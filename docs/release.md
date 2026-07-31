@@ -79,7 +79,10 @@ original, license-reviewed icon before describing the visual identity as final.
 - Verify SHA-256 on a separate path.
 - Start on a clean Windows 10/11 x64 environment and verify first launch, project selection, chat,
   file editing/conflicts, portable-folder replacement, data retention/removal behavior,
-  backgrounds, companion opt-in/import, and an external Pi extension package.
+  backgrounds, companion opt-in/import, and an external Pi extension package. If the first
+  unsigned preview is published before this matrix is available, keep it marked as a prerelease
+  and list every unverified Windows interaction explicitly in the Release notes; never describe it
+  as stable or fully clean-machine validated.
 - Confirm the tag commit passed the required public CI checks and review the unsigned status,
   generated notes, asset names, checksums, and provenance before publishing the draft.
 - If any binary gate fails, keep the draft unpublished and publish source-only release notes only

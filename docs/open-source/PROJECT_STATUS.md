@@ -59,13 +59,39 @@ implies endorsement.
   rejection of unknown, traversal, symlink, script, and remote-resource inputs;
 - an isolated production Web build passed, the staged standalone service started, and
   `/api/health` returned successfully;
+- an isolated Windows package build passed. `verify:package` confirmed the Electron shell, 20
+  backgrounds, token-authenticated health/root/session routes, packaged-Electron runtime isolation,
+  and a synthetic external Pi package exposing an extension command, tool, and Skill, while finding
+  zero piGUI-owned SubAgent features;
+- the package contains a v3 exact package inventory and CycloneDX 1.5 SBOM covering 101 packaged
+  copies plus 565 runtime-source packages (666 components total) and 224 content-hashed license
+  texts;
+- the portable first-run smoke test passed with isolated user data, a healthy bundled service,
+  loaded renderer, ready preload bridge, and ready AppShell;
+- the real unpacked EXE showed no duplicate operating-system title/menu row. Its integrated top
+  strip performed the native double-click maximize action, native restore and close worked, and
+  the appearance control opened the bundled theme/background panel;
+- ASAR and staged-renderer probes confirmed the packaged `hidden` title style, native overlay,
+  transparent title color, auto-hidden menu, desktop-only runtime marker, drag/no-drag CSS, and
+  native-control safe-area variables are the same bytes as the reviewed build output;
+- synthetic desktop automation did not expose a window-coordinate change after continuous dragging.
+  Native double-click maximize strongly confirms Windows treated the blank point as a caption area,
+  but standard-mouse continuous drag remains part of the clean-machine matrix rather than being
+  overstated as complete;
+- the local candidate `piGUI-0.1.0-win-x64-portable.exe` is 180,907,440 bytes with SHA-256
+  `6461C3D0ECE8F55F7CA50F67155CE03B56B509D58B2111ECC62D0FD6982229FF`; its Authenticode
+  status is `NotSigned`;
+- an artifact string scan found no `C:\Users\lyh` or `F:\piGUI` private build paths. High-confidence
+  token-pattern candidates were confined to upstream binary byte sequences, Next.js identifiers,
+  and a dependency documentation marker rather than stored credentials;
 - the final browser walkthrough passed at 1440x900, the 959/960px breakpoint, and 390x844:
   text opened in Edit, `Ctrl+S` wrote to disk, the 409 continue/reload/confirmed-overwrite flow
   preserved user intent, all 20 background thumbnails rendered and switched with themes, project
   collapse worked, and desktop/mobile rounded or overlay layouts matched their intended modes.
 
-These results verify the source implementation. They are **not** a claim that a distributable
-Windows executable or public release has passed all gates.
+These results verify the source implementation and the locally built unsigned Windows candidate.
+They are **not** a claim that clean-machine Windows coverage, public CI, or the public GitHub
+prerelease has already passed.
 
 ## Visual and companion compatibility boundary
 
@@ -82,21 +108,16 @@ rejected instead of executed or fetched.
 
 ## Still pending before release completion
 
-- isolated Windows package build, startup/health check, and synthetic Pi extension fixture;
-- packaged-EXE walkthrough of native controls, drag/resize, the `Alt` menu, Window Controls
-  Overlay safe areas, and the critical direct-editing/appearance flows; browser checks are complete
-  but cannot prove Electron's native window chrome;
+- clean-machine manual coverage for continuous window dragging, edge/corner resize, the transient
+  `Alt` menu, 100/125/150% DPI scaling, portable-folder movement, and the full editor conflict flow;
+  the current packaged EXE evidence covers the integrated top row, double-click maximize,
+  restore/close, and the appearance panel;
 - clean-machine portable replacement, data-retention, and uninstall checks;
-- review of generated release artifacts for secrets and private developer paths (the current
-  worktree and one-commit repository history scan found no credential signatures or private paths);
-- artifact-level third-party license audit. The unused LobeHub peer UI chain is absent from the
-  committed lockfile, `format@0.2.2` and `khroma@2.1.0` have hash-pinned reviewed MIT evidence,
-  and runtime `UNDECLARED` entries now fail source generation; the binary manifest/SBOM must still
-  prove the same closure for the actual artifact;
-- first source commit/push, public CI result, branch protection, and GitHub Release.
+- first source push, public CI result, branch protection, and GitHub Release download/checksum
+  verification.
 
-Until those items are recorded, any locally produced executable is an unsigned development
-artifact, not an official stable release. Track the detailed acceptance record in
+Until those items are recorded, the locally produced executable is an unsigned prerelease
+candidate, not an official stable release. Track the detailed acceptance record in
 [the release goal](../RELEASE_GOAL_2026-07-31.md) and the administrative gates in
 [the public launch checklist](LAUNCH_CHECKLIST.md).
 

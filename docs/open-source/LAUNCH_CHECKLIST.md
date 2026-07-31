@@ -18,8 +18,10 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
 - [x] Remove the unused LobeHub peer UI chain from the committed lockfile, pin reviewed MIT
   evidence for `format@0.2.2` and `khroma@2.1.0`, and fail source generation on any other runtime
   `UNDECLARED` package.
-- [ ] Confirm an actual isolated build contains the build-derived exact npm package manifest,
+- [x] Confirm an actual isolated build contains the build-derived exact npm package manifest,
   CycloneDX SBOM, and content-hashed license text bundle, and that `verify:package` accepts it.
+  The verified package records 101 packaged copies, 565 runtime-source packages, 666 CycloneDX
+  components, and 224 unique license texts.
 
 ## Repository configuration
 
@@ -64,8 +66,14 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
   theme/background switching; project collapse; and 1440x900, 959/960px, and 390x844 layouts.
 - [x] Complete an isolated production Web build, start the staged standalone service, and pass
   its `/api/health` check. This is source/Web evidence, not a Windows package result.
-- [ ] Complete the packaged-EXE walkthrough for native window controls, drag/resize, the `Alt`
-  menu, Window Controls Overlay safe areas, and the same critical editor/appearance flows.
+- [x] Complete the packaged-EXE walkthrough for the integrated Window Controls Overlay, native
+  maximize/restore/close behavior, the blank integrated top strip's native double-click maximize action,
+  and a clickable appearance entry that opens the bundled theme/background panel.
+- [ ] Complete a clean-machine manual pass for continuous window dragging, edge/corner resize,
+  transient `Alt` menu display, DPI scaling, and the full editor conflict flow. Browser automation
+  and the current desktop automation do not replace that Windows 10/11 coverage; its synthetic
+  drag did not expose an observable window-coordinate change, so continuous dragging is not marked
+  as manually confirmed.
 
 ## Visual and companion scope
 
@@ -91,18 +99,23 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
 
 ## Windows and Pi extension release readiness
 
-- [ ] Build in an isolated worktree or release environment, not the active development `.next`.
-- [ ] Verify the unpacked Windows application starts, serves its health endpoint, and does not
+- [x] Build in an isolated worktree or release environment, not the active development `.next`.
+- [x] Verify the unpacked Windows application starts, serves its health endpoint, and does not
   resolve runtime modules from the developer checkout.
-- [ ] Run the synthetic Pi extension fixture against the packaged service without touching the
+- [x] Run the synthetic Pi extension fixture against the packaged service without touching the
   user's real Pi directory.
 - [ ] Test first launch, portable-folder replacement, data retention, and removal on a clean
   Windows 10/11 x64 environment.
 - [x] Define the current pre-release support boundary in `SECURITY.md` and `SUPPORT.md`.
 - [x] Configure tag releases to generate and re-verify SHA-256 checksums, smoke-test the final
   portable EXE, and create a draft GitHub prerelease for manual review.
-- [ ] Verify an actual release artifact, checksum, release notes, unsigned status, and provenance
-  before creating or announcing a GitHub Release.
+- [x] Verify the locally produced candidate artifact, package contents, checksum, unsigned status,
+  and provenance before creating a GitHub Release. Candidate:
+  `piGUI-0.1.0-win-x64-portable.exe`, 180,907,440 bytes,
+  SHA-256 `6461C3D0ECE8F55F7CA50F67155CE03B56B509D58B2111ECC62D0FD6982229FF`,
+  Authenticode `NotSigned`.
+- [ ] Verify the artifact downloaded from the draft GitHub Release matches its published checksum
+  and review the generated release notes and unsigned warning before making the prerelease public.
 - [x] Document telemetry, local storage, network behavior, extension boundaries, and the lack of
   automatic updates in the initial release.
 
