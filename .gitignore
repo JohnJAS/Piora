@@ -12,6 +12,10 @@
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
+/.verification/
+/verification-output/
 
 # next.js
 /.next/
@@ -22,7 +26,24 @@
 
 # misc
 .DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.log
+*.jsonl
 *.pem
+*.key
+*.p12
+*.pfx
+/certificates/
+/desktop/certificates/
+
+# Never publish copied Pi/Codex runtime state or locally imported companion data.
+.pi/
+.codex/
+.pi-gui-data/
+/local-pets/
 
 # debug
 npm-debug.log*

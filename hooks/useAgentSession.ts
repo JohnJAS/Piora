@@ -1148,22 +1148,25 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       agentRunningRef.current = false;
       closeEvents();
-      if (e instanceof EventStreamConnectionError) {
-        const optimisticKey = optimisticUserMessageKeyRef.current;
-        if (optimisticKey) {
-          setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            return last?.role === "user" && userMessageKey(last) === optimisticKey
-              ? prev.slice(0, -1)
-              : prev;
-          });
-        }
-        addNotice({ type: "error", message: e.message });
-        // The prompt never reached the agent, so restore the user's text into
-        // the input instead of losing it. Mirrors the shell-command recovery in
-        // executeBash; insertIfEmpty avoids clobbering anything typed since.
-        if (message) opts.chatInputRef?.current?.insertIfEmpty(message);
+      const optimisticKey = optimisticUserMessageKeyRef.current;
+      if (optimisticKey) {
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          return last?.role === "user" && userMessageKey(last) === optimisticKey
+            ? prev.slice(0, -1)
+            : prev;
+        });
       }
+      // Surface startup, session, and event-stream failures instead of leaving
+      // the composer apparently inert. The prompt never reached the agent in
+      // this branch, so put the text back without clobbering newer input.
+      addNotice({
+        type: "error",
+        message: e instanceof EventStreamConnectionError
+          ? e.message
+          : e instanceof Error ? e.message : String(e),
+      });
+      if (message) opts.chatInputRef?.current?.insertIfEmpty(message);
       optimisticUserMessageKeyRef.current = null;
       setAgentRunning(false);
       setAgentPhase(null);

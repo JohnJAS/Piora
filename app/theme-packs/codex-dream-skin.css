@@ -1,0 +1,101 @@
+/*
+ * Pi GUI adaptation of the visual language from Fei-Away/Codex-Dream-Skin.
+ * The upstream project is MIT licensed; see public/themes/codex-dream-skin/.
+ * This is a Pi-native theme: it only changes our CSS variables and renderer
+ * surfaces. It does not use CDP, inject into another application, or replace
+ * any installed software.
+ */
+
+html[data-theme="dream"] {
+  color-scheme: dark;
+  --bg: #111318;
+  --bg-panel: #191c22;
+  --bg-hover: #20242b;
+  --bg-selected: #2b3038;
+  --border: rgba(141, 163, 151, 0.28);
+  --text: #edf0f1;
+  --text-muted: #a3aaae;
+  --text-dim: #748087;
+  --accent: #8da397;
+  --accent-hover: #b2c7bb;
+  --user-bg: rgba(141, 163, 151, 0.17);
+  --assistant-bg: #111318;
+  --tool-bg: #171b20;
+  --bg-subtle: rgba(141, 163, 151, 0.08);
+  --dream-line: rgba(141, 163, 151, 0.24);
+  --dream-glow: rgba(157, 148, 163, 0.16);
+}
+
+html[data-theme="dream"] body {
+  background:
+    radial-gradient(900px 420px at 84% -10%, var(--dream-glow), transparent 70%),
+    radial-gradient(700px 420px at 5% 110%, rgba(130, 152, 163, 0.11), transparent 70%),
+    var(--bg);
+}
+
+html[data-theme="dream"] body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.55;
+  background:
+    linear-gradient(115deg, transparent 0 37%, rgba(237, 240, 241, 0.035) 50%, transparent 63%),
+    radial-gradient(520px 260px at 76% 14%, rgba(141, 163, 151, 0.08), transparent 72%);
+}
+
+html[data-theme="dream"] body > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="dream"] .app-topbar {
+  border-bottom-color: var(--dream-line) !important;
+  box-shadow: 0 1px 0 rgba(237, 240, 241, 0.025), 0 12px 30px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(18px);
+}
+
+html[data-theme="dream"] .app-topbar-title-icon {
+  border-color: rgba(141, 163, 151, 0.38);
+  background: rgba(141, 163, 151, 0.13);
+  box-shadow: 0 0 18px rgba(141, 163, 151, 0.13);
+}
+
+html[data-theme="dream"] .sidebar-container {
+  border-right-color: var(--dream-line) !important;
+  background:
+    linear-gradient(180deg, rgba(141, 163, 151, 0.035), transparent 38%),
+    var(--bg-panel) !important;
+  box-shadow: 14px 0 36px rgba(0, 0, 0, 0.12);
+}
+
+html[data-theme="dream"] #file-panel {
+  border-left-color: var(--dream-line) !important;
+  background: color-mix(in srgb, var(--bg-panel) 94%, var(--accent)) !important;
+}
+
+html[data-theme="dream"] .theme-menu-option:focus-visible,
+html[data-theme="dream"] button:focus-visible,
+html[data-theme="dream"] input:focus-visible,
+html[data-theme="dream"] textarea:focus-visible {
+  outline-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(141, 163, 151, 0.16);
+}
+
+html[data-theme="dream"] .markdown-body a {
+  color: var(--accent-hover);
+}
+
+html[data-theme="dream"] ::selection {
+  color: #111318;
+  background: rgba(141, 163, 151, 0.72);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="dream"] .app-topbar,
+  html[data-theme="dream"] .sidebar-container {
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+}

@@ -10,6 +10,7 @@ declare global {
   interface Window {
     piDesktop?: {
       selectDirectory: () => Promise<string | null>;
+      onMenuAction?: (listener: (action: string) => void) => () => void;
     };
   }
 }
@@ -345,7 +346,7 @@ function PiWebTitle() {
   const [scrambling, setScrambling] = useState(false);
   const revertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const target = showVersion ? `${process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}p${process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}` : "Pi Web";
+  const target = showVersion ? `${process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}p${process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}` : "piGUI";
   const display = useScramble(target, scrambling);
 
   const triggerScramble = useCallback((toVersion: boolean) => {
@@ -860,7 +861,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const sessionTree = buildSessionTree(filteredSessions);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+    <div className="session-sidebar-content" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {customPathOpen && (
         <DirectoryPicker
           busy={customPathValidating}
@@ -874,15 +875,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       )}
       {/* Header */}
       <div
+        className="sidebar-header"
         style={{
           padding: "12px 10px 10px",
           borderBottom: "1px solid var(--border)",
           flexShrink: 0,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div className="sidebar-title-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <PiWebTitle />
-          <div style={{ display: "flex", gap: 6 }}>
+          <div className="sidebar-primary-actions" style={{ display: "flex", gap: 4 }}>
             <button
               onClick={handleNewSession}
               disabled={!selectedCwd}
@@ -895,7 +897,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 height: 32,
                 paddingLeft: 10,
                 paddingRight: 12,
-                borderRadius: 7,
+                borderRadius: "var(--radius-control)",
                 fontSize: 12,
                 fontWeight: 500,
                 letterSpacing: "-0.01em",
@@ -930,7 +932,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 color: sessionRefreshDone ? "#4ade80" : "var(--text-muted)",
                 cursor: "pointer",
                 width: 32, height: 32,
-                borderRadius: 7,
+                borderRadius: "var(--radius-control)",
                 padding: 0,
                 flexShrink: 0,
                 transition: "background 0.3s, color 0.3s, border-color 0.3s",
@@ -964,7 +966,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         </div>
 
         {/* CWD picker */}
-        <div ref={dropdownRef} style={{ position: "relative" }}>
+        <div ref={dropdownRef} className="sidebar-project-picker" style={{ position: "relative" }}>
           <button
             onClick={() => setDropdownOpen((v) => !v)}
             title={selectedProject ?? selectedCwd ?? ""}
@@ -975,7 +977,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               padding: "6px 10px",
               background: selectedCwd ? "var(--bg-hover)" : "rgba(37,99,235,0.06)",
               border: selectedCwd ? "1px solid var(--border)" : "1px solid rgba(37,99,235,0.4)",
-              borderRadius: 7,
+              borderRadius: "var(--radius-control)",
               cursor: "pointer",
               fontSize: 12,
               color: "var(--text)",

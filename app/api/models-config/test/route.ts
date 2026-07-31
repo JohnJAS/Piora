@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { completeSimple, type AssistantMessage } from "@earendil-works/pi-ai/compat";
+import type { AssistantMessage } from "@earendil-works/pi-ai/compat";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 
@@ -66,26 +66,23 @@ export async function POST(req: Request) {
     const model = modelRuntime.getModel(providerName, modelId);
     if (!model) return NextResponse.json({ ok: false, error: `Model not found: ${providerName}/${modelId}` });
 
-    const resolved = await modelRuntime.getAuth(model);
-    if (!resolved?.auth.apiKey) {
-      return NextResponse.json({ ok: false, error: `No API key found for "${providerName}"` });
-    }
-
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TEST_TIMEOUT_MS);
     let status: number | undefined;
     const startedAt = Date.now();
 
     try {
-      const message = await completeSimple(model, {
+      // Use the same runtime that loaded the temporary models.json. Calling
+      // the legacy compat dispatcher here bypasses custom provider overlays
+      // (baseUrl, headers, API-key commands) and can make a valid configured
+      // model appear unreachable.
+      const message = await modelRuntime.completeSimple(model, {
         messages: [{
           role: "user",
           content: "Reply with OK only.",
           timestamp: Date.now(),
         }],
       }, {
-        apiKey: resolved.auth.apiKey,
-        headers: resolved.auth.headers,
         maxTokens: 16,
         timeoutMs: TEST_TIMEOUT_MS,
         maxRetries: 0,

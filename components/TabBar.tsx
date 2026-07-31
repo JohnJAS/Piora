@@ -8,8 +8,10 @@ export interface Tab {
   id: string;
   label: string;
   filePath: string;
+  cwd?: string;
   sourceSessionId?: string | null;
-  initialDisplayMode?: "source" | "preview" | "diff";
+  initialDisplayMode?: "source" | "preview" | "diff" | "edit";
+  isDirty?: boolean;
 }
 
 interface Props {
@@ -25,19 +27,21 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
 
   return (
     <div
+      className="file-tab-list"
       style={{
         display: "flex",
         alignItems: "flex-end",
         background: "var(--bg-panel)",
         overflowX: "auto",
         flexShrink: 0,
-        height: 36,
+        height: 40,
       }}
     >
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId;
         return (
           <div
+            className={`file-tab${isActive ? " is-active" : ""}`}
             key={tab.id}
             onClick={() => onSelectTab(tab.id)}
             onMouseDown={(e) => {
@@ -53,11 +57,13 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
               display: "flex",
               alignItems: "center",
               gap: 6,
-              height: 36,
+              height: 32,
+              margin: "4px 2px",
               paddingLeft: 12,
               paddingRight: 6,
-              borderRight: "1px solid var(--border)",
-              background: isActive ? "var(--bg)" : "var(--bg-panel)",
+              border: "1px solid transparent",
+              borderRadius: "var(--radius-control)",
+              background: isActive ? "var(--bg)" : "transparent",
               cursor: "pointer",
               fontSize: 12,
               color: isActive ? "var(--text)" : "var(--text-muted)",
@@ -83,6 +89,20 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
             >
               {tab.label}
             </span>
+            {tab.isDirty && (
+              <span
+                title="Unsaved changes"
+                aria-label="Unsaved changes"
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background: "color-mix(in srgb, #d99a28 82%, var(--text))",
+                  boxShadow: "0 0 0 2px color-mix(in srgb, #d99a28 14%, transparent)",
+                  flex: "0 0 7px",
+                }}
+              />
+            )}
             <button
               onClick={(e) => { e.stopPropagation(); onCloseTab(tab.id); }}
               onMouseEnter={() => setHoveredClose(tab.id)}
@@ -92,7 +112,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
                 width: 24, height: 24,
                 background: hoveredClose === tab.id ? "var(--bg-hover)" : "transparent",
                 border: "none",
-                borderRadius: 4,
+                borderRadius: "var(--radius-small)",
                 color: hoveredClose === tab.id ? "var(--text)" : "var(--text-dim)",
                 cursor: "pointer",
                 padding: 0,

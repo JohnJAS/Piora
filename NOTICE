@@ -1,0 +1,55 @@
+piGUI
+Copyright (c) 2026 piGUI contributors
+
+This project is distributed under the MIT License. See LICENSE.
+
+This project is based on and contains portions of pi-web:
+  Project: https://github.com/agegr/pi-web
+  Copyright (c) 2026 agegr
+  License: MIT
+
+This project integrates packages from the Pi coding agent project:
+  Project: https://github.com/earendil-works/pi
+  Copyright (c) 2025 Mario Zechner
+  License: MIT
+
+The companion pet compatibility logic in lib/companion-pets.ts contains a
+modified TypeScript adaptation of portions of the OpenAI Codex TUI pet catalog,
+model defaults, and asset-cache conventions:
+  Project: https://github.com/openai/codex
+  Snapshot: 775fb21d2af9b9936618fe22dd62e6f0cb3ba4a3
+  Copyright 2025 OpenAI
+  License: Apache-2.0
+
+The complete upstream license, NOTICE, immutable source links, and modification
+summary are in third_party/openai-codex. No upstream Rust binary, Rust source
+file, spritesheet, logo, or other visual asset is bundled as a product asset;
+only the attributed, modified TypeScript adaptation is part of piGUI. This
+compatibility layer is independently maintained and is not an official OpenAI
+integration.
+
+The copyright and permission notices for these upstream works must be retained
+in copies or substantial portions of the software. Dependencies and bundled
+components may have additional notices and license terms of their own.
+
+The bundled backgrounds under public/themes/dream-backgrounds are original
+project assets released under the project MIT License. Their manifest,
+generation records, and file hashes are stored alongside the assets.
+
+The npm tarballs for rehype-katex 7.0.1 and remark-math 6.0.0 declare MIT but
+omit their monorepo-root license file. A byte-for-byte upstream license copy,
+immutable commit links, and package-version provenance are retained in
+third_party/remark-math and included in each packaged license bundle.
+
+THIRD_PARTY_LICENSES.md is a deterministic inventory of the complete npm lock
+file. Each packaged application also contains a build-derived CycloneDX SBOM,
+an exact manifest of npm package copies in resources/web, and every LICENSE,
+LICENCE, COPYING, and NOTICE file published with the corresponding installed
+packages. These texts are retained byte-for-byte and deduplicated by SHA-256.
+The release verifier checks this material against the final unpacked artifact;
+the source inventory alone is not treated as artifact-level evidence.
+
+piGUI is independently maintained and is not endorsed by or affiliated with
+agegr, earendil-works, or OpenAI. "Codex" and other third-party names are used
+only for descriptive comparison and remain the property of their respective
+owners.

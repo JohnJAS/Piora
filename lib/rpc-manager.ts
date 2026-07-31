@@ -7,6 +7,7 @@ import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
+import { resolveDefaultModelPreference } from "./model-policy";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
@@ -1159,13 +1160,17 @@ export async function startRpcSession(
     );
     const defaultProvider = services.settingsManager.getDefaultProvider();
     const defaultModelId = services.settingsManager.getDefaultModel();
+    const preferredDefault = resolveDefaultModelPreference({
+      models: scope.visible,
+      settingsProvider: defaultProvider,
+      settingsModel: defaultModelId,
+      environment: process.env,
+    });
     const initial = sessionFile
       ? { scopedModels: [...scope.scopedModels] }
       : selectInitialModelScope(scope, {
         ...(initialModel ? { requestedModel: initialModel } : {}),
-        ...(defaultProvider && defaultModelId
-          ? { defaultModel: { provider: defaultProvider, modelId: defaultModelId } }
-          : {}),
+        ...(preferredDefault ? { defaultModel: preferredDefault } : {}),
         ...(thinkingLevel ? { thinkingLevel } : {}),
       });
     const { session: inner } = await createAgentSessionFromServices({

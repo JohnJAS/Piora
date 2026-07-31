@@ -1,0 +1,17 @@
+{
+  "name": "@pi-gui/packaged-extension-verification-fixture",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "keywords": [
+    "pi-package"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/package-probe.js"
+    ],
+    "skills": [
+      "./skills/package-probe/SKILL.md"
+    ]
+  }
+}

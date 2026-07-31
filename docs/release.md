@@ -1,177 +1,90 @@
-# Release Checklist
+# piGUI release procedure
 
-This repo publishes two artifacts for each release:
+The piGUI release process is configured to publish source code and an unsigned Windows x64 portable application from
+[`kexijiang/pi-gui`](https://github.com/kexijiang/pi-gui). It does not publish the former
+`@agegr/pi-web` npm package.
 
-- npm package: `@agegr/pi-web`
-- GitHub Release: `agegr/pi-web`
+## Prerequisites
 
-Use this checklist from a clean `main` checkout.
+- Node.js `22.19.0` (see `.nvmrc`).
+- A clean reviewed commit on `main`.
+- No credentials, user sessions, project files, local pet imports, build output, or signing
+  material in the release tree.
+- The third-party notices and 20 bundled backgrounds match the committed lockfile and manifest.
 
-## 1. Preflight
+## Local verification
 
-```bash
-git status --short --branch
-git log --oneline --decorate -5
-gh auth status
-npm whoami
-node -e "const p=require('./package.json'); console.log(p.version)"
+Run source checks in the working tree:
+
+```powershell
+npm ci
+npm run licenses:check
+npm run lint
+npm run typecheck
+npm test
+npm run verify:backgrounds
 ```
 
-Expected:
+Do not run `next build` in an active development worktree. Create an isolated worktree or clean
+release checkout, then run:
 
-- `git status` is clean, or only contains changes you intentionally plan to release.
-- GitHub is authenticated as an account that can push and create releases.
-- npm is authenticated as an account that can publish `@agegr/pi-web`.
-
-## 2. Publish to npm
-
-```bash
-npm run release
+```powershell
+npm ci
+npm run dist:win
+npm run verify:package
+npm run smoke:portable -- --expected-version 0.1.0
 ```
 
-The release script runs:
+`verify:package` starts the packaged standalone service in an isolated home directory and checks
+HTTP authentication, Pi session startup, external package/extension/tool/Skill discovery,
+the exact packaged npm dependency manifest, CycloneDX SBOM, content-hashed third-party license
+texts, project license files, and the absence of known development-only packages. Electron
+Builder generates this material from the final `resources/web` tree before creating the portable
+executable; do not hand-edit `resources/licenses/third-party`. For a normal packaged verification,
+the extension fixture runs through the executable in `win-unpacked` with Electron's
+`ELECTRON_RUN_AS_NODE` mode rather than the developer's Node.js executable.
 
-```bash
-npm version patch --no-git-tag-version && npm run build && npm publish --access public
+`smoke:portable` launches the final portable EXE in an isolated profile and requires its reported
+application version to match `--expected-version`. It also requires the hidden smoke window to load
+the renderer, expose the preload bridge, and reach the piGUI application shell before passing.
+
+## Publish a prerelease
+
+After the local gates pass, push `main`, wait for the public CI matrix, then create and push the
+matching version tag:
+
+```powershell
+git tag -a v0.1.0 -m "piGUI v0.1.0"
+git push origin v0.1.0
 ```
 
-Notes:
+The tag workflow first runs the complete source gate on Ubuntu with Node.js 22.19.0. The Windows
+build starts only after that gate passes, repeats the source checks on Windows, builds the portable
+artifact, verifies the packaged service through the packaged Electron runtime, smoke-tests the final
+EXE and its embedded version in an isolated profile, creates
+`SHA256SUMS.txt`, and creates a **draft** GitHub prerelease. A maintainer must inspect the draft,
+download and verify its assets, complete the checks below, and explicitly publish it. The workflow
+never publishes the draft automatically. Never manually mark an unsigned artifact as a signed or
+stable release.
 
-- This bumps `package.json` and `package-lock.json`.
-- It intentionally runs a production build. Do not run `next build` during normal development; release work is the exception.
-- If `npm view @agegr/pi-web version` briefly shows the previous version, check the exact version instead:
+The initial preview intentionally has no custom application icon because no reviewed original
+icon asset is available yet; Windows may show the generic Electron application icon. Add only an
+original, license-reviewed icon before describing the visual identity as final.
 
-```bash
-npm view @agegr/pi-web@<version> version --registry https://registry.npmjs.org/
-npm view @agegr/pi-web versions --json --registry https://registry.npmjs.org/
-```
+## Review the draft before publication
 
-## 3. Commit the Version Bump
+- Download the artifact and checksum from the draft Release page.
+- Verify SHA-256 on a separate path.
+- Start on a clean Windows 10/11 x64 environment and verify first launch, project selection, chat,
+  file editing/conflicts, portable-folder replacement, data retention/removal behavior,
+  backgrounds, companion opt-in/import, and an external Pi extension package.
+- Confirm the tag commit passed the required public CI checks and review the unsigned status,
+  generated notes, asset names, checksums, and provenance before publishing the draft.
+- If any binary gate fails, keep the draft unpublished and publish source-only release notes only
+  after clearly documenting the limitation.
 
-Replace `<version>` with the new package version, for example `0.7.5`.
+## Post-release record
 
-```bash
-git diff -- package.json package-lock.json
-git add package.json package-lock.json
-git commit -m "Release v<version>"
-```
-
-## 4. Tag and Push
-
-```bash
-git tag -a v<version> -m "v<version>"
-git push origin main --tags
-```
-
-Confirm the tag does not already exist before creating it when unsure:
-
-```bash
-git ls-remote --tags origin v<version>
-gh release view v<version> --repo agegr/pi-web
-```
-
-## 5. Generate Release Notes from Commits
-
-Use the previous release tag as the base.
-
-```bash
-git log --oneline --decorate v<previous>..v<version>
-git log --format='%h%x09%s%n%b' v<previous>..v<version>
-git diff --stat v<previous>..v<version>
-```
-
-Write the release notes from those commits, not from memory. Include both Chinese and English sections. Keep commit hashes next to each item when useful.
-
-Suggested structure:
-
-```markdown
-## 中文
-
-基于 `v<previous>..v<version>` 的提交整理。
-
-### 新增
-
-- ...
-
-### 修复
-
-- ...
-
-### 改进
-
-- ...
-
-### 内部调整
-
-- 发布 npm 包 `@agegr/pi-web@<version>`。
-
-## English
-
-Prepared from commits in `v<previous>..v<version>`.
-
-### Added
-
-- ...
-
-### Fixed
-
-- ...
-
-### Improved
-
-- ...
-
-### Internal
-
-- Published npm package `@agegr/pi-web@<version>`.
-```
-
-## 6. Create or Update the GitHub Release
-
-Create a new release:
-
-```bash
-gh release create v<version> \
-  --repo agegr/pi-web \
-  --verify-tag \
-  --title "v<version>" \
-  --notes-file release-notes.md
-```
-
-If the release already exists and only the notes need updating:
-
-```bash
-gh release edit v<version> \
-  --repo agegr/pi-web \
-  --notes-file release-notes.md
-```
-
-You can avoid a temporary file by passing notes through stdin:
-
-```bash
-gh release edit v<version> --repo agegr/pi-web --notes-file - <<'EOF'
-## 中文
-
-...
-
-## English
-
-...
-EOF
-```
-
-## 7. Final Verification
-
-```bash
-gh release view v<version> --repo agegr/pi-web
-npm view @agegr/pi-web@<version> version --registry https://registry.npmjs.org/
-git status --short --branch
-git log --oneline --decorate -3
-```
-
-Expected:
-
-- GitHub Release exists and is not a draft unless intentionally published as one.
-- npm exact version resolves.
-- `main` is aligned with `origin/main`.
-- `HEAD` points at the release commit and `v<version>` tag.
+- Confirm the public Release page exposes the reviewed assets and checksums.
+- Update `docs/open-source/PROJECT_STATUS.md`, `docs/open-source/LAUNCH_CHECKLIST.md`, and the
+  release goal with the exact commit, CI run, and Release URL.

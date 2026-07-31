@@ -276,8 +276,9 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
 
   if (inline) {
     return (
-      <div style={{ height: "100%", display: "flex", alignItems: "stretch" }}>
+      <div className="topbar-branch-control" style={{ height: "100%", display: "flex", alignItems: "stretch" }}>
         <button
+          className="topbar-control"
           ref={btnRef}
           onClick={() => onToggle ? onToggle() : setOpenInternal((v) => !v)}
           style={{
@@ -289,7 +290,6 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
             background: open ? "var(--bg-selected)" : "none",
             border: "none",
             borderTop: open ? "2px solid var(--accent)" : "2px solid transparent",
-            borderRight: "1px solid var(--border)",
             cursor: "pointer",
             color: open ? "var(--text)" : "var(--text-muted)",
             fontSize: 11,
@@ -303,16 +303,16 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
           aria-pressed={open}
         >
           {branchIcon}
-           {!compact && <span>{t("i18n.branches")}</span>}
+           {!compact && <span className="topbar-action-label">{t("i18n.branches")}</span>}
         </button>
         {open && dropdownPos && (
-          <div style={{
+          <div className="app-floating-panel branch-floating-panel" style={{
             position: "fixed",
-            top: dropdownPos.top,
-            left: dropdownPos.left,
-            width: dropdownPos.width,
+            top: dropdownPos.top + 6,
+            left: dropdownPos.left + 6,
+            width: Math.max(280, dropdownPos.width - 12),
             background: "var(--bg-panel)",
-            borderBottom: "1px solid var(--border)",
+            border: "1px solid var(--border)",
             zIndex: 500,
           }}>
             {hasContent && firstNode ? (

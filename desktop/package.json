@@ -1,0 +1,37 @@
+{
+  "name": "@pi-gui/desktop",
+  "productName": "piGUI",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Secure Electron desktop shell for piGUI",
+  "author": {
+    "name": "piGUI contributors",
+    "url": "https://github.com/kexijiang/pi-gui"
+  },
+  "publisher": "piGUI",
+  "copyright": "Copyright © 2026 piGUI contributors",
+  "license": "MIT",
+  "homepage": "https://github.com/kexijiang/pi-gui#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kexijiang/pi-gui.git"
+  },
+  "main": "dist/main.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "npm run build && electron .",
+    "pack": "electron-builder --config electron-builder.yml --dir --win --x64",
+    "dist": "electron-builder --config electron-builder.yml --win --x64"
+  },
+  "devDependencies": {
+    "@types/node": "25.0.10",
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3",
+    "typescript": "5.9.3"
+  }
+}

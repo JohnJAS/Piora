@@ -4,21 +4,11 @@ import { createAgentSessionServices, getAgentDir, type SettingsManager } from "@
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { loadModelsWithCache, withModelRuntimeError, type ModelsData } from "@/lib/models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "@/lib/model-scope";
+import { prioritizeProvider, resolveDefaultModelPreference } from "@/lib/model-policy";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { projectTrustReloadOptions } from "@/lib/project-trust";
 
 export const dynamic = "force-dynamic";
-
-const modelNameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
-
-function compareModelEntries(
-  a: { id: string; name: string; provider: string },
-  b: { id: string; name: string; provider: string }
-): number {
-  return modelNameCollator.compare(a.name || a.id, b.name || b.id)
-    || modelNameCollator.compare(a.provider, b.provider)
-    || modelNameCollator.compare(a.id, b.id);
-}
 
 async function loadModels(cwd: string): Promise<ModelsData> {
   const nameMap = new Map<string, string>();
@@ -46,12 +36,13 @@ async function loadModels(cwd: string): Promise<ModelsData> {
     settings.getEnabledModels(),
   );
   const { visible, thinkingLevelPins, warnings } = scope;
-  modelList = visible.map((m) => ({
+  const orderedVisible = prioritizeProvider(visible, (model) => model.provider);
+  modelList = orderedVisible.map((m) => ({
     id: m.id,
     name: m.name,
     provider: m.provider,
-  })).sort(compareModelEntries);
-  for (const m of visible) {
+  }));
+  for (const m of orderedVisible) {
     const key = `${m.provider}:${m.id}`;
     nameMap.set(key, m.name);
     thinkingLevels[key] = getSupportedThinkingLevels(m);
@@ -60,10 +51,14 @@ async function loadModels(cwd: string): Promise<ModelsData> {
 
   const defaultProvider = settings.getDefaultProvider();
   const defaultModelId = settings.getDefaultModel();
+  const preferredDefault = resolveDefaultModelPreference({
+    models: visible,
+    settingsProvider: defaultProvider,
+    settingsModel: defaultModelId,
+    environment: process.env,
+  });
   const initial = selectInitialModelScope(scope, {
-    ...(defaultProvider && defaultModelId
-      ? { defaultModel: { provider: defaultProvider, modelId: defaultModelId } }
-      : {}),
+    ...(preferredDefault ? { defaultModel: preferredDefault } : {}),
   });
   if (initial.model) {
     defaultModel = { provider: initial.model.provider, modelId: initial.model.id };

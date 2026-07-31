@@ -15,6 +15,7 @@ import {
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
+import { prioritizeProvider } from "@/lib/model-policy";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -75,6 +76,8 @@ export interface ChatInputHandle {
   insertIfEmpty: (text: string) => void;
   prependText: (text: string) => void;
   addImages: (files: File[]) => void;
+  /** Send a separate local UI shortcut without replacing the user's draft. */
+  sendText: (text: string) => boolean;
 }
 
 const TOOL_PRESETS = ["off", "default", "full"] as const;
@@ -82,12 +85,6 @@ const TOOL_PRESET_MAP: Record<"off" | "default" | "full", "none" | "default" | "
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
 const MODEL_FILTER_THRESHOLD = 8;
 const MODEL_OPTION_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
-
-function compareModelOptions(a: ModelOption, b: ModelOption): number {
-  return MODEL_OPTION_COLLATOR.compare(a.name || a.modelId, b.name || b.modelId)
-    || MODEL_OPTION_COLLATOR.compare(a.provider, b.provider)
-    || MODEL_OPTION_COLLATOR.compare(a.modelId, b.modelId);
-}
 
 export function filterModelOptions(options: ModelOption[], query: string): ModelOption[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -185,6 +182,7 @@ function revokeImagePreview(image: AttachedImage): void {
 function QueuedMessageRow({ kind, text }: { kind: "steer" | "follow-up"; text: string }) {
   return (
     <div
+      className="composer-shell"
       title={text}
       style={{
         display: "flex",
@@ -338,6 +336,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   attachedImagesRef.current = attachedImages;
 
   useImperativeHandle(ref, () => ({
+    sendText(text: string) {
+      const message = text.trim();
+      if (!message || isStreaming) return false;
+      onAudioUnlock?.();
+      onSend(message);
+      return true;
+    },
     insertIfEmpty(text: string) {
       const ta = textareaRef.current;
       const current = ta ? ta.value : value;
@@ -980,13 +985,19 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   // Build model options: prefer modelList (has provider info), fallback to modelNames
   const modelOptions: ModelOption[] = (() => {
     if (modelList && modelList.length > 0) {
-      return modelList.map((m) => ({ provider: m.provider, modelId: m.id, name: m.name })).sort(compareModelOptions);
+      return prioritizeProvider(
+        modelList.map((m) => ({ provider: m.provider, modelId: m.id, name: m.name })),
+        (option) => option.provider,
+      );
     }
-    return Object.entries(modelNames ?? {}).map(([modelId, name]) => ({
-      provider: model?.provider ?? "unknown",
-      modelId,
-      name,
-    })).sort(compareModelOptions);
+    return prioritizeProvider(
+      Object.entries(modelNames ?? {}).map(([modelId, name]) => ({
+        provider: model?.provider ?? "unknown",
+        modelId,
+        name,
+      })),
+      (option) => option.provider,
+    );
   })();
   const filteredModelOptions = filterModelOptions(modelOptions, modelFilter);
   const showModelFilter = modelOptions.length > MODEL_FILTER_THRESHOLD;
@@ -1073,7 +1084,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           e.target.value = "";
         }}
       />
-      <div style={{ maxWidth: 820, margin: "0 auto" }}>
+      <div className="composer-column" style={{ maxWidth: 820, margin: "0 auto" }}>
         <ModelErrorBanner error={modelError} />
         <ModelScopeWarningBanner warnings={modelScopeWarnings} />
         {/* Queued steering / follow-up messages (delivered by pi on upcoming turns) */}
@@ -1174,6 +1185,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         )}
         {compactError && (
           <div
+            className="composer-surface"
             role="alert"
             style={{
               marginBottom: 8,
@@ -1546,7 +1558,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               border: `1px solid ${bashMode ? "var(--tool-bg)" : isStreaming && (onSteer || onFollowUp)
                 ? "rgba(234,179,8,0.4)"
                 : "color-mix(in srgb, var(--border) 70%, transparent)"}`,
-              borderRadius: 14,
+              borderRadius: "var(--radius-panel)",
               padding: "10px 10px 10px 14px",
               boxShadow: "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -12px rgba(15,23,42,0.10)",
               transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
@@ -1688,7 +1700,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         )}
 
         {/* Bottom bar: left | center (context) | right */}
-        <div style={{
+        <div className="composer-meta-bar" style={{
           marginTop: 8,
           display: isMobile ? "grid" : "flex",
           gridTemplateColumns: isMobile ? "minmax(0, 1fr) auto" : undefined,
@@ -1892,7 +1904,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           {!isMobile && <div style={{ flex: 1 }} />}
 
           {/* RIGHT: thinking + tools preset + compact + sound (idle) | Stop + sound (streaming) */}
-          <div ref={controlsMenuRef} style={{
+          <div ref={controlsMenuRef} className="composer-advanced-controls" style={{
             flex: "0 0 auto",
             display: "flex",
             alignItems: "center",
@@ -1945,7 +1957,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 {t("chat.moreControls")}
               </button>
             )}
-            <div style={{
+            <div className="composer-advanced-cluster" style={{
               display: isMobile ? (controlsMenuOpen ? "flex" : "none") : "flex",
               alignItems: "center",
               gap: isMobile ? 1 : 2,

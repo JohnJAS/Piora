@@ -10,6 +10,11 @@ try {
 } catch { /* package not found, use default */ }
 
 const nextConfig: NextConfig = {
+  output: "standalone",
+  // Keep webpack/nft tracing inside the repository on Windows. Without an
+  // explicit root, monorepo/workspace detection can broaden the standalone
+  // trace and make the packaged output less deterministic.
+  outputFileTracingRoot: __dirname,
   serverExternalPackages: [
     "undici",
     "@earendil-works/pi-coding-agent",

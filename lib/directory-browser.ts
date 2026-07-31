@@ -1,6 +1,6 @@
 import { readdir, realpath, stat } from "fs/promises";
-import { homedir } from "os";
 import path from "path";
+import { getRuntimeHomeDirectory } from "./runtime-home";
 
 export interface BrowsableDirectory {
   name: string;
@@ -8,19 +8,21 @@ export interface BrowsableDirectory {
 }
 
 export function getBrowseStartDirectory(directory?: string): string {
-  return directory || homedir();
+  return directory || getRuntimeHomeDirectory();
 }
 
 export function normalizeDirectory(directory: string): string {
-  if (directory === "~") return homedir();
-  if (directory.startsWith("~/")) return path.resolve(homedir(), directory.slice(2));
+  if (directory === "~") return getRuntimeHomeDirectory();
+  if (directory.startsWith("~/")) return path.resolve(getRuntimeHomeDirectory(), directory.slice(2));
   return path.resolve(directory);
 }
 
 export function getParentDirectory(directory: string): string | null {
   const pathApi = /^[a-zA-Z]:[\\/]/.test(directory) || directory.startsWith("\\\\")
     ? path.win32
-    : path;
+    : directory.startsWith("/")
+      ? path.posix
+      : path;
   const normalized = pathApi.normalize(directory);
   const parent = pathApi.dirname(normalized);
   return parent === normalized ? null : parent;

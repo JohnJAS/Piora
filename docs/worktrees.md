@@ -39,13 +39,13 @@ Pi Web creates the checkout at:
 For example, if the main checkout is:
 
 ```text
-/Users/alex/Documents/Workspace/pi-web
+/Users/example/Workspace/pi-gui
 ```
 
 and you create branch `codex/worktree-help`, the worktree is created under:
 
 ```text
-/Users/alex/Documents/Workspace/pi-web-worktrees/codex-worktree-help
+/Users/example/Workspace/pi-gui-worktrees/example-branch
 ```
 
 If the branch already exists, Pi Web adds a worktree for that branch. If it does not exist, Pi Web creates the branch from the current `HEAD`.

@@ -1,6 +1,16 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo, type CSSProperties, type MouseEvent } from "react";
+import {
+  useEffect,
+  useState,
+  useRef,
+  useCallback,
+  useMemo,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent,
+  type UIEvent as ReactUIEvent,
+} from "react";
 import {
   Prism as SyntaxHighlighter,
   createElement as renderSyntaxNode,
@@ -24,6 +34,7 @@ import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import { parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
 import { useI18n } from "@/hooks/useI18n";
+import editorStyles from "./FileEditor.module.css";
 
 interface Props {
   filePath: string;
@@ -33,21 +44,38 @@ interface Props {
   onMentionLines?: (relativePath: string, startLine: number, endLine: number) => void;
   gitRefreshKey?: number;
   initialDisplayMode?: DisplayMode;
+  active?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
+  onSaved?: () => void;
 }
 
 interface FileData {
   content: string;
   language: string;
   size: number;
+  version: string;
+  mtime: string;
 }
 
-type DisplayMode = "source" | "preview" | "diff";
+export type DisplayMode = "source" | "preview" | "diff" | "edit";
 
-const DISPLAY_MODE_LABELS: Record<DisplayMode, string> = {
-  source: "Source",
-  preview: "Preview",
-  diff: "Diff",
+const DISPLAY_MODE_LABEL_KEYS: Record<DisplayMode, string> = {
+  source: "i18n.source",
+  preview: "i18n.preview",
+  diff: "i18n.diff",
+  edit: "i18n.edit",
 };
+
+interface FileConflictData {
+  error?: string;
+  code?: string;
+  currentVersion?: string;
+  mtime?: string;
+  size?: number;
+  notice?: "changed" | "refreshFailed";
+}
+
+type ConflictDecision = "reload" | "overwrite";
 
 const FILE_CODE_STYLE: CSSProperties = {
   fontFamily: "var(--font-mono)",
@@ -207,6 +235,10 @@ function getFileApiUrl(
   return `/api/files/${encoded}?${searchParams.toString()}`;
 }
 
+function getFileWriteApiUrl(filePath: string): string {
+  return `/api/files/${encodeFilePathForApi(filePath)}`;
+}
+
 function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceSessionId?: string | null }) {
   const { t } = useI18n();
   return (
@@ -237,6 +269,17 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function getEditorCursorPosition(value: string, selectionStart: number): { line: number; column: number } {
+  const beforeCursor = value.slice(0, selectionStart);
+  const line = beforeCursor.split("\n").length;
+  const lastNewline = beforeCursor.lastIndexOf("\n");
+  return { line, column: selectionStart - lastNewline };
 }
 
 function diffLines(patch: string): DiffLine[] {
@@ -410,7 +453,7 @@ function DiffView({ patch }: { patch: string }) {
   );
 }
 
-function ImageViewer({ filePath, cwd, sourceSessionId }: Props) {
+function ImageViewer({ filePath, cwd, sourceSessionId, active = true }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -433,6 +476,8 @@ function ImageViewer({ filePath, cwd, sourceSessionId }: Props) {
       esRef.current = null;
     }
 
+    if (!active) return;
+
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
 
@@ -451,7 +496,7 @@ function ImageViewer({ filePath, cwd, sourceSessionId }: Props) {
       es.close();
       esRef.current = null;
     };
-  }, [filePath, sourceSessionId]);
+  }, [active, filePath, sourceSessionId]);
 
   const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
 
@@ -544,7 +589,7 @@ function formatDuration(seconds: number): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
-function AudioViewer({ filePath, cwd, sourceSessionId }: Props) {
+function AudioViewer({ filePath, cwd, sourceSessionId, active = true }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -567,6 +612,8 @@ function AudioViewer({ filePath, cwd, sourceSessionId }: Props) {
       esRef.current = null;
     }
 
+    if (!active) return;
+
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
 
@@ -587,7 +634,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId }: Props) {
       es.close();
       esRef.current = null;
     };
-  }, [filePath, sourceSessionId]);
+  }, [active, filePath, sourceSessionId]);
 
   const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
 
@@ -661,7 +708,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId }: Props) {
   );
 }
 
-function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
+function DocumentViewer({ filePath, cwd, sourceSessionId, active = true }: Props) {
   const { t } = useI18n();
   const [watching, setWatching] = useState(false);
   const [bust, setBust] = useState(0);
@@ -685,6 +732,8 @@ function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
       esRef.current.close();
       esRef.current = null;
     }
+
+    if (!active) return;
 
     fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
       .then((r) => r.json())
@@ -724,7 +773,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
       es.close();
       esRef.current = null;
     };
-  }, [filePath, isPdf, sourceSessionId]);
+  }, [active, filePath, isPdf, sourceSessionId]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -783,20 +832,55 @@ function DocumentViewer({ filePath, cwd, sourceSessionId }: Props) {
   );
 }
 
-export function FileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, initialDisplayMode }: Props) {
+export function FileViewer({
+  filePath,
+  cwd,
+  sourceSessionId,
+  onOpenFile,
+  onMentionLines,
+  gitRefreshKey,
+  initialDisplayMode,
+  active = true,
+  onDirtyChange,
+  onSaved,
+}: Props) {
   if (isImagePath(filePath)) {
-    return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
+    return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
   }
   if (isAudioPath(filePath)) {
-    return <AudioViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
+    return <AudioViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
   }
   if (isDocumentPreviewPath(filePath)) {
-    return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} />;
+    return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
   }
-  return <TextFileViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} onOpenFile={onOpenFile} onMentionLines={onMentionLines} gitRefreshKey={gitRefreshKey} initialDisplayMode={initialDisplayMode} />;
+  return (
+    <TextFileViewer
+      filePath={filePath}
+      cwd={cwd}
+      sourceSessionId={sourceSessionId}
+      onOpenFile={onOpenFile}
+      onMentionLines={onMentionLines}
+      gitRefreshKey={gitRefreshKey}
+      initialDisplayMode={initialDisplayMode}
+      active={active}
+      onDirtyChange={onDirtyChange}
+      onSaved={onSaved}
+    />
+  );
 }
 
-function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionLines, gitRefreshKey, initialDisplayMode }: Props) {
+function TextFileViewer({
+  filePath,
+  cwd,
+  sourceSessionId,
+  onOpenFile,
+  onMentionLines,
+  gitRefreshKey,
+  initialDisplayMode,
+  active = true,
+  onDirtyChange,
+  onSaved,
+}: Props) {
   const { isDark } = useTheme();
   const { t } = useI18n();
   const [data, setData] = useState<FileData | null>(null);
@@ -807,25 +891,80 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
   const [displayMode, setDisplayMode] = useState<DisplayMode>("source");
   const [wrapLines, setWrapLines] = useState(false);
   const [watching, setWatching] = useState(false);
+  const [draftContent, setDraftContent] = useState("");
+  const [savedContent, setSavedContent] = useState("");
+  const [expectedVersion, setExpectedVersion] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [externalChange, setExternalChange] = useState<FileConflictData | null>(null);
+  const [conflictDecision, setConflictDecision] = useState<ConflictDecision | null>(null);
+  const [cursorPosition, setCursorPosition] = useState({ line: 1, column: 1 });
+  const [editorScrollTop, setEditorScrollTop] = useState(0);
   const esRef = useRef<EventSource | null>(null);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const conflictConfirmRef = useRef<HTMLButtonElement | null>(null);
+  const loadedRef = useRef(false);
+  const dirtyRef = useRef(false);
+  const savingRef = useRef(false);
+  const draftContentRef = useRef("");
+  const expectedVersionRef = useRef("");
   const gitDiffRequestRef = useRef(0);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const [selectedLineRange, setSelectedLineRange] = useState<SelectedLineRange | null>(null);
 
-  const fetchContent = useCallback((filePath: string) => {
-    return fetch(getFileApiUrl(filePath, "read", sourceSessionId))
-      .then((r) => r.json())
-      .then((d: FileData & { error?: string }) => {
-        if (d.error) {
-          setError(d.error);
-          return null;
+  const dirty = draftContent !== savedContent;
+  dirtyRef.current = dirty;
+  savingRef.current = saving;
+  draftContentRef.current = draftContent;
+  expectedVersionRef.current = expectedVersion;
+
+  const fetchContent = useCallback((targetPath: string, replaceDraft = true) => {
+    return fetch(getFileApiUrl(targetPath, "read", sourceSessionId))
+      .then(async (response) => {
+        const next = await response.json() as FileData & { error?: string };
+        if (!response.ok || next.error) {
+          throw new Error(next.error ?? `HTTP ${response.status}`);
         }
-        setError(null);
-        setData(d);
-        return d;
+        return next;
       })
-      .catch((e) => {
-        setError(String(e));
+      .then((next) => {
+        setError(null);
+        setData(next);
+        loadedRef.current = true;
+        if (replaceDraft) {
+          setDraftContent(next.content);
+          setSavedContent(next.content);
+          setExpectedVersion(next.version);
+          draftContentRef.current = next.content;
+          expectedVersionRef.current = next.version;
+          dirtyRef.current = false;
+          setExternalChange(null);
+          setConflictDecision(null);
+          setSaveError(null);
+        } else if (next.version !== expectedVersionRef.current) {
+          setConflictDecision(null);
+          setExternalChange({
+            code: "FILE_CONFLICT",
+            currentVersion: next.version,
+            mtime: next.mtime,
+            size: next.size,
+            notice: "changed",
+          });
+        }
+        return next;
+      })
+      .catch((cause: unknown) => {
+        const message = cause instanceof Error ? cause.message : String(cause);
+        if (replaceDraft && !dirtyRef.current) {
+          setError(message);
+        } else {
+          setConflictDecision(null);
+          setExternalChange({
+            error: message,
+            code: "FILE_CONFLICT",
+            notice: "refreshFailed",
+          });
+        }
         return null;
       });
   }, [sourceSessionId]);
@@ -852,7 +991,8 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     }
   }, [cwd]);
 
-  // Initial load + SSE watch setup
+  // Reset only when this mounted viewer is repointed to a different file.
+  // Active-tab changes must not reset the draft.
   useEffect(() => {
     setLoading(true);
     setError(null);
@@ -861,15 +1001,43 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     setDisplayMode("source");
     setWrapLines(false);
     setWatching(false);
+    setDraftContent("");
+    setSavedContent("");
+    setExpectedVersion("");
+    setSaving(false);
+    setSaveError(null);
+    setExternalChange(null);
+    setConflictDecision(null);
+    setCursorPosition({ line: 1, column: 1 });
+    setEditorScrollTop(0);
+    loadedRef.current = false;
+    dirtyRef.current = false;
+    savingRef.current = false;
+    draftContentRef.current = "";
+    expectedVersionRef.current = "";
 
     if (esRef.current) {
       esRef.current.close();
       esRef.current = null;
     }
+  }, [filePath]);
 
-    fetchContent(filePath).finally(() => setLoading(false));
+  // Only the active tab keeps an EventSource open. Inactive viewers stay
+  // mounted so their unsaved drafts, cursor and view mode survive tab switches.
+  useEffect(() => {
+    if (!active) {
+      if (esRef.current) {
+        esRef.current.close();
+        esRef.current = null;
+      }
+      setWatching(false);
+      return;
+    }
 
-    // Set up SSE watch
+    const replaceDraft = !dirtyRef.current;
+    if (!loadedRef.current) setLoading(true);
+    fetchContent(filePath, replaceDraft).finally(() => setLoading(false));
+
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
 
@@ -877,8 +1045,26 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
       setWatching(true);
     });
 
-    es.addEventListener("change", () => {
-      void fetchContent(filePath);
+    es.addEventListener("change", (event) => {
+      if (dirtyRef.current || savingRef.current) {
+        if (!savingRef.current) {
+          let details: FileConflictData = {
+            code: "FILE_CONFLICT",
+            notice: "changed",
+          };
+          try {
+            details = {
+              ...details,
+              ...JSON.parse((event as MessageEvent).data) as FileConflictData,
+              notice: "changed",
+            };
+          } catch { /* keep the generic notice */ }
+          setConflictDecision(null);
+          setExternalChange(details);
+        }
+      } else {
+        void fetchContent(filePath, true);
+      }
       void fetchGitDiff(filePath);
     });
 
@@ -894,11 +1080,15 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
       es.close();
       esRef.current = null;
     };
-  }, [filePath, fetchContent, fetchGitDiff, sourceSessionId]);
+  }, [active, filePath, fetchContent, fetchGitDiff, sourceSessionId]);
 
   useEffect(() => {
-    void fetchGitDiff(filePath);
-  }, [fetchGitDiff, filePath, gitRefreshKey]);
+    if (active) void fetchGitDiff(filePath);
+  }, [active, fetchGitDiff, filePath, gitRefreshKey]);
+
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
   useEffect(() => {
     if (data?.language === "markdown" && initialDisplayMode !== "diff") {
@@ -934,9 +1124,189 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     }
   }, [initialDisplayMode, hasGitDiff]);
 
+  const updateCursorPosition = useCallback((textarea: HTMLTextAreaElement | null) => {
+    if (!textarea) return;
+    setCursorPosition(getEditorCursorPosition(textarea.value, textarea.selectionStart));
+  }, []);
+
+  const applyEditorValue = useCallback((
+    nextValue: string,
+    selectionStart: number,
+    selectionEnd = selectionStart,
+  ) => {
+    setDraftContent(nextValue);
+    draftContentRef.current = nextValue;
+    setSaveError(null);
+    requestAnimationFrame(() => {
+      const textarea = editorRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(selectionStart, selectionEnd);
+      updateCursorPosition(textarea);
+    });
+  }, [updateCursorPosition]);
+
+  const saveFile = useCallback(async (force = false) => {
+    if (savingRef.current) return;
+
+    const contentToSave = draftContentRef.current;
+    if (!force && contentToSave === savedContent) return;
+
+    setSaving(true);
+    savingRef.current = true;
+    setSaveError(null);
+
+    try {
+      const response = await fetch(getFileWriteApiUrl(filePath), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: contentToSave,
+          expectedVersion: expectedVersionRef.current,
+          ...(force ? { force: true } : {}),
+        }),
+      });
+      const next = await response.json().catch(() => ({})) as Partial<FileData> & FileConflictData;
+
+      if (response.status === 409 || next.code === "FILE_CONFLICT") {
+        setConflictDecision(null);
+        setExternalChange({
+          ...next,
+          code: "FILE_CONFLICT",
+          notice: "changed",
+        });
+        return;
+      }
+      if (!response.ok || next.error) {
+        throw new Error(next.error ?? `HTTP ${response.status}`);
+      }
+      if (typeof next.version !== "string") {
+        throw new Error(t("fileEditor.saveMissingVersion"));
+      }
+
+      const savedData: FileData = {
+        content: typeof next.content === "string" ? next.content : contentToSave,
+        language: typeof next.language === "string" ? next.language : (data?.language ?? "text"),
+        size: typeof next.size === "number" ? next.size : utf8ByteLength(contentToSave),
+        version: next.version,
+        mtime: typeof next.mtime === "string" ? next.mtime : new Date().toISOString(),
+      };
+      setData(savedData);
+      setSavedContent(contentToSave);
+      setExpectedVersion(savedData.version);
+      expectedVersionRef.current = savedData.version;
+      dirtyRef.current = draftContentRef.current !== contentToSave;
+      setExternalChange(null);
+      onSaved?.();
+      void fetchGitDiff(filePath);
+    } catch (cause: unknown) {
+      setSaveError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }, [data?.language, fetchGitDiff, filePath, onSaved, savedContent, t]);
+
+  const reloadFromDisk = useCallback(async () => {
+    setConflictDecision(null);
+    setLoading(true);
+    const next = await fetchContent(filePath, true);
+    setLoading(false);
+    if (next) {
+      setExternalChange(null);
+      void fetchGitDiff(filePath);
+    }
+  }, [fetchContent, fetchGitDiff, filePath]);
+
+  const overwriteDisk = useCallback(() => {
+    setConflictDecision(null);
+    void saveFile(true);
+  }, [saveFile]);
+
+  useEffect(() => {
+    if (conflictDecision) conflictConfirmRef.current?.focus();
+  }, [conflictDecision]);
+
+  const handleEditorKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      void saveFile(false);
+      return;
+    }
+    if (event.key !== "Tab" || event.ctrlKey || event.metaKey || event.altKey) return;
+
+    event.preventDefault();
+    const textarea = event.currentTarget;
+    const value = textarea.value;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const indent = "  ";
+
+    if (start === end && !event.shiftKey) {
+      applyEditorValue(`${value.slice(0, start)}${indent}${value.slice(end)}`, start + indent.length);
+      return;
+    }
+
+    const blockStart = value.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+    const nextNewline = value.indexOf("\n", end);
+    const blockEnd = nextNewline === -1 ? value.length : nextNewline;
+    const block = value.slice(blockStart, blockEnd);
+    const blockLines = block.split("\n");
+
+    if (event.shiftKey) {
+      const removedWidths: number[] = [];
+      const updatedBlock = blockLines.map((line) => {
+        const match = line.match(/^(?: {1,2}|\t)/);
+        const removed = match?.[0].length ?? 0;
+        removedWidths.push(removed);
+        return line.slice(removed);
+      }).join("\n");
+      const removedBeforeStart = Math.min(removedWidths[0] ?? 0, start - blockStart);
+      const totalRemoved = removedWidths.reduce((total, width) => total + width, 0);
+      const nextStart = Math.max(blockStart, start - removedBeforeStart);
+      const nextEnd = Math.max(nextStart, end - totalRemoved);
+      applyEditorValue(
+        `${value.slice(0, blockStart)}${updatedBlock}${value.slice(blockEnd)}`,
+        nextStart,
+        nextEnd,
+      );
+      return;
+    }
+
+    const updatedBlock = blockLines.map((line) => `${indent}${line}`).join("\n");
+    const nextStart = start + indent.length;
+    const nextEnd = end + (indent.length * blockLines.length);
+    applyEditorValue(
+      `${value.slice(0, blockStart)}${updatedBlock}${value.slice(blockEnd)}`,
+      nextStart,
+      nextEnd,
+    );
+  }, [applyEditorValue, saveFile]);
+
+  const handleEditorScroll = useCallback((event: ReactUIEvent<HTMLTextAreaElement>) => {
+    setEditorScrollTop(event.currentTarget.scrollTop);
+  }, []);
+
+  useEffect(() => {
+    if (!active || displayMode !== "edit") return;
+    const focusFrame = requestAnimationFrame(() => editorRef.current?.focus());
+    return () => cancelAnimationFrame(focusFrame);
+  }, [active, displayMode]);
+
+  useEffect(() => {
+    if (!active || displayMode !== "edit") return;
+    const handleSaveShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key.toLowerCase() !== "s" || (!event.ctrlKey && !event.metaKey)) return;
+      event.preventDefault();
+      void saveFile(false);
+    };
+    window.addEventListener("keydown", handleSaveShortcut);
+    return () => window.removeEventListener("keydown", handleSaveShortcut);
+  }, [active, displayMode, saveFile]);
+
   const markdownPreview = useMemo(
-    () => (data?.language === "markdown" ? normalizeDisplayMath(data.content) : ""),
-    [data],
+    () => (data?.language === "markdown" ? normalizeDisplayMath(draftContent) : ""),
+    [data?.language, draftContent],
   );
 
   useEffect(() => {
@@ -954,7 +1324,7 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
 
     document.addEventListener("selectionchange", updateSelectedLineRange);
     return () => document.removeEventListener("selectionchange", updateSelectedLineRange);
-  }, [data?.content, displayMode, onMentionLines]);
+  }, [draftContent, displayMode, onMentionLines]);
 
   const mentionLineRange = useCallback((lineRange: SelectedLineRange | null) => {
     if (!onMentionLines || !lineRange) return;
@@ -1009,7 +1379,7 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
   if (!data && !isDeletedDiff) return null;
 
   const language = data?.language ?? "text";
-  const content = data?.content ?? "";
+  const content = draftContent;
   const isHtml = language === "html";
   const isMarkdown = language === "markdown";
   const hasPreview = isHtml || isMarkdown;
@@ -1020,12 +1390,16 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
     ? ["diff"]
     : [
         "source",
+        "edit",
         ...(hasPreview ? ["preview" as const] : []),
         ...(hasGitDiff ? ["diff" as const] : []),
       ];
   const metadata = isDeletedDiff
     ? t("files.deleted")
-    : `${language} · ${lines.length} lines · ${formatSize(data!.size)}`;
+    : `${language} · ${t(lines.length === 1 ? "fileEditor.lineCountOne" : "fileEditor.lineCount", { count: lines.length })} · ${formatSize(dirty ? utf8ByteLength(content) : data!.size)}`;
+  const externalChangeMessage = externalChange?.notice === "refreshFailed"
+    ? t("fileEditor.refreshFailed", { error: externalChange.error ?? t("i18n.unknown") })
+    : t("fileEditor.externalChangeBody");
 
   return (
     <div className="file-viewer-shell" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -1078,7 +1452,7 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
                       color: active ? "var(--text)" : "var(--text-muted)",
                     }}
                   >
-                    {DISPLAY_MODE_LABELS[mode]}
+                    {t(DISPLAY_MODE_LABEL_KEYS[mode])}
                   </button>
                 );
               })}
@@ -1122,13 +1496,166 @@ function TextFileViewer({ filePath, cwd, sourceSessionId, onOpenFile, onMentionL
             )}
           </div>
 
+          {!isDeletedDiff && (
+            <button
+              type="button"
+              onClick={() => void saveFile(false)}
+              disabled={!dirty || saving}
+              className={editorStyles.saveButton}
+              title={dirty ? t("fileEditor.saveShortcutTitle") : t("fileEditor.noUnsavedChanges")}
+              aria-label={saving ? t("fileEditor.savingFile") : t("fileEditor.saveFile")}
+              aria-keyshortcuts="Control+S Meta+S"
+            >
+              {saving ? (
+                <span className={editorStyles.spinner} aria-hidden="true" />
+              ) : (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+                  <path d="M17 21v-8H7v8" />
+                  <path d="M7 3v5h8" />
+                </svg>
+              )}
+              <span className={editorStyles.saveLabel}>{saving ? t("i18n.saving") : dirty ? t("i18n.save") : t("i18n.saved")}</span>
+            </button>
+          )}
+
           {!isDeletedDiff && <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />}
         </div>
       </div>
 
+      {externalChange && !isDeletedDiff && (
+        <div
+          className={editorStyles.conflictBanner}
+          role="alert"
+          aria-live="polite"
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || !conflictDecision) return;
+            event.preventDefault();
+            setConflictDecision(null);
+          }}
+        >
+          <div className={`${editorStyles.noticeCopy} ${conflictDecision ? editorStyles.confirmationCopy : ""}`}>
+            <strong>
+              {conflictDecision === "reload"
+                ? t("fileEditor.reloadConfirmTitle")
+                : conflictDecision === "overwrite"
+                  ? t("fileEditor.overwriteConfirmTitle")
+                  : t("fileEditor.externalChangeTitle")}
+            </strong>
+            <span>
+              {conflictDecision === "reload"
+                ? t("fileEditor.reloadConfirmBody")
+                : conflictDecision === "overwrite"
+                  ? t("fileEditor.overwriteConfirmBody")
+                  : externalChangeMessage}
+            </span>
+          </div>
+          <div className={editorStyles.noticeActions}>
+            {conflictDecision ? (
+              <>
+                <button type="button" onClick={() => setConflictDecision(null)} disabled={saving}>
+                  {t("i18n.cancel")}
+                </button>
+                <button
+                  ref={conflictConfirmRef}
+                  type="button"
+                  className={editorStyles.dangerAction}
+                  onClick={conflictDecision === "reload" ? () => void reloadFromDisk() : overwriteDisk}
+                  disabled={saving}
+                >
+                  {conflictDecision === "reload" ? t("fileEditor.confirmReload") : t("fileEditor.confirmOverwrite")}
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExternalChange(null);
+                    setDisplayMode("edit");
+                    requestAnimationFrame(() => editorRef.current?.focus());
+                  }}
+                  disabled={saving}
+                >
+                  {t("fileEditor.keepEditing")}
+                </button>
+                <button type="button" onClick={() => setConflictDecision("reload")} disabled={saving}>
+                  {t("fileEditor.reloadDisk")}
+                </button>
+                <button type="button" className={editorStyles.dangerAction} onClick={() => setConflictDecision("overwrite")} disabled={saving}>
+                  {t("fileEditor.overwrite")}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {saveError && !isDeletedDiff && (
+        <div className={editorStyles.errorBanner} role="alert">
+          <span><strong>{t("fileEditor.saveFailed")}</strong> {saveError}</span>
+          <div className={editorStyles.noticeActions}>
+            <button type="button" onClick={() => void saveFile(false)}>{t("fileEditor.tryAgain")}</button>
+            <button type="button" onClick={() => setSaveError(null)} aria-label={t("fileEditor.dismissSaveError")}>{t("fileEditor.dismiss")}</button>
+          </div>
+        </div>
+      )}
+
       {/* Content area */}
-      <div ref={contentRef} className="file-viewer-content" style={{ flex: 1, overflow: "auto", background: "var(--bg)" }}>
-        {effectiveDisplayMode === "diff" && hasGitDiff ? (
+      <div
+        ref={contentRef}
+        className="file-viewer-content"
+        style={{
+          flex: 1,
+          overflow: effectiveDisplayMode === "edit" ? "hidden" : "auto",
+          background: "var(--bg)",
+        }}
+      >
+        {effectiveDisplayMode === "edit" ? (
+          <div className={editorStyles.editorShell}>
+            <div className={editorStyles.editorBody}>
+              <div className={editorStyles.lineNumberViewport} aria-hidden="true">
+                <div
+                  className={editorStyles.lineNumbers}
+                  style={{ transform: `translateY(${-editorScrollTop}px)` }}
+                >
+                  {lines.map((_, index) => <span key={index}>{index + 1}</span>)}
+                </div>
+              </div>
+              <textarea
+                ref={editorRef}
+                className={editorStyles.textarea}
+                value={draftContent}
+                wrap="off"
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                aria-label={t("fileEditor.editFile", { file: getFileName(filePath) })}
+                onChange={(event) => {
+                  const nextValue = event.currentTarget.value;
+                  setDraftContent(nextValue);
+                  draftContentRef.current = nextValue;
+                  setSaveError(null);
+                  updateCursorPosition(event.currentTarget);
+                }}
+                onKeyDown={handleEditorKeyDown}
+                onKeyUp={(event) => updateCursorPosition(event.currentTarget)}
+                onClick={(event) => updateCursorPosition(event.currentTarget)}
+                onSelect={(event) => updateCursorPosition(event.currentTarget)}
+                onScroll={handleEditorScroll}
+              />
+            </div>
+            <div className={editorStyles.statusBar}>
+              <span className={dirty ? editorStyles.unsavedStatus : editorStyles.savedStatus}>
+                <span className={editorStyles.statusDot} aria-hidden="true" />
+                {dirty ? t("fileEditor.unsaved") : t("i18n.saved")}
+              </span>
+              <span>{t("fileEditor.cursorPosition", { line: cursorPosition.line, column: cursorPosition.column })}</span>
+              <span>UTF-8</span>
+              <span>{formatSize(utf8ByteLength(draftContent))}</span>
+            </div>
+          </div>
+        ) : effectiveDisplayMode === "diff" && hasGitDiff ? (
           <DiffView patch={gitDiff.patch!} />
         ) : isHtml && effectiveDisplayMode === "preview" ? (
           <iframe

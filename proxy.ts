@@ -4,8 +4,11 @@ import {
   isApiRequestHostAllowed,
 } from "@/lib/request-security";
 import {
+  isDesktopTokenEnabled,
+  isValidDesktopToken,
   isValidBasicAuthorization,
   isWebPasswordEnabled,
+  PI_DESKTOP_TOKEN_HEADER,
 } from "@/lib/web-auth";
 
 export function proxy(request: NextRequest) {
@@ -20,6 +23,17 @@ export function proxy(request: NextRequest) {
       return new NextResponse("Untrusted request", { status: 403 });
     }
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  }
+
+  const desktopToken = process.env.PI_DESKTOP_TOKEN;
+  if (
+    isDesktopTokenEnabled(desktopToken)
+    && !isValidDesktopToken(request.headers.get(PI_DESKTOP_TOKEN_HEADER), desktopToken)
+  ) {
+    if (isApiRequest) {
+      return NextResponse.json({ error: "Desktop authentication required" }, { status: 403 });
+    }
+    return new NextResponse("Desktop authentication required", { status: 403 });
   }
 
   const password = process.env.PI_WEB_PASSWORD;

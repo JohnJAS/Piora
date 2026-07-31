@@ -15,6 +15,7 @@ import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import type { SessionStatsInfo } from "@/lib/pi-types";
+import { deriveCompanionActivityStatus, type CompanionActivity } from "@/lib/companion";
 import {
   captureScrollDistance,
   getNextVisibleCount,
@@ -37,6 +38,7 @@ interface Props {
   onSessionStatsPanelOpen?: () => void;
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
   onOpenFile?: (filePath: string) => void;
+  onCompanionActivityChange?: (activity: CompanionActivity) => void;
 }
 
 function phaseLabel(phase: AgentPhase, t: (key: string, params?: Record<string, string | number>) => string): string {
@@ -170,7 +172,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange }: Props) {
   const { t } = useI18n();
   const { soundEnabled, onSoundToggle, playDoneSound, unlockAudio } = useAudio();
   const isMobile = useIsMobile();
@@ -217,6 +219,37 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   });
   const sessionBusy = agentRunning || bashRunning;
+  const latestErrorNotice = useMemo(() => {
+    for (let index = notices.length - 1; index >= 0; index -= 1) {
+      if (notices[index]?.type === "error") return notices[index]?.message ?? null;
+    }
+    return null;
+  }, [notices]);
+  const companionActivityStatus = deriveCompanionActivityStatus({
+    error,
+    hasErrorNotice: latestErrorNotice !== null,
+    hasReviewRequest: Boolean(extensionDialog || extensionCustomUi),
+    isBusy: sessionBusy,
+    isCompacting,
+    phase: agentPhase?.kind ?? null,
+  });
+  const companionActivityCause = companionActivityStatus === "failed"
+    ? (error || latestErrorNotice || t("companion.activity.failedCause"))
+    : companionActivityStatus === "review"
+      ? t("companion.activity.reviewCause")
+      : companionActivityStatus === "waiting"
+        ? t("companion.activity.waitingCause")
+        : companionActivityStatus === "running"
+          ? (isCompacting ? t("companion.activity.compactingCause") : phaseLabel(agentPhase, t))
+          : t("companion.activity.idleCause");
+
+  useEffect(() => {
+    onCompanionActivityChange?.({ status: companionActivityStatus, cause: companionActivityCause });
+  }, [companionActivityCause, companionActivityStatus, onCompanionActivityChange]);
+
+  useEffect(() => () => {
+    onCompanionActivityChange?.({ status: "idle", cause: t("companion.activity.idleCause") });
+  }, [onCompanionActivityChange, t]);
 
   // Register the abort handler for the global Esc shortcut
   useEffect(() => {
@@ -466,7 +499,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             >
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4, overflow: "hidden" }}>
                 <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: 0, color: "var(--text)", flexShrink: 0, whiteSpace: "nowrap" }}>π</span>
-                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 700, letterSpacing: 0, flexShrink: 0, whiteSpace: "nowrap" }}>Pi Web</span>
+                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 700, letterSpacing: 0, flexShrink: 0, whiteSpace: "nowrap" }}>piGUI</span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
                 <span style={{ fontSize: 11, color: "var(--text-muted)" }}>

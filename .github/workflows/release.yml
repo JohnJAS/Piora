@@ -1,0 +1,200 @@
+name: Release Windows portable app
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  source-gate:
+    name: Source gate (Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Verify release tag and metadata
+        shell: bash
+        run: |
+          git fetch --no-tags --force origin +refs/heads/main:refs/remotes/origin/main
+          node scripts/verify-release-metadata.mjs "$GITHUB_REF_NAME" --require-origin-main
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify license inventory freshness
+        run: npm run licenses:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Verify bundled backgrounds
+        run: npm run verify:backgrounds
+
+  windows-build:
+    name: Build and verify Windows portable app
+    needs: source-gate
+    runs-on: windows-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Verify release tag and metadata
+        shell: pwsh
+        run: |
+          git fetch --no-tags --force origin +refs/heads/main:refs/remotes/origin/main
+          node scripts/verify-release-metadata.mjs $env:GITHUB_REF_NAME --require-origin-main
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify license inventory freshness
+        run: npm run licenses:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Verify bundled backgrounds
+        run: npm run verify:backgrounds
+
+      - name: Build portable Windows application
+        run: npm run dist:win
+
+      - name: Verify packaged standalone service
+        run: npm run verify:package
+
+      - name: Smoke-test portable executable
+        shell: pwsh
+        run: npm run smoke:portable -- --expected-version "$env:GITHUB_REF_NAME"
+
+      - name: Generate checksums
+        shell: pwsh
+        run: |
+          $artifacts = @(Get-ChildItem -LiteralPath desktop/release -Filter '*-portable.exe' -File)
+          if ($artifacts.Count -ne 1) {
+            throw "Expected exactly one portable Windows executable; found $($artifacts.Count)."
+          }
+          $lines = foreach ($artifact in $artifacts) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName).Hash.ToLowerInvariant()
+            "$hash  $($artifact.Name)"
+          }
+          Set-Content -LiteralPath desktop/release/SHA256SUMS.txt -Value $lines -Encoding ascii
+
+      - name: Upload verified release payload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pigui-windows-${{ github.ref_name }}
+          path: |
+            desktop/release/*-portable.exe
+            desktop/release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+  publish-draft:
+    name: Create draft prerelease
+    needs: windows-build
+    runs-on: windows-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download verified release payload
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: pigui-windows-${{ github.ref_name }}
+          path: release-payload
+
+      - name: Verify downloaded SHA-256 checksums
+        shell: pwsh
+        run: |
+          $root = (Resolve-Path -LiteralPath release-payload).Path
+          $checksumPath = Join-Path $root 'SHA256SUMS.txt'
+          if (-not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) {
+            throw 'SHA256SUMS.txt is missing from the downloaded artifact.'
+          }
+
+          $expected = @{}
+          foreach ($line in Get-Content -LiteralPath $checksumPath) {
+            if ($line -notmatch '^([0-9a-fA-F]{64})  ([^\\/]+\.exe)$') {
+              throw "Malformed checksum line: $line"
+            }
+            $name = $Matches[2]
+            if ($expected.ContainsKey($name)) {
+              throw "Duplicate checksum entry: $name"
+            }
+            $expected[$name] = $Matches[1].ToLowerInvariant()
+          }
+
+          $executables = @(Get-ChildItem -LiteralPath $root -Filter '*-portable.exe' -File)
+          if ($executables.Count -ne 1 -or $executables.Count -ne $expected.Count) {
+            throw 'Executable count does not match SHA256SUMS.txt.'
+          }
+          foreach ($executable in $executables) {
+            if (-not $expected.ContainsKey($executable.Name)) {
+              throw "Executable is not listed in SHA256SUMS.txt: $($executable.Name)"
+            }
+            $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $executable.FullName).Hash.ToLowerInvariant()
+            if ($actual -ne $expected[$executable.Name]) {
+              throw "SHA-256 mismatch for $($executable.Name)"
+            }
+          }
+
+      - name: Create draft prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $root = (Resolve-Path -LiteralPath release-payload).Path
+          $assets = @(Get-ChildItem -LiteralPath $root -Filter '*-portable.exe' -File | ForEach-Object FullName)
+          $assets += (Resolve-Path -LiteralPath (Join-Path $root 'SHA256SUMS.txt')).Path
+          & gh release create $env:GITHUB_REF_NAME @assets `
+            --repo $env:GITHUB_REPOSITORY `
+            --title "piGUI $env:GITHUB_REF_NAME" `
+            --notes "Unsigned Windows preview: the executable is not code-signed, so Windows may show a reputation warning. Verify it against SHA256SUMS.txt before running." `
+            --generate-notes `
+            --verify-tag `
+            --prerelease `
+            --draft
+          if ($LASTEXITCODE -ne 0) {
+            throw "gh release create failed with exit code $LASTEXITCODE"
+          }

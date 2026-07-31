@@ -1,0 +1,77 @@
+name: Bug report
+description: Report a reproducible problem in piGUI
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve piGUI.
+
+        **Do not include API keys, tokens, private prompts, session files, or sensitive logs. Do not report vulnerabilities here; follow SECURITY.md and use private vulnerability reporting.**
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Provide the release version or full commit SHA.
+      placeholder: 0.x.y or abcdef123...
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: Include the Windows edition, version, architecture, and build when applicable.
+      placeholder: Windows 11 24H2 x64, build 26100.x
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime details
+      description: For source builds, include Node.js and npm versions. For packaged builds, state the installation method.
+      placeholder: Node 22.19.0, npm 10.x, source checkout
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the observed behavior and its impact.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest repeatable sequence, including relevant settings with secrets removed.
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, screenshots, or other evidence
+      description: Drag files here after removing credentials, personal data, private paths, prompts, and session content.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include provider/model information only when relevant and safe to share.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues and pull requests for duplicates.
+          required: true
+        - label: I removed secrets and private data from this report.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true

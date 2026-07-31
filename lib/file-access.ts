@@ -1,8 +1,7 @@
-import { readdirSync } from "fs";
-import { homedir } from "os";
 import path from "path";
 import { getAdditionalAllowedRoots, normalizeSlashes } from "./allowed-roots";
 import { isExistingPathWithinRoots } from "./path-security";
+import { getRuntimeHomeDirectory } from "./runtime-home";
 import { listAllSessions } from "./session-reader";
 export { allowFileRoot, normalizeSlashes } from "./allowed-roots";
 
@@ -36,10 +35,14 @@ export async function getAllowedFileRoots(): Promise<Set<string>> {
   }
 
   // Also allow ~/pi-cwd-* directories created by the default-cwd endpoint.
+  // Runtime home resolution keeps Next's output-file tracer from turning this
+  // immediate directory read into a recursive glob over the whole profile.
   try {
-    for (const name of readdirSync(homedir())) {
-      if (/^pi-cwd-\d{8}$/.test(name)) {
-        roots.add(normalizeSlashes(path.join(homedir(), name)));
+    const homeDirectory = getRuntimeHomeDirectory();
+    const runtimeFs = await import("node:fs");
+    for (const entry of runtimeFs.readdirSync(homeDirectory, { withFileTypes: true })) {
+      if (entry.isDirectory() && /^pi-cwd-\d{8}$/.test(entry.name)) {
+        roots.add(normalizeSlashes(path.join(homeDirectory, entry.name)));
       }
     }
   } catch {

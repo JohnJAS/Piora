@@ -11,6 +11,8 @@
  * it from an id.
  */
 
+import { prioritizeProvider } from "./model-policy";
+
 /** Credential kinds pi stores in `auth.json`. */
 export type ProviderCredentialType = "api_key" | "oauth";
 
@@ -67,7 +69,7 @@ function dedupeById(providers: readonly ProviderListingInput[]): ProviderListing
     seen.add(provider.id);
     result.push(provider);
   }
-  return result;
+  return prioritizeProvider(result, (provider) => provider.id);
 }
 
 /**
@@ -96,7 +98,7 @@ export function buildApiKeyProviderList(
       supportsOAuth: provider.hasOAuth,
     });
   }
-  return result;
+  return prioritizeProvider(result, (provider) => provider.id);
 }
 
 /** Providers that can be authenticated with OAuth. */

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "codex-dream-skin",
+  "name": "Dream Skin",
+  "description": "A Pi-native atmospheric dark theme inspired by Codex Dream Skin.",
+  "appearance": "dark",
+  "capabilities": ["safe-css", "surface-tokens"],
+  "entry": "builtin",
+  "source": "https://github.com/Fei-Away/Codex-Dream-Skin",
+  "license": "MIT",
+  "artwork": "none"
+}

@@ -9,7 +9,9 @@ const jiti = createJiti(import.meta.url, {
   tsconfigPaths: true,
 });
 const { MessageView } = await jiti.import("./MessageView.tsx");
-const { I18nProvider } = await jiti.import("../hooks/useI18n.tsx");
+// Import through the same tsconfig alias used by the component so Jiti reuses
+// the exact context module instead of creating a second provider instance.
+const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 
 function renderMessage(message) {
   return renderToStaticMarkup(

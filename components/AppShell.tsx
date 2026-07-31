@@ -12,6 +12,8 @@ import { SkillsConfig } from "./SkillsConfig";
 import { PluginsConfig } from "./PluginsConfig";
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { BranchNavigator } from "./BranchNavigator";
+import { BackgroundSettings } from "./BackgroundSettings";
+import { CompanionPet } from "./CompanionPet";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -35,6 +37,7 @@ import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { SessionStatsInfo } from "@/lib/pi-types";
+import { canSendCompanionPhrase, type CompanionActivity } from "@/lib/companion";
 
 type SessionCopyField = "file" | "id";
 type AutoNameStatus =
@@ -45,12 +48,13 @@ type AutoNameStatus =
 
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
 const LANGUAGE_MENU_WIDTH = 176;
+const THEME_MENU_WIDTH = 300;
 
 export function AppShell() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [initialNavigation] = useState(() => getInitialNavigation(searchParams));
-  const { isDark, toggleTheme } = useTheme();
+  const { theme, themes, setTheme } = useTheme();
   const { locale, setLocale, t: translate, supportedLocales } = useI18n();
   const isMobile = useIsMobile();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
@@ -141,7 +145,14 @@ export function AppShell() {
     reclampRightPanelWidth();
   }, [reclampRightPanelWidth, reclampSidebarWidth, rightPanelOpen]);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
+  const [companionOpen, setCompanionOpen] = useState(false);
+  const [companionActivity, setCompanionActivity] = useState<CompanionActivity>(() => ({
+    status: "idle",
+    cause: translate("companion.activity.idleCause"),
+  }));
   const topBarRef = useRef<HTMLDivElement>(null);
+  const themeBtnRef = useRef<HTMLButtonElement>(null);
+  const themeMenuRef = useRef<HTMLDivElement>(null);
   const languageBtnRef = useRef<HTMLButtonElement>(null);
 
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
@@ -198,11 +209,21 @@ export function AppShell() {
     setContextUsage(usage);
   }, []);
 
+  useEffect(() => {
+    setCompanionActivity((current) => current.status === "idle"
+      ? { ...current, cause: translate("companion.activity.idleCause") }
+      : current);
+  }, [translate]);
+
+  const handleSendCompanionPhrase = useCallback((text: string) => (
+    chatInputRef.current?.sendText(text) ?? false
+  ), []);
+
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | "session" | "language" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | "session" | "theme" | "language" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
-  const toggleTopPanel = useCallback((panel: "branches" | "system" | "session" | "language") => {
+  const toggleTopPanel = useCallback((panel: "branches" | "system" | "session" | "theme" | "language") => {
     if (isMobile) setSidebarOpen(false);
     setActiveTopPanel((cur) => cur === panel ? null : panel);
   }, [isMobile]);
@@ -221,9 +242,15 @@ export function AppShell() {
     if (!activeTopPanel || !topBarRef.current) return;
     const update = () => {
       const topBarRect = topBarRef.current!.getBoundingClientRect();
-      if (activeTopPanel === "language" && !isMobile && languageBtnRef.current) {
-        const buttonRect = languageBtnRef.current.getBoundingClientRect();
-        const width = Math.min(LANGUAGE_MENU_WIDTH, topBarRect.width);
+      const compactMenuButton = activeTopPanel === "theme"
+        ? themeBtnRef.current
+        : activeTopPanel === "language"
+          ? languageBtnRef.current
+          : null;
+      if (compactMenuButton && !isMobile) {
+        const buttonRect = compactMenuButton.getBoundingClientRect();
+        const menuWidth = activeTopPanel === "theme" ? THEME_MENU_WIDTH : LANGUAGE_MENU_WIDTH;
+        const width = Math.min(menuWidth, topBarRect.width);
         const left = Math.min(
           buttonRect.left - 1,
           Math.max(topBarRect.left, topBarRect.right - width),
@@ -236,13 +263,75 @@ export function AppShell() {
     update();
     const ro = new ResizeObserver(update);
     ro.observe(topBarRef.current);
+    if (themeBtnRef.current) ro.observe(themeBtnRef.current);
     if (languageBtnRef.current) ro.observe(languageBtnRef.current);
     return () => ro.disconnect();
   }, [activeTopPanel, isMobile]);
 
+  useEffect(() => {
+    if (activeTopPanel !== "theme") return;
+    const frame = requestAnimationFrame(() => {
+      themeMenuRef.current
+        ?.querySelector<HTMLButtonElement>(`[role="menuitemradio"][aria-checked="true"]`)
+        ?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeTopPanel]);
+
+  const handleThemeMenuKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveTopPanel(null);
+      themeBtnRef.current?.focus();
+      return;
+    }
+
+    const items = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>(`[role="menuitemradio"]`),
+    );
+    if (items.length === 0) return;
+
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+      nextIndex = (currentIndex + 1 + items.length) % items.length;
+    } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+      nextIndex = (currentIndex - 1 + items.length) % items.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = items.length - 1;
+    }
+
+    if (nextIndex !== null) {
+      event.preventDefault();
+      items[nextIndex]?.focus();
+    }
+  }, []);
+
   // Right panel — file tabs only
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
+  const hasDirtyFileTabs = fileTabs.some((tab) => tab.isDirty);
+
+  useEffect(() => {
+    if (!hasDirtyFileTabs) return;
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = true;
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasDirtyFileTabs]);
+
+  const handleFileDirtyChange = useCallback((tabId: string, dirty: boolean) => {
+    setFileTabs((currentTabs) => {
+      const target = currentTabs.find((tab) => tab.id === tabId);
+      if (!target || Boolean(target.isDirty) === dirty) return currentTabs;
+      return currentTabs.map((tab) => tab.id === tabId ? { ...tab, isDirty: dirty } : tab);
+    });
+  }, []);
 
   // Same @mention format as the chat input's @ autocomplete, so the agent's
   // read tool resolves it the same way (it strips the @ prefix).
@@ -309,6 +398,13 @@ export function AppShell() {
     const newProject = projectRoot ?? cwd;
     const currentProject = activeProjectRootRef.current
       ?? (selectedSession ? (selectedSession.projectRoot ?? selectedSession.cwd) : null);
+    const dirtyTabs = fileTabs.filter((tab) => tab.isDirty);
+    const keepDirtyTabs = currentProject !== null
+      && currentProject !== newProject
+      && dirtyTabs.length > 0
+      && !window.confirm(
+        `Discard unsaved changes in ${dirtyTabs.length} file${dirtyTabs.length === 1 ? "" : "s"} before switching projects?\n\nCancel keeps the edited file tabs open.`,
+      );
     activeProjectRootRef.current = newProject;
 
     // Keep the project identity in sync during the initial URL restore without
@@ -335,16 +431,24 @@ export function AppShell() {
     setBranchActiveLeafId(null);
     setSystemPrompt(null);
     setActiveTopPanel(null);
-    // File tabs are keyed by absolute path, so tabs opened in the previous
-    // project would otherwise linger after switching to a different project.
-    // Reached only past the same-project early return above, so worktrees of
-    // one repo keep their open tabs. Mirror handleCloseFileTab and close the
-    // now-empty right panel.
-    setFileTabs([]);
-    setActiveFileTabId(null);
-    setRightPanelOpen(false);
+    // Clean tabs can close with the old project. If the user declines to
+    // discard unsaved work, retain only those dirty tabs; each tab remembers
+    // its original cwd so previews and git diffs remain correctly scoped.
+    if (keepDirtyTabs) {
+      setFileTabs(dirtyTabs);
+      setActiveFileTabId(
+        activeFileTabId && dirtyTabs.some((tab) => tab.id === activeFileTabId)
+          ? activeFileTabId
+          : dirtyTabs[dirtyTabs.length - 1]?.id ?? null,
+      );
+      setRightPanelOpen(true);
+    } else {
+      setFileTabs([]);
+      setActiveFileTabId(null);
+      setRightPanelOpen(false);
+    }
     router.replace("/", { scroll: false });
-  }, [router, selectedSession]);
+  }, [activeFileTabId, fileTabs, router, selectedSession]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     setNewSessionCwd(null);
@@ -377,6 +481,37 @@ export function AppShell() {
     if (isMobile) setSidebarOpen(false);
     router.replace("/", { scroll: false });
   }, [router, isMobile]);
+
+  // Native Electron menus stay deliberately thin: the renderer owns all
+  // application state and receives only a small action name from preload.
+  useEffect(() => {
+    const unsubscribe = window.piDesktop?.onMenuAction?.((action) => {
+      switch (action) {
+        case "new-session":
+          if (activeCwd) handleNewSession(`menu-${Date.now()}`, activeCwd);
+          else setSidebarOpen(true);
+          break;
+        case "choose-project":
+          setSidebarOpen(true);
+          break;
+        case "toggle-sidebar":
+          handleSidebarToggle();
+          break;
+        case "toggle-files":
+          setRightPanelOpen((open) => !open);
+          break;
+        case "models":
+          setModelsConfigOpen(true);
+          break;
+        case "theme":
+          toggleTopPanel("theme");
+          break;
+        default:
+          break;
+      }
+    });
+    return unsubscribe;
+  }, [activeCwd, handleNewSession, handleSidebarToggle, toggleTopPanel]);
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
   useGlobalKeyboardShortcuts({
@@ -499,6 +634,7 @@ export function AppShell() {
           id: tabId,
           label: fileName,
           filePath,
+          cwd: activeCwd ?? undefined,
           sourceSessionId,
           initialDisplayMode: modeHint,
         }];
@@ -518,24 +654,27 @@ export function AppShell() {
     setRightPanelOpen(true);
     // On mobile the file panel is full-screen; close the drawer so it shows.
     if (isMobile) setSidebarOpen(false);
-  }, [isMobile]);
+  }, [activeCwd, isMobile]);
 
   const handleOpenLinkedFile = useCallback((filePath: string) => {
     handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null });
   }, [handleOpenFile, selectedSession?.id]);
 
   const handleCloseFileTab = useCallback((tabId: string) => {
-    setFileTabs((prev) => {
-      const next = prev.filter((t) => t.id !== tabId);
-      if (next.length === 0) setRightPanelOpen(false);
-      return next;
-    });
-    setActiveFileTabId((cur) => {
-      if (cur !== tabId) return cur;
-      const remaining = fileTabs.filter((t) => t.id !== tabId);
-      return remaining.length > 0 ? remaining[remaining.length - 1].id : null;
-    });
-  }, [fileTabs]);
+    const closingIndex = fileTabs.findIndex((tab) => tab.id === tabId);
+    if (closingIndex < 0) return;
+
+    const closingTab = fileTabs[closingIndex];
+    if (closingTab.isDirty && !window.confirm(`Discard unsaved changes in ${closingTab.label}?`)) return;
+
+    const remaining = fileTabs.filter((tab) => tab.id !== tabId);
+    setFileTabs(remaining);
+    if (remaining.length === 0) setRightPanelOpen(false);
+    if (activeFileTabId === tabId) {
+      const nextIndex = Math.min(closingIndex, remaining.length - 1);
+      setActiveFileTabId(nextIndex >= 0 ? remaining[nextIndex].id : null);
+    }
+  }, [activeFileTabId, fileTabs]);
 
   const handleViewFullHistory = useCallback(() => {
     if (!selectedSession) return;
@@ -598,9 +737,8 @@ export function AppShell() {
     }
   }, [projectTrustBusy, projectTrustCwd]);
 
-  const activeFileTab = fileTabs.find((t) => t.id === activeFileTabId) ?? null;
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
-  const windowTitle = activeCwdName ? `${activeCwdName} - Pi Web` : "Pi Web";
+  const windowTitle = activeCwdName ? `${activeCwdName} - piGUI` : "piGUI";
 
   useEffect(() => {
     const syncWindowTitle = () => {
@@ -632,7 +770,7 @@ export function AppShell() {
         onAtMention={handleAtMention}
         onAtMentions={handleAtMentions}
       />
-      <div style={{ padding: "8px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 4 }}>
+      <div className="sidebar-config-cluster" style={{ padding: "3px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 2 }}>
         {([
           {
              label: translate("common.models"),
@@ -682,7 +820,7 @@ export function AppShell() {
             style={{
               flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
               height: 32, padding: 0, background: "none", border: "none",
-              borderRadius: 9, color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
+              borderRadius: "var(--radius-control)", color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
               fontSize: 12, opacity: disabled ? 0.35 : 1,
               transition: "background 0.12s, color 0.12s",
             }}
@@ -770,7 +908,7 @@ export function AppShell() {
         }
       }
     `}</style>
-    <div style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}>
+    <div className="app-shell" style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}>
       {/* Mobile overlay backdrop */}
       <div
         className={`sidebar-overlay-backdrop${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
@@ -814,17 +952,18 @@ export function AppShell() {
       )}
 
       {/* Center: chat */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+      <div className="workspace-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0, position: "relative" }}>
         {/* Top bar with sidebar toggle */}
-        <div ref={topBarRef} style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: 36, background: "var(--bg-panel)" }}>
+        <div ref={topBarRef} className="app-topbar" style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: 48, background: "var(--bg)" }}>
           <button
+            className="topbar-control topbar-icon-button"
             onClick={handleSidebarToggle}
              title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
              aria-label={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
             style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
-              background: "none", border: "none", borderRight: "1px solid var(--border)",
+              background: "none", border: "none",
               color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
             }}
             onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
@@ -839,39 +978,52 @@ export function AppShell() {
                 <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
               </svg>
             )}
-          </button>
+           </button>
+          <div className="app-topbar-title" aria-live="polite">
+            <span className="app-topbar-title-icon" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" />
+              </svg>
+            </span>
+            <span className="app-topbar-title-text">
+              {selectedSession?.name || activeCwdName || (showChat ? translate("sidebar.new") : "piGUI")}
+            </span>
+            {activeCwdName && selectedSession?.name && (
+              <span className="app-topbar-title-path">{activeCwdName}</span>
+            )}
+          </div>
+          <div className="app-topbar-cluster app-topbar-appearance" aria-label={translate("theme.choose")}>
           <button
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              toggleTheme({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-            }}
-             title={isDark ? translate("theme.light") : translate("theme.dark")}
-             aria-label={isDark ? translate("theme.light") : translate("theme.dark")}
-            aria-pressed={isDark}
+            className="topbar-control topbar-icon-button"
+            ref={themeBtnRef}
+            type="button"
+            onClick={() => toggleTopPanel("theme")}
+            title={translate("theme.choose")}
+            aria-label={translate("theme.choose")}
+            aria-haspopup="menu"
+            aria-expanded={activeTopPanel === "theme"}
             style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
-              background: "none", border: "none", borderRight: "1px solid var(--border)",
-              color: "var(--text-muted)", cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
+              background: activeTopPanel === "theme" ? "var(--bg-selected)" : "none",
+              border: "none",
+              color: activeTopPanel === "theme" ? "var(--text)" : "var(--text-muted)",
+              cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
             }}
             onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = activeTopPanel === "theme" ? "var(--text)" : "var(--text-muted)";
+            }}
           >
-            {isDark ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="5" />
-                <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
-                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
-                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-              </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-              </svg>
-            )}
-           </button>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 3a9 9 0 1 0 0 18h1.4a1.6 1.6 0 0 0 1.1-2.7 1.6 1.6 0 0 1 1.1-2.7H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3Z" />
+              <circle cx="7.5" cy="10" r="1" fill="currentColor" stroke="none" />
+              <circle cx="10.5" cy="6.8" r="1" fill="currentColor" stroke="none" />
+              <circle cx="15" cy="7.8" r="1" fill="currentColor" stroke="none" />
+            </svg>
+          </button>
            <button
+             className="topbar-control topbar-icon-button"
              ref={languageBtnRef}
              type="button"
              onClick={() => toggleTopPanel("language")}
@@ -884,7 +1036,7 @@ export function AppShell() {
                display: "flex", alignItems: "center", justifyContent: "center",
                width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
                background: activeTopPanel === "language" ? "var(--bg-selected)" : "none",
-               border: "none", borderRight: "1px solid var(--border)",
+               border: "none",
                color: activeTopPanel === "language" ? "var(--text)" : "var(--text-muted)",
                cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
              }}
@@ -912,6 +1064,41 @@ export function AppShell() {
                <path d="M14 18h6" />
              </svg>
            </button>
+          </div>
+          <button
+            className="topbar-control topbar-icon-button"
+            type="button"
+            onClick={() => setCompanionOpen((current) => !current)}
+            title={translate(companionOpen ? "companion.close" : "companion.open")}
+            aria-label={translate(companionOpen ? "companion.close" : "companion.open")}
+            aria-pressed={companionOpen}
+            style={{
+              position: "relative",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
+              background: companionOpen ? "var(--bg-selected)" : "none",
+              border: "none",
+              color: companionOpen ? "var(--text)" : "var(--text-muted)",
+              cursor: "pointer", flexShrink: 0, transition: "color 0.12s, background 0.12s",
+            }}
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="m7 8-2.5-4L3 10v5a6 6 0 0 0 6 6h6a6 6 0 0 0 6-6v-5l-1.5-6L17 8" />
+              <path d="M8.5 13h.01M15.5 13h.01M9.5 17c1.5 1.2 3.5 1.2 5 0" />
+            </svg>
+            <span
+              aria-hidden="true"
+              style={{
+                position: "absolute", right: 6, bottom: 6, width: 6, height: 6,
+                borderRadius: "50%",
+                background: companionActivity.status === "failed" ? "#dc2626"
+                  : companionActivity.status === "review" ? "#8b5cf6"
+                    : companionActivity.status === "waiting" ? "#d97706"
+                      : companionActivity.status === "running" ? "#2563eb" : "#22a06b",
+                boxShadow: "0 0 0 2px var(--bg)",
+              }}
+            />
+          </button>
           {showChat && projectTrust?.requiresTrust && !projectTrust.trusted && (
             <button
               type="button"
@@ -956,8 +1143,9 @@ export function AppShell() {
             </button>
           )}
           {showChat && (
-            <div style={{ display: "flex", alignItems: "stretch", height: "100%" }}>
+            <div className="app-topbar-cluster app-topbar-session-tools" style={{ display: "flex", alignItems: "stretch", height: 34 }}>
               <button
+                className="topbar-control"
                 onClick={handleViewFullHistory}
                 disabled={!selectedSession}
                  title={selectedSession ? translate("history.full") : translate("history.unsaved")}
@@ -971,7 +1159,6 @@ export function AppShell() {
                   background: "none",
                   border: "none",
                   borderTop: "2px solid transparent",
-                  borderRight: "1px solid var(--border)",
                   color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
                   cursor: selectedSession ? "pointer" : "not-allowed",
                   opacity: selectedSession ? 1 : 0.45,
@@ -1008,7 +1195,7 @@ export function AppShell() {
                   <path d="M3 3v5h5" />
                   <path d="M12 7v5l3 2" />
                 </svg>
-                 {!isMobile && <span>{translate("history.label")}</span>}
+                 {!isMobile && <span className="topbar-action-label">{translate("history.label")}</span>}
               </button>
               {(() => {
                 const hasMessages = Boolean(
@@ -1035,6 +1222,7 @@ export function AppShell() {
 
                 return (
                   <button
+                    className="topbar-control"
                     type="button"
                     onClick={() => void handleAutoName()}
                     disabled={disabled}
@@ -1045,7 +1233,6 @@ export function AppShell() {
                       height: "100%", padding: "0 12px",
                       background: "none", border: "none",
                       borderTop: "2px solid transparent",
-                      borderRight: "1px solid var(--border)",
                       color: isError ? "#dc2626" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)",
                       cursor: disabled ? "not-allowed" : "pointer",
                       opacity: disabled && autoNameStatus.kind !== "naming" ? 0.45 : 1,
@@ -1078,7 +1265,7 @@ export function AppShell() {
                         <path d="M6 4V2M5 3H3M19 19v3M17.5 20.5h3" />
                       </svg>
                     )}
-                    {!isMobile && <span>{label}</span>}
+                    {!isMobile && <span className="topbar-action-label">{label}</span>}
                   </button>
                 );
               })()}
@@ -1094,6 +1281,7 @@ export function AppShell() {
                 hasSession
               />
               <button
+                className="topbar-control"
                 ref={systemBtnRef}
                 onClick={() => toggleTopPanel("system")}
                  title={translate("system.prompt")}
@@ -1105,7 +1293,6 @@ export function AppShell() {
                   background: activeTopPanel === "system" ? "var(--bg-selected)" : "none",
                   border: "none",
                   borderTop: activeTopPanel === "system" ? "2px solid var(--accent)" : "2px solid transparent",
-                  borderRight: "1px solid var(--border)",
                   cursor: "pointer",
                   color: activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)",
                   fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
@@ -1119,7 +1306,7 @@ export function AppShell() {
                   <line x1="8" y1="13" x2="16" y2="13" />
                   <line x1="8" y1="17" x2="13" y2="17" />
                 </svg>
-                 {!isMobile && <span>{translate("system.label")}</span>}
+                 {!isMobile && <span className="topbar-action-label">{translate("system.label")}</span>}
               </button>
             </div>
           )}
@@ -1155,6 +1342,7 @@ export function AppShell() {
 
             return (
               <button
+                className="topbar-stats-control"
                 type="button"
                 onClick={() => toggleTopPanel("session")}
                title={tooltip || translate("session.title")}
@@ -1224,15 +1412,91 @@ export function AppShell() {
           })()}
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && topPanelPos && (
-            <div style={{
+            <div className="app-top-panel-frame" style={{
               position: "fixed",
               top: topPanelPos.top,
               left: topPanelPos.left,
               width: topPanelPos.width,
-              maxHeight: `calc(100dvh - ${topPanelPos.top}px)`,
+              maxHeight: `calc(100dvh - ${topPanelPos.top}px - 8px)`,
               overflowY: "auto",
               zIndex: 500,
             }}>
+              {activeTopPanel === "theme" && (
+                <div
+                  ref={themeMenuRef}
+                  onKeyDown={handleThemeMenuKeyDown}
+                  style={{
+                    background: "var(--bg-panel)",
+                    borderLeft: "1px solid var(--border)",
+                    borderRight: "1px solid var(--border)",
+                    borderBottom: "1px solid var(--border)",
+                    overflow: "hidden",
+                    padding: 4,
+                  }}
+                >
+                  <div role="menu" aria-label={translate("theme.choose")}>
+                    {themes.map((preset) => {
+                      const selected = theme === preset.id;
+                      return (
+                        <button
+                        key={preset.id}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={selected}
+                        tabIndex={selected ? 0 : -1}
+                        className="theme-menu-option"
+                        onClick={() => {
+                          const rect = themeBtnRef.current?.getBoundingClientRect();
+                          setTheme(preset.id, rect ? {
+                            x: rect.left + rect.width / 2,
+                            y: rect.top + rect.height / 2,
+                          } : undefined);
+                          setActiveTopPanel(null);
+                          themeBtnRef.current?.focus();
+                        }}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 9,
+                          width: "100%", height: 38, padding: "0 10px",
+                          border: "none", borderRadius: 4,
+                          background: selected ? "var(--bg-selected)" : "transparent",
+                          color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 12,
+                          transition: "background 0.1s",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!selected) e.currentTarget.style.background = "var(--bg-hover)";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!selected) e.currentTarget.style.background = "transparent";
+                        }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            position: "relative", width: 22, height: 22, flex: "0 0 22px",
+                            overflow: "hidden", borderRadius: 6,
+                            background: preset.preview.background,
+                            border: "1px solid color-mix(in srgb, var(--border) 72%, var(--text-dim))",
+                          }}
+                        >
+                          <span style={{
+                            position: "absolute", right: 3, bottom: 3,
+                            width: 7, height: 7, borderRadius: "50%",
+                            background: preset.preview.accent,
+                          }} />
+                        </span>
+                        <span style={{ flex: 1 }}>{translate(`theme.${preset.id}.name`)}</span>
+                        {selected ? (
+                          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="m5 12 4 4L19 6" />
+                          </svg>
+                        ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <BackgroundSettings compact />
+                </div>
+              )}
               {activeTopPanel === "language" && (
                 <div
                   role="menu"
@@ -1464,66 +1728,80 @@ export function AppShell() {
 
         </div>
 
-        {/* Chat content */}
-        <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-          {showChat ? (
-            <ChatWindow
-              key={sessionKey}
-              session={selectedSession}
-              newSessionCwd={effectiveNewSessionCwd}
-              onAgentEnd={handleAgentEnd}
-              onSessionCreated={handleSessionCreated}
-              onSessionForked={handleSessionForked}
-              modelsRefreshKey={modelsRefreshKey}
-              chatInputRef={chatInputRef}
-              onBranchDataChange={handleBranchDataChange}
-              onSystemPromptChange={handleSystemPromptChange}
-              onSessionStatsChange={handleSessionStatsChange}
-              onSessionStatsPanelOpen={openSessionStatsPanel}
-              onContextUsageChange={handleContextUsageChange}
-              onOpenFile={handleOpenLinkedFile}
-            />
-          ) : initialCwdStatus === "validating" ? (
-            <div
-              role="status"
-              style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
-            >
-               <div style={{ fontSize: 14, color: "var(--text)" }}>{translate("workspace.opening")}</div>
-              <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                {initialNavigation.requestedCwd}
-              </div>
-            </div>
-          ) : initialCwdStatus === "error" ? (
-            <div
-              role="alert"
-              style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
-            >
-               <div style={{ fontSize: 14, color: "#dc2626" }}>{translate("workspace.unable")}</div>
-              <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                {initialNavigation.requestedCwd}
-              </div>
-              <div style={{ maxWidth: 720, fontSize: 12 }}>{initialCwdError}</div>
-            </div>
-          ) : showPlaceholder ? (
-            activeCwd ? (
-              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
-                 {translate("workspace.selectSession")}
-              </div>
-            ) : (
-              <div style={{ position: "absolute", top: 12, left: 12, display: "flex", alignItems: "flex-start", gap: 8, userSelect: "none", pointerEvents: "none" }}>
-                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7, flexShrink: 0 }}>
-                  <line x1="20" y1="12" x2="4" y2="12" /><polyline points="10 6 4 12 10 18" />
-                </svg>
-                <div>
-                   <div style={{ fontSize: 18, fontWeight: 600, color: "var(--text)", marginBottom: 8 }}>{translate("workspace.getStarted")}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.8 }}>
-                     <span style={{ color: "var(--text-dim)", marginRight: 6 }}>1.</span>{translate("workspace.selectProject")}<br />
-                     <span style={{ color: "var(--text-dim)", marginRight: 6 }}>2.</span>{translate("workspace.addModels")}
-                  </div>
+        <div className="workspace-body">
+          <div className="workspace-layout">
+            {/* Chat content */}
+            <div className="workspace-chat">
+            {showChat ? (
+              <ChatWindow
+                key={sessionKey}
+                session={selectedSession}
+                newSessionCwd={effectiveNewSessionCwd}
+                onAgentEnd={handleAgentEnd}
+                onSessionCreated={handleSessionCreated}
+                onSessionForked={handleSessionForked}
+                modelsRefreshKey={modelsRefreshKey}
+                chatInputRef={chatInputRef}
+                onBranchDataChange={handleBranchDataChange}
+                onSystemPromptChange={handleSystemPromptChange}
+                onSessionStatsChange={handleSessionStatsChange}
+                onSessionStatsPanelOpen={openSessionStatsPanel}
+                onContextUsageChange={handleContextUsageChange}
+                onOpenFile={handleOpenLinkedFile}
+                onCompanionActivityChange={setCompanionActivity}
+              />
+            ) : initialCwdStatus === "validating" ? (
+              <div
+                role="status"
+                style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
+              >
+                 <div style={{ fontSize: 14, color: "var(--text)" }}>{translate("workspace.opening")}</div>
+                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                  {initialNavigation.requestedCwd}
                 </div>
               </div>
-            )
-          ) : null}
+            ) : initialCwdStatus === "error" ? (
+              <div
+                role="alert"
+                style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
+              >
+                 <div style={{ fontSize: 14, color: "#dc2626" }}>{translate("workspace.unable")}</div>
+                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                  {initialNavigation.requestedCwd}
+                </div>
+                <div style={{ maxWidth: 720, fontSize: 12 }}>{initialCwdError}</div>
+              </div>
+            ) : showPlaceholder ? (
+              activeCwd ? (
+                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
+                   {translate("workspace.selectSession")}
+                </div>
+              ) : (
+                <div className="workspace-empty-state">
+                  <div className="workspace-empty-mark" aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" />
+                    </svg>
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="workspace-empty-title">{translate("workspace.getStarted")}</div>
+                    <div className="workspace-empty-steps">
+                      <span><b>1</b>{translate("workspace.selectProject")}</span>
+                      <span><b>2</b>{translate("workspace.addModels")}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            ) : null}
+            </div>
+            <CompanionPet
+              open={companionOpen}
+              onOpenChange={setCompanionOpen}
+              activity={companionActivity}
+              canSendPhrase={canSendCompanionPhrase(companionActivity.status, showChat)}
+              onSendPhrase={handleSendCompanionPhrase}
+            />
+          </div>
         </div>
       </div>
 
@@ -1556,7 +1834,7 @@ export function AppShell() {
         } as React.CSSProperties}
       >
         {/* Right panel tab bar */}
-        <div style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 36 }}>
+        <div className="right-panel-tabs" style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 40 }}>
           <div style={{ flex: 1, overflow: "hidden" }}>
             <TabBar
               tabs={fileTabs}
@@ -1569,21 +1847,40 @@ export function AppShell() {
         </div>
 
         {/* File content */}
-        <div style={{ flex: 1, overflow: "hidden" }}>
-          {activeFileTab?.filePath ? (
-            <FileViewer
-              filePath={activeFileTab.filePath}
-              cwd={activeCwd ?? undefined}
-              sourceSessionId={activeFileTab.sourceSessionId}
-              gitRefreshKey={explorerRefreshKey}
-              initialDisplayMode={activeFileTab.initialDisplayMode}
-              onMentionLines={rightPanelOpen ? handleFileLineMention : undefined}
-              onOpenFile={(filePath) => handleOpenFile(
-                filePath,
-                getFileName(filePath),
-                { sourceSessionId: activeFileTab.sourceSessionId },
-              )}
-            />
+        <div style={{ position: "relative", flex: 1, overflow: "hidden" }}>
+          {fileTabs.length > 0 ? (
+            fileTabs.map((tab) => {
+              const isActive = tab.id === activeFileTabId;
+              return (
+                <div
+                  key={tab.id}
+                  aria-hidden={!isActive}
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    display: isActive ? "block" : "none",
+                    overflow: "hidden",
+                  }}
+                >
+                  <FileViewer
+                    filePath={tab.filePath}
+                    cwd={tab.cwd ?? activeCwd ?? undefined}
+                    sourceSessionId={tab.sourceSessionId}
+                    gitRefreshKey={explorerRefreshKey}
+                    initialDisplayMode={tab.initialDisplayMode}
+                    active={rightPanelOpen && isActive}
+                    onDirtyChange={(dirty) => handleFileDirtyChange(tab.id, dirty)}
+                    onSaved={handleExplorerRefresh}
+                    onMentionLines={rightPanelOpen && isActive ? handleFileLineMention : undefined}
+                    onOpenFile={(filePath) => handleOpenFile(
+                      filePath,
+                      getFileName(filePath),
+                      { sourceSessionId: tab.sourceSessionId },
+                    )}
+                  />
+                </div>
+              );
+            })
           ) : (
             <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
                {translate("files.noneOpen")}
@@ -1594,16 +1891,17 @@ export function AppShell() {
     </div>
     {/* File panel toggle — always visible at top-right */}
     <button
+      className="right-panel-toggle"
       onClick={() => setRightPanelOpen((v) => !v)}
        aria-controls="file-panel"
        aria-expanded={rightPanelOpen}
        title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
        aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
       style={{
-        position: "fixed", top: 0, right: 0, zIndex: 300,
+        position: "fixed", top: 7, right: 8, zIndex: 300,
         display: "flex", alignItems: "center", justifyContent: "center",
-        width: 36, height: 36, padding: 0,
-        background: "var(--bg-panel)", border: "none", borderLeft: "1px solid var(--border)", borderBottom: "1px solid var(--border)",
+        width: 32, height: 32, padding: 0,
+        background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--radius-control)",
         color: rightPanelOpen ? "var(--text)" : "var(--text-muted)",
         cursor: "pointer", transition: "color 0.12s",
       }}

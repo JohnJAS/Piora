@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./theme-packs/codex-dream-skin.css";
 
 @theme {
   --color-bg: var(--bg);
@@ -19,23 +20,33 @@
 }
 
 :root {
-  --bg: #ffffff;
-  --bg-panel: #f5f5f5;
-  --bg-hover: #eeeeee;
-  --bg-selected: #e8e8e8;
-  --border: #e0e0e0;
-  --text: #1a1a1a;
-  --text-muted: #6b7280;
-  --text-dim: #9ca3af;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --user-bg: #eff6ff;
-  --assistant-bg: #ffffff;
-  --tool-bg: #f9fafb;
-  --bg-subtle: rgba(0,0,0,0.03);
+  color-scheme: light;
+  --bg: #fffdfc;
+  --bg-panel: #f7f4f3;
+  --bg-hover: #f0edec;
+  --bg-selected: #ebe6e5;
+  --border: #e5dfdd;
+  --text: #282524;
+  --text-muted: #706967;
+  --text-dim: #a49a97;
+  --accent: #3569d4;
+  --accent-hover: #2857bb;
+  --user-bg: #eef3ff;
+  --assistant-bg: #fffdfc;
+  --tool-bg: #faf8f7;
+  --bg-subtle: rgba(72, 53, 48, 0.035);
+  --radius-small: 5px;
+  --radius-control: 8px;
+  --radius-surface: 11px;
+  --radius-panel: 14px;
+  --shadow-popover: 0 18px 48px rgba(34, 29, 27, 0.12), 0 2px 8px rgba(34, 29, 27, 0.06);
+  --shadow-surface: 0 1px 2px rgba(34, 29, 27, 0.04), 0 10px 30px rgba(34, 29, 27, 0.045);
+  --chrome-translucent: color-mix(in srgb, var(--bg) 92%, transparent);
+  --panel-translucent: color-mix(in srgb, var(--bg-panel) 94%, transparent);
 }
 
 html.dark {
+  color-scheme: dark;
   --bg: #1a1a1a;
   --bg-panel: #242424;
   --bg-hover: #2e2e2e;
@@ -50,6 +61,45 @@ html.dark {
   --assistant-bg: #1a1a1a;
   --tool-bg: #1f2937;
   --bg-subtle: rgba(255,255,255,0.04);
+}
+
+html[data-theme="midnight"] {
+  --bg: #0b1020;
+  --bg-panel: #121a2e;
+  --bg-hover: #1a2540;
+  --bg-selected: #243153;
+  --border: #263453;
+  --text: #e6eaff;
+  --text-muted: #a4aecb;
+  --text-dim: #687492;
+  --accent: #8b9dff;
+  --accent-hover: #a8b4ff;
+  --user-bg: #17264a;
+  --assistant-bg: #0b1020;
+  --tool-bg: #101d33;
+  --bg-subtle: rgba(139, 157, 255, 0.055);
+}
+
+html[data-theme="forest"] {
+  --bg: #101914;
+  --bg-panel: #17231b;
+  --bg-hover: #203027;
+  --bg-selected: #293d31;
+  --border: #304538;
+  --text: #e4eee7;
+  --text-muted: #9fb2a4;
+  --text-dim: #697d6e;
+  --accent: #6fcf97;
+  --accent-hover: #96deb1;
+  --user-bg: #193528;
+  --assistant-bg: #101914;
+  --tool-bg: #162b20;
+  --bg-subtle: rgba(111, 207, 151, 0.055);
+}
+
+.theme-menu-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /* Theme toggle: circular wipe via View Transitions API.
@@ -79,11 +129,324 @@ html, body {
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   font-size: 14px;
+  line-height: 1.45;
   overscroll-behavior: none;
 }
 
 body {
   height: 100dvh;
+}
+
+/* Codex-inspired desktop chrome: quiet separators, generous spacing, and a
+   readable session title that remains visible while the utility controls move
+   to the right. */
+.app-topbar {
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--border) 72%, transparent);
+  gap: 6px;
+  padding: 6px 46px 6px 7px;
+  position: relative;
+  z-index: 100;
+  background: var(--chrome-translucent) !important;
+  backdrop-filter: blur(18px) saturate(1.08);
+}
+.app-topbar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+  height: 100%;
+  padding: 0 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.app-topbar-title-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel));
+  color: var(--accent);
+}
+.app-topbar-title-text,
+.app-topbar-title-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-topbar-title-path {
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 72%, white);
+  outline-offset: 2px;
+}
+
+.app-shell {
+  isolation: isolate;
+  background: color-mix(in srgb, var(--bg) 97%, var(--bg-panel)) !important;
+}
+
+.workspace-main {
+  background: color-mix(in srgb, var(--bg) 98%, var(--bg-panel));
+}
+
+.workspace-body {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  container: workspace-body / inline-size;
+}
+
+.workspace-layout {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace-chat {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+@container workspace-body (max-width: 760px) {
+  .workspace-layout {
+    flex-direction: column;
+  }
+}
+
+.sidebar-container {
+  background: color-mix(in srgb, var(--bg-panel) 96%, var(--bg)) !important;
+  border-right-color: color-mix(in srgb, var(--border) 82%, transparent) !important;
+}
+
+.sidebar-header {
+  padding: 12px 10px 10px !important;
+  border-bottom-color: color-mix(in srgb, var(--border) 72%, transparent) !important;
+}
+
+.sidebar-primary-actions,
+.sidebar-config-cluster,
+.app-topbar-cluster,
+.composer-advanced-cluster {
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: calc(var(--radius-control) + 2px);
+  background: color-mix(in srgb, var(--bg) 62%, var(--bg-panel));
+}
+
+.sidebar-primary-actions {
+  padding: 2px;
+}
+
+.sidebar-config-cluster {
+  margin: 7px 8px 8px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 25%, transparent);
+}
+
+.app-topbar-cluster {
+  height: 34px !important;
+  padding: 2px;
+  gap: 1px;
+  flex: 0 0 auto;
+}
+
+.topbar-control {
+  min-height: 28px !important;
+  height: 28px !important;
+  padding-block: 0 !important;
+  border: 0 !important;
+  border-radius: var(--radius-control) !important;
+}
+
+.topbar-icon-button {
+  width: 30px !important;
+  min-width: 30px;
+}
+
+.topbar-stats-control {
+  align-self: center;
+  height: 34px !important;
+  margin-left: 0 !important;
+  padding-inline: 10px !important;
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent) !important;
+  border-radius: calc(var(--radius-control) + 2px);
+  background: color-mix(in srgb, var(--bg) 74%, var(--bg-panel)) !important;
+}
+
+.app-top-panel-frame {
+  margin-top: 6px;
+  padding-inline: 6px;
+}
+
+.app-top-panel-frame > div,
+.app-floating-panel {
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
+  border-radius: var(--radius-surface) !important;
+  background: var(--panel-translucent) !important;
+  box-shadow: var(--shadow-popover);
+  backdrop-filter: blur(20px) saturate(1.08);
+}
+
+.branch-floating-panel {
+  max-width: calc(100vw - 12px);
+  overflow: hidden;
+}
+
+.workspace-empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: min(520px, calc(100% - 40px));
+  height: max-content;
+  margin: auto;
+  padding: 22px;
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  border-radius: var(--radius-panel);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  box-shadow: var(--shadow-surface);
+  backdrop-filter: blur(16px);
+  user-select: none;
+}
+
+.workspace-empty-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  color: var(--accent);
+}
+
+.workspace-empty-title {
+  margin-bottom: 9px;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.workspace-empty-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.workspace-empty-steps span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.workspace-empty-steps b {
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.right-panel-container {
+  background: color-mix(in srgb, var(--bg) 98%, var(--bg-panel)) !important;
+}
+
+.right-panel-tabs,
+.file-tab-list {
+  background: color-mix(in srgb, var(--bg-panel) 88%, var(--bg)) !important;
+}
+
+.file-tab.is-active {
+  border-color: color-mix(in srgb, var(--border) 82%, transparent) !important;
+  box-shadow: 0 1px 2px rgba(34, 29, 27, 0.045);
+}
+
+.right-panel-toggle {
+  box-shadow: 0 1px 3px rgba(34, 29, 27, 0.06);
+}
+
+.composer-shell {
+  padding-bottom: max(10px, env(safe-area-inset-bottom)) !important;
+}
+
+.composer-surface {
+  box-shadow: var(--shadow-surface) !important;
+  backdrop-filter: blur(18px);
+}
+
+.composer-meta-bar {
+  min-height: 34px;
+  margin-top: 6px !important;
+}
+
+.composer-advanced-cluster {
+  padding: 2px;
+}
+
+@media (max-width: 1120px) {
+  .topbar-action-label {
+    display: none;
+  }
+
+  .topbar-control {
+    width: 30px;
+    padding-inline: 0 !important;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-topbar-title {
+    padding-inline: 8px;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .app-topbar-title-path {
+    display: none;
+  }
 }
 
 ::-webkit-scrollbar {
@@ -975,6 +1338,10 @@ span.linenumber {
 
 /* Mobile sidebar: slide in/out as overlay */
 @media (max-width: 640px) {
+  .workspace-layout {
+    flex-direction: column;
+  }
+
   .chat-stats-center {
     display: none !important;
   }

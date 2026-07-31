@@ -1,6 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
 export const PI_WEB_AUTH_USERNAME = "pi";
+export const PI_DESKTOP_TOKEN_HEADER = "x-pi-desktop-token";
 
 function hashSecret(value: string): Buffer {
   return createHash("sha256").update(value, "utf8").digest();
@@ -14,6 +15,21 @@ export function isWebPasswordEnabled(
   password: string | undefined = process.env.PI_WEB_PASSWORD,
 ): password is string {
   return typeof password === "string" && password.length > 0;
+}
+
+export function isDesktopTokenEnabled(
+  token: string | undefined = process.env.PI_DESKTOP_TOKEN,
+): token is string {
+  return typeof token === "string" && token.length > 0;
+}
+
+export function isValidDesktopToken(
+  suppliedToken: string | null,
+  expectedToken = process.env.PI_DESKTOP_TOKEN,
+): boolean {
+  return isDesktopTokenEnabled(expectedToken)
+    && typeof suppliedToken === "string"
+    && secretsEqual(suppliedToken, expectedToken);
 }
 
 export function isValidBasicAuthorization(

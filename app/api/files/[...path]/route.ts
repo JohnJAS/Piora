@@ -20,13 +20,25 @@ import {
 } from "@/lib/file-types";
 import { resolveDirentIsDirectory } from "@/lib/file-dirent";
 import { isFilePathReferencedBySession } from "@/lib/session-file-references";
-import { isApiRequestAllowed } from "@/lib/request-security";
+import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import {
   inspectUploadTargets,
   parseUploadConflictStrategy,
   validateUploadFileNames,
 } from "@/lib/file-upload";
 import { parseFormDataWithinLimit, RequestBodyTooLargeError } from "@/lib/bounded-form-data";
+import {
+  InvalidJsonBodyError,
+  JsonBodyTooLargeError,
+  parseJsonWithinLimit,
+} from "@/lib/bounded-json";
+import {
+  TEXT_EDIT_MAX_REQUEST_BYTES,
+  TextFileEditError,
+  readTextFileSnapshot,
+  resolveWritableTextFilePath,
+  saveTextFileAtomic,
+} from "@/lib/file-editor";
 
 const IGNORED_NAMES = new Set([
   "node_modules", ".git", ".next", "dist", "build", "__pycache__",
@@ -120,6 +132,17 @@ async function getUploadDirectory(segments: string[]): Promise<
 function parseUploadFileNames(value: unknown): string[] | null {
   if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) return null;
   return value;
+}
+
+function fileEditErrorResponse(error: TextFileEditError): NextResponse {
+  return NextResponse.json(
+    { error: error.message, code: error.code },
+    { status: error.status },
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export async function POST(
@@ -238,6 +261,85 @@ export async function POST(
     );
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  }
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  if (!isApiRequestAllowed(request)) {
+    return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  }
+  if (!hasJsonContentType(request)) {
+    return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+  }
+
+  let body: unknown;
+  try {
+    body = await parseJsonWithinLimit(request, TEXT_EDIT_MAX_REQUEST_BYTES);
+  } catch (error) {
+    if (error instanceof JsonBodyTooLargeError) {
+      return NextResponse.json(
+        { error: "Edit request is too large", code: "FILE_TOO_LARGE" },
+        { status: 413 },
+      );
+    }
+    if (error instanceof InvalidJsonBodyError) {
+      return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
+    }
+    throw error;
+  }
+
+  if (!isRecord(body) || typeof body.content !== "string") {
+    return NextResponse.json({ error: "content must be a string" }, { status: 400 });
+  }
+  if (typeof body.expectedVersion !== "string" || !/^[a-f0-9]{64}$/i.test(body.expectedVersion)) {
+    return NextResponse.json(
+      { error: "expectedVersion must be a SHA-256 version" },
+      { status: 400 },
+    );
+  }
+  if (body.force !== undefined && typeof body.force !== "boolean") {
+    return NextResponse.json({ error: "force must be a boolean" }, { status: 400 });
+  }
+
+  try {
+    const { path: segments } = await params;
+    const requestedPath = filePathFromSegments(segments);
+    const allowedRoots = await getAllowedFileRoots();
+    // Deliberately do not consult session file references here: they are a
+    // viewer-only exception and must never grant filesystem write access.
+    const filePath = resolveWritableTextFilePath(requestedPath, allowedRoots);
+    const result = await saveTextFileAtomic(
+      filePath,
+      body.content,
+      body.expectedVersion,
+      body.force ?? false,
+    );
+
+    if (result.status === "conflict") {
+      return NextResponse.json({
+        error: "File changed on disk",
+        code: "FILE_CONFLICT",
+        currentVersion: result.current.version,
+        mtime: result.current.mtime,
+        size: result.current.size,
+      }, { status: 409 });
+    }
+
+    return NextResponse.json({
+      ...result.snapshot,
+      language: getLanguage(filePath),
+    }, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch (error) {
+    if (error instanceof TextFileEditError) return fileEditErrorResponse(error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      { status: 500 },
+    );
   }
 }
 
@@ -468,9 +570,11 @@ export async function GET(
       if (stat.size > TEXT_PREVIEW_MAX_BYTES) {
         return NextResponse.json({ error: "File too large for preview (>256KB)" }, { status: 413 });
       }
-      const content = fs.readFileSync(filePath, "utf-8");
+      const snapshot = readTextFileSnapshot(filePath);
       const language = getLanguage(filePath);
-      return NextResponse.json({ content, language, size: stat.size });
+      return NextResponse.json({ ...snapshot, language }, {
+        headers: { "Cache-Control": "no-store" },
+      });
     }
 
     if (type === "download") {
@@ -606,6 +710,7 @@ export async function GET(
 
     return NextResponse.json({ entries, path: filePath });
   } catch (error) {
+    if (error instanceof TextFileEditError) return fileEditErrorResponse(error);
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }

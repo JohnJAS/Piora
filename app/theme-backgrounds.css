@@ -1,0 +1,85 @@
+/*
+ * Optional application background layer.
+ *
+ * Background preferences only drive these host-owned selectors and custom
+ * properties. They never replace semantic palette tokens, execute theme code,
+ * or reach the Pi runtime. The editor/file panel stays intentionally opaque.
+ */
+html[data-app-background-active="true"] body {
+  isolation: isolate;
+  background: var(--bg);
+}
+
+html[data-app-background-active="true"] body::before,
+html[data-app-background-active="true"] body::after {
+  content: "";
+  position: fixed;
+  pointer-events: none;
+  inset: 0;
+}
+
+html[data-app-background-active="true"] body::before {
+  z-index: 0;
+  inset: -32px;
+  opacity: 1;
+  background-color: var(--bg);
+  background-image: var(--app-background-image, none), var(--app-background-fallback, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: blur(var(--app-background-blur, 0));
+  transform: scale(1.035);
+  transform-origin: center;
+}
+
+html[data-app-background-active="true"] body::after {
+  z-index: 0;
+  background: color-mix(in srgb, var(--bg) var(--app-background-overlay, 58%), transparent);
+}
+
+html[data-app-background-active="true"] body > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* AppShell currently returns a scoped style followed by its full-height root. */
+html[data-app-background-active="true"] body > style + div {
+  background: transparent !important;
+}
+
+html[data-app-background-active="true"] .app-topbar {
+  background: color-mix(in srgb, var(--bg) 88%, transparent) !important;
+  backdrop-filter: blur(18px);
+}
+
+html[data-app-background-active="true"] .sidebar-container {
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent) !important;
+  backdrop-filter: blur(20px);
+}
+
+html[data-app-background-active="true"] #file-panel {
+  /* Keep file previews and editors visually stable against decorative art. */
+  background: color-mix(in srgb, var(--bg) 98%, transparent) !important;
+}
+
+@supports not (background: color-mix(in srgb, black 50%, transparent)) {
+  html[data-app-background-active="true"] body::after {
+    background: var(--bg);
+    opacity: 0.58;
+  }
+
+  html[data-app-background-active="true"] .app-topbar {
+    background: var(--bg) !important;
+  }
+
+  html[data-app-background-active="true"] .sidebar-container {
+    background: var(--bg-panel) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-app-background-active="true"] .app-topbar,
+  html[data-app-background-active="true"] .sidebar-container {
+    backdrop-filter: none;
+  }
+}
