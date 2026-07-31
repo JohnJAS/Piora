@@ -133,9 +133,14 @@ export async function generateLicenseInventory({
 } = {}) {
   const lockPath = resolve(projectRoot, "package-lock.json");
   const lockBytes = await readFile(lockPath);
-  const lock = JSON.parse(lockBytes.toString("utf8"));
+  // Hash the repository's canonical LF representation. npm can leave a
+  // mixed- or CRLF-ending working copy on Windows even when .gitattributes
+  // commits package-lock.json with LF, which otherwise makes --check disagree
+  // with a clean Linux/Windows checkout of the same Git object.
+  const canonicalLockText = lockBytes.toString("utf8").replace(/\r\n?/g, "\n");
+  const lock = JSON.parse(canonicalLockText);
   const records = await collectLockedPackages({ lock });
-  const lockfileSha256 = createHash("sha256").update(lockBytes).digest("hex");
+  const lockfileSha256 = createHash("sha256").update(canonicalLockText).digest("hex");
   const output = renderLicenseInventory(records, lockfileSha256);
 
   if (check) {
