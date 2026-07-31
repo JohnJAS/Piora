@@ -512,46 +512,45 @@ select:focus-visible,
 /* Electron's native Window Controls Overlay removes the duplicate OS title
    row while keeping the real minimize/maximize/close buttons. Make the app's
    top chrome draggable, reserve the system-button safe area, and keep every
-   interactive control clickable. These rules are dormant in a normal browser. */
-@media (display-mode: window-controls-overlay) {
-  .app-topbar,
-  .right-panel-tabs {
-    -webkit-app-region: drag;
-    app-region: drag;
-  }
+   interactive control clickable. The renderer adds desktop-chrome only when
+   Electron's isolated preload bridge is present, so normal browsers stay inert. */
+.app-shell.desktop-chrome .app-topbar,
+.app-shell.desktop-chrome .right-panel-tabs {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
 
-  .app-topbar button,
-  .app-topbar a,
-  .app-topbar input,
-  .app-topbar select,
-  .app-topbar textarea,
-  .app-topbar [role="button"],
-  .right-panel-tabs button,
-  .right-panel-tabs a,
-  .right-panel-tabs input,
-  .right-panel-tabs [role="button"],
-  .right-panel-toggle {
-    -webkit-app-region: no-drag;
-    app-region: no-drag;
-  }
+.app-shell.desktop-chrome .app-topbar button,
+.app-shell.desktop-chrome .app-topbar a,
+.app-shell.desktop-chrome .app-topbar input,
+.app-shell.desktop-chrome .app-topbar select,
+.app-shell.desktop-chrome .app-topbar textarea,
+.app-shell.desktop-chrome .app-topbar [role="button"],
+.app-shell.desktop-chrome .right-panel-tabs button,
+.app-shell.desktop-chrome .right-panel-tabs a,
+.app-shell.desktop-chrome .right-panel-tabs input,
+.app-shell.desktop-chrome .right-panel-tabs [role="button"],
+.app-shell.desktop-chrome .right-panel-toggle {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
 
-  .app-shell:has(.right-panel-closed) .app-topbar {
-    padding-right: calc(
-      46px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
-    );
-  }
+.app-shell.desktop-chrome:has(.right-panel-closed) .app-topbar {
+  padding-right: calc(
+    46px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
+  );
+}
 
-  .right-panel-tabs {
-    padding-right: calc(
-      100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
-    );
-  }
+.app-shell.desktop-chrome .right-panel-tabs {
+  padding-right: calc(
+    100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
+  );
+}
 
-  .right-panel-toggle {
-    right: calc(
-      8px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
-    ) !important;
-  }
+.app-shell.desktop-chrome .right-panel-toggle {
+  right: calc(
+    8px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
+  ) !important;
 }
 
 ::-webkit-scrollbar {

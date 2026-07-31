@@ -77,6 +77,7 @@ export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
+  const [desktopChrome, setDesktopChrome] = useState(false);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const rightPanelWidthRef = useRef(RIGHT_PANEL_FALLBACK_WIDTH);
   const getResponsiveRightPanelWidth = useCallback(
@@ -495,6 +496,14 @@ export function AppShell() {
     });
     return unsubscribe;
   }, [activeCwd, handleNewSession, handleSidebarToggle, openAppearanceSettings]);
+
+  // Electron's titleBarOverlay does not make the browser-only
+  // `(display-mode: window-controls-overlay)` media query true. Use the
+  // preload bridge as the authoritative desktop-runtime signal so the real
+  // packaged window gets draggable regions and native-control safe areas.
+  useEffect(() => {
+    setDesktopChrome(Boolean(window.piDesktop));
+  }, []);
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
   useGlobalKeyboardShortcuts({
@@ -937,7 +946,7 @@ export function AppShell() {
         }
       }
     `}</style>
-    <div className="app-shell" style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}>
+    <div className={`app-shell${desktopChrome ? " desktop-chrome" : ""}`} style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}>
       {/* Mobile overlay backdrop */}
       <div
         className={`sidebar-overlay-backdrop${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
