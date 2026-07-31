@@ -67,8 +67,8 @@ export async function listWindowsDrives(): Promise<BrowsableDirectory[]> {
     const letter = String.fromCharCode(code);
     const root = `${letter}:\\`;
     try {
-      const driveStat = await stat(root, { throwIfNoEntry: false });
-      if (driveStat && driveStat.isDirectory()) {
+      const driveStat = await stat(root);
+      if (driveStat.isDirectory()) {
         drives.push({ name: root, path: root });
       }
     } catch {
