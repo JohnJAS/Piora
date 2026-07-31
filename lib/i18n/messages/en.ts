@@ -180,6 +180,7 @@ export const enLocale: LocalePlugin = {
     "sidebar.selectProject": "Select project…",
     "sidebar.openProject": "Open project…",
     "sidebar.projects": "Projects",
+    "sidebar.newProject": "New project",
     "sidebar.expandProject": "Expand project",
     "sidebar.collapseProject": "Collapse project",
     "sidebar.showMoreSessions": "Show {count} more",

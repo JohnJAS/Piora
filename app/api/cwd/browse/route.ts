@@ -4,6 +4,7 @@ import {
   getBrowseStartDirectory,
   getParentDirectory,
   listDirectories,
+  listWindowsDrives,
   resolveDirectory,
 } from "@/lib/directory-browser";
 
@@ -27,11 +28,25 @@ export async function GET(request: NextRequest) {
     }
 
     const directories = await listDirectories(resolved);
+    const parentPath = getParentDirectory(resolved);
+    let browseEntries = directories;
+    // On Windows a drive root has no parent, so surface sibling drives as
+    // pickable entries to let the user switch between disks.
+    if (process.platform === "win32" && parentPath === null) {
+      const drives = await listWindowsDrives();
+      const currentRoot = resolved.replace(/[\\/]+$/, "").toLowerCase();
+      browseEntries = [
+        ...drives.filter(
+          (drive) => drive.path.replace(/[\\/]+$/, "").toLowerCase() !== currentRoot,
+        ),
+        ...directories,
+      ];
+    }
 
     return NextResponse.json({
       path: resolved,
-      parentPath: getParentDirectory(resolved),
-      directories,
+      parentPath,
+      directories: browseEntries,
     });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

@@ -4,7 +4,18 @@ All notable changes to piGUI are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Added
+
+- The sidebar project section reveals a `+` action on hover to open a local
+  folder as a new project, and each project row reveals a `+` to start a new
+  conversation in that project.
+- The directory picker now surfaces sibling Windows drive roots so folders on
+  other disks can be selected directly.
+
+### Changed
+
+- Removed the top sidebar `New` button; creating a project now flows through
+  the project section `+` entry, matching the Codex-style workspace model.
 
 ## [0.1.0] - 2026-07-31
 

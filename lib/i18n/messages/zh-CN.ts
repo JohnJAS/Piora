@@ -180,6 +180,7 @@ export const zhCNLocale: LocalePlugin = {
     "sidebar.selectProject": "选择项目…",
     "sidebar.openProject": "打开项目…",
     "sidebar.projects": "项目",
+    "sidebar.newProject": "新建项目",
     "sidebar.expandProject": "展开项目",
     "sidebar.collapseProject": "折叠项目",
     "sidebar.showMoreSessions": "显示另外 {count} 个会话",

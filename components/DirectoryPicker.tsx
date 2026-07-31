@@ -32,6 +32,20 @@ function FolderIcon() {
   );
 }
 
+function isDrivePath(value: string): boolean {
+  return /^[A-Za-z]:[\\/]$/.test(value);
+}
+
+function DriveIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
+      <rect x="1.5" y="4.5" width="13" height="7" rx="1.2" />
+      <line x1="12" y1="8" x2="12" y2="8" />
+      <circle cx="3.6" cy="8" r="0.9" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 interface Props {
   onCancel: () => void;
   onSelect: (path: string) => void;
@@ -160,7 +174,7 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error }: Pro
                 title={entry.path}
                 style={{ width: "100%", minHeight: 30, display: "flex", alignItems: "center", gap: 7, padding: "5px 8px", border: 0, borderRadius: 5, background: "none", color: "var(--text-muted)", cursor: "pointer", textAlign: "left", fontFamily: "var(--font-mono)", fontSize: 11 }}
               >
-                <FolderIcon />
+                {isDrivePath(entry.path) ? <DriveIcon /> : <FolderIcon />}
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.name}</span>
               </button>
             ))

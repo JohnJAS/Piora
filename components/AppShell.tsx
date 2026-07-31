@@ -1024,7 +1024,7 @@ export function AppShell() {
               </svg>
             </span>
             <span className="app-topbar-title-text">
-              {selectedSession?.name || activeCwdName || (showChat ? translate("sidebar.new") : "piGUI")}
+              {selectedSession?.name || activeCwdName || (showChat ? translate("i18n.newSession") : "piGUI")}
             </span>
             {activeCwdName && selectedSession?.name && (
               <span className="app-topbar-title-path">{activeCwdName}</span>

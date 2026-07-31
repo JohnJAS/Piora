@@ -56,3 +56,24 @@ export async function listDirectories(directory: string): Promise<BrowsableDirec
     .filter((entry): entry is BrowsableDirectory => entry !== null)
     .sort((left, right) => left.name.localeCompare(right.name));
 }
+
+/**
+ * Enumerates the currently mounted Windows drive roots (C:\, D:\, ...).
+ * Unreadable or media-less drives are skipped.
+ */
+export async function listWindowsDrives(): Promise<BrowsableDirectory[]> {
+  const drives: BrowsableDirectory[] = [];
+  for (let code = 65; code <= 90; code += 1) {
+    const letter = String.fromCharCode(code);
+    const root = `${letter}:\\`;
+    try {
+      const driveStat = await stat(root, { throwIfNoEntry: false });
+      if (driveStat && driveStat.isDirectory()) {
+        drives.push({ name: root, path: root });
+      }
+    } catch {
+      // Skip drives that cannot be stat'ed (for example empty card readers).
+    }
+  }
+  return drives;
+}

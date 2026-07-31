@@ -379,6 +379,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [customPathValue, setCustomPathValue] = useState("");
   const [customPathError, setCustomPathError] = useState<string | null>(null);
   const [customPathValidating, setCustomPathValidating] = useState(false);
+  const [projectsHovered, setProjectsHovered] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   // Worktree switcher state
   const [worktreeState, setWorktreeState] = useState<WorktreeState | null>(null);
@@ -801,15 +802,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onSelectSession(s);
   }, [onSelectSession]);
 
-  const handleNewSession = useCallback(() => {
-    if (!selectedCwd) return;
+  const handleNewSessionInProject = useCallback((cwd: string) => {
     // Generate a temporary UUID client-side — no backend call needed.
     // Pi will be spawned lazily when the user sends the first message.
     const tempId = typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-    onNewSession?.(tempId, selectedCwd);
-  }, [selectedCwd, onNewSession]);
+    onNewSession?.(tempId, cwd);
+  }, [onNewSession]);
 
   const selectedProject = projectRootFor(selectedCwd);
   const projectGroups = useMemo(
@@ -892,44 +892,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         <div className="sidebar-title-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <PiWebTitle />
           <div className="sidebar-primary-actions" style={{ display: "flex", gap: 4 }}>
-            <button
-              onClick={handleNewSession}
-              disabled={!selectedCwd}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                background: "var(--bg-hover)",
-                border: "1px solid var(--border)",
-                color: selectedCwd ? "var(--text-muted)" : "var(--text-dim)",
-                cursor: selectedCwd ? "pointer" : "not-allowed",
-                height: 32,
-                paddingLeft: 10,
-                paddingRight: 12,
-                borderRadius: "var(--radius-control)",
-                fontSize: 12,
-                fontWeight: 500,
-                letterSpacing: "-0.01em",
-                flexShrink: 0,
-                transition: "background 0.12s, color 0.12s, border-color 0.12s",
-              }}
-             title={selectedCwd ? t("sidebar.newSessionTitle", { path: selectedCwd }) : t("sidebar.selectProject")}
-              onMouseEnter={(e) => {
-                if (!selectedCwd) return;
-                e.currentTarget.style.background = "var(--bg-selected)";
-                e.currentTarget.style.color = "var(--accent)";
-                e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "var(--bg-hover)";
-                e.currentTarget.style.color = selectedCwd ? "var(--text-muted)" : "var(--text-dim)";
-                e.currentTarget.style.borderColor = "var(--border)";
-              }}
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                <line x1="6" y1="1" x2="6" y2="11" />
-                <line x1="1" y1="6" x2="11" y2="6" />
-              </svg>
-              {t("sidebar.new")}
-            </button>
             <button
               onClick={() => loadSessions(false)}
               style={{
@@ -1431,9 +1393,41 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
       {/* Codex-style project folders with their conversations nested below. */}
       <div style={{ flex: explorerOpen && (selectedCwdProp || selectedCwd) ? "1 1 0" : "1 1 auto", overflowY: "auto", padding: "4px 0 8px", minHeight: 80 }}>
-        {!loading && !error && projectGroups.length > 0 && (
-          <div style={{ padding: "4px 12px 5px", color: "var(--text-dim)", fontSize: 10, fontWeight: 650, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-            {t("sidebar.projects")}
+        {!loading && !error && (
+          <div
+            onMouseEnter={() => setProjectsHovered(true)}
+            onMouseLeave={() => setProjectsHovered(false)}
+            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 12px 5px" }}
+          >
+            <span style={{ color: "var(--text-dim)", fontSize: 10, fontWeight: 650, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+              {t("sidebar.projects")}
+            </span>
+            <button
+              type="button"
+              onClick={handleCustomPathClick}
+              title={t("sidebar.newProject")}
+              aria-label={t("sidebar.newProject")}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                width: 22, height: 22, padding: 0, border: "none", borderRadius: 6,
+                background: "var(--bg-hover)", color: "var(--text-muted)", cursor: "pointer",
+                flexShrink: 0, opacity: projectsHovered ? 1 : 0,
+                transition: "opacity 0.12s, background 0.12s, color 0.12s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "var(--bg-selected)";
+                e.currentTarget.style.color = "var(--accent)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "var(--bg-hover)";
+                e.currentTarget.style.color = "var(--text-muted)";
+              }}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 5v14" />
+                <path d="M5 12h14" />
+              </svg>
+            </button>
           </div>
         )}
         {loading && (
@@ -1489,6 +1483,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               });
             }}
             onSelectSession={handleSelectSessionFromList}
+            onNewSession={handleNewSessionInProject}
             onRenamed={() => loadSessions()}
             onSessionDeleted={(id) => {
               onSessionDeleted?.(id);
@@ -1629,6 +1624,7 @@ function ProjectSessionGroup({
   onToggleProject,
   onToggleSessions,
   onSelectSession,
+  onNewSession,
   onRenamed,
   onSessionDeleted,
 }: {
@@ -1645,10 +1641,12 @@ function ProjectSessionGroup({
   onToggleProject: () => void;
   onToggleSessions: () => void;
   onSelectSession: (session: SessionInfo) => void;
+  onNewSession?: (cwd: string) => void;
   onRenamed: () => void;
   onSessionDeleted: (sessionId: string) => void;
 }) {
   const { t } = useI18n();
+  const [rowHovered, setRowHovered] = useState(false);
   const projectHasAttention = group.tree.some((root) => sessionTreeContainsAnyId(root, attentionSessionIds));
   const projectOpen = !isCollapsed || projectHasAttention;
   const visibleRoots = getVisibleSessionRoots(group.tree, sessionsExpanded, attentionSessionIds);
@@ -1660,6 +1658,8 @@ function ProjectSessionGroup({
   return (
     <section style={{ margin: "1px 7px 5px" }} aria-label={projectLabel}>
       <div
+        onMouseEnter={() => setRowHovered(true)}
+        onMouseLeave={() => setRowHovered(false)}
         style={{
           minHeight: 40,
           display: "flex",
@@ -1730,6 +1730,32 @@ function ProjectSessionGroup({
           <span title={t("sidebar.sessionsCount", { count: group.sessions.length })} style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: 10 }}>
             {group.sessions.length}
           </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => onNewSession?.(group.preferredCwd)}
+          title={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
+          aria-label={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 24, height: 24, padding: 0, border: "none", borderRadius: 6,
+            background: "var(--bg-hover)", color: "var(--text-muted)", cursor: "pointer",
+            flexShrink: 0, opacity: rowHovered ? 1 : 0,
+            transition: "opacity 0.12s, background 0.12s, color 0.12s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "var(--bg-selected)";
+            e.currentTarget.style.color = "var(--accent)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "var(--bg-hover)";
+            e.currentTarget.style.color = "var(--text-muted)";
+          }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 5v14" />
+            <path d="M5 12h14" />
+          </svg>
         </button>
       </div>
 
