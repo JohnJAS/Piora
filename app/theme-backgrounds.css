@@ -47,6 +47,12 @@ html[data-app-background-active="true"] body > style + div {
   background: transparent !important;
 }
 
+html[data-app-background-active="true"] .workspace-main {
+  /* The artwork lives on body::before; keep the chat canvas transparent so it
+     remains visible while individual controls retain their readable surfaces. */
+  background: transparent !important;
+}
+
 html[data-app-background-active="true"] .app-topbar {
   background: color-mix(in srgb, var(--bg) 88%, transparent) !important;
   backdrop-filter: blur(18px);

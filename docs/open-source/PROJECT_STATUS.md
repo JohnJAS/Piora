@@ -18,8 +18,9 @@ implies endorsement.
 
 - the existing Pi conversation and Process rendering, session format, runtime, tools, skills,
   extensions, packages, and left-side file tree remain the product foundation;
-- the right file workspace has Source, Edit, Preview, and Diff modes, dirty-state protection,
-  keyboard save, version-aware writes, and explicit disk-conflict handling;
+- ordinary text files open directly in the right-side Edit mode, while Source, Preview, and Diff
+  remain available alongside dirty-state protection, keyboard save, version-aware writes, and
+  explicit disk-conflict handling;
 - file writes are constrained to authorized roots and ordinary bounded UTF-8 text, with content
   hashes, HTTP 409 conflicts, symlink/path checks, file locking, and atomic replacement;
 - five color themes remain available, with a separate local-only background layer, readability
@@ -29,6 +30,10 @@ implies endorsement.
 - restrained radius, spacing, border, shadow, and surface tokens now give the shell a clearer
   Codex-inspired hierarchy, while related appearance, session/model, composer, and editor controls
   are grouped by workflow;
+- conversations are grouped inside workspace project folders; each project shows three recent root
+  conversation chains by default and persists project/session expansion state;
+- the Windows desktop shell hides the duplicate native title row and uses native Window Controls
+  Overlay with a safe draggable web title strip instead of reimplementing system window buttons;
 - an optional, closable companion dock displays existing Pi/session status, TODO progress, and
   user-configured quick phrases through the normal message-send path; it does not create another
   Agent/SubAgent or autonomous execution path;
@@ -45,16 +50,16 @@ implies endorsement.
 
 - `npm run typecheck`: passed for the web and desktop TypeScript projects;
 - `npm run lint`: passed;
-- `npm test` under the required Node.js 22.19.0 runtime: 310 tests, 305 passed, 0 failed,
+- `npm test` under the required Node.js 22.19.0 runtime: 328 tests, 323 passed, 0 failed,
   5 skipped because Windows did not grant symlink-creation privileges;
 - `npm run verify:backgrounds`: passed for 20 unique manifest-linked images totaling 2,274,482
   bytes, each decodable, at least 1600x900, 16:9, and below the per-file limit;
 - focused front-end and back-end tests cover companion state/TODO/phrases, optional visibility,
   Codex local-pet discovery/preview/import, V1/V2 fixtures, atomic replacement/rollback, and
   rejection of unknown, traversal, symlink, script, and remote-resource inputs;
-- final browser walkthroughs passed at 1440x900 and 390x844, including the retained file tree,
-  editor save/conflict and draft preservation, grouped visual hierarchy, and optional companion;
-  the companion did not overlap the composer or right-side editor.
+- earlier browser evidence for save/conflict and companion behavior remains useful, but the final
+  1440x900, 390x844, reopened editor/appearance/project-folder walkthrough and integrated EXE title
+  bar verification are pending after the latest UI corrections.
 
 These results verify the source implementation. They are **not** a claim that a distributable
 Windows executable or public release has passed all gates.
@@ -75,6 +80,8 @@ rejected instead of executed or fetched.
 ## Still pending before release completion
 
 - isolated Windows package build, startup/health check, and synthetic Pi extension fixture;
+- final browser and packaged-EXE walkthrough of direct editing, appearance/background selection,
+  project folders with three-item overflow, rounded surfaces, and native window-control safe areas;
 - clean-machine portable replacement, data-retention, and uninstall checks;
 - review of generated release artifacts for secrets and private developer paths (the current
   worktree and one-commit repository history scan found no credential signatures or private paths);

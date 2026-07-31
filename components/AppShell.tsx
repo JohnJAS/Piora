@@ -48,7 +48,6 @@ type AutoNameStatus =
 
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
 const LANGUAGE_MENU_WIDTH = 176;
-const THEME_MENU_WIDTH = 300;
 
 export function AppShell() {
   const router = useRouter();
@@ -146,14 +145,16 @@ export function AppShell() {
   }, [reclampRightPanelWidth, reclampSidebarWidth, rightPanelOpen]);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const [companionOpen, setCompanionOpen] = useState(false);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [companionActivity, setCompanionActivity] = useState<CompanionActivity>(() => ({
     status: "idle",
     cause: translate("companion.activity.idleCause"),
   }));
   const topBarRef = useRef<HTMLDivElement>(null);
   const themeBtnRef = useRef<HTMLButtonElement>(null);
-  const themeMenuRef = useRef<HTMLDivElement>(null);
   const languageBtnRef = useRef<HTMLButtonElement>(null);
+  const appearanceDialogRef = useRef<HTMLDivElement>(null);
+  const appearanceReturnFocusRef = useRef<HTMLElement | null>(null);
 
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
@@ -220,13 +221,28 @@ export function AppShell() {
   ), []);
 
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | "session" | "theme" | "language" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | "session" | "language" | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
-  const toggleTopPanel = useCallback((panel: "branches" | "system" | "session" | "theme" | "language") => {
+  const toggleTopPanel = useCallback((panel: "branches" | "system" | "session" | "language") => {
     if (isMobile) setSidebarOpen(false);
     setActiveTopPanel((cur) => cur === panel ? null : panel);
   }, [isMobile]);
+
+  const openAppearanceSettings = useCallback((trigger?: HTMLElement | null) => {
+    appearanceReturnFocusRef.current = trigger
+      ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    setActiveTopPanel(null);
+    if (isMobile) setSidebarOpen(false);
+    setAppearanceOpen(true);
+  }, [isMobile]);
+
+  const closeAppearanceSettings = useCallback(() => {
+    setAppearanceOpen(false);
+    const returnFocus = appearanceReturnFocusRef.current;
+    appearanceReturnFocusRef.current = null;
+    window.requestAnimationFrame(() => returnFocus?.focus());
+  }, []);
 
   const openSessionStatsPanel = useCallback(() => {
     if (isMobile) setSidebarOpen(false);
@@ -242,14 +258,10 @@ export function AppShell() {
     if (!activeTopPanel || !topBarRef.current) return;
     const update = () => {
       const topBarRect = topBarRef.current!.getBoundingClientRect();
-      const compactMenuButton = activeTopPanel === "theme"
-        ? themeBtnRef.current
-        : activeTopPanel === "language"
-          ? languageBtnRef.current
-          : null;
+      const compactMenuButton = activeTopPanel === "language" ? languageBtnRef.current : null;
       if (compactMenuButton && !isMobile) {
         const buttonRect = compactMenuButton.getBoundingClientRect();
-        const menuWidth = activeTopPanel === "theme" ? THEME_MENU_WIDTH : LANGUAGE_MENU_WIDTH;
+        const menuWidth = LANGUAGE_MENU_WIDTH;
         const width = Math.min(menuWidth, topBarRect.width);
         const left = Math.min(
           buttonRect.left - 1,
@@ -263,52 +275,23 @@ export function AppShell() {
     update();
     const ro = new ResizeObserver(update);
     ro.observe(topBarRef.current);
-    if (themeBtnRef.current) ro.observe(themeBtnRef.current);
     if (languageBtnRef.current) ro.observe(languageBtnRef.current);
     return () => ro.disconnect();
   }, [activeTopPanel, isMobile]);
 
   useEffect(() => {
-    if (activeTopPanel !== "theme") return;
-    const frame = requestAnimationFrame(() => {
-      themeMenuRef.current
-        ?.querySelector<HTMLButtonElement>(`[role="menuitemradio"][aria-checked="true"]`)
-        ?.focus();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [activeTopPanel]);
-
-  const handleThemeMenuKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape") {
+    if (!appearanceOpen) return;
+    const dialog = appearanceDialogRef.current;
+    const focusTarget = dialog?.querySelector<HTMLElement>("[data-appearance-close]");
+    focusTarget?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
       event.preventDefault();
-      event.stopPropagation();
-      setActiveTopPanel(null);
-      themeBtnRef.current?.focus();
-      return;
-    }
-
-    const items = Array.from(
-      event.currentTarget.querySelectorAll<HTMLButtonElement>(`[role="menuitemradio"]`),
-    );
-    if (items.length === 0) return;
-
-    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
-    let nextIndex: number | null = null;
-    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
-      nextIndex = (currentIndex + 1 + items.length) % items.length;
-    } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
-      nextIndex = (currentIndex - 1 + items.length) % items.length;
-    } else if (event.key === "Home") {
-      nextIndex = 0;
-    } else if (event.key === "End") {
-      nextIndex = items.length - 1;
-    }
-
-    if (nextIndex !== null) {
-      event.preventDefault();
-      items[nextIndex]?.focus();
-    }
-  }, []);
+      closeAppearanceSettings();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [appearanceOpen, closeAppearanceSettings]);
 
   // Right panel — file tabs only
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
@@ -504,14 +487,14 @@ export function AppShell() {
           setModelsConfigOpen(true);
           break;
         case "theme":
-          toggleTopPanel("theme");
+          openAppearanceSettings();
           break;
         default:
           break;
       }
     });
     return unsubscribe;
-  }, [activeCwd, handleNewSession, handleSidebarToggle, toggleTopPanel]);
+  }, [activeCwd, handleNewSession, handleSidebarToggle, openAppearanceSettings]);
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
   useGlobalKeyboardShortcuts({
@@ -770,6 +753,52 @@ export function AppShell() {
         onAtMention={handleAtMention}
         onAtMentions={handleAtMentions}
       />
+      <button
+        type="button"
+        onClick={(event) => openAppearanceSettings(event.currentTarget)}
+        aria-haspopup="dialog"
+        aria-expanded={appearanceOpen}
+        title={translate("appearance.title")}
+        style={{
+          height: 36,
+          margin: "7px 8px 0",
+          padding: "0 10px",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          flexShrink: 0,
+          border: "1px solid color-mix(in srgb, var(--border) 82%, transparent)",
+          borderRadius: "var(--radius-control)",
+          background: appearanceOpen ? "var(--bg-selected)" : "color-mix(in srgb, var(--bg) 62%, var(--bg-panel))",
+          color: appearanceOpen ? "var(--text)" : "var(--text-muted)",
+          cursor: "pointer",
+          fontSize: 12,
+          fontWeight: 550,
+          textAlign: "left",
+          transition: "background 0.12s, color 0.12s, border-color 0.12s",
+        }}
+        onMouseEnter={(event) => {
+          event.currentTarget.style.background = "var(--bg-hover)";
+          event.currentTarget.style.color = "var(--text)";
+        }}
+        onMouseLeave={(event) => {
+          event.currentTarget.style.background = appearanceOpen
+            ? "var(--bg-selected)"
+            : "color-mix(in srgb, var(--bg) 62%, var(--bg-panel))";
+          event.currentTarget.style.color = appearanceOpen ? "var(--text)" : "var(--text-muted)";
+        }}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 3a9 9 0 1 0 0 18h1.4a1.6 1.6 0 0 0 1.1-2.7 1.6 1.6 0 0 1 1.1-2.7H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3Z" />
+          <circle cx="7.5" cy="10" r="1" fill="currentColor" stroke="none" />
+          <circle cx="10.5" cy="6.8" r="1" fill="currentColor" stroke="none" />
+          <circle cx="15" cy="7.8" r="1" fill="currentColor" stroke="none" />
+        </svg>
+        <span style={{ flex: 1 }}>{translate("appearance.title")}</span>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="m9 18 6-6-6-6" />
+        </svg>
+      </button>
       <div className="sidebar-config-cluster" style={{ padding: "3px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 2 }}>
         {([
           {
@@ -992,27 +1021,31 @@ export function AppShell() {
               <span className="app-topbar-title-path">{activeCwdName}</span>
             )}
           </div>
-          <div className="app-topbar-cluster app-topbar-appearance" aria-label={translate("theme.choose")}>
+          <div
+            className="app-topbar-cluster app-topbar-appearance"
+            aria-label={translate("appearance.title")}
+            style={{ display: "flex", alignItems: "center" }}
+          >
           <button
             className="topbar-control topbar-icon-button"
             ref={themeBtnRef}
             type="button"
-            onClick={() => toggleTopPanel("theme")}
-            title={translate("theme.choose")}
-            aria-label={translate("theme.choose")}
-            aria-haspopup="menu"
-            aria-expanded={activeTopPanel === "theme"}
+            onClick={(event) => openAppearanceSettings(event.currentTarget)}
+            title={translate("appearance.title")}
+            aria-label={translate("appearance.title")}
+            aria-haspopup="dialog"
+            aria-expanded={appearanceOpen}
             style={{
               display: "flex", alignItems: "center", justifyContent: "center",
               width: TOP_BAR_ICON_BUTTON_SIZE, height: TOP_BAR_ICON_BUTTON_SIZE, padding: 0,
-              background: activeTopPanel === "theme" ? "var(--bg-selected)" : "none",
+              background: appearanceOpen ? "var(--bg-selected)" : "none",
               border: "none",
-              color: activeTopPanel === "theme" ? "var(--text)" : "var(--text-muted)",
+              color: appearanceOpen ? "var(--text)" : "var(--text-muted)",
               cursor: "pointer", flexShrink: 0, transition: "color 0.12s",
             }}
             onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.color = activeTopPanel === "theme" ? "var(--text)" : "var(--text-muted)";
+              e.currentTarget.style.color = appearanceOpen ? "var(--text)" : "var(--text-muted)";
             }}
           >
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1421,82 +1454,6 @@ export function AppShell() {
               overflowY: "auto",
               zIndex: 500,
             }}>
-              {activeTopPanel === "theme" && (
-                <div
-                  ref={themeMenuRef}
-                  onKeyDown={handleThemeMenuKeyDown}
-                  style={{
-                    background: "var(--bg-panel)",
-                    borderLeft: "1px solid var(--border)",
-                    borderRight: "1px solid var(--border)",
-                    borderBottom: "1px solid var(--border)",
-                    overflow: "hidden",
-                    padding: 4,
-                  }}
-                >
-                  <div role="menu" aria-label={translate("theme.choose")}>
-                    {themes.map((preset) => {
-                      const selected = theme === preset.id;
-                      return (
-                        <button
-                        key={preset.id}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={selected}
-                        tabIndex={selected ? 0 : -1}
-                        className="theme-menu-option"
-                        onClick={() => {
-                          const rect = themeBtnRef.current?.getBoundingClientRect();
-                          setTheme(preset.id, rect ? {
-                            x: rect.left + rect.width / 2,
-                            y: rect.top + rect.height / 2,
-                          } : undefined);
-                          setActiveTopPanel(null);
-                          themeBtnRef.current?.focus();
-                        }}
-                        style={{
-                          display: "flex", alignItems: "center", gap: 9,
-                          width: "100%", height: 38, padding: "0 10px",
-                          border: "none", borderRadius: 4,
-                          background: selected ? "var(--bg-selected)" : "transparent",
-                          color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 12,
-                          transition: "background 0.1s",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!selected) e.currentTarget.style.background = "var(--bg-hover)";
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!selected) e.currentTarget.style.background = "transparent";
-                        }}
-                      >
-                        <span
-                          aria-hidden="true"
-                          style={{
-                            position: "relative", width: 22, height: 22, flex: "0 0 22px",
-                            overflow: "hidden", borderRadius: 6,
-                            background: preset.preview.background,
-                            border: "1px solid color-mix(in srgb, var(--border) 72%, var(--text-dim))",
-                          }}
-                        >
-                          <span style={{
-                            position: "absolute", right: 3, bottom: 3,
-                            width: 7, height: 7, borderRadius: "50%",
-                            background: preset.preview.accent,
-                          }} />
-                        </span>
-                        <span style={{ flex: 1 }}>{translate(`theme.${preset.id}.name`)}</span>
-                        {selected ? (
-                          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="m5 12 4 4L19 6" />
-                          </svg>
-                        ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <BackgroundSettings compact />
-                </div>
-              )}
               {activeTopPanel === "language" && (
                 <div
                   role="menu"
@@ -1912,6 +1869,157 @@ export function AppShell() {
         <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
       </svg>
     </button>
+    {appearanceOpen && (
+      <div
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) closeAppearanceSettings();
+        }}
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 900,
+          display: "grid",
+          placeItems: "center",
+          padding: 12,
+          background: "rgba(10, 12, 16, 0.48)",
+          backdropFilter: "blur(7px)",
+        }}
+      >
+        <div
+          ref={appearanceDialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="appearance-dialog-title"
+          aria-describedby="appearance-dialog-description"
+          style={{
+            width: "min(760px, calc(100vw - 24px))",
+            maxHeight: "calc(100dvh - 24px)",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            border: "1px solid color-mix(in srgb, var(--border) 88%, transparent)",
+            borderRadius: "var(--radius-panel)",
+            background: "var(--bg-panel)",
+            boxShadow: "var(--shadow-popover)",
+            color: "var(--text)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <h2 id="appearance-dialog-title" style={{ margin: 0, fontSize: 16, fontWeight: 650, letterSpacing: "-0.015em" }}>
+                {translate("appearance.title")}
+              </h2>
+              <p id="appearance-dialog-description" style={{ margin: "3px 0 0", color: "var(--text-muted)", fontSize: 11 }}>
+                {translate("appearance.description")}
+              </p>
+            </div>
+            <button
+              type="button"
+              data-appearance-close
+              onClick={closeAppearanceSettings}
+              title={translate("appearance.close")}
+              aria-label={translate("appearance.close")}
+              style={{
+                width: 30,
+                height: 30,
+                padding: 0,
+                display: "grid",
+                placeItems: "center",
+                flexShrink: 0,
+                border: "none",
+                borderRadius: "var(--radius-control)",
+                background: "transparent",
+                color: "var(--text-muted)",
+                cursor: "pointer",
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
+            </button>
+          </div>
+          <div style={{ minHeight: 0, overflowY: "auto", padding: 16 }}>
+            <section aria-labelledby="appearance-theme-title" style={{ paddingBottom: 16 }}>
+              <div style={{ marginBottom: 9 }}>
+                <h3 id="appearance-theme-title" style={{ margin: 0, fontSize: 12, fontWeight: 700 }}>
+                  {translate("appearance.theme")}
+                </h3>
+                <p style={{ margin: "2px 0 0", color: "var(--text-dim)", fontSize: 10 }}>
+                  {translate("appearance.themeHint")}
+                </p>
+              </div>
+              <div
+                role="radiogroup"
+                aria-label={translate("appearance.theme")}
+                style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(108px, 1fr))", gap: 8 }}
+              >
+                {themes.map((preset) => {
+                  const selected = theme === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      className="theme-menu-option"
+                      data-theme-id={preset.id}
+                      onClick={(event) => {
+                        const rect = event.currentTarget.getBoundingClientRect();
+                        setTheme(preset.id, {
+                          x: rect.left + rect.width / 2,
+                          y: rect.top + rect.height / 2,
+                        });
+                      }}
+                      style={{
+                        minWidth: 0,
+                        padding: 8,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        border: selected ? "1px solid var(--accent)" : "1px solid var(--border)",
+                        borderRadius: "var(--radius-control)",
+                        background: selected ? "var(--bg-selected)" : "var(--bg)",
+                        color: "var(--text)",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontSize: 11,
+                        transition: "border-color 0.12s, background 0.12s",
+                      }}
+                    >
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          position: "relative",
+                          width: 28,
+                          height: 28,
+                          flex: "0 0 28px",
+                          overflow: "hidden",
+                          borderRadius: "var(--radius-small)",
+                          background: preset.preview.background,
+                          border: "1px solid color-mix(in srgb, var(--border) 72%, var(--text-dim))",
+                        }}
+                      >
+                        <span style={{ position: "absolute", right: 4, bottom: 4, width: 8, height: 8, borderRadius: "50%", background: preset.preview.accent }} />
+                      </span>
+                      <span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {translate(`theme.${preset.id}.name`)}
+                      </span>
+                      {selected ? (
+                        <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="m5 12 4 4L19 6" />
+                        </svg>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+            <BackgroundSettings />
+          </div>
+        </div>
+      </div>
+    )}
     {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
     {projectTrustDialogOpen && projectTrustCwd && (
       <ProjectTrustDialog

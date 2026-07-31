@@ -11,6 +11,7 @@ import {
   normalizeFilePathSlashes,
 } from "@/lib/file-paths";
 import type { GitFileStatus, GitFileStatusKind, GitStatusResponse } from "@/lib/git-types";
+import { getFileViewerKind } from "@/lib/file-types";
 import { useI18n } from "@/hooks/useI18n";
 type Translate = ReturnType<typeof useI18n>["t"];
 
@@ -243,6 +244,9 @@ function TreeNode({
   const containsGitChanges = node.isDir && (
     gitStatus !== undefined || changedDirectoryPaths.has(normalizedPath)
   );
+  const openHint = !node.isDir && getFileViewerKind(node.fullPath) === "text"
+    ? t("files.openInEditor")
+    : t("files.openPreview");
   const [children, setChildren] = useState<FileNode[]>(node.children ?? []);
   const [loaded, setLoaded] = useState(node.loaded ?? false);
   const [loading, setLoading] = useState(false);
@@ -322,7 +326,7 @@ function TreeNode({
             whiteSpace: "nowrap",
             flex: 1,
           }}
-          title={node.fullPath}
+          title={node.isDir ? node.fullPath : `${node.fullPath} · ${openHint}`}
         >
           {node.name}
         </span>

@@ -22,10 +22,8 @@ import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import {
   DOCX_PREVIEW_MAX_BYTES,
+  getFileViewerKind,
   getFileExt,
-  isAudioPath,
-  isDocumentPreviewPath,
-  isImagePath,
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { resolveLocalFileHref } from "@/lib/file-links";
@@ -269,6 +267,22 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function ReadOnlyNotice() {
+  const { t } = useI18n();
+  return (
+    <div className={editorStyles.readOnlyNotice} role="status">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <rect width="16" height="11" x="4" y="11" rx="2" />
+        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+      </svg>
+      <span>
+        <strong>{t("fileEditor.readOnlyTitle")}</strong>
+        {t("fileEditor.readOnlyTypeBody")}
+      </span>
+    </div>
+  );
 }
 
 function utf8ByteLength(value: string): number {
@@ -541,6 +555,7 @@ function ImageViewer({ filePath, cwd, sourceSessionId, active = true }: Props) {
         </span>
         <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
       </div>
+      <ReadOnlyNotice />
       <div
         style={{
           flex: 1,
@@ -677,6 +692,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId, active = true }: Props) {
         </span>
         <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
       </div>
+      <ReadOnlyNotice />
       <div
         style={{
           flex: 1,
@@ -813,6 +829,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, active = true }: Props
           {watching ? "live" : "static"}
         </span>
       </div>
+      <ReadOnlyNotice />
       <div style={{ flex: 1, minHeight: 0, background: "var(--bg-panel)" }}>
         {error ? (
           <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, color: "#f87171", fontSize: 13, textAlign: "center" }}>
@@ -844,13 +861,14 @@ export function FileViewer({
   onDirtyChange,
   onSaved,
 }: Props) {
-  if (isImagePath(filePath)) {
+  const viewerKind = getFileViewerKind(filePath);
+  if (viewerKind === "image") {
     return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
   }
-  if (isAudioPath(filePath)) {
+  if (viewerKind === "audio") {
     return <AudioViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
   }
-  if (isDocumentPreviewPath(filePath)) {
+  if (viewerKind === "document") {
     return <DocumentViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
   }
   return (
@@ -888,7 +906,7 @@ function TextFileViewer({
   const [gitDiffLoading, setGitDiffLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [displayMode, setDisplayMode] = useState<DisplayMode>("source");
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("edit");
   const [wrapLines, setWrapLines] = useState(false);
   const [watching, setWatching] = useState(false);
   const [draftContent, setDraftContent] = useState("");
@@ -998,7 +1016,7 @@ function TextFileViewer({
     setError(null);
     setData(null);
     setGitDiff(null);
-    setDisplayMode("source");
+    setDisplayMode("edit");
     setWrapLines(false);
     setWatching(false);
     setDraftContent("");
@@ -1090,12 +1108,6 @@ function TextFileViewer({
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
 
-  useEffect(() => {
-    if (data?.language === "markdown" && initialDisplayMode !== "diff") {
-      setDisplayMode("preview");
-    }
-  }, [data?.language, initialDisplayMode]);
-
   const hasGitDiff = gitDiff?.supported === true && typeof gitDiff.patch === "string";
   const isDeletedDiff = hasGitDiff && gitDiff.status === "deleted";
 
@@ -1110,19 +1122,21 @@ function TextFileViewer({
     setWatching(false);
   }, [isDeletedDiff]);
 
-  // Opened from the Changes list (initialDisplayMode === "diff"): switch to the
-  // diff view once the git diff has resolved. We do this after the diff loads
-  // rather than at mount so files without a diff never flash an empty diff view.
-  const autoDiffAppliedRef = useRef(false);
+  // File-tree and linked text files start in edit mode. Explicit callers (the
+  // Changes list uses `diff`) may still request another initial view once that
+  // view is available. Apply the hint only once so a user's later view choice
+  // is not overwritten.
+  const initialDisplayModeAppliedRef = useRef(false);
   useEffect(() => {
-    autoDiffAppliedRef.current = false;
+    initialDisplayModeAppliedRef.current = false;
   }, [filePath]);
   useEffect(() => {
-    if (initialDisplayMode === "diff" && hasGitDiff && !autoDiffAppliedRef.current) {
-      autoDiffAppliedRef.current = true;
-      setDisplayMode("diff");
-    }
-  }, [initialDisplayMode, hasGitDiff]);
+    if (!initialDisplayMode || initialDisplayModeAppliedRef.current) return;
+    if (initialDisplayMode === "diff" && !hasGitDiff) return;
+    if (initialDisplayMode === "preview" && data?.language !== "markdown" && data?.language !== "html") return;
+    initialDisplayModeAppliedRef.current = true;
+    setDisplayMode(initialDisplayMode);
+  }, [data?.language, initialDisplayMode, hasGitDiff]);
 
   const updateCursorPosition = useCallback((textarea: HTMLTextAreaElement | null) => {
     if (!textarea) return;
@@ -1389,8 +1403,8 @@ function TextFileViewer({
   const displayModes: DisplayMode[] = isDeletedDiff
     ? ["diff"]
     : [
-        "source",
         "edit",
+        "source",
         ...(hasPreview ? ["preview" as const] : []),
         ...(hasGitDiff ? ["diff" as const] : []),
       ];
@@ -1444,14 +1458,22 @@ function TextFileViewer({
                     key={mode}
                     type="button"
                     onClick={() => setDisplayMode(mode)}
-                    title={mode === "diff" ? t("i18n.compareHead") : undefined}
+                    title={mode === "diff" ? t("i18n.compareHead") : mode === "edit" ? t("fileEditor.editModeTitle") : undefined}
+                    aria-label={mode === "edit" ? t("fileEditor.editModeTitle") : t(DISPLAY_MODE_LABEL_KEYS[mode])}
                     aria-pressed={active}
-                    className="file-viewer-mode-button"
+                    className={`file-viewer-mode-button${mode === "edit" ? ` ${editorStyles.editModeButton}` : ""}`}
+                    data-active={mode === "edit" && active ? "true" : undefined}
                     style={{
                       background: active ? "var(--bg-selected)" : "transparent",
                       color: active ? "var(--text)" : "var(--text-muted)",
                     }}
                   >
+                    {mode === "edit" && (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                      </svg>
+                    )}
                     {t(DISPLAY_MODE_LABEL_KEYS[mode])}
                   </button>
                 );

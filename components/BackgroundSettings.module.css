@@ -57,7 +57,78 @@
   font-size: 10px;
 }
 
-.select,
+.presetGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 8px;
+}
+
+.presetButton {
+  min-width: 0;
+  padding: 5px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.presetButton:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+  background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+
+.presetButton[data-selected="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 32%, transparent);
+}
+
+.presetButton:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.presetArtwork {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: calc(var(--radius-control) - 2px);
+  background-color: var(--bg-panel);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.noneArtwork {
+  background-image:
+    linear-gradient(45deg, transparent 47%, color-mix(in srgb, #ef4444 72%, var(--text)) 48% 52%, transparent 53%),
+    linear-gradient(135deg, var(--bg), var(--bg-panel));
+}
+
+.customArtwork {
+  background-image:
+    radial-gradient(circle at 76% 22%, color-mix(in srgb, var(--accent) 38%, transparent), transparent 30%),
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 20%, var(--bg)), var(--bg-panel));
+}
+
+.presetLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 2px 1px;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .button,
 .uploadButton {
   min-height: 30px;
@@ -67,11 +138,6 @@
   color: var(--text);
   font: inherit;
   font-size: 11px;
-}
-
-.select {
-  width: 100%;
-  padding: 0 8px;
 }
 
 .actions {
@@ -97,7 +163,7 @@
 
 .button:focus-visible,
 .uploadButton:focus-within,
-.select:focus-visible,
+.presetButton:focus-visible,
 .range:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -129,6 +195,10 @@
 }
 
 @media (max-width: 480px) {
+  .presetGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .actions {
     grid-template-columns: 1fr;
   }

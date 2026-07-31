@@ -56,11 +56,12 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
 - [x] Include 20 unique original background assets, a manifest, generation records, hashes, and a
   local-only selection/customization layer.
 - [x] Record local source gates: typecheck passed, lint passed, and Node.js 22.19.0 tests reported
-  305 passed, 0 failed, and 5 Windows symlink-permission skips out of 310 tests.
+  323 passed, 0 failed, and 5 Windows symlink-permission skips out of 328 tests.
 - [x] Record prior desktop/mobile browser evidence for file save, disk conflict/draft preservation,
   the retained file tree, grouped visual hierarchy, and optional companion.
-- [x] Complete the final desktop/mobile release revalidation and attach its concise verification
-  record.
+- [ ] Complete the final desktop/mobile/EXE release revalidation for the reopened editor,
+  appearance, background, project-folder, rounded-shell, and integrated-title-bar flows, then
+  attach its concise verification record.
 
 ## Visual and companion scope
 

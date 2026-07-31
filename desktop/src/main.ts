@@ -21,6 +21,7 @@ import { StandaloneServer, type ServerExit } from "./server-supervisor.js";
 
 const DESKTOP_PARTITION = "persist:pigui";
 const DESKTOP_TOKEN_HEADER = "X-Pi-Desktop-Token";
+const DESKTOP_TITLE_BAR_HEIGHT = 40;
 const PORTABLE_SMOKE_TEST = process.env.PI_GUI_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
 
@@ -222,6 +223,24 @@ function createMainWindow(
   log: Logger,
   { showWhenReady = true }: { showWhenReady?: boolean } = {},
 ): BrowserWindow {
+  // Keep the native resize frame and native window controls, but let the web
+  // shell occupy the former title-bar area. The renderer supplies the narrow
+  // draggable region and uses the Window Controls Overlay CSS environment
+  // variables to avoid the system buttons. This intentionally does not use
+  // `frame: false`, which would require us to reimplement window behavior.
+  const integratedTitleBar = process.platform === "darwin"
+    ? { titleBarStyle: "hiddenInset" as const }
+    : {
+        titleBarStyle: "hidden" as const,
+        titleBarOverlay: {
+          color: "#00000000",
+          // Neutral mid-tone stays legible across piGUI's independent light
+          // and dark themes without replacing the native system controls.
+          symbolColor: "#737373",
+          height: DESKTOP_TITLE_BAR_HEIGHT,
+        },
+      };
+
   const window = new BrowserWindow({
     width: 1440,
     height: 920,
@@ -230,7 +249,10 @@ function createMainWindow(
     show: false,
     title: "piGUI",
     backgroundColor: "#111318",
-    autoHideMenuBar: false,
+    // The menu remains installed: Alt reveals it on Windows/Linux and all
+    // accelerators continue to work without a second permanent header row.
+    autoHideMenuBar: true,
+    ...integratedTitleBar,
     webPreferences: {
       preload: join(__dirname, "preload.js"),
       partition: DESKTOP_PARTITION,

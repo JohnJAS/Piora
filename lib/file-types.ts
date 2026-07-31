@@ -3,6 +3,7 @@ export const IMAGE_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 export const DOCX_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 
 export type DocumentPreviewKind = "pdf" | "docx";
+export type FileViewerKind = "text" | "image" | "audio" | "document";
 
 export const IMAGE_EXT_TO_MIME: Record<string, string> = {
   png: "image/png",
@@ -70,4 +71,16 @@ export function isAudioPath(filePath: string): boolean {
 
 export function isDocumentPreviewPath(filePath: string): boolean {
   return documentPreviewKind(filePath) !== null;
+}
+
+/**
+ * Select the UI used to open a file. The text viewer still validates the
+ * actual bytes as UTF-8 and enforces the 256 KiB limit before it enables the
+ * editor; this extension-level routing does not weaken those server checks.
+ */
+export function getFileViewerKind(filePath: string): FileViewerKind {
+  if (isImagePath(filePath)) return "image";
+  if (isAudioPath(filePath)) return "audio";
+  if (isDocumentPreviewPath(filePath)) return "document";
+  return "text";
 }

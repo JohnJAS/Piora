@@ -6,7 +6,10 @@
  * any installed software.
  */
 
-html[data-theme="dream"] {
+/* globals.css imports this pack before the generic html.dark palette. The
+ * additional .dark class keeps the Dream variables more specific so that the
+ * later generic dark rule cannot flatten Dream back to the default palette. */
+html.dark[data-theme="dream"] {
   color-scheme: dark;
   --bg: #111318;
   --bg-panel: #191c22;

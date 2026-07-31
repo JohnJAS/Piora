@@ -63,3 +63,17 @@ do not hand-edit it or replace it with the broader source lockfile inventory.
   delegated to the operating system browser.
 - Child stdout/stderr and lifecycle events are written to
   `<userData>/logs/pi-gui.log` with one rotated backup.
+
+## Integrated title bar
+
+The desktop window uses Electron's native Window Controls Overlay rather than
+`frame: false`. On Windows, the permanent operating-system title/menu rows are
+hidden while native minimize, maximize, close, edge resizing, Alt menu access,
+and application-menu accelerators remain available.
+
+The web shell owns a 40 px top drag strip. It should use `app-region: drag`
+(plus the prefixed form supported by Chromium), size its safe area with
+`env(titlebar-area-x)`, `env(titlebar-area-width)`, and
+`env(titlebar-area-height)`, and mark every interactive child as
+`app-region: no-drag`. These environment variables fall back normally in the
+browser build, so the same shell can serve both web and desktop.

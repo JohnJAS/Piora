@@ -449,6 +449,111 @@ select:focus-visible,
   }
 }
 
+/* Wide desktop shell: treat the navigation, conversation workspace, and file
+   editor as three quiet surfaces floating on the application canvas. The
+   resize handles keep their zero-width layout footprint and sit inside the
+   eight-pixel gutters, so closing either side panel removes its gutter too. */
+@media (min-width: 960px) {
+  .app-shell {
+    padding: 8px;
+    background: color-mix(in srgb, var(--bg) 90%, var(--bg-panel)) !important;
+  }
+
+  .sidebar-container.sidebar-open,
+  .workspace-main,
+  .right-panel-container.right-panel-open {
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--border) 84%, transparent) !important;
+    border-radius: var(--radius-panel);
+    box-shadow: 0 1px 2px rgba(34, 29, 27, 0.035), 0 8px 24px rgba(34, 29, 27, 0.04);
+  }
+
+  .sidebar-container.sidebar-open {
+    margin-right: 8px;
+  }
+
+  .workspace-main {
+    background: color-mix(in srgb, var(--bg) 97%, var(--bg-panel));
+  }
+
+  .right-panel-container.right-panel-open {
+    margin-left: 8px;
+  }
+
+  .sidebar-container.sidebar-closed {
+    margin-right: 0;
+    border: 0 !important;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .right-panel-container.right-panel-closed {
+    margin-left: 0;
+    border: 0 !important;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .sidebar-container,
+  .right-panel-container {
+    transition:
+      width 0.2s ease,
+      min-width 0.2s ease,
+      margin 0.2s ease,
+      border-color 0.16s ease,
+      box-shadow 0.16s ease;
+  }
+
+  .app-topbar {
+    border-radius: var(--radius-panel) var(--radius-panel) 0 0;
+  }
+}
+
+/* Electron's native Window Controls Overlay removes the duplicate OS title
+   row while keeping the real minimize/maximize/close buttons. Make the app's
+   top chrome draggable, reserve the system-button safe area, and keep every
+   interactive control clickable. These rules are dormant in a normal browser. */
+@media (display-mode: window-controls-overlay) {
+  .app-topbar,
+  .right-panel-tabs {
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  .app-topbar button,
+  .app-topbar a,
+  .app-topbar input,
+  .app-topbar select,
+  .app-topbar textarea,
+  .app-topbar [role="button"],
+  .right-panel-tabs button,
+  .right-panel-tabs a,
+  .right-panel-tabs input,
+  .right-panel-tabs [role="button"],
+  .right-panel-toggle {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+
+  .app-shell:has(.right-panel-closed) .app-topbar {
+    padding-right: calc(
+      46px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
+    );
+  }
+
+  .right-panel-tabs {
+    padding-right: calc(
+      100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
+    );
+  }
+
+  .right-panel-toggle {
+    right: calc(
+      8px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
+    ) !important;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;

@@ -24,3 +24,24 @@ test("polls running sessions only while the tab is visible", () => {
   assert.match(source, /document\.visibilityState !== "visible"/);
   assert.match(source, /document\.addEventListener\("visibilitychange", onVisibilityChange\)/);
 });
+
+test("renders sessions inside persisted project folders", () => {
+  assert.match(source, /buildSessionProjectGroups\(/);
+  assert.match(source, /<ProjectSessionGroup/);
+  assert.match(source, /pi-gui:sidebar-collapsed-projects:v1/);
+  assert.match(source, /pi-gui:sidebar-expanded-project-sessions:v1/);
+});
+
+test("project session overflow is accessible and attention-aware", () => {
+  assert.match(source, /getVisibleSessionRoots\(group\.tree, sessionsExpanded, attentionSessionIds\)/);
+  assert.match(source, /sessionTreeContainsAnyId\(root, attentionSessionIds\)/);
+  assert.match(source, /aria-expanded=\{sessionsExpanded\}/);
+  assert.match(source, /sidebar\.showMoreSessions/);
+  assert.match(source, /sidebar\.showFewerSessions/);
+});
+
+test("project opener does not duplicate the recent-project list", () => {
+  assert.match(source, /sidebar\.openProject/);
+  assert.doesNotMatch(source, /visibleProjects\.map/);
+  assert.doesNotMatch(source, /filteredSessions/);
+});

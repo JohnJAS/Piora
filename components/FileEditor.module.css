@@ -40,6 +40,48 @@
   container-type: inline-size;
 }
 
+.editModeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-weight: 650 !important;
+}
+
+.editModeButton[data-active="true"] {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 48%, transparent);
+  color: var(--accent) !important;
+}
+
+.readOnlyNotice {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 5px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  background: color-mix(in srgb, var(--bg-panel) 76%, var(--bg));
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+  flex-shrink: 0;
+}
+
+.readOnlyNotice svg {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+.readOnlyNotice span {
+  min-width: 0;
+}
+
+.readOnlyNotice strong {
+  margin-right: 6px;
+  color: var(--text);
+  font-weight: 650;
+}
+
 .spinner {
   width: 11px;
   height: 11px;

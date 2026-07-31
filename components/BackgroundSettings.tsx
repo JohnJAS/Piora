@@ -47,9 +47,6 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
     reset,
   } = useBackground();
 
-  const selection = preference.source === "builtin" && preference.presetId
-    ? `builtin:${preference.presetId}`
-    : preference.source;
   const selectedPreset = getBackgroundPreset(preference.presetId);
   const previewBackground = selectedPreset
     ? selectedPreset.artworkStatus === "available"
@@ -80,30 +77,67 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
 
       <div className={styles.preview} aria-hidden="true" style={{ backgroundImage: previewBackground }} />
 
-      <label className={styles.field}>
-        <span className={styles.fieldHeader}>{t("background.source")}</span>
-        <select
-          className={styles.select}
-          value={selection}
-          disabled={!hydrated || busy}
-          onChange={(event) => {
-            const value = event.currentTarget.value;
-            if (value === "none") setNone();
-            else if (value === "custom") void selectStoredCustom();
-            else if (value.startsWith("builtin:")) setBuiltin(value.slice("builtin:".length));
-          }}
-        >
-          <option value="none">{t("background.none")}</option>
-          {presets.map((preset) => (
-            <option key={preset.id} value={`builtin:${preset.id}`}>
-              {t(preset.nameKey)}{preset.artworkStatus === "planned" ? ` · ${t("background.previewFallback")}` : ""}
-            </option>
-          ))}
+      <div className={styles.field}>
+        <span id={`${titleId}-source`} className={styles.fieldHeader}>{t("background.source")}</span>
+        <div className={styles.presetGrid} role="radiogroup" aria-labelledby={`${titleId}-source`}>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={preference.source === "none"}
+            data-selected={preference.source === "none" ? "true" : "false"}
+            data-background-choice="none"
+            className={styles.presetButton}
+            disabled={!hydrated || busy}
+            onClick={setNone}
+          >
+            <span className={`${styles.presetArtwork} ${styles.noneArtwork}`} aria-hidden="true" />
+            <span className={styles.presetLabel}>{t("background.none")}</span>
+          </button>
+          {presets.map((preset) => {
+            const selected = preference.source === "builtin" && preference.presetId === preset.id;
+            const artwork = preset.artworkStatus === "available"
+              ? `url("${preset.asset}"), ${preset.fallback}`
+              : preset.fallback;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                aria-label={t(preset.nameKey)}
+                data-selected={selected ? "true" : "false"}
+                data-background-preset={preset.id}
+                className={styles.presetButton}
+                disabled={!hydrated || busy}
+                onClick={() => setBuiltin(preset.id)}
+              >
+                <span className={styles.presetArtwork} aria-hidden="true" style={{ backgroundImage: artwork }} />
+                <span className={styles.presetLabel}>
+                  {t(preset.nameKey)}
+                  {preset.artworkStatus === "planned" ? ` · ${t("background.previewFallback")}` : ""}
+                </span>
+              </button>
+            );
+          })}
           {hasStoredCustom ? (
-            <option value="custom">{t("background.savedCustom", { name: customName || t("background.localImage") })}</option>
+            <button
+              type="button"
+              role="radio"
+              aria-checked={preference.source === "custom"}
+              data-selected={preference.source === "custom" ? "true" : "false"}
+              data-background-choice="custom"
+              className={styles.presetButton}
+              disabled={!hydrated || busy}
+              onClick={() => void selectStoredCustom()}
+            >
+              <span className={`${styles.presetArtwork} ${styles.customArtwork}`} aria-hidden="true" />
+              <span className={styles.presetLabel}>
+                {t("background.savedCustom", { name: customName || t("background.localImage") })}
+              </span>
+            </button>
           ) : null}
-        </select>
-      </label>
+        </div>
+      </div>
 
       <div className={styles.actions}>
         <label className={styles.uploadButton} data-disabled={busy ? "true" : "false"}>
