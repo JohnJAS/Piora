@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `9b4b0566fc5a5e31930eadc5aa3be0a372c4047b9a22bb136109ce840b1d7184`
+Lockfile SHA-256: `f9f63bb84f0ce41da0efb8646e0892a594952c3e06adea0f90fff699753c1fe2`
 
-Unique locked packages: **1079**. Runtime packages: **566**. Build/development-only packages: **513**.
+Unique locked packages: **1078**. Runtime packages: **566**. Build/development-only packages: **512**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -950,7 +950,6 @@ Every locked package declares a license.
 | `mime-types` | `2.1.35` | MIT | No |
 | `mimic-response` | `1.0.1` | MIT | No |
 | `mimic-response` | `3.1.0` | MIT | No |
-| `minimatch` | `10.2.4` | BlueOak-1.0.0 | No |
 | `minimatch` | `10.2.6` | BlueOak-1.0.0 | No |
 | `minimatch` | `3.1.5` | ISC | No |
 | `minimatch` | `5.1.9` | ISC | No |
