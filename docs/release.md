@@ -47,6 +47,8 @@ the extension fixture runs through the executable in `win-unpacked` with Electro
 `smoke:portable` launches the final portable EXE in an isolated profile and requires its reported
 application version to match `--expected-version`. It also requires the hidden smoke window to load
 the renderer, expose the preload bridge, and reach the piGUI application shell before passing.
+The default five-minute timeout includes first-run extraction and cleanup of the complete portable
+payload; a healthy marker alone is insufficient if the wrapper never exits cleanly.
 
 ## Publish a prerelease
 

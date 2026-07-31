@@ -50,7 +50,7 @@ implies endorsement.
 
 - `npm run typecheck`: passed for the web and desktop TypeScript projects;
 - `npm run lint`: passed;
-- `npm test` under the required Node.js 22.19.0 runtime: 328 tests, 323 passed, 0 failed,
+- `npm test` under the required Node.js 22.19.0 runtime: 329 tests, 324 passed, 0 failed,
   5 skipped because Windows did not grant symlink-creation privileges;
 - `npm run verify:backgrounds`: passed for 20 unique manifest-linked images totaling 2,274,482
   bytes, each decodable, at least 1600x900, 16:9, and below the per-file limit;

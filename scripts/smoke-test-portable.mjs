@@ -12,6 +12,10 @@ import {
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STRICT_VERSION = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+// The portable NSIS wrapper must unpack and later remove the complete Electron
+// payload. On slower Windows disks that cleanup alone can exceed 90 seconds,
+// even after the renderer has written a healthy marker.
+export const DEFAULT_PORTABLE_SMOKE_TIMEOUT_MS = 300_000;
 
 export function normalizeExpectedVersion(value) {
   if (value === undefined) return undefined;
@@ -113,7 +117,7 @@ async function terminateChild(child) {
 
 export async function smokeTestPortableExecutable(
   executablePath,
-  { timeoutMs = 90_000, expectedVersion } = {},
+  { timeoutMs = DEFAULT_PORTABLE_SMOKE_TIMEOUT_MS, expectedVersion } = {},
 ) {
   const executable = resolve(executablePath);
   if (!(await stat(executable).catch(() => undefined))?.isFile()) {
