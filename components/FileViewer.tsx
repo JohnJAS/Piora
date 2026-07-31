@@ -1402,7 +1402,7 @@ function TextFileViewer({
     : t("fileEditor.externalChangeBody");
 
   return (
-    <div className="file-viewer-shell" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+    <div className={`${editorStyles.container} file-viewer-shell`} style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       <div
         className="file-viewer-toolbar"
         style={{
