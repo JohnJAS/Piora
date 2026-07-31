@@ -10,6 +10,7 @@ import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
 import { PluginsConfig } from "./PluginsConfig";
+import { SettingsDialog } from "./SettingsDialog";
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { BranchNavigator } from "./BranchNavigator";
 import { BackgroundSettings } from "./BackgroundSettings";
@@ -147,6 +148,9 @@ export function AppShell() {
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const [companionOpen, setCompanionOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [sidebarMenuOpen, setSidebarMenuOpen] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [currentModelInfo, setCurrentModelInfo] = useState<{ provider: string; modelId: string } | null>(null);
   const [companionActivity, setCompanionActivity] = useState<CompanionActivity>(() => ({
     status: "idle",
     cause: translate("companion.activity.idleCause"),
@@ -155,6 +159,7 @@ export function AppShell() {
   const themeBtnRef = useRef<HTMLButtonElement>(null);
   const languageBtnRef = useRef<HTMLButtonElement>(null);
   const appearanceDialogRef = useRef<HTMLDivElement>(null);
+  const sidebarMenuRef = useRef<HTMLDivElement>(null);
   const appearanceReturnFocusRef = useRef<HTMLElement | null>(null);
 
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
@@ -216,6 +221,17 @@ export function AppShell() {
       ? { ...current, cause: translate("companion.activity.idleCause") }
       : current);
   }, [translate]);
+
+  useEffect(() => {
+    if (!sidebarMenuOpen) return;
+    const handler = (event: MouseEvent) => {
+      if (sidebarMenuRef.current && !sidebarMenuRef.current.contains(event.target as Node)) {
+        setSidebarMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [sidebarMenuOpen]);
 
   const handleSendCompanionPhrase = useCallback((text: string) => (
     chatInputRef.current?.sendText(text) ?? false
@@ -730,6 +746,7 @@ export function AppShell() {
   }, [projectTrustBusy, projectTrustCwd]);
 
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
+  const canOpenSkillsPlugins = Boolean(activeCwd || selectedSession?.cwd || newSessionCwd);
   const windowTitle = activeCwdName ? `${activeCwdName} - piGUI` : "piGUI";
 
   useEffect(() => {
@@ -762,113 +779,153 @@ export function AppShell() {
         onAtMention={handleAtMention}
         onAtMentions={handleAtMentions}
       />
-      <button
-        type="button"
-        onClick={(event) => openAppearanceSettings(event.currentTarget)}
-        aria-haspopup="dialog"
-        aria-expanded={appearanceOpen}
-        title={translate("appearance.title")}
-        style={{
-          height: 36,
-          margin: "7px 8px 0",
-          padding: "0 10px",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          flexShrink: 0,
-          border: "1px solid color-mix(in srgb, var(--border) 82%, transparent)",
-          borderRadius: "var(--radius-control)",
-          background: appearanceOpen ? "var(--bg-selected)" : "color-mix(in srgb, var(--bg) 62%, var(--bg-panel))",
-          color: appearanceOpen ? "var(--text)" : "var(--text-muted)",
-          cursor: "pointer",
-          fontSize: 12,
-          fontWeight: 550,
-          textAlign: "left",
-          transition: "background 0.12s, color 0.12s, border-color 0.12s",
-        }}
-        onMouseEnter={(event) => {
-          event.currentTarget.style.background = "var(--bg-hover)";
-          event.currentTarget.style.color = "var(--text)";
-        }}
-        onMouseLeave={(event) => {
-          event.currentTarget.style.background = appearanceOpen
-            ? "var(--bg-selected)"
-            : "color-mix(in srgb, var(--bg) 62%, var(--bg-panel))";
-          event.currentTarget.style.color = appearanceOpen ? "var(--text)" : "var(--text-muted)";
-        }}
+      <div
+        ref={sidebarMenuRef}
+        className="sidebar-user-menu"
+        style={{ borderTop: "1px solid var(--border)", padding: "7px 8px 8px", flexShrink: 0, position: "relative" }}
       >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M12 3a9 9 0 1 0 0 18h1.4a1.6 1.6 0 0 0 1.1-2.7 1.6 1.6 0 0 1 1.1-2.7H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3Z" />
-          <circle cx="7.5" cy="10" r="1" fill="currentColor" stroke="none" />
-          <circle cx="10.5" cy="6.8" r="1" fill="currentColor" stroke="none" />
-          <circle cx="15" cy="7.8" r="1" fill="currentColor" stroke="none" />
-        </svg>
-        <span style={{ flex: 1 }}>{translate("appearance.title")}</span>
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="m9 18 6-6-6-6" />
-        </svg>
-      </button>
-      <div className="sidebar-config-cluster" style={{ padding: "3px", flexShrink: 0, display: "flex", justifyContent: "space-between", gap: 2 }}>
-        {([
-          {
-             label: translate("common.models"),
-            onClick: () => setModelsConfigOpen(true),
-            disabled: false,
-            icon: (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" />
-                <line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" />
-                <line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" />
-                <line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" />
-                <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
-              </svg>
-            ),
-          },
-          {
-             label: translate("common.skills"),
-            onClick: () => setSkillsConfigOpen(true),
-            disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
-            icon: (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                <path d="M2 17l10 5 10-5" />
-                <path d="M2 12l10 5 10-5" />
-              </svg>
-            ),
-          },
-          {
-             label: translate("common.plugins"),
-            onClick: () => setPluginsConfigOpen(true),
-            disabled: !activeCwd && !selectedSession?.cwd && !newSessionCwd,
-            icon: (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M9 7V2" />
-                <path d="M15 7V2" />
-                <path d="M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0Z" />
-                <path d="M12 19v3" />
-              </svg>
-            ),
-          },
-        ] as { label: string; onClick: () => void; disabled: boolean; icon: React.ReactNode }[]).map(({ label, onClick, disabled, icon }) => (
-          <button
-            key={label}
-            onClick={onClick}
-            disabled={disabled}
-            title={label}
+        <button
+          type="button"
+          onClick={() => setSidebarMenuOpen((v) => !v)}
+          title={currentModelInfo
+            ? `${currentModelInfo.provider}/${currentModelInfo.modelId}`
+            : translate("sidebar.selectModel")}
+          aria-expanded={sidebarMenuOpen}
+          aria-haspopup="menu"
+          style={{
+            width: "100%", height: 34, padding: "0 9px", display: "flex", alignItems: "center", gap: 8,
+            background: sidebarMenuOpen ? "var(--bg-selected)" : "transparent",
+            border: "none", borderRadius: "var(--radius-control)",
+            color: sidebarMenuOpen ? "var(--text)" : "var(--text-muted)",
+            cursor: "pointer", fontSize: 12, textAlign: "left",
+            transition: "background 0.12s, color 0.12s",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "var(--bg-hover)";
+            e.currentTarget.style.color = "var(--text)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = sidebarMenuOpen ? "var(--bg-selected)" : "transparent";
+            e.currentTarget.style.color = sidebarMenuOpen ? "var(--text)" : "var(--text-muted)";
+          }}
+        >
+          <span style={{
+            flexShrink: 0, width: 22, height: 22, borderRadius: 6,
+            background: "var(--bg-panel)", border: "1px solid var(--border)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="4" y="4" width="16" height="16" rx="2" />
+              <rect x="9" y="9" width="6" height="6" />
+            </svg>
+          </span>
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {currentModelInfo?.modelId ?? translate("sidebar.selectModel")}
+          </span>
+          <svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, transform: sidebarMenuOpen ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
+            <polyline points="2 3.5 5 6.5 8 3.5" />
+          </svg>
+        </button>
+
+        {sidebarMenuOpen && (
+          <div
+            role="menu"
             style={{
-              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-              height: 32, padding: 0, background: "none", border: "none",
-              borderRadius: "var(--radius-control)", color: "var(--text-muted)", cursor: disabled ? "default" : "pointer",
-              fontSize: 12, opacity: disabled ? 0.35 : 1,
-              transition: "background 0.12s, color 0.12s",
+              position: "absolute", bottom: "calc(100% + 6px)", left: 8, right: 8, zIndex: 120,
+              background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 8,
+              boxShadow: "0 -6px 20px rgba(0,0,0,0.12)", overflow: "hidden", padding: "4px 0",
             }}
-            onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; } }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--text-muted)"; }}
           >
-            {icon}
-            {label}
-          </button>
-        ))}
+            {([
+              {
+                label: translate("sidebar.settings"),
+                onClick: () => { setSettingsDialogOpen(true); setSidebarMenuOpen(false); },
+                disabled: false,
+                icon: (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                ),
+              },
+              {
+                label: translate("common.models"),
+                onClick: () => { setModelsConfigOpen(true); setSidebarMenuOpen(false); },
+                disabled: false,
+                icon: (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" />
+                    <line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" />
+                    <line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" />
+                    <line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" />
+                    <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
+                  </svg>
+                ),
+              },
+              {
+                label: translate("common.skills"),
+                onClick: () => { setSkillsConfigOpen(true); setSidebarMenuOpen(false); },
+                disabled: !canOpenSkillsPlugins,
+                icon: (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                    <path d="M2 17l10 5 10-5" />
+                    <path d="M2 12l10 5 10-5" />
+                  </svg>
+                ),
+              },
+              {
+                label: translate("common.plugins"),
+                onClick: () => { setPluginsConfigOpen(true); setSidebarMenuOpen(false); },
+                disabled: !canOpenSkillsPlugins,
+                icon: (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 7V2" />
+                    <path d="M15 7V2" />
+                    <path d="M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0Z" />
+                    <path d="M12 19v3" />
+                  </svg>
+                ),
+              },
+              {
+                label: translate("appearance.title"),
+                onClick: () => { openAppearanceSettings(); setSidebarMenuOpen(false); },
+                disabled: false,
+                icon: (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3a9 9 0 1 0 0 18h1.4a1.6 1.6 0 0 0 1.1-2.7 1.6 1.6 0 0 1 1.1-2.7H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3Z" />
+                    <circle cx="7.5" cy="10" r="1" fill="currentColor" stroke="none" />
+                    <circle cx="10.5" cy="6.8" r="1" fill="currentColor" stroke="none" />
+                    <circle cx="15" cy="7.8" r="1" fill="currentColor" stroke="none" />
+                  </svg>
+                ),
+              },
+            ] as { label: string; onClick: () => void; disabled: boolean; icon: React.ReactNode }[]).map(({ label, onClick, disabled, icon }) => (
+              <button
+                key={label}
+                type="button"
+                role="menuitem"
+                onClick={onClick}
+                disabled={disabled}
+                title={label}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  width: "100%", height: 34, padding: "0 10px",
+                  background: "none", border: "none",
+                  color: disabled ? "var(--text-dim)" : "var(--text-muted)",
+                  cursor: disabled ? "default" : "pointer", fontSize: 12, textAlign: "left",
+                  opacity: disabled ? 0.45 : 1,
+                  transition: "background 0.12s, color 0.12s",
+                }}
+                onMouseEnter={(e) => { if (!disabled) { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--text)"; } }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = disabled ? "var(--text-dim)" : "var(--text-muted)"; }}
+              >
+                {icon}
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </>
   );
@@ -1715,6 +1772,7 @@ export function AppShell() {
                 onContextUsageChange={handleContextUsageChange}
                 onOpenFile={handleOpenLinkedFile}
                 onCompanionActivityChange={setCompanionActivity}
+                onModelInfoChange={setCurrentModelInfo}
               />
             ) : initialCwdStatus === "validating" ? (
               <div
@@ -2052,6 +2110,15 @@ export function AppShell() {
         onReloaded={() => setSessionKey((k) => k + 1)}
       />
     )}
+    <SettingsDialog
+      open={settingsDialogOpen}
+      onClose={() => setSettingsDialogOpen(false)}
+      onOpenModels={() => { setSettingsDialogOpen(false); setModelsConfigOpen(true); }}
+      onOpenSkills={() => { setSettingsDialogOpen(false); setSkillsConfigOpen(true); }}
+      onOpenPlugins={() => { setSettingsDialogOpen(false); setPluginsConfigOpen(true); }}
+      onOpenAppearance={() => { setSettingsDialogOpen(false); openAppearanceSettings(); }}
+      onOpenLanguage={() => { setSettingsDialogOpen(false); toggleTopPanel("language"); }}
+    />
     </>
   );
 }

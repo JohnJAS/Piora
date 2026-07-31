@@ -662,6 +662,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const commitCustomPath = useCallback(async (candidate?: string) => {
     const path = (candidate ?? customPathValue).trim();
     if (!path || customPathValidating) return;
+    const chatRunning = selectedSessionId !== null && runningSessionIds.has(selectedSessionId);
+    if (chatRunning && !window.confirm(t("sidebar.confirmSwitchWhileRunning"))) return;
 
     setCustomPathValidating(true);
     setCustomPathError(null);
@@ -685,7 +687,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     } finally {
       setCustomPathValidating(false);
     }
-  }, [customPathValue, customPathValidating]);
+  }, [customPathValue, customPathValidating, runningSessionIds, selectedSessionId, t]);
 
   const handleCustomPathClick = useCallback(() => {
     setCustomPathOpen(true);
@@ -798,9 +800,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   // works when the prop value won't change — e.g. re-clicking the already
   // open session after manually switching worktrees.
   const handleSelectSessionFromList = useCallback((s: SessionInfo) => {
+    const chatRunning = selectedSessionId !== null && runningSessionIds.has(selectedSessionId);
+    const sameProject = s.cwd ? projectRootFor(s.cwd) === projectRootFor(selectedCwd) : true;
+    if (chatRunning && !sameProject && !window.confirm(t("sidebar.confirmSwitchWhileRunning"))) return;
     if (s.cwd) setSelectedCwd(s.cwd);
     onSelectSession(s);
-  }, [onSelectSession]);
+  }, [onSelectSession, projectRootFor, runningSessionIds, selectedCwd, selectedSessionId, t]);
 
   const handleNewSessionInProject = useCallback((cwd: string) => {
     // Generate a temporary UUID client-side — no backend call needed.
@@ -1458,6 +1463,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
             unreadSessionIds={unreadSessionIds}
             attentionSessionIds={attentionSessionIds}
             onSelectProject={() => {
+              const chatRunning = selectedSessionId !== null && runningSessionIds.has(selectedSessionId);
+              if (chatRunning && group.projectRoot !== selectedProject && !window.confirm(t("sidebar.confirmSwitchWhileRunning"))) return;
               setSelectedCwd(group.preferredCwd);
               setCollapsedProjectKeys((previous) => {
                 if (!previous.has(group.key)) return previous;

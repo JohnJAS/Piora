@@ -306,6 +306,15 @@ export interface AttachedImage {
   previewUrl: string;
 }
 
+/** A non-image file attached from the composer. `text` is the readable
+ * contents when the file is small enough to embed; binary or oversized files
+ * only contribute their name. */
+export interface AttachedFile {
+  name: string;
+  size: number;
+  text: string | null;
+}
+
 type SelectedModel = { provider: string; modelId: string };
 type ModelEntry = { id: string; name: string; provider: string };
 type ModelsResponse = {
@@ -1062,13 +1071,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [addNotice, handleExtensionUiRequest, loadSession, waitForPromptSettlement]);
   handleAgentEventRef.current = handleAgentEvent;
 
-  const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
+  const handleSend = useCallback(async (message: string, images?: AttachedImage[], files?: AttachedFile[]) => {
     const trimmedMessage = message.trim();
-    if (!trimmedMessage && !images?.length) return;
+    if (!trimmedMessage && !images?.length && !files?.length) return;
     if (agentRunningRef.current || bashRunningRef.current) return;
-    const isSlashCommandPrompt = !images?.length && trimmedMessage.startsWith("/");
+    const isSlashCommandPrompt = !images?.length && !files?.length && trimmedMessage.startsWith("/");
 
-    const isBashCommand = !images?.length && trimmedMessage.startsWith("!");
+    const isBashCommand = !images?.length && !files?.length && trimmedMessage.startsWith("!");
     if (isBashCommand) {
       const isExcluded = trimmedMessage.startsWith("!!");
       const bashCmd = (isExcluded ? trimmedMessage.slice(2) : trimmedMessage.slice(1)).trim();
@@ -1079,12 +1088,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
     const promptRunId = promptRunIdRef.current + 1;
 
+    const fileTexts = (files ?? []).map((file) =>
+      file.text != null
+        ? `附件: ${file.name}\n\`\`\`\n${file.text}\n\`\`\``
+        : `附件: ${file.name}（二进制或超大文件，仅提供文件名）`,
+    ).join("\n\n");
+    const effectiveMessage = fileTexts ? `${fileTexts}\n\n${message}` : message;
+    const effectiveTrimmed = fileTexts ? effectiveMessage.trim() : trimmedMessage;
+
     const imageBlocks = images?.map((img) => ({ type: "image" as const, source: { type: "base64" as const, media_type: img.mimeType, data: img.data } }));
     const userMsg: AgentMessage = {
       role: "user",
       content: imageBlocks?.length
-        ? [...(message.trim() ? [{ type: "text" as const, text: message }] : []), ...imageBlocks]
-        : message,
+        ? [...(effectiveTrimmed ? [{ type: "text" as const, text: effectiveMessage }] : []), ...imageBlocks]
+        : effectiveMessage,
       timestamp: Date.now(),
     };
     setMessages((prev) => [...prev, userMsg]);
@@ -1119,10 +1136,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           promptRequestStarted = true;
           await sendAgentCommand(sid, {
             type: "prompt",
-            message,
+            message: effectiveMessage,
             ...(piImages?.length ? { images: piImages } : {}),
           });
-          promoteNewSession(1, message);
+          promoteNewSession(1, effectiveMessage);
         }
       } else if (session) {
         sentSessionId = session.id;
@@ -1130,7 +1147,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         promptRequestStarted = true;
         await sendAgentCommand(session.id, {
           type: "prompt",
-          message,
+          message: effectiveMessage,
           ...(piImages?.length ? { images: piImages } : {}),
         });
       }

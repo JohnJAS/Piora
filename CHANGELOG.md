@@ -11,11 +11,24 @@ All notable changes to piGUI are documented here. The project follows [Semantic 
   conversation in that project.
 - The directory picker now surfaces sibling Windows drive roots so folders on
   other disks can be selected directly.
+- The composer model pill moved into the input's bottom-right corner and now
+  opens a Codex-style panel that combines model selection, reasoning effort,
+  and compact-context controls.
+- A single `+` attach button in the composer accepts both images and text
+  files; file chips embed readable contents into the next message.
+- A settings hub dialog is reachable from the sidebar's bottom-left model
+  chip, which also hosts quick links to model, skill, plugin, appearance, and
+  language settings.
+- Inter is bundled locally as the interface font to match the Codex look.
 
 ### Changed
 
 - Removed the top sidebar `New` button; creating a project now flows through
   the project section `+` entry, matching the Codex-style workspace model.
+- Switching away from a project while its conversation is still responding
+  asks for confirmation instead of dropping the streaming view instantly.
+- Reasoning-effort and compact-context controls no longer sit in the bottom
+  meta bar; they moved into the model settings panel.
 
 ## [0.1.0] - 2026-07-31
 
