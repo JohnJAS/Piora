@@ -82,7 +82,9 @@ export async function patchBundledBraceExpansion(root = projectRoot) {
     return { patched: false, reason: "already-patched", version: patchedVersion };
   }
 
-  const temporaryDirectory = await mkdtemp(join(targetParent, ".brace-expansion-patch-"));
+  const temporaryDirectory = await mkdtemp(
+    join(targetParentRealPath, ".brace-expansion-patch-"),
+  );
   assertInside(targetParentRealPath, temporaryDirectory, "Patch temporary directory");
   try {
     await cp(source, temporaryDirectory, {
