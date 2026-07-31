@@ -25,8 +25,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "npm run build && electron .",
-    "pack": "electron-builder --config electron-builder.yml --dir --win --x64",
-    "dist": "electron-builder --config electron-builder.yml --win --x64"
+    "pack": "electron-builder --config electron-builder.yml --dir --win --x64 --publish never",
+    "dist": "electron-builder --config electron-builder.yml --win --x64 --publish never"
   },
   "devDependencies": {
     "@types/node": "25.0.10",
