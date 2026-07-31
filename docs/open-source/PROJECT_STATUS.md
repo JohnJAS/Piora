@@ -57,9 +57,12 @@ implies endorsement.
 - focused front-end and back-end tests cover companion state/TODO/phrases, optional visibility,
   Codex local-pet discovery/preview/import, V1/V2 fixtures, atomic replacement/rollback, and
   rejection of unknown, traversal, symlink, script, and remote-resource inputs;
-- earlier browser evidence for save/conflict and companion behavior remains useful, but the final
-  1440x900, 390x844, reopened editor/appearance/project-folder walkthrough and integrated EXE title
-  bar verification are pending after the latest UI corrections.
+- an isolated production Web build passed, the staged standalone service started, and
+  `/api/health` returned successfully;
+- the final browser walkthrough passed at 1440x900, the 959/960px breakpoint, and 390x844:
+  text opened in Edit, `Ctrl+S` wrote to disk, the 409 continue/reload/confirmed-overwrite flow
+  preserved user intent, all 20 background thumbnails rendered and switched with themes, project
+  collapse worked, and desktop/mobile rounded or overlay layouts matched their intended modes.
 
 These results verify the source implementation. They are **not** a claim that a distributable
 Windows executable or public release has passed all gates.
@@ -80,8 +83,9 @@ rejected instead of executed or fetched.
 ## Still pending before release completion
 
 - isolated Windows package build, startup/health check, and synthetic Pi extension fixture;
-- final browser and packaged-EXE walkthrough of direct editing, appearance/background selection,
-  project folders with three-item overflow, rounded surfaces, and native window-control safe areas;
+- packaged-EXE walkthrough of native controls, drag/resize, the `Alt` menu, Window Controls
+  Overlay safe areas, and the critical direct-editing/appearance flows; browser checks are complete
+  but cannot prove Electron's native window chrome;
 - clean-machine portable replacement, data-retention, and uninstall checks;
 - review of generated release artifacts for secrets and private developer paths (the current
   worktree and one-commit repository history scan found no credential signatures or private paths);

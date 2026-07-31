@@ -59,17 +59,21 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
   323 passed, 0 failed, and 5 Windows symlink-permission skips out of 328 tests.
 - [x] Record prior desktop/mobile browser evidence for file save, disk conflict/draft preservation,
   the retained file tree, grouped visual hierarchy, and optional companion.
-- [ ] Complete the final desktop/mobile/EXE release revalidation for the reopened editor,
-  appearance, background, project-folder, rounded-shell, and integrated-title-bar flows, then
-  attach its concise verification record.
+- [x] Complete the final browser revalidation: default Edit and real `Ctrl+S` disk write; the
+  409 continue/reload/confirmed-overwrite flow; 20 visible background thumbnails and live
+  theme/background switching; project collapse; and 1440x900, 959/960px, and 390x844 layouts.
+- [x] Complete an isolated production Web build, start the staged standalone service, and pass
+  its `/api/health` check. This is source/Web evidence, not a Windows package result.
+- [ ] Complete the packaged-EXE walkthrough for native window controls, drag/resize, the `Alt`
+  menu, Window Controls Overlay safe areas, and the same critical editor/appearance flows.
 
 ## Visual and companion scope
 
 - [x] Define and apply restrained radius, spacing, border, shadow, and surface hierarchy tokens;
   verify that primary/secondary actions and nested panels remain visually distinct.
 - [x] Group related settings by workflow and remove or explain duplicate entry points.
-- [x] Complete an initial browser walkthrough of hierarchy, grouped controls, responsive layout,
-  focus behavior, and reduced motion at representative desktop and mobile sizes.
+- [x] Complete the final browser walkthrough of hierarchy, grouped controls, responsive layout,
+  focus behavior, and reduced motion at 1440x900, 959/960px, and 390x844.
 - [x] Implement a fully optional/closable companion that never covers chat, input, file tree,
   editor, save conflicts, or permission prompts.
 - [x] Map companion task state and TODO progress to existing Pi/session data without adding a
