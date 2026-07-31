@@ -250,7 +250,7 @@
 }
 
 @container (max-width: 520px) {
-  :global(.file-viewer-meta) {
+  .container :global(.file-viewer-meta) {
     display: none;
   }
 
@@ -284,11 +284,11 @@
 }
 
 @container (max-width: 390px) {
-  :global(.file-viewer-path) {
+  .container :global(.file-viewer-path) {
     display: none;
   }
 
-  :global(.file-viewer-toolbar) {
+  .container :global(.file-viewer-toolbar) {
     overflow-x: auto;
   }
 }
