@@ -1,6 +1,6 @@
 # Public repository launch checklist
 
-Status date: **2026-07-31 (Asia/Shanghai)**
+Status date: **2026-08-01 (Asia/Shanghai)**
 
 This is an evidence checklist. A checked item means the repository contains the work or the
 GitHub setting was confirmed; it does not imply that later package, CI, or release gates passed.
@@ -28,7 +28,8 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
 - [x] Add `https://github.com/kexijiang/pi-gui.git` as `origin` and retain
   `https://github.com/agegr/pi-web.git` as `upstream`.
 - [x] Configure CI and release workflows for `main` and tag-based prereleases.
-- [ ] After the first push, confirm `main` as the GitHub default branch and a successful public CI run.
+- [x] Confirm `main` as the GitHub default branch and a successful public Ubuntu/Windows CI run
+  ([run 30676930532](https://github.com/kexijiang/pi-gui/actions/runs/30676930532) for `71eaf95`).
 - [ ] Enable branch protection with the verified CI checks required for merges.
 - [x] Enable private vulnerability reporting, Dependabot security updates, secret scanning, and
   push protection where available.
@@ -46,6 +47,9 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
   Pi sessions, logs, generated artifacts, and developer-only fixtures.
 - [x] Confirm `.gitignore` covers local auth, sessions, environment files, builds, signing
   materials, editor state, and temporary verification output.
+- [x] Add a redacting release-hygiene verifier for tracked/untracked file names and contents,
+  private checkout/home paths, and high-confidence credentials in reachable Git text history;
+  run it in CI and tag releases.
 - [x] Pin third-party GitHub Actions used by CI/release workflows to immutable commit SHAs.
 - [x] Configure source checks for Windows and Linux and package checks for Windows.
 - [ ] Confirm those checks pass in the public GitHub Actions environment after the source push.
@@ -57,8 +61,10 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
   HTTP 409 conflict flow.
 - [x] Include 20 unique original background assets, a manifest, generation records, hashes, and a
   local-only selection/customization layer.
-- [x] Record local source gates: typecheck passed, lint passed, and Node.js 22.19.0 tests reported
-  324 passed, 0 failed, and 5 Windows symlink-permission skips out of 329 tests.
+- [x] Record local source gates: typecheck passed for Web and desktop, lint passed, and Node.js
+  22.19.0 tests reported 375 passed, 0 failed, and 5 Windows symlink-permission skips out of
+  380 tests. License/background checks also passed and an official-registry production dependency
+  audit reported zero vulnerabilities.
 - [x] Record prior desktop/mobile browser evidence for file save, disk conflict/draft preservation,
   the retained file tree, grouped visual hierarchy, and optional companion.
 - [x] Complete the final browser revalidation: default Edit and real `Ctrl+S` disk write; the

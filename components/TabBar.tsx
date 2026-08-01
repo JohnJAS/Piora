@@ -34,7 +34,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
         background: "var(--bg-panel)",
         overflowX: "auto",
         flexShrink: 0,
-        height: 40,
+        minHeight: "max(40px, calc(var(--font-sm) + 28px))",
       }}
     >
       {tabs.map((tab) => {
@@ -57,7 +57,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
               display: "flex",
               alignItems: "center",
               gap: 6,
-              height: 32,
+              minHeight: "max(32px, calc(var(--font-sm) + 20px))",
               margin: "4px 2px",
               paddingLeft: 12,
               paddingRight: 6,
@@ -65,7 +65,7 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
               borderRadius: "var(--radius-control)",
               background: isActive ? "var(--bg)" : "transparent",
               cursor: "pointer",
-              fontSize: 12,
+              fontSize: "var(--font-sm)",
               color: isActive ? "var(--text)" : "var(--text-muted)",
               whiteSpace: "nowrap",
               maxWidth: 180,

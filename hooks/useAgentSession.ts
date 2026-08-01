@@ -359,6 +359,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [newSessionModel, setNewSessionModel] = useState<SelectedModel | null>(null);
   const [newSessionDefaultModel, setNewSessionDefaultModel] = useState<SelectedModel | null>(null);
   const [toolPreset, setToolPreset] = useState<"none" | "default" | "full">("default");
+  const [toolsLoaded, setToolsLoaded] = useState(session === null);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>("auto");
   const [retryInfo, setRetryInfo] = useState<{ attempt: number; maxAttempts: number; errorMessage?: string } | null>(null);
   const [contextUsage, setContextUsage] = useState<{ percent: number | null; contextWindow: number; tokens: number | null } | null>(null);
@@ -401,6 +402,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const thinkingLevelOverrideRef = useRef<Exclude<ThinkingLevelOption, "auto"> | null>(null);
   const promptRunIdRef = useRef(0);
   const optimisticUserMessageKeyRef = useRef<string | null>(null);
+  const suppressCompletionNotificationRef = useRef(false);
+  const toolPresetMutationRef = useRef(false);
 
   const setToolPresetState = opts.setToolPreset ?? setToolPreset;
 
@@ -524,11 +527,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, []);
 
   const loadTools = useCallback(async (sid: string) => {
+    setToolsLoaded(false);
     try {
       const tools = await sendAgentCommand<ToolEntry[]>(sid, { type: "get_tools" });
       if (tools) {
         const { getPresetFromTools } = await import("@/lib/tool-presets");
         setToolPresetState(getPresetFromTools(tools));
+        setToolsLoaded(true);
       }
     } catch (e) {
       console.error("Failed to load tools:", e);
@@ -796,7 +801,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentPhase(null);
       setRetryInfo(null);
       dispatch({ type: "end" });
-      onAgentEnd?.();
+      const shouldNotify = !suppressCompletionNotificationRef.current;
+      suppressCompletionNotificationRef.current = false;
+      if (shouldNotify) onAgentEnd?.();
     }
   }, [closeEvents, loadSession, onAgentEnd]);
 
@@ -960,9 +967,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         break;
       case "prompt_error":
+        suppressCompletionNotificationRef.current = true;
         addNotice({ type: "error", message: (event.errorMessage as string | undefined) ?? "Command failed" });
         break;
       case "extension_error":
+        suppressCompletionNotificationRef.current = true;
         addNotice({
           type: "error",
           message: (event.error as string | undefined) ?? "Extension command failed",
@@ -990,6 +999,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // appending it again would duplicate it.
         if (!agentRunningRef.current) break;
         const completed = event.message as AgentMessage | undefined;
+        if (completed?.role === "assistant" && completed.stopReason === "error") {
+          suppressCompletionNotificationRef.current = true;
+        }
         if (completed && completed.role === "user") {
           // Delivered steering/follow-up messages surface here as user
           // messages. The run's initial prompt also emits one, but handleSend
@@ -1107,6 +1119,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setMessages((prev) => [...prev, userMsg]);
     optimisticUserMessageKeyRef.current = userMessageKey(userMsg);
     promptRunIdRef.current = promptRunId;
+    suppressCompletionNotificationRef.current = false;
     agentRunningRef.current = true;
     setAgentRunning(true);
     setAgentPhase(isSlashCommandPrompt ? { kind: "running_command" } : { kind: "waiting_model" });
@@ -1222,6 +1235,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (!sid) return;
+    suppressCompletionNotificationRef.current = true;
     if (bashRunningRef.current) {
       try {
         await sendAgentCommand(sid, { type: "abort_bash" });
@@ -1530,16 +1544,29 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [isNew]);
 
   const handleToolPresetChange = useCallback(async (preset: "none" | "default" | "full") => {
+    if (toolPresetMutationRef.current || !toolsLoaded || preset === toolPreset) return;
+    toolPresetMutationRef.current = true;
+    setToolsLoaded(false);
+    const previousPreset = toolPreset;
     const toolNames = getToolNamesForPreset(preset);
     setToolPresetState(preset);
     const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
-    if (!sid) return;
+    if (!sid) {
+      toolPresetMutationRef.current = false;
+      setToolsLoaded(true);
+      return;
+    }
     try {
       await sendAgentCommand(sid, { type: "set_tools", toolNames });
     } catch (e) {
       console.error("Failed to set tools:", e);
+      setToolPresetState(previousPreset);
+      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      toolPresetMutationRef.current = false;
+      setToolsLoaded(true);
     }
-  }, [setToolPresetState]);
+  }, [addNotice, setToolPresetState, toolPreset, toolsLoaded]);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     ignoreProgrammaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_IGNORE_MS;
@@ -1574,9 +1601,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   useEffect(() => {
     if (session) {
       sessionIdRef.current = session.id;
+      void loadTools(session.id);
       loadSession(session.id, true, true).then((agentState) => {
         if (agentState?.running) {
-          loadTools(session.id);
           if (agentState.state?.isStreaming || agentState.state?.isPromptRunning) {
             agentRunningRef.current = true;
             setAgentRunning(true);
@@ -1696,7 +1723,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   return {
     // State
     data, loading, error, activeLeafId, messages, entryIds, streamState,
-    agentRunning, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
+    agentRunning, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, toolsLoaded, thinkingLevel,
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,

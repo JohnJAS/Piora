@@ -212,6 +212,21 @@ export function useBackground() {
     commitPreference({ ...snapshot.preference, source: "builtin", presetId });
   }, [snapshot.preference]);
 
+  const applyBuiltinPreset = useCallback((
+    presetId: string,
+    options: { overlay?: number; blur?: number } = {},
+  ) => {
+    if (!getBackgroundPreset(presetId)) return;
+    replaceCustomObjectUrl(null);
+    commitPreference({
+      ...snapshot.preference,
+      source: "builtin",
+      presetId,
+      overlay: Math.min(90, Math.max(0, Math.round(options.overlay ?? snapshot.preference.overlay))),
+      blur: Math.min(24, Math.max(0, Math.round(options.blur ?? snapshot.preference.blur))),
+    });
+  }, [snapshot.preference]);
+
   const selectStoredCustom = useCallback(async () => {
     const revision = ++operationRevision;
     setState({ ...state, busy: true, error: null });
@@ -300,6 +315,7 @@ export function useBackground() {
     presets: BACKGROUND_PRESETS,
     setNone,
     setBuiltin,
+    applyBuiltinPreset,
     selectStoredCustom,
     uploadCustom,
     setOverlay,

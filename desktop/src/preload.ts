@@ -6,6 +6,12 @@ const runtime = Object.freeze({
     chrome: process.versions.chrome,
     electron: process.versions.electron,
   }),
+  notifyCompletion(taskTitle?: string): Promise<boolean> {
+    return ipcRenderer.invoke(
+      "pi:completion-notification",
+      typeof taskTitle === "string" ? taskTitle : undefined,
+    ) as Promise<boolean>;
+  },
   onMenuAction(listener: (action: string) => void) {
     const handler = (_event: Electron.IpcRendererEvent, action: unknown) => {
       if (typeof action === "string") listener(action);

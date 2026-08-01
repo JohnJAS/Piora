@@ -18,6 +18,7 @@ Run source checks in the working tree:
 
 ```powershell
 npm ci
+npm run verify:hygiene
 npm run licenses:check
 npm run lint
 npm run typecheck

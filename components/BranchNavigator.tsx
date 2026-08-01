@@ -164,7 +164,7 @@ function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelec
         {/* Role badge */}
         {role && (
           <span style={{
-            fontSize: 9,
+            fontSize: "var(--font-3xs)",
             fontFamily: "var(--font-mono)",
             color: role === "user" ? "var(--accent)" : "var(--text-dim)",
             background: role === "user" ? "rgba(37,99,235,0.08)" : "var(--bg-hover)",
@@ -181,14 +181,14 @@ function TreeNodeView({ node, activePathIds, depth, isLast, parentLines, onSelec
 
         {/* Skipped indicator */}
         {skipped > 0 && (
-          <span style={{ fontSize: 10, color: "var(--text-dim)", marginRight: 5, flexShrink: 0 }}>
+          <span style={{ fontSize: "var(--font-2xs)", color: "var(--text-dim)", marginRight: 5, flexShrink: 0 }}>
             +{skipped}
           </span>
         )}
 
         {/* Label */}
         <span style={{
-          fontSize: 11,
+          fontSize: "var(--font-xs)",
           color: isActive ? "var(--text)" : isOnPath ? "var(--text-muted)" : "var(--text-dim)",
           fontWeight: isActive ? 500 : 400,
           overflow: "hidden",
@@ -226,16 +226,34 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
 
   useEffect(() => {
     if (!open || !inline) return;
-    const anchor = containerRef?.current ?? btnRef.current;
-    if (!anchor) return;
+    const anchor = btnRef.current;
+    const boundary = containerRef?.current
+      ?? (anchor?.offsetParent instanceof HTMLElement ? anchor.offsetParent : null);
+    if (!anchor || !boundary) return;
     const update = () => {
-      const rect = anchor.getBoundingClientRect();
-      setDropdownPos({ top: rect.bottom, left: rect.left, width: rect.width });
+      const anchorRect = anchor.getBoundingClientRect();
+      const boundaryRect = boundary.getBoundingClientRect();
+      const inset = 6;
+      const width = Math.max(0, Math.min(380, boundaryRect.width - inset * 2, window.innerWidth - inset * 2));
+      const leftInViewport = Math.min(
+        Math.max(anchorRect.left, boundaryRect.left + inset),
+        boundaryRect.right - width - inset,
+      );
+      setDropdownPos({
+        top: boundaryRect.height + inset,
+        left: leftInViewport - boundaryRect.left,
+        width,
+      });
     };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(anchor);
-    return () => ro.disconnect();
+    ro.observe(boundary);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
   }, [open, inline, containerRef]);
 
   const activePathIds = useMemo(
@@ -292,7 +310,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
             borderTop: open ? "2px solid var(--accent)" : "2px solid transparent",
             cursor: "pointer",
             color: open ? "var(--text)" : "var(--text-muted)",
-            fontSize: 11,
+            fontSize: "var(--font-xs)",
             whiteSpace: "nowrap",
             transition: "color 0.1s, background 0.1s",
           }}
@@ -307,33 +325,40 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
         </button>
         {open && dropdownPos && (
           <div className="app-floating-panel branch-floating-panel" style={{
-            position: "fixed",
-            top: dropdownPos.top + 6,
-            left: dropdownPos.left + 6,
-            width: Math.max(280, dropdownPos.width - 12),
-            background: "var(--bg-panel)",
-            border: "1px solid var(--border)",
+            position: "absolute",
+            top: dropdownPos.top,
+            left: dropdownPos.left,
+            width: dropdownPos.width,
             zIndex: 500,
           }}>
-            {hasContent && firstNode ? (
-              <div style={{ padding: "4px 12px 8px 12px", maxHeight: 260, overflowY: "auto" }}>
-                {firstNode.children.map((child, idx) => (
-                  <TreeNodeView
-                    key={child.entry.id}
-                    node={child}
-                    activePathIds={activePathIds}
-                    depth={0}
-                    isLast={idx === firstNode.children.length - 1}
-                    parentLines={[]}
-                    onSelect={handleSelect}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                {noBranchReason}
-              </div>
-            )}
+            <div className="soft-top-panel-header">
+              <span className="soft-top-panel-icon" aria-hidden="true">{branchIcon}</span>
+              <span className="soft-top-panel-heading">
+                <span className="soft-top-panel-title">{t("i18n.branches")}</span>
+                <span className="soft-top-panel-description">{t("i18n.branchesDescription")}</span>
+              </span>
+            </div>
+            <div className="soft-top-panel-body">
+              {hasContent && firstNode ? (
+                <div className="branch-tree-scroll">
+                  {firstNode.children.map((child, idx) => (
+                    <TreeNodeView
+                      key={child.entry.id}
+                      node={child}
+                      activePathIds={activePathIds}
+                      depth={0}
+                      isLast={idx === firstNode.children.length - 1}
+                      parentLines={[]}
+                      onSelect={handleSelect}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="soft-top-panel-empty">
+                  {noBranchReason}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -355,7 +380,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
           border: "none",
           cursor: "pointer",
           color: "var(--text-muted)",
-          fontSize: 11,
+          fontSize: "var(--font-xs)",
           textAlign: "left",
         }}
       >
@@ -391,7 +416,7 @@ export function BranchNavigator({ tree, activeLeafId, onLeafChange, inline, cont
               ))}
             </div>
           ) : (
-            <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+            <div style={{ padding: "10px 16px", fontSize: "var(--font-sm)", color: "var(--text-muted)", fontStyle: "italic" }}>
               {noBranchReason ?? t("i18n.noBranches")}
             </div>
           )}

@@ -1,6 +1,6 @@
 # Open-source project status
 
-Status date: **2026-07-31 (Asia/Shanghai)**
+Status date: **2026-08-01 (Asia/Shanghai)**
 
 ## Identity and repository
 
@@ -45,13 +45,24 @@ implies endorsement.
   configuration, CI, and prerelease workflow are present;
 - Pi's own resource loader remains responsible for extensions. piGUI does not add a separate
   SubAgent or plugin product model.
+- interface font family and user-entered size now cover the complete GUI while code remains on a
+  dedicated monospaced stack; the standalone `piGUI` chrome label and completion tone were removed,
+  with an opt-in native/browser completion notification replacing the latter;
+- the conversation header exposes a restrained project menu, and model settings expose real
+  availability tests through the current trusted Pi runtime without bypassing extension providers;
+- historical Pi reasoning retains its raw content-block index and can recover from rapid
+  collapse/reopen, request timeout, and live-message reconciliation instead of remaining on a
+  loading placeholder.
 
 ## Verification recorded so far
 
 - `npm run typecheck`: passed for the web and desktop TypeScript projects;
 - `npm run lint`: passed;
-- `npm test` under the required Node.js 22.19.0 runtime: 329 tests, 324 passed, 0 failed,
+- `npm test` under the required Node.js 22.19.0 runtime: 380 tests, 375 passed, 0 failed,
   5 skipped because Windows did not grant symlink-creation privileges;
+- `npm run licenses:check` and `npm run verify:backgrounds` passed; the latter verified 20 unique
+  WebP assets totaling 2,274,482 bytes. `npm audit --omit=dev --audit-level=high` against the
+  official npm registry reported zero vulnerabilities;
 - `npm run verify:backgrounds`: passed for 20 unique manifest-linked images totaling 2,274,482
   bytes, each decodable, at least 1600x900, 16:9, and below the per-file limit;
 - focused front-end and back-end tests cover companion state/TODO/phrases, optional visibility,
@@ -81,7 +92,7 @@ implies endorsement.
 - the local candidate `piGUI-0.1.0-win-x64-portable.exe` is 180,907,440 bytes with SHA-256
   `6461C3D0ECE8F55F7CA50F67155CE03B56B509D58B2111ECC62D0FD6982229FF`; its Authenticode
   status is `NotSigned`;
-- an artifact string scan found no `C:\Users\lyh` or `F:\piGUI` private build paths. High-confidence
+- an artifact string scan found no developer-home or development-checkout private build paths. High-confidence
   token-pattern candidates were confined to upstream binary byte sequences, Next.js identifiers,
   and a dependency documentation marker rather than stored credentials;
 - the final browser walkthrough passed at 1440x900, the 959/960px breakpoint, and 390x844:
@@ -113,8 +124,10 @@ rejected instead of executed or fetched.
   the current packaged EXE evidence covers the integrated top row, double-click maximize,
   restore/close, and the appearance panel;
 - clean-machine portable replacement, data-retention, and uninstall checks;
-- first source push, public CI result, branch protection, and GitHub Release download/checksum
-  verification.
+- the current final working-tree batch still needs an isolated package rebuild, reviewed PR into
+  `main`, its own public CI result, and GitHub Release download/checksum verification. The public
+  repository, default `main`, and prior successful Ubuntu/Windows CI are already established;
+- branch protection/rulesets remain an administrative hardening task and are not yet enabled.
 
 Until those items are recorded, the locally produced executable is an unsigned prerelease
 candidate, not an official stable release. Track the detailed acceptance record in

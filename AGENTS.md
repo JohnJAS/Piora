@@ -86,8 +86,8 @@ lib/
 components/
   AppShell.tsx        layout + URL state + tab management
   SessionSidebar.tsx  session tree + FileExplorer
-  ChatWindow.tsx      chat composition + completion sound wrapper
-  ChatInput.tsx       input bar + model/thinking/tools/compact controls
+  ChatWindow.tsx      chat composition + task-control registration
+  ChatInput.tsx       input bar + model/thinking/compact controls
   MessageView.tsx     renders one message (user/assistant/toolCall/toolResult)
   BranchNavigator.tsx in-session branch switcher
   ChatMinimap.tsx     scroll minimap alongside the message list
@@ -102,7 +102,8 @@ components/
 
 hooks/
   useAgentSession.ts  messages + streaming + SSE + fork/navigate/reconciliation logic
-  useAudio.ts         completion sound + browser AudioContext unlock
+  useCompletionNotification.ts opt-in desktop/browser completion notifications
+  useFontPreferences.ts safe built-in font and text-size preferences
   useDragDrop.ts      shared drag/drop state
   useIsMobile.ts      responsive breakpoint hook
   useTheme.ts         theme state
@@ -178,9 +179,10 @@ Newer pi emits `compaction_start` / `compaction_end`; older versions emitted `au
 - API-key routes store and remove keys through `AuthStorage`. Status endpoints must never return the raw key.
 - The model test route is `app/api/models-config/test/route.ts`; `app/api/models/test/` is not a real route.
 
-### Completion sound
-- `hooks/useAudio.ts` stores the toggle in `localStorage` as `pi-sound-enabled` and reuses one `AudioContext`.
-- Browser autoplay policy means sound must be unlocked from a user gesture; `ChatInput` calls the unlock hook from interactive controls, and `ChatWindow` plays the tone from `onAgentEnd`.
+### Completion notifications
+- Completion notifications are opt-in and stored in `localStorage` as `pi-completion-notifications-enabled`.
+- The packaged Electron app sends a native Windows notification through a same-origin, main-frame-only IPC bridge. Browser mode falls back to the Web Notification API.
+- Notification payloads contain only app-owned completion copy and an optional sanitized task title; chat text, tool output, and file contents are never forwarded.
 
 ### Exported session HTML
 - `/api/sessions/[id]/export` delegates to pi's export helper, then patches recursive tree helpers in the generated HTML to iterative versions so very deep linear sessions do not overflow the browser call stack.

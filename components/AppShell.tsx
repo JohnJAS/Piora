@@ -3,8 +3,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { SessionSidebar } from "./SessionSidebar";
-import { ChatWindow } from "./ChatWindow";
+import { SessionSidebar, type SessionSidebarHandle } from "./SessionSidebar";
+import { ChatWindow, type TaskControls } from "./ChatWindow";
 import { FileViewer } from "./FileViewer";
 import { TabBar, type Tab } from "./TabBar";
 import { ModelsConfig } from "./ModelsConfig";
@@ -14,11 +14,14 @@ import { SettingsDialog } from "./SettingsDialog";
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { BranchNavigator } from "./BranchNavigator";
 import { BackgroundSettings } from "./BackgroundSettings";
+import { AppearanceLooks } from "./AppearanceLooks";
+import { FontSettings } from "./FontSettings";
 import { CompanionPet } from "./CompanionPet";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
+import { useCompletionNotification } from "@/hooks/useCompletionNotification";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
@@ -46,9 +49,13 @@ type AutoNameStatus =
   | { kind: "naming" }
   | { kind: "success" }
   | { kind: "error"; message: string };
+type TopPanel = "branches" | "project" | "system" | "session" | "language" | "taskControls";
 
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
 const LANGUAGE_MENU_WIDTH = 176;
+const PROJECT_MENU_WIDTH = 360;
+const TASK_CONTROLS_MENU_WIDTH = 292;
+const SYSTEM_PROMPT_MENU_WIDTH = 480;
 
 export function AppShell() {
   const router = useRouter();
@@ -56,6 +63,12 @@ export function AppShell() {
   const [initialNavigation] = useState(() => getInitialNavigation(searchParams));
   const { theme, themes, setTheme } = useTheme();
   const { locale, setLocale, t: translate, supportedLocales } = useI18n();
+  const {
+    notificationEnabled,
+    notificationCapability,
+    onNotificationToggle,
+    notifyCompletion,
+  } = useCompletionNotification();
   const isMobile = useIsMobile();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
@@ -146,6 +159,7 @@ export function AppShell() {
     reclampRightPanelWidth();
   }, [reclampRightPanelWidth, reclampSidebarWidth, rightPanelOpen]);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
+  const sessionSidebarRef = useRef<SessionSidebarHandle>(null);
   const [companionOpen, setCompanionOpen] = useState(false);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [sidebarMenuOpen, setSidebarMenuOpen] = useState(false);
@@ -156,8 +170,12 @@ export function AppShell() {
     cause: translate("companion.activity.idleCause"),
   }));
   const topBarRef = useRef<HTMLDivElement>(null);
+  const projectBtnRef = useRef<HTMLButtonElement>(null);
   const themeBtnRef = useRef<HTMLButtonElement>(null);
   const languageBtnRef = useRef<HTMLButtonElement>(null);
+  const taskControlsBtnRef = useRef<HTMLButtonElement>(null);
+  const topPanelFrameRef = useRef<HTMLDivElement>(null);
+  const autoFocusedTopPanelRef = useRef<TopPanel | null>(null);
   const appearanceDialogRef = useRef<HTMLDivElement>(null);
   const sidebarMenuRef = useRef<HTMLDivElement>(null);
   const appearanceReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -195,6 +213,8 @@ export function AppShell() {
   }, []);
   const [copiedSessionField, setCopiedSessionField] = useState<SessionCopyField | null>(null);
   const sessionCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [projectPathCopied, setProjectPathCopied] = useState(false);
+  const projectPathCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleCopySessionField = useCallback((field: SessionCopyField, value: string) => {
     void copyText(value).then(() => {
       if (sessionCopyTimerRef.current) clearTimeout(sessionCopyTimerRef.current);
@@ -206,6 +226,7 @@ export function AppShell() {
   useEffect(() => {
     return () => {
       if (sessionCopyTimerRef.current) clearTimeout(sessionCopyTimerRef.current);
+      if (projectPathCopyTimerRef.current) clearTimeout(projectPathCopyTimerRef.current);
       if (autoNameTimerRef.current) clearTimeout(autoNameTimerRef.current);
     };
   }, []);
@@ -238,10 +259,11 @@ export function AppShell() {
   ), []);
 
   // Single active panel — only one dropdown open at a time
-  const [activeTopPanel, setActiveTopPanel] = useState<"branches" | "system" | "session" | "language" | null>(null);
+  const [activeTopPanel, setActiveTopPanel] = useState<TopPanel | null>(null);
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [taskControls, setTaskControls] = useState<TaskControls | null>(null);
 
-  const toggleTopPanel = useCallback((panel: "branches" | "system" | "session" | "language") => {
+  const toggleTopPanel = useCallback((panel: TopPanel) => {
     if (isMobile) setSidebarOpen(false);
     setActiveTopPanel((cur) => cur === panel ? null : panel);
   }, [isMobile]);
@@ -271,30 +293,129 @@ export function AppShell() {
     setSidebarOpen((open) => !open);
   }, [isMobile]);
 
+  const handleOpenProjectPicker = useCallback(() => {
+    setActiveTopPanel(null);
+    sessionSidebarRef.current?.openProjectPicker();
+  }, []);
+
   useEffect(() => {
     if (!activeTopPanel || !topBarRef.current) return;
     const update = () => {
       const topBarRect = topBarRef.current!.getBoundingClientRect();
-      const compactMenuButton = activeTopPanel === "language" ? languageBtnRef.current : null;
+      const compactMenuButton = activeTopPanel === "project"
+        ? projectBtnRef.current
+        : activeTopPanel === "language"
+          ? languageBtnRef.current
+          : activeTopPanel === "taskControls"
+            ? taskControlsBtnRef.current
+            : activeTopPanel === "system"
+              ? systemBtnRef.current
+              : null;
       if (compactMenuButton && !isMobile) {
         const buttonRect = compactMenuButton.getBoundingClientRect();
-        const menuWidth = LANGUAGE_MENU_WIDTH;
-        const width = Math.min(menuWidth, topBarRect.width);
-        const left = Math.min(
-          buttonRect.left - 1,
-          Math.max(topBarRect.left, topBarRect.right - width),
+        const menuWidth = activeTopPanel === "project"
+          ? PROJECT_MENU_WIDTH
+          : activeTopPanel === "language"
+            ? LANGUAGE_MENU_WIDTH
+            : activeTopPanel === "system"
+              ? SYSTEM_PROMPT_MENU_WIDTH
+              : TASK_CONTROLS_MENU_WIDTH;
+        const horizontalInset = 6;
+        const width = Math.min(menuWidth, Math.max(0, topBarRect.width - horizontalInset * 2));
+        const leftInViewport = Math.min(
+          Math.max(buttonRect.left, topBarRect.left + horizontalInset),
+          topBarRect.right - width - horizontalInset,
         );
-        setTopPanelPos({ top: topBarRect.bottom, left, width });
+        setTopPanelPos({
+          top: topBarRect.height + 6,
+          left: leftInViewport - topBarRect.left,
+          width,
+        });
         return;
       }
-      setTopPanelPos({ top: topBarRect.bottom, left: topBarRect.left, width: topBarRect.width });
+      setTopPanelPos({ top: topBarRect.height + 6, left: 6, width: Math.max(0, topBarRect.width - 12) });
     };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(topBarRef.current);
+    if (projectBtnRef.current) ro.observe(projectBtnRef.current);
     if (languageBtnRef.current) ro.observe(languageBtnRef.current);
+    if (taskControlsBtnRef.current) ro.observe(taskControlsBtnRef.current);
+    if (systemBtnRef.current) ro.observe(systemBtnRef.current);
     return () => ro.disconnect();
   }, [activeTopPanel, isMobile]);
+
+  useEffect(() => {
+    if (!activeTopPanel) {
+      autoFocusedTopPanelRef.current = null;
+      return;
+    }
+    if (
+      activeTopPanel !== "project"
+      && activeTopPanel !== "taskControls"
+      && activeTopPanel !== "language"
+    ) return;
+    if (!topPanelPos || autoFocusedTopPanelRef.current === activeTopPanel) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      if (autoFocusedTopPanelRef.current === activeTopPanel) return;
+      const firstItem = topPanelFrameRef.current?.querySelector<HTMLElement>(
+        '[role="menuitem"]:not([disabled]), [role="menuitemradio"]:not([disabled]), [role="menuitemcheckbox"]:not([disabled]), button:not([disabled])',
+      );
+      if (!firstItem) return;
+      firstItem.focus();
+      autoFocusedTopPanelRef.current = activeTopPanel;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTopPanel, topPanelPos]);
+
+  useEffect(() => {
+    if (!activeTopPanel) return;
+    const focusItems = () => Array.from(
+      topPanelFrameRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], button:not([disabled])') ?? [],
+    ).filter((item) => !item.hasAttribute("disabled"));
+    const restoreTriggerFocus = () => {
+      if (activeTopPanel === "project") projectBtnRef.current?.focus();
+      if (activeTopPanel === "taskControls") taskControlsBtnRef.current?.focus();
+      if (activeTopPanel === "language") languageBtnRef.current?.focus();
+    };
+    const closePanel = () => {
+      setActiveTopPanel(null);
+      restoreTriggerFocus();
+    };
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      const frame = topPanelFrameRef.current;
+      if (frame?.contains(target) || topBarRef.current?.contains(target)) return;
+      setActiveTopPanel(null);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closePanel();
+        return;
+      }
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+      const items = focusItems();
+      if (items.length === 0) return;
+      event.preventDefault();
+      const activeIndex = items.indexOf(document.activeElement as HTMLElement);
+      const nextIndex = event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? items.length - 1
+          : event.key === "ArrowDown"
+            ? (activeIndex + 1 + items.length) % items.length
+            : (activeIndex - 1 + items.length) % items.length;
+      items[nextIndex]?.focus();
+    };
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [activeTopPanel]);
 
   useEffect(() => {
     if (!appearanceOpen) return;
@@ -302,9 +423,25 @@ export function AppShell() {
     const focusTarget = dialog?.querySelector<HTMLElement>("[data-appearance-close]");
     focusTarget?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      closeAppearanceSettings();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeAppearanceSettings();
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -492,7 +629,7 @@ export function AppShell() {
           else setSidebarOpen(true);
           break;
         case "choose-project":
-          setSidebarOpen(true);
+          handleOpenProjectPicker();
           break;
         case "toggle-sidebar":
           handleSidebarToggle();
@@ -511,7 +648,7 @@ export function AppShell() {
       }
     });
     return unsubscribe;
-  }, [activeCwd, handleNewSession, handleSidebarToggle, openAppearanceSettings]);
+  }, [activeCwd, handleNewSession, handleOpenProjectPicker, handleSidebarToggle, openAppearanceSettings]);
 
   // Electron's titleBarOverlay does not make the browser-only
   // `(display-mode: window-controls-overlay)` media query true. Use the
@@ -554,6 +691,13 @@ export function AppShell() {
   const handleAgentEnd = useCallback(() => {
     setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
+    const taskTitle = selectedSession?.name
+      || (activeCwd ? getFileName(activeCwd) || activeCwd : undefined);
+    void notifyCompletion(taskTitle);
+  }, [activeCwd, notifyCompletion, selectedSession?.name]);
+
+  const handleTaskControlsChange = useCallback((controls: TaskControls | null) => {
+    setTaskControls(controls);
   }, []);
 
   const handleAutoName = useCallback(async () => {
@@ -697,8 +841,25 @@ export function AppShell() {
   const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   const projectTrustCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
+  const currentProjectCwd = selectedSession?.cwd ?? effectiveNewSessionCwd ?? activeCwd;
+  const currentProjectPath = selectedSession?.projectRoot ?? activeProjectRootRef.current ?? currentProjectCwd;
+  const currentProjectName = currentProjectPath ? getFileName(currentProjectPath) || currentProjectPath : null;
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showChat;
+
+  const handleNewSessionInCurrentProject = useCallback(() => {
+    if (!currentProjectCwd) return;
+    handleNewSession(`project-menu-${Date.now()}`, currentProjectCwd);
+  }, [currentProjectCwd, handleNewSession]);
+
+  const handleCopyCurrentProjectPath = useCallback(() => {
+    if (!currentProjectCwd) return;
+    void copyText(currentProjectCwd).then(() => {
+      if (projectPathCopyTimerRef.current) clearTimeout(projectPathCopyTimerRef.current);
+      setProjectPathCopied(true);
+      projectPathCopyTimerRef.current = setTimeout(() => setProjectPathCopied(false), 1400);
+    }).catch(() => {});
+  }, [currentProjectCwd]);
 
   useEffect(() => {
     setProjectTrust(null);
@@ -763,6 +924,7 @@ export function AppShell() {
   const sidebarContent = (
     <>
       <SessionSidebar
+        ref={sessionSidebarRef}
         selectedSessionId={selectedSession?.id ?? null}
         onSelectSession={handleSelectSession}
         onNewSession={handleNewSession}
@@ -797,7 +959,7 @@ export function AppShell() {
             background: sidebarMenuOpen ? "var(--bg-selected)" : "transparent",
             border: "none", borderRadius: "var(--radius-control)",
             color: sidebarMenuOpen ? "var(--text)" : "var(--text-muted)",
-            cursor: "pointer", fontSize: 12, textAlign: "left",
+            cursor: "pointer", fontSize: "var(--font-sm)", textAlign: "left",
             transition: "background 0.12s, color 0.12s",
           }}
           onMouseEnter={(e) => {
@@ -913,7 +1075,7 @@ export function AppShell() {
                   width: "100%", height: 34, padding: "0 10px",
                   background: "none", border: "none",
                   color: disabled ? "var(--text-dim)" : "var(--text-muted)",
-                  cursor: disabled ? "default" : "pointer", fontSize: 12, textAlign: "left",
+                  cursor: disabled ? "default" : "pointer", fontSize: "var(--font-sm)", textAlign: "left",
                   opacity: disabled ? 0.45 : 1,
                   transition: "background 0.12s, color 0.12s",
                 }}
@@ -1049,7 +1211,7 @@ export function AppShell() {
       {/* Center: chat */}
       <div className="workspace-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0, position: "relative" }}>
         {/* Top bar with sidebar toggle */}
-        <div ref={topBarRef} className="app-topbar" style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", height: 48, background: "var(--bg)" }}>
+        <div ref={topBarRef} className="app-topbar" style={{ display: "flex", alignItems: "center", flexShrink: 0, borderBottom: "1px solid var(--border)", minHeight: "max(48px, calc(var(--font-base) + 34px))", background: "var(--bg)" }}>
           <button
             className="topbar-control topbar-icon-button"
             onClick={handleSidebarToggle}
@@ -1074,17 +1236,48 @@ export function AppShell() {
               </svg>
             )}
            </button>
-          <div className="app-topbar-title" aria-live="polite">
-            <span className="app-topbar-title-icon" aria-hidden="true">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" />
+          <div
+            aria-live="polite"
+            style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0, flex: "1 1 auto" }}
+          >
+            <button
+              ref={projectBtnRef}
+              className="app-topbar-title"
+              type="button"
+              onClick={() => toggleTopPanel("project")}
+              title={currentProjectPath ?? translate("projectMenu.noProject")}
+              aria-label={translate("projectMenu.title")}
+              aria-haspopup="menu"
+              aria-expanded={activeTopPanel === "project"}
+              aria-pressed={activeTopPanel === "project"}
+              style={{
+                flex: "0 1 auto",
+                width: "auto",
+                maxWidth: selectedSession?.name ? "55%" : "100%",
+                border: "none",
+                borderRadius: "var(--radius-control)",
+                background: activeTopPanel === "project" ? "var(--bg-selected)" : "transparent",
+                cursor: "pointer",
+                textAlign: "left",
+                transition: "background 0.12s ease, color 0.12s ease",
+              }}
+            >
+              <span className="app-topbar-title-icon" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" />
+                </svg>
+              </span>
+              <span className="app-topbar-title-text">
+                {currentProjectName ?? translate("projectMenu.noProject")}
+              </span>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-dim)" }}>
+                <path d="m3 4.5 3 3 3-3" />
               </svg>
-            </span>
-            <span className="app-topbar-title-text">
-              {selectedSession?.name || activeCwdName || (showChat ? translate("i18n.newSession") : "piGUI")}
-            </span>
-            {activeCwdName && selectedSession?.name && (
-              <span className="app-topbar-title-path">{activeCwdName}</span>
+            </button>
+            {selectedSession?.name && (
+              <span className="app-topbar-title-path" title={selectedSession.name}>
+                {selectedSession.name}
+              </span>
             )}
           </div>
           <div
@@ -1219,7 +1412,7 @@ export function AppShell() {
                 color: "#d97706",
                 cursor: "pointer",
                 flexShrink: 0,
-                fontSize: 11,
+                fontSize: "var(--font-xs)",
                 whiteSpace: "nowrap",
               }}
             >
@@ -1262,7 +1455,7 @@ export function AppShell() {
                   cursor: selectedSession ? "pointer" : "not-allowed",
                   opacity: selectedSession ? 1 : 0.45,
                   flexShrink: 0,
-                  fontSize: 11,
+                  fontSize: "var(--font-xs)",
                   whiteSpace: "nowrap",
                   transition: "color 0.1s, background 0.1s, opacity 0.1s",
                 }}
@@ -1335,7 +1528,7 @@ export function AppShell() {
                       color: isError ? "#dc2626" : isSuccess ? "var(--accent)" : disabled ? "var(--text-dim)" : "var(--text-muted)",
                       cursor: disabled ? "not-allowed" : "pointer",
                       opacity: disabled && autoNameStatus.kind !== "naming" ? 0.45 : 1,
-                      flexShrink: 0, fontSize: 11, whiteSpace: "nowrap",
+                      flexShrink: 0, fontSize: "var(--font-xs)", whiteSpace: "nowrap",
                       transition: "color 0.1s, background 0.1s, opacity 0.1s",
                     }}
                     onMouseEnter={(e) => {
@@ -1394,7 +1587,7 @@ export function AppShell() {
                   borderTop: activeTopPanel === "system" ? "2px solid var(--accent)" : "2px solid transparent",
                   cursor: "pointer",
                   color: activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)",
-                  fontSize: 11, whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
+                  fontSize: "var(--font-xs)", whiteSpace: "nowrap", transition: "color 0.1s, background 0.1s",
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.color = activeTopPanel === "system" ? "var(--text)" : "var(--text-muted)"; }}
@@ -1406,6 +1599,38 @@ export function AppShell() {
                   <line x1="8" y1="17" x2="13" y2="17" />
                 </svg>
                  {!isMobile && <span className="topbar-action-label">{translate("system.label")}</span>}
+              </button>
+              <button
+                className="topbar-control topbar-icon-button"
+                ref={taskControlsBtnRef}
+                type="button"
+                onClick={() => toggleTopPanel("taskControls")}
+                title={translate("taskControls.buttonLabel")}
+                aria-label={translate("taskControls.buttonLabel")}
+                aria-haspopup="menu"
+                aria-expanded={activeTopPanel === "taskControls"}
+                aria-pressed={activeTopPanel === "taskControls"}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: TOP_BAR_ICON_BUTTON_SIZE,
+                  height: "100%",
+                  padding: 0,
+                  background: activeTopPanel === "taskControls" ? "var(--bg-selected)" : "none",
+                  border: "none",
+                  borderTop: activeTopPanel === "taskControls" ? "2px solid var(--accent)" : "2px solid transparent",
+                  borderRadius: 7,
+                  color: activeTopPanel === "taskControls" ? "var(--text)" : "var(--text-muted)",
+                  cursor: "pointer",
+                  transition: "color 0.1s, background 0.1s",
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <circle cx="5" cy="12" r="1.8" />
+                  <circle cx="12" cy="12" r="1.8" />
+                  <circle cx="19" cy="12" r="1.8" />
+                </svg>
               </button>
             </div>
           )}
@@ -1456,7 +1681,7 @@ export function AppShell() {
                   background: activeTopPanel === "session" ? "var(--bg-selected)" : "none",
                   border: "none",
                   borderTop: activeTopPanel === "session" ? "2px solid var(--accent)" : "2px solid transparent",
-                  fontSize: 11, color: "var(--text-muted)",
+                  fontSize: "var(--font-xs)", color: "var(--text-muted)",
                   whiteSpace: "nowrap", cursor: "pointer",
                   fontVariantNumeric: "tabular-nums",
                   transition: "color 0.1s, background 0.1s",
@@ -1510,31 +1735,256 @@ export function AppShell() {
             );
           })()}
           {/* Top panel dropdown — shared, only one active at a time */}
-          {activeTopPanel && topPanelPos && (
-            <div className="app-top-panel-frame" style={{
-              position: "fixed",
+          {activeTopPanel && activeTopPanel !== "branches" && topPanelPos && (
+            <div ref={topPanelFrameRef} className="app-top-panel-frame" style={{
+              position: "absolute",
               top: topPanelPos.top,
               left: topPanelPos.left,
               width: topPanelPos.width,
-              maxHeight: `calc(100dvh - ${topPanelPos.top}px - 8px)`,
+              maxHeight: "calc(100dvh - 76px)",
               overflowY: "auto",
               zIndex: 500,
             }}>
+              {activeTopPanel === "project" && (
+                <div
+                  className="soft-top-panel"
+                  role="menu"
+                  aria-label={translate("projectMenu.title")}
+                  data-project-menu
+                >
+                  <div className="soft-top-panel-header">
+                    <span className="soft-top-panel-icon" aria-hidden="true">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" />
+                      </svg>
+                    </span>
+                    <span className="soft-top-panel-heading">
+                      <span className="soft-top-panel-title">
+                        {currentProjectName ?? translate("projectMenu.noProject")}
+                      </span>
+                      <span className="soft-top-panel-description" title={currentProjectPath ?? undefined}>
+                        {currentProjectPath ?? translate("projectMenu.description")}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="soft-top-panel-body">
+                    <button
+                      className="soft-menu-item"
+                      type="button"
+                      role="menuitem"
+                      disabled={!currentProjectCwd}
+                      onClick={handleNewSessionInCurrentProject}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "18px minmax(0, 1fr)",
+                        columnGap: 8,
+                        cursor: currentProjectCwd ? "pointer" : "not-allowed",
+                        opacity: currentProjectCwd ? 1 : 0.5,
+                      }}
+                    >
+                      <span aria-hidden="true" style={{ paddingTop: 2, color: "var(--text-muted)" }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 5v14M5 12h14" />
+                        </svg>
+                      </span>
+                      <span style={{ minWidth: 0 }}>
+                        <span className="soft-menu-item-title">{translate("projectMenu.newSession")}</span>
+                        <span className="soft-menu-item-description">{translate("projectMenu.newSessionDescription")}</span>
+                      </span>
+                    </button>
+                    <button
+                      className="soft-menu-item"
+                      type="button"
+                      role="menuitem"
+                      onClick={handleOpenProjectPicker}
+                      style={{ display: "grid", gridTemplateColumns: "18px minmax(0, 1fr)", columnGap: 8, cursor: "pointer" }}
+                    >
+                      <span aria-hidden="true" style={{ paddingTop: 2, color: "var(--text-muted)" }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" />
+                          <path d="m14 12 2 2 4-4" />
+                        </svg>
+                      </span>
+                      <span style={{ minWidth: 0 }}>
+                        <span className="soft-menu-item-title">{translate("projectMenu.switchProject")}</span>
+                        <span className="soft-menu-item-description">{translate("projectMenu.switchProjectDescription")}</span>
+                      </span>
+                    </button>
+                    <button
+                      className="soft-menu-item"
+                      type="button"
+                      role="menuitem"
+                      disabled={!currentProjectCwd}
+                      onClick={handleCopyCurrentProjectPath}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "18px minmax(0, 1fr)",
+                        columnGap: 8,
+                        cursor: currentProjectCwd ? "pointer" : "not-allowed",
+                        opacity: currentProjectCwd ? 1 : 0.5,
+                      }}
+                    >
+                      <span aria-hidden="true" style={{ paddingTop: 2, color: projectPathCopied ? "var(--accent)" : "var(--text-muted)" }}>
+                        {projectPathCopied ? (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="m5 12 4 4L19 6" />
+                          </svg>
+                        ) : (
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="9" y="9" width="11" height="11" rx="2" />
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                          </svg>
+                        )}
+                      </span>
+                      <span style={{ minWidth: 0 }}>
+                        <span className="soft-menu-item-title">
+                          {translate(projectPathCopied ? "projectMenu.copied" : "projectMenu.copyPath")}
+                        </span>
+                        <span className="soft-menu-item-description" title={currentProjectCwd ?? undefined}>
+                          {currentProjectCwd ?? translate("projectMenu.copyPathDescription")}
+                        </span>
+                      </span>
+                    </button>
+                    {!sidebarOpen && (
+                      <>
+                        <div className="soft-top-panel-divider" />
+                        <button
+                          className="soft-menu-item"
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setSidebarOpen(true);
+                            setActiveTopPanel(null);
+                          }}
+                          style={{ display: "grid", gridTemplateColumns: "18px minmax(0, 1fr)", columnGap: 8, cursor: "pointer" }}
+                        >
+                          <span aria-hidden="true" style={{ paddingTop: 2, color: "var(--text-muted)" }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                              <rect x="3" y="3" width="18" height="18" rx="2" />
+                              <path d="M9 3v18" />
+                            </svg>
+                          </span>
+                          <span style={{ minWidth: 0 }}>
+                            <span className="soft-menu-item-title">{translate("projectMenu.showSidebar")}</span>
+                            <span className="soft-menu-item-description">{translate("projectMenu.showSidebarDescription")}</span>
+                          </span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+              {activeTopPanel === "taskControls" && (
+                <div
+                  className="soft-top-panel"
+                  role="menu"
+                  aria-label={translate("taskControls.title")}
+                >
+                  <div className="soft-top-panel-header">
+                    <span className="soft-top-panel-icon" aria-hidden="true">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 2v3M12 19v3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M2 12h3M19 12h3M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    </span>
+                    <span className="soft-top-panel-heading">
+                      <span className="soft-top-panel-title">{translate("taskControls.title")}</span>
+                      <span className="soft-top-panel-description">{translate("taskControls.description")}</span>
+                    </span>
+                  </div>
+                  <div className="soft-top-panel-body">
+                    {taskControls ? (
+                      <>
+                        <div className="soft-top-panel-section-label">{translate("taskControls.tools")}</div>
+                        {([
+                          { value: "none", label: translate("taskControls.presetOff"), description: translate("chat.noTools") },
+                          { value: "default", label: translate("taskControls.presetDefault"), description: translate("chat.builtInTools", { count: 4 }) },
+                          { value: "full", label: translate("taskControls.presetFull"), description: translate("chat.allBuiltInTools") },
+                        ] as const).map((option) => {
+                          const selected = taskControls.toolPreset === option.value;
+                          return (
+                            <button
+                              className="soft-menu-item"
+                              key={option.value}
+                              type="button"
+                              role="menuitemradio"
+                              aria-checked={selected}
+                              disabled={taskControls.disabled}
+                              onClick={() => {
+                                if (!selected) taskControls.onToolPresetChange(option.value);
+                              }}
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "18px minmax(0, 1fr)",
+                                columnGap: 8,
+                                background: selected ? "var(--bg-selected)" : "transparent",
+                                cursor: taskControls.disabled ? "not-allowed" : "pointer",
+                                opacity: taskControls.disabled ? 0.55 : 1,
+                              }}
+                            >
+                              <span aria-hidden="true" style={{ paddingTop: 2, color: selected ? "var(--accent)" : "transparent" }}>
+                                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="1.5 6 4.5 9 10.5 2.5" />
+                                </svg>
+                              </span>
+                              <span style={{ minWidth: 0 }}>
+                                <span className="soft-menu-item-title" style={{ fontWeight: selected ? 600 : 500 }}>{option.label}</span>
+                                <span className="soft-menu-item-description">{option.description}</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                        <div className="soft-top-panel-divider" />
+                        <button
+                          className="soft-menu-item"
+                          type="button"
+                          role="menuitemcheckbox"
+                          aria-checked={notificationEnabled}
+                          disabled={notificationCapability === "unsupported"}
+                          onClick={() => void onNotificationToggle()}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "18px minmax(0, 1fr) auto",
+                            columnGap: 8,
+                            alignItems: "start",
+                            cursor: notificationCapability === "unsupported" ? "not-allowed" : "pointer",
+                            opacity: notificationCapability === "unsupported" ? 0.5 : 1,
+                          }}
+                        >
+                          <span aria-hidden="true" style={{ paddingTop: 2, color: notificationEnabled ? "var(--accent)" : "var(--text-dim)" }}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+                              <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+                            </svg>
+                          </span>
+                          <span style={{ minWidth: 0 }}>
+                            <span className="soft-menu-item-title">{translate("taskControls.notifications")}</span>
+                            <span className="soft-menu-item-description">
+                              {notificationCapability === "unsupported"
+                                ? translate("taskControls.notificationsUnsupported")
+                                : translate("taskControls.notificationsDescription")}
+                            </span>
+                          </span>
+                          <span className={`soft-switch${notificationEnabled ? " is-on" : ""}`} aria-hidden="true">
+                            <span />
+                          </span>
+                        </button>
+                      </>
+                    ) : (
+                      <div className="soft-top-panel-empty" role="status">{translate("taskControls.loading")}</div>
+                    )}
+                  </div>
+                </div>
+              )}
               {activeTopPanel === "language" && (
                 <div
+                  className="soft-top-panel soft-top-panel-compact"
                   role="menu"
                   aria-label={translate("common.language")}
-                  style={{
-                    background: "var(--bg-panel)",
-                    borderLeft: "1px solid var(--border)",
-                    borderRight: "1px solid var(--border)",
-                    borderBottom: "1px solid var(--border)",
-                    overflow: "hidden",
-                    padding: 4,
-                  }}
                 >
                   {supportedLocales.map((plugin) => (
                     <button
+                      className="soft-menu-item soft-menu-item-single-line"
                       key={plugin.id}
                       type="button"
                       onClick={() => {
@@ -1545,58 +1995,51 @@ export function AppShell() {
                       aria-checked={locale === plugin.id}
                       style={{
                         display: "flex", alignItems: "center",
-                        width: "100%", height: 34, padding: "0 10px",
-                        border: "none", borderRadius: 4,
+                        width: "100%", minHeight: 34,
                         background: locale === plugin.id ? "var(--bg-selected)" : "transparent",
-                        color: "var(--text)", cursor: "pointer", textAlign: "left", fontSize: 12,
-                        transition: "background 0.1s",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (locale !== plugin.id) e.currentTarget.style.background = "var(--bg-hover)";
-                      }}
-                      onMouseLeave={(e) => {
-                        if (locale !== plugin.id) e.currentTarget.style.background = "transparent";
+                        cursor: "pointer",
                       }}
                     >
                       <span>{plugin.label}</span>
+                      {locale === plugin.id ? (
+                        <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="m5 12 4 4L19 6" />
+                        </svg>
+                      ) : null}
                     </button>
                   ))}
                 </div>
               )}
               {activeTopPanel === "system" && (
-                <div style={{
-                  background: "var(--bg-panel)",
-                  borderBottom: "1px solid var(--border)",
-                }}>
-                  {systemPrompt ? (
-                    <div style={{
-                      maxHeight: "min(600px, 75vh)",
-                      overflowY: "auto",
-                      padding: "12px 16px",
-                      color: "var(--text-muted)",
-                      fontSize: 12,
-                      lineHeight: 1.6,
-                      whiteSpace: "pre-wrap",
-                      fontFamily: "var(--font-mono)",
-                    }}>
-                      {systemPrompt}
-                    </div>
-                  ) : systemPrompt === "" ? (
-                    <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                       {translate("system.empty")}
-                    </div>
-                  ) : (
-                    <div style={{ padding: "10px 16px", fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
-                       {translate("system.load")}
-                    </div>
-                  )}
+                <div className="soft-top-panel">
+                  <div className="soft-top-panel-header">
+                    <span className="soft-top-panel-icon" aria-hidden="true">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="8" y1="13" x2="16" y2="13" />
+                        <line x1="8" y1="17" x2="13" y2="17" />
+                      </svg>
+                    </span>
+                    <span className="soft-top-panel-heading">
+                      <span className="soft-top-panel-title">{translate("system.prompt")}</span>
+                      <span className="soft-top-panel-description">{translate("system.description")}</span>
+                    </span>
+                  </div>
+                  <div className="soft-top-panel-body">
+                    {systemPrompt ? (
+                      <div className="system-prompt-content">{systemPrompt}</div>
+                    ) : systemPrompt === "" ? (
+                      <div className="soft-top-panel-empty">{translate("system.empty")}</div>
+                    ) : (
+                      <div className="soft-top-panel-empty">{translate("system.load")}</div>
+                    )}
+                  </div>
                 </div>
               )}
               {activeTopPanel === "session" && (
-                <div className="session-info-popover" style={{
+                <div className="session-info-popover soft-top-panel" style={{
                   background: "var(--bg-panel)",
-                  borderBottom: "1px solid var(--border)",
-                  boxShadow: "0 10px 28px rgba(0,0,0,0.10)",
                   padding: "12px 16px",
                 }}>
                   {sessionStats ? (() => {
@@ -1632,7 +2075,7 @@ export function AppShell() {
                       compact = false,
                     ) => (
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{title}</div>
+                          <div style={{ fontSize: "var(--font-xs)", fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{title}</div>
                           <div style={{
                             display: "grid",
                             gridTemplateColumns: compact ? "max-content max-content" : "auto minmax(0, 1fr)",
@@ -1704,7 +2147,7 @@ export function AppShell() {
                     };
                     const sessionInfoSection = (
                       <div style={{ minWidth: 0 }}>
-                         <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{translate("session.infoSection")}</div>
+                         <div style={{ fontSize: "var(--font-xs)", fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{translate("session.infoSection")}</div>
                         <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", columnGap: 12, rowGap: 8, alignItems: "start" }}>
                           {sessionRows.map((row) => (
                             <div key={`session-info:${row.label}`} style={{ display: "contents" }}>
@@ -1730,7 +2173,7 @@ export function AppShell() {
                           ? "1fr"
                           : "minmax(360px, 1.7fr) minmax(140px, 0.55fr) minmax(190px, 0.75fr)",
                         gap: isMobile ? 16 : 24,
-                        fontSize: 12,
+                        fontSize: "var(--font-sm)",
                         lineHeight: 1.5,
                         fontFamily: "var(--font-mono)",
                       }}>
@@ -1740,7 +2183,7 @@ export function AppShell() {
                       </div>
                     );
                   })() : (
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+                    <div style={{ fontSize: "var(--font-sm)", color: "var(--text-muted)", fontStyle: "italic" }}>
                        {translate("session.load")}
                     </div>
                   )}
@@ -1773,14 +2216,15 @@ export function AppShell() {
                 onOpenFile={handleOpenLinkedFile}
                 onCompanionActivityChange={setCompanionActivity}
                 onModelInfoChange={setCurrentModelInfo}
+                onTaskControlsChange={handleTaskControlsChange}
               />
             ) : initialCwdStatus === "validating" ? (
               <div
                 role="status"
                 style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
               >
-                 <div style={{ fontSize: 14, color: "var(--text)" }}>{translate("workspace.opening")}</div>
-                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                 <div style={{ fontSize: "var(--font-base)", color: "var(--text)" }}>{translate("workspace.opening")}</div>
+                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: "var(--font-sm)" }}>
                   {initialNavigation.requestedCwd}
                 </div>
               </div>
@@ -1789,15 +2233,15 @@ export function AppShell() {
                 role="alert"
                 style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
               >
-                 <div style={{ fontSize: 14, color: "#dc2626" }}>{translate("workspace.unable")}</div>
-                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: 12 }}>
+                 <div style={{ fontSize: "var(--font-base)", color: "#dc2626" }}>{translate("workspace.unable")}</div>
+                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: "var(--font-sm)" }}>
                   {initialNavigation.requestedCwd}
                 </div>
-                <div style={{ maxWidth: 720, fontSize: 12 }}>{initialCwdError}</div>
+                <div style={{ maxWidth: 720, fontSize: "var(--font-sm)" }}>{initialCwdError}</div>
               </div>
             ) : showPlaceholder ? (
               activeCwd ? (
-                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: 15 }}>
+                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "var(--font-lg)" }}>
                    {translate("workspace.selectSession")}
                 </div>
               ) : (
@@ -1858,7 +2302,7 @@ export function AppShell() {
         } as React.CSSProperties}
       >
         {/* Right panel tab bar */}
-        <div className="right-panel-tabs" style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", height: 40 }}>
+        <div className="right-panel-tabs" style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", minHeight: "max(40px, calc(var(--font-sm) + 28px))" }}>
           <div style={{ flex: 1, overflow: "hidden" }}>
             <TabBar
               tabs={fileTabs}
@@ -1906,23 +2350,23 @@ export function AppShell() {
               );
             })
           ) : (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: 12 }}>
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: "var(--font-sm)" }}>
                {translate("files.noneOpen")}
             </div>
           )}
         </div>
       </div>
-    </div>
     {/* File panel toggle — always visible at top-right */}
     <button
-      className="right-panel-toggle"
+      className={`right-panel-toggle ${rightPanelOpen ? "is-open" : "is-closed"}`}
+      data-panel-open={rightPanelOpen ? "true" : "false"}
       onClick={() => setRightPanelOpen((v) => !v)}
        aria-controls="file-panel"
        aria-expanded={rightPanelOpen}
        title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
        aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
       style={{
-        position: "fixed", top: 7, right: 8, zIndex: 300,
+        position: "fixed", right: 8, zIndex: 300,
         display: "flex", alignItems: "center", justifyContent: "center",
         width: 32, height: 32, padding: 0,
         background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--radius-control)",
@@ -1936,8 +2380,10 @@ export function AppShell() {
         <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="15" y1="3" x2="15" y2="21" />
       </svg>
     </button>
+    </div>
     {appearanceOpen && (
       <div
+        className="app-shell-dialog-backdrop"
         role="presentation"
         onMouseDown={(event) => {
           if (event.target === event.currentTarget) closeAppearanceSettings();
@@ -1954,6 +2400,7 @@ export function AppShell() {
         }}
       >
         <div
+          className="app-shell-dialog"
           ref={appearanceDialogRef}
           role="dialog"
           aria-modal="true"
@@ -1972,12 +2419,12 @@ export function AppShell() {
             color: "var(--text)",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+          <div className="app-shell-dialog-header" style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <h2 id="appearance-dialog-title" style={{ margin: 0, fontSize: 16, fontWeight: 650, letterSpacing: "-0.015em" }}>
+              <h2 id="appearance-dialog-title" style={{ margin: 0, fontSize: "var(--font-xl)", fontWeight: 650, letterSpacing: "-0.015em" }}>
                 {translate("appearance.title")}
               </h2>
-              <p id="appearance-dialog-description" style={{ margin: "3px 0 0", color: "var(--text-muted)", fontSize: 11 }}>
+              <p id="appearance-dialog-description" style={{ margin: "3px 0 0", color: "var(--text-muted)", fontSize: "var(--font-xs)" }}>
                 {translate("appearance.description")}
               </p>
             </div>
@@ -2006,13 +2453,14 @@ export function AppShell() {
               </svg>
             </button>
           </div>
-          <div style={{ minHeight: 0, overflowY: "auto", padding: 16 }}>
+          <div className="app-shell-dialog-body" style={{ minHeight: 0, overflowY: "auto", padding: 16 }}>
+            <AppearanceLooks />
             <section aria-labelledby="appearance-theme-title" style={{ paddingBottom: 16 }}>
               <div style={{ marginBottom: 9 }}>
-                <h3 id="appearance-theme-title" style={{ margin: 0, fontSize: 12, fontWeight: 700 }}>
+                <h3 id="appearance-theme-title" style={{ margin: 0, fontSize: "var(--font-sm)", fontWeight: 700 }}>
                   {translate("appearance.theme")}
                 </h3>
-                <p style={{ margin: "2px 0 0", color: "var(--text-dim)", fontSize: 10 }}>
+                <p style={{ margin: "2px 0 0", color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>
                   {translate("appearance.themeHint")}
                 </p>
               </div>
@@ -2050,7 +2498,7 @@ export function AppShell() {
                         color: "var(--text)",
                         cursor: "pointer",
                         textAlign: "left",
-                        fontSize: 11,
+                        fontSize: "var(--font-xs)",
                         transition: "border-color 0.12s, background 0.12s",
                       }}
                     >
@@ -2082,12 +2530,19 @@ export function AppShell() {
                 })}
               </div>
             </section>
+            <FontSettings />
             <BackgroundSettings />
           </div>
         </div>
       </div>
     )}
-    {modelsConfigOpen && <ModelsConfig onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((k) => k + 1); }} />}
+    {modelsConfigOpen && (
+      <ModelsConfig
+        cwd={projectTrustCwd ?? activeCwd ?? undefined}
+        onModelsChanged={() => setModelsRefreshKey((key) => key + 1)}
+        onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((key) => key + 1); }}
+      />
+    )}
     {projectTrustDialogOpen && projectTrustCwd && (
       <ProjectTrustDialog
         cwd={projectTrustCwd}

@@ -40,8 +40,30 @@ test("project session overflow is accessible and attention-aware", () => {
   assert.match(source, /sidebar\.showFewerSessions/);
 });
 
-test("project opener does not duplicate the recent-project list", () => {
-  assert.match(source, /sidebar\.openProject/);
+test("project creation lives in the projects header without a duplicate list", () => {
+  assert.match(source, /sidebar\.newProject/);
+  assert.match(source, /sidebar\.useDefaultDirectory/);
+  assert.doesNotMatch(source, /sidebar\.openProject/);
   assert.doesNotMatch(source, /visibleProjects\.map/);
   assert.doesNotMatch(source, /filteredSessions/);
+});
+
+test("exposes the existing validated project picker to shell-level project actions", () => {
+  assert.match(source, /export interface SessionSidebarHandle\s*\{\s*openProjectPicker:\s*\(\) => void;/);
+  assert.match(source, /forwardRef<SessionSidebarHandle, Props>/);
+  assert.match(source, /useImperativeHandle\(ref,[\s\S]*?openProjectPicker:\s*handleCustomPathClick/);
+  assert.match(source, /handleCustomPathClick[\s\S]*?setCustomPathOpen\(true\)/);
+  assert.match(source, /commitCustomPath[\s\S]*?fetch\("\/api\/cwd\/validate"/);
+});
+
+test("keeps the real worktree switcher without an inactive repo-root hint", () => {
+  assert.match(source, /showWorktreeSwitcher/);
+  assert.match(source, /sidebar\.switchWorktreeTitle/);
+  assert.doesNotMatch(source, /inactiveWorktreeSelector/);
+  assert.doesNotMatch(source, /sidebar\.openRepoRoot/);
+});
+
+test("removes the standalone piGUI brand header without leaving empty chrome", () => {
+  assert.doesNotMatch(source, /PiWebTitle|useScramble|sidebar-title-row/);
+  assert.match(source, /\{showWorktreeSwitcher && <div\s+className="sidebar-header"/);
 });

@@ -1,12 +1,13 @@
-import { stat } from "fs/promises";
-import { resolve } from "path";
-import { createAgentSessionServices, getAgentDir, type SettingsManager } from "@earendil-works/pi-coding-agent";
+import type { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { loadModelsWithCache, withModelRuntimeError, type ModelsData } from "@/lib/models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "@/lib/model-scope";
 import { prioritizeProvider, resolveDefaultModelPreference } from "@/lib/model-policy";
-import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
-import { projectTrustReloadOptions } from "@/lib/project-trust";
+import {
+  createTrustedModelServices,
+  ModelRequestCwdError,
+  resolveModelRequestCwd,
+} from "@/lib/model-runtime-context";
 
 export const dynamic = "force-dynamic";
 
@@ -17,16 +18,7 @@ async function loadModels(cwd: string): Promise<ModelsData> {
   const thinkingLevels: Record<string, string[]> = {};
   const thinkingLevelMaps: Record<string, Record<string, string | null>> = {};
 
-  const agentDir = getAgentDir();
-  // Gate untrusted project extensions: enumerating models still imports and
-  // runs a repository's .pi/extensions factories, so honor project trust here
-  // too (see lib/project-trust.ts, #236).
-  const trustReloadOptions = projectTrustReloadOptions(cwd, agentDir);
-  const services = await createAgentSessionServices({
-    cwd,
-    agentDir,
-    ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
-  });
+  const services = await createTrustedModelServices(cwd);
   const modelError = services.modelRuntime.getError();
   const settings: SettingsManager = services.settingsManager;
   // `enabledModels` supports globs and fuzzy patterns, so resolve it the same
@@ -88,21 +80,14 @@ const EMPTY_MODELS: ModelsData = {
 };
 
 export async function GET(req: Request) {
-  const requestedCwd = new URL(req.url).searchParams.get("cwd") || process.cwd();
-  const cwd = resolve(requestedCwd);
-
-  let cwdStat;
+  let cwd: string;
   try {
-    cwdStat = await stat(cwd);
-  } catch {
-    return Response.json({ error: `Directory does not exist: ${cwd}` }, { status: 400 });
-  }
-  if (!cwdStat.isDirectory()) {
-    return Response.json({ error: `Not a directory: ${cwd}` }, { status: 400 });
-  }
-  const allowedRoots = await getAllowedFileRoots();
-  if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
-    return Response.json({ error: "Access denied" }, { status: 403 });
+    cwd = await resolveModelRequestCwd(new URL(req.url).searchParams.get("cwd"));
+  } catch (error) {
+    if (error instanceof ModelRequestCwdError) {
+      return Response.json({ error: error.message }, { status: error.status });
+    }
+    throw error;
   }
 
   try {

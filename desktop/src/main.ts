@@ -5,9 +5,12 @@ import {
   app,
   BrowserWindow,
   dialog,
+  ipcMain,
   Menu,
+  Notification,
   session as electronSession,
   shell,
+  type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
   type MessageBoxOptions,
   type Session,
@@ -21,7 +24,9 @@ import { StandaloneServer, type ServerExit } from "./server-supervisor.js";
 
 const DESKTOP_PARTITION = "persist:pigui";
 const DESKTOP_TOKEN_HEADER = "X-Pi-Desktop-Token";
+const COMPLETION_NOTIFICATION_CHANNEL = "pi:completion-notification";
 const DESKTOP_TITLE_BAR_HEIGHT = 40;
+const MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80;
 const PORTABLE_SMOKE_TEST = process.env.PI_GUI_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
 
@@ -36,6 +41,63 @@ let server: StandaloneServer | undefined;
 let serverUrl: URL | undefined;
 let shutdownPromise: Promise<void> | undefined;
 let shutdownComplete = false;
+
+function sanitizeNotificationTaskTitle(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return undefined;
+  return Array.from(normalized).slice(0, MAX_NOTIFICATION_TASK_TITLE_LENGTH).join("");
+}
+
+function isTrustedCompletionNotificationSender(event: IpcMainInvokeEvent): boolean {
+  if (!serverUrl || !event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+    return false;
+  }
+  return isAllowedAppUrl(event.senderFrame.url, serverUrl.origin);
+}
+
+function getCompletionNotificationCopy(taskTitle: string | undefined): {
+  title: string;
+  body: string;
+} {
+  const isChinese = app.getLocale().toLowerCase().startsWith("zh");
+  return {
+    title: taskTitle ? `${taskTitle} - piGUI` : "piGUI",
+    body: isChinese
+      ? "任务已完成，可以回到 piGUI 查看结果。"
+      : "Task completed. Open piGUI to review the result.",
+  };
+}
+
+function registerCompletionNotificationHandler(): void {
+  ipcMain.removeHandler(COMPLETION_NOTIFICATION_CHANNEL);
+  ipcMain.handle(
+    COMPLETION_NOTIFICATION_CHANNEL,
+    (event, requestedTaskTitle: unknown): boolean => {
+      if (!isTrustedCompletionNotificationSender(event)) {
+        logger?.warn("Blocked completion notification from an untrusted renderer");
+        return false;
+      }
+      if (!Notification.isSupported()) return false;
+
+      const copy = getCompletionNotificationCopy(
+        sanitizeNotificationTaskTitle(requestedTaskTitle),
+      );
+      const notification = new Notification({ ...copy, silent: false });
+      notification.on("click", () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      });
+      notification.show();
+      return true;
+    },
+  );
+}
 
 // Apply Chromium's sandbox to every renderer created by this application.
 app.enableSandbox();
@@ -411,6 +473,7 @@ async function startApplication(): Promise<void> {
 
   const runtimeSession = electronSession.fromPartition(DESKTOP_PARTITION, { cache: true });
   configureSession(runtimeSession, serverUrl.origin, token);
+  registerCompletionNotificationHandler();
 
   if (PORTABLE_SMOKE_TEST) {
     const smokeMarker = process.env.PI_GUI_SMOKE_MARKER?.trim();

@@ -50,6 +50,8 @@ export interface ApiKeyProviderListing {
   modelCount: number;
   /** True when the same provider can also be authenticated with OAuth. */
   supportsOAuth: boolean;
+  /** True only when auth.json contains the API key this UI can safely remove. */
+  canRemoveStoredCredential: boolean;
 }
 
 export interface OAuthProviderListing {
@@ -96,6 +98,7 @@ export function buildApiKeyProviderList(
       ...(configured && provider.status.source ? { source: provider.status.source } : {}),
       modelCount: provider.modelCount,
       supportsOAuth: provider.hasOAuth,
+      canRemoveStoredCredential: provider.credentialType === "api_key",
     });
   }
   return prioritizeProvider(result, (provider) => provider.id);

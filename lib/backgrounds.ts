@@ -152,6 +152,16 @@ export function parseBackgroundManifest(value: unknown): BackgroundManifest {
 export const BACKGROUND_MANIFEST = parseBackgroundManifest(manifestJson);
 export const BACKGROUND_PRESETS = BACKGROUND_MANIFEST.presets;
 
+const BACKGROUND_PREPAINT_PRESETS = JSON.stringify(Object.fromEntries(
+  BACKGROUND_PRESETS.map((preset) => [preset.id, {
+    asset: preset.artworkStatus === "available" ? preset.asset : null,
+    fallback: preset.fallback,
+  }]),
+)).replace(/</g, "\\u003c");
+
+/** Restores a validated built-in background before React/IndexedDB hydration. */
+export const BACKGROUND_INITIALIZATION_SCRIPT = `(function(){try{var p=${BACKGROUND_PREPAINT_PRESETS},v=localStorage.getItem("${BACKGROUND_PREFERENCE_STORAGE_KEY}");if(!v)return;var s=JSON.parse(v),b=s&&s.source==="builtin"&&typeof s.presetId==="string"?p[s.presetId]:null;if(!b)return;var n=function(x,d,a,z){return typeof x==="number"&&isFinite(x)?Math.min(z,Math.max(a,Math.round(x))):d},o=n(s.overlay,58,0,90),l=n(s.blur,0,0,24),r=document.documentElement;r.dataset.appBackgroundActive="true";r.dataset.appBackgroundSource="builtin";r.dataset.appBackgroundPreset=s.presetId;r.style.setProperty("--app-background-image",b.asset?'url("'+b.asset+'")':"none");r.style.setProperty("--app-background-fallback",b.fallback);r.style.setProperty("--app-background-overlay",o+"%");r.style.setProperty("--app-background-blur",l+"px")}catch(_){}})();`;
+
 const PRESETS_BY_ID = new Map(BACKGROUND_PRESETS.map((preset) => [preset.id, preset]));
 
 export function getBackgroundPreset(id: string | null | undefined): BackgroundPreset | undefined {

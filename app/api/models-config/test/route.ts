@@ -5,6 +5,11 @@ import { join } from "path";
 import type { AssistantMessage } from "@earendil-works/pi-ai/compat";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
+import {
+  createTrustedModelServices,
+  ModelRequestCwdError,
+  resolveModelRequestCwd,
+} from "@/lib/model-runtime-context";
 
 export const dynamic = "force-dynamic";
 
@@ -39,27 +44,43 @@ export async function POST(req: Request) {
   let tempDir: string | undefined;
 
   try {
-    const body = await req.json() as { providerName?: unknown; provider?: unknown; model?: unknown };
+    const body = await req.json() as {
+      providerName?: unknown;
+      provider?: unknown;
+      model?: unknown;
+      modelId?: unknown;
+      cwd?: unknown;
+    };
     const providerName = typeof body.providerName === "string" ? body.providerName.trim() : "";
     if (!providerName) return NextResponse.json({ ok: false, error: "providerName is required" }, { status: 400 });
-    if (!isRecord(body.provider)) return NextResponse.json({ ok: false, error: "provider is required" }, { status: 400 });
-    if (!isRecord(body.model)) return NextResponse.json({ ok: false, error: "model is required" }, { status: 400 });
+    const testingDraftConfig = body.provider !== undefined || body.model !== undefined;
+    let modelId: string;
+    let modelRuntime: ModelRuntime;
 
-    const modelId = typeof body.model.id === "string" ? body.model.id.trim() : "";
-    if (!modelId) return NextResponse.json({ ok: false, error: "Model ID is required" }, { status: 400 });
+    if (testingDraftConfig) {
+      if (!isRecord(body.provider)) return NextResponse.json({ ok: false, error: "provider is required" }, { status: 400 });
+      if (!isRecord(body.model)) return NextResponse.json({ ok: false, error: "model is required" }, { status: 400 });
+      modelId = typeof body.model.id === "string" ? body.model.id.trim() : "";
+      if (!modelId) return NextResponse.json({ ok: false, error: "Model ID is required" }, { status: 400 });
 
-    tempDir = mkdtempSync(join(tmpdir(), "pi-web-model-test-"));
-    const modelsPath = join(tempDir, "models.json");
-    writeFileSync(modelsPath, JSON.stringify({
-      providers: {
-        [providerName]: {
-          ...body.provider,
-          models: [{ ...body.model, id: modelId }],
+      tempDir = mkdtempSync(join(tmpdir(), "pi-web-model-test-"));
+      const modelsPath = join(tempDir, "models.json");
+      writeFileSync(modelsPath, JSON.stringify({
+        providers: {
+          [providerName]: {
+            ...body.provider,
+            models: [{ ...body.model, id: modelId }],
+          },
         },
-      },
-    }, null, 2), "utf8");
+      }, null, 2), "utf8");
+      modelRuntime = await ModelRuntime.create({ modelsPath });
+    } else {
+      modelId = typeof body.modelId === "string" ? body.modelId.trim() : "";
+      if (!modelId) return NextResponse.json({ ok: false, error: "modelId is required" }, { status: 400 });
+      const cwd = await resolveModelRequestCwd(typeof body.cwd === "string" ? body.cwd : undefined);
+      modelRuntime = (await createTrustedModelServices(cwd)).modelRuntime;
+    }
 
-    const modelRuntime = await ModelRuntime.create({ modelsPath });
     const loadError = modelRuntime.getError();
     if (loadError) return NextResponse.json({ ok: false, error: loadError });
 
@@ -111,6 +132,12 @@ export async function POST(req: Request) {
       clearTimeout(timeout);
     }
   } catch (error) {
+    if (error instanceof ModelRequestCwdError) {
+      return NextResponse.json(
+        { ok: false, error: error.message, code: error.code },
+        { status: error.status },
+      );
+    }
     return NextResponse.json({ ok: false, error: errorMessage(error) }, { status: 500 });
   } finally {
     if (tempDir) rmSync(tempDir, { recursive: true, force: true });

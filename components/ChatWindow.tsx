@@ -11,10 +11,10 @@ import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
-import { useAudio } from "@/hooks/useAudio";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import type { SessionStatsInfo } from "@/lib/pi-types";
+import type { ToolPreset } from "@/lib/tool-presets";
 import { deriveCompanionActivityStatus, type CompanionActivity } from "@/lib/companion";
 import {
   captureScrollDistance,
@@ -40,6 +40,13 @@ interface Props {
   onOpenFile?: (filePath: string) => void;
   onCompanionActivityChange?: (activity: CompanionActivity) => void;
   onModelInfoChange?: (model: { provider: string; modelId: string } | null) => void;
+  onTaskControlsChange?: (controls: TaskControls | null) => void;
+}
+
+export interface TaskControls {
+  toolPreset: ToolPreset;
+  disabled: boolean;
+  onToolPresetChange: (preset: ToolPreset) => void;
 }
 
 function phaseLabel(phase: AgentPhase, t: (key: string, params?: Record<string, string | number>) => string): string {
@@ -152,7 +159,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
           background: "transparent",
           color: "var(--text-muted)",
           cursor: "pointer",
-          fontSize: 12,
+          fontSize: "var(--font-sm)",
           textAlign: "left",
         }}
         title={expanded ? t("chat.collapseProcess") : t("chat.expandProcess")}
@@ -173,25 +180,9 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onModelInfoChange }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onModelInfoChange, onTaskControlsChange }: Props) {
   const { t } = useI18n();
-  const { soundEnabled, onSoundToggle, playDoneSound, unlockAudio } = useAudio();
   const isMobile = useIsMobile();
-
-  // Wrap onAgentEnd to play the completion sound. This is more reliable than
-  // wrapping handleAgentEventRef because useAgentSession overwrites that ref
-  // on every render (it syncs the latest callback), which would blow away an
-  // externally-installed wrapper after the first re-render.
-  const playDoneSoundRef = useRef(playDoneSound);
-  playDoneSoundRef.current = playDoneSound;
-  const soundEnabledRef = useRef(soundEnabled);
-  soundEnabledRef.current = soundEnabled;
-  const wrappedOnAgentEnd = useCallback(() => {
-    if (soundEnabledRef.current) {
-      playDoneSoundRef.current();
-    }
-    onAgentEnd?.();
-  }, [onAgentEnd]);
 
   // 稳定化 onEditContent 引用，配合 React.memo 防止历史消息重渲染
   const handleEditContent = useCallback((content: string) => {
@@ -200,7 +191,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   const {
     loading, error, messages, entryIds, streamState,
-    agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, thinkingLevel,
+    agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, toolsLoaded, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
@@ -216,10 +207,20 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     handleBuiltinSlashCommand,
     handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands,
   } = useAgentSession({
-    session, newSessionCwd, onAgentEnd: wrappedOnAgentEnd, onSessionCreated, onSessionForked,
+    session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   });
   const sessionBusy = agentRunning || bashRunning;
+
+  useEffect(() => {
+    onTaskControlsChange?.({
+      toolPreset,
+      disabled: sessionBusy || !toolsLoaded,
+      onToolPresetChange: handleToolPresetChange,
+    });
+  }, [handleToolPresetChange, onTaskControlsChange, sessionBusy, toolPreset, toolsLoaded]);
+
+  useEffect(() => () => onTaskControlsChange?.(null), [onTaskControlsChange]);
   const latestErrorNotice = useMemo(() => {
     for (let index = notices.length - 1; index >= 0; index -= 1) {
       if (notices[index]?.type === "error") return notices[index]?.message ?? null;
@@ -392,8 +393,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       isCompacting={isCompacting}
       compactError={compactError}
       compactResult={compactResult}
-      toolPreset={toolPreset}
-      onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
       thinkingLevel={thinkingLevel}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       availableThinkingLevels={availableThinkingLevels}
@@ -406,9 +405,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       slashCommandsLoading={slashCommandsLoading}
       onLoadSlashCommands={loadSlashCommands}
       onBuiltinCommand={handleBuiltinSlashCommand}
-      soundEnabled={soundEnabled}
-      onSoundToggle={onSoundToggle}
-      onAudioUnlock={unlockAudio}
       draftKey={session?.id ?? (newSessionCwd ? `new:${newSessionCwd}` : undefined)}
       cwd={session?.cwd ?? newSessionCwd}
     />
@@ -503,14 +499,14 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               }}
             >
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4, overflow: "hidden" }}>
-                <span style={{ fontSize: 28, fontWeight: 700, letterSpacing: 0, color: "var(--text)", flexShrink: 0, whiteSpace: "nowrap" }}>π</span>
-                <span style={{ fontSize: 22, color: "var(--text)", fontWeight: 700, letterSpacing: 0, flexShrink: 0, whiteSpace: "nowrap" }}>piGUI</span>
+                <span style={{ fontSize: "var(--font-display)", fontWeight: 700, letterSpacing: 0, color: "var(--text)", flexShrink: 0, whiteSpace: "nowrap" }}>π</span>
+                <span style={{ fontSize: "var(--font-5xl)", color: "var(--text)", fontWeight: 700, letterSpacing: 0, flexShrink: 0, whiteSpace: "nowrap" }}>piGUI</span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
                   web <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0"}</span>
                 </span>
-                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                <span style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)" }}>
                   pi <span style={{ color: "var(--text)" }}>v{process.env.NEXT_PUBLIC_PI_VERSION ?? "0.0.0"}</span>
                 </span>
               </div>
@@ -726,13 +722,13 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             )}
 
             {agentRunning && !streamState.streamingMessage && (
-              <div className="py-2 text-[13px] text-text-muted">
+              <div className="py-2 text-text-muted" style={{ fontSize: "var(--font-md)" }}>
                 <span className="animate-[pulse_1.5s_infinite]">{phaseLabel(agentPhase, t)}</span>
               </div>
             )}
 
             {bashRunning && !pendingBash && (
-              <div className="py-2 text-[13px] text-text-muted">
+              <div className="py-2 text-text-muted" style={{ fontSize: "var(--font-md)" }}>
                  <span className="animate-[pulse_1.5s_infinite]">{t("chat.runningCommand")}</span>
               </div>
             )}
@@ -802,10 +798,10 @@ function ExtensionWidgets({ widgets }: { widgets: Array<{ key: string; lines: st
             overflow: "hidden",
           }}
         >
-          <div style={{ padding: "5px 9px", borderBottom: "1px solid var(--border)", color: "var(--text-dim)", fontSize: 11, fontFamily: "var(--font-mono)" }}>
+          <div style={{ padding: "5px 9px", borderBottom: "1px solid var(--border)", color: "var(--text-dim)", fontSize: "var(--font-xs)", fontFamily: "var(--font-mono)" }}>
             {widget.key}
           </div>
-          <pre style={{ margin: 0, padding: "8px 9px", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "var(--font-mono)" }}>
+          <pre style={{ margin: 0, padding: "8px 9px", color: "var(--text-muted)", fontSize: "var(--font-sm)", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "var(--font-mono)" }}>
             {widget.lines.join("\n")}
           </pre>
         </div>
@@ -855,7 +851,7 @@ function NoticeShelf({ notices, floating = false, align = "left" }: { notices: N
               boxShadow: floating
                 ? "0 1px 2px rgba(15,23,42,0.05), 0 10px 28px -14px rgba(15,23,42,0.24)"
                 : "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -12px rgba(15,23,42,0.10)",
-              fontSize: 18,
+              fontSize: "var(--font-3xl)",
               lineHeight: 1.45,
               transformOrigin: "top center",
               animation: notice.exiting
@@ -933,13 +929,13 @@ function ExtensionDialog({
         }}
       >
         <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ color: "var(--text)", fontSize: 14, fontWeight: 650 }}>{request.title}</div>
-          <div style={{ marginTop: 3, color: "var(--text-dim)", fontSize: 11, fontFamily: "var(--font-mono)" }}>{t("chat.extensionRequest")}</div>
+          <div style={{ color: "var(--text)", fontSize: "var(--font-base)", fontWeight: 650 }}>{request.title}</div>
+          <div style={{ marginTop: 3, color: "var(--text-dim)", fontSize: "var(--font-xs)", fontFamily: "var(--font-mono)" }}>{t("chat.extensionRequest")}</div>
         </div>
 
         <div style={{ padding: 14 }}>
           {request.method === "confirm" && (
-            <div style={{ color: "var(--text-muted)", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{request.message}</div>
+            <div style={{ color: "var(--text-muted)", fontSize: "var(--font-md)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{request.message}</div>
           )}
           {request.method === "select" && (
             <div style={{ display: "grid", gap: 8 }}>
@@ -956,7 +952,7 @@ function ExtensionDialog({
                     color: "var(--text)",
                     cursor: "pointer",
                     textAlign: "left",
-                    fontSize: 13,
+                    fontSize: "var(--font-md)",
                   }}
                 >
                   {option}
@@ -982,7 +978,7 @@ function ExtensionDialog({
                 background: "var(--bg-panel)",
                 color: "var(--text)",
                 outline: "none",
-                fontSize: 13,
+                fontSize: "var(--font-md)",
               }}
             />
           )}
@@ -1005,7 +1001,7 @@ function ExtensionDialog({
                 color: "var(--text)",
                 outline: "none",
                 resize: "vertical",
-                fontSize: 13,
+                fontSize: "var(--font-md)",
                 lineHeight: 1.55,
                 fontFamily: "var(--font-mono)",
               }}
@@ -1168,7 +1164,7 @@ function ExtensionCustomPanel({
           }}
         />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "10px 12px", borderBottom: "1px solid var(--border)" }}>
-           <div style={{ color: "var(--text)", fontSize: 13, fontWeight: 650 }}>{t("chat.extensionPanel")}</div>
+           <div style={{ color: "var(--text)", fontSize: "var(--font-md)", fontWeight: 650 }}>{t("chat.extensionPanel")}</div>
           <button
             onClick={() => onInput(request, "\x03")}
             style={{
@@ -1178,7 +1174,7 @@ function ExtensionCustomPanel({
               background: "var(--bg-panel)",
               color: "var(--text-muted)",
               cursor: "pointer",
-              fontSize: 12,
+              fontSize: "var(--font-sm)",
             }}
           >
              {t("chat.close")}
@@ -1193,7 +1189,7 @@ function ExtensionCustomPanel({
             background: "var(--bg-panel)",
             color: "var(--text)",
             fontFamily: "var(--font-mono)",
-            fontSize: 13,
+            fontSize: "var(--font-md)",
             lineHeight: 1.45,
             whiteSpace: "pre",
           }}

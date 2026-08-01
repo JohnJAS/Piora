@@ -309,9 +309,9 @@ function entryToUiMessage(
       if (!options.deferThinking || message.role !== "assistant") return message;
       return {
         ...message,
-        content: message.content.map((block) => (
+        content: message.content.map((block, blockIndex) => (
           block.type === "thinking" && block.thinking.trim() !== ""
-            ? { ...block, thinking: "", deferred: true }
+            ? { ...block, thinking: "", deferred: true, deferredBlockIndex: blockIndex }
             : block
         )),
       };

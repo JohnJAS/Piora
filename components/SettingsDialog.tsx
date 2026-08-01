@@ -123,6 +123,7 @@ export function SettingsDialog({
 
   return createPortal(
     <div
+      className="app-shell-dialog-backdrop"
       role="dialog"
       aria-modal="true"
       aria-label={t("sidebar.settings")}
@@ -136,6 +137,7 @@ export function SettingsDialog({
       }}
     >
       <div
+        className="app-shell-dialog"
         style={{
           width: 440, maxWidth: "calc(100vw - 24px)",
           maxHeight: "calc(100dvh - 32px)", overflow: "hidden",
@@ -144,23 +146,23 @@ export function SettingsDialog({
           boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px 10px" }}>
+        <div className="app-shell-dialog-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px 10px" }}>
           <div>
-            <div style={{ color: "var(--text)", fontWeight: 700, fontSize: 15 }}>{t("sidebar.settings")}</div>
-            <div style={{ marginTop: 2, color: "var(--text-muted)", fontSize: 11 }}>{t("settings.description")}</div>
+            <div style={{ color: "var(--text)", fontWeight: 700, fontSize: "var(--font-lg)" }}>{t("sidebar.settings")}</div>
+            <div style={{ marginTop: 2, color: "var(--text-muted)", fontSize: "var(--font-xs)" }}>{t("settings.description")}</div>
           </div>
           <button
             type="button"
             onClick={onClose}
             title={t("i18n.close")}
             aria-label={t("i18n.close")}
-            style={{ padding: "2px 6px", border: 0, background: "none", color: "var(--text-muted)", fontSize: 20, lineHeight: 1, cursor: "pointer" }}
+            style={{ padding: "2px 6px", border: 0, background: "none", color: "var(--text-muted)", fontSize: "var(--font-4xl)", lineHeight: 1, cursor: "pointer" }}
           >
             ×
           </button>
         </div>
 
-        <div style={{ overflowY: "auto", padding: "6px 12px 14px" }}>
+        <div className="app-shell-dialog-body" style={{ overflowY: "auto", padding: "6px 12px 14px" }}>
           {entries.map((entry) => (
             <button
               key={entry.key}
@@ -183,8 +185,8 @@ export function SettingsDialog({
                 {entry.icon}
               </span>
               <span style={{ minWidth: 0, flex: 1 }}>
-                <span style={{ display: "block", fontSize: 13, fontWeight: 600 }}>{t(entry.labelKey)}</span>
-                <span style={{ display: "block", marginTop: 2, color: "var(--text-muted)", fontSize: 11, lineHeight: 1.45 }}>
+                <span style={{ display: "block", fontSize: "var(--font-md)", fontWeight: 600 }}>{t(entry.labelKey)}</span>
+                <span style={{ display: "block", marginTop: 2, color: "var(--text-muted)", fontSize: "var(--font-xs)", lineHeight: 1.45 }}>
                   {t(entry.descriptionKey)}
                 </span>
               </span>

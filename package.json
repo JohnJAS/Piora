@@ -67,6 +67,7 @@
     "dist:win": "npm run build:app && npm run dist --workspace @pi-gui/desktop",
     "verify:package": "node scripts/verify-packaged-web.mjs",
     "verify:release": "node scripts/verify-release-metadata.mjs",
+    "verify:hygiene": "node scripts/verify-release-hygiene.mjs",
     "smoke:portable": "node scripts/smoke-test-portable.mjs",
     "verify:backgrounds": "node scripts/verify-background-assets.mjs",
     "backgrounds:overview": "node scripts/create-background-overview.mjs",

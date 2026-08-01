@@ -45,7 +45,7 @@
   padding: 0;
   color: var(--text-dim);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-variant-numeric: tabular-nums;
   line-height: 18px;
   text-align: center;
@@ -72,7 +72,7 @@
   background: transparent;
   color: var(--text);
   font-family: inherit;
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 500;
   letter-spacing: 0;
   line-height: 18px;
@@ -119,7 +119,7 @@
   background: transparent;
   color: var(--text-dim);
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 600;
   letter-spacing: 0;
   line-height: 26px;
@@ -172,7 +172,7 @@
   padding-top: 7px;
   padding-bottom: 7px;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 600;
 }
 
@@ -182,20 +182,20 @@
   padding-bottom: 5px;
   padding-left: 50px;
   color: color-mix(in srgb, var(--text) 88%, var(--text-muted));
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 500;
 }
 
 .heading[data-level="3"] {
   padding-left: 60px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 400;
 }
 
 .paragraph {
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: var(--font-base);
   font-weight: 400;
 }
 

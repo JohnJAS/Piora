@@ -113,6 +113,7 @@ npm run dev
 npm run lint
 npm run typecheck
 npm test
+npm run verify:hygiene
 npm run verify:backgrounds
 npm run licenses:generate
 ```

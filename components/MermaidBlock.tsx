@@ -264,7 +264,7 @@ export function CodeBlock({ code, lang, headerAction }: CodeBlockProps) {
         customStyle={{
           margin: 0,
           padding: "11px 13px",
-          fontSize: 12.5,
+          fontSize: "var(--font-sm-plus)",
           lineHeight: 1.62,
           borderRadius: 0,
           background: "color-mix(in srgb, var(--bg) 92%, var(--bg-panel))",

@@ -37,6 +37,7 @@ Run all checks before submitting a pull request:
 
 ```powershell
 npm run licenses:check
+npm run verify:hygiene
 npm run lint
 npm run typecheck
 npm test

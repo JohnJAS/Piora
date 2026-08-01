@@ -5,7 +5,14 @@ import { MarkdownBody } from "./MarkdownBody";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
-import { getAssistantErrorMessage, isEmptyThinkingBlock } from "@/lib/message-display";
+import {
+  getAssistantErrorMessage,
+  getThinkingBlockDisplay,
+  isEmptyThinkingBlock,
+  shouldSubscribeToThinkingLoad,
+  subscribeToThinkingLoad,
+  type ThinkingLoadState,
+} from "@/lib/message-display";
 import { parseUnifiedPatch, type SplitDiffCell } from "@/lib/patch";
 import type {
   AgentMessage,
@@ -22,7 +29,9 @@ import type {
 } from "@/lib/types";
 
 const MAX_THINKING_CACHE_ENTRIES = 100;
-const thinkingContentCache = new Map<string, Promise<string>>();
+const THINKING_LOAD_TIMEOUT_MS = 15_000;
+type ThinkingCacheEntry = { promise: Promise<string> };
+const thinkingContentCache = new Map<string, ThinkingCacheEntry>();
 
 function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number): Promise<string> {
   const key = `${sessionId}:${entryId}:${blockIndex}`;
@@ -30,22 +39,41 @@ function loadThinkingContent(sessionId: string, entryId: string, blockIndex: num
   if (cached) {
     thinkingContentCache.delete(key);
     thinkingContentCache.set(key, cached);
-    return cached;
+    return cached.promise;
   }
 
-  const request = fetch(
-    `/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/thinking?blockIndex=${blockIndex}`,
-  ).then(async (response) => {
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json() as { thinking?: unknown };
-    if (typeof data.thinking !== "string") throw new Error("Invalid thinking response");
-    return data.thinking;
-  }).catch((error) => {
-    thinkingContentCache.delete(key);
+  const cacheEntry = {} as ThinkingCacheEntry;
+  const request = (async () => {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, THINKING_LOAD_TIMEOUT_MS);
+    try {
+      const response = await fetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/thinking?blockIndex=${blockIndex}`,
+        { signal: controller.signal },
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json() as { thinking?: unknown };
+      if (typeof data.thinking !== "string") throw new Error("Invalid thinking response");
+      return data.thinking;
+    } catch (error) {
+      if (timedOut) throw new Error("Thinking content request timed out");
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  })().catch((error) => {
+    if (thinkingContentCache.get(key) === cacheEntry) {
+      thinkingContentCache.delete(key);
+    }
     throw error;
   });
 
-  thinkingContentCache.set(key, request);
+  cacheEntry.promise = request;
+  thinkingContentCache.set(key, cacheEntry);
   if (thinkingContentCache.size > MAX_THINKING_CACHE_ENTRIES) {
     const oldestKey = thinkingContentCache.keys().next().value;
     if (oldestKey) thinkingContentCache.delete(oldestKey);
@@ -191,7 +219,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
             border: "1px solid rgba(59,130,246,0.2)",
             borderRadius: 12,
             padding: "8px 12px",
-            fontSize: 14,
+            fontSize: "var(--font-base)",
             lineHeight: 1.6,
             color: "var(--text)",
             wordBreak: "break-word",
@@ -249,7 +277,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                 borderRadius: 5,
                 color: copied ? "var(--accent)" : "var(--text-dim)",
                 cursor: "pointer",
-                fontSize: 11, fontWeight: 400,
+                fontSize: "var(--font-xs)", fontWeight: 400,
                 whiteSpace: "nowrap",
                 transition: "color 0.12s",
               }}
@@ -287,7 +315,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                     borderRadius: 5,
                     color: "var(--text-dim)",
                     cursor: "pointer",
-                    fontSize: 11, fontWeight: 400,
+                    fontSize: "var(--font-xs)", fontWeight: 400,
                     whiteSpace: "nowrap",
                     transition: "color 0.12s",
                   }}
@@ -313,7 +341,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                     borderRadius: 5,
                     color: forking ? "var(--accent)" : "var(--text-dim)",
                     cursor: forking ? "not-allowed" : "pointer",
-                    fontSize: 11, fontWeight: 400,
+                    fontSize: "var(--font-xs)", fontWeight: 400,
                     whiteSpace: "nowrap",
                     transition: "color 0.12s",
                   }}
@@ -331,7 +359,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
               )}
             </div>
           )}
-          {time && <span style={{ fontSize: 10, color: "var(--text-dim)" }}>{time}</span>}
+          {time && <span style={{ fontSize: "var(--font-2xs)", color: "var(--text-dim)" }}>{time}</span>}
         </div>
       )}
     </div>
@@ -482,7 +510,7 @@ function AssistantMessageView({
       {/* Model label */}
       <div
         style={{
-          fontSize: 11,
+          fontSize: "var(--font-xs)",
           color: "var(--text-dim)",
           marginBottom: 4,
           display: "flex",
@@ -506,7 +534,7 @@ function AssistantMessageView({
 
               {est > 0 && (
                 <span style={{ display: "flex", alignItems: "center", gap: 4, color: "var(--text)" }} title={t("i18n.estimatedTokens")}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 2, fontSize: 11, fontWeight: 400 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 2, fontSize: "var(--font-xs)", fontWeight: 400 }}>
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="5" y1="1.5" x2="5" y2="8.5" /><polyline points="2 6 5 8.5 8 6" />
                     </svg>
@@ -515,7 +543,7 @@ function AssistantMessageView({
                   {tps !== null && (() => {
                     const bg = tps >= 50 ? "#53b3cb" : tps >= 30 ? "#9bc53d" : tps >= 15 ? "#f9c22e" : "#e01a4f";
                     return (
-                      <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 4, background: bg, color: "#fff", fontSize: 11, fontWeight: 400 }}>
+                      <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 4, background: bg, color: "#fff", fontSize: "var(--font-xs)", fontWeight: 400 }}>
                         {tps.toFixed(1)} t/s
                       </span>
                     );
@@ -544,7 +572,7 @@ function AssistantMessageView({
             background: "rgba(239,68,68,0.07)",
             color: "#ef4444",
             fontFamily: "var(--font-mono)",
-            fontSize: 12,
+            fontSize: "var(--font-sm)",
             lineHeight: 1.5,
             whiteSpace: "pre-wrap",
             overflowWrap: "anywhere",
@@ -558,7 +586,7 @@ function AssistantMessageView({
         display: "flex", alignItems: "center", gap: 8, marginTop: 4,
       }}>
         {message.usage && !isStreaming && (
-          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+          <div style={{ fontSize: "var(--font-xs)", color: "var(--text-dim)" }}>
             {formatUsage(message.usage)}
           </div>
         )}
@@ -573,7 +601,7 @@ function AssistantMessageView({
               borderRadius: 5,
               color: copied ? "var(--accent)" : "var(--text-dim)",
               cursor: "pointer",
-              fontSize: 11, fontWeight: 400,
+              fontSize: "var(--font-xs)", fontWeight: 400,
               whiteSpace: "nowrap",
               opacity: hovered ? 1 : 0,
               pointerEvents: hovered ? "auto" : "none",
@@ -596,7 +624,7 @@ function AssistantMessageView({
           </button>
         )}
         {time && !isStreaming && (
-          <span style={{ fontSize: 10, color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>
+          <span style={{ fontSize: "var(--font-2xs)", color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>
         )}
       </div>
     </div>
@@ -608,7 +636,8 @@ function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCal
     return <TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} />;
   }
   if (block.type === "thinking") {
-    return <ThinkingBlock block={block as ThinkingContent} duration={streamingDuration} sessionId={sessionId} entryId={entryId} blockIndex={blockIndex} />;
+    const thinkingBlock = block as ThinkingContent;
+    return <ThinkingBlock block={thinkingBlock} duration={streamingDuration} sessionId={sessionId} entryId={entryId} blockIndex={thinkingBlock.deferredBlockIndex ?? blockIndex} />;
   }
   if (block.type === "toolCall") {
     const tc = block as ToolCallContent;
@@ -632,29 +661,29 @@ function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
 }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
-  const [content, setContent] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadState, setLoadState] = useState<ThinkingLoadState | null>(null);
+  const sourceKey = sessionId && entryId ? `${sessionId}:${entryId}:${blockIndex}` : null;
+  const loadStateRef = useRef(loadState);
+  const currentSourceKeyRef = useRef(sourceKey);
+  loadStateRef.current = loadState;
+  currentSourceKeyRef.current = sourceKey;
 
-  const toggle = async () => {
-    const nextExpanded = !expanded;
-    setExpanded(nextExpanded);
-    if (!nextExpanded || !block.deferred || content !== null) return;
-    if (!sessionId || !entryId) {
-      setError(t("i18n.thinkingUnavailable"));
-      return;
-    }
+  useEffect(() => {
+    if (!expanded || !block.deferred || !sourceKey || !sessionId || !entryId) return;
+    const existing = loadStateRef.current;
+    if (!shouldSubscribeToThinkingLoad(sourceKey, existing)) return;
 
-    setLoading(true);
-    setError(null);
-    try {
-      setContent(await loadThinkingContent(sessionId, entryId, blockIndex));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  };
+    return subscribeToThinkingLoad(
+      sourceKey,
+      loadThinkingContent(sessionId, entryId, blockIndex),
+      () => currentSourceKeyRef.current === sourceKey,
+      setLoadState,
+    );
+  }, [block.deferred, blockIndex, entryId, expanded, sessionId, sourceKey]);
+
+  const display = block.deferred && !sourceKey
+    ? { status: "error" as const, error: t("i18n.thinkingUnavailable") }
+    : getThinkingBlockDisplay(block, sourceKey, loadState);
 
   return (
     <div
@@ -662,11 +691,13 @@ function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
         border: "1px solid var(--border)",
         borderRadius: 6,
         overflow: "hidden",
-        fontSize: 13,
+        fontSize: "var(--font-md)",
       }}
     >
       <button
-        onClick={() => void toggle()}
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
         style={{
           display: "flex",
           alignItems: "center",
@@ -677,28 +708,34 @@ function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
           border: "none",
           color: "var(--text-muted)",
           cursor: "pointer",
-          fontSize: 12,
+          fontSize: "var(--font-sm)",
           textAlign: "left",
         }}
       >
          <span>{t("i18n.thinking")}</span>
         {duration !== undefined && (
-          <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
+          <span style={{ marginLeft: "auto", fontSize: "var(--font-xs)", color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
         )}
       </button>
       {expanded && (
         <div
           style={{
             padding: "8px 10px",
-            color: error ? "#f87171" : "var(--text-muted)",
-            fontSize: 12,
+            color: display.status === "error" ? "#f87171" : "var(--text-muted)",
+            fontSize: "var(--font-sm)",
             lineHeight: 1.6,
             whiteSpace: "pre-wrap",
             background: "var(--bg-panel)",
             borderTop: "1px solid var(--border)",
           }}
         >
-           {loading ? t("i18n.loadingThinking") : error ?? (block.deferred ? content : block.thinking)}
+           {display.status === "loading"
+             ? t("i18n.loadingThinking")
+             : display.status === "error"
+               ? display.error
+               : display.status === "content"
+                 ? display.content
+                 : null}
         </div>
       )}
     </div>
@@ -724,7 +761,7 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
       style={{
         borderRadius: 7,
         overflow: "hidden",
-        fontSize: 12,
+        fontSize: "var(--font-sm)",
         border: isError ? "1px solid rgba(248,113,113,0.45)" : "1px solid rgba(34,197,94,0.25)",
         background: isError ? "rgba(248,113,113,0.05)" : "rgba(34,197,94,0.04)",
       }}
@@ -742,19 +779,19 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
           border: "none",
           color: "var(--text-muted)",
           cursor: "pointer",
-          fontSize: 12,
+          fontSize: "var(--font-sm)",
           textAlign: "left",
           minWidth: 0,
         }}
       >
-        <span style={{ color: isError ? "#f87171" : "#16a34a", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: 11, flexShrink: 0 }}>
+        <span style={{ color: isError ? "#f87171" : "#16a34a", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: "var(--font-xs)", flexShrink: 0 }}>
           {block.toolName}
         </span>
-        <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
+        <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: "var(--font-xs)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
           {getToolPreview(block)}
         </span>
         {duration !== undefined && (
-          <span style={{ fontSize: 11, color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
+          <span style={{ fontSize: "var(--font-xs)", color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
         )}
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}>
           <polyline points="2 3.5 5 6.5 8 3.5" />
@@ -768,7 +805,7 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
             margin: 0,
             padding: "8px 10px",
             color: "var(--text-muted)",
-            fontSize: 12,
+            fontSize: "var(--font-sm)",
             lineHeight: 1.5,
             overflow: "auto",
             background: "var(--bg-subtle)",
@@ -833,7 +870,7 @@ function SplitPatchView({ text }: { text: string }) {
             minWidth: 0,
             borderTop: fileIndex === 0 ? "none" : "1px solid var(--border)",
             fontFamily: "var(--font-mono)",
-            fontSize: 12,
+            fontSize: "var(--font-sm)",
             lineHeight: 1.55,
           }}
         >
@@ -961,7 +998,7 @@ function PatchTextView({ text }: { text: string }) {
   const lines = text.split(/\r?\n/);
 
   return (
-    <div style={{ maxHeight: 520, overflowY: "auto", overflowX: "hidden", fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.55, minWidth: 0 }}>
+    <div style={{ maxHeight: 520, overflowY: "auto", overflowX: "hidden", fontFamily: "var(--font-mono)", fontSize: "var(--font-sm)", lineHeight: 1.55, minWidth: 0 }}>
       {lines.map((line, i) => {
         const kind =
           line.startsWith("@@") ? "hunk" :
@@ -1063,7 +1100,7 @@ function PairedResult({ text, isEmpty, isError }: {
           margin: 0,
           padding: "8px 10px",
           color: isError ? "#f87171" : (isEmpty ? "var(--text-dim)" : "var(--text-muted)"),
-          fontSize: 12,
+          fontSize: "var(--font-sm)",
           lineHeight: 1.5,
           overflow: "auto",
           maxHeight: 400,
@@ -1107,23 +1144,23 @@ function CompactionMessageView({ message }: { message: CustomMessage }) {
             color: "var(--text-muted)",
           }}
         >
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 650 }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--font-xs)", fontWeight: 650 }}>
             compaction
           </span>
-          {time && <span style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: 10 }}>{time}</span>}
+          {time && <span style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>{time}</span>}
         </div>
 
         <div style={{ padding: "11px 13px 12px" }}>
-          <div style={{ color: "var(--text)", fontSize: 15, fontWeight: 700, lineHeight: 1.35 }}>
+          <div style={{ color: "var(--text)", fontSize: "var(--font-lg)", fontWeight: 700, lineHeight: 1.35 }}>
              {t("i18n.conversationCompacted")}
           </div>
-          <div style={{ marginTop: 3, marginBottom: 10, color: "var(--text)", fontSize: 14, lineHeight: 1.5 }}>
+          <div style={{ marginTop: 3, marginBottom: 10, color: "var(--text)", fontSize: "var(--font-base)", lineHeight: 1.5 }}>
              {t("i18n.compactionDescription")}
           </div>
           {parsedSummary.body ? (
             <MarkdownBody className="markdown-compaction-message">{parsedSummary.body}</MarkdownBody>
           ) : (
-             <span style={{ color: "var(--text-dim)", fontSize: 12 }}>{t("i18n.noSummary")}</span>
+             <span style={{ color: "var(--text-dim)", fontSize: "var(--font-sm)" }}>{t("i18n.noSummary")}</span>
           )}
           <CompactionFileMetadata readFiles={parsedSummary.readFiles} modifiedFiles={parsedSummary.modifiedFiles} />
         </div>
@@ -1203,14 +1240,14 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
             borderBottom: "1px solid var(--border)",
             background: "var(--bg-panel)",
             color: "var(--text-muted)",
-            fontSize: 12,
+            fontSize: "var(--font-sm)",
           }}
         >
-          <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 650 }}>
+          <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)", fontSize: "var(--font-xs)", fontWeight: 650 }}>
             {title}
           </span>
-           {isHiddenDisplay && <span style={{ color: "var(--text-dim)", fontSize: 11 }}>{t("i18n.hiddenExtensionMessage")}</span>}
-          {time && <span style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: 10 }}>{time}</span>}
+           {isHiddenDisplay && <span style={{ color: "var(--text-dim)", fontSize: "var(--font-xs)" }}>{t("i18n.hiddenExtensionMessage")}</span>}
+          {time && <span style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>{time}</span>}
         </div>
 
         {contentExpanded ? (
@@ -1232,7 +1269,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                 })}
               </div>
             )}
-             {text ? <MarkdownBody className="markdown-custom-message" cwd={cwd} onOpenFile={onOpenFile}>{text}</MarkdownBody> : <span style={{ color: "var(--text-dim)", fontSize: 12 }}>{t("i18n.noMessage")}</span>}
+             {text ? <MarkdownBody className="markdown-custom-message" cwd={cwd} onOpenFile={onOpenFile}>{text}</MarkdownBody> : <span style={{ color: "var(--text-dim)", fontSize: "var(--font-sm)" }}>{t("i18n.noMessage")}</span>}
           </div>
         ) : (
           <button
@@ -1245,7 +1282,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
               background: "transparent",
               color: "var(--text-dim)",
               cursor: "pointer",
-              fontSize: 12,
+              fontSize: "var(--font-sm)",
               textAlign: "left",
             }}
           >
@@ -1272,7 +1309,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                 background: "none",
                 color: copied ? "var(--accent)" : "var(--text-dim)",
                 cursor: "pointer",
-                fontSize: 11,
+                fontSize: "var(--font-xs)",
               }}
             >
                {copied ? t("i18n.copied") : t("i18n.copy")}
@@ -1291,7 +1328,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                 background: "none",
                 color: "var(--text-dim)",
                 cursor: "pointer",
-                fontSize: 11,
+                fontSize: "var(--font-xs)",
               }}
             >
               {isHiddenDisplay
@@ -1309,7 +1346,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
               borderTop: "1px solid var(--border)",
               background: "var(--bg)",
               color: "var(--text-muted)",
-              fontSize: 12,
+              fontSize: "var(--font-sm)",
               lineHeight: 1.5,
               whiteSpace: "pre-wrap",
               wordBreak: "break-word",
@@ -1458,23 +1495,23 @@ function BashExecutionView({ message, sessionId }: { message: BashExecutionMessa
     <div style={{ margin: "6px 0" }}>
       <ToolCallBlock block={block} result={result} />
       {message.truncated && fullOutputUrl && (
-        <div style={{ padding: "4px 10px", fontSize: 11, marginTop: -1 }}>
+        <div style={{ padding: "4px 10px", fontSize: "var(--font-xs)", marginTop: -1 }}>
           {showFullButton && (
             <button
               onClick={loadFullOutput}
               disabled={loadingFull}
-              style={{ background: "none", border: "none", color: "var(--accent)", cursor: loadingFull ? "default" : "pointer", fontSize: 11, padding: 0, textDecoration: "underline" }}
+              style={{ background: "none", border: "none", color: "var(--accent)", cursor: loadingFull ? "default" : "pointer", fontSize: "var(--font-xs)", padding: 0, textDecoration: "underline" }}
             >
               {loadingFull ? "loading…" : "view full output"}
             </button>
           )}
           <a
             href={`${fullOutputUrl}&download=1`}
-            style={{ marginLeft: showFullButton ? 10 : 0, color: "var(--accent)", fontSize: 11, textDecoration: "underline" }}
+            style={{ marginLeft: showFullButton ? 10 : 0, color: "var(--accent)", fontSize: "var(--font-xs)", textDecoration: "underline" }}
           >
             download full output
           </a>
-          {fullError && <span style={{ marginLeft: 6, color: "var(--text-dim)", fontSize: 11 }}>({fullError})</span>}
+          {fullError && <span style={{ marginLeft: 6, color: "var(--text-dim)", fontSize: "var(--font-xs)" }}>({fullError})</span>}
         </div>
       )}
     </div>

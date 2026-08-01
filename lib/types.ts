@@ -36,6 +36,8 @@ export interface ThinkingContent {
   thinking: string;
   /** Historical content omitted from the initial response and loaded on demand. */
   deferred?: boolean;
+  /** Original content-array index used to retrieve a deferred historical block. */
+  deferredBlockIndex?: number;
 }
 
 export interface ToolCallContent {

@@ -35,6 +35,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify release-tree hygiene
+        run: npm run verify:hygiene
+
       - name: Verify license inventory freshness
         run: npm run licenses:check
 
@@ -79,6 +82,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify release-tree hygiene
+        run: npm run verify:hygiene
 
       - name: Verify license inventory freshness
         run: npm run licenses:check

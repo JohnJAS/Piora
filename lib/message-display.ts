@@ -4,6 +4,77 @@ interface DisplayOptions {
   isStreaming?: boolean;
 }
 
+export type ThinkingLoadState =
+  | { sourceKey: string; status: "loading" }
+  | { sourceKey: string; status: "loaded"; content: string }
+  | { sourceKey: string; status: "error"; error: string };
+
+export type ThinkingBlockDisplay =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "content"; content: string }
+  | { status: "error"; error: string };
+
+/**
+ * Resolve what a thinking block should show from its current Pi message and an
+ * optional historical load. The message snapshot is authoritative: once Pi
+ * supplies live/full thinking, a stale deferred request must never cover it
+ * with a loading or error placeholder.
+ */
+export function getThinkingBlockDisplay(
+  block: ThinkingContent,
+  sourceKey: string | null,
+  loadState: ThinkingLoadState | null,
+): ThinkingBlockDisplay {
+  if (!block.deferred) {
+    return { status: "content", content: block.thinking };
+  }
+  if (!sourceKey || loadState?.sourceKey !== sourceKey) {
+    return { status: "idle" };
+  }
+  if (loadState.status === "loading") return { status: "loading" };
+  if (loadState.status === "error") return { status: "error", error: loadState.error };
+  return { status: "content", content: loadState.content };
+}
+
+export function shouldSubscribeToThinkingLoad(
+  sourceKey: string,
+  loadState: ThinkingLoadState | null,
+): boolean {
+  return loadState?.sourceKey !== sourceKey || loadState.status !== "loaded";
+}
+
+/**
+ * Bind one mounted view to a shared historical-thinking request. A loading
+ * request may be subscribed to more than once: this is required when the user
+ * collapses and reopens a block before the shared promise settles.
+ */
+export function subscribeToThinkingLoad(
+  sourceKey: string,
+  request: Promise<string>,
+  isCurrentSource: () => boolean,
+  onState: (state: ThinkingLoadState) => void,
+): () => void {
+  let active = true;
+  onState({ sourceKey, status: "loading" });
+  void request.then((content) => {
+    if (active && isCurrentSource()) {
+      onState({ sourceKey, status: "loaded", content });
+    }
+  }).catch((error) => {
+    if (active && isCurrentSource()) {
+      onState({
+        sourceKey,
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+  return () => {
+    active = false;
+  };
+}
+
 export function isEmptyThinkingBlock(block: AssistantContentBlock, options: DisplayOptions = {}): block is ThinkingContent {
   return block.type === "thinking" && !block.deferred && !options.isStreaming && block.thinking.trim() === "";
 }
