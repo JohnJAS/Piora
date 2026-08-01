@@ -10,6 +10,10 @@ No unreleased changes.
 
 ### Added
 
+- An original piGUI application mark with transparent PNG and multi-resolution
+  Windows ICO assets, wired into the portable Electron executable and matching
+  browser/PWA icons, with generation and MIT-license provenance retained in the
+  repository.
 - The sidebar project section reveals a `+` action on hover to open a local
   folder as a new project, and each project row reveals a `+` to start a new
   conversation in that project.

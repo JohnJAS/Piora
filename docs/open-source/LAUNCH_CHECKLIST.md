@@ -10,7 +10,8 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
 - [x] Adopt `piGUI` for the initial public preview and use original, non-affiliation-implying assets.
 - [x] Use `kexijiang/pi-gui` as the public repository and update package/application metadata.
 - [x] Retain the upstream `agegr` copyright and add piGUI contributor authorship in MIT `LICENSE`.
-- [x] Record pi-web, Pi, project independence, and original-background attribution in `NOTICE`.
+- [x] Record pi-web, Pi, project independence, and original background/application-icon attribution
+  in `NOTICE`.
 - [x] Retain the Apache-2.0 license, upstream NOTICE, immutable source links, and modification
   statement for the OpenAI Codex pet compatibility adaptation, including packaged copies.
 - [x] Generate `THIRD_PARTY_LICENSES.md` deterministically from the committed npm lockfile and
@@ -38,8 +39,9 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
 - [ ] Decide whether GitHub Discussions are enabled and document their purpose.
 - [x] Add repository topics, description, and concise support/security documentation.
 - [ ] Add and visually review the GitHub social preview.
-- [ ] Design and license-review an original piGUI application icon; the initial preview documents
-  that it may use Electron's generic icon.
+- [x] Design and license-review an original piGUI application icon; retain the source raster,
+  transparent master, multi-resolution Windows ICO, full prompt, and MIT provenance under
+  `desktop/build` without using third-party branding or visual assets.
 
 ## Source and secret hygiene
 
@@ -75,6 +77,8 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
 - [x] Complete the packaged-EXE walkthrough for the integrated Window Controls Overlay, native
   maximize/restore/close behavior, the blank integrated top strip's native double-click maximize action,
   and a clickable appearance entry that opens the bundled theme/background panel.
+- [ ] Confirm the newly built `win-unpacked` executable and final portable EXE both embed the
+  reviewed piGUI icon rather than Electron's generic icon.
 - [ ] Complete a clean-machine manual pass for continuous window dragging, edge/corner resize,
   transient `Alt` menu display, DPI scaling, and the full editor conflict flow. Browser automation
   and the current desktop automation do not replace that Windows 10/11 coverage; its synthetic

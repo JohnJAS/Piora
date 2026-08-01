@@ -36,6 +36,12 @@ The bundled backgrounds under public/themes/dream-backgrounds are original
 project assets released under the project MIT License. Their manifest,
 generation records, and file hashes are stored alongside the assets.
 
+The application icon under desktop/build, together with the matching browser
+and installed-app icons, is an original project asset released under the
+project MIT License. Its generation prompt, source raster, transparent master,
+output formats, and independence from third-party visual assets are recorded in
+desktop/build/README.md.
+
 The bundled Inter font files under public/fonts/inter are redistributed under
 the SIL Open Font License 1.1 (Rasmus Andersson; upstream:
 https://github.com/rsms/inter). The license text is included at

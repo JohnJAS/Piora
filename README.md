@@ -1,5 +1,9 @@
 # piGUI
 
+<p align="center">
+  <img src="desktop/build/icon.png" alt="piGUI original application icon" width="112" height="112">
+</p>
+
 [![CI](https://github.com/kexijiang/pi-gui/actions/workflows/ci.yml/badge.svg)](https://github.com/kexijiang/pi-gui/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Windows](https://img.shields.io/badge/Desktop-Windows%20x64-2563eb.svg)](desktop/README.md)
@@ -142,6 +146,9 @@ npm run dist:win
 ```
 
 产物位于 `desktop/release/`。首批 Windows 产物是未签名预发布包，Windows 可能显示信誉警告；
+
+Windows EXE、浏览器 favicon 与 PWA 使用同一套原创 piGUI 标志。多尺寸 ICO、透明 PNG、
+完整生成提示词和 MIT 许可记录见 [`desktop/build`](desktop/build/README.md)。
 在代码签名、干净虚拟机升级/卸载和数据保留验证完成前，不应把它描述为已签名稳定发行版。
 
 ## 数据与网络

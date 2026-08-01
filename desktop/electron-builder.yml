@@ -5,6 +5,7 @@ asar: true
 afterPack: ../scripts/electron-after-pack-licenses.cjs
 
 directories:
+  buildResources: build
   output: release
 
 files:
@@ -47,6 +48,7 @@ extraResources:
       - "SOURCE.md"
 
 win:
+  icon: icon.ico
   target:
     - target: portable
       arch:

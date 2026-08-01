@@ -70,9 +70,12 @@ download and verify its assets, complete the checks below, and explicitly publis
 never publishes the draft automatically. Never manually mark an unsigned artifact as a signed or
 stable release.
 
-The initial preview intentionally has no custom application icon because no reviewed original
-icon asset is available yet; Windows may show the generic Electron application icon. Add only an
-original, license-reviewed icon before describing the visual identity as final.
+The preview uses the original piGUI icon recorded in
+[`desktop/build/README.md`](../desktop/build/README.md). Electron Builder consumes the reviewed
+multi-resolution `icon.ico`; the same mark is exported to the browser/PWA icons. Before publishing,
+verify the ICO sizes and transparent edge on light and dark surfaces, then extract and inspect the
+icons embedded in both `win-unpacked/piGUI.exe` and the final portable EXE. A completed visual
+identity does not imply that the executable is signed or that clean-machine validation passed.
 
 ## Review the draft before publication
 
