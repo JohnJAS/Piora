@@ -496,6 +496,8 @@ export const enLocale: LocalePlugin = {
     "models.catalogFilling": "Filling details…",
     "models.catalogFill": "Fill model details",
     "models.catalogFilled": "{count} fields filled",
+    "models.deleteModelConfirm": "Delete model “{id}”?",
+    "models.deleteProviderConfirm": "Delete provider “{name}” and all of its models?",
     "models.catalogNoEmptyFields": "No empty fields to fill",
     "models.catalogNoExactMatch": "No exact models.dev match",
     "models.catalogPriceProvider": "Price matched Provider {provider}",

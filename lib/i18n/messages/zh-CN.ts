@@ -496,6 +496,8 @@ export const zhCNLocale: LocalePlugin = {
     "models.catalogFilling": "正在填入模型信息…",
     "models.catalogFill": "填入模型信息",
     "models.catalogFilled": "已填入 {count} 个字段",
+    "models.deleteModelConfirm": "删除模型“{id}”？",
+    "models.deleteProviderConfirm": "删除提供商“{name}”及其全部模型？",
     "models.catalogNoEmptyFields": "没有需要填入的空字段",
     "models.catalogNoExactMatch": "models.dev 中没有精确匹配",
     "models.catalogPriceProvider": "价格已匹配 Provider {provider}",

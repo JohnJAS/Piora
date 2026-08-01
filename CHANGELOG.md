@@ -11,6 +11,8 @@ All notable changes to piGUI are documented here. The project follows [Semantic 
   conversation in that project.
 - The directory picker now surfaces sibling Windows drive roots so folders on
   other disks can be selected directly.
+- The model configuration list gains one-click delete actions on provider and
+  model rows (with confirmation), alongside the existing detail-view remove.
 - The composer model pill moved into the input's bottom-right corner and now
   opens a Codex-style panel that combines model selection, reasoning effort,
   and compact-context controls.
