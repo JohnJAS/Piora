@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from "react";
 import { useI18n } from "@/hooks/useI18n";
-import type { CompanionPet as CompanionPetMetadata, CompanionPetSourceKind, CompanionPetsResponse } from "@/lib/companion-pets";
+import type { CompanionPet as CompanionPetMetadata } from "@/lib/companion-pets";
 import {
   advanceCompanionAnimation,
   getCompanionAnimationFrameIndices,
@@ -10,18 +10,11 @@ import {
   selectCompanionSpriteState,
   type CompanionActivity,
 } from "@/lib/companion";
-import {
-  COMPANION_STORAGE_KEY,
-  MAX_COMPANION_PHRASES,
-  MAX_COMPANION_TODOS,
-  createCompanionId,
-  createDefaultCompanionPreferences,
-  parseCompanionPreferences,
-  type CompanionPreferences,
-} from "@/lib/companion-store";
+import { MAX_COMPANION_PHRASES, MAX_COMPANION_TODOS, createCompanionId, type CompanionPreferences } from "@/lib/companion-store";
 import styles from "./CompanionPet.module.css";
+import { AliIcon } from "./AliIcon";
 
-type CompanionTab = "todos" | "phrases" | "pets";
+type CompanionTab = "todos" | "phrases";
 
 type RenderableAnimationState = {
   id: string;
@@ -38,18 +31,15 @@ type RenderablePet = Omit<CompanionPetMetadata, "states"> & {
   states: RenderableAnimationState[];
 };
 
-type SourcedPet = CompanionPetMetadata & {
-  sourceKind?: CompanionPetSourceKind;
-  sourceKey?: string;
-  origin?: Exclude<CompanionPetSourceKind, "pi-gui-installed">;
-};
-
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   activity: CompanionActivity;
   canSendPhrase: boolean;
   onSendPhrase: (text: string) => boolean;
+  preferences: CompanionPreferences;
+  setPreferences: Dispatch<SetStateAction<CompanionPreferences>>;
+  activePet: CompanionPetMetadata | null;
 }
 
 const ACTIVITY_COLORS: Record<CompanionActivity["status"], string> = {
@@ -59,19 +49,6 @@ const ACTIVITY_COLORS: Record<CompanionActivity["status"], string> = {
   review: "#8b5cf6",
   failed: "#dc2626",
 };
-
-const SOURCE_MESSAGE_KEYS: Record<CompanionPetSourceKind, string> = {
-  "codex-builtin-cache": "companion.source.codexBuiltinCache",
-  "codex-custom": "companion.source.codexCustom",
-  "codex-legacy-avatar": "companion.source.codexLegacyAvatar",
-  "pi-gui-installed": "companion.source.piGuiInstalled",
-};
-
-function resolvePetSourceKind(pet: SourcedPet): CompanionPetSourceKind {
-  if (pet.installed && pet.origin && pet.origin in SOURCE_MESSAGE_KEYS) return pet.origin;
-  if (pet.sourceKind && pet.sourceKind in SOURCE_MESSAGE_KEYS) return pet.sourceKind;
-  return pet.source === "codex" ? "codex-custom" : "pi-gui-installed";
-}
 
 function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
@@ -180,72 +157,29 @@ function SpritePet({ pet, status }: { pet: CompanionPetMetadata; status: Compani
   );
 }
 
-export function CompanionPet({ open, onOpenChange, activity, canSendPhrase, onSendPhrase }: Props) {
+export function CompanionPet({
+  open,
+  onOpenChange,
+  activity,
+  canSendPhrase,
+  onSendPhrase,
+  preferences,
+  setPreferences,
+  activePet,
+}: Props) {
   const { t } = useI18n();
-  const defaults = useMemo(() => createDefaultCompanionPreferences([
-    { label: t("companion.defaultContinueLabel"), text: t("companion.defaultContinueText") },
-    { label: t("companion.defaultTestLabel"), text: t("companion.defaultTestText") },
-  ]), [t]);
-  const [preferences, setPreferences] = useState<CompanionPreferences>(defaults);
-  const [hydrated, setHydrated] = useState(false);
   const [tab, setTab] = useState<CompanionTab>("todos");
   const [todoText, setTodoText] = useState("");
   const [phraseLabel, setPhraseLabel] = useState("");
   const [phraseText, setPhraseText] = useState("");
   const [editingPhraseId, setEditingPhraseId] = useState<string | null>(null);
-  const [pets, setPets] = useState<CompanionPetsResponse | null>(null);
-  const [petsLoading, setPetsLoading] = useState(false);
-  const [petsError, setPetsError] = useState<string | null>(null);
-  const [importingPetId, setImportingPetId] = useState<string | null>(null);
   const [sendNotice, setSendNotice] = useState("");
   const sendNoticeTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    let restored = defaults;
-    try {
-      restored = parseCompanionPreferences(window.localStorage.getItem(COMPANION_STORAGE_KEY), defaults);
-    } catch {
-      // Storage can be disabled by browser policy; the in-memory companion
-      // remains fully usable for the current app session.
-    }
-    setPreferences(restored);
-    onOpenChange(restored.open);
-    setHydrated(true);
-  }, [defaults, onOpenChange]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    try {
-      window.localStorage.setItem(COMPANION_STORAGE_KEY, JSON.stringify({ ...preferences, open }));
-    } catch {
-      // Keep the feature available in memory when persistence is unavailable.
-    }
-  }, [hydrated, open, preferences]);
 
   useEffect(() => () => {
     if (sendNoticeTimerRef.current !== null) window.clearTimeout(sendNoticeTimerRef.current);
   }, []);
 
-  const loadPets = useCallback(async () => {
-    setPetsLoading(true);
-    setPetsError(null);
-    try {
-      const response = await fetch("/api/companion-pets", { cache: "no-store" });
-      const body = await response.json() as CompanionPetsResponse | { error?: string };
-      if (!response.ok) throw new Error("error" in body && body.error ? body.error : t("companion.loadPetsFailed"));
-      setPets(body as CompanionPetsResponse);
-    } catch (error) {
-      setPetsError(error instanceof Error ? error.message : t("companion.loadPetsFailed"));
-    } finally {
-      setPetsLoading(false);
-    }
-  }, [t]);
-
-  useEffect(() => {
-    if (open) void loadPets();
-  }, [loadPets, open]);
-
-  const activePet = pets?.installed.find((pet) => pet.id === preferences.selectedPetId) ?? null;
   const remainingTodos = preferences.todos.filter((todo) => !todo.completed).length;
   const statusLabel = t(`companion.activity.${activity.status}`);
 
@@ -277,30 +211,6 @@ export function CompanionPet({ open, onOpenChange, activity, canSendPhrase, onSe
     setEditingPhraseId(null);
   };
 
-  const importPet = async (pet: SourcedPet) => {
-    setImportingPetId(pet.sourceKey ?? pet.id);
-    setPetsError(null);
-    try {
-      const response = await fetch("/api/companion-pets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "import",
-          id: pet.id,
-          ...(pet.sourceKind ? { sourceKind: pet.sourceKind } : {}),
-        }),
-      });
-      const body = await response.json() as { pet?: CompanionPetMetadata; error?: string };
-      if (!response.ok || !body.pet) throw new Error(body.error || t("companion.importFailed"));
-      setPreferences((current) => ({ ...current, selectedPetId: body.pet!.id }));
-      await loadPets();
-    } catch (error) {
-      setPetsError(error instanceof Error ? error.message : t("companion.importFailed"));
-    } finally {
-      setImportingPetId(null);
-    }
-  };
-
   const sendPhrase = (text: string) => {
     const sent = canSendPhrase && onSendPhrase(text);
     setSendNotice(sent ? t("companion.sent") : t("companion.sendUnavailable"));
@@ -309,7 +219,7 @@ export function CompanionPet({ open, onOpenChange, activity, canSendPhrase, onSe
   };
 
   const moveTabFocus = (current: CompanionTab, direction: -1 | 1) => {
-    const tabs: CompanionTab[] = ["todos", "phrases", "pets"];
+    const tabs: CompanionTab[] = ["todos", "phrases"];
     const next = tabs[(tabs.indexOf(current) + direction + tabs.length) % tabs.length];
     setTab(next);
     requestAnimationFrame(() => document.getElementById(`companion-tab-${next}`)?.focus());
@@ -331,12 +241,12 @@ export function CompanionPet({ open, onOpenChange, activity, canSendPhrase, onSe
           <div className={styles.activityCause}>{activity.cause}</div>
         </div>
         <button className={styles.iconButton} type="button" onClick={() => onOpenChange(false)} title={t("companion.close")} aria-label={t("companion.close")}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          <AliIcon name="close" size={15} />
         </button>
       </div>
 
       <div className={styles.tabs} role="tablist" aria-label={t("companion.sections")}>
-        {(["todos", "phrases", "pets"] as const).map((item) => (
+        {(["todos", "phrases"] as const).map((item) => (
           <button
             key={item}
             id={`companion-tab-${item}`}
@@ -370,7 +280,7 @@ export function CompanionPet({ open, onOpenChange, activity, canSendPhrase, onSe
                 <li className={styles.todoItem} key={todo.id}>
                   <input type="checkbox" checked={todo.completed} onChange={(event) => setPreferences((current) => ({ ...current, todos: current.todos.map((item) => item.id === todo.id ? { ...item, completed: event.target.checked } : item) }))} aria-label={t("companion.toggleTodo", { todo: todo.text })} />
                   <span className={`${styles.todoText}${todo.completed ? ` ${styles.todoDone}` : ""}`}>{todo.text}</span>
-                  <button className={styles.dangerButton} type="button" onClick={() => setPreferences((current) => ({ ...current, todos: current.todos.filter((item) => item.id !== todo.id) }))} aria-label={t("companion.removeTodo", { todo: todo.text })}>×</button>
+                  <button className={styles.dangerButton} type="button" onClick={() => setPreferences((current) => ({ ...current, todos: current.todos.filter((item) => item.id !== todo.id) }))} aria-label={t("companion.removeTodo", { todo: todo.text })}><AliIcon name="close" size={12} /></button>
                 </li>
               ))}
             </ul>
@@ -394,7 +304,7 @@ export function CompanionPet({ open, onOpenChange, activity, canSendPhrase, onSe
                 <li className={styles.phraseItem} key={phrase.id}>
                   <button className={styles.phraseButton} type="button" disabled={!canSendPhrase} title={phrase.text} onClick={() => sendPhrase(phrase.text)}>{phrase.label}</button>
                   <button className={styles.secondaryButton} type="button" onClick={() => { setEditingPhraseId(phrase.id); setPhraseLabel(phrase.label); setPhraseText(phrase.text); }}>{t("companion.edit")}</button>
-                  <button className={styles.dangerButton} type="button" onClick={() => setPreferences((current) => ({ ...current, phrases: current.phrases.filter((item) => item.id !== phrase.id) }))} aria-label={t("companion.removePhrase", { phrase: phrase.label })}>×</button>
+                  <button className={styles.dangerButton} type="button" onClick={() => setPreferences((current) => ({ ...current, phrases: current.phrases.filter((item) => item.id !== phrase.id) }))} aria-label={t("companion.removePhrase", { phrase: phrase.label })}><AliIcon name="close" size={12} /></button>
                 </li>
               ))}
             </ul>
@@ -402,45 +312,6 @@ export function CompanionPet({ open, onOpenChange, activity, canSendPhrase, onSe
         </section>
       ) : null}
 
-      {tab === "pets" ? (
-        <section id="companion-panel-pets" className={styles.panel} role="tabpanel" aria-labelledby="companion-tab-pets">
-          <div className={styles.summary}><span>{t("companion.localOnly")}</span><button className={styles.secondaryButton} type="button" onClick={() => void loadPets()} disabled={petsLoading}>{t("companion.refresh")}</button></div>
-          <ul className={styles.list}>
-            <li className={styles.petItem}>
-              <div className={styles.petCopy}><div className={styles.petName}>{t("companion.builtinPet")}</div><div className={styles.petMeta}>{t("companion.builtinPetDescription")}</div></div>
-              <button className={styles.secondaryButton} type="button" disabled={preferences.selectedPetId === "builtin"} onClick={() => setPreferences((current) => ({ ...current, selectedPetId: "builtin" }))}>{preferences.selectedPetId === "builtin" ? t("companion.selected") : t("companion.select")}</button>
-            </li>
-            {pets?.installed.map((pet) => {
-              const sourcedPet = pet as SourcedPet;
-              const sourceLabel = t(SOURCE_MESSAGE_KEYS[resolvePetSourceKind(sourcedPet)]);
-              return (
-                <li className={styles.petItem} key={`installed:${sourcedPet.sourceKey ?? pet.id}`}>
-                  <div className={styles.petCopy}><div className={styles.petName}>{pet.displayName}</div><div className={styles.petMeta}>{sourceLabel} · {t("companion.codexCompatibleVersion", { version: pet.spriteVersionNumber })}{pet.author ? ` · ${pet.author}` : ""}</div></div>
-                  <button className={styles.secondaryButton} type="button" disabled={preferences.selectedPetId === pet.id} onClick={() => setPreferences((current) => ({ ...current, selectedPetId: pet.id }))}>{preferences.selectedPetId === pet.id ? t("companion.selected") : t("companion.select")}</button>
-                </li>
-              );
-            })}
-          </ul>
-          <div className={styles.summary} style={{ marginTop: 14 }}><span>{t("companion.discoveredCodexPets")}</span><span>{pets?.sources.length ?? 0}</span></div>
-          {petsLoading && !pets ? <div className={styles.notice}>{t("companion.loadingPets")}</div> : null}
-          {!petsLoading && pets && pets.sources.length === 0 ? <div className={styles.empty}>{pets.codexSourceAvailable ? t("companion.noCodexPets") : t("companion.codexNotFound")}</div> : null}
-          <ul className={styles.list}>
-            {pets?.sources.map((pet) => {
-              const sourcedPet = pet as SourcedPet;
-              const sourceKey = sourcedPet.sourceKey ?? `${resolvePetSourceKind(sourcedPet)}:${pet.id}`;
-              const sourceLabel = t(SOURCE_MESSAGE_KEYS[resolvePetSourceKind(sourcedPet)]);
-              return (
-                <li className={styles.petItem} key={`source:${sourceKey}`}>
-                  <div className={styles.petCopy}><div className={styles.petName}>{pet.displayName}</div><div className={styles.petMeta}>{sourceLabel} · {t("companion.codexCompatibleVersion", { version: pet.spriteVersionNumber })}{pet.description ? ` · ${pet.description}` : ""}</div></div>
-                  <button className={styles.primaryButton} type="button" disabled={importingPetId !== null} onClick={() => void importPet(sourcedPet)}>{importingPetId === sourceKey ? t("companion.importing") : t("companion.import")}</button>
-                </li>
-              );
-            })}
-          </ul>
-          {petsError ? <div className={styles.error} role="alert">{petsError}</div> : null}
-          {pets?.diagnostics.map((diagnostic, index) => <div className={styles.diagnostic} key={`${diagnostic.scope}:${diagnostic.id ?? "general"}:${index}`}>{diagnostic.message}</div>)}
-        </section>
-      ) : null}
     </aside>
   );
 }

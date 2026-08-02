@@ -8,6 +8,7 @@ import {
   UI_FONT_SIZE_MIN,
   isUiFontSize,
 } from "@/lib/font-preferences";
+import { AliIcon } from "./AliIcon";
 
 export function FontSettings() {
   const titleId = useId();
@@ -141,9 +142,7 @@ export function FontSettings() {
                 </span>
               </span>
               {selected && (
-                <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="m5 12 4 4L19 6" />
-                </svg>
+                <AliIcon name="check" size={13} style={{ color: "var(--accent)" }} />
               )}
             </button>
           );

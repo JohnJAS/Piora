@@ -214,6 +214,210 @@ function patchExportHtml(html: string): string {
   return html;
 }
 
+function injectBeforeClosingTag(html: string, closingTag: "</head>" | "</body>", content: string): string {
+  const index = html.toLowerCase().lastIndexOf(closingTag);
+  if (index < 0) return `${html}${content}`;
+  return `${html.slice(0, index)}${content}${html.slice(index)}`;
+}
+
+function patchEmbeddedExportHtml(html: string, appearance: "light" | "dark"): string {
+  const lightPalette = appearance === "light" ? `
+  <style data-pi-history-appearance>
+    :root {
+      color-scheme: light;
+      --accent: #3973c8;
+      --border: #d8d7d3;
+      --borderAccent: #9bb7df;
+      --borderMuted: #e6e5e1;
+      --success: #267a48;
+      --error: #be3f38;
+      --warning: #9a640d;
+      --muted: #73736f;
+      --dim: #989892;
+      --text: #2f2f2c;
+      --thinkingText: #74746f;
+      --selectedBg: #e8edf6;
+      --userMessageBg: #f1f0ed;
+      --userMessageText: #2f2f2c;
+      --customMessageBg: #f3eef7;
+      --customMessageText: #3c3541;
+      --customMessageLabel: #76529d;
+      --toolPendingBg: #f4f3f0;
+      --toolSuccessBg: #edf6ef;
+      --toolErrorBg: #fff0ef;
+      --toolTitle: #343431;
+      --toolOutput: #6d6d68;
+      --mdHeading: #875d17;
+      --mdLink: #3569ad;
+      --mdLinkUrl: #85857f;
+      --mdCode: #176c66;
+      --mdCodeBlock: #356f4a;
+      --mdCodeBlockBorder: #d2d1cc;
+      --mdQuote: #74746f;
+      --mdQuoteBorder: #cecdc8;
+      --mdHr: #d9d8d3;
+      --mdListBullet: #4e719d;
+      --toolDiffAdded: #247447;
+      --toolDiffRemoved: #b13d35;
+      --toolDiffContext: #777772;
+      --syntaxComment: #5f7d55;
+      --syntaxKeyword: #365f9d;
+      --syntaxFunction: #7b641b;
+      --syntaxVariable: #1f6f82;
+      --syntaxString: #9a4b34;
+      --syntaxNumber: #5d7338;
+      --syntaxType: #167169;
+      --syntaxOperator: #3c3c39;
+      --syntaxPunctuation: #4b4b47;
+      --thinkingOff: #a2a29c;
+      --thinkingMinimal: #8b8b85;
+      --thinkingLow: #6683a5;
+      --thinkingMedium: #4f719a;
+      --thinkingHigh: #7d6593;
+      --thinkingXhigh: #955ba5;
+      --thinkingMax: #a63e9c;
+      --bashMode: #527238;
+      --exportPageBg: #f4f3f0;
+      --exportCardBg: #ffffff;
+      --exportInfoBg: #fff7df;
+      --body-bg: #f4f3f0;
+      --container-bg: #ffffff;
+      --info-bg: #fff7df;
+    }
+  </style>` : `
+  <style data-pi-history-appearance>:root { color-scheme: dark; }</style>`;
+
+  const embeddedChrome = `
+  <style data-pi-history-embed>
+    :root {
+      --line-height: 20px;
+      --sidebar-width: min(300px, 30vw);
+      --sidebar-min-width: 220px;
+      --sidebar-max-width: 460px;
+    }
+    html, body, #app { height: 100%; min-height: 100%; }
+    body {
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    button, input { font-family: inherit; }
+    code, pre, .tree-container, .tree-status, .tool-command, .tool-output, .message-timestamp {
+      font-family: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    }
+    #sidebar {
+      border-right-color: var(--borderMuted);
+      box-shadow: inset -1px 0 color-mix(in srgb, var(--borderMuted) 42%, transparent);
+    }
+    .sidebar-header {
+      padding: 12px 10px 10px;
+      border-bottom: 1px solid var(--borderMuted);
+      background: color-mix(in srgb, var(--container-bg) 92%, var(--body-bg));
+    }
+    .sidebar-search {
+      min-height: 32px;
+      padding: 5px 9px;
+      border-color: var(--borderMuted);
+      border-radius: 8px;
+      background: var(--body-bg);
+      font-size: 12px;
+      outline: none;
+    }
+    .sidebar-search:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+    }
+    .sidebar-filters {
+      gap: 4px;
+      padding: 8px 0 0;
+    }
+    .filter-btn {
+      min-height: 25px;
+      padding: 3px 8px;
+      border-color: var(--borderMuted);
+      border-radius: 6px;
+      font-size: 10px;
+    }
+    .filter-btn:hover { background: var(--selectedBg); color: var(--text); }
+    .filter-btn.active {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+    .tree-container {
+      padding: 7px 4px;
+      font-size: 11px;
+      line-height: 1.5;
+    }
+    .tree-status {
+      border-top: 1px solid var(--borderMuted);
+      background: color-mix(in srgb, var(--container-bg) 92%, var(--body-bg));
+    }
+    #sidebar-resizer { width: 5px; }
+    #content {
+      align-items: center;
+      padding: 20px clamp(18px, 3vw, 42px);
+      scroll-behavior: smooth;
+    }
+    #header-container, #messages { width: min(820px, 100%); }
+    .header {
+      margin-bottom: 18px;
+      padding: 16px 18px;
+      border: 1px solid var(--borderMuted);
+      border-radius: 12px;
+      box-shadow: 0 1px 2px color-mix(in srgb, #000 6%, transparent);
+    }
+    .header-toggle-btn, .download-json-btn {
+      min-height: 28px;
+      padding: 3px 9px;
+      border-color: var(--borderMuted);
+      border-radius: 7px;
+      background: var(--container-bg);
+      color: var(--text);
+    }
+    .header-toggle-btn:hover, .download-json-btn:hover {
+      border-color: var(--accent);
+      background: var(--selectedBg);
+    }
+    #messages { gap: 18px; }
+    .user-message {
+      padding: 12px 14px;
+      border: 1px solid color-mix(in srgb, var(--borderMuted) 76%, transparent);
+      border-radius: 11px;
+    }
+    .assistant-message { line-height: 1.65; }
+    .model-change, .branch-summary, .compaction, .thinking-block, .system-prompt,
+    .tool-execution, .hook-message, .skill-invocation {
+      border-radius: 9px !important;
+    }
+    .copy-link-btn {
+      border-color: var(--borderMuted);
+      border-radius: 7px;
+    }
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-thumb {
+      border: 3px solid transparent;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--muted) 48%, transparent);
+      background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-track { background: transparent; }
+  </style>`;
+
+  const escapeBridge = `
+  <script data-pi-history-bridge>
+    window.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") window.parent.postMessage("pi-session-history:escape", "*");
+    });
+  </script>`;
+
+  return injectBeforeClosingTag(
+    injectBeforeClosingTag(html, "</head>", `${lightPalette}${embeddedChrome}`),
+    "</body>",
+    escapeBridge,
+  );
+}
+
 async function exportSession(filePath: string, outputPath: string): Promise<void> {
   const cliPath = await getPiCliPath();
   if (cliPath) {
@@ -243,7 +447,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const inline = new URL(req.url).searchParams.get("inline") === "1";
+  const searchParams = new URL(req.url).searchParams;
+  const inline = searchParams.get("inline") === "1";
+  const embed = inline && searchParams.get("embed") === "1";
+  const appearance = searchParams.get("appearance") === "light" ? "light" : "dark";
 
   try {
     const filePath = await resolveSessionPath(id);
@@ -263,14 +470,17 @@ export async function GET(
 
       const html = readFileSync(outputPath, "utf8");
       const patchedHtml = patchExportHtml(html);
-      return new Response(patchedHtml, {
+      const responseHtml = embed ? patchEmbeddedExportHtml(patchedHtml, appearance) : patchedHtml;
+      return new Response(responseHtml, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Content-Disposition": getContentDisposition(fileName, inline),
           "Cache-Control": "no-cache",
-          "Content-Security-Policy": "frame-ancestors 'none'",
+          "Content-Security-Policy": embed ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
+          "Cross-Origin-Resource-Policy": "same-origin",
+          "Referrer-Policy": "no-referrer",
           "X-Content-Type-Options": "nosniff",
-          "X-Frame-Options": "DENY",
+          ...(embed ? {} : { "X-Frame-Options": "DENY" }),
         },
       });
     } finally {

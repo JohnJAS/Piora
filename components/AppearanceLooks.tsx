@@ -5,6 +5,7 @@ import { useBackground } from "@/hooks/useBackground";
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { getBackgroundPreset } from "@/lib/backgrounds";
+import { AliIcon } from "./AliIcon";
 
 interface AppearanceLook {
   id: string;
@@ -141,9 +142,7 @@ export function AppearanceLooks() {
               >
                 {selected && (
                   <span style={{ position: "absolute", right: 6, top: 6, width: 18, height: 18, display: "grid", placeItems: "center", borderRadius: "50%", background: "var(--accent)", color: "#fff" }}>
-                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="1.5 6 4.5 9 10.5 2.5" />
-                    </svg>
+                    <AliIcon name="check" size={11} />
                   </span>
                 )}
               </span>

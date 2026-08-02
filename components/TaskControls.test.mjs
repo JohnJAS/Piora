@@ -14,7 +14,7 @@ test("moves tool presets out of the composer into the task menu", () => {
   assert.match(appShell, /taskControls\.presetOff/);
   assert.match(appShell, /taskControls\.presetDefault/);
   assert.match(appShell, /taskControls\.presetFull/);
-  assert.match(appShell, /taskControls\.buttonLabel/);
+  assert.match(appShell, /conversationMenu\.buttonLabel/);
   assert.doesNotMatch(appShell, /disabled=\{!taskControls\}/);
   assert.match(appShell, /activeTopPanel === "taskControls"\s*&&\s*\(/);
 });
@@ -39,7 +39,8 @@ test("loads the real preset for idle sessions before enabling the menu", () => {
 
 test("keeps the file drawer toggle inside the shell and aligns both header states", () => {
   assert.match(appShell, /className=\{`right-panel-toggle \$\{rightPanelOpen \? "is-open" : "is-closed"\}`\}/);
-  assert.match(appShell, /<\/button>\s*<\/div>\s*\{appearanceOpen/);
+  assert.match(appShell, /<\/button>\s*<\/div>\s*\{historyDialogOpen/);
+  assert.match(appShell, /<SessionHistoryDialog[\s\S]*?\{appearanceOpen/);
   assert.match(globalCss, /\.right-panel-toggle\s*\{[^}]*top:\s*8px/s);
   assert.match(globalCss, /\.right-panel-toggle\.is-open\s*\{[^}]*top:\s*4px/s);
   assert.match(globalCss, /@media \(min-width: 960px\)[\s\S]*?\.right-panel-toggle\s*\{[^}]*top:\s*16px/s);

@@ -13,6 +13,7 @@ import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { getToolNamesForPreset, type ToolEntry } from "@/lib/tool-presets";
 import type { SessionStatsInfo } from "@/lib/pi-types";
+import { estimateSessionContextUsage } from "@/lib/context-usage";
 
 export interface SessionData {
   sessionId: string;
@@ -160,6 +161,7 @@ const PROMPT_SETTLE_INITIAL_DELAY_MS = 800;
 const PROMPT_SETTLE_POLL_MS = 600;
 const PROMPT_SETTLE_MAX_MS = 20_000;
 const AGENT_STATE_RECONCILE_MS = 15_000;
+const CONTEXT_USAGE_REFRESH_MS = 1_500;
 const BASH_STATE_RECONCILE_MS = 1_000;
 const EVENT_STREAM_CONNECT_TIMEOUT_MS = 5_000;
 const MAX_NOTICES = 5;
@@ -316,7 +318,7 @@ export interface AttachedFile {
 }
 
 type SelectedModel = { provider: string; modelId: string };
-type ModelEntry = { id: string; name: string; provider: string };
+type ModelEntry = { id: string; name: string; provider: string; contextWindow?: number };
 type ModelsResponse = {
   models: Record<string, string>;
   modelList?: ModelEntry[];
@@ -404,11 +406,27 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const optimisticUserMessageKeyRef = useRef<string | null>(null);
   const suppressCompletionNotificationRef = useRef(false);
   const toolPresetMutationRef = useRef(false);
+  const lastContextUsageRefreshAtRef = useRef(0);
 
   const setToolPresetState = opts.setToolPreset ?? setToolPreset;
 
   const currentModel = currentModelOverride ?? data?.context.model ?? pendingModel ?? null;
   const displayModel = isNew ? (newSessionModel ?? newSessionDefaultModel) : currentModel;
+  const estimatedContextUsage = useMemo(() => {
+    if (!displayModel) return null;
+    const contextWindow = modelList.find((entry) => (
+      entry.provider === displayModel.provider && entry.id === displayModel.modelId
+    ))?.contextWindow ?? 0;
+    return estimateSessionContextUsage(messages, contextWindow);
+  }, [displayModel, messages, modelList]);
+  const effectiveContextUsage = useMemo(() => {
+    if (!agentRunning) return estimatedContextUsage ?? contextUsage;
+    if (!contextUsage) return estimatedContextUsage;
+    if (!estimatedContextUsage || contextUsage.tokens === null) return contextUsage;
+    return (estimatedContextUsage.tokens ?? 0) > contextUsage.tokens
+      ? estimatedContextUsage
+      : contextUsage;
+  }, [agentRunning, contextUsage, estimatedContextUsage]);
 
   const sessionStats = useMemo(() => {
     if (sessionStatsOverride) return sessionStatsOverride;
@@ -445,9 +463,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       totalMessages: messages.length,
       tokens,
       cost,
-      ...(contextUsage ? { contextUsage } : {}),
+      ...(effectiveContextUsage ? { contextUsage: effectiveContextUsage } : {}),
     } satisfies SessionStatsInfo;
-  }, [messages, sessionStatsOverride, contextUsage, data?.filePath, session?.id, session?.name]);
+  }, [messages, sessionStatsOverride, effectiveContextUsage, data?.filePath, session?.id, session?.name]);
 
   const loadSession = useCallback(async (sid: string, showLoading = false, includeState = false) => {
     let messagesLoaded = false;
@@ -858,6 +876,20 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [loadSession]);
 
+  const refreshContextUsage = useCallback(async (sid: string) => {
+    try {
+      const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+      if (!res.ok || sessionIdRef.current !== sid) return;
+      const data = await res.json() as { state?: AgentStateResponse };
+      if (sessionIdRef.current !== sid) return;
+      if (data.state?.contextUsage !== undefined) {
+        setContextUsage(data.state.contextUsage ?? null);
+      }
+    } catch {
+      // The next message completion or reconciliation tick will retry.
+    }
+  }, []);
+
   // Reconcile client streaming state with the server. When SSE events are
   // missed (network drop, mobile tab backgrounded, half-open connection),
   // agent_end never arrives and the UI stays in streaming state forever.
@@ -882,9 +914,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setQueuedMessages(normalizeQueuedMessages(state?.queuedMessages));
       const busy = data.running && state
         && (state.isStreaming || state.isPromptRunning || state.isCompacting);
+      // Context usage is useful while the run is still active (especially
+      // across multi-tool turns), so do not defer it until idle settlement.
+      if (state?.contextUsage !== undefined) setContextUsage(state.contextUsage ?? null);
       if (busy || !agentRunningRef.current) return;
       if (state) {
-        if (state.contextUsage !== undefined) setContextUsage(state.contextUsage ?? null);
         if (state.systemPrompt !== undefined) setSystemPrompt(state.systemPrompt ?? null);
         if (state.extensionStatuses !== undefined) setExtensionStatuses(state.extensionStatuses ?? []);
         if (state.extensionWidgets !== undefined) setExtensionWidgets(state.extensionWidgets ?? []);
@@ -989,6 +1023,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         if (msg) {
           dispatch({ type: "update", message: normalizeToolCalls(msg as AgentMessage) });
+          const now = Date.now();
+          if (
+            msg.role === "assistant"
+            && sessionIdRef.current
+            && now - lastContextUsageRefreshAtRef.current >= CONTEXT_USAGE_REFRESH_MS
+          ) {
+            lastContextUsageRefreshAtRef.current = now;
+            void refreshContextUsage(sessionIdRef.current);
+          }
         }
         setAgentPhase(null);
         break;
@@ -1025,6 +1068,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         dispatch({ type: "reset" });
         setAgentPhase({ kind: "waiting_model" });
+        if (completed?.role === "assistant" && sessionIdRef.current) {
+          void refreshContextUsage(sessionIdRef.current);
+        }
         break;
       }
       case "tool_execution_start": {
@@ -1080,7 +1126,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
     }
-  }, [addNotice, handleExtensionUiRequest, loadSession, waitForPromptSettlement]);
+  }, [addNotice, handleExtensionUiRequest, loadSession, refreshContextUsage, waitForPromptSettlement]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[], files?: AttachedFile[]) => {
@@ -1573,6 +1619,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     messagesEndRef.current?.scrollIntoView({ behavior });
   }, []);
 
+  const handleScrollToBottom = useCallback(() => {
+    completionScrollAllowedRef.current = true;
+    scrollToBottom("smooth");
+  }, [scrollToBottom]);
+
   const scrollUserMsgToTop = useCallback(() => {
     const container = scrollContainerRef.current;
     const el = lastUserMsgRef.current;
@@ -1724,7 +1775,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // State
     data, loading, error, activeLeafId, messages, entryIds, streamState,
     agentRunning, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, toolsLoaded, thinkingLevel,
-    retryInfo, contextUsage, systemPrompt, forkingEntryId,
+    retryInfo, contextUsage: effectiveContextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
     notices: noticeState.visible, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
@@ -1736,6 +1787,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     lastUserMsgRef, pendingScrollToUserRef, initialScrollDoneRef,
     // Actions
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
+    handleScrollToBottom,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,

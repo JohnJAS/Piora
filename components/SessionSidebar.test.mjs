@@ -34,7 +34,8 @@ test("renders sessions inside persisted project folders", () => {
 
 test("project session overflow is accessible and attention-aware", () => {
   assert.match(source, /getVisibleSessionRoots\(group\.tree, sessionsExpanded, attentionSessionIds\)/);
-  assert.match(source, /sessionTreeContainsAnyId\(root, attentionSessionIds\)/);
+  assert.match(source, /runningSessionIds\.has\(session\.id\) \|\| unreadSessionIds\.has\(session\.id\)/);
+  assert.doesNotMatch(source, /projectHasAttention[^;]*attentionSessionIds/);
   assert.match(source, /aria-expanded=\{sessionsExpanded\}/);
   assert.match(source, /sidebar\.showMoreSessions/);
   assert.match(source, /sidebar\.showFewerSessions/);

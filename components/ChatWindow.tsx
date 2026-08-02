@@ -16,6 +16,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { ToolPreset } from "@/lib/tool-presets";
 import { deriveCompanionActivityStatus, type CompanionActivity } from "@/lib/companion";
+import { AliIcon } from "./AliIcon";
 import {
   captureScrollDistance,
   getNextVisibleCount,
@@ -39,7 +40,6 @@ interface Props {
   onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
   onOpenFile?: (filePath: string) => void;
   onCompanionActivityChange?: (activity: CompanionActivity) => void;
-  onModelInfoChange?: (model: { provider: string; modelId: string } | null) => void;
   onTaskControlsChange?: (controls: TaskControls | null) => void;
 }
 
@@ -65,6 +65,7 @@ function phaseLabel(phase: AgentPhase, t: (key: string, params?: Record<string, 
 const CHAT_MINIMAP_WIDTH = 36;
 const CHAT_COLUMN_PADDING = 16;
 const CHAT_INPUT_RIGHT_PADDING = CHAT_COLUMN_PADDING + CHAT_MINIMAP_WIDTH;
+const SCROLL_TO_BOTTOM_THRESHOLD = 96;
 
 function hasFinalAssistantAnswer(message: AgentMessage): boolean {
   if (message.role !== "assistant") return false;
@@ -164,9 +165,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
         }}
         title={expanded ? t("chat.collapseProcess") : t("chat.expandProcess")}
       >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>
-          <polyline points="4 2.5 7.5 6 4 9.5" />
-        </svg>
+        <AliIcon name="arrowright" size={12} style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
         <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {parts.join(" · ")}
         </span>
@@ -180,7 +179,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onModelInfoChange, onTaskControlsChange }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
 
@@ -201,7 +200,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     isNew,
     sessionIdRef, messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
-    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
+    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange, handleScrollToBottom,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
@@ -262,6 +261,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   // Only render the last N messages initially. When the user scrolls to the
   // top, load another page while keeping the scroll position stable.
   const [visibleCount, setVisibleCount] = useState(VISIBLE_PAGE_SIZE);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const prevScrollDistanceRef = useRef<number | null>(null);
 
@@ -360,8 +360,36 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const isEmptyNew = isNew && messages.length === 0 && !streamState.isStreaming && !sessionBusy;
 
   useEffect(() => {
-    onModelInfoChange?.(displayModelValue);
-  }, [displayModelValue, onModelInfoChange]);
+    if (loading || isEmptyNew) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    let frame = 0;
+    const updateVisibility = () => {
+      frame = 0;
+      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+      const shouldShow = distanceFromBottom > SCROLL_TO_BOTTOM_THRESHOLD;
+      setShowScrollToBottom((current) => current === shouldShow ? current : shouldShow);
+    };
+    const scheduleUpdate = () => {
+      if (frame !== 0) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(updateVisibility);
+    };
+
+    container.addEventListener("scroll", scheduleUpdate, { passive: true });
+    const resizeObserver = new ResizeObserver(scheduleUpdate);
+    resizeObserver.observe(container);
+    const content = container.firstElementChild;
+    if (content) resizeObserver.observe(content);
+    scheduleUpdate();
+
+    return () => {
+      container.removeEventListener("scroll", scheduleUpdate);
+      resizeObserver.disconnect();
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
+  }, [isEmptyNew, loading, scrollContainerRef, session?.id]);
+
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
 
   const availableThinkingLevels = displayModelValue
@@ -407,6 +435,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       onBuiltinCommand={handleBuiltinSlashCommand}
       draftKey={session?.id ?? (newSessionCwd ? `new:${newSessionCwd}` : undefined)}
       cwd={session?.cwd ?? newSessionCwd}
+      contextUsage={contextUsage}
+      sessionStats={sessionStats}
     />
   );
 
@@ -756,12 +786,27 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         {isMobile ? null : (
           <ChatMinimap
             messages={messages}
-            streamingMessage={streamState.streamingMessage}
             scrollContainer={scrollContainerRef}
             messageRefs={messageRefs}
             onRevealHistory={revealHistoryForMinimap}
           />
         )}
+        {showScrollToBottom ? (
+          <div
+            className="chat-scroll-to-bottom-layer"
+            style={{ right: isMobile ? 0 : CHAT_MINIMAP_WIDTH }}
+          >
+            <button
+              type="button"
+              className="chat-scroll-to-bottom"
+              onClick={handleScrollToBottom}
+              aria-label={t("chat.scrollToBottom")}
+              title={t("chat.scrollToBottom")}
+            >
+              <AliIcon name="arrowdown" size={16} />
+            </button>
+          </div>
+        ) : null}
       </div>
 
       <div className="relative">

@@ -21,6 +21,23 @@
 /.next/
 /out/
 
+# desktop build output (electron-builder + tsc)
+/desktop/dist/
+/desktop/release/
+/desktop/release2/
+/desktop/release3/
+/desktop/release-delivery/
+/desktop/release-final/
+/desktop/release-v2/
+/desktop/node_modules/
+
+# electron download cache & custom build outputs
+.electron-cache/
+.next-final/
+
+# workbuddy workspace data
+.workbuddy/
+
 # production
 /build
 
@@ -38,6 +55,18 @@ desktop.ini
 *.pfx
 /certificates/
 /desktop/certificates/
+
+# editor/OS temp files
+*.tmp
+*.temp
+*~
+*.swp
+*.swo
+*.bak
+*.orig
+*.rej
+.nfs*
+
 
 # Never publish copied Pi/Codex runtime state or locally imported companion data.
 .pi/

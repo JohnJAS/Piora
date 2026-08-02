@@ -25,7 +25,6 @@ import { StandaloneServer, type ServerExit } from "./server-supervisor.js";
 const DESKTOP_PARTITION = "persist:pigui";
 const DESKTOP_TOKEN_HEADER = "X-Pi-Desktop-Token";
 const COMPLETION_NOTIFICATION_CHANNEL = "pi:completion-notification";
-const DESKTOP_TITLE_BAR_HEIGHT = 40;
 const MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80;
 const PORTABLE_SMOKE_TEST = process.env.PI_GUI_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
@@ -135,8 +134,32 @@ function installApplicationMenu(): void {
         { label: "显示/隐藏侧栏", accelerator: "CmdOrCtrl+Shift+B", click: () => sendMenuAction("toggle-sidebar") },
         { label: "显示/隐藏文件面板", accelerator: "CmdOrCtrl+Shift+E", click: () => sendMenuAction("toggle-files") },
         { type: "separator" },
+        { label: "重新加载", role: "reload" },
+        { label: "实际大小", role: "resetZoom" },
+        { label: "放大", role: "zoomIn" },
+        { label: "缩小", role: "zoomOut" },
+        { type: "separator" },
+        { label: "切换全屏", role: "togglefullscreen" },
+      ],
+    },
+    {
+      label: "工具",
+      submenu: [
+        { label: "设置", accelerator: "CmdOrCtrl+,", click: () => sendMenuAction("settings") },
+        { type: "separator" },
         { label: "模型设置", click: () => sendMenuAction("models") },
-        { label: "主题", click: () => sendMenuAction("theme") },
+        { label: "技能管理", click: () => sendMenuAction("skills") },
+        { label: "插件管理", click: () => sendMenuAction("plugins") },
+        { type: "separator" },
+        { label: "外观", click: () => sendMenuAction("appearance") },
+        { label: "语言", click: () => sendMenuAction("language") },
+        {
+          label: "宠物",
+          submenu: [
+            { label: "显示/隐藏宠物", click: () => sendMenuAction("toggle-companion") },
+            { label: "宠物设置", click: () => sendMenuAction("companion-settings") },
+          ],
+        },
       ],
     },
     {
@@ -285,23 +308,16 @@ function createMainWindow(
   log: Logger,
   { showWhenReady = true }: { showWhenReady?: boolean } = {},
 ): BrowserWindow {
-  // Keep the native resize frame and native window controls, but let the web
-  // shell occupy the former title-bar area. The renderer supplies the narrow
-  // draggable region and uses the Window Controls Overlay CSS environment
-  // variables to avoid the system buttons. This intentionally does not use
-  // `frame: false`, which would require us to reimplement window behavior.
+  // On Windows we use a standard framed window (no `titleBarStyle: "hidden"`):
+  // the OS title bar sits above the native menu bar (autoHideMenuBar: false
+  // below), which sits above the in-app top bar. This keeps the always-visible
+  // native menu from crowding the web top bar and removes the second, web-drawn
+  // title row that `titleBarOverlay` produced. macOS keeps its frameless
+  // `hiddenInset` look because its menu lives in the screen menu bar, not the
+  // window chrome.
   const integratedTitleBar = process.platform === "darwin"
     ? { titleBarStyle: "hiddenInset" as const }
-    : {
-        titleBarStyle: "hidden" as const,
-        titleBarOverlay: {
-          color: "#00000000",
-          // Neutral mid-tone stays legible across piGUI's independent light
-          // and dark themes without replacing the native system controls.
-          symbolColor: "#737373",
-          height: DESKTOP_TITLE_BAR_HEIGHT,
-        },
-      };
+    : {};
 
   const window = new BrowserWindow({
     width: 1440,
@@ -311,9 +327,11 @@ function createMainWindow(
     show: false,
     title: "piGUI",
     backgroundColor: "#111318",
-    // The menu remains installed: Alt reveals it on Windows/Linux and all
-    // accelerators continue to work without a second permanent header row.
-    autoHideMenuBar: true,
+    // Show the native menu bar persistently on Windows/Linux so it is visible
+    // without pressing Alt. All accelerators still work. Note this adds a
+    // native menu row above the in-app top bar; if you prefer it hidden by
+    // default, set this back to `true` (Alt reveals it).
+    autoHideMenuBar: false,
     ...integratedTitleBar,
     webPreferences: {
       preload: join(__dirname, "preload.js"),

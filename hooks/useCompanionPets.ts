@@ -1,0 +1,76 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { useI18n } from "./useI18n";
+import type {
+  CompanionPet,
+  CompanionPetSourceKind,
+  CompanionPetsResponse,
+} from "@/lib/companion-pets";
+
+export type CompanionPetSource = CompanionPet & {
+  sourceKind?: CompanionPetSourceKind;
+  sourceKey?: string;
+  origin?: Exclude<CompanionPetSourceKind, "pi-gui-installed">;
+};
+
+export function getCompanionPetSourceKey(pet: CompanionPetSource): string {
+  return pet.sourceKey ?? `${pet.sourceKind ?? pet.source}:${pet.id}`;
+}
+
+export function useCompanionPets(active: boolean) {
+  const { t } = useI18n();
+  const [catalog, setCatalog] = useState<CompanionPetsResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [importingPetKey, setImportingPetKey] = useState<string | null>(null);
+
+  const loadPets = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/companion-pets", { cache: "no-store" });
+      const body = await response.json() as CompanionPetsResponse | { error?: string };
+      if (!response.ok) {
+        throw new Error("error" in body && body.error ? body.error : t("companion.loadPetsFailed"));
+      }
+      setCatalog(body as CompanionPetsResponse);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : t("companion.loadPetsFailed"));
+    } finally {
+      setLoading(false);
+    }
+  }, [t]);
+
+  useEffect(() => {
+    if (active) void loadPets();
+  }, [active, loadPets]);
+
+  const importPet = useCallback(async (pet: CompanionPetSource): Promise<CompanionPet | null> => {
+    const sourceKey = getCompanionPetSourceKey(pet);
+    setImportingPetKey(sourceKey);
+    setError(null);
+    try {
+      const response = await fetch("/api/companion-pets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "import",
+          id: pet.id,
+          ...(pet.sourceKind ? { sourceKind: pet.sourceKind } : {}),
+        }),
+      });
+      const body = await response.json() as { pet?: CompanionPet; error?: string };
+      if (!response.ok || !body.pet) throw new Error(body.error || t("companion.importFailed"));
+      await loadPets();
+      return body.pet;
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : t("companion.importFailed"));
+      return null;
+    } finally {
+      setImportingPetKey(null);
+    }
+  }, [loadPets, t]);
+
+  return { catalog, loading, error, importingPetKey, loadPets, importPet };
+}

@@ -10,7 +10,8 @@ test("turns the top-bar folder into an accessible Codex-style project menu", () 
   assert.match(appShell, /aria-haspopup="menu"[\s\S]*?aria-expanded=\{activeTopPanel === "project"\}/);
   assert.match(appShell, /activeTopPanel === "project"[\s\S]*?data-project-menu/);
   assert.match(appShell, /currentProjectName \?\? translate\("projectMenu\.noProject"\)/);
-  assert.match(appShell, /selectedSession\?\.name && \([\s\S]*?className="app-topbar-title-path"/);
+  assert.match(appShell, /className=\{`app-topbar-title-path/);
+  assert.match(appShell, /selectedSession\?\.name \?\? translate\("i18n\.newSession"\)/);
 });
 
 test("keeps project actions in the renderer without restoring an open-root shell bridge", () => {

@@ -1,0 +1,47 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useI18n } from "./useI18n";
+import {
+  COMPANION_STORAGE_KEY,
+  createDefaultCompanionPreferences,
+  parseCompanionPreferences,
+  type CompanionPreferences,
+} from "@/lib/companion-store";
+
+export function useCompanionPreferences() {
+  const { t } = useI18n();
+  const defaults = useMemo(() => createDefaultCompanionPreferences([
+    { label: t("companion.defaultContinueLabel"), text: t("companion.defaultContinueText") },
+    { label: t("companion.defaultTestLabel"), text: t("companion.defaultTestText") },
+  ]), [t]);
+  const [preferences, setPreferences] = useState<CompanionPreferences>(defaults);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    let restored = defaults;
+    try {
+      restored = parseCompanionPreferences(window.localStorage.getItem(COMPANION_STORAGE_KEY), defaults);
+    } catch {
+      // Storage may be disabled by browser policy. The companion remains
+      // available in memory for the current app session.
+    }
+    setPreferences(restored);
+    setHydrated(true);
+  }, [defaults]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      window.localStorage.setItem(COMPANION_STORAGE_KEY, JSON.stringify(preferences));
+    } catch {
+      // Keep the feature usable in memory when persistence is unavailable.
+    }
+  }, [hydrated, preferences]);
+
+  const setOpen = useCallback((open: boolean) => {
+    setPreferences((current) => ({ ...current, open }));
+  }, []);
+
+  return { preferences, setPreferences, setOpen };
+}

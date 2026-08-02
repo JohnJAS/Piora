@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Noto_Sans_Mono } from "next/font/google";
 import { BackgroundBootstrap } from "@/components/BackgroundBootstrap";
+import { AppTooltip } from "@/components/AppTooltip";
 import { PwaRegistration } from "@/components/PwaRegistration";
 import { BACKGROUND_INITIALIZATION_SCRIPT } from "@/lib/backgrounds";
 import { FONT_PREFERENCE_INITIALIZATION_SCRIPT } from "@/lib/font-preferences";
@@ -82,6 +83,7 @@ export default function RootLayout({
       <body translate="no" className="notranslate" style={{ height: "100dvh", display: "flex", flexDirection: "column" }}>
         <BackgroundBootstrap />
         {children}
+        <AppTooltip />
         <PwaRegistration />
       </body>
     </html>

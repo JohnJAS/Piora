@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const nextDirectory = join(projectRoot, ".next");
 const standaloneDirectory = join(nextDirectory, "standalone");
+const buildIdFile = join(nextDirectory, "BUILD_ID");
 
 const assets = [
   {
@@ -71,7 +72,31 @@ export async function findSymbolicLinks(root) {
   return links;
 }
 
+async function isNonEmptyDirectory(path) {
+  const type = await getPathType(path);
+  if (type !== "directory") return false;
+  return (await readdir(path)).length > 0;
+}
+
 async function main() {
+  // A production `next build` always writes .next/BUILD_ID. A dev-server or
+  // interrupted build leaves it missing; staging such a tree produces a
+  // portable EXE whose HTML loads but whose JS/CSS 404 — a black window.
+  // Fail fast instead of silently packaging a broken app.
+  if ((await getPathType(buildIdFile)) !== "file") {
+    throw new Error(
+      `Production build marker .next/BUILD_ID was not found. ` +
+      `The .next directory looks polluted (a dev server or failed build). ` +
+      `Stop npm run dev, delete .next, then run \`next build\` again.`,
+    );
+  }
+  if (!(await isNonEmptyDirectory(join(nextDirectory, "static")))) {
+    throw new Error(
+      `.next/static is missing or empty; the production build output is incomplete. ` +
+      `Delete .next and run \`next build\` again before packaging.`,
+    );
+  }
+
   if ((await getPathType(standaloneDirectory)) !== "directory") {
     throw new Error(
       `Standalone output not found at ${standaloneDirectory}. Run a Next.js build first.`,
@@ -116,6 +141,12 @@ async function main() {
       force: true,
       dereference: true,
     });
+    if (!(await isNonEmptyDirectory(asset.destination))) {
+      throw new Error(
+        `Staging ${asset.name} produced an empty directory at ${asset.destination}. ` +
+        `The packaged app would render a blank window; aborting.`,
+      );
+    }
     console.log(`Staged ${asset.name} at ${asset.destination}`);
   }
 }

@@ -33,6 +33,7 @@ import { parseUnifiedPatch } from "@/lib/patch";
 import type { GitFileDiffResponse } from "@/lib/git-types";
 import { useI18n } from "@/hooks/useI18n";
 import editorStyles from "./FileEditor.module.css";
+import { AliIcon } from "./AliIcon";
 
 interface Props {
   filePath: string;
@@ -109,12 +110,7 @@ interface SelectedLineRange {
 }
 
 function MentionIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="4" />
-      <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8" />
-    </svg>
-  );
+  return <AliIcon name="link" size={14} />;
 }
 
 function closestSourceLine(node: Node): HTMLElement | null {
@@ -247,11 +243,7 @@ function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceS
       aria-label={t("i18n.downloadFile")}
       className="file-viewer-icon-button"
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-        <polyline points="7 10 12 15 17 10" />
-        <line x1="12" y1="15" x2="12" y2="3" />
-      </svg>
+      <AliIcon name="download" size={14} />
     </a>
   );
 }
@@ -273,10 +265,7 @@ function ReadOnlyNotice() {
   const { t } = useI18n();
   return (
     <div className={editorStyles.readOnlyNotice} role="status">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <rect width="16" height="11" x="4" y="11" rx="2" />
-        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-      </svg>
+      <AliIcon name="lock" size={13} />
       <span>
         <strong>{t("fileEditor.readOnlyTitle")}</strong>
         {t("fileEditor.readOnlyTypeBody")}
@@ -1469,10 +1458,7 @@ function TextFileViewer({
                     }}
                   >
                     {mode === "edit" && (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                        <path d="M12 20h9" />
-                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                      </svg>
+                      <AliIcon name="edit" size={12} />
                     )}
                     {t(DISPLAY_MODE_LABEL_KEYS[mode])}
                   </button>
@@ -1507,12 +1493,7 @@ function TextFileViewer({
                     color: wrapLines ? "var(--text)" : "var(--text-muted)",
                   }}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M3 6h18" />
-                    <path d="M3 12h15a3 3 0 1 1 0 6h-4" />
-                    <path d="m16 16-2 2 2 2" />
-                    <path d="M3 18h7" />
-                  </svg>
+                  <AliIcon name="enter" size={14} />
                 </button>
               </>
             )}
@@ -1531,11 +1512,7 @@ function TextFileViewer({
               {saving ? (
                 <span className={editorStyles.spinner} aria-hidden="true" />
               ) : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
-                  <path d="M17 21v-8H7v8" />
-                  <path d="M7 3v5h8" />
-                </svg>
+                <AliIcon name="save" size={13} />
               )}
               <span className={editorStyles.saveLabel}>{saving ? t("i18n.saving") : dirty ? t("i18n.save") : t("i18n.saved")}</span>
             </button>

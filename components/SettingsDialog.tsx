@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
+import { AliIcon } from "./AliIcon";
 
 interface Props {
   open: boolean;
@@ -12,6 +13,7 @@ interface Props {
   onOpenPlugins: () => void;
   onOpenAppearance: () => void;
   onOpenLanguage: () => void;
+  onOpenCompanion: () => void;
 }
 
 interface SettingsEntry {
@@ -30,6 +32,7 @@ export function SettingsDialog({
   onOpenPlugins,
   onOpenAppearance,
   onOpenLanguage,
+  onOpenCompanion,
 }: Props) {
   const { t } = useI18n();
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
@@ -55,69 +58,42 @@ export function SettingsDialog({
       labelKey: "common.models",
       descriptionKey: "settings.modelsDescription",
       onClick: onOpenModels,
-      icon: (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" />
-          <line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" />
-          <line x1="9" y1="20" x2="9" y2="23" /><line x1="15" y1="20" x2="15" y2="23" />
-          <line x1="20" y1="9" x2="23" y2="9" /><line x1="20" y1="14" x2="23" y2="14" />
-          <line x1="1" y1="9" x2="4" y2="9" /><line x1="1" y1="14" x2="4" y2="14" />
-        </svg>
-      ),
+      icon: <AliIcon name="api" size={15} />,
     },
     {
       key: "skills",
       labelKey: "common.skills",
       descriptionKey: "settings.skillsDescription",
       onClick: onOpenSkills,
-      icon: (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 2L2 7l10 5 10-5-10-5z" />
-          <path d="M2 17l10 5 10-5" />
-          <path d="M2 12l10 5 10-5" />
-        </svg>
-      ),
+      icon: <AliIcon name="solution" size={15} />,
     },
     {
       key: "plugins",
       labelKey: "common.plugins",
       descriptionKey: "settings.pluginsDescription",
       onClick: onOpenPlugins,
-      icon: (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9 7V2" />
-          <path d="M15 7V2" />
-          <path d="M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0Z" />
-          <path d="M12 19v3" />
-        </svg>
-      ),
+      icon: <AliIcon name="appstore-add" size={15} />,
     },
     {
       key: "appearance",
       labelKey: "appearance.title",
       descriptionKey: "settings.appearanceDescription",
       onClick: onOpenAppearance,
-      icon: (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 3a9 9 0 1 0 0 18h1.4a1.6 1.6 0 0 0 1.1-2.7 1.6 1.6 0 0 1 1.1-2.7H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3Z" />
-          <circle cx="7.5" cy="10" r="1" fill="currentColor" stroke="none" />
-          <circle cx="10.5" cy="6.8" r="1" fill="currentColor" stroke="none" />
-          <circle cx="15" cy="7.8" r="1" fill="currentColor" stroke="none" />
-        </svg>
-      ),
+      icon: <AliIcon name="skin" size={15} />,
     },
     {
       key: "language",
       labelKey: "common.language",
       descriptionKey: "settings.languageDescription",
       onClick: onOpenLanguage,
-      icon: (
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="9" />
-          <line x1="3" y1="12" x2="21" y2="12" />
-          <path d="M12 3a14.5 14.5 0 0 1 0 18 14.5 14.5 0 0 1 0-18z" />
-        </svg>
-      ),
+      icon: <AliIcon name="translate" size={15} />,
+    },
+    {
+      key: "companion",
+      labelKey: "companion.settingsTitle",
+      descriptionKey: "companion.settingsDescription",
+      onClick: onOpenCompanion,
+      icon: <AliIcon name="robot" size={15} />,
     },
   ];
 
@@ -158,7 +134,7 @@ export function SettingsDialog({
             aria-label={t("i18n.close")}
             style={{ padding: "2px 6px", border: 0, background: "none", color: "var(--text-muted)", fontSize: "var(--font-4xl)", lineHeight: 1, cursor: "pointer" }}
           >
-            ×
+            <AliIcon name="close" size={14} />
           </button>
         </div>
 
@@ -190,9 +166,7 @@ export function SettingsDialog({
                   {t(entry.descriptionKey)}
                 </span>
               </span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: "var(--text-dim)" }}>
-                <path d="m9 18 6-6-6-6" />
-              </svg>
+              <AliIcon name="arrowright" size={12} style={{ color: "var(--text-dim)" }} />
             </button>
           ))}
         </div>

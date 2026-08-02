@@ -24,3 +24,26 @@ test("closes the session event stream only after prompt settlement or a pre-prom
   assert.match(sendSource, /if \(promptRequestStarted && sentSessionId\) \{[\s\S]*?waitForPromptSettlement/);
   assert.match(sendSource, /if \(promptRequestStarted && sentSessionId\) \{[\s\S]*?return;[\s\S]*?\}[\s\S]*?closeEvents\(\)/);
 });
+
+test("refreshes context usage during streaming and after assistant messages", () => {
+  const reconcileSource = source.slice(
+    source.indexOf("const reconcileAgentState"),
+    source.indexOf("// Recovery net for missed SSE events"),
+  );
+  const messageUpdateSource = source.slice(
+    source.indexOf('case "message_update"'),
+    source.indexOf('case "message_end"'),
+  );
+  const messageEndSource = source.slice(
+    source.indexOf('case "message_end"'),
+    source.indexOf('case "tool_execution_start"'),
+  );
+
+  assert.ok(
+    reconcileSource.indexOf("setContextUsage(state.contextUsage ?? null)")
+      < reconcileSource.indexOf("if (busy || !agentRunningRef.current) return"),
+  );
+  assert.match(messageUpdateSource, /CONTEXT_USAGE_REFRESH_MS/);
+  assert.match(messageUpdateSource, /refreshContextUsage\(sessionIdRef\.current\)/);
+  assert.match(messageEndSource, /completed\?\.role === "assistant"[\s\S]*refreshContextUsage/);
+});

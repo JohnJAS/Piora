@@ -6,13 +6,13 @@ import {
   buildSessionProjectGroups,
   getProjectLabel,
   getVisibleSessionRoots,
-  sessionTreeContainsAnyId,
   type SessionProjectGroup as SessionProjectGroupData,
   type SessionTreeNode,
 } from "@/lib/session-project-groups";
 import { useI18n } from "@/hooks/useI18n";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
+import { AliIcon } from "./AliIcon";
 
 declare global {
   interface Window {
@@ -810,12 +810,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                   textAlign: "left",
                 }}
               >
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: currentWt && !currentWt.isMain ? "var(--accent)" : "var(--text-dim)" }}>
-                  <line x1="6" y1="3" x2="6" y2="15" />
-                  <circle cx="18" cy="6" r="3" />
-                  <circle cx="6" cy="18" r="3" />
-                  <path d="M18 9a9 9 0 0 1-9 9" />
-                </svg>
+                <AliIcon name="branches" size={11} style={{ color: currentWt && !currentWt.isMain ? "var(--accent)" : "var(--text-dim)" }} />
                 <PathLabel
                   text={currentWt ? (currentWt.branch ?? displayCwd(currentWt.path, homeDir)) : "…"}
                   style={{ flex: 1, fontFamily: "var(--font-mono)", color: "var(--text)" }}
@@ -828,9 +823,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                     {worktreeState.worktrees.length}
                   </span>
                 )}
-                <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                  <polyline points="2 3.5 5 6.5 8 3.5" />
-                </svg>
+                <AliIcon name="arrowdown" size={9} />
               </button>
 
               <AnimatedDropdown
@@ -932,9 +925,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                             }}
                           >
                             {isCurrent ? (
-                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                                <polyline points="1.5 5 4 7.5 8.5 2.5" />
-                              </svg>
+                              <AliIcon name="check" size={10} style={{ color: "var(--accent)" }} />
                             ) : (
                               <span style={{ width: 10, flexShrink: 0 }} />
                             )}
@@ -957,12 +948,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                               onMouseEnter={(e) => { e.currentTarget.style.color = "#ef4444"; e.currentTarget.style.background = "rgba(239,68,68,0.08)"; }}
                               onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
                             >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="3 6 5 6 21 6" />
-                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                                <path d="M10 11v6M14 11v6" />
-                                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                              </svg>
+                              <AliIcon name="delete" size={12} />
                             </button>
                           )}
                         </div>
@@ -996,10 +982,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                         fontSize: "var(--font-xs)",
                       }}
                     >
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" style={{ flexShrink: 0 }}>
-                        <line x1="5" y1="1" x2="5" y2="9" />
-                        <line x1="1" y1="5" x2="9" y2="5" />
-                      </svg>
+                      <AliIcon name="plus" size={10} />
                        <span>{t("sidebar.newWorktree")}</span>
                     </button>
                   ) : (
@@ -1123,11 +1106,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                   e.currentTarget.style.color = "var(--text-muted)";
                 }}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M3 10.5 12 3l9 7.5" />
-                  <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" />
-                  <path d="M9.5 21v-6h5v6" />
-                </svg>
+                <AliIcon name="home" size={13} />
               </button>
               <button
                 type="button"
@@ -1150,10 +1129,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                   e.currentTarget.style.color = "var(--text-muted)";
                 }}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M12 5v14" />
-                  <path d="M5 12h14" />
-                </svg>
+                <AliIcon name="plus" size={13} />
               </button>
             </div>
           </div>
@@ -1255,13 +1231,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                 textAlign: "left",
               }}
             >
-              <svg
-                width="9" height="9" viewBox="0 0 10 10" fill="none"
-                stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-                style={{ transform: explorerOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s", flexShrink: 0 }}
-              >
-                <polyline points="3 2 7 5 3 8" />
-              </svg>
+              <AliIcon name="chevron-right" size={14} strokeWidth={1.8} style={{ transform: explorerOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
               {t("files.explorer")}
             </button>
             {explorerOpen && changesCount > 0 && (
@@ -1272,11 +1242,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                 color={changesCollapsed ? "var(--text-dim)" : "var(--accent)"}
                 background={changesCollapsed ? "none" : "var(--bg-selected)"}
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M3 12h6" />
-                  <path d="M15 12h6" />
-                </svg>
+                <AliIcon name="diff" size={13} />
               </ToolbarIconButton>
             )}
             {explorerOpen && (
@@ -1286,11 +1252,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                 title={t("sidebar.uploadFilesTitle")}
                 color="var(--text-dim)"
               >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <path d="m17 8-5-5-5 5" />
-                  <path d="M12 3v12" />
-                </svg>
+                <AliIcon name="upload" size={13} />
               </ToolbarIconButton>
             )}
             <ToolbarIconButton
@@ -1308,14 +1270,9 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
               marginRight={6}
             >
               {explorerRefreshDone ? (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4ade80" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
+                <AliIcon name="check" size={13} style={{ color: "#4ade80" }} />
               ) : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                </svg>
+                <AliIcon name="reload" size={13} />
               )}
             </ToolbarIconButton>
           </div>
@@ -1377,7 +1334,13 @@ function ProjectSessionGroup({
 }) {
   const { t } = useI18n();
   const [rowHovered, setRowHovered] = useState(false);
-  const projectHasAttention = group.tree.some((root) => sessionTreeContainsAnyId(root, attentionSessionIds));
+  // Keep projects with background activity visible, but do not treat the
+  // currently selected (idle) session as a reason to override an explicit
+  // collapse. selectedSessionId remains in attentionSessionIds solely so the
+  // active conversation is retained by the session-overflow calculation.
+  const projectHasAttention = group.sessions.some((session) => (
+    runningSessionIds.has(session.id) || unreadSessionIds.has(session.id)
+  ));
   const projectOpen = !isCollapsed || projectHasAttention;
   const visibleRoots = getVisibleSessionRoots(group.tree, sessionsExpanded, attentionSessionIds);
   const hiddenRootCount = group.tree.length - visibleRoots.length;
@@ -1422,9 +1385,7 @@ function ProjectSessionGroup({
             cursor: "pointer",
           }}
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: projectOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>
-            <polyline points="3.5 2 6.5 5 3.5 8" />
-          </svg>
+          <AliIcon name="chevron-right" size={14} strokeWidth={1.8} style={{ transform: projectOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
         </button>
 
         <button
@@ -1445,9 +1406,11 @@ function ProjectSessionGroup({
             textAlign: "left",
           }}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill={isSelectedProject ? "color-mix(in srgb, var(--accent) 16%, transparent)" : "none"} stroke={isSelectedProject ? "var(--accent)" : "currentColor"} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0, color: "var(--text-muted)" }}>
-            <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2h8.5A1.5 1.5 0 0 1 21 8.5v8A1.5 1.5 0 0 1 19.5 18h-15A1.5 1.5 0 0 1 3 16.5v-10Z" />
-          </svg>
+          <AliIcon
+            name="folder-open"
+            size={18}
+            style={{ color: isSelectedProject ? "var(--accent)" : "var(--text-muted)", fontSize: "var(--font-sm)" }}
+          />
           <span style={{ minWidth: 0, flex: 1 }}>
             <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--font-sm)", fontWeight: isSelectedProject ? 650 : 550 }}>
               {projectLabel}
@@ -1483,10 +1446,7 @@ function ProjectSessionGroup({
             e.currentTarget.style.color = "var(--text-muted)";
           }}
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M12 5v14" />
-            <path d="M5 12h14" />
-          </svg>
+          <AliIcon name="plus" size={13} />
         </button>
       </div>
 
@@ -1625,24 +1585,7 @@ function RunningSessionIndicator() {
         color: "var(--accent)",
       }}
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" style={{ display: "block" }}>
-        <g>
-          <path
-            d="M21 12a9 9 0 1 1-3.8-7.4"
-            stroke="currentColor"
-            strokeWidth="2.8"
-            strokeLinecap="round"
-          />
-          <animateTransform
-            attributeName="transform"
-            type="rotate"
-            from="0 12 12"
-            to="360 12 12"
-            dur="0.9s"
-            repeatCount="indefinite"
-          />
-        </g>
-      </svg>
+      <AliIcon className="animate-spin" name="reload" size={14} />
     </span>
   );
 }
@@ -1812,12 +1755,7 @@ function SessionItem({
                 whiteSpace: "nowrap",
               }}
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="3 6 5 6 21 6" />
-                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                <path d="M10 11v6M14 11v6" />
-                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-              </svg>
+              <AliIcon name="delete" size={12} />
               {t("sidebar.delete")}
             </button>
             <button
@@ -1864,12 +1802,7 @@ function SessionItem({
         <>
           {/* Fork indicator for child sessions */}
           {depth > 0 && (
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <line x1="6" y1="3" x2="6" y2="15" />
-              <circle cx="18" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <path d="M18 9a9 9 0 0 1-9 9" />
-            </svg>
+            <AliIcon name="fork" size={10} style={{ color: "var(--text-dim)" }} />
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
@@ -1903,12 +1836,7 @@ function SessionItem({
                   title={`Worktree: ${session.cwd}`}
                   style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--accent)", minWidth: 0, overflow: "hidden" }}
                 >
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                    <line x1="6" y1="3" x2="6" y2="15" />
-                    <circle cx="18" cy="6" r="3" />
-                    <circle cx="6" cy="18" r="3" />
-                    <path d="M18 9a9 9 0 0 1-9 9" />
-                  </svg>
+                  <AliIcon name="branches" size={9} />
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.worktreeBranch}</span>
                 </span>
               )}
@@ -1931,9 +1859,7 @@ function SessionItem({
                 transition: "transform 0.15s",
               }}
             >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="2 3.5 5 6.5 8 3.5" />
-              </svg>
+              <AliIcon name="arrowdown" size={10} />
             </button>
           )}
 
@@ -1962,9 +1888,7 @@ function SessionItem({
                   e.currentTarget.style.borderColor = "var(--border)";
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-                </svg>
+                <AliIcon name="edit" size={14} />
               </button>
               <button
                 onClick={handleDeleteClick}
@@ -1988,12 +1912,7 @@ function SessionItem({
                   e.currentTarget.style.borderColor = "var(--border)";
                 }}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="3 6 5 6 21 6" />
-                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                  <path d="M10 11v6M14 11v6" />
-                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                </svg>
+                <AliIcon name="delete" size={14} />
               </button>
             </div>
           )}

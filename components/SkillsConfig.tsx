@@ -10,6 +10,7 @@ import type {
   SkillsResponse,
   SkillUpdateResult,
 } from "@/lib/api-types";
+import { AliIcon } from "./AliIcon";
 
 function shortenPath(p: string): string {
   // Match common home dir patterns: /Users/xxx, /home/xxx
@@ -197,8 +198,9 @@ function SkillDetail({
                 whiteSpace: "nowrap",
               }}
             >
-              {skill.install.skillsShUrl.replace(/^https?:\/\//, "")} ↗
+              {skill.install.skillsShUrl.replace(/^https?:\/\//, "")}
             </span>
+            <AliIcon name="export" size={11} />
           </a>
         </div>
       )}
@@ -520,6 +522,9 @@ function AddSkillPanel({
           </div>
           <span
             style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
               fontSize: "var(--font-sm)",
               color: "var(--text-dim)",
               fontFamily: "var(--font-mono)",
@@ -528,7 +533,8 @@ function AddSkillPanel({
               whiteSpace: "nowrap",
             }}
           >
-            → {installPath}
+            <AliIcon name="arrowright" size={11} />
+            {installPath}
           </span>
         </div>
 
@@ -613,12 +619,15 @@ function AddSkillPanel({
                         target="_blank"
                         rel="noreferrer"
                         style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 4,
                           fontSize: "var(--font-sm)",
                           color: "var(--accent)",
                           textDecoration: "none",
                         }}
                       >
-                        skills.sh ↗
+                        skills.sh <AliIcon name="export" size={11} />
                       </a>
                     )}
                   </div>
@@ -629,6 +638,10 @@ function AddSkillPanel({
                   }
                   disabled={isInstalled || isInstalling || installing !== null}
                   style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 5,
                     flexShrink: 0,
                     padding: "5px 14px",
                     fontSize: "var(--font-sm)",
@@ -649,7 +662,7 @@ function AddSkillPanel({
                   }}
                 >
                   {isInstalled
-                     ? `✓ ${t("i18n.installed")}`
+                     ? <><AliIcon name="check" size={12} />{t("i18n.installed")}</>
                     : isInstalling
                        ? t("i18n.installing")
                        : t("i18n.install")}
@@ -922,17 +935,23 @@ export function SkillsConfig({
           </div>
           <button
             onClick={onClose}
+            title={t("i18n.close")}
+            aria-label={t("i18n.close")}
             style={{
+              display: "inline-flex",
+              width: 28,
+              height: 28,
+              alignItems: "center",
+              justifyContent: "center",
               background: "none",
               border: "none",
+              borderRadius: 7,
               color: "var(--text-muted)",
               cursor: "pointer",
-              fontSize: "var(--font-4xl)",
-              lineHeight: 1,
-              padding: "2px 6px",
+              padding: 0,
             }}
           >
-            ×
+            <AliIcon name="close" size={16} />
           </button>
         </div>
 
@@ -1128,7 +1147,7 @@ export function SkillsConfig({
                                       flexShrink: 0,
                                     }}
                                   >
-                                    ↑
+                                    <AliIcon name="arrowup" size={13} />
                                   </span>
                                 );
                               })()}
@@ -1170,19 +1189,7 @@ export function SkillsConfig({
                   if (!addMode) e.currentTarget.style.background = "none";
                 }}
               >
-                <svg
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
+                <AliIcon name="plus" size={13} />
                  {t("i18n.addSkill")}
               </div>
             </div>

@@ -135,6 +135,11 @@ npm run licenses:generate
 # 生成 Web standalone 与 Electron 主进程
 npm run build:app
 
+> 若打包出的 EXE 打开是黑屏（HTML 能加载但 JS/CSS 404），通常是在 dev 污染的
+> `.next` 目录上打包所致；诊断与修复步骤见
+> [BLACK_SCREEN_TROUBLESHOOTING.md](docs/open-source/BLACK_SCREEN_TROUBLESHOOTING.md)。
+> `stage-standalone.mjs` 已内置 BUILD_ID/静态资源完整性校验，残缺 `.next` 会直接报错。
+
 # 生成 unpacked 测试目录
 npm run pack:win
 

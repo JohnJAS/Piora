@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
+import { AliIcon } from "./AliIcon";
 
 interface DirectoryEntry {
   name: string;
@@ -25,11 +26,7 @@ async function loadDirectories(directory?: string): Promise<BrowseResponse> {
 }
 
 function FolderIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
-      <path d="M1.5 3h4l1.5 2h7.5v7.5h-13z" />
-    </svg>
-  );
+  return <AliIcon name="folder-open" size={14} />;
 }
 
 function isDrivePath(value: string): boolean {
@@ -37,13 +34,7 @@ function isDrivePath(value: string): boolean {
 }
 
 function DriveIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
-      <rect x="1.5" y="4.5" width="13" height="7" rx="1.2" />
-      <line x1="12" y1="8" x2="12" y2="8" />
-      <circle cx="3.6" cy="8" r="0.9" fill="currentColor" stroke="none" />
-    </svg>
-  );
+  return <AliIcon name="database" size={14} />;
 }
 
 interface Props {
@@ -122,15 +113,13 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error }: Pro
             aria-label={t("i18n.close")}
             style={{ padding: "2px 6px", border: 0, background: "none", color: "var(--text-muted)", fontSize: "var(--font-4xl)", lineHeight: 1, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 }}
           >
-            ×
+            <AliIcon name="close" size={14} />
           </button>
         </div>
 
         <form onSubmit={handlePathSubmit} style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, padding: "10px 14px", borderBottom: "1px solid var(--border)" }}>
           <button className="directory-picker-back" type="button" onClick={() => parentDirectory && void navigateTo(parentDirectory)} disabled={loading || !parentDirectory} title={t("directoryPicker.goToParent")} aria-label={t("directoryPicker.goToParent")} style={{ width: 36, height: 36, padding: 0, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: "1px solid var(--border)", borderRadius: 6, background: "var(--bg-hover)", color: "var(--text-muted)", cursor: parentDirectory ? "pointer" : "default", opacity: parentDirectory ? 1 : 0.45 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="m18 15-6-6-6 6" />
-            </svg>
+            <AliIcon name="arrowup" size={16} />
           </button>
           <label htmlFor="directory-path" style={{ position: "absolute", width: 1, height: 1, padding: 0, margin: -1, overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0 }}>
             {t("directoryPicker.directoryPath")}
