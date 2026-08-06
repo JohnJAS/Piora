@@ -1,64 +1,54 @@
-# piGUI application icon
+# Piora application icon
 
-The piGUI application icon is an original project asset generated on
-2026-08-01 with OpenAI's built-in image generation model. It is released under
-the same MIT License as the piGUI project.
+Piora uses an original project asset: a mathematical pi mark designed for this project. The
+public name combines **Pi** with **Aurora**: a compact reference to the Pi agent
+runtime and to ideas becoming visible.
 
-No Pi, pi-web, Codex, OpenAI, or other third-party logo, trademark, or visual
-asset was used as source material. The symbol is an independent visual identity
-for piGUI: a rounded application window crossed by one continuous path, evoking
-conversation and code flow without drawing a literal letter.
+The production icon is released under the same MIT License as the project. It
+does not reuse the Pi, Codex, OpenAI, or any other third-party logo or visual
+asset.
+
+## Design
+
+The mark is a literal pi silhouette drawn as three calm ribbon strokes. Warm
+ivory moves through ultraviolet into cyan against a midnight-indigo field. A
+simple silhouette, wide counters, and heavy strokes keep the mark recognizable
+at Windows taskbar sizes; subtle highlights are reserved for larger surfaces.
 
 ## Files
 
-- `icon-source-chroma.png`: original generated raster on a flat chroma-key
-  background.
-- `icon-transparent.png`: chroma-keyed RGBA source with edge despill.
-- `icon.png`: production 1024 x 1024 transparent PNG, centered and normalized
-  so the visible mark occupies 88% of the canvas.
-- `icon.ico`: Windows multi-resolution icon containing 16, 24, 32, 48, 64,
-  128, and 256 px RGBA images.
+- `piora-icon.svg`: editable, deterministic source of truth.
+- `icon.png`: 1024 x 1024 production PNG.
+- `icon.ico`: Windows icon with 16, 24, 32, 48, 64, 128, and 256 px PNG frames.
+- `icon-transparent.png`: compatibility copy used by older project tooling.
+- `icon-source-chroma.png`: archived source of the retired piGUI icon; not used.
 
-The same production mark is exported to `app/favicon.ico` and
-`public/icons/` for the browser and installed-app surfaces. Electron Builder
-uses `icon.ico` for both the unpacked Windows executable and the portable EXE.
+`npm run brand:icons` regenerates the production PNG/ICO files, the browser
+favicon, and PWA icons. Electron Builder uses `icon.ico` for unpacked and
+portable Windows executables.
 
-## Generation prompt
+## Design brief
 
 > Use case: logo-brand
 >
-> Asset type: Windows desktop application icon and repository brand mark
+> Asset type: Windows desktop application icon and product brand mark
 >
-> Primary request: Create an original, memorable symbol for piGUI, a calm
-> modern graphical shell for a coding agent. The mark should combine the idea
-> of a rounded application window or portal with one continuous flowing path
-> that subtly suggests conversation, code flow, and the mathematical rhythm of
-> pi without drawing a literal letter or using any text.
+> Primary request: Create an original, refined icon centered on the
+> mathematical symbol pi for a modern AI coding workspace named Piora. The mark
+> should feel artistic, calm, premium, and memorable.
 >
-> Style/medium: crisp vector-like logo mark, flat geometric construction,
-> minimal and premium
+> Style/medium: vector-friendly logo mark with a crisp geometric silhouette
+> and restrained luminous color transitions
 >
-> Composition/framing: one centered square icon mark, strong silhouette,
-> generous even padding, readable at 16px, 32px, and 256px; no surrounding
-> badge mockup
+> Composition/framing: one large centered pi symbol, optically balanced with
+> generous padding, recognizable at 16 px and 32 px
 >
-> Color palette: deep sapphire blue and restrained luminous violet with a small
-> warm pearl highlight; do not use any green in the subject
+> Color palette: midnight indigo, warm ivory, ultraviolet, and a small cyan
+> highlight
 >
-> Scene/backdrop: perfectly flat solid #00ff00 chroma-key background for local
-> background removal
->
-> Constraints: original design only; exactly one cohesive mark; no words, no
-> letters, no numbers, no trademarked symbols, no OpenAI or Codex shapes, no Pi
-> product branding, no watermark; background must be one uniform #00ff00 with
-> no shadow, gradient, texture, reflection, floor plane, or lighting variation;
-> crisp antialiased edges; no cast shadow; no contact shadow; no transparency
-> preview checkerboard
->
-> Avoid: mascots, robots, brains, command prompts, angle-bracket cliches, tiny
-> details, thin hairlines, 3D mockups, glossy app-store frames
+> Constraints: no text, no browser-window motif, no traffic-light dots, no
+> chat bubble, no robot, no code brackets, no watermark, no tiny details
 
-The generated image was converted to transparency with the Codex image
-generation skill's local chroma-key helper. The fully opaque subject pixels
-remain unchanged; despill is limited to the antialiased edge. The production
-PNG was then centered, resized, and exported to standard Windows icon sizes.
+The built-in image-generation route was attempted first but did not return a
+result. The final asset therefore uses a deterministic project-native SVG,
+which provides exact geometry and repeatable multi-resolution exports.

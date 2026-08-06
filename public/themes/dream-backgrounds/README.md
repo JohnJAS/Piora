@@ -28,6 +28,6 @@ images or third-party source assets were supplied. The prompts required no
 text, logos, watermarks, recognizable people, brands, characters or existing
 IP. The generated images were only resized/encoded as WebP after visual review.
 
-The piGUI contributors make these bundled background files available under
+The Piora contributors make these bundled background files available under
 the same MIT License as the project. Generation and checksum records are kept
 in this directory.

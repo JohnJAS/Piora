@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="128" y1="96" x2="896" y2="928" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#17162F"/>
+      <stop offset="0.52" stop-color="#0D1630"/>
+      <stop offset="1" stop-color="#07111F"/>
+    </linearGradient>
+    <radialGradient id="aura" cx="0" cy="0" r="1" gradientTransform="translate(760 210) rotate(132) scale(570 520)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7C5CFF" stop-opacity="0.38"/>
+      <stop offset="0.46" stop-color="#4B3CC4" stop-opacity="0.13"/>
+      <stop offset="1" stop-color="#10162B" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="pi" x1="230" y1="264" x2="810" y2="807" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF3DC"/>
+      <stop offset="0.32" stop-color="#EFCBFF"/>
+      <stop offset="0.68" stop-color="#B69AFF"/>
+      <stop offset="1" stop-color="#68E4FF"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="250" y1="265" x2="770" y2="700" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.72"/>
+      <stop offset="0.58" stop-color="#FFFFFF" stop-opacity="0.08"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="softGlow" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+  </defs>
+
+  <rect x="48" y="48" width="928" height="928" rx="228" fill="url(#bg)"/>
+  <rect x="48" y="48" width="928" height="928" rx="228" fill="url(#aura)"/>
+  <path d="M246 310C364 274 655 274 778 310M363 326C362 507 337 680 256 789M655 326C653 523 681 693 790 786"
+        fill="none" stroke="#815FFF" stroke-opacity="0.28" stroke-width="132" stroke-linecap="round" filter="url(#softGlow)"/>
+  <path d="M246 310C364 274 655 274 778 310M363 326C362 507 337 680 256 789M655 326C653 523 681 693 790 786"
+        fill="none" stroke="url(#pi)" stroke-width="108" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M251 296C372 265 650 265 773 296M351 332C349 488 330 631 281 734M644 331C643 493 659 630 718 718"
+        fill="none" stroke="url(#shine)" stroke-width="15" stroke-linecap="round"/>
+  <rect x="49.5" y="49.5" width="925" height="925" rx="226.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.09" stroke-width="3"/>
+</svg>

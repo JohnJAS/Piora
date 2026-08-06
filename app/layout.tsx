@@ -11,9 +11,9 @@ import "./theme-backgrounds.css";
 const themeInitializationScript = `(function(){try{var a=["light","dark","starlight","ivory","doodle","fortune","midnight","forest","dream"],k=["dark","midnight","forest","dream"],f=function(x){return a.indexOf(x)>-1},t=null,v=localStorage.getItem("pi-theme:v1");if(v){try{var p=JSON.parse(v);if(p&&f(p.theme))t=p.theme}catch(_){}}if(!t){var l=localStorage.getItem("pi-theme");if(f(l))t=l}if(!t)t="light";var r=document.documentElement,d=k.indexOf(t)>-1;r.setAttribute("data-theme",t);r.classList.toggle("dark",d);r.style.colorScheme=d?"dark":"light"}catch(_){}})();`;
 
 export const metadata: Metadata = {
-  title: "piGUI",
+  title: "Piora",
   description: "Local-first desktop GUI for the Pi coding agent",
-  applicationName: "piGUI",
+  applicationName: "Piora",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "piGUI",
+    title: "Piora",
   },
   formatDetection: {
     telephone: false,

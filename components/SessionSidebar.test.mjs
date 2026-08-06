@@ -62,6 +62,8 @@ test("matches the Codex project rail with real pin, metadata, edit, and new-chat
   assert.match(source, /onTogglePinned/);
   assert.match(source, /onRenameProject/);
   assert.match(source, /onNewSession/);
+  assert.match(source, /styles\.pinnedUnpin/);
+  assert.match(source, /togglePinnedProject\(group\.projectRoot\)/);
 });
 
 test("project session overflow is accessible and attention-aware", () => {
@@ -73,6 +75,7 @@ test("project session overflow is accessible and attention-aware", () => {
   assert.match(source, /aria-expanded=\{sessionsExpanded\}/);
   assert.match(source, /sidebar\.showMoreSessions/);
   assert.match(source, /sidebar\.showFewerSessions/);
+  assert.match(source, /if \(isSelectedProject\) onToggleProject\(\)/);
 });
 
 test("project creation lives in the projects header without a duplicate list", () => {
@@ -98,8 +101,16 @@ test("keeps the real worktree switcher without an inactive repo-root hint", () =
   assert.doesNotMatch(source, /sidebar\.openRepoRoot/);
 });
 
-test("uses a compact Codex-style piGUI brand row without the old animated title", () => {
+test("uses a compact Codex-style Piora brand row without the old animated title", () => {
   assert.doesNotMatch(source, /PiWebTitle|useScramble|sidebar-title-row/);
   assert.match(source, /sidebar\.appMenu/);
   assert.match(source, /\{showWorktreeSwitcher && <div\s+className="sidebar-header"/);
+  assert.doesNotMatch(source, /<span>Piora<\/span>[\s\S]{0,120}rotate\(90deg\)/);
+});
+
+test("keeps project navigation visible and exposes global skills without an account footer", () => {
+  assert.match(source, /styles\.projectsHeader/);
+  assert.match(source, /sidebar\.globalSkills/);
+  assert.match(source, /onOpenSkills/);
+  assert.doesNotMatch(source, /styles\.accountButton|styles\.footer|accountLabel/);
 });

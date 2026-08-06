@@ -33,10 +33,10 @@ function getBrowserNotificationCopy(taskTitle: string | undefined): {
   const isChinese = typeof navigator !== "undefined"
     && navigator.language.toLowerCase().startsWith("zh");
   return {
-    title: taskTitle ? `${taskTitle} - piGUI` : "piGUI",
+    title: taskTitle ? `${taskTitle} - Piora` : "Piora",
     body: isChinese
-      ? "任务已完成，可以回到 piGUI 查看结果。"
-      : "Task completed. Open piGUI to review the result.",
+      ? "任务已完成，可以回到 Piora 查看结果。"
+      : "Task completed. Open Piora to review the result.",
   };
 }
 

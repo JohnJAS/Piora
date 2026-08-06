@@ -1,5 +1,5 @@
-piGUI
-Copyright (c) 2026 piGUI contributors
+Piora
+Copyright (c) 2026 Piora contributors
 
 This project is distributed under the MIT License. See LICENSE.
 
@@ -24,7 +24,7 @@ model defaults, and asset-cache conventions:
 The complete upstream license, NOTICE, immutable source links, and modification
 summary are in third_party/openai-codex. No upstream Rust binary, Rust source
 file, spritesheet, logo, or other visual asset is bundled as a product asset;
-only the attributed, modified TypeScript adaptation is part of piGUI. This
+only the attributed, modified TypeScript adaptation is part of Piora. This
 compatibility layer is independently maintained and is not an official OpenAI
 integration.
 
@@ -60,7 +60,7 @@ packages. These texts are retained byte-for-byte and deduplicated by SHA-256.
 The release verifier checks this material against the final unpacked artifact;
 the source inventory alone is not treated as artifact-level evidence.
 
-piGUI is independently maintained and is not endorsed by or affiliated with
+Piora is independently maintained and is not endorsed by or affiliated with
 agegr, earendil-works, or OpenAI. "Codex" and other third-party names are used
 only for descriptive comparison and remain the property of their respective
 owners.

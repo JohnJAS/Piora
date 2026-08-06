@@ -1,6 +1,6 @@
-# piGUI desktop shell
+# Piora desktop shell
 
-This directory owns the Electron process only. The existing piGUI web application
+This directory owns the Electron process only. The existing Piora web application
 continues to run as an independent Next.js standalone process on loopback.
 
 ## Development
@@ -22,7 +22,7 @@ $env:PI_DESKTOP_SERVER_ENTRY = "F:\path\to\standalone\server.js"
 npm start
 ```
 
-Do not run `next build` as part of the normal piGUI development loop. Produce
+Do not run `next build` as part of the normal Piora development loop. Produce
 the standalone output in an isolated release checkout or CI job.
 
 ## Release input
@@ -55,7 +55,7 @@ do not hand-edit it or replace it with the broader source lockfile inventory.
 - Pi and Next execute in a child process with no shell invocation.
 - The service binds only to `127.0.0.1` on an available port. The selected port
   is reused when possible so origin-scoped web preferences survive restarts.
-- A fresh high-entropy token is passed to the server, enforced by piGUI, and
+- A fresh high-entropy token is passed to the server, enforced by Piora, and
   injected into requests by Electron's network layer. The renderer cannot read
   the token.
 - Cross-origin navigation, new Electron windows, webviews, and permission

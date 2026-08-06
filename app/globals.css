@@ -326,7 +326,7 @@ body.desktop-pet-document {
   align-items: center;
   gap: 6px;
   min-height: max(48px, calc(var(--font-base) + 32px));
-  padding: 6px 46px 6px 8px;
+  padding: 6px 8px;
   position: relative;
   z-index: 100;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 76%, transparent);

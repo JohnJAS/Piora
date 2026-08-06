@@ -43,6 +43,11 @@ const PORTABLE_SMOKE_TEST = process.env.PI_GUI_SMOKE_TEST === "1"
 const requestedSmokeUserData = process.env.PI_GUI_SMOKE_USER_DATA?.trim();
 if (PORTABLE_SMOKE_TEST && requestedSmokeUserData) {
   app.setPath("userData", resolve(requestedSmokeUserData));
+} else {
+  // Keep the existing on-disk profile while the public product name moves
+  // from piGUI to Piora. Changing Electron's default userData path would make
+  // upgrades look like a fresh install and hide the user's preferences.
+  app.setPath("userData", join(app.getPath("appData"), "piGUI"));
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -80,10 +85,10 @@ function getCompletionNotificationCopy(taskTitle: string | undefined): {
 } {
   const isChinese = app.getLocale().toLowerCase().startsWith("zh");
   return {
-    title: taskTitle ? `${taskTitle} - piGUI` : "piGUI",
+    title: taskTitle ? `${taskTitle} - Piora` : "Piora",
     body: isChinese
-      ? "任务已完成，可以回到 piGUI 查看结果。"
-      : "Task completed. Open piGUI to review the result.",
+      ? "任务已完成，可以回到 Piora 查看结果。"
+      : "Task completed. Open Piora to review the result.",
   };
 }
 
@@ -141,7 +146,7 @@ function installApplicationMenu(): void {
         { label: "选择项目", accelerator: "CmdOrCtrl+O", click: () => sendMenuAction("choose-project") },
         { type: "separator" },
         { role: "close", label: "关闭窗口" },
-        { role: "quit", label: "退出 piGUI" },
+        { role: "quit", label: "退出 Piora" },
       ],
     },
     { id: "app-menu-edit", label: "编辑", submenu: editRoles },
@@ -187,12 +192,12 @@ function installApplicationMenu(): void {
       submenu: [
         { label: "打开项目主页", click: () => shell.openExternal("https://github.com/kexijiang/pi-gui") },
         {
-          label: "关于 piGUI",
+          label: "关于 Piora",
           click: () => {
             const options: MessageBoxOptions = {
               type: "info",
-              title: "关于 piGUI",
-              message: `piGUI ${app.getVersion()}`,
+              title: "关于 Piora",
+              message: `Piora ${app.getVersion()}`,
               detail: "基于 Pi Agent 与 pi-web 的开源桌面应用。",
             };
             void (mainWindow
@@ -576,7 +581,7 @@ function createMainWindow(
     minWidth: 900,
     minHeight: 640,
     show: false,
-    title: "piGUI",
+    title: "Piora",
     backgroundColor: "#111318",
     autoHideMenuBar: true,
     ...integratedTitleBar,
@@ -694,8 +699,8 @@ function handleUnexpectedServerExit(exit: ServerExit): void {
   logger?.error("Web server stopped unexpectedly", exit);
   const options: MessageBoxOptions = {
     type: "error" as const,
-    title: "piGUI",
-    message: "The local piGUI service stopped unexpectedly.",
+    title: "Piora",
+    message: "The local Piora service stopped unexpectedly.",
     ...(logger ? { detail: `See ${logger.filePath} for details.` } : {}),
   };
 
@@ -710,7 +715,7 @@ async function startApplication(): Promise<void> {
   app.setAppUserModelId("io.github.kexijiang.pigui");
 
   logger = new FileLogger(app.getPath("userData"));
-  logger.info("Starting piGUI", {
+  logger.info("Starting Piora", {
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron,
   });
@@ -776,11 +781,11 @@ async function startApplication(): Promise<void> {
 }
 
 async function stopApplication(): Promise<void> {
-  logger?.info("Stopping piGUI");
+  logger?.info("Stopping Piora");
   await server?.stop();
   server = undefined;
   serverUrl = undefined;
-  logger?.info("piGUI stopped");
+  logger?.info("Piora stopped");
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -814,7 +819,7 @@ if (!hasSingleInstanceLock) {
   void startApplication().catch(async (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     logger?.error("Desktop startup failed", error);
-    dialog.showErrorBox("piGUI could not start", message);
+    dialog.showErrorBox("Piora could not start", message);
     await server?.stop().catch((shutdownError) => {
       logger?.error("Unable to stop the web server after a startup failure", shutdownError);
     });

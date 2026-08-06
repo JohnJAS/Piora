@@ -196,7 +196,7 @@ jobs:
           $releaseNotes = "Unsigned Windows preview: the executable is not code-signed, so Windows may show a reputation warning. Verify it against SHA256SUMS.txt before running.`n`nValidation boundary: automated source, package, portable-startup, and packaged Pi-extension checks passed. Continuous mouse dragging, edge/corner resizing, transient Alt menu behavior, 100/125/150% DPI, portable-folder replacement, and the full editor conflict flow have not yet been re-run on a clean Windows 10/11 machine. This is a prerelease, not a stable build."
           & gh release create $env:GITHUB_REF_NAME @assets `
             --repo $env:GITHUB_REPOSITORY `
-            --title "piGUI $env:GITHUB_REF_NAME" `
+            --title "Piora $env:GITHUB_REF_NAME" `
             --notes $releaseNotes `
             --generate-notes `
             --verify-tag `

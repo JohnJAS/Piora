@@ -1,18 +1,18 @@
-# piGUI
+# Piora
 
 <p align="center">
-  <img src="desktop/build/icon.png" alt="piGUI original application icon" width="112" height="112">
+  <img src="desktop/build/icon.png" alt="Piora original application icon" width="112" height="112">
 </p>
 
 [![CI](https://github.com/kexijiang/pi-gui/actions/workflows/ci.yml/badge.svg)](https://github.com/kexijiang/pi-gui/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Windows](https://img.shields.io/badge/Desktop-Windows%20x64-2563eb.svg)](desktop/README.md)
 
-piGUI 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面 GUI。它基于
+Piora 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面应用。它基于
 [pi-web](https://github.com/agegr/pi-web) 演进，目标不是重新发明 Agent，而是在保留 Pi
 运行时、会话、工具、skills 与 extensions 的前提下，提供接近现代代码桌面应用的文件和视觉体验。
 
-> piGUI 由社区独立维护，不隶属于或代表 Pi、pi-web、OpenAI 或 Codex。
+> Piora 由社区独立维护，不隶属于或代表 Pi、pi-web、OpenAI 或 Codex。
 
 > 当前按首个公开预发布版本建设。是否存在可下载的 Windows 产物，以
 > [GitHub Releases](https://github.com/kexijiang/pi-gui/releases) 为准；本地构建配置不等于已发布、已签名或已完成干净机器验证的二进制。
@@ -25,7 +25,7 @@ piGUI 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面
 - 保存采用内容版本校验；外部修改不会静默覆盖本地草稿。
 - 内置 20 张原创背景，并支持选择本机图片、遮罩、模糊和一键恢复。
 - 可选桌宠面板展示 Pi 运行状态、待办事项和可配置快捷短语，并可显式导入本机 Codex 宠物素材。
-- Pi 的扩展仍由 Pi 原生资源加载器发现和执行；piGUI 不增加自己的 SubAgent 产品层。
+- Pi 的扩展仍由 Pi 原生资源加载器发现和执行；Piora 不增加自己的 SubAgent 产品层。
 
 ![20 个内置原创背景总览](docs/assets/backgrounds-overview.webp)
 
@@ -74,7 +74,7 @@ piGUI 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面
 
 ### Pi 扩展能力
 
-piGUI 直接使用 Pi 的 AgentSession、资源加载器、SettingsManager 和 package/skill/extension
+Piora 直接使用 Pi 的 AgentSession、资源加载器、SettingsManager 和 package/skill/extension
 机制。Web 开发环境继续使用已经安装的 JavaScript/TypeScript extensions、skills、prompts
 和 packages；桌面打包已保留同一加载路径，但每个公开 Windows 版本必须通过隔离扩展 fixture
 后才能声明打包支持。项目扩展仍受 Project Trust 约束。
@@ -152,13 +152,13 @@ npm run dist:win
 
 产物位于 `desktop/release/`。首批 Windows 产物是未签名预发布包，Windows 可能显示信誉警告；
 
-Windows EXE、浏览器 favicon 与 PWA 使用同一套原创 piGUI 标志。多尺寸 ICO、透明 PNG、
+Windows EXE、浏览器 favicon 与 PWA 使用同一套原创 Piora 标志。多尺寸 ICO、透明 PNG、
 完整生成提示词和 MIT 许可记录见 [`desktop/build`](desktop/build/README.md)。
 在代码签名、干净虚拟机升级/卸载和数据保留验证完成前，不应把它描述为已签名稳定发行版。
 
 ## 数据与网络
 
-piGUI 不包含分析 SDK、广告、账号服务或默认遥测。Electron 桌面应用启动只监听动态
+Piora 不包含分析 SDK、广告、账号服务或默认遥测。Electron 桌面应用启动只监听动态
 `127.0.0.1` 端口的本地服务，并使用每次启动生成的随机桌面令牌。
 
 模型请求、OAuth、模型发现、skills/packages 安装以及第三方扩展可能按用户操作访问网络；
@@ -168,7 +168,7 @@ piGUI 不包含分析 SDK、广告、账号服务或默认遥测。Electron 桌�
 
 删除或替换 portable EXE 不会清除用户数据。Windows 下 Electron 配置通常保留在
 `%APPDATA%\piGUI`，导入的宠物副本位于 `%USERPROFILE%\.pi\agent\pi-gui`；Pi 自己的会话、
-凭据和扩展仍位于 `%USERPROFILE%\.pi\agent`，不应为了清理 piGUI 而整体删除。
+凭据和扩展仍位于 `%USERPROFILE%\.pi\agent`，不应为了清理 Piora 而整体删除。
 详见 [隐私与网络行为](docs/open-source/PRIVACY_AND_NETWORK.md)。
 
 ## 项目结构与开发约束
@@ -177,7 +177,7 @@ piGUI 不包含分析 SDK、广告、账号服务或默认遥测。Electron 桌�
 [AGENTS.md](AGENTS.md)。涉及这些区域的贡献在修改前必须阅读该文件。
 
 本轮目标、验收与持续进度记录在
-[今晚交付目标](docs/RELEASE_GOAL_2026-07-31.md)。Codex 与 piGUI 的体验取舍见
+[今晚交付目标](docs/RELEASE_GOAL_2026-07-31.md)。Codex 与 Piora 的体验取舍见
 [UX 对比报告](docs/CODEX_PI_GUI_UX_COMPARISON_2026-07-31.md)。
 当前已经验证和仍待验证的边界见 [项目状态](docs/open-source/PROJECT_STATUS.md)。
 

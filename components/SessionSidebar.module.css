@@ -29,6 +29,23 @@
   cursor: default;
 }
 
+.brandMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 2px;
+  border-radius: 6px;
+  background: linear-gradient(145deg, #fff3dc 8%, #cfadff 58%, #68e4ff 100%);
+  color: #10142a;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: var(--font-md);
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 28%);
+}
+
 .brandActions {
   display: flex;
   align-items: center;
@@ -109,23 +126,57 @@
 .pinnedRow {
   display: flex;
   align-items: center;
-  gap: 8px;
   width: 100%;
   height: 30px;
-  padding: 0 8px;
-  border: 0;
   border-radius: 7px;
   background: transparent;
   color: var(--text);
   font-size: var(--font-sm);
+}
+
+.pinnedRow:hover,
+.pinnedRow:focus-within {
+  background: var(--bg-hover);
+}
+
+.pinnedMain {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
-.pinnedRow:hover,
-.pinnedRow:focus-visible {
-  background: var(--bg-hover);
+.pinnedMain:focus-visible {
   outline: none;
+}
+
+.pinnedUnpin {
+  margin-right: 4px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pinnedRow:hover .pinnedUnpin,
+.pinnedRow:focus-within .pinnedUnpin {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.projectsHeader {
+  position: sticky;
+  z-index: 3;
+  top: -4px;
+  background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
+  backdrop-filter: blur(12px);
 }
 
 .projectGroup {
@@ -283,51 +334,6 @@ button.menuItem:focus-visible {
   background: var(--bg);
   color: var(--text);
   font-size: var(--font-sm);
-}
-
-.footer {
-  display: flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 5px 8px;
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.accountButton {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 32px;
-  flex: 1;
-  padding: 0 6px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text);
-  cursor: pointer;
-  text-align: left;
-}
-
-.accountButton:hover,
-.accountButton:focus-visible {
-  background: var(--bg-hover);
-  outline: none;
-}
-
-.avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 16%, var(--bg-selected));
-  color: var(--accent);
-  font-size: var(--font-xs);
-  font-weight: 700;
-  flex-shrink: 0;
 }
 
 .ellipsis {

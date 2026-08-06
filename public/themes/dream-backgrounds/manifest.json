@@ -5,7 +5,7 @@
   "description": "Stable artwork slots for the optional Pi GUI background layer. Artwork files are added independently from the application code.",
   "artworkStatus": "complete",
   "license": "MIT",
-  "copyright": "Copyright (c) 2026 piGUI contributors",
+  "copyright": "Copyright (c) 2026 Piora contributors",
   "provenance": {
     "method": "OpenAI image generation from original text prompts; no reference images supplied",
     "records": [

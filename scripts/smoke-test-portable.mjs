@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -77,23 +77,6 @@ function assertSafeTemporaryDirectory(directory) {
   }
 }
 
-function waitForExit(child, timeoutMs) {
-  return new Promise((resolveExit, rejectExit) => {
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      rejectExit(new Error(`Portable EXE did not exit within ${timeoutMs} ms.`));
-    }, timeoutMs);
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      rejectExit(error);
-    });
-    child.once("exit", (code, signal) => {
-      clearTimeout(timer);
-      resolveExit({ code, signal });
-    });
-  });
-}
-
 async function waitForMarker(markerPath, timeoutMs, signal) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -113,6 +96,36 @@ async function terminateChild(child) {
     exited,
     new Promise((resolveDelay) => setTimeout(resolveDelay, 3_000)),
   ]);
+}
+
+async function terminateExtractedPortableProcesses(temporaryDirectory) {
+  if (process.platform !== "win32") return;
+
+  const script = [
+    "$root = [System.IO.Path]::GetFullPath($env:PI_GUI_SMOKE_PROCESS_ROOT)",
+    "$prefix = $root.TrimEnd('\\') + '\\'",
+    "Get-CimInstance Win32_Process | Where-Object {",
+    "  $_.ExecutablePath -and [System.IO.Path]::GetFullPath($_.ExecutablePath).StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)",
+    "} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+  ].join("; ");
+
+  await new Promise((resolveTermination, rejectTermination) => {
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", script],
+      {
+        env: {
+          ...process.env,
+          PI_GUI_SMOKE_PROCESS_ROOT: temporaryDirectory,
+        },
+        windowsHide: true,
+      },
+      (error) => {
+        if (error) rejectTermination(error);
+        else resolveTermination();
+      },
+    );
+  });
 }
 
 export async function smokeTestPortableExecutable(
@@ -153,15 +166,13 @@ export async function smokeTestPortableExecutable(
     child.stdout.on("data", (chunk) => { stdout = (stdout + chunk).slice(-16_384); });
     child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-16_384); });
 
-    const [exit, markerText] = await Promise.all([
-      waitForExit(child, timeoutMs),
-      waitForMarker(markerPath, timeoutMs, markerAbort.signal),
-    ]);
-    if (exit.code !== 0) {
-      throw new Error(
-        `Portable EXE smoke test failed (code=${String(exit.code)}, signal=${String(exit.signal)}).\n${stderr || stdout}`,
-      );
-    }
+    // The electron-builder portable wrapper can remain alive while its
+    // extracted Electron process is already healthy (and can also outlive the
+    // app during NSIS cleanup). The marker is the actual end-to-end contract:
+    // it is written only after the bundled service, preload bridge, renderer,
+    // and app shell are all ready. Once validated, the test owns cleanup of
+    // both the wrapper and every extracted process under its isolated root.
+    const markerText = await waitForMarker(markerPath, timeoutMs, markerAbort.signal);
     const marker = validatePortableSmokeMarker(markerText, expectedVersion);
     return {
       executable,
@@ -173,10 +184,32 @@ export async function smokeTestPortableExecutable(
       preloadBridgeReady: marker.preloadBridgeReady,
       appShellReady: marker.appShellReady,
     };
+  } catch (error) {
+    const logCandidates = [
+      join(paths.userData, "logs", "pi-gui.log"),
+      join(paths.appData, "piGUI", "logs", "pi-gui.log"),
+    ];
+    const logs = [];
+    for (const logPath of logCandidates) {
+      const content = await readFile(logPath, "utf8").catch(() => undefined);
+      if (content) logs.push(`${logPath}:\n${content.slice(-16_384)}`);
+    }
+    const diagnostic = [stderr, stdout, ...logs].filter(Boolean).join("\n");
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      diagnostic ? `${message}\n${diagnostic}` : message,
+      { cause: error },
+    );
   } finally {
     markerAbort.abort();
     if (child) await terminateChild(child);
-    await rm(temporaryDirectory, { recursive: true, force: true });
+    await terminateExtractedPortableProcesses(temporaryDirectory);
+    await rm(temporaryDirectory, {
+      recursive: true,
+      force: true,
+      maxRetries: process.platform === "win32" ? 20 : 0,
+      retryDelay: 250,
+    });
   }
 }
 

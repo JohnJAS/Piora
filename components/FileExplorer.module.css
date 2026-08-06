@@ -21,9 +21,9 @@
 }
 
 .filterShell:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 58%, var(--border));
+  border-color: var(--border);
   background: var(--bg-panel);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: none;
 }
 
 .filterInput {

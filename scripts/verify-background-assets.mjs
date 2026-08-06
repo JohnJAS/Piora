@@ -17,8 +17,8 @@ const hashes = new Set();
 if (manifest.schemaVersion !== 1) failures.push("manifest schemaVersion must be 1");
 if (manifest.artworkStatus !== "complete") failures.push("manifest artworkStatus must be complete");
 if (manifest.license !== "MIT") failures.push("manifest license must be MIT");
-if (manifest.copyright !== "Copyright (c) 2026 piGUI contributors") {
-  failures.push("manifest copyright must identify piGUI contributors");
+if (manifest.copyright !== "Copyright (c) 2026 Piora contributors") {
+  failures.push("manifest copyright must identify Piora contributors");
 }
 if (
   manifest.provenance?.method

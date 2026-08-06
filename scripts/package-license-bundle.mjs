@@ -772,7 +772,7 @@ function buildArtifacts({ applicationVersion, packages, runtimeSourceClosure, li
     metadata: {
       component: {
         type: "application",
-        name: "piGUI packaged web",
+        name: "Piora packaged web",
         version: applicationVersion,
       },
     },
@@ -833,7 +833,7 @@ function buildArtifacts({ applicationVersion, packages, runtimeSourceClosure, li
     ],
   };
   const readme = [
-    "piGUI packaged third-party license bundle",
+    "Piora packaged third-party license bundle",
     "",
     "THIRD_PARTY_PACKAGES.json contains two explicitly labelled evidence scopes:",
     "packaged-node-modules is the exact inventory of npm package copies found in the",

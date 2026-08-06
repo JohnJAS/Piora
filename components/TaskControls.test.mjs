@@ -19,14 +19,14 @@ test("moves conversation controls out of the composer and top bar into settings"
   assert.doesNotMatch(appShell, /topbar-more-button/);
 });
 
-test("opens settings as an embedded workspace page instead of a viewport modal", () => {
+test("opens settings as a viewport-wide page above the complete application shell", () => {
   assert.match(appShell, /\{settingsPage\}/);
   assert.match(appShell, /display: settingsDialogOpen \? "none" : "block"/);
   assert.match(appShell, /const effectiveRightPanelOpen = rightPanelOpen && !settingsDialogOpen/);
-  assert.doesNotMatch(settingsDialog, /createPortal|aria-modal|app-shell-dialog-backdrop/);
-  assert.match(settingsDialog, /role="region"/);
-  assert.match(settingsCss, /\.backdrop\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%/s);
-  assert.doesNotMatch(settingsCss, /position:\s*fixed|backdrop-filter/);
+  assert.match(settingsDialog, /createPortal/);
+  assert.match(settingsDialog, /aria-modal="true"/);
+  assert.match(settingsDialog, /document\.body/);
+  assert.match(settingsCss, /\.backdrop\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*0;/s);
 });
 
 test("anchors soft top-bar panels inside the top bar coordinate system", () => {

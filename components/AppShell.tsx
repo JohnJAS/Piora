@@ -983,7 +983,7 @@ export function AppShell() {
   }, [projectTrustBusy, projectTrustCwd]);
 
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
-  const windowTitle = activeCwdName ? `${activeCwdName} - piGUI` : "piGUI";
+  const windowTitle = activeCwdName ? `${activeCwdName} - Piora` : "Piora";
   const desktopMenus: Array<{ id: DesktopMenuId; label: string }> = locale === "zh-CN"
     ? [
         { id: "file", label: "文件" },
@@ -1044,6 +1044,7 @@ export function AppShell() {
       onAtMentions={handleAtMentions}
       onOpenSettings={() => setSettingsDialogOpen(true)}
       onOpenPlugins={() => setPluginsConfigOpen(true)}
+      onOpenSkills={() => setSkillsConfigOpen(true)}
     />
   );
 

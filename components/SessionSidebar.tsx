@@ -109,6 +109,7 @@ interface Props {
   onAtMentions?: (relativePaths: string[]) => void;
   onOpenSettings?: () => void;
   onOpenPlugins?: () => void;
+  onOpenSkills?: () => void;
 }
 
 export interface SessionSidebarHandle {
@@ -307,7 +308,7 @@ function AnimatedDropdown({ open, children, style }: { open: boolean; children: 
 
 
 
-export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, selectedFilePath, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onOpenSettings, onOpenPlugins }, ref) {
+export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, selectedFilePath, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onOpenSettings, onOpenPlugins, onOpenSkills }, ref) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -766,10 +767,6 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     () => projectGroups.filter((group) => pinnedProjectRoots.has(group.projectRoot)),
     [pinnedProjectRoots, projectGroups],
   );
-  const accountLabel = useMemo(() => {
-    const normalized = homeDir.replace(/[\\/]+$/, "");
-    return normalized.split(/[\\/]/).filter(Boolean).at(-1) ?? "Local";
-  }, [homeDir]);
   const togglePinnedProject = useCallback((projectRoot: string) => {
     setPinnedProjectRoots((previous) => {
       const next = new Set(previous);
@@ -827,8 +824,8 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       )}
       <div className={styles.brandRow}>
         <button type="button" className={styles.brandButton} aria-label={t("sidebar.appMenu")}>
-          <span>piGUI</span>
-          <AliIcon name="chevron-right" size={11} style={{ transform: "rotate(90deg)" }} />
+          <span className={styles.brandMark} aria-hidden="true">π</span>
+          <span>Piora</span>
         </button>
         <div className={styles.brandActions}>
           <button
@@ -875,6 +872,12 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
             <span>{t("common.plugins")}</span>
           </button>
         )}
+        {onOpenSkills && (
+          <button type="button" className={styles.navButton} onClick={onOpenSkills}>
+            <AliIcon name="solution" size={15} />
+            <span>{t("sidebar.globalSkills")}</span>
+          </button>
+        )}
       </nav>
 
       {pinnedProjectGroups.length > 0 && (
@@ -882,23 +885,33 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
           <div className={styles.sectionLabel}>{t("sidebar.pinned")}</div>
           <div className={styles.pinnedList}>
             {pinnedProjectGroups.map((group) => (
-              <button
-                type="button"
-                className={styles.pinnedRow}
-                key={group.projectRoot}
-                title={group.projectRoot}
-                onClick={() => {
-                  setSelectedCwd(group.preferredCwd);
-                  setCollapsedProjectKeys((previous) => {
-                    const next = new Set(previous);
-                    next.delete(group.key);
-                    return next;
-                  });
-                }}
-              >
-                <AliIcon name="folder" size={15} />
-                <span className={styles.ellipsis}>{projectAliases[group.projectRoot] ?? getProjectLabel(group.projectRoot)}</span>
-              </button>
+              <div className={styles.pinnedRow} key={group.projectRoot}>
+                <button
+                  type="button"
+                  className={styles.pinnedMain}
+                  title={group.projectRoot}
+                  onClick={() => {
+                    setSelectedCwd(group.preferredCwd);
+                    setCollapsedProjectKeys((previous) => {
+                      const next = new Set(previous);
+                      next.delete(group.key);
+                      return next;
+                    });
+                  }}
+                >
+                  <AliIcon name="folder" size={15} />
+                  <span className={styles.ellipsis}>{projectAliases[group.projectRoot] ?? getProjectLabel(group.projectRoot)}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.rowAction} ${styles.pinnedUnpin}`}
+                  onClick={() => togglePinnedProject(group.projectRoot)}
+                  title={t("sidebar.unpinProject")}
+                  aria-label={t("sidebar.unpinProject")}
+                >
+                  <AliIcon name="pushpin" size={13} style={{ color: "var(--accent)" }} />
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -1218,7 +1231,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       <div className="sidebar-project-scroll" style={{ flex: explorerOpen && (selectedCwdProp || selectedCwd) ? "1 1 0" : "1 1 auto", overflowY: "auto", padding: "4px 0 8px", minHeight: 80 }}>
         {!loading && !error && (
           <div
-            className={styles.sectionLabel}
+            className={`${styles.sectionLabel} ${styles.projectsHeader}`}
             onMouseEnter={() => setProjectsHovered(true)}
             onMouseLeave={() => setProjectsHovered(false)}
           >
@@ -1416,23 +1429,6 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         </div>
       )}
 
-      {onOpenSettings && (
-        <div className={styles.footer}>
-          <button
-            type="button"
-            className={styles.accountButton}
-            onClick={onOpenSettings}
-            title={t("sidebar.settings")}
-            aria-label={t("sidebar.settings")}
-          >
-            <span className={styles.avatar} aria-hidden="true">{accountLabel.slice(0, 1).toUpperCase()}</span>
-            <span className={styles.ellipsis}>{accountLabel}</span>
-          </button>
-          <button type="button" className={styles.iconButton} onClick={onOpenSettings} title={t("sidebar.settings")} aria-label={t("sidebar.settings")}>
-            <AliIcon name="setting" size={14} />
-          </button>
-        </div>
-      )}
     </div>
   );
 });
@@ -1504,7 +1500,10 @@ function ProjectSessionGroup({
         </button>
 
         <button
-          onClick={onSelectProject}
+          onClick={() => {
+            if (isSelectedProject) onToggleProject();
+            else onSelectProject();
+          }}
           title={group.projectRoot}
           className={styles.projectMain}
           aria-expanded={projectOpen}

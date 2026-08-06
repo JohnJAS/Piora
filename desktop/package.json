@@ -1,15 +1,15 @@
 {
   "name": "@pi-gui/desktop",
-  "productName": "piGUI",
+  "productName": "Piora",
   "version": "0.1.0",
   "private": true,
-  "description": "Secure Electron desktop shell for piGUI",
+  "description": "Secure Electron desktop shell for Piora",
   "author": {
-    "name": "piGUI contributors",
+    "name": "Piora contributors",
     "url": "https://github.com/kexijiang/pi-gui"
   },
-  "publisher": "piGUI",
-  "copyright": "Copyright © 2026 piGUI contributors",
+  "publisher": "Piora",
+  "copyright": "Copyright © 2026 Piora contributors",
   "license": "MIT",
   "homepage": "https://github.com/kexijiang/pi-gui#readme",
   "repository": {

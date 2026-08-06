@@ -37,8 +37,8 @@ test("desktop notification IPC accepts only a sanitized task title", () => {
 });
 
 test("desktop and browser notifications use application-owned completion copy", () => {
-  assert.match(mainSource, /Task completed\. Open piGUI to review the result\./);
-  assert.match(hookSource, /Task completed\. Open piGUI to review the result\./);
+  assert.match(mainSource, /Task completed\. Open Piora to review the result\./);
+  assert.match(hookSource, /Task completed\. Open Piora to review the result\./);
   assert.match(mainSource, /new Notification\(\{ \.\.\.copy, silent: false \}\)/);
   assert.match(hookSource, /tag: "pigui-task-complete"/);
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
 import type { TaskControls } from "./ChatWindow";
@@ -129,7 +130,7 @@ export function SettingsDialog({
     },
   ], [onOpenAppearance, onOpenCompanion, onOpenLanguage, onOpenModels, onOpenPlugins, onOpenSkills]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
   const activeEntry = entries.find((entry) => entry.key === activeKey) ?? entries[0];
   const quickEntries = entries.filter((entry) => ["appearance", "language", "companion"].includes(entry.key));
@@ -138,10 +139,11 @@ export function SettingsDialog({
     entry.onOpen();
   };
 
-  return (
+  return createPortal(
     <div
       className={styles.backdrop}
-      role="region"
+      role="dialog"
+      aria-modal="true"
       aria-label={t("sidebar.settings")}
     >
       <div className={styles.dialog}>
@@ -308,6 +310,7 @@ export function SettingsDialog({
           </main>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

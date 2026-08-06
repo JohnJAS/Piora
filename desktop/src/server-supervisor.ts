@@ -231,7 +231,7 @@ export class StandaloneServer {
       }
     }
 
-    throw new Error("Unable to start the piGUI server", { cause: lastError });
+    throw new Error("Unable to start the Piora server", { cause: lastError });
   }
 
   async stop(): Promise<void> {

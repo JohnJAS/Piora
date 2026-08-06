@@ -13,6 +13,11 @@ test("mounts one global theme-aware tooltip layer", () => {
   assert.doesNotMatch(tooltip, /if \(!content\) return null/);
 });
 
+test("keeps the tooltip out of the body flex layout before stylesheets load", () => {
+  assert.match(tooltip, /const style: TooltipCssProperties = \{[\s\S]*?position: "fixed"/);
+  assert.match(tooltip, /pointerEvents: "none"/);
+});
+
 test("delegates native title hover and focus without consuming iframe names", () => {
   assert.match(tooltip, /closest\("\[title\]:not\(iframe\)"\)/);
   assert.match(tooltip, /document\.addEventListener\("pointerover", onPointerOver, true\)/);

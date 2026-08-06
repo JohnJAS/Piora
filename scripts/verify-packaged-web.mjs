@@ -245,9 +245,9 @@ async function inspectElectronShell(webRoot, required) {
   const executableCandidates = (await readdir(unpackedRoot, { withFileTypes: true }))
     .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".exe"))
     .map((entry) => entry.name);
-  const executable = executableCandidates.find((name) => name.toLowerCase() === "pigui.exe");
+  const executable = executableCandidates.find((name) => name.toLowerCase() === "piora.exe");
   if (!executable) {
-    throw new Error(`The packaged piGUI application executable was not found in ${unpackedRoot}`);
+    throw new Error(`The packaged Piora application executable was not found in ${unpackedRoot}`);
   }
 
   return {
@@ -557,7 +557,7 @@ async function main() {
       typeof entry.name === "string" && /^(?:pi[-_]?gui)[-_]?sub[-_]?agents?$/i.test(entry.name)
     ));
     if (piGuiOwnedSubagentEntries.length > 0) {
-      throw new Error(`Unexpected piGUI-owned SubAgent capability: ${JSON.stringify(piGuiOwnedSubagentEntries)}`);
+      throw new Error(`Unexpected Piora-owned SubAgent capability: ${JSON.stringify(piGuiOwnedSubagentEntries)}`);
     }
 
     console.log(JSON.stringify({

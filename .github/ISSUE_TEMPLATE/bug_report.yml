@@ -1,11 +1,11 @@
 name: Bug report
-description: Report a reproducible problem in piGUI
+description: Report a reproducible problem in Piora
 title: "[Bug]: "
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping improve piGUI.
+        Thanks for helping improve Piora.
 
         **Do not include API keys, tokens, private prompts, session files, or sensitive logs. Do not report vulnerabilities here; follow SECURITY.md and use private vulnerability reporting.**
   - type: input

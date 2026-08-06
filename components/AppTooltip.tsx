@@ -273,6 +273,13 @@ export function AppTooltip() {
   }, [content]);
 
   const style: TooltipCssProperties = {
+    // Keep the tooltip out of body's column flex layout from the very first
+    // paint. During a packaged-app cold start the stylesheet can arrive after
+    // this markup; relying on `.app-tooltip { position: fixed }` alone lets a
+    // hovered title briefly become a flex item and shrink the application.
+    position: "fixed",
+    zIndex: 1600,
+    pointerEvents: "none",
     left: position?.left ?? 0,
     top: position?.top ?? 0,
     "--app-tooltip-arrow-x": `${position?.arrowX ?? 12}px`,
