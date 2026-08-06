@@ -24,6 +24,7 @@ export function useCompanionPets(active: boolean) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [importingPetKey, setImportingPetKey] = useState<string | null>(null);
+  const [importingArchive, setImportingArchive] = useState(false);
 
   const loadPets = useCallback(async () => {
     setLoading(true);
@@ -72,5 +73,24 @@ export function useCompanionPets(active: boolean) {
     }
   }, [loadPets, t]);
 
-  return { catalog, loading, error, importingPetKey, loadPets, importPet };
+  const importPetArchive = useCallback(async (file: File): Promise<CompanionPet | null> => {
+    setImportingArchive(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file, file.name);
+      const response = await fetch("/api/companion-pets", { method: "POST", body: formData });
+      const body = await response.json() as { pet?: CompanionPet; error?: string };
+      if (!response.ok || !body.pet) throw new Error(body.error || t("companion.importFailed"));
+      await loadPets();
+      return body.pet;
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : t("companion.importFailed"));
+      return null;
+    } finally {
+      setImportingArchive(false);
+    }
+  }, [loadPets, t]);
+
+  return { catalog, loading, error, importingPetKey, importingArchive, loadPets, importPet, importPetArchive };
 }

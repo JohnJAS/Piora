@@ -12,6 +12,21 @@ const runtime = Object.freeze({
       typeof taskTitle === "string" ? taskTitle : undefined,
     ) as Promise<boolean>;
   },
+  openMenu(menu: "file" | "edit" | "view" | "features" | "help", x: number, y: number): Promise<boolean> {
+    return ipcRenderer.invoke("pi:open-application-menu", menu, x, y) as Promise<boolean>;
+  },
+  revealPath(filePath: string): Promise<boolean> {
+    return ipcRenderer.invoke("pi:reveal-path", filePath) as Promise<boolean>;
+  },
+  openPath(filePath: string): Promise<boolean> {
+    return ipcRenderer.invoke("pi:open-path", filePath) as Promise<boolean>;
+  },
+  setCompanionWindowVisible(visible: boolean): Promise<boolean> {
+    return ipcRenderer.invoke("pi:companion-window-visible", visible) as Promise<boolean>;
+  },
+  companionAction(action: "focus-main" | "open-settings" | "hide"): Promise<boolean> {
+    return ipcRenderer.invoke("pi:companion-window-action", action) as Promise<boolean>;
+  },
   onMenuAction(listener: (action: string) => void) {
     const handler = (_event: Electron.IpcRendererEvent, action: unknown) => {
       if (typeof action === "string") listener(action);

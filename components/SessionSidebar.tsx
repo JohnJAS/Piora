@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useState, useCallback, useRef, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { SessionInfo } from "@/lib/types";
 import {
   buildSessionProjectGroups,
@@ -13,11 +14,18 @@ import { useI18n } from "@/hooks/useI18n";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
 import { AliIcon } from "./AliIcon";
+import styles from "./SessionSidebar.module.css";
 
 declare global {
   interface Window {
     piDesktop?: {
       selectDirectory: () => Promise<string | null>;
+      platform?: string;
+      openMenu?: (menu: "file" | "edit" | "view" | "features" | "help", x: number, y: number) => Promise<boolean>;
+      revealPath?: (filePath: string) => Promise<boolean>;
+      openPath?: (filePath: string) => Promise<boolean>;
+      setCompanionWindowVisible?: (visible: boolean) => Promise<boolean>;
+      companionAction?: (action: "focus-main" | "open-settings" | "hide") => Promise<boolean>;
       onMenuAction?: (listener: (action: string) => void) => () => void;
     };
   }
@@ -94,14 +102,18 @@ interface Props {
   selectedCwd?: string | null;
   onCwdChange?: (cwd: string | null, projectRoot?: string | null) => void;
   onOpenFile?: (filePath: string, fileName: string, options?: { sourceSessionId?: string | null; modeHint?: "diff" }) => void;
+  selectedFilePath?: string | null;
   explorerRefreshKey?: number;
   onExplorerRefresh?: () => void;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
   onAtMentions?: (relativePaths: string[]) => void;
+  onOpenSettings?: () => void;
+  onOpenPlugins?: () => void;
 }
 
 export interface SessionSidebarHandle {
   openProjectPicker: () => void;
+  focusFileSearch: () => void;
 }
 
 interface WorktreeEntry {
@@ -124,6 +136,8 @@ interface WorktreeState {
 const UNREAD_SESSIONS_STORAGE_KEY = "pi-web:unread-session-ids";
 const COLLAPSED_PROJECTS_STORAGE_KEY = "pi-gui:sidebar-collapsed-projects:v1";
 const EXPANDED_PROJECT_SESSIONS_STORAGE_KEY = "pi-gui:sidebar-expanded-project-sessions:v1";
+const PINNED_PROJECTS_STORAGE_KEY = "pi-gui:sidebar-pinned-projects:v1";
+const PROJECT_ALIASES_STORAGE_KEY = "pi-gui:sidebar-project-aliases:v1";
 const RUNNING_SESSIONS_POLL_MS = 2500;
 
 function loadUnreadSessionIds(): Set<string> {
@@ -170,18 +184,29 @@ function saveStoredStringSet(key: string, values: Set<string>): void {
   }
 }
 
-function formatRelativeTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const mins = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString();
+function loadProjectAliases(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PROJECT_ALIASES_STORAGE_KEY) ?? "{}") as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .filter(([projectRoot, alias]) => projectRoot.length > 0 && typeof alias === "string" && alias.trim().length > 0)
+        .map(([projectRoot, alias]) => [projectRoot, String(alias).trim().slice(0, 80)]),
+    );
+  } catch {
+    return {};
+  }
+}
+
+function saveProjectAliases(aliases: Record<string, string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (Object.keys(aliases).length === 0) window.localStorage.removeItem(PROJECT_ALIASES_STORAGE_KEY);
+    else window.localStorage.setItem(PROJECT_ALIASES_STORAGE_KEY, JSON.stringify(aliases));
+  } catch {
+    // Ignore storage quota and privacy-mode failures.
+  }
 }
 
 /**
@@ -282,7 +307,7 @@ function AnimatedDropdown({ open, children, style }: { open: boolean; children: 
 
 
 
-export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions }, ref) {
+export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, selectedFilePath, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onOpenSettings, onOpenPlugins }, ref) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -319,6 +344,10 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   const [expandedProjectSessionKeys, setExpandedProjectSessionKeys] = useState<Set<string>>(
     () => loadStoredStringSet(EXPANDED_PROJECT_SESSIONS_STORAGE_KEY),
   );
+  const [pinnedProjectRoots, setPinnedProjectRoots] = useState<Set<string>>(
+    () => loadStoredStringSet(PINNED_PROJECTS_STORAGE_KEY),
+  );
+  const [projectAliases, setProjectAliases] = useState<Record<string, string>>(() => loadProjectAliases());
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
   // Once polling has delivered a snapshot it is the source of truth for
   // running state; late /api/sessions responses must not overwrite it.
@@ -373,6 +402,14 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   useEffect(() => {
     saveStoredStringSet(EXPANDED_PROJECT_SESSIONS_STORAGE_KEY, expandedProjectSessionKeys);
   }, [expandedProjectSessionKeys]);
+
+  useEffect(() => {
+    saveStoredStringSet(PINNED_PROJECTS_STORAGE_KEY, pinnedProjectRoots);
+  }, [pinnedProjectRoots]);
+
+  useEffect(() => {
+    saveProjectAliases(projectAliases);
+  }, [projectAliases]);
 
   useEffect(() => {
     let stopped = false;
@@ -564,8 +601,6 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   const commitCustomPath = useCallback(async (candidate?: string) => {
     const path = (candidate ?? customPathValue).trim();
     if (!path || customPathValidating) return;
-    const chatRunning = selectedSessionId !== null && runningSessionIds.has(selectedSessionId);
-    if (chatRunning && !window.confirm(t("sidebar.confirmSwitchWhileRunning"))) return;
 
     setCustomPathValidating(true);
     setCustomPathError(null);
@@ -588,7 +623,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     } finally {
       setCustomPathValidating(false);
     }
-  }, [customPathValue, customPathValidating, runningSessionIds, selectedSessionId, t]);
+  }, [customPathValue, customPathValidating]);
 
   const handleCustomPathClick = useCallback(() => {
     setCustomPathOpen(true);
@@ -597,6 +632,10 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
 
   useImperativeHandle(ref, () => ({
     openProjectPicker: handleCustomPathClick,
+    focusFileSearch() {
+      setExplorerOpen(true);
+      requestAnimationFrame(() => fileExplorerRef.current?.focusSearch());
+    },
   }), [handleCustomPathClick]);
   const handleDefaultCwd = useCallback(async () => {
     try {
@@ -700,12 +739,11 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   // works when the prop value won't change — e.g. re-clicking the already
   // open session after manually switching worktrees.
   const handleSelectSessionFromList = useCallback((s: SessionInfo) => {
-    const chatRunning = selectedSessionId !== null && runningSessionIds.has(selectedSessionId);
-    const sameProject = s.cwd ? projectRootFor(s.cwd) === projectRootFor(selectedCwd) : true;
-    if (chatRunning && !sameProject && !window.confirm(t("sidebar.confirmSwitchWhileRunning"))) return;
+    // Agent sessions are process-owned and keep running independently of the
+    // visible chat. Switching is therefore safe and must remain immediate.
     if (s.cwd) setSelectedCwd(s.cwd);
     onSelectSession(s);
-  }, [onSelectSession, projectRootFor, runningSessionIds, selectedCwd, selectedSessionId, t]);
+  }, [onSelectSession]);
 
   const handleNewSessionInProject = useCallback((cwd: string) => {
     // Generate a temporary UUID client-side — no backend call needed.
@@ -724,6 +762,31 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     ),
     [allSessions, selectedCwd, selectedProject],
   );
+  const pinnedProjectGroups = useMemo(
+    () => projectGroups.filter((group) => pinnedProjectRoots.has(group.projectRoot)),
+    [pinnedProjectRoots, projectGroups],
+  );
+  const accountLabel = useMemo(() => {
+    const normalized = homeDir.replace(/[\\/]+$/, "");
+    return normalized.split(/[\\/]/).filter(Boolean).at(-1) ?? "Local";
+  }, [homeDir]);
+  const togglePinnedProject = useCallback((projectRoot: string) => {
+    setPinnedProjectRoots((previous) => {
+      const next = new Set(previous);
+      if (next.has(projectRoot)) next.delete(projectRoot);
+      else next.add(projectRoot);
+      return next;
+    });
+  }, []);
+  const renameProject = useCallback((projectRoot: string, alias: string) => {
+    setProjectAliases((previous) => {
+      const next = { ...previous };
+      const normalized = alias.trim().slice(0, 80);
+      if (normalized && normalized !== getProjectLabel(projectRoot)) next[projectRoot] = normalized;
+      else delete next[projectRoot];
+      return next;
+    });
+  }, []);
   const attentionSessionIds = useMemo(() => {
     const ids = new Set<string>([...runningSessionIds, ...unreadSessionIds]);
     if (selectedSessionId) ids.add(selectedSessionId);
@@ -750,7 +813,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     && selectedProject === worktreeState.projectRoot
   );
   return (
-    <div className="session-sidebar-content" style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+    <div className={`session-sidebar-content ${styles.shell}`}>
       {customPathOpen && (
         <DirectoryPicker
           busy={customPathValidating}
@@ -761,6 +824,84 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
           }}
           onSelect={(path) => void commitCustomPath(path)}
         />
+      )}
+      <div className={styles.brandRow}>
+        <button type="button" className={styles.brandButton} aria-label={t("sidebar.appMenu")}>
+          <span>piGUI</span>
+          <AliIcon name="chevron-right" size={11} style={{ transform: "rotate(90deg)" }} />
+        </button>
+        <div className={styles.brandActions}>
+          <button
+            type="button"
+            className={styles.iconButton}
+            onClick={() => fileExplorerRef.current?.focusSearch()}
+            title={t("sidebar.search")}
+            aria-label={t("sidebar.search")}
+          >
+            <AliIcon name="search" size={15} />
+          </button>
+          <button
+            type="button"
+            className={styles.iconButton}
+            onClick={onOpenSettings}
+            title={t("sidebar.settings")}
+            aria-label={t("sidebar.settings")}
+          >
+            <AliIcon name="notification" size={15} />
+          </button>
+        </div>
+      </div>
+
+      <nav className={styles.primaryNav} aria-label={t("sidebar.primaryNavigation")}>
+        <button
+          type="button"
+          className={styles.navButton}
+          onClick={() => {
+            const cwd = selectedCwd ?? selectedCwdProp ?? projectGroups[0]?.preferredCwd;
+            if (cwd) handleNewSessionInProject(cwd);
+            else void handleDefaultCwd();
+          }}
+        >
+          <AliIcon name="edit" size={15} />
+          <span>{t("sidebar.newChat")}</span>
+        </button>
+        <button type="button" className={styles.navButton} onClick={() => fileExplorerRef.current?.focusSearch()}>
+          <AliIcon name="search" size={15} />
+          <span>{t("sidebar.searchFiles")}</span>
+        </button>
+        {onOpenPlugins && (
+          <button type="button" className={styles.navButton} onClick={onOpenPlugins}>
+            <AliIcon name="appstore-add" size={15} />
+            <span>{t("common.plugins")}</span>
+          </button>
+        )}
+      </nav>
+
+      {pinnedProjectGroups.length > 0 && (
+        <div>
+          <div className={styles.sectionLabel}>{t("sidebar.pinned")}</div>
+          <div className={styles.pinnedList}>
+            {pinnedProjectGroups.map((group) => (
+              <button
+                type="button"
+                className={styles.pinnedRow}
+                key={group.projectRoot}
+                title={group.projectRoot}
+                onClick={() => {
+                  setSelectedCwd(group.preferredCwd);
+                  setCollapsedProjectKeys((previous) => {
+                    const next = new Set(previous);
+                    next.delete(group.key);
+                    return next;
+                  });
+                }}
+              >
+                <AliIcon name="folder" size={15} />
+                <span className={styles.ellipsis}>{projectAliases[group.projectRoot] ?? getProjectLabel(group.projectRoot)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
       {/* Worktree controls are the only content that needs a sidebar header. */}
       {showWorktreeSwitcher && <div
@@ -1074,62 +1215,32 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       </div>}
 
       {/* Codex-style project folders with their conversations nested below. */}
-      <div style={{ flex: explorerOpen && (selectedCwdProp || selectedCwd) ? "1 1 0" : "1 1 auto", overflowY: "auto", padding: "4px 0 8px", minHeight: 80 }}>
+      <div className="sidebar-project-scroll" style={{ flex: explorerOpen && (selectedCwdProp || selectedCwd) ? "1 1 0" : "1 1 auto", overflowY: "auto", padding: "4px 0 8px", minHeight: 80 }}>
         {!loading && !error && (
           <div
+            className={styles.sectionLabel}
             onMouseEnter={() => setProjectsHovered(true)}
             onMouseLeave={() => setProjectsHovered(false)}
-            style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 12px 5px" }}
           >
-            <span style={{ color: "var(--text-dim)", fontSize: "var(--font-2xs)", fontWeight: 650, letterSpacing: "0.06em", textTransform: "uppercase" }}>
-              {t("sidebar.projects")}
-            </span>
-            <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <span>{t("sidebar.projects")}</span>
+            <div className={styles.sectionLabelActions} style={{ opacity: projectsHovered ? 1 : 0 }}>
               <button
                 type="button"
+                className={styles.rowAction}
                 onClick={() => void handleDefaultCwd()}
                 title={t("sidebar.useDefaultDirectory")}
                 aria-label={t("sidebar.useDefaultDirectory")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 22, height: 22, padding: 0, border: "none", borderRadius: 6,
-                  background: "var(--bg-hover)", color: "var(--text-muted)", cursor: "pointer",
-                  flexShrink: 0, opacity: projectsHovered ? 1 : 0,
-                  transition: "opacity 0.12s, background 0.12s, color 0.12s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--bg-selected)";
-                  e.currentTarget.style.color = "var(--accent)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                }}
               >
-                <AliIcon name="home" size={13} />
+                <AliIcon name="home" size={12} />
               </button>
               <button
                 type="button"
+                className={styles.rowAction}
                 onClick={handleCustomPathClick}
                 title={t("sidebar.newProject")}
                 aria-label={t("sidebar.newProject")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 22, height: 22, padding: 0, border: "none", borderRadius: 6,
-                  background: "var(--bg-hover)", color: "var(--text-muted)", cursor: "pointer",
-                  flexShrink: 0, opacity: projectsHovered ? 1 : 0,
-                  transition: "opacity 0.12s, background 0.12s, color 0.12s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--bg-selected)";
-                  e.currentTarget.style.color = "var(--accent)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                }}
               >
-                <AliIcon name="plus" size={13} />
+                <AliIcon name="plus" size={12} />
               </button>
             </div>
           </div>
@@ -1162,11 +1273,8 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
             unreadSessionIds={unreadSessionIds}
             attentionSessionIds={attentionSessionIds}
             onSelectProject={() => {
-              const chatRunning = selectedSessionId !== null && runningSessionIds.has(selectedSessionId);
-              if (chatRunning && group.projectRoot !== selectedProject && !window.confirm(t("sidebar.confirmSwitchWhileRunning"))) return;
               setSelectedCwd(group.preferredCwd);
               setCollapsedProjectKeys((previous) => {
-                if (!previous.has(group.key)) return previous;
                 const next = new Set(previous);
                 next.delete(group.key);
                 return next;
@@ -1195,6 +1303,10 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
               onSessionDeleted?.(id);
               loadSessions();
             }}
+            isPinned={pinnedProjectRoots.has(group.projectRoot)}
+            displayLabel={projectAliases[group.projectRoot] ?? getProjectLabel(group.projectRoot)}
+            onTogglePinned={() => togglePinnedProject(group.projectRoot)}
+            onRenameProject={(alias) => renameProject(group.projectRoot, alias)}
           />
         ))}
       </div>
@@ -1247,6 +1359,15 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
             )}
             {explorerOpen && (
               <ToolbarIconButton
+                onClick={() => fileExplorerRef.current?.focusSearch()}
+                title={t("files.searchShortcut")}
+                color="var(--text-dim)"
+              >
+                <AliIcon name="search" size={13} />
+              </ToolbarIconButton>
+            )}
+            {explorerOpen && (
+              <ToolbarIconButton
                 onClick={() => fileExplorerRef.current?.openUploadPicker()}
                 disabled={explorerUploadBusy}
                 title={t("sidebar.uploadFilesTitle")}
@@ -1281,6 +1402,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
               <FileExplorer
                 ref={fileExplorerRef}
                 cwd={selectedCwd ?? selectedCwdProp!}
+                selectedFilePath={selectedFilePath}
                 onOpenFile={onOpenFile ?? (() => {})}
                 refreshKey={explorerKey}
                 onAtMention={onAtMention}
@@ -1291,6 +1413,24 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
               />
             </div>
           )}
+        </div>
+      )}
+
+      {onOpenSettings && (
+        <div className={styles.footer}>
+          <button
+            type="button"
+            className={styles.accountButton}
+            onClick={onOpenSettings}
+            title={t("sidebar.settings")}
+            aria-label={t("sidebar.settings")}
+          >
+            <span className={styles.avatar} aria-hidden="true">{accountLabel.slice(0, 1).toUpperCase()}</span>
+            <span className={styles.ellipsis}>{accountLabel}</span>
+          </button>
+          <button type="button" className={styles.iconButton} onClick={onOpenSettings} title={t("sidebar.settings")} aria-label={t("sidebar.settings")}>
+            <AliIcon name="setting" size={14} />
+          </button>
         </div>
       )}
     </div>
@@ -1314,6 +1454,10 @@ function ProjectSessionGroup({
   onNewSession,
   onRenamed,
   onSessionDeleted,
+  isPinned,
+  displayLabel,
+  onTogglePinned,
+  onRenameProject,
 }: {
   group: SessionProjectGroupData;
   homeDir: string;
@@ -1331,127 +1475,73 @@ function ProjectSessionGroup({
   onNewSession?: (cwd: string) => void;
   onRenamed: () => void;
   onSessionDeleted: (sessionId: string) => void;
+  isPinned: boolean;
+  displayLabel: string;
+  onTogglePinned: () => void;
+  onRenameProject: (alias: string) => void;
 }) {
   const { t } = useI18n();
-  const [rowHovered, setRowHovered] = useState(false);
-  // Keep projects with background activity visible, but do not treat the
-  // currently selected (idle) session as a reason to override an explicit
-  // collapse. selectedSessionId remains in attentionSessionIds solely so the
-  // active conversation is retained by the session-overflow calculation.
-  const projectHasAttention = group.sessions.some((session) => (
-    runningSessionIds.has(session.id) || unreadSessionIds.has(session.id)
-  ));
-  const projectOpen = !isCollapsed || projectHasAttention;
+  const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+  // Collapsing is purely presentational. Background agents keep running and
+  // report their state on the project row without forcing the folder open.
+  const projectOpen = !isCollapsed;
   const visibleRoots = getVisibleSessionRoots(group.tree, sessionsExpanded, attentionSessionIds);
   const hiddenRootCount = group.tree.length - visibleRoots.length;
   const runningCount = group.sessions.filter((session) => runningSessionIds.has(session.id)).length;
   const unreadCount = group.sessions.filter((session) => unreadSessionIds.has(session.id)).length;
-  const projectLabel = getProjectLabel(group.projectRoot);
 
   return (
-    <section className="sidebar-project-group" style={{ margin: "1px 7px 5px" }} aria-label={projectLabel}>
-      <div
-        className={`sidebar-project-row${isSelectedProject ? " is-selected" : ""}`}
-        onMouseEnter={() => setRowHovered(true)}
-        onMouseLeave={() => setRowHovered(false)}
-        style={{
-          minHeight: "max(40px, calc(var(--font-sm) + var(--font-3xs-plus) + 14px))",
-          display: "flex",
-          alignItems: "center",
-          padding: "2px 5px",
-          borderRadius: "var(--radius-control)",
-          background: isSelectedProject ? "var(--bg-selected)" : "transparent",
-          border: `1px solid ${isSelectedProject ? "color-mix(in srgb, var(--accent) 24%, transparent)" : "transparent"}`,
-          transition: "background 0.12s, border-color 0.12s",
-        }}
-      >
+    <section className={styles.projectGroup} aria-label={displayLabel}>
+      <div className={`${styles.projectRow}${isSelectedProject ? ` ${styles.projectRowSelected}` : ""}`}>
         <button
           onClick={onToggleProject}
           title={projectOpen ? t("sidebar.collapseProject") : t("sidebar.expandProject")}
           aria-label={projectOpen ? t("sidebar.collapseProject") : t("sidebar.expandProject")}
           aria-expanded={projectOpen}
-          style={{
-            width: 24,
-            height: 28,
-            padding: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexShrink: 0,
-            border: "none",
-            borderRadius: 6,
-            background: "transparent",
-            color: "var(--text-dim)",
-            cursor: "pointer",
-          }}
+          className={styles.rowAction}
         >
-          <AliIcon name="chevron-right" size={14} strokeWidth={1.8} style={{ transform: projectOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+          <AliIcon name={projectOpen ? "folder-open" : "folder"} size={15} />
         </button>
 
         <button
           onClick={onSelectProject}
           title={group.projectRoot}
-          style={{
-            minWidth: 0,
-            flex: 1,
-            minHeight: 34,
-            padding: "2px 4px",
-            display: "flex",
-            alignItems: "center",
-            gap: 7,
-            border: "none",
-            background: "transparent",
-            color: "var(--text)",
-            cursor: "pointer",
-            textAlign: "left",
-          }}
+          className={styles.projectMain}
+          aria-expanded={projectOpen}
         >
-          <AliIcon
-            name="folder-open"
-            size={18}
-            style={{ color: isSelectedProject ? "var(--accent)" : "var(--text-muted)", fontSize: "var(--font-sm)" }}
-          />
-          <span style={{ minWidth: 0, flex: 1 }}>
-            <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--font-sm)", fontWeight: isSelectedProject ? 650 : 550 }}>
-              {projectLabel}
-            </span>
-            <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: "var(--font-3xs-plus)", lineHeight: 1.25 }}>
-              {displayCwd(group.projectRoot, homeDir)}
-            </span>
-          </span>
+          <span className={styles.projectName}>{displayLabel}</span>
           {runningCount > 0 && <RunningSessionIndicator />}
           {runningCount === 0 && unreadCount > 0 && <UnreadSessionIndicator />}
-          <span title={t("sidebar.sessionsCount", { count: group.sessions.length })} style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>
-            {group.sessions.length}
-          </span>
         </button>
-        <button
-          type="button"
-          onClick={() => onNewSession?.(group.preferredCwd)}
-          title={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
-          aria-label={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
-          style={{
-            display: "flex", alignItems: "center", justifyContent: "center",
-            width: 24, height: 24, padding: 0, border: "none", borderRadius: 6,
-            background: "var(--bg-hover)", color: "var(--text-muted)", cursor: "pointer",
-            flexShrink: 0, opacity: rowHovered ? 1 : 0,
-            transition: "opacity 0.12s, background 0.12s, color 0.12s",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = "var(--bg-selected)";
-            e.currentTarget.style.color = "var(--accent)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "var(--bg-hover)";
-            e.currentTarget.style.color = "var(--text-muted)";
-          }}
-        >
-          <AliIcon name="plus" size={13} />
-        </button>
+        <div className={styles.projectActions}>
+          <button
+            type="button"
+            className={styles.rowAction}
+            onClick={(event) => {
+              event.stopPropagation();
+              const rect = event.currentTarget.getBoundingClientRect();
+              setMenuAnchor({ x: rect.right + 6, y: rect.top - 4 });
+            }}
+            title={t("sidebar.projectMenu")}
+            aria-label={t("sidebar.projectMenuFor", { project: displayLabel })}
+            aria-expanded={menuAnchor !== null}
+          >
+            <AliIcon name="ellipsis" size={14} />
+          </button>
+          <button
+            type="button"
+            className={styles.rowAction}
+            onClick={() => onNewSession?.(group.preferredCwd)}
+            title={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
+            aria-label={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
+          >
+            <AliIcon name="edit" size={13} />
+          </button>
+        </div>
       </div>
 
       {projectOpen && (
-        <div style={{ marginLeft: 17, padding: "2px 0 1px 5px", borderLeft: "1px solid var(--border)" }}>
+        <div className={styles.sessionList}>
           {group.tree.length === 0 && (
             <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: "var(--font-xs)" }}>
               {t("sidebar.noSessionsInProject")}
@@ -1494,7 +1584,150 @@ function ProjectSessionGroup({
           )}
         </div>
       )}
+      {menuAnchor && createPortal(
+        <ProjectContextMenu
+          anchor={menuAnchor}
+          group={group}
+          displayLabel={displayLabel}
+          homeDir={homeDir}
+          runningCount={runningCount}
+          isPinned={isPinned}
+          onTogglePinned={onTogglePinned}
+          onRenameProject={onRenameProject}
+          onNewSession={() => onNewSession?.(group.preferredCwd)}
+          onClose={() => setMenuAnchor(null)}
+        />,
+        document.body,
+      )}
     </section>
+  );
+}
+
+function ProjectContextMenu({
+  anchor,
+  group,
+  displayLabel,
+  homeDir,
+  runningCount,
+  isPinned,
+  onTogglePinned,
+  onRenameProject,
+  onNewSession,
+  onClose,
+}: {
+  anchor: { x: number; y: number };
+  group: SessionProjectGroupData;
+  displayLabel: string;
+  homeDir: string;
+  runningCount: number;
+  isPinned: boolean;
+  onTogglePinned: () => void;
+  onRenameProject: (alias: string) => void;
+  onNewSession: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [editing, setEditing] = useState(false);
+  const [alias, setAlias] = useState(displayLabel);
+  const [metadata, setMetadata] = useState<{ repository?: string; branch?: string } | null>(null);
+
+  useEffect(() => {
+    const closeOnPointer = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) onClose();
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", closeOnPointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeOnPointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [onClose]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch(`/api/project-info?cwd=${encodeURIComponent(group.preferredCwd)}`, { signal: controller.signal })
+      .then(async (response) => response.ok ? response.json() as Promise<{ repository?: string; branch?: string }> : null)
+      .then((value) => { if (value) setMetadata(value); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [group.preferredCwd]);
+
+  const commitAlias = () => {
+    onRenameProject(alias);
+    setEditing(false);
+  };
+  const left = Math.max(8, Math.min(anchor.x, window.innerWidth - 330));
+  const top = Math.max(8, Math.min(anchor.y, window.innerHeight - 270));
+
+  return (
+    <div ref={menuRef} className={styles.projectMenu} role="menu" aria-label={t("sidebar.projectMenuFor", { project: displayLabel })} style={{ left, top }}>
+      <div className={styles.projectMenuHeader}>
+        <AliIcon name="folder" size={16} />
+        <span className={styles.ellipsis} style={{ flex: 1 }}>{displayLabel}</span>
+        <button
+          type="button"
+          className={styles.iconButton}
+          onClick={() => { onTogglePinned(); onClose(); }}
+          title={isPinned ? t("sidebar.unpinProject") : t("sidebar.pinProject")}
+          aria-label={isPinned ? t("sidebar.unpinProject") : t("sidebar.pinProject")}
+        >
+          <AliIcon name="pushpin" size={14} style={{ color: isPinned ? "var(--accent)" : undefined }} />
+        </button>
+      </div>
+      <div className={`${styles.menuItem} ${styles.menuItemMuted}`}>
+        <AliIcon name="message" size={14} />
+        <span>{t("sidebar.projectTaskSummary", { count: group.sessions.length, running: runningCount })}</span>
+      </div>
+      <div className={styles.menuDivider} />
+      {metadata?.repository && (
+        <div className={styles.menuItem} title={metadata.repository}>
+          <AliIcon name="code" size={14} />
+          <span className={styles.ellipsis}>{metadata.repository}</span>
+        </div>
+      )}
+      <div className={styles.menuItem} title={group.projectRoot}>
+        <AliIcon name="folder" size={14} />
+        <span className={styles.ellipsis}>{displayCwd(group.projectRoot, homeDir)}</span>
+      </div>
+      {metadata?.branch && (
+        <div className={`${styles.menuItem} ${styles.menuItemMuted}`} title={metadata.branch}>
+          <AliIcon name="branches" size={14} />
+          <span className={styles.ellipsis}>{metadata.branch}</span>
+        </div>
+      )}
+      <div className={styles.menuDivider} />
+      {editing ? (
+        <div style={{ padding: "3px 5px 5px" }}>
+          <input
+            ref={inputRef}
+            className={styles.menuRenameInput}
+            value={alias}
+            onChange={(event) => setAlias(event.target.value)}
+            onBlur={commitAlias}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") commitAlias();
+              if (event.key === "Escape") { setEditing(false); setAlias(displayLabel); }
+            }}
+            aria-label={t("sidebar.projectName")}
+            autoFocus
+          />
+        </div>
+      ) : (
+        <button type="button" className={styles.menuItem} role="menuitem" onClick={() => { setEditing(true); setTimeout(() => inputRef.current?.select(), 0); }}>
+          <AliIcon name="setting" size={14} />
+          <span>{t("sidebar.editProject")}</span>
+        </button>
+      )}
+      <button type="button" className={styles.menuItem} role="menuitem" onClick={() => { onNewSession(); onClose(); }}>
+        <AliIcon name="edit" size={14} />
+        <span>{t("sidebar.newChat")}</span>
+      </button>
+    </div>
   );
 }
 
@@ -1585,7 +1818,7 @@ function RunningSessionIndicator() {
         color: "var(--accent)",
       }}
     >
-      <AliIcon className="animate-spin" name="reload" size={14} />
+      <span className="sidebar-running-spinner" aria-hidden="true" />
     </span>
   );
 }
@@ -1706,7 +1939,7 @@ function SessionItem({
   }, []);
 
   // Fixed-height outer wrapper — content swaps in place so the list never reflows
-  const ITEM_HEIGHT = "max(44px, calc(var(--font-sm) + var(--font-xs) + 23px))";
+  const ITEM_HEIGHT = "max(31px, calc(var(--font-sm) + 16px))";
 
   return (
     <div
@@ -1715,22 +1948,21 @@ function SessionItem({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); }}
       style={{
+        position: "relative",
         height: ITEM_HEIGHT,
         width: "calc(100% - 12px)",
         margin: "2px 6px",
         boxSizing: "border-box",
         display: "flex",
         alignItems: "center",
-        paddingLeft: depth > 0 ? depth * 12 + 10 : 10,
-        paddingRight: 8,
+        paddingLeft: depth > 0 ? depth * 12 + 8 : 8,
+        paddingRight: 5,
         cursor: confirmDelete || renaming ? "default" : "pointer",
         background: confirmDelete
           ? "rgba(239,68,68,0.06)"
           : isSelected ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
-        border: confirmDelete
-          ? "1px solid rgba(239,68,68,0.55)"
-          : isSelected ? "1px solid color-mix(in srgb, var(--accent) 24%, transparent)" : "1px solid transparent",
-        borderRadius: "var(--radius-control)",
+        border: "1px solid transparent",
+        borderRadius: 7,
         transition: "background 0.1s, border-color 0.1s",
         opacity: deleting ? 0.5 : 1,
         gap: 6,
@@ -1822,26 +2054,17 @@ function SessionItem({
                 {title}
               </span>
             </div>
-            <div style={{ marginTop: 2, display: "flex", alignItems: "center", gap: 8, color: "var(--text-dim)", fontSize: "var(--font-xs)", minWidth: 0 }}>
-              {isRunning ? (
-                <RunningSessionIndicator />
-              ) : isUnread ? (
-                <UnreadSessionIndicator />
-              ) : (
-                <span title={session.modified}>{formatRelativeTime(session.modified)}</span>
-              )}
-              <span>{t("sidebar.messagesCount", { count: session.messageCount })}</span>
-              {session.worktreeBranch && (
-                <span
-                  title={`Worktree: ${session.cwd}`}
-                  style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--accent)", minWidth: 0, overflow: "hidden" }}
-                >
-                  <AliIcon name="branches" size={9} />
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{session.worktreeBranch}</span>
-                </span>
-              )}
-            </div>
           </div>
+
+          {isRunning ? (
+            <RunningSessionIndicator />
+          ) : isUnread ? (
+            <UnreadSessionIndicator />
+          ) : session.worktreeBranch ? (
+            <span title={`Worktree: ${session.worktreeBranch}`} style={{ color: "var(--text-dim)", display: "inline-flex" }}>
+              <AliIcon name="branches" size={11} />
+            </span>
+          ) : null}
 
           {/* Collapse toggle — always visible when has children */}
           {hasChildren && (
@@ -1863,17 +2086,37 @@ function SessionItem({
             </button>
           )}
 
-          {/* Action buttons — shown on hover */}
-          {hovered && (
-            <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          {/* Action buttons — shown on hover. Absolutely positioned so they
+              overlay the row instead of shrinking the title (mounting/unmounting
+              in-flow buttons reflowed the row content and made the list visibly
+              jitter every time the mouse entered or left a row). */}
+          <div
+              aria-hidden={!hovered}
+              style={{
+                position: "absolute",
+                right: 4,
+                top: 0,
+                bottom: 0,
+                zIndex: 2,
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                paddingLeft: 14,
+                flexShrink: 0,
+                opacity: hovered ? 1 : 0,
+                visibility: hovered ? "visible" : "hidden",
+                pointerEvents: hovered ? "auto" : "none",
+                background: `linear-gradient(to right, transparent, ${isSelected ? "var(--bg-selected)" : "var(--bg-hover)"} 38%)`,
+              }}
+            >
               <button
                 onClick={startRename}
                 title={t("sidebar.rename")}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 28, height: 28, padding: 0,
-                  background: "var(--bg-hover)", border: "1px solid var(--border)",
-                  borderRadius: 7, color: "var(--text-muted)",
+                  width: 23, height: 23, padding: 0,
+                  background: "var(--bg-hover)", border: "none",
+                  borderRadius: 6, color: "var(--text-muted)",
                   cursor: "pointer", flexShrink: 0,
                   transition: "background 0.12s, color 0.12s, border-color 0.12s",
                 }}
@@ -1895,9 +2138,9 @@ function SessionItem({
                 title={t("sidebar.deleteWithShiftClick")}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 28, height: 28, padding: 0,
-                  background: "var(--bg-hover)", border: "1px solid var(--border)",
-                  borderRadius: 7, color: "var(--text-muted)",
+                  width: 23, height: 23, padding: 0,
+                  background: "var(--bg-hover)", border: "none",
+                  borderRadius: 6, color: "var(--text-muted)",
                   cursor: "pointer", flexShrink: 0,
                   transition: "background 0.12s, color 0.12s, border-color 0.12s",
                 }}
@@ -1914,8 +2157,7 @@ function SessionItem({
               >
                 <AliIcon name="delete" size={14} />
               </button>
-            </div>
-          )}
+          </div>
         </>
       )}
     </div>

@@ -1,0 +1,104 @@
+.window {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  user-select: none;
+  color: var(--text);
+}
+
+.dragSurface {
+  position: absolute;
+  inset: 8px 8px 32px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-items: center;
+  justify-items: center;
+  padding: 8px 10px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--bg-panel) 82%, transparent);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.18), inset 0 1px rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(18px) saturate(1.12);
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.pet {
+  width: 92px;
+  height: 100px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  filter: drop-shadow(0 8px 12px rgba(15, 23, 42, 0.16));
+}
+
+.statusCard {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--bg) 76%, transparent);
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--pet-status);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pet-status) 17%, transparent);
+}
+
+.statusCopy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.statusCopy strong,
+.statusCopy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusCopy strong { font-size: var(--font-xs); font-weight: 650; }
+.statusCopy small { color: var(--text-muted); font-size: var(--font-3xs-plus); }
+
+.actions {
+  position: absolute;
+  right: 12px;
+  bottom: 4px;
+  display: flex;
+  gap: 3px;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.actions button {
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-panel) 84%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.actions button:hover { background: var(--bg-hover); color: var(--text); }
+
+.dragHint {
+  position: absolute;
+  left: 14px;
+  bottom: 10px;
+  color: color-mix(in srgb, var(--text-muted) 74%, transparent);
+  font-size: var(--font-3xs-plus);
+  pointer-events: none;
+}

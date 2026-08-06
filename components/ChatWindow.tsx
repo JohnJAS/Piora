@@ -24,6 +24,7 @@ import {
   restoreScrollTop,
   VISIBLE_PAGE_SIZE,
 } from "@/lib/chat-lazy-load";
+import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
 
 interface Props {
   session: SessionInfo | null;
@@ -367,8 +368,14 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     let frame = 0;
     const updateVisibility = () => {
       frame = 0;
-      const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
-      const shouldShow = distanceFromBottom > SCROLL_TO_BOTTOM_THRESHOLD;
+      const transientTail = container.querySelector<HTMLElement>("[data-chat-tail-spacer]");
+      const shouldShow = shouldShowScrollToBottom({
+        scrollHeight: container.scrollHeight,
+        scrollTop: container.scrollTop,
+        clientHeight: container.clientHeight,
+        transientTailHeight: transientTail?.offsetHeight ?? 0,
+        threshold: SCROLL_TO_BOTTOM_THRESHOLD,
+      });
       setShowScrollToBottom((current) => current === shouldShow ? current : shouldShow);
     };
     const scheduleUpdate = () => {
@@ -776,7 +783,11 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             )}
 
             {agentRunning && (
-              <div style={{ height: scrollContainerRef.current ? scrollContainerRef.current.clientHeight : "80vh" }} />
+              <div
+                data-chat-tail-spacer
+                aria-hidden="true"
+                style={{ height: scrollContainerRef.current ? scrollContainerRef.current.clientHeight : "80vh" }}
+              />
             )}
 
             <div ref={messagesEndRef} />

@@ -25,10 +25,23 @@ interface Props {
 export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
   const { t } = useI18n();
   const [hoveredClose, setHoveredClose] = useState<string | null>(null);
+  const [hoveredTab, setHoveredTab] = useState<string | null>(null);
+
+  const moveFocus = (currentId: string, direction: -1 | 1) => {
+    const currentIndex = tabs.findIndex((tab) => tab.id === currentId);
+    if (currentIndex < 0 || tabs.length === 0) return;
+    const nextIndex = (currentIndex + direction + tabs.length) % tabs.length;
+    onSelectTab(tabs[nextIndex].id);
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(`[data-file-tab-id="${CSS.escape(tabs[nextIndex].id)}"]`)?.focus();
+    });
+  };
 
   return (
     <div
       className="file-tab-list"
+      role="tablist"
+      aria-label={t("files.openFiles")}
       style={{
         display: "flex",
         alignItems: "flex-end",
@@ -44,7 +57,31 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
           <div
             className={`file-tab${isActive ? " is-active" : ""}`}
             key={tab.id}
+            role="tab"
+            aria-selected={isActive}
+            tabIndex={isActive ? 0 : -1}
+            data-file-tab-id={tab.id}
             onClick={() => onSelectTab(tab.id)}
+            onMouseEnter={() => setHoveredTab(tab.id)}
+            onMouseLeave={() => setHoveredTab(null)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowLeft") {
+                event.preventDefault();
+                moveFocus(tab.id, -1);
+              } else if (event.key === "ArrowRight") {
+                event.preventDefault();
+                moveFocus(tab.id, 1);
+              } else if (event.key === "Home" && tabs[0]) {
+                event.preventDefault();
+                onSelectTab(tabs[0].id);
+              } else if (event.key === "End" && tabs[tabs.length - 1]) {
+                event.preventDefault();
+                onSelectTab(tabs[tabs.length - 1].id);
+              } else if (event.key === "Delete") {
+                event.preventDefault();
+                onCloseTab(tab.id);
+              }
+            }}
             onMouseDown={(e) => {
               if (e.button === 1) e.preventDefault();
             }}
@@ -119,6 +156,8 @@ export function TabBar({ tabs, activeTabId, onSelectTab, onCloseTab }: Props) {
                 padding: 0,
                 flexShrink: 0,
                 transition: "background 0.1s, color 0.1s",
+                opacity: isActive || hoveredTab === tab.id || hoveredClose === tab.id ? 1 : 0,
+                pointerEvents: isActive || hoveredTab === tab.id ? "auto" : "none",
               }}
                title={t("i18n.close")}
                aria-label={`${t("i18n.close")} ${tab.label}`}

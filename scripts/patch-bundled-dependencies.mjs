@@ -24,9 +24,10 @@ async function readPackage(path) {
   return JSON.parse(await readFile(join(path, "package.json"), "utf8"));
 }
 
-export async function patchBundledBraceExpansion(root = projectRoot) {
+export async function patchBundledBraceExpansion(root = projectRoot, sourceRoot = root) {
   const modulesRoot = join(root, "node_modules");
-  const source = join(modulesRoot, "brace-expansion");
+  const sourceModulesRoot = join(sourceRoot, "node_modules");
+  const source = join(sourceModulesRoot, "brace-expansion");
   const targetParent = join(
     modulesRoot,
     "@earendil-works",
@@ -35,7 +36,7 @@ export async function patchBundledBraceExpansion(root = projectRoot) {
   );
   const target = join(targetParent, "brace-expansion");
 
-  assertInside(modulesRoot, source, "Patch source");
+  assertInside(sourceModulesRoot, source, "Patch source");
   assertInside(modulesRoot, target, "Patch target");
 
   const [sourceEntry, targetEntry] = await Promise.all([
@@ -70,13 +71,14 @@ export async function patchBundledBraceExpansion(root = projectRoot) {
     );
   }
 
-  const [modulesRealPath, sourceRealPath, targetParentRealPath] = await Promise.all([
+  const [sourceModulesRealPath, targetModulesRealPath, sourceRealPath, targetParentRealPath] = await Promise.all([
+    realpath(sourceModulesRoot),
     realpath(modulesRoot),
     realpath(source),
     realpath(targetParent),
   ]);
-  assertInside(modulesRealPath, sourceRealPath, "Resolved patch source");
-  assertInside(modulesRealPath, targetParentRealPath, "Resolved patch target parent");
+  assertInside(sourceModulesRealPath, sourceRealPath, "Resolved patch source");
+  assertInside(targetModulesRealPath, targetParentRealPath, "Resolved patch target parent");
 
   if (targetPackage.version === patchedVersion) {
     return { patched: false, reason: "already-patched", version: patchedVersion };

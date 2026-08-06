@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
 import {
@@ -29,14 +29,17 @@ interface Props {
   onClose: () => void;
   companionOpen: boolean;
   onCompanionOpenChange: (open: boolean) => void;
+  desktopMode: boolean;
   selectedPetId: string;
   onSelectPet: (petId: string) => void;
   catalog: CompanionPetsResponse | null;
   loading: boolean;
   error: string | null;
   importingPetKey: string | null;
+  importingArchive: boolean;
   onRefresh: () => void;
   onImportPet: (pet: CompanionPetSource) => Promise<CompanionPet | null>;
+  onImportArchive: (file: File) => Promise<CompanionPet | null>;
 }
 
 export function CompanionSettingsDialog({
@@ -44,17 +47,21 @@ export function CompanionSettingsDialog({
   onClose,
   companionOpen,
   onCompanionOpenChange,
+  desktopMode,
   selectedPetId,
   onSelectPet,
   catalog,
   loading,
   error,
   importingPetKey,
+  importingArchive,
   onRefresh,
   onImportPet,
+  onImportArchive,
 }: Props) {
   const { t } = useI18n();
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+  const archiveInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setPortalTarget(document.body);
@@ -87,6 +94,20 @@ export function CompanionSettingsDialog({
       }}
     >
       <div className={styles.dialog}>
+        <input
+          ref={archiveInputRef}
+          type="file"
+          accept=".zip,application/zip"
+          hidden
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
+            void onImportArchive(file).then((imported) => {
+              if (imported) onSelectPet(imported.id);
+            });
+          }}
+        />
         <header className={styles.header}>
           <div>
             <div className={styles.title}>{t("companion.settingsTitle")}</div>
@@ -117,6 +138,46 @@ export function CompanionSettingsDialog({
               <span className={styles.switchThumb} />
             </button>
           </div>
+
+          <div className={styles.modeCard} data-available={desktopMode ? "true" : "false"}>
+            <span className={styles.modeIcon} aria-hidden="true"><AliIcon name="layout" size={16} /></span>
+            <div className={styles.copy}>
+              <div className={styles.label}>{t("companion.desktopMode")}</div>
+              <div className={styles.description}>{t("companion.desktopModeDescription")}</div>
+            </div>
+            <span className={styles.modeBadge}>
+              {desktopMode ? t("companion.desktopModeReady") : t("companion.desktopModeUnavailable")}
+            </span>
+          </div>
+
+          <details className={styles.helpCard}>
+            <summary>{t("companion.howToUse")}</summary>
+            <ol>
+              <li>{t("companion.helpStatus")}</li>
+              <li>{t("companion.helpTodos")}</li>
+              <li>{t("companion.helpPhrases")}</li>
+              <li>{desktopMode ? t("companion.helpDesktop") : t("companion.helpBrowser")}</li>
+            </ol>
+          </details>
+
+          <section className={styles.section} aria-labelledby="companion-import-zip-title">
+            <div className={styles.importCard}>
+              <span className={styles.importIcon} aria-hidden="true"><AliIcon name="import" size={17} /></span>
+              <div className={styles.copy}>
+                <div className={styles.label} id="companion-import-zip-title">{t("companion.importZip")}</div>
+                <div className={styles.description}>{t("companion.importZipDescription")}</div>
+                <div className={styles.archiveHint}>{t("companion.importZipHint")}</div>
+              </div>
+              <button
+                className={styles.primaryButton}
+                type="button"
+                disabled={importingArchive || importingPetKey !== null}
+                onClick={() => archiveInputRef.current?.click()}
+              >
+                {importingArchive ? t("companion.importing") : t("companion.chooseZip")}
+              </button>
+            </div>
+          </section>
 
           <section className={styles.section} aria-labelledby="companion-installed-pets-title">
             <div className={styles.sectionHeader}>

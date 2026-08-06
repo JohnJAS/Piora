@@ -7,16 +7,26 @@ const chatInput = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf
 const chatWindow = readFileSync(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 const agentSession = readFileSync(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8");
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const settingsDialog = readFileSync(new URL("./SettingsDialog.tsx", import.meta.url), "utf8");
+const settingsCss = readFileSync(new URL("./SettingsDialog.module.css", import.meta.url), "utf8");
 
-test("moves tool presets out of the composer into the task menu", () => {
+test("moves conversation controls out of the composer and top bar into settings", () => {
   assert.doesNotMatch(chatInput, /TOOL_PRESETS|toolDropdown|soundEnabled|onAudioUnlock/);
-  assert.match(appShell, /role="menuitemradio"/);
-  assert.match(appShell, /taskControls\.presetOff/);
-  assert.match(appShell, /taskControls\.presetDefault/);
-  assert.match(appShell, /taskControls\.presetFull/);
-  assert.match(appShell, /conversationMenu\.buttonLabel/);
-  assert.doesNotMatch(appShell, /disabled=\{!taskControls\}/);
-  assert.match(appShell, /activeTopPanel === "taskControls"\s*&&\s*\(/);
+  assert.match(settingsDialog, /key:\s*"conversation"/);
+  assert.match(settingsDialog, /taskControls\.preset\$\{/);
+  assert.match(settingsDialog, /conversation\.onGenerateTitle/);
+  assert.match(settingsDialog, /conversation\.onNotificationToggle/);
+  assert.doesNotMatch(appShell, /topbar-more-button/);
+});
+
+test("opens settings as an embedded workspace page instead of a viewport modal", () => {
+  assert.match(appShell, /\{settingsPage\}/);
+  assert.match(appShell, /display: settingsDialogOpen \? "none" : "block"/);
+  assert.match(appShell, /const effectiveRightPanelOpen = rightPanelOpen && !settingsDialogOpen/);
+  assert.doesNotMatch(settingsDialog, /createPortal|aria-modal|app-shell-dialog-backdrop/);
+  assert.match(settingsDialog, /role="region"/);
+  assert.match(settingsCss, /\.backdrop\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%/s);
+  assert.doesNotMatch(settingsCss, /position:\s*fixed|backdrop-filter/);
 });
 
 test("anchors soft top-bar panels inside the top bar coordinate system", () => {
@@ -38,10 +48,9 @@ test("loads the real preset for idle sessions before enabling the menu", () => {
 });
 
 test("keeps the file drawer toggle inside the shell and aligns both header states", () => {
-  assert.match(appShell, /className=\{`right-panel-toggle \$\{rightPanelOpen \? "is-open" : "is-closed"\}`\}/);
-  assert.match(appShell, /<\/button>\s*<\/div>\s*\{historyDialogOpen/);
+  assert.match(appShell, /className=\{`topbar-control topbar-icon-button right-panel-toggle/);
+  assert.match(appShell, /aria-controls="file-panel"/);
   assert.match(appShell, /<SessionHistoryDialog[\s\S]*?\{appearanceOpen/);
-  assert.match(globalCss, /\.right-panel-toggle\s*\{[^}]*top:\s*8px/s);
-  assert.match(globalCss, /\.right-panel-toggle\.is-open\s*\{[^}]*top:\s*4px/s);
-  assert.match(globalCss, /@media \(min-width: 960px\)[\s\S]*?\.right-panel-toggle\s*\{[^}]*top:\s*16px/s);
+  assert.doesNotMatch(appShell, /position:\s*"fixed", right:\s*8/);
+  assert.doesNotMatch(globalCss, /\.right-panel-toggle\s*\{[^}]*top:/s);
 });

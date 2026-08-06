@@ -5,7 +5,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { getProjectTrustStatus, trustProject } from "@/lib/project-trust";
-import { destroyRpcSessionsForCwd, hasBusyRpcSessionForCwd } from "@/lib/rpc-manager";
+import { destroyRpcSessionsForCwd, hasBusyRpcSessionForCwd, invalidateServicesCache } from "@/lib/rpc-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +55,7 @@ export async function POST(req: Request) {
 
     const status = trustProject(result.cwd, agentDir);
     invalidateModelsCache();
+    invalidateServicesCache();
     destroyRpcSessionsForCwd(result.cwd);
     return NextResponse.json(status);
   } catch (error) {

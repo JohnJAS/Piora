@@ -42,7 +42,7 @@ interface Props {
   activePet: CompanionPetMetadata | null;
 }
 
-const ACTIVITY_COLORS: Record<CompanionActivity["status"], string> = {
+export const COMPANION_ACTIVITY_COLORS: Record<CompanionActivity["status"], string> = {
   idle: "#22a06b",
   running: "#2563eb",
   waiting: "#d97706",
@@ -62,7 +62,7 @@ function usePrefersReducedMotion(): boolean {
   return reduced;
 }
 
-function BuiltinPet({ status }: { status: CompanionActivity["status"] }) {
+export function BuiltinPet({ status }: { status: CompanionActivity["status"] }) {
   return (
     <div className={styles.builtinPet} data-status={status} aria-hidden="true">
       <svg width="65" height="70" viewBox="0 0 72 76" fill="none">
@@ -78,7 +78,7 @@ function BuiltinPet({ status }: { status: CompanionActivity["status"] }) {
   );
 }
 
-function SpritePet({ pet, status }: { pet: CompanionPetMetadata; status: CompanionActivity["status"] }) {
+export function SpritePet({ pet, status }: { pet: CompanionPetMetadata; status: CompanionActivity["status"] }) {
   const reducedMotion = usePrefersReducedMotion();
   const renderablePet = pet as unknown as RenderablePet;
   const grid = renderablePet.frame ?? {
@@ -174,6 +174,7 @@ export function CompanionPet({
   const [phraseText, setPhraseText] = useState("");
   const [editingPhraseId, setEditingPhraseId] = useState<string | null>(null);
   const [sendNotice, setSendNotice] = useState("");
+  const [helpOpen, setHelpOpen] = useState(false);
   const sendNoticeTimerRef = useRef<number | null>(null);
 
   useEffect(() => () => {
@@ -235,15 +236,31 @@ export function CompanionPet({
         </div>
         <div className={styles.activityCopy} aria-live="polite">
           <div className={styles.activityRow}>
-            <span className={styles.activityDot} style={{ "--activity-color": ACTIVITY_COLORS[activity.status] } as CSSProperties} />
+            <span className={styles.activityDot} style={{ "--activity-color": COMPANION_ACTIVITY_COLORS[activity.status] } as CSSProperties} />
             <span>{statusLabel}</span>
           </div>
           <div className={styles.activityCause}>{activity.cause}</div>
         </div>
-        <button className={styles.iconButton} type="button" onClick={() => onOpenChange(false)} title={t("companion.close")} aria-label={t("companion.close")}>
-          <AliIcon name="close" size={15} />
-        </button>
+        <div className={styles.headerActions}>
+          <button className={styles.iconButton} type="button" onClick={() => setHelpOpen((open) => !open)} title={t("companion.howToUse")} aria-label={t("companion.howToUse")} aria-expanded={helpOpen}>
+            <AliIcon name="info" size={15} />
+          </button>
+          <button className={styles.iconButton} type="button" onClick={() => onOpenChange(false)} title={t("companion.close")} aria-label={t("companion.close")}>
+            <AliIcon name="close" size={15} />
+          </button>
+        </div>
       </div>
+
+      {helpOpen && (
+        <div className={styles.helpPanel} role="note">
+          <div className={styles.helpTitle}>{t("companion.howToUse")}</div>
+          <ul>
+            <li>{t("companion.helpStatus")}</li>
+            <li>{t("companion.helpTodos")}</li>
+            <li>{t("companion.helpPhrases")}</li>
+          </ul>
+        </div>
+      )}
 
       <div className={styles.tabs} role="tablist" aria-label={t("companion.sections")}>
         {(["todos", "phrases"] as const).map((item) => (

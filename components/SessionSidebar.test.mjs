@@ -25,17 +25,51 @@ test("polls running sessions only while the tab is visible", () => {
   assert.match(source, /document\.addEventListener\("visibilitychange", onVisibilityChange\)/);
 });
 
+test("switches sessions immediately while another session is running", () => {
+  const switchSource = source.slice(
+    source.indexOf("const handleSelectSessionFromList"),
+    source.indexOf("const handleNewSessionInProject"),
+  );
+  assert.doesNotMatch(switchSource, /window\.confirm/);
+  assert.match(switchSource, /setSelectedCwd\(s\.cwd\)/);
+  assert.match(switchSource, /onSelectSession\(s\)/);
+});
+
+test("hover actions overlay a fixed-height session row without reflow", () => {
+  assert.match(sessionItemSource, /position:\s*"relative"/);
+  assert.match(sessionItemSource, /Action buttons[^]*position:\s*"absolute"/);
+  assert.match(sessionItemSource, /opacity:\s*hovered \? 1 : 0/);
+  assert.doesNotMatch(sessionItemSource, /\{hovered && \(/);
+  assert.match(source, /className="sidebar-project-scroll"/);
+});
+
 test("renders sessions inside persisted project folders", () => {
   assert.match(source, /buildSessionProjectGroups\(/);
   assert.match(source, /<ProjectSessionGroup/);
   assert.match(source, /pi-gui:sidebar-collapsed-projects:v1/);
   assert.match(source, /pi-gui:sidebar-expanded-project-sessions:v1/);
+  assert.match(source, /pi-gui:sidebar-pinned-projects:v1/);
+  assert.match(source, /pi-gui:sidebar-project-aliases:v1/);
+});
+
+test("matches the Codex project rail with real pin, metadata, edit, and new-chat actions", () => {
+  assert.match(source, /styles\.brandRow/);
+  assert.match(source, /styles\.primaryNav/);
+  assert.match(source, /pinnedProjectGroups\.map/);
+  assert.match(source, /function ProjectContextMenu/);
+  assert.match(source, /\/api\/project-info\?cwd=/);
+  assert.match(source, /sidebar\.projectTaskSummary/);
+  assert.match(source, /onTogglePinned/);
+  assert.match(source, /onRenameProject/);
+  assert.match(source, /onNewSession/);
 });
 
 test("project session overflow is accessible and attention-aware", () => {
   assert.match(source, /getVisibleSessionRoots\(group\.tree, sessionsExpanded, attentionSessionIds\)/);
-  assert.match(source, /runningSessionIds\.has\(session\.id\) \|\| unreadSessionIds\.has\(session\.id\)/);
-  assert.doesNotMatch(source, /projectHasAttention[^;]*attentionSessionIds/);
+  assert.match(source, /new Set<string>\(\[\.\.\.runningSessionIds, \.\.\.unreadSessionIds\]\)/);
+  assert.match(source, /const projectOpen = !isCollapsed/);
+  assert.match(source, /name=\{projectOpen \? "folder-open" : "folder"\}/);
+  assert.match(source, /sidebar-running-spinner/);
   assert.match(source, /aria-expanded=\{sessionsExpanded\}/);
   assert.match(source, /sidebar\.showMoreSessions/);
   assert.match(source, /sidebar\.showFewerSessions/);
@@ -64,7 +98,8 @@ test("keeps the real worktree switcher without an inactive repo-root hint", () =
   assert.doesNotMatch(source, /sidebar\.openRepoRoot/);
 });
 
-test("removes the standalone piGUI brand header without leaving empty chrome", () => {
+test("uses a compact Codex-style piGUI brand row without the old animated title", () => {
   assert.doesNotMatch(source, /PiWebTitle|useScramble|sidebar-title-row/);
+  assert.match(source, /sidebar\.appMenu/);
   assert.match(source, /\{showWorktreeSwitcher && <div\s+className="sidebar-header"/);
 });

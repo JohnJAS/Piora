@@ -3,6 +3,7 @@
 import { cp, lstat, readdir, rm, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { patchBundledBraceExpansion } from "./patch-bundled-dependencies.mjs";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const nextDirectory = join(projectRoot, ".next");
@@ -107,6 +108,12 @@ async function main() {
   if ((await getPathType(serverEntry)) !== "file") {
     throw new Error(`Standalone server entry not found at ${serverEntry}.`);
   }
+
+  // Next traces the SDK's bundled dependency before the root postinstall
+  // replacement is applied to the standalone tree. Apply the same reviewed
+  // replacement to the exact runtime that Electron will ship.
+  const runtimePatch = await patchBundledBraceExpansion(standaloneDirectory, projectRoot);
+  console.log(JSON.stringify({ standaloneRuntimePatch: "brace-expansion", ...runtimePatch }));
 
   const stagedAssets = [];
   for (const asset of assets) {

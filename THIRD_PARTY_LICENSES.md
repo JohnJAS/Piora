@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `285c2e0084aabb43d03b8deefc485c677f93826c2b9ea5fa76ae8dc9e3313ca9`
+Lockfile SHA-256: `0a8ebd238f11f9dd2fc170775a8022f090bf64b45cbe1e8058ef3125e3b898a2`
 
-Unique locked packages: **1076**. Runtime packages: **565**. Build/development-only packages: **511**.
+Unique locked packages: **1077**. Runtime packages: **566**. Build/development-only packages: **511**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -244,6 +244,7 @@ Every locked package declares a license.
 | `bignumber.js` | `9.3.1` | MIT | No |
 | `bluebird` | `3.4.7` | MIT | No |
 | `bowser` | `2.14.1` | MIT | No |
+| `brace-expansion` | `5.0.7` | MIT | No |
 | `brace-expansion` | `5.0.9` | MIT | No |
 | `buffer-equal-constant-time` | `1.0.1` | BSD-3-Clause | No |
 | `callsites` | `3.1.0` | MIT | No |

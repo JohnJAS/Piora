@@ -1,5 +1,5 @@
 import { resolveSessionPath } from "@/lib/session-reader";
-import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
+import { getRpcSession, startRpcSession, type AgentSessionWrapper } from "@/lib/rpc-manager";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 
 export const dynamic = "force-dynamic";
@@ -11,32 +11,49 @@ export async function GET(
 ) {
   const { id } = await params;
 
-  // Fast path: already-running session
-  let session = getRpcSession(id);
-  if (!session || !session.isAlive()) {
+  // Resolve the session without blocking the HTTP response: creating an
+  // AgentSession for a cold session takes seconds (model runtime + resource
+  // loader setup), and doing it synchronously here stalled every other request
+  // in flight (including the session-messages GET the UI needs to render the
+  // composer) and made the client's EventSource connection time out.
+  const session = getRpcSession(id);
+  let sessionReady: Promise<AgentSessionWrapper | null>;
+  if (session?.isAlive()) {
+    sessionReady = Promise.resolve(session);
+  } else {
     const filePath = await resolveSessionPath(id);
     if (!filePath) {
       return new Response("Session not found", { status: 404 });
     }
     const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? process.cwd();
-    try {
-      ({ session } = await startRpcSession(id, filePath, cwd));
-    } catch (error) {
-      return new Response(`Failed to start agent: ${error}`, { status: 500 });
-    }
+    sessionReady = startRpcSession(id, filePath, cwd)
+      .then(({ session: started }) => started)
+      .catch((error) => {
+        console.error(`[pi-web] failed to start agent for events: ${error}`);
+        return null;
+      });
   }
 
   const stream = new ReadableStream({
-    start(controller) {
+    async start(controller) {
       const encode = (data: unknown) => {
         const text = `data: ${JSON.stringify(data)}\n\n`;
         controller.enqueue(new TextEncoder().encode(text));
       };
 
-      // Send initial connected event
+      const resolved = await sessionReady;
+      if (!resolved) {
+        try {
+          encode({ type: "error", message: "Failed to start agent session" });
+        } catch { /* controller already closed */ }
+        controller.close();
+        return;
+      }
+
+      // Send initial connected event once the session is actually ready
       encode({ type: "connected", sessionId: id });
 
-      const unsubscribe = session.onEvent((event) => {
+      const unsubscribe = resolved.onEvent((event) => {
         encode(event);
       });
 
@@ -53,7 +70,7 @@ export async function GET(
       const cleanup = () => {
         clearInterval(heartbeat);
         unsubscribe();
-        controller.close();
+        try { controller.close(); } catch { /* already closed */ }
       };
 
       // Detect client disconnect via abort signal

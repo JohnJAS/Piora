@@ -21,7 +21,7 @@
 .header {
   position: relative;
   display: grid;
-  grid-template-columns: 82px minmax(0, 1fr) 30px;
+  grid-template-columns: 82px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   min-height: 104px;
@@ -290,6 +290,32 @@
 .phraseButton:hover:not(:disabled),
 .phraseButton:focus-visible:not(:disabled) {
   background: var(--bg-hover);
+}
+
+.headerActions {
+  display: flex;
+  align-self: start;
+  gap: 2px;
+}
+
+.helpPanel {
+  padding: 10px 13px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg));
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+}
+
+.helpTitle {
+  margin-bottom: 4px;
+  color: var(--text);
+  font-weight: 650;
+}
+
+.helpPanel ul {
+  margin: 0;
+  padding-left: 18px;
 }
 
 .petName {

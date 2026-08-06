@@ -39,6 +39,15 @@ export function useCompanionPreferences() {
     }
   }, [hydrated, preferences]);
 
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== COMPANION_STORAGE_KEY) return;
+      setPreferences(parseCompanionPreferences(event.newValue, defaults));
+    };
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [defaults]);
+
   const setOpen = useCallback((open: boolean) => {
     setPreferences((current) => ({ ...current, open }));
   }, []);

@@ -19,3 +19,11 @@ test("selecting a session in another project survives cwd synchronization", () =
     /if \(!cwdBelongsToSelectedSession\) \{\s*router\.replace\("\/", \{ scroll: false \}\);\s*\}/,
   );
 });
+
+test("session selection restores focus to the remounted composer", () => {
+  const selectionHandler = source.slice(
+    source.indexOf("const handleSelectSession"),
+    source.indexOf("const handleNewSession"),
+  );
+  assert.match(selectionHandler, /requestAnimationFrame[^]*chatInputRef\.current\?\.focus\(\)/);
+});

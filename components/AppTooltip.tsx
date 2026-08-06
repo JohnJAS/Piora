@@ -272,8 +272,6 @@ export function AppTooltip() {
     setPosition({ left, top, arrowX, placement });
   }, [content]);
 
-  if (!content) return null;
-
   const style: TooltipCssProperties = {
     left: position?.left ?? 0,
     top: position?.top ?? 0,
@@ -288,7 +286,7 @@ export function AppTooltip() {
       className={`app-tooltip app-tooltip-${position?.placement ?? "top"}${position ? " is-visible" : ""}`}
       style={style}
     >
-      {content.text}
+      {content?.text ?? ""}
     </div>
   );
 }

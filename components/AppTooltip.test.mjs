@@ -10,6 +10,7 @@ test("mounts one global theme-aware tooltip layer", () => {
   assert.match(layout, /import \{ AppTooltip \} from "@\/components\/AppTooltip"/);
   assert.match(layout, /<AppTooltip \/>/);
   assert.match(styles, /\.app-tooltip \{[\s\S]*?position: fixed;[\s\S]*?var\(--surface-raised\)/);
+  assert.doesNotMatch(tooltip, /if \(!content\) return null/);
 });
 
 test("delegates native title hover and focus without consuming iframe names", () => {

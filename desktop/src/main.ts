@@ -8,6 +8,7 @@ import {
   ipcMain,
   Menu,
   Notification,
+  screen,
   session as electronSession,
   shell,
   type IpcMainInvokeEvent,
@@ -16,7 +17,9 @@ import {
   type Session,
 } from "electron";
 import {
+  readCompanionWindowPosition,
   readPreferredServerPort,
+  writeCompanionWindowPosition,
   writePreferredServerPort,
 } from "./desktop-state.js";
 import { FileLogger, type Logger } from "./logger.js";
@@ -25,6 +28,14 @@ import { StandaloneServer, type ServerExit } from "./server-supervisor.js";
 const DESKTOP_PARTITION = "persist:pigui";
 const DESKTOP_TOKEN_HEADER = "X-Pi-Desktop-Token";
 const COMPLETION_NOTIFICATION_CHANNEL = "pi:completion-notification";
+const APPLICATION_MENU_CHANNEL = "pi:open-application-menu";
+const REVEAL_PATH_CHANNEL = "pi:reveal-path";
+const OPEN_PATH_CHANNEL = "pi:open-path";
+const COMPANION_VISIBILITY_CHANNEL = "pi:companion-window-visible";
+const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
+const DESKTOP_TITLE_BAR_HEIGHT = 40;
+const COMPANION_WINDOW_WIDTH = 188;
+const COMPANION_WINDOW_HEIGHT = 218;
 const MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80;
 const PORTABLE_SMOKE_TEST = process.env.PI_GUI_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
@@ -35,11 +46,16 @@ if (PORTABLE_SMOKE_TEST && requestedSmokeUserData) {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let companionWindow: BrowserWindow | null = null;
 let logger: FileLogger | undefined;
 let server: StandaloneServer | undefined;
 let serverUrl: URL | undefined;
 let shutdownPromise: Promise<void> | undefined;
 let shutdownComplete = false;
+let applicationMenu: Menu | null = null;
+let companionMoveTimer: NodeJS.Timeout | undefined;
+
+type ApplicationMenuId = "file" | "edit" | "view" | "features" | "help";
 
 function sanitizeNotificationTaskTitle(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -118,6 +134,7 @@ function installApplicationMenu(): void {
 
   const template: MenuItemConstructorOptions[] = [
     {
+      id: "app-menu-file",
       label: "文件",
       submenu: [
         { label: "新对话", accelerator: "CmdOrCtrl+N", click: () => sendMenuAction("new-session") },
@@ -127,8 +144,9 @@ function installApplicationMenu(): void {
         { role: "quit", label: "退出 piGUI" },
       ],
     },
-    { label: "编辑", submenu: editRoles },
+    { id: "app-menu-edit", label: "编辑", submenu: editRoles },
     {
+      id: "app-menu-view",
       label: "视图",
       submenu: [
         { label: "显示/隐藏侧栏", accelerator: "CmdOrCtrl+Shift+B", click: () => sendMenuAction("toggle-sidebar") },
@@ -143,7 +161,8 @@ function installApplicationMenu(): void {
       ],
     },
     {
-      label: "工具",
+      id: "app-menu-features",
+      label: "功能",
       submenu: [
         { label: "设置", accelerator: "CmdOrCtrl+,", click: () => sendMenuAction("settings") },
         { type: "separator" },
@@ -163,6 +182,7 @@ function installApplicationMenu(): void {
       ],
     },
     {
+      id: "app-menu-help",
       label: "帮助",
       submenu: [
         { label: "打开项目主页", click: () => shell.openExternal("https://github.com/kexijiang/pi-gui") },
@@ -184,7 +204,98 @@ function installApplicationMenu(): void {
     },
   ];
 
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  applicationMenu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(applicationMenu);
+}
+
+function registerApplicationMenuPopupHandler(): void {
+  ipcMain.removeHandler(APPLICATION_MENU_CHANNEL);
+  ipcMain.handle(
+    APPLICATION_MENU_CHANNEL,
+    async (event, requestedMenu: unknown, requestedX: unknown, requestedY: unknown): Promise<boolean> => {
+      if (
+        !serverUrl
+        || !event.senderFrame
+        || event.senderFrame !== event.sender.mainFrame
+        || !isAllowedAppUrl(event.senderFrame.url, serverUrl.origin)
+      ) {
+        logger?.warn("Blocked application menu request from an untrusted renderer");
+        return false;
+      }
+
+      const allowedMenus: readonly ApplicationMenuId[] = ["file", "edit", "view", "features", "help"];
+      if (typeof requestedMenu !== "string" || !allowedMenus.includes(requestedMenu as ApplicationMenuId)) {
+        return false;
+      }
+      const window = mainWindow;
+      const submenu = applicationMenu?.getMenuItemById(`app-menu-${requestedMenu}`)?.submenu;
+      if (!window || window.isDestroyed() || !submenu) return false;
+
+      const x = Number.isFinite(requestedX) ? Math.max(0, Math.round(requestedX as number)) : undefined;
+      const y = Number.isFinite(requestedY) ? Math.max(0, Math.round(requestedY as number)) : DESKTOP_TITLE_BAR_HEIGHT;
+      await new Promise<void>((resolvePopup) => {
+        submenu.popup({ window, ...(x === undefined ? {} : { x }), y, callback: resolvePopup });
+      });
+      return true;
+    },
+  );
+}
+
+function isTrustedMainWindowSender(event: IpcMainInvokeEvent): boolean {
+  return Boolean(
+    serverUrl
+    && mainWindow
+    && !mainWindow.isDestroyed()
+    && event.sender === mainWindow.webContents
+    && event.senderFrame
+    && event.senderFrame === event.sender.mainFrame
+    && isAllowedAppUrl(event.senderFrame.url, serverUrl.origin),
+  );
+}
+
+function resolveExistingRendererPath(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim() || !isAbsolute(value)) return null;
+  const target = resolve(value);
+  return existsSync(target) ? target : null;
+}
+
+function registerFileShellHandlers(): void {
+  ipcMain.removeHandler(REVEAL_PATH_CHANNEL);
+  ipcMain.removeHandler(OPEN_PATH_CHANNEL);
+
+  ipcMain.handle(REVEAL_PATH_CHANNEL, async (event, requestedPath: unknown): Promise<boolean> => {
+    if (!isTrustedMainWindowSender(event)) {
+      logger?.warn("Blocked reveal-path request from an untrusted renderer");
+      return false;
+    }
+    const target = resolveExistingRendererPath(requestedPath);
+    if (!target) return false;
+    try {
+      if (statSync(target).isDirectory()) {
+        return (await shell.openPath(target)) === "";
+      }
+      shell.showItemInFolder(target);
+      return true;
+    } catch (error) {
+      logger?.warn("Unable to reveal local path", error);
+      return false;
+    }
+  });
+
+  ipcMain.handle(OPEN_PATH_CHANNEL, async (event, requestedPath: unknown): Promise<boolean> => {
+    if (!isTrustedMainWindowSender(event)) {
+      logger?.warn("Blocked open-path request from an untrusted renderer");
+      return false;
+    }
+    const target = resolveExistingRendererPath(requestedPath);
+    if (!target) return false;
+    try {
+      return (await shell.openPath(target)) === "";
+    } catch (error) {
+      logger?.warn("Unable to open local path", error);
+      return false;
+    }
+  });
 }
 
 function isFile(path: string): boolean {
@@ -303,21 +414,161 @@ function configureSession(runtimeSession: Session, origin: string, token: string
   );
 }
 
+function getCompanionWindowPosition(): { x: number; y: number } {
+  const saved = logger ? readCompanionWindowPosition(app.getPath("userData"), logger) : undefined;
+  const display = saved
+    ? screen.getDisplayNearestPoint(saved)
+    : screen.getPrimaryDisplay();
+  const area = display.workArea;
+  const defaultX = area.x + area.width - COMPANION_WINDOW_WIDTH - 24;
+  const defaultY = area.y + area.height - COMPANION_WINDOW_HEIGHT - 24;
+  return {
+    x: Math.min(Math.max(saved?.x ?? defaultX, area.x), area.x + Math.max(0, area.width - COMPANION_WINDOW_WIDTH)),
+    y: Math.min(Math.max(saved?.y ?? defaultY, area.y), area.y + Math.max(0, area.height - COMPANION_WINDOW_HEIGHT)),
+  };
+}
+
+function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
+  const position = getCompanionWindowPosition();
+  const window = new BrowserWindow({
+    ...position,
+    width: COMPANION_WINDOW_WIDTH,
+    height: COMPANION_WINDOW_HEIGHT,
+    minWidth: COMPANION_WINDOW_WIDTH,
+    minHeight: COMPANION_WINDOW_HEIGHT,
+    maxWidth: COMPANION_WINDOW_WIDTH,
+    maxHeight: COMPANION_WINDOW_HEIGHT,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    alwaysOnTop: true,
+    backgroundColor: "#00000000",
+    webPreferences: {
+      preload: join(__dirname, "preload.js"),
+      partition: DESKTOP_PARTITION,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      nodeIntegrationInWorker: false,
+      webviewTag: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      navigateOnDragDrop: false,
+      safeDialogs: true,
+      devTools: !app.isPackaged || process.env.PI_DESKTOP_DEVTOOLS === "1",
+    },
+  });
+
+  window.setAlwaysOnTop(true, "floating");
+  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event, requestedUrl) => {
+    if (!isAllowedAppUrl(requestedUrl, url.origin)) event.preventDefault();
+  });
+  window.webContents.on("will-redirect", (event, requestedUrl) => {
+    if (!isAllowedAppUrl(requestedUrl, url.origin)) event.preventDefault();
+  });
+  window.webContents.on("will-attach-webview", (event) => event.preventDefault());
+  window.webContents.on("render-process-gone", (_event, details) => log.error("Companion renderer exited", details));
+  window.on("move", () => {
+    if (companionMoveTimer) clearTimeout(companionMoveTimer);
+    companionMoveTimer = setTimeout(() => {
+      if (!companionWindow || companionWindow.isDestroyed() || !logger) return;
+      const bounds = companionWindow.getBounds();
+      writeCompanionWindowPosition(app.getPath("userData"), { x: bounds.x, y: bounds.y }, logger);
+    }, 180);
+  });
+  window.on("closed", () => {
+    if (companionMoveTimer) clearTimeout(companionMoveTimer);
+    companionMoveTimer = undefined;
+    if (companionWindow === window) companionWindow = null;
+  });
+  void window.loadURL(new URL("/desktop-pet", url).toString());
+  return window;
+}
+
+function showCompanionWindow(): boolean {
+  if (!serverUrl || !logger) return false;
+  if (!companionWindow || companionWindow.isDestroyed()) {
+    companionWindow = createCompanionWindow(serverUrl, logger);
+  }
+  companionWindow.showInactive();
+  return true;
+}
+
+function closeCompanionWindow(): void {
+  if (!companionWindow || companionWindow.isDestroyed()) return;
+  if (logger) {
+    const bounds = companionWindow.getBounds();
+    writeCompanionWindowPosition(app.getPath("userData"), { x: bounds.x, y: bounds.y }, logger);
+  }
+  companionWindow.destroy();
+  companionWindow = null;
+}
+
+function focusMainWindow(action?: string): boolean {
+  if ((!mainWindow || mainWindow.isDestroyed()) && serverUrl && logger) {
+    mainWindow = createMainWindow(serverUrl, logger);
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  if (action) mainWindow.webContents.send("pi:menu-action", action);
+  return true;
+}
+
+function registerCompanionWindowHandlers(): void {
+  ipcMain.removeHandler(COMPANION_VISIBILITY_CHANNEL);
+  ipcMain.handle(COMPANION_VISIBILITY_CHANNEL, (event, visible: unknown): boolean => {
+    if (!isTrustedCompletionNotificationSender(event) || typeof visible !== "boolean") return false;
+    if (visible) return showCompanionWindow();
+    closeCompanionWindow();
+    return true;
+  });
+
+  ipcMain.removeHandler(COMPANION_ACTION_CHANNEL);
+  ipcMain.handle(COMPANION_ACTION_CHANNEL, (event, action: unknown): boolean => {
+    if (!isTrustedCompletionNotificationSender(event) || typeof action !== "string") return false;
+    if (action === "focus-main") return focusMainWindow();
+    if (action === "open-settings") return focusMainWindow("companion-settings");
+    if (action === "hide") {
+      companionWindow?.hide();
+      setTimeout(closeCompanionWindow, 0);
+      mainWindow?.webContents.send("pi:menu-action", "hide-companion");
+      return true;
+    }
+    return false;
+  });
+}
+
 function createMainWindow(
   url: URL,
   log: Logger,
   { showWhenReady = true }: { showWhenReady?: boolean } = {},
 ): BrowserWindow {
-  // On Windows we use a standard framed window (no `titleBarStyle: "hidden"`):
-  // the OS title bar sits above the native menu bar (autoHideMenuBar: false
-  // below), which sits above the in-app top bar. This keeps the always-visible
-  // native menu from crowding the web top bar and removes the second, web-drawn
-  // title row that `titleBarOverlay` produced. macOS keeps its frameless
-  // `hiddenInset` look because its menu lives in the screen menu bar, not the
-  // window chrome.
-  const integratedTitleBar = process.platform === "darwin"
-    ? { titleBarStyle: "hiddenInset" as const }
-    : {};
+  // Windows keeps native resize/minimize/maximize/close behavior, but places
+  // those controls over the renderer-owned, Codex-style title strip. The full
+  // native title and menu rows stay hidden; the installed Menu still owns
+  // accelerators and supplies the popup submenus opened by the renderer.
+  const integratedTitleBar = process.platform === "win32"
+    ? {
+        titleBarStyle: "hidden" as const,
+        titleBarOverlay: {
+          color: "#00000000",
+          symbolColor: "#737373",
+          height: DESKTOP_TITLE_BAR_HEIGHT,
+        },
+      }
+    : process.platform === "darwin"
+      ? { titleBarStyle: "hiddenInset" as const }
+      : {};
 
   const window = new BrowserWindow({
     width: 1440,
@@ -327,11 +578,7 @@ function createMainWindow(
     show: false,
     title: "piGUI",
     backgroundColor: "#111318",
-    // Show the native menu bar persistently on Windows/Linux so it is visible
-    // without pressing Alt. All accelerators still work. Note this adds a
-    // native menu row above the in-app top bar; if you prefer it hidden by
-    // default, set this back to `true` (Alt reveals it).
-    autoHideMenuBar: false,
+    autoHideMenuBar: true,
     ...integratedTitleBar,
     webPreferences: {
       preload: join(__dirname, "preload.js"),
@@ -492,6 +739,7 @@ async function startApplication(): Promise<void> {
   const runtimeSession = electronSession.fromPartition(DESKTOP_PARTITION, { cache: true });
   configureSession(runtimeSession, serverUrl.origin, token);
   registerCompletionNotificationHandler();
+  registerCompanionWindowHandlers();
 
   if (PORTABLE_SMOKE_TEST) {
     const smokeMarker = process.env.PI_GUI_SMOKE_MARKER?.trim();
@@ -521,6 +769,8 @@ async function startApplication(): Promise<void> {
   }
 
   installApplicationMenu();
+  registerApplicationMenuPopupHandler();
+  registerFileShellHandlers();
 
   mainWindow = createMainWindow(serverUrl, logger);
 }
@@ -538,10 +788,7 @@ if (!hasSingleInstanceLock) {
   app.quit();
 } else {
   app.on("second-instance", () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
+    focusMainWindow();
   });
 
   app.on("activate", () => {

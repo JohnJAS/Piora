@@ -80,6 +80,7 @@ interface Props {
 }
 
 export interface ChatInputHandle {
+  focus: () => void;
   insertText: (text: string) => void;
   insertIfEmpty: (text: string) => void;
   prependText: (text: string) => void;
@@ -320,6 +321,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   attachedFilesRef.current = attachedFiles;
 
   useImperativeHandle(ref, () => ({
+    focus() {
+      textareaRef.current?.focus({ preventScroll: true });
+    },
     sendText(text: string) {
       const message = text.trim();
       if (!message || isStreaming) return false;

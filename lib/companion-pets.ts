@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import JSZip from "jszip";
 import {
   getRuntimeHomeDirectory,
   type RuntimeHomeEnvironment,
@@ -23,6 +24,9 @@ export const PET_MANIFEST_MAX_BYTES = 64 * 1024;
 export const PET_INSTALLED_MANIFEST_MAX_BYTES = 256 * 1024;
 export const PET_SPRITESHEET_MAX_BYTES = 16 * 1024 * 1024;
 export const PET_IMPORT_REQUEST_MAX_BYTES = 4 * 1024;
+export const PET_ARCHIVE_MAX_BYTES = 20 * 1024 * 1024;
+export const PET_ARCHIVE_REQUEST_MAX_BYTES = PET_ARCHIVE_MAX_BYTES + 1024 * 1024;
+const PET_ARCHIVE_MAX_ENTRIES = 64;
 
 const ATLAS_WIDTH = 1536;
 const ATLAS_HEIGHT_V1 = 1872;
@@ -1496,13 +1500,12 @@ function loadCodexSourcePet(
   throw new CompanionPetError("Codex pet source was not found", "PET_NOT_FOUND", 404);
 }
 
-export function importCodexPet(
-  id: string,
+function installValidatedPet(
+  source: ValidatedPetPackage,
   environment: CompanionPetEnvironment = process.env,
-  sourceKind?: CodexPetSourceKind,
 ): { pet: CompanionPet; replaced: boolean } {
+  const id = source.manifest.id;
   requireValidPetId(id);
-  const source = loadCodexSourcePet(id, environment, sourceKind);
   // validatePetPackage returns the exact bytes read from its verified file
   // descriptor, so no attacker-controlled pathname is reopened for the copy.
   const spritesheetBytes = source.spritesheetBytes;
@@ -1644,6 +1647,156 @@ export function importCodexPet(
     throw new CompanionPetError("Pet import failed", "PET_IMPORT_FAILED", 500);
   }
   return { pet: stagedPet, replaced };
+}
+
+export function importCodexPet(
+  id: string,
+  environment: CompanionPetEnvironment = process.env,
+  sourceKind?: CodexPetSourceKind,
+): { pet: CompanionPet; replaced: boolean } {
+  requireValidPetId(id);
+  return installValidatedPet(loadCodexSourcePet(id, environment, sourceKind), environment);
+}
+
+type SizedZipObject = JSZip.JSZipObject & {
+  _data?: { uncompressedSize?: number };
+  unsafeOriginalName?: string;
+};
+
+function assertSafeArchiveEntry(entry: SizedZipObject): void {
+  const originalName = entry.unsafeOriginalName ?? entry.name;
+  const normalized = originalName.replace(/\\/g, "/");
+  const segments = normalized.split("/").filter(Boolean);
+  if (
+    originalName.includes("\\")
+    || normalized.startsWith("/")
+    || /^[A-Za-z]:/.test(normalized)
+    || segments.some((segment) => segment === "." || segment === "..")
+  ) {
+    throw new CompanionPetError("Pet archive contains an unsafe path", "INVALID_PET_PACKAGE", 422);
+  }
+}
+
+async function readArchiveEntryWithinLimit(
+  entry: SizedZipObject,
+  maxBytes: number,
+  label: string,
+): Promise<Buffer> {
+  const declaredSize = entry._data?.uncompressedSize;
+  if (typeof declaredSize === "number" && declaredSize > maxBytes) {
+    throw new CompanionPetError(`${label} is too large`, "PET_TOO_LARGE", 413);
+  }
+  const chunks: Buffer[] = [];
+  let total = 0;
+  await new Promise<void>((resolveRead, rejectRead) => {
+    const stream = entry.nodeStream("nodebuffer");
+    let settled = false;
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      stream.pause();
+      rejectRead(error);
+    };
+    stream.on("data", (chunk: Buffer) => {
+      total += chunk.byteLength;
+      if (total > maxBytes) {
+        fail(new CompanionPetError(`${label} is too large`, "PET_TOO_LARGE", 413));
+        return;
+      }
+      chunks.push(Buffer.from(chunk));
+    });
+    stream.on("error", () => fail(
+      new CompanionPetError(`Could not read ${label}`, "INVALID_PET_PACKAGE", 422),
+    ));
+    stream.on("end", () => {
+      if (settled) return;
+      settled = true;
+      resolveRead();
+    });
+    stream.resume();
+  });
+  return Buffer.concat(chunks, total);
+}
+
+function archiveFallbackPetId(fileName: string): string {
+  const base = path.basename(fileName, path.extname(fileName))
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^[^A-Za-z0-9]+/, "")
+    .slice(0, 64);
+  return isValidPetId(base) ? base : `pet-${randomUUID().slice(0, 8)}`;
+}
+
+export async function importCodexPetArchive(
+  archiveBytes: Buffer,
+  fileName: string,
+  environment: CompanionPetEnvironment = process.env,
+): Promise<{ pet: CompanionPet; replaced: boolean }> {
+  if (archiveBytes.byteLength === 0) {
+    throw new CompanionPetError("Pet archive is empty", "INVALID_PET_PACKAGE", 422);
+  }
+  if (archiveBytes.byteLength > PET_ARCHIVE_MAX_BYTES) {
+    throw new CompanionPetError("Pet archive is too large", "PET_TOO_LARGE", 413);
+  }
+
+  let archive: JSZip;
+  try {
+    archive = await JSZip.loadAsync(archiveBytes, { createFolders: false });
+  } catch {
+    throw new CompanionPetError("Pet archive is not a valid ZIP file", "INVALID_PET_PACKAGE", 422);
+  }
+  const entries = Object.values(archive.files) as SizedZipObject[];
+  if (entries.length === 0 || entries.length > PET_ARCHIVE_MAX_ENTRIES) {
+    throw new CompanionPetError("Pet archive contains too many entries", "INVALID_PET_PACKAGE", 422);
+  }
+  entries.forEach(assertSafeArchiveEntry);
+
+  const manifestCandidates = entries
+    .filter((entry) => !entry.dir && /(^|\/)(pet|avatar)\.json$/i.test(entry.name))
+    .sort((left, right) => left.name.split("/").length - right.name.split("/").length);
+  const manifestEntry = manifestCandidates[0];
+  if (!manifestEntry) {
+    throw new CompanionPetError("Pet archive must contain pet.json", "INVALID_PET_PACKAGE", 422);
+  }
+  const manifestBytes = await readArchiveEntryWithinLimit(
+    manifestEntry,
+    PET_MANIFEST_MAX_BYTES,
+    path.basename(manifestEntry.name),
+  );
+  let parsedManifest: unknown;
+  try {
+    parsedManifest = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(manifestBytes));
+  } catch {
+    throw new CompanionPetError("Pet manifest is invalid JSON", "INVALID_PET_PACKAGE", 422);
+  }
+  const manifest = normalizePetManifest(parsedManifest, archiveFallbackPetId(fileName));
+  const sourceSpritesheet = normalizeSpritesheetSourcePath(
+    isPlainRecord(parsedManifest) ? parsedManifest.spritesheetPath : undefined,
+  );
+  const manifestDirectory = path.posix.dirname(manifestEntry.name);
+  const sourcePath = manifestDirectory === "."
+    ? sourceSpritesheet.relativePath
+    : `${manifestDirectory}/${sourceSpritesheet.relativePath}`;
+  const spritesheetEntry = entries.find((entry) => !entry.dir && entry.name === sourcePath);
+  if (!spritesheetEntry) {
+    throw new CompanionPetError("Pet archive is missing its spritesheet", "INVALID_PET_PACKAGE", 422);
+  }
+  const spritesheetBytes = await readArchiveEntryWithinLimit(
+    spritesheetEntry,
+    PET_SPRITESHEET_MAX_BYTES,
+    "spritesheet",
+  );
+  const inspection = inspectPetSpritesheetBytes(spritesheetBytes, sourceSpritesheet.installedName);
+  assertAtlasGeometry(inspection, manifest);
+  const sourceKind: CodexPetSourceKind = manifestEntry.name.toLowerCase().endsWith("avatar.json")
+    ? "codex-legacy-avatar"
+    : "codex-custom";
+  return installValidatedPet({
+    manifest,
+    pet: petFromManifest(manifest, "codex", sourceKind, false),
+    spritesheetBytes,
+    mimeType: inspection.mimeType,
+    sourceKind,
+  }, environment);
 }
 
 export function readInstalledPetSpritesheet(

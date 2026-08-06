@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { loadSkillsWithInstallInfo } from "@/lib/skills-service";
+import { invalidateServicesCache } from "@/lib/rpc-manager";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { getRuntimeHomeDirectory } from "@/lib/runtime-home";
 
@@ -66,6 +67,7 @@ export async function PATCH(req: Request) {
     }
 
     writeFileSync(filePath, updated, "utf8");
+    invalidateServicesCache();
     return NextResponse.json({ success: true });
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 });

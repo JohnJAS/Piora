@@ -32,7 +32,7 @@ test("anchors, focuses, and restores the project menu with the shared panel mech
   assert.match(appShell, /activeTopPanel === "project"\s*\? projectBtnRef\.current/);
   assert.match(appShell, /if \(projectBtnRef\.current\) ro\.observe\(projectBtnRef\.current\)/);
   assert.match(appShell, /if \(!topPanelPos \|\| autoFocusedTopPanelRef\.current === activeTopPanel\) return/);
-  assert.match(appShell, /firstItem\.focus\(\);\s*autoFocusedTopPanelRef\.current = activeTopPanel/);
+  assert.match(appShell, /firstItem\.focus\(\{ preventScroll: true \}\);\s*autoFocusedTopPanelRef\.current = activeTopPanel/);
   assert.match(appShell, /topPanelFrameRef\.current\?\.querySelectorAll/);
-  assert.match(appShell, /if \(activeTopPanel === "project"\) projectBtnRef\.current\?\.focus\(\)/);
+  assert.match(appShell, /if \(activeTopPanel === "project"\) projectBtnRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
 });

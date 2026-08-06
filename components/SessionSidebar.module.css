@@ -1,0 +1,345 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg-panel);
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 7px 10px 5px 14px;
+  flex-shrink: 0;
+}
+
+.brandButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 3px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-md);
+  font-weight: 690;
+  cursor: default;
+}
+
+.brandActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.iconButton:hover,
+.iconButton:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+  outline: none;
+}
+
+.primaryNav {
+  display: grid;
+  gap: 1px;
+  padding: 1px 8px 7px;
+  flex-shrink: 0;
+}
+
+.navButton {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 31px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.navButton:hover,
+.navButton:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.sectionLabel {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 7px 15px 4px;
+  color: var(--text-dim);
+  font-size: var(--font-xs);
+  font-weight: 500;
+}
+
+.sectionLabelActions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.pinnedList {
+  padding: 0 7px 4px;
+}
+
+.pinnedRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pinnedRow:hover,
+.pinnedRow:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.projectGroup {
+  margin: 0 7px 3px;
+}
+
+.projectRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 31px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  transition: background 100ms ease;
+}
+
+.projectRow:hover,
+.projectRowSelected {
+  background: var(--bg-hover);
+}
+
+.projectMain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.projectName {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 480;
+}
+
+.projectActions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.projectRow:hover .projectActions,
+.projectRow:focus-within .projectActions,
+.projectRowSelected .projectActions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rowAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 23px;
+  height: 23px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.rowAction:hover,
+.rowAction:focus-visible {
+  background: var(--bg-selected);
+  color: var(--text);
+  outline: none;
+}
+
+.sessionList {
+  padding: 1px 0 2px 23px;
+}
+
+.projectMenu {
+  position: fixed;
+  z-index: 1200;
+  width: 320px;
+  max-width: calc(100vw - 20px);
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-panel) 95%, transparent);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.projectMenuHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 4px 0 3px;
+  color: var(--text);
+  font-size: var(--font-md);
+  font-weight: 650;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  text-align: left;
+}
+
+button.menuItem {
+  cursor: pointer;
+}
+
+button.menuItem:hover,
+button.menuItem:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.menuItemMuted {
+  color: var(--text-muted);
+}
+
+.menuDivider {
+  height: 1px;
+  margin: 5px 3px;
+  background: var(--border);
+}
+
+.menuRenameInput {
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 5px 8px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.accountButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 32px;
+  flex: 1;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.accountButton:hover,
+.accountButton:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-selected));
+  color: var(--accent);
+  font-size: var(--font-xs);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.ellipsis {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .projectRow,
+  .projectActions {
+    transition: none;
+  }
+}

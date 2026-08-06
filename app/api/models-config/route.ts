@@ -4,6 +4,7 @@ import { dirname, join } from "path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { writePrivateFileAtomicSync } from "@/lib/atomic-file";
 import { invalidateModelsCache } from "@/lib/models-cache";
+import { invalidateServicesCache } from "@/lib/rpc-manager";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,7 @@ export async function PUT(req: Request) {
     const body = await req.json() as Record<string, unknown>;
     writeModelsJson(body);
     invalidateModelsCache();
+    invalidateServicesCache();
     return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

@@ -51,6 +51,8 @@
 
 :root {
   color-scheme: light;
+  /* Keep production builds offline: prefer an installed mono face, then system fonts. */
+  --font-noto-mono: 'Noto Sans Mono';
   --bg: #fffdfc;
   --bg-panel: #f7f4f3;
   --bg-hover: #f0edec;
@@ -308,6 +310,14 @@ body {
   overflow: hidden;
 }
 
+html.desktop-pet-document,
+body.desktop-pet-document {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent !important;
+}
+
 /* Conversation chrome: one strong identity line and progressively disclosed
    actions. The composer owns token/context status, so this bar stays quiet. */
 .app-topbar {
@@ -469,7 +479,7 @@ select:focus-visible,
 .sidebar-project-row,
 .sidebar-session-row {
   box-shadow: none;
-  transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease !important;
+  transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease !important;
 }
 
 .sidebar-project-row:hover,
@@ -484,10 +494,8 @@ select:focus-visible,
   box-shadow: var(--shadow-control);
 }
 
-.sidebar-project-row:active,
-.sidebar-session-row:active {
-  transform: translateY(1px);
-}
+/* No press-down translate: combined with the transform transition above it
+   made rows jump a pixel on every click, which reads as list jitter. */
 
 .sidebar-primary-actions,
 .sidebar-config-cluster,
@@ -857,15 +865,29 @@ select:focus-visible,
 }
 
 .right-panel-toggle {
-  top: 8px;
   border-color: var(--border-soft) !important;
   background: var(--panel-translucent) !important;
   box-shadow: var(--shadow-control);
   backdrop-filter: blur(16px) saturate(1.06);
 }
 
-.right-panel-toggle.is-open {
-  top: 4px;
+.sidebar-project-scroll {
+  overflow-anchor: none;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
+.sidebar-running-spinner {
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: sidebar-running-spin 0.72s linear infinite;
+}
+
+@keyframes sidebar-running-spin {
+  to { transform: rotate(360deg); }
 }
 
 .composer-shell {
@@ -1738,58 +1760,95 @@ select:focus-visible,
     border-radius: var(--radius-panel) var(--radius-panel) 0 0;
   }
 
-  .right-panel-toggle {
-    top: 16px;
-    right: 16px !important;
-  }
-
-  .right-panel-toggle.is-open {
-    top: 12px;
-  }
 }
 
-/* Electron's native Window Controls Overlay removes the duplicate OS title
-   row while keeping the real minimize/maximize/close buttons. Make the app's
-   top chrome draggable, reserve the system-button safe area, and keep every
-   interactive control clickable. The renderer adds desktop-chrome only when
-   Electron's isolated preload bridge is present, so normal browsers stay inert. */
-.app-shell.desktop-chrome .app-topbar,
-.app-shell.desktop-chrome .right-panel-tabs {
+/* Electron title strip: renderer-owned menus plus native Windows window
+   controls. The preload bridge gates this chrome, so browsers keep the normal
+   edge-to-edge shell. */
+.desktop-titlebar {
+  display: none;
+}
+
+.app-shell.desktop-chrome {
+  position: relative;
+  padding-top: 40px;
+}
+
+.app-shell.desktop-chrome .desktop-titlebar {
+  position: absolute;
+  z-index: 2000;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  height: 40px;
+  align-items: center;
+  gap: 3px;
+  padding-left: calc(env(titlebar-area-x, 0px) + 10px);
+  padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
+  background: color-mix(in srgb, var(--bg-panel) 88%, transparent);
+  color: var(--text-muted);
+  backdrop-filter: blur(22px) saturate(1.08);
   -webkit-app-region: drag;
   app-region: drag;
+  user-select: none;
 }
 
-.app-shell.desktop-chrome .app-topbar button,
-.app-shell.desktop-chrome .app-topbar a,
-.app-shell.desktop-chrome .app-topbar input,
-.app-shell.desktop-chrome .app-topbar select,
-.app-shell.desktop-chrome .app-topbar textarea,
-.app-shell.desktop-chrome .app-topbar [role="button"],
-.app-shell.desktop-chrome .right-panel-tabs button,
-.app-shell.desktop-chrome .right-panel-tabs a,
-.app-shell.desktop-chrome .right-panel-tabs input,
-.app-shell.desktop-chrome .right-panel-tabs [role="button"],
-.app-shell.desktop-chrome .right-panel-toggle {
+.desktop-titlebar-mark {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  margin-right: 2px;
+  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-raised) 86%, transparent);
+  color: var(--text);
+  font-family: Georgia, serif;
+  font-size: var(--font-lg);
+  font-weight: 600;
+  line-height: 1;
+  box-shadow: var(--shadow-control);
+}
+
+.desktop-titlebar-menus {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.desktop-titlebar-menu {
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 28px;
+  cursor: default;
+  transition: color 100ms ease, background 100ms ease;
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
 
-.app-shell.desktop-chrome:has(.right-panel-closed) .app-topbar {
-  padding-right: calc(
-    46px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
-  );
+.desktop-titlebar-menu:hover,
+.desktop-titlebar-menu[data-active="true"] {
+  background: color-mix(in srgb, var(--bg-hover) 86%, transparent);
+  color: var(--text);
 }
 
-.app-shell.desktop-chrome .right-panel-tabs {
-  padding-right: calc(
-    40px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
-  );
+.desktop-titlebar-drag {
+  min-width: 24px;
+  height: 100%;
+  flex: 1 1 auto;
 }
 
-.app-shell.desktop-chrome .right-panel-toggle {
-  right: calc(
-    16px + 100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)
-  ) !important;
+@media (min-width: 960px) {
+  .app-shell.desktop-chrome {
+    padding-top: 48px;
+  }
 }
 
 ::-webkit-scrollbar {

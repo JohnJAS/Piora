@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useState, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { getFileIcon, FolderIcon } from "./FileIcons";
 import {
   encodeFilePathForApi,
@@ -11,9 +12,12 @@ import {
   normalizeFilePathSlashes,
 } from "@/lib/file-paths";
 import type { GitFileStatus, GitFileStatusKind, GitStatusResponse } from "@/lib/git-types";
+import type { FileIndexEntry } from "@/lib/file-fuzzy";
 import { getFileViewerKind } from "@/lib/file-types";
+import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
+import styles from "./FileExplorer.module.css";
 type Translate = ReturnType<typeof useI18n>["t"];
 
 interface FileEntry {
@@ -32,8 +36,21 @@ interface FileNode {
   loaded?: boolean;
 }
 
+interface FileContextTarget {
+  name: string;
+  fullPath: string;
+  isDir: boolean;
+}
+
+interface FileContextMenuState {
+  target: FileContextTarget;
+  x: number;
+  y: number;
+}
+
 interface Props {
   cwd: string;
+  selectedFilePath?: string | null;
   onOpenFile: (filePath: string, fileName: string, options?: OpenFileOptions) => void;
   refreshKey?: number;
   onAtMention?: (relativePath: string, isDir: boolean) => void;
@@ -45,6 +62,7 @@ interface Props {
 
 export interface FileExplorerHandle {
   openUploadPicker: () => void;
+  focusSearch: () => void;
 }
 
 type UploadPhase = "idle" | "checking" | "uploading";
@@ -203,6 +221,235 @@ function DismissButton({ onClick, title }: { onClick: () => void; title: string 
   );
 }
 
+function FileContextMenu({
+  menu,
+  cwd,
+  onClose,
+  onOpenInApp,
+  onAtMention,
+  t,
+}: {
+  menu: FileContextMenuState;
+  cwd: string;
+  onClose: () => void;
+  onOpenInApp: (target: FileContextTarget) => void;
+  onAtMention?: (relativePath: string, isDir: boolean) => void;
+  t: Translate;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [openWithVisible, setOpenWithVisible] = useState(false);
+  const desktopBridge = window.piDesktop;
+  const left = Math.max(6, Math.min(menu.x, window.innerWidth - 250));
+  const top = Math.max(6, Math.min(menu.y, window.innerHeight - 210));
+  const openSubmenuLeft = left + 238 + 222 + 12 > window.innerWidth;
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) onClose();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    const handleViewportChange = () => onClose();
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("blur", handleViewportChange);
+    window.addEventListener("resize", handleViewportChange);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("blur", handleViewportChange);
+      window.removeEventListener("resize", handleViewportChange);
+    };
+  }, [onClose]);
+
+  const runAndClose = (action: () => void | Promise<unknown>) => {
+    onClose();
+    void action();
+  };
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className={styles.contextMenu}
+      role="menu"
+      aria-label={t("files.contextMenu")}
+      style={{ left, top }}
+      onContextMenu={(event) => event.preventDefault()}
+    >
+      <button
+        type="button"
+        role="menuitem"
+        className={styles.contextMenuItem}
+        disabled={!desktopBridge?.revealPath}
+        onClick={() => runAndClose(() => desktopBridge?.revealPath?.(menu.target.fullPath))}
+      >
+        <span className={styles.contextMenuIcon}><FolderIcon size={15} /></span>
+        <span className={styles.contextMenuLabel}>{t("files.revealInFileExplorer")}</span>
+      </button>
+
+      {menu.target.isDir ? (
+        <button
+          type="button"
+          role="menuitem"
+          className={styles.contextMenuItem}
+          onClick={() => runAndClose(() => onOpenInApp(menu.target))}
+        >
+          <span className={styles.contextMenuIcon}><AliIcon name="folder-open" size={15} /></span>
+          <span className={styles.contextMenuLabel}>{t("files.expandInPiGUI")}</span>
+        </button>
+      ) : (
+        <div
+          role="menuitem"
+          tabIndex={0}
+          className={styles.contextMenuItem}
+          data-open={openWithVisible}
+          onMouseEnter={() => setOpenWithVisible(true)}
+          onMouseLeave={() => setOpenWithVisible(false)}
+          onFocus={() => setOpenWithVisible(true)}
+          onClick={() => setOpenWithVisible((visible) => !visible)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " " || event.key === "ArrowRight") {
+              event.preventDefault();
+              setOpenWithVisible(true);
+            } else if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              setOpenWithVisible(false);
+            }
+          }}
+        >
+          <span className={styles.contextMenuIcon}>{getFileIcon(menu.target.name, 15)}</span>
+          <span className={styles.contextMenuLabel}>{t("files.openWith")}</span>
+          <AliIcon name="chevron-right" size={14} />
+          {openWithVisible && (
+            <div
+              className={`${styles.contextSubmenu}${openSubmenuLeft ? ` ${styles.contextSubmenuLeft}` : ""}`}
+              role="menu"
+              onMouseEnter={() => setOpenWithVisible(true)}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className={styles.contextMenuItem}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  runAndClose(() => onOpenInApp(menu.target));
+                }}
+              >
+                <span className={styles.contextMenuIcon}><AliIcon name="file" size={15} /></span>
+                <span className={styles.contextMenuLabel}>{t("files.openInPiGUI")}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className={styles.contextMenuItem}
+                disabled={!desktopBridge?.openPath}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  runAndClose(() => desktopBridge?.openPath?.(menu.target.fullPath));
+                }}
+              >
+                <span className={styles.contextMenuIcon}><AliIcon name="export" size={15} /></span>
+                <span className={styles.contextMenuLabel}>{t("files.openWithDefaultApp")}</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className={styles.contextMenuSeparator} role="separator" />
+      <button
+        type="button"
+        role="menuitem"
+        className={styles.contextMenuItem}
+        onClick={() => runAndClose(() => copyText(menu.target.fullPath))}
+      >
+        <span className={styles.contextMenuIcon}><AliIcon name="copy" size={15} /></span>
+        <span className={styles.contextMenuLabel}>{t("files.copyPath")}</span>
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className={styles.contextMenuItem}
+        disabled={!onAtMention}
+        onClick={() => runAndClose(() => onAtMention?.(
+          getRelativeFilePath(menu.target.fullPath, cwd),
+          menu.target.isDir,
+        ))}
+      >
+        <span className={styles.contextMenuIcon}><AddToChatIcon size={15} /></span>
+        <span className={styles.contextMenuLabel}>{t("files.insertPath")}</span>
+      </button>
+    </div>,
+    document.body,
+  );
+}
+
+function SearchResultRow({
+  entry,
+  cwd,
+  onOpen,
+  onOpenContextMenu,
+  selected,
+}: {
+  entry: FileIndexEntry;
+  cwd: string;
+  onOpen: (target: FileContextTarget) => void;
+  onOpenContextMenu: (target: FileContextTarget, x: number, y: number) => void;
+  selected: boolean;
+}) {
+  const fullPath = joinFilePath(cwd, entry.path);
+  const name = getFileName(entry.path);
+  const parentPath = getFileDirectory(entry.path);
+  const target = { name, fullPath, isDir: entry.isDir };
+  return (
+    <div
+      className={styles.searchResult}
+      role="option"
+      aria-selected={selected}
+      data-file-search-result
+      tabIndex={0}
+      title={fullPath}
+      style={{ background: selected ? "var(--bg-selected)" : undefined }}
+      onClick={() => onOpen(target)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen(target);
+        } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+          const rows = Array.from(
+            event.currentTarget.parentElement?.querySelectorAll<HTMLElement>("[data-file-search-result]") ?? [],
+          );
+          const currentIndex = rows.indexOf(event.currentTarget);
+          const nextIndex = event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? rows.length - 1
+              : event.key === "ArrowDown"
+                ? Math.min(rows.length - 1, currentIndex + 1)
+                : Math.max(0, currentIndex - 1);
+          if (rows[nextIndex]) {
+            event.preventDefault();
+            rows[nextIndex].focus();
+          }
+        }
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onOpenContextMenu(target, event.clientX, event.clientY);
+      }}
+    >
+      <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
+        {entry.isDir ? <FolderIcon size={15} /> : getFileIcon(name, 15)}
+      </span>
+      <div className={styles.searchResultText}>
+        <div className={styles.searchResultName}>{name}</div>
+        <div className={styles.searchResultPath}>{parentPath === "." ? "" : parentPath}</div>
+      </div>
+    </div>
+  );
+}
+
 function TreeNode({
   node,
   depth,
@@ -215,6 +462,8 @@ function TreeNode({
   highlightedPaths,
   gitStatusByPath,
   changedDirectoryPaths,
+  onOpenContextMenu,
+  selectedFilePath,
   t,
 }: {
   node: FileNode;
@@ -228,12 +477,15 @@ function TreeNode({
   highlightedPaths: Set<string>;
   gitStatusByPath: Map<string, GitFileStatus>;
   changedDirectoryPaths: Set<string>;
+  onOpenContextMenu: (target: FileContextTarget, x: number, y: number) => void;
+  selectedFilePath?: string | null;
   t: Translate;
 }) {
   const open = expandedPaths.has(node.fullPath);
   const highlighted = highlightedPaths.has(node.fullPath);
   const normalizedPath = normalizeFilePathSlashes(node.fullPath);
   const gitStatus = gitStatusByPath.get(normalizedPath);
+  const selected = !node.isDir && normalizedPath === selectedFilePath;
   const containsGitChanges = node.isDir && (
     gitStatus !== undefined || changedDirectoryPaths.has(normalizedPath)
   );
@@ -267,6 +519,10 @@ function TreeNode({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshToken]);
 
+  useEffect(() => {
+    if (open && !loaded && !loading) void loadChildren();
+  }, [loadChildren, loaded, loading, open]);
+
   const handleClick = useCallback(() => {
     if (node.isDir) {
       const next = !open;
@@ -281,6 +537,28 @@ function TreeNode({
     <div>
       <div
         onClick={handleClick}
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={selected}
+        aria-current={selected ? "page" : undefined}
+        aria-expanded={node.isDir ? open : undefined}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            handleClick();
+          } else if (node.isDir && event.key === "ArrowRight" && !open) {
+            event.preventDefault();
+            onToggleExpanded(node.fullPath, true);
+          } else if (node.isDir && event.key === "ArrowLeft" && open) {
+            event.preventDefault();
+            onToggleExpanded(node.fullPath, false);
+          }
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onOpenContextMenu(node, event.clientX, event.clientY);
+        }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
@@ -292,7 +570,7 @@ function TreeNode({
           paddingRight: 8,
           minHeight: "max(24px, calc(var(--font-sm) + 10px))",
           cursor: "pointer",
-          background: hovered ? "var(--bg-hover)" : "transparent",
+          background: selected ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
           borderRadius: 4,
           userSelect: "none",
         }}
@@ -438,6 +716,8 @@ function TreeNode({
               highlightedPaths={highlightedPaths}
               gitStatusByPath={gitStatusByPath}
               changedDirectoryPaths={changedDirectoryPaths}
+              onOpenContextMenu={onOpenContextMenu}
+              selectedFilePath={selectedFilePath}
               t={t}
             />
           ))}
@@ -460,11 +740,15 @@ function ChangeRow({
   status,
   cwd,
   onOpenFile,
+  onOpenContextMenu,
+  selected,
   t,
 }: {
   status: GitFileStatus;
   cwd: string;
   onOpenFile: OpenFileHandler;
+  onOpenContextMenu: (target: FileContextTarget, x: number, y: number) => void;
+  selected: boolean;
   t: Translate;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -473,9 +757,14 @@ function ChangeRow({
   return (
     <div
       onClick={() => onOpenFile(status.filePath, name, { modeHint: "diff" })}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onOpenContextMenu({ name, fullPath: status.filePath, isDir: false }, event.clientX, event.clientY);
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       title={status.filePath}
+      aria-current={selected ? "page" : undefined}
       style={{
         display: "flex",
         alignItems: "center",
@@ -484,7 +773,7 @@ function ChangeRow({
         paddingRight: 8,
         minHeight: "max(24px, calc(var(--font-sm) + 10px))",
         cursor: "pointer",
-        background: hovered ? "var(--bg-hover)" : "transparent",
+        background: selected ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
         borderRadius: 4,
         userSelect: "none",
       }}
@@ -511,6 +800,7 @@ function ChangeRow({
 
 export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileExplorer({
   cwd,
+  selectedFilePath,
   onOpenFile,
   refreshKey,
   onAtMention,
@@ -533,10 +823,19 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSummary, setUploadSummary] = useState<UploadSummary | null>(null);
   const [pendingConflict, setPendingConflict] = useState<PendingConflict | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<FileIndexEntry[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState(false);
+  const [contextMenu, setContextMenu] = useState<FileContextMenuState | null>(null);
   const prevCwdRef = useRef<string | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const refreshToken = `${refreshKey ?? 0}:${treeRefreshKey}`;
   const uploadBusy = uploadPhase !== "idle";
+  const normalizedSelectedFilePath = selectedFilePath
+    ? normalizeFilePathSlashes(selectedFilePath)
+    : null;
 
   const gitStatusByPath = useMemo(() => new Map(
     gitFiles.map((status) => [normalizeFilePathSlashes(status.filePath), status]),
@@ -565,6 +864,29 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       return next;
     });
   }, []);
+
+  const handleOpenContextMenu = useCallback((target: FileContextTarget, x: number, y: number) => {
+    setContextMenu({ target, x, y });
+  }, []);
+
+  const handleOpenTarget = useCallback((target: FileContextTarget) => {
+    if (!target.isDir) {
+      onOpenFile(target.fullPath, target.name);
+      return;
+    }
+    const relative = normalizeFilePathSlashes(getRelativeFilePath(target.fullPath, cwd));
+    const segments = relative.split("/").filter(Boolean);
+    setExpandedPaths((previous) => {
+      const next = new Set(previous);
+      let current = cwd;
+      for (const segment of segments) {
+        current = joinFilePath(current, segment);
+        next.add(current);
+      }
+      return next;
+    });
+    setSearchQuery("");
+  }, [cwd, onOpenFile]);
 
   const applyUploadResult = useCallback((data: UploadResponse) => {
     const uploaded = data.uploaded ?? [];
@@ -657,6 +979,10 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
     openUploadPicker() {
       if (!uploadBusy) uploadInputRef.current?.click();
     },
+    focusSearch() {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    },
   }), [uploadBusy]);
 
   useEffect(() => {
@@ -676,6 +1002,9 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       setUploadSummary(null);
       setPendingConflict(null);
       setUploadError(null);
+      setSearchQuery("");
+      setSearchResults([]);
+      setContextMenu(null);
     }
 
     setLoading(cwdChanged);
@@ -687,6 +1016,55 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [cwd, refreshKey, treeRefreshKey]);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      setSearchError(false);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      setSearchLoading(true);
+      setSearchError(false);
+      fetch(`/api/file-index?cwd=${encodeURIComponent(cwd)}&q=${encodeURIComponent(query)}`, {
+        signal: controller.signal,
+      })
+        .then((response) => {
+          if (!response.ok) throw new Error(`file search failed: ${response.status}`);
+          return response.json() as Promise<{ matches?: FileIndexEntry[] }>;
+        })
+        .then((data) => setSearchResults(data.matches ?? []))
+        .catch((searchFailure) => {
+          if ((searchFailure as { name?: string }).name !== "AbortError") setSearchError(true);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearchLoading(false);
+        });
+    }, 120);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [cwd, searchQuery]);
+
+  useEffect(() => {
+    if (!selectedFilePath) return;
+    const relative = normalizeFilePathSlashes(getRelativeFilePath(selectedFilePath, cwd));
+    const directorySegments = relative.split("/").filter(Boolean).slice(0, -1);
+    if (directorySegments.length === 0) return;
+    setExpandedPaths((previous) => {
+      const next = new Set(previous);
+      let current = cwd;
+      for (const segment of directorySegments) {
+        current = joinFilePath(current, segment);
+        next.add(current);
+      }
+      return next;
+    });
+  }, [cwd, selectedFilePath]);
 
   useEffect(() => {
     let cancelled = false;
@@ -724,6 +1102,48 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   return (
     <div style={{ minHeight: "100%" }}>
       <input ref={uploadInputRef} type="file" multiple hidden onChange={handleUploadInput} />
+      <div className={styles.filterBar}>
+        <div className={styles.filterShell}>
+          <AliIcon name="search" size={14} aria-hidden="true" />
+          <input
+            ref={searchInputRef}
+            className={styles.filterInput}
+            type="text"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && searchQuery) {
+                event.preventDefault();
+                setSearchQuery("");
+              } else if (event.key === "ArrowDown") {
+                const firstResult = document.querySelector<HTMLElement>("[data-file-search-result]");
+                if (firstResult) {
+                  event.preventDefault();
+                  firstResult.focus();
+                }
+              }
+            }}
+            placeholder={t("files.searchPlaceholder")}
+            aria-label={t("files.searchPlaceholder")}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              className={styles.clearButton}
+              onClick={() => {
+                setSearchQuery("");
+                searchInputRef.current?.focus();
+              }}
+              title={t("files.clearSearch")}
+              aria-label={t("files.clearSearch")}
+            >
+              <AliIcon name="close" size={12} />
+            </button>
+          )}
+        </div>
+      </div>
       {showUploadFeedback && (
         <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
         {uploadBusy && (
@@ -824,7 +1244,28 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
         </div>
       )}
 
-      {!changesCollapsed && gitFiles.length > 0 && (
+      {searchQuery.trim() && (
+        <div style={{ padding: "1px 0 4px" }} role="listbox" aria-label={t("files.searchResults")}>
+          {searchLoading && searchResults.length === 0 ? (
+            <div className={styles.searchStatus}>{t("files.searching")}</div>
+          ) : searchError ? (
+            <div className={styles.searchStatus} style={{ color: "#f87171" }}>{t("files.searchFailed")}</div>
+          ) : searchResults.length === 0 ? (
+            <div className={styles.searchStatus}>{t("files.noSearchResults")}</div>
+          ) : searchResults.map((entry) => (
+            <SearchResultRow
+              key={`${entry.isDir ? "dir" : "file"}:${entry.path}`}
+              entry={entry}
+              cwd={cwd}
+              onOpen={handleOpenTarget}
+              onOpenContextMenu={handleOpenContextMenu}
+              selected={normalizeFilePathSlashes(joinFilePath(cwd, entry.path)) === normalizedSelectedFilePath}
+            />
+          ))}
+        </div>
+      )}
+
+      {!searchQuery.trim() && !changesCollapsed && gitFiles.length > 0 && (
         <div style={{ padding: "0 4px 2px" }}>
           <div
             aria-label={t("files.changeStats", {
@@ -841,13 +1282,21 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             <span style={{ color: GIT_STATUS_COLORS.deleted, fontFamily: "var(--font-mono)" }}>-{gitLineStats.deletions}</span>
           </div>
           {gitFiles.map((status) => (
-            <ChangeRow key={status.filePath} status={status} cwd={cwd} onOpenFile={onOpenFile} t={t} />
+            <ChangeRow
+              key={status.filePath}
+              status={status}
+              cwd={cwd}
+              onOpenFile={onOpenFile}
+              onOpenContextMenu={handleOpenContextMenu}
+              selected={normalizeFilePathSlashes(status.filePath) === normalizedSelectedFilePath}
+              t={t}
+            />
           ))}
         </div>
       )}
 
-      {(changesCollapsed || gitFiles.length === 0) && (
-        <div style={{ padding: "2px 4px" }}>
+      {!searchQuery.trim() && (changesCollapsed || gitFiles.length === 0) && (
+        <div style={{ padding: "2px 4px" }} role="tree" aria-label={t("files.explorer")}>
           {loading ? (
             <div style={{ padding: "8px 12px", fontSize: "var(--font-xs)", color: "var(--text-dim)" }}>Loading files...</div>
           ) : error ? (
@@ -867,6 +1316,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                 highlightedPaths={highlightedPaths}
                 gitStatusByPath={gitStatusByPath}
                 changedDirectoryPaths={changedDirectoryPaths}
+                onOpenContextMenu={handleOpenContextMenu}
+                selectedFilePath={normalizedSelectedFilePath}
                 t={t}
               />
             ))
@@ -877,6 +1328,16 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             </div>
           )}
         </div>
+      )}
+      {contextMenu && (
+        <FileContextMenu
+          menu={contextMenu}
+          cwd={cwd}
+          onClose={() => setContextMenu(null)}
+          onOpenInApp={handleOpenTarget}
+          onAtMention={onAtMention}
+          t={t}
+        />
       )}
     </div>
   );

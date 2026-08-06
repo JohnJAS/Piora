@@ -76,6 +76,93 @@
   background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
 }
 
+.modeCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--bg-panel) 44%, transparent);
+}
+
+.modeIcon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text-muted);
+}
+
+.modeBadge {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-dim) 9%, transparent);
+  color: var(--text-dim);
+  font-size: var(--font-2xs);
+  font-weight: 650;
+}
+
+.modeCard[data-available="true"] .modeBadge {
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  color: var(--accent);
+}
+
+.helpCard {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--bg-panel) 40%, transparent);
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.helpCard summary {
+  color: var(--text);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.helpCard ol {
+  margin: 9px 0 1px;
+  padding-left: 20px;
+  line-height: 1.6;
+}
+
+.importCard {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 38%, var(--border));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-panel));
+}
+
+.importIcon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--accent);
+}
+
+.archiveHint {
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: var(--font-2xs);
+  line-height: 1.4;
+}
+
 .displayIcon,
 .petIcon {
   display: grid;

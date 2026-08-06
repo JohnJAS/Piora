@@ -163,7 +163,11 @@ const PROMPT_SETTLE_MAX_MS = 20_000;
 const AGENT_STATE_RECONCILE_MS = 15_000;
 const CONTEXT_USAGE_REFRESH_MS = 1_500;
 const BASH_STATE_RECONCILE_MS = 1_000;
-const EVENT_STREAM_CONNECT_TIMEOUT_MS = 5_000;
+// Cold sessions create their AgentSession on the server when the events route
+// or the first command arrives; that setup (model runtime + resource loader)
+// can take longer than a default fetch timeout. Keep the connect window wide
+// so a slow first start never fails the send.
+const EVENT_STREAM_CONNECT_TIMEOUT_MS = 30_000;
 const MAX_NOTICES = 5;
 const NOTICE_VISIBLE_MS = 5000;
 const NOTICE_EXIT_ANIMATION_MS = 180;

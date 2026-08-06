@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Sans_Mono } from "next/font/google";
 import { BackgroundBootstrap } from "@/components/BackgroundBootstrap";
 import { AppTooltip } from "@/components/AppTooltip";
 import { PwaRegistration } from "@/components/PwaRegistration";
@@ -8,12 +7,6 @@ import { FONT_PREFERENCE_INITIALIZATION_SCRIPT } from "@/lib/font-preferences";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 import "./theme-backgrounds.css";
-
-const notoSansMono = Noto_Sans_Mono({
-  subsets: ["latin", "cyrillic"],
-  variable: "--font-noto-mono",
-  display: "swap",
-});
 
 const themeInitializationScript = `(function(){try{var a=["light","dark","starlight","ivory","doodle","fortune","midnight","forest","dream"],k=["dark","midnight","forest","dream"],f=function(x){return a.indexOf(x)>-1},t=null,v=localStorage.getItem("pi-theme:v1");if(v){try{var p=JSON.parse(v);if(p&&f(p.theme))t=p.theme}catch(_){}}if(!t){var l=localStorage.getItem("pi-theme");if(f(l))t=l}if(!t)t="light";var r=document.documentElement,d=k.indexOf(t)>-1;r.setAttribute("data-theme",t);r.classList.toggle("dark",d);r.style.colorScheme=d?"dark":"light"}catch(_){}})();`;
 
@@ -61,7 +54,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" translate="no" className={`${notoSansMono.variable} notranslate`} suppressHydrationWarning>
+    <html lang="en" translate="no" className="notranslate" suppressHydrationWarning>
       <head>
         <meta name="google" content="notranslate" />
         <script

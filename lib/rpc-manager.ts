@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, Theme } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, Theme, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
@@ -988,6 +988,34 @@ declare global {
   var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
   var __piStartingSessionCwds: Map<string, number> | undefined;
   var __piRunningListeners: Set<(ids: string[]) => void> | undefined;
+  var __piServicesCache: Map<string, AgentSessionServices> | undefined;
+}
+
+// ============================================================================
+// Per-cwd session services cache
+//
+// `createAgentSessionServices()` is expensive (~5-8s: ModelRuntime.create +
+// resource loader reload + model runtime refresh). Every session start used to
+// pay that cost again, and its synchronous work blocks the Node event loop, so
+// switching sessions (which creates the AgentSession for the target session)
+// stalled unrelated requests — including the session-messages GET the UI needs
+// to render the composer — leaving the chat stuck in "loading" with no input
+// for many seconds.
+//
+// Sessions of the same cwd share the SDK services object safely: each
+// AgentSession builds its own extension runner from the shared resource
+// loader. Invalidate via invalidateServicesCache() whenever models, auth,
+// settings, skills, plugins, or project trust change.
+// ============================================================================
+
+function getServicesCache(): Map<string, AgentSessionServices> {
+  if (!globalThis.__piServicesCache) globalThis.__piServicesCache = new Map();
+  return globalThis.__piServicesCache;
+}
+
+/** Drop cached per-cwd services so the next session start reloads them. */
+export function invalidateServicesCache(): void {
+  getServicesCache().clear();
 }
 
 function getRegistry(): Map<string, AgentSessionWrapper> {
@@ -1148,12 +1176,21 @@ export async function startRpcSession(
     // before the SDK restores the saved model from the session file.
     // Gate untrusted project extensions so opening a repository does not run
     // its .pi/extensions code automatically (see lib/project-trust.ts, #236).
+    // Services are cached per cwd: reusing the model runtime + resource loader
+    // turns a ~5-8s session start into milliseconds and stops session creation
+    // from blocking the event loop (which stalled session loading and left the
+    // composer hidden while switching sessions).
     const trustReloadOptions = projectTrustReloadOptions(cwd, agentDir);
-    const services = await createAgentSessionServices({
-      cwd,
-      agentDir,
-      ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
-    });
+    const cwdKey = normalizeRpcCwd(cwd);
+    let services = getServicesCache().get(cwdKey);
+    if (!services) {
+      services = await createAgentSessionServices({
+        cwd,
+        agentDir,
+        ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
+      });
+      getServicesCache().set(cwdKey, services);
+    }
     const scope = await resolveVisibleModels(
       services.modelRuntime,
       services.settingsManager.getEnabledModels(),

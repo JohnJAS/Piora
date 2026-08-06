@@ -55,6 +55,7 @@ type AutoNameStatus =
   | { kind: "success" }
   | { kind: "error"; message: string };
 type TopPanel = "branches" | "project" | "system" | "session" | "language" | "taskControls";
+type DesktopMenuId = "file" | "edit" | "view" | "features" | "help";
 
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
 const LANGUAGE_MENU_WIDTH = 176;
@@ -98,6 +99,7 @@ export function AppShell() {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
   const [desktopChrome, setDesktopChrome] = useState(false);
+  const [openDesktopMenuId, setOpenDesktopMenuId] = useState<DesktopMenuId | null>(null);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const rightPanelWidthRef = useRef(RIGHT_PANEL_FALLBACK_WIDTH);
   const getResponsiveRightPanelWidth = useCallback(
@@ -458,6 +460,7 @@ export function AppShell() {
   // Right panel — file tabs only
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
+  const activeFilePath = fileTabs.find((tab) => tab.id === activeFileTabId)?.filePath ?? null;
   const hasDirtyFileTabs = fileTabs.some((tab) => tab.isDirty);
 
   useEffect(() => {
@@ -604,6 +607,7 @@ export function AppShell() {
   }, [activeFileTabId, fileTabs, router, selectedSession]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
+    setSettingsDialogOpen(false);
     setNewSessionCwd(null);
     setSelectedSession(session);
     setSessionKey((k) => k + 1);
@@ -620,10 +624,17 @@ export function AppShell() {
     // and calling replace in production Next.js triggers a Suspense remount loop
     if (!isRestore) {
       router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
+      // Session changes remount ChatWindow. Restore focus after that mount so
+      // dismissing a native dialog or leaving a streaming session can never
+      // strand keyboard input on the old, detached composer.
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => chatInputRef.current?.focus());
+      });
     }
   }, [router, isMobile]);
 
   const handleNewSession = useCallback((_sessionId: string, cwd: string) => {
+    setSettingsDialogOpen(false);
     setSelectedSession(null);
     setNewSessionCwd(cwd);
     setSessionKey((k) => k + 1);
@@ -675,6 +686,9 @@ export function AppShell() {
         case "toggle-companion":
           toggleCompanion();
           break;
+        case "hide-companion":
+          setCompanionOpen(false);
+          break;
         case "companion-settings":
           setCompanionSettingsOpen(true);
           break;
@@ -683,7 +697,7 @@ export function AppShell() {
       }
     });
     return unsubscribe;
-  }, [activeCwd, handleNewSession, handleOpenProjectPicker, handleSidebarToggle, openAppearanceSettings, toggleCompanion, toggleTopPanel]);
+  }, [activeCwd, handleNewSession, handleOpenProjectPicker, handleSidebarToggle, openAppearanceSettings, setCompanionOpen, toggleCompanion, toggleTopPanel]);
 
   // Electron's titleBarOverlay does not make the browser-only
   // `(display-mode: window-controls-overlay)` media query true. Use the
@@ -691,6 +705,36 @@ export function AppShell() {
   // packaged window gets draggable regions and native-control safe areas.
   useEffect(() => {
     setDesktopChrome(Boolean(window.piDesktop));
+  }, []);
+
+  useEffect(() => {
+    if (!desktopChrome) return;
+    void window.piDesktop?.setCompanionWindowVisible?.(companionOpen);
+  }, [companionOpen, desktopChrome]);
+
+  useEffect(() => {
+    if (!desktopChrome || typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel("pi-companion-runtime-v1");
+    const publishActivity = () => channel.postMessage({ type: "activity", activity: companionActivity });
+    channel.onmessage = (event: MessageEvent<unknown>) => {
+      if (event.data && typeof event.data === "object" && (event.data as { type?: unknown }).type === "ready") {
+        publishActivity();
+      }
+    };
+    publishActivity();
+    return () => channel.close();
+  }, [companionActivity, desktopChrome]);
+
+  const openDesktopMenu = useCallback(async (menu: DesktopMenuId, anchor: HTMLElement) => {
+    const bridge = window.piDesktop?.openMenu;
+    if (!bridge) return;
+    const rect = anchor.getBoundingClientRect();
+    setOpenDesktopMenuId(menu);
+    try {
+      await bridge(menu, rect.left, rect.bottom);
+    } finally {
+      setOpenDesktopMenuId(null);
+    }
   }, []);
 
   // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
@@ -940,6 +984,21 @@ export function AppShell() {
 
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
   const windowTitle = activeCwdName ? `${activeCwdName} - piGUI` : "piGUI";
+  const desktopMenus: Array<{ id: DesktopMenuId; label: string }> = locale === "zh-CN"
+    ? [
+        { id: "file", label: "文件" },
+        { id: "edit", label: "编辑" },
+        { id: "view", label: "视图" },
+        { id: "features", label: "功能" },
+        { id: "help", label: "帮助" },
+      ]
+    : [
+        { id: "file", label: "File" },
+        { id: "edit", label: "Edit" },
+        { id: "view", label: "View" },
+        { id: "features", label: "Features" },
+        { id: "help", label: "Help" },
+      ];
 
   useEffect(() => {
     const syncWindowTitle = () => {
@@ -951,6 +1010,18 @@ export function AppShell() {
     observer.observe(document.head, { childList: true, subtree: true, characterData: true });
     return () => observer.disconnect();
   }, [windowTitle]);
+
+  useEffect(() => {
+    const handleQuickOpen = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.shiftKey) return;
+      if ((!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== "p") return;
+      event.preventDefault();
+      setSidebarOpen(true);
+      requestAnimationFrame(() => sessionSidebarRef.current?.focusFileSearch());
+    };
+    window.addEventListener("keydown", handleQuickOpen);
+    return () => window.removeEventListener("keydown", handleQuickOpen);
+  }, []);
 
   const sidebarContent = (
     <SessionSidebar
@@ -966,12 +1037,41 @@ export function AppShell() {
       selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
       onCwdChange={handleCwdChange}
       onOpenFile={handleOpenFile}
+      selectedFilePath={activeFilePath}
       explorerRefreshKey={explorerRefreshKey}
       onExplorerRefresh={handleExplorerRefresh}
       onAtMention={handleAtMention}
       onAtMentions={handleAtMentions}
+      onOpenSettings={() => setSettingsDialogOpen(true)}
+      onOpenPlugins={() => setPluginsConfigOpen(true)}
     />
   );
+
+  const settingsPage = (
+    <SettingsDialog
+      open={settingsDialogOpen}
+      onClose={() => setSettingsDialogOpen(false)}
+      onOpenModels={() => { setSettingsDialogOpen(false); setModelsConfigOpen(true); }}
+      onOpenSkills={() => { setSettingsDialogOpen(false); setSkillsConfigOpen(true); }}
+      onOpenPlugins={() => { setSettingsDialogOpen(false); setPluginsConfigOpen(true); }}
+      onOpenAppearance={() => { setSettingsDialogOpen(false); openAppearanceSettings(); }}
+      onOpenLanguage={() => { setSettingsDialogOpen(false); toggleTopPanel("language"); }}
+      onOpenCompanion={() => { setSettingsDialogOpen(false); setCompanionSettingsOpen(true); }}
+      conversation={{
+        hasSession: Boolean(selectedSession),
+        hasMessages: Boolean(selectedSession && (sessionStats?.userMessages ?? selectedSession.messageCount) > 0),
+        autoNameStatus: autoNameStatus.kind,
+        ...(autoNameStatus.kind === "error" ? { autoNameError: autoNameStatus.message } : {}),
+        systemPrompt,
+        taskControls,
+        notificationEnabled,
+        notificationCapability,
+        onGenerateTitle: () => { void handleAutoName(); },
+        onNotificationToggle: () => { void onNotificationToggle(); },
+      }}
+    />
+  );
+  const effectiveRightPanelOpen = rightPanelOpen && !settingsDialogOpen;
 
   return (
     <>
@@ -1047,6 +1147,27 @@ export function AppShell() {
       }
     `}</style>
     <div className={`app-shell${desktopChrome ? " desktop-chrome" : ""}`} style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}>
+      {desktopChrome ? (
+        <header className="desktop-titlebar" aria-label={windowTitle}>
+          <div className="desktop-titlebar-mark" aria-hidden="true">π</div>
+          <nav className="desktop-titlebar-menus" aria-label={locale === "zh-CN" ? "应用菜单" : "Application menu"}>
+            {desktopMenus.map((menu) => (
+              <button
+                key={menu.id}
+                type="button"
+                className="desktop-titlebar-menu"
+                aria-haspopup="menu"
+                aria-expanded={openDesktopMenuId === menu.id}
+                data-active={openDesktopMenuId === menu.id ? "true" : "false"}
+                onClick={(event) => { void openDesktopMenu(menu.id, event.currentTarget); }}
+              >
+                {menu.label}
+              </button>
+            ))}
+          </nav>
+          <div className="desktop-titlebar-drag" />
+        </header>
+      ) : null}
       {/* Mobile overlay backdrop */}
       <div
         className={`sidebar-overlay-backdrop${mobileSidebarReady ? "" : " sidebar-mobile-pending"}`}
@@ -1126,8 +1247,10 @@ export function AppShell() {
               </span>
               <AliIcon name="arrowdown" size={12} style={{ color: "var(--text-dim)" }} />
             </button>
-            {showChat ? <span className="app-topbar-title-separator" aria-hidden="true">/</span> : null}
-            {showChat ? (
+            {showChat || settingsDialogOpen ? <span className="app-topbar-title-separator" aria-hidden="true">/</span> : null}
+            {settingsDialogOpen ? (
+              <span className="app-topbar-title-path">{translate("sidebar.settings")}</span>
+            ) : showChat ? (
               <span
                 className={`app-topbar-title-path${selectedSession?.name ? "" : " is-placeholder"}`}
                 title={selectedSession?.name ?? translate("i18n.newSession")}
@@ -1136,7 +1259,7 @@ export function AppShell() {
               </span>
             ) : null}
           </div>
-          {showChat && projectTrust?.requiresTrust && !projectTrust.trusted && (
+          {!settingsDialogOpen && showChat && projectTrust?.requiresTrust && !projectTrust.trusted && (
             <button
               type="button"
               onClick={() => {
@@ -1165,7 +1288,7 @@ export function AppShell() {
               {!isMobile && <span>{translate("trust.resourcesNotLoaded")}</span>}
             </button>
           )}
-          {showChat && (
+          {!settingsDialogOpen && showChat && (
             <div className="conversation-toolbar-actions">
               <button
                 className="topbar-control topbar-history-button"
@@ -1217,16 +1340,14 @@ export function AppShell() {
                 hasSession={Boolean(selectedSession)}
               />
               <button
-                className="topbar-control topbar-icon-button topbar-more-button"
-                ref={taskControlsBtnRef}
+                className={`topbar-control topbar-icon-button right-panel-toggle ${rightPanelOpen ? "is-open" : "is-closed"}`}
                 type="button"
-                onClick={() => toggleTopPanel("taskControls")}
-                title={translate("conversationMenu.buttonLabel")}
-                aria-label={translate("conversationMenu.buttonLabel")}
-                aria-haspopup="menu"
-                aria-expanded={activeTopPanel === "taskControls"}
-                aria-pressed={activeTopPanel === "taskControls"}
-                data-active={activeTopPanel === "taskControls" ? "true" : "false"}
+                data-panel-open={rightPanelOpen ? "true" : "false"}
+                onClick={() => setRightPanelOpen((value) => !value)}
+                aria-controls="file-panel"
+                aria-expanded={rightPanelOpen}
+                title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
+                aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -1234,16 +1355,16 @@ export function AppShell() {
                   width: TOP_BAR_ICON_BUTTON_SIZE,
                   height: "100%",
                   padding: 0,
-                  background: activeTopPanel === "taskControls" ? "var(--bg-selected)" : "none",
+                  background: rightPanelOpen ? "var(--bg-selected)" : "none",
                   border: "none",
-                  borderTop: activeTopPanel === "taskControls" ? "2px solid var(--accent)" : "2px solid transparent",
+                  borderTop: rightPanelOpen ? "2px solid var(--accent)" : "2px solid transparent",
                   borderRadius: 7,
-                  color: activeTopPanel === "taskControls" ? "var(--text)" : "var(--text-muted)",
+                  color: rightPanelOpen ? "var(--text)" : "var(--text-muted)",
                   cursor: "pointer",
                   transition: "color 0.1s, background 0.1s",
                 }}
               >
-                <AliIcon name="ellipsis" size={16} />
+                <AliIcon name="layout" size={16} />
               </button>
             </div>
           )}
@@ -1748,6 +1869,7 @@ export function AppShell() {
           <div className="workspace-layout">
             {/* Chat content */}
             <div className="workspace-chat">
+            <div style={{ height: "100%", display: settingsDialogOpen ? "none" : "block" }} aria-hidden={settingsDialogOpen}>
             {showChat ? (
               <ChatWindow
                 key={sessionKey}
@@ -1809,8 +1931,10 @@ export function AppShell() {
               )
             ) : null}
             </div>
+            {settingsPage}
+            </div>
             <CompanionPet
-              open={companionOpen}
+              open={companionOpen && !desktopChrome && !settingsDialogOpen}
               onOpenChange={setCompanionOpen}
               activity={companionActivity}
               canSendPhrase={canSendCompanionPhrase(companionActivity.status, showChat)}
@@ -1825,10 +1949,10 @@ export function AppShell() {
 
       <div
         aria-hidden="true"
-        className={`right-panel-overlay-backdrop${rightPanelOpen ? " is-open" : ""}`}
+        className={`right-panel-overlay-backdrop${effectiveRightPanelOpen ? " is-open" : ""}`}
         onClick={() => setRightPanelOpen(false)}
       />
-      {rightPanelOpen && (
+      {effectiveRightPanelOpen && (
         <div
           {...rightPanelResizer.separatorProps}
           aria-controls="file-panel"
@@ -1842,7 +1966,7 @@ export function AppShell() {
       <div
         ref={rightPanelResizer.panelRef}
         id="file-panel"
-        className={`right-panel-container${rightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
+        className={`right-panel-container${effectiveRightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
         style={{
           "--right-panel-width": `${rightPanelResizer.width}px`,
           display: "flex",
@@ -1886,10 +2010,10 @@ export function AppShell() {
                     sourceSessionId={tab.sourceSessionId}
                     gitRefreshKey={explorerRefreshKey}
                     initialDisplayMode={tab.initialDisplayMode}
-                    active={rightPanelOpen && isActive}
+                    active={effectiveRightPanelOpen && isActive}
                     onDirtyChange={(dirty) => handleFileDirtyChange(tab.id, dirty)}
                     onSaved={handleExplorerRefresh}
-                    onMentionLines={rightPanelOpen && isActive ? handleFileLineMention : undefined}
+                    onMentionLines={effectiveRightPanelOpen && isActive ? handleFileLineMention : undefined}
                     onOpenFile={(filePath) => handleOpenFile(
                       filePath,
                       getFileName(filePath),
@@ -1907,27 +2031,6 @@ export function AppShell() {
         </div>
       </div>
     {/* File panel toggle — always visible at top-right */}
-    <button
-      className={`right-panel-toggle ${rightPanelOpen ? "is-open" : "is-closed"}`}
-      data-panel-open={rightPanelOpen ? "true" : "false"}
-      onClick={() => setRightPanelOpen((v) => !v)}
-       aria-controls="file-panel"
-       aria-expanded={rightPanelOpen}
-       title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
-       aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
-      style={{
-        position: "fixed", right: 8, zIndex: 300,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        width: 32, height: 32, padding: 0,
-        background: "var(--bg-panel)", border: "1px solid var(--border)", borderRadius: "var(--radius-control)",
-        color: rightPanelOpen ? "var(--text)" : "var(--text-muted)",
-        cursor: "pointer", transition: "color 0.12s",
-      }}
-      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.color = rightPanelOpen ? "var(--text)" : "var(--text-muted)"; }}
-    >
-      <AliIcon name="layout" size={16} />
-    </button>
     </div>
     {historyDialogOpen && selectedSession ? (
       <SessionHistoryDialog
@@ -2117,29 +2220,22 @@ export function AppShell() {
         onReloaded={() => setSessionKey((k) => k + 1)}
       />
     )}
-    <SettingsDialog
-      open={settingsDialogOpen}
-      onClose={() => setSettingsDialogOpen(false)}
-      onOpenModels={() => { setSettingsDialogOpen(false); setModelsConfigOpen(true); }}
-      onOpenSkills={() => { setSettingsDialogOpen(false); setSkillsConfigOpen(true); }}
-      onOpenPlugins={() => { setSettingsDialogOpen(false); setPluginsConfigOpen(true); }}
-      onOpenAppearance={() => { setSettingsDialogOpen(false); openAppearanceSettings(); }}
-      onOpenLanguage={() => { setSettingsDialogOpen(false); toggleTopPanel("language"); }}
-      onOpenCompanion={() => { setSettingsDialogOpen(false); setCompanionSettingsOpen(true); }}
-    />
     <CompanionSettingsDialog
       open={companionSettingsOpen}
       onClose={() => setCompanionSettingsOpen(false)}
       companionOpen={companionOpen}
       onCompanionOpenChange={setCompanionOpen}
+      desktopMode={desktopChrome}
       selectedPetId={companionPreferences.selectedPetId}
       onSelectPet={handleSelectCompanionPet}
       catalog={companionPets.catalog}
       loading={companionPets.loading}
       error={companionPets.error}
       importingPetKey={companionPets.importingPetKey}
+      importingArchive={companionPets.importingArchive}
       onRefresh={() => { void companionPets.loadPets(); }}
       onImportPet={companionPets.importPet}
+      onImportArchive={companionPets.importPetArchive}
     />
     </>
   );
