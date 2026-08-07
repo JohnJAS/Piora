@@ -72,9 +72,11 @@
   --status-attention: #d97706;
   --status-failed: #dc2626;
   --status-ready: #16a34a;
-  --user-bg: #eef3ff;
-  --assistant-bg: #fffdfc;
-  --tool-bg: #faf8f7;
+  /* Message surfaces: user = neutral panel block, assistant = no bubble
+     (docs/PIORA_UI_STYLE_SPEC.md §2.5), tool = panel base. */
+  --user-bg: var(--bg-panel);
+  --assistant-bg: transparent;
+  --tool-bg: var(--bg-panel);
   --bg-subtle: rgba(24, 24, 27, 0.035);
   --canvas: color-mix(in srgb, var(--bg) 88%, var(--bg-panel));
   --surface: color-mix(in srgb, var(--bg) 96%, var(--bg-panel));
@@ -189,9 +191,9 @@ html.dark {
   --status-attention: #f0a53a;
   --status-failed: #f0605d;
   --status-ready: #4ade80;
-  --user-bg: #1e293b;
-  --assistant-bg: #1a1a1a;
-  --tool-bg: #1f2937;
+  --user-bg: var(--bg-panel);
+  --assistant-bg: transparent;
+  --tool-bg: var(--bg-panel);
   --bg-subtle: rgba(255,255,255,0.04);
 }
 
