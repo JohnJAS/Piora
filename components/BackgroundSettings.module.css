@@ -15,7 +15,7 @@
 
 .title {
   margin: 0;
-  font-size: var(--font-sm);
+  font-size: var(--text-sm);
   font-weight: 700;
 }
 
@@ -23,7 +23,7 @@
 .status,
 .error {
   margin: 2px 0 0;
-  font-size: var(--font-2xs);
+  font-size: var(--text-xs);
   line-height: 1.45;
   color: var(--text-dim);
 }
@@ -54,7 +54,7 @@
   justify-content: space-between;
   gap: 8px;
   color: var(--text-muted);
-  font-size: var(--font-2xs);
+  font-size: var(--text-xs);
 }
 
 .presetGrid {
@@ -125,7 +125,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   padding: 0 2px 1px;
-  font-size: var(--font-2xs);
+  font-size: var(--text-xs);
   line-height: 1.35;
 }
 
@@ -137,7 +137,7 @@
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-size: var(--font-xs);
+  font-size: var(--text-xs);
 }
 
 .actions {

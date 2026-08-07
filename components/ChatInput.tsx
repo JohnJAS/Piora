@@ -229,7 +229,7 @@ function ModelNoticeBanner({ tone, title, body }: { tone: "error" | "warning"; t
         borderRadius: 6,
         background: `rgba(${color},0.07)`,
         color: `rgb(${color})`,
-        fontSize: "var(--font-xs)",
+        fontSize: "var(--text-xs)",
         lineHeight: 1.45,
       }}
     >
@@ -1149,7 +1149,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           <div style={{
             marginBottom: 8, padding: "5px 10px",
             background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)",
-            borderRadius: 6, fontSize: "var(--font-sm)", color: "rgba(180,130,0,0.9)",
+            borderRadius: 6, fontSize: "var(--text-sm)", color: "rgba(180,130,0,0.9)",
             display: "flex", alignItems: "center", gap: 6,
           }}>
             <AliIcon name="reload" size={11} />
@@ -1160,7 +1160,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           <div style={{
             marginBottom: 8, padding: "5px 10px",
             background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.24)",
-            borderRadius: 6, fontSize: "var(--font-sm)", color: "rgba(5,150,105,0.95)",
+            borderRadius: 6, fontSize: "var(--text-sm)", color: "rgba(5,150,105,0.95)",
             display: "flex", alignItems: "center", gap: 6,
           }}>
             <AliIcon name="check" size={11} />
@@ -1179,7 +1179,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               borderRadius: 6,
               color: "#ef4444",
               fontFamily: "var(--font-mono)",
-              fontSize: "var(--font-sm)",
+              fontSize: "var(--text-sm)",
               lineHeight: 1.5,
               whiteSpace: "pre-wrap",
               overflowWrap: "anywhere",
@@ -1227,11 +1227,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   display: "flex", alignItems: "center", gap: 6,
                   maxWidth: 260, padding: "4px 6px 4px 8px",
                   background: "var(--bg-panel)", border: "1px solid var(--border)",
-                  borderRadius: 6, fontSize: "var(--font-xs)", color: "var(--text-muted)",
+                  borderRadius: 6, fontSize: "var(--text-xs)", color: "var(--text-muted)",
                 }}
               >
                 <AliIcon name="file" size={12} />
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: "var(--font-2xs-plus)" }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>
                   {file.name}
                 </span>
                 <button
@@ -1310,11 +1310,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         color: "var(--text)",
                         cursor: "pointer",
                         textAlign: "left",
-                        fontSize: "var(--font-sm-plus)",
+                        fontSize: "var(--text-sm)",
                         lineHeight: 1.45,
                       }}
                     >
-                      <span style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: "var(--font-xs)", color: "var(--text-dim)", paddingTop: 1 }}>
+                      <span style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-dim)", paddingTop: 1 }}>
                         {index + 1}
                       </span>
                       <span style={{ minWidth: 0, display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, overflow: "hidden", overflowWrap: "anywhere" }}>
@@ -1350,7 +1350,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   alignItems: "center",
                   justifyContent: "space-between",
                   gap: 8,
-                  fontSize: "var(--font-xs)",
+                  fontSize: "var(--text-xs)",
                   color: "var(--text-dim)",
                 }}
               >
@@ -1359,7 +1359,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
               <div style={{ maxHeight: "calc(min(56vh, 460px) - 34px)", overflowY: "auto", padding: 10 }}>
                 {!slashCommandsLoading && filteredSlashCommands.length === 0 ? (
-                  <div style={{ padding: "2px 2px 4px", fontSize: "var(--font-sm)", color: "var(--text-dim)" }}>
+                  <div style={{ padding: "2px 2px 4px", fontSize: "var(--text-sm)", color: "var(--text-dim)" }}>
                      {t("chat.noCommands")}
                   </div>
                 ) : (
@@ -1377,7 +1377,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           padding: "4px 0 6px",
                           background: "var(--bg)",
                           color: "var(--text-dim)",
-                          fontSize: "var(--font-2xs)",
+                          fontSize: "var(--text-xs)",
                           fontWeight: 600,
                           textTransform: "uppercase",
                         }}
@@ -1425,7 +1425,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                               }}
                             >
                               <span style={{
-                                fontSize: "var(--font-md)",
+                                fontSize: "var(--text-base)",
                                 fontFamily: "var(--font-mono)",
                                 overflowWrap: "anywhere",
                                 wordBreak: "break-word",
@@ -1438,7 +1438,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                   WebkitBoxOrient: "vertical",
                                   WebkitLineClamp: 2,
                                   overflow: "hidden",
-                                  fontSize: "var(--font-xs)",
+                                  fontSize: "var(--text-xs)",
                                   lineHeight: 1.35,
                                   color: "var(--text-dim)",
                                 }}>
@@ -1487,7 +1487,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     alignItems: "center",
                     justifyContent: "space-between",
                     gap: 8,
-                    fontSize: "var(--font-xs)",
+                    fontSize: "var(--text-xs)",
                     color: "var(--text-dim)",
                   }}
                 >
@@ -1500,7 +1500,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 </div>
                 <div style={{ maxHeight: "calc(min(48vh, 400px) - 34px)", overflowY: "auto", padding: 4 }}>
                   {!indexLoading && atMatches.length === 0 ? (
-                    <div style={{ padding: "6px 8px", fontSize: "var(--font-sm)", color: "var(--text-dim)" }}>
+                    <div style={{ padding: "6px 8px", fontSize: "var(--text-sm)", color: "var(--text-dim)" }}>
                        {needsServerSearch && !serverResultInUse ? t("chat.searching") : t("chat.noMatchingFiles")}
                     </div>
                   ) : (
@@ -1532,7 +1532,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             color: "var(--text)",
                             cursor: "pointer",
                             textAlign: "left",
-                            fontSize: "var(--font-sm-plus)",
+                            fontSize: "var(--text-sm)",
                             fontFamily: "var(--font-mono)",
                           }}
                         >
@@ -1730,7 +1730,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       borderRadius: 8,
                       color: modelDropdownOpen ? "var(--text)" : "var(--text-muted)",
                       cursor: isStreaming ? "not-allowed" : "pointer",
-                      fontSize: "var(--font-xs-plus)",
+                      fontSize: "var(--text-xs)",
                       opacity: isStreaming ? 0.5 : 1,
                       transition: "background 0.12s, color 0.12s, border-color 0.12s",
                     }}
@@ -1793,7 +1793,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             style={{
                               width: "100%",
                               minWidth: isMobile ? 0 : 220,
-                              fontSize: "var(--font-xs)",
+                              fontSize: "var(--text-xs)",
                               fontFamily: "var(--font-mono)",
                               padding: "5px 8px",
                               border: "1px solid var(--border)",
@@ -1808,7 +1808,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       )}
                       <div style={{ minHeight: 0, overflowY: "auto" }}>
                         {modelsByProvider.length === 0 ? (
-                          <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: "var(--font-sm)", whiteSpace: "nowrap" }}>
+                          <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: "var(--text-sm)", whiteSpace: "nowrap" }}>
                             {modelFilter.trim() ? t("chat.noMatchingModels") : "No available models"}
                           </div>
                         ) : modelsByProvider.map((group, gi) => (
@@ -1816,7 +1816,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             {(modelsByProvider.length > 1) && (
                               <div style={{
                                 padding: "6px 12px 4px",
-                                fontSize: "var(--font-2xs)", fontWeight: 600, color: "var(--text-dim)",
+                                fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--text-dim)",
                                 textTransform: "uppercase", letterSpacing: "0.07em",
                                 borderTop: gi > 0 ? "1px solid var(--border)" : "none",
                               }}>
@@ -1839,7 +1839,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                     background: isActive ? "var(--bg-selected)" : "none",
                                     border: "none",
                                     color: isActive ? "var(--text)" : "var(--text-muted)",
-                                    cursor: "pointer", fontSize: "var(--font-sm)", textAlign: "left",
+                                    cursor: "pointer", fontSize: "var(--text-sm)", textAlign: "left",
                                     fontWeight: isActive ? 600 : 400,
                                     whiteSpace: "nowrap",
                                   }}
@@ -1868,7 +1868,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           <div style={{ borderTop: "1px solid var(--border)", paddingBottom: 4 }}>
                             <div style={{
                               padding: "6px 12px 4px",
-                              fontSize: "var(--font-2xs)", fontWeight: 600, color: "var(--text-dim)",
+                              fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--text-dim)",
                               textTransform: "uppercase", letterSpacing: "0.07em",
                             }}>
                               {t("chat.reasoningEffort")}
@@ -1893,7 +1893,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                     background: isActive ? "var(--bg-selected)" : "none",
                                     border: "none",
                                     color: isActive ? "var(--text)" : "var(--text-muted)",
-                                    cursor: "pointer", fontSize: "var(--font-sm)", textAlign: "left",
+                                    cursor: "pointer", fontSize: "var(--text-sm)", textAlign: "left",
                                     fontWeight: isActive ? 600 : 400,
                                     whiteSpace: "nowrap",
                                   }}
@@ -1905,9 +1905,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                     : <span style={{ width: 10, flexShrink: 0 }} />}
                                   <span style={{ flex: 1 }}>
                                     {displayLabel}
-                                    {showOriginal && <span style={{ fontSize: "var(--font-2xs)", color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginLeft: 5 }}>({lvl})</span>}
+                                    {showOriginal && <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginLeft: 5 }}>({lvl})</span>}
                                   </span>
-                                  <span style={{ fontSize: "var(--font-xs)", color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
+                                  <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
                                 </button>
                               );
                             })}
@@ -1926,7 +1926,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                 background: "none", border: "none",
                                 color: isCompacting ? "#ef4444" : "var(--text-muted)",
                                 cursor: (isStreaming && !isCompacting) ? "not-allowed" : "pointer",
-                                fontSize: "var(--font-sm)", textAlign: "left",
+                                fontSize: "var(--text-sm)", textAlign: "left",
                               }}
                               onMouseEnter={(e) => {
                                 e.currentTarget.style.background = "var(--bg-hover)";

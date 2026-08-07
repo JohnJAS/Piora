@@ -70,10 +70,10 @@ export function AppearanceLooks() {
   return (
     <section aria-labelledby={titleId} style={{ paddingBottom: 16 }}>
       <div style={{ marginBottom: 9 }}>
-        <h3 id={titleId} style={{ margin: 0, fontSize: "var(--font-sm)", fontWeight: 700 }}>
+        <h3 id={titleId} style={{ margin: 0, fontSize: "var(--text-sm)", fontWeight: 700 }}>
           {t("appearance.looks")}
         </h3>
-        <p style={{ margin: "2px 0 0", color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>
+        <p style={{ margin: "2px 0 0", color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>
           {t("appearance.looksHint")}
         </p>
       </div>
@@ -147,10 +147,10 @@ export function AppearanceLooks() {
                 )}
               </span>
               <span style={{ minWidth: 0, padding: "0 2px 2px" }}>
-                <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--font-xs)", fontWeight: 650 }}>
+                <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--text-xs)", fontWeight: 650 }}>
                   {t(look.nameKey)}
                 </span>
-                <span style={{ display: "block", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>
+                <span style={{ display: "block", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>
                   {t(look.descriptionKey)}
                 </span>
               </span>

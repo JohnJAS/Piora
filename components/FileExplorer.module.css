@@ -34,7 +34,7 @@
   outline: 0;
   background: transparent;
   color: var(--text);
-  font-size: var(--font-sm);
+  font-size: var(--text-sm);
 }
 
 .filterInput::placeholder { color: var(--text-dim); }
@@ -60,7 +60,7 @@
 
 .searchResult {
   display: flex;
-  min-height: max(30px, calc(var(--font-sm) + 14px));
+  min-height: max(30px, calc(var(--text-sm) + 14px));
   align-items: center;
   gap: 7px;
   margin: 1px 4px;
@@ -85,9 +85,9 @@
   white-space: nowrap;
 }
 
-.searchResultName { color: var(--text); font-size: var(--font-sm); }
-.searchResultPath { margin-top: 1px; color: var(--text-dim); font-size: var(--font-2xs); }
-.searchStatus { padding: 10px 12px; color: var(--text-dim); font-size: var(--font-xs); }
+.searchResultName { color: var(--text); font-size: var(--text-sm); }
+.searchResultPath { margin-top: 1px; color: var(--text-dim); font-size: var(--text-xs); }
+.searchStatus { padding: 10px 12px; color: var(--text-dim); font-size: var(--text-xs); }
 
 .contextMenu {
   position: fixed;
@@ -115,7 +115,7 @@
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: var(--font-sm);
+  font-size: var(--text-sm);
   text-align: left;
   cursor: default;
 }

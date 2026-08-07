@@ -1282,7 +1282,7 @@ export function AppShell() {
                 color: "#d97706",
                 cursor: "pointer",
                 flexShrink: 0,
-                fontSize: "var(--font-xs)",
+                fontSize: "var(--text-xs)",
                 whiteSpace: "nowrap",
               }}
             >
@@ -1313,7 +1313,7 @@ export function AppShell() {
                   cursor: selectedSession ? "pointer" : "not-allowed",
                   opacity: selectedSession ? 1 : 0.45,
                   flexShrink: 0,
-                  fontSize: "var(--font-xs)",
+                  fontSize: "var(--text-xs)",
                   whiteSpace: "nowrap",
                   transition: "color 0.1s, background 0.1s, opacity 0.1s",
                 }}
@@ -1753,7 +1753,7 @@ export function AppShell() {
                       compact = false,
                     ) => (
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: "var(--font-xs)", fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{title}</div>
+                          <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{title}</div>
                           <div style={{
                             display: "grid",
                             gridTemplateColumns: compact ? "max-content max-content" : "auto minmax(0, 1fr)",
@@ -1820,7 +1820,7 @@ export function AppShell() {
                     };
                     const sessionInfoSection = (
                       <div style={{ minWidth: 0 }}>
-                         <div style={{ fontSize: "var(--font-xs)", fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{translate("session.infoSection")}</div>
+                         <div style={{ fontSize: "var(--text-xs)", fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{translate("session.infoSection")}</div>
                         <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", columnGap: 12, rowGap: 8, alignItems: "start" }}>
                           {sessionRows.map((row) => (
                             <div key={`session-info:${row.label}`} style={{ display: "contents" }}>
@@ -1846,7 +1846,7 @@ export function AppShell() {
                           ? "1fr"
                           : "minmax(360px, 1.7fr) minmax(140px, 0.55fr) minmax(190px, 0.75fr)",
                         gap: isMobile ? 16 : 24,
-                        fontSize: "var(--font-sm)",
+                        fontSize: "var(--text-sm)",
                         lineHeight: 1.5,
                         fontFamily: "var(--font-mono)",
                       }}>
@@ -1856,7 +1856,7 @@ export function AppShell() {
                       </div>
                     );
                   })() : (
-                    <div style={{ fontSize: "var(--font-sm)", color: "var(--text-muted)", fontStyle: "italic" }}>
+                    <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", fontStyle: "italic" }}>
                        {translate("session.load")}
                     </div>
                   )}
@@ -1896,8 +1896,8 @@ export function AppShell() {
                 role="status"
                 style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
               >
-                 <div style={{ fontSize: "var(--font-base)", color: "var(--text)" }}>{translate("workspace.opening")}</div>
-                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: "var(--font-sm)" }}>
+                 <div style={{ fontSize: "var(--text-base)", color: "var(--text)" }}>{translate("workspace.opening")}</div>
+                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
                   {initialNavigation.requestedCwd}
                 </div>
               </div>
@@ -1906,15 +1906,15 @@ export function AppShell() {
                 role="alert"
                 style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, color: "var(--text-muted)", textAlign: "center" }}
               >
-                 <div style={{ fontSize: "var(--font-base)", color: "#dc2626" }}>{translate("workspace.unable")}</div>
-                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: "var(--font-sm)" }}>
+                 <div style={{ fontSize: "var(--text-base)", color: "#dc2626" }}>{translate("workspace.unable")}</div>
+                <div style={{ maxWidth: "min(720px, 100%)", overflowWrap: "anywhere", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }}>
                   {initialNavigation.requestedCwd}
                 </div>
-                <div style={{ maxWidth: 720, fontSize: "var(--font-sm)" }}>{initialCwdError}</div>
+                <div style={{ maxWidth: 720, fontSize: "var(--text-sm)" }}>{initialCwdError}</div>
               </div>
             ) : showPlaceholder ? (
               activeCwd ? (
-                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "var(--font-lg)" }}>
+                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "var(--text-md)" }}>
                    {translate("workspace.selectSession")}
                 </div>
               ) : (
@@ -1978,7 +1978,7 @@ export function AppShell() {
         } as React.CSSProperties}
       >
         {/* Right panel tab bar */}
-        <div className="right-panel-tabs" style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", minHeight: "max(40px, calc(var(--font-sm) + 28px))" }}>
+        <div className="right-panel-tabs" style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", minHeight: "max(40px, calc(var(--text-sm) + 28px))" }}>
           <div style={{ flex: 1, overflow: "hidden" }}>
             <TabBar
               tabs={fileTabs}
@@ -2026,7 +2026,7 @@ export function AppShell() {
               );
             })
           ) : (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: "var(--font-sm)" }}>
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: "var(--text-sm)" }}>
                {translate("files.noneOpen")}
             </div>
           )}
@@ -2082,10 +2082,10 @@ export function AppShell() {
         >
           <div className="app-shell-dialog-header" style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <h2 id="appearance-dialog-title" style={{ margin: 0, fontSize: "var(--font-xl)", fontWeight: 650, letterSpacing: "-0.015em" }}>
+              <h2 id="appearance-dialog-title" style={{ margin: 0, fontSize: "var(--text-md)", fontWeight: 650, letterSpacing: "-0.015em" }}>
                 {translate("appearance.title")}
               </h2>
-              <p id="appearance-dialog-description" style={{ margin: "3px 0 0", color: "var(--text-muted)", fontSize: "var(--font-xs)" }}>
+              <p id="appearance-dialog-description" style={{ margin: "3px 0 0", color: "var(--text-muted)", fontSize: "var(--text-xs)" }}>
                 {translate("appearance.description")}
               </p>
             </div>
@@ -2116,10 +2116,10 @@ export function AppShell() {
             <AppearanceLooks />
             <section aria-labelledby="appearance-theme-title" style={{ paddingBottom: 16 }}>
               <div style={{ marginBottom: 9 }}>
-                <h3 id="appearance-theme-title" style={{ margin: 0, fontSize: "var(--font-sm)", fontWeight: 700 }}>
+                <h3 id="appearance-theme-title" style={{ margin: 0, fontSize: "var(--text-sm)", fontWeight: 700 }}>
                   {translate("appearance.theme")}
                 </h3>
-                <p style={{ margin: "2px 0 0", color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>
+                <p style={{ margin: "2px 0 0", color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>
                   {translate("appearance.themeHint")}
                 </p>
               </div>
@@ -2150,7 +2150,7 @@ export function AppShell() {
                     color: "var(--text-muted)",
                     cursor: "pointer",
                     textAlign: "left",
-                    fontSize: "var(--font-xs)",
+                    fontSize: "var(--text-xs)",
                   }}
                 >
                   <AliIcon name={moreThemesOpen ? "arrowdown" : "arrowright"} size={12} />
@@ -2258,7 +2258,7 @@ function ThemeOption({ preset, theme, onSelect, translate }: ThemeOptionProps) {
         color: "var(--text)",
         cursor: "pointer",
         textAlign: "left",
-        fontSize: "var(--font-xs)",
+        fontSize: "var(--text-xs)",
         transition: "border-color 0.12s, background 0.12s",
       }}
     >

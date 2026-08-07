@@ -45,7 +45,7 @@ export function ExtensionStatusBar({ statuses }: { statuses: ExtensionStatusItem
           overflow: "hidden",
           color: "var(--text-muted)",
           fontFamily: "var(--font-mono)",
-          fontSize: "var(--font-xs)",
+          fontSize: "var(--text-xs)",
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
         }}

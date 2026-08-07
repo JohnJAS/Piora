@@ -958,7 +958,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                   border: "1px solid var(--border)",
                   borderRadius: 7,
                   cursor: "pointer",
-                  fontSize: "var(--font-xs)",
+                  fontSize: "var(--text-xs)",
                   lineHeight: 1.35,
                   color: "var(--text-muted)",
                   textAlign: "left",
@@ -970,10 +970,10 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                   style={{ flex: 1, fontFamily: "var(--font-mono)", color: "var(--text)" }}
                 />
                 {currentWt?.isMain && (
-                   <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>{t("sidebar.main")}</span>
+                   <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>{t("sidebar.main")}</span>
                 )}
                 {worktreeState.worktrees.length > 1 && (
-                  <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>
+                  <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>
                     {worktreeState.worktrees.length}
                   </span>
                 )}
@@ -1010,7 +1010,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                         autoFocus
                         style={{
                           width: "100%",
-                          fontSize: "var(--font-xs)",
+                          fontSize: "var(--text-xs)",
                           fontFamily: "var(--font-mono)",
                           padding: "5px 8px",
                           border: "1px solid var(--border)",
@@ -1029,19 +1029,19 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                       if (wtConfirmRemove === wt.path) {
                         return (
                           <div key={wt.path} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderBottom: "1px solid var(--border)", background: "rgba(239,68,68,0.06)" }}>
-                            <span style={{ flex: 1, fontSize: "var(--font-xs)", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <span style={{ flex: 1, fontSize: "var(--text-xs)", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {t("sidebar.forceRemoveCheckout")}
                             </span>
                             <button
                               onClick={() => void handleRemoveWorktree(wt.path, true)}
                               disabled={wtBusy}
-                              style={{ padding: "3px 9px", background: "#ef4444", border: "none", borderRadius: 5, color: "#fff", fontSize: "var(--font-xs)", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
+                              style={{ padding: "3px 9px", background: "#ef4444", border: "none", borderRadius: 5, color: "#fff", fontSize: "var(--text-xs)", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
                             >
                               {t("sidebar.force")}
                             </button>
                             <button
                               onClick={() => setWtConfirmRemove(null)}
-                              style={{ padding: "3px 9px", background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-muted)", fontSize: "var(--font-xs)", cursor: "pointer", flexShrink: 0 }}
+                              style={{ padding: "3px 9px", background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-muted)", fontSize: "var(--text-xs)", cursor: "pointer", flexShrink: 0 }}
                             >
                               {t("sidebar.cancel")}
                             </button>
@@ -1074,7 +1074,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                               color: isCurrent ? "var(--text)" : "var(--text-muted)",
                               cursor: "pointer",
                               textAlign: "left",
-                              fontSize: "var(--font-xs)",
+                              fontSize: "var(--text-xs)",
                               fontFamily: "var(--font-mono)",
                             }}
                           >
@@ -1084,7 +1084,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                               <span style={{ width: 10, flexShrink: 0 }} />
                             )}
                             <PathLabel text={wt.branch ?? displayCwd(wt.path, homeDir)} style={{ flex: 1 }} />
-                            {wt.isMain && <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>{t("sidebar.main")}</span>}
+                            {wt.isMain && <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>{t("sidebar.main")}</span>}
                           </button>
                           {!wt.isMain && (
                             <button
@@ -1109,7 +1109,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                       );
                     })}
                     {showWtFilter && visibleWorktrees.length === 0 && wtFilter.trim() && (
-                      <div style={{ padding: "8px 10px", fontSize: "var(--font-xs)", color: "var(--text-dim)" }}>{t("sidebar.noMatchingWorktrees")}</div>
+                      <div style={{ padding: "8px 10px", fontSize: "var(--text-xs)", color: "var(--text-dim)" }}>{t("sidebar.noMatchingWorktrees")}</div>
                     )}
                   </div>
 
@@ -1133,7 +1133,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                         color: "var(--text-muted)",
                         cursor: "pointer",
                         textAlign: "left",
-                        fontSize: "var(--font-xs)",
+                        fontSize: "var(--text-xs)",
                       }}
                     >
                       <AliIcon name="plus" size={10} />
@@ -1162,7 +1162,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                          placeholder={t("sidebar.branchName")}
                         style={{
                           width: "100%",
-                          fontSize: "var(--font-xs)",
+                          fontSize: "var(--text-xs)",
                           fontFamily: "var(--font-mono)",
                           padding: "5px 8px",
                           border: "1px solid var(--accent)",
@@ -1184,7 +1184,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                             border: "none",
                             borderRadius: 5,
                             color: "#fff",
-                            fontSize: "var(--font-xs)",
+                            fontSize: "var(--text-xs)",
                             fontWeight: 600,
                             cursor: wtBusy || !wtNewBranch.trim() ? "not-allowed" : "pointer",
                             opacity: wtBusy || !wtNewBranch.trim() ? 0.65 : 1,
@@ -1201,7 +1201,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                             border: "1px solid var(--border)",
                             borderRadius: 5,
                             color: "var(--text-muted)",
-                            fontSize: "var(--font-xs)",
+                            fontSize: "var(--text-xs)",
                             cursor: "pointer",
                           }}
                         >
@@ -1214,7 +1214,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                     <div style={{
                       padding: "5px 10px 8px",
                       color: "#dc2626",
-                      fontSize: "var(--font-xs)",
+                      fontSize: "var(--text-xs)",
                       lineHeight: 1.35,
                       overflowWrap: "anywhere",
                     }}>
@@ -1259,17 +1259,17 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
           </div>
         )}
         {loading && (
-          <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: "var(--font-sm)" }}>
+          <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>
             {t("sidebar.loading")}
           </div>
         )}
         {error && (
-          <div style={{ padding: "12px 14px", color: "#f87171", fontSize: "var(--font-sm)" }}>
+          <div style={{ padding: "12px 14px", color: "#f87171", fontSize: "var(--text-sm)" }}>
             {error}
           </div>
         )}
         {!loading && !error && projectGroups.length === 0 && (
-          <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: "var(--font-sm)" }}>
+          <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>
             {t("sidebar.noSessions")}
           </div>
         )}
@@ -1349,7 +1349,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
                 border: "none",
                 color: "var(--text-muted)",
                 cursor: "pointer",
-                fontSize: "var(--font-xs)",
+                fontSize: "var(--text-xs)",
                 fontWeight: 600,
                 letterSpacing: "0.05em",
                 textTransform: "uppercase",
@@ -1542,7 +1542,7 @@ function ProjectSessionGroup({
       {projectOpen && (
         <div className={styles.sessionList}>
           {group.tree.length === 0 && (
-            <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: "var(--font-xs)" }}>
+            <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>
               {t("sidebar.noSessionsInProject")}
             </div>
           )}
@@ -1573,7 +1573,7 @@ function ProjectSessionGroup({
                 color: "var(--text-dim)",
                 cursor: "pointer",
                 textAlign: "left",
-                fontSize: "var(--font-2xs-plus)",
+                fontSize: "var(--text-xs)",
               }}
             >
               {sessionsExpanded
@@ -1938,7 +1938,7 @@ function SessionItem({
   }, []);
 
   // Fixed-height outer wrapper — content swaps in place so the list never reflows
-  const ITEM_HEIGHT = "max(31px, calc(var(--font-sm) + 16px))";
+  const ITEM_HEIGHT = "max(31px, calc(var(--text-sm) + 16px))";
 
   return (
     <div
@@ -1971,7 +1971,7 @@ function SessionItem({
       {confirmDelete ? (
         /* ── Delete confirmation: same height, two flat buttons ── */
         <>
-          <div style={{ flex: 1, minWidth: 0, fontSize: "var(--font-sm)", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ flex: 1, minWidth: 0, fontSize: "var(--text-sm)", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {t("sidebar.deleteSession", { title: title.slice(0, 22) + (title.length > 22 ? "…" : "") })}
           </div>
           <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
@@ -1979,10 +1979,10 @@ function SessionItem({
               onClick={handleDeleteConfirm}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-                minHeight: "max(26px, calc(var(--font-sm) + 14px))", padding: "0 8px",
+                minHeight: "max(26px, calc(var(--text-sm) + 14px))", padding: "0 8px",
                 background: "#ef4444", border: "none",
                 borderRadius: 6, color: "#fff",
-                cursor: "pointer", fontSize: "var(--font-sm)", fontWeight: 600,
+                cursor: "pointer", fontSize: "var(--text-sm)", fontWeight: 600,
                 whiteSpace: "nowrap",
               }}
             >
@@ -1993,10 +1993,10 @@ function SessionItem({
               onClick={handleDeleteCancel}
               style={{
                 display: "flex", alignItems: "center", justifyContent: "center",
-                minHeight: "max(26px, calc(var(--font-sm) + 14px))", padding: "0 8px",
+                minHeight: "max(26px, calc(var(--text-sm) + 14px))", padding: "0 8px",
                 background: "var(--bg)", border: "1px solid var(--border)",
                 borderRadius: 6, color: "var(--text-muted)",
-                cursor: "pointer", fontSize: "var(--font-sm)", fontWeight: 500,
+                cursor: "pointer", fontSize: "var(--text-sm)", fontWeight: 500,
                 whiteSpace: "nowrap",
               }}
             >
@@ -2018,14 +2018,14 @@ function SessionItem({
           autoFocus
           style={{
             flex: 1,
-            fontSize: "var(--font-sm)",
+            fontSize: "var(--text-sm)",
             padding: "5px 8px",
             border: "1px solid var(--accent)",
             borderRadius: 5,
             outline: "none",
             background: "var(--bg)",
             color: "var(--text)",
-            minHeight: "max(28px, calc(var(--font-sm) + 16px))",
+            minHeight: "max(28px, calc(var(--text-sm) + 16px))",
           }}
         />
       ) : (
@@ -2042,7 +2042,7 @@ function SessionItem({
                 alignItems: "center",
                 gap: 5,
                 minWidth: 0,
-                fontSize: "var(--font-sm)",
+                fontSize: "var(--text-sm)",
                 fontWeight: isSelected ? 500 : 400,
                 lineHeight: 1.4,
                 color: "var(--text)",

@@ -128,7 +128,7 @@ function SkillDetail({
       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
         <span
           style={{
-            fontSize: "var(--font-2xs)",
+            fontSize: "var(--text-xs)",
             padding: "1px 5px",
             borderRadius: 3,
             flexShrink: 0,
@@ -145,7 +145,7 @@ function SkillDetail({
         <span
           style={{
             fontFamily: "var(--font-mono)",
-            fontSize: "var(--font-xs)",
+            fontSize: "var(--text-xs)",
             color: "var(--text-dim)",
             flex: 1,
             overflow: "hidden",
@@ -161,7 +161,7 @@ function SkillDetail({
           onToggle={() => onToggle(skill)}
         />
         {saveError && (
-          <span style={{ fontSize: "var(--font-sm)", color: "#f87171", flexShrink: 0 }}>
+          <span style={{ fontSize: "var(--text-sm)", color: "#f87171", flexShrink: 0 }}>
             {saveError}
           </span>
         )}
@@ -170,7 +170,7 @@ function SkillDetail({
       {skill.install?.skillsShUrl && (
         <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
           <span
-            style={{ fontSize: "var(--font-sm)", color: "var(--text-muted)", fontWeight: 500 }}
+            style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", fontWeight: 500 }}
           >
             Source
           </span>
@@ -192,7 +192,7 @@ function SkillDetail({
             <span
               style={{
                 fontFamily: "var(--font-mono)",
-                fontSize: "var(--font-sm)",
+                fontSize: "var(--text-sm)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
@@ -208,7 +208,7 @@ function SkillDetail({
       {skill.install && (
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
           <span
-            style={{ fontSize: "var(--font-sm)", color: "var(--text-muted)", fontWeight: 500 }}
+            style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", fontWeight: 500 }}
           >
             Version
           </span>
@@ -223,7 +223,7 @@ function SkillDetail({
             <span
               style={{
                 fontFamily: "var(--font-mono)",
-                fontSize: "var(--font-sm)",
+                fontSize: "var(--text-sm)",
                 color: "var(--text-muted)",
               }}
             >
@@ -241,7 +241,7 @@ function SkillDetail({
                   color: "var(--text-muted)",
                   cursor: checkingUpdate || updating ? "not-allowed" : "pointer",
                   opacity: checkingUpdate || updating ? 0.5 : 1,
-                  fontSize: "var(--font-xs)",
+                  fontSize: "var(--text-xs)",
                 }}
               >
                  {t("i18n.check")}
@@ -251,7 +251,7 @@ function SkillDetail({
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontSize: "var(--font-sm)",
+                  fontSize: "var(--text-sm)",
                   color: "#d97706",
                 }}
               >
@@ -262,7 +262,7 @@ function SkillDetail({
               (updateStatus && updateStatus.state !== "update-available")) && (
               <span
                 style={{
-                  fontSize: "var(--font-sm)",
+                  fontSize: "var(--text-sm)",
                   color: checkingUpdate
                     ? "var(--accent)"
                     : updateStatus?.state === "up-to-date"
@@ -293,7 +293,7 @@ function SkillDetail({
                   color: "#fff",
                   cursor: updating || checkingUpdate ? "not-allowed" : "pointer",
                   opacity: updating || checkingUpdate ? 0.5 : 1,
-                  fontSize: "var(--font-xs)",
+                  fontSize: "var(--text-xs)",
                   fontWeight: 600,
                 }}
               >
@@ -302,21 +302,21 @@ function SkillDetail({
             )}
           </div>
           {updateError && (
-            <span style={{ fontSize: "var(--font-sm)", color: "#ef4444" }}>{updateError}</span>
+            <span style={{ fontSize: "var(--text-sm)", color: "#ef4444" }}>{updateError}</span>
           )}
         </div>
       )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span
-          style={{ fontSize: "var(--font-sm)", color: "var(--text-muted)", fontWeight: 500 }}
+          style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", fontWeight: 500 }}
         >
           Name
         </span>
         <span
           style={{
             fontFamily: "var(--font-mono)",
-            fontSize: "var(--font-base)",
+            fontSize: "var(--text-base)",
             color: "var(--text)",
           }}
         >
@@ -326,12 +326,12 @@ function SkillDetail({
 
       <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         <span
-          style={{ fontSize: "var(--font-sm)", color: "var(--text-muted)", fontWeight: 500 }}
+          style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", fontWeight: 500 }}
         >
           Description
         </span>
         <span
-          style={{ fontSize: "var(--font-base)", color: "var(--text-muted)", lineHeight: 1.6 }}
+          style={{ fontSize: "var(--text-base)", color: "var(--text-muted)", lineHeight: 1.6 }}
         >
           {skill.description}
         </span>
@@ -440,7 +440,7 @@ function AddSkillPanel({
           marginBottom: 20,
         }}
       >
-        <div style={{ fontSize: "var(--font-base)", fontWeight: 600, color: "var(--text)" }}>
+        <div style={{ fontSize: "var(--text-base)", fontWeight: 600, color: "var(--text)" }}>
            {t("i18n.addSkill")}
         </div>
 
@@ -457,7 +457,7 @@ function AddSkillPanel({
             style={{
               flex: 1,
               padding: "7px 10px",
-              fontSize: "var(--font-md)",
+              fontSize: "var(--text-base)",
               background: "var(--bg-panel)",
               border: "1px solid var(--border)",
               borderRadius: 6,
@@ -470,7 +470,7 @@ function AddSkillPanel({
             disabled={searching || !query.trim()}
             style={{
               padding: "7px 16px",
-              fontSize: "var(--font-md)",
+              fontSize: "var(--text-base)",
               borderRadius: 6,
               border: "none",
               background: "var(--accent)",
@@ -492,7 +492,7 @@ function AddSkillPanel({
               borderRadius: 5,
               border: "1px solid var(--border)",
               overflow: "hidden",
-              fontSize: "var(--font-sm)",
+              fontSize: "var(--text-sm)",
               flexShrink: 0,
             }}
           >
@@ -525,7 +525,7 @@ function AddSkillPanel({
               display: "inline-flex",
               alignItems: "center",
               gap: 5,
-              fontSize: "var(--font-sm)",
+              fontSize: "var(--text-sm)",
               color: "var(--text-dim)",
               fontFamily: "var(--font-mono)",
               overflow: "hidden",
@@ -540,11 +540,11 @@ function AddSkillPanel({
 
         {/* Errors */}
         {searchError && (
-          <div style={{ fontSize: "var(--font-sm)", color: "#f87171" }}>{searchError}</div>
+          <div style={{ fontSize: "var(--text-sm)", color: "#f87171" }}>{searchError}</div>
         )}
         {installError && (
           <div
-            style={{ fontSize: "var(--font-sm)", color: "#f87171", wordBreak: "break-word" }}
+            style={{ fontSize: "var(--text-sm)", color: "#f87171", wordBreak: "break-word" }}
           >
             {installError}
           </div>
@@ -578,7 +578,7 @@ function AddSkillPanel({
                   {/* skill name prominent */}
                   <div
                     style={{
-                      fontSize: "var(--font-md)",
+                      fontSize: "var(--text-base)",
                       fontWeight: 600,
                       color: "var(--text)",
                       marginBottom: 3,
@@ -598,7 +598,7 @@ function AddSkillPanel({
                     <span
                       style={{
                         fontFamily: "var(--font-mono)",
-                        fontSize: "var(--font-xs)",
+                        fontSize: "var(--text-xs)",
                         color: "var(--text-dim)",
                       }}
                     >
@@ -606,7 +606,7 @@ function AddSkillPanel({
                     </span>
                     <span
                       style={{
-                        fontSize: "var(--font-sm)",
+                        fontSize: "var(--text-sm)",
                         color: "var(--text-muted)",
                         fontWeight: 500,
                       }}
@@ -622,7 +622,7 @@ function AddSkillPanel({
                           display: "inline-flex",
                           alignItems: "center",
                           gap: 4,
-                          fontSize: "var(--font-sm)",
+                          fontSize: "var(--text-sm)",
                           color: "var(--accent)",
                           textDecoration: "none",
                         }}
@@ -644,7 +644,7 @@ function AddSkillPanel({
                     gap: 5,
                     flexShrink: 0,
                     padding: "5px 14px",
-                    fontSize: "var(--font-sm)",
+                    fontSize: "var(--text-sm)",
                     fontWeight: 500,
                     borderRadius: 5,
                     border: "1px solid var(--border)",
@@ -675,7 +675,7 @@ function AddSkillPanel({
         !searchError &&
         !searching && (
           <div
-            style={{ fontSize: "var(--font-md)", color: "var(--text-dim)", lineHeight: 1.8 }}
+            style={{ fontSize: "var(--text-base)", color: "var(--text-dim)", lineHeight: 1.8 }}
           >
             Search{" "}
             <a
@@ -915,13 +915,13 @@ export function SkillsConfig({
         >
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
             <span
-              style={{ fontSize: "var(--font-lg)", fontWeight: 700, color: "var(--text)" }}
+              style={{ fontSize: "var(--text-md)", fontWeight: 700, color: "var(--text)" }}
             >
                {t("common.skills")}
             </span>
             <code
               style={{
-                fontSize: "var(--font-xs)",
+                fontSize: "var(--text-xs)",
                 color: "var(--text-muted)",
                 fontFamily: "var(--font-mono)",
                 maxWidth: 320,
@@ -963,7 +963,7 @@ export function SkillsConfig({
               borderBottom: "1px solid var(--border)",
               background: "var(--bg-panel)",
               color: "var(--text-muted)",
-              fontSize: "var(--font-sm)",
+              fontSize: "var(--text-sm)",
             }}
           >
             {t("trust.skillsNotLoaded")}
@@ -990,7 +990,7 @@ export function SkillsConfig({
                 <div
                   style={{
                     padding: "10px 8px",
-                    fontSize: "var(--font-sm)",
+                    fontSize: "var(--text-sm)",
                     color: "var(--text-muted)",
                   }}
                 >
@@ -1000,7 +1000,7 @@ export function SkillsConfig({
                 <div
                   style={{
                     padding: "10px 8px",
-                    fontSize: "var(--font-xs)",
+                    fontSize: "var(--text-xs)",
                     color: "#f87171",
                   }}
                 >
@@ -1010,7 +1010,7 @@ export function SkillsConfig({
                 <div
                   style={{
                     padding: "10px 8px",
-                    fontSize: "var(--font-xs)",
+                    fontSize: "var(--text-xs)",
                     color: "var(--text-dim)",
                   }}
                 >
@@ -1060,7 +1060,7 @@ export function SkillsConfig({
                         <div
                           style={{
                             padding: "4px 8px 3px",
-                            fontSize: "var(--font-2xs)",
+                            fontSize: "var(--text-xs)",
                             fontWeight: 600,
                             color: "var(--text-dim)",
                             textTransform: "uppercase",
@@ -1119,7 +1119,7 @@ export function SkillsConfig({
                               />
                               <span
                                 style={{
-                                  fontSize: "var(--font-sm)",
+                                  fontSize: "var(--text-sm)",
                                   fontWeight: isSelected ? 600 : 400,
                                   color: disabled
                                     ? "var(--text-dim)"
@@ -1142,7 +1142,7 @@ export function SkillsConfig({
                                      title={t("i18n.updateAvailable")}
                                     style={{
                                       color: "#d97706",
-                                      fontSize: "var(--font-md)",
+                                      fontSize: "var(--text-base)",
                                       lineHeight: 1,
                                       flexShrink: 0,
                                     }}
@@ -1179,7 +1179,7 @@ export function SkillsConfig({
                   cursor: "pointer",
                   background: addMode ? "var(--bg-selected)" : "none",
                   color: addMode ? "var(--accent)" : "var(--text-dim)",
-                  fontSize: "var(--font-sm)",
+                  fontSize: "var(--text-sm)",
                 }}
                 onMouseEnter={(e) => {
                   if (!addMode)
@@ -1248,7 +1248,7 @@ export function SkillsConfig({
                   alignItems: "center",
                   justifyContent: "center",
                   color: "var(--text-dim)",
-                  fontSize: "var(--font-md)",
+                  fontSize: "var(--text-base)",
                 }}
               >
                  {t("i18n.selectSkill")}
@@ -1284,7 +1284,7 @@ export function SkillsConfig({
                       ? "not-allowed"
                       : "pointer",
                   opacity: checkingAll || updatingSkill !== null ? 0.5 : 1,
-                  fontSize: "var(--font-sm)",
+                  fontSize: "var(--text-sm)",
                 }}
               >
                  {checkingAll ? t("i18n.checking") : t("i18n.checkUpdates")}
@@ -1293,7 +1293,7 @@ export function SkillsConfig({
             {Object.values(updateStatuses).filter(
               (status) => status.state === "update-available",
             ).length > 0 && (
-              <span style={{ fontSize: "var(--font-sm)", color: "#d97706" }}>
+              <span style={{ fontSize: "var(--text-sm)", color: "#d97706" }}>
                 {
                   Object.values(updateStatuses).filter(
                     (status) => status.state === "update-available",
@@ -1316,7 +1316,7 @@ export function SkillsConfig({
               borderRadius: 6,
               color: "var(--text-muted)",
               cursor: "pointer",
-              fontSize: "var(--font-md)",
+              fontSize: "var(--text-base)",
             }}
           >
              {t("i18n.close")}

@@ -56,10 +56,10 @@ export function FontSettings() {
     <section className="soft-settings-section" aria-labelledby={titleId} style={{ padding: "16px 0", borderTop: "1px solid var(--border)" }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 9 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <h3 id={titleId} style={{ margin: 0, fontSize: "var(--font-sm)", fontWeight: 700 }}>
+          <h3 id={titleId} style={{ margin: 0, fontSize: "var(--text-sm)", fontWeight: 700 }}>
             {t("appearance.font.title")}
           </h3>
-          <p style={{ margin: "2px 0 0", color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>
+          <p style={{ margin: "2px 0 0", color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>
             {t("appearance.font.hint")}
           </p>
         </div>
@@ -74,7 +74,7 @@ export function FontSettings() {
             background: "var(--bg)",
             color: "var(--text-muted)",
             cursor: "pointer",
-            fontSize: "var(--font-2xs)",
+            fontSize: "var(--text-xs)",
           }}
         >
           {t("appearance.font.reset")}
@@ -126,16 +126,16 @@ export function FontSettings() {
                   background: "var(--bg-panel)",
                   color: "var(--text)",
                   fontFamily: preset.previewFamily,
-                  fontSize: "var(--font-xl)",
+                  fontSize: "var(--text-md)",
                 }}
               >
                 Aa
               </span>
               <span style={{ minWidth: 0, flex: 1 }}>
-                <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: preset.previewFamily, fontSize: "var(--font-xs)", fontWeight: 600 }}>
+                <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: preset.previewFamily, fontSize: "var(--text-xs)", fontWeight: 600 }}>
                   {t(preset.nameKey)}
                 </span>
-                <span style={{ display: "block", marginTop: 2, color: unavailable ? "#b45309" : "var(--text-dim)", fontFamily: preset.previewFamily, fontSize: "var(--font-2xs)" }}>
+                <span style={{ display: "block", marginTop: 2, color: unavailable ? "#b45309" : "var(--text-dim)", fontFamily: preset.previewFamily, fontSize: "var(--text-xs)" }}>
                   {unavailable
                     ? t("appearance.font.unavailable")
                     : `${t("appearance.font.preview")} · ${t(`appearance.font.source.${preset.source}`)}`}
@@ -150,7 +150,7 @@ export function FontSettings() {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
-        <span id={sizeId} style={{ minWidth: 64, color: "var(--text-muted)", fontSize: "var(--font-2xs)" }}>
+        <span id={sizeId} style={{ minWidth: 64, color: "var(--text-muted)", fontSize: "var(--text-xs)" }}>
           {t("appearance.font.size")}
         </span>
         <div
@@ -177,7 +177,7 @@ export function FontSettings() {
                   background: selected ? "var(--bg-selected)" : "transparent",
                   color: selected ? "var(--text)" : "var(--text-muted)",
                   cursor: "pointer",
-                  fontSize: "var(--font-xs)",
+                  fontSize: "var(--text-xs)",
                   fontWeight: selected ? 650 : 500,
                 }}
               >
@@ -212,7 +212,7 @@ export function FontSettings() {
           />
           <span aria-hidden="true">px</span>
         </label>
-        <span style={{ color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>
+        <span style={{ color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>
           {t("appearance.font.sizeRange", { min: UI_FONT_SIZE_MIN, max: UI_FONT_SIZE_MAX })}
         </span>
       </div>

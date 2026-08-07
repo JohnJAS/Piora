@@ -120,7 +120,7 @@ const API_OPTIONS = ["openai-completions", "openai-responses", "anthropic-messag
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <label style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)", fontWeight: 500 }}>{label}</label>
+      <label style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", fontWeight: 500 }}>{label}</label>
       {children}
     </div>
   );
@@ -132,7 +132,7 @@ const inputStyle = {
   border: "1px solid var(--border)",
   borderRadius: 5,
   color: "var(--text)",
-  fontSize: "var(--font-sm)",
+  fontSize: "var(--text-sm)",
   outline: "none",
   width: "100%",
   boxSizing: "border-box" as const,
@@ -230,7 +230,7 @@ function Select({ value, onChange, options, required }: { value: string; onChang
 
 function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: "var(--font-sm)", color: "var(--text-muted)" }}>
+    <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
         style={{ width: 13, height: 13, accentColor: "var(--accent)", cursor: "pointer" }} />
       {label}
@@ -239,7 +239,7 @@ function Check({ label, checked, onChange }: { label: string; checked: boolean; 
 }
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <div style={{ fontSize: "var(--font-xs)", fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>{children}</div>;
+  return <div style={{ fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>{children}</div>;
 }
 
 // ── Provider detail ───────────────────────────────────────────────────────────
@@ -344,7 +344,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
         <button onClick={() => {
           if (window.confirm(t("models.deleteProviderConfirm", { name }))) onDelete();
         }}
-          style={{ padding: "3px 8px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: "#ef4444", cursor: "pointer", fontSize: "var(--font-xs)" }}>
+          style={{ padding: "3px 8px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: "#ef4444", cursor: "pointer", fontSize: "var(--text-xs)" }}>
            {t("i18n.delete")}
         </button>
       </div>
@@ -353,7 +353,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
         <TextInput value={editingName} onChange={setEditingName} placeholder="provider-name" mono />
         {editingName !== name && editingName.trim() && (
           <button onClick={() => onRename(editingName.trim())}
-            style={{ marginTop: 4, padding: "3px 10px", background: "var(--accent)", border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", fontSize: "var(--font-xs)", alignSelf: "flex-start" }}>
+            style={{ marginTop: 4, padding: "3px 10px", background: "var(--accent)", border: "none", borderRadius: 4, color: "#fff", cursor: "pointer", fontSize: "var(--text-xs)", alignSelf: "flex-start" }}>
              {t("i18n.rename")}
           </button>
         )}
@@ -367,7 +367,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
       <Field label="API Key">
         <SecretTextInput value={provider.apiKey ?? ""} onChange={(v) => set("apiKey", v || undefined)}
           placeholder="ENV_VAR_NAME, !shell-command, or literal key" mono />
-        <span style={{ fontSize: "var(--font-2xs)", color: "var(--text-dim)", marginTop: 2 }}>
+        <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", marginTop: 2 }}>
           Prefix with <code style={{ fontFamily: "var(--font-mono)" }}>!</code> to run a shell command, or use an env var name
         </span>
       </Field>
@@ -384,7 +384,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
             style={{
               alignSelf: "flex-start", height: 30, padding: "0 12px", border: "1px solid var(--border)", borderRadius: 5,
               background: "var(--bg-panel)", color: !provider.baseUrl?.trim() || discoveryState.phase === "loading" ? "var(--text-dim)" : "var(--text-muted)",
-              cursor: !provider.baseUrl?.trim() || discoveryState.phase === "loading" ? "not-allowed" : "pointer", fontSize: "var(--font-xs)",
+              cursor: !provider.baseUrl?.trim() || discoveryState.phase === "loading" ? "not-allowed" : "pointer", fontSize: "var(--text-xs)",
             }}
           >
             {discoveryState.phase === "loading" ? t("models.discoveryFetching") : t("models.discoveryFetch")}
@@ -392,7 +392,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
         )}
 
         {discoveryState.phase === "error" && (
-          <div style={{ padding: "7px 9px", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 5, color: "#ef4444", fontSize: "var(--font-xs)", lineHeight: 1.4 }}>
+          <div style={{ padding: "7px 9px", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 5, color: "#ef4444", fontSize: "var(--text-xs)", lineHeight: 1.4 }}>
             {discoveryState.message}
           </div>
         )}
@@ -413,7 +413,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
                   minHeight: 32, padding: "5px 9px", display: "flex", alignItems: "center", gap: 8,
                   position: "sticky", top: 0, zIndex: 1, borderBottom: "1px solid var(--border)",
                   background: "var(--bg)", cursor: selectableShownIds.length ? "pointer" : "default",
-                  color: "var(--text-muted)", fontSize: "var(--font-2xs)", fontWeight: 600,
+                  color: "var(--text-muted)", fontSize: "var(--text-xs)", fontWeight: 600,
                 }}
               >
                 <input
@@ -427,7 +427,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
                 {t("models.discoverySelectShown")}
               </label>
               {shownDiscoveredModels.length === 0 ? (
-                <div style={{ padding: 12, color: "var(--text-dim)", fontSize: "var(--font-xs)" }}>{t("models.discoveryNoMatches")}</div>
+                <div style={{ padding: 12, color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>{t("models.discoveryNoMatches")}</div>
               ) : shownDiscoveredModels.map((model, index) => {
                 const alreadyAdded = existingModelIds.has(model.id);
                 const checked = selectedModelIds.includes(model.id);
@@ -448,17 +448,17 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
                       style={{ width: 13, height: 13, accentColor: "var(--accent)", flexShrink: 0 }}
                     />
                     <span style={{ minWidth: 0, flex: 1 }}>
-                      <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: "var(--font-xs)" }}>{model.name ?? model.id}</span>
-                      {model.name && <code style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: "var(--font-2xs)", fontFamily: "var(--font-mono)" }}>{model.id}</code>}
+                      <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: "var(--text-xs)" }}>{model.name ?? model.id}</span>
+                      {model.name && <code style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>{model.id}</code>}
                     </span>
-                    {alreadyAdded && <span style={{ color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>{t("models.discoveryAdded")}</span>}
+                    {alreadyAdded && <span style={{ color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>{t("models.discoveryAdded")}</span>}
                   </label>
                 );
               })}
             </div>
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <span title={discoveryState.endpoint} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: "var(--font-2xs)" }}>
+              <span title={discoveryState.endpoint} style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>
                 {filteredDiscoveredModels.length > shownDiscoveredModels.length
                   ? t("models.discoveryShowing", { shown: shownDiscoveredModels.length, total: filteredDiscoveredModels.length })
                   : t("models.discoveryFetched", { count: discoveryState.models.length })}
@@ -466,7 +466,7 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
               <button
                 onClick={addSelectedModels}
                 disabled={selectedCount === 0}
-                style={{ height: 28, padding: "0 11px", border: "none", borderRadius: 5, background: selectedCount ? "var(--accent)" : "var(--bg-panel)", color: selectedCount ? "#fff" : "var(--text-dim)", cursor: selectedCount ? "pointer" : "not-allowed", fontSize: "var(--font-xs)", fontWeight: 600, whiteSpace: "nowrap" }}
+                style={{ height: 28, padding: "0 11px", border: "none", borderRadius: 5, background: selectedCount ? "var(--accent)" : "var(--bg-panel)", color: selectedCount ? "#fff" : "var(--text-dim)", cursor: selectedCount ? "pointer" : "not-allowed", fontSize: "var(--text-xs)", fontWeight: 600, whiteSpace: "nowrap" }}
               >
                 {selectedCount
                   ? t("models.discoveryAddSelectedCount", { count: selectedCount })
@@ -525,7 +525,7 @@ function ThinkingLevelMapEditor({
 
         const btnBase: React.CSSProperties = {
           padding: "4px 10px",
-          fontSize: "var(--font-2xs)",
+          fontSize: "var(--text-xs)",
           border: "none",
           cursor: "pointer",
           fontWeight: 400,
@@ -562,7 +562,7 @@ function ThinkingLevelMapEditor({
             <div style={{ display: "flex", alignItems: "center", gap: 5, width: 68, flexShrink: 0 }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0, opacity: state === "null" ? 0.3 : 1 }} />
               <span style={{
-                fontSize: "var(--font-xs)",
+                fontSize: "var(--text-xs)",
                 fontFamily: "var(--font-mono)",
                 color: state === "null" ? "var(--text-dim)" : "var(--text-muted)",
                 textDecoration: state === "null" ? "line-through" : "none",
@@ -608,7 +608,7 @@ function ThinkingLevelMapEditor({
                   outline: "none",
                   color: state === "string" ? "var(--text)" : "var(--text-dim)",
                   fontFamily: "var(--font-mono)",
-                  fontSize: "var(--font-xs)",
+                  fontSize: "var(--text-xs)",
                   padding: "4px 7px",
                   transition: "background 0.1s, color 0.1s",
                 }}
@@ -854,7 +854,7 @@ function ModelDetail({
                 borderRadius: 4,
                 background: testState.phase === "error" ? "#fee2e2" : testState.phase === "success" ? "#dcfce7" : "#e5e7eb",
                 color: "#111827",
-                fontSize: "var(--font-xs)",
+                fontSize: "var(--text-xs)",
                 display: "inline-flex",
                 alignItems: "center",
                 whiteSpace: "nowrap",
@@ -878,7 +878,7 @@ function ModelDetail({
               borderRadius: 4,
               color: testState.phase === "success" ? "#fff" : (!model.id.trim() || testState.phase === "testing") ? "var(--text-dim)" : "var(--text-muted)",
               cursor: (!model.id.trim() || testState.phase === "testing") ? "not-allowed" : "pointer",
-              fontSize: "var(--font-xs)",
+              fontSize: "var(--text-xs)",
               display: "inline-flex",
               alignItems: "center",
               justifyContent: "center",
@@ -892,7 +892,7 @@ function ModelDetail({
              {testState.phase === "testing" ? t("i18n.checking") : testState.phase === "success" ? t("common.ok") : t("i18n.test")}
           </button>
           <button onClick={onDelete}
-            style={{ height: 24, padding: "0 8px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: "#ef4444", cursor: "pointer", fontSize: "var(--font-xs)", boxSizing: "border-box" }}>
+            style={{ height: 24, padding: "0 8px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: "#ef4444", cursor: "pointer", fontSize: "var(--text-xs)", boxSizing: "border-box" }}>
              {t("i18n.remove")}
           </button>
         </div>
@@ -913,7 +913,7 @@ function ModelDetail({
               background: "var(--bg-panel)",
               color: !model.id.trim() || catalogState.phase === "loading" ? "var(--text-dim)" : "var(--text-muted)",
               cursor: !model.id.trim() || catalogState.phase === "loading" ? "not-allowed" : "pointer",
-              fontSize: "var(--font-xs)",
+              fontSize: "var(--text-xs)",
             }}
           >
             {catalogState.phase === "loading" ? t("models.catalogFilling") : t("models.catalogFill")}
@@ -922,7 +922,7 @@ function ModelDetail({
             href="https://github.com/anomalyco/models.dev"
             target="_blank"
             rel="noreferrer"
-            style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: "var(--font-2xs)", textDecoration: "none" }}
+            style={{ marginLeft: "auto", color: "var(--text-dim)", fontSize: "var(--text-xs)", textDecoration: "none" }}
           >
             {t("models.catalogSource")}
           </a>
@@ -932,7 +932,7 @@ function ModelDetail({
           aria-live="polite"
           style={{
             marginTop: 6, height: 20, display: "flex", alignItems: "center",
-            justifyContent: "space-between", gap: 8, color: catalogStatusColor, fontSize: "var(--font-2xs)",
+            justifyContent: "space-between", gap: 8, color: catalogStatusColor, fontSize: "var(--text-xs)",
           }}
         >
           <span
@@ -944,7 +944,7 @@ function ModelDetail({
           {catalogUndoRef.current && (
             <button
               onClick={undoCatalogFill}
-              style={{ flexShrink: 0, padding: "0 2px", border: "none", background: "none", color: "var(--accent)", cursor: "pointer", fontSize: "var(--font-2xs)" }}
+              style={{ flexShrink: 0, padding: "0 2px", border: "none", background: "none", color: "var(--accent)", cursor: "pointer", fontSize: "var(--text-xs)" }}
             >
               {t("models.catalogUndo")}
             </button>
@@ -975,7 +975,7 @@ function ModelDetail({
               {model.thinkingLevelMap && (
                 <button
                   onClick={() => set("thinkingLevelMap", undefined)}
-                  style={{ fontSize: "var(--font-2xs)", padding: "2px 7px", background: "none", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-dim)", cursor: "pointer" }}
+                  style={{ fontSize: "var(--text-xs)", padding: "2px 7px", background: "none", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-dim)", cursor: "pointer" }}
                 >
                   clear all
                 </button>
@@ -1146,7 +1146,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
            <SectionTitle>{t("i18n.subscription")}</SectionTitle>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: provider.loggedIn ? "#4ade80" : "var(--border)", display: "inline-block" }} />
-          <span style={{ fontSize: "var(--font-xs)", color: provider.loggedIn ? "#4ade80" : "var(--text-dim)" }}>
+          <span style={{ fontSize: "var(--text-xs)", color: provider.loggedIn ? "#4ade80" : "var(--text-dim)" }}>
              {provider.loggedIn ? t("i18n.connected") : t("i18n.notConnected")}
           </span>
         </div>
@@ -1155,16 +1155,16 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
       {/* Status */}
       <div style={{ minHeight: 48 }}>
         {loginState.phase === "idle" && (
-          <p style={{ margin: 0, fontSize: "var(--font-sm)", color: "var(--text-muted)", lineHeight: 1.5 }}>
+          <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)", lineHeight: 1.5 }}>
              {provider.loggedIn ? t("models.oauthConnectedHint") : t("models.oauthConnectHint", { name: provider.name })}
           </p>
         )}
         {loginState.phase === "connecting" && (
-            <p style={{ margin: 0, fontSize: "var(--font-sm)", color: "var(--text-muted)" }}>{t("i18n.openingBrowser")}</p>
+            <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>{t("i18n.openingBrowser")}</p>
         )}
         {loginState.phase === "select" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <p style={{ margin: 0, fontSize: "var(--font-sm)", color: "var(--text-muted)", lineHeight: 1.5 }}>
+            <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)", lineHeight: 1.5 }}>
               {loginState.message}
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1172,7 +1172,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
                 <button
                   key={option.id}
                   onClick={() => submitSelection(loginState.token, option.id)}
-                  style={{ padding: "6px 9px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", cursor: "pointer", fontSize: "var(--font-sm)", textAlign: "left" }}
+                  style={{ padding: "6px 9px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", cursor: "pointer", fontSize: "var(--text-sm)", textAlign: "left" }}
                 >
                   {option.label}
                 </button>
@@ -1182,13 +1182,13 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         )}
         {(loginState.phase === "auth" || loginState.phase === "prompt") && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <p style={{ margin: 0, fontSize: "var(--font-sm)", color: "var(--text-muted)", lineHeight: 1.5 }}>
+            <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)", lineHeight: 1.5 }}>
               {loginState.phase === "auth"
                 ? "Complete sign-in in the browser, then copy the redirect URL from the address bar and paste it below."
                 : loginState.message}
             </p>
             {loginState.phase === "auth" && (
-              <p style={{ margin: 0, fontSize: "var(--font-xs)", color: "var(--text-dim)", lineHeight: 1.5 }}>
+              <p style={{ margin: 0, fontSize: "var(--text-xs)", color: "var(--text-dim)", lineHeight: 1.5 }}>
                 If the browser window did not open,{" "}
                 <a href={loginState.url} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)", wordBreak: "break-all" }}>
                   click here to open the login page
@@ -1203,12 +1203,12 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") submitCode(loginState.token, inputValue); }}
                 placeholder={loginState.phase === "auth" ? "http://localhost:1455/auth/callback?code=…" : (loginState.placeholder ?? "Enter value…")}
-                style={{ flex: 1, padding: "6px 9px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", fontSize: "var(--font-sm)", outline: "none", fontFamily: "var(--font-mono)", boxSizing: "border-box" }}
+                style={{ flex: 1, padding: "6px 9px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", fontSize: "var(--text-sm)", outline: "none", fontFamily: "var(--font-mono)", boxSizing: "border-box" }}
               />
               <button
                 onClick={() => submitCode(loginState.token, inputValue)}
                 disabled={!inputValue.trim()}
-                style={{ padding: "6px 12px", background: inputValue.trim() ? "var(--accent)" : "var(--bg-panel)", border: "none", borderRadius: 5, color: inputValue.trim() ? "#fff" : "var(--text-dim)", cursor: inputValue.trim() ? "pointer" : "not-allowed", fontSize: "var(--font-sm)", fontWeight: 600, flexShrink: 0 }}
+                style={{ padding: "6px 12px", background: inputValue.trim() ? "var(--accent)" : "var(--bg-panel)", border: "none", borderRadius: 5, color: inputValue.trim() ? "#fff" : "var(--text-dim)", cursor: inputValue.trim() ? "pointer" : "not-allowed", fontSize: "var(--text-sm)", fontWeight: 600, flexShrink: 0 }}
               >
                  {t("i18n.submit")}
               </button>
@@ -1217,13 +1217,13 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         )}
         {loginState.phase === "device_code" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <p style={{ margin: 0, fontSize: "var(--font-sm)", color: "var(--text-muted)", lineHeight: 1.5 }}>
+            <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)", lineHeight: 1.5 }}>
               Open the verification page and enter this code:
             </p>
-            <div style={{ padding: "8px 10px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", fontSize: "var(--font-xl)", fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: 0 }}>
+            <div style={{ padding: "8px 10px", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text)", fontSize: "var(--text-md)", fontWeight: 700, fontFamily: "var(--font-mono)", letterSpacing: 0 }}>
               {loginState.userCode}
             </div>
-            <p style={{ margin: 0, fontSize: "var(--font-xs)", color: "var(--text-dim)", lineHeight: 1.5 }}>
+            <p style={{ margin: 0, fontSize: "var(--text-xs)", color: "var(--text-dim)", lineHeight: 1.5 }}>
               <a href={loginState.verificationUri} target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)", wordBreak: "break-all" }}>
                 {loginState.verificationUri}
               </a>
@@ -1232,13 +1232,13 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
           </div>
         )}
         {loginState.phase === "progress" && (
-          <p style={{ margin: 0, fontSize: "var(--font-sm)", color: "var(--text-muted)" }}>{loginState.message}</p>
+          <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>{loginState.message}</p>
         )}
         {loginState.phase === "success" && (
-             <p style={{ margin: 0, fontSize: "var(--font-sm)", color: "#4ade80" }}>{t("i18n.connectedSuccessfully")}</p>
+             <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "#4ade80" }}>{t("i18n.connectedSuccessfully")}</p>
         )}
         {loginState.phase === "error" && (
-          <p style={{ margin: 0, fontSize: "var(--font-sm)", color: "#f87171" }}>{loginState.message}</p>
+          <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "#f87171" }}>{loginState.message}</p>
         )}
       </div>
 
@@ -1247,7 +1247,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
         {isWorking ? (
           <button
             onClick={() => { eventSourceRef.current?.close(); setLoginState({ phase: "idle" }); }}
-            style={{ padding: "5px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-muted)", cursor: "pointer", fontSize: "var(--font-sm)" }}
+            style={{ padding: "5px 12px", background: "none", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-muted)", cursor: "pointer", fontSize: "var(--text-sm)" }}
           >
              {t("i18n.cancel")}
           </button>
@@ -1255,7 +1255,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
           <>
             <button
               onClick={handleLogin}
-              style={{ padding: "5px 14px", background: "var(--accent)", border: "none", borderRadius: 5, color: "#fff", cursor: "pointer", fontSize: "var(--font-sm)", fontWeight: 600 }}
+              style={{ padding: "5px 14px", background: "var(--accent)", border: "none", borderRadius: 5, color: "#fff", cursor: "pointer", fontSize: "var(--text-sm)", fontWeight: 600 }}
             >
                {provider.loggedIn ? t("i18n.relogin") : t("i18n.login")}
             </button>
@@ -1265,7 +1265,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
                   if (!window.confirm(t("models.removeCredentialConfirm", { name: provider.name }))) return;
                   void handleLogout();
                 }}
-                style={{ padding: "5px 12px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 5, color: "#ef4444", cursor: "pointer", fontSize: "var(--font-sm)" }}
+                style={{ padding: "5px 12px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 5, color: "#ef4444", cursor: "pointer", fontSize: "var(--text-sm)" }}
               >
                  {t("models.removeConfiguration")}
               </button>
@@ -1342,13 +1342,13 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
          <SectionTitle>API Key</SectionTitle>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: provider.configured ? "#4ade80" : "var(--border)", display: "inline-block" }} />
-          <span style={{ fontSize: "var(--font-xs)", color: provider.configured ? "#4ade80" : "var(--text-dim)" }}>
+          <span style={{ fontSize: "var(--text-xs)", color: provider.configured ? "#4ade80" : "var(--text-dim)" }}>
              {provider.configured ? t("i18n.configured") : t("i18n.notConfigured")}
           </span>
         </div>
       </div>
 
-      <p style={{ margin: 0, fontSize: "var(--font-sm)", color: "var(--text-muted)", lineHeight: 1.5 }}>
+      <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "var(--text-muted)", lineHeight: 1.5 }}>
         {provider.configured
           ? provider.canRemoveStoredCredential
             ? t("models.apiKeyStoredHint")
@@ -1377,7 +1377,7 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
               border: "none", borderRadius: 5,
               color: (apiKey.trim() || savedOk) ? "#fff" : "var(--text-dim)",
               cursor: (saving || !apiKey.trim() || savedOk) ? "not-allowed" : "pointer",
-              fontSize: "var(--font-sm)", fontWeight: 600, flexShrink: 0,
+              fontSize: "var(--text-sm)", fontWeight: 600, flexShrink: 0,
               display: "flex", alignItems: "center", gap: 5,
             }}
           >
@@ -1389,7 +1389,7 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
         </div>
       </Field>
 
-      {error && <p style={{ margin: 0, fontSize: "var(--font-sm)", color: "#f87171" }}>{error}</p>}
+      {error && <p style={{ margin: 0, fontSize: "var(--text-sm)", color: "#f87171" }}>{error}</p>}
 
       {provider.configured && provider.canRemoveStoredCredential && (
         <button
@@ -1402,14 +1402,14 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
             alignSelf: "flex-start", padding: "5px 12px",
             background: "none", border: "1px solid rgba(239,68,68,0.3)",
             borderRadius: 5, color: "#ef4444",
-            cursor: removing ? "not-allowed" : "pointer", fontSize: "var(--font-sm)",
+            cursor: removing ? "not-allowed" : "pointer", fontSize: "var(--text-sm)",
           }}
         >
            {removing ? t("i18n.removing") : t("models.removeConfiguration")}
         </button>
       )}
       {provider.configured && !provider.canRemoveStoredCredential && (
-        <p role="note" style={{ margin: 0, fontSize: "var(--font-xs)", color: "var(--text-dim)", lineHeight: 1.5 }}>
+        <p role="note" style={{ margin: 0, fontSize: "var(--text-xs)", color: "var(--text-dim)", lineHeight: 1.5 }}>
           {t("models.externalCredential")}
         </p>
       )}
@@ -1492,18 +1492,18 @@ function AddProviderPicker({
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Escape") onClose(); }}
              placeholder={t("i18n.searchProviders")}
-            style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--text)", fontSize: "var(--font-md)", boxSizing: "border-box" }}
+            style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--text)", fontSize: "var(--text-base)", boxSizing: "border-box" }}
           />
         </div>
 
         {/* Card grid */}
         <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
           {totalCount === 0 ? (
-            <div style={{ padding: "20px 0", fontSize: "var(--font-sm)", color: "var(--text-dim)", textAlign: "center" }}>{t("i18n.noProviders")}</div>
+            <div style={{ padding: "20px 0", fontSize: "var(--text-sm)", color: "var(--text-dim)", textAlign: "center" }}>{t("i18n.noProviders")}</div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(240px, 100%), 1fr))", gap: 8 }}>
               {visibleHiddenProviders.length > 0 && (
-                <div style={{ gridColumn: "1 / -1", fontSize: "var(--font-2xs)", fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                <div style={{ gridColumn: "1 / -1", fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>
                   {t("models.hiddenProviders")}
                 </div>
               )}
@@ -1525,8 +1525,8 @@ function AddProviderPicker({
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "var(--font-sm)", fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{provider.label}</div>
-                    <div style={{ fontSize: "var(--font-2xs)", color: "var(--text-dim)", marginTop: 2 }}>
+                    <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{provider.label}</div>
+                    <div style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", marginTop: 2 }}>
                       {restoringProvider === provider.id ? t("models.restoringProvider") : t("models.restoreProvider")}
                     </div>
                   </div>
@@ -1534,13 +1534,13 @@ function AddProviderPicker({
                 </button>
               ))}
               {restoreError && (
-                <div role="alert" style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 6, background: "rgba(239,68,68,0.08)", color: "#dc2626", fontSize: "var(--font-xs)" }}>
+                <div role="alert" style={{ gridColumn: "1 / -1", padding: "8px 10px", borderRadius: 6, background: "rgba(239,68,68,0.08)", color: "#dc2626", fontSize: "var(--text-xs)" }}>
                   {t("models.restoreProviderFailed")}
                 </div>
               )}
 
               {availableApiKey.length > 0 && (
-                <div style={{ gridColumn: "1 / -1", paddingTop: visibleHiddenProviders.length > 0 ? 6 : 0, fontSize: "var(--font-2xs)", fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>API Key</div>
+                <div style={{ gridColumn: "1 / -1", paddingTop: visibleHiddenProviders.length > 0 ? 6 : 0, fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>API Key</div>
               )}
               {availableApiKey.map((p) => (
                 <button key={p.id} onClick={() => { onSelectApiKey(p.id); onClose(); }}
@@ -1549,15 +1549,15 @@ function AddProviderPicker({
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "var(--font-sm)", fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.displayName}</div>
-                    <div style={{ fontSize: "var(--font-2xs)", color: "var(--text-dim)", marginTop: 2 }}>{p.modelCount} models</div>
+                    <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.displayName}</div>
+                    <div style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", marginTop: 2 }}>{p.modelCount} models</div>
                   </div>
                   <ModelProviderIcon provider={p.id} size={28} />
                 </button>
               ))}
 
               {availableOAuth.length > 0 && (
-                 <div style={{ gridColumn: "1 / -1", paddingTop: availableApiKey.length > 0 ? 6 : 0, fontSize: "var(--font-2xs)", fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>{t("i18n.subscriptions")}</div>
+                 <div style={{ gridColumn: "1 / -1", paddingTop: availableApiKey.length > 0 ? 6 : 0, fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>{t("i18n.subscriptions")}</div>
               )}
               {availableOAuth.map((p) => (
                 <button key={p.id} onClick={() => { onSelectOAuth(p.id); onClose(); }}
@@ -1566,15 +1566,15 @@ function AddProviderPicker({
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "var(--font-sm)", fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
-                    <div style={{ fontSize: "var(--font-2xs)", color: "var(--text-dim)", marginTop: 2 }}>OAuth</div>
+                    <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</div>
+                    <div style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", marginTop: 2 }}>OAuth</div>
                   </div>
                   <ModelProviderIcon provider={p.id} size={28} />
                 </button>
               ))}
 
               {showCustom && (
-                 <div style={{ gridColumn: "1 / -1", paddingTop: availableApiKey.length > 0 || availableOAuth.length > 0 ? 6 : 0, fontSize: "var(--font-2xs)", fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>{t("i18n.custom")}</div>
+                 <div style={{ gridColumn: "1 / -1", paddingTop: availableApiKey.length > 0 || availableOAuth.length > 0 ? 6 : 0, fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.07em" }}>{t("i18n.custom")}</div>
               )}
               {showCustom && (
                 <button
@@ -1584,8 +1584,8 @@ function AddProviderPicker({
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.background = "var(--bg-panel)"; }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "var(--font-sm)", fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>OpenAI / Anthropic compatible</div>
-                     <div style={{ fontSize: "var(--font-2xs)", color: "var(--text-dim)", marginTop: 2 }}>{t("i18n.customEndpoint")}</div>
+                    <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>OpenAI / Anthropic compatible</div>
+                     <div style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", marginTop: 2 }}>{t("i18n.customEndpoint")}</div>
                   </div>
                   <span style={{ width: 26, height: 26, borderRadius: 5, background: "var(--bg-hover)", border: "1px dashed var(--border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                     <AliIcon name="plus" size={13} style={{ color: "var(--text-dim)" }} />
@@ -1982,7 +1982,7 @@ export function ModelsConfig({
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <SectionTitle>{t("models.availableModels")}</SectionTitle>
           {!modelScopeLoading && providerModels.length > 0 && (
-            <span style={{ marginLeft: "auto", fontSize: "var(--font-xs)", color: "var(--text-dim)" }}>
+            <span style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--text-dim)" }}>
               {t("models.visibleCount", { visible: visibleCount, total: providerModels.length })}
             </span>
           )}
@@ -1998,7 +1998,7 @@ export function ModelsConfig({
                 background: "transparent",
                 color: "var(--text-muted)",
                 cursor: scopeMutationBusy || modelScope?.projectOverride ? "not-allowed" : "pointer",
-                fontSize: "var(--font-xs)",
+                fontSize: "var(--text-xs)",
                 opacity: scopeMutationBusy || modelScope?.projectOverride ? 0.55 : 1,
               }}
             >
@@ -2020,7 +2020,7 @@ export function ModelsConfig({
                 background: "transparent",
                 color: "var(--text-muted)",
                 cursor: scopeMutationBusy || modelScope?.projectOverride ? "not-allowed" : "pointer",
-                fontSize: "var(--font-xs)",
+                fontSize: "var(--text-xs)",
                 opacity: scopeMutationBusy || modelScope?.projectOverride ? 0.55 : 1,
               }}
             >
@@ -2030,25 +2030,25 @@ export function ModelsConfig({
         </div>
 
         {modelScopeError && modelScope && (
-          <div role="alert" style={{ padding: "9px 10px", borderRadius: 6, background: "rgba(239,68,68,0.08)", color: "#dc2626", fontSize: "var(--font-sm)" }}>
+          <div role="alert" style={{ padding: "9px 10px", borderRadius: 6, background: "rgba(239,68,68,0.08)", color: "#dc2626", fontSize: "var(--text-sm)" }}>
             {modelScopeError}
           </div>
         )}
 
         {modelScope && modelScope.warnings.length > 0 && (
-          <div role="note" style={{ padding: "9px 10px", borderRadius: 6, background: "rgba(245,158,11,0.09)", color: "#b45309", fontSize: "var(--font-xs)", lineHeight: 1.5 }}>
+          <div role="note" style={{ padding: "9px 10px", borderRadius: 6, background: "rgba(245,158,11,0.09)", color: "#b45309", fontSize: "var(--text-xs)", lineHeight: 1.5 }}>
             {modelScope.warnings.map((warning) => <div key={warning}>{warning}</div>)}
           </div>
         )}
 
         {modelScopeLoading ? (
-          <div style={{ padding: "12px 0", fontSize: "var(--font-sm)", color: "var(--text-muted)" }}>{t("i18n.loading")}</div>
+          <div style={{ padding: "12px 0", fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>{t("i18n.loading")}</div>
         ) : modelScopeError && !modelScope ? (
-          <div role="alert" style={{ padding: "9px 10px", borderRadius: 6, background: "rgba(239,68,68,0.08)", color: "#dc2626", fontSize: "var(--font-sm)" }}>
+          <div role="alert" style={{ padding: "9px 10px", borderRadius: 6, background: "rgba(239,68,68,0.08)", color: "#dc2626", fontSize: "var(--text-sm)" }}>
             {modelScopeError}
           </div>
         ) : providerModels.length === 0 ? (
-          <div style={{ padding: "12px 0", fontSize: "var(--font-sm)", color: "var(--text-dim)" }}>{t("models.noProviderModels")}</div>
+          <div style={{ padding: "12px 0", fontSize: "var(--text-sm)", color: "var(--text-dim)" }}>{t("models.noProviderModels")}</div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", border: "1px solid var(--border)", borderRadius: 7, overflow: "hidden" }}>
             {providerModels.map((model, index) => {
@@ -2086,16 +2086,16 @@ export function ModelsConfig({
                   <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: model.enabled ? "#22c55e" : "var(--text-dim)" }} />
                   <span style={{ minWidth: 0, flex: 1 }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: "var(--font-sm)", fontWeight: 500 }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: "var(--text-sm)", fontWeight: 500 }}>
                         {model.name || model.id}
                       </span>
                       {isDefault && (
-                        <span style={{ flexShrink: 0, padding: "1px 5px", borderRadius: 999, background: "var(--bg-selected)", color: "var(--accent)", fontSize: "var(--font-3xs)", fontWeight: 600 }}>
+                        <span style={{ flexShrink: 0, padding: "1px 5px", borderRadius: 999, background: "var(--bg-selected)", color: "var(--accent)", fontSize: "var(--text-xs)", fontWeight: 600 }}>
                           {t("models.defaultBadge")}
                         </span>
                       )}
                     </span>
-                    <code style={{ display: "block", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: "var(--font-2xs)" }}>
+                    <code style={{ display: "block", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>
                       {model.id}
                     </code>
                     {testSummary && (
@@ -2111,7 +2111,7 @@ export function ModelsConfig({
                             : testState.phase === "success"
                               ? "#15803d"
                               : "var(--text-dim)",
-                          fontSize: "var(--font-2xs)",
+                          fontSize: "var(--text-xs)",
                           lineHeight: 1.35,
                           overflowWrap: "anywhere",
                         }}
@@ -2133,7 +2133,7 @@ export function ModelsConfig({
                       justifyContent: "center",
                       gap: 5,
                       minWidth: 52,
-                      minHeight: "max(28px, calc(var(--font-xs) + 12px))",
+                      minHeight: "max(28px, calc(var(--text-xs) + 12px))",
                       padding: "4px 9px",
                       border: `1px solid ${testState.phase === "error"
                         ? "rgba(220,38,38,0.3)"
@@ -2153,7 +2153,7 @@ export function ModelsConfig({
                           : "var(--text-muted)",
                       cursor: testState.phase === "testing" ? "wait" : "pointer",
                       opacity: testState.phase === "testing" ? 0.68 : 1,
-                      fontSize: "var(--font-xs)",
+                      fontSize: "var(--text-xs)",
                       fontWeight: 550,
                       whiteSpace: "nowrap",
                     }}
@@ -2208,11 +2208,11 @@ export function ModelsConfig({
         )}
 
         {modelScope?.projectOverride && (
-          <div role="note" style={{ fontSize: "var(--font-xs)", lineHeight: 1.5, color: "#b45309" }}>
+          <div role="note" style={{ fontSize: "var(--text-xs)", lineHeight: 1.5, color: "#b45309" }}>
             {t("models.projectScopeOverride")}
           </div>
         )}
-        <div style={{ fontSize: "var(--font-xs)", lineHeight: 1.5, color: "var(--text-dim)" }}>
+        <div style={{ fontSize: "var(--text-xs)", lineHeight: 1.5, color: "var(--text-dim)" }}>
           {t("models.scopeChangeHint")}
         </div>
       </div>
@@ -2288,8 +2288,8 @@ export function ModelsConfig({
         {/* Header */}
         <div className="app-shell-dialog-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-             <span style={{ fontSize: "var(--font-lg)", fontWeight: 700, color: "var(--text)" }}>{t("common.models")}</span>
-            <code style={{ fontSize: "var(--font-xs)", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>Pi registry · ~/.pi/agent/models.json</code>
+             <span style={{ fontSize: "var(--text-md)", fontWeight: 700, color: "var(--text)" }}>{t("common.models")}</span>
+            <code style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>Pi registry · ~/.pi/agent/models.json</code>
           </div>
           <button onClick={onClose} disabled={modelScopeBusyKey !== null || saving} title={t("i18n.close")} aria-label={t("i18n.close")} style={{ display: "inline-flex", width: 28, height: 28, alignItems: "center", justifyContent: "center", background: "none", border: "none", borderRadius: 7, color: "var(--text-muted)", cursor: modelScopeBusyKey !== null || saving ? "not-allowed" : "pointer", opacity: modelScopeBusyKey !== null || saving ? 0.55 : 1, padding: 0 }}><AliIcon name="close" size={16} /></button>
         </div>
@@ -2320,8 +2320,8 @@ export function ModelsConfig({
                     onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "none"; }}
                     >
                     <ModelProviderIcon provider={p.id} size={16} />
-                    <span style={{ fontSize: "var(--font-sm)", color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.displayName}</span>
-                    {scopedModels.length > 0 && <span style={{ fontSize: "var(--font-2xs)", color: "var(--text-dim)" }}>{visibleModels}/{scopedModels.length}</span>}
+                    <span style={{ fontSize: "var(--text-sm)", color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.displayName}</span>
+                    {scopedModels.length > 0 && <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)" }}>{visibleModels}/{scopedModels.length}</span>}
                   </div>
                 );
               })}
@@ -2340,8 +2340,8 @@ export function ModelsConfig({
                     onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = "none"; }}
                     >
                     <ModelProviderIcon provider={p.id} size={16} />
-                    <span style={{ fontSize: "var(--font-sm)", color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
-                    {scopedModels.length > 0 && <span style={{ fontSize: "var(--font-2xs)", color: "var(--text-dim)" }}>{visibleModels}/{scopedModels.length}</span>}
+                    <span style={{ fontSize: "var(--text-sm)", color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                    {scopedModels.length > 0 && <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)" }}>{visibleModels}/{scopedModels.length}</span>}
                   </div>
                 );
               })}
@@ -2360,8 +2360,8 @@ export function ModelsConfig({
                     onMouseLeave={(event) => { if (!isSelected) event.currentTarget.style.background = "none"; }}
                   >
                     <ModelProviderIcon provider={providerId} size={16} />
-                    <span style={{ fontSize: "var(--font-sm)", color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{providerId}</span>
-                    <span style={{ fontSize: "var(--font-2xs)", color: "var(--text-dim)" }}>{visibleModels}/{scopedModels.length}</span>
+                    <span style={{ fontSize: "var(--text-sm)", color: "var(--text)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{providerId}</span>
+                    <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)" }}>{visibleModels}/{scopedModels.length}</span>
                   </div>
                 );
               })}
@@ -2373,7 +2373,7 @@ export function ModelsConfig({
 
               {/* Custom providers */}
               {loading ? (
-                 <div style={{ padding: "10px 8px", fontSize: "var(--font-sm)", color: "var(--text-muted)" }}>{t("i18n.loading")}</div>
+                 <div style={{ padding: "10px 8px", fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>{t("i18n.loading")}</div>
               ) : providers.map(([pName, pData]) => {
                 const isProviderSelected = selection?.type === "provider" && selection.name === pName;
                 const models = pData.models ?? [];
@@ -2387,7 +2387,7 @@ export function ModelsConfig({
                       onMouseLeave={(e) => { if (!isProviderSelected) e.currentTarget.style.background = "none"; }}
                     >
                       <AliIcon name="api" size={11} style={{ color: "var(--text-dim)" }} />
-                      <span style={{ fontSize: "var(--font-sm)", fontWeight: isProviderSelected ? 600 : 400, color: "var(--text)", fontFamily: "var(--font-mono)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span style={{ fontSize: "var(--text-sm)", fontWeight: isProviderSelected ? 600 : 400, color: "var(--text)", fontFamily: "var(--font-mono)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {pName}
                       </span>
                       <button
@@ -2430,11 +2430,11 @@ export function ModelsConfig({
                           onMouseEnter={(e) => { if (!isModelSelected) e.currentTarget.style.background = "var(--bg-hover)"; }}
                           onMouseLeave={(e) => { if (!isModelSelected) e.currentTarget.style.background = "none"; }}
                         >
-                          <span style={{ fontSize: "var(--font-xs)", fontFamily: "var(--font-mono)", color: m.id ? "var(--text-muted)" : "var(--text-dim)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: m.id ? "var(--text-muted)" : "var(--text-dim)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                              {m.id || t("i18n.newModel")}
                           </span>
                           {m.reasoning && (
-                            <span style={{ fontSize: "var(--font-3xs)", padding: "1px 4px", background: "rgba(99,102,241,0.12)", color: "rgba(99,102,241,0.8)", borderRadius: 3, flexShrink: 0 }}>T</span>
+                            <span style={{ fontSize: "var(--text-xs)", padding: "1px 4px", background: "rgba(99,102,241,0.12)", color: "rgba(99,102,241,0.8)", borderRadius: 3, flexShrink: 0 }}>T</span>
                           )}
                           <button
                             type="button"
@@ -2475,7 +2475,7 @@ export function ModelsConfig({
                       onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; e.currentTarget.style.background = "var(--bg-hover)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
                     >
-                       <span style={{ fontSize: "var(--font-xs)" }}>+ {t("i18n.model")}</span>
+                       <span style={{ fontSize: "var(--text-xs)" }}>+ {t("i18n.model")}</span>
                     </div>
                   </div>
                 );
@@ -2487,7 +2487,7 @@ export function ModelsConfig({
               <button onClick={() => setPickerOpen(true)} style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
                 width: "100%", padding: "6px 0", background: "none", border: "1px dashed var(--border)", borderRadius: 5,
-                color: "var(--text-muted)", cursor: "pointer", fontSize: "var(--font-sm)",
+                color: "var(--text-muted)", cursor: "pointer", fontSize: "var(--text-sm)",
               }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.color = "var(--accent)"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; e.currentTarget.style.color = "var(--text-muted)"; }}
@@ -2500,7 +2500,7 @@ export function ModelsConfig({
           {/* Right: detail */}
           <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
             {loading ? null : detailContent ?? (
-              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: "var(--font-md)" }}>
+              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: "var(--text-base)" }}>
                  {t("i18n.selectProviderModel")}
               </div>
             )}
@@ -2509,8 +2509,8 @@ export function ModelsConfig({
 
         {/* Footer */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "10px 18px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
-          {saveError && <span style={{ fontSize: "var(--font-sm)", color: "#f87171", flex: 1 }}>{saveError}</span>}
-          <button onClick={onClose} disabled={modelScopeBusyKey !== null || saving} style={{ padding: "6px 14px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: modelScopeBusyKey !== null || saving ? "not-allowed" : "pointer", opacity: modelScopeBusyKey !== null || saving ? 0.55 : 1, fontSize: "var(--font-md)" }}>
+          {saveError && <span style={{ fontSize: "var(--text-sm)", color: "#f87171", flex: 1 }}>{saveError}</span>}
+          <button onClick={onClose} disabled={modelScopeBusyKey !== null || saving} style={{ padding: "6px 14px", background: "none", border: "1px solid var(--border)", borderRadius: 6, color: "var(--text-muted)", cursor: modelScopeBusyKey !== null || saving ? "not-allowed" : "pointer", opacity: modelScopeBusyKey !== null || saving ? 0.55 : 1, fontSize: "var(--text-base)" }}>
              {t("i18n.close")}
           </button>
           <button onClick={handleSave} disabled={saving || savedOk} style={{
@@ -2520,7 +2520,7 @@ export function ModelsConfig({
             background: savedOk ? "#16a34a" : saving ? "var(--bg-panel)" : "var(--accent)",
             border: "none", borderRadius: 6,
             color: savedOk ? "#fff" : saving ? "var(--text-muted)" : "#fff",
-            cursor: (saving || savedOk) ? "default" : "pointer", fontSize: "var(--font-md)", fontWeight: 600,
+            cursor: (saving || savedOk) ? "default" : "pointer", fontSize: "var(--text-base)", fontWeight: 600,
             display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
             transition: "background-color 0.2s ease, color 0.2s ease",
             animation: savedOk ? "saved-pop 0.45s ease" : undefined,

@@ -54,10 +54,10 @@ export function ProjectTrustDialog({
         <div style={{ display: "flex", gap: 12, padding: "18px 18px 14px" }}>
           <AliIcon name="warning" size={20} style={{ color: "#f59e0b", marginTop: 1 }} />
           <div style={{ minWidth: 0 }}>
-            <div id="project-trust-title" style={{ fontSize: "var(--font-lg)", fontWeight: 700, color: "var(--text)" }}>
+            <div id="project-trust-title" style={{ fontSize: "var(--text-md)", fontWeight: 700, color: "var(--text)" }}>
               {t("trust.dialogTitle")}
             </div>
-            <div style={{ marginTop: 7, fontSize: "var(--font-sm)", lineHeight: 1.6, color: "var(--text-muted)" }}>
+            <div style={{ marginTop: 7, fontSize: "var(--text-sm)", lineHeight: 1.6, color: "var(--text-muted)" }}>
               {t("trust.dialogBody")}
             </div>
             <code
@@ -70,14 +70,14 @@ export function ProjectTrustDialog({
                 background: "var(--bg)",
                 color: "var(--text)",
                 fontFamily: "var(--font-mono)",
-                fontSize: "var(--font-xs)",
+                fontSize: "var(--text-xs)",
                 overflowWrap: "anywhere",
               }}
             >
               {cwd}
             </code>
             {error && (
-              <div role="alert" style={{ marginTop: 10, color: "#ef4444", fontSize: "var(--font-sm)", lineHeight: 1.5 }}>
+              <div role="alert" style={{ marginTop: 10, color: "#ef4444", fontSize: "var(--text-sm)", lineHeight: 1.5 }}>
                 {error}
               </div>
             )}
@@ -104,7 +104,7 @@ export function ProjectTrustDialog({
               background: "transparent",
               color: "var(--text-muted)",
               cursor: busy ? "not-allowed" : "pointer",
-              fontSize: "var(--font-sm)",
+              fontSize: "var(--text-sm)",
             }}
           >
             {t("trust.cancel")}
@@ -122,7 +122,7 @@ export function ProjectTrustDialog({
               color: "white",
               cursor: busy ? "wait" : "pointer",
               opacity: busy ? 0.7 : 1,
-              fontSize: "var(--font-sm)",
+              fontSize: "var(--text-sm)",
               fontWeight: 600,
             }}
           >
