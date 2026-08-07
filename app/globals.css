@@ -116,6 +116,21 @@
   --font-4xl: 1.428571rem;
   --font-5xl: 1.571429rem;
   --font-display: 2rem;
+  /*
+   * Codex-aligned 6-level scale (docs/PIORA_UI_STYLE_SPEC.md §3.2). New and
+   * migrated components should use these instead of the 18-level scale
+   * above, which is legacy and being phased out (T-02 S10). These are
+   * currently plain aliases onto the legacy scale — same computed values,
+   * so introducing them here is a no-op visually. S10 repoints them to
+   * their own literal rem values and removes the legacy tokens once every
+   * caller has migrated.
+   */
+  --text-xs: var(--font-xs-plus);   /* ~11.5px */
+  --text-sm: var(--font-sm-plus);   /* ~12.5px */
+  --text-base: var(--font-base);    /* =14px */
+  --text-md: var(--font-lg);        /* ~15px */
+  --text-lg: var(--font-2xl);       /* ~17px */
+  --text-xl: var(--font-4xl);       /* =20px */
   --editor-code-line-height: 1.485714rem;
   --chat-font-size: var(--ui-font-size);
   --chat-line-height: calc(var(--chat-font-size) + 8px);
