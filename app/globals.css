@@ -82,10 +82,12 @@
   --surface-raised: color-mix(in srgb, var(--bg) 91%, transparent);
   --border-soft: color-mix(in srgb, var(--border) 72%, transparent);
   --border-strong: #d4d4d8;
-  --radius-small: 5px;
-  --radius-control: 8px;
-  --radius-surface: 11px;
-  --radius-panel: 14px;
+  /* Radius scale: 3 steps only (docs/PIORA_UI_STYLE_SPEC.md §4.1). Legacy
+     --radius-small maps onto --radius-control and is removed in S10. */
+  --radius-small: var(--radius-control);
+  --radius-control: 6px;    /* buttons, inputs, badges, small cards */
+  --radius-surface: 10px;   /* panels, dialogs, composer */
+  --radius-panel: 14px;     /* large floating layers, modals */
   /* One shadow, for out-of-flow layers only (dropdowns, palettes, modals,
      context menus — docs/PIORA_UI_STYLE_SPEC.md §4.2). Panels layer via
      --border + --bg-panel; no shadow-surface/control, no inset highlights,
