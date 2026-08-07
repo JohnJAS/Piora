@@ -1620,7 +1620,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     ignoreProgrammaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_IGNORE_MS;
-    messagesEndRef.current?.scrollIntoView({ behavior });
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    // The live-tail spacer is a scrolling aid, not message content, so jumping
+    // to the container bottom would land on a blank viewport. Scroll to the
+    // real content bottom instead: the last message sits at the viewport
+    // bottom, and when the conversation is shorter than the viewport the
+    // content stays pinned to the top (max(0, …)).
+    const spacer = container.querySelector<HTMLElement>("[data-chat-tail-spacer]");
+    const spacerHeight = spacer?.offsetHeight ?? 0;
+    container.scrollTo({
+      top: Math.max(0, container.scrollHeight - spacerHeight - container.clientHeight),
+      behavior,
+    });
   }, []);
 
   const handleScrollToBottom = useCallback(() => {

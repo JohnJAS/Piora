@@ -21,6 +21,9 @@ export function shouldShowScrollToBottom({
 }: ScrollToBottomVisibilityInput): boolean {
   const contentHeight = Math.max(0, scrollHeight - Math.max(0, transientTailHeight));
   const contentOverflowsViewport = contentHeight > clientHeight + 1;
-  const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+  // Measure against the real content height, not scrollHeight, so the tail
+  // spacer cannot keep the button visible after the user already reached the
+  // bottom of the conversation.
+  const distanceFromBottom = contentHeight - scrollTop - clientHeight;
   return contentOverflowsViewport && distanceFromBottom > threshold;
 }
