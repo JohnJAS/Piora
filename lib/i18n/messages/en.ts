@@ -161,6 +161,8 @@ export const enLocale: LocalePlugin = {
     "theme.light": "Switch to light mode",
     "theme.dark": "Switch to dark mode",
     "theme.choose": "Choose theme",
+    "theme.more": "More themes",
+    "theme.moreHint": "Decorative themes kept out of the main selector",
     "theme.light.name": "Light",
     "theme.dark.name": "Dark",
     "theme.starlight.name": "Starlight",

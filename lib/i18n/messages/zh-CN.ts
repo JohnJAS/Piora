@@ -161,6 +161,8 @@ export const zhCNLocale: LocalePlugin = {
     "theme.light": "切换到浅色模式",
     "theme.dark": "切换到深色模式",
     "theme.choose": "选择主题",
+    "theme.more": "更多主题",
+    "theme.moreHint": "装饰主题收在主选择器之外",
     "theme.light.name": "浅色",
     "theme.dark.name": "深色",
     "theme.starlight.name": "梦幻星光",
