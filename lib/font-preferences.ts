@@ -83,7 +83,7 @@ export const UI_FONT_SIZE_MAX = 48;
 
 export const DEFAULT_FONT_PREFERENCE: Readonly<FontPreference> = Object.freeze({
   schemaVersion: 1,
-  family: "system",
+  family: "inter",
   size: 14,
 });
 
@@ -128,4 +128,4 @@ export function serializeFontPreference(preference: FontPreference): string {
 const FONT_ID_JSON = JSON.stringify(UI_FONT_PRESETS.map(({ id }) => id));
 
 /** Applies only validated data attributes before paint; all font stacks live in static CSS. */
-export const FONT_PREFERENCE_INITIALIZATION_SCRIPT = `(function(){try{var f=${FONT_ID_JSON},n=${UI_FONT_SIZE_MIN},m=${UI_FONT_SIZE_MAX},p={family:"system",size:14},v=localStorage.getItem("${FONT_PREFERENCE_STORAGE_KEY}");if(v){try{var x=JSON.parse(v);if(x&&f.indexOf(x.family)>-1)p.family=x.family;if(x&&Number.isInteger(x.size)&&x.size>=n&&x.size<=m)p.size=x.size}catch(_){}}var r=document.documentElement;r.setAttribute("data-ui-font",p.family);r.setAttribute("data-ui-font-size",String(p.size));r.style.setProperty("--ui-font-size",p.size+"px")}catch(_){}})();`;
+export const FONT_PREFERENCE_INITIALIZATION_SCRIPT = `(function(){try{var f=${FONT_ID_JSON},n=${UI_FONT_SIZE_MIN},m=${UI_FONT_SIZE_MAX},p={family:"inter",size:14},v=localStorage.getItem("${FONT_PREFERENCE_STORAGE_KEY}");if(v){try{var x=JSON.parse(v);if(x&&f.indexOf(x.family)>-1)p.family=x.family;if(x&&Number.isInteger(x.size)&&x.size>=n&&x.size<=m)p.size=x.size}catch(_){}}var r=document.documentElement;r.setAttribute("data-ui-font",p.family);r.setAttribute("data-ui-font-size",String(p.size));r.style.setProperty("--ui-font-size",p.size+"px")}catch(_){}})();`;

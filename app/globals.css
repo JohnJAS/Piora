@@ -94,8 +94,10 @@
      no translucent chrome (T-02 S4). */
   --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
   --overlay-scrim: rgba(22, 20, 19, 0.3);
-  --ui-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
   --ui-font-size: 14px;
+  /* Inter is the default UI face (docs/PIORA_UI_STYLE_SPEC.md §3.1), bundled
+     locally in /fonts/inter. Chinese falls back to YaHei/PingFang. */
+  --ui-font-family: 'Inter', 'Microsoft YaHei UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   /*
    * UI typography scale. These values preserve the original 14 px visual
    * hierarchy while following the user-selected root size everywhere.
@@ -143,7 +145,7 @@ html[data-ui-font="system"] {
 }
 
 html[data-ui-font="inter"] {
-  --ui-font-family: 'Inter', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif;
+  --ui-font-family: 'Inter', 'Microsoft YaHei UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
 
 html[data-ui-font="yahei"] {
