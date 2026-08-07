@@ -98,7 +98,7 @@ interface Props {
   skipInitialProjectSelection?: boolean;
   onInitialRestoreDone?: () => void;
   refreshKey?: number;
-  onSessionDeleted?: (sessionId: string) => void;
+  onSessionDeleted?: (session: SessionInfo) => void;
   selectedCwd?: string | null;
   onCwdChange?: (cwd: string | null, projectRoot?: string | null) => void;
   onOpenFile?: (filePath: string, fileName: string, options?: { sourceSessionId?: string | null; modeHint?: "diff" }) => void;
@@ -339,6 +339,8 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
+  const [deletedSessionToast, setDeletedSessionToast] = useState<{ session: SessionInfo; key: number } | null>(null);
+  const deletedSessionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [collapsedProjectKeys, setCollapsedProjectKeys] = useState<Set<string>>(
     () => loadStoredStringSet(COLLAPSED_PROJECTS_STORAGE_KEY),
   );
@@ -745,6 +747,37 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     if (s.cwd) setSelectedCwd(s.cwd);
     onSelectSession(s);
   }, [onSelectSession]);
+
+  // Undo window after a session delete: the server keeps the file in trash for
+  // 5s; this toast offers restore within the same window (task T-01).
+  const handleSessionDeletedWithUndo = useCallback((session: SessionInfo) => {
+    onSessionDeleted?.(session);
+    setDeletedSessionToast((current) => ({ session, key: (current?.key ?? 0) + 1 }));
+    loadSessions();
+    if (deletedSessionTimerRef.current) clearTimeout(deletedSessionTimerRef.current);
+    deletedSessionTimerRef.current = setTimeout(() => {
+      setDeletedSessionToast(null);
+      deletedSessionTimerRef.current = null;
+    }, 5_000);
+  }, [onSessionDeleted, loadSessions]);
+
+  const handleUndoDelete = useCallback(async () => {
+    const toast = deletedSessionToast;
+    if (!toast) return;
+    const { session, key } = toast;
+    setDeletedSessionToast((current) => (current?.key === key ? null : current));
+    if (deletedSessionTimerRef.current) clearTimeout(deletedSessionTimerRef.current);
+    deletedSessionTimerRef.current = null;
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/restore`, { method: "POST" });
+      if (!response.ok) throw new Error("restore failed");
+      loadSessions();
+    } catch {
+      // Restore failed (window already purged or IO error); refresh to show the
+      // session is gone.
+      loadSessions();
+    }
+  }, [deletedSessionToast, loadSessions]);
 
   const handleNewSessionInProject = useCallback((cwd: string) => {
     // Generate a temporary UUID client-side — no backend call needed.
@@ -1312,10 +1345,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
             onSelectSession={handleSelectSessionFromList}
             onNewSession={handleNewSessionInProject}
             onRenamed={() => loadSessions()}
-            onSessionDeleted={(id) => {
-              onSessionDeleted?.(id);
-              loadSessions();
-            }}
+            onSessionDeleted={handleSessionDeletedWithUndo}
             isPinned={pinnedProjectRoots.has(group.projectRoot)}
             displayLabel={projectAliases[group.projectRoot] ?? getProjectLabel(group.projectRoot)}
             onTogglePinned={() => togglePinnedProject(group.projectRoot)}
@@ -1429,6 +1459,54 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         </div>
       )}
 
+      {deletedSessionToast && (
+        <div
+          role="status"
+          style={{
+            position: "absolute",
+            bottom: 12,
+            left: "50%",
+            transform: "translateX(-50%)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            zIndex: 60,
+            maxWidth: "calc(100% - 24px)",
+            padding: "8px 10px 8px 14px",
+            borderRadius: "var(--radius-control)",
+            border: "1px solid var(--border)",
+            background: "var(--bg)",
+            boxShadow: "var(--shadow-popover)",
+            color: "var(--text)",
+            fontSize: "var(--text-sm)",
+            animation: "notice-shelf-in 0.18s ease-out both",
+          }}
+        >
+          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {t("sidebar.deletedToast", {
+              title: (deletedSessionToast.session.name || deletedSessionToast.session.firstMessage || deletedSessionToast.session.id).slice(0, 30),
+            })}
+          </span>
+          <button
+            type="button"
+            onClick={() => void handleUndoDelete()}
+            style={{
+              flexShrink: 0,
+              padding: "4px 10px",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-control)",
+              background: "var(--bg-hover)",
+              color: "var(--accent)",
+              cursor: "pointer",
+              fontSize: "var(--text-sm)",
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {t("sidebar.undo")}
+          </button>
+        </div>
+      )}
     </div>
   );
 });
@@ -1470,7 +1548,7 @@ function ProjectSessionGroup({
   onSelectSession: (session: SessionInfo) => void;
   onNewSession?: (cwd: string) => void;
   onRenamed: () => void;
-  onSessionDeleted: (sessionId: string) => void;
+  onSessionDeleted: (session: SessionInfo) => void;
   isPinned: boolean;
   displayLabel: string;
   onTogglePinned: () => void;
@@ -1746,7 +1824,7 @@ function SessionTreeItem({
   unreadSessionIds: Set<string>;
   onSelectSession: (s: SessionInfo) => void;
   onRenamed?: () => void;
-  onSessionDeleted?: (id: string) => void;
+  onSessionDeleted?: (session: SessionInfo) => void;
   depth: number;
 }) {
   const [collapsed, setCollapsed] = useState(false);
@@ -1773,7 +1851,7 @@ function SessionTreeItem({
           isUnread={unreadSessionIds.has(node.session.id)}
           onClick={() => onSelectSession(node.session)}
           onRenamed={onRenamed}
-          onDeleted={(id) => onSessionDeleted?.(id)}
+          onDeleted={(session) => onSessionDeleted?.(session)}
           depth={depth}
           hasChildren={hasChildren}
           collapsed={collapsed}
@@ -1868,7 +1946,7 @@ function SessionItem({
   isUnread?: boolean;
   onClick: () => void;
   onRenamed?: () => void;
-  onDeleted?: (id: string) => void;
+  onDeleted?: (session: SessionInfo) => void;
   depth?: number;
   hasChildren?: boolean;
   collapsed?: boolean;
@@ -1912,20 +1990,18 @@ function SessionItem({
     setDeleting(true);
     try {
       await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
-      onDeleted?.(session.id);
+      onDeleted?.(session);
     } catch {
       setDeleting(false);
     }
-  }, [session.id, onDeleted]);
+  }, [session, onDeleted]);
 
   const handleDeleteClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    if (e.shiftKey) {
-      void performDelete();
-    } else {
-      setConfirmDelete(true);
-    }
-  }, [performDelete]);
+    // Shift+click no longer skips the confirmation (task T-01) — deletion is
+    // always confirmed first and remains reversible via the Undo toast.
+    setConfirmDelete(true);
+  }, []);
 
   const handleDeleteConfirm = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -2134,7 +2210,7 @@ function SessionItem({
               </button>
               <button
                 onClick={handleDeleteClick}
-                title={t("sidebar.deleteWithShiftClick")}
+                title={t("sidebar.delete")}
                 style={{
                   display: "flex", alignItems: "center", justifyContent: "center",
                   width: 23, height: 23, padding: 0,

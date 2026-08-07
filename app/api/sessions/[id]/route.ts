@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { statSync } from "fs";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
   resolveSessionPath,
@@ -8,10 +7,10 @@ import {
   invalidateSessionPathCache,
   invalidateSessionListCache,
   buildSessionContext,
-  readSessionHeader,
+  listAllSessions,
 } from "@/lib/session-reader";
-import { sessionPathKey } from "@/lib/session-path";
 import { getRpcSession } from "@/lib/rpc-manager";
+import { purgeExpiredTrash, trashSession } from "@/lib/session-trash";
 
 // BranchNavigator still traverses recursively, so keep the response tree shallow.
 const MAX_PROJECTED_TREE_DEPTH = 200;
@@ -195,6 +194,11 @@ export async function PATCH(
 }
 
 // DELETE /api/sessions/[id]
+// Reversible delete (task T-01): the session's whole subtree is moved to the
+// trash instead of being unlinked, so the 5s Undo window can move it back
+// exactly (children keep their parentSession links — no cascade re-parenting
+// needs to be reversed). Stale trash older than the undo window is purged on
+// the next delete.
 export async function DELETE(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -206,42 +210,33 @@ export async function DELETE(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    // Read only the bounded header before deleting.
-    const parentSessionPath = readSessionHeader(filePath)?.parentSession;
-
-    // Re-attach all direct children to this session's parent (cascade re-parent)
-    // Scan sibling files in the same directory
-    const targetPathKey = sessionPathKey(filePath);
-    const dir = dirname(filePath);
-    try {
-      const files = readdirSync(dir).filter(
-        (file) => file.endsWith(".jsonl") && sessionPathKey(join(dir, file)) !== targetPathKey,
-      );
-      for (const file of files) {
-        const childPath = join(dir, file);
-        try {
-          const content = readFileSync(childPath, "utf8");
-          const lines = content.split("\n");
-          const header = JSON.parse(lines[0]) as { type?: string; parentSession?: string };
-          if (
-            header.type === "session" &&
-            header.parentSession &&
-            sessionPathKey(header.parentSession) === targetPathKey
-          ) {
-            // Rewrite header with new parentSession
-            header.parentSession = parentSessionPath;
-            lines[0] = JSON.stringify(header);
-            writeFileSync(childPath, lines.join("\n"));
-          }
-        } catch { /* skip malformed */ }
+    // Collect the whole subtree (this session + every descendant that points
+    // at a member via parentSessionId) so restore is an exact move-back.
+    const all = await listAllSessions();
+    const byId = new Map(all.map((s) => [s.id, s]));
+    const subtreePaths: string[] = [];
+    const seen = new Set<string>();
+    const queue = [id];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      if (seen.has(current)) continue;
+      seen.add(current);
+      const session = byId.get(current);
+      if (session?.path) subtreePaths.push(session.path);
+      for (const s of all) {
+        if (s.parentSessionId === current) queue.push(s.id);
       }
-    } catch { /* skip if dir unreadable */ }
+    }
 
     getRpcSession(id)?.destroy();
-    unlinkSync(filePath);
-    invalidateSessionPathCache(id);
+    purgeExpiredTrash();
+    trashSession(id, subtreePaths);
+    // Invalidate path caches for every session in the subtree.
+    for (const sessionId of seen) {
+      invalidateSessionPathCache(sessionId);
+    }
     invalidateSessionListCache();
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, trashedCount: subtreePaths.length });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

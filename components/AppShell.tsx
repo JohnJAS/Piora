@@ -836,9 +836,9 @@ export function AppShell() {
     setInitialSessionRestored(true);
   }, []);
 
-  const handleSessionDeleted = useCallback((sessionId: string) => {
+  const handleSessionDeleted = useCallback((deleted: SessionInfo) => {
     setRefreshKey((k) => k + 1);
-    if (selectedSession?.id === sessionId) {
+    if (selectedSession?.id === deleted.id) {
       const cwd = selectedSession.cwd;
       setSelectedSession(null);
       setNewSessionCwd(cwd ?? null);

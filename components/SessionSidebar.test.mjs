@@ -5,11 +5,13 @@ import test from "node:test";
 const source = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
 const sessionItemSource = source.slice(source.indexOf("function SessionItem("));
 
-test("only Shift+click bypasses session deletion confirmation", () => {
-  assert.match(
-    sessionItemSource,
-    /const handleDeleteClick[\s\S]*?if \(e\.shiftKey\) \{\s*void performDelete\(\);\s*\} else \{\s*setConfirmDelete\(true\);/,
-  );
+test("always confirms session deletion and offers undo (no Shift+click bypass)", () => {
+  // Task T-01: Shift+click no longer skips the confirmation — every delete
+  // goes through the confirm state first, and deletion stays reversible.
+  assert.doesNotMatch(source, /e\.shiftKey/);
+  assert.match(source, /const handleDeleteClick[\s\S]*?setConfirmDelete\(true\);/);
+  assert.match(source, /const handleDeleteConfirm[\s\S]*?void performDelete\(\);/);
+  assert.match(source, /const handleUndoDelete[\s\S]*?\/restore/);
 });
 
 test("does not register row-level session deletion shortcuts", () => {
