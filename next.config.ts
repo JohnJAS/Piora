@@ -22,7 +22,11 @@ const nextConfig: NextConfig = {
     "@earendil-works/pi-ai",
     "@earendil-works/pi-tui",
   ],
-  allowedDevOrigins: ['192.168.*.*'],
+  // Dev-only: allow remote testing via localtunnel/Cloudflare-style public
+  // hosts without a hard-coded tunnel name. `*.loca.lt` is the localtunnel
+  // public suffix; LAN IPs keep on-network testing working. Never affects
+  // production (dev servers only).
+  allowedDevOrigins: ['192.168.*.*', '*.loca.lt'],
   async headers() {
     return [
       {

@@ -23,11 +23,28 @@ function hostnameFromAuthority(value: string): string | null {
 function normalizeConfiguredHostname(value: string | undefined): string | null {
   const trimmed = value?.trim();
   if (!trimmed) return null;
+  if (trimmed.startsWith("*.")) return trimmed.toLowerCase();
   return isIP(trimmed) ? normalizeHostname(trimmed) : hostnameFromAuthority(trimmed);
 }
 
 function isLoopbackHostname(hostname: string): boolean {
   return hostname === "localhost" || hostname.endsWith(".localhost");
+}
+
+/**
+ * Configured hostnames may include a leading `*.` suffix wildcard so dev
+ * tunnels whose public subdomain changes on reconnect (e.g. localtunnel) stay
+ * reachable without editing the allowlist. The wildcard must be a full label
+ * (`*.loca.lt`), never a bare `*`, and it still only widens the operator's own
+ * allowlist — it does not weaken the IP-literal or origin checks.
+ */
+function matchesConfiguredHostname(configured: string | null, hostname: string): boolean {
+  if (!configured) return false;
+  if (configured.startsWith("*.")) {
+    const suffix = configured.slice(1);
+    return hostname.length > suffix.length && hostname.endsWith(suffix);
+  }
+  return configured === hostname;
 }
 
 function configuredHostnamesFromEnvironment(): string[] {
@@ -83,7 +100,7 @@ export function isApiRequestHostAllowed(
   if (isLoopbackHostname(hostname) || isIP(hostname)) return true;
 
   return configuredHostnames.some(
-    (configured) => normalizeConfiguredHostname(configured) === hostname,
+    (configured) => matchesConfiguredHostname(normalizeConfiguredHostname(configured), hostname),
   );
 }
 
