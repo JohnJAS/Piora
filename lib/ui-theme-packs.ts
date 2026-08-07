@@ -26,7 +26,7 @@ export const UI_THEME_PACKS: readonly UiThemePackDescriptor[] = [
     source: "https://github.com/Fei-Away/Codex-Dream-Skin",
     license: "MIT",
     entry: "builtin",
-    cssSource: "app/theme-packs/codex-dream-skin.css",
+    cssSource: "/themes/codex-dream-skin/skin.css",
     artwork: "none",
   },
 ] as const;

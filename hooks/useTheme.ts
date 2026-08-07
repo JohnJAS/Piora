@@ -1,7 +1,13 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { UiThemePackId } from "../lib/ui-theme-packs";
+
+/** Static CSS that a theme pack injects only while that theme is active
+    (docs/PIORA_UI_STYLE_SPEC.md §2.6 / task T-02 S8 — no unconditional import). */
+const THEME_PACK_STYLESHEETS: Partial<Record<UiThemePackId, string>> = {
+  "codex-dream-skin": "/themes/codex-dream-skin/skin.css",
+};
 
 export type Theme =
   | "light"
@@ -172,6 +178,32 @@ function transitionToTheme(theme: Theme, origin?: ThemeChangeOrigin, appearanceA
 
 export function useTheme() {
   const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
+  // Load the active theme pack's stylesheet on demand and unload it when the
+  // theme changes, so non-pack themes never ship the pack's CSS (T-02 S8).
+  useEffect(() => {
+    const preset = THEME_PRESETS.find(({ id }) => id === theme);
+    const href = preset?.packId ? THEME_PACK_STYLESHEETS[preset.packId] : undefined;
+    if (!preset || !preset.packId || !href) return;
+
+    let link = document.head.querySelector<HTMLLinkElement>(
+      `link[data-theme-pack="${preset.packId}"]`,
+    );
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.dataset.themePack = preset.packId;
+      document.head.appendChild(link);
+    }
+    link.href = href;
+
+    return () => {
+      const current = document.head.querySelector<HTMLLinkElement>(
+        `link[data-theme-pack="${preset.packId}"]`,
+      );
+      current?.remove();
+    };
+  }, [theme]);
 
   const setTheme = useCallback((next: Theme, origin?: ThemeChangeOrigin) => {
     transitionToTheme(next, origin);
