@@ -54,6 +54,13 @@ import { CommandPalette } from "./CommandPalette";
 import { useCommands } from "@/hooks/useCommands";
 import { filterGuiCommands, type Command, type CommandContext, type PiSlashCommand } from "@/lib/commands";
 import { SETTINGS_REOPEN_STORAGE_KEY } from "@/lib/settings-portability";
+import {
+  findReopenableFileTab,
+  moveFileTab,
+  rememberClosedFileTabs,
+  tabsAfter,
+  tabsExcept,
+} from "@/lib/file-tabs";
 
 type SessionCopyField = "file" | "id";
 type AutoNameStatus =
@@ -475,7 +482,12 @@ export function AppShell() {
   // Right panel — file tabs only
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
+  const [closedFileTabs, setClosedFileTabs] = useState<Tab[]>([]);
   const hasDirtyFileTabs = fileTabs.some((tab) => tab.isDirty);
+  const reopenableClosedFileTab = useMemo(
+    () => findReopenableFileTab(closedFileTabs, fileTabs),
+    [closedFileTabs, fileTabs],
+  );
 
   useEffect(() => {
     if (!hasDirtyFileTabs) return;
@@ -494,6 +506,14 @@ export function AppShell() {
       return currentTabs.map((tab) => tab.id === tabId ? { ...tab, isDirty: dirty } : tab);
     });
   }, []);
+
+  const confirmDiscardFileTabs = useCallback((tabs: readonly Tab[]) => {
+    const dirtyTabs = tabs.filter((tab) => tab.isDirty);
+    if (dirtyTabs.length === 0) return true;
+    return window.confirm(dirtyTabs.length === 1
+      ? translate("files.discardUnsavedFile", { name: dirtyTabs[0].label })
+      : translate("files.discardUnsavedFiles", { count: dirtyTabs.length }));
+  }, [translate]);
 
   // Same @mention format as the chat input's @ autocomplete, so the agent's
   // read tool resolves it the same way (it strips the @ prefix).
@@ -883,6 +903,7 @@ export function AppShell() {
     const modeHint = options?.modeHint;
     const revealLine = options?.line;
     const tabId = `file:${filePath}`;
+    setClosedFileTabs((current) => current.filter((tab) => tab.id !== tabId));
     setFileTabs((prev) => {
       const existing = prev.find((t) => t.id === tabId);
       if (!existing) {
@@ -924,16 +945,64 @@ export function AppShell() {
     if (closingIndex < 0) return;
 
     const closingTab = fileTabs[closingIndex];
-    if (closingTab.isDirty && !window.confirm(`Discard unsaved changes in ${closingTab.label}?`)) return;
+    if (!confirmDiscardFileTabs([closingTab])) return;
 
     const remaining = fileTabs.filter((tab) => tab.id !== tabId);
+    setClosedFileTabs((current) => rememberClosedFileTabs(current, [closingTab]));
     setFileTabs(remaining);
     if (remaining.length === 0) setRightPanelOpen(false);
     if (activeFileTabId === tabId) {
       const nextIndex = Math.min(closingIndex, remaining.length - 1);
       setActiveFileTabId(nextIndex >= 0 ? remaining[nextIndex].id : null);
     }
-  }, [activeFileTabId, fileTabs]);
+  }, [activeFileTabId, confirmDiscardFileTabs, fileTabs]);
+
+  const handleCloseOtherFileTabs = useCallback((tabId: string) => {
+    const target = fileTabs.find((tab) => tab.id === tabId);
+    if (!target) return;
+    const closingTabs = tabsExcept(fileTabs, tabId);
+    if (closingTabs.length === 0 || !confirmDiscardFileTabs(closingTabs)) return;
+    setClosedFileTabs((current) => rememberClosedFileTabs(current, closingTabs));
+    setFileTabs([target]);
+    setActiveFileTabId(tabId);
+  }, [confirmDiscardFileTabs, fileTabs]);
+
+  const handleCloseFileTabsToRight = useCallback((tabId: string) => {
+    const targetIndex = fileTabs.findIndex((tab) => tab.id === tabId);
+    if (targetIndex < 0) return;
+    const closingTabs = tabsAfter(fileTabs, tabId);
+    if (closingTabs.length === 0 || !confirmDiscardFileTabs(closingTabs)) return;
+    const remaining = fileTabs.slice(0, targetIndex + 1);
+    setClosedFileTabs((current) => rememberClosedFileTabs(current, closingTabs));
+    setFileTabs(remaining);
+    if (!remaining.some((tab) => tab.id === activeFileTabId)) setActiveFileTabId(tabId);
+  }, [activeFileTabId, confirmDiscardFileTabs, fileTabs]);
+
+  const handleMoveFileTab = useCallback((tabId: string, targetIndex: number) => {
+    setFileTabs((current) => moveFileTab(current, tabId, targetIndex));
+  }, []);
+
+  const handleReopenClosedFileTab = useCallback(() => {
+    if (!reopenableClosedFileTab) return;
+    setClosedFileTabs((current) => current.filter((tab) => tab.id !== reopenableClosedFileTab.id));
+    setFileTabs((current) => current.some((tab) => tab.id === reopenableClosedFileTab.id)
+      ? current
+      : [...current, reopenableClosedFileTab]);
+    setActiveFileTabId(reopenableClosedFileTab.id);
+    setRightPanelTab("files");
+    setRightPanelOpen(true);
+  }, [reopenableClosedFileTab]);
+
+  useEffect(() => {
+    const handleReopenShortcut = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.key.toLowerCase() !== "t") return;
+      if (!reopenableClosedFileTab) return;
+      event.preventDefault();
+      handleReopenClosedFileTab();
+    };
+    window.addEventListener("keydown", handleReopenShortcut);
+    return () => window.removeEventListener("keydown", handleReopenShortcut);
+  }, [handleReopenClosedFileTab, reopenableClosedFileTab]);
 
   const handleViewFullHistory = useCallback(() => {
     if (!selectedSession) return;
@@ -2233,8 +2302,13 @@ export function AppShell() {
           active={effectiveRightPanelOpen}
           fileTabs={fileTabs}
           activeFileTabId={activeFileTabId}
+          canReopenClosedFileTab={Boolean(reopenableClosedFileTab)}
           onSelectFileTab={setActiveFileTabId}
           onCloseFileTab={handleCloseFileTab}
+          onCloseOtherFileTabs={handleCloseOtherFileTabs}
+          onCloseFileTabsToRight={handleCloseFileTabsToRight}
+          onMoveFileTab={handleMoveFileTab}
+          onReopenClosedFileTab={handleReopenClosedFileTab}
           onOpenFile={handleOpenFile}
           onDirtyChange={handleFileDirtyChange}
           onRefresh={handleExplorerRefresh}

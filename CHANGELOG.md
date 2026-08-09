@@ -4,7 +4,11 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+
+- File tabs can be reordered by drag-and-drop or keyboard-accessible actions,
+  closed in groups, and reopened from the tab menu or with
+  `Ctrl/Cmd+Shift+T`, while preserving unsaved-change confirmation.
 
 ## [0.1.0] - 2026-08-01
 

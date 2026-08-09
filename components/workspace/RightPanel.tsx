@@ -21,8 +21,13 @@ interface Props {
   active: boolean;
   fileTabs: Tab[];
   activeFileTabId: string | null;
+  canReopenClosedFileTab: boolean;
   onSelectFileTab: (id: string) => void;
   onCloseFileTab: (id: string) => void;
+  onCloseOtherFileTabs: (id: string) => void;
+  onCloseFileTabsToRight: (id: string) => void;
+  onMoveFileTab: (id: string, targetIndex: number) => void;
+  onReopenClosedFileTab: () => void;
   onOpenFile: (path: string, name: string, options?: { sourceSessionId?: string | null; modeHint?: "diff"; line?: number }) => void;
   onDirtyChange: (id: string, dirty: boolean) => void;
   onRefresh: () => void;
@@ -68,7 +73,17 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
       <div className={styles.filesRoot}>
         <div className={styles.explorer}>{cwd ? <FileExplorer ref={explorerRef} cwd={cwd} selectedFilePath={fileTabs.find((tab) => tab.id === activeFileTabId)?.filePath ?? null} onOpenFile={props.onOpenFile} refreshKey={refreshKey} onAtMention={props.onMention} onAtMentions={props.onMentions} changesCollapsed /> : <div className={styles.empty}>{t("workspace.selectProject")}</div>}</div>
         <div className={styles.fileViewer}>
-          <div className={styles.fileTabs}><TabBar tabs={fileTabs} activeTabId={activeFileTabId ?? ""} onSelectTab={props.onSelectFileTab} onCloseTab={props.onCloseFileTab} /></div>
+          <div className={styles.fileTabs}><TabBar
+            tabs={fileTabs}
+            activeTabId={activeFileTabId ?? ""}
+            canReopenClosedTab={props.canReopenClosedFileTab}
+            onSelectTab={props.onSelectFileTab}
+            onCloseTab={props.onCloseFileTab}
+            onCloseOtherTabs={props.onCloseOtherFileTabs}
+            onCloseTabsToRight={props.onCloseFileTabsToRight}
+            onMoveTab={props.onMoveFileTab}
+            onReopenClosedTab={props.onReopenClosedFileTab}
+          /></div>
           <div className={styles.fileBody}>{fileTabs.length ? fileTabs.map((tab) => {
             const selected = tab.id === activeFileTabId;
             return <div key={tab.id} aria-hidden={!selected} style={{ position: "absolute", inset: 0, display: selected ? "block" : "none", overflow: "hidden" }}><FileViewer filePath={tab.filePath} cwd={tab.cwd ?? cwd ?? undefined} sourceSessionId={tab.sourceSessionId} gitRefreshKey={refreshKey} initialDisplayMode={tab.initialDisplayMode} revealLine={tab.revealLine} revealKey={tab.revealKey} active={active && activeTab === "files" && selected} onDirtyChange={(dirty) => props.onDirtyChange(tab.id, dirty)} onSaved={props.onRefresh} onMentionLines={active && selected ? props.onMentionLines : undefined} onOpenFile={(path) => props.onOpenFile(path, path.replace(/\\/g, "/").split("/").pop() ?? path)} /></div>;
