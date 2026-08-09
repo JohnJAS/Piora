@@ -37,6 +37,14 @@ const REVIEWED_RUNTIME_REPLACEMENTS = Object.freeze([
     installedVersion: "5.0.9",
     mechanism: "scripts/patch-bundled-dependencies.mjs",
   }),
+  Object.freeze({
+    lockPath: "node_modules/@earendil-works/pi-coding-agent/node_modules/undici",
+    lockedName: "undici",
+    lockedVersion: "8.5.0",
+    installedName: "undici",
+    installedVersion: "8.9.0",
+    mechanism: "scripts/patch-bundled-dependencies.mjs",
+  }),
 ]);
 const REVIEWED_RUNTIME_REPLACEMENT_BY_PATH = new Map(
   REVIEWED_RUNTIME_REPLACEMENTS.map((replacement) => [replacement.lockPath, replacement]),
