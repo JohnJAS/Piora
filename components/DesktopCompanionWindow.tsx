@@ -47,25 +47,21 @@ export function DesktopCompanionWindow() {
 
   const statusLabel = t(`companion.activity.${activity.status}`);
   const cause = activity.cause || t(`companion.activity.${activity.status}Cause`);
+  const petLabel = activePet?.displayName ?? t("companion.builtinPet");
 
   return (
     <main className={styles.window} aria-label={t("companion.desktopMode")}>
-      <div className={styles.dragSurface}>
-        <div className={styles.pet} aria-label={activePet?.displayName ?? t("companion.builtinPet")}>
+      <div className={styles.dragSurface} title={`${petLabel} · ${statusLabel} · ${cause}`}>
+        <div className={styles.pet} aria-label={petLabel}>
           {activePet ? <SpritePet pet={activePet} status={activity.status} /> : <BuiltinPet status={activity.status} />}
         </div>
-        <div className={styles.statusCard}>
-          <span
-            className={styles.statusDot}
-            style={{ "--pet-status": COMPANION_ACTIVITY_COLORS[activity.status] } as CSSProperties}
-          />
-          <span className={styles.statusCopy}>
-            <strong>{statusLabel}</strong>
-            <small title={cause}>{cause}</small>
-          </span>
-        </div>
+        <span
+          className={styles.statusDot}
+          aria-label={`${statusLabel}: ${cause}`}
+          style={{ "--pet-status": COMPANION_ACTIVITY_COLORS[activity.status] } as CSSProperties}
+        />
       </div>
-      <div className={styles.actions}>
+      <div className={styles.actions} aria-label={t("companion.desktopMode")}>
         <button type="button" title={t("companion.focusApp")} aria-label={t("companion.focusApp")} onClick={() => void window.piDesktop?.companionAction?.("focus-main")}>
           <AliIcon name="message" size={14} />
         </button>
@@ -76,7 +72,6 @@ export function DesktopCompanionWindow() {
           <AliIcon name="close" size={13} />
         </button>
       </div>
-      <span className={styles.dragHint}>{t("companion.dragHint")}</span>
     </main>
   );
 }

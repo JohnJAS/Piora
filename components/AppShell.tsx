@@ -74,7 +74,7 @@ type AutoNameStatus =
   | { kind: "success" }
   | { kind: "error"; message: string };
 type TopPanel = "branches" | "project" | "system" | "session" | "language" | "taskControls";
-type DesktopMenuId = "file" | "edit" | "view" | "help";
+type DesktopMenuId = "file" | "edit" | "view" | "window" | "help";
 
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
 const LANGUAGE_MENU_WIDTH = 176;
@@ -1246,12 +1246,14 @@ export function AppShell() {
         { id: "file", label: "文件" },
         { id: "edit", label: "编辑" },
         { id: "view", label: "视图" },
+        { id: "window", label: "窗口" },
         { id: "help", label: "帮助" },
       ]
     : [
         { id: "file", label: "File" },
         { id: "edit", label: "Edit" },
         { id: "view", label: "View" },
+        { id: "window", label: "Window" },
         { id: "help", label: "Help" },
       ];
 

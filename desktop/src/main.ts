@@ -41,8 +41,8 @@ const COMPANION_VISIBILITY_CHANNEL = "pi:companion-window-visible";
 const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
 const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
 const DESKTOP_TITLE_BAR_HEIGHT = 40;
-const COMPANION_WINDOW_WIDTH = 188;
-const COMPANION_WINDOW_HEIGHT = 218;
+const COMPANION_WINDOW_WIDTH = 136;
+const COMPANION_WINDOW_HEIGHT = 146;
 const MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80;
 const PORTABLE_SMOKE_TEST = process.env.PIORA_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
@@ -71,7 +71,7 @@ let trayPollTimer: NodeJS.Timeout | undefined;
 let applicationToken: string | undefined;
 let runningTaskCount = 0;
 
-type ApplicationMenuId = "file" | "edit" | "view" | "help";
+type ApplicationMenuId = "file" | "edit" | "view" | "window" | "help";
 
 function sanitizeNotificationTaskTitle(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -158,7 +158,6 @@ function installApplicationMenu(): void {
         { type: "separator" },
         { label: "设置", accelerator: "CmdOrCtrl+,", click: () => sendMenuAction("settings") },
         { type: "separator" },
-        { role: "close", label: "关闭窗口" },
         { role: "quit", label: "退出 Piora" },
       ],
     },
@@ -169,14 +168,23 @@ function installApplicationMenu(): void {
       submenu: [
         { label: "显示/隐藏侧栏", accelerator: "CmdOrCtrl+Shift+B", click: () => sendMenuAction("toggle-sidebar") },
         { label: "显示/隐藏文件面板", accelerator: "CmdOrCtrl+Shift+E", click: () => sendMenuAction("toggle-files") },
-        { label: "显示/隐藏宠物", click: () => sendMenuAction("toggle-companion") },
-        { type: "separator" },
-        { label: "重新加载", role: "reload" },
         { label: "实际大小", role: "resetZoom" },
         { label: "放大", role: "zoomIn" },
         { label: "缩小", role: "zoomOut" },
         { type: "separator" },
         { label: "切换全屏", role: "togglefullscreen" },
+        { type: "separator" },
+        { label: "重新加载", role: "reload" },
+      ],
+    },
+    {
+      id: "app-menu-window",
+      label: "窗口",
+      submenu: [
+        { label: "显示/隐藏桌面宠物", click: () => sendMenuAction("toggle-companion") },
+        { type: "separator" },
+        { role: "minimize", label: "最小化" },
+        { role: "close", label: "关闭窗口" },
       ],
     },
     {
@@ -221,7 +229,7 @@ function registerApplicationMenuPopupHandler(): void {
         return false;
       }
 
-      const allowedMenus: readonly ApplicationMenuId[] = ["file", "edit", "view", "help"];
+      const allowedMenus: readonly ApplicationMenuId[] = ["file", "edit", "view", "window", "help"];
       if (typeof requestedMenu !== "string" || !allowedMenus.includes(requestedMenu as ApplicationMenuId)) {
         return false;
       }

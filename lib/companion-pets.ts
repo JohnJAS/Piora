@@ -19,6 +19,7 @@ import {
   getRuntimeHomeDirectory,
   type RuntimeHomeEnvironment,
 } from "./runtime-home";
+import { BUNDLED_COMPANION_PETS_PUBLIC_PATH } from "./companion-store";
 
 export const PET_MANIFEST_MAX_BYTES = 64 * 1024;
 export const PET_INSTALLED_MANIFEST_MAX_BYTES = 256 * 1024;
@@ -73,9 +74,10 @@ export type CompanionPetSourceKind =
   | "codex-builtin-cache"
   | "codex-custom"
   | "codex-legacy-avatar"
+  | "piora-bundled"
   | "piora-installed";
 
-export type CodexPetSourceKind = Exclude<CompanionPetSourceKind, "piora-installed">;
+export type CodexPetSourceKind = Exclude<CompanionPetSourceKind, "piora-bundled" | "piora-installed">;
 
 export type PetAnimationStateId =
   | "idle"
@@ -1068,7 +1070,9 @@ function petFromManifest(
 ): CompanionPet {
   const width = manifest.frame.width * manifest.frame.columns;
   const height = manifest.frame.height * manifest.frame.rows;
-  const origin = sourceKind === "piora-installed" ? manifest.origin : sourceKind;
+  const origin = sourceKind === "piora-installed" || sourceKind === "piora-bundled"
+    ? manifest.origin
+    : sourceKind;
   return {
     id: manifest.id,
     displayName: manifest.displayName,
@@ -1076,9 +1080,11 @@ function petFromManifest(
     ...(manifest.author ? { author: manifest.author } : {}),
     spriteVersionNumber: manifest.spriteVersionNumber,
     spritesheetPath: manifest.spritesheetPath,
-    atlasUrl: source === "piora"
-      ? `/api/companion-pets/${encodeURIComponent(manifest.id)}/spritesheet`
-      : null,
+    atlasUrl: sourceKind === "piora-bundled"
+      ? `${BUNDLED_COMPANION_PETS_PUBLIC_PATH}/${encodeURIComponent(manifest.id)}/${manifest.spritesheetPath}`
+      : source === "piora"
+        ? `/api/companion-pets/${encodeURIComponent(manifest.id)}/spritesheet`
+        : null,
     width,
     height,
     frame: { ...manifest.frame },
@@ -1118,7 +1124,7 @@ function validatePetPackage(
   if (!rootTargetStats.isDirectory()) {
     throw new CompanionPetError("Pet data root is not a directory", "PET_ACCESS_DENIED", 403);
   }
-  if (sourceKind === "piora-installed" && rootPathStats.isSymbolicLink()) {
+  if ((sourceKind === "piora-installed" || sourceKind === "piora-bundled") && rootPathStats.isSymbolicLink()) {
     throw new CompanionPetError(
       "Installed pet data root must not be a symbolic link",
       "PET_ACCESS_DENIED",
@@ -1143,7 +1149,7 @@ function validatePetPackage(
   const manifestBytes = readBoundedRegularFile(
     realPetDirectory,
     manifestFileName,
-    sourceKind === "piora-installed"
+    sourceKind === "piora-installed" || sourceKind === "piora-bundled"
       ? PET_INSTALLED_MANIFEST_MAX_BYTES
       : PET_MANIFEST_MAX_BYTES,
     manifestFileName,
@@ -1210,13 +1216,17 @@ export function getPioraPetsDirectory(
   return path.join(getRuntimeHomeDirectory(environment), ".pi", "agent", "piora", "pets");
 }
 
+export function getBundledPioraPetsDirectory(): string {
+  return path.join(process.cwd(), "public", "companion-pets", "bundled");
+}
+
 function listPetPackages(
   root: string,
   sourceKind: CompanionPetSourceKind,
   installedSourceKeys: ReadonlySet<string>,
   manifestFileName = "pet.json",
 ): { pets: CompanionPet[]; diagnostics: CompanionPetDiagnostic[]; available: boolean } {
-  const source = sourceKind === "piora-installed" ? "piora" : "codex";
+  const source = sourceKind === "piora-installed" || sourceKind === "piora-bundled" ? "piora" : "codex";
   const scope = source === "codex" ? "source" : "installed";
   let rootPathStats: fs.Stats;
   let rootStats: fs.Stats;
@@ -1226,7 +1236,7 @@ function listPetPackages(
   } catch {
     return { pets: [], diagnostics: [], available: false };
   }
-  if (sourceKind === "piora-installed" && rootPathStats.isSymbolicLink()) {
+  if ((sourceKind === "piora-installed" || sourceKind === "piora-bundled") && rootPathStats.isSymbolicLink()) {
     return {
       pets: [],
       diagnostics: [{ scope, message: "Installed pet root must not be a symbolic link" }],
@@ -1261,7 +1271,7 @@ function listPetPackages(
         entry.name,
         source,
         sourceKind,
-        sourceKind === "piora-installed"
+        sourceKind === "piora-installed" || sourceKind === "piora-bundled"
           || installedSourceKeys.has(`${sourceKind}:${entry.name}`)
           || installedSourceKeys.has(`*:${entry.name}`),
         manifestFileName,
@@ -1351,12 +1361,22 @@ function listBuiltinPets(
 export function listCompanionPets(
   environment: CompanionPetEnvironment = process.env,
 ): CompanionPetsResponse {
+  const bundledResult = listPetPackages(
+    getBundledPioraPetsDirectory(),
+    "piora-bundled",
+    new Set(),
+  );
   const installedResult = listPetPackages(
     getPioraPetsDirectory(environment),
     "piora-installed",
     new Set(),
   );
-  const installedSourceKeys = new Set(installedResult.pets.map((pet) => (
+  const installedById = new Map(bundledResult.pets.map((pet) => [pet.id, pet]));
+  for (const pet of installedResult.pets) installedById.set(pet.id, pet);
+  const installed = [...installedById.values()].sort((left, right) => (
+    left.displayName.localeCompare(right.displayName)
+  ));
+  const installedSourceKeys = new Set(installed.map((pet) => (
     `${pet.origin ?? "*"}:${pet.id}`
   )));
   const builtinResult = listBuiltinPets(
@@ -1382,11 +1402,12 @@ export function listCompanionPets(
   return {
     codexSourceAvailable: builtinResult.available || customResult.available || legacyResult.available,
     sources,
-    installed: installedResult.pets,
+    installed,
     diagnostics: [
       ...builtinResult.diagnostics,
       ...customResult.diagnostics,
       ...legacyResult.diagnostics,
+      ...bundledResult.diagnostics,
       ...installedResult.diagnostics,
     ],
   };

@@ -76,6 +76,7 @@ export const zhCNLocale: LocalePlugin = {
     "companion.source.codexBuiltinCache": "Codex 内置 · 本机缓存",
     "companion.source.codexCustom": "Codex 自定义宠物 · 本机",
     "companion.source.codexLegacyAvatar": "Codex 旧版头像 · 本机",
+    "companion.source.pioraBundled": "随 Piora 内置 · 离线可用",
     "companion.source.pioraInstalled": "Piora 本地副本",
     "companion.refresh": "刷新",
     "companion.builtinPet": "Pi 小助手",

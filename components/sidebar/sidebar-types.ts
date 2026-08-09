@@ -5,7 +5,7 @@ declare global {
     piDesktop?: {
       selectDirectory: () => Promise<string | null>;
       platform?: string;
-      openMenu?: (menu: "file" | "edit" | "view" | "help", x: number, y: number) => Promise<boolean>;
+      openMenu?: (menu: "file" | "edit" | "view" | "window" | "help", x: number, y: number) => Promise<boolean>;
       revealPath?: (filePath: string) => Promise<boolean>;
       openPath?: (filePath: string) => Promise<boolean>;
       setCompanionWindowVisible?: (visible: boolean) => Promise<boolean>;

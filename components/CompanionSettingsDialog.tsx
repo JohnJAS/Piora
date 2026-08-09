@@ -16,10 +16,12 @@ const SOURCE_MESSAGE_KEYS: Record<CompanionPetSourceKind, string> = {
   "codex-builtin-cache": "companion.source.codexBuiltinCache",
   "codex-custom": "companion.source.codexCustom",
   "codex-legacy-avatar": "companion.source.codexLegacyAvatar",
+  "piora-bundled": "companion.source.pioraBundled",
   "piora-installed": "companion.source.pioraInstalled",
 };
 
 function resolvePetSourceKind(pet: CompanionPetSource): CompanionPetSourceKind {
+  if (pet.sourceKind === "piora-bundled") return pet.sourceKind;
   if (pet.installed && pet.origin && pet.origin in SOURCE_MESSAGE_KEYS) return pet.origin;
   if (pet.sourceKind && pet.sourceKind in SOURCE_MESSAGE_KEYS) return pet.sourceKind;
   return pet.source === "codex" ? "codex-custom" : "piora-installed";

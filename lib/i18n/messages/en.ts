@@ -76,6 +76,7 @@ export const enLocale: LocalePlugin = {
     "companion.source.codexBuiltinCache": "Codex built-in · local cache",
     "companion.source.codexCustom": "Codex custom pet · local",
     "companion.source.codexLegacyAvatar": "Codex legacy avatar · local",
+    "companion.source.pioraBundled": "Bundled with Piora · works offline",
     "companion.source.pioraInstalled": "Piora local copy",
     "companion.refresh": "Refresh",
     "companion.builtinPet": "Pi neutral",

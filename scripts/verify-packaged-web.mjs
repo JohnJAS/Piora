@@ -30,6 +30,8 @@ const backgroundAssetRoot = "themes/dream-backgrounds";
 const backgroundManifestName = "manifest.json";
 const expectedBackgroundCount = 20;
 const safeBackgroundAsset = /^\/themes\/dream-backgrounds\/[A-Za-z0-9][A-Za-z0-9._-]*\.webp$/;
+const bundledPetRelativeRoot = "companion-pets/bundled/pekka-pal.codex-pet";
+const bundledPetId = "pekka-pal.codex-pet";
 
 export const forbiddenPackagedDependencies = Object.freeze([
   "@giscus/react",
@@ -151,6 +153,47 @@ export async function verifyPackagedBackgroundAssets(
   }
 
   return { backgroundCount: expectedBackgroundCount };
+}
+
+export async function verifyPackagedCompanionAssets(
+  webRootInput,
+  sourcePublicRootInput = join(projectRoot, "public"),
+) {
+  const webRoot = resolve(webRootInput);
+  const sourcePublicRoot = resolve(sourcePublicRootInput);
+  const sourcePetRoot = join(sourcePublicRoot, bundledPetRelativeRoot);
+  const packagedPetRoot = join(webRoot, "public", bundledPetRelativeRoot);
+
+  for (const fileName of ["pet.json", "spritesheet.webp"]) {
+    const sourcePath = join(sourcePetRoot, fileName);
+    const packagedPath = join(packagedPetRoot, fileName);
+    await assertRegularFile(sourcePath, `Source bundled pet ${fileName}`);
+    await assertRegularFile(packagedPath, `Packaged bundled pet ${fileName}`);
+    const [sourceBytes, packagedBytes] = await Promise.all([
+      readFile(sourcePath),
+      readFile(packagedPath),
+    ]);
+    if (!sourceBytes.equals(packagedBytes)) {
+      throw new Error(`Packaged bundled pet asset differs from source: ${fileName}`);
+    }
+  }
+
+  const manifest = JSON.parse(await readFile(join(sourcePetRoot, "pet.json"), "utf8"));
+  if (
+    manifest?.id !== bundledPetId
+    || manifest?.spritesheetPath !== "spritesheet.webp"
+    || manifest?.frame?.width !== 192
+    || manifest?.frame?.height !== 208
+    || manifest?.frame?.columns !== 8
+    || manifest?.frame?.rows !== 11
+  ) {
+    throw new Error("Bundled companion manifest does not match the reviewed default pet geometry");
+  }
+
+  return {
+    id: bundledPetId,
+    spritesheetBytes: (await stat(join(packagedPetRoot, "spritesheet.webp"))).size,
+  };
 }
 
 /**
@@ -380,6 +423,7 @@ async function main() {
   await assertFile(join(fixtureSourceRoot, "extensions", "package-probe.js"));
   await assertFile(join(fixtureSourceRoot, "skills", "package-probe", "SKILL.md"));
   const packagedBackgrounds = await verifyPackagedBackgroundAssets(packagedWebRoot);
+  const packagedCompanion = await verifyPackagedCompanionAssets(packagedWebRoot);
 
   const electronShell = await inspectElectronShell(packagedWebRoot, requireElectronShell);
   const forbiddenDependencyCopies = await findForbiddenPackagedDependencies(packagedWebRoot);
@@ -567,6 +611,7 @@ async function main() {
       patchedBundledDependencies: patchedBundledDependencies.map(({ name, version }) => `${name}@${version}`),
       forbiddenDependencyChecks: forbiddenPackagedDependencies.length,
       packagedBackgrounds: packagedBackgrounds.backgroundCount,
+      packagedCompanion,
       electronShellChecked: electronShell.checked,
       executable: electronShell.executable,
       fixtureRuntime,
