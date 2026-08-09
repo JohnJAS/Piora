@@ -66,6 +66,6 @@ tests              436 total / 431 pass / 0 fail / 5 skipped
 
 - npm 中断曾把桌面工作区移动到 `node_modules.broken/@piora/desktop`；已将用户修改原样恢复到 `desktop/`。
 - 恢复备份继续保留并被 Git、TypeScript、ESLint 排除：
-  - `F:\Piora\node_modules.broken`
-  - `F:\Piora-recovery\node_modules.broken-20260808`（一次超时搬运留下的部分副本）
+  - `<workspace>\node_modules.broken`
+  - `<recovery-root>\node_modules.broken-20260808`（一次超时搬运留下的部分副本）
 - 未删除或覆盖用户已有的其他工作区修改，未创建提交。
