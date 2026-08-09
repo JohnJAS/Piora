@@ -109,7 +109,7 @@ jobs:
 
       - name: Smoke-test portable executable
         shell: pwsh
-        run: npm run smoke:portable -- --expected-version "$env:GITHUB_REF_NAME"
+        run: node scripts/smoke-test-portable.mjs --expected-version "$env:GITHUB_REF_NAME"
 
       - name: Generate checksums
         shell: pwsh

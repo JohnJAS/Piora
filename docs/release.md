@@ -33,7 +33,7 @@ release checkout, then run:
 npm ci
 npm run dist:win
 npm run verify:package
-npm run smoke:portable -- --expected-version 0.1.0
+node scripts/smoke-test-portable.mjs --expected-version 0.1.0
 ```
 
 `verify:package` starts the packaged standalone service in an isolated home directory and checks
@@ -45,7 +45,7 @@ executable; do not hand-edit `resources/licenses/third-party`. For a normal pack
 the extension fixture runs through the executable in `win-unpacked` with Electron's
 `ELECTRON_RUN_AS_NODE` mode rather than the developer's Node.js executable.
 
-`smoke:portable` launches the final portable EXE in an isolated profile and requires its reported
+The portable smoke script launches the final portable EXE in an isolated profile and requires its reported
 application version to match `--expected-version`. It also requires the hidden smoke window to load
 the renderer, expose the preload bridge, and reach the Piora application shell before passing.
 The default five-minute timeout includes first-run extraction and cleanup of the complete portable
