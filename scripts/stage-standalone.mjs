@@ -25,6 +25,23 @@ const assets = [
     required: true,
     rejectSymlinks: false,
   },
+  {
+    // Next 16's standalone trace can omit the client reference manifest for
+    // this secondary App Router entry. The main page still works, but opening
+    // the Electron companion window then returns 500 and crashes its renderer.
+    name: "desktop companion client reference manifest",
+    source: join(nextDirectory, "server", "app", "desktop-pet", "page_client-reference-manifest.js"),
+    destination: join(
+      standaloneDirectory,
+      ".next",
+      "server",
+      "app",
+      "desktop-pet",
+      "page_client-reference-manifest.js",
+    ),
+    required: true,
+    rejectSymlinks: true,
+  },
   ...[
     ["Piora approval extension", "extensions/piora-approval.ts"],
     ["Piora approval policy", "lib/approval-policy.ts"],

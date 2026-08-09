@@ -41,6 +41,7 @@ export const forbiddenPackagedDependencies = Object.freeze([
 
 const requiredPaths = [
   "server.js",
+  ".next/server/app/desktop-pet/page_client-reference-manifest.js",
   "node_modules/next/package.json",
   "node_modules/@earendil-works/pi-agent-core/package.json",
   "node_modules/@earendil-works/pi-ai/package.json",
@@ -535,6 +536,12 @@ async function main() {
       headers: { "X-Pi-Desktop-Token": token },
     });
     if (!rootResponse.ok) throw new Error(`Packaged root page returned ${rootResponse.status}`);
+    const companionPageResponse = await fetch(`${origin}/desktop-pet`, {
+      headers: { "X-Pi-Desktop-Token": token },
+    });
+    if (!companionPageResponse.ok) {
+      throw new Error(`Packaged companion page returned ${companionPageResponse.status}`);
+    }
 
     const { response: newSessionResponse, body: newSession } = await postJson(
       origin,
@@ -620,6 +627,7 @@ async function main() {
       unauthorizedStatus: unauthorized.status,
       healthStatus: 200,
       rootStatus: rootResponse.status,
+      companionPageStatus: companionPageResponse.status,
       agentSessionStatus: newSessionResponse.status,
       piPackage: fixturePackageName,
       extensionCommand: fixtureCommandName,

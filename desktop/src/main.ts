@@ -65,6 +65,7 @@ let shutdownPromise: Promise<void> | undefined;
 let shutdownComplete = false;
 let applicationMenu: Menu | null = null;
 let companionMoveTimer: NodeJS.Timeout | undefined;
+let companionShouldBeVisible = false;
 let mainWindowStateTimer: NodeJS.Timeout | undefined;
 let tray: Tray | null = null;
 let trayPollTimer: NodeJS.Timeout | undefined;
@@ -481,7 +482,19 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
     if (!isAllowedAppUrl(requestedUrl, url.origin)) event.preventDefault();
   });
   window.webContents.on("will-attach-webview", (event) => event.preventDefault());
-  window.webContents.on("render-process-gone", (_event, details) => log.error("Companion renderer exited", details));
+  window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+    if (isMainFrame) log.error("Companion page failed to load", { errorCode, errorDescription, validatedUrl });
+  });
+  window.webContents.on("render-process-gone", (_event, details) => {
+    log.error("Companion renderer exited", details);
+    if (companionWindow === window) {
+      companionWindow = null;
+      window.destroy();
+    }
+  });
+  window.once("ready-to-show", () => {
+    if (companionWindow === window && companionShouldBeVisible) window.showInactive();
+  });
   window.on("move", () => {
     if (companionMoveTimer) clearTimeout(companionMoveTimer);
     companionMoveTimer = setTimeout(() => {
@@ -501,14 +514,17 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
 
 function showCompanionWindow(): boolean {
   if (!serverUrl || !logger) return false;
+  companionShouldBeVisible = true;
   if (!companionWindow || companionWindow.isDestroyed()) {
     companionWindow = createCompanionWindow(serverUrl, logger);
+    return true;
   }
   companionWindow.showInactive();
   return true;
 }
 
 function closeCompanionWindow(): void {
+  companionShouldBeVisible = false;
   if (!companionWindow || companionWindow.isDestroyed()) return;
   if (logger) {
     const bounds = companionWindow.getBounds();
