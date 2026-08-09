@@ -18,6 +18,11 @@ import { getNextTreeRenderCount, getTreeRenderWindow, TREE_INITIAL_RENDER_COUNT 
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
+import {
+  parseWorkspaceContinuity,
+  updateWorkspaceContinuity,
+  workspaceContinuityStorageKey,
+} from "@/lib/workspace-continuity";
 import styles from "./FileExplorer.module.css";
 type Translate = ReturnType<typeof useI18n>["t"];
 
@@ -952,6 +957,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const [focusedTreePath, setFocusedTreePath] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<FileContextMenuState | null>(null);
   const prevCwdRef = useRef<string | null>(null);
+  const skipExpandedPersistenceRef = useRef(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const refreshToken = `${refreshKey ?? 0}:${treeRefreshKey}`;
@@ -1125,7 +1131,17 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
 
     // Reset expanded state only when cwd changes, not on refreshKey bumps
     if (cwdChanged) {
-      setExpandedPaths(new Set());
+      let restored = parseWorkspaceContinuity(null, cwd);
+      try {
+        restored = parseWorkspaceContinuity(
+          window.localStorage.getItem(workspaceContinuityStorageKey(cwd)),
+          cwd,
+        );
+      } catch {
+        // The tree remains usable when browser storage is unavailable.
+      }
+      skipExpandedPersistenceRef.current = true;
+      setExpandedPaths(new Set(restored.expandedPaths));
       setHighlightedPaths(new Set());
       setUploadSummary(null);
       setPendingConflict(null);
@@ -1145,6 +1161,26 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [cwd, refreshKey, treeRefreshKey]);
+
+  useEffect(() => {
+    if (skipExpandedPersistenceRef.current) {
+      skipExpandedPersistenceRef.current = false;
+      return;
+    }
+    try {
+      const key = workspaceContinuityStorageKey(cwd);
+      window.localStorage.setItem(
+        key,
+        updateWorkspaceContinuity(
+          window.localStorage.getItem(key),
+          cwd,
+          { expandedPaths },
+        ),
+      );
+    } catch {
+      // Expansion remains available for the current render when storage fails.
+    }
+  }, [cwd, expandedPaths]);
 
   useEffect(() => {
     const query = searchQuery.trim();

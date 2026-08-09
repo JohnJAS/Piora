@@ -61,6 +61,11 @@ import {
   tabsAfter,
   tabsExcept,
 } from "@/lib/file-tabs";
+import {
+  parseWorkspaceContinuity,
+  updateWorkspaceContinuity,
+  workspaceContinuityStorageKey,
+} from "@/lib/workspace-continuity";
 
 type SessionCopyField = "file" | "id";
 type AutoNameStatus =
@@ -532,6 +537,7 @@ export function AppShell() {
 
   const initialSessionId = initialNavigation.sessionId;
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
+  const [activeProjectRoot, setActiveProjectRoot] = useState<string | null>(null);
   const activeProjectRootRef = useRef<string | null>(null);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId);
@@ -592,11 +598,24 @@ export function AppShell() {
         `Discard unsaved changes in ${dirtyTabs.length} file${dirtyTabs.length === 1 ? "" : "s"} before switching projects?\n\nCancel keeps the edited file tabs open.`,
       );
     activeProjectRootRef.current = newProject;
+    setActiveProjectRoot(newProject);
+    let restored = parseWorkspaceContinuity(null, newProject);
+    try {
+      restored = parseWorkspaceContinuity(
+        window.localStorage.getItem(workspaceContinuityStorageKey(newProject)),
+        newProject,
+      );
+    } catch {
+      // Workspace navigation still works when browser storage is unavailable.
+    }
 
     // Keep the project identity in sync during the initial URL restore without
     // remounting the just-created or restored chat.
     if (suppressCwdBumpRef.current) {
       suppressCwdBumpRef.current = false;
+      setFileTabs(restored.tabs);
+      setActiveFileTabId(restored.activeTabId);
+      if (restored.tabs.length > 0) setRightPanelOpen(true);
       return;
     }
     // Worktrees of one repo share a project root. Moving the effective cwd
@@ -619,26 +638,49 @@ export function AppShell() {
     setBranchActiveLeafId(null);
     setSystemPrompt(null);
     setActiveTopPanel(null);
-    // Clean tabs can close with the old project. If the user declines to
-    // discard unsaved work, retain only those dirty tabs; each tab remembers
-    // its original cwd so previews and git diffs remain correctly scoped.
-    if (keepDirtyTabs) {
-      setFileTabs(dirtyTabs);
-      setActiveFileTabId(
-        activeFileTabId && dirtyTabs.some((tab) => tab.id === activeFileTabId)
-          ? activeFileTabId
-          : dirtyTabs[dirtyTabs.length - 1]?.id ?? null,
-      );
-      setRightPanelOpen(true);
-    } else {
-      setFileTabs([]);
-      setActiveFileTabId(null);
-      setRightPanelOpen(false);
-    }
+    const retainedTabs = keepDirtyTabs ? dirtyTabs : [];
+    const retainedIds = new Set(retainedTabs.map((tab) => tab.id));
+    const restoredTabs = restored.tabs.filter((tab) => !retainedIds.has(tab.id));
+    const nextTabs: Tab[] = [...retainedTabs, ...restoredTabs];
+    const nextActiveId = activeFileTabId && retainedIds.has(activeFileTabId)
+      ? activeFileTabId
+      : restored.activeTabId && nextTabs.some((tab) => tab.id === restored.activeTabId)
+        ? restored.activeTabId
+        : nextTabs.at(-1)?.id ?? null;
+    setFileTabs(nextTabs);
+    setActiveFileTabId(nextActiveId);
+    setRightPanelOpen(nextTabs.length > 0);
     if (!cwdBelongsToSelectedSession) {
       router.replace("/", { scroll: false });
     }
   }, [activeFileTabId, fileTabs, router, selectedSession]);
+
+  useEffect(() => {
+    if (!activeProjectRoot) return;
+    try {
+      const key = workspaceContinuityStorageKey(activeProjectRoot);
+      const persistedTabs = fileTabs.map((tab) => ({
+        id: tab.id,
+        label: tab.label,
+        filePath: tab.filePath,
+        cwd: tab.cwd ?? activeProjectRoot,
+        initialDisplayMode: tab.initialDisplayMode,
+      }));
+      const persistedActiveId = activeFileTabId && persistedTabs.some((tab) => tab.id === activeFileTabId)
+        ? activeFileTabId
+        : persistedTabs.at(-1)?.id ?? null;
+      window.localStorage.setItem(
+        key,
+        updateWorkspaceContinuity(
+          window.localStorage.getItem(key),
+          activeProjectRoot,
+          { tabs: persistedTabs, activeTabId: persistedActiveId },
+        ),
+      );
+    } catch {
+      // Open files remain usable even when localStorage is blocked or full.
+    }
+  }, [activeFileTabId, activeProjectRoot, fileTabs]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     setSettingsDialogOpen(false);

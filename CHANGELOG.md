@@ -9,6 +9,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 - File tabs can be reordered by drag-and-drop or keyboard-accessible actions,
   closed in groups, and reopened from the tab menu or with
   `Ctrl/Cmd+Shift+T`, while preserving unsaved-change confirmation.
+- Open file tabs, the active file, and expanded file-tree directories restore
+  per workspace after refresh without persisting unsaved editor contents.
 
 ## [0.1.0] - 2026-08-01
 
