@@ -1,6 +1,6 @@
 # Open-source project status
 
-Status date: **2026-08-01 (Asia/Shanghai)**
+Status date: **2026-08-09 (Asia/Shanghai)**
 
 ## Identity and repository
 
@@ -52,13 +52,16 @@ implies endorsement.
   availability tests through the current trusted Pi runtime without bypassing extension providers;
 - historical Pi reasoning retains its raw content-block index and can recover from rapid
   collapse/reopen, request timeout, and live-message reconciliation instead of remaining on a
-  loading placeholder.
+  loading placeholder;
+- workspace file tabs support pointer and keyboard reordering, bulk close, reopen history, and
+  dirty-state confirmation, while open files, the active tab, and expanded file-tree paths restore
+  per project without persisting editor contents.
 
 ## Verification recorded so far
 
 - `npm run typecheck`: passed for the web and desktop TypeScript projects;
 - `npm run lint`: passed;
-- `npm test` under the required Node.js 22.19.0 runtime: 380 tests, 375 passed, 0 failed,
+- `npm test` under the required Node.js 22.19.0 runtime: 552 tests, 547 passed, 0 failed,
   5 skipped because Windows did not grant symlink-creation privileges;
 - `npm run licenses:check` and `npm run verify:backgrounds` passed; the latter verified 20 unique
   WebP assets totaling 2,274,482 bytes. `npm audit --omit=dev --audit-level=high` against the
@@ -89,8 +92,9 @@ implies endorsement.
   Native double-click maximize strongly confirms Windows treated the blank point as a caption area,
   but standard-mouse continuous drag remains part of the clean-machine matrix rather than being
   overstated as complete;
-- the local candidate `Piora-0.1.0-win-x64-portable.exe` is 180,907,440 bytes with SHA-256
-  `6461C3D0ECE8F55F7CA50F67155CE03B56B509D58B2111ECC62D0FD6982229FF`; its Authenticode
+- the current local candidate `Piora-0.1.0-win-x64-portable.exe`, built from runtime commit
+  `626b632`, is 181,199,599 bytes with SHA-256
+  `74AA29B1937B2840544427D7DA2B064D78F4F081BC5E4BCF5F3B6DF0E19648F4`; its Authenticode
   status is `NotSigned`;
 - an artifact string scan found no developer-home or development-checkout private build paths. High-confidence
   token-pattern candidates were confined to upstream binary byte sequences, Next.js identifiers,
@@ -124,9 +128,10 @@ rejected instead of executed or fetched.
   the current packaged EXE evidence covers the integrated top row, double-click maximize,
   restore/close, and the appearance panel;
 - clean-machine portable replacement, data-retention, and uninstall checks;
-- the current final working-tree batch still needs an isolated package rebuild, reviewed PR into
-  `main`, its own public CI result, and GitHub Release download/checksum verification. The public
-  repository, default `main`, and prior successful Ubuntu/Windows CI are already established;
+- the current final working-tree batch has an isolated local package build and portable smoke
+  result, but still needs a reviewed push/PR into `main`, its own public CI result, and GitHub
+  Release download/checksum verification. The public repository, default `main`, and prior
+  successful Ubuntu/Windows CI are already established;
 - branch protection/rulesets remain an administrative hardening task and are not yet enabled.
 
 Until those items are recorded, the locally produced executable is an unsigned prerelease

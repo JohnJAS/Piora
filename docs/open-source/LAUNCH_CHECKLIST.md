@@ -121,8 +121,8 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
   portable EXE, and create a draft GitHub prerelease for manual review.
 - [x] Verify the locally produced candidate artifact, package contents, checksum, unsigned status,
   and provenance before creating a GitHub Release. Candidate:
-  `Piora-0.1.0-win-x64-portable.exe`, 180,907,440 bytes,
-  SHA-256 `6461C3D0ECE8F55F7CA50F67155CE03B56B509D58B2111ECC62D0FD6982229FF`,
+  `Piora-0.1.0-win-x64-portable.exe`, 181,199,599 bytes, built from runtime commit `626b632`,
+  SHA-256 `74AA29B1937B2840544427D7DA2B064D78F4F081BC5E4BCF5F3B6DF0E19648F4`,
   Authenticode `NotSigned`.
 - [ ] Verify the artifact downloaded from the draft GitHub Release matches its published checksum
   and review the generated release notes and unsigned warning before making the prerelease public.
