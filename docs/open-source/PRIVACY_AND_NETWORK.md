@@ -1,6 +1,6 @@
 # Privacy and network behavior
 
-piGUI is a local desktop interface for Pi. It has no piGUI account service, advertising SDK,
+Piora is a local desktop interface for Pi. It has no Piora account service, advertising SDK,
 analytics SDK, crash-upload SDK, or built-in telemetry pipeline.
 
 ## Local data
@@ -17,7 +17,7 @@ background image in IndexedDB or a size-limited localStorage fallback. The compa
 open state, selected pet, TODO items, and user-defined quick phrases in localStorage under the
 same profile. None of this profile data is uploaded by the theme, background, or companion UI.
 
-On packaged Windows builds the Electron profile is normally under `%APPDATA%\piGUI`; development
+On packaged Windows builds the Electron profile is normally under `%APPDATA%\Piora`; development
 in a normal browser uses that browser's site-data location instead. Operational logs are written
 under the Electron profile's `logs` directory and can include filesystem paths.
 
@@ -34,13 +34,13 @@ are:
 
 If `CODEX_HOME` is explicitly configured, the same relative paths below that directory are used.
 Import is an explicit button action. A validated, normalized manifest and its PNG/WebP sprite
-sheet are copied into piGUI-owned storage at
-`%USERPROFILE%\.pi\agent\pi-gui\pets\<pet-id>`. The importer does not execute JavaScript,
+sheet are copied into Piora-owned storage at
+`%USERPROFILE%\.pi\agent\piora\pets\<pet-id>`. The importer does not execute JavaScript,
 HTML, CSS, npm scripts, CDP hooks, or remote asset URLs, and it does not modify the source Codex
 package.
 
 This is an independently maintained, best-effort file-format compatibility layer. It is not an
-official OpenAI or Codex integration, and piGUI does not bundle Codex pet artwork or branding.
+official OpenAI or Codex integration, and Piora does not bundle Codex pet artwork or branding.
 
 ## Local server boundary
 
@@ -79,25 +79,25 @@ The first public build is a portable EXE, not an installer. Deleting or replacin
 **not** delete the Electron profile, Pi sessions/settings/credentials, imported pets, or browser
 site data. This is intentional so replacing a portable binary does not destroy user state.
 
-To remove only piGUI-owned data on Windows, close piGUI first, then remove the following locations
+To remove only Piora-owned data on Windows, close Piora first, then remove the following locations
 if they exist:
 
-- `%APPDATA%\piGUI` for the Electron profile, localStorage/IndexedDB preferences, and logs;
-- `%USERPROFILE%\.pi\agent\pi-gui` for pet copies imported by piGUI;
-- the piGUI origin's site data in the browser used for web development.
+- `%APPDATA%\Piora` for the Electron profile, localStorage/IndexedDB preferences, and logs;
+- `%USERPROFILE%\.pi\agent\piora` for pet copies imported by Piora;
+- the Piora origin's site data in the browser used for web development.
 
 Do not delete all of `%USERPROFILE%\.pi\agent` unless you also intend to remove Pi sessions,
 credentials, settings, and installed resources used by Pi itself. Source pet data under
-`%USERPROFILE%\.codex` remains owned by Codex and is never removed by piGUI.
+`%USERPROFILE%\.codex` remains owned by Codex and is never removed by Piora.
 
-## What piGUI does not do by default
+## What Piora does not do by default
 
 - no analytics, crash-report upload, or behavioral tracking;
 - no automatic upload of conversations, projects, TODOs, quick phrases, pets, or backgrounds;
 - no remote theme CSS, theme JavaScript, or background URL loading;
 - no automatic installation or execution of project extensions before project trust;
 - no automatic updater in the initial release;
-- no background network monitor owned by piGUI.
+- no background network monitor owned by Piora.
 
 Review and redact logs before sharing them in an issue. Never attach credentials, private
 prompts, session files, TODOs, quick phrases, imported personal artwork, or proprietary source

@@ -1,5 +1,5 @@
 @echo off
-title piGUI desktop build
+title Piora desktop build
 setlocal
 
 set "LOGFILE=F:\piGUI\desktop\build-log.txt"
@@ -28,7 +28,7 @@ if %errorlevel% neq 0 (
 
 REM ---- Running as admin ----
 echo ============================================
-echo  piGUI desktop build (admin)
+echo  Piora desktop build (admin)
 echo  %date% %time%
 echo ============================================
 echo.

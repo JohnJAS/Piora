@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useState, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
+import { forwardRef, startTransition, useState, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { getFileIcon, FolderIcon } from "./FileIcons";
 import {
@@ -14,6 +14,7 @@ import {
 import type { GitFileStatus, GitFileStatusKind, GitStatusResponse } from "@/lib/git-types";
 import type { FileIndexEntry } from "@/lib/file-fuzzy";
 import { getFileViewerKind } from "@/lib/file-types";
+import { getNextTreeRenderCount, getTreeRenderWindow, TREE_INITIAL_RENDER_COUNT } from "@/lib/tree-progressive";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
@@ -296,7 +297,7 @@ function FileContextMenu({
           onClick={() => runAndClose(() => onOpenInApp(menu.target))}
         >
           <span className={styles.contextMenuIcon}><AliIcon name="folder-open" size={15} /></span>
-          <span className={styles.contextMenuLabel}>{t("files.expandInPiGUI")}</span>
+          <span className={styles.contextMenuLabel}>{t("files.expandInPiora")}</span>
         </button>
       ) : (
         <div
@@ -337,7 +338,7 @@ function FileContextMenu({
                 }}
               >
                 <span className={styles.contextMenuIcon}><AliIcon name="file" size={15} /></span>
-                <span className={styles.contextMenuLabel}>{t("files.openInPiGUI")}</span>
+                <span className={styles.contextMenuLabel}>{t("files.openInPiora")}</span>
               </button>
               <button
                 type="button"
@@ -391,12 +392,16 @@ function SearchResultRow({
   onOpen,
   onOpenContextMenu,
   selected,
+  active,
+  onFocus,
 }: {
   entry: FileIndexEntry;
   cwd: string;
   onOpen: (target: FileContextTarget) => void;
   onOpenContextMenu: (target: FileContextTarget, x: number, y: number) => void;
   selected: boolean;
+  active: boolean;
+  onFocus: () => void;
 }) {
   const fullPath = joinFilePath(cwd, entry.path);
   const name = getFileName(entry.path);
@@ -408,7 +413,9 @@ function SearchResultRow({
       role="option"
       aria-selected={selected}
       data-file-search-result
-      tabIndex={0}
+      data-tree-label={name}
+      tabIndex={active ? 0 : -1}
+      onFocus={onFocus}
       title={fullPath}
       style={{ background: selected ? "var(--bg-selected)" : undefined }}
       onClick={() => onOpen(target)}
@@ -431,6 +438,18 @@ function SearchResultRow({
           if (rows[nextIndex]) {
             event.preventDefault();
             rows[nextIndex].focus();
+          }
+        } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          const rows = Array.from(
+            event.currentTarget.parentElement?.querySelectorAll<HTMLElement>("[data-file-search-result]") ?? [],
+          );
+          const currentIndex = rows.indexOf(event.currentTarget);
+          const needle = event.key.toLocaleLowerCase();
+          const ordered = [...rows.slice(currentIndex + 1), ...rows.slice(0, currentIndex + 1)];
+          const match = ordered.find((row) => row.dataset.treeLabel?.toLocaleLowerCase().startsWith(needle));
+          if (match) {
+            event.preventDefault();
+            match.focus();
           }
         }
       }}
@@ -464,6 +483,10 @@ function TreeNode({
   changedDirectoryPaths,
   onOpenContextMenu,
   selectedFilePath,
+  focusedPath,
+  onFocusedPathChange,
+  positionInSet,
+  setSize,
   t,
 }: {
   node: FileNode;
@@ -479,6 +502,10 @@ function TreeNode({
   changedDirectoryPaths: Set<string>;
   onOpenContextMenu: (target: FileContextTarget, x: number, y: number) => void;
   selectedFilePath?: string | null;
+  focusedPath: string | null;
+  onFocusedPathChange: (fullPath: string) => void;
+  positionInSet?: number;
+  setSize?: number;
   t: Translate;
 }) {
   const open = expandedPaths.has(node.fullPath);
@@ -496,6 +523,32 @@ function TreeNode({
   const [loaded, setLoaded] = useState(node.loaded ?? false);
   const [loading, setLoading] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [visibleChildCount, setVisibleChildCount] = useState(TREE_INITIAL_RENDER_COUNT);
+  const progressiveSentinelRef = useRef<HTMLButtonElement>(null);
+  const childWindow = useMemo(
+    () => getTreeRenderWindow(children.length, visibleChildCount),
+    [children.length, visibleChildCount],
+  );
+  const visibleChildren = useMemo(
+    () => children.slice(0, childWindow.endIndex),
+    [childWindow.endIndex, children],
+  );
+
+  const revealMoreChildren = useCallback(() => {
+    startTransition(() => {
+      setVisibleChildCount((current) => getNextTreeRenderCount(current, children.length));
+    });
+  }, [children.length]);
+
+  useEffect(() => {
+    const sentinel = progressiveSentinelRef.current;
+    if (!open || childWindow.remaining === 0 || !sentinel || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) revealMoreChildren();
+    }, { rootMargin: "160px 0px" });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [childWindow.remaining, open, revealMoreChildren]);
 
   const loadChildren = useCallback(async (force = false) => {
     if (loaded && !force) return;
@@ -536,22 +589,75 @@ function TreeNode({
   return (
     <div>
       <div
-        onClick={handleClick}
+        onClick={(event) => {
+          event.currentTarget.focus({ preventScroll: true });
+          handleClick();
+        }}
         role="treeitem"
-        tabIndex={0}
+        tabIndex={focusedPath === node.fullPath ? 0 : -1}
+        data-file-tree-item
+        data-tree-label={node.name}
         aria-selected={selected}
         aria-current={selected ? "page" : undefined}
         aria-expanded={node.isDir ? open : undefined}
+        aria-level={depth + 1}
+        aria-posinset={positionInSet}
+        aria-setsize={setSize}
+        className={styles.treeItemRow}
+        onFocus={() => onFocusedPathChange(node.fullPath)}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             handleClick();
-          } else if (node.isDir && event.key === "ArrowRight" && !open) {
+            return;
+          }
+
+          const tree = event.currentTarget.closest<HTMLElement>("[role='tree']");
+          const items = Array.from(tree?.querySelectorAll<HTMLElement>("[data-file-tree-item]") ?? []);
+          const currentIndex = items.indexOf(event.currentTarget);
+          const focusAt = (index: number) => {
+            const target = items[index];
+            if (!target) return;
             event.preventDefault();
-            onToggleExpanded(node.fullPath, true);
-          } else if (node.isDir && event.key === "ArrowLeft" && open) {
+            target.focus({ preventScroll: true });
+          };
+
+          if (event.key === "ArrowDown") focusAt(Math.min(items.length - 1, currentIndex + 1));
+          else if (event.key === "ArrowUp") focusAt(Math.max(0, currentIndex - 1));
+          else if (event.key === "Home") focusAt(0);
+          else if (event.key === "End") focusAt(items.length - 1);
+          else if (event.key === "ArrowRight" && node.isDir) {
             event.preventDefault();
-            onToggleExpanded(node.fullPath, false);
+            if (!open) {
+              onToggleExpanded(node.fullPath, true);
+              if (!loaded) void loadChildren();
+            } else {
+              const child = items[currentIndex + 1];
+              if (child?.getAttribute("aria-level") === String(depth + 2)) {
+                child.focus({ preventScroll: true });
+              }
+            }
+          } else if (event.key === "ArrowLeft") {
+            if (node.isDir && open) {
+              event.preventDefault();
+              onToggleExpanded(node.fullPath, false);
+            } else {
+              const parentLevel = String(depth);
+              const parent = items.slice(0, currentIndex).reverse()
+                .find((item) => item.getAttribute("aria-level") === parentLevel);
+              if (parent) {
+                event.preventDefault();
+                parent.focus({ preventScroll: true });
+              }
+            }
+          } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+            const needle = event.key.toLocaleLowerCase();
+            const ordered = [...items.slice(currentIndex + 1), ...items.slice(0, currentIndex + 1)];
+            const match = ordered.find((item) => item.dataset.treeLabel?.toLocaleLowerCase().startsWith(needle));
+            if (match) {
+              event.preventDefault();
+              match.focus({ preventScroll: true });
+            }
           }
         }}
         onContextMenu={(event) => {
@@ -701,8 +807,8 @@ function TreeNode({
         )}
       </div>
       {node.isDir && open && (
-        <div>
-          {children.map((child) => (
+        <div role="group">
+          {visibleChildren.map((child, index) => (
             <TreeNode
               key={child.fullPath}
               node={child}
@@ -718,6 +824,10 @@ function TreeNode({
               changedDirectoryPaths={changedDirectoryPaths}
               onOpenContextMenu={onOpenContextMenu}
               selectedFilePath={selectedFilePath}
+              focusedPath={focusedPath}
+              onFocusedPathChange={onFocusedPathChange}
+              positionInSet={index + 1}
+              setSize={children.length}
               t={t}
             />
           ))}
@@ -728,6 +838,17 @@ function TreeNode({
           )}
         </div>
       )}
+      {node.isDir && open && childWindow.remaining > 0 ? (
+        <button
+          ref={progressiveSentinelRef}
+          type="button"
+          className={styles.treeLoadMore}
+          style={{ marginLeft: 8 + (depth + 1) * 14 }}
+          onClick={revealMoreChildren}
+        >
+          {t("files.loadMore", { shown: childWindow.endIndex, total: children.length })}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -827,6 +948,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const [searchResults, setSearchResults] = useState<FileIndexEntry[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState(false);
+  const [focusedSearchIndex, setFocusedSearchIndex] = useState(0);
+  const [focusedTreePath, setFocusedTreePath] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<FileContextMenuState | null>(null);
   const prevCwdRef = useRef<string | null>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
@@ -836,6 +959,11 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
   const normalizedSelectedFilePath = selectedFilePath
     ? normalizeFilePathSlashes(selectedFilePath)
     : null;
+  const treeFocusablePath = focusedTreePath ?? roots[0]?.fullPath ?? null;
+
+  useEffect(() => {
+    setFocusedSearchIndex(0);
+  }, [searchQuery, searchResults]);
 
   const gitStatusByPath = useMemo(() => new Map(
     gitFiles.map((status) => [normalizeFilePathSlashes(status.filePath), status]),
@@ -1004,6 +1132,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
       setUploadError(null);
       setSearchQuery("");
       setSearchResults([]);
+      setFocusedTreePath(null);
       setContextMenu(null);
     }
 
@@ -1252,7 +1381,7 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
             <div className={styles.searchStatus} style={{ color: "#f87171" }}>{t("files.searchFailed")}</div>
           ) : searchResults.length === 0 ? (
             <div className={styles.searchStatus}>{t("files.noSearchResults")}</div>
-          ) : searchResults.map((entry) => (
+          ) : searchResults.map((entry, index) => (
             <SearchResultRow
               key={`${entry.isDir ? "dir" : "file"}:${entry.path}`}
               entry={entry}
@@ -1260,6 +1389,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
               onOpen={handleOpenTarget}
               onOpenContextMenu={handleOpenContextMenu}
               selected={normalizeFilePathSlashes(joinFilePath(cwd, entry.path)) === normalizedSelectedFilePath}
+              active={index === focusedSearchIndex}
+              onFocus={() => setFocusedSearchIndex(index)}
             />
           ))}
         </div>
@@ -1318,6 +1449,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(function FileE
                 changedDirectoryPaths={changedDirectoryPaths}
                 onOpenContextMenu={handleOpenContextMenu}
                 selectedFilePath={normalizedSelectedFilePath}
+                focusedPath={treeFocusablePath}
+                onFocusedPathChange={setFocusedTreePath}
                 t={t}
               />
             ))

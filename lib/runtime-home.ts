@@ -2,7 +2,7 @@ import path from "node:path";
 
 export interface RuntimeHomeEnvironment {
   readonly [key: string]: string | undefined;
-  PI_GUI_HOME?: string;
+  PIORA_HOME?: string;
   USERPROFILE?: string;
   HOME?: string;
 }
@@ -16,7 +16,7 @@ export interface RuntimeHomeEnvironment {
 export function getRuntimeHomeDirectory(
   environment: RuntimeHomeEnvironment = process.env,
 ): string {
-  const configuredHome = environment.PI_GUI_HOME?.trim();
+  const configuredHome = environment.PIORA_HOME?.trim();
   const platformHome = (process.platform === "win32"
     ? environment.USERPROFILE
     : environment.HOME)?.trim();
@@ -25,7 +25,7 @@ export function getRuntimeHomeDirectory(
 
   if (!homeDirectory) {
     throw new Error(
-      "Unable to resolve the home directory. Set PI_GUI_HOME, USERPROFILE, or HOME.",
+      "Unable to resolve the home directory. Set PIORA_HOME, USERPROFILE, or HOME.",
     );
   }
 

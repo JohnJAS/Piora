@@ -1,11 +1,11 @@
 # Support
 
-piGUI is an independent, community-maintained open-source project.
+Piora is an independent, community-maintained open-source project.
 
 ## Where to ask
 
-- Reproducible defects: use the [GitHub issue chooser](https://github.com/kexijiang/pi-gui/issues/new/choose) and select the bug-report template.
-- Focused product proposals: use the [GitHub issue chooser](https://github.com/kexijiang/pi-gui/issues/new/choose) and select the feature-request template.
+- Reproducible defects: use the [GitHub issue chooser](https://github.com/kexijiang/piora/issues/new/choose) and select the bug-report template.
+- Focused product proposals: use the [GitHub issue chooser](https://github.com/kexijiang/piora/issues/new/choose) and select the feature-request template.
 - Security vulnerabilities: follow [SECURITY.md](SECURITY.md); do not open a public issue.
 - Questions about Pi itself or pi-web behavior should be reproduced first so they can be routed to the correct upstream project.
 

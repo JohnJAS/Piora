@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import type {
   SkillInfo as Skill,
   SkillInstallScope,
@@ -697,9 +698,11 @@ function AddSkillPanel({
 export function SkillsConfig({
   cwd,
   onClose,
+  embedded = false,
 }: {
   cwd: string;
   onClose: () => void;
+  embedded?: boolean;
 }) {
   const isMobile = useIsMobile();
   const { t } = useI18n();
@@ -716,6 +719,8 @@ export function SkillsConfig({
   const [updatingSkill, setUpdatingSkill] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [projectResourcesLoaded, setProjectResourcesLoaded] = useState(true);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, !embedded, { onEscape: onClose });
 
   const loadSkills = useCallback(async () => {
     setLoading(true);
@@ -871,33 +876,40 @@ export function SkillsConfig({
 
   return (
     <div
-      className="app-shell-dialog-backdrop"
+      className={embedded ? undefined : "app-shell-dialog-backdrop"}
       style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.35)",
+        position: embedded ? "relative" : "fixed",
+        inset: embedded ? undefined : 0,
+        zIndex: embedded ? undefined : 1000,
+        width: "100%",
+        height: "100%",
+        minHeight: 0,
+        background: embedded ? "var(--bg)" : "rgba(0,0,0,0.35)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
       }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (!embedded && e.target === e.currentTarget) onClose();
       }}
     >
       <div
-        className="app-shell-dialog"
+        ref={dialogRef}
+        className={embedded ? undefined : "app-shell-dialog"}
+        role={embedded ? "region" : "dialog"}
+        aria-modal={embedded ? undefined : true}
+        aria-label={t("common.skills")}
         style={{
-          width: isMobile ? "calc(100vw - 16px)" : 860,
-          maxWidth: "calc(100vw - 16px)",
-          height: isMobile ? "calc(100dvh - 16px)" : "78vh",
-          maxHeight: "calc(100dvh - 16px)",
+          width: embedded ? "100%" : isMobile ? "calc(100vw - 16px)" : 860,
+          maxWidth: embedded ? "none" : "calc(100vw - 16px)",
+          height: embedded ? "100%" : isMobile ? "calc(100dvh - 16px)" : "78vh",
+          maxHeight: embedded ? "none" : "calc(100dvh - 16px)",
           background: "var(--bg)",
-          border: "1px solid var(--border)",
-          borderRadius: 10,
+          border: embedded ? "none" : "1px solid var(--border)",
+          borderRadius: embedded ? 0 : 10,
           display: "flex",
           flexDirection: "column",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+          boxShadow: embedded ? "none" : "0 8px 32px rgba(0,0,0,0.18)",
           overflow: "hidden",
         }}
       >
@@ -933,7 +945,7 @@ export function SkillsConfig({
               {shortenPath(cwd)}
             </code>
           </div>
-          <button
+          {!embedded && <button
             onClick={onClose}
             title={t("i18n.close")}
             aria-label={t("i18n.close")}
@@ -952,7 +964,7 @@ export function SkillsConfig({
             }}
           >
             <AliIcon name="close" size={16} />
-          </button>
+          </button>}
         </div>
 
         {!projectResourcesLoaded && (
@@ -1307,7 +1319,7 @@ export function SkillsConfig({
               </span>
             )}
           </div>
-          <button
+          {!embedded && <button
             onClick={onClose}
             style={{
               padding: "6px 14px",
@@ -1320,7 +1332,7 @@ export function SkillsConfig({
             }}
           >
              {t("i18n.close")}
-          </button>
+          </button>}
         </div>
       </div>
     </div>

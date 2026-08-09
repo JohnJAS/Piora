@@ -62,7 +62,7 @@ do not hand-edit it or replace it with the broader source lockfile inventory.
   requests are denied. Regular HTTP(S) links opened with `target=_blank` are
   delegated to the operating system browser.
 - Child stdout/stderr and lifecycle events are written to
-  `<userData>/logs/pi-gui.log` with one rotated backup.
+  `<userData>/logs/piora.log` with one rotated backup.
 
 ## Integrated title bar
 

@@ -6,7 +6,7 @@ export interface ToolEntry {
 
 export type ToolPreset = "none" | "default" | "full";
 
-export const PRESET_NONE: string[] = [];
+export const PRESET_NONE: string[] = ["read", "grep", "find", "ls"];
 export const PRESET_DEFAULT: string[] = ["read", "bash", "edit", "write"];
 export const PRESET_FULL: string[] = ["bash", "read", "edit", "write", "grep", "find", "ls"];
 
@@ -22,6 +22,7 @@ export function getPresetFromTools(tools: ToolEntry[]): ToolPreset {
     .sort()
     .join(",");
 
+  if (active === [...PRESET_NONE].sort().join(",")) return "none";
   if (active === [...PRESET_DEFAULT].sort().join(",")) return "default";
   if (active === [...PRESET_FULL].sort().join(",")) return "full";
   return "default";
@@ -31,4 +32,10 @@ export function getToolNamesForPreset(preset: ToolPreset): string[] {
   if (preset === "none") return [...PRESET_NONE];
   if (preset === "full") return [...PRESET_FULL];
   return [...PRESET_DEFAULT];
+}
+
+export function getPermissionTierForPreset(preset: ToolPreset): "read-only" | "auto-edit" | "full-access" {
+  if (preset === "none") return "read-only";
+  if (preset === "full") return "full-access";
+  return "auto-edit";
 }

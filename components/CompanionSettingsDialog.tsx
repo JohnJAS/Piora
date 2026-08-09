@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useI18n } from "@/hooks/useI18n";
 import {
   getCompanionPetSourceKey,
@@ -15,18 +16,19 @@ const SOURCE_MESSAGE_KEYS: Record<CompanionPetSourceKind, string> = {
   "codex-builtin-cache": "companion.source.codexBuiltinCache",
   "codex-custom": "companion.source.codexCustom",
   "codex-legacy-avatar": "companion.source.codexLegacyAvatar",
-  "pi-gui-installed": "companion.source.piGuiInstalled",
+  "piora-installed": "companion.source.pioraInstalled",
 };
 
 function resolvePetSourceKind(pet: CompanionPetSource): CompanionPetSourceKind {
   if (pet.installed && pet.origin && pet.origin in SOURCE_MESSAGE_KEYS) return pet.origin;
   if (pet.sourceKind && pet.sourceKind in SOURCE_MESSAGE_KEYS) return pet.sourceKind;
-  return pet.source === "codex" ? "codex-custom" : "pi-gui-installed";
+  return pet.source === "codex" ? "codex-custom" : "piora-installed";
 }
 
 interface Props {
   open: boolean;
   onClose: () => void;
+  embedded?: boolean;
   companionOpen: boolean;
   onCompanionOpenChange: (open: boolean) => void;
   desktopMode: boolean;
@@ -45,6 +47,7 @@ interface Props {
 export function CompanionSettingsDialog({
   open,
   onClose,
+  embedded = false,
   companionOpen,
   onCompanionOpenChange,
   desktopMode,
@@ -62,38 +65,32 @@ export function CompanionSettingsDialog({
   const { t } = useI18n();
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const archiveInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, open && !embedded, { onEscape: onClose });
 
   useEffect(() => {
     setPortalTarget(document.body);
   }, []);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [onClose, open]);
+  if (!open || (!embedded && !portalTarget)) return null;
 
-  if (!open || !portalTarget) return null;
-
-  return createPortal(
+  const content = (
     <div
       className="app-shell-dialog-backdrop"
-      role="dialog"
-      aria-modal="true"
+      role={embedded ? undefined : "dialog"}
+      aria-modal={embedded ? undefined : true}
       aria-label={t("companion.settingsTitle")}
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (!embedded && event.target === event.currentTarget) onClose();
       }}
       style={{
-        position: "fixed", inset: 0, zIndex: 1200,
+        position: embedded ? "relative" : "fixed", inset: embedded ? undefined : 0, zIndex: embedded ? undefined : 1200,
+        width: "100%", height: "100%", minHeight: 0,
         display: "flex", alignItems: "center", justifyContent: "center",
-        background: "rgba(0,0,0,0.35)",
+        background: embedded ? "var(--bg)" : "rgba(0,0,0,0.35)",
       }}
     >
-      <div className={styles.dialog}>
+      <div ref={dialogRef} className={styles.dialog} style={embedded ? { width: "100%", maxWidth: "none", height: "100%", maxHeight: "none", border: 0, borderRadius: 0, boxShadow: "none" } : undefined}>
         <input
           ref={archiveInputRef}
           type="file"
@@ -113,9 +110,9 @@ export function CompanionSettingsDialog({
             <div className={styles.title}>{t("companion.settingsTitle")}</div>
             <div className={styles.subtitle}>{t("companion.settingsDescription")}</div>
           </div>
-          <button className={styles.closeButton} type="button" onClick={onClose} title={t("i18n.close")} aria-label={t("i18n.close")}>
+          {!embedded && <button className={styles.closeButton} type="button" onClick={onClose} title={t("i18n.close")} aria-label={t("i18n.close")}>
             <AliIcon name="close" size={14} />
-          </button>
+          </button>}
         </header>
 
         <div className={styles.body}>
@@ -281,7 +278,7 @@ export function CompanionSettingsDialog({
           </section>
         </div>
       </div>
-    </div>,
-    portalTarget,
+    </div>
   );
+  return embedded ? content : createPortal(content, portalTarget!);
 }

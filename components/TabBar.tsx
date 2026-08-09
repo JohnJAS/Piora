@@ -12,6 +12,8 @@ export interface Tab {
   cwd?: string;
   sourceSessionId?: string | null;
   initialDisplayMode?: "source" | "preview" | "diff" | "edit";
+  revealLine?: number;
+  revealKey?: number;
   isDirty?: boolean;
 }
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { useRef } from "react";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
 
@@ -17,6 +19,8 @@ export function ProjectTrustDialog({
   onConfirm: () => void;
 }) {
   const { t } = useI18n();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, true, { onEscape: busy ? undefined : onCancel });
 
   return (
     <div
@@ -37,6 +41,7 @@ export function ProjectTrustDialog({
       }}
     >
       <div
+        ref={dialogRef}
         className="app-shell-dialog"
         role="dialog"
         aria-modal="true"

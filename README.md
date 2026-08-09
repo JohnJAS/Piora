@@ -4,7 +4,7 @@
   <img src="desktop/build/icon.png" alt="Piora original application icon" width="112" height="112">
 </p>
 
-[![CI](https://github.com/kexijiang/pi-gui/actions/workflows/ci.yml/badge.svg)](https://github.com/kexijiang/pi-gui/actions/workflows/ci.yml)
+[![CI](https://github.com/kexijiang/piora/actions/workflows/ci.yml/badge.svg)](https://github.com/kexijiang/piora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Windows](https://img.shields.io/badge/Desktop-Windows%20x64-2563eb.svg)](desktop/README.md)
 
@@ -15,7 +15,7 @@ Piora 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面
 > Piora 由社区独立维护，不隶属于或代表 Pi、pi-web、OpenAI 或 Codex。
 
 > 当前按首个公开预发布版本建设。是否存在可下载的 Windows 产物，以
-> [GitHub Releases](https://github.com/kexijiang/pi-gui/releases) 为准；本地构建配置不等于已发布、已签名或已完成干净机器验证的二进制。
+> [GitHub Releases](https://github.com/kexijiang/piora/releases) 为准；本地构建配置不等于已发布、已签名或已完成干净机器验证的二进制。
 
 ## 这次版本解决什么
 
@@ -65,7 +65,7 @@ Piora 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面
 - 状态来自现有 Pi 会话；TODO、快捷短语、面板状态和所选宠物只保存在本地应用配置中。
 - 快捷短语只有在用户明确点击发送后，才会经过与输入框相同的普通 Pi 消息路径。
 - 只有打开或手动刷新桌宠面板时，才会扫描本机 Codex 宠物目录；导入会把通过校验的
-  声明式 manifest 与 PNG/WebP spritesheet 复制到 `~/.pi/agent/pi-gui/pets`。
+  声明式 manifest 与 PNG/WebP spritesheet 复制到 `~/.pi/agent/piora/pets`。
 - 不执行宠物包内的 JavaScript、HTML、CSS、npm scripts、CDP hook 或远程资源。
 
 该能力是独立维护的文件格式兼容层，不是 OpenAI/Codex 官方集成；项目不捆绑 Codex
@@ -101,8 +101,8 @@ Portable EXE 不内置 npm、npx、Git、编译器、用户扩展、API Key 或 
 ## 本地开发
 
 ```powershell
-git clone https://github.com/kexijiang/pi-gui.git
-cd pi-gui
+git clone https://github.com/kexijiang/piora.git
+cd piora
 npm ci
 npm run dev
 ```
@@ -167,7 +167,7 @@ Piora 不包含分析 SDK、广告、账号服务或默认遥测。Electron 桌�
 所选模型提供商。
 
 删除或替换 portable EXE 不会清除用户数据。Windows 下 Electron 配置通常保留在
-`%APPDATA%\piGUI`，导入的宠物副本位于 `%USERPROFILE%\.pi\agent\pi-gui`；Pi 自己的会话、
+`%APPDATA%\Piora`，导入的宠物副本位于 `%USERPROFILE%\.pi\agent\piora`；Pi 自己的会话、
 凭据和扩展仍位于 `%USERPROFILE%\.pi\agent`，不应为了清理 Piora 而整体删除。
 详见 [隐私与网络行为](docs/open-source/PRIVACY_AND_NETWORK.md)。
 
@@ -178,7 +178,7 @@ Piora 不包含分析 SDK、广告、账号服务或默认遥测。Electron 桌�
 
 本轮目标、验收与持续进度记录在
 [今晚交付目标](docs/RELEASE_GOAL_2026-07-31.md)。Codex 与 Piora 的体验取舍见
-[UX 对比报告](docs/CODEX_PI_GUI_UX_COMPARISON_2026-07-31.md)。
+[UX 对比报告](docs/CODEX_PIORA_UX_COMPARISON_2026-07-31.md)。
 当前已经验证和仍待验证的边界见 [项目状态](docs/open-source/PROJECT_STATUS.md)。
 
 ## 贡献、支持与安全

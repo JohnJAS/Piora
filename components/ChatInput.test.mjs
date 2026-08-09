@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -12,6 +13,12 @@ const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, filterModelOptions
 // Import through the same tsconfig alias used by the component so Jiti reuses
 // the exact context module instead of creating a second provider instance.
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
+const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+
+test("uses an ordinary cursor for the session information hover", () => {
+  assert.match(globalCss, /\.session-stats-trigger\s*\{[^}]*cursor:\s*default/s);
+  assert.doesNotMatch(globalCss, /\.session-stats-trigger\s*\{[^}]*cursor:\s*help/s);
+});
 
 test("renders the upstream model error", () => {
   const html = renderToStaticMarkup(

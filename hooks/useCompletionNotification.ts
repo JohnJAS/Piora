@@ -128,7 +128,7 @@ export function useCompletionNotification() {
       const copy = getBrowserNotificationCopy(safeTaskTitle);
       new Notification(copy.title, {
         body: copy.body,
-        tag: "pigui-task-complete",
+        tag: "piora-task-complete",
       });
       return true;
     } catch {

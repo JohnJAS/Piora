@@ -27,6 +27,28 @@ test("opens settings as a viewport-wide page above the complete application shel
   assert.match(settingsDialog, /aria-modal="true"/);
   assert.match(settingsDialog, /document\.body/);
   assert.match(settingsCss, /\.backdrop\s*\{[^}]*position:\s*fixed;[^}]*inset:\s*0;/s);
+  assert.match(settingsDialog, /sections\[activeEntry\.key\]/);
+  assert.match(settingsDialog, /onActiveKeyChange\(entry\.key\)/);
+  assert.match(appShell, /<ModelsConfig[\s\S]*?embedded/);
+  assert.match(appShell, /<SkillsConfig embedded/);
+  assert.match(appShell, /<PluginsConfig[\s\S]*?embedded/);
+  assert.match(appShell, /<CompanionSettingsDialog[\s\S]*?embedded/);
+  assert.doesNotMatch(appShell, /setSettingsDialogOpen\(false\);\s*setModelsConfigOpen/);
+});
+
+test("settings exposes a Codex-style back button on the left", () => {
+  assert.match(settingsDialog, /className=\{styles\.backButton\}/);
+  assert.match(settingsDialog, /name="arrowleft"/);
+  assert.match(settingsDialog, /aria-label=\{t\("settings\.back"\)\}/);
+  assert.match(settingsDialog, /className=\{styles\.backButton\}[\s\S]*?onClick=\{onClose\}/);
+});
+
+test("settings search stays inside the settings page and navigates to matching sections", () => {
+  assert.match(settingsDialog, /useDeferredValue\(searchQuery\)/);
+  assert.match(settingsDialog, /settings\.searchPlaceholder/);
+  assert.match(settingsDialog, /filteredEntries\.map/);
+  assert.match(settingsDialog, /setSearchQuery\(""\);\s*onActiveKeyChange\(entry\.key\)/);
+  assert.match(settingsCss, /\.searchResults/);
 });
 
 test("anchors soft top-bar panels inside the top bar coordinate system", () => {
@@ -50,7 +72,9 @@ test("loads the real preset for idle sessions before enabling the menu", () => {
 test("keeps the file drawer toggle inside the shell and aligns both header states", () => {
   assert.match(appShell, /className=\{`topbar-control topbar-icon-button right-panel-toggle/);
   assert.match(appShell, /aria-controls="file-panel"/);
-  assert.match(appShell, /<SessionHistoryDialog[\s\S]*?\{appearanceOpen/);
+  assert.match(appShell, /<SessionHistoryDialog/);
+  assert.match(appShell, /\{settingsPage\}/);
+  assert.doesNotMatch(appShell, /\{appearanceOpen &&/);
   assert.doesNotMatch(appShell, /position:\s*"fixed", right:\s*8/);
   assert.doesNotMatch(globalCss, /\.right-panel-toggle\s*\{[^}]*top:/s);
 });

@@ -20,8 +20,8 @@ const packagedWebRoot = resolve(
   suppliedWebRoot ?? "desktop/release/win-unpacked/resources/web",
 );
 const requireElectronShell = !suppliedWebRoot || process.argv.includes("--require-electron-shell");
-const token = "pi-gui-package-verification";
-const fixturePackageName = "@pi-gui/packaged-extension-verification-fixture";
+const token = "piora-package-verification";
+const fixturePackageName = "@piora/packaged-extension-verification-fixture";
 const fixtureCommandName = "packaged-extension-probe";
 const fixtureToolName = "packaged_extension_probe";
 const fixtureSkillName = "packaged-package-probe";
@@ -353,26 +353,27 @@ async function main() {
   for (const requiredPath of requiredPaths) {
     await assertFile(join(packagedWebRoot, requiredPath));
   }
-  const patchedBundledDependencyPath = join(
-    packagedWebRoot,
-    "node_modules",
-    "@earendil-works",
-    "pi-coding-agent",
-    "node_modules",
-    "brace-expansion",
-    "package.json",
-  );
-  await assertFile(patchedBundledDependencyPath);
-  const patchedBundledDependency = JSON.parse(
-    await readFile(patchedBundledDependencyPath, "utf8"),
-  );
-  if (
-    patchedBundledDependency?.name !== "brace-expansion"
-    || patchedBundledDependency?.version !== "5.0.9"
-  ) {
-    throw new Error(
-      "Packaged Pi runtime must contain the postinstall-patched brace-expansion@5.0.9.",
+  const patchedBundledDependencies = [
+    { name: "brace-expansion", version: "5.0.9" },
+    { name: "undici", version: "8.9.0" },
+  ];
+  for (const expected of patchedBundledDependencies) {
+    const manifestPath = join(
+      packagedWebRoot,
+      "node_modules",
+      "@earendil-works",
+      "pi-coding-agent",
+      "node_modules",
+      expected.name,
+      "package.json",
     );
+    await assertFile(manifestPath);
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    if (manifest?.name !== expected.name || manifest?.version !== expected.version) {
+      throw new Error(
+        `Packaged Pi runtime must contain the reviewed ${expected.name}@${expected.version}.`,
+      );
+    }
   }
   await assertDirectory(join(packagedWebRoot, "node_modules"));
   await assertFile(join(fixtureSourceRoot, "package.json"));
@@ -391,7 +392,7 @@ async function main() {
   }
 
   const temporaryRoot = resolve(tmpdir());
-  const temporaryDirectory = await mkdtemp(join(temporaryRoot, "pi-gui-package-"));
+  const temporaryDirectory = await mkdtemp(join(temporaryRoot, "piora-package-"));
   const temporaryRelativePath = relative(temporaryRoot, temporaryDirectory);
   if (
     !temporaryRelativePath
@@ -454,7 +455,7 @@ async function main() {
         NEXT_TELEMETRY_DISABLED: "1",
         HOME: isolatedHomeDir,
         USERPROFILE: isolatedHomeDir,
-        PI_GUI_HOME: isolatedHomeDir,
+        PIORA_HOME: isolatedHomeDir,
         PI_CODING_AGENT_DIR: isolatedAgentDir,
         PI_PACKAGE_VERIFY_MARKER: extensionMarker,
         PI_WEB_ALLOWED_HOSTS: "127.0.0.1",
@@ -553,17 +554,17 @@ async function main() {
       throw new Error(`Fixture extension tool is loaded but inactive: ${JSON.stringify(fixtureTool)}`);
     }
 
-    const piGuiOwnedSubagentEntries = [...commands, ...tools].filter((entry) => (
+    const pioraOwnedSubagentEntries = [...commands, ...tools].filter((entry) => (
       typeof entry.name === "string" && /^(?:pi[-_]?gui)[-_]?sub[-_]?agents?$/i.test(entry.name)
     ));
-    if (piGuiOwnedSubagentEntries.length > 0) {
-      throw new Error(`Unexpected Piora-owned SubAgent capability: ${JSON.stringify(piGuiOwnedSubagentEntries)}`);
+    if (pioraOwnedSubagentEntries.length > 0) {
+      throw new Error(`Unexpected Piora-owned SubAgent capability: ${JSON.stringify(pioraOwnedSubagentEntries)}`);
     }
 
     console.log(JSON.stringify({
       isolated: true,
       dependencyChecks: requiredPaths.length,
-      patchedBundledDependency: "brace-expansion@5.0.9",
+      patchedBundledDependencies: patchedBundledDependencies.map(({ name, version }) => `${name}@${version}`),
       forbiddenDependencyChecks: forbiddenPackagedDependencies.length,
       packagedBackgrounds: packagedBackgrounds.backgroundCount,
       electronShellChecked: electronShell.checked,
@@ -579,7 +580,7 @@ async function main() {
       extensionCommand: fixtureCommandName,
       extensionTool: fixtureToolName,
       skill: fixtureSkillName,
-      piGuiOwnedSubagentFeatures: 0,
+      pioraOwnedSubagentFeatures: 0,
     }));
   } finally {
     if (child) await stopChild(child);

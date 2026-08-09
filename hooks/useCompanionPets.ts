@@ -11,7 +11,7 @@ import type {
 export type CompanionPetSource = CompanionPet & {
   sourceKind?: CompanionPetSourceKind;
   sourceKey?: string;
-  origin?: Exclude<CompanionPetSourceKind, "pi-gui-installed">;
+  origin?: Exclude<CompanionPetSourceKind, "piora-installed">;
 };
 
 export function getCompanionPetSourceKey(pet: CompanionPetSource): string {

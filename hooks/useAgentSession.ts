@@ -11,7 +11,7 @@ import type {
 } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { sendAgentCommand } from "@/lib/agent-client";
-import { getToolNamesForPreset, type ToolEntry } from "@/lib/tool-presets";
+import { getPermissionTierForPreset, getToolNamesForPreset, type ToolEntry } from "@/lib/tool-presets";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { estimateSessionContextUsage } from "@/lib/context-usage";
 
@@ -973,7 +973,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // One logical prompt can emit multiple agent_end events before retrying,
         // compacting, or continuing messages queued by extension handlers.
         // Keep the stream open until prompt_done and server-idle settlement.
-        if (!agentRunningRef.current) break;
+        if (!agentRunningRef.current && !bashRunningRef.current) break;
         setAgentPhase(null);
         setRetryInfo(null);
         dispatch({ type: "end" });
@@ -994,7 +994,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         break;
       case "prompt_done":
-        if (!agentRunningRef.current) break;
+        if (!agentRunningRef.current && !bashRunningRef.current) break;
         // Extension commands can call pi.sendUserMessage(), which starts its
         // agent run asynchronously. In that case prompt_done for the command
         // arrives before agent_start for the injected message. Give that run
@@ -1071,7 +1071,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           setMessages((prev) => [...prev, normalizeToolCalls(completed)]);
         }
         dispatch({ type: "reset" });
-        setAgentPhase({ kind: "waiting_model" });
+        setAgentPhase(bashRunningRef.current ? null : { kind: "waiting_model" });
         if (completed?.role === "assistant" && sessionIdRef.current) {
           void refreshContextUsage(sessionIdRef.current);
         }
@@ -1263,6 +1263,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       const sid = sessionIdRef.current ?? session?.id ?? await ensureNewSession();
       if (!sid) throw new Error("Unable to create a session for the shell command");
+      await ensureEventsConnected(sid);
       await sendAgentCommand(sid, {
         type: "bash",
         command,
@@ -1278,8 +1279,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       bashRunningRef.current = false;
       setPendingBash(null);
       setBashRunning(false);
+      closeEvents();
     }
-  }, [addNotice, ensureNewSession, loadSession, opts.chatInputRef, promoteNewSession, session]);
+  }, [addNotice, closeEvents, ensureEventsConnected, ensureNewSession, loadSession, opts.chatInputRef, promoteNewSession, session]);
   executeBashRef.current = executeBash;
 
   const handleAbort = useCallback(async () => {
@@ -1607,7 +1609,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return;
     }
     try {
-      await sendAgentCommand(sid, { type: "set_tools", toolNames });
+      await Promise.all([
+        sendAgentCommand(sid, { type: "set_tools", toolNames }),
+        sendAgentCommand(sid, { type: "set_permission_tier", tier: getPermissionTierForPreset(preset) }),
+      ]);
     } catch (e) {
       console.error("Failed to set tools:", e);
       setToolPresetState(previousPreset);

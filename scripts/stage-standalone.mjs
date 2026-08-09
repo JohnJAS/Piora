@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { cp, lstat, readdir, rm, stat } from "node:fs/promises";
+import { cp, lstat, mkdir, readdir, rm, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { patchBundledBraceExpansion } from "./patch-bundled-dependencies.mjs";
+import { patchBundledBraceExpansion, patchBundledUndici } from "./patch-bundled-dependencies.mjs";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const nextDirectory = join(projectRoot, ".next");
@@ -25,6 +25,18 @@ const assets = [
     required: true,
     rejectSymlinks: false,
   },
+  ...[
+    ["Piora approval extension", "extensions/piora-approval.ts"],
+    ["Piora approval policy", "lib/approval-policy.ts"],
+    ["Piora approval runtime", "lib/approval-runtime.ts"],
+    ["Piora approval protocol", "lib/approval-ui.ts"],
+  ].map(([name, relativePath]) => ({
+    name,
+    source: join(projectRoot, relativePath),
+    destination: join(standaloneDirectory, relativePath),
+    required: true,
+    rejectSymlinks: true,
+  })),
 ];
 
 async function getPathType(path) {
@@ -112,8 +124,13 @@ async function main() {
   // Next traces the SDK's bundled dependency before the root postinstall
   // replacement is applied to the standalone tree. Apply the same reviewed
   // replacement to the exact runtime that Electron will ship.
-  const runtimePatch = await patchBundledBraceExpansion(standaloneDirectory, projectRoot);
-  console.log(JSON.stringify({ standaloneRuntimePatch: "brace-expansion", ...runtimePatch }));
+  const runtimePatches = await Promise.all([
+    patchBundledBraceExpansion(standaloneDirectory, projectRoot)
+      .then((result) => ({ package: "brace-expansion", ...result })),
+    patchBundledUndici(standaloneDirectory, projectRoot)
+      .then((result) => ({ package: "undici", ...result })),
+  ]);
+  console.log(JSON.stringify({ standaloneRuntimePatches: runtimePatches }));
 
   const stagedAssets = [];
   for (const asset of assets) {
@@ -123,8 +140,8 @@ async function main() {
       stagedAssets.push({ ...asset, sourceType });
       continue;
     }
-    if (sourceType !== "directory") {
-      throw new Error(`Expected ${asset.name} directory at ${asset.source}.`);
+    if (sourceType !== "directory" && sourceType !== "file") {
+      throw new Error(`Expected ${asset.name} at ${asset.source}.`);
     }
     if (asset.rejectSymlinks) {
       const symbolicLinks = await findSymbolicLinks(asset.source);
@@ -143,16 +160,15 @@ async function main() {
       console.log(`Skipped ${asset.name}; source directory does not exist.`);
       continue;
     }
+    await mkdir(dirname(asset.destination), { recursive: true });
     await cp(asset.source, asset.destination, {
       recursive: true,
       force: true,
       dereference: true,
     });
-    if (!(await isNonEmptyDirectory(asset.destination))) {
-      throw new Error(
-        `Staging ${asset.name} produced an empty directory at ${asset.destination}. ` +
-        `The packaged app would render a blank window; aborting.`,
-      );
+    const destinationType = await getPathType(asset.destination);
+    if ((asset.sourceType === "directory" && !await isNonEmptyDirectory(asset.destination)) || (asset.sourceType === "file" && destinationType !== "file")) {
+      throw new Error(`Staging ${asset.name} produced an invalid destination at ${asset.destination}.`);
     }
     console.log(`Staged ${asset.name} at ${asset.destination}`);
   }

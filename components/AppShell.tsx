@@ -1,16 +1,16 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar, type SessionSidebarHandle } from "./SessionSidebar";
 import { ChatWindow, type TaskControls } from "./ChatWindow";
-import { FileViewer } from "./FileViewer";
-import { TabBar, type Tab } from "./TabBar";
+import type { Tab } from "./TabBar";
+import { RightPanel, type RightPanelHandle, type RightPanelTab } from "./workspace/RightPanel";
 import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
 import { PluginsConfig } from "./PluginsConfig";
-import { SettingsDialog } from "./SettingsDialog";
+import { SettingsDialog, type SettingsKey } from "./SettingsDialog";
 import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { BranchNavigator } from "./BranchNavigator";
 import { BackgroundSettings } from "./BackgroundSettings";
@@ -26,6 +26,7 @@ import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useCompletionNotification } from "@/hooks/useCompletionNotification";
 import { useCompanionPets } from "@/hooks/useCompanionPets";
 import { useCompanionPreferences } from "@/hooks/useCompanionPreferences";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
@@ -34,12 +35,14 @@ import {
   getDefaultRightPanelWidth,
   getRightPanelMaxWidth,
   getSidebarMaxWidth,
+  isRightPanelOverlayViewport,
   RIGHT_PANEL_FALLBACK_WIDTH,
   RIGHT_PANEL_MAX_WIDTH,
   RIGHT_PANEL_MIN_WIDTH,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_MIN_WIDTH,
+  WORKSPACE_MIN_WIDTH,
 } from "@/lib/panel-layout";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
 import type { ProjectTrustStatus } from "@/lib/api-types";
@@ -47,6 +50,10 @@ import type { ChatInputHandle } from "./ChatInput";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { canSendCompanionPhrase, type CompanionActivity } from "@/lib/companion";
 import { AliIcon } from "./AliIcon";
+import { CommandPalette } from "./CommandPalette";
+import { useCommands } from "@/hooks/useCommands";
+import { filterGuiCommands, type Command, type CommandContext, type PiSlashCommand } from "@/lib/commands";
+import { SETTINGS_REOPEN_STORAGE_KEY } from "@/lib/settings-portability";
 
 type SessionCopyField = "file" | "id";
 type AutoNameStatus =
@@ -55,7 +62,7 @@ type AutoNameStatus =
   | { kind: "success" }
   | { kind: "error"; message: string };
 type TopPanel = "branches" | "project" | "system" | "session" | "language" | "taskControls";
-type DesktopMenuId = "file" | "edit" | "view" | "features" | "help";
+type DesktopMenuId = "file" | "edit" | "view" | "help";
 
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
 const LANGUAGE_MENU_WIDTH = 176;
@@ -86,10 +93,9 @@ export function AppShell() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [sessionKey, setSessionKey] = useState(0);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
-  const [modelsConfigOpen, setModelsConfigOpen] = useState(false);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
-  const [skillsConfigOpen, setSkillsConfigOpen] = useState(false);
-  const [pluginsConfigOpen, setPluginsConfigOpen] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [settingsKey, setSettingsKey] = useState<SettingsKey>("general");
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
   const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
@@ -97,8 +103,17 @@ export function AppShell() {
   const [projectTrustError, setProjectTrustError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  // Keep the server and first client render identical. The persisted tab is
+  // restored after hydration so React never has to replace this subtree.
+  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("review");
+  const [rightPanelTabRestored, setRightPanelTabRestored] = useState(false);
+  const [rightPanelOverlayMode, setRightPanelOverlayMode] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [piSlashCommands, setPiSlashCommands] = useState<PiSlashCommand[]>([]);
+  const [currentIsGitRepository, setCurrentIsGitRepository] = useState(false);
   const [mobileSidebarReady, setMobileSidebarReady] = useState(false);
   const [desktopChrome, setDesktopChrome] = useState(false);
+  const [globalShortcutEnabled, setGlobalShortcutEnabled] = useState(false);
   const [openDesktopMenuId, setOpenDesktopMenuId] = useState<DesktopMenuId | null>(null);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const rightPanelWidthRef = useRef(RIGHT_PANEL_FALLBACK_WIDTH);
@@ -162,26 +177,54 @@ export function AppShell() {
     setMobileSidebarReady(true);
   }, []);
   useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem(SETTINGS_REOPEN_STORAGE_KEY) !== "general") return;
+      window.sessionStorage.removeItem(SETTINGS_REOPEN_STORAGE_KEY);
+      setSettingsKey("general");
+      setSettingsDialogOpen(true);
+    } catch {
+      // Import still applies when session storage is unavailable; only reopening is skipped.
+    }
+  }, []);
+  useEffect(() => {
+    const syncPanelMode = () => setRightPanelOverlayMode(isRightPanelOverlayViewport(window.innerWidth));
+    syncPanelMode();
+    window.addEventListener("resize", syncPanelMode);
+    return () => window.removeEventListener("resize", syncPanelMode);
+  }, []);
+  useEffect(() => {
+    if (rightPanelOverlayMode && rightPanelOpen && sidebarOpen) setSidebarOpen(false);
+  }, [rightPanelOpen, rightPanelOverlayMode, sidebarOpen]);
+  useEffect(() => {
     if (!rightPanelOpen) return;
     reclampSidebarWidth();
     reclampRightPanelWidth();
   }, [reclampRightPanelWidth, reclampSidebarWidth, rightPanelOpen]);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const sessionSidebarRef = useRef<SessionSidebarHandle>(null);
+  const rightPanelRef = useRef<RightPanelHandle>(null);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem("piora-right-panel-tab");
+    setRightPanelTab(stored === "files" || stored === "commands" ? stored : "review");
+    setRightPanelTabRestored(true);
+  }, []);
+
+  useEffect(() => {
+    if (!rightPanelTabRestored) return;
+    window.localStorage.setItem("piora-right-panel-tab", rightPanelTab);
+  }, [rightPanelTab, rightPanelTabRestored]);
   const {
     preferences: companionPreferences,
     setPreferences: setCompanionPreferences,
     setOpen: setCompanionOpen,
   } = useCompanionPreferences();
   const companionOpen = companionPreferences.open;
-  const [companionSettingsOpen, setCompanionSettingsOpen] = useState(false);
-  const companionPets = useCompanionPets(companionOpen || companionSettingsOpen);
+  const companionPets = useCompanionPets(companionOpen || (settingsDialogOpen && settingsKey === "companion"));
   const activeCompanionPet = companionPets.catalog?.installed.find(
     (pet) => pet.id === companionPreferences.selectedPetId,
   ) ?? null;
-  const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [moreThemesOpen, setMoreThemesOpen] = useState(false);
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [companionActivity, setCompanionActivity] = useState<CompanionActivity>(() => ({
     status: "idle",
     cause: translate("companion.activity.idleCause"),
@@ -191,7 +234,6 @@ export function AppShell() {
   const taskControlsBtnRef = useRef<HTMLButtonElement>(null);
   const topPanelFrameRef = useRef<HTMLDivElement>(null);
   const autoFocusedTopPanelRef = useRef<TopPanel | null>(null);
-  const appearanceDialogRef = useRef<HTMLDivElement>(null);
 
   // Branch navigator state — populated by ChatWindow via onBranchDataChange
   const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
@@ -269,6 +311,9 @@ export function AppShell() {
 
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<TopPanel | null>(null);
+  useFocusTrap(topPanelFrameRef, activeTopPanel !== null && activeTopPanel !== "branches", {
+    onEscape: () => setActiveTopPanel(null),
+  });
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const [taskControls, setTaskControls] = useState<TaskControls | null>(null);
 
@@ -277,15 +322,12 @@ export function AppShell() {
     setActiveTopPanel((cur) => cur === panel ? null : panel);
   }, [isMobile]);
 
-  const openAppearanceSettings = useCallback(() => {
+  const openSettings = useCallback((key: SettingsKey = "general") => {
     setActiveTopPanel(null);
     if (isMobile) setSidebarOpen(false);
-    setAppearanceOpen(true);
+    setSettingsKey(key);
+    setSettingsDialogOpen(true);
   }, [isMobile]);
-
-  const closeAppearanceSettings = useCallback(() => {
-    setAppearanceOpen(false);
-  }, []);
 
   const openSessionStatsPanel = useCallback(() => {
     if (isMobile) setSidebarOpen(false);
@@ -294,8 +336,10 @@ export function AppShell() {
 
   const handleSidebarToggle = useCallback(() => {
     if (isMobile) setActiveTopPanel(null);
-    setSidebarOpen((open) => !open);
-  }, [isMobile]);
+    const nextOpen = !sidebarOpen;
+    if (rightPanelOverlayMode && nextOpen) setRightPanelOpen(false);
+    setSidebarOpen(nextOpen);
+  }, [isMobile, rightPanelOverlayMode, sidebarOpen]);
 
   const handleOpenProjectPicker = useCallback(() => {
     setActiveTopPanel(null);
@@ -428,40 +472,9 @@ export function AppShell() {
     };
   }, [activeTopPanel]);
 
-  useEffect(() => {
-    if (!appearanceOpen) return;
-    const dialog = appearanceDialogRef.current;
-    const focusTarget = dialog?.querySelector<HTMLElement>("[data-appearance-close]");
-    focusTarget?.focus({ preventScroll: true });
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeAppearanceSettings();
-        return;
-      }
-      if (event.key !== "Tab" || !dialog) return;
-      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ));
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [appearanceOpen, closeAppearanceSettings]);
-
   // Right panel — file tabs only
   const [fileTabs, setFileTabs] = useState<Tab[]>([]);
   const [activeFileTabId, setActiveFileTabId] = useState<string | null>(null);
-  const activeFilePath = fileTabs.find((tab) => tab.id === activeFileTabId)?.filePath ?? null;
   const hasDirtyFileTabs = fileTabs.some((tab) => tab.isDirty);
 
   useEffect(() => {
@@ -666,23 +679,22 @@ export function AppShell() {
           setRightPanelOpen((open) => !open);
           break;
         case "settings":
-          setSettingsDialogOpen(true);
+          openSettings();
           break;
         case "models":
-          setModelsConfigOpen(true);
+          openSettings("models");
           break;
         case "skills":
-          setSkillsConfigOpen(true);
+          openSettings("skills");
           break;
         case "plugins":
-          setPluginsConfigOpen(true);
+          openSettings("plugins");
           break;
         case "appearance":
-        case "theme":
-          openAppearanceSettings();
+          openSettings("appearance");
           break;
         case "language":
-          toggleTopPanel("language");
+          openSettings("language");
           break;
         case "toggle-companion":
           toggleCompanion();
@@ -691,14 +703,14 @@ export function AppShell() {
           setCompanionOpen(false);
           break;
         case "companion-settings":
-          setCompanionSettingsOpen(true);
+          openSettings("companion");
           break;
         default:
           break;
       }
     });
     return unsubscribe;
-  }, [activeCwd, handleNewSession, handleOpenProjectPicker, handleSidebarToggle, openAppearanceSettings, setCompanionOpen, toggleCompanion, toggleTopPanel]);
+  }, [activeCwd, handleNewSession, handleOpenProjectPicker, handleSidebarToggle, openSettings, setCompanionOpen, toggleCompanion]);
 
   // Electron's titleBarOverlay does not make the browser-only
   // `(display-mode: window-controls-overlay)` media query true. Use the
@@ -706,7 +718,18 @@ export function AppShell() {
   // packaged window gets draggable regions and native-control safe areas.
   useEffect(() => {
     setDesktopChrome(Boolean(window.piDesktop));
+    const enabled = window.localStorage.getItem("piora-global-shortcut-enabled") === "true";
+    setGlobalShortcutEnabled(enabled);
+    if (enabled) void window.piDesktop?.setGlobalShortcut?.(true);
   }, []);
+
+  const toggleGlobalShortcut = useCallback(async () => {
+    const next = !globalShortcutEnabled;
+    const accepted = await window.piDesktop?.setGlobalShortcut?.(next);
+    if (accepted === false) return;
+    setGlobalShortcutEnabled(next);
+    window.localStorage.setItem("piora-global-shortcut-enabled", String(next));
+  }, [globalShortcutEnabled]);
 
   useEffect(() => {
     if (!desktopChrome) return;
@@ -854,10 +877,11 @@ export function AppShell() {
   const handleOpenFile = useCallback((
     filePath: string,
     fileName: string,
-    options?: { sourceSessionId?: string | null; modeHint?: "diff" },
+    options?: { sourceSessionId?: string | null; modeHint?: "diff"; line?: number },
   ) => {
     const sourceSessionId = options?.sourceSessionId;
     const modeHint = options?.modeHint;
+    const revealLine = options?.line;
     const tabId = `file:${filePath}`;
     setFileTabs((prev) => {
       const existing = prev.find((t) => t.id === tabId);
@@ -869,20 +893,23 @@ export function AppShell() {
           cwd: activeCwd ?? undefined,
           sourceSessionId,
           initialDisplayMode: modeHint,
+          ...(revealLine ? { revealLine, revealKey: Date.now() } : {}),
         }];
       }
       const sourceUnchanged = !sourceSessionId || existing.sourceSessionId === sourceSessionId;
       const modeUnchanged = !modeHint || existing.initialDisplayMode === modeHint;
-      if (sourceUnchanged && modeUnchanged) return prev;
+      if (sourceUnchanged && modeUnchanged && !revealLine) return prev;
       return prev.map((t) => {
         if (t.id !== tabId) return t;
         const next: Tab = { ...t };
         if (sourceSessionId) next.sourceSessionId = sourceSessionId;
         if (modeHint) next.initialDisplayMode = modeHint;
+        if (revealLine) { next.revealLine = revealLine; next.revealKey = Date.now(); }
         return next;
       });
     });
     setActiveFileTabId(tabId);
+    setRightPanelTab("files");
     setRightPanelOpen(true);
     // On mobile the file panel is full-screen; close the drawer so it shows.
     if (isMobile) setSidebarOpen(false);
@@ -914,6 +941,29 @@ export function AppShell() {
     setHistoryDialogOpen(true);
   }, [selectedSession]);
 
+  const handleTaskRename = useCallback(async (name: string) => {
+    if (!selectedSession) return;
+    const response = await fetch(`/api/sessions/${encodeURIComponent(selectedSession.id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!response.ok) return;
+    setSelectedSession((current) => current?.id === selectedSession.id ? { ...current, name } : current);
+    setRefreshKey((key) => key + 1);
+  }, [selectedSession]);
+
+  const handleTaskExport = useCallback(() => {
+    if (!selectedSession) return;
+    setHistoryDialogOpen(true);
+  }, [selectedSession]);
+
+  const handleOpenTaskChanges = useCallback(() => {
+    if (rightPanelOverlayMode) setSidebarOpen(false);
+    setRightPanelTab("review");
+    setRightPanelOpen(true);
+  }, [rightPanelOverlayMode]);
+
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
   const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
@@ -928,6 +978,97 @@ export function AppShell() {
     if (!currentProjectCwd) return;
     handleNewSession(`project-menu-${Date.now()}`, currentProjectCwd);
   }, [currentProjectCwd, handleNewSession]);
+
+  useEffect(() => {
+    if (!currentProjectCwd) { setCurrentIsGitRepository(false); return; }
+    const controller = new AbortController();
+    fetch(`/api/git/status?cwd=${encodeURIComponent(currentProjectCwd)}`, { signal: controller.signal, cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: { isGitRepository?: boolean } | null) => setCurrentIsGitRepository(Boolean(data?.isGitRepository)))
+      .catch(() => {});
+    return () => controller.abort();
+  }, [currentProjectCwd, explorerRefreshKey]);
+
+  useEffect(() => {
+    const openPalette = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLocaleLowerCase() === "k") {
+        event.preventDefault();
+        setCommandPaletteOpen(true);
+      }
+    };
+    window.addEventListener("keydown", openPalette);
+    return () => window.removeEventListener("keydown", openPalette);
+  }, []);
+
+  useEffect(() => {
+    const cycleWorkspaceFocus = (event: KeyboardEvent) => {
+      if (event.key !== "F6" || event.ctrlKey || event.metaKey || event.altKey || settingsDialogOpen) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      const targets: Array<{ zone: "sidebar" | "composer" | "panel"; focus: () => void }> = [];
+      if (sidebarOpen) targets.push({ zone: "sidebar", focus: () => sessionSidebarRef.current?.focusTaskSearch() });
+      targets.push({ zone: "composer", focus: () => chatInputRef.current?.focus() });
+      if (rightPanelOpen) targets.push({ zone: "panel", focus: () => rightPanelRef.current?.focusActiveTab() });
+      if (targets.length < 2) return;
+
+      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const currentZone = activeElement?.closest(".session-sidebar-content")
+        ? "sidebar"
+        : activeElement?.closest("#file-panel")
+          ? "panel"
+          : "composer";
+      const currentIndex = Math.max(0, targets.findIndex((target) => target.zone === currentZone));
+      const delta = event.shiftKey ? -1 : 1;
+      const nextIndex = (currentIndex + delta + targets.length) % targets.length;
+      event.preventDefault();
+      targets[nextIndex].focus();
+    };
+    window.addEventListener("keydown", cycleWorkspaceFocus);
+    return () => window.removeEventListener("keydown", cycleWorkspaceFocus);
+  }, [rightPanelOpen, settingsDialogOpen, sidebarOpen]);
+
+  const commandActions = useMemo<CommandContext["actions"]>(() => ({
+    "navigate.newSession": handleNewSessionInCurrentProject,
+    "navigate.chooseProject": handleOpenProjectPicker,
+    "navigate.searchTasks": () => { setSidebarOpen(true); window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, shiftKey: true })); },
+    "navigate.searchFiles": () => { setRightPanelTab("files"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusFileSearch()); },
+    "navigate.focusComposer": () => chatInputRef.current?.focus(),
+    "navigate.history": handleViewFullHistory,
+    "session.rename": (argument) => argument?.trim() ? void handleTaskRename(argument.trim()) : chatInputRef.current?.insertText("/name "),
+    "session.export": handleTaskExport,
+    "session.compact": () => chatInputRef.current?.insertText("/compact"),
+    "session.stats": () => chatInputRef.current?.insertText("/session"),
+    "model.select": () => openSettings("models"),
+    "model.thinking": () => openSettings("conversation"),
+    "model.permissions": () => openSettings("conversation"),
+    "panel.review": () => { setRightPanelTab("review"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
+    "panel.files": () => { setRightPanelTab("files"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
+    "panel.commands": () => { setRightPanelTab("commands"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
+    "panel.toggleSidebar": () => setSidebarOpen((open) => !open),
+    "panel.close": () => setRightPanelOpen(false),
+    "settings.general": () => openSettings("general"),
+    "git.commit": (argument) => {
+      setRightPanelTab("review");
+      setRightPanelOpen(true);
+      window.setTimeout(() => {
+        if (argument?.trim()) window.dispatchEvent(new CustomEvent("piora:prefill-commit-message", { detail: { cwd: currentProjectCwd, message: argument.trim() } }));
+        else window.dispatchEvent(new CustomEvent("piora:focus-review-commit"));
+      }, 0);
+    },
+    "git.refresh": handleExplorerRefresh,
+  }), [currentProjectCwd, handleExplorerRefresh, handleNewSessionInCurrentProject, handleOpenProjectPicker, handleTaskExport, handleTaskRename, handleViewFullHistory, openSettings]);
+  const commandContext = useMemo<CommandContext>(() => ({ hasProject: Boolean(currentProjectCwd), hasSession: Boolean(selectedSession), isRunning: Boolean(taskControls?.disabled), isGitRepository: currentIsGitRepository, actions: commandActions }), [commandActions, currentIsGitRepository, currentProjectCwd, selectedSession, taskControls?.disabled]);
+  const { commands: guiCommands, run: runGuiCommand } = useCommands(commandContext, translate);
+  const piPaletteCommands = useMemo<Command[]>(() => piSlashCommands.map((item) => ({
+    id: `pi:${item.source}:${item.name}`,
+    group: "session",
+    title: `/${item.name}${item.description ? ` — ${item.description}` : ""}`,
+    source: item.sourceInfo?.source ?? item.source,
+    enabled: () => selectedSession ? true : { reason: "commands.needsSession" },
+    run: () => { chatInputRef.current?.insertText(`/${item.name} `); chatInputRef.current?.focus(); },
+  })), [piSlashCommands, selectedSession]);
+  const paletteCommands = useMemo(() => [...guiCommands, ...piPaletteCommands], [guiCommands, piPaletteCommands]);
+  const searchPaletteCommands = useCallback((query: string) => filterGuiCommands(paletteCommands, query, (item) => item.id.startsWith("pi:") ? item.title : translate(item.title)), [paletteCommands, translate]);
+  const runPaletteCommand = useCallback(async (item: Command, argument?: string) => { if (item.id.startsWith("pi:")) await item.run(commandContext, argument); else await runGuiCommand(item, argument); }, [commandContext, runGuiCommand]);
 
   const handleCopyCurrentProjectPath = useCallback(() => {
     if (!currentProjectCwd) return;
@@ -950,6 +1091,10 @@ export function AppShell() {
     })
       .then(async (response) => {
         const data = await response.json() as ProjectTrustStatus & { error?: string };
+        if (response.status === 400 && data.error === "Directory does not exist") {
+          setProjectTrust(null);
+          return;
+        }
         if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
         setProjectTrust(data);
       })
@@ -990,14 +1135,12 @@ export function AppShell() {
         { id: "file", label: "文件" },
         { id: "edit", label: "编辑" },
         { id: "view", label: "视图" },
-        { id: "features", label: "功能" },
         { id: "help", label: "帮助" },
       ]
     : [
         { id: "file", label: "File" },
         { id: "edit", label: "Edit" },
         { id: "view", label: "View" },
-        { id: "features", label: "Features" },
         { id: "help", label: "Help" },
       ];
 
@@ -1017,8 +1160,9 @@ export function AppShell() {
       if (event.defaultPrevented || event.altKey || event.shiftKey) return;
       if ((!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== "p") return;
       event.preventDefault();
-      setSidebarOpen(true);
-      requestAnimationFrame(() => sessionSidebarRef.current?.focusFileSearch());
+      setRightPanelTab("files");
+      setRightPanelOpen(true);
+      requestAnimationFrame(() => rightPanelRef.current?.focusFileSearch());
     };
     window.addEventListener("keydown", handleQuickOpen);
     return () => window.removeEventListener("keydown", handleQuickOpen);
@@ -1037,15 +1181,12 @@ export function AppShell() {
       onSessionDeleted={handleSessionDeleted}
       selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
       onCwdChange={handleCwdChange}
-      onOpenFile={handleOpenFile}
-      selectedFilePath={activeFilePath}
-      explorerRefreshKey={explorerRefreshKey}
-      onExplorerRefresh={handleExplorerRefresh}
-      onAtMention={handleAtMention}
-      onAtMentions={handleAtMentions}
-      onOpenSettings={() => setSettingsDialogOpen(true)}
-      onOpenPlugins={() => setPluginsConfigOpen(true)}
-      onOpenSkills={() => setSkillsConfigOpen(true)}
+      onFocusFileSearch={() => {
+        setRightPanelTab("files");
+        setRightPanelOpen(true);
+        requestAnimationFrame(() => rightPanelRef.current?.focusFileSearch());
+      }}
+      onOpenSettings={() => openSettings()}
     />
   );
 
@@ -1053,12 +1194,96 @@ export function AppShell() {
     <SettingsDialog
       open={settingsDialogOpen}
       onClose={() => setSettingsDialogOpen(false)}
-      onOpenModels={() => { setSettingsDialogOpen(false); setModelsConfigOpen(true); }}
-      onOpenSkills={() => { setSettingsDialogOpen(false); setSkillsConfigOpen(true); }}
-      onOpenPlugins={() => { setSettingsDialogOpen(false); setPluginsConfigOpen(true); }}
-      onOpenAppearance={() => { setSettingsDialogOpen(false); openAppearanceSettings(); }}
-      onOpenLanguage={() => { setSettingsDialogOpen(false); toggleTopPanel("language"); }}
-      onOpenCompanion={() => { setSettingsDialogOpen(false); setCompanionSettingsOpen(true); }}
+      activeKey={settingsKey}
+      onActiveKeyChange={setSettingsKey}
+      sections={{
+        models: (
+          <ModelsConfig
+            embedded
+            cwd={projectTrustCwd ?? activeCwd ?? undefined}
+            onModelsChanged={() => setModelsRefreshKey((key) => key + 1)}
+            onClose={() => setSettingsKey("general")}
+          />
+        ),
+        skills: projectTrustCwd ? (
+          <SkillsConfig embedded cwd={projectTrustCwd} onClose={() => setSettingsKey("general")} />
+        ) : undefined,
+        plugins: projectTrustCwd ? (
+          <PluginsConfig
+            embedded
+            cwd={projectTrustCwd}
+            sessionId={selectedSession?.id ?? null}
+            onClose={() => setSettingsKey("general")}
+            onReloaded={() => setSessionKey((key) => key + 1)}
+          />
+        ) : undefined,
+        appearance: (
+          <div style={{ height: "100%", overflowY: "auto", padding: "26px 30px 34px" }}>
+            <div style={{ marginBottom: 22 }}>
+              <h2 style={{ margin: 0, color: "var(--text)", fontSize: "calc(var(--text-lg) * 1.22)", fontWeight: 680 }}>{translate("appearance.title")}</h2>
+              <p style={{ margin: "7px 0 0", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>{translate("appearance.description")}</p>
+            </div>
+            <AppearanceLooks />
+            <section aria-labelledby="settings-appearance-theme" style={{ paddingBottom: 16 }}>
+              <h3 id="settings-appearance-theme" style={{ margin: "0 0 3px", fontSize: "var(--text-sm)" }}>{translate("appearance.theme")}</h3>
+              <p style={{ margin: "0 0 10px", color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>{translate("appearance.themeHint")}</p>
+              <div role="radiogroup" aria-label={translate("appearance.theme")} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(108px, 1fr))", gap: 8 }}>
+                {themes.filter(({ id }) => id === "light" || id === "dark").map((preset) => (
+                  <ThemeOption key={preset.id} preset={preset} theme={theme} onSelect={setTheme} translate={translate} />
+                ))}
+              </div>
+              <button type="button" className="theme-menu-option" aria-expanded={moreThemesOpen} onClick={() => setMoreThemesOpen((open) => !open)} style={{ width: "100%", marginTop: 10, padding: "7px 9px", display: "flex", alignItems: "center", gap: 7, border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: "var(--text-xs)" }}>
+                <AliIcon name={moreThemesOpen ? "arrowdown" : "arrowright"} size={12} />
+                <span style={{ flex: 1, textAlign: "left" }}>{translate("theme.more")}</span>
+                <span>{themes.length - 2}</span>
+              </button>
+              {moreThemesOpen && (
+                <div role="radiogroup" aria-label={translate("theme.more")} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(108px, 1fr))", gap: 8, marginTop: 8 }}>
+                  {themes.filter(({ id }) => id !== "light" && id !== "dark").map((preset) => (
+                    <ThemeOption key={preset.id} preset={preset} theme={theme} onSelect={setTheme} translate={translate} />
+                  ))}
+                </div>
+              )}
+            </section>
+            <FontSettings />
+            <BackgroundSettings />
+          </div>
+        ),
+        language: (
+          <div style={{ height: "100%", overflowY: "auto", padding: "26px 30px" }}>
+            <h2 style={{ margin: 0, color: "var(--text)", fontSize: "calc(var(--text-lg) * 1.22)", fontWeight: 680 }}>{translate("common.language")}</h2>
+            <p style={{ margin: "7px 0 22px", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>{translate("settings.languageDescription")}</p>
+            <div role="radiogroup" aria-label={translate("common.language")} style={{ display: "grid", gap: 8, maxWidth: 520 }}>
+              {supportedLocales.map((plugin) => (
+                <button key={plugin.id} type="button" role="radio" aria-checked={locale === plugin.id} onClick={() => setLocale(plugin.id as typeof locale)} style={{ minHeight: 44, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 9, background: locale === plugin.id ? "var(--bg-selected)" : "var(--bg-panel)", color: "var(--text)", cursor: "pointer", font: "inherit" }}>
+                  <span>{plugin.label}</span>
+                  {locale === plugin.id ? <AliIcon name="check" size={14} style={{ color: "var(--accent)" }} /> : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        ),
+        companion: (
+          <CompanionSettingsDialog
+            embedded
+            open
+            onClose={() => setSettingsKey("general")}
+            companionOpen={companionOpen}
+            onCompanionOpenChange={setCompanionOpen}
+            desktopMode={desktopChrome}
+            selectedPetId={companionPreferences.selectedPetId}
+            onSelectPet={handleSelectCompanionPet}
+            catalog={companionPets.catalog}
+            loading={companionPets.loading}
+            error={companionPets.error}
+            importingPetKey={companionPets.importingPetKey}
+            importingArchive={companionPets.importingArchive}
+            onRefresh={() => { void companionPets.loadPets(); }}
+            onImportPet={companionPets.importPet}
+            onImportArchive={companionPets.importPetArchive}
+          />
+        ),
+      }}
       conversation={{
         hasSession: Boolean(selectedSession),
         hasMessages: Boolean(selectedSession && (sessionStats?.userMessages ?? selectedSession.messageCount) > 0),
@@ -1070,6 +1295,11 @@ export function AppShell() {
         notificationCapability,
         onGenerateTitle: () => { void handleAutoName(); },
         onNotificationToggle: () => { void onNotificationToggle(); },
+      }}
+      desktop={{
+        available: desktopChrome,
+        globalShortcutEnabled,
+        onGlobalShortcutToggle: toggleGlobalShortcut,
       }}
     />
   );
@@ -1148,7 +1378,18 @@ export function AppShell() {
         }
       }
     `}</style>
-    <div className={`app-shell${desktopChrome ? " desktop-chrome" : ""}`} style={{ display: "flex", height: "100dvh", overflow: "hidden", background: "var(--bg)" }}>
+    <div
+      className={`app-shell${desktopChrome ? " desktop-chrome" : ""}`}
+      data-side-panel-mode={rightPanelOverlayMode ? "overlay" : "split"}
+      style={{
+        "--workspace-min-width": `${WORKSPACE_MIN_WIDTH}px`,
+        display: "flex",
+        height: "100dvh",
+        overflow: "hidden",
+        background: "var(--bg)",
+      } as React.CSSProperties}
+    >
+      <a className="skip-to-content" href="#piora-main-content">{translate("a11y.skipToContent")}</a>
       {desktopChrome ? (
         <header className="desktop-titlebar" aria-label={windowTitle}>
           <div className="desktop-titlebar-mark" aria-hidden="true">π</div>
@@ -1213,7 +1454,7 @@ export function AppShell() {
       )}
 
       {/* Center: chat */}
-      <div className="workspace-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0, position: "relative" }}>
+      <div id="piora-main-content" role="main" tabIndex={-1} className="workspace-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
         {/* Quiet conversation chrome: identity on the left, contextual actions on the right. */}
         <div ref={topBarRef} className="app-topbar">
           <button
@@ -1890,6 +2131,10 @@ export function AppShell() {
                 onOpenFile={handleOpenLinkedFile}
                 onCompanionActivityChange={setCompanionActivity}
                 onTaskControlsChange={handleTaskControlsChange}
+                onOpenTaskChanges={handleOpenTaskChanges}
+                onRenameTask={handleTaskRename}
+                onExportTask={handleTaskExport}
+                onSlashCommandsChange={setPiSlashCommands}
               />
             ) : initialCwdStatus === "validating" ? (
               <div
@@ -1964,10 +2209,12 @@ export function AppShell() {
         />
       )}
 
-      {/* Right panel: file viewer — always mounted, width animated via CSS */}
+      {/* Right workspace: Review and Files stay mounted so edits and scroll positions survive tab switches. */}
       <div
         ref={rightPanelResizer.panelRef}
         id="file-panel"
+        aria-hidden={!effectiveRightPanelOpen}
+        inert={!effectiveRightPanelOpen ? true : undefined}
         className={`right-panel-container${effectiveRightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
         style={{
           "--right-panel-width": `${rightPanelResizer.width}px`,
@@ -1977,63 +2224,37 @@ export function AppShell() {
           background: "var(--bg)",
         } as React.CSSProperties}
       >
-        {/* Right panel tab bar */}
-        <div className="right-panel-tabs" style={{ display: "flex", alignItems: "center", flexShrink: 0, background: "var(--bg-panel)", borderBottom: "1px solid var(--border)", minHeight: "max(40px, calc(var(--text-sm) + 28px))" }}>
-          <div style={{ flex: 1, overflow: "hidden" }}>
-            <TabBar
-              tabs={fileTabs}
-              activeTabId={activeFileTabId ?? ""}
-              onSelectTab={setActiveFileTabId}
-              onCloseTab={handleCloseFileTab}
-            />
-          </div>
-
-        </div>
-
-        {/* File content */}
-        <div style={{ position: "relative", flex: 1, overflow: "hidden" }}>
-          {fileTabs.length > 0 ? (
-            fileTabs.map((tab) => {
-              const isActive = tab.id === activeFileTabId;
-              return (
-                <div
-                  key={tab.id}
-                  aria-hidden={!isActive}
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    display: isActive ? "block" : "none",
-                    overflow: "hidden",
-                  }}
-                >
-                  <FileViewer
-                    filePath={tab.filePath}
-                    cwd={tab.cwd ?? activeCwd ?? undefined}
-                    sourceSessionId={tab.sourceSessionId}
-                    gitRefreshKey={explorerRefreshKey}
-                    initialDisplayMode={tab.initialDisplayMode}
-                    active={effectiveRightPanelOpen && isActive}
-                    onDirtyChange={(dirty) => handleFileDirtyChange(tab.id, dirty)}
-                    onSaved={handleExplorerRefresh}
-                    onMentionLines={effectiveRightPanelOpen && isActive ? handleFileLineMention : undefined}
-                    onOpenFile={(filePath) => handleOpenFile(
-                      filePath,
-                      getFileName(filePath),
-                      { sourceSessionId: tab.sourceSessionId },
-                    )}
-                  />
-                </div>
-              );
-            })
-          ) : (
-            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: "var(--text-sm)" }}>
-               {translate("files.noneOpen")}
-            </div>
-          )}
-        </div>
+        <RightPanel
+          ref={rightPanelRef}
+          activeTab={rightPanelTab}
+          onActiveTabChange={setRightPanelTab}
+          cwd={activeCwd}
+          refreshKey={explorerRefreshKey}
+          active={effectiveRightPanelOpen}
+          fileTabs={fileTabs}
+          activeFileTabId={activeFileTabId}
+          onSelectFileTab={setActiveFileTabId}
+          onCloseFileTab={handleCloseFileTab}
+          onOpenFile={handleOpenFile}
+          onDirtyChange={handleFileDirtyChange}
+          onRefresh={handleExplorerRefresh}
+          onMention={handleAtMention}
+          onMentions={handleAtMentions}
+          onMentionLines={handleFileLineMention}
+          taskControls={taskControls}
+          projectTrusted={Boolean(projectTrust?.trusted)}
+        />
       </div>
     {/* File panel toggle — always visible at top-right */}
     </div>
+    <CommandPalette
+      open={commandPaletteOpen}
+      commands={paletteCommands}
+      context={commandContext}
+      search={searchPaletteCommands}
+      onRun={runPaletteCommand}
+      onClose={() => setCommandPaletteOpen(false)}
+    />
     {historyDialogOpen && selectedSession ? (
       <SessionHistoryDialog
         sessionId={selectedSession.id}
@@ -2042,147 +2263,6 @@ export function AppShell() {
         onClose={() => setHistoryDialogOpen(false)}
       />
     ) : null}
-    {appearanceOpen && (
-      <div
-        className="app-shell-dialog-backdrop"
-        role="presentation"
-        onMouseDown={(event) => {
-          if (event.target === event.currentTarget) closeAppearanceSettings();
-        }}
-        style={{
-          position: "fixed",
-          inset: 0,
-          zIndex: 900,
-          display: "grid",
-          placeItems: "center",
-          padding: 12,
-          background: "rgba(10, 12, 16, 0.48)",
-          backdropFilter: "blur(7px)",
-        }}
-      >
-        <div
-          className="app-shell-dialog"
-          ref={appearanceDialogRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="appearance-dialog-title"
-          aria-describedby="appearance-dialog-description"
-          style={{
-            width: "min(760px, calc(100vw - 24px))",
-            maxHeight: "calc(100dvh - 24px)",
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            border: "1px solid color-mix(in srgb, var(--border) 88%, transparent)",
-            borderRadius: "var(--radius-panel)",
-            background: "var(--bg-panel)",
-            boxShadow: "var(--shadow-popover)",
-            color: "var(--text)",
-          }}
-        >
-          <div className="app-shell-dialog-header" style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <h2 id="appearance-dialog-title" style={{ margin: 0, fontSize: "var(--text-md)", fontWeight: 650, letterSpacing: "-0.015em" }}>
-                {translate("appearance.title")}
-              </h2>
-              <p id="appearance-dialog-description" style={{ margin: "3px 0 0", color: "var(--text-muted)", fontSize: "var(--text-xs)" }}>
-                {translate("appearance.description")}
-              </p>
-            </div>
-            <button
-              type="button"
-              data-appearance-close
-              onClick={closeAppearanceSettings}
-              title={translate("appearance.close")}
-              aria-label={translate("appearance.close")}
-              style={{
-                width: 30,
-                height: 30,
-                padding: 0,
-                display: "grid",
-                placeItems: "center",
-                flexShrink: 0,
-                border: "none",
-                borderRadius: "var(--radius-control)",
-                background: "transparent",
-                color: "var(--text-muted)",
-                cursor: "pointer",
-              }}
-            >
-              <AliIcon name="close" size={16} />
-            </button>
-          </div>
-          <div className="app-shell-dialog-body" style={{ minHeight: 0, overflowY: "auto", padding: 16 }}>
-            <AppearanceLooks />
-            <section aria-labelledby="appearance-theme-title" style={{ paddingBottom: 16 }}>
-              <div style={{ marginBottom: 9 }}>
-                <h3 id="appearance-theme-title" style={{ margin: 0, fontSize: "var(--text-sm)", fontWeight: 700 }}>
-                  {translate("appearance.theme")}
-                </h3>
-                <p style={{ margin: "2px 0 0", color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>
-                  {translate("appearance.themeHint")}
-                </p>
-              </div>
-              <div
-                role="radiogroup"
-                aria-label={translate("appearance.theme")}
-                style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(108px, 1fr))", gap: 8 }}
-              >
-                {themes.filter(({ id }) => id === "light" || id === "dark").map((preset) => (
-                  <ThemeOption key={preset.id} preset={preset} theme={theme} onSelect={setTheme} translate={translate} />
-                ))}
-              </div>
-              <div style={{ marginTop: 10 }}>
-                <button
-                  type="button"
-                  className="theme-menu-option"
-                  aria-expanded={moreThemesOpen}
-                  onClick={() => setMoreThemesOpen((open) => !open)}
-                  style={{
-                    width: "100%",
-                    padding: "7px 9px",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 7,
-                    border: "1px solid var(--border)",
-                    borderRadius: "var(--radius-control)",
-                    background: "transparent",
-                    color: "var(--text-muted)",
-                    cursor: "pointer",
-                    textAlign: "left",
-                    fontSize: "var(--text-xs)",
-                  }}
-                >
-                  <AliIcon name={moreThemesOpen ? "arrowdown" : "arrowright"} size={12} />
-                  <span style={{ flex: 1 }}>{translate("theme.more")}</span>
-                  <span style={{ color: "var(--text-dim)" }}>{themes.length - 2}</span>
-                </button>
-                {moreThemesOpen && (
-                  <div
-                    role="radiogroup"
-                    aria-label={translate("theme.more")}
-                    style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(108px, 1fr))", gap: 8, marginTop: 8 }}
-                  >
-                    {themes.filter(({ id }) => id !== "light" && id !== "dark").map((preset) => (
-                      <ThemeOption key={preset.id} preset={preset} theme={theme} onSelect={setTheme} translate={translate} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
-            <FontSettings />
-            <BackgroundSettings />
-          </div>
-        </div>
-      </div>
-    )}
-    {modelsConfigOpen && (
-      <ModelsConfig
-        cwd={projectTrustCwd ?? activeCwd ?? undefined}
-        onModelsChanged={() => setModelsRefreshKey((key) => key + 1)}
-        onClose={() => { setModelsConfigOpen(false); setModelsRefreshKey((key) => key + 1); }}
-      />
-    )}
     {projectTrustDialogOpen && projectTrustCwd && (
       <ProjectTrustDialog
         cwd={projectTrustCwd}
@@ -2194,34 +2274,6 @@ export function AppShell() {
         onConfirm={() => void handleTrustProject()}
       />
     )}
-    {skillsConfigOpen && projectTrustCwd && (
-      <SkillsConfig cwd={projectTrustCwd} onClose={() => setSkillsConfigOpen(false)} />
-    )}
-    {pluginsConfigOpen && projectTrustCwd && (
-      <PluginsConfig
-        cwd={projectTrustCwd}
-        sessionId={selectedSession?.id ?? null}
-        onClose={() => setPluginsConfigOpen(false)}
-        onReloaded={() => setSessionKey((k) => k + 1)}
-      />
-    )}
-    <CompanionSettingsDialog
-      open={companionSettingsOpen}
-      onClose={() => setCompanionSettingsOpen(false)}
-      companionOpen={companionOpen}
-      onCompanionOpenChange={setCompanionOpen}
-      desktopMode={desktopChrome}
-      selectedPetId={companionPreferences.selectedPetId}
-      onSelectPet={handleSelectCompanionPet}
-      catalog={companionPets.catalog}
-      loading={companionPets.loading}
-      error={companionPets.error}
-      importingPetKey={companionPets.importingPetKey}
-      importingArchive={companionPets.importingArchive}
-      onRefresh={() => { void companionPets.loadPets(); }}
-      onImportPet={companionPets.importPet}
-      onImportArchive={companionPets.importPetArchive}
-    />
     </>
   );
 }

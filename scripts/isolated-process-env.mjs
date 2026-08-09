@@ -78,7 +78,7 @@ export function createIsolatedProcessEnvironment(
   Object.assign(environment, {
     HOME: paths.home,
     USERPROFILE: paths.home,
-    PI_GUI_HOME: paths.home,
+    PIORA_HOME: paths.home,
     APPDATA: paths.appData,
     LOCALAPPDATA: paths.localAppData,
     TEMP: paths.temp,

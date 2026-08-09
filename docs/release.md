@@ -1,7 +1,7 @@
-# piGUI release procedure
+# Piora release procedure
 
-The piGUI release process is configured to publish source code and an unsigned Windows x64 portable application from
-[`kexijiang/pi-gui`](https://github.com/kexijiang/pi-gui). It does not publish the former
+The Piora release process is configured to publish source code and an unsigned Windows x64 portable application from
+[`kexijiang/piora`](https://github.com/kexijiang/piora). It does not publish the former
 `@agegr/pi-web` npm package.
 
 ## Prerequisites
@@ -47,7 +47,7 @@ the extension fixture runs through the executable in `win-unpacked` with Electro
 
 `smoke:portable` launches the final portable EXE in an isolated profile and requires its reported
 application version to match `--expected-version`. It also requires the hidden smoke window to load
-the renderer, expose the preload bridge, and reach the piGUI application shell before passing.
+the renderer, expose the preload bridge, and reach the Piora application shell before passing.
 The default five-minute timeout includes first-run extraction and cleanup of the complete portable
 payload; a healthy marker alone is insufficient if the wrapper never exits cleanly.
 
@@ -57,7 +57,7 @@ After the local gates pass, push `main`, wait for the public CI matrix, then cre
 matching version tag:
 
 ```powershell
-git tag -a v0.1.0 -m "piGUI v0.1.0"
+git tag -a v0.1.0 -m "Piora v0.1.0"
 git push origin v0.1.0
 ```
 
@@ -70,11 +70,11 @@ download and verify its assets, complete the checks below, and explicitly publis
 never publishes the draft automatically. Never manually mark an unsigned artifact as a signed or
 stable release.
 
-The preview uses the original piGUI icon recorded in
+The preview uses the original Piora icon recorded in
 [`desktop/build/README.md`](../desktop/build/README.md). Electron Builder consumes the reviewed
 multi-resolution `icon.ico`; the same mark is exported to the browser/PWA icons. Before publishing,
 verify the ICO sizes and transparent edge on light and dark surfaces, then extract and inspect the
-icons embedded in both `win-unpacked/piGUI.exe` and the final portable EXE. A completed visual
+icons embedded in both `win-unpacked/Piora.exe` and the final portable EXE. A completed visual
 identity does not imply that the executable is signed or that clean-machine validation passed.
 
 ## Review the draft before publication

@@ -14,16 +14,17 @@
   gap: 6px;
   padding: 0 8px;
   border: 1px solid var(--border-soft);
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: color-mix(in srgb, var(--bg) 72%, var(--bg-panel));
   color: var(--text-dim);
   transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
+/* Focus per PIORA_UI_STYLE_SPEC §6.2: keep 1px border, swap to accent + subtle ring */
 .filterShell:focus-within {
-  border-color: var(--border);
+  border-color: var(--accent);
   background: var(--bg-panel);
-  box-shadow: none;
+  box-shadow: 0 0 0 3px var(--accent-subtle);
 }
 
 .filterInput {
@@ -31,10 +32,14 @@
   height: 100%;
   flex: 1;
   border: 0;
-  outline: 0;
   background: transparent;
   color: var(--text);
   font-size: var(--text-sm);
+}
+
+/* Outrank the global input:focus-visible outline; the shell provides the focus ring */
+.filterInput:focus-visible {
+  outline: none;
 }
 
 .filterInput::placeholder { color: var(--text-dim); }
@@ -145,3 +150,29 @@
 }
 
 .contextSubmenuLeft { right: calc(100% + 5px); left: auto; }
+.treeItemRow {
+  content-visibility: auto;
+  contain-intrinsic-block-size: 24px;
+}
+
+.treeLoadMore {
+  display: block;
+  max-width: calc(100% - 24px);
+  min-height: 28px;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  text-align: left;
+}
+
+.treeLoadMore:hover,
+.treeLoadMore:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+}

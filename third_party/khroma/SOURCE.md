@@ -7,5 +7,5 @@
 - License text SHA-256: `66b333b0f66759a0b710459e03f7029abe17f4358114a128d2c972e642961b49`
 
 The published package includes this exact license file but omits a machine-readable license field
-from its package manifest. piGUI records the reviewed MIT classification and immutable upstream
+from its package manifest. Piora records the reviewed MIT classification and immutable upstream
 evidence so the generated runtime SBOM does not guess from a package name or a later version.

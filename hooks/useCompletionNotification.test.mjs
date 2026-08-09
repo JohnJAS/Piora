@@ -40,7 +40,7 @@ test("desktop and browser notifications use application-owned completion copy", 
   assert.match(mainSource, /Task completed\. Open Piora to review the result\./);
   assert.match(hookSource, /Task completed\. Open Piora to review the result\./);
   assert.match(mainSource, /new Notification\(\{ \.\.\.copy, silent: false \}\)/);
-  assert.match(hookSource, /tag: "pigui-task-complete"/);
+  assert.match(hookSource, /tag: "piora-task-complete"/);
 });
 
 test("a user-stopped run does not emit a successful completion notification", () => {

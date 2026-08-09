@@ -48,7 +48,11 @@ html[data-theme="dream"] body::before {
     radial-gradient(520px 260px at 76% 14%, rgba(141, 163, 151, 0.08), transparent 72%);
 }
 
-html[data-theme="dream"] body > * {
+/* Lift only the app root above the body::before decor layer. Do NOT use
+ * `body > *`: portals (settings dialog, context menus, tooltips) are direct
+ * body children with their own fixed positioning and z-index, and forcing
+ * position/z-index here would override them and break their overlays. */
+html[data-theme="dream"] body > .app-shell {
   position: relative;
   z-index: 1;
 }

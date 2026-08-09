@@ -4,13 +4,13 @@ Status date: **2026-08-01 (Asia/Shanghai)**
 
 ## Identity and repository
 
-The first public preview uses the name **piGUI** and the repository
-[`kexijiang/pi-gui`](https://github.com/kexijiang/pi-gui). Package metadata and the Windows
-application identity use that repository and the application ID `io.github.kexijiang.pigui`.
+The first public preview uses the name **Piora** and the repository
+[`kexijiang/piora`](https://github.com/kexijiang/piora). Package metadata and the Windows
+application identity use that repository and the application ID `io.github.kexijiang.piora`.
 The public repository has been created and the local checkout has both `origin` and the retained
 `agegr/pi-web` `upstream` remote.
 
-piGUI is independently maintained. It is not an official application from agegr,
+Piora is independently maintained. It is not an official application from agegr,
 earendil-works, OpenAI, or Codex, and it must not use their trademarks or artwork in a way that
 implies endorsement.
 
@@ -39,14 +39,14 @@ implies endorsement.
   Agent/SubAgent or autonomous execution path;
 - known local Codex pets can be discovered, previewed, and explicitly imported from the current
   pets directory, legacy avatars directory, and built-in `tui-pets` cache. The importer supports
-  declarative V1/V2 PNG/WebP sprite resources, copies only normalized data into piGUI-managed
+  declarative V1/V2 PNG/WebP sprite resources, copies only normalized data into Piora-managed
   storage, and uses atomic replacement with rollback;
 - an Electron shell, local token-authenticated standalone service, Windows packaging
   configuration, CI, and prerelease workflow are present;
-- Pi's own resource loader remains responsible for extensions. piGUI does not add a separate
+- Pi's own resource loader remains responsible for extensions. Piora does not add a separate
   SubAgent or plugin product model.
 - interface font family and user-entered size now cover the complete GUI while code remains on a
-  dedicated monospaced stack; the standalone `piGUI` chrome label and completion tone were removed,
+  dedicated monospaced stack; the standalone `Piora` chrome label and completion tone were removed,
   with an opt-in native/browser completion notification replacing the latter;
 - the conversation header exposes a restrained project menu, and model settings expose real
   availability tests through the current trusted Pi runtime without bypassing extension providers;
@@ -73,7 +73,7 @@ implies endorsement.
 - an isolated Windows package build passed. `verify:package` confirmed the Electron shell, 20
   backgrounds, token-authenticated health/root/session routes, packaged-Electron runtime isolation,
   and a synthetic external Pi package exposing an extension command, tool, and Skill, while finding
-  zero piGUI-owned SubAgent features;
+  zero Piora-owned SubAgent features;
 - the package contains a v3 exact package inventory and CycloneDX 1.5 SBOM covering 101 packaged
   copies plus 565 runtime-source packages (666 components total) and 224 content-hashed license
   texts;
@@ -89,7 +89,7 @@ implies endorsement.
   Native double-click maximize strongly confirms Windows treated the blank point as a caption area,
   but standard-mouse continuous drag remains part of the clean-machine matrix rather than being
   overstated as complete;
-- the local candidate `piGUI-0.1.0-win-x64-portable.exe` is 180,907,440 bytes with SHA-256
+- the local candidate `Piora-0.1.0-win-x64-portable.exe` is 180,907,440 bytes with SHA-256
   `6461C3D0ECE8F55F7CA50F67155CE03B56B509D58B2111ECC62D0FD6982229FF`; its Authenticode
   status is `NotSigned`;
 - an artifact string scan found no developer-home or development-checkout private build paths. High-confidence

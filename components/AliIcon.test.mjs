@@ -37,6 +37,14 @@ test("allows an explicit stroke width to override optical sizing", () => {
   assert.match(overridden, /stroke-width="2\.25"/);
 });
 
+test("renders the settings icon as a gear rather than sliders", () => {
+  const settings = renderToStaticMarkup(React.createElement(AliIcon, { name: "setting", size: 15 }));
+
+  assert.match(settings, /M12\.22 2h-\.44/);
+  assert.match(settings, /M12 15a3 3 0 1 0 0-6/);
+  assert.doesNotMatch(settings, /M20 7h-9|M14 17H5/);
+});
+
 test("scales custom file icon strokes to the same optical weight", () => {
   assert.equal(getFileIconStrokeWidth(14), 2 * (14 / 24));
   assert.equal(getFileIconStrokeWidth(16), 1.75 * (14 / 24));

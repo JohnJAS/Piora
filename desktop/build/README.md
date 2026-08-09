@@ -21,7 +21,7 @@ at Windows taskbar sizes; subtle highlights are reserved for larger surfaces.
 - `icon.png`: 1024 x 1024 production PNG.
 - `icon.ico`: Windows icon with 16, 24, 32, 48, 64, 128, and 256 px PNG frames.
 - `icon-transparent.png`: compatibility copy used by older project tooling.
-- `icon-source-chroma.png`: archived source of the retired piGUI icon; not used.
+- `icon-source-chroma.png`: archived source of the retired Piora icon; not used.
 
 `npm run brand:icons` regenerates the production PNG/ICO files, the browser
 favicon, and PWA icons. Electron Builder uses `icon.ico` for unpacked and

@@ -7,9 +7,9 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
 
 ## Identity and legal
 
-- [x] Adopt `piGUI` for the initial public preview and use original, non-affiliation-implying assets.
-- [x] Use `kexijiang/pi-gui` as the public repository and update package/application metadata.
-- [x] Retain the upstream `agegr` copyright and add piGUI contributor authorship in MIT `LICENSE`.
+- [x] Adopt `Piora` for the initial public preview and use original, non-affiliation-implying assets.
+- [x] Use `kexijiang/piora` as the public repository and update package/application metadata.
+- [x] Retain the upstream `agegr` copyright and add Piora contributor authorship in MIT `LICENSE`.
 - [x] Record pi-web, Pi, project independence, and original background/application-icon attribution
   in `NOTICE`.
 - [x] Retain the Apache-2.0 license, upstream NOTICE, immutable source links, and modification
@@ -26,11 +26,11 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
 
 ## Repository configuration
 
-- [x] Add `https://github.com/kexijiang/pi-gui.git` as `origin` and retain
+- [x] Add `https://github.com/kexijiang/piora.git` as `origin` and retain
   `https://github.com/agegr/pi-web.git` as `upstream`.
 - [x] Configure CI and release workflows for `main` and tag-based prereleases.
 - [x] Confirm `main` as the GitHub default branch and a successful public Ubuntu/Windows CI run
-  ([run 30676930532](https://github.com/kexijiang/pi-gui/actions/runs/30676930532) for `71eaf95`).
+  ([run 30676930532](https://github.com/kexijiang/piora/actions/runs/30676930532) for `71eaf95`).
 - [ ] Enable branch protection with the verified CI checks required for merges.
 - [x] Enable private vulnerability reporting, Dependabot security updates, secret scanning, and
   push protection where available.
@@ -39,7 +39,7 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
 - [ ] Decide whether GitHub Discussions are enabled and document their purpose.
 - [x] Add repository topics, description, and concise support/security documentation.
 - [ ] Add and visually review the GitHub social preview.
-- [x] Design and license-review an original piGUI application icon; retain the source raster,
+- [x] Design and license-review an original Piora application icon; retain the source raster,
   transparent master, multi-resolution Windows ICO, full prompt, and MIT provenance under
   `desktop/build` without using third-party branding or visual assets.
 
@@ -78,7 +78,7 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
   maximize/restore/close behavior, the blank integrated top strip's native double-click maximize action,
   and a clickable appearance entry that opens the bundled theme/background panel.
 - [ ] Confirm the newly built `win-unpacked` executable and final portable EXE both embed the
-  reviewed piGUI icon rather than Electron's generic icon.
+  reviewed Piora icon rather than Electron's generic icon.
 - [ ] Complete a clean-machine manual pass for continuous window dragging, edge/corner resize,
   transient `Alt` menu display, DPI scaling, and the full editor conflict flow. Browser automation
   and the current desktop automation do not replace that Windows 10/11 coverage; its synthetic
@@ -121,7 +121,7 @@ GitHub setting was confirmed; it does not imply that later package, CI, or relea
   portable EXE, and create a draft GitHub prerelease for manual review.
 - [x] Verify the locally produced candidate artifact, package contents, checksum, unsigned status,
   and provenance before creating a GitHub Release. Candidate:
-  `piGUI-0.1.0-win-x64-portable.exe`, 180,907,440 bytes,
+  `Piora-0.1.0-win-x64-portable.exe`, 180,907,440 bytes,
   SHA-256 `6461C3D0ECE8F55F7CA50F67155CE03B56B509D58B2111ECC62D0FD6982229FF`,
   Authenticode `NotSigned`.
 - [ ] Verify the artifact downloaded from the draft GitHub Release matches its published checksum

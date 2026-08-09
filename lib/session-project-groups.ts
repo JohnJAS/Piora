@@ -87,14 +87,23 @@ export function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
 export function buildSessionProjectGroups(
   sessions: SessionInfo[],
   activeProject?: ActiveProject | null,
+  rememberedProjects: ActiveProject[] = [],
 ): SessionProjectGroup[] {
   const grouped = new Map<string, SessionInfo[]>();
+  const rememberedCwdByRoot = new Map<string, string>();
   for (const session of sessions) {
     const projectRoot = session.projectRoot ?? session.cwd;
     if (!projectRoot) continue;
     const projectSessions = grouped.get(projectRoot);
     if (projectSessions) projectSessions.push(session);
     else grouped.set(projectRoot, [session]);
+  }
+
+  for (const project of rememberedProjects) {
+    const projectRoot = project.projectRoot ?? project.cwd;
+    if (!projectRoot) continue;
+    rememberedCwdByRoot.set(projectRoot, project.cwd);
+    if (!grouped.has(projectRoot)) grouped.set(projectRoot, []);
   }
 
   const activeRoot = activeProject
@@ -110,7 +119,7 @@ export function buildSessionProjectGroups(
       projectRoot,
       preferredCwd: isActive && activeProject
         ? activeProject.cwd
-        : (sessionsNewestFirst[0]?.cwd ?? projectRoot),
+        : (sessionsNewestFirst[0]?.cwd ?? rememberedCwdByRoot.get(projectRoot) ?? projectRoot),
       latestModified: sessionsNewestFirst[0]?.modified ?? null,
       sessions: sessionsNewestFirst,
       tree: buildSessionTree(sessionsNewestFirst),

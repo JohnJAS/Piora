@@ -71,8 +71,9 @@ desktop.ini
 # Never publish copied Pi/Codex runtime state or locally imported companion data.
 .pi/
 .codex/
-.pi-gui-data/
+.piora-data/
 /local-pets/
+/node_modules.broken/
 
 # debug
 npm-debug.log*

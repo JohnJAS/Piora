@@ -72,7 +72,7 @@ export function getSensitivePathReason(filePath) {
   if (/^(?:auth|credentials|secrets)\.json$/.test(name)) {
     return "credential-file";
   }
-  if (/(^|\/)(?:\.pi|\.codex|\.pi-gui-data|local-pets)(?:\/|$)/.test(lower)) {
+  if (/(^|\/)(?:\.pi|\.codex|\.piora-data|local-pets)(?:\/|$)/.test(lower)) {
     return "runtime-user-data";
   }
   if (/^(?:\.next|desktop\/release|\.verification|verification-output)(?:\/|$)/.test(lower)) {

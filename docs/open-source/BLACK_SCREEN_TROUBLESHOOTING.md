@@ -9,7 +9,7 @@
 
 打开 EXE 后屏幕为黑色（实际是窗口背景色 `#111318`），且：
 
-- 桌面日志（`%APPDATA%\piGUI\logs\pi-gui.log`）显示 **standalone 服务正常**：
+- 桌面日志（`%APPDATA%\Piora\logs\piora.log`）显示 **standalone 服务正常**：
   `Starting web server` → `Next.js 16.2.12` → `✓ Ready` → `Web server is ready`；
 - 没有 `did-fail-load`、没有 `render-process-gone`（HTML 本身加载成功了）；
 - 但没有渲染出任何 UI。

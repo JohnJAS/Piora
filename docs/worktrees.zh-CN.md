@@ -39,13 +39,13 @@ Pi Web 会把 checkout 放在：
 例如 main checkout 是：
 
 ```text
-/Users/example/Workspace/pi-gui
+/Users/example/Workspace/piora
 ```
 
 新建 `codex/worktree-help` 时，目录会是：
 
 ```text
-/Users/example/Workspace/pi-gui-worktrees/example-branch
+/Users/example/Workspace/piora-worktrees/example-branch
 ```
 
 如果这个 branch 已存在，Pi Web 会为它添加 worktree。如果 branch 不存在，Pi Web 会从当前 `HEAD` 创建这个 branch。

@@ -263,7 +263,7 @@ export class StandaloneServer {
           PI_WEB_HOSTNAME: LOOPBACK_HOST,
           PI_WEB_ALLOWED_HOSTS: LOOPBACK_HOST,
           PI_WEB_NO_OPEN: "1",
-          PI_GUI_HOME: this.options.homeDirectory,
+          PIORA_HOME: this.options.homeDirectory,
           // Desktop requests use the per-launch token below. Do not inherit an
           // unrelated shell-wide Basic Auth password that the renderer and
           // health probe cannot satisfy.

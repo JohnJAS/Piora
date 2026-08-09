@@ -1,5 +1,5 @@
 {
-  "name": "@pi-gui/packaged-extension-verification-fixture",
+  "name": "@piora/packaged-extension-verification-fixture",
   "version": "0.0.0",
   "private": true,
   "type": "module",

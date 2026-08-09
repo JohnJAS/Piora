@@ -34,7 +34,7 @@ export function validatePortableSmokeMarker(markerText, expectedVersion) {
     throw new Error(`Portable EXE wrote malformed smoke-test JSON: ${markerText}`, { cause: error });
   }
   if (
-    marker?.schema !== "pigui-portable-smoke-v1"
+    marker?.schema !== "piora-portable-smoke-v1"
     || marker?.ok !== true
     || typeof marker?.appVersion !== "string"
     || !marker.appVersion
@@ -102,7 +102,7 @@ async function terminateExtractedPortableProcesses(temporaryDirectory) {
   if (process.platform !== "win32") return;
 
   const script = [
-    "$root = [System.IO.Path]::GetFullPath($env:PI_GUI_SMOKE_PROCESS_ROOT)",
+    "$root = [System.IO.Path]::GetFullPath($env:PIORA_SMOKE_PROCESS_ROOT)",
     "$prefix = $root.TrimEnd('\\') + '\\'",
     "Get-CimInstance Win32_Process | Where-Object {",
     "  $_.ExecutablePath -and [System.IO.Path]::GetFullPath($_.ExecutablePath).StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)",
@@ -116,7 +116,7 @@ async function terminateExtractedPortableProcesses(temporaryDirectory) {
       {
         env: {
           ...process.env,
-          PI_GUI_SMOKE_PROCESS_ROOT: temporaryDirectory,
+          PIORA_SMOKE_PROCESS_ROOT: temporaryDirectory,
         },
         windowsHide: true,
       },
@@ -137,7 +137,7 @@ export async function smokeTestPortableExecutable(
     throw new Error(`Portable EXE does not exist: ${executable}`);
   }
 
-  const temporaryDirectory = await mkdtemp(join(resolve(tmpdir()), "pigui-portable-smoke-"));
+  const temporaryDirectory = await mkdtemp(join(resolve(tmpdir()), "piora-portable-smoke-"));
   assertSafeTemporaryDirectory(temporaryDirectory);
   const paths = await prepareIsolatedEnvironment(temporaryDirectory);
   await mkdir(join(temporaryDirectory, "agent"), { recursive: true });
@@ -151,9 +151,9 @@ export async function smokeTestPortableExecutable(
     child = spawn(executable, ["--smoke-test", `--user-data-dir=${paths.userData}`], {
       cwd: temporaryDirectory,
       env: createIsolatedProcessEnvironment(temporaryDirectory, {
-        PI_GUI_SMOKE_TEST: "1",
-        PI_GUI_SMOKE_MARKER: markerPath,
-        PI_GUI_SMOKE_USER_DATA: paths.userData,
+        PIORA_SMOKE_TEST: "1",
+        PIORA_SMOKE_MARKER: markerPath,
+        PIORA_SMOKE_USER_DATA: paths.userData,
         PI_CODING_AGENT_DIR: join(temporaryDirectory, "agent"),
         NEXT_TELEMETRY_DISABLED: "1",
       }),
@@ -186,8 +186,8 @@ export async function smokeTestPortableExecutable(
     };
   } catch (error) {
     const logCandidates = [
-      join(paths.userData, "logs", "pi-gui.log"),
-      join(paths.appData, "piGUI", "logs", "pi-gui.log"),
+      join(paths.userData, "logs", "piora.log"),
+      join(paths.appData, "Piora", "logs", "piora.log"),
     ];
     const logs = [];
     for (const logPath of logCandidates) {

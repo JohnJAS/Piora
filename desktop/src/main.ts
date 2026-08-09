@@ -7,10 +7,13 @@ import {
   dialog,
   ipcMain,
   Menu,
+  nativeImage,
   Notification,
   screen,
   session as electronSession,
   shell,
+  globalShortcut,
+  Tray,
   type IpcMainInvokeEvent,
   type MenuItemConstructorOptions,
   type MessageBoxOptions,
@@ -18,14 +21,17 @@ import {
 } from "electron";
 import {
   readCompanionWindowPosition,
+  readMainWindowState,
   readPreferredServerPort,
   writeCompanionWindowPosition,
+  writeMainWindowState,
   writePreferredServerPort,
 } from "./desktop-state.js";
 import { FileLogger, type Logger } from "./logger.js";
 import { StandaloneServer, type ServerExit } from "./server-supervisor.js";
+import { fitBoundsToVisibleDisplays } from "./window-bounds.js";
 
-const DESKTOP_PARTITION = "persist:pigui";
+const DESKTOP_PARTITION = "persist:piora";
 const DESKTOP_TOKEN_HEADER = "X-Pi-Desktop-Token";
 const COMPLETION_NOTIFICATION_CHANNEL = "pi:completion-notification";
 const APPLICATION_MENU_CHANNEL = "pi:open-application-menu";
@@ -33,21 +39,21 @@ const REVEAL_PATH_CHANNEL = "pi:reveal-path";
 const OPEN_PATH_CHANNEL = "pi:open-path";
 const COMPANION_VISIBILITY_CHANNEL = "pi:companion-window-visible";
 const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
+const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
 const DESKTOP_TITLE_BAR_HEIGHT = 40;
 const COMPANION_WINDOW_WIDTH = 188;
 const COMPANION_WINDOW_HEIGHT = 218;
 const MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80;
-const PORTABLE_SMOKE_TEST = process.env.PI_GUI_SMOKE_TEST === "1"
+const PORTABLE_SMOKE_TEST = process.env.PIORA_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
 
-const requestedSmokeUserData = process.env.PI_GUI_SMOKE_USER_DATA?.trim();
+const requestedSmokeUserData = process.env.PIORA_SMOKE_USER_DATA?.trim();
 if (PORTABLE_SMOKE_TEST && requestedSmokeUserData) {
   app.setPath("userData", resolve(requestedSmokeUserData));
 } else {
-  // Keep the existing on-disk profile while the public product name moves
-  // from piGUI to Piora. Changing Electron's default userData path would make
-  // upgrades look like a fresh install and hide the user's preferences.
-  app.setPath("userData", join(app.getPath("appData"), "piGUI"));
+  // The on-disk profile directory follows the product name (Piora). It is set
+  // explicitly so it stays stable and independent of Electron's derived app name.
+  app.setPath("userData", join(app.getPath("appData"), "Piora"));
 }
 
 let mainWindow: BrowserWindow | null = null;
@@ -59,8 +65,13 @@ let shutdownPromise: Promise<void> | undefined;
 let shutdownComplete = false;
 let applicationMenu: Menu | null = null;
 let companionMoveTimer: NodeJS.Timeout | undefined;
+let mainWindowStateTimer: NodeJS.Timeout | undefined;
+let tray: Tray | null = null;
+let trayPollTimer: NodeJS.Timeout | undefined;
+let applicationToken: string | undefined;
+let runningTaskCount = 0;
 
-type ApplicationMenuId = "file" | "edit" | "view" | "features" | "help";
+type ApplicationMenuId = "file" | "edit" | "view" | "help";
 
 function sanitizeNotificationTaskTitle(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -145,6 +156,8 @@ function installApplicationMenu(): void {
         { label: "新对话", accelerator: "CmdOrCtrl+N", click: () => sendMenuAction("new-session") },
         { label: "选择项目", accelerator: "CmdOrCtrl+O", click: () => sendMenuAction("choose-project") },
         { type: "separator" },
+        { label: "设置", accelerator: "CmdOrCtrl+,", click: () => sendMenuAction("settings") },
+        { type: "separator" },
         { role: "close", label: "关闭窗口" },
         { role: "quit", label: "退出 Piora" },
       ],
@@ -156,6 +169,7 @@ function installApplicationMenu(): void {
       submenu: [
         { label: "显示/隐藏侧栏", accelerator: "CmdOrCtrl+Shift+B", click: () => sendMenuAction("toggle-sidebar") },
         { label: "显示/隐藏文件面板", accelerator: "CmdOrCtrl+Shift+E", click: () => sendMenuAction("toggle-files") },
+        { label: "显示/隐藏宠物", click: () => sendMenuAction("toggle-companion") },
         { type: "separator" },
         { label: "重新加载", role: "reload" },
         { label: "实际大小", role: "resetZoom" },
@@ -166,31 +180,10 @@ function installApplicationMenu(): void {
       ],
     },
     {
-      id: "app-menu-features",
-      label: "功能",
-      submenu: [
-        { label: "设置", accelerator: "CmdOrCtrl+,", click: () => sendMenuAction("settings") },
-        { type: "separator" },
-        { label: "模型设置", click: () => sendMenuAction("models") },
-        { label: "技能管理", click: () => sendMenuAction("skills") },
-        { label: "插件管理", click: () => sendMenuAction("plugins") },
-        { type: "separator" },
-        { label: "外观", click: () => sendMenuAction("appearance") },
-        { label: "语言", click: () => sendMenuAction("language") },
-        {
-          label: "宠物",
-          submenu: [
-            { label: "显示/隐藏宠物", click: () => sendMenuAction("toggle-companion") },
-            { label: "宠物设置", click: () => sendMenuAction("companion-settings") },
-          ],
-        },
-      ],
-    },
-    {
       id: "app-menu-help",
       label: "帮助",
       submenu: [
-        { label: "打开项目主页", click: () => shell.openExternal("https://github.com/kexijiang/pi-gui") },
+        { label: "打开项目主页", click: () => shell.openExternal("https://github.com/kexijiang/piora") },
         {
           label: "关于 Piora",
           click: () => {
@@ -228,7 +221,7 @@ function registerApplicationMenuPopupHandler(): void {
         return false;
       }
 
-      const allowedMenus: readonly ApplicationMenuId[] = ["file", "edit", "view", "features", "help"];
+      const allowedMenus: readonly ApplicationMenuId[] = ["file", "edit", "view", "help"];
       if (typeof requestedMenu !== "string" || !allowedMenus.includes(requestedMenu as ApplicationMenuId)) {
         return false;
       }
@@ -529,6 +522,114 @@ function focusMainWindow(action?: string): boolean {
   return true;
 }
 
+function persistMainWindowState(window: BrowserWindow): void {
+  if (!logger || window.isDestroyed()) return;
+  const bounds = window.isMaximized() ? window.getNormalBounds() : window.getBounds();
+  writeMainWindowState(app.getPath("userData"), { ...bounds, maximized: window.isMaximized() }, logger);
+}
+
+function getInitialMainWindowState(log: Logger): { x?: number; y?: number; width: number; height: number; maximized: boolean } {
+  const saved = readMainWindowState(app.getPath("userData"), log);
+  if (!saved) return { width: 1440, height: 920, maximized: false };
+  const primaryWorkArea = screen.getPrimaryDisplay().workArea;
+  const fitted = fitBoundsToVisibleDisplays(
+    saved,
+    screen.getAllDisplays().map((display) => display.workArea),
+    primaryWorkArea,
+    { width: 640, height: 480 },
+  );
+  return { ...fitted, maximized: saved.maximized };
+}
+
+function reconcileWindowToDisplays(window: BrowserWindow, minimumSize: { width: number; height: number }): void {
+  if (window.isDestroyed()) return;
+  const wasMaximized = window.isMaximized();
+  const current = wasMaximized ? window.getNormalBounds() : window.getBounds();
+  const fitted = fitBoundsToVisibleDisplays(
+    current,
+    screen.getAllDisplays().map((display) => display.workArea),
+    screen.getPrimaryDisplay().workArea,
+    minimumSize,
+  );
+  if (fitted === current) return;
+  if (wasMaximized) window.unmaximize();
+  window.setBounds(fitted);
+  if (wasMaximized) window.maximize();
+}
+
+function handleDisplayConfigurationChanged(): void {
+  if (mainWindow) reconcileWindowToDisplays(mainWindow, { width: 640, height: 480 });
+  if (companionWindow) reconcileWindowToDisplays(companionWindow, { width: COMPANION_WINDOW_WIDTH, height: COMPANION_WINDOW_HEIGHT });
+}
+
+function installDisplayReconciliation(): void {
+  screen.on("display-added", handleDisplayConfigurationChanged);
+  screen.on("display-removed", handleDisplayConfigurationChanged);
+  screen.on("display-metrics-changed", handleDisplayConfigurationChanged);
+}
+
+function removeDisplayReconciliation(): void {
+  screen.removeListener("display-added", handleDisplayConfigurationChanged);
+  screen.removeListener("display-removed", handleDisplayConfigurationChanged);
+  screen.removeListener("display-metrics-changed", handleDisplayConfigurationChanged);
+}
+
+function installNativeContextMenu(window: BrowserWindow): void {
+  window.webContents.on("context-menu", (_event, params) => {
+    const template: MenuItemConstructorOptions[] = params.isEditable
+      ? [
+          { role: "undo" }, { role: "redo" }, { type: "separator" },
+          { role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" },
+        ]
+      : params.selectionText ? [{ role: "copy" }, { role: "selectAll" }] : [];
+    if (template.length) Menu.buildFromTemplate(template).popup({ window });
+  });
+}
+
+function updateTrayMenu(): void {
+  if (!tray) return;
+  const isChinese = app.getLocale().toLowerCase().startsWith("zh");
+  tray.setToolTip(runningTaskCount > 0 ? `Piora · ${runningTaskCount}` : "Piora");
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: isChinese ? "显示 Piora" : "Show Piora", click: () => focusMainWindow() },
+    { label: isChinese ? "新任务" : "New task", click: () => focusMainWindow("new-session") },
+    { label: isChinese ? `运行中任务：${runningTaskCount}` : `Running tasks: ${runningTaskCount}`, enabled: false },
+    { type: "separator" },
+    { label: isChinese ? "退出" : "Quit", click: () => app.quit() },
+  ]));
+}
+
+async function refreshTrayTaskCount(): Promise<void> {
+  if (!serverUrl || !applicationToken) return;
+  try {
+    const response = await fetch(new URL("/api/agent/running", serverUrl), { headers: { [DESKTOP_TOKEN_HEADER]: applicationToken } });
+    if (!response.ok) return;
+    const payload = await response.json() as { runningSessionIds?: unknown[] };
+    const next = Array.isArray(payload.runningSessionIds) ? payload.runningSessionIds.length : 0;
+    if (next !== runningTaskCount) { runningTaskCount = next; updateTrayMenu(); }
+  } catch { /* The next poll retries after transient server errors. */ }
+}
+
+function installTray(): void {
+  const candidates = [process.execPath, join(app.getAppPath(), "build", "icon.ico"), join(__dirname, "..", "build", "icon.ico")];
+  const image = candidates.map((candidate) => nativeImage.createFromPath(candidate)).find((candidate) => !candidate.isEmpty());
+  if (!image) return;
+  tray = new Tray(image.resize({ width: 16, height: 16 }));
+  tray.on("click", () => focusMainWindow());
+  updateTrayMenu();
+  trayPollTimer = setInterval(() => { void refreshTrayTaskCount(); }, 2_500);
+  void refreshTrayTaskCount();
+}
+
+function registerGlobalShortcutHandler(): void {
+  ipcMain.removeHandler(GLOBAL_SHORTCUT_CHANNEL);
+  ipcMain.handle(GLOBAL_SHORTCUT_CHANNEL, (event, enabled: unknown): boolean => {
+    if (!isTrustedMainWindowSender(event) || typeof enabled !== "boolean") return false;
+    globalShortcut.unregister("CommandOrControl+Alt+P");
+    return !enabled || globalShortcut.register("CommandOrControl+Alt+P", () => focusMainWindow("new-session"));
+  });
+}
+
 function registerCompanionWindowHandlers(): void {
   ipcMain.removeHandler(COMPANION_VISIBILITY_CHANNEL);
   ipcMain.handle(COMPANION_VISIBILITY_CHANNEL, (event, visible: unknown): boolean => {
@@ -575,9 +676,12 @@ function createMainWindow(
       ? { titleBarStyle: "hiddenInset" as const }
       : {};
 
+  const initialState = getInitialMainWindowState(log);
   const window = new BrowserWindow({
-    width: 1440,
-    height: 920,
+    ...(initialState.x === undefined ? {} : { x: initialState.x }),
+    ...(initialState.y === undefined ? {} : { y: initialState.y }),
+    width: initialState.width,
+    height: initialState.height,
     minWidth: 900,
     minHeight: 640,
     show: false,
@@ -618,6 +722,7 @@ function createMainWindow(
   });
 
   window.webContents.on("will-attach-webview", (event) => event.preventDefault());
+  installNativeContextMenu(window);
   window.webContents.on("render-process-gone", (_event, details) => {
     log.error("Renderer process exited", details);
   });
@@ -634,8 +739,21 @@ function createMainWindow(
     },
   );
 
-  if (showWhenReady) window.once("ready-to-show", () => window.show());
+  if (showWhenReady) window.once("ready-to-show", () => {
+    if (initialState.maximized) window.maximize();
+    window.show();
+  });
+  const scheduleWindowStateWrite = () => {
+    if (mainWindowStateTimer) clearTimeout(mainWindowStateTimer);
+    mainWindowStateTimer = setTimeout(() => persistMainWindowState(window), 180);
+  };
+  window.on("move", scheduleWindowStateWrite);
+  window.on("resize", scheduleWindowStateWrite);
+  window.on("maximize", scheduleWindowStateWrite);
+  window.on("unmaximize", scheduleWindowStateWrite);
   window.on("closed", () => {
+    if (mainWindowStateTimer) clearTimeout(mainWindowStateTimer);
+    mainWindowStateTimer = undefined;
     if (mainWindow === window) mainWindow = null;
   });
 
@@ -712,7 +830,7 @@ function handleUnexpectedServerExit(exit: ServerExit): void {
 
 async function startApplication(): Promise<void> {
   await app.whenReady();
-  app.setAppUserModelId("io.github.kexijiang.pigui");
+  app.setAppUserModelId("io.github.kexijiang.piora");
 
   logger = new FileLogger(app.getPath("userData"));
   logger.info("Starting Piora", {
@@ -727,6 +845,7 @@ async function startApplication(): Promise<void> {
   }
 
   const token = randomBytes(32).toString("base64url");
+  applicationToken = token;
   const preferredPort = readPreferredServerPort(app.getPath("userData"), logger);
   server = new StandaloneServer({
     serverEntry,
@@ -745,18 +864,19 @@ async function startApplication(): Promise<void> {
   configureSession(runtimeSession, serverUrl.origin, token);
   registerCompletionNotificationHandler();
   registerCompanionWindowHandlers();
+  registerGlobalShortcutHandler();
 
   if (PORTABLE_SMOKE_TEST) {
-    const smokeMarker = process.env.PI_GUI_SMOKE_MARKER?.trim();
+    const smokeMarker = process.env.PIORA_SMOKE_MARKER?.trim();
     if (!smokeMarker) {
-      throw new Error("PI_GUI_SMOKE_MARKER is required in portable smoke-test mode.");
+      throw new Error("PIORA_SMOKE_MARKER is required in portable smoke-test mode.");
     }
     mainWindow = createMainWindow(serverUrl, logger, { showWhenReady: false });
     const rendererState = await waitForSmokeRenderer(mainWindow);
     writeFileSync(
       resolve(smokeMarker),
       `${JSON.stringify({
-        schema: "pigui-portable-smoke-v1",
+        schema: "piora-portable-smoke-v1",
         ok: true,
         appVersion: app.getVersion(),
         rendererLoaded: rendererState.rendererLoaded,
@@ -776,8 +896,10 @@ async function startApplication(): Promise<void> {
   installApplicationMenu();
   registerApplicationMenuPopupHandler();
   registerFileShellHandlers();
+  installDisplayReconciliation();
 
   mainWindow = createMainWindow(serverUrl, logger);
+  installTray();
 }
 
 async function stopApplication(): Promise<void> {
@@ -785,6 +907,13 @@ async function stopApplication(): Promise<void> {
   await server?.stop();
   server = undefined;
   serverUrl = undefined;
+  applicationToken = undefined;
+  if (trayPollTimer) clearInterval(trayPollTimer);
+  trayPollTimer = undefined;
+  tray?.destroy();
+  tray = null;
+  globalShortcut.unregisterAll();
+  removeDisplayReconciliation();
   logger?.info("Piora stopped");
 }
 
