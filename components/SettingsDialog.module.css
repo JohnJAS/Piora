@@ -7,6 +7,10 @@
   background: var(--bg);
 }
 
+.desktopBackdrop {
+  top: 40px;
+}
+
 .dialog {
   width: 100%;
   height: 100%;
@@ -18,7 +22,7 @@
 
 .header {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 32px;
+  grid-template-columns: max-content minmax(0, 1fr) 36px;
   align-items: center;
   gap: 10px;
   padding: 0 16px;
@@ -33,15 +37,25 @@
 }
 
 .backButton {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
+  min-width: 112px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
   border: 0;
   border-radius: 9px;
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.backLabel {
+  white-space: nowrap;
 }
 
 .backButton:hover,
@@ -619,6 +633,15 @@
   }
 
   .subtitle {
+    display: none;
+  }
+
+  .backButton {
+    min-width: 40px;
+    padding: 0;
+  }
+
+  .backLabel {
     display: none;
   }
 

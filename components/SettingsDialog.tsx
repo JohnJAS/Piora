@@ -163,7 +163,7 @@ export function SettingsDialog({
 
   return createPortal(
     <div
-      className={styles.backdrop}
+      className={`${styles.backdrop}${desktop.available ? ` ${styles.desktopBackdrop}` : ""}`}
       role="dialog"
       aria-modal="true"
       aria-label={t("sidebar.settings")}
@@ -178,6 +178,7 @@ export function SettingsDialog({
             aria-label={t("settings.back")}
           >
             <AliIcon name="arrowleft" size={17} />
+            <span className={styles.backLabel}>{t("settings.back")}</span>
           </button>
           <div className={styles.headerCopy}>
             <div className={styles.title}>{t("sidebar.settings")}</div>

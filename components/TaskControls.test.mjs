@@ -41,6 +41,10 @@ test("settings exposes a Codex-style back button on the left", () => {
   assert.match(settingsDialog, /name="arrowleft"/);
   assert.match(settingsDialog, /aria-label=\{t\("settings\.back"\)\}/);
   assert.match(settingsDialog, /className=\{styles\.backButton\}[\s\S]*?onClick=\{onClose\}/);
+  assert.match(settingsDialog, /className=\{styles\.backLabel\}>\{t\("settings\.back"\)\}/);
+  assert.match(settingsDialog, /styles\.desktopBackdrop/);
+  assert.match(settingsCss, /\.desktopBackdrop\s*\{[^}]*top:\s*40px/);
+  assert.match(settingsCss, /\.backButton\s*\{[^}]*min-width:\s*112px;[^}]*min-height:\s*40px/);
 });
 
 test("settings search stays inside the settings page and navigates to matching sections", () => {
