@@ -1,4 +1,4 @@
-appId: io.github.kexijiang.pigui
+appId: io.github.kexijiang.piora
 productName: Piora
 copyright: Copyright © 2026 Piora contributors
 asar: true
@@ -52,6 +52,11 @@ extraResources:
     filter:
       - "LICENSE"
       - "NOTICE"
+      - "SOURCE.md"
+  - from: ../third_party/openpets
+    to: licenses/openpets
+    filter:
+      - "LICENSE"
       - "SOURCE.md"
 
 win:

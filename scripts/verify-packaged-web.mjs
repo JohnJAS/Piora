@@ -20,8 +20,8 @@ const packagedWebRoot = resolve(
   suppliedWebRoot ?? "desktop/release/win-unpacked/resources/web",
 );
 const requireElectronShell = !suppliedWebRoot || process.argv.includes("--require-electron-shell");
-const token = "pi-gui-package-verification";
-const fixturePackageName = "@pi-gui/packaged-extension-verification-fixture";
+const token = "piora-package-verification";
+const fixturePackageName = "@piora/packaged-extension-verification-fixture";
 const fixtureCommandName = "packaged-extension-probe";
 const fixtureToolName = "packaged_extension_probe";
 const fixtureSkillName = "packaged-package-probe";
@@ -30,6 +30,8 @@ const backgroundAssetRoot = "themes/dream-backgrounds";
 const backgroundManifestName = "manifest.json";
 const expectedBackgroundCount = 20;
 const safeBackgroundAsset = /^\/themes\/dream-backgrounds\/[A-Za-z0-9][A-Za-z0-9._-]*\.webp$/;
+const bundledPetRelativeRoot = "companion-pets/bundled/pekka-pal.codex-pet";
+const bundledPetId = "pekka-pal.codex-pet";
 
 export const forbiddenPackagedDependencies = Object.freeze([
   "@giscus/react",
@@ -39,6 +41,7 @@ export const forbiddenPackagedDependencies = Object.freeze([
 
 const requiredPaths = [
   "server.js",
+  ".next/server/app/desktop-pet/page_client-reference-manifest.js",
   "node_modules/next/package.json",
   "node_modules/@earendil-works/pi-agent-core/package.json",
   "node_modules/@earendil-works/pi-ai/package.json",
@@ -153,6 +156,47 @@ export async function verifyPackagedBackgroundAssets(
   return { backgroundCount: expectedBackgroundCount };
 }
 
+export async function verifyPackagedCompanionAssets(
+  webRootInput,
+  sourcePublicRootInput = join(projectRoot, "public"),
+) {
+  const webRoot = resolve(webRootInput);
+  const sourcePublicRoot = resolve(sourcePublicRootInput);
+  const sourcePetRoot = join(sourcePublicRoot, bundledPetRelativeRoot);
+  const packagedPetRoot = join(webRoot, "public", bundledPetRelativeRoot);
+
+  for (const fileName of ["pet.json", "spritesheet.webp"]) {
+    const sourcePath = join(sourcePetRoot, fileName);
+    const packagedPath = join(packagedPetRoot, fileName);
+    await assertRegularFile(sourcePath, `Source bundled pet ${fileName}`);
+    await assertRegularFile(packagedPath, `Packaged bundled pet ${fileName}`);
+    const [sourceBytes, packagedBytes] = await Promise.all([
+      readFile(sourcePath),
+      readFile(packagedPath),
+    ]);
+    if (!sourceBytes.equals(packagedBytes)) {
+      throw new Error(`Packaged bundled pet asset differs from source: ${fileName}`);
+    }
+  }
+
+  const manifest = JSON.parse(await readFile(join(sourcePetRoot, "pet.json"), "utf8"));
+  if (
+    manifest?.id !== bundledPetId
+    || manifest?.spritesheetPath !== "spritesheet.webp"
+    || manifest?.frame?.width !== 192
+    || manifest?.frame?.height !== 208
+    || manifest?.frame?.columns !== 8
+    || manifest?.frame?.rows !== 11
+  ) {
+    throw new Error("Bundled companion manifest does not match the reviewed default pet geometry");
+  }
+
+  return {
+    id: bundledPetId,
+    spritesheetBytes: (await stat(join(packagedPetRoot, "spritesheet.webp"))).size,
+  };
+}
+
 /**
  * Find forbidden packages at every nested node_modules boundary without
  * following symlinks. The walk is intentionally rooted at the packaged web
@@ -227,6 +271,21 @@ async function inspectElectronShell(webRoot, required) {
     ]);
     if (!sourceBytes.equals(packagedBytes)) {
       throw new Error(`Packaged OpenAI Codex attribution is stale or modified: ${fileName}`);
+    }
+  }
+  const openPetsAttributionRoot = join(projectRoot, "third_party", "openpets");
+  const packagedOpenPetsAttributionRoot = join(resourcesRoot, "licenses", "openpets");
+  for (const fileName of ["LICENSE", "SOURCE.md"]) {
+    const sourcePath = join(openPetsAttributionRoot, fileName);
+    const packagedPath = join(packagedOpenPetsAttributionRoot, fileName);
+    await assertFile(sourcePath);
+    await assertFile(packagedPath);
+    const [sourceBytes, packagedBytes] = await Promise.all([
+      readFile(sourcePath),
+      readFile(packagedPath),
+    ]);
+    if (!sourceBytes.equals(packagedBytes)) {
+      throw new Error(`Packaged OpenPets attribution is stale or modified: ${fileName}`);
     }
   }
   for (const licensePath of [
@@ -353,32 +412,34 @@ async function main() {
   for (const requiredPath of requiredPaths) {
     await assertFile(join(packagedWebRoot, requiredPath));
   }
-  const patchedBundledDependencyPath = join(
-    packagedWebRoot,
-    "node_modules",
-    "@earendil-works",
-    "pi-coding-agent",
-    "node_modules",
-    "brace-expansion",
-    "package.json",
-  );
-  await assertFile(patchedBundledDependencyPath);
-  const patchedBundledDependency = JSON.parse(
-    await readFile(patchedBundledDependencyPath, "utf8"),
-  );
-  if (
-    patchedBundledDependency?.name !== "brace-expansion"
-    || patchedBundledDependency?.version !== "5.0.9"
-  ) {
-    throw new Error(
-      "Packaged Pi runtime must contain the postinstall-patched brace-expansion@5.0.9.",
+  const patchedBundledDependencies = [
+    { name: "brace-expansion", version: "5.0.9" },
+    { name: "undici", version: "8.9.0" },
+  ];
+  for (const expected of patchedBundledDependencies) {
+    const manifestPath = join(
+      packagedWebRoot,
+      "node_modules",
+      "@earendil-works",
+      "pi-coding-agent",
+      "node_modules",
+      expected.name,
+      "package.json",
     );
+    await assertFile(manifestPath);
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    if (manifest?.name !== expected.name || manifest?.version !== expected.version) {
+      throw new Error(
+        `Packaged Pi runtime must contain the reviewed ${expected.name}@${expected.version}.`,
+      );
+    }
   }
   await assertDirectory(join(packagedWebRoot, "node_modules"));
   await assertFile(join(fixtureSourceRoot, "package.json"));
   await assertFile(join(fixtureSourceRoot, "extensions", "package-probe.js"));
   await assertFile(join(fixtureSourceRoot, "skills", "package-probe", "SKILL.md"));
   const packagedBackgrounds = await verifyPackagedBackgroundAssets(packagedWebRoot);
+  const packagedCompanion = await verifyPackagedCompanionAssets(packagedWebRoot);
 
   const electronShell = await inspectElectronShell(packagedWebRoot, requireElectronShell);
   const forbiddenDependencyCopies = await findForbiddenPackagedDependencies(packagedWebRoot);
@@ -391,7 +452,7 @@ async function main() {
   }
 
   const temporaryRoot = resolve(tmpdir());
-  const temporaryDirectory = await mkdtemp(join(temporaryRoot, "pi-gui-package-"));
+  const temporaryDirectory = await mkdtemp(join(temporaryRoot, "piora-package-"));
   const temporaryRelativePath = relative(temporaryRoot, temporaryDirectory);
   if (
     !temporaryRelativePath
@@ -454,7 +515,7 @@ async function main() {
         NEXT_TELEMETRY_DISABLED: "1",
         HOME: isolatedHomeDir,
         USERPROFILE: isolatedHomeDir,
-        PI_GUI_HOME: isolatedHomeDir,
+        PIORA_HOME: isolatedHomeDir,
         PI_CODING_AGENT_DIR: isolatedAgentDir,
         PI_PACKAGE_VERIFY_MARKER: extensionMarker,
         PI_WEB_ALLOWED_HOSTS: "127.0.0.1",
@@ -490,6 +551,12 @@ async function main() {
       headers: { "X-Pi-Desktop-Token": token },
     });
     if (!rootResponse.ok) throw new Error(`Packaged root page returned ${rootResponse.status}`);
+    const companionPageResponse = await fetch(`${origin}/desktop-pet`, {
+      headers: { "X-Pi-Desktop-Token": token },
+    });
+    if (!companionPageResponse.ok) {
+      throw new Error(`Packaged companion page returned ${companionPageResponse.status}`);
+    }
 
     const { response: newSessionResponse, body: newSession } = await postJson(
       origin,
@@ -553,19 +620,20 @@ async function main() {
       throw new Error(`Fixture extension tool is loaded but inactive: ${JSON.stringify(fixtureTool)}`);
     }
 
-    const piGuiOwnedSubagentEntries = [...commands, ...tools].filter((entry) => (
+    const pioraOwnedSubagentEntries = [...commands, ...tools].filter((entry) => (
       typeof entry.name === "string" && /^(?:pi[-_]?gui)[-_]?sub[-_]?agents?$/i.test(entry.name)
     ));
-    if (piGuiOwnedSubagentEntries.length > 0) {
-      throw new Error(`Unexpected Piora-owned SubAgent capability: ${JSON.stringify(piGuiOwnedSubagentEntries)}`);
+    if (pioraOwnedSubagentEntries.length > 0) {
+      throw new Error(`Unexpected Piora-owned SubAgent capability: ${JSON.stringify(pioraOwnedSubagentEntries)}`);
     }
 
     console.log(JSON.stringify({
       isolated: true,
       dependencyChecks: requiredPaths.length,
-      patchedBundledDependency: "brace-expansion@5.0.9",
+      patchedBundledDependencies: patchedBundledDependencies.map(({ name, version }) => `${name}@${version}`),
       forbiddenDependencyChecks: forbiddenPackagedDependencies.length,
       packagedBackgrounds: packagedBackgrounds.backgroundCount,
+      packagedCompanion,
       electronShellChecked: electronShell.checked,
       executable: electronShell.executable,
       fixtureRuntime,
@@ -574,12 +642,13 @@ async function main() {
       unauthorizedStatus: unauthorized.status,
       healthStatus: 200,
       rootStatus: rootResponse.status,
+      companionPageStatus: companionPageResponse.status,
       agentSessionStatus: newSessionResponse.status,
       piPackage: fixturePackageName,
       extensionCommand: fixtureCommandName,
       extensionTool: fixtureToolName,
       skill: fixtureSkillName,
-      piGuiOwnedSubagentFeatures: 0,
+      pioraOwnedSubagentFeatures: 0,
     }));
   } finally {
     if (child) await stopChild(child);

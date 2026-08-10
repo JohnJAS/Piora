@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "pi-gui-original-backgrounds",
+  "id": "piora-original-backgrounds",
   "name": "Pi GUI Original Backgrounds",
   "description": "Stable artwork slots for the optional Pi GUI background layer. Artwork files are added independently from the application code.",
   "artworkStatus": "complete",

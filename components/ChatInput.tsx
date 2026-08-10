@@ -27,6 +27,13 @@ import { prioritizeProvider } from "@/lib/model-policy";
 import { AliIcon } from "./AliIcon";
 import { ModelProviderIcon } from "./ModelProviderIcon";
 import type { SessionStatsInfo } from "@/lib/pi-types";
+import {
+  buildSlashCommandRegistry,
+  filterSlashCommandRegistry,
+  getSlashCommandDescription,
+  type SlashCommandPaletteItem,
+  type SlashCommandSource,
+} from "@/lib/commands";
 
 export interface AttachedImage {
   data: string;   // base64, no prefix
@@ -85,13 +92,13 @@ export interface ChatInputHandle {
   insertIfEmpty: (text: string) => void;
   prependText: (text: string) => void;
   addImages: (files: File[]) => void;
+  addFiles: (files: File[]) => void;
   /** Send a separate local UI shortcut without replacing the user's draft. */
   sendText: (text: string) => boolean;
 }
 
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
 const MODEL_FILTER_THRESHOLD = 8;
-const MODEL_OPTION_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 
 export function filterModelOptions(options: ModelOption[], query: string): ModelOption[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -127,22 +134,6 @@ export function getContextRemainingPercent(
   return Math.max(0, Math.min(100, 100 - usedPercent));
 }
 
-type SlashCommandPaletteItem = SlashCommandInfo | {
-  name: string;
-  description: string;
-  source: "builtin";
-};
-
-type SlashCommandSource = SlashCommandPaletteItem["source"];
-
-const BUILTIN_SLASH_COMMANDS: SlashCommandPaletteItem[] = [
-  { name: "compact", description: "chat.commandCompact", source: "builtin" },
-  { name: "reload", description: "chat.commandReload", source: "builtin" },
-  { name: "name", description: "chat.commandName", source: "builtin" },
-  { name: "session", description: "chat.commandSession", source: "builtin" },
-  { name: "copy", description: "chat.commandCopy", source: "builtin" },
-];
-
 const SLASH_SOURCES: SlashCommandSource[] = ["builtin", "extension", "prompt", "skill"];
 
 const SLASH_SOURCE_GROUP_LABEL_KEYS: Record<SlashCommandSource, string> = {
@@ -152,26 +143,6 @@ const SLASH_SOURCE_GROUP_LABEL_KEYS: Record<SlashCommandSource, string> = {
   skill: "chat.skills",
 };
 
-const SLASH_SOURCE_ORDER: Record<SlashCommandSource, number> = {
-  builtin: 0,
-  extension: 1,
-  prompt: 2,
-  skill: 3,
-};
-
-function slashMatchRank(command: SlashCommandPaletteItem, query: string, t: (key: string) => string): number {
-  const name = command.name.toLowerCase();
-  const description = getSlashDescription(command, t).toLowerCase();
-  if (name === query) return 0;
-  if (name.startsWith(query)) return 1;
-  if (name.includes(query)) return 2;
-  if (description.includes(query)) return 3;
-  return 4;
-}
-
-function getSlashDescription(command: SlashCommandPaletteItem, t: (key: string) => string): string {
-  return command.source === "builtin" ? t(command.description) : command.description ?? "";
-}
 
 function imageToDraftImage(image: AttachedImage): ChatDraftImage {
   return { data: image.data, mimeType: image.mimeType };
@@ -386,6 +357,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     addImages(files: File[]) {
       processImageFiles(files);
     },
+    addFiles(files: File[]) {
+      void processFileSelection(files);
+    },
   }));
 
   const processImageFiles = useCallback(async (files: File[]) => {
@@ -556,19 +530,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const filteredSlashCommands = (() => {
     if (slashQuery === null) return [];
-    const commands = [...(isStreaming ? [] : BUILTIN_SLASH_COMMANDS), ...(slashCommands ?? [])];
-    return [...commands]
-      .filter((command) => {
-        const name = command.name.toLowerCase();
-        const description = getSlashDescription(command, t).toLowerCase();
-        return name.includes(slashQuery) || description.includes(slashQuery);
-      })
-      .sort((a, b) => {
-        const rankDelta = slashMatchRank(a, slashQuery, t) - slashMatchRank(b, slashQuery, t);
-        if (rankDelta !== 0) return rankDelta;
-        return SLASH_SOURCE_ORDER[a.source] - SLASH_SOURCE_ORDER[b.source]
-          || MODEL_OPTION_COLLATOR.compare(a.name, b.name);
-      });
+    return filterSlashCommandRegistry(buildSlashCommandRegistry(slashCommands ?? [], isStreaming), slashQuery, t);
   })();
 
   const groupedSlashCommands = (() => {
@@ -1442,7 +1404,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                   lineHeight: 1.35,
                                   color: "var(--text-dim)",
                                 }}>
-                                   {getSlashDescription(command, t)}
+                                {getSlashCommandDescription(command, t)}
                                 </span>
                               )}
                             </button>

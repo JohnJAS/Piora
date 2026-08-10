@@ -10,10 +10,14 @@ import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import { resolveDefaultModelPreference } from "./model-policy";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
+import { ensureWindowsBashShellPath } from "./windows-bash";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS } from "./custom-ui-terminal";
+import type { Runtime, TaskRuntimeSnapshot } from "./task-status";
+import { clearPermissionTier, inferPermissionTierFromTools, setPermissionTier } from "./approval-runtime";
+import type { PermissionTier } from "./approval-policy";
 
 // ============================================================================
 // Types
@@ -125,6 +129,9 @@ export class AgentSessionWrapper {
   private extensionStatuses = new Map<string, string>();
   private extensionWidgets = new Map<string, ExtensionWidgetItem>();
   private promptRunning = false;
+  private stopping = false;
+  private lastPromptFailed = false;
+  private lastPromptErrorSummary: string | undefined;
   private extensionsBound = false;
   private extensionBindingPromise: Promise<void> | null = null;
   private extensionBindingError: unknown = null;
@@ -153,12 +160,34 @@ export class AgentSessionWrapper {
   }
 
   isRunning(): boolean {
-    return this._alive && (this.promptRunning || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning);
+    return this._alive && this.getRuntime() !== "idle";
+  }
+
+  getRuntime(): Runtime {
+    if (!this._alive) return "idle";
+    if (this.stopping) return "stopping";
+    if (this.inner.isCompacting) return "compacting";
+    if (this.promptRunning || this.inner.isStreaming || this.inner.isBashRunning) return "running";
+    return "idle";
+  }
+
+  getTaskRuntimeSnapshot(): TaskRuntimeSnapshot {
+    return {
+      id: this.sessionId,
+      runtime: this.getRuntime(),
+      pendingApproval: this.pendingUiResponses.size > 0 || this.activeCustomUis.size > 0,
+      lastPromptFailed: this.lastPromptFailed,
+      ...(this.lastPromptErrorSummary ? { errorSummary: this.lastPromptErrorSummary } : {}),
+    };
   }
 
   start(): void {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       this.resetIdleTimer();
+      if (event.type === "agent_start") {
+        this.lastPromptFailed = false;
+        this.lastPromptErrorSummary = undefined;
+      }
       if (event.type === "agent_end") {
         invalidateSessionListCache();
       }
@@ -335,6 +364,8 @@ export class AgentSessionWrapper {
         // Fire and forget — events come via subscribe
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
+        this.lastPromptFailed = false;
+        this.lastPromptErrorSummary = undefined;
         this.promptRunning = true;
         notifyRunningChange();
         this.inner.prompt(command.message as string, {
@@ -347,6 +378,8 @@ export class AgentSessionWrapper {
           notifyRunningChange();
         }).catch((error) => {
           this.promptRunning = false;
+          this.lastPromptFailed = true;
+          this.lastPromptErrorSummary = error instanceof Error ? error.message : String(error);
           invalidateSessionListCache();
           this.emit({
             type: "prompt_error",
@@ -358,9 +391,17 @@ export class AgentSessionWrapper {
         return null;
       }
 
-      case "abort":
-        await this.withFinalRunningNotification(() => this.inner.abort());
+      case "abort": {
+        this.stopping = true;
+        notifyRunningChange();
+        try {
+          await this.withFinalRunningNotification(() => this.inner.abort());
+        } finally {
+          this.stopping = false;
+          notifyRunningChange();
+        }
         return null;
+      }
 
       case "get_state": {
         const model = this.inner.model;
@@ -372,6 +413,10 @@ export class AgentSessionWrapper {
           isPromptRunning: this.promptRunning,
           isBashRunning: this.inner.isBashRunning,
           isCompacting: this.inner.isCompacting,
+          runtime: this.getRuntime(),
+          pendingApproval: this.pendingUiResponses.size > 0 || this.activeCustomUis.size > 0,
+          lastPromptFailed: this.lastPromptFailed,
+          lastPromptErrorSummary: this.lastPromptErrorSummary,
           autoCompactionEnabled: this.inner.autoCompactionEnabled,
           autoRetryEnabled: this.inner.autoRetryEnabled,
           model: model ? { id: model.id, provider: model.provider } : undefined,
@@ -562,6 +607,15 @@ export class AgentSessionWrapper {
         return null;
       }
 
+      case "set_permission_tier": {
+        const tier = command.tier as PermissionTier;
+        if (tier !== "read-only" && tier !== "auto-edit" && tier !== "full-access") {
+          throw new Error("Invalid permission tier");
+        }
+        setPermissionTier(this.inner.sessionId, tier);
+        return null;
+      }
+
       case "reload": {
         await this.waitForExtensionsBound();
         this.extensionStatuses.clear();
@@ -577,7 +631,14 @@ export class AgentSessionWrapper {
       }
 
       case "abort_compaction": {
-        this.inner.abortCompaction();
+        this.stopping = true;
+        notifyRunningChange();
+        try {
+          this.inner.abortCompaction();
+        } finally {
+          this.stopping = false;
+          notifyRunningChange();
+        }
         return null;
       }
 
@@ -617,7 +678,14 @@ export class AgentSessionWrapper {
       }
 
       case "abort_bash": {
-        this.inner.abortBash();
+        this.stopping = true;
+        notifyRunningChange();
+        try {
+          this.inner.abortBash();
+        } finally {
+          this.stopping = false;
+          notifyRunningChange();
+        }
         return null;
       }
 
@@ -680,6 +748,7 @@ export class AgentSessionWrapper {
     } as ExtensionUiRequest as AgentEvent;
     this.pendingUiRequests.set(id, event);
     this.emit(event);
+    notifyRunningChange();
   }
 
   private closeCustomUi(id: string, value: unknown): void {
@@ -688,6 +757,7 @@ export class AgentSessionWrapper {
     custom.settled = true;
     this.activeCustomUis.delete(id);
     this.pendingUiRequests.delete(id);
+    notifyRunningChange();
     try {
       custom.component.dispose?.();
     } catch {
@@ -812,6 +882,7 @@ export class AgentSessionWrapper {
         signal?.removeEventListener("abort", onAbort);
         this.pendingUiRequests.delete(id);
         this.pendingUiResponses.delete(id);
+        notifyRunningChange();
       };
       const settle = (value: T) => {
         cleanup();
@@ -828,6 +899,7 @@ export class AgentSessionWrapper {
         cancel: () => settle(defaultValue),
       });
       this.emit(fullRequest as AgentEvent);
+      notifyRunningChange();
     });
   }
 
@@ -987,7 +1059,7 @@ declare global {
   var __piSessions: Map<string, AgentSessionWrapper> | undefined;
   var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
   var __piStartingSessionCwds: Map<string, number> | undefined;
-  var __piRunningListeners: Set<(ids: string[]) => void> | undefined;
+  var __piRunningListeners: Set<(sessions: TaskRuntimeSnapshot[]) => void> | undefined;
   var __piServicesCache: Map<string, AgentSessionServices> | undefined;
 }
 
@@ -1081,11 +1153,102 @@ export function destroyRpcSessionsForCwd(cwd: string): number {
 }
 
 export function getRunningRpcSessionIds(): string[] {
-  const ids = new Set<string>();
-  for (const [sessionId, session] of getRegistry()) {
-    if (session.isRunning()) ids.add(session.sessionId || sessionId);
+  return getRunningRpcSessionStatuses()
+    .filter((session) => session.runtime !== "idle")
+    .map((session) => session.id);
+}
+
+export function getRunningRpcSessionStatuses(): TaskRuntimeSnapshot[] {
+  const statuses: TaskRuntimeSnapshot[] = [];
+  for (const session of getRegistry().values()) {
+    if (!session.isAlive()) continue;
+    // globalThis deliberately retains wrappers across Next.js hot reloads.
+    // A wrapper created by the previous module version does not yet have the
+    // three-axis accessor, so adapt it until that live session is recreated.
+    const snapshot = typeof session.getTaskRuntimeSnapshot === "function"
+      ? session.getTaskRuntimeSnapshot()
+      : {
+          id: session.sessionId,
+          runtime: session.inner.isCompacting ? "compacting" as const : session.isRunning() ? "running" as const : "idle" as const,
+          pendingApproval: false,
+          lastPromptFailed: false,
+        };
+    if (snapshot.runtime !== "idle" || snapshot.pendingApproval || snapshot.lastPromptFailed) {
+      statuses.push(snapshot);
+    }
   }
-  return [...ids];
+  return statuses.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export interface UnpersistedSessionInfo {
+  id: string;
+  path: string;
+  cwd: string;
+  name?: string;
+  created: string;
+  modified: string;
+  messageCount: number;
+  firstMessage: string;
+  parentSessionPath?: string;
+}
+
+/**
+ * Session infos for live registry sessions missing from the caller's disk
+ * scan. The primary case: pi delays the first file write until an assistant
+ * message exists, so a brand-new session is invisible to the session list
+ * (and thus the sidebar) until its first turn completes. Entries already
+ * covered by the disk scan are excluded via `excludeIds` — not via
+ * existsSync — because a freshly flushed file may still be absent from a
+ * cached (TTL) scan, and the registry entry must bridge that window too.
+ * Field semantics mirror the SDK's buildSessionInfo() so merged entries
+ * render identically to disk entries.
+ */
+export function getUnpersistedSessionInfos(excludeIds?: ReadonlySet<string>): UnpersistedSessionInfo[] {
+  const infos: UnpersistedSessionInfo[] = [];
+  for (const session of getRegistry().values()) {
+    if (!session.isAlive()) continue;
+    if (excludeIds?.has(session.sessionId)) continue;
+    const sessionFile = session.sessionFile;
+    if (!sessionFile) continue;
+
+    const manager = session.inner.sessionManager;
+    const header = manager.getHeader();
+    if (!header) continue;
+
+    let messageCount = 0;
+    let firstMessage = "";
+    let lastActivityMs = Date.parse(header.timestamp);
+    for (const entry of manager.getEntries()) {
+      if (entry.type !== "message") continue;
+      messageCount += 1;
+      const message = entry.message;
+      if (message.role !== "user" && message.role !== "assistant") continue;
+      const timestamp = (message as { timestamp?: unknown }).timestamp;
+      const activityMs = typeof timestamp === "number" ? timestamp : Date.parse(entry.timestamp);
+      if (!Number.isNaN(activityMs)) lastActivityMs = Math.max(lastActivityMs, activityMs);
+      if (!firstMessage && message.role === "user") {
+        firstMessage = typeof message.content === "string"
+          ? message.content
+          : message.content
+              .filter((block): block is { type: "text"; text: string } => (block as { type?: unknown }).type === "text")
+              .map((block) => block.text)
+              .join(" ");
+      }
+    }
+
+    infos.push({
+      id: session.sessionId,
+      path: sessionFile,
+      cwd: header.cwd || session.cwd,
+      name: manager.getSessionName(),
+      created: header.timestamp,
+      modified: new Date(Number.isNaN(lastActivityMs) ? Date.now() : lastActivityMs).toISOString(),
+      messageCount,
+      firstMessage: firstMessage || "(no messages)",
+      ...(header.parentSession ? { parentSessionPath: header.parentSession } : {}),
+    });
+  }
+  return infos;
 }
 
 // ----------------------------------------------------------------------------
@@ -1097,13 +1260,13 @@ export function getRunningRpcSessionIds(): string[] {
 // survive Next.js hot-reload.
 // ----------------------------------------------------------------------------
 
-function getRunningListeners(): Set<(ids: string[]) => void> {
+function getRunningListeners(): Set<(sessions: TaskRuntimeSnapshot[]) => void> {
   if (!globalThis.__piRunningListeners) globalThis.__piRunningListeners = new Set();
   return globalThis.__piRunningListeners;
 }
 
 /** Subscribe to running-session-id changes. Returns an unsubscribe function. */
-export function subscribeRunningSessions(listener: (ids: string[]) => void): () => void {
+export function subscribeRunningSessions(listener: (sessions: TaskRuntimeSnapshot[]) => void): () => void {
   const listeners = getRunningListeners();
   listeners.add(listener);
   return () => { listeners.delete(listener); };
@@ -1116,12 +1279,12 @@ let lastRunningSnapshot = "";
  * notification, broadcast it to subscribers. Cheap to call often.
  */
 export function notifyRunningChange(): void {
-  const ids = getRunningRpcSessionIds();
-  const snapshot = JSON.stringify([...ids].sort());
+  const sessions = getRunningRpcSessionStatuses();
+  const snapshot = JSON.stringify(sessions);
   if (snapshot === lastRunningSnapshot) return;
   lastRunningSnapshot = snapshot;
   for (const listener of getRunningListeners()) {
-    try { listener(ids); } catch { /* ignore listener errors */ }
+    try { listener(sessions); } catch { /* ignore listener errors */ }
   }
 }
 
@@ -1184,13 +1347,16 @@ export async function startRpcSession(
     const cwdKey = normalizeRpcCwd(cwd);
     let services = getServicesCache().get(cwdKey);
     if (!services) {
+      const bundledApprovalExtension = resolve(process.cwd(), "extensions", "piora-approval.ts");
       services = await createAgentSessionServices({
         cwd,
         agentDir,
+        ...(existsSync(bundledApprovalExtension) ? { resourceLoaderOptions: { additionalExtensionPaths: [bundledApprovalExtension] } } : {}),
         ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
       });
       getServicesCache().set(cwdKey, services);
     }
+    ensureWindowsBashShellPath(services.settingsManager);
     const scope = await resolveVisibleModels(
       services.modelRuntime,
       services.settingsManager.getEnabledModels(),
@@ -1236,10 +1402,11 @@ export async function startRpcSession(
     wrapper.start();
 
     const realSessionId = inner.sessionId as string;
+    setPermissionTier(realSessionId, inferPermissionTierFromTools(toolNames));
     const realSessionFile = inner.sessionFile as string | undefined;
     if (realSessionFile) cacheSessionPath(realSessionId, realSessionFile);
 
-    wrapper.onDestroy(() => registry.delete(realSessionId));
+    wrapper.onDestroy(() => { registry.delete(realSessionId); clearPermissionTier(realSessionId); });
     registry.set(realSessionId, wrapper);
     wrapper.beginExtensionBinding({ forceEmptySystemPrompt: toolNames?.length === 0 });
 

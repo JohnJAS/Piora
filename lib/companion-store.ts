@@ -1,5 +1,7 @@
 export const COMPANION_STORAGE_KEY = "pi-companion-preferences-v1";
 export const COMPANION_SCHEMA_VERSION = 1;
+export const DEFAULT_COMPANION_PET_ID = "pekka-pal.codex-pet";
+export const BUNDLED_COMPANION_PETS_PUBLIC_PATH = "/companion-pets/bundled";
 export const MAX_COMPANION_TODOS = 100;
 export const MAX_COMPANION_PHRASES = 24;
 
@@ -51,7 +53,7 @@ export function createDefaultCompanionPreferences(seeds: CompanionPhraseSeed[] =
   return {
     version: COMPANION_SCHEMA_VERSION,
     open: false,
-    selectedPetId: "builtin",
+    selectedPetId: DEFAULT_COMPANION_PET_ID,
     todos: [],
     phrases: seeds.slice(0, MAX_COMPANION_PHRASES).flatMap((seed, index) => {
       const label = cleanText(seed.label, MAX_PHRASE_LABEL_LENGTH);

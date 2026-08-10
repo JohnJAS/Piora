@@ -1,16 +1,16 @@
 # Open-source project status
 
-Status date: **2026-08-01 (Asia/Shanghai)**
+Status date: **2026-08-09 (Asia/Shanghai)**
 
 ## Identity and repository
 
-The first public preview uses the name **piGUI** and the repository
-[`kexijiang/pi-gui`](https://github.com/kexijiang/pi-gui). Package metadata and the Windows
-application identity use that repository and the application ID `io.github.kexijiang.pigui`.
+The first public preview uses the name **Piora** and the repository
+[`kexijiang/piora`](https://github.com/kexijiang/piora). Package metadata and the Windows
+application identity use that repository and the application ID `io.github.kexijiang.piora`.
 The public repository has been created and the local checkout has both `origin` and the retained
 `agegr/pi-web` `upstream` remote.
 
-piGUI is independently maintained. It is not an official application from agegr,
+Piora is independently maintained. It is not an official application from agegr,
 earendil-works, OpenAI, or Codex, and it must not use their trademarks or artwork in a way that
 implies endorsement.
 
@@ -39,26 +39,29 @@ implies endorsement.
   Agent/SubAgent or autonomous execution path;
 - known local Codex pets can be discovered, previewed, and explicitly imported from the current
   pets directory, legacy avatars directory, and built-in `tui-pets` cache. The importer supports
-  declarative V1/V2 PNG/WebP sprite resources, copies only normalized data into piGUI-managed
+  declarative V1/V2 PNG/WebP sprite resources, copies only normalized data into Piora-managed
   storage, and uses atomic replacement with rollback;
 - an Electron shell, local token-authenticated standalone service, Windows packaging
   configuration, CI, and prerelease workflow are present;
-- Pi's own resource loader remains responsible for extensions. piGUI does not add a separate
+- Pi's own resource loader remains responsible for extensions. Piora does not add a separate
   SubAgent or plugin product model.
 - interface font family and user-entered size now cover the complete GUI while code remains on a
-  dedicated monospaced stack; the standalone `piGUI` chrome label and completion tone were removed,
+  dedicated monospaced stack; the standalone `Piora` chrome label and completion tone were removed,
   with an opt-in native/browser completion notification replacing the latter;
 - the conversation header exposes a restrained project menu, and model settings expose real
   availability tests through the current trusted Pi runtime without bypassing extension providers;
 - historical Pi reasoning retains its raw content-block index and can recover from rapid
   collapse/reopen, request timeout, and live-message reconciliation instead of remaining on a
-  loading placeholder.
+  loading placeholder;
+- workspace file tabs support pointer and keyboard reordering, bulk close, reopen history, and
+  dirty-state confirmation, while open files, the active tab, and expanded file-tree paths restore
+  per project without persisting editor contents.
 
 ## Verification recorded so far
 
 - `npm run typecheck`: passed for the web and desktop TypeScript projects;
 - `npm run lint`: passed;
-- `npm test` under the required Node.js 22.19.0 runtime: 380 tests, 375 passed, 0 failed,
+- `npm test` under the required Node.js 22.19.0 runtime: 552 tests, 547 passed, 0 failed,
   5 skipped because Windows did not grant symlink-creation privileges;
 - `npm run licenses:check` and `npm run verify:backgrounds` passed; the latter verified 20 unique
   WebP assets totaling 2,274,482 bytes. `npm audit --omit=dev --audit-level=high` against the
@@ -73,7 +76,7 @@ implies endorsement.
 - an isolated Windows package build passed. `verify:package` confirmed the Electron shell, 20
   backgrounds, token-authenticated health/root/session routes, packaged-Electron runtime isolation,
   and a synthetic external Pi package exposing an extension command, tool, and Skill, while finding
-  zero piGUI-owned SubAgent features;
+  zero Piora-owned SubAgent features;
 - the package contains a v3 exact package inventory and CycloneDX 1.5 SBOM covering 101 packaged
   copies plus 565 runtime-source packages (666 components total) and 224 content-hashed license
   texts;
@@ -89,8 +92,9 @@ implies endorsement.
   Native double-click maximize strongly confirms Windows treated the blank point as a caption area,
   but standard-mouse continuous drag remains part of the clean-machine matrix rather than being
   overstated as complete;
-- the local candidate `piGUI-0.1.0-win-x64-portable.exe` is 180,907,440 bytes with SHA-256
-  `6461C3D0ECE8F55F7CA50F67155CE03B56B509D58B2111ECC62D0FD6982229FF`; its Authenticode
+- the current local candidate `Piora-0.1.0-win-x64-portable.exe`, built from runtime commit
+  `626b632`, is 181,199,599 bytes with SHA-256
+  `74AA29B1937B2840544427D7DA2B064D78F4F081BC5E4BCF5F3B6DF0E19648F4`; its Authenticode
   status is `NotSigned`;
 - an artifact string scan found no developer-home or development-checkout private build paths. High-confidence
   token-pattern candidates were confined to upstream binary byte sequences, Next.js identifiers,
@@ -124,9 +128,10 @@ rejected instead of executed or fetched.
   the current packaged EXE evidence covers the integrated top row, double-click maximize,
   restore/close, and the appearance panel;
 - clean-machine portable replacement, data-retention, and uninstall checks;
-- the current final working-tree batch still needs an isolated package rebuild, reviewed PR into
-  `main`, its own public CI result, and GitHub Release download/checksum verification. The public
-  repository, default `main`, and prior successful Ubuntu/Windows CI are already established;
+- the current final working-tree batch has an isolated local package build and portable smoke
+  result, but still needs a reviewed push/PR into `main`, its own public CI result, and GitHub
+  Release download/checksum verification. The public repository, default `main`, and prior
+  successful Ubuntu/Windows CI are already established;
 - branch protection/rulesets remain an administrative hardening task and are not yet enabled.
 
 Until those items are recorded, the locally produced executable is an unsigned prerelease

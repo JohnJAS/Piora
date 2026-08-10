@@ -1,4 +1,5 @@
-import { getRunningRpcSessionIds, subscribeRunningSessions } from "@/lib/rpc-manager";
+import { getRunningRpcSessionStatuses, subscribeRunningSessions } from "@/lib/rpc-manager";
+import { createRunningSessionsPayload } from "@/lib/task-status";
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +16,9 @@ export async function GET(req: Request) {
 
       // Subscribe BEFORE taking the initial snapshot so no state change can slip
       // through the gap between snapshot and subscription.
-      const unsubscribe = subscribeRunningSessions((ids) => {
+      const unsubscribe = subscribeRunningSessions((sessions) => {
         try {
-          encode({ type: "running", runningSessionIds: ids });
+          encode({ type: "running", ...createRunningSessionsPayload(sessions) });
         } catch {
           // controller already closed
         }
@@ -25,7 +26,7 @@ export async function GET(req: Request) {
 
       // Initial snapshot so the client renders the correct state immediately.
       // (A duplicate frame here is harmless: the client just sets the same set.)
-      encode({ type: "running", runningSessionIds: getRunningRpcSessionIds() });
+      encode({ type: "running", ...createRunningSessionsPayload(getRunningRpcSessionStatuses()) });
 
       // Heartbeat to keep the connection alive through proxies/timeouts.
       const heartbeat = setInterval(() => {

@@ -1,6 +1,6 @@
-# Contributing to piGUI
+# Contributing to Piora
 
-Thank you for helping build piGUI. The repository uses **piGUI** as the name of its initial public preview. The project is evolving from the `agegr/pi-web` codebase toward a Windows desktop application powered by the `earendil-works/pi` agent. A future rename must update package metadata, application identity, documentation, and repository links together.
+Thank you for helping build Piora. The repository uses **Piora** as the name of its initial public preview. The project is evolving from the `agegr/pi-web` codebase toward a Windows desktop application powered by the `earendil-works/pi` agent. A future rename must update package metadata, application identity, documentation, and repository links together.
 
 By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md). Contributions are made under the repository's MIT License.
 
@@ -9,7 +9,7 @@ By participating, you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 - Search existing issues and pull requests first.
 - Use a bug report for reproducible defects and a feature request for product proposals.
 - Do not publish vulnerabilities, credentials, private prompts, session files, or sensitive logs. Follow [SECURITY.md](SECURITY.md) instead.
-- Keep feature requests focused on piGUI. Upstream pi-web or Pi defects may need a minimal reproduction before we can decide where they belong.
+- Keep feature requests focused on Piora. Upstream pi-web or Pi defects may need a minimal reproduction before we can decide where they belong.
 
 ## Development setup
 

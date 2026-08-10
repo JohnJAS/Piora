@@ -1,5 +1,5 @@
-export const PI_GUI_DEFAULT_PROVIDER_ENV = "PI_GUI_DEFAULT_PROVIDER";
-export const PI_GUI_DEFAULT_MODEL_ENV = "PI_GUI_DEFAULT_MODEL";
+export const PIORA_DEFAULT_PROVIDER_ENV = "PIORA_DEFAULT_PROVIDER";
+export const PIORA_DEFAULT_MODEL_ENV = "PIORA_DEFAULT_MODEL";
 export const DEFAULT_PREFERRED_PROVIDER = "deepseek";
 
 export interface ModelReference {
@@ -43,10 +43,10 @@ function findAvailableReference(
 }
 
 /** Read the non-secret desktop default packaged or supplied by the launcher. */
-export function readPiGuiDefaultModel(environment: Environment): ModelReference | undefined {
+export function readPioraDefaultModel(environment: Environment): ModelReference | undefined {
   return asReference(
-    environment[PI_GUI_DEFAULT_PROVIDER_ENV],
-    environment[PI_GUI_DEFAULT_MODEL_ENV],
+    environment[PIORA_DEFAULT_PROVIDER_ENV],
+    environment[PIORA_DEFAULT_MODEL_ENV],
   );
 }
 
@@ -54,7 +54,7 @@ export function readPiGuiDefaultModel(environment: Environment): ModelReference 
  * Resolve the default for a new desktop session.
  *
  * A valid explicit pi setting always wins. The desktop launcher can supply a
- * versioned default through PI_GUI_DEFAULT_PROVIDER / PI_GUI_DEFAULT_MODEL.
+ * versioned default through PIORA_DEFAULT_PROVIDER / PIORA_DEFAULT_MODEL.
  * When neither is usable, the first available DeepSeek model is preferred.
  */
 export function resolveDefaultModelPreference(options: {
@@ -72,7 +72,7 @@ export function resolveDefaultModelPreference(options: {
 
   const desktopDefault = findAvailableReference(
     options.models,
-    readPiGuiDefaultModel(options.environment),
+    readPioraDefaultModel(options.environment),
   );
   if (desktopDefault) return desktopDefault;
 

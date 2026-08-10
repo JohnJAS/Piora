@@ -109,7 +109,7 @@ jobs:
 
       - name: Smoke-test portable executable
         shell: pwsh
-        run: npm run smoke:portable -- --expected-version "$env:GITHUB_REF_NAME"
+        run: node scripts/smoke-test-portable.mjs --expected-version "$env:GITHUB_REF_NAME"
 
       - name: Generate checksums
         shell: pwsh
@@ -127,7 +127,7 @@ jobs:
       - name: Upload verified release payload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: pigui-windows-${{ github.ref_name }}
+          name: piora-windows-${{ github.ref_name }}
           path: |
             desktop/release/*-portable.exe
             desktop/release/SHA256SUMS.txt
@@ -147,7 +147,7 @@ jobs:
       - name: Download verified release payload
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: pigui-windows-${{ github.ref_name }}
+          name: piora-windows-${{ github.ref_name }}
           path: release-payload
 
       - name: Verify downloaded SHA-256 checksums

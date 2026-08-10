@@ -75,6 +75,7 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
   const restoredRef = useRef(false);
   const [width, setWidth] = useState(defaultWidth);
   const [isResizing, setIsResizing] = useState(false);
+  const [hasMounted, setHasMounted] = useState(false);
 
   const effectiveMaxWidth = useCallback(
     () => Math.min(maxWidth, Math.max(minWidth, getMaxWidth())),
@@ -208,6 +209,10 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
   }, [commitWidth, effectiveMaxWidth, growthDirection, minWidth, resetWidth, widthRef]);
 
   useEffect(() => {
+    setHasMounted(true);
+  }, []);
+
+  useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
 
@@ -264,7 +269,7 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     separatorProps: {
       "aria-label": ariaLabel,
       "aria-orientation": "vertical" as const,
-      "aria-valuemax": effectiveMaxWidth(),
+      "aria-valuemax": hasMounted ? effectiveMaxWidth() : maxWidth,
       "aria-valuemin": minWidth,
       "aria-valuenow": width,
       "aria-valuetext": `${width} px`,

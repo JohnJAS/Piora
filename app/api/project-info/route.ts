@@ -6,7 +6,7 @@ import {
   isFilePathAllowed,
   isWindowsAbsolutePath,
 } from "@/lib/file-access";
-import { getProjectInfo } from "@/lib/project-info";
+import { getProjectInfo, getProjectStarterSignals } from "@/lib/project-info";
 
 export async function GET(request: NextRequest) {
   const cwd = request.nextUrl.searchParams.get("cwd")?.trim() ?? "";
@@ -29,5 +29,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Access denied" }, { status: 403 });
   }
 
-  return NextResponse.json(await getProjectInfo(cwd));
+  const info = await getProjectInfo(cwd);
+  if (!request.nextUrl.searchParams.has("starters")) return NextResponse.json(info);
+  return NextResponse.json({ ...info, starterSignals: await getProjectStarterSignals(cwd) });
 }

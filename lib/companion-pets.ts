@@ -3,11 +3,11 @@
  *
  * This file contains a modified TypeScript adaptation of portions of the
  * OpenAI Codex TUI pet catalog, model, and asset-cache conventions.
- * Copyright 2025 OpenAI. Modified by piGUI contributors for local discovery,
+ * Copyright 2025 OpenAI. Modified by Piora contributors for local discovery,
  * validation, normalization, and atomic import behavior.
  *
  * See third_party/openai-codex/SOURCE.md, LICENSE, and NOTICE for the pinned
- * upstream revision and Apache-2.0 attribution. The piGUI project as a whole
+ * upstream revision and Apache-2.0 attribution. The Piora project as a whole
  * remains distributed under its existing MIT license.
  */
 
@@ -19,6 +19,7 @@ import {
   getRuntimeHomeDirectory,
   type RuntimeHomeEnvironment,
 } from "./runtime-home";
+import { BUNDLED_COMPANION_PETS_PUBLIC_PATH } from "./companion-store";
 
 export const PET_MANIFEST_MAX_BYTES = 64 * 1024;
 export const PET_INSTALLED_MANIFEST_MAX_BYTES = 256 * 1024;
@@ -73,9 +74,10 @@ export type CompanionPetSourceKind =
   | "codex-builtin-cache"
   | "codex-custom"
   | "codex-legacy-avatar"
-  | "pi-gui-installed";
+  | "piora-bundled"
+  | "piora-installed";
 
-export type CodexPetSourceKind = Exclude<CompanionPetSourceKind, "pi-gui-installed">;
+export type CodexPetSourceKind = Exclude<CompanionPetSourceKind, "piora-bundled" | "piora-installed">;
 
 export type PetAnimationStateId =
   | "idle"
@@ -133,7 +135,7 @@ export interface CompanionPet {
   frameHeight: number;
   frameCount: number;
   states: PetAnimationState[];
-  source: "codex" | "pi-gui";
+  source: "codex" | "piora";
   sourceKind: CompanionPetSourceKind;
   sourceKey: string;
   origin?: CodexPetSourceKind;
@@ -510,16 +512,16 @@ function normalizeAnimation(
   if (!isPlainRecord(value)) {
     throw new CompanionPetError(`${label} must be an object`, "INVALID_PET_PACKAGE", 422);
   }
-  const isPiGuiNormalized = value.frameIndices !== undefined;
+  const isPioraNormalized = value.frameIndices !== undefined;
   const frameIndices = normalizeFrameIndices(
-    isPiGuiNormalized ? value.frameIndices : value.frames,
+    isPioraNormalized ? value.frameIndices : value.frames,
     frameCount,
     `${label}.frames`,
   );
   const fallback = safeManifestText(value.fallback, `${label}.fallback`, 80) ?? "idle";
   safeAnimationName(fallback, `${label}.fallback`);
 
-  if (isPiGuiNormalized) {
+  if (isPioraNormalized) {
     if (!Array.isArray(value.durationsMs) || value.durationsMs.length !== frameIndices.length) {
       throw new CompanionPetError(
         `${label}.durationsMs must match its frame count`,
@@ -1062,13 +1064,15 @@ function readBoundedRegularFile(
 
 function petFromManifest(
   manifest: NormalizedPetManifest,
-  source: "codex" | "pi-gui",
+  source: "codex" | "piora",
   sourceKind: CompanionPetSourceKind,
   installed: boolean,
 ): CompanionPet {
   const width = manifest.frame.width * manifest.frame.columns;
   const height = manifest.frame.height * manifest.frame.rows;
-  const origin = sourceKind === "pi-gui-installed" ? manifest.origin : sourceKind;
+  const origin = sourceKind === "piora-installed" || sourceKind === "piora-bundled"
+    ? manifest.origin
+    : sourceKind;
   return {
     id: manifest.id,
     displayName: manifest.displayName,
@@ -1076,9 +1080,11 @@ function petFromManifest(
     ...(manifest.author ? { author: manifest.author } : {}),
     spriteVersionNumber: manifest.spriteVersionNumber,
     spritesheetPath: manifest.spritesheetPath,
-    atlasUrl: source === "pi-gui"
-      ? `/api/companion-pets/${encodeURIComponent(manifest.id)}/spritesheet`
-      : null,
+    atlasUrl: sourceKind === "piora-bundled"
+      ? `${BUNDLED_COMPANION_PETS_PUBLIC_PATH}/${encodeURIComponent(manifest.id)}/${manifest.spritesheetPath}`
+      : source === "piora"
+        ? `/api/companion-pets/${encodeURIComponent(manifest.id)}/spritesheet`
+        : null,
     width,
     height,
     frame: { ...manifest.frame },
@@ -1099,7 +1105,7 @@ function petFromManifest(
 function validatePetPackage(
   root: string,
   id: string,
-  source: "codex" | "pi-gui",
+  source: "codex" | "piora",
   sourceKind: CompanionPetSourceKind,
   installed: boolean,
   manifestFileName = "pet.json",
@@ -1118,7 +1124,7 @@ function validatePetPackage(
   if (!rootTargetStats.isDirectory()) {
     throw new CompanionPetError("Pet data root is not a directory", "PET_ACCESS_DENIED", 403);
   }
-  if (sourceKind === "pi-gui-installed" && rootPathStats.isSymbolicLink()) {
+  if ((sourceKind === "piora-installed" || sourceKind === "piora-bundled") && rootPathStats.isSymbolicLink()) {
     throw new CompanionPetError(
       "Installed pet data root must not be a symbolic link",
       "PET_ACCESS_DENIED",
@@ -1143,7 +1149,7 @@ function validatePetPackage(
   const manifestBytes = readBoundedRegularFile(
     realPetDirectory,
     manifestFileName,
-    sourceKind === "pi-gui-installed"
+    sourceKind === "piora-installed" || sourceKind === "piora-bundled"
       ? PET_INSTALLED_MANIFEST_MAX_BYTES
       : PET_MANIFEST_MAX_BYTES,
     manifestFileName,
@@ -1204,10 +1210,14 @@ export function getCodexBuiltinPetsAssetsDirectory(
   return path.join(getCodexHomeDirectory(environment), "cache", "tui-pets", "v1", "assets");
 }
 
-export function getPiGuiPetsDirectory(
+export function getPioraPetsDirectory(
   environment: CompanionPetEnvironment = process.env,
 ): string {
-  return path.join(getRuntimeHomeDirectory(environment), ".pi", "agent", "pi-gui", "pets");
+  return path.join(getRuntimeHomeDirectory(environment), ".pi", "agent", "piora", "pets");
+}
+
+export function getBundledPioraPetsDirectory(): string {
+  return path.join(process.cwd(), "public", "companion-pets", "bundled");
 }
 
 function listPetPackages(
@@ -1216,7 +1226,7 @@ function listPetPackages(
   installedSourceKeys: ReadonlySet<string>,
   manifestFileName = "pet.json",
 ): { pets: CompanionPet[]; diagnostics: CompanionPetDiagnostic[]; available: boolean } {
-  const source = sourceKind === "pi-gui-installed" ? "pi-gui" : "codex";
+  const source = sourceKind === "piora-installed" || sourceKind === "piora-bundled" ? "piora" : "codex";
   const scope = source === "codex" ? "source" : "installed";
   let rootPathStats: fs.Stats;
   let rootStats: fs.Stats;
@@ -1226,7 +1236,7 @@ function listPetPackages(
   } catch {
     return { pets: [], diagnostics: [], available: false };
   }
-  if (sourceKind === "pi-gui-installed" && rootPathStats.isSymbolicLink()) {
+  if ((sourceKind === "piora-installed" || sourceKind === "piora-bundled") && rootPathStats.isSymbolicLink()) {
     return {
       pets: [],
       diagnostics: [{ scope, message: "Installed pet root must not be a symbolic link" }],
@@ -1261,7 +1271,7 @@ function listPetPackages(
         entry.name,
         source,
         sourceKind,
-        sourceKind === "pi-gui-installed"
+        sourceKind === "piora-installed" || sourceKind === "piora-bundled"
           || installedSourceKeys.has(`${sourceKind}:${entry.name}`)
           || installedSourceKeys.has(`*:${entry.name}`),
         manifestFileName,
@@ -1351,12 +1361,22 @@ function listBuiltinPets(
 export function listCompanionPets(
   environment: CompanionPetEnvironment = process.env,
 ): CompanionPetsResponse {
-  const installedResult = listPetPackages(
-    getPiGuiPetsDirectory(environment),
-    "pi-gui-installed",
+  const bundledResult = listPetPackages(
+    getBundledPioraPetsDirectory(),
+    "piora-bundled",
     new Set(),
   );
-  const installedSourceKeys = new Set(installedResult.pets.map((pet) => (
+  const installedResult = listPetPackages(
+    getPioraPetsDirectory(environment),
+    "piora-installed",
+    new Set(),
+  );
+  const installedById = new Map(bundledResult.pets.map((pet) => [pet.id, pet]));
+  for (const pet of installedResult.pets) installedById.set(pet.id, pet);
+  const installed = [...installedById.values()].sort((left, right) => (
+    left.displayName.localeCompare(right.displayName)
+  ));
+  const installedSourceKeys = new Set(installed.map((pet) => (
     `${pet.origin ?? "*"}:${pet.id}`
   )));
   const builtinResult = listBuiltinPets(
@@ -1382,11 +1402,12 @@ export function listCompanionPets(
   return {
     codexSourceAvailable: builtinResult.available || customResult.available || legacyResult.available,
     sources,
-    installed: installedResult.pets,
+    installed,
     diagnostics: [
       ...builtinResult.diagnostics,
       ...customResult.diagnostics,
       ...legacyResult.diagnostics,
+      ...bundledResult.diagnostics,
       ...installedResult.diagnostics,
     ],
   };
@@ -1510,7 +1531,7 @@ function installValidatedPet(
   // descriptor, so no attacker-controlled pathname is reopened for the copy.
   const spritesheetBytes = source.spritesheetBytes;
 
-  const configuredInstallRoot = getPiGuiPetsDirectory(environment);
+  const configuredInstallRoot = getPioraPetsDirectory(environment);
   try {
     fs.mkdirSync(configuredInstallRoot, { recursive: true, mode: 0o700 });
   } catch {
@@ -1594,7 +1615,7 @@ function installValidatedPet(
     if (!stagedSpritesheetBytes.equals(spritesheetBytes)) {
       throw new CompanionPetError("Staged spritesheet verification failed", "PET_IMPORT_FAILED", 500);
     }
-    stagedPet = petFromManifest(stagedManifest, "pi-gui", "pi-gui-installed", true);
+    stagedPet = petFromManifest(stagedManifest, "piora", "piora-installed", true);
 
     assertDirectorySnapshot(destination, destinationSnapshot, "Installed pet destination");
     if (destinationSnapshot) {
@@ -1804,15 +1825,15 @@ export function readInstalledPetSpritesheet(
   environment: CompanionPetEnvironment = process.env,
 ): { bytes: Buffer; mimeType: "image/png" | "image/webp"; pet: CompanionPet } {
   requireValidPetId(id);
-  const installRoot = getPiGuiPetsDirectory(environment);
+  const installRoot = getPioraPetsDirectory(environment);
   if (!fs.existsSync(installRoot)) {
     throw new CompanionPetError("Installed pet was not found", "PET_NOT_FOUND", 404);
   }
   const validated = validatePetPackage(
     installRoot,
     id,
-    "pi-gui",
-    "pi-gui-installed",
+    "piora",
+    "piora-installed",
     true,
   );
   return {

@@ -1,16 +1,22 @@
 # Changelog
 
-All notable changes to piGUI are documented here. The project follows [Semantic Versioning](https://semver.org/) after the first tagged public release.
+All notable changes to Piora are documented here. The project follows [Semantic Versioning](https://semver.org/) after the first tagged public release.
 
 ## [Unreleased]
 
-No unreleased changes.
+### Added
+
+- File tabs can be reordered by drag-and-drop or keyboard-accessible actions,
+  closed in groups, and reopened from the tab menu or with
+  `Ctrl/Cmd+Shift+T`, while preserving unsaved-change confirmation.
+- Open file tabs, the active file, and expanded file-tree directories restore
+  per workspace after refresh without persisting unsaved editor contents.
 
 ## [0.1.0] - 2026-08-01
 
 ### Added
 
-- An original piGUI application mark with transparent PNG and multi-resolution
+- An original Piora application mark with transparent PNG and multi-resolution
   Windows ICO assets, wired into the portable Electron executable and matching
   browser/PWA icons, with generation and MIT-license provenance retained in the
   repository.
@@ -75,7 +81,7 @@ No unreleased changes.
   asks for confirmation instead of dropping the streaming view instantly.
 - Reasoning-effort and compact-context controls no longer sit in the bottom
   meta bar; they moved into the model settings panel.
-- Removed the standalone `piGUI` label from the upper-left application chrome
+- Removed the standalone `Piora` label from the upper-left application chrome
   and aligned the right file-workspace toggle with both the closed top bar and
   the open file-tab strip, including the Electron safe area.
 - The custom text-size setting now scales navigation, project/session rows,

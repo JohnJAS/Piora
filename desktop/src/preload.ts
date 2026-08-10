@@ -12,7 +12,7 @@ const runtime = Object.freeze({
       typeof taskTitle === "string" ? taskTitle : undefined,
     ) as Promise<boolean>;
   },
-  openMenu(menu: "file" | "edit" | "view" | "features" | "help", x: number, y: number): Promise<boolean> {
+  openMenu(menu: "file" | "edit" | "view" | "window" | "help", x: number, y: number): Promise<boolean> {
     return ipcRenderer.invoke("pi:open-application-menu", menu, x, y) as Promise<boolean>;
   },
   revealPath(filePath: string): Promise<boolean> {
@@ -26,6 +26,9 @@ const runtime = Object.freeze({
   },
   companionAction(action: "focus-main" | "open-settings" | "hide"): Promise<boolean> {
     return ipcRenderer.invoke("pi:companion-window-action", action) as Promise<boolean>;
+  },
+  setGlobalShortcut(enabled: boolean): Promise<boolean> {
+    return ipcRenderer.invoke("pi:set-global-shortcut", enabled) as Promise<boolean>;
   },
   onMenuAction(listener: (action: string) => void) {
     const handler = (_event: Electron.IpcRendererEvent, action: unknown) => {

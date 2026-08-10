@@ -9,5 +9,5 @@
 - License text SHA-256: `0b2c94863590ca2aed327e89642b7e74b1608ec423bfec1d8f1beba2945fc4ba`
 
 The npm package manifest declares MIT but the published tarball does not include the complete
-license file. piGUI therefore ships the exact upstream MIT text added by the same repository and
+license file. Piora therefore ships the exact upstream MIT text added by the same repository and
 records both immutable commits. No package code is copied into this directory.

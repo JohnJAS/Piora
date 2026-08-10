@@ -5,11 +5,20 @@ import type { Logger } from "./logger.js";
 interface DesktopState {
   serverPort?: number;
   companionWindowPosition?: CompanionWindowPosition;
+  mainWindowState?: MainWindowState;
 }
 
 export interface CompanionWindowPosition {
   x: number;
   y: number;
+}
+
+export interface MainWindowState {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  maximized: boolean;
 }
 
 function isValidPort(value: unknown): value is number {
@@ -93,4 +102,27 @@ export function writeCompanionWindowPosition(
 ): void {
   if (!isValidPosition(position)) return;
   writeDesktopState(userDataDirectory, { companionWindowPosition: position }, logger);
+}
+
+function isValidMainWindowState(value: unknown): value is MainWindowState {
+  if (!value || typeof value !== "object") return false;
+  const state = value as Record<string, unknown>;
+  return [state.x, state.y, state.width, state.height].every(Number.isInteger)
+    && Number(state.width) >= 640
+    && Number(state.height) >= 480
+    && Number(state.width) <= 20_000
+    && Number(state.height) <= 20_000
+    && Math.abs(Number(state.x)) <= 100_000
+    && Math.abs(Number(state.y)) <= 100_000
+    && typeof state.maximized === "boolean";
+}
+
+export function readMainWindowState(userDataDirectory: string, logger: Logger): MainWindowState | undefined {
+  const state = readDesktopState(userDataDirectory, logger);
+  return isValidMainWindowState(state.mainWindowState) ? state.mainWindowState : undefined;
+}
+
+export function writeMainWindowState(userDataDirectory: string, state: MainWindowState, logger: Logger): void {
+  if (!isValidMainWindowState(state)) return;
+  writeDesktopState(userDataDirectory, { mainWindowState: state }, logger);
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
 
@@ -53,6 +54,8 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error }: Pro
   const [directories, setDirectories] = useState<DirectoryEntry[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, Boolean(portalTarget), { onEscape: busy ? undefined : onCancel });
 
   const navigateTo = useCallback(async (directory?: string) => {
     setLoading(true);
@@ -100,7 +103,7 @@ export function DirectoryPicker({ onCancel, onSelect, busy = false, error }: Pro
       }}
       style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}
     >
-      <div className="directory-picker-panel app-shell-dialog" style={{ width: 520, maxWidth: "calc(100vw - 16px)", height: "min(620px, calc(100dvh - 16px))", maxHeight: "calc(100dvh - 16px)", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }}>
+      <div ref={dialogRef} className="directory-picker-panel app-shell-dialog" style={{ width: 520, maxWidth: "calc(100vw - 16px)", height: "min(620px, calc(100dvh - 16px))", maxHeight: "calc(100dvh - 16px)", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg)", border: "1px solid var(--border)", borderRadius: 10, boxShadow: "0 8px 32px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0, padding: "12px 18px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ color: "var(--text)", fontWeight: 700, fontSize: "var(--text-md)" }}>{t("directoryPicker.selectDirectory")}</div>

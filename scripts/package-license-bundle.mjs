@@ -37,6 +37,14 @@ const REVIEWED_RUNTIME_REPLACEMENTS = Object.freeze([
     installedVersion: "5.0.9",
     mechanism: "scripts/patch-bundled-dependencies.mjs",
   }),
+  Object.freeze({
+    lockPath: "node_modules/@earendil-works/pi-coding-agent/node_modules/undici",
+    lockedName: "undici",
+    lockedVersion: "8.5.0",
+    installedName: "undici",
+    installedVersion: "8.9.0",
+    mechanism: "scripts/patch-bundled-dependencies.mjs",
+  }),
 ]);
 const REVIEWED_RUNTIME_REPLACEMENT_BY_PATH = new Map(
   REVIEWED_RUNTIME_REPLACEMENTS.map((replacement) => [replacement.lockPath, replacement]),
@@ -77,7 +85,7 @@ const REVIEWED_LICENSE_FALLBACKS = Object.freeze([
     licensePath: "third_party/format/LICENSE.md",
     provenancePath: "third_party/format/SOURCE.md",
     licenseSha256: "0b2c94863590ca2aed327e89642b7e74b1608ec423bfec1d8f1beba2945fc4ba",
-    provenanceSha256: "e7e09d5e6237a7131232be0080ee783d90c1106229fd52eb2676f3a32e208ff6",
+    provenanceSha256: "fb937cd4b4290274e316281adb88163df6f58b20e1365c9ffc5ead1b902674e0",
   }),
   Object.freeze({
     name: "khroma",
@@ -89,7 +97,7 @@ const REVIEWED_LICENSE_FALLBACKS = Object.freeze([
     licensePath: "third_party/khroma/LICENSE",
     provenancePath: "third_party/khroma/SOURCE.md",
     licenseSha256: "66b333b0f66759a0b710459e03f7029abe17f4358114a128d2c972e642961b49",
-    provenanceSha256: "4cb7c62d2d59cb04acc94d58085b28d420f5c0359f0cf013b889825947cfdb24",
+    provenanceSha256: "63cb2cbfe8f700e79fcf3facc3d850e225f4e20dd857a4e1f43ea423f285299c",
   }),
 ]);
 const LICENSE_TEXT_REQUIRED_PACKAGE_NAMES = new Set([
@@ -754,7 +762,7 @@ function buildArtifacts({ applicationVersion, packages, runtimeSourceClosure, li
   const packageInventoryBytes = Buffer.from(json({ packages, runtimeSourceClosure }), "utf8");
   const totalLicenseTextBytes = [...licenseTexts.values()].reduce((sum, bytes) => sum + bytes.length, 0);
   const manifest = {
-    schema: "pi-gui-third-party-packages-v3",
+    schema: "piora-third-party-packages-v3",
     source: "resources/web/node_modules",
     runtimeSource: "effective package-lock.json dev !== true closure after reviewed postinstall replacements",
     packageCount: packages.length,
@@ -779,20 +787,20 @@ function buildArtifacts({ applicationVersion, packages, runtimeSourceClosure, li
     components: [
       ...packages.map((entry) => ({
         type: "library",
-        "bom-ref": `urn:pi-gui:npm-location:${sha256(Buffer.from(entry.path, "utf8"))}`,
+        "bom-ref": `urn:piora:npm-location:${sha256(Buffer.from(entry.path, "utf8"))}`,
         name: entry.name,
         version: entry.version,
         purl: packagePurl(entry.name, entry.version),
         ...componentLicense(entry),
         properties: [
-          { name: "piGUI:evidenceScope", value: entry.scope },
-          { name: "piGUI:distributionPath", value: entry.path },
-          { name: "piGUI:packageJsonSha256", value: entry.packageJsonSha256 },
-          { name: "piGUI:licenseMaterialStatus", value: entry.licenseMaterialStatus },
-          { name: "piGUI:licenseFileCount", value: String(entry.licenseFiles.length) },
+          { name: "Piora:evidenceScope", value: entry.scope },
+          { name: "Piora:distributionPath", value: entry.path },
+          { name: "Piora:packageJsonSha256", value: entry.packageJsonSha256 },
+          { name: "Piora:licenseMaterialStatus", value: entry.licenseMaterialStatus },
+          { name: "Piora:licenseFileCount", value: String(entry.licenseFiles.length) },
           ...(entry.reviewedLicenseFallback
             ? [{
-                name: "piGUI:reviewedLicenseFallback",
+                name: "Piora:reviewedLicenseFallback",
                 value: JSON.stringify(entry.reviewedLicenseFallback),
               }]
             : []),
@@ -800,31 +808,31 @@ function buildArtifacts({ applicationVersion, packages, runtimeSourceClosure, li
       })),
       ...runtimeSourceClosure.map((entry) => ({
         type: "library",
-        "bom-ref": `urn:pi-gui:npm-runtime-source:${sha256(Buffer.from(`${entry.name}@${entry.version}`, "utf8"))}`,
+        "bom-ref": `urn:piora:npm-runtime-source:${sha256(Buffer.from(`${entry.name}@${entry.version}`, "utf8"))}`,
         name: entry.name,
         version: entry.version,
         purl: packagePurl(entry.name, entry.version),
         ...componentLicense(entry),
         properties: [
-          { name: "piGUI:evidenceScope", value: entry.scope },
-          { name: "piGUI:lockInstallPaths", value: JSON.stringify(entry.lockPaths) },
-          { name: "piGUI:optional", value: String(entry.optional) },
-          { name: "piGUI:sourceInstalled", value: String(entry.sourceInstalled) },
-          { name: "piGUI:licenseMaterialStatus", value: entry.licenseMaterialStatus },
+          { name: "Piora:evidenceScope", value: entry.scope },
+          { name: "Piora:lockInstallPaths", value: JSON.stringify(entry.lockPaths) },
+          { name: "Piora:optional", value: String(entry.optional) },
+          { name: "Piora:sourceInstalled", value: String(entry.sourceInstalled) },
+          { name: "Piora:licenseMaterialStatus", value: entry.licenseMaterialStatus },
           {
-            name: "piGUI:sourcePackageJsonSha256",
+            name: "Piora:sourcePackageJsonSha256",
             value: JSON.stringify(entry.sourcePackageJsonSha256),
           },
-          { name: "piGUI:licenseFileCount", value: String(entry.licenseFiles.length) },
+          { name: "Piora:licenseFileCount", value: String(entry.licenseFiles.length) },
           ...(entry.reviewedReplacements
             ? [{
-                name: "piGUI:reviewedRuntimeReplacements",
+                name: "Piora:reviewedRuntimeReplacements",
                 value: JSON.stringify(entry.reviewedReplacements),
               }]
             : []),
           ...(entry.reviewedLicenseFallback
             ? [{
-                name: "piGUI:reviewedLicenseFallback",
+                name: "Piora:reviewedLicenseFallback",
                 value: JSON.stringify(entry.reviewedLicenseFallback),
               }]
             : []),

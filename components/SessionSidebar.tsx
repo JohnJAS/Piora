@@ -1,511 +1,78 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useState, useCallback, useRef, type CSSProperties, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useState, useCallback, useRef } from "react";
+import { useI18n } from "@/hooks/useI18n";
 import type { SessionInfo } from "@/lib/types";
+import type { SessionFlags } from "@/lib/session-flags";
 import {
   buildSessionProjectGroups,
   getProjectLabel,
-  getVisibleSessionRoots,
-  type SessionProjectGroup as SessionProjectGroupData,
-  type SessionTreeNode,
 } from "@/lib/session-project-groups";
-import { useI18n } from "@/hooks/useI18n";
 import { DirectoryPicker } from "./DirectoryPicker";
-import { FileExplorer, type FileExplorerHandle } from "./FileExplorer";
-import { AliIcon } from "./AliIcon";
-import styles from "./SessionSidebar.module.css";
+import type { SessionSidebarHandle, SessionSidebarProps as Props } from "./sidebar/sidebar-types";
+import { WorktreeSection } from "./sidebar/WorktreeSection";
+import { useWorktreeState } from "./sidebar/useWorktreeState";
+import { SidebarNavigation } from "./sidebar/SidebarNavigation";
+import { SidebarProjectArea } from "./sidebar/SidebarProjectArea";
+import { SidebarFooter } from "./sidebar/SidebarFooter";
+import { useSessionCatalog } from "./sidebar/useSessionCatalog";
+import { useProjectPicker } from "./sidebar/useProjectPicker";
+import { getRecentProjects } from "./sidebar/sidebar-utils";
+import { useSidebarState } from "./sidebar/useSidebarState";
+import { SidebarShell } from "./sidebar/SidebarShell";
 
-declare global {
-  interface Window {
-    piDesktop?: {
-      selectDirectory: () => Promise<string | null>;
-      platform?: string;
-      openMenu?: (menu: "file" | "edit" | "view" | "features" | "help", x: number, y: number) => Promise<boolean>;
-      revealPath?: (filePath: string) => Promise<boolean>;
-      openPath?: (filePath: string) => Promise<boolean>;
-      setCompanionWindowVisible?: (visible: boolean) => Promise<boolean>;
-      companionAction?: (action: "focus-main" | "open-settings" | "hide") => Promise<boolean>;
-      onMenuAction?: (listener: (action: string) => void) => () => void;
-    };
-  }
-}
+export type { SessionSidebarHandle } from "./sidebar/sidebar-types";
 
-function ToolbarIconButton({
-  onClick,
-  title,
-  disabled,
-  skipHover,
-  color,
-  background = "none",
-  marginRight,
-  ariaPressed,
-  children,
-}: {
-  onClick: () => void;
-  title: string;
-  disabled?: boolean;
-  skipHover?: boolean;
-  color: string;
-  background?: string;
-  marginRight?: number;
-  ariaPressed?: boolean;
-  children: ReactNode;
-}) {
-  const enter = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (disabled || skipHover) return;
-    e.currentTarget.style.color = "var(--text-muted)";
-    e.currentTarget.style.background = "var(--bg-hover)";
-  };
-  const leave = (e: React.MouseEvent<HTMLButtonElement>) => {
-    if (disabled || skipHover) return;
-    e.currentTarget.style.color = color;
-    e.currentTarget.style.background = background;
-  };
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      aria-label={title}
-      aria-pressed={ariaPressed}
-      style={{
-        position: "relative",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        width: 26, height: 26, padding: 0, marginRight,
-        background,
-        border: "none",
-        color,
-        cursor: disabled ? "default" : "pointer",
-        borderRadius: 5,
-        flexShrink: 0,
-        opacity: disabled ? 0.6 : 1,
-        transition: "color 0.3s, background 0.3s",
-      }}
-      onMouseEnter={enter}
-      onMouseLeave={leave}
-    >
-      {children}
-    </button>
-  );
-}
-
-interface Props {
-  selectedSessionId: string | null;
-  onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
-  onNewSession?: (sessionId: string, cwd: string) => void;
-  initialSessionId?: string | null;
-  skipInitialProjectSelection?: boolean;
-  onInitialRestoreDone?: () => void;
-  refreshKey?: number;
-  onSessionDeleted?: (session: SessionInfo) => void;
-  selectedCwd?: string | null;
-  onCwdChange?: (cwd: string | null, projectRoot?: string | null) => void;
-  onOpenFile?: (filePath: string, fileName: string, options?: { sourceSessionId?: string | null; modeHint?: "diff" }) => void;
-  selectedFilePath?: string | null;
-  explorerRefreshKey?: number;
-  onExplorerRefresh?: () => void;
-  onAtMention?: (relativePath: string, isDir: boolean) => void;
-  onAtMentions?: (relativePaths: string[]) => void;
-  onOpenSettings?: () => void;
-  onOpenPlugins?: () => void;
-  onOpenSkills?: () => void;
-}
-
-export interface SessionSidebarHandle {
-  openProjectPicker: () => void;
-  focusFileSearch: () => void;
-}
-
-interface WorktreeEntry {
-  path: string;
-  branch: string | null;
-  isMain: boolean;
-}
-
-interface WorktreeState {
-  /** The cwd this data was fetched for — guards against stale responses */
-  forCwd: string;
-  projectRoot: string;
-  isGit: boolean;
-  /** False when forCwd is a repo subdirectory — the switcher is hidden there
-   *  because subdir sessions keep their own project identity */
-  isTopLevel: boolean;
-  worktrees: WorktreeEntry[];
-}
-
-const UNREAD_SESSIONS_STORAGE_KEY = "pi-web:unread-session-ids";
-const COLLAPSED_PROJECTS_STORAGE_KEY = "pi-gui:sidebar-collapsed-projects:v1";
-const EXPANDED_PROJECT_SESSIONS_STORAGE_KEY = "pi-gui:sidebar-expanded-project-sessions:v1";
-const PINNED_PROJECTS_STORAGE_KEY = "pi-gui:sidebar-pinned-projects:v1";
-const PROJECT_ALIASES_STORAGE_KEY = "pi-gui:sidebar-project-aliases:v1";
-const RUNNING_SESSIONS_POLL_MS = 2500;
-
-function loadUnreadSessionIds(): Set<string> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const raw = window.localStorage.getItem(UNREAD_SESSIONS_STORAGE_KEY);
-    if (!raw) return new Set();
-    const parsed = JSON.parse(raw) as unknown;
-    if (Array.isArray(parsed)) return new Set(parsed.filter((id): id is string => typeof id === "string"));
-    return new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-function saveUnreadSessionIds(ids: Set<string>): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (ids.size === 0) window.localStorage.removeItem(UNREAD_SESSIONS_STORAGE_KEY);
-    else window.localStorage.setItem(UNREAD_SESSIONS_STORAGE_KEY, JSON.stringify([...ids]));
-  } catch {
-    // ignore storage quota / privacy-mode errors
-  }
-}
-
-function loadStoredStringSet(key: string): Set<string> {
-  if (typeof window === "undefined") return new Set();
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(key) ?? "[]") as unknown;
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((value): value is string => typeof value === "string"));
-  } catch {
-    return new Set();
-  }
-}
-
-function saveStoredStringSet(key: string, values: Set<string>): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (values.size === 0) window.localStorage.removeItem(key);
-    else window.localStorage.setItem(key, JSON.stringify([...values]));
-  } catch {
-    // Ignore storage quota and privacy-mode failures. Sidebar state remains usable.
-  }
-}
-
-function loadProjectAliases(): Record<string, string> {
-  if (typeof window === "undefined") return {};
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(PROJECT_ALIASES_STORAGE_KEY) ?? "{}") as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    return Object.fromEntries(
-      Object.entries(parsed)
-        .filter(([projectRoot, alias]) => projectRoot.length > 0 && typeof alias === "string" && alias.trim().length > 0)
-        .map(([projectRoot, alias]) => [projectRoot, String(alias).trim().slice(0, 80)]),
-    );
-  } catch {
-    return {};
-  }
-}
-
-function saveProjectAliases(aliases: Record<string, string>): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (Object.keys(aliases).length === 0) window.localStorage.removeItem(PROJECT_ALIASES_STORAGE_KEY);
-    else window.localStorage.setItem(PROJECT_ALIASES_STORAGE_KEY, JSON.stringify(aliases));
-  } catch {
-    // Ignore storage quota and privacy-mode failures.
-  }
-}
-
-/**
- * Return all projects (deduped by projectRoot so worktrees collapse into their
- * main repo) sorted by most recent session activity.
- */
-function getRecentProjects(sessions: SessionInfo[]): string[] {
-  const latestByRoot = new Map<string, string>(); // projectRoot -> most recent modified
-  for (const s of sessions) {
-    const root = s.projectRoot ?? s.cwd;
-    if (!root) continue;
-    const prev = latestByRoot.get(root);
-    if (!prev || s.modified > prev) {
-      latestByRoot.set(root, s.modified);
-    }
-  }
-  return [...latestByRoot.entries()]
-    .sort((a, b) => b[1].localeCompare(a[1]))
-    .map(([root]) => root);
-}
-
-/** Substitute the home dir prefix with ~ (no path truncation — see PathLabel) */
-function displayCwd(cwd: string, homeDir?: string): string {
-  return (homeDir && cwd.startsWith(homeDir)) ? "~" + cwd.slice(homeDir.length) : cwd;
-}
-
-/**
- * Path label that ellipsizes on the LEFT, keeping the (most relevant) trailing
- * segments visible: "…orkspace/pi-web". Shows as much of the path as fits
- * instead of a fixed number of segments. The rtl container moves the ellipsis
- * to the left edge; the inner plaintext bidi isolation keeps the path itself
- * rendered strictly left-to-right (no punctuation reordering).
- */
-function PathLabel({ text, style }: { text: string; style?: CSSProperties }) {
-  return (
-    <span
-      style={{
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-        display: "block",
-        minWidth: 0,
-        lineHeight: 1.35,
-        direction: "rtl",
-        textAlign: "left",
-        ...style,
-      }}
-    >
-      <span style={{ unicodeBidi: "plaintext" }}>{text}</span>
-    </span>
-  );
-}
-
-const DROPDOWN_ANIMATION_MS = 140;
-
-function AnimatedDropdown({ open, children, style }: { open: boolean; children: ReactNode; style: CSSProperties }) {
-  const [mounted, setMounted] = useState(open);
-  const [visible, setVisible] = useState(open);
-
-  useEffect(() => {
-    let frame: number | undefined;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-
-    if (open) {
-      setMounted(true);
-      setVisible(false);
-      frame = window.requestAnimationFrame(() => {
-        frame = window.requestAnimationFrame(() => setVisible(true));
-      });
-    } else {
-      setVisible(false);
-      timeout = setTimeout(() => setMounted(false), DROPDOWN_ANIMATION_MS);
-    }
-
-    return () => {
-      if (frame !== undefined) window.cancelAnimationFrame(frame);
-      if (timeout) clearTimeout(timeout);
-    };
-  }, [open]);
-
-  if (!mounted) return null;
-
-  return (
-    <div
-      style={{
-        ...style,
-        opacity: visible ? 1 : 0,
-        transform: visible ? "translateY(0) scale(1)" : "translateY(-8px) scale(0.96)",
-        transformOrigin: "top center",
-        transition: `opacity ${DROPDOWN_ANIMATION_MS}ms ease, transform ${DROPDOWN_ANIMATION_MS}ms ease`,
-        pointerEvents: open ? "auto" : "none",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-
-
-export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenFile, selectedFilePath, explorerRefreshKey, onExplorerRefresh, onAtMention, onAtMentions, onOpenSettings, onOpenPlugins, onOpenSkills }, ref) {
+export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onFocusFileSearch, onOpenSettings }, ref) {
   const { t } = useI18n();
-  const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [sessionFlags, setSessionFlags] = useState<SessionFlags>({});
+  const [taskSearch, setTaskSearch] = useState("");
+  const taskSearchRef = useRef<HTMLInputElement>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const [homeDir, setHomeDir] = useState<string>("");
-  const [wtFilter, setWtFilter] = useState("");
-  const [customPathOpen, setCustomPathOpen] = useState(false);
-  const [customPathValue, setCustomPathValue] = useState("");
-  const [customPathError, setCustomPathError] = useState<string | null>(null);
-  const [customPathValidating, setCustomPathValidating] = useState(false);
   const [projectsHovered, setProjectsHovered] = useState(false);
-  // Worktree switcher state
-  const [worktreeState, setWorktreeState] = useState<WorktreeState | null>(null);
-  const [wtDropdownOpen, setWtDropdownOpen] = useState(false);
-  const [wtNewOpen, setWtNewOpen] = useState(false);
-  const [wtNewBranch, setWtNewBranch] = useState("");
-  const [wtError, setWtError] = useState<string | null>(null);
-  const [wtBusy, setWtBusy] = useState(false);
-  const [wtConfirmRemove, setWtConfirmRemove] = useState<string | null>(null);
-  const wtDropdownRef = useRef<HTMLDivElement>(null);
-  const wtNewInputRef = useRef<HTMLInputElement>(null);
-  const [explorerOpen, setExplorerOpen] = useState(true);
-  const [explorerKey, setExplorerKey] = useState(0);
-  const [explorerUploadBusy, setExplorerUploadBusy] = useState(false);
-  const [changesCount, setChangesCount] = useState(0);
-  const [changesCollapsed, setChangesCollapsed] = useState(true);
-  const [explorerRefreshDone, setExplorerRefreshDone] = useState(false);
-  const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
-  const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
   const [deletedSessionToast, setDeletedSessionToast] = useState<{ session: SessionInfo; key: number } | null>(null);
+  const [archivedSessionToast, setArchivedSessionToast] = useState<SessionInfo | null>(null);
   const deletedSessionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [collapsedProjectKeys, setCollapsedProjectKeys] = useState<Set<string>>(
-    () => loadStoredStringSet(COLLAPSED_PROJECTS_STORAGE_KEY),
-  );
-  const [expandedProjectSessionKeys, setExpandedProjectSessionKeys] = useState<Set<string>>(
-    () => loadStoredStringSet(EXPANDED_PROJECT_SESSIONS_STORAGE_KEY),
-  );
-  const [pinnedProjectRoots, setPinnedProjectRoots] = useState<Set<string>>(
-    () => loadStoredStringSet(PINNED_PROJECTS_STORAGE_KEY),
-  );
-  const [projectAliases, setProjectAliases] = useState<Record<string, string>>(() => loadProjectAliases());
-  const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
-  // Once polling has delivered a snapshot it is the source of truth for
-  // running state; late /api/sessions responses must not overwrite it.
-  const runningPollAuthoritativeRef = useRef(false);
-  const explorerRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fileExplorerRef = useRef<FileExplorerHandle>(null);
-
-  const loadSessions = useCallback(async (showLoading = false) => {
-    try {
-      if (showLoading) setLoading(true);
-      const res = await fetch("/api/sessions");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as { sessions: SessionInfo[]; runningSessionIds?: string[] };
-      setAllSessions(data.sessions);
-      // Treat the fetched running set as an initial fallback only. Once the
-      // lightweight poll is live, a slow session-list fetch cannot overwrite it.
-      if (!runningPollAuthoritativeRef.current) {
-        setRunningSessionIds(new Set(data.runningSessionIds ?? []));
-      }
-      // Drop unread markers for sessions that no longer exist (e.g. deleted).
-      const existingIds = new Set(data.sessions.map((s) => s.id));
-      setUnreadSessionIds((prev) => {
-        if (prev.size === 0) return prev;
-        const next = new Set([...prev].filter((id) => existingIds.has(id)));
-        return next.size === prev.size ? prev : next;
-      });
-      setError(null);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      if (showLoading) setLoading(false);
-    }
-  }, []);
-
-  const initialLoadDone = useRef(false);
-  useEffect(() => {
-    const isFirst = !initialLoadDone.current;
-    initialLoadDone.current = true;
-    loadSessions(isFirst);
-  }, [loadSessions, refreshKey]);
-
-  // Persist unread markers so they survive a browser refresh before the user
-  // has actually opened the completed session.
-  useEffect(() => {
-    saveUnreadSessionIds(unreadSessionIds);
-  }, [unreadSessionIds]);
+  const {
+    collapsedProjectKeys, setCollapsedProjectKeys,
+    expandedProjectSessionKeys, setExpandedProjectSessionKeys,
+    pinnedProjectRoots, setPinnedProjectRoots,
+    rememberedProjectRoots, setRememberedProjectRoots,
+    hiddenProjectRoots, setHiddenProjectRoots,
+    projectAliases, setProjectAliases,
+  } = useSidebarState();
+  const {
+    customPathOpen, setCustomPathOpen, customPathError, setCustomPathError,
+    customPathValidating, commitCustomPath, handleCustomPathClick, handleDefaultCwd,
+  } = useProjectPicker({ setSelectedCwd, setRememberedProjectRoots, setHiddenProjectRoots });
+  const { allSessions, loading, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions } = useSessionCatalog({ selectedSessionId, refreshKey });
+  const {
+    worktreeState, wtFilter, setWtFilter, wtDropdownOpen, setWtDropdownOpen,
+    wtNewOpen, setWtNewOpen, wtNewBranch, setWtNewBranch, wtError, setWtError,
+    wtBusy, wtConfirmRemove, setWtConfirmRemove, wtDropdownRef, wtNewInputRef,
+    handleCreateWorktree, handleRemoveWorktree,
+  } = useWorktreeState({ selectedCwd, setSelectedCwd, refreshKey });
 
   useEffect(() => {
-    saveStoredStringSet(COLLAPSED_PROJECTS_STORAGE_KEY, collapsedProjectKeys);
-  }, [collapsedProjectKeys]);
-
-  useEffect(() => {
-    saveStoredStringSet(EXPANDED_PROJECT_SESSIONS_STORAGE_KEY, expandedProjectSessionKeys);
-  }, [expandedProjectSessionKeys]);
-
-  useEffect(() => {
-    saveStoredStringSet(PINNED_PROJECTS_STORAGE_KEY, pinnedProjectRoots);
-  }, [pinnedProjectRoots]);
-
-  useEffect(() => {
-    saveProjectAliases(projectAliases);
-  }, [projectAliases]);
-
-  useEffect(() => {
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let controller: AbortController | null = null;
-
-    const clearTimer = () => {
-      if (timer) clearTimeout(timer);
-      timer = null;
-    };
-
-    const schedule = () => {
-      clearTimer();
-      if (stopped || document.visibilityState !== "visible") return;
-      timer = setTimeout(() => void poll(), RUNNING_SESSIONS_POLL_MS);
-    };
-
-    const poll = async () => {
-      if (stopped || document.visibilityState !== "visible") return;
-      const current = new AbortController();
-      controller?.abort();
-      controller = current;
-      try {
-        const res = await fetch("/api/agent/running", {
-          cache: "no-store",
-          signal: current.signal,
-        });
-        if (!res.ok) return;
-        const data = await res.json() as { runningSessionIds?: string[] };
-        if (stopped || controller !== current) return;
-        runningPollAuthoritativeRef.current = true;
-        setRunningSessionIds(new Set(data.runningSessionIds ?? []));
-      } catch {
-        // Keep the last known state; the next visible-tab poll retries.
-      } finally {
-        if (controller === current) controller = null;
-        schedule();
-      }
-    };
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        void poll();
-        return;
-      }
-      clearTimer();
-      controller?.abort();
-      controller = null;
-    };
-
-    void poll();
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    return () => {
-      stopped = true;
-      clearTimer();
-      controller?.abort();
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
+    let cancelled = false;
+    fetch("/api/sessions/flags")
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
+      .then((data: { flags?: SessionFlags }) => { if (!cancelled) setSessionFlags(data.flags ?? {}); })
+      .catch(() => { /* Flags are optional; the task list remains usable. */ });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
-    const previous = previousRunningSessionIdsRef.current;
-    const completedInBackground = [...previous].filter((id) => !runningSessionIds.has(id) && id !== selectedSessionId);
-    const newlyRunning = [...runningSessionIds];
-
-    if (completedInBackground.length > 0 || newlyRunning.length > 0) {
-      setUnreadSessionIds((prev) => {
-        const next = new Set(prev);
-        newlyRunning.forEach((id) => next.delete(id));
-        completedInBackground.forEach((id) => next.add(id));
-        return next;
-      });
-    }
-    if (completedInBackground.length > 0) {
-      loadSessions(false);
-    }
-
-    previousRunningSessionIdsRef.current = runningSessionIds;
-  }, [runningSessionIds, selectedSessionId, loadSessions]);
-
-  useEffect(() => {
-    if (!selectedSessionId) return;
-    setUnreadSessionIds((prev) => {
-      if (!prev.has(selectedSessionId)) return prev;
-      const next = new Set(prev);
-      next.delete(selectedSessionId);
-      return next;
-    });
-  }, [selectedSessionId]);
-
-  useEffect(() => {
-    if (explorerRefreshKey !== undefined) setExplorerKey((k) => k + 1);
-  }, [explorerRefreshKey]);
+    const focusTaskSearch = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.shiftKey && event.key.toLocaleLowerCase() === "f") {
+        event.preventDefault();
+        taskSearchRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", focusTaskSearch);
+    return () => window.removeEventListener("keydown", focusTaskSearch);
+  }, []);
 
   useEffect(() => {
     fetch("/api/home").then((r) => r.json()).then((d: { home?: string }) => {
@@ -547,41 +114,10 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     }
   }, [selectedCwdProp]);
 
-  // Load worktrees for the current effective cwd
-  const [wtRefreshKey, setWtRefreshKey] = useState(0);
-  useLayoutEffect(() => {
-    if (!selectedCwd) {
-      setWorktreeState(null);
-      return;
-    }
-    let cancelled = false;
-    fetch(`/api/worktrees?cwd=${encodeURIComponent(selectedCwd)}`)
-      .then((r) => r.json())
-      .then((d: { projectRoot?: string; isGit?: boolean; isTopLevel?: boolean; worktrees?: WorktreeEntry[]; error?: string }) => {
-        if (cancelled) return;
-        if (d.error || !d.projectRoot) {
-          setWorktreeState(null);
-          return;
-        }
-        setWorktreeState({
-          forCwd: selectedCwd,
-          projectRoot: d.projectRoot,
-          isGit: d.isGit ?? false,
-          isTopLevel: d.isTopLevel ?? false,
-          worktrees: d.worktrees ?? [],
-        });
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setWorktreeState(null);
-        }
-      });
-    return () => { cancelled = true; };
-  }, [selectedCwd, wtRefreshKey, refreshKey]);
-
-  // Auto-select cwd and restore session from URL on first load
+  // Auto-select cwd and restore session from URL on first load. Explicitly
+  // added empty projects participate even before their first session exists.
   useEffect(() => {
-    if (allSessions.length === 0 || skipInitialProjectSelection) return;
+    if (loading || skipInitialProjectSelection) return;
 
     if (selectedCwd === null) {
       // If restoring a session, set cwd to match that session
@@ -596,151 +132,21 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         // Session not found — notify parent so it can show the placeholder
         onInitialRestoreDone?.();
       }
-      const projects = getRecentProjects(allSessions);
+      const projects = getRecentProjects(allSessions.filter((session) => (
+        !hiddenProjectRoots.has(session.projectRoot ?? session.cwd)
+      )));
+      for (const projectRoot of rememberedProjectRoots) {
+        if (!hiddenProjectRoots.has(projectRoot) && !projects.includes(projectRoot)) projects.push(projectRoot);
+      }
       if (projects.length > 0) setSelectedCwd(projects[0]);
     }
-  }, [allSessions, selectedCwd, initialSessionId, skipInitialProjectSelection, onSelectSession, onInitialRestoreDone]);
-
-  const commitCustomPath = useCallback(async (candidate?: string) => {
-    const path = (candidate ?? customPathValue).trim();
-    if (!path || customPathValidating) return;
-
-    setCustomPathValidating(true);
-    setCustomPathError(null);
-    try {
-      const res = await fetch("/api/cwd/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: path }),
-      });
-      const data = await res.json().catch(() => ({})) as { cwd?: string; error?: string };
-      if (!res.ok || data.error) {
-        setCustomPathError(data.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setSelectedCwd(data.cwd ?? path);
-      setCustomPathOpen(false);
-      setCustomPathValue("");
-    } catch (e) {
-      setCustomPathError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setCustomPathValidating(false);
-    }
-  }, [customPathValue, customPathValidating]);
-
-  const handleCustomPathClick = useCallback(() => {
-    setCustomPathOpen(true);
-    setCustomPathError(null);
-  }, []);
+  }, [allSessions, hiddenProjectRoots, initialSessionId, loading, onInitialRestoreDone, onSelectSession, rememberedProjectRoots, selectedCwd, skipInitialProjectSelection]);
 
   useImperativeHandle(ref, () => ({
     openProjectPicker: handleCustomPathClick,
-    focusFileSearch() {
-      setExplorerOpen(true);
-      requestAnimationFrame(() => fileExplorerRef.current?.focusSearch());
-    },
-  }), [handleCustomPathClick]);
-  const handleDefaultCwd = useCallback(async () => {
-    try {
-      const res = await fetch("/api/default-cwd", { method: "POST" });
-      const data = await res.json() as { cwd?: string; error?: string };
-      if (data.cwd) {
-        setSelectedCwd(data.cwd);
-        setCustomPathOpen(false);
-        setCustomPathValue("");
-        setCustomPathError(null);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const handleCreateWorktree = useCallback(async () => {
-    const branch = wtNewBranch.trim();
-    if (!branch || wtBusy || !worktreeState) return;
-    setWtBusy(true);
-    setWtError(null);
-    try {
-      const res = await fetch("/api/worktrees", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: worktreeState.projectRoot, branch }),
-      });
-      const data = await res.json().catch(() => ({})) as { path?: string; error?: string };
-      if (!res.ok || data.error || !data.path) {
-        setWtError(data.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setWtNewOpen(false);
-      setWtNewBranch("");
-      setWtDropdownOpen(false);
-      // Optimistically register the new worktree so projectRootFor() resolves
-      // it to the main repo before the refetch lands (keeps AppShell from
-      // treating the new cwd as a different project).
-      setWorktreeState((prev) => prev ? {
-        ...prev,
-        forCwd: data.path!,
-        worktrees: [...prev.worktrees, { path: data.path!, branch, isMain: false }],
-      } : prev);
-      setSelectedCwd(data.path);
-      setWtRefreshKey((k) => k + 1);
-    } catch (e) {
-      setWtError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setWtBusy(false);
-    }
-  }, [wtNewBranch, wtBusy, worktreeState]);
-
-  const handleRemoveWorktree = useCallback(async (path: string, force: boolean) => {
-    if (!worktreeState || wtBusy) return;
-    setWtBusy(true);
-    setWtError(null);
-    try {
-      const res = await fetch("/api/worktrees", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: worktreeState.projectRoot, path, force }),
-      });
-      const data = await res.json().catch(() => ({})) as { error?: string; dirty?: boolean };
-      if (!res.ok) {
-        if (data.dirty && !force) {
-          // Dirty worktree — ask the user to confirm a force removal
-          setWtConfirmRemove(path);
-          return;
-        }
-        setWtError(data.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setWtConfirmRemove(null);
-      if (selectedCwd === path) setSelectedCwd(worktreeState.projectRoot);
-      setWtRefreshKey((k) => k + 1);
-    } catch (e) {
-      setWtError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setWtBusy(false);
-    }
-  }, [worktreeState, wtBusy, selectedCwd]);
-
-  // Close dropdowns on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (wtDropdownRef.current && !wtDropdownRef.current.contains(e.target as Node)) {
-        setWtDropdownOpen(false);
-        setWtNewOpen(false);
-        setWtNewBranch("");
-        setWtError(null);
-        setWtConfirmRemove(null);
-        setWtFilter("");
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  // Clicking a session moves the effective cwd to that session's worktree.
-  // Done on the click path (not via the selectedCwd prop sync) so it also
-  // works when the prop value won't change — e.g. re-clicking the already
-  // open session after manually switching worktrees.
+    focusTaskSearch() { taskSearchRef.current?.focus({ preventScroll: true }); },
+    focusFileSearch() { onFocusFileSearch?.(); },
+  }), [handleCustomPathClick, onFocusFileSearch]);
   const handleSelectSessionFromList = useCallback((s: SessionInfo) => {
     // Agent sessions are process-owned and keep running independently of the
     // visible chat. Switching is therefore safe and must remain immediate.
@@ -779,6 +185,50 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     }
   }, [deletedSessionToast, loadSessions]);
 
+  const patchSessionFlag = useCallback(async (
+    session: SessionInfo,
+    patch: { pinned?: boolean; archived?: boolean },
+  ) => {
+    const previous = sessionFlags[session.id] ?? {};
+    const optimistic = {
+      ...previous,
+      ...patch,
+      ...(patch.pinned === true ? { pinnedAt: previous.pinnedAt ?? new Date().toISOString() } : {}),
+    };
+    setSessionFlags((flags) => ({ ...flags, [session.id]: optimistic }));
+    if (patch.archived === true) setArchivedSessionToast(session);
+    try {
+      const response = await fetch("/api/sessions/flags", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: session.id, ...patch }),
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json() as { flag: SessionFlags[string] };
+      setSessionFlags((flags) => ({ ...flags, [session.id]: data.flag }));
+    } catch {
+      setSessionFlags((flags) => ({ ...flags, [session.id]: previous }));
+      if (patch.archived === true) setArchivedSessionToast(null);
+    }
+  }, [sessionFlags]);
+
+  const undoArchive = useCallback(() => {
+    const session = archivedSessionToast;
+    if (!session) return;
+    setArchivedSessionToast(null);
+    void patchSessionFlag(session, { archived: false });
+  }, [archivedSessionToast, patchSessionFlag]);
+
+  const duplicateSession = useCallback(async (session: SessionInfo) => {
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/duplicate`, { method: "POST" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await loadSessions();
+    } catch {
+      // Keep the current task list intact if the source is still being written.
+    }
+  }, [loadSessions]);
+
   const handleNewSessionInProject = useCallback((cwd: string) => {
     // Generate a temporary UUID client-side — no backend call needed.
     // Pi will be spawned lazily when the user sends the first message.
@@ -789,13 +239,38 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   }, [onNewSession]);
 
   const selectedProject = projectRootFor(selectedCwd);
+  const visibleSessions = useMemo(
+    () => allSessions.filter((session) => !hiddenProjectRoots.has(session.projectRoot ?? session.cwd)),
+    [allSessions, hiddenProjectRoots],
+  );
+  const visibleRememberedProjects = useMemo(
+    () => [...rememberedProjectRoots]
+      .filter((projectRoot) => !hiddenProjectRoots.has(projectRoot))
+      .map((cwd) => ({ cwd })),
+    [hiddenProjectRoots, rememberedProjectRoots],
+  );
   const projectGroups = useMemo(
     () => buildSessionProjectGroups(
-      allSessions,
-      selectedCwd ? { cwd: selectedCwd, projectRoot: selectedProject } : null,
+      visibleSessions,
+      selectedCwd && selectedProject && !hiddenProjectRoots.has(selectedProject)
+        ? { cwd: selectedCwd, projectRoot: selectedProject }
+        : null,
+      visibleRememberedProjects,
     ),
-    [allSessions, selectedCwd, selectedProject],
+    [hiddenProjectRoots, selectedCwd, selectedProject, visibleRememberedProjects, visibleSessions],
   );
+  const searchedProjectGroups = useMemo(() => {
+    const query = taskSearch.trim().toLocaleLowerCase();
+    if (!query) return projectGroups;
+    return projectGroups.filter((group) => {
+      const projectLabel = projectAliases[group.projectRoot] ?? getProjectLabel(group.projectRoot);
+      if (`${projectLabel}\n${group.projectRoot}`.toLocaleLowerCase().includes(query)) return true;
+      return group.sessions.some((session) => {
+        const title = session.name || session.firstMessage || session.id;
+        return `${title}\n${session.cwd}`.toLocaleLowerCase().includes(query);
+      });
+    });
+  }, [projectAliases, projectGroups, taskSearch]);
   const pinnedProjectGroups = useMemo(
     () => projectGroups.filter((group) => pinnedProjectRoots.has(group.projectRoot)),
     [pinnedProjectRoots, projectGroups],
@@ -807,7 +282,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       else next.add(projectRoot);
       return next;
     });
-  }, []);
+  }, [setPinnedProjectRoots]);
   const renameProject = useCallback((projectRoot: string, alias: string) => {
     setProjectAliases((previous) => {
       const next = { ...previous };
@@ -816,7 +291,34 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       else delete next[projectRoot];
       return next;
     });
-  }, []);
+  }, [setProjectAliases]);
+  const removeProject = useCallback((projectRoot: string) => {
+    const fallback = projectGroups.find((group) => group.projectRoot !== projectRoot);
+    setRememberedProjectRoots((previous) => {
+      if (!previous.has(projectRoot)) return previous;
+      const next = new Set(previous);
+      next.delete(projectRoot);
+      return next;
+    });
+    setHiddenProjectRoots((previous) => {
+      const next = new Set(previous);
+      next.add(projectRoot);
+      return next;
+    });
+    setPinnedProjectRoots((previous) => {
+      if (!previous.has(projectRoot)) return previous;
+      const next = new Set(previous);
+      next.delete(projectRoot);
+      return next;
+    });
+    setProjectAliases((previous) => {
+      if (!(projectRoot in previous)) return previous;
+      const next = { ...previous };
+      delete next[projectRoot];
+      return next;
+    });
+    if (selectedProject === projectRoot) setSelectedCwd(fallback?.preferredCwd ?? null);
+  }, [projectGroups, selectedProject, setHiddenProjectRoots, setPinnedProjectRoots, setProjectAliases, setRememberedProjectRoots]);
   const attentionSessionIds = useMemo(() => {
     const ids = new Set<string>([...runningSessionIds, ...unreadSessionIds]);
     if (selectedSessionId) ids.add(selectedSessionId);
@@ -834,7 +336,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     };
     setCollapsedProjectKeys(prune);
     setExpandedProjectSessionKeys(prune);
-  }, [projectGroups, loading, error]);
+  }, [projectGroups, loading, error, setCollapsedProjectKeys, setExpandedProjectSessionKeys]);
 
   const showWorktreeSwitcher = Boolean(
     worktreeState?.isGit
@@ -843,7 +345,14 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     && selectedProject === worktreeState.projectRoot
   );
   return (
-    <div className={`session-sidebar-content ${styles.shell}`}>
+    <SidebarShell>
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {completionAnnouncement
+          ? completionAnnouncement.count === 1
+            ? t("sidebar.taskCompleted", { title: completionAnnouncement.title })
+            : t("sidebar.tasksCompleted", { count: completionAnnouncement.count, title: completionAnnouncement.title })
+          : ""}
+      </div>
       {customPathOpen && (
         <DirectoryPicker
           busy={customPathValidating}
@@ -855,1386 +364,67 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
           onSelect={(path) => void commitCustomPath(path)}
         />
       )}
-      <div className={styles.brandRow}>
-        <button type="button" className={styles.brandButton} aria-label={t("sidebar.appMenu")}>
-          <span className={styles.brandMark} aria-hidden="true">π</span>
-          <span>Piora</span>
-        </button>
-        <div className={styles.brandActions}>
-          <button
-            type="button"
-            className={styles.iconButton}
-            onClick={() => fileExplorerRef.current?.focusSearch()}
-            title={t("sidebar.search")}
-            aria-label={t("sidebar.search")}
-          >
-            <AliIcon name="search" size={15} />
-          </button>
-          <button
-            type="button"
-            className={styles.iconButton}
-            onClick={onOpenSettings}
-            title={t("sidebar.settings")}
-            aria-label={t("sidebar.settings")}
-          >
-            <AliIcon name="notification" size={15} />
-          </button>
-        </div>
-      </div>
-
-      <nav className={styles.primaryNav} aria-label={t("sidebar.primaryNavigation")}>
-        <button
-          type="button"
-          className={styles.navButton}
-          onClick={() => {
-            const cwd = selectedCwd ?? selectedCwdProp ?? projectGroups[0]?.preferredCwd;
-            if (cwd) handleNewSessionInProject(cwd);
-            else void handleDefaultCwd();
-          }}
-        >
-          <AliIcon name="edit" size={15} />
-          <span>{t("sidebar.newChat")}</span>
-        </button>
-        <button type="button" className={styles.navButton} onClick={() => fileExplorerRef.current?.focusSearch()}>
-          <AliIcon name="search" size={15} />
-          <span>{t("sidebar.searchFiles")}</span>
-        </button>
-        {onOpenPlugins && (
-          <button type="button" className={styles.navButton} onClick={onOpenPlugins}>
-            <AliIcon name="appstore-add" size={15} />
-            <span>{t("common.plugins")}</span>
-          </button>
-        )}
-        {onOpenSkills && (
-          <button type="button" className={styles.navButton} onClick={onOpenSkills}>
-            <AliIcon name="solution" size={15} />
-            <span>{t("sidebar.globalSkills")}</span>
-          </button>
-        )}
-      </nav>
-
-      {pinnedProjectGroups.length > 0 && (
-        <div>
-          <div className={styles.sectionLabel}>{t("sidebar.pinned")}</div>
-          <div className={styles.pinnedList}>
-            {pinnedProjectGroups.map((group) => (
-              <div className={styles.pinnedRow} key={group.projectRoot}>
-                <button
-                  type="button"
-                  className={styles.pinnedMain}
-                  title={group.projectRoot}
-                  onClick={() => {
-                    setSelectedCwd(group.preferredCwd);
-                    setCollapsedProjectKeys((previous) => {
-                      const next = new Set(previous);
-                      next.delete(group.key);
-                      return next;
-                    });
-                  }}
-                >
-                  <AliIcon name="folder" size={15} />
-                  <span className={styles.ellipsis}>{projectAliases[group.projectRoot] ?? getProjectLabel(group.projectRoot)}</span>
-                </button>
-                <button
-                  type="button"
-                  className={`${styles.rowAction} ${styles.pinnedUnpin}`}
-                  onClick={() => togglePinnedProject(group.projectRoot)}
-                  title={t("sidebar.unpinProject")}
-                  aria-label={t("sidebar.unpinProject")}
-                >
-                  <AliIcon name="pushpin" size={13} style={{ color: "var(--accent)" }} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {/* Worktree controls are the only content that needs a sidebar header. */}
-      {showWorktreeSwitcher && <div
-        className="sidebar-header"
-        style={{
-          padding: "10px",
-          borderBottom: "1px solid var(--border)",
-          flexShrink: 0,
-        }}
-      >
-        {/* Worktree switcher — shown only for git projects at a checkout top
-            level (repo subdirs keep their own project identity, so switching
-            from them would jump projects). Rendered whenever the selected cwd
-            belongs to the loaded project (not just when forCwd matches), so
-            switching between worktrees of one project keeps the row mounted
-            instead of flickering while data refetches: all worktrees of a
-            project share the same list anyway. */}
-        {(() => {
-          if (!worktreeState) return null;
-          const currentWt = worktreeState.worktrees.find((w) => w.path === selectedCwd)
-            ?? worktreeState.worktrees.find((w) => w.isMain);
-          const showWtFilter = worktreeState.worktrees.length >= 8;
-          const visibleWorktrees = showWtFilter && wtFilter.trim()
-            ? worktreeState.worktrees.filter((w) =>
-                (w.branch ?? displayCwd(w.path, homeDir)).toLowerCase().includes(wtFilter.trim().toLowerCase()))
-            : worktreeState.worktrees;
-          return (
-            <div ref={wtDropdownRef} style={{ position: "relative" }}>
-              <button
-                onClick={() => setWtDropdownOpen((v) => !v)}
-                 title={currentWt ? t("sidebar.switchWorktreeTitle", { path: currentWt.path }) : t("sidebar.switchWorktree")}
-                style={{
-                  width: "100%",
-                  height: 29,
-                  boxSizing: "border-box",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "0 10px",
-                  background: "var(--bg-hover)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 7,
-                  cursor: "pointer",
-                  fontSize: "var(--text-xs)",
-                  lineHeight: 1.35,
-                  color: "var(--text-muted)",
-                  textAlign: "left",
-                }}
-              >
-                <AliIcon name="branches" size={11} style={{ color: currentWt && !currentWt.isMain ? "var(--accent)" : "var(--text-dim)" }} />
-                <PathLabel
-                  text={currentWt ? (currentWt.branch ?? displayCwd(currentWt.path, homeDir)) : "…"}
-                  style={{ flex: 1, fontFamily: "var(--font-mono)", color: "var(--text)" }}
-                />
-                {currentWt?.isMain && (
-                   <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>{t("sidebar.main")}</span>
-                )}
-                {worktreeState.worktrees.length > 1 && (
-                  <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>
-                    {worktreeState.worktrees.length}
-                  </span>
-                )}
-                <AliIcon name="arrowdown" size={9} />
-              </button>
-
-              <AnimatedDropdown
-                open={wtDropdownOpen}
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 4px)",
-                  left: 0,
-                  right: 0,
-                  zIndex: 100,
-                  background: "var(--bg)",
-                  border: "1px solid var(--border)",
-                  borderRadius: 8,
-                  boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
-                  overflow: "hidden",
-                }}
-              >
-                  {showWtFilter && (
-                    <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)" }}>
-                      <input
-                        value={wtFilter}
-                        onChange={(e) => setWtFilter(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape") {
-                            setWtFilter("");
-                            setWtDropdownOpen(false);
-                          }
-                        }}
-                        placeholder={t("sidebar.filterWorktrees")}
-                        autoFocus
-                        style={{
-                          width: "100%",
-                          fontSize: "var(--text-xs)",
-                          fontFamily: "var(--font-mono)",
-                          padding: "5px 8px",
-                          border: "1px solid var(--border)",
-                          borderRadius: 5,
-                          outline: "none",
-                          background: "var(--bg)",
-                          color: "var(--text)",
-                          boxSizing: "border-box",
-                        }}
-                      />
-                    </div>
-                  )}
-                  <div style={{ maxHeight: "min(40vh, 300px)", overflowY: "auto" }}>
-                    {visibleWorktrees.map((wt) => {
-                      const isCurrent = wt.path === selectedCwd || (wt.isMain && !worktreeState.worktrees.some((w) => w.path === selectedCwd));
-                      if (wtConfirmRemove === wt.path) {
-                        return (
-                          <div key={wt.path} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderBottom: "1px solid var(--border)", background: "rgba(239,68,68,0.06)" }}>
-                            <span style={{ flex: 1, fontSize: "var(--text-xs)", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {t("sidebar.forceRemoveCheckout")}
-                            </span>
-                            <button
-                              onClick={() => void handleRemoveWorktree(wt.path, true)}
-                              disabled={wtBusy}
-                              style={{ padding: "3px 9px", background: "#ef4444", border: "none", borderRadius: 5, color: "#fff", fontSize: "var(--text-xs)", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
-                            >
-                              {t("sidebar.force")}
-                            </button>
-                            <button
-                              onClick={() => setWtConfirmRemove(null)}
-                              style={{ padding: "3px 9px", background: "var(--bg-hover)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--text-muted)", fontSize: "var(--text-xs)", cursor: "pointer", flexShrink: 0 }}
-                            >
-                              {t("sidebar.cancel")}
-                            </button>
-                          </div>
-                        );
-                      }
-                      return (
-                        <div
-                          key={wt.path}
-                          className="wt-row"
-                          style={{ display: "flex", alignItems: "center", borderBottom: "1px solid var(--border)" }}
-                        >
-                          <button
-                            onClick={() => {
-                              setSelectedCwd(wt.path);
-                              setWtDropdownOpen(false);
-                              setWtError(null);
-                              setWtFilter("");
-                            }}
-                            title={wt.path}
-                            style={{
-                              flex: 1,
-                              minWidth: 0,
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 7,
-                              padding: "8px 10px",
-                              background: "var(--bg)",
-                              border: "none",
-                              color: isCurrent ? "var(--text)" : "var(--text-muted)",
-                              cursor: "pointer",
-                              textAlign: "left",
-                              fontSize: "var(--text-xs)",
-                              fontFamily: "var(--font-mono)",
-                            }}
-                          >
-                            {isCurrent ? (
-                              <AliIcon name="check" size={10} style={{ color: "var(--accent)" }} />
-                            ) : (
-                              <span style={{ width: 10, flexShrink: 0 }} />
-                            )}
-                            <PathLabel text={wt.branch ?? displayCwd(wt.path, homeDir)} style={{ flex: 1 }} />
-                            {wt.isMain && <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>{t("sidebar.main")}</span>}
-                          </button>
-                          {!wt.isMain && (
-                            <button
-                              onClick={() => void handleRemoveWorktree(wt.path, false)}
-                              disabled={wtBusy}
-                               title={t("sidebar.removeWorktreeTitle", { path: wt.path })}
-                              style={{
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                width: 34, height: 28, padding: 0, marginRight: 4,
-                                background: "none", border: "none",
-                                color: "var(--text-dim)", cursor: "pointer",
-                                borderRadius: 5, flexShrink: 0,
-                                transition: "color 0.12s, background 0.12s",
-                              }}
-                              onMouseEnter={(e) => { e.currentTarget.style.color = "#ef4444"; e.currentTarget.style.background = "rgba(239,68,68,0.08)"; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.background = "none"; }}
-                            >
-                              <AliIcon name="delete" size={12} />
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {showWtFilter && visibleWorktrees.length === 0 && wtFilter.trim() && (
-                      <div style={{ padding: "8px 10px", fontSize: "var(--text-xs)", color: "var(--text-dim)" }}>{t("sidebar.noMatchingWorktrees")}</div>
-                    )}
-                  </div>
-
-                  {!wtNewOpen ? (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setWtNewOpen(true);
-                        setWtError(null);
-                        setTimeout(() => wtNewInputRef.current?.focus(), 0);
-                      }}
-                      title={t("sidebar.createWorktreeTitle")}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 7,
-                        width: "100%",
-                        padding: "8px 10px",
-                        background: "none",
-                        border: "none",
-                        color: "var(--text-muted)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        fontSize: "var(--text-xs)",
-                      }}
-                    >
-                      <AliIcon name="plus" size={10} />
-                       <span>{t("sidebar.newWorktree")}</span>
-                    </button>
-                  ) : (
-                    <div style={{ padding: "6px 8px" }}>
-                      <input
-                        ref={wtNewInputRef}
-                        value={wtNewBranch}
-                        onChange={(e) => {
-                          setWtNewBranch(e.target.value);
-                          setWtError(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            void handleCreateWorktree();
-                          }
-                          if (e.key === "Escape") {
-                            setWtNewOpen(false);
-                            setWtNewBranch("");
-                            setWtError(null);
-                          }
-                        }}
-                         placeholder={t("sidebar.branchName")}
-                        style={{
-                          width: "100%",
-                          fontSize: "var(--text-xs)",
-                          fontFamily: "var(--font-mono)",
-                          padding: "5px 8px",
-                          border: "1px solid var(--accent)",
-                          borderRadius: 5,
-                          outline: "none",
-                          background: "var(--bg)",
-                          color: "var(--text)",
-                          boxSizing: "border-box",
-                        }}
-                      />
-                      <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
-                        <button
-                          onClick={() => void handleCreateWorktree()}
-                          disabled={wtBusy || !wtNewBranch.trim()}
-                          style={{
-                            flex: 1,
-                            padding: "4px 0",
-                            background: "var(--accent)",
-                            border: "none",
-                            borderRadius: 5,
-                            color: "#fff",
-                            fontSize: "var(--text-xs)",
-                            fontWeight: 600,
-                            cursor: wtBusy || !wtNewBranch.trim() ? "not-allowed" : "pointer",
-                            opacity: wtBusy || !wtNewBranch.trim() ? 0.65 : 1,
-                          }}
-                        >
-                           {wtBusy ? t("sidebar.creating") : t("sidebar.create")}
-                        </button>
-                        <button
-                          onClick={() => { setWtNewOpen(false); setWtNewBranch(""); setWtError(null); }}
-                          style={{
-                            flex: 1,
-                            padding: "4px 0",
-                            background: "var(--bg-hover)",
-                            border: "1px solid var(--border)",
-                            borderRadius: 5,
-                            color: "var(--text-muted)",
-                            fontSize: "var(--text-xs)",
-                            cursor: "pointer",
-                          }}
-                        >
-                           {t("sidebar.cancel")}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {wtError && (
-                    <div style={{
-                      padding: "5px 10px 8px",
-                      color: "#dc2626",
-                      fontSize: "var(--text-xs)",
-                      lineHeight: 1.35,
-                      overflowWrap: "anywhere",
-                    }}>
-                      {wtError}
-                    </div>
-                  )}
-              </AnimatedDropdown>
-            </div>
-          );
-        })()}
-      </div>}
-
-      {/* Codex-style project folders with their conversations nested below. */}
-      <div className="sidebar-project-scroll" style={{ flex: explorerOpen && (selectedCwdProp || selectedCwd) ? "1 1 0" : "1 1 auto", overflowY: "auto", padding: "4px 0 8px", minHeight: 80 }}>
-        {!loading && !error && (
-          <div
-            className={`${styles.sectionLabel} ${styles.projectsHeader}`}
-            onMouseEnter={() => setProjectsHovered(true)}
-            onMouseLeave={() => setProjectsHovered(false)}
-          >
-            <span>{t("sidebar.projects")}</span>
-            <div className={styles.sectionLabelActions} style={{ opacity: projectsHovered ? 1 : 0 }}>
-              <button
-                type="button"
-                className={styles.rowAction}
-                onClick={() => void handleDefaultCwd()}
-                title={t("sidebar.useDefaultDirectory")}
-                aria-label={t("sidebar.useDefaultDirectory")}
-              >
-                <AliIcon name="home" size={12} />
-              </button>
-              <button
-                type="button"
-                className={styles.rowAction}
-                onClick={handleCustomPathClick}
-                title={t("sidebar.newProject")}
-                aria-label={t("sidebar.newProject")}
-              >
-                <AliIcon name="plus" size={12} />
-              </button>
-            </div>
-          </div>
-        )}
-        {loading && (
-          <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>
-            {t("sidebar.loading")}
-          </div>
-        )}
-        {error && (
-          <div style={{ padding: "12px 14px", color: "#f87171", fontSize: "var(--text-sm)" }}>
-            {error}
-          </div>
-        )}
-        {!loading && !error && projectGroups.length === 0 && (
-          <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>
-            {t("sidebar.noSessions")}
-          </div>
-        )}
-        {projectGroups.map((group) => (
-          <ProjectSessionGroup
-            key={group.key}
-            group={group}
-            homeDir={homeDir}
-            isSelectedProject={selectedProject === group.projectRoot}
-            isCollapsed={collapsedProjectKeys.has(group.key)}
-            sessionsExpanded={expandedProjectSessionKeys.has(group.key)}
-            selectedSessionId={selectedSessionId}
-            runningSessionIds={runningSessionIds}
-            unreadSessionIds={unreadSessionIds}
-            attentionSessionIds={attentionSessionIds}
-            onSelectProject={() => {
-              setSelectedCwd(group.preferredCwd);
-              setCollapsedProjectKeys((previous) => {
-                const next = new Set(previous);
-                next.delete(group.key);
-                return next;
-              });
-            }}
-            onToggleProject={() => {
-              setCollapsedProjectKeys((previous) => {
-                const next = new Set(previous);
-                if (next.has(group.key)) next.delete(group.key);
-                else next.add(group.key);
-                return next;
-              });
-            }}
-            onToggleSessions={() => {
-              setExpandedProjectSessionKeys((previous) => {
-                const next = new Set(previous);
-                if (next.has(group.key)) next.delete(group.key);
-                else next.add(group.key);
-                return next;
-              });
-            }}
-            onSelectSession={handleSelectSessionFromList}
-            onNewSession={handleNewSessionInProject}
-            onRenamed={() => loadSessions()}
-            onSessionDeleted={handleSessionDeletedWithUndo}
-            isPinned={pinnedProjectRoots.has(group.projectRoot)}
-            displayLabel={projectAliases[group.projectRoot] ?? getProjectLabel(group.projectRoot)}
-            onTogglePinned={() => togglePinnedProject(group.projectRoot)}
-            onRenameProject={(alias) => renameProject(group.projectRoot, alias)}
-          />
-        ))}
-      </div>
-
-      {/* File Explorer section */}
-      {(selectedCwdProp || selectedCwd) && (
-        <div
-          style={{
-            borderTop: "1px solid var(--border)",
-            display: "flex",
-            flexDirection: "column",
-            flex: explorerOpen ? "1 1 0" : "0 0 auto",
-            minHeight: 0,
-            overflow: "hidden",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-            <button
-              onClick={() => setExplorerOpen((v) => !v)}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                flex: 1,
-                padding: "6px 10px",
-                background: "none",
-                border: "none",
-                color: "var(--text-muted)",
-                cursor: "pointer",
-                fontSize: "var(--text-xs)",
-                fontWeight: 600,
-                letterSpacing: "0.05em",
-                textTransform: "uppercase",
-                textAlign: "left",
-              }}
-            >
-              <AliIcon name="chevron-right" size={14} strokeWidth={1.8} style={{ transform: explorerOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
-              {t("files.explorer")}
-            </button>
-            {explorerOpen && changesCount > 0 && (
-              <ToolbarIconButton
-                onClick={() => setChangesCollapsed((v) => !v)}
-                title={t("sidebar.changedFiles", { count: changesCount })}
-                ariaPressed={!changesCollapsed}
-                color={changesCollapsed ? "var(--text-dim)" : "var(--accent)"}
-                background={changesCollapsed ? "none" : "var(--bg-selected)"}
-              >
-                <AliIcon name="diff" size={13} />
-              </ToolbarIconButton>
-            )}
-            {explorerOpen && (
-              <ToolbarIconButton
-                onClick={() => fileExplorerRef.current?.focusSearch()}
-                title={t("files.searchShortcut")}
-                color="var(--text-dim)"
-              >
-                <AliIcon name="search" size={13} />
-              </ToolbarIconButton>
-            )}
-            {explorerOpen && (
-              <ToolbarIconButton
-                onClick={() => fileExplorerRef.current?.openUploadPicker()}
-                disabled={explorerUploadBusy}
-                title={t("sidebar.uploadFilesTitle")}
-                color="var(--text-dim)"
-              >
-                <AliIcon name="upload" size={13} />
-              </ToolbarIconButton>
-            )}
-            <ToolbarIconButton
-              onClick={() => {
-                if (onExplorerRefresh) onExplorerRefresh();
-                else setExplorerKey((k) => k + 1);
-                setExplorerRefreshDone(true);
-                if (explorerRefreshTimerRef.current) clearTimeout(explorerRefreshTimerRef.current);
-                explorerRefreshTimerRef.current = setTimeout(() => setExplorerRefreshDone(false), 2000);
-              }}
-              title={t("sidebar.refreshExplorer")}
-              skipHover={explorerRefreshDone}
-              color={explorerRefreshDone ? "#4ade80" : "var(--text-dim)"}
-              background={explorerRefreshDone ? "rgba(74,222,128,0.18)" : "none"}
-              marginRight={6}
-            >
-              {explorerRefreshDone ? (
-                <AliIcon name="check" size={13} style={{ color: "#4ade80" }} />
-              ) : (
-                <AliIcon name="reload" size={13} />
-              )}
-            </ToolbarIconButton>
-          </div>
-          {explorerOpen && (
-            <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
-              <FileExplorer
-                ref={fileExplorerRef}
-                cwd={selectedCwd ?? selectedCwdProp!}
-                selectedFilePath={selectedFilePath}
-                onOpenFile={onOpenFile ?? (() => {})}
-                refreshKey={explorerKey}
-                onAtMention={onAtMention}
-                onAtMentions={onAtMentions}
-                onUploadBusyChange={setExplorerUploadBusy}
-                changesCollapsed={changesCollapsed}
-                onChangesCountChange={setChangesCount}
-              />
-            </div>
-          )}
-        </div>
-      )}
-
-      {deletedSessionToast && (
-        <div
-          role="status"
-          style={{
-            position: "absolute",
-            bottom: 12,
-            left: "50%",
-            transform: "translateX(-50%)",
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            zIndex: 60,
-            maxWidth: "calc(100% - 24px)",
-            padding: "8px 10px 8px 14px",
-            borderRadius: "var(--radius-control)",
-            border: "1px solid var(--border)",
-            background: "var(--bg)",
-            boxShadow: "var(--shadow-popover)",
-            color: "var(--text)",
-            fontSize: "var(--text-sm)",
-            animation: "notice-shelf-in 0.18s ease-out both",
-          }}
-        >
-          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {t("sidebar.deletedToast", {
-              title: (deletedSessionToast.session.name || deletedSessionToast.session.firstMessage || deletedSessionToast.session.id).slice(0, 30),
-            })}
-          </span>
-          <button
-            type="button"
-            onClick={() => void handleUndoDelete()}
-            style={{
-              flexShrink: 0,
-              padding: "4px 10px",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-control)",
-              background: "var(--bg-hover)",
-              color: "var(--accent)",
-              cursor: "pointer",
-              fontSize: "var(--text-sm)",
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {t("sidebar.undo")}
-          </button>
-        </div>
-      )}
-    </div>
+      <SidebarNavigation
+        onFocusFileSearch={onFocusFileSearch}
+        taskSearchRef={taskSearchRef}
+        taskSearch={taskSearch}
+        setTaskSearch={setTaskSearch}
+        onOpenSettings={onOpenSettings}
+        selectedCwd={selectedCwd}
+        selectedCwdProp={selectedCwdProp}
+        projectGroups={projectGroups}
+        pinnedProjectGroups={pinnedProjectGroups}
+        projectAliases={projectAliases}
+        setSelectedCwd={setSelectedCwd}
+        setCollapsedProjectKeys={setCollapsedProjectKeys}
+        handleNewSessionInProject={handleNewSessionInProject}
+        handleDefaultCwd={handleDefaultCwd}
+        togglePinnedProject={togglePinnedProject}
+      />
+      <WorktreeSection
+        showWorktreeSwitcher={showWorktreeSwitcher}
+        worktreeState={worktreeState}
+        selectedCwd={selectedCwd}
+        homeDir={homeDir}
+        wtFilter={wtFilter}
+        setWtFilter={setWtFilter}
+        wtDropdownOpen={wtDropdownOpen}
+        setWtDropdownOpen={setWtDropdownOpen}
+        wtNewOpen={wtNewOpen}
+        setWtNewOpen={setWtNewOpen}
+        wtNewBranch={wtNewBranch}
+        setWtNewBranch={setWtNewBranch}
+        wtError={wtError}
+        setWtError={setWtError}
+        wtBusy={wtBusy}
+        wtConfirmRemove={wtConfirmRemove}
+        setWtConfirmRemove={setWtConfirmRemove}
+        wtDropdownRef={wtDropdownRef}
+        wtNewInputRef={wtNewInputRef}
+        setSelectedCwd={setSelectedCwd}
+        handleCreateWorktree={handleCreateWorktree}
+        handleRemoveWorktree={handleRemoveWorktree}
+      />
+      <SidebarProjectArea
+        loading={loading} error={error} projectsHovered={projectsHovered} setProjectsHovered={setProjectsHovered}
+        handleDefaultCwd={handleDefaultCwd} handleCustomPathClick={handleCustomPathClick}
+        projectGroups={projectGroups} searchedProjectGroups={searchedProjectGroups} selectedProject={selectedProject}
+        collapsedProjectKeys={collapsedProjectKeys} expandedProjectSessionKeys={expandedProjectSessionKeys}
+        setCollapsedProjectKeys={setCollapsedProjectKeys} setExpandedProjectSessionKeys={setExpandedProjectSessionKeys}
+        selectedSessionId={selectedSessionId} runningSessionIds={runningSessionIds} unreadSessionIds={unreadSessionIds}
+        attentionSessionIds={attentionSessionIds} setSelectedCwd={setSelectedCwd} homeDir={homeDir}
+        handleSelectSessionFromList={handleSelectSessionFromList} handleNewSessionInProject={handleNewSessionInProject}
+        loadSessions={loadSessions} handleSessionDeletedWithUndo={handleSessionDeletedWithUndo}
+        sessionFlags={sessionFlags} taskSearch={taskSearch} patchSessionFlag={patchSessionFlag}
+        duplicateSession={duplicateSession} pinnedProjectRoots={pinnedProjectRoots} projectAliases={projectAliases}
+        togglePinnedProject={togglePinnedProject} renameProject={renameProject} removeProject={removeProject}
+      />
+      <SidebarFooter
+        deletedToast={deletedSessionToast}
+        archivedToast={archivedSessionToast}
+        onUndoDelete={handleUndoDelete}
+        onUndoArchive={undoArchive}
+      />
+    </SidebarShell>
   );
 });
-
-function ProjectSessionGroup({
-  group,
-  homeDir,
-  isSelectedProject,
-  isCollapsed,
-  sessionsExpanded,
-  selectedSessionId,
-  runningSessionIds,
-  unreadSessionIds,
-  attentionSessionIds,
-  onSelectProject,
-  onToggleProject,
-  onToggleSessions,
-  onSelectSession,
-  onNewSession,
-  onRenamed,
-  onSessionDeleted,
-  isPinned,
-  displayLabel,
-  onTogglePinned,
-  onRenameProject,
-}: {
-  group: SessionProjectGroupData;
-  homeDir: string;
-  isSelectedProject: boolean;
-  isCollapsed: boolean;
-  sessionsExpanded: boolean;
-  selectedSessionId: string | null;
-  runningSessionIds: Set<string>;
-  unreadSessionIds: Set<string>;
-  attentionSessionIds: Set<string>;
-  onSelectProject: () => void;
-  onToggleProject: () => void;
-  onToggleSessions: () => void;
-  onSelectSession: (session: SessionInfo) => void;
-  onNewSession?: (cwd: string) => void;
-  onRenamed: () => void;
-  onSessionDeleted: (session: SessionInfo) => void;
-  isPinned: boolean;
-  displayLabel: string;
-  onTogglePinned: () => void;
-  onRenameProject: (alias: string) => void;
-}) {
-  const { t } = useI18n();
-  const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
-  // Collapsing is purely presentational. Background agents keep running and
-  // report their state on the project row without forcing the folder open.
-  const projectOpen = !isCollapsed;
-  const visibleRoots = getVisibleSessionRoots(group.tree, sessionsExpanded, attentionSessionIds);
-  const hiddenRootCount = group.tree.length - visibleRoots.length;
-  const runningCount = group.sessions.filter((session) => runningSessionIds.has(session.id)).length;
-  const unreadCount = group.sessions.filter((session) => unreadSessionIds.has(session.id)).length;
-
-  return (
-    <section className={styles.projectGroup} aria-label={displayLabel}>
-      <div className={`${styles.projectRow}${isSelectedProject ? ` ${styles.projectRowSelected}` : ""}`}>
-        <button
-          onClick={onToggleProject}
-          title={projectOpen ? t("sidebar.collapseProject") : t("sidebar.expandProject")}
-          aria-label={projectOpen ? t("sidebar.collapseProject") : t("sidebar.expandProject")}
-          aria-expanded={projectOpen}
-          className={styles.rowAction}
-        >
-          <AliIcon name={projectOpen ? "folder-open" : "folder"} size={15} />
-        </button>
-
-        <button
-          onClick={() => {
-            if (isSelectedProject) onToggleProject();
-            else onSelectProject();
-          }}
-          title={group.projectRoot}
-          className={styles.projectMain}
-          aria-expanded={projectOpen}
-        >
-          <span className={styles.projectName}>{displayLabel}</span>
-          {runningCount > 0 && <RunningSessionIndicator />}
-          {runningCount === 0 && unreadCount > 0 && <UnreadSessionIndicator />}
-        </button>
-        <div className={styles.projectActions}>
-          <button
-            type="button"
-            className={styles.rowAction}
-            onClick={(event) => {
-              event.stopPropagation();
-              const rect = event.currentTarget.getBoundingClientRect();
-              setMenuAnchor({ x: rect.right + 6, y: rect.top - 4 });
-            }}
-            title={t("sidebar.projectMenu")}
-            aria-label={t("sidebar.projectMenuFor", { project: displayLabel })}
-            aria-expanded={menuAnchor !== null}
-          >
-            <AliIcon name="ellipsis" size={14} />
-          </button>
-          <button
-            type="button"
-            className={styles.rowAction}
-            onClick={() => onNewSession?.(group.preferredCwd)}
-            title={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
-            aria-label={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
-          >
-            <AliIcon name="edit" size={13} />
-          </button>
-        </div>
-      </div>
-
-      {projectOpen && (
-        <div className={styles.sessionList}>
-          {group.tree.length === 0 && (
-            <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>
-              {t("sidebar.noSessionsInProject")}
-            </div>
-          )}
-          {visibleRoots.map((node) => (
-            <SessionTreeItem
-              key={node.session.id}
-              node={node}
-              selectedSessionId={selectedSessionId}
-              runningSessionIds={runningSessionIds}
-              unreadSessionIds={unreadSessionIds}
-              onSelectSession={onSelectSession}
-              onRenamed={onRenamed}
-              onSessionDeleted={onSessionDeleted}
-              depth={0}
-            />
-          ))}
-          {(hiddenRootCount > 0 || sessionsExpanded) && group.tree.length > 3 && (
-            <button
-              onClick={onToggleSessions}
-              aria-expanded={sessionsExpanded}
-              style={{
-                width: "calc(100% - 12px)",
-                margin: "2px 6px",
-                padding: "6px 10px",
-                border: "none",
-                borderRadius: "var(--radius-control)",
-                background: "transparent",
-                color: "var(--text-dim)",
-                cursor: "pointer",
-                textAlign: "left",
-                fontSize: "var(--text-xs)",
-              }}
-            >
-              {sessionsExpanded
-                ? t("sidebar.showFewerSessions")
-                : t("sidebar.showMoreSessions", { count: hiddenRootCount })}
-            </button>
-          )}
-        </div>
-      )}
-      {menuAnchor && createPortal(
-        <ProjectContextMenu
-          anchor={menuAnchor}
-          group={group}
-          displayLabel={displayLabel}
-          homeDir={homeDir}
-          runningCount={runningCount}
-          isPinned={isPinned}
-          onTogglePinned={onTogglePinned}
-          onRenameProject={onRenameProject}
-          onNewSession={() => onNewSession?.(group.preferredCwd)}
-          onClose={() => setMenuAnchor(null)}
-        />,
-        document.body,
-      )}
-    </section>
-  );
-}
-
-function ProjectContextMenu({
-  anchor,
-  group,
-  displayLabel,
-  homeDir,
-  runningCount,
-  isPinned,
-  onTogglePinned,
-  onRenameProject,
-  onNewSession,
-  onClose,
-}: {
-  anchor: { x: number; y: number };
-  group: SessionProjectGroupData;
-  displayLabel: string;
-  homeDir: string;
-  runningCount: number;
-  isPinned: boolean;
-  onTogglePinned: () => void;
-  onRenameProject: (alias: string) => void;
-  onNewSession: () => void;
-  onClose: () => void;
-}) {
-  const { t } = useI18n();
-  const menuRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [editing, setEditing] = useState(false);
-  const [alias, setAlias] = useState(displayLabel);
-  const [metadata, setMetadata] = useState<{ repository?: string; branch?: string } | null>(null);
-
-  useEffect(() => {
-    const closeOnPointer = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) onClose();
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("mousedown", closeOnPointer);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closeOnPointer);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [onClose]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void fetch(`/api/project-info?cwd=${encodeURIComponent(group.preferredCwd)}`, { signal: controller.signal })
-      .then(async (response) => response.ok ? response.json() as Promise<{ repository?: string; branch?: string }> : null)
-      .then((value) => { if (value) setMetadata(value); })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [group.preferredCwd]);
-
-  const commitAlias = () => {
-    onRenameProject(alias);
-    setEditing(false);
-  };
-  const left = Math.max(8, Math.min(anchor.x, window.innerWidth - 330));
-  const top = Math.max(8, Math.min(anchor.y, window.innerHeight - 270));
-
-  return (
-    <div ref={menuRef} className={styles.projectMenu} role="menu" aria-label={t("sidebar.projectMenuFor", { project: displayLabel })} style={{ left, top }}>
-      <div className={styles.projectMenuHeader}>
-        <AliIcon name="folder" size={16} />
-        <span className={styles.ellipsis} style={{ flex: 1 }}>{displayLabel}</span>
-        <button
-          type="button"
-          className={styles.iconButton}
-          onClick={() => { onTogglePinned(); onClose(); }}
-          title={isPinned ? t("sidebar.unpinProject") : t("sidebar.pinProject")}
-          aria-label={isPinned ? t("sidebar.unpinProject") : t("sidebar.pinProject")}
-        >
-          <AliIcon name="pushpin" size={14} style={{ color: isPinned ? "var(--accent)" : undefined }} />
-        </button>
-      </div>
-      <div className={`${styles.menuItem} ${styles.menuItemMuted}`}>
-        <AliIcon name="message" size={14} />
-        <span>{t("sidebar.projectTaskSummary", { count: group.sessions.length, running: runningCount })}</span>
-      </div>
-      <div className={styles.menuDivider} />
-      {metadata?.repository && (
-        <div className={styles.menuItem} title={metadata.repository}>
-          <AliIcon name="code" size={14} />
-          <span className={styles.ellipsis}>{metadata.repository}</span>
-        </div>
-      )}
-      <div className={styles.menuItem} title={group.projectRoot}>
-        <AliIcon name="folder" size={14} />
-        <span className={styles.ellipsis}>{displayCwd(group.projectRoot, homeDir)}</span>
-      </div>
-      {metadata?.branch && (
-        <div className={`${styles.menuItem} ${styles.menuItemMuted}`} title={metadata.branch}>
-          <AliIcon name="branches" size={14} />
-          <span className={styles.ellipsis}>{metadata.branch}</span>
-        </div>
-      )}
-      <div className={styles.menuDivider} />
-      {editing ? (
-        <div style={{ padding: "3px 5px 5px" }}>
-          <input
-            ref={inputRef}
-            className={styles.menuRenameInput}
-            value={alias}
-            onChange={(event) => setAlias(event.target.value)}
-            onBlur={commitAlias}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") commitAlias();
-              if (event.key === "Escape") { setEditing(false); setAlias(displayLabel); }
-            }}
-            aria-label={t("sidebar.projectName")}
-            autoFocus
-          />
-        </div>
-      ) : (
-        <button type="button" className={styles.menuItem} role="menuitem" onClick={() => { setEditing(true); setTimeout(() => inputRef.current?.select(), 0); }}>
-          <AliIcon name="setting" size={14} />
-          <span>{t("sidebar.editProject")}</span>
-        </button>
-      )}
-      <button type="button" className={styles.menuItem} role="menuitem" onClick={() => { onNewSession(); onClose(); }}>
-        <AliIcon name="edit" size={14} />
-        <span>{t("sidebar.newChat")}</span>
-      </button>
-    </div>
-  );
-}
-
-function SessionTreeItem({
-  node,
-  selectedSessionId,
-  runningSessionIds,
-  unreadSessionIds,
-  onSelectSession,
-  onRenamed,
-  onSessionDeleted,
-  depth,
-}: {
-  node: SessionTreeNode;
-  selectedSessionId: string | null;
-  runningSessionIds: Set<string>;
-  unreadSessionIds: Set<string>;
-  onSelectSession: (s: SessionInfo) => void;
-  onRenamed?: () => void;
-  onSessionDeleted?: (session: SessionInfo) => void;
-  depth: number;
-}) {
-  const [collapsed, setCollapsed] = useState(false);
-  const hasChildren = node.children.length > 0;
-
-  return (
-    <div>
-      <div style={{ position: "relative" }}>
-        {/* Indent line for child sessions */}
-        {depth > 0 && (
-          <div style={{
-            position: "absolute",
-            left: depth * 12 + 6,
-            top: 0, bottom: 0,
-            width: 1,
-            background: "var(--border)",
-            pointerEvents: "none",
-          }} />
-        )}
-        <SessionItem
-          session={node.session}
-          isSelected={node.session.id === selectedSessionId}
-          isRunning={runningSessionIds.has(node.session.id)}
-          isUnread={unreadSessionIds.has(node.session.id)}
-          onClick={() => onSelectSession(node.session)}
-          onRenamed={onRenamed}
-          onDeleted={(session) => onSessionDeleted?.(session)}
-          depth={depth}
-          hasChildren={hasChildren}
-          collapsed={collapsed}
-          onToggleCollapse={() => setCollapsed((v) => !v)}
-        />
-      </div>
-      {hasChildren && !collapsed && (
-        <div>
-          {node.children.map((child) => (
-            <SessionTreeItem
-              key={child.session.id}
-              node={child}
-              selectedSessionId={selectedSessionId}
-              runningSessionIds={runningSessionIds}
-              unreadSessionIds={unreadSessionIds}
-              onSelectSession={onSelectSession}
-              onRenamed={onRenamed}
-              onSessionDeleted={onSessionDeleted}
-              depth={depth + 1}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function RunningSessionIndicator() {
-  const { t } = useI18n();
-  return (
-    <span
-      title={t("sidebar.agentRunning")}
-      aria-label={t("sidebar.agentRunning")}
-      style={{
-        width: 14,
-        height: 14,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-        color: "var(--accent)",
-      }}
-    >
-      <span className="sidebar-running-spinner" aria-hidden="true" />
-    </span>
-  );
-}
-
-function UnreadSessionIndicator() {
-  const { t } = useI18n();
-  return (
-    <span
-      title={t("sidebar.newActivity")}
-      aria-label={t("sidebar.newSessionActivity")}
-      style={{
-        width: 14,
-        height: 14,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-        color: "#0891b2",
-      }}
-    >
-      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" style={{ display: "block" }}>
-        <circle cx="7" cy="7" r="2.5" fill="currentColor" />
-        <circle cx="7" cy="7" r="3" stroke="currentColor" strokeWidth="1.4" opacity="0.32">
-          <animate attributeName="r" values="3;6;3" dur="1.6s" repeatCount="indefinite" />
-          <animate attributeName="opacity" values="0.32;0;0.32" dur="1.6s" repeatCount="indefinite" />
-        </circle>
-      </svg>
-    </span>
-  );
-}
-
-function SessionItem({
-  session,
-  isSelected,
-  isRunning,
-  isUnread,
-  onClick,
-  onRenamed,
-  onDeleted,
-  depth = 0,
-  hasChildren = false,
-  collapsed = false,
-  onToggleCollapse,
-}: {
-  session: SessionInfo;
-  isSelected: boolean;
-  isRunning?: boolean;
-  isUnread?: boolean;
-  onClick: () => void;
-  onRenamed?: () => void;
-  onDeleted?: (session: SessionInfo) => void;
-  depth?: number;
-  hasChildren?: boolean;
-  collapsed?: boolean;
-  onToggleCollapse?: () => void;
-}) {
-  const { t } = useI18n();
-  const [hovered, setHovered] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState("");
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
-
-  const startRename = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setRenameValue(session.name ?? "");
-    setRenaming(true);
-    setTimeout(() => inputRef.current?.select(), 0);
-  }, [session.name]);
-
-  const commitRename = useCallback(async () => {
-    const name = renameValue.trim();
-    setRenaming(false);
-    if (name === (session.name ?? "")) return;
-    try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      onRenamed?.();
-    } catch {
-      // ignore
-    }
-  }, [renameValue, session.id, session.name, onRenamed]);
-
-  const performDelete = useCallback(async () => {
-    setConfirmDelete(false);
-    setDeleting(true);
-    try {
-      await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
-      onDeleted?.(session);
-    } catch {
-      setDeleting(false);
-    }
-  }, [session, onDeleted]);
-
-  const handleDeleteClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    // Shift+click no longer skips the confirmation (task T-01) — deletion is
-    // always confirmed first and remains reversible via the Undo toast.
-    setConfirmDelete(true);
-  }, []);
-
-  const handleDeleteConfirm = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    void performDelete();
-  }, [performDelete]);
-
-  const handleDeleteCancel = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setConfirmDelete(false);
-  }, []);
-
-  // Fixed-height outer wrapper — content swaps in place so the list never reflows
-  const ITEM_HEIGHT = "max(31px, calc(var(--text-sm) + 16px))";
-
-  return (
-    <div
-      className={`sidebar-session-row${isSelected ? " is-selected" : ""}`}
-      onClick={confirmDelete || renaming ? undefined : onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { setHovered(false); }}
-      style={{
-        position: "relative",
-        height: ITEM_HEIGHT,
-        width: "calc(100% - 12px)",
-        margin: "2px 6px",
-        boxSizing: "border-box",
-        display: "flex",
-        alignItems: "center",
-        paddingLeft: depth > 0 ? depth * 12 + 8 : 8,
-        paddingRight: 5,
-        cursor: confirmDelete || renaming ? "default" : "pointer",
-        background: confirmDelete
-          ? "rgba(239,68,68,0.06)"
-          : isSelected ? "var(--bg-selected)" : hovered ? "var(--bg-hover)" : "transparent",
-        border: "1px solid transparent",
-        borderRadius: 7,
-        transition: "background 0.1s, border-color 0.1s",
-        opacity: deleting ? 0.5 : 1,
-        gap: 6,
-        overflow: "hidden",
-      }}
-    >
-      {confirmDelete ? (
-        /* ── Delete confirmation: same height, two flat buttons ── */
-        <>
-          <div style={{ flex: 1, minWidth: 0, fontSize: "var(--text-sm)", color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {t("sidebar.deleteSession", { title: title.slice(0, 22) + (title.length > 22 ? "…" : "") })}
-          </div>
-          <div style={{ display: "flex", gap: 5, flexShrink: 0 }}>
-            <button
-              onClick={handleDeleteConfirm}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-                minHeight: "max(26px, calc(var(--text-sm) + 14px))", padding: "0 8px",
-                background: "#ef4444", border: "none",
-                borderRadius: 6, color: "#fff",
-                cursor: "pointer", fontSize: "var(--text-sm)", fontWeight: 600,
-                whiteSpace: "nowrap",
-              }}
-            >
-              <AliIcon name="delete" size={12} />
-              {t("sidebar.delete")}
-            </button>
-            <button
-              onClick={handleDeleteCancel}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                minHeight: "max(26px, calc(var(--text-sm) + 14px))", padding: "0 8px",
-                background: "var(--bg)", border: "1px solid var(--border)",
-                borderRadius: 6, color: "var(--text-muted)",
-                cursor: "pointer", fontSize: "var(--text-sm)", fontWeight: 500,
-                whiteSpace: "nowrap",
-              }}
-            >
-              {t("sidebar.cancel")}
-            </button>
-          </div>
-        </>
-      ) : renaming ? (
-        /* ── Rename: input fills the same row ── */
-        <input
-          ref={inputRef}
-          value={renameValue}
-          onChange={(e) => setRenameValue(e.target.value)}
-          onBlur={commitRename}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commitRename();
-            if (e.key === "Escape") setRenaming(false);
-          }}
-          autoFocus
-          style={{
-            flex: 1,
-            fontSize: "var(--text-sm)",
-            padding: "5px 8px",
-            border: "1px solid var(--accent)",
-            borderRadius: 5,
-            outline: "none",
-            background: "var(--bg)",
-            color: "var(--text)",
-            minHeight: "max(28px, calc(var(--text-sm) + 16px))",
-          }}
-        />
-      ) : (
-        /* ── Normal view ── */
-        <>
-          {/* Fork indicator for child sessions */}
-          {depth > 0 && (
-            <AliIcon name="fork" size={10} style={{ color: "var(--text-dim)" }} />
-          )}
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 5,
-                minWidth: 0,
-                fontSize: "var(--text-sm)",
-                fontWeight: isSelected ? 500 : 400,
-                lineHeight: 1.4,
-                color: "var(--text)",
-              }}
-              title={title}
-            >
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-                {title}
-              </span>
-            </div>
-          </div>
-
-          {isRunning ? (
-            <RunningSessionIndicator />
-          ) : isUnread ? (
-            <UnreadSessionIndicator />
-          ) : session.worktreeBranch ? (
-            <span title={`Worktree: ${session.worktreeBranch}`} style={{ color: "var(--text-dim)", display: "inline-flex" }}>
-              <AliIcon name="branches" size={11} />
-            </span>
-          ) : null}
-
-          {/* Collapse toggle — always visible when has children */}
-          {hasChildren && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleCollapse?.(); }}
-              title={collapsed ? t("sidebar.expandForks") : t("sidebar.collapseForks")}
-              aria-label={collapsed ? t("sidebar.expandForks") : t("sidebar.collapseForks")}
-              aria-expanded={!collapsed}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                width: 20, height: 20, padding: 0, flexShrink: 0,
-                background: "none", border: "none",
-                color: "var(--text-dim)", cursor: "pointer",
-                transform: collapsed ? "rotate(-90deg)" : "none",
-                transition: "transform 0.15s",
-              }}
-            >
-              <AliIcon name="arrowdown" size={10} />
-            </button>
-          )}
-
-          {/* Action buttons — shown on hover. Absolutely positioned so they
-              overlay the row instead of shrinking the title (mounting/unmounting
-              in-flow buttons reflowed the row content and made the list visibly
-              jitter every time the mouse entered or left a row). */}
-          <div
-              aria-hidden={!hovered}
-              style={{
-                position: "absolute",
-                right: 4,
-                top: 0,
-                bottom: 0,
-                zIndex: 2,
-                display: "flex",
-                alignItems: "center",
-                gap: 4,
-                paddingLeft: 14,
-                flexShrink: 0,
-                opacity: hovered ? 1 : 0,
-                visibility: hovered ? "visible" : "hidden",
-                pointerEvents: hovered ? "auto" : "none",
-                background: `linear-gradient(to right, transparent, ${isSelected ? "var(--bg-selected)" : "var(--bg-hover)"} 38%)`,
-              }}
-            >
-              <button
-                onClick={startRename}
-                title={t("sidebar.rename")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 23, height: 23, padding: 0,
-                  background: "var(--bg-hover)", border: "none",
-                  borderRadius: 6, color: "var(--text-muted)",
-                  cursor: "pointer", flexShrink: 0,
-                  transition: "background 0.12s, color 0.12s, border-color 0.12s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "var(--bg-selected)";
-                  e.currentTarget.style.color = "var(--accent)";
-                  e.currentTarget.style.borderColor = "rgba(37,99,235,0.35)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                  e.currentTarget.style.borderColor = "var(--border)";
-                }}
-              >
-                <AliIcon name="edit" size={14} />
-              </button>
-              <button
-                onClick={handleDeleteClick}
-                title={t("sidebar.delete")}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 23, height: 23, padding: 0,
-                  background: "var(--bg-hover)", border: "none",
-                  borderRadius: 6, color: "var(--text-muted)",
-                  cursor: "pointer", flexShrink: 0,
-                  transition: "background 0.12s, color 0.12s, border-color 0.12s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(239,68,68,0.08)";
-                  e.currentTarget.style.color = "#ef4444";
-                  e.currentTarget.style.borderColor = "rgba(239,68,68,0.35)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                  e.currentTarget.style.color = "var(--text-muted)";
-                  e.currentTarget.style.borderColor = "var(--border)";
-                }}
-              >
-                <AliIcon name="delete" size={14} />
-              </button>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}

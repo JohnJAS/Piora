@@ -7,10 +7,11 @@ import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { MessageView } from "./MessageView";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
+import { StarterCards } from "./StarterCards";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { useI18n } from "@/hooks/useI18n";
-import { useAgentSession, type AgentPhase, type NoticeItem } from "@/hooks/useAgentSession";
+import { useAgentSession, type AgentPhase, type NoticeItem, type SlashCommandInfo } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import type { SessionStatsInfo } from "@/lib/pi-types";
@@ -25,6 +26,8 @@ import {
   VISIBLE_PAGE_SIZE,
 } from "@/lib/chat-lazy-load";
 import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
+import { TaskHeader } from "./TaskHeader";
+import { ApprovalCard, isApprovalRequest } from "./ApprovalCard";
 
 interface Props {
   session: SessionInfo | null;
@@ -42,12 +45,21 @@ interface Props {
   onOpenFile?: (filePath: string) => void;
   onCompanionActivityChange?: (activity: CompanionActivity) => void;
   onTaskControlsChange?: (controls: TaskControls | null) => void;
+  onOpenTaskChanges?: () => void;
+  onRenameTask?: (name: string) => void | Promise<void>;
+  onExportTask?: () => void;
+  onSlashCommandsChange?: (commands: SlashCommandInfo[]) => void;
 }
 
 export interface TaskControls {
   toolPreset: ToolPreset;
   disabled: boolean;
   onToolPresetChange: (preset: ToolPreset) => void;
+  runCommand: (command: string, excludeFromContext: boolean) => Promise<void>;
+  abort: () => Promise<void>;
+  bashRunning: boolean;
+  pendingCommand: string | null;
+  latestBash: { command: string; output: string; exitCode?: number; cancelled?: boolean; excludeFromContext?: boolean } | null;
 }
 
 function phaseLabel(phase: AgentPhase, t: (key: string, params?: Record<string, string | number>) => string): string {
@@ -180,7 +192,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onOpenTaskChanges, onRenameTask, onExportTask, onSlashCommandsChange }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
 
@@ -211,14 +223,38 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   });
   const sessionBusy = agentRunning || bashRunning;
+  const latestBash = useMemo(() => {
+    if (streamState.streamingMessage?.role === "bashExecution") {
+      return streamState.streamingMessage as BashExecutionMessage;
+    }
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message.role === "bashExecution") return message;
+    }
+    return null;
+  }, [messages, streamState.streamingMessage]);
+  const changePermissionPreset = useCallback((preset: ToolPreset) => {
+    if (preset === "full" && toolPreset !== "full" && !window.confirm(t("approval.fullConfirm"))) return;
+    void handleToolPresetChange(preset);
+  }, [handleToolPresetChange, t, toolPreset]);
+
+  useEffect(() => { onSlashCommandsChange?.(slashCommands); }, [onSlashCommandsChange, slashCommands]);
+  useEffect(() => {
+    if (session?.id) void loadSlashCommands();
+  }, [loadSlashCommands, session?.id]);
 
   useEffect(() => {
     onTaskControlsChange?.({
       toolPreset,
       disabled: sessionBusy || !toolsLoaded,
-      onToolPresetChange: handleToolPresetChange,
+      onToolPresetChange: changePermissionPreset,
+      runCommand: async (command, excludeFromContext) => { await handleSend(`${excludeFromContext ? "!!" : "!"}${command}`); },
+      abort: handleAbort,
+      bashRunning,
+      pendingCommand: pendingBash?.command ?? null,
+      latestBash,
     });
-  }, [handleToolPresetChange, onTaskControlsChange, sessionBusy, toolPreset, toolsLoaded]);
+  }, [bashRunning, changePermissionPreset, handleAbort, handleSend, latestBash, onTaskControlsChange, pendingBash?.command, sessionBusy, toolPreset, toolsLoaded]);
 
   useEffect(() => () => onTaskControlsChange?.(null), [onTaskControlsChange]);
   const latestErrorNotice = useMemo(() => {
@@ -335,12 +371,33 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   const onDrop = useCallback((files: File[]) => {
     if (sessionBusy) return;
-    chatInputRef?.current?.addImages(files);
+    chatInputRef?.current?.addFiles(files);
   }, [sessionBusy, chatInputRef]);
 
   const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
 
-  const visibleMessages = messages.filter((m) => m.role === "user" || m.role === "assistant");
+  const visibleMessages = useMemo(
+    () => messages.filter((message) => message.role === "user" || message.role === "assistant"),
+    [messages],
+  );
+  const chatRenderMetadata = useMemo(() => {
+    const toolResultsMap = new Map<string, ToolResultMessage>();
+    const visibleRefIndexByMessage = new Map<number, number>();
+    let lastUserIdx = -1;
+    let lastAnchorIdx = -1;
+    let refIdx = 0;
+    for (let index = 0; index < messages.length; index += 1) {
+      const message = messages[index];
+      if (message.role === "toolResult") toolResultsMap.set(message.toolCallId, message);
+      if (message.role === "user" || message.role === "assistant") {
+        visibleRefIndexByMessage.set(index, refIdx);
+        refIdx += 1;
+      }
+      if (message.role === "user") lastUserIdx = index;
+      if (isGroupAnchor(message)) lastAnchorIdx = index;
+    }
+    return { toolResultsMap, visibleRefIndexByMessage, lastUserIdx, lastAnchorIdx };
+  }, [messages]);
   const inputHistory = useMemo(() => {
     const seen = new Set<string>();
     const history: string[] = [];
@@ -506,12 +563,9 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         </div>
       )}
 
-      {extensionDialog && (
-        <ExtensionDialog
-          request={extensionDialog}
-          onRespond={respondToExtensionUi}
-        />
-      )}
+      {extensionDialog && (isApprovalRequest(extensionDialog)
+        ? <ApprovalCard request={extensionDialog} onRespond={respondToExtensionUi} />
+        : <ExtensionDialog request={extensionDialog} onRespond={respondToExtensionUi} />)}
 
       {extensionCustomUi && (
         <ExtensionCustomPanel
@@ -519,6 +573,21 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           onInput={sendExtensionCustomInput}
         />
       )}
+
+      <TaskHeader
+        sessionId={session?.id ?? sessionIdRef.current ?? ""}
+        cwd={session?.cwd ?? newSessionCwd ?? ""}
+        taskName={session?.name ?? session?.firstMessage?.slice(0, 50) ?? t("i18n.newSession")}
+        worktreeBranch={session?.worktreeBranch}
+        busy={sessionBusy}
+        compacting={isCompacting}
+        permissionPreset={toolPreset}
+        onStop={handleAbort}
+        onOpenChanges={() => onOpenTaskChanges?.()}
+        onOpenDetails={() => onSessionStatsPanelOpen?.()}
+        onRename={(name) => onRenameTask?.(name)}
+        onExport={() => onExportTask?.()}
+      />
 
       {isEmptyNew ? (
         <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
@@ -549,6 +618,13 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               </div>
             </div>
             <NoticeShelf notices={notices} align="right" />
+            <StarterCards
+              cwd={newSessionCwd}
+              onSelect={(prompt) => {
+                chatInputRef?.current?.insertIfEmpty(prompt);
+                chatInputRef?.current?.focus();
+              }}
+            />
             {chatInputElement}
           </div>
         </div>
@@ -576,34 +652,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               <ExtensionWidgets widgets={aboveEditorWidgets} />
 
             {(() => {
-              const toolResultsMap = new Map<string, ToolResultMessage>();
-              for (const msg of messages) {
-                if (msg.role === "toolResult") {
-                  toolResultsMap.set((msg as ToolResultMessage).toolCallId, msg as ToolResultMessage);
-                }
-              }
-
-              let lastUserIdx = -1;
-              for (let i = messages.length - 1; i >= 0; i--) {
-                if (messages[i].role === "user") { lastUserIdx = i; break; }
-              }
-              // Anchor for live-tail detection: the last user message, or a
-              // compaction summary when compaction has replaced it mid-turn.
-              // Computed independently from lastUserIdx (which is kept for the
-              // scroll-to-user ref) because a compaction summary can sit after
-              // the last user message and anchor the still-streaming segment.
-              let lastAnchorIdx = -1;
-              for (let i = messages.length - 1; i >= 0; i--) {
-                if (isGroupAnchor(messages[i])) { lastAnchorIdx = i; break; }
-              }
-
-              const visibleRefIndexByMessage = new Map<number, number>();
-              let refIdx = 0;
-              messages.forEach((msg, idx) => {
-                if (msg.role === "user" || msg.role === "assistant") {
-                  visibleRefIndexByMessage.set(idx, refIdx++);
-                }
-              });
+              const { toolResultsMap, visibleRefIndexByMessage, lastUserIdx, lastAnchorIdx } = chatRenderMetadata;
 
               const attachVisibleRef = (idx: number, refIndex: number) => (el: HTMLDivElement | null) => {
                 messageRefs.current[refIndex] = el;
@@ -654,7 +703,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                 );
                 if (!isVisible || options.attachRef === false || currentRefIdx === undefined) return view;
                 return (
-                  <div key={`${keyPrefix}-${idx}`} ref={attachVisibleRef(idx, currentRefIdx)}>
+                  <div key={`${keyPrefix}-${idx}`} ref={attachVisibleRef(idx, currentRefIdx)} className="chat-message-shell">
                     {view}
                   </div>
                 );
@@ -728,6 +777,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                     <div
                       key={`process-group-${userIdx}-${finalAssistantIdx}`}
                       ref={processRefIdx === undefined ? undefined : (el) => { messageRefs.current[processRefIdx] = el; }}
+                      className="chat-message-shell"
                     >
                       {processGroup}
                     </div>,

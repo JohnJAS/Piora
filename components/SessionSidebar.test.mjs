@@ -2,15 +2,22 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
-const sessionItemSource = source.slice(source.indexOf("function SessionItem("));
+const mainSource = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
+const taskRowSource = await readFile(new URL("./sidebar/TaskRow.tsx", import.meta.url), "utf8");
+const splitSources = await Promise.all([
+  "ProjectList.tsx", "SidebarNavigation.tsx", "SidebarProjectArea.tsx", "SidebarFileArea.tsx",
+  "useSessionCatalog.ts", "sidebar-utils.ts", "sidebar-types.ts", "useProjectPicker.ts", "WorktreeSection.tsx",
+].map((file) => readFile(new URL(`./sidebar/${file}`, import.meta.url), "utf8")));
+const source = [mainSource, taskRowSource, ...splitSources].join("\n");
+const sessionItemSource = taskRowSource.slice(taskRowSource.indexOf("export function TaskRow("));
+const sidebarSource = source;
 
 test("always confirms session deletion and offers undo (no Shift+click bypass)", () => {
   // Task T-01: Shift+click no longer skips the confirmation — every delete
   // goes through the confirm state first, and deletion stays reversible.
-  assert.doesNotMatch(source, /e\.shiftKey/);
-  assert.match(source, /const handleDeleteClick[\s\S]*?setConfirmDelete\(true\);/);
-  assert.match(source, /const handleDeleteConfirm[\s\S]*?void performDelete\(\);/);
+  assert.doesNotMatch(sidebarSource, /e\.shiftKey/);
+  assert.match(taskRowSource, /const handleDeleteClick[\s\S]*?setConfirmDelete\(true\);/);
+  assert.match(taskRowSource, /const handleDeleteConfirm[\s\S]*?void performDelete\(\);/);
   assert.match(source, /const handleUndoDelete[\s\S]*?\/restore/);
 });
 
@@ -24,7 +31,7 @@ test("polls running sessions only while the tab is visible", () => {
   assert.doesNotMatch(source, /new EventSource\("\/api\/agent\/running\/events"\)/);
   assert.match(source, /fetch\("\/api\/agent\/running"/);
   assert.match(source, /document\.visibilityState !== "visible"/);
-  assert.match(source, /document\.addEventListener\("visibilitychange", onVisibilityChange\)/);
+  assert.match(source, /document\.addEventListener\("visibilitychange", (?:onVisibilityChange|visibility)\)/);
 });
 
 test("switches sessions immediately while another session is running", () => {
@@ -48,10 +55,21 @@ test("hover actions overlay a fixed-height session row without reflow", () => {
 test("renders sessions inside persisted project folders", () => {
   assert.match(source, /buildSessionProjectGroups\(/);
   assert.match(source, /<ProjectSessionGroup/);
-  assert.match(source, /pi-gui:sidebar-collapsed-projects:v1/);
-  assert.match(source, /pi-gui:sidebar-expanded-project-sessions:v1/);
-  assert.match(source, /pi-gui:sidebar-pinned-projects:v1/);
-  assert.match(source, /pi-gui:sidebar-project-aliases:v1/);
+  assert.match(source, /piora:sidebar-collapsed-projects:v1/);
+  assert.match(source, /piora:sidebar-expanded-project-sessions:v1/);
+  assert.match(source, /piora:sidebar-pinned-projects:v1/);
+  assert.match(source, /piora:sidebar-project-aliases:v1/);
+  assert.match(source, /piora:sidebar-remembered-projects:v1/);
+  assert.match(source, /piora:sidebar-hidden-projects:v1/);
+});
+
+test("keeps empty projects and lets stale renamed paths be removed from the list", () => {
+  assert.match(source, /rememberProject\(cwd\)/);
+  assert.match(source, /visibleRememberedProjects/);
+  assert.match(source, /hiddenProjectRoots\.has\(session\.projectRoot \?\? session\.cwd\)/);
+  assert.match(source, /const removeProject = useCallback/);
+  assert.match(source, /onRemoveProject=\{\(\) => removeProject\(group\.projectRoot\)\}/);
+  assert.match(source, /sidebar\.removeProjectDescription/);
 });
 
 test("matches the Codex project rail with real pin, metadata, edit, and new-chat actions", () => {
@@ -73,7 +91,7 @@ test("project session overflow is accessible and attention-aware", () => {
   assert.match(source, /new Set<string>\(\[\.\.\.runningSessionIds, \.\.\.unreadSessionIds\]\)/);
   assert.match(source, /const projectOpen = !isCollapsed/);
   assert.match(source, /name=\{projectOpen \? "folder-open" : "folder"\}/);
-  assert.match(source, /sidebar-running-spinner/);
+  assert.match(sidebarSource, /sidebar-running-spinner/);
   assert.match(source, /aria-expanded=\{sessionsExpanded\}/);
   assert.match(source, /sidebar\.showMoreSessions/);
   assert.match(source, /sidebar\.showFewerSessions/);
@@ -110,9 +128,18 @@ test("uses a compact Codex-style Piora brand row without the old animated title"
   assert.doesNotMatch(source, /<span>Piora<\/span>[\s\S]{0,120}rotate\(90deg\)/);
 });
 
-test("keeps project navigation visible and exposes global skills without an account footer", () => {
+test("keeps project navigation visible with one settings entry and no duplicate extension shortcuts", () => {
   assert.match(source, /styles\.projectsHeader/);
-  assert.match(source, /sidebar\.globalSkills/);
-  assert.match(source, /onOpenSkills/);
+  assert.match(source, /onOpenSettings/);
+  assert.doesNotMatch(source, /onOpenSkills|onOpenPlugins/);
   assert.doesNotMatch(source, /styles\.accountButton|styles\.footer|accountLabel/);
+});
+
+test("uses a settings gear instead of the notification bell", () => {
+  const settingsButton = source.slice(
+    source.indexOf("onClick={onOpenSettings}"),
+    source.indexOf("</button>", source.indexOf("onClick={onOpenSettings}")),
+  );
+  assert.match(settingsButton, /AliIcon name="setting"/);
+  assert.doesNotMatch(settingsButton, /AliIcon name="notification"/);
 });

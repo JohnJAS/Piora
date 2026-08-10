@@ -1,10 +1,12 @@
 "use client";
 
 import { memo, useState, useRef, useEffect, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { MarkdownBody } from "./MarkdownBody";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
+import { summarizeToolCall } from "@/lib/tool-summary";
 import {
   getAssistantErrorMessage,
   getThinkingBlockDisplay,
@@ -13,7 +15,6 @@ import {
   subscribeToThinkingLoad,
   type ThinkingLoadState,
 } from "@/lib/message-display";
-import { parseUnifiedPatch, type SplitDiffCell } from "@/lib/patch";
 import type {
   AgentMessage,
   UserMessage,
@@ -27,7 +28,12 @@ import type {
   ToolCallContent,
   ThinkingContent,
 } from "@/lib/types";
-import { AliIcon } from "./AliIcon";
+import { AliIcon, type AliIconName } from "./AliIcon";
+
+const DiffView = dynamic(
+  () => import("./DiffView").then((module) => module.DiffView),
+  { ssr: false },
+);
 
 const MAX_THINKING_CACHE_ENTRIES = 100;
 const THINKING_LOAD_TIMEOUT_MS = 15_000;
@@ -725,10 +731,12 @@ function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
 
 
 function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number }) {
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
-  const inputStr = JSON.stringify(block.input, null, 2);
-  const isEditTool = isEditToolName(block.toolName);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const diagnostics = safeJson({ input: block.input, result: result ?? null });
   const resultDiff = result && !result.isError ? getResultDiff(result) : null;
+  const summary = summarizeToolCall(block.toolName, block.input, result, t);
 
   // Result display
   const resultText = result
@@ -749,7 +757,7 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
     >
       {/* ── Tool call header ── */}
       <button
-        onClick={() => setExpanded((v) => !v)}
+        onClick={(event) => togglePreservingScroll(event.currentTarget, () => setExpanded((value) => !value))}
         style={{
           display: "flex",
           alignItems: "center",
@@ -765,37 +773,18 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
           minWidth: 0,
         }}
       >
-        <span style={{ color: isError ? "#f87171" : "#16a34a", fontFamily: "var(--font-mono)", fontWeight: 600, fontSize: "var(--text-xs)", flexShrink: 0 }}>
-          {block.toolName}
+        <AliIcon name={summary.icon as AliIconName} size={14} style={{ color: summary.status === "error" ? "var(--status-failed)" : summary.status === "running" ? "var(--status-running)" : "var(--status-completed)", flexShrink: 0 }} />
+        <span style={{ color: "var(--text)", fontWeight: 550, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+          {summary.title}
         </span>
         <span style={{ color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-          {getToolPreview(block)}
+          {summary.detail ?? ""}
         </span>
         {duration !== undefined && (
           <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
         )}
         <AliIcon name="arrowdown" size={10} style={{ color: "var(--text-dim)", transform: expanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }} />
       </button>
-
-      {/* ── Expanded: input args ── */}
-      {expanded && !isEditTool && (
-        <pre
-          style={{
-            margin: 0,
-            padding: "8px 10px",
-            color: "var(--text-muted)",
-            fontSize: "var(--text-sm)",
-            lineHeight: 1.5,
-            overflow: "auto",
-            background: "var(--bg-subtle)",
-            borderTop: isError ? "1px solid rgba(248,113,113,0.25)" : "1px solid rgba(34,197,94,0.2)",
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-all",
-          }}
-        >
-          {inputStr}
-        </pre>
-      )}
 
       {/* ── Paired result — only shown when expanded ── */}
       {expanded && result && (
@@ -811,8 +800,31 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
           />
         )
       )}
+      {expanded && (
+        <div style={{ borderTop: "1px solid var(--border)" }}>
+          <button
+            type="button"
+            onClick={(event) => togglePreservingScroll(event.currentTarget, () => setDiagnosticsOpen((value) => !value))}
+            aria-expanded={diagnosticsOpen}
+            style={{ width: "100%", height: 28, padding: "0 10px", display: "flex", alignItems: "center", gap: 6, border: 0, background: "var(--bg-panel)", color: "var(--text-dim)", cursor: "pointer", fontSize: "var(--text-xs)", textAlign: "left" }}
+          >
+            <AliIcon name="code" size={12} />
+            <span style={{ flex: 1 }}>{t("toolSummary.diagnostics")}</span>
+            <AliIcon name="arrowdown" size={9} style={{ transform: diagnosticsOpen ? "rotate(180deg)" : "none" }} />
+          </button>
+          {diagnosticsOpen && <pre style={{ margin: 0, padding: "8px 10px", maxHeight: 320, overflow: "auto", background: "var(--bg-subtle)", color: "var(--text-muted)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: "var(--text-xs)" }}>{diagnostics}</pre>}
+        </div>
+      )}
     </div>
   );
+}
+
+function togglePreservingScroll(control: HTMLElement, toggle: () => void) {
+  const scroller = control.closest(".overflow-y-auto") as HTMLElement | null;
+  const scrollTop = scroller?.scrollTop;
+  toggle();
+  if (!scroller || scrollTop === undefined) return;
+  requestAnimationFrame(() => { scroller.scrollTop = scrollTop; });
 }
 
 interface ResultDiff {
@@ -829,207 +841,7 @@ function PairedDiffResult({ diff }: {
         background: "var(--bg)",
       }}
     >
-      <SplitPatchView text={diff.text} />
-    </div>
-  );
-}
-
-function SplitPatchView({ text }: { text: string }) {
-  const { t } = useI18n();
-  const files = useMemo(() => parseUnifiedPatch(text), [text]);
-  if (!files) return <PatchTextView text={text} />;
-  const showFileHeaders = files.length > 1;
-
-  return (
-    <div style={{ maxHeight: 560, overflowY: "auto", overflowX: "hidden", background: "var(--bg)" }}>
-      {files.map((file, fileIndex) => (
-        <div
-          key={fileIndex}
-          style={{
-            minWidth: 0,
-            borderTop: fileIndex === 0 ? "none" : "1px solid var(--border)",
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--text-sm)",
-            lineHeight: 1.55,
-          }}
-        >
-          {showFileHeaders && (
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-                position: "sticky",
-                top: 0,
-                zIndex: 1,
-                background: "var(--bg-panel)",
-                borderBottom: "1px solid var(--border)",
-              }}
-            >
-               <SplitDiffHeader title={file.oldPath || t("i18n.before")} side="left" />
-               <SplitDiffHeader title={file.newPath || t("i18n.after")} side="right" />
-            </div>
-          )}
-
-          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}>
-            {file.rows.map((row, rowIndex) => {
-              if (row.type === "hunk") {
-                return null;
-              }
-
-              return (
-                <div key={rowIndex} style={{ display: "contents" }}>
-                  <SplitDiffCellView cell={row.left} side="left" />
-                  <SplitDiffCellView cell={row.right} side="right" />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function SplitDiffHeader({ title, side }: { title: string; side: "left" | "right" }) {
-  return (
-    <div
-      title={title}
-      style={{
-        padding: "5px 10px",
-        color: "var(--text-dim)",
-        borderRight: side === "left" ? "1px solid var(--border)" : "none",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {title}
-    </div>
-  );
-}
-
-function SplitDiffCellView({ cell, side }: { cell: SplitDiffCell; side: "left" | "right" }) {
-  const bg =
-    cell.type === "added"
-      ? "rgba(34,197,94,0.12)"
-      : cell.type === "removed"
-      ? "rgba(248,113,113,0.13)"
-      : cell.type === "empty"
-      ? "var(--bg-subtle)"
-      : "transparent";
-  const marker =
-    cell.type === "added" ? "+" : cell.type === "removed" ? "-" : " ";
-  const markerColor =
-    cell.type === "added" ? "#22c55e" : cell.type === "removed" ? "#f87171" : "var(--text-dim)";
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        minWidth: 0,
-        background: bg,
-        borderRight: side === "left" ? "1px solid var(--border)" : "none",
-      }}
-    >
-      <span
-        style={{
-          width: 42,
-          padding: "0 6px",
-          textAlign: "right",
-          color: "var(--text-dim)",
-          userSelect: "none",
-          background: "var(--bg-panel)",
-          borderRight: "1px solid var(--border)",
-          flexShrink: 0,
-        }}
-      >
-        {cell.lineNo ?? ""}
-      </span>
-      <span
-        style={{
-          width: 18,
-          padding: "0 5px",
-          color: markerColor,
-          userSelect: "none",
-          fontWeight: cell.type === "context" || cell.type === "empty" ? 400 : 700,
-          flexShrink: 0,
-        }}
-      >
-        {marker}
-      </span>
-      <span
-        style={{
-          flex: 1,
-          minWidth: 0,
-          padding: "0 10px 0 0",
-          color: cell.type === "empty" ? "var(--text-dim)" : "var(--text)",
-          whiteSpace: "pre-wrap",
-          overflowWrap: "anywhere",
-        }}
-      >
-        {cell.text || "\u00a0"}
-      </span>
-    </div>
-  );
-}
-
-function PatchTextView({ text }: { text: string }) {
-  const lines = text.split(/\r?\n/);
-
-  return (
-    <div style={{ maxHeight: 520, overflowY: "auto", overflowX: "hidden", fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)", lineHeight: 1.55, minWidth: 0 }}>
-      {lines.map((line, i) => {
-        const kind =
-          line.startsWith("@@") ? "hunk" :
-          line.startsWith("+") && !line.startsWith("+++") ? "added" :
-          line.startsWith("-") && !line.startsWith("---") ? "removed" :
-          "context";
-        const bg =
-          kind === "added" ? "rgba(34,197,94,0.12)" :
-          kind === "removed" ? "rgba(248,113,113,0.13)" :
-          kind === "hunk" ? "rgba(96,165,250,0.12)" :
-          "transparent";
-        const color =
-          kind === "added" ? "#22c55e" :
-          kind === "removed" ? "#f87171" :
-          kind === "hunk" ? "var(--accent)" :
-          "var(--text)";
-
-        return (
-          <div
-            key={i}
-            style={{
-              display: "flex",
-              background: bg,
-              borderLeft: kind === "added"
-                ? "3px solid #22c55e"
-                : kind === "removed"
-                ? "3px solid #f87171"
-                : kind === "hunk"
-                ? "3px solid var(--accent)"
-                : "3px solid transparent",
-            }}
-          >
-            <span
-              style={{
-                width: 48,
-                padding: "0 8px",
-                color: "var(--text-dim)",
-                background: "var(--bg-panel)",
-                borderRight: "1px solid var(--border)",
-                textAlign: "right",
-                userSelect: "none",
-                flexShrink: 0,
-              }}
-            >
-              {i + 1}
-            </span>
-            <span style={{ padding: "0 10px", whiteSpace: "pre-wrap", overflowWrap: "anywhere", color }}>
-              {line || "\u00a0"}
-            </span>
-          </div>
-        );
-      })}
+      <DiffView patch={diff.text} mode="split" />
     </div>
   );
 }
@@ -1045,16 +857,6 @@ function getResultDiff(result: ToolResultMessage): ResultDiff | null {
   if (diff) return { text: diff };
 
   return null;
-}
-
-function isEditToolName(toolName: string): boolean {
-  const name = toolName.toLowerCase();
-  return name === "edit" ||
-    name.startsWith("edit_") ||
-    name.endsWith(".edit") ||
-    name.endsWith("_edit") ||
-    name.includes("str_replace") ||
-    name.includes("replace_editor");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1383,23 +1185,6 @@ function previewText(text: string): string {
   return normalized.length > 140 ? `${normalized.slice(0, 140)}...` : normalized;
 }
 
-
-function getToolPreview(block: ToolCallContent): string {
-  const input = block.input;
-  if (!input || typeof input !== "object") return "";
-  const keys = Object.keys(input);
-  if (keys.length === 0) return "";
-
-  // Common tool input patterns
-  if ("command" in input) return String(input.command).slice(0, 120);
-  if ("path" in input) return String(input.path).slice(0, 120);
-  if ("file_path" in input) return String(input.file_path).slice(0, 120);
-  if ("pattern" in input) return String(input.pattern).slice(0, 120);
-  if ("query" in input) return String(input.query).slice(0, 120);
-
-  const first = input[keys[0]];
-  return String(first).slice(0, 120);
-}
 
 function formatUsage(usage: {
   input: number;

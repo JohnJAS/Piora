@@ -1,6 +1,6 @@
-# Pi extension compatibility in piGUI
+# Pi extension compatibility in Piora
 
-piGUI does not define a second plugin or agent system. The desktop application starts Pi's coding-agent runtime in-process and uses Pi's own resource loader, settings, package manager, extension API, skills and session format. A feature available through Pi should remain a Pi feature; the GUI only adapts interactions that otherwise belong to the terminal UI.
+Piora does not define a second plugin or agent system. The desktop application starts Pi's coding-agent runtime in-process and uses Pi's own resource loader, settings, package manager, extension API, skills and session format. A feature available through Pi should remain a Pi feature; the GUI only adapts interactions that otherwise belong to the terminal UI.
 
 ## Compatibility model
 
@@ -9,7 +9,7 @@ piGUI does not define a second plugin or agent system. The desktop application s
 | Global extensions in the Pi agent directory | Supported | Implemented; release verification pending | The app uses the real user home and does not bundle user data. |
 | Project extensions in the selected workspace | Supported after project trust | Implemented; release verification pending | Opening a project never silently grants extension execution trust. |
 | Skills, prompts and themes discovered by Pi | Supported | Implemented; release verification pending | Enable/disable state remains in Pi settings. |
-| Extension-defined tools and commands | Supported | Implemented; release verification pending | They remain runtime-defined; piGUI does not hard-code them. |
+| Extension-defined tools and commands | Supported | Implemented; release verification pending | They remain runtime-defined; Piora does not hard-code them. |
 | Select, confirm, text input, editor, notify and status UI | Adapted by the GUI | Adapted by the GUI | Terminal-oriented rendering may differ visually. |
 | Package install/update requiring `npm`, `npx` or `git` | Uses tools on `PATH` | Uses tools on `PATH` | A portable EXE does not currently ship a private package manager or Git. |
 | Native Node add-ons (`.node`) | Environment-dependent | Limited | Add-ons must match the Electron/Node ABI and platform architecture. |
@@ -21,7 +21,7 @@ piGUI does not define a second plugin or agent system. The desktop application s
 - The default Pi agent directory remains `~/.pi/agent` unless the user explicitly configures `PI_CODING_AGENT_DIR`.
 - The desktop packaging configuration includes the Pi runtime distribution required to discover and execute extensions; each release must prove this in the isolated fixture before making a packaged-support claim.
 - Project trust applies before project-provided code is loaded.
-- Generic extension UI events are translated into GUI controls without introducing piGUI-specific SubAgent semantics.
+- Generic extension UI events are translated into GUI controls without introducing Piora-specific SubAgent semantics.
 
 ## What is not bundled
 
@@ -52,4 +52,4 @@ The release checklist must record the fixture result. Passing the fixture establ
 - Treat GUI notifications and widgets as advisory presentation surfaces, not security boundaries.
 - Declare external executables and native dependencies clearly.
 - Keep network access explicit and user-visible.
-- Test against the exact Pi package version listed in piGUI's lockfile.
+- Test against the exact Pi package version listed in Piora's lockfile.

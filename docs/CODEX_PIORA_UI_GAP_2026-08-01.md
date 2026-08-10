@@ -6,7 +6,7 @@
 >
 > Codex 基线：OpenAI Codex 桌面端当前公开产品能力与官方文档
 >
-> 上一轮基线：`docs/CODEX_PI_GUI_UX_COMPARISON_2026-07-31.md`
+> 上一轮基线：`docs/CODEX_PIORA_UX_COMPARISON_2026-07-31.md`
 >
 > **本报告为纯只读分析，未修改任何代码。**
 

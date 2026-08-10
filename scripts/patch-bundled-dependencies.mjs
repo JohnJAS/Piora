@@ -5,8 +5,6 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const patchedVersion = "5.0.9";
-const acceptedBundledVersions = new Set(["5.0.7", patchedVersion]);
 
 function assertInside(parent, child, label) {
   const childRelativePath = relative(parent, child);
@@ -24,17 +22,23 @@ async function readPackage(path) {
   return JSON.parse(await readFile(join(path, "package.json"), "utf8"));
 }
 
-export async function patchBundledBraceExpansion(root = projectRoot, sourceRoot = root) {
+async function patchBundledPackage({
+  root,
+  sourceRoot,
+  packageName,
+  patchedVersion,
+  acceptedBundledVersions,
+}) {
   const modulesRoot = join(root, "node_modules");
   const sourceModulesRoot = join(sourceRoot, "node_modules");
-  const source = join(sourceModulesRoot, "brace-expansion");
+  const source = join(sourceModulesRoot, packageName);
   const targetParent = join(
     modulesRoot,
     "@earendil-works",
     "pi-coding-agent",
     "node_modules",
   );
-  const target = join(targetParent, "brace-expansion");
+  const target = join(targetParent, packageName);
 
   assertInside(sourceModulesRoot, source, "Patch source");
   assertInside(modulesRoot, target, "Patch target");
@@ -57,13 +61,13 @@ export async function patchBundledBraceExpansion(root = projectRoot, sourceRoot 
     readPackage(source),
     readPackage(target),
   ]);
-  if (sourcePackage.name !== "brace-expansion" || sourcePackage.version !== patchedVersion) {
+  if (sourcePackage.name !== packageName || sourcePackage.version !== patchedVersion) {
     throw new Error(
-      `Expected locked brace-expansion ${patchedVersion}, found ${sourcePackage.name}@${sourcePackage.version}`,
+      `Expected locked ${packageName} ${patchedVersion}, found ${sourcePackage.name}@${sourcePackage.version}`,
     );
   }
   if (
-    targetPackage.name !== "brace-expansion"
+    targetPackage.name !== packageName
     || !acceptedBundledVersions.has(targetPackage.version)
   ) {
     throw new Error(
@@ -85,7 +89,7 @@ export async function patchBundledBraceExpansion(root = projectRoot, sourceRoot 
   }
 
   const temporaryDirectory = await mkdtemp(
-    join(targetParentRealPath, ".brace-expansion-patch-"),
+    join(targetParentRealPath, `.${packageName}-patch-`),
   );
   assertInside(targetParentRealPath, temporaryDirectory, "Patch temporary directory");
   try {
@@ -103,7 +107,7 @@ export async function patchBundledBraceExpansion(root = projectRoot, sourceRoot 
   }
 
   const installedPackage = await readPackage(target);
-  if (installedPackage.name !== "brace-expansion" || installedPackage.version !== patchedVersion) {
+  if (installedPackage.name !== packageName || installedPackage.version !== patchedVersion) {
     throw new Error(`Bundled dependency patch verification failed at ${target}`);
   }
   return {
@@ -113,9 +117,32 @@ export async function patchBundledBraceExpansion(root = projectRoot, sourceRoot 
   };
 }
 
+export async function patchBundledBraceExpansion(root = projectRoot, sourceRoot = root) {
+  return patchBundledPackage({
+    root,
+    sourceRoot,
+    packageName: "brace-expansion",
+    patchedVersion: "5.0.9",
+    acceptedBundledVersions: new Set(["5.0.7", "5.0.9"]),
+  });
+}
+
+export async function patchBundledUndici(root = projectRoot, sourceRoot = root) {
+  return patchBundledPackage({
+    root,
+    sourceRoot,
+    packageName: "undici",
+    patchedVersion: "8.9.0",
+    acceptedBundledVersions: new Set(["8.5.0", "8.9.0"]),
+  });
+}
+
 async function main() {
-  const result = await patchBundledBraceExpansion();
-  console.log(JSON.stringify({ bundledDependencyPatch: "brace-expansion", ...result }));
+  const patches = await Promise.all([
+    patchBundledBraceExpansion().then((result) => ({ package: "brace-expansion", ...result })),
+    patchBundledUndici().then((result) => ({ package: "undici", ...result })),
+  ]);
+  console.log(JSON.stringify({ bundledDependencyPatches: patches }));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

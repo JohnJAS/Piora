@@ -1,0 +1,141 @@
+"use client";
+
+import type { Dispatch, RefObject, SetStateAction } from "react";
+import { useI18n } from "@/hooks/useI18n";
+import { getProjectLabel, type SessionProjectGroup } from "@/lib/session-project-groups";
+import { AliIcon } from "../AliIcon";
+import styles from "../SessionSidebar.module.css";
+
+interface Props {
+  onFocusFileSearch?: () => void;
+  taskSearchRef: RefObject<HTMLInputElement | null>;
+  taskSearch: string;
+  setTaskSearch: Dispatch<SetStateAction<string>>;
+  onOpenSettings?: () => void;
+  selectedCwd: string | null;
+  selectedCwdProp?: string | null;
+  projectGroups: SessionProjectGroup[];
+  pinnedProjectGroups: SessionProjectGroup[];
+  projectAliases: Record<string, string>;
+  setSelectedCwd: Dispatch<SetStateAction<string | null>>;
+  setCollapsedProjectKeys: Dispatch<SetStateAction<Set<string>>>;
+  handleNewSessionInProject: (cwd: string) => void;
+  handleDefaultCwd: () => Promise<void>;
+  togglePinnedProject: (root: string) => void;
+}
+
+export function SidebarNavigation(props: Props) {
+  const { t } = useI18n();
+  const { onFocusFileSearch, taskSearchRef, taskSearch, setTaskSearch, onOpenSettings, selectedCwd, selectedCwdProp, projectGroups, pinnedProjectGroups, projectAliases, setSelectedCwd, setCollapsedProjectKeys, handleNewSessionInProject, handleDefaultCwd, togglePinnedProject } = props;
+  return <>
+      <div className={styles.brandRow}>
+        <button type="button" className={styles.brandButton} aria-label={t("sidebar.appMenu")}>
+          <span className={styles.brandMark} aria-hidden="true">π</span>
+          <span>Piora</span>
+        </button>
+        <div className={styles.brandActions}>
+          <button
+            type="button"
+            className={styles.iconButton}
+            onClick={() => taskSearchRef.current?.focus()}
+            title={t("sidebar.search")}
+            aria-label={t("sidebar.search")}
+          >
+            <AliIcon name="search" size={15} />
+          </button>
+          <button
+            type="button"
+            className={styles.iconButton}
+            onClick={onOpenSettings}
+            title={t("sidebar.settings")}
+            aria-label={t("sidebar.settings")}
+          >
+            <AliIcon name="setting" size={15} />
+          </button>
+        </div>
+      </div>
+
+      <nav className={styles.primaryNav} aria-label={t("sidebar.primaryNavigation")}>
+        <button
+          type="button"
+          className={styles.navButton}
+          onClick={() => {
+            const cwd = selectedCwd ?? selectedCwdProp ?? projectGroups[0]?.preferredCwd;
+            if (cwd) handleNewSessionInProject(cwd);
+            else void handleDefaultCwd();
+          }}
+        >
+          <AliIcon name="edit" size={15} />
+          <span>{t("sidebar.newChat")}</span>
+        </button>
+        <button type="button" className={styles.navButton} onClick={onFocusFileSearch}>
+          <AliIcon name="search" size={15} />
+          <span>{t("sidebar.searchFiles")}</span>
+        </button>
+      </nav>
+
+      <div style={{ padding: "3px 8px 5px", position: "relative" }}>
+        <AliIcon name="search" size={13} style={{ position: "absolute", left: 17, top: 12, color: "var(--text-dim)", pointerEvents: "none" }} />
+        <input
+          ref={taskSearchRef}
+          value={taskSearch}
+          onChange={(event) => setTaskSearch(event.target.value)}
+          placeholder={t("sidebar.searchTasks")}
+          aria-label={t("sidebar.searchTasks")}
+          style={{
+            width: "100%", minHeight: 31, boxSizing: "border-box", padding: "6px 28px",
+            border: "1px solid var(--border)", borderRadius: 7, outline: "none",
+            background: "var(--bg)", color: "var(--text)", fontSize: "var(--text-sm)",
+          }}
+        />
+        {taskSearch && (
+          <button
+            type="button"
+            onClick={() => setTaskSearch("")}
+            title={t("sidebar.clearSearch")}
+            aria-label={t("sidebar.clearSearch")}
+            style={{ position: "absolute", right: 13, top: 8, width: 24, height: 24, border: 0, background: "transparent", color: "var(--text-dim)", cursor: "pointer" }}
+          >
+            <AliIcon name="close" size={12} />
+          </button>
+        )}
+      </div>
+
+      {pinnedProjectGroups.length > 0 && (
+        <div>
+          <div className={styles.sectionLabel}>{t("sidebar.pinned")}</div>
+          <div className={styles.pinnedList}>
+            {pinnedProjectGroups.map((group) => (
+              <div className={styles.pinnedRow} key={group.projectRoot}>
+                <button
+                  type="button"
+                  className={styles.pinnedMain}
+                  title={group.projectRoot}
+                  onClick={() => {
+                    setSelectedCwd(group.preferredCwd);
+                    setCollapsedProjectKeys((previous) => {
+                      const next = new Set(previous);
+                      next.delete(group.key);
+                      return next;
+                    });
+                  }}
+                >
+                  <AliIcon name="folder" size={15} />
+                  <span className={styles.ellipsis}>{projectAliases[group.projectRoot] ?? getProjectLabel(group.projectRoot)}</span>
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.rowAction} ${styles.pinnedUnpin}`}
+                  onClick={() => togglePinnedProject(group.projectRoot)}
+                  title={t("sidebar.unpinProject")}
+                  aria-label={t("sidebar.unpinProject")}
+                >
+                  <AliIcon name="pushpin" size={13} style={{ color: "var(--accent)" }} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+  </>;
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useSyncExternalStore } from "react";
-import type { UiThemePackId } from "../lib/ui-theme-packs";
+import type { UiThemePackId } from "../lib/ui-theme-packs.ts";
 
 /** Static CSS that a theme pack injects only while that theme is active
     (docs/PIORA_UI_STYLE_SPEC.md §2.6 / task T-02 S8 — no unconditional import). */

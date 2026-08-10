@@ -106,7 +106,7 @@ Browser / Electron WebContents
 
 ### 1.5 需要警惕的偏离
 
-`docs/CODEX_PI_GUI_UI_GAP_2026-08-01.md` 已经明确记录：**皮肤对齐了 Codex，骨架还是 Pi 的控制台**。桌宠 + 背景图 + 外观风格 + Dream Skin 的代码量，超过了当时全部 P0 修复之和。
+`docs/CODEX_PIORA_UI_GAP_2026-08-01.md` 已经明确记录：**皮肤对齐了 Codex，骨架还是 Pi 的控制台**。桌宠 + 背景图 + 外观风格 + Dream Skin 的代码量，超过了当时全部 P0 修复之和。
 
 本设计规格的硬性要求：**装饰层（外观/桌宠/主题包）进入功能冻结，除 bugfix 外不新增，直到 G1–G6 全部完成。**
 
@@ -229,7 +229,7 @@ Browser / Electron WebContents
 │ ▸ Tasks          (12·2▶)  │   ← 跨项目的任务列表（默认按更新时间）
 │ ▸ Activity                 │   ← 时间线：完成/失败/需确认（可选 P2）
 ├ 当前项目 ──────────────────┤
-│ 📌 piGUI                   │   ← Pin 区
+│ 📌 Piora                   │   ← Pin 区
 │    ├ ● 修复 diff 渲染       │   ← 任务行（带状态点 + 状态词）
 │    ├ ⏸ 等待确认: rm -rf     │
 │    └ ✓ 补充 i18n            │
@@ -296,7 +296,7 @@ FileExplorer 与 Git Changes **从左栏迁到右栏**（见区域 E）。左栏
 
 **B.2.2 任务头（新建，48px，仅在有任务时显示）**
 ```
-● Running · 3m12s     Local · piGUI · main ⎇     +142 −18 (7 files)     [Stop] [⋯]
+● Running · 3m12s     Local · Piora · main ⎇     +142 −18 (7 files)     [Stop] [⋯]
 ```
 | 槽位 | 内容 | 点击行为 |
 |---|---|---|
@@ -333,7 +333,7 @@ FileExplorer 与 Git Changes **从左栏迁到右栏**（见区域 E）。左栏
 
 **C.2.1 新会话空态**
 ```
-在 piGUI 中开始一个任务
+在 Piora 中开始一个任务
 
   ▸ 解释这个仓库的架构
   ▸ 找出并修复一个 bug

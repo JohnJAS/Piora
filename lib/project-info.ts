@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import fs from "node:fs";
+import path from "node:path";
 
 const execFileAsync = promisify(execFile);
 const GIT_TIMEOUT_MS = 5_000;
@@ -45,4 +47,47 @@ export async function getProjectInfo(cwd: string): Promise<{
     repository: formatGitRepository(remoteUrl),
     branch: branch ?? undefined,
   };
+}
+
+export interface ProjectStarterSignals {
+  hasReadme: boolean;
+  hasTests: boolean;
+  hasPackageJson: boolean;
+  hasOutdatedDependencies: boolean;
+}
+
+export async function getProjectStarterSignals(cwd: string): Promise<ProjectStarterSignals> {
+  let hasReadme = false;
+  let hasTests = false;
+  let visited = 0;
+  const queue: Array<{ directory: string; depth: number }> = [{ directory: cwd, depth: 0 }];
+  while (queue.length > 0 && visited < 2_000 && (!hasReadme || !hasTests)) {
+    const current = queue.shift()!;
+    let entries: fs.Dirent[];
+    try { entries = fs.readdirSync(current.directory, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      visited++;
+      const lower = entry.name.toLocaleLowerCase();
+      if (entry.isFile() && /^readme(?:\.|$)/i.test(entry.name)) hasReadme = true;
+      if (entry.isFile() && /(?:^|\.)(?:test|spec)\.[^.]+$/i.test(entry.name)) hasTests = true;
+      if (entry.isDirectory() && (lower === "test" || lower === "tests" || lower === "__tests__")) hasTests = true;
+      if (entry.isDirectory() && current.depth < 3 && !["node_modules", ".git", ".next", "dist", "build"].includes(lower)) {
+        queue.push({ directory: path.join(current.directory, entry.name), depth: current.depth + 1 });
+      }
+    }
+  }
+  const hasPackageJson = fs.existsSync(path.join(cwd, "package.json"));
+  let hasOutdatedDependencies = false;
+  if (hasPackageJson) {
+    try {
+      const { stdout } = await execFileAsync(process.platform === "win32" ? "npm.cmd" : "npm", ["outdated", "--json", "--depth=0"], {
+        cwd, timeout: 5_000, maxBuffer: GIT_MAX_BUFFER, windowsHide: true,
+      });
+      hasOutdatedDependencies = Object.keys(JSON.parse(stdout || "{}") as object).length > 0;
+    } catch (error) {
+      const stdout = (error as { stdout?: string }).stdout;
+      try { hasOutdatedDependencies = Object.keys(JSON.parse(stdout || "{}") as object).length > 0; } catch { /* offline */ }
+    }
+  }
+  return { hasReadme, hasTests, hasPackageJson, hasOutdatedDependencies };
 }

@@ -11,6 +11,7 @@ import {
   type CompanionActivity,
 } from "@/lib/companion";
 import { MAX_COMPANION_PHRASES, MAX_COMPANION_TODOS, createCompanionId, type CompanionPreferences } from "@/lib/companion-store";
+import { STATUS_PRESENTATION, type TaskStatusPresentationKey } from "@/lib/task-status";
 import styles from "./CompanionPet.module.css";
 import { AliIcon } from "./AliIcon";
 
@@ -42,13 +43,20 @@ interface Props {
   activePet: CompanionPetMetadata | null;
 }
 
-export const COMPANION_ACTIVITY_COLORS: Record<CompanionActivity["status"], string> = {
-  idle: "#22a06b",
-  running: "#2563eb",
-  waiting: "#d97706",
-  review: "#8b5cf6",
-  failed: "#dc2626",
+const COMPANION_STATUS_KEYS: Record<CompanionActivity["status"], TaskStatusPresentationKey> = {
+  idle: "unread",
+  running: "running",
+  waiting: "needs_input",
+  review: "needs_approval",
+  failed: "failed",
 };
+
+export const COMPANION_ACTIVITY_COLORS: Record<CompanionActivity["status"], string> = Object.fromEntries(
+  Object.entries(COMPANION_STATUS_KEYS).map(([activity, key]) => [
+    activity,
+    `var(${STATUS_PRESENTATION[key].colorVar})`,
+  ]),
+) as Record<CompanionActivity["status"], string>;
 
 function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(false);
@@ -112,7 +120,7 @@ export function SpritePet({ pet, status }: { pet: CompanionPetMetadata; status: 
     if (reducedMotion || !animation || frameIndices.length === 0) return;
     const durations = animation.durationsMs;
     const timeout = window.setTimeout(() => {
-      // Older piGUI imports predate explicit loop metadata and were all
+      // Older Piora imports predate explicit loop metadata and were all
       // looping row animations. The normalized contract always supplies
       // loopStart (number or null), so undefined is the legacy-only case.
       const loopStart = animation.loopStart === undefined ? 0 : animation.loopStart;
@@ -145,6 +153,7 @@ export function SpritePet({ pet, status }: { pet: CompanionPetMetadata; status: 
       <img src={pet.atlasUrl} alt="" hidden onError={() => setFailed(true)} />
       <div
         className={styles.sprite}
+        data-testid="companion-sprite-frame"
         aria-hidden="true"
         style={{
           ...fittedSize,

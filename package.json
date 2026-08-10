@@ -1,22 +1,22 @@
 {
-  "name": "pigui",
+  "name": "piora",
   "version": "0.1.0",
   "private": true,
   "description": "Open-source Pi coding agent desktop application",
   "author": {
     "name": "Piora contributors",
-    "url": "https://github.com/kexijiang/pi-gui"
+    "url": "https://github.com/kexijiang/piora"
   },
   "publisher": "Piora",
   "copyright": "Copyright © 2026 Piora contributors",
   "license": "MIT",
-  "homepage": "https://github.com/kexijiang/pi-gui#readme",
+  "homepage": "https://github.com/kexijiang/piora#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kexijiang/pi-gui.git"
+    "url": "git+https://github.com/kexijiang/piora.git"
   },
   "bugs": {
-    "url": "https://github.com/kexijiang/pi-gui/issues"
+    "url": "https://github.com/kexijiang/piora/issues"
   },
   "keywords": [
     "pi",
@@ -33,10 +33,12 @@
     "minimatch@10.2.5": {
       "brace-expansion": "5.0.9"
     },
-    "dompurify": "3.4.12",
+    "dompurify": "3.4.13",
     "js-yaml": "4.3.1",
     "postcss": "$postcss",
-    "sharp@0.34.5": "0.35.3"
+    "nanoid": "3.3.17",
+    "sharp@0.34.5": "0.35.3",
+    "undici": "$undici"
   },
   "workspaces": [
     "desktop"
@@ -51,6 +53,7 @@
     "!.next/dev",
     "!.next/**/*.js.map",
     "public",
+    "extensions",
     "next.config.ts",
     "package.json"
   ],
@@ -60,16 +63,18 @@
     "dev:lan": "next dev -H 0.0.0.0 -p 30141",
     "build": "next build --webpack",
     "build:web": "next build --webpack && node scripts/stage-standalone.mjs",
-    "build:desktop": "npm run build --workspace @pi-gui/desktop",
+    "build:desktop": "npm run build --workspace @piora/desktop",
     "build:app": "npm run build:web && npm run build:desktop",
-    "typecheck": "tsc --noEmit && npm run typecheck --workspace @pi-gui/desktop",
+    "typecheck": "tsc --noEmit && npm run typecheck --workspace @piora/desktop",
     "test": "node --test components/*.test.mjs hooks/*.test.mjs lib/*.test.mjs lib/i18n/*.test.mjs",
-    "pack:win": "npm run build:app && npm run pack --workspace @pi-gui/desktop",
-    "dist:win": "npm run build:app && npm run dist --workspace @pi-gui/desktop",
+    "perf:check": "node scripts/check-performance-budgets.mjs",
+    "pack:win": "npm run build:app && npm run pack --workspace @piora/desktop",
+    "dist:win": "npm run build:app && npm run dist --workspace @piora/desktop",
     "verify:package": "node scripts/verify-packaged-web.mjs",
     "verify:release": "node scripts/verify-release-metadata.mjs",
     "verify:hygiene": "node scripts/verify-release-hygiene.mjs",
     "smoke:portable": "node scripts/smoke-test-portable.mjs",
+    "test:companion:packaged": "node scripts/test-packaged-companion.mjs",
     "verify:backgrounds": "node scripts/verify-background-assets.mjs",
     "backgrounds:overview": "node scripts/create-background-overview.mjs",
     "licenses:generate": "node scripts/generate-license-inventory.mjs",
@@ -91,8 +96,8 @@
     "jszip": "^3.10.1",
     "katex": "^0.16.47",
     "mammoth": "^1.12.0",
-    "mermaid": "^11.16.0",
-    "next": "16.2.12",
+    "mermaid": "^11.16.1",
+    "next": "^16.2.12",
     "proper-lockfile": "4.1.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -103,7 +108,7 @@
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
-    "undici": "8.5.0"
+    "undici": "8.9.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.2",

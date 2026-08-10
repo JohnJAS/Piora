@@ -37,7 +37,11 @@ html[data-app-background-active="true"] body::after {
   background: color-mix(in srgb, var(--bg) var(--app-background-overlay, 58%), transparent);
 }
 
-html[data-app-background-active="true"] body > * {
+/* Lift only the app root above the fixed background pseudo-layers. Do NOT
+ * use `body > *`: portals (settings dialog, context menus, tooltips) are
+ * direct body children with their own fixed positioning and z-index, and
+ * forcing position/z-index here would override them and break overlays. */
+html[data-app-background-active="true"] body > .app-shell {
   position: relative;
   z-index: 1;
 }

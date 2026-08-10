@@ -35,7 +35,7 @@ export class FileLogger implements Logger {
   constructor(userDataDirectory: string) {
     const logDirectory = join(userDataDirectory, "logs");
     mkdirSync(logDirectory, { recursive: true });
-    this.filePath = join(logDirectory, "pi-gui.log");
+    this.filePath = join(logDirectory, "piora.log");
   }
 
   info(message: string, details?: unknown): void {

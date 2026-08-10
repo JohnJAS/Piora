@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
 
@@ -16,13 +17,6 @@ interface SessionHistoryDialogProps {
 
 type LoadState = "loading" | "ready" | "error";
 
-const FOCUSABLE_SELECTOR = [
-  "a[href]",
-  "button:not([disabled])",
-  "iframe",
-  "[tabindex]:not([tabindex='-1'])",
-].join(",");
-
 export function SessionHistoryDialog({
   sessionId,
   sessionName,
@@ -35,6 +29,7 @@ export function SessionHistoryDialog({
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [frameVersion, setFrameVersion] = useState(0);
   const [loadState, setLoadState] = useState<LoadState>("loading");
+  useFocusTrap(dialogRef, true, { initialFocus: closeButtonRef, onEscape: onClose });
 
   const encodedSessionId = useMemo(() => encodeURIComponent(sessionId), [sessionId]);
   const embeddedUrl = useMemo(
@@ -49,15 +44,11 @@ export function SessionHistoryDialog({
   }, []);
 
   useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
 
     return () => {
-      window.cancelAnimationFrame(frame);
       document.body.style.overflow = previousOverflow;
-      previousFocus?.focus();
     };
   }, []);
 
@@ -68,30 +59,6 @@ export function SessionHistoryDialog({
     };
     window.addEventListener("message", handleFrameMessage);
     return () => window.removeEventListener("message", handleFrameMessage);
-  }, [onClose]);
-
-  const handleDialogKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
-      return;
-    }
-    if (event.key !== "Tab") return;
-
-    const focusable = Array.from(
-      dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? [],
-    ).filter((element) => !element.hasAttribute("disabled") && element.getAttribute("aria-hidden") !== "true");
-    if (focusable.length === 0) return;
-
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
   }, [onClose]);
 
   return createPortal(
@@ -109,7 +76,6 @@ export function SessionHistoryDialog({
         aria-modal="true"
         aria-labelledby="session-history-dialog-title"
         aria-describedby="session-history-dialog-description"
-        onKeyDown={handleDialogKeyDown}
       >
         <header className="session-history-header app-shell-dialog-header">
           <span className="session-history-icon" aria-hidden="true">

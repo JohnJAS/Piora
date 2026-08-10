@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-piGUI is currently pre-release. Security fixes are applied to the current default branch; older snapshots and unofficial binaries are not guaranteed to receive fixes.
+Piora is currently pre-release. Security fixes are applied to the current default branch; older snapshots and unofficial binaries are not guaranteed to receive fixes.
 
 | Version | Supported |
 | --- | --- |
@@ -15,7 +15,7 @@ This policy will be replaced with a release support table before stable binaries
 
 Please do **not** open a public issue for a suspected vulnerability.
 
-Use [GitHub Private Vulnerability Reporting](https://github.com/kexijiang/pi-gui/security/advisories/new), or open the repository's **Security** tab and select **Report a vulnerability**. If that feature is unavailable, privately contact the repository owner through the contact method on their GitHub profile and ask for a secure reporting channel without including exploit details in the first message.
+Use [GitHub Private Vulnerability Reporting](https://github.com/kexijiang/piora/security/advisories/new), or open the repository's **Security** tab and select **Report a vulnerability**. If that feature is unavailable, privately contact the repository owner through the contact method on their GitHub profile and ask for a secure reporting channel without including exploit details in the first message.
 
 Include, when available:
 
@@ -37,7 +37,7 @@ We will acknowledge receipt when maintainers are available, investigate, and coo
 - unauthenticated access to a local agent API;
 - path traversal or symlink-based boundary escapes;
 - malicious session, Markdown, extension, skill, package, or model data leading to code execution;
-- dependency vulnerabilities with a demonstrated reachable impact in piGUI.
+- dependency vulnerabilities with a demonstrated reachable impact in Piora.
 
 ## Expected behavior and limitations
 

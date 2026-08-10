@@ -10,7 +10,7 @@ import {
   type SupportedBackgroundMime,
 } from "./backgrounds";
 
-const DATABASE_NAME = "pi-gui-appearance";
+const DATABASE_NAME = "piora-appearance";
 const DATABASE_VERSION = 1;
 const STORE_NAME = "backgrounds";
 const ACTIVE_BACKGROUND_KEY = "active";

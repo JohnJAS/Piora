@@ -3,7 +3,12 @@ import typescript from "eslint-config-next/typescript";
 
 const eslintConfig = [
   {
-    ignores: ["desktop/dist/**", "desktop/release/**", "piGUI-*-win-x64/**"],
+    ignores: [
+      "desktop/dist/**",
+      "desktop/release/**",
+      "node_modules.broken/**",
+      "Piora-*-win-x64/**",
+    ],
   },
   ...coreWebVitals,
   ...typescript,

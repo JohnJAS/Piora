@@ -30,8 +30,8 @@ test("serializes model-scope mutations and renders Pi diagnostics", () => {
   assert.match(source, /if \(modelScopeMutationRef\.current\) return/);
   assert.match(source, /const scopeMutationBusy = modelScopeBusyKey !== null/);
   assert.match(source, /modelScope\.warnings\.map/);
-  assert.match(source, /role="dialog"/);
-  assert.match(source, /aria-modal="true"/);
+  assert.match(source, /role=\{embedded \? "region" : "dialog"\}/);
+  assert.match(source, /aria-modal=\{embedded \? undefined : true\}/);
 });
 
 test("offers a real availability test for draft and already-loaded models", () => {

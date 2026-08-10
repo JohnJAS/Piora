@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sendAgentCommand } from "@/lib/agent-client";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import type { PluginPackageInfo, PluginsResponse } from "@/lib/api-types";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
@@ -582,11 +583,13 @@ export function PluginsConfig({
   sessionId,
   onClose,
   onReloaded,
+  embedded = false,
 }: {
   cwd: string;
   sessionId: string | null;
   onClose: () => void;
   onReloaded?: () => void;
+  embedded?: boolean;
 }) {
   const isMobile = useIsMobile();
   const { t } = useI18n();
@@ -600,6 +603,8 @@ export function PluginsConfig({
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(dialogRef, !embedded, { onEscape: onClose });
 
   const packages = useMemo(() => data?.packages ?? [], [data?.packages]);
   const selectedPackage = packages.find((pkg) => packageKey(pkg) === selected) ?? null;
@@ -719,30 +724,38 @@ export function PluginsConfig({
   return (
     <div
       style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 1000,
-        background: "rgba(0,0,0,0.35)",
+        position: embedded ? "relative" : "fixed",
+        inset: embedded ? undefined : 0,
+        zIndex: embedded ? undefined : 1000,
+        width: "100%",
+        height: "100%",
+        minHeight: 0,
+        background: embedded ? "var(--bg)" : "rgba(0,0,0,0.35)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
       }}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (!embedded && e.target === e.currentTarget) onClose();
       }}
     >
       <div
+        ref={dialogRef}
+        className={embedded ? undefined : "app-shell-dialog"}
+        role={embedded ? "region" : "dialog"}
+        aria-modal={embedded ? undefined : true}
+        aria-label={t("common.plugins")}
         style={{
-          width: isMobile ? "calc(100vw - 16px)" : 860,
-          maxWidth: "calc(100vw - 16px)",
-          height: isMobile ? "calc(100dvh - 16px)" : "76vh",
-          maxHeight: "calc(100dvh - 16px)",
+          width: embedded ? "100%" : isMobile ? "calc(100vw - 16px)" : 860,
+          maxWidth: embedded ? "none" : "calc(100vw - 16px)",
+          height: embedded ? "100%" : isMobile ? "calc(100dvh - 16px)" : "76vh",
+          maxHeight: embedded ? "none" : "calc(100dvh - 16px)",
           background: "var(--bg)",
-          border: "1px solid var(--border)",
-          borderRadius: 8,
+          border: embedded ? "none" : "1px solid var(--border)",
+          borderRadius: embedded ? 0 : 8,
           display: "flex",
           flexDirection: "column",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+          boxShadow: embedded ? "none" : "0 8px 32px rgba(0,0,0,0.18)",
           overflow: "hidden",
         }}
       >
@@ -773,7 +786,7 @@ export function PluginsConfig({
               {shortenPath(cwd)}
             </code>
           </div>
-          <button
+          {!embedded && <button
             onClick={onClose}
             title={t("i18n.close")}
             aria-label={t("i18n.close")}
@@ -792,7 +805,7 @@ export function PluginsConfig({
             }}
           >
             <AliIcon name="close" size={16} />
-          </button>
+          </button>}
         </div>
 
         {!projectResourcesLoaded && (
@@ -1039,9 +1052,9 @@ export function PluginsConfig({
           <button onClick={() => void loadPlugins()} disabled={loading || busyKey !== null} style={buttonStyle(loading || busyKey !== null)}>
              {t("i18n.refresh")}
           </button>
-          <button onClick={onClose} style={buttonStyle(false)}>
+          {!embedded && <button onClick={onClose} style={buttonStyle(false)}>
              {t("i18n.close")}
-          </button>
+          </button>}
         </div>
       </div>
     </div>

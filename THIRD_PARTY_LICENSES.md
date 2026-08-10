@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `0a8ebd238f11f9dd2fc170775a8022f090bf64b45cbe1e8058ef3125e3b898a2`
+Lockfile SHA-256: `40bcf4a4a20338703a22b4df1716711280b3f89d1d64a78498aa2ec154ab64dd`
 
-Unique locked packages: **1077**. Runtime packages: **566**. Build/development-only packages: **511**.
+Unique locked packages: **1078**. Runtime packages: **567**. Build/development-only packages: **511**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -317,7 +317,7 @@ Every locked package declares a license.
 | `devlop` | `1.1.0` | MIT | No |
 | `diff` | `8.0.4` | BSD-3-Clause | No |
 | `dingbat-to-unicode` | `1.0.1` | BSD-2-Clause | No |
-| `dompurify` | `3.4.12` | (MPL-2.0 OR Apache-2.0) | No |
+| `dompurify` | `3.4.13` | (MPL-2.0 OR Apache-2.0) | No |
 | `duck` | `0.1.12` | BSD | No |
 | `ecdsa-sig-formatter` | `1.0.11` | Apache-2.0 | No |
 | `entities` | `6.0.1` | BSD-2-Clause | No |
@@ -427,7 +427,7 @@ Every locked package declares a license.
 | `mdast-util-to-hast` | `13.2.1` | MIT | No |
 | `mdast-util-to-markdown` | `2.1.2` | MIT | No |
 | `mdast-util-to-string` | `4.0.0` | MIT | No |
-| `mermaid` | `11.16.0` | MIT | No |
+| `mermaid` | `11.16.1` | MIT | No |
 | `micromark` | `4.0.2` | MIT | No |
 | `micromark-core-commonmark` | `2.0.3` | MIT | No |
 | `micromark-extension-gfm` | `3.0.0` | MIT | No |
@@ -461,7 +461,7 @@ Every locked package declares a license.
 | `minipass` | `7.1.3` | BlueOak-1.0.0 | No |
 | `mlly` | `1.8.2` | MIT | No |
 | `ms` | `2.1.3` | MIT | No |
-| `nanoid` | `3.3.16` | MIT | No |
+| `nanoid` | `3.3.17` | MIT | No |
 | `next` | `16.2.12` | MIT | No |
 | `node-domexception` | `1.0.0` | MIT | No |
 | `node-fetch` | `3.3.2` | MIT | No |
@@ -551,6 +551,7 @@ Every locked package declares a license.
 | `ufo` | `1.6.4` | MIT | No |
 | `underscore` | `1.13.8` | MIT | No |
 | `undici` | `8.5.0` | MIT | No |
+| `undici` | `8.9.0` | MIT | No |
 | `undici-types` | `6.21.0` | MIT | No |
 | `undici-types` | `7.18.2` | MIT | No |
 | `unified` | `11.0.5` | MIT | No |

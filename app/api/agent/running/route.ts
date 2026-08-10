@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { getRunningRpcSessionIds } from "@/lib/rpc-manager";
+import { getRunningRpcSessionStatuses } from "@/lib/rpc-manager";
+import { createRunningSessionsPayload } from "@/lib/task-status";
 
 export const dynamic = "force-dynamic";
 
 // GET /api/agent/running - Lightweight snapshot for visible-tab polling.
 export async function GET() {
   return NextResponse.json(
-    { runningSessionIds: getRunningRpcSessionIds() },
+    createRunningSessionsPayload(getRunningRpcSessionStatuses()),
     { headers: { "Cache-Control": "no-store" } },
   );
 }

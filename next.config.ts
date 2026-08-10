@@ -22,6 +22,16 @@ const nextConfig: NextConfig = {
     "@earendil-works/pi-ai",
     "@earendil-works/pi-tui",
   ],
+  webpack(config, { isServer }) {
+    // The instrumentation entry is compiled through a separate webpack path
+    // that does not apply serverExternalPackages consistently. Keep undici as
+    // a Node runtime dependency there as well; bundling it pulls in node:console
+    // from its mock tooling and breaks the dev compiler.
+    if (isServer && Array.isArray(config.externals)) {
+      config.externals.push("undici");
+    }
+    return config;
+  },
   // Dev-only: allow remote testing via localtunnel/Cloudflare-style public
   // hosts without a hard-coded tunnel name. `*.loca.lt` is the localtunnel
   // public suffix; LAN IPs keep on-network testing working. Never affects
