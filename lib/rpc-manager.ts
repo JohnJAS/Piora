@@ -9,15 +9,12 @@ import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import { resolveDefaultModelPreference } from "./model-policy";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
-import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { ensureWindowsBashShellPath } from "./windows-bash";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS } from "./custom-ui-terminal";
-import type { Runtime, TaskRuntimeSnapshot } from "./task-status";
-import { clearPermissionTier, inferPermissionTierFromTools, setPermissionTier } from "./approval-runtime";
-import type { PermissionTier } from "./approval-policy";
+import type { Runtime, TaskRuntimeActivity, TaskRuntimeActivityKind, TaskRuntimeSnapshot } from "./task-status";
 
 // ============================================================================
 // Types
@@ -75,6 +72,47 @@ export interface RpcSessionStartOptions {
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+const TASK_ACTIVITY_MAX_LENGTH = 240;
+const TASK_ACTIVITY_STREAM_INTERVAL_MS = 300;
+
+function compactTaskActivityText(value: unknown, maxLength = TASK_ACTIVITY_MAX_LENGTH): string {
+  const text = typeof value === "string" ? value : (() => {
+    try { return JSON.stringify(value); } catch { return String(value ?? ""); }
+  })();
+  const compact = text.replace(/\s+/g, " ").trim();
+  if (compact.length <= maxLength) return compact;
+  return `…${compact.slice(-(maxLength - 1))}`;
+}
+
+function activityFromMessage(message: unknown): Pick<TaskRuntimeActivity, "kind" | "message"> | null {
+  if (!message || typeof message !== "object") return null;
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") {
+    const text = compactTaskActivityText(content);
+    return text ? { kind: "assistant", message: text } : null;
+  }
+  if (!Array.isArray(content)) return null;
+  for (let index = content.length - 1; index >= 0; index -= 1) {
+    const block = content[index];
+    if (!block || typeof block !== "object") continue;
+    const candidate = block as Record<string, unknown>;
+    if (candidate.type === "toolCall") {
+      const name = compactTaskActivityText(candidate.toolName ?? candidate.name, 64);
+      const input = compactTaskActivityText(candidate.input ?? candidate.arguments, 160);
+      const detail = [name, input].filter(Boolean).join(": ");
+      if (detail) return { kind: "tool", message: detail };
+    }
+    if (candidate.type === "text") {
+      const text = compactTaskActivityText(candidate.text);
+      if (text) return { kind: "assistant", message: text };
+    }
+    if (candidate.type === "thinking") {
+      const thinking = compactTaskActivityText(candidate.thinking);
+      if (thinking) return { kind: "thinking", message: thinking };
+    }
+  }
+  return null;
+}
 
 // Extensions require a complete Theme, while the web UI applies its own styling.
 class PlainTextTheme extends Theme {
@@ -132,6 +170,10 @@ export class AgentSessionWrapper {
   private stopping = false;
   private lastPromptFailed = false;
   private lastPromptErrorSummary: string | undefined;
+  private runStartedAt: number | null = null;
+  private taskActivity: TaskRuntimeActivity | null = null;
+  private fallbackTaskTitle: string | null = null;
+  private lastStreamActivityAt = 0;
   private extensionsBound = false;
   private extensionBindingPromise: Promise<void> | null = null;
   private extensionBindingError: unknown = null;
@@ -172,18 +214,78 @@ export class AgentSessionWrapper {
   }
 
   getTaskRuntimeSnapshot(): TaskRuntimeSnapshot {
+    const runtime = this.getRuntime();
+    if (runtime === "idle") this.runStartedAt = null;
+    else this.runStartedAt ??= Date.now();
+    const title = compactTaskActivityText(
+      this.inner.sessionManager.getSessionName() || this.fallbackTaskTitle || "",
+      80,
+    );
     return {
       id: this.sessionId,
-      runtime: this.getRuntime(),
+      runtime,
       pendingApproval: this.pendingUiResponses.size > 0 || this.activeCustomUis.size > 0,
       lastPromptFailed: this.lastPromptFailed,
       ...(this.lastPromptErrorSummary ? { errorSummary: this.lastPromptErrorSummary } : {}),
+      ...(this.runStartedAt !== null ? { startedAt: this.runStartedAt } : {}),
+      ...(title ? { title } : {}),
+      ...(this.taskActivity ? { activity: this.taskActivity } : {}),
     };
+  }
+
+  private setTaskActivity(kind: TaskRuntimeActivityKind, message: unknown, streaming = false): void {
+    const now = Date.now();
+    if (streaming && now - this.lastStreamActivityAt < TASK_ACTIVITY_STREAM_INTERVAL_MS) return;
+    const compact = compactTaskActivityText(message);
+    if (!compact) return;
+    this.taskActivity = { kind, message: compact, updatedAt: now };
+    if (streaming) this.lastStreamActivityAt = now;
+  }
+
+  private beginRun(kind: TaskRuntimeActivityKind, message: unknown): void {
+    this.runStartedAt = Date.now();
+    this.lastStreamActivityAt = 0;
+    this.setTaskActivity(kind, message);
+  }
+
+  private updateActivityFromEvent(event: AgentEvent): void {
+    if (event.type === "agent_start") {
+      this.runStartedAt ??= Date.now();
+      if (!this.taskActivity) this.setTaskActivity("thinking", "Thinking");
+      return;
+    }
+    if (event.type === "message_start" || event.type === "message_update" || event.type === "message_end") {
+      const activity = activityFromMessage(event.message);
+      if (activity) this.setTaskActivity(activity.kind, activity.message, event.type === "message_update");
+      return;
+    }
+    if (event.type === "tool_execution_start") {
+      const name = compactTaskActivityText(event.toolName, 64) || "tool";
+      const input = compactTaskActivityText(event.args ?? event.input ?? event.arguments, 160);
+      this.setTaskActivity("tool", input ? `${name}: ${input}` : name);
+      return;
+    }
+    if (event.type === "tool_execution_end") {
+      this.setTaskActivity("thinking", "Waiting for the model");
+      return;
+    }
+    if (event.type === "compaction_start" || event.type === "auto_compaction_start") {
+      this.setTaskActivity("compacting", "Compacting conversation context");
+      return;
+    }
+    if (event.type === "auto_retry_start") {
+      this.setTaskActivity("retry", event.errorMessage ?? "Retrying the model request");
+      return;
+    }
+    if (event.type === "extension_ui_request") {
+      this.setTaskActivity("approval", event.title ?? event.message ?? "Waiting for your input");
+    }
   }
 
   start(): void {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       this.resetIdleTimer();
+      this.updateActivityFromEvent(event);
       if (event.type === "agent_start") {
         this.lastPromptFailed = false;
         this.lastPromptErrorSummary = undefined;
@@ -364,6 +466,9 @@ export class AgentSessionWrapper {
         // Fire and forget — events come via subscribe
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
+        const promptText = compactTaskActivityText(command.message);
+        this.fallbackTaskTitle = compactTaskActivityText(command.message, 80) || this.fallbackTaskTitle;
+        this.beginRun("prompt", promptText || "Processing request");
         this.lastPromptFailed = false;
         this.lastPromptErrorSummary = undefined;
         this.promptRunning = true;
@@ -509,6 +614,7 @@ export class AgentSessionWrapper {
       }
 
       case "compact": {
+        this.beginRun("compacting", "Compacting conversation context");
         try {
           return await this.withFinalRunningNotification(() =>
             this.inner.compact(command.customInstructions as string | undefined)
@@ -607,20 +713,10 @@ export class AgentSessionWrapper {
         return null;
       }
 
-      case "set_permission_tier": {
-        const tier = command.tier as PermissionTier;
-        if (tier !== "read-only" && tier !== "auto-edit" && tier !== "full-access") {
-          throw new Error("Invalid permission tier");
-        }
-        setPermissionTier(this.inner.sessionId, tier);
-        return null;
-      }
-
       case "reload": {
         await this.waitForExtensionsBound();
         this.extensionStatuses.clear();
         this.extensionWidgets.clear();
-        this.syncProjectTrust();
         await this.inner.reload();
         if (typeof this.inner.bindExtensions !== "function") {
           this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
@@ -661,6 +757,7 @@ export class AgentSessionWrapper {
         if (this.promptRunning || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning) {
           throw new Error("Cannot run a shell command while the session is busy");
         }
+        this.beginRun("command", command.command);
         const execution = this.inner.executeBash(
           command.command as string,
           undefined,
@@ -1034,7 +1131,6 @@ export class AgentSessionWrapper {
       reload: async () => {
         this.extensionStatuses.clear();
         this.extensionWidgets.clear();
-        this.syncProjectTrust();
         await this.inner.reload({
           beforeSessionStart: () => {
             this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
@@ -1045,10 +1141,6 @@ export class AgentSessionWrapper {
     };
   }
 
-  private syncProjectTrust(): void {
-    const status = getProjectTrustStatus(this.cwd, getAgentDir());
-    this.inner.settingsManager.setProjectTrusted(status.trusted);
-  }
 }
 
 // ============================================================================
@@ -1077,7 +1169,7 @@ declare global {
 // Sessions of the same cwd share the SDK services object safely: each
 // AgentSession builds its own extension runner from the shared resource
 // loader. Invalidate via invalidateServicesCache() whenever models, auth,
-// settings, skills, plugins, or project trust change.
+// settings, skills, or plugins change.
 // ============================================================================
 
 function getServicesCache(): Map<string, AgentSessionServices> {
@@ -1337,22 +1429,18 @@ export async function startRpcSession(
 
     // Build services first so extension-registered providers are available
     // before the SDK restores the saved model from the session file.
-    // Gate untrusted project extensions so opening a repository does not run
-    // its .pi/extensions code automatically (see lib/project-trust.ts, #236).
     // Services are cached per cwd: reusing the model runtime + resource loader
     // turns a ~5-8s session start into milliseconds and stops session creation
     // from blocking the event loop (which stalled session loading and left the
     // composer hidden while switching sessions).
-    const trustReloadOptions = projectTrustReloadOptions(cwd, agentDir);
     const cwdKey = normalizeRpcCwd(cwd);
     let services = getServicesCache().get(cwdKey);
     if (!services) {
-      const bundledApprovalExtension = resolve(process.cwd(), "extensions", "piora-approval.ts");
+      const bundledBrowserExtension = resolve(process.cwd(), "extensions", "piora-browser.ts");
       services = await createAgentSessionServices({
         cwd,
         agentDir,
-        ...(existsSync(bundledApprovalExtension) ? { resourceLoaderOptions: { additionalExtensionPaths: [bundledApprovalExtension] } } : {}),
-        ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
+        ...(existsSync(bundledBrowserExtension) ? { resourceLoaderOptions: { additionalExtensionPaths: [bundledBrowserExtension] } } : {}),
       });
       getServicesCache().set(cwdKey, services);
     }
@@ -1402,11 +1490,10 @@ export async function startRpcSession(
     wrapper.start();
 
     const realSessionId = inner.sessionId as string;
-    setPermissionTier(realSessionId, inferPermissionTierFromTools(toolNames));
     const realSessionFile = inner.sessionFile as string | undefined;
     if (realSessionFile) cacheSessionPath(realSessionId, realSessionFile);
 
-    wrapper.onDestroy(() => { registry.delete(realSessionId); clearPermissionTier(realSessionId); });
+    wrapper.onDestroy(() => { registry.delete(realSessionId); });
     registry.set(realSessionId, wrapper);
     wrapper.beginExtensionBinding({ forceEmptySystemPrompt: toolNames?.length === 0 });
 

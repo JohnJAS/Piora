@@ -54,11 +54,6 @@ export interface SkillsResponse {
   projectResourcesLoaded: boolean;
 }
 
-export interface ProjectTrustStatus {
-  requiresTrust: boolean;
-  trusted: boolean;
-}
-
 export type PluginScope = "global" | "project";
 export type PluginResourceKind = "extension" | "skill" | "prompt" | "theme";
 

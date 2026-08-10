@@ -15,7 +15,6 @@ import { useAgentSession, type AgentPhase, type NoticeItem, type SlashCommandInf
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import type { SessionStatsInfo } from "@/lib/pi-types";
-import type { ToolPreset } from "@/lib/tool-presets";
 import { deriveCompanionActivityStatus, type CompanionActivity } from "@/lib/companion";
 import { AliIcon } from "./AliIcon";
 import {
@@ -27,7 +26,6 @@ import {
 } from "@/lib/chat-lazy-load";
 import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
 import { TaskHeader } from "./TaskHeader";
-import { ApprovalCard, isApprovalRequest } from "./ApprovalCard";
 
 interface Props {
   session: SessionInfo | null;
@@ -52,9 +50,7 @@ interface Props {
 }
 
 export interface TaskControls {
-  toolPreset: ToolPreset;
   disabled: boolean;
-  onToolPresetChange: (preset: ToolPreset) => void;
   runCommand: (command: string, excludeFromContext: boolean) => Promise<void>;
   abort: () => Promise<void>;
   bashRunning: boolean;
@@ -203,7 +199,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   const {
     loading, error, messages, entryIds, streamState,
-    agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, toolPreset, toolsLoaded, thinkingLevel,
+    agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
@@ -217,7 +213,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
-    handleToolPresetChange, handleThinkingLevelChange, loadSlashCommands,
+    handleThinkingLevelChange, loadSlashCommands,
   } = useAgentSession({
     session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
@@ -233,11 +229,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     }
     return null;
   }, [messages, streamState.streamingMessage]);
-  const changePermissionPreset = useCallback((preset: ToolPreset) => {
-    if (preset === "full" && toolPreset !== "full" && !window.confirm(t("approval.fullConfirm"))) return;
-    void handleToolPresetChange(preset);
-  }, [handleToolPresetChange, t, toolPreset]);
-
   useEffect(() => { onSlashCommandsChange?.(slashCommands); }, [onSlashCommandsChange, slashCommands]);
   useEffect(() => {
     if (session?.id) void loadSlashCommands();
@@ -245,16 +236,14 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
   useEffect(() => {
     onTaskControlsChange?.({
-      toolPreset,
-      disabled: sessionBusy || !toolsLoaded,
-      onToolPresetChange: changePermissionPreset,
+      disabled: sessionBusy,
       runCommand: async (command, excludeFromContext) => { await handleSend(`${excludeFromContext ? "!!" : "!"}${command}`); },
       abort: handleAbort,
       bashRunning,
       pendingCommand: pendingBash?.command ?? null,
       latestBash,
     });
-  }, [bashRunning, changePermissionPreset, handleAbort, handleSend, latestBash, onTaskControlsChange, pendingBash?.command, sessionBusy, toolPreset, toolsLoaded]);
+  }, [bashRunning, handleAbort, handleSend, latestBash, onTaskControlsChange, pendingBash?.command, sessionBusy]);
 
   useEffect(() => () => onTaskControlsChange?.(null), [onTaskControlsChange]);
   const latestErrorNotice = useMemo(() => {
@@ -563,9 +552,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         </div>
       )}
 
-      {extensionDialog && (isApprovalRequest(extensionDialog)
-        ? <ApprovalCard request={extensionDialog} onRespond={respondToExtensionUi} />
-        : <ExtensionDialog request={extensionDialog} onRespond={respondToExtensionUi} />)}
+      {extensionDialog && <ExtensionDialog request={extensionDialog} onRespond={respondToExtensionUi} />}
 
       {extensionCustomUi && (
         <ExtensionCustomPanel
@@ -581,7 +568,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         worktreeBranch={session?.worktreeBranch}
         busy={sessionBusy}
         compacting={isCompacting}
-        permissionPreset={toolPreset}
         onStop={handleAbort}
         onOpenChanges={() => onOpenTaskChanges?.()}
         onOpenDetails={() => onSessionStatsPanelOpen?.()}
@@ -682,6 +668,18 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                   }
                 }
                 if (options.showTimestamp !== undefined) showTimestamp = options.showTimestamp;
+                let responseStartedAt: number | undefined;
+                if (msg.role === "assistant" && showTimestamp) {
+                  const belongsToActiveTail = sessionBusy && !messages.slice(idx + 1).some((message) => message.role === "user");
+                  if (!belongsToActiveTail) {
+                    for (let userIdx = idx - 1; userIdx >= 0; userIdx -= 1) {
+                      const candidate = messages[userIdx];
+                      if (candidate.role !== "user") continue;
+                      responseStartedAt = candidate.timestamp;
+                      break;
+                    }
+                  }
+                }
                 const view = (
                   <MessageView
                     key={`${keyPrefix}-view-${idx}`}
@@ -698,6 +696,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                     onEditContent={handleEditContent}
                     showTimestamp={showTimestamp}
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
+                    responseStartedAt={responseStartedAt}
                     sessionId={session?.id ?? sessionIdRef.current ?? undefined}
                   />
                 );

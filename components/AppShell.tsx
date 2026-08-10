@@ -11,7 +11,6 @@ import { ModelsConfig } from "./ModelsConfig";
 import { SkillsConfig } from "./SkillsConfig";
 import { PluginsConfig } from "./PluginsConfig";
 import { SettingsDialog, type SettingsKey } from "./SettingsDialog";
-import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { BranchNavigator } from "./BranchNavigator";
 import { BackgroundSettings } from "./BackgroundSettings";
 import { AppearanceLooks } from "./AppearanceLooks";
@@ -46,7 +45,6 @@ import {
   WORKSPACE_MIN_WIDTH,
 } from "@/lib/panel-layout";
 import type { SessionInfo, SessionTreeNode } from "@/lib/types";
-import type { ProjectTrustStatus } from "@/lib/api-types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { canSendCompanionPhrase, type CompanionActivity } from "@/lib/companion";
@@ -110,10 +108,6 @@ export function AppShell() {
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [settingsKey, setSettingsKey] = useState<SettingsKey>("general");
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
-  const [projectTrust, setProjectTrust] = useState<ProjectTrustStatus | null>(null);
-  const [projectTrustDialogOpen, setProjectTrustDialogOpen] = useState(false);
-  const [projectTrustBusy, setProjectTrustBusy] = useState(false);
-  const [projectTrustError, setProjectTrustError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   // Keep the server and first client render identical. The persisted tab is
@@ -1079,7 +1073,7 @@ export function AppShell() {
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
   const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
-  const projectTrustCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
+  const projectCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
   const currentProjectCwd = selectedSession?.cwd ?? effectiveNewSessionCwd ?? activeCwd;
   const currentProjectPath = selectedSession?.projectRoot ?? activeProjectRootRef.current ?? currentProjectCwd;
   const currentProjectName = currentProjectPath ? getFileName(currentProjectPath) || currentProjectPath : null;
@@ -1151,7 +1145,6 @@ export function AppShell() {
     "session.stats": () => chatInputRef.current?.insertText("/session"),
     "model.select": () => openSettings("models"),
     "model.thinking": () => openSettings("conversation"),
-    "model.permissions": () => openSettings("conversation"),
     "panel.review": () => { setRightPanelTab("review"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "panel.files": () => { setRightPanelTab("files"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "panel.commands": () => { setRightPanelTab("commands"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
@@ -1190,55 +1183,6 @@ export function AppShell() {
       projectPathCopyTimerRef.current = setTimeout(() => setProjectPathCopied(false), 1400);
     }).catch(() => {});
   }, [currentProjectCwd]);
-
-  useEffect(() => {
-    setProjectTrust(null);
-    setProjectTrustDialogOpen(false);
-    setProjectTrustError(null);
-    if (!projectTrustCwd) return;
-
-    const controller = new AbortController();
-    fetch(`/api/project-trust?cwd=${encodeURIComponent(projectTrustCwd)}`, {
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        const data = await response.json() as ProjectTrustStatus & { error?: string };
-        if (response.status === 400 && data.error === "Directory does not exist") {
-          setProjectTrust(null);
-          return;
-        }
-        if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
-        setProjectTrust(data);
-      })
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        console.error("Failed to load project trust:", error);
-      });
-    return () => controller.abort();
-  }, [projectTrustCwd]);
-
-  const handleTrustProject = useCallback(async () => {
-    if (!projectTrustCwd || projectTrustBusy) return;
-    setProjectTrustBusy(true);
-    setProjectTrustError(null);
-    try {
-      const response = await fetch("/api/project-trust", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: projectTrustCwd }),
-      });
-      const data = await response.json() as ProjectTrustStatus & { error?: string };
-      if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
-      setProjectTrust(data);
-      setProjectTrustDialogOpen(false);
-      setModelsRefreshKey((key) => key + 1);
-      setSessionKey((key) => key + 1);
-    } catch (error) {
-      setProjectTrustError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setProjectTrustBusy(false);
-    }
-  }, [projectTrustBusy, projectTrustCwd]);
 
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
   const windowTitle = activeCwdName ? `${activeCwdName} - Piora` : "Piora";
@@ -1314,18 +1258,18 @@ export function AppShell() {
         models: (
           <ModelsConfig
             embedded
-            cwd={projectTrustCwd ?? activeCwd ?? undefined}
+            cwd={projectCwd ?? activeCwd ?? undefined}
             onModelsChanged={() => setModelsRefreshKey((key) => key + 1)}
             onClose={() => setSettingsKey("general")}
           />
         ),
-        skills: projectTrustCwd ? (
-          <SkillsConfig embedded cwd={projectTrustCwd} onClose={() => setSettingsKey("general")} />
+        skills: projectCwd ? (
+          <SkillsConfig embedded cwd={projectCwd} onClose={() => setSettingsKey("general")} />
         ) : undefined,
-        plugins: projectTrustCwd ? (
+        plugins: projectCwd ? (
           <PluginsConfig
             embedded
-            cwd={projectTrustCwd}
+            cwd={projectCwd}
             sessionId={selectedSession?.id ?? null}
             onClose={() => setSettingsKey("general")}
             onReloaded={() => setSessionKey((key) => key + 1)}
@@ -1617,35 +1561,6 @@ export function AppShell() {
               </span>
             ) : null}
           </div>
-          {!settingsDialogOpen && showChat && projectTrust?.requiresTrust && !projectTrust.trusted && (
-            <button
-              type="button"
-              onClick={() => {
-                setProjectTrustError(null);
-                setProjectTrustDialogOpen(true);
-              }}
-              title={translate("trust.resourcesNotLoaded")}
-              aria-label={translate("trust.resourcesNotLoaded")}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                height: "100%",
-                padding: isMobile ? "0 10px" : "0 12px",
-                background: "none",
-                border: "none",
-                borderRight: "1px solid var(--border)",
-                color: "#d97706",
-                cursor: "pointer",
-                flexShrink: 0,
-                fontSize: "var(--text-xs)",
-                whiteSpace: "nowrap",
-              }}
-            >
-              <AliIcon name="warning" size={13} />
-              {!isMobile && <span>{translate("trust.resourcesNotLoaded")}</span>}
-            </button>
-          )}
           {!settingsDialogOpen && showChat && (
             <div className="conversation-toolbar-actions">
               <button
@@ -1941,44 +1856,6 @@ export function AppShell() {
                     <div className="soft-top-panel-divider" />
                     {taskControls ? (
                       <>
-                        <div className="soft-top-panel-section-label">{translate("taskControls.tools")}</div>
-                        {([
-                          { value: "none", label: translate("taskControls.presetOff"), description: translate("chat.noTools") },
-                          { value: "default", label: translate("taskControls.presetDefault"), description: translate("chat.builtInTools", { count: 4 }) },
-                          { value: "full", label: translate("taskControls.presetFull"), description: translate("chat.allBuiltInTools") },
-                        ] as const).map((option) => {
-                          const selected = taskControls.toolPreset === option.value;
-                          return (
-                            <button
-                              className="soft-menu-item"
-                              key={option.value}
-                              type="button"
-                              role="menuitemradio"
-                              aria-checked={selected}
-                              disabled={taskControls.disabled}
-                              onClick={() => {
-                                if (!selected) taskControls.onToolPresetChange(option.value);
-                              }}
-                              style={{
-                                display: "grid",
-                                gridTemplateColumns: "18px minmax(0, 1fr)",
-                                columnGap: 8,
-                                background: selected ? "var(--bg-selected)" : "transparent",
-                                cursor: taskControls.disabled ? "not-allowed" : "pointer",
-                                opacity: taskControls.disabled ? 0.55 : 1,
-                              }}
-                            >
-                              <span aria-hidden="true" style={{ paddingTop: 2, color: selected ? "var(--accent)" : "transparent" }}>
-                                <AliIcon name="check" size={12} />
-                              </span>
-                              <span style={{ minWidth: 0 }}>
-                                <span className="soft-menu-item-title" style={{ fontWeight: selected ? 600 : 500 }}>{option.label}</span>
-                                <span className="soft-menu-item-description">{option.description}</span>
-                              </span>
-                            </button>
-                          );
-                        })}
-                        <div className="soft-top-panel-divider" />
                         <button
                           className="soft-menu-item"
                           type="button"
@@ -2362,7 +2239,6 @@ export function AppShell() {
           onMentions={handleAtMentions}
           onMentionLines={handleFileLineMention}
           taskControls={taskControls}
-          projectTrusted={Boolean(projectTrust?.trusted)}
         />
       </div>
     {/* File panel toggle — always visible at top-right */}
@@ -2383,17 +2259,6 @@ export function AppShell() {
         onClose={() => setHistoryDialogOpen(false)}
       />
     ) : null}
-    {projectTrustDialogOpen && projectTrustCwd && (
-      <ProjectTrustDialog
-        cwd={projectTrustCwd}
-        busy={projectTrustBusy}
-        error={projectTrustError}
-        onCancel={() => {
-          if (!projectTrustBusy) setProjectTrustDialogOpen(false);
-        }}
-        onConfirm={() => void handleTrustProject()}
-      />
-    )}
     </>
   );
 }

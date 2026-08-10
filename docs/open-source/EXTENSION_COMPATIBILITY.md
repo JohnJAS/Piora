@@ -7,7 +7,7 @@ Piora does not define a second plugin or agent system. The desktop application s
 | Pi capability | Development/Web | Packaged Windows app | Notes |
 | --- | --- | --- | --- |
 | Global extensions in the Pi agent directory | Supported | Implemented; release verification pending | The app uses the real user home and does not bundle user data. |
-| Project extensions in the selected workspace | Supported after project trust | Implemented; release verification pending | Opening a project never silently grants extension execution trust. |
+| Project extensions in the selected workspace | Supported | Implemented; release verification pending | Piora follows Pi's direct local-agent model without a separate Project Trust prompt. |
 | Skills, prompts and themes discovered by Pi | Supported | Implemented; release verification pending | Enable/disable state remains in Pi settings. |
 | Extension-defined tools and commands | Supported | Implemented; release verification pending | They remain runtime-defined; Piora does not hard-code them. |
 | Select, confirm, text input, editor, notify and status UI | Adapted by the GUI | Adapted by the GUI | Terminal-oriented rendering may differ visually. |
@@ -20,7 +20,7 @@ Piora does not define a second plugin or agent system. The desktop application s
 - Pi remains responsible for extension discovery, loading, lifecycle, tools, commands and configuration.
 - The default Pi agent directory remains `~/.pi/agent` unless the user explicitly configures `PI_CODING_AGENT_DIR`.
 - The desktop packaging configuration includes the Pi runtime distribution required to discover and execute extensions; each release must prove this in the isolated fixture before making a packaged-support claim.
-- Project trust applies before project-provided code is loaded.
+- Project resources load directly without a Piora-specific trust or permission tier.
 - Generic extension UI events are translated into GUI controls without introducing Piora-specific SubAgent semantics.
 
 ## What is not bundled

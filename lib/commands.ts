@@ -77,7 +77,6 @@ export const GUI_COMMANDS: Command[] = [
   command("session.stats", "session", "commands.stats", { needs: "session" }),
   command("model.select", "model", "commands.selectModel", { needs: "project", whenIdle: true }),
   command("model.thinking", "model", "commands.thinking", { needs: "project" }),
-  command("model.permissions", "model", "commands.permissions", { needs: "project" }),
   command("panel.review", "panel", "commands.openReview", { needs: "git" }),
   command("panel.files", "panel", "commands.openFiles", { needs: "project" }),
   command("panel.commands", "panel", "commands.openCommands", { needs: "session" }),

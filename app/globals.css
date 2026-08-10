@@ -89,11 +89,17 @@
   --radius-control: 6px;    /* buttons, inputs, badges, small cards */
   --radius-surface: 10px;   /* panels, dialogs, composer */
   --radius-panel: 14px;     /* large floating layers, modals */
-  /* One shadow, for out-of-flow layers only (dropdowns, palettes, modals,
-     context menus — docs/PIORA_UI_STYLE_SPEC.md §4.2). Panels layer via
-     --border + --bg-panel; no shadow-surface/control, no inset highlights,
-     no translucent chrome (T-02 S4). */
+  /* Elevation stays restrained: one popover level plus softer floating and
+     composer levels. In-flow panels still rely primarily on border + surface. */
   --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
+  --shadow-float: 0 20px 55px rgba(24, 24, 27, 0.11), 0 6px 18px rgba(24, 24, 27, 0.06);
+  --shadow-composer: 0 16px 36px rgba(24, 24, 27, 0.08), 0 3px 10px rgba(24, 24, 27, 0.045);
+  --ambient-primary: rgba(47, 111, 235, 0.11);
+  --ambient-secondary: rgba(124, 58, 237, 0.065);
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: rgba(255, 255, 255, 0.72);
+  --motion-ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --motion-ease-spring: cubic-bezier(0.2, 0.82, 0.2, 1);
   --overlay-scrim: rgba(22, 20, 19, 0.3);
   --ui-font-size: 14px;
   /* Inter is the default UI face (docs/PIORA_UI_STYLE_SPEC.md §3.1), bundled
@@ -170,6 +176,11 @@ html.dark {
   --assistant-bg: transparent;
   --tool-bg: var(--bg-panel);
   --bg-subtle: rgba(255,255,255,0.04);
+  --ambient-primary: rgba(106, 155, 255, 0.14);
+  --ambient-secondary: rgba(139, 92, 246, 0.09);
+  --surface-highlight: rgba(255, 255, 255, 0.055);
+  --shadow-float: 0 24px 64px rgba(0, 0, 0, 0.38), 0 7px 20px rgba(0, 0, 0, 0.24);
+  --shadow-composer: 0 18px 42px rgba(0, 0, 0, 0.28), 0 4px 12px rgba(0, 0, 0, 0.18);
 }
 
 html[data-theme="starlight"] {
@@ -188,6 +199,8 @@ html[data-theme="starlight"] {
   --assistant-bg: #faf9ff;
   --tool-bg: #f3f1ff;
   --bg-subtle: rgba(120, 87, 232, 0.06);
+  --ambient-primary: rgba(120, 87, 232, 0.15);
+  --ambient-secondary: rgba(236, 72, 153, 0.08);
 }
 
 html[data-theme="ivory"] {
@@ -206,6 +219,8 @@ html[data-theme="ivory"] {
   --assistant-bg: #fcfaf2;
   --tool-bg: #f5f2e7;
   --bg-subtle: rgba(120, 131, 79, 0.06);
+  --ambient-primary: rgba(98, 109, 61, 0.12);
+  --ambient-secondary: rgba(180, 128, 58, 0.08);
 }
 
 html[data-theme="doodle"] {
@@ -224,6 +239,8 @@ html[data-theme="doodle"] {
   --assistant-bg: #fffcf4;
   --tool-bg: #f2f7ed;
   --bg-subtle: rgba(14, 159, 143, 0.065);
+  --ambient-primary: rgba(11, 129, 117, 0.14);
+  --ambient-secondary: rgba(244, 173, 47, 0.11);
 }
 
 html[data-theme="fortune"] {
@@ -242,6 +259,8 @@ html[data-theme="fortune"] {
   --assistant-bg: #fffbef;
   --tool-bg: #f8eedb;
   --bg-subtle: rgba(185, 44, 37, 0.06);
+  --ambient-primary: rgba(185, 44, 37, 0.13);
+  --ambient-secondary: rgba(205, 147, 48, 0.12);
 }
 
 html[data-theme="midnight"] {
@@ -259,6 +278,8 @@ html[data-theme="midnight"] {
   --assistant-bg: #0b1020;
   --tool-bg: #101d33;
   --bg-subtle: rgba(139, 157, 255, 0.055);
+  --ambient-primary: rgba(107, 126, 255, 0.2);
+  --ambient-secondary: rgba(126, 68, 235, 0.14);
 }
 
 html[data-theme="forest"] {
@@ -276,6 +297,8 @@ html[data-theme="forest"] {
   --assistant-bg: #101914;
   --tool-bg: #162b20;
   --bg-subtle: rgba(111, 207, 151, 0.055);
+  --ambient-primary: rgba(111, 207, 151, 0.16);
+  --ambient-secondary: rgba(170, 139, 69, 0.09);
 }
 
 .theme-menu-option:focus-visible {
@@ -357,7 +380,9 @@ html.desktop-pet-document[data-app-background-active="true"] body::after {
   position: relative;
   z-index: 100;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
-  background: var(--bg-panel) !important;
+  background: color-mix(in srgb, var(--surface-glass) 92%, var(--bg-panel)) !important;
+  box-shadow: 0 1px 0 var(--surface-highlight);
+  backdrop-filter: blur(18px) saturate(1.15);
 }
 
 .app-topbar-identity {
@@ -452,12 +477,14 @@ select:focus-visible,
   isolation: isolate;
   position: relative;
   background:
-    radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--accent) 3%, transparent), transparent 46%),
+    radial-gradient(circle at 14% -14%, var(--ambient-primary), transparent 38%),
+    radial-gradient(circle at 94% 4%, var(--ambient-secondary), transparent 34%),
+    linear-gradient(145deg, color-mix(in srgb, var(--canvas) 96%, var(--accent) 4%), var(--canvas) 44%),
     var(--canvas) !important;
 }
 
 .workspace-main {
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
   min-width: var(--workspace-min-width, 640px);
 }
 
@@ -494,8 +521,11 @@ select:focus-visible,
 }
 
 .sidebar-container {
-  background: var(--surface-muted) !important;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-raised) 48%, transparent), transparent 170px),
+    color-mix(in srgb, var(--surface-muted) 94%, transparent) !important;
   border-right-color: var(--border-soft) !important;
+  box-shadow: 1px 0 0 var(--surface-highlight);
 }
 
 .sidebar-header {
@@ -518,6 +548,7 @@ select:focus-visible,
 .sidebar-session-row.is-selected {
   border-color: color-mix(in srgb, var(--accent) 18%, var(--border-soft)) !important;
   background: color-mix(in srgb, var(--bg-selected) 82%, var(--surface-raised)) !important;
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 76%, transparent), 0 5px 16px color-mix(in srgb, var(--ambient-primary) 26%, transparent) !important;
 }
 
 /* No press-down translate: combined with the transform transition above it
@@ -630,8 +661,9 @@ select:focus-visible,
 .app-floating-panel {
   border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
   border-radius: var(--radius-surface) !important;
-  background: var(--bg-panel) !important;
-  box-shadow: var(--shadow-popover);
+  background: color-mix(in srgb, var(--surface-glass) 90%, var(--bg-panel)) !important;
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(22px) saturate(1.14);
 }
 
 .soft-top-panel {
@@ -815,8 +847,9 @@ select:focus-visible,
   padding: 22px;
   border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
   border-radius: var(--radius-panel);
-  background: var(--bg);
-  box-shadow: var(--shadow-popover);
+  background: color-mix(in srgb, var(--surface-glass) 92%, var(--bg));
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(20px) saturate(1.1);
   user-select: none;
 }
 
@@ -1164,12 +1197,14 @@ select:focus-visible,
   border-color: var(--border-soft) !important;
   border-radius: var(--radius-panel) !important;
   background: var(--surface-raised) !important;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+  box-shadow: var(--shadow-composer);
+  transition: border-color 0.18s var(--motion-ease-out), box-shadow 0.18s var(--motion-ease-out), background 0.18s var(--motion-ease-out), transform 0.18s var(--motion-ease-out);
 }
 
 .composer-surface:focus-within {
   border-color: color-mix(in srgb, var(--accent) 32%, var(--border)) !important;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 7%, transparent) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent), var(--shadow-composer) !important;
+  transform: translateY(-1px);
 }
 
 .composer-meta-bar {
@@ -2866,80 +2901,46 @@ span.linenumber {
   background: rgba(0, 0, 0, 0.22);
 }
 
-.approval-card {
-  width: min(600px, 100%);
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--bg);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
-}
-
-.approval-card-heading,
-.approval-card-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 14px;
-}
-
-.approval-card-heading {
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border);
-  color: var(--text);
-  font-weight: 650;
-}
-
-.approval-card-heading code {
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
-.approval-card pre {
-  max-height: 240px;
-  margin: 14px 14px 8px;
-  overflow: auto;
-  padding: 10px;
-  border-radius: 8px;
-  background: var(--tool-bg);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.approval-card p {
-  margin: 0;
-  padding: 0 14px 12px;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
-.approval-card-actions {
-  justify-content: flex-end;
-  border-top: 1px solid var(--border);
-}
-
-.approval-card-actions button {
-  min-height: 34px;
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-panel);
-  color: var(--text);
-  cursor: pointer;
-}
-
-.approval-card-actions .danger {
-  color: var(--status-failed);
-}
 .search-reveal-line {
   background: color-mix(in srgb, var(--accent) 14%, transparent) !important;
 }
 .chat-message-shell {
   content-visibility: auto;
   contain-intrinsic-block-size: auto 120px;
+}
+
+.message-row {
+  position: relative;
+  transition: opacity 160ms var(--motion-ease-out), transform 160ms var(--motion-ease-out);
+}
+
+.message-row[data-streaming="true"] {
+  animation: message-stream-arrive 220ms var(--motion-ease-out) both;
+}
+
+.message-user-bubble {
+  box-shadow: 0 1px 0 var(--surface-highlight), 0 7px 18px color-mix(in srgb, var(--ambient-primary) 12%, transparent);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.message-row-user:hover .message-user-bubble {
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--border)) !important;
+  box-shadow: 0 1px 0 var(--surface-highlight), 0 10px 24px color-mix(in srgb, var(--ambient-primary) 18%, transparent);
+}
+
+.message-model-label {
+  letter-spacing: 0.015em;
+}
+
+.message-response-meta {
+  min-height: 24px;
+  padding-top: 2px;
+  border-top: 1px solid color-mix(in srgb, var(--border-soft) 54%, transparent);
+}
+
+@keyframes message-stream-arrive {
+  from { opacity: 0.55; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 .skip-to-content {
   position: fixed;

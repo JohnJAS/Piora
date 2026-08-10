@@ -122,6 +122,17 @@ function getVersion(): number {
   return version;
 }
 
+function getRunningSnapshots(): TaskRuntimeSnapshot[] {
+  return [...runtimeBySession.values()]
+    .filter((snapshot) => snapshot.runtime !== "idle" || snapshot.pendingApproval || snapshot.lastPromptFailed)
+    .sort((left, right) => (left.startedAt ?? 0) - (right.startedAt ?? 0));
+}
+
+export function useRunningTaskSnapshots(): TaskRuntimeSnapshot[] {
+  useSyncExternalStore(subscribe, getVersion, getVersion);
+  return getRunningSnapshots();
+}
+
 export function useTaskStatus({
   sessionId,
   archived = false,
@@ -146,5 +157,8 @@ export function useTaskStatus({
     archived,
     isViewing,
   });
-  return runtime === "stopping" ? { ...status, runtime: "stopping" } : status;
+  const statusWithStartedAt = snapshot?.startedAt === undefined
+    ? status
+    : { ...status, startedAt: snapshot.startedAt };
+  return runtime === "stopping" ? { ...statusWithStartedAt, runtime: "stopping" } : statusWithStartedAt;
 }

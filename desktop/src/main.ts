@@ -44,7 +44,7 @@ const DESKTOP_TITLE_BAR_HEIGHT = 40;
 // Reserve a transparent message area above the sprite, following the
 // OpenPets/OpenPetsKit split between pet pixels and transient task bubbles.
 const COMPANION_WINDOW_WIDTH = 236;
-const COMPANION_WINDOW_HEIGHT = 230;
+const COMPANION_WINDOW_HEIGHT = 360;
 const MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80;
 const PORTABLE_SMOKE_TEST = process.env.PIORA_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
