@@ -29,9 +29,18 @@ async function git(cwd: string, args: string[], maxBuffer = GIT_STATUS_MAX_BUFFE
 
 async function findRepositoryRoot(cwd: string): Promise<string | null> {
   try {
-    return (await git(cwd, ["rev-parse", "--show-toplevel"])).trim() || null;
+    const repositoryRoot = (await git(cwd, ["rev-parse", "--show-toplevel"])).trim();
+    return repositoryRoot ? resolveExistingPath(repositoryRoot) : null;
   } catch {
     return null;
+  }
+}
+
+function resolveExistingPath(candidate: string): string {
+  try {
+    return fs.realpathSync.native(candidate);
+  } catch {
+    return path.resolve(candidate);
   }
 }
 
@@ -164,7 +173,8 @@ function countUntrackedTextLines(filePath: string): number {
 }
 
 export async function getGitStatus(cwd: string): Promise<GitStatusResponse> {
-  const repositoryRoot = await findRepositoryRoot(cwd);
+  const resolvedCwd = resolveExistingPath(cwd);
+  const repositoryRoot = await findRepositoryRoot(resolvedCwd);
   if (!repositoryRoot) {
     return {
       isGitRepository: false,
@@ -178,10 +188,10 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResponse> {
   const allEntries = await readStatusEntries(repositoryRoot);
   const ignoredPaths = await readIgnoredPaths(repositoryRoot, allEntries.map((entry) => entry.path));
   const entries = allEntries.filter((entry) => !ignoredPaths.has(entry.path));
-  const trackedLineStats = await readTrackedLineStats(repositoryRoot, cwd, ignoredPaths);
+  const trackedLineStats = await readTrackedLineStats(repositoryRoot, resolvedCwd, ignoredPaths);
   const files = entries.flatMap((entry): GitFileStatus[] => {
     const filePath = path.resolve(repositoryRoot, entry.path);
-    if (!isWithinPath(cwd, filePath)) return [];
+    if (!isWithinPath(resolvedCwd, filePath)) return [];
     const classified = classifyGitStatus(entry);
     const lineStats = trackedLineStats.byPath.get(entry.path);
     const untrackedLines = classified.status === "untracked" ? countUntrackedTextLines(filePath) : 0;
