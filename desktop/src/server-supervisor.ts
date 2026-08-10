@@ -7,6 +7,7 @@ import type { Logger } from "./logger.js";
 
 const LOOPBACK_HOST = "127.0.0.1";
 const MAX_START_ATTEMPTS = 5;
+const START_RETRY_BASE_DELAY_MS = 750;
 const MAX_LOG_LINE_LENGTH = 16_384;
 
 export interface ServerExit {
@@ -228,10 +229,17 @@ export class StandaloneServer {
         this.options.logger.warn(`Web server start attempt ${attempt} failed`, error);
         await stopChild(child, this.options.logger, 1_000);
         if (this.child === child) this.child = undefined;
+        if (attempt < MAX_START_ATTEMPTS) {
+          // Portable builds can be scanned immediately after extraction. A
+          // short increasing delay gives Defender and third-party scanners
+          // time to release transient locks before the next attempt.
+          await delay(START_RETRY_BASE_DELAY_MS * attempt);
+        }
       }
     }
 
-    throw new Error("Unable to start the Piora server", { cause: lastError });
+    const lastMessage = lastError instanceof Error ? lastError.message : String(lastError ?? "unknown error");
+    throw new Error(`Unable to start the Piora server. Last error: ${lastMessage}`, { cause: lastError });
   }
 
   async stop(): Promise<void> {

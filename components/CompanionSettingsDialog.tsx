@@ -160,6 +160,23 @@ export function CompanionSettingsDialog({
           </details>
 
           <section className={styles.section} aria-labelledby="companion-import-zip-title">
+            <div className={styles.importCard} style={{ marginBottom: 9 }}>
+              <span className={styles.importIcon} aria-hidden="true"><AliIcon name="link" size={17} /></span>
+              <div className={styles.copy}>
+                <div className={styles.label}>{t("companion.openSourceCatalog")}</div>
+                <div className={styles.description}>{t("companion.openSourceCatalogDescription")}</div>
+                <div className={styles.archiveHint}>{t("companion.openSourceCatalogLicense")}</div>
+              </div>
+              <a
+                className={styles.primaryButton}
+                data-open-pet-runtime
+                href="https://github.com/alterhq/openpets"
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                {t("companion.browseCatalog")}
+              </a>
+            </div>
             <div className={styles.importCard}>
               <span className={styles.importIcon} aria-hidden="true"><AliIcon name="import" size={17} /></span>
               <div className={styles.copy}>

@@ -153,6 +153,7 @@ export function SpritePet({ pet, status }: { pet: CompanionPetMetadata; status: 
       <img src={pet.atlasUrl} alt="" hidden onError={() => setFailed(true)} />
       <div
         className={styles.sprite}
+        data-testid="companion-sprite-frame"
         aria-hidden="true"
         style={{
           ...fittedSize,

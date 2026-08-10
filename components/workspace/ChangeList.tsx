@@ -5,6 +5,7 @@ import { useI18n } from "@/hooks/useI18n";
 import type { GitFileStatus } from "@/lib/git-types";
 import { getReviewNavigationIndex } from "@/lib/review-keyboard";
 import { getReviewListWindow, REVIEW_LIST_PAGE_SIZE } from "@/lib/review-progressive";
+import { getFileIcon } from "../FileIcons";
 import styles from "./WorkspacePanel.module.css";
 
 export type ChangeGroup = "staged" | "unstaged" | "untracked";
@@ -95,6 +96,7 @@ export function ChangeList({ items, selectedKey, checkedPaths, onSelect, onToggl
             aria-level={1}
             aria-posinset={positionInGroup}
             aria-setsize={groupSize}
+            data-group={item.group}
             tabIndex={item.key === selectedKey ? 0 : -1}
             aria-selected={item.key === selectedKey}
             className={`${styles.changeRow} ${item.key === selectedKey ? styles.selected : ""}`}
@@ -116,16 +118,21 @@ export function ChangeList({ items, selectedKey, checkedPaths, onSelect, onToggl
               }
             }}
           >
+            <span className={styles.changeFileIcon} aria-hidden="true">{getFileIcon(name, 15)}</span>
             <input
+              className={styles.changeCheckbox}
               type="checkbox"
               checked={checkedPaths.has(path)}
               aria-label={t("review.selectFile", { name })}
               onClick={(event) => event.stopPropagation()}
               onChange={() => onToggle(path)}
             />
-            <span className={styles.statusCode}>{item.file.code}</span>
-            <span className={styles.changeName} title={path}><b>{name}</b>{parentLabel ? <small>{parentLabel}</small> : null}</span>
-            <span className={styles.lineStats}>+{item.file.additions ?? 0} −{item.file.deletions ?? 0}</span>
+            <span className={styles.changeName} title={path}>{parentLabel ? <small>{parentLabel}/</small> : null}<b>{name}</b></span>
+            <span className={styles.lineStats}>
+              {(item.file.additions ?? 0) > 0 ? <span className={styles.additions}>+{item.file.additions}</span> : null}
+              {(item.file.deletions ?? 0) > 0 ? <span className={styles.deletions}>−{item.file.deletions}</span> : null}
+              {(item.file.additions ?? 0) === 0 && (item.file.deletions ?? 0) === 0 ? <span>—</span> : null}
+            </span>
           </div>;
         })}
       </section>;
@@ -141,6 +148,6 @@ export function ChangeList({ items, selectedKey, checkedPaths, onSelect, onToggl
 
 function compactParentPath(parent: string): string {
   const parts = parent.split("/").filter(Boolean);
-  if (parts.length <= 2) return "";
+  if (parts.length <= 2) return parts.join("/");
   return parts.slice(-2).join("/");
 }

@@ -41,15 +41,25 @@ const COMPANION_VISIBILITY_CHANNEL = "pi:companion-window-visible";
 const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
 const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
 const DESKTOP_TITLE_BAR_HEIGHT = 40;
-const COMPANION_WINDOW_WIDTH = 136;
-const COMPANION_WINDOW_HEIGHT = 146;
+// Reserve a transparent message area above the sprite, following the
+// OpenPets/OpenPetsKit split between pet pixels and transient task bubbles.
+const COMPANION_WINDOW_WIDTH = 236;
+const COMPANION_WINDOW_HEIGHT = 230;
 const MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80;
 const PORTABLE_SMOKE_TEST = process.env.PIORA_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
 
 const requestedSmokeUserData = process.env.PIORA_SMOKE_USER_DATA?.trim();
+const requestedCompanionUiTestUserData = process.env.PIORA_COMPANION_UI_TEST === "1"
+  ? process.env.PIORA_COMPANION_UI_TEST_USER_DATA?.trim()
+  : undefined;
 if (PORTABLE_SMOKE_TEST && requestedSmokeUserData) {
   app.setPath("userData", resolve(requestedSmokeUserData));
+} else if (requestedCompanionUiTestUserData) {
+  // Packaged companion E2E checks run beside an already-open user instance.
+  // An explicit test-only profile keeps the instance lock, state, and storage
+  // completely isolated from the user's real Piora data.
+  app.setPath("userData", resolve(requestedCompanionUiTestUserData));
 } else {
   // The on-disk profile directory follows the product name (Piora). It is set
   // explicitly so it stays stable and independent of Electron's derived app name.
@@ -482,6 +492,21 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
     if (!isAllowedAppUrl(requestedUrl, url.origin)) event.preventDefault();
   });
   window.webContents.on("will-attach-webview", (event) => event.preventDefault());
+  window.webContents.on("context-menu", () => {
+    if (window.isDestroyed()) return;
+    Menu.buildFromTemplate([
+      { label: "打开 Piora", click: () => { focusMainWindow(); } },
+      { label: "桌宠设置", click: () => { focusMainWindow("companion-settings"); } },
+      { type: "separator" },
+      {
+        label: "隐藏桌宠",
+        click: () => {
+          closeCompanionWindow();
+          mainWindow?.webContents.send("pi:menu-action", "hide-companion");
+        },
+      },
+    ]).popup({ window });
+  });
   window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
     if (isMainFrame) log.error("Companion page failed to load", { errorCode, errorDescription, validatedUrl });
   });
@@ -972,7 +997,8 @@ if (!hasSingleInstanceLock) {
   void startApplication().catch(async (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     logger?.error("Desktop startup failed", error);
-    dialog.showErrorBox("Piora could not start", message);
+    const detail = logger ? `${message}\n\nDiagnostic log: ${logger.filePath}` : message;
+    dialog.showErrorBox("Piora could not start", detail);
     await server?.stop().catch((shutdownError) => {
       logger?.error("Unable to stop the web server after a startup failure", shutdownError);
     });

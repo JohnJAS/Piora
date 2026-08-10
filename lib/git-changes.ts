@@ -1,4 +1,4 @@
-import { execFile } from "child_process";
+import { execFile, spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import { promisify } from "util";
@@ -54,9 +54,67 @@ async function readStatusEntries(repositoryRoot: string): Promise<GitPorcelainEn
   return parseGitPorcelainV1(output);
 }
 
+async function readIgnoredPaths(repositoryRoot: string, paths: readonly string[]): Promise<Set<string>> {
+  if (paths.length === 0) return new Set();
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", [
+      "-C",
+      repositoryRoot,
+      "check-ignore",
+      "--no-index",
+      "-z",
+      "--stdin",
+    ], {
+      env: { ...process.env, LC_ALL: "C" },
+      windowsHide: true,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.kill();
+      reject(error);
+    };
+    const timeout = setTimeout(() => fail(new Error("git check-ignore timed out")), GIT_TIMEOUT_MS);
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+      if (Buffer.byteLength(stdout) > GIT_STATUS_MAX_BUFFER) fail(new Error("git check-ignore output is too large"));
+    });
+    child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+    child.on("error", fail);
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (settled) return;
+      settled = true;
+      // check-ignore exits 1 when none of the supplied paths are ignored.
+      if (code !== 0 && code !== 1) {
+        reject(new Error(stderr.trim() || `git check-ignore exited with code ${code ?? "unknown"}`));
+        return;
+      }
+      resolve(new Set(stdout.split("\0").filter(Boolean)));
+    });
+    child.stdin.on("error", fail);
+    child.stdin.end(`${paths.join("\0")}\0`);
+  });
+}
+
+async function readVisibleStatusEntries(repositoryRoot: string): Promise<GitPorcelainEntry[]> {
+  const entries = await readStatusEntries(repositoryRoot);
+  const ignoredPaths = await readIgnoredPaths(repositoryRoot, entries.map((entry) => entry.path));
+  return entries.filter((entry) => !ignoredPaths.has(entry.path));
+}
+
 async function readTrackedLineStats(
   repositoryRoot: string,
   cwd: string,
+  ignoredPaths: ReadonlySet<string> = new Set(),
 ): Promise<{ additions: number; deletions: number; byPath: Map<string, { additions: number; deletions: number }> }> {
   const relativeCwd = toGitPath(path.relative(repositoryRoot, cwd));
   const pathspec = relativeCwd || ".";
@@ -76,6 +134,7 @@ async function readTrackedLineStats(
     for (const line of output.split(/\r?\n/)) {
       if (!line) continue;
       const [added, deleted, filePath] = line.split("\t", 3);
+      if (filePath && ignoredPaths.has(filePath)) continue;
       const addedCount = Number(added);
       const deletedCount = Number(deleted);
       if (Number.isInteger(addedCount)) additions += addedCount;
@@ -116,10 +175,10 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResponse> {
     };
   }
 
-  const [entries, trackedLineStats] = await Promise.all([
-    readStatusEntries(repositoryRoot),
-    readTrackedLineStats(repositoryRoot, cwd),
-  ]);
+  const allEntries = await readStatusEntries(repositoryRoot);
+  const ignoredPaths = await readIgnoredPaths(repositoryRoot, allEntries.map((entry) => entry.path));
+  const entries = allEntries.filter((entry) => !ignoredPaths.has(entry.path));
+  const trackedLineStats = await readTrackedLineStats(repositoryRoot, cwd, ignoredPaths);
   const files = entries.flatMap((entry): GitFileStatus[] => {
     const filePath = path.resolve(repositoryRoot, entry.path);
     if (!isWithinPath(cwd, filePath)) return [];
@@ -197,7 +256,7 @@ export async function getGitFileDiff(cwd: string, filePath: string, scope: "comb
 
   const resolvedFilePath = path.resolve(filePath);
   const relativePath = toGitPath(path.relative(repositoryRoot, resolvedFilePath));
-  const entries = await readStatusEntries(repositoryRoot);
+  const entries = await readVisibleStatusEntries(repositoryRoot);
   const entry = entries.find((candidate) => candidate.path === relativePath);
   if (!entry) return { supported: false };
 

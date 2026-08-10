@@ -273,6 +273,21 @@ async function inspectElectronShell(webRoot, required) {
       throw new Error(`Packaged OpenAI Codex attribution is stale or modified: ${fileName}`);
     }
   }
+  const openPetsAttributionRoot = join(projectRoot, "third_party", "openpets");
+  const packagedOpenPetsAttributionRoot = join(resourcesRoot, "licenses", "openpets");
+  for (const fileName of ["LICENSE", "SOURCE.md"]) {
+    const sourcePath = join(openPetsAttributionRoot, fileName);
+    const packagedPath = join(packagedOpenPetsAttributionRoot, fileName);
+    await assertFile(sourcePath);
+    await assertFile(packagedPath);
+    const [sourceBytes, packagedBytes] = await Promise.all([
+      readFile(sourcePath),
+      readFile(packagedPath),
+    ]);
+    if (!sourceBytes.equals(packagedBytes)) {
+      throw new Error(`Packaged OpenPets attribution is stale or modified: ${fileName}`);
+    }
+  }
   for (const licensePath of [
     join(unpackedRoot, "LICENSE.electron.txt"),
     join(unpackedRoot, "LICENSES.chromium.html"),

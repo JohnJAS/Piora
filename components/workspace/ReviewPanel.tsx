@@ -73,7 +73,7 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       setStatus(data);
       const nextItems = createItems(data);
-      setSelectedKey((current) => nextItems.some((item) => item.key === current) ? current : nextItems[0]?.key ?? null);
+      setSelectedKey((current) => nextItems.some((item) => item.key === current) ? current : null);
       setCheckedPaths((current) => new Set([...current].filter((path) => data.files.some((file) => file.filePath === path))));
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setLoading(false); }
@@ -141,29 +141,34 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     finally { setBusy(false); }
   }, [amend, busy, commitMessage, cwd, loadStatus, onRefresh, t]);
 
-  if (!cwd) return <div className={styles.empty}>{t("review.selectProject")}</div>;
-  if (loading && status.files.length === 0) return <div className={styles.empty}>{t("review.loading")}</div>;
-  if (!status.isGitRepository) return <div className={styles.empty}>{error || t("review.notGit")}</div>;
+  if (!cwd) return <ReviewEmpty message={t("review.selectProject")} />;
+  if (loading && status.files.length === 0) return <ReviewEmpty message={t("review.loading")} loading />;
+  if (!status.isGitRepository) return <ReviewEmpty message={error || t("review.notGit")} />;
 
   const checked = [...checkedPaths];
   const selectedPaths = checked.length ? checked : selectedItem ? [selectedItem.file.filePath] : [];
   const stagedCount = status.files.filter((file) => file.indexStatus !== " " && file.indexStatus !== "?").length;
-  return <div className={styles.reviewRoot} aria-busy={busy}>
+  return <div className={`${styles.reviewRoot} ${selectedItem ? styles.reviewRootWithDiff : ""}`} aria-busy={busy}>
     <aside className={styles.reviewSidebar} aria-label={t("review.controls")}>
       <div className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">
         {selectedItem ? t("review.selectedChange", { path: selectedItem.file.filePath }) : t("review.noSelectedChange")}
       </div>
       <div className={styles.reviewToolbar}>
-        <b>{t("review.changes", { count: status.files.length })}</b>
-        <button className={styles.iconAction} type="button" onClick={() => void loadStatus()} disabled={busy} title={t("review.refresh")} aria-label={t("review.refresh")}><AliIcon name="reload" size={13} /></button>
+        <div className={styles.reviewHeading}>
+          <b>{t("review.changes", { count: status.files.length })}</b>
+          <span className={styles.reviewStats} aria-label={`+${status.additions} −${status.deletions}`}>
+            <span className={styles.additions}>+{status.additions}</span>
+            <span className={styles.deletions}>−{status.deletions}</span>
+          </span>
+        </div>
+        <div className={styles.reviewToolbarActions}>
+          <button className={styles.iconAction} type="button" disabled={busy || selectedPaths.length === 0} onClick={() => void mutate(selectedItem?.group === "staged" ? "unstage" : "stage", selectedPaths)} title={selectedItem?.group === "staged" ? t("review.unstage") : t("review.stage")} aria-label={selectedItem?.group === "staged" ? t("review.unstage") : t("review.stage")}><AliIcon name={selectedItem?.group === "staged" ? "minus" : "check"} size={13} /></button>
+          <button className={`${styles.iconAction} ${styles.danger}`} type="button" disabled={busy || selectedPaths.length === 0 || selectedItem?.group === "staged"} onClick={() => void mutate("revert", selectedPaths)} title={t("review.revert")} aria-label={t("review.revert")}><AliIcon name="history" size={13} /></button>
+          <button className={styles.iconAction} type="button" onClick={() => void loadStatus()} disabled={busy} title={t("review.refresh")} aria-label={t("review.refresh")}><AliIcon name="reload" size={13} /></button>
+        </div>
       </div>
-      {items.length ? <ChangeList items={items} selectedKey={selectedKey} checkedPaths={checkedPaths} onSelect={(item) => setSelectedKey(item.key)} onToggle={(path) => setCheckedPaths((current) => { const next = new Set(current); if (next.has(path)) next.delete(path); else next.add(path); return next; })} /> : <div className={styles.empty}>{t("review.clean")}</div>}
-      <div className={styles.bulkActions}>
-        <button type="button" disabled={busy || selectedPaths.length === 0} onClick={() => void mutate(selectedItem?.group === "staged" ? "unstage" : "stage", selectedPaths)}>{selectedItem?.group === "staged" ? t("review.unstage") : t("review.stage")}</button>
-        <button type="button" className={styles.danger} disabled={busy || selectedPaths.length === 0 || selectedItem?.group === "staged"} onClick={() => void mutate("revert", selectedPaths)}>{t("review.revert")}</button>
-      </div>
-      <div className={styles.commitPanel}>
-        <span className={styles.commitPreview}>{t("review.commitPreview", { count: stagedCount })}</span>
+      {items.length ? <ChangeList items={items} selectedKey={selectedKey} checkedPaths={checkedPaths} onSelect={(item) => setSelectedKey(item.key)} onToggle={(path) => setCheckedPaths((current) => { const next = new Set(current); if (next.has(path)) next.delete(path); else next.add(path); return next; })} /> : <ReviewEmpty message={t("review.clean")} compact />}
+      {stagedCount > 0 ? <div className={styles.commitPanel}>
         <textarea
           ref={commitMessageRef}
           value={commitMessage}
@@ -179,14 +184,23 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
           rows={3}
         />
         <span id="review-commit-shortcut" className={styles.srOnly}>{t("review.commitShortcut")}</span>
-        <label><input type="checkbox" checked={amend} onChange={(event) => setAmend(event.target.checked)} />{t("review.amend")}</label>
-        <button className={styles.primaryAction} type="button" disabled={busy || !commitMessage.trim()} aria-keyshortcuts="Control+Enter Meta+Enter" onClick={() => void commit()}>{t("review.commit")}</button>
-      </div>
+        <div className={styles.commitFooter}>
+          <label className={styles.amendToggle}><input type="checkbox" checked={amend} onChange={(event) => setAmend(event.target.checked)} />{t("review.amend")}</label>
+          <button className={styles.primaryAction} type="button" disabled={busy || !commitMessage.trim()} aria-keyshortcuts="Control+Enter Meta+Enter" onClick={() => void commit()}><AliIcon name="check" size={13} />{t("review.commit")}</button>
+        </div>
+      </div> : null}
       {error ? <div role="alert" className={styles.error}>{error}</div> : null}
       {toast ? <div role="status" className={styles.toast}>{toast}</div> : null}
     </aside>
-    <section className={styles.diffPane} role="region" aria-label={t("review.diffRegion")}>
-      {selectedItem && diff?.supported && diff.patch ? <DiffView patch={diff.patch} filePath={selectedItem.file.filePath} onOpenFile={(path) => onOpenFile(path)} hunkActions={(hunk) => <span className={styles.hunkActions} onClick={(event) => event.stopPropagation()}><button type="button" disabled={busy} onClick={() => void mutate(selectedItem.group === "staged" ? "unstage" : "stage", [selectedItem.file.filePath], { hunk })}>{selectedItem.group === "staged" ? t("review.unstageHunk") : t("review.stageHunk")}</button>{selectedItem.group !== "staged" ? <button type="button" disabled={busy} onClick={() => void mutate("revert", [selectedItem.file.filePath], { hunk })}>{t("review.revertHunk")}</button> : null}</span>} /> : <div className={styles.empty}>{selectedItem ? t("review.diffUnavailable") : t("review.selectChange")}</div>}
-    </section>
+    {selectedItem ? <section className={styles.diffPane} role="region" aria-label={t("review.diffRegion")}>
+      {diff?.supported && diff.patch ? <DiffView patch={diff.patch} filePath={selectedItem.file.filePath} onOpenFile={(path) => onOpenFile(path)} hunkActions={(hunk) => <span className={styles.hunkActions} onClick={(event) => event.stopPropagation()}><button type="button" disabled={busy} onClick={() => void mutate(selectedItem.group === "staged" ? "unstage" : "stage", [selectedItem.file.filePath], { hunk })}>{selectedItem.group === "staged" ? t("review.unstageHunk") : t("review.stageHunk")}</button>{selectedItem.group !== "staged" ? <button type="button" className={styles.danger} disabled={busy} onClick={() => void mutate("revert", [selectedItem.file.filePath], { hunk })}>{t("review.revertHunk")}</button> : null}</span>} /> : <ReviewEmpty message={t("review.diffUnavailable")} />}
+    </section> : null}
+  </div>;
+}
+
+function ReviewEmpty({ message, loading = false, compact = false }: { message: string; loading?: boolean; compact?: boolean }) {
+  return <div className={`${styles.reviewEmpty} ${compact ? styles.reviewEmptyCompact : ""}`}>
+    <span className={`${styles.emptyIcon} ${loading ? styles.emptyIconLoading : ""}`} aria-hidden="true"><AliIcon name={loading ? "reload" : "diff"} size={17} /></span>
+    <span>{message}</span>
   </div>;
 }

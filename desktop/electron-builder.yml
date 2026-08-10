@@ -53,6 +53,11 @@ extraResources:
       - "LICENSE"
       - "NOTICE"
       - "SOURCE.md"
+  - from: ../third_party/openpets
+    to: licenses/openpets
+    filter:
+      - "LICENSE"
+      - "SOURCE.md"
 
 win:
   icon: icon.ico

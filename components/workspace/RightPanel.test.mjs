@@ -30,6 +30,9 @@ test("moves files and review into an accessible keyboard-operable right workspac
 test("the command panel reuses Pi channels while file lookup stays in Files", () => {
   const commandPanel = fs.readFileSync(new URL("./CommandPanel.tsx", import.meta.url), "utf8");
   assert.match(commandPanel, /piora-command-history-v1/);
+  assert.match(commandPanel, /filterCommandHistory/);
+  assert.match(commandPanel, /role="combobox"/);
+  assert.match(commandPanel, /role="listbox"/);
   assert.match(commandPanel, /excludeFromContext/);
   assert.match(commandPanel, /controls\.runCommand/);
   assert.match(commandPanel, /Interactive commands|commandPanel\.limit/);

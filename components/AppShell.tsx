@@ -15,6 +15,7 @@ import { ProjectTrustDialog } from "./ProjectTrustDialog";
 import { BranchNavigator } from "./BranchNavigator";
 import { BackgroundSettings } from "./BackgroundSettings";
 import { AppearanceLooks } from "./AppearanceLooks";
+import { AppearanceResetButton } from "./AppearanceResetButton";
 import { FontSettings } from "./FontSettings";
 import { CompanionPet } from "./CompanionPet";
 import { CompanionSettingsDialog } from "./CompanionSettingsDialog";
@@ -1335,6 +1336,7 @@ export function AppShell() {
             <div style={{ marginBottom: 22 }}>
               <h2 style={{ margin: 0, color: "var(--text)", fontSize: "calc(var(--text-lg) * 1.22)", fontWeight: 680 }}>{translate("appearance.title")}</h2>
               <p style={{ margin: "7px 0 0", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>{translate("appearance.description")}</p>
+              <AppearanceResetButton />
             </div>
             <AppearanceLooks />
             <section aria-labelledby="settings-appearance-theme" style={{ paddingBottom: 16 }}>

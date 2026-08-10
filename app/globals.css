@@ -332,6 +332,19 @@ body.desktop-pet-document {
   background: transparent !important;
 }
 
+/* The companion renderer shares appearance storage with the main window.
+   Never let a saved app wallpaper paint body pseudo-elements behind the pet. */
+html.desktop-pet-document[data-app-background-active="true"] body {
+  isolation: auto !important;
+  background: transparent !important;
+}
+
+html.desktop-pet-document[data-app-background-active="true"] body::before,
+html.desktop-pet-document[data-app-background-active="true"] body::after {
+  content: none !important;
+  display: none !important;
+}
+
 /* Conversation chrome: one strong identity line and progressively disclosed
    actions. The composer owns token/context status, so this bar stays quiet. */
 .app-topbar {
@@ -2223,6 +2236,17 @@ pre, code {
 }
 .mermaid-zoom-dialog::backdrop {
   background: rgba(0, 0, 0, 0.35);
+}
+.mermaid-zoom-dialog[data-desktop-chrome="true"] {
+  inset: 40px 0 0;
+  height: calc(100dvh - 40px);
+}
+.mermaid-zoom-dialog[data-desktop-chrome="true"]::backdrop {
+  background: linear-gradient(
+    to bottom,
+    transparent 0 40px,
+    rgba(0, 0, 0, 0.35) 40px
+  );
 }
 .mermaid-zoom-layout {
   display: grid;

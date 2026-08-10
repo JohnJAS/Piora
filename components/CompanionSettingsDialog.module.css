@@ -310,6 +310,12 @@
   color: var(--accent);
 }
 
+a.primaryButton {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+
 .secondaryButton:disabled,
 .primaryButton:disabled,
 .selectButton:disabled {

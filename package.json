@@ -74,6 +74,7 @@
     "verify:release": "node scripts/verify-release-metadata.mjs",
     "verify:hygiene": "node scripts/verify-release-hygiene.mjs",
     "smoke:portable": "node scripts/smoke-test-portable.mjs",
+    "test:companion:packaged": "node scripts/test-packaged-companion.mjs",
     "verify:backgrounds": "node scripts/verify-background-assets.mjs",
     "backgrounds:overview": "node scripts/create-background-overview.mjs",
     "licenses:generate": "node scripts/generate-license-inventory.mjs",

@@ -45,9 +45,9 @@ test("file lookup stays in Files and the standalone Search tab is removed", () =
 });
 
 test("the command input uses a compact low-contrast focus treatment", () => {
-  assert.match(workspaceCss, /\.commandToolbar > input \{[^}]*height: 30px;/);
-  assert.match(workspaceCss, /\.commandToolbar > input:focus-visible \{[^}]*var\(--text-muted\) 24%[^}]*var\(--text-muted\) 5%/);
-  assert.doesNotMatch(workspaceCss, /\.searchControls > input,\.commandToolbar > input/);
+  assert.match(workspaceCss, /\.commandInputWrap > input \{[^}]*height: 30px;/);
+  assert.match(workspaceCss, /\.commandInputWrap > input:focus-visible \{[^}]*var\(--text-muted\) 24%[^}]*var\(--text-muted\) 5%/);
+  assert.doesNotMatch(workspaceCss, /\.searchControls > input,\.commandInputWrap > input/);
 });
 
 test("workspace actions share compact subtle button styling", () => {

@@ -121,6 +121,7 @@ function MermaidZoomDialog({ svg, onClose }: { svg: string; onClose: () => void 
   const { t } = useI18n();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [zoom, setZoom] = useState(1);
+  const hasDesktopChrome = typeof window !== "undefined" && Boolean(window.piDesktop);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -140,6 +141,7 @@ function MermaidZoomDialog({ svg, onClose }: { svg: string; onClose: () => void 
     <dialog
       ref={dialogRef}
       className="mermaid-zoom-dialog"
+      data-desktop-chrome={hasDesktopChrome ? "true" : undefined}
       aria-label={t("i18n.mermaidViewer")}
       onCancel={(event) => {
         event.preventDefault();
