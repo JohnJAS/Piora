@@ -18,7 +18,8 @@ The shell expects a Next standalone `server.js`. During local shell work, point
 at an existing standalone artifact explicitly:
 
 ```powershell
-$env:PI_DESKTOP_SERVER_ENTRY = "F:\path\to\standalone\server.js"
+$repositoryRoot = git rev-parse --show-toplevel
+$env:PI_DESKTOP_SERVER_ENTRY = Join-Path $repositoryRoot ".next\standalone\server.js"
 npm start
 ```
 

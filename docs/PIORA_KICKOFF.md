@@ -32,7 +32,7 @@ git checkout -b feat/codex-alignment
 把下面这段发给 GPT，只改最后一行的任务号：
 
 ```
-你在 F:\piGUI 工作，这是 Piora —— pi Agent 的桌面 GUI（Next.js + Electron）。
+你在 Piora 仓库根目录工作，这是 Piora —— pi Agent 的桌面 GUI（Next.js + Electron）。
 
 开工前按顺序读这四份文件，不要跳过：
 1. AGENTS.md —— 架构与已知陷阱

@@ -24,16 +24,10 @@
 # desktop build output (electron-builder + tsc)
 /desktop/dist/
 /desktop/release/
-/desktop/release2/
-/desktop/release3/
-/desktop/release-delivery/
-/desktop/release-final/
-/desktop/release-v2/
 /desktop/node_modules/
 
-# electron download cache & custom build outputs
+# electron download cache
 .electron-cache/
-.next-final/
 
 # workbuddy workspace data
 .workbuddy/

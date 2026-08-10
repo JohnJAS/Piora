@@ -17,6 +17,13 @@ export const SECRET_RULES = Object.freeze([
   { id: "private-key", pattern: /-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----/g },
 ]);
 
+export const PORTABILITY_RULES = Object.freeze([
+  {
+    id: "repository-specific-absolute-path",
+    pattern: /\b[A-Z]:[\\/](?:[^\\/\r\n]+[\\/])*(?:piGUI|Piora)(?:[\\/]|$)/gi,
+  },
+]);
+
 const TEXT_EXTENSIONS = new Set([
   ".bat", ".cjs", ".cmd", ".css", ".csv", ".html", ".ini", ".js",
   ".json", ".jsx", ".md", ".mjs", ".ps1", ".scss", ".sh", ".svg",
@@ -96,7 +103,11 @@ function listReleaseTreeFiles() {
 
 function inspectReleaseTree(files) {
   const findings = [];
-  const contentRules = [...SECRET_RULES, ...buildPrivatePathRules()];
+  const contentRules = [
+    ...SECRET_RULES,
+    ...PORTABILITY_RULES,
+    ...buildPrivatePathRules(),
+  ];
 
   for (const filePath of files) {
     const pathReason = getSensitivePathReason(filePath);
