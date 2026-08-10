@@ -21,6 +21,7 @@ const nextConfig: NextConfig = {
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
     "@earendil-works/pi-tui",
+    "playwright-core",
   ],
   webpack(config, { isServer }) {
     // The instrumentation entry is compiled through a separate webpack path

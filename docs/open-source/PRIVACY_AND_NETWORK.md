@@ -95,7 +95,8 @@ credentials, settings, and installed resources used by Pi itself. Source pet dat
 - no analytics, crash-report upload, or behavioral tracking;
 - no automatic upload of conversations, projects, TODOs, quick phrases, pets, or backgrounds;
 - no remote theme CSS, theme JavaScript, or background URL loading;
-- no automatic installation or execution of project extensions before project trust;
+- no separate Project Trust or per-tool approval layer; project resources follow Pi's direct local-agent loading model;
+- the built-in browser accesses websites only when an Agent invokes its browser tool, in a private headless context that does not inherit normal browser logins;
 - no automatic updater in the initial release;
 - no background network monitor owned by Piora.
 

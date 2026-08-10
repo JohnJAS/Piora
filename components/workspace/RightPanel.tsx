@@ -35,7 +35,6 @@ interface Props {
   onMentions: (relativePaths: string[]) => void;
   onMentionLines: (relativePath: string, startLine: number, endLine: number) => void;
   taskControls: TaskControls | null;
-  projectTrusted: boolean;
 }
 
 const TABS: RightPanelTab[] = ["review", "files", "commands"];
@@ -92,7 +91,7 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
       </div>
     </section>
     <section id="workspace-commands" role="tabpanel" aria-labelledby="workspace-commands-tab" hidden={activeTab !== "commands"} className={styles.panel}>
-      <CommandPanel trusted={props.projectTrusted} controls={props.taskControls} />
+      <CommandPanel controls={props.taskControls} />
     </section>
   </div>;
 });

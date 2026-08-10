@@ -12,11 +12,10 @@ const HISTORY_KEY = "piora-command-history-v1";
 const HISTORY_LIMIT = 100;
 
 interface Props {
-  trusted: boolean;
   controls: TaskControls | null;
 }
 
-export function CommandPanel({ trusted, controls }: Props) {
+export function CommandPanel({ controls }: Props) {
   const { t } = useI18n();
   const [command, setCommand] = useState("");
   const [excludeFromContext, setExcludeFromContext] = useState(false);
@@ -40,7 +39,7 @@ export function CommandPanel({ trusted, controls }: Props) {
   );
   const run = (commandOverride?: string) => {
     const value = (commandOverride ?? command).trim();
-    if (!value || !trusted || !controls || controls.disabled) return;
+    if (!value || !controls || controls.disabled) return;
     const next = [value, ...history.filter((item) => item !== value)].slice(0, HISTORY_LIMIT);
     setHistory(next);
     window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
@@ -97,7 +96,7 @@ export function CommandPanel({ trusted, controls }: Props) {
           }}
           placeholder={t("commandPanel.placeholder")}
           aria-label={t("commandPanel.placeholder")}
-          disabled={!trusted || !controls || controls.bashRunning}
+          disabled={!controls || controls.bashRunning}
         />
         {suggestions.length ? (
           <div id="command-history-suggestions" className={styles.commandSuggestions} role="listbox" aria-label={t("commandPanel.historyMatches")}>
@@ -130,10 +129,9 @@ export function CommandPanel({ trusted, controls }: Props) {
       </div>
       {controls?.bashRunning
         ? <button type="button" className={styles.danger} onClick={controls.abort}>{t("commandPanel.stop")}</button>
-        : <button className={styles.primaryAction} type="button" onClick={() => run()} disabled={!trusted || !controls || controls.disabled || !command.trim()}><AliIcon name="play" size={12} /><span>{t("commandPanel.run")}</span></button>}
+        : <button className={styles.primaryAction} type="button" onClick={() => run()} disabled={!controls || controls.disabled || !command.trim()}><AliIcon name="play" size={12} /><span>{t("commandPanel.run")}</span></button>}
     </div>
     <label className={styles.commandContextToggle}><input type="checkbox" checked={excludeFromContext} onChange={(event) => setExcludeFromContext(event.target.checked)} />{t("commandPanel.exclude")}</label>
-    {!trusted ? <div className={styles.error} role="alert">{t("commandPanel.untrusted")}</div> : null}
     <div className={styles.commandLimit}>{t("commandPanel.limit")}</div>
     <div className={styles.commandOutput} aria-live="polite">
       {controls?.bashRunning ? <div className={styles.searchNotice}>{t("commandPanel.running", { command: controls.pendingCommand ?? command })}</div> : null}

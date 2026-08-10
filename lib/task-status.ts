@@ -6,6 +6,8 @@ export interface TaskStatus {
   lifecycle: Lifecycle;
   runtime: Runtime;
   attention: Attention;
+  /** Server-owned start time for the current run. Survives task switches. */
+  startedAt?: number;
 }
 
 export interface TaskStatusInput {
@@ -27,6 +29,25 @@ export interface TaskRuntimeSnapshot {
   pendingApproval: boolean;
   lastPromptFailed: boolean;
   errorSummary?: string;
+  startedAt?: number;
+  title?: string;
+  activity?: TaskRuntimeActivity;
+}
+
+export type TaskRuntimeActivityKind =
+  | "prompt"
+  | "thinking"
+  | "assistant"
+  | "tool"
+  | "command"
+  | "compacting"
+  | "approval"
+  | "retry";
+
+export interface TaskRuntimeActivity {
+  kind: TaskRuntimeActivityKind;
+  message: string;
+  updatedAt: number;
 }
 
 export interface RunningSessionsPayload {

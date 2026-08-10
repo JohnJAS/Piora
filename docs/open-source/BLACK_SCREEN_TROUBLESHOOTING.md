@@ -39,11 +39,12 @@
 排查时按以下顺序核对仓库状态：
 
 ```
-Test-Path F:\piGUI\.next\BUILD_ID                              # 应为 True（生产构建标志）
-Test-Path F:\piGUI\.next\routes-manifest.json                 # 应为 True
-Test-Path F:\piGUI\.next\static\chunks\webpack.js             # 应为 True
-Test-Path F:\piGUI\.next\standalone\.next\static\chunks\webpack.js   # 应为 True（打包内容）
-Test-Path F:\piGUI\.next\standalone\public                    # 应为 True
+$repositoryRoot = git rev-parse --show-toplevel
+Test-Path (Join-Path $repositoryRoot ".next\BUILD_ID")
+Test-Path (Join-Path $repositoryRoot ".next\routes-manifest.json")
+Test-Path (Join-Path $repositoryRoot ".next\static\chunks\webpack.js")
+Test-Path (Join-Path $repositoryRoot ".next\standalone\.next\static\chunks\webpack.js")
+Test-Path (Join-Path $repositoryRoot ".next\standalone\public")
 ```
 
 其中任意一项为 False，就是这次黑屏的直接原因。
@@ -54,16 +55,17 @@ Test-Path F:\piGUI\.next\standalone\public                    # 应为 True
 # 1. 关闭所有 npm run dev / next dev 终端
 
 # 2. 彻底删除被污染的 .next（含旧的 standalone）
-Remove-Item -Recurse -Force F:\piGUI\.next
+$repositoryRoot = git rev-parse --show-toplevel
+Remove-Item -Recurse -Force (Join-Path $repositoryRoot ".next")
 
 # 3. 重新完整打包（build:web → stage-standalone → desktop）
-cd F:\piGUI
+Set-Location $repositoryRoot
 npm run dist:win
 
 # 4. 打包前先验证 standalone 已补全
-Test-Path F:\piGUI\.next\standalone\.next\static\chunks\webpack.js   # True
-Test-Path F:\piGUI\.next\standalone\public                          # True
-Test-Path F:\piGUI\.next\BUILD_ID                                   # True
+Test-Path (Join-Path $repositoryRoot ".next\standalone\.next\static\chunks\webpack.js")
+Test-Path (Join-Path $repositoryRoot ".next\standalone\public")
+Test-Path (Join-Path $repositoryRoot ".next\BUILD_ID")
 ```
 
 正式发布按 README 要求应在**隔离工作树**中打包（`git worktree` 或干净副本），

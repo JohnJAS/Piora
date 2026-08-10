@@ -21,13 +21,27 @@
   app-region: drag;
 }
 
-.activityBubble {
+.activityBubbles {
   position: absolute;
   top: 4px;
   left: 4px;
   right: 4px;
-  min-height: 48px;
-  max-height: 72px;
+  max-height: 210px;
+  display: grid;
+  gap: 6px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  pointer-events: none;
+}
+
+.activityBubbles::-webkit-scrollbar {
+  display: none;
+}
+
+.activityBubble {
+  position: relative;
+  min-height: 46px;
+  max-height: 64px;
   display: flex;
   align-items: flex-start;
   gap: 9px;
@@ -44,7 +58,7 @@
   pointer-events: none;
 }
 
-.activityBubble::after {
+.activityBubble:last-child::after {
   position: absolute;
   right: 48px;
   bottom: -5px;

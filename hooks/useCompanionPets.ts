@@ -14,6 +14,14 @@ export type CompanionPetSource = CompanionPet & {
   origin?: Exclude<CompanionPetSourceKind, "piora-bundled" | "piora-installed">;
 };
 
+const COMPANION_PETS_CHANNEL = "pi-companion-pets-v1";
+
+function notifyPetCatalogChanged(): void {
+  const channel = new BroadcastChannel(COMPANION_PETS_CHANNEL);
+  channel.postMessage({ type: "pets-changed" });
+  channel.close();
+}
+
 export function getCompanionPetSourceKey(pet: CompanionPetSource): string {
   return pet.sourceKey ?? `${pet.sourceKind ?? pet.source}:${pet.id}`;
 }
@@ -47,6 +55,21 @@ export function useCompanionPets(active: boolean) {
     if (active) void loadPets();
   }, [active, loadPets]);
 
+  useEffect(() => {
+    if (!active) return;
+    const channel = new BroadcastChannel(COMPANION_PETS_CHANNEL);
+    channel.onmessage = (event: MessageEvent<unknown>) => {
+      if (
+        event.data
+        && typeof event.data === "object"
+        && (event.data as { type?: unknown }).type === "pets-changed"
+      ) {
+        void loadPets();
+      }
+    };
+    return () => channel.close();
+  }, [active, loadPets]);
+
   const importPet = useCallback(async (pet: CompanionPetSource): Promise<CompanionPet | null> => {
     const sourceKey = getCompanionPetSourceKey(pet);
     setImportingPetKey(sourceKey);
@@ -64,6 +87,7 @@ export function useCompanionPets(active: boolean) {
       const body = await response.json() as { pet?: CompanionPet; error?: string };
       if (!response.ok || !body.pet) throw new Error(body.error || t("companion.importFailed"));
       await loadPets();
+      notifyPetCatalogChanged();
       return body.pet;
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : t("companion.importFailed"));
@@ -83,6 +107,7 @@ export function useCompanionPets(active: boolean) {
       const body = await response.json() as { pet?: CompanionPet; error?: string };
       if (!response.ok || !body.pet) throw new Error(body.error || t("companion.importFailed"));
       await loadPets();
+      notifyPetCatalogChanged();
       return body.pet;
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : t("companion.importFailed"));

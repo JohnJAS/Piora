@@ -12,7 +12,6 @@ import {
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { invalidateServicesCache } from "@/lib/rpc-manager";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
-import { getProjectTrustStatus } from "@/lib/project-trust";
 import type {
   PluginDiagnostic,
   PluginPackageInfo,
@@ -204,9 +203,8 @@ function collectResources(paths: ResolvedPaths): {
 
 async function readPlugins(cwd: string): Promise<PluginsResponse> {
   const agentDir = getAgentDir();
-  const projectTrust = getProjectTrustStatus(cwd, agentDir);
   const settingsManager = SettingsManager.create(cwd, agentDir, {
-    projectTrusted: projectTrust.trusted,
+    projectTrusted: true,
   });
   const packageManager = new DefaultPackageManager({
     cwd,
@@ -271,7 +269,7 @@ async function readPlugins(cwd: string): Promise<PluginsResponse> {
     packages,
     totals,
     diagnostics,
-    projectResourcesLoaded: projectTrust.trusted,
+    projectResourcesLoaded: true,
   };
 }
 
@@ -319,17 +317,10 @@ export async function POST(req: Request) {
     }
 
     const agentDir = getAgentDir();
-    const projectTrust = getProjectTrustStatus(body.cwd, agentDir);
     const settingsManager = SettingsManager.create(body.cwd, agentDir, {
-      projectTrusted: projectTrust.trusted,
+      projectTrusted: true,
     });
     const scope = readScope(body.scope);
-    if (scope === "project" && !projectTrust.trusted) {
-      return NextResponse.json(
-        { error: "Project resources must be trusted before modifying project plugins" },
-        { status: 403 },
-      );
-    }
     const packageManager = new DefaultPackageManager({
       cwd: body.cwd,
       agentDir,

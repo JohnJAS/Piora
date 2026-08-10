@@ -77,7 +77,8 @@ Piora 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面
 Piora 直接使用 Pi 的 AgentSession、资源加载器、SettingsManager 和 package/skill/extension
 机制。Web 开发环境继续使用已经安装的 JavaScript/TypeScript extensions、skills、prompts
 和 packages；桌面打包已保留同一加载路径，但每个公开 Windows 版本必须通过隔离扩展 fixture
-后才能声明打包支持。项目扩展仍受 Project Trust 约束。
+后才能声明打包支持。Piora 不增加 Project Trust 或工具权限档位，项目资源按 Pi 的本地 Agent
+模型直接加载。
 
 Portable EXE 不内置 npm、npx、Git、编译器、用户扩展、API Key 或 `~/.pi/agent`。因此：
 

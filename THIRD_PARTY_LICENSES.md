@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `40bcf4a4a20338703a22b4df1716711280b3f89d1d64a78498aa2ec154ab64dd`
+Lockfile SHA-256: `103a2b3d6e0e42c93b22d38f0cd0d54bb8663ead0e93347749d5cabb1aeac68c`
 
-Unique locked packages: **1078**. Runtime packages: **567**. Build/development-only packages: **511**.
+Unique locked packages: **1079**. Runtime packages: **568**. Build/development-only packages: **511**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -485,6 +485,7 @@ Every locked package declares a license.
 | `pathe` | `2.0.3` | MIT | No |
 | `picocolors` | `1.1.1` | ISC | No |
 | `pkg-types` | `1.3.1` | MIT | No |
+| `playwright-core` | `1.62.1` | Apache-2.0 | No |
 | `points-on-curve` | `0.2.0` | MIT | No |
 | `points-on-path` | `0.2.1` | MIT | No |
 | `polished` | `4.3.1` | MIT | No |

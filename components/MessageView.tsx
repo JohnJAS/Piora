@@ -103,6 +103,7 @@ interface Props {
   onEditContent?: (content: string) => void;
   showTimestamp?: boolean;
   prevTimestamp?: number;
+  responseStartedAt?: number;
   sessionId?: string;
 }
 
@@ -119,6 +120,15 @@ function formatTime(ts?: number): string | null {
   return `${date} ${time}`;
 }
 
+function formatResponseDuration(startedAt?: number, finishedAt?: number): string | null {
+  if (startedAt === undefined || finishedAt === undefined || finishedAt < startedAt) return null;
+  const elapsedMs = finishedAt - startedAt;
+  if (elapsedMs < 10_000) return `${Math.max(0.1, elapsedMs / 1_000).toFixed(1)}s`;
+  const seconds = Math.round(elapsedMs / 1_000);
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
 function haveSameRelevantToolResults(
   message: AgentMessage,
   previous: Map<string, ToolResultMessage> | undefined,
@@ -133,12 +143,12 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp, sessionId }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp, responseStartedAt, sessionId }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} sessionId={sessionId} entryId={entryId} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} responseStartedAt={responseStartedAt} sessionId={sessionId} entryId={entryId} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -159,6 +169,7 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.isStreaming === next.isStreaming
     && haveSameRelevantToolResults(prev.message, prev.toolResults, next.toolResults)
     && prev.modelNames === next.modelNames
+    && prev.responseStartedAt === next.responseStartedAt
     && prev.cwd === next.cwd
     && prev.onOpenFile === next.onOpenFile
     && prev.entryId === next.entryId
@@ -213,12 +224,14 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
 
   return (
     <div
+      className="message-row message-row-user"
       style={{ marginBottom: 16, display: "flex", flexDirection: "column", alignItems: "flex-end" }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
       <div style={{ display: "flex", alignItems: "flex-end", gap: 6, maxWidth: "85%" }}>
         <div
+          className="message-user-bubble"
           style={{
             flex: 1,
             minWidth: 0,
@@ -369,6 +382,7 @@ function AssistantMessageView({
   onOpenFile,
   showTimestamp,
   prevTimestamp,
+  responseStartedAt,
   sessionId,
   entryId,
 }: {
@@ -380,11 +394,13 @@ function AssistantMessageView({
   onOpenFile?: (filePath: string) => void;
   showTimestamp?: boolean;
   prevTimestamp?: number;
+  responseStartedAt?: number;
   sessionId?: string;
   entryId?: string;
 }) {
   const { t } = useI18n();
   const time = showTimestamp ? formatTime(message.timestamp) : null;
+  const responseDuration = showTimestamp ? formatResponseDuration(responseStartedAt, message.timestamp) : null;
   const blockItems = (message.content ?? [])
     .map((block, originalIndex) => ({ block, originalIndex }))
     .filter(({ block }) => !isEmptyThinkingBlock(block, { isStreaming }));
@@ -497,12 +513,15 @@ function AssistantMessageView({
 
   return (
     <div
+      className="message-row message-row-assistant"
+      data-streaming={isStreaming ? "true" : "false"}
       style={{ marginBottom: 16 }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
       {/* Model label */}
       <div
+        className="message-model-label"
         style={{
           fontSize: "var(--text-xs)",
           color: "var(--text-dim)",
@@ -574,13 +593,18 @@ function AssistantMessageView({
         </div>
       )}
 
-      <div style={{
+      <div className="message-response-meta" style={{
         display: "flex", alignItems: "center", gap: 8, marginTop: 4,
       }}>
         {message.usage && !isStreaming && (
           <div style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)" }}>
             {formatUsage(message.usage)}
           </div>
+        )}
+        {responseDuration && !isStreaming && (
+          <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>
+            {t("i18n.responseTime", { duration: responseDuration })}
+          </span>
         )}
         {textContent && !isStreaming && (
           <button

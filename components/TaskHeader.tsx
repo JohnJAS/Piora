@@ -7,7 +7,6 @@ import type { GitStatusResponse } from "@/lib/git-types";
 import { STATUS_PRESENTATION, getTaskStatusPresentationKey } from "@/lib/task-status";
 import { AliIcon } from "./AliIcon";
 import styles from "./TaskHeader.module.css";
-import type { ToolPreset } from "@/lib/tool-presets";
 
 interface ProjectHeaderInfo {
   repository?: string;
@@ -21,7 +20,6 @@ interface Props {
   worktreeBranch?: string;
   busy: boolean;
   compacting: boolean;
-  permissionPreset: ToolPreset;
   onStop: () => void;
   onOpenChanges: () => void;
   onOpenDetails: () => void;
@@ -36,6 +34,10 @@ const EMPTY_GIT_STATUS: GitStatusResponse = {
   additions: 0,
   deletions: 0,
 };
+
+// TaskHeader is intentionally remounted when the selected task changes. Keep
+// the optimistic start time keyed by session until the server snapshot arrives.
+const optimisticRunStarts = new Map<string, number>();
 
 function getPathName(path: string): string {
   return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
@@ -55,7 +57,6 @@ export function TaskHeader({
   worktreeBranch,
   busy,
   compacting,
-  permissionPreset,
   onStop,
   onOpenChanges,
   onOpenDetails,
@@ -152,15 +153,21 @@ export function TaskHeader({
   useEffect(() => {
     if (!active) {
       runStartedAtRef.current = null;
+      optimisticRunStarts.delete(sessionId);
       setElapsedMs(0);
       return;
     }
-    runStartedAtRef.current ??= Date.now();
+    const authoritativeStart = taskStatus.startedAt;
+    const startedAt = authoritativeStart
+      ?? optimisticRunStarts.get(sessionId)
+      ?? Date.now();
+    optimisticRunStarts.set(sessionId, startedAt);
+    runStartedAtRef.current = startedAt;
     const update = () => setElapsedMs(Date.now() - (runStartedAtRef.current ?? Date.now()));
     update();
     const timer = setInterval(update, 1_000);
     return () => clearInterval(timer);
-  }, [active]);
+  }, [active, sessionId, taskStatus.startedAt]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -217,7 +224,6 @@ export function TaskHeader({
             <span className={styles.separator}>·</span>
             <span className={`${styles.environmentText} ${styles.environmentDetail}`}>{projectLabel}</span>
             {branch ? <><span className={styles.separator}>·</span><span className={styles.environmentText}>{branch}</span></> : null}
-            {permissionPreset === "full" ? <><span className={styles.separator}>·</span><span className={styles.permissionBadge}>{t("approval.fullBadge")}</span></> : null}
           </button>
         )}
       </div>

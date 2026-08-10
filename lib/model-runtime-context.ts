@@ -5,7 +5,6 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
-import { projectTrustReloadOptions } from "@/lib/project-trust";
 
 export class ModelRequestCwdError extends Error {
   constructor(
@@ -22,7 +21,7 @@ export class ModelRequestCwdError extends Error {
  * Resolve and authorize the cwd used to enumerate models.
  *
  * Model discovery can import project extensions, so callers must use the same
- * allowed-root and project-trust path as `/api/models` instead of constructing
+ * allowed-root path as `/api/models` instead of constructing
  * a bare ModelRuntime.
  */
 export async function resolveModelRequestCwd(requestedCwd?: string | null): Promise<string> {
@@ -45,13 +44,11 @@ export async function resolveModelRequestCwd(requestedCwd?: string | null): Prom
   return cwd;
 }
 
-/** Build Pi services without bypassing the repository trust gate. */
+/** Build Pi services for the validated workspace. */
 export function createTrustedModelServices(cwd: string) {
   const agentDir = getAgentDir();
-  const trustReloadOptions = projectTrustReloadOptions(cwd, agentDir);
   return createAgentSessionServices({
     cwd,
     agentDir,
-    ...(trustReloadOptions ? { resourceLoaderReloadOptions: trustReloadOptions } : {}),
   });
 }

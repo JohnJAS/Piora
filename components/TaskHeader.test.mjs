@@ -21,6 +21,13 @@ test("polls git changes only while a running task is visible", () => {
   assert.match(source, /3_000/);
 });
 
+test("keeps elapsed time anchored to the server run across task switches", () => {
+  assert.match(source, /optimisticRunStarts = new Map<string, number>/);
+  assert.match(source, /const authoritativeStart = taskStatus\.startedAt/);
+  assert.match(source, /optimisticRunStarts\.get\(sessionId\)/);
+  assert.match(source, /Date\.now\(\) - \(runStartedAtRef\.current/);
+});
+
 test("degrades slots in the required narrow-window order without overflow", () => {
   assert.match(css, /overflow:\s*visible/);
   assert.match(css, /@container \(max-width: 640px\)[\s\S]*?\.changesSlot[\s\S]*?display:\s*none/);

@@ -292,31 +292,6 @@ export function SettingsDialog({
                     </button>
                   </div>
 
-                  <div className={styles.conversationRowStacked}>
-                    <div className={styles.conversationCopy}>
-                      <div className={styles.rowTitle}>{t("taskControls.tools")}</div>
-                      <div className={styles.rowDescription}>{t("settings.toolsDescription")}</div>
-                    </div>
-                    <div className={styles.optionGroup}>
-                      {(["none", "default", "full"] as const).map((preset) => {
-                        const selected = conversation.taskControls?.toolPreset === preset;
-                        return (
-                          <button
-                            className={styles.optionButton}
-                            type="button"
-                            key={preset}
-                            aria-pressed={selected}
-                            disabled={!conversation.taskControls || conversation.taskControls.disabled}
-                            onClick={() => conversation.taskControls?.onToolPresetChange(preset)}
-                          >
-                            {selected ? <AliIcon name="check" size={12} /> : null}
-                            {t(`taskControls.preset${preset === "none" ? "Off" : preset === "default" ? "Default" : "Full"}`)}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
                   <div className={styles.conversationRow}>
                     <div className={styles.conversationCopy}>
                       <div className={styles.rowTitle}>{t("taskControls.notifications")}</div>

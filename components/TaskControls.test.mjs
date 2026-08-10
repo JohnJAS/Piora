@@ -10,12 +10,13 @@ const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "
 const settingsDialog = readFileSync(new URL("./SettingsDialog.tsx", import.meta.url), "utf8");
 const settingsCss = readFileSync(new URL("./SettingsDialog.module.css", import.meta.url), "utf8");
 
-test("moves conversation controls out of the composer and top bar into settings", () => {
+test("keeps conversation metadata and notifications out of the composer", () => {
   assert.doesNotMatch(chatInput, /TOOL_PRESETS|toolDropdown|soundEnabled|onAudioUnlock/);
   assert.match(settingsDialog, /key:\s*"conversation"/);
-  assert.match(settingsDialog, /taskControls\.preset\$\{/);
   assert.match(settingsDialog, /conversation\.onGenerateTitle/);
   assert.match(settingsDialog, /conversation\.onNotificationToggle/);
+  assert.doesNotMatch(settingsDialog, /taskControls\.preset/);
+  assert.doesNotMatch(appShell, /model\.permissions/);
   assert.doesNotMatch(appShell, /topbar-more-button/);
 });
 
@@ -67,10 +68,11 @@ test("anchors soft top-bar panels inside the top bar coordinate system", () => {
   assert.match(globalCss, /\.soft-menu-item:hover/);
 });
 
-test("loads the real preset for idle sessions before enabling the menu", () => {
-  assert.match(agentSession, /void loadTools\(session\.id\)/);
-  assert.match(agentSession, /const \[toolsLoaded, setToolsLoaded\]/);
-  assert.match(chatWindow, /disabled: sessionBusy \|\| !toolsLoaded/);
+test("always enables Pi's coding tools without exposing permission tiers", () => {
+  assert.match(agentSession, /BUILTIN_AGENT_TOOLS/);
+  assert.match(agentSession, /type: "set_tools"/);
+  assert.doesNotMatch(agentSession, /toolPreset|permissionTier|PRESET_NONE/);
+  assert.doesNotMatch(chatWindow, /onToolPresetChange|permissionPreset/);
 });
 
 test("keeps the file drawer toggle inside the shell and aligns both header states", () => {

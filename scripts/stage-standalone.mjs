@@ -43,10 +43,7 @@ const assets = [
     rejectSymlinks: true,
   },
   ...[
-    ["Piora approval extension", "extensions/piora-approval.ts"],
-    ["Piora approval policy", "lib/approval-policy.ts"],
-    ["Piora approval runtime", "lib/approval-runtime.ts"],
-    ["Piora approval protocol", "lib/approval-ui.ts"],
+    ["Piora browser extension", "extensions/piora-browser.ts"],
   ].map(([name, relativePath]) => ({
     name,
     source: join(projectRoot, relativePath),
@@ -54,6 +51,13 @@ const assets = [
     required: true,
     rejectSymlinks: true,
   })),
+  {
+    name: "Playwright browser runtime",
+    source: join(projectRoot, "node_modules", "playwright-core"),
+    destination: join(standaloneDirectory, "node_modules", "playwright-core"),
+    required: true,
+    rejectSymlinks: true,
+  },
 ];
 
 async function getPathType(path) {
