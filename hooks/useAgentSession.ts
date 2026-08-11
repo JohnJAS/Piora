@@ -1067,6 +1067,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "tool_execution_start": {
         const id = event.toolCallId as string;
         const name = event.toolName as string;
+        if (name === "browser") window.dispatchEvent(new CustomEvent("piora:show-browser"));
         setAgentPhase((prev) => {
           const tools = prev?.kind === "running_tools" ? [...prev.tools] : [];
           if (!tools.some((t) => t.id === id)) tools.push({ id, name });

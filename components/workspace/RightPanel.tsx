@@ -7,10 +7,11 @@ import { FileViewer } from "../FileViewer";
 import { TabBar, type Tab } from "../TabBar";
 import { ReviewPanel } from "./ReviewPanel";
 import { CommandPanel } from "./CommandPanel";
+import { BrowserPanel } from "./BrowserPanel";
 import type { TaskControls } from "../ChatWindow";
 import styles from "./WorkspacePanel.module.css";
 
-export type RightPanelTab = "review" | "files" | "commands";
+export type RightPanelTab = "review" | "files" | "commands" | "browser";
 export interface RightPanelHandle { focusActiveTab: () => void; focusFileSearch: () => void; }
 
 interface Props {
@@ -37,7 +38,7 @@ interface Props {
   taskControls: TaskControls | null;
 }
 
-const TABS: RightPanelTab[] = ["review", "files", "commands"];
+const TABS: RightPanelTab[] = ["review", "files", "commands", "browser"];
 
 export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPanel(props, ref) {
   const { t } = useI18n();
@@ -92,6 +93,9 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     </section>
     <section id="workspace-commands" role="tabpanel" aria-labelledby="workspace-commands-tab" hidden={activeTab !== "commands"} className={styles.panel}>
       <CommandPanel controls={props.taskControls} />
+    </section>
+    <section id="workspace-browser" role="tabpanel" aria-labelledby="workspace-browser-tab" hidden={activeTab !== "browser"} className={styles.panel}>
+      <BrowserPanel active={active && activeTab === "browser"} />
     </section>
   </div>;
 });

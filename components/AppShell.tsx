@@ -213,7 +213,7 @@ export function AppShell() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem("piora-right-panel-tab");
-    setRightPanelTab(stored === "files" || stored === "commands" ? stored : "review");
+    setRightPanelTab(stored === "files" || stored === "commands" || stored === "browser" ? stored : "review");
     setRightPanelTabRestored(true);
   }, []);
 
@@ -221,6 +221,15 @@ export function AppShell() {
     if (!rightPanelTabRestored) return;
     window.localStorage.setItem("piora-right-panel-tab", rightPanelTab);
   }, [rightPanelTab, rightPanelTabRestored]);
+
+  useEffect(() => {
+    const showBrowser = () => {
+      setRightPanelTab("browser");
+      setRightPanelOpen(true);
+    };
+    window.addEventListener("piora:show-browser", showBrowser);
+    return () => window.removeEventListener("piora:show-browser", showBrowser);
+  }, []);
   const {
     preferences: companionPreferences,
     setPreferences: setCompanionPreferences,

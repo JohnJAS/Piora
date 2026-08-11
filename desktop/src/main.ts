@@ -48,6 +48,7 @@ const COMPANION_WINDOW_HEIGHT = 360;
 const MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80;
 const PORTABLE_SMOKE_TEST = process.env.PIORA_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
+const STARTUP_SHELL_BACKGROUND = "#111318";
 
 const requestedSmokeUserData = process.env.PIORA_SMOKE_USER_DATA?.trim();
 const requestedCompanionUiTestUserData = process.env.PIORA_COMPANION_UI_TEST === "1"
@@ -810,6 +811,52 @@ function createMainWindow(
   return window;
 }
 
+function createStartupWindow(log: Logger): { window: BrowserWindow; ready: Promise<number> } {
+  const initialState = getInitialMainWindowState(log);
+  const window = new BrowserWindow({
+    ...(initialState.x === undefined ? {} : { x: initialState.x }),
+    ...(initialState.y === undefined ? {} : { y: initialState.y }),
+    width: initialState.width,
+    height: initialState.height,
+    minWidth: 900,
+    minHeight: 640,
+    show: false,
+    title: "Piora",
+    backgroundColor: STARTUP_SHELL_BACKGROUND,
+    autoHideMenuBar: true,
+    ...(process.platform === "win32" ? {
+      titleBarStyle: "hidden" as const,
+      titleBarOverlay: { color: "#00000000", symbolColor: "#737373", height: DESKTOP_TITLE_BAR_HEIGHT },
+    } : {}),
+    webPreferences: {
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      devTools: false,
+    },
+  });
+  const ready = new Promise<number>((resolveReady) => {
+    window.once("ready-to-show", () => {
+      const readyAt = Date.now();
+      if (!PORTABLE_SMOKE_TEST) {
+        if (initialState.maximized) window.maximize();
+        window.show();
+      }
+      const startupMarker = process.env.PIORA_SMOKE_STARTUP_MARKER?.trim();
+      if (PORTABLE_SMOKE_TEST && startupMarker) {
+        writeFileSync(resolve(startupMarker), `${JSON.stringify({ schema: "piora-startup-v1", ready: true, surface: "electron-shell" })}\n`, { encoding: "utf8", flag: "wx" });
+      }
+      resolveReady(readyAt);
+    });
+  });
+  const startupDocument = `<!doctype html><html><head><meta charset="utf-8"><style>
+    *{box-sizing:border-box}html,body{height:100%;margin:0;background:#111318;color:#e7e7e7;font-family:Segoe UI,system-ui,sans-serif}
+    body{display:grid;grid-template-columns:250px 1fr}.sidebar{border-right:1px solid #282b31;padding:58px 14px 20px}.brand{display:flex;align-items:center;gap:10px;font-weight:650}.mark{width:24px;height:24px;border-radius:7px;background:#e7e7e7;color:#111318;display:grid;place-items:center}.lines{margin-top:38px;display:grid;gap:12px}.line{height:9px;border-radius:5px;background:#22252b}.line:nth-child(2){width:78%}.line:nth-child(3){width:62%}.main{display:grid;place-items:center}.loading{display:grid;justify-items:center;gap:14px;color:#9a9da5;font-size:13px}.spinner{width:22px;height:22px;border:2px solid #32363e;border-top-color:#d8d8d8;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+  </style></head><body><aside class="sidebar"><div class="brand"><span class="mark">P</span><span>Piora</span></div><div class="lines"><span class="line"></span><span class="line"></span><span class="line"></span></div></aside><main class="main"><div class="loading"><span class="spinner"></span><span>Starting Piora…</span></div></main></body></html>`;
+  void window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(startupDocument)}`);
+  return { window, ready };
+}
+
 type SmokeRendererState = {
   readyState: string;
   rendererLoaded: boolean;
@@ -887,6 +934,11 @@ async function startApplication(): Promise<void> {
     electronVersion: process.versions.electron,
   });
 
+  // Show an app-owned shell immediately while the bundled Next.js service
+  // starts in parallel. This keeps portable EXE launch responsive even on a
+  // cold filesystem and gives the smoke test a true process-to-window gate.
+  const startup = createStartupWindow(logger);
+
   const serverEntry = resolveStandaloneServerEntry();
   const serverHostEntry = join(__dirname, "server-host.js");
   if (!existsSync(serverHostEntry)) {
@@ -922,6 +974,7 @@ async function startApplication(): Promise<void> {
     }
     mainWindow = createMainWindow(serverUrl, logger, { showWhenReady: false });
     const rendererState = await waitForSmokeRenderer(mainWindow);
+    await startup.ready;
     writeFileSync(
       resolve(smokeMarker),
       `${JSON.stringify({
@@ -937,6 +990,7 @@ async function startApplication(): Promise<void> {
     logger.info("Portable smoke test reached a healthy bundled service and renderer");
     await stopApplication();
     shutdownComplete = true;
+    startup.window.destroy();
     mainWindow.destroy();
     app.exit(0);
     return;
@@ -948,6 +1002,9 @@ async function startApplication(): Promise<void> {
   installDisplayReconciliation();
 
   mainWindow = createMainWindow(serverUrl, logger);
+  mainWindow.once("ready-to-show", () => {
+    if (!startup.window.isDestroyed()) startup.window.destroy();
+  });
   installTray();
 }
 

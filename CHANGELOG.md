@@ -4,13 +4,36 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-08-11
+
 ### Added
 
+- A configurable prompt-optimizer system instruction in Agent settings, with
+  local persistence, restore-default controls, and preview-before-apply flow.
+- A Codex-style Browser workspace panel with interactive page frames, tabs,
+  navigation controls, direct keyboard input, and a dedicated persistent Piora
+  profile that keeps website sign-ins across application restarts.
 - File tabs can be reordered by drag-and-drop or keyboard-accessible actions,
   closed in groups, and reopened from the tab menu or with
   `Ctrl/Cmd+Shift+T`, while preserving unsaved-change confirmation.
 - Open file tabs, the active file, and expanded file-tree directories restore
   per workspace after refresh without persisting unsaved editor contents.
+
+### Changed
+
+- The portable desktop app now presents an immediate lightweight startup shell
+  while the bundled service loads, packages with store compression for faster
+  extraction, and enforces a three-second process-to-window smoke-test budget.
+
+### Fixed
+
+- Selected projects and sessions use a neutral Codex-style highlight without
+  the previous blue accent rail.
+- Review diffs start collapsed and expand independently instead of opening all
+  files when one file is selected.
+- Desktop companion bubbles stay close to the pet when idle and stack active
+  task bubbles above the base status bubble.
+- Review and diff typography now follows the configured UI font scale.
 
 ## [0.1.0] - 2026-08-01
 

@@ -19,6 +19,7 @@ export interface GitFileStatus {
 export interface GitStatusResponse {
   isGitRepository: boolean;
   repositoryRoot: string | null;
+  branch?: string | null;
   files: GitFileStatus[];
   additions: number;
   deletions: number;

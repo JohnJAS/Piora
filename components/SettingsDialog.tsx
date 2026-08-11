@@ -7,6 +7,12 @@ import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
 import type { TaskControls } from "./ChatWindow";
 import { SettingsPortabilityCard } from "./SettingsPortabilityCard";
+import { PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH, PROMPT_OPTIMIZER_SYSTEM_PROMPT } from "@/lib/prompt-optimizer";
+import {
+  readPromptOptimizerSystemPrompt,
+  resetPromptOptimizerSystemPrompt,
+  writePromptOptimizerSystemPrompt,
+} from "@/lib/prompt-optimizer-settings";
 import styles from "./SettingsDialog.module.css";
 
 interface Props {
@@ -63,6 +69,9 @@ export function SettingsDialog({
   const { t } = useI18n();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [optimizerPromptDraft, setOptimizerPromptDraft] = useState(PROMPT_OPTIMIZER_SYSTEM_PROMPT);
+  const [optimizerPromptSaved, setOptimizerPromptSaved] = useState(PROMPT_OPTIMIZER_SYSTEM_PROMPT);
+  const [optimizerPromptStatus, setOptimizerPromptStatus] = useState<"idle" | "saved" | "error">("idle");
   const deferredSearchQuery = useDeferredValue(searchQuery);
   useFocusTrap(dialogRef, open, { onEscape: onClose });
 
@@ -137,6 +146,36 @@ export function SettingsDialog({
   useEffect(() => {
     if (!open) setSearchQuery("");
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const saved = readPromptOptimizerSystemPrompt(window.localStorage);
+    setOptimizerPromptDraft(saved);
+    setOptimizerPromptSaved(saved);
+    setOptimizerPromptStatus("idle");
+  }, [open]);
+
+  const saveOptimizerPrompt = () => {
+    try {
+      const saved = writePromptOptimizerSystemPrompt(optimizerPromptDraft, window.localStorage);
+      setOptimizerPromptDraft(saved);
+      setOptimizerPromptSaved(saved);
+      setOptimizerPromptStatus("saved");
+    } catch {
+      setOptimizerPromptStatus("error");
+    }
+  };
+
+  const restoreOptimizerPrompt = () => {
+    try {
+      const restored = resetPromptOptimizerSystemPrompt(window.localStorage);
+      setOptimizerPromptDraft(restored);
+      setOptimizerPromptSaved(restored);
+      setOptimizerPromptStatus("saved");
+    } catch {
+      setOptimizerPromptStatus("error");
+    }
+  };
 
   const normalizedSearch = deferredSearchQuery.trim().toLocaleLowerCase();
   const filteredEntries = useMemo(() => {
@@ -311,6 +350,43 @@ export function SettingsDialog({
                     >
                       <span />
                     </button>
+                  </div>
+
+                  <div className={styles.conversationRowStacked}>
+                    <div className={styles.conversationCopy}>
+                      <div className={styles.rowTitle}>{t("settings.promptOptimizerTitle")}</div>
+                      <div className={styles.rowDescription}>{t("settings.promptOptimizerDescription")}</div>
+                    </div>
+                    <textarea
+                      className={styles.promptEditor}
+                      value={optimizerPromptDraft}
+                      maxLength={PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH}
+                      aria-label={t("settings.promptOptimizerTitle")}
+                      onChange={(event) => {
+                        setOptimizerPromptDraft(event.target.value);
+                        setOptimizerPromptStatus("idle");
+                      }}
+                    />
+                    <div className={styles.promptEditorFooter}>
+                      <span role="status">
+                        {optimizerPromptStatus === "saved"
+                          ? t("settings.promptOptimizerSaved")
+                          : optimizerPromptStatus === "error"
+                            ? t("settings.promptOptimizerSaveFailed")
+                            : `${Array.from(optimizerPromptDraft).length.toLocaleString()} / ${PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH.toLocaleString()}`}
+                      </span>
+                      <div>
+                        <button className={styles.secondaryButton} type="button" onClick={restoreOptimizerPrompt}>{t("settings.promptOptimizerRestore")}</button>
+                        <button
+                          className={styles.primaryButton}
+                          type="button"
+                          disabled={!optimizerPromptDraft.trim() || optimizerPromptDraft.trim() === optimizerPromptSaved}
+                          onClick={saveOptimizerPrompt}
+                        >
+                          {t("settings.promptOptimizerSave")}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </section>
 

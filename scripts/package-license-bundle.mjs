@@ -12,6 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 const scriptPath = fileURLToPath(import.meta.url);
@@ -946,17 +947,17 @@ async function writeArtifacts(outputRoot, bundleRoot, artifacts) {
       await writeFile(destination, bytes);
     }
     try {
-      await rename(bundleRoot, backupRoot);
+      await renameWithTransientWindowsRetry(bundleRoot, backupRoot);
       movedExisting = true;
     } catch (error) {
       if (error?.code !== "ENOENT") throw error;
     }
-    await rename(temporaryRoot, bundleRoot);
+    await renameWithTransientWindowsRetry(temporaryRoot, bundleRoot);
     installedNewBundle = true;
   } catch (error) {
     if (movedExisting && !installedNewBundle) {
       try {
-        await rename(backupRoot, bundleRoot);
+        await renameWithTransientWindowsRetry(backupRoot, bundleRoot);
       } catch {
         // Preserve the original error; the backup path is included in it only locally.
       }
@@ -966,6 +967,20 @@ async function writeArtifacts(outputRoot, bundleRoot, artifacts) {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
   if (movedExisting) await rm(backupRoot, { recursive: true, force: true });
+}
+
+async function renameWithTransientWindowsRetry(source, destination) {
+  const retryableCodes = new Set(["EACCES", "EBUSY", "EPERM"]);
+  const maxAttempts = process.platform === "win32" ? 8 : 1;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await rename(source, destination);
+      return;
+    } catch (error) {
+      if (attempt === maxAttempts || !retryableCodes.has(error?.code)) throw error;
+      await delay(50 * (2 ** (attempt - 1)));
+    }
+  }
 }
 
 export async function generatePackageLicenseBundle({

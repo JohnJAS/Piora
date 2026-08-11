@@ -26,17 +26,19 @@
 .button { width: 27px; height: 27px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--text-muted); cursor: pointer; padding: 0; }
 .button:hover { border-color: color-mix(in srgb, var(--border) 72%, transparent); background: var(--bg-hover); color: var(--text); }
 .button:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 36%, transparent); outline-offset: 0; }
-.hunk { min-height: 29px; display: flex; align-items: center; gap: 7px; padding: 0 7px 0 9px; color: var(--text-muted); background: color-mix(in srgb, var(--accent) 4%, var(--bg)); border-block: 1px solid color-mix(in srgb, var(--border) 76%, transparent); overflow: hidden; }
-.hunkToggle { min-width: 0; height: 27px; flex: 1; display: flex; align-items: center; gap: 5px; overflow: hidden; border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: var(--text-xs); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.hunk { min-height: 33px; display: flex; align-items: center; gap: 5px; padding: 3px 6px 3px 0; color: var(--text-muted); background: var(--bg); overflow: hidden; }
+.hunkToggle { min-width: 0; height: 27px; flex: 1; display: flex; align-items: center; gap: 5px; overflow: hidden; border: 0; border-radius: 0 8px 8px 0; background: color-mix(in srgb, var(--surface-muted) 88%, var(--bg)); color: inherit; cursor: pointer; padding: 0 9px; font: inherit; font-family: var(--font-ui, system-ui, sans-serif); font-size: var(--text-xs); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.hunkToggle:hover { background: color-mix(in srgb, var(--surface-muted) 72%, var(--bg-hover)); color: var(--text); }
 .hunkToggle:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 36%, transparent); outline-offset: -2px; }
-.hunkChevron { width: 13px; flex: 0 0 auto; color: currentColor; font-family: system-ui, sans-serif; font-size: var(--text-sm); text-align: center; }
+.hunkChevron { width: 13px; flex: 0 0 auto; display: inline-flex; color: currentColor; transition: transform 120ms ease; }
+.hunkToggle[aria-expanded="true"] .hunkChevron { transform: rotate(90deg); }
 .line { display: grid; grid-template-columns: 46px 46px 20px minmax(max-content, 1fr); min-height: 23px; line-height: 23px; content-visibility: auto; contain-intrinsic-block-size: 23px; }
 .line:hover { background-image: linear-gradient(color-mix(in srgb, var(--text) 2.5%, transparent), color-mix(in srgb, var(--text) 2.5%, transparent)); }
 .lineNumber { padding: 0 7px; text-align: right; color: color-mix(in srgb, var(--text-dim) 78%, transparent); background: color-mix(in srgb, var(--surface-muted) 46%, transparent); user-select: none; border-right: 1px solid color-mix(in srgb, var(--border) 54%, transparent); font-variant-numeric: tabular-nums; }
 .marker { color: var(--text-dim); text-align: center; user-select: none; }
 .code { padding: 0 12px 0 6px; white-space: pre; }
-.added { background-color: color-mix(in srgb, var(--status-ready) 10%, transparent); }
-.removed { background-color: color-mix(in srgb, var(--status-failed) 9%, transparent); }
+.added { background-color: color-mix(in srgb, var(--status-ready) 12%, transparent); }
+.removed { background-color: color-mix(in srgb, var(--status-failed) 11%, transparent); }
 .added .marker { color: var(--status-ready); }
 .removed .marker { color: var(--status-failed); }
 .meta { color: var(--text-dim); font-style: italic; }

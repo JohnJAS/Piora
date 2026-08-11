@@ -17,6 +17,7 @@ export interface DiffViewProps {
   mode?: "unified" | "split";
   contextLines?: number;
   collapsed?: boolean;
+  showFileHeader?: boolean;
   hunkActions?: (hunk: Hunk) => ReactNode;
   onOpenFile?: (path: string, line: number) => void;
 }
@@ -30,6 +31,7 @@ export function DiffView({
   mode = "unified",
   contextLines = 3,
   collapsed = false,
+  showFileHeader = true,
   hunkActions,
   onOpenFile,
 }: DiffViewProps) {
@@ -73,7 +75,7 @@ export function DiffView({
         const displayPath = filePath ?? bestPath(file);
         return (
           <section key={`${displayPath}-${fileIndex}`}>
-            <div className={styles.fileHeader}>
+            {showFileHeader ? <div className={styles.fileHeader}>
               <span className={styles.filePath} title={displayPath}>{displayPath || t("diff.unknownFile")}</span>
               <span className={styles.fileStatus}>{t(`diff.status.${file.status}`)}</span>
               {displayPath && onOpenFile && (
@@ -84,11 +86,15 @@ export function DiffView({
               <button className={styles.button} type="button" onClick={() => void navigator.clipboard.writeText(patch)} title={t("diff.copy")} aria-label={t("diff.copy")}>
                 <AliIcon name="copy" size={13} />
               </button>
-            </div>
+            </div> : null}
             {file.binary ? <div className={styles.notice}>{t("diff.binary")}</div> : file.hunks.map((hunk, hunkIndex) => {
               if (remaining <= 0) return null;
               const key = `${fileIndex}:${hunkIndex}`;
               const isCollapsed = collapsed || collapsedHunks.has(key);
+              const previousHunk = file.hunks[hunkIndex - 1];
+              const hiddenBefore = previousHunk
+                ? Math.max(0, hunk.oldStart - (previousHunk.oldStart + previousHunk.oldCount))
+                : Math.max(0, Math.min(hunk.oldStart, hunk.newStart) - 1);
               const lines = hunk.lines.slice(0, remaining);
               remaining -= lines.length;
               return (
@@ -100,7 +106,7 @@ export function DiffView({
                       title={hunk.header}
                       onClick={() => setCollapsedHunks((current) => toggleSet(current, key))}
                       aria-expanded={!isCollapsed}
-                    ><span className={styles.hunkChevron} aria-hidden="true">{isCollapsed ? "›" : "⌄"}</span>{compactHunkHeader(hunk.header)}</button>
+                    ><span className={styles.hunkChevron} aria-hidden="true"><AliIcon name="chevron-right" size={12} /></span>{hiddenBefore > 0 ? t("diff.unchangedLines", { count: hiddenBefore }) : t("diff.changeBlock", { index: hunkIndex + 1 })}</button>
                     {hunkActions?.(hunk)}
                   </div>
                   {!isCollapsed && (mode === "split"
@@ -176,4 +182,3 @@ function bestPath(file: DiffFile): string { return file.newPath && file.newPath 
 function firstLine(file: DiffFile): number { return file.hunks[0]?.newStart || file.hunks[0]?.oldStart || 1; }
 function languageFor(path: string): string { return path.split(".").pop()?.toLowerCase() || "text"; }
 function toggleSet(current: Set<string>, key: string): Set<string> { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; }
-function compactHunkHeader(header: string): string { return header.match(/^@@[^@]*@@/)?.[0] ?? header; }
