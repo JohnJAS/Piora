@@ -14,6 +14,7 @@ const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, filterModelOptions
 // the exact context module instead of creating a second provider instance.
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const chatInputSource = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
 
 test("uses an ordinary cursor for the session information hover", () => {
   assert.match(globalCss, /\.session-stats-trigger\s*\{[^}]*cursor:\s*default/s);
@@ -217,6 +218,32 @@ test("keeps an unknown context ring visible before runtime usage is available", 
 
   assert.match(html, /data-context-used="unknown"/);
   assert.match(html, /stroke-dasharray="3 6"/);
+});
+
+test("designs prompt optimization as a preview before replacing the draft", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(ChatInput, {
+        onSend() {},
+        onAbort() {},
+        isStreaming: false,
+        model: { provider: "openai", modelId: "gpt-5" },
+      }),
+    ),
+  );
+
+  assert.match(html, /aria-label="Optimize prompt"/);
+  assert.match(html, /class="prompt-optimize-button"/);
+  assert.match(chatInputSource, /fetch\("\/api\/prompts\/optimize"/);
+  assert.match(chatInputSource, /prompt-optimization-review/);
+  assert.match(chatInputSource, /chat\.keepOriginalPrompt/);
+  assert.match(chatInputSource, /chat\.useOptimizedPrompt/);
+  assert.match(
+    chatInputSource,
+    /className="is-primary"[\s\S]*?onClick=\{\(\) => \{[\s\S]*?setValue\(promptOptimization\.result!\)[\s\S]*?chat\.useOptimizedPrompt/,
+  );
 });
 
 test("renders compact errors above the input as a wrapping alert", () => {

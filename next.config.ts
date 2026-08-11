@@ -15,6 +15,16 @@ const nextConfig: NextConfig = {
   // explicit root, monorepo/workspace detection can broaden the standalone
   // trace and make the packaged output less deterministic.
   outputFileTracingRoot: __dirname,
+  // Browser profiles contain user-owned cookies, storage and cache files. They
+  // are runtime data, never application dependencies. Excluding them also
+  // prevents node-file-trace from following a developer's local profile when
+  // the persistent browser extension is compiled for standalone packaging.
+  outputFileTracingExcludes: {
+    "/*": [
+      "**/.pi/agent/piora/browser-profile/**",
+      "**/piora/browser-profile/**",
+    ],
+  },
   serverExternalPackages: [
     "undici",
     "@earendil-works/pi-coding-agent",

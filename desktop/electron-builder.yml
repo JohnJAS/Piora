@@ -2,6 +2,7 @@ appId: io.github.kexijiang.piora
 productName: Piora
 copyright: Copyright © 2026 Piora contributors
 asar: true
+compression: normal
 afterPack: ../scripts/electron-after-pack-licenses.cjs
 
 directories:
@@ -73,3 +74,6 @@ electronDownload:
   isVerifyChecksum: false
 
 artifactName: ${productName}-${version}-${os}-${arch}-portable.${ext}
+
+portable:
+  splashImage: build/portable-splash.bmp

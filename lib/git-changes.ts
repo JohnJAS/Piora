@@ -120,6 +120,19 @@ async function readVisibleStatusEntries(repositoryRoot: string): Promise<GitPorc
   return entries.filter((entry) => !ignoredPaths.has(entry.path));
 }
 
+async function readBranchLabel(repositoryRoot: string): Promise<string | null> {
+  try {
+    return (await git(repositoryRoot, ["symbolic-ref", "--quiet", "--short", "HEAD"])).trim() || null;
+  } catch {
+    try {
+      const sha = (await git(repositoryRoot, ["rev-parse", "--short", "HEAD"])).trim();
+      return sha ? `HEAD ${sha}` : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
 async function readTrackedLineStats(
   repositoryRoot: string,
   cwd: string,
@@ -179,13 +192,14 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResponse> {
     return {
       isGitRepository: false,
       repositoryRoot: null,
+      branch: null,
       files: [],
       additions: 0,
       deletions: 0,
     };
   }
 
-  const allEntries = await readStatusEntries(repositoryRoot);
+  const [allEntries, branch] = await Promise.all([readStatusEntries(repositoryRoot), readBranchLabel(repositoryRoot)]);
   const ignoredPaths = await readIgnoredPaths(repositoryRoot, allEntries.map((entry) => entry.path));
   const entries = allEntries.filter((entry) => !ignoredPaths.has(entry.path));
   const trackedLineStats = await readTrackedLineStats(repositoryRoot, resolvedCwd, ignoredPaths);
@@ -212,6 +226,7 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResponse> {
   return {
     isGitRepository: true,
     repositoryRoot,
+    branch,
     files,
     additions: trackedLineStats.additions + untrackedAdditions,
     deletions: trackedLineStats.deletions,

@@ -9,7 +9,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useCompanionPets } from "@/hooks/useCompanionPets";
 import { useCompanionPreferences } from "@/hooks/useCompanionPreferences";
 import { useI18n } from "@/hooks/useI18n";
@@ -34,8 +34,6 @@ export function DesktopCompanionWindow() {
   const pets = useCompanionPets(true);
   const runningTasks = useRunningTaskSnapshots();
   const [activity, setActivity] = useState<CompanionActivity>(DEFAULT_ACTIVITY);
-  const [bubbleVisible, setBubbleVisible] = useState(false);
-  const bubbleTimerRef = useRef<number | null>(null);
   const activePet = useMemo(
     () => pets.catalog?.installed.find((pet) => pet.id === preferences.selectedPetId) ?? null,
     [pets.catalog?.installed, preferences.selectedPetId],
@@ -65,26 +63,6 @@ export function DesktopCompanionWindow() {
     return () => channel.close();
   }, []);
 
-  useEffect(() => {
-    setBubbleVisible(true);
-    if (bubbleTimerRef.current !== null) window.clearTimeout(bubbleTimerRef.current);
-    bubbleTimerRef.current = null;
-
-    // Active and actionable states remain visible. Idle is a short completion
-    // acknowledgement, then disappears so only the transparent pet remains.
-    if (runningTasks.length === 0 && activity.status === "idle") {
-      bubbleTimerRef.current = window.setTimeout(() => {
-        setBubbleVisible(false);
-        bubbleTimerRef.current = null;
-      }, 3_200);
-    }
-
-    return () => {
-      if (bubbleTimerRef.current !== null) window.clearTimeout(bubbleTimerRef.current);
-      bubbleTimerRef.current = null;
-    };
-  }, [activity.cause, activity.status, runningTasks.length]);
-
   const taskBubbles = useMemo(() => runningTasks.map((snapshot) => {
     const status = snapshotActivityStatus(snapshot);
     return {
@@ -105,6 +83,7 @@ export function DesktopCompanionWindow() {
   }, [activity, taskBubbles]);
   const statusLabel = t(`companion.activity.${displayActivity.status}`);
   const cause = displayActivity.cause || t(`companion.activity.${displayActivity.status}Cause`);
+  const statusCause = t(`companion.activity.${displayActivity.status}Cause`);
   const petLabel = activePet?.displayName ?? t("companion.builtinPet");
 
   return (
@@ -113,16 +92,19 @@ export function DesktopCompanionWindow() {
         className={styles.dragSurface}
         title={`${petLabel} · ${statusLabel} · ${cause} · ${t("companion.desktopInteractionHint")}`}
       >
-        <div className={styles.activityBubbles} aria-live="polite">
-          {(taskBubbles.length > 0 ? taskBubbles : [{ id: "active", status: displayActivity.status, title: statusLabel, cause }]).map((item) => (
+        <div className={styles.activityBubbles} aria-live="polite" data-has-active-tasks={taskBubbles.length > 0}>
+          {[
+            ...taskBubbles,
+            { id: "companion-status", status: displayActivity.status, title: statusLabel, cause: statusCause },
+          ].map((item) => (
             <div
               key={item.id}
               className={styles.activityBubble}
               data-testid="companion-activity-bubble"
-              data-visible={taskBubbles.length > 0 || bubbleVisible}
+              data-visible="true"
+              data-kind={item.id === "companion-status" ? "status" : "task"}
               data-status={item.status}
               role="status"
-              aria-hidden={taskBubbles.length === 0 && !bubbleVisible}
             >
               <span className={styles.activityCopy}>
                 <strong>{item.title}</strong>

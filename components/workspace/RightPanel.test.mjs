@@ -17,8 +17,9 @@ test("moves files and review into an accessible keyboard-operable right workspac
   assert.match(rightPanel, /<FileExplorer/);
   assert.match(rightPanel, /<FileViewer/);
   assert.match(rightPanel, /<CommandPanel/);
+  assert.match(rightPanel, /<BrowserPanel/);
   assert.doesNotMatch(rightPanel, /<SearchPanel/);
-  assert.match(rightPanel, /"review", "files", "commands"/);
+  assert.match(rightPanel, /"review", "files", "commands", "browser"/);
   assert.doesNotMatch(rightPanel, /workspace-search/);
   assert.match(shell, /piora-right-panel-tab/);
   assert.match(shell, /useState<RightPanelTab>\("review"\)/);

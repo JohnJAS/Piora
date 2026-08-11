@@ -4,6 +4,7 @@ import test from "node:test";
 
 const mainSource = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
 const taskRowSource = await readFile(new URL("./sidebar/TaskRow.tsx", import.meta.url), "utf8");
+const globalStyles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const splitSources = await Promise.all([
   "ProjectList.tsx", "SidebarNavigation.tsx", "SidebarProjectArea.tsx", "SidebarFileArea.tsx",
   "useSessionCatalog.ts", "sidebar-utils.ts", "sidebar-types.ts", "useProjectPicker.ts", "WorktreeSection.tsx",
@@ -50,6 +51,16 @@ test("hover actions overlay a fixed-height session row without reflow", () => {
   assert.match(sessionItemSource, /opacity:\s*hovered \? 1 : 0/);
   assert.doesNotMatch(sessionItemSource, /\{hovered && \(/);
   assert.match(source, /className="sidebar-project-scroll"/);
+});
+
+test("selected sessions use a neutral Codex-style background without an accent rail", () => {
+  const selectedStyles = globalStyles.slice(
+    globalStyles.indexOf(".sidebar-project-row.is-selected"),
+    globalStyles.indexOf("/* No press-down translate", globalStyles.indexOf(".sidebar-project-row.is-selected")),
+  );
+  assert.match(selectedStyles, /background:\s*var\(--bg-selected\)/);
+  assert.match(selectedStyles, /box-shadow:\s*none/);
+  assert.doesNotMatch(selectedStyles, /inset|var\(--accent\)/);
 });
 
 test("renders sessions inside persisted project folders", () => {

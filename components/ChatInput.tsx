@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
+import { readPromptOptimizerSystemPrompt } from "@/lib/prompt-optimizer-settings";
 import type { AttachedFile, BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import { clearDraft, getDraft, setDraft, type ChatDraftImage } from "@/lib/draft-store";
 import {
@@ -45,6 +46,13 @@ interface ModelOption {
   provider: string;
   modelId: string;
   name: string;
+}
+
+interface PromptOptimizationState {
+  source: string;
+  loading: boolean;
+  result?: string;
+  error?: string;
 }
 
 interface Props {
@@ -249,6 +257,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const [modelFilter, setModelFilter] = useState("");
+  const [promptOptimization, setPromptOptimization] = useState<PromptOptimizationState | null>(null);
   const [streamingActionMenuOpen, setStreamingActionMenuOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
@@ -273,6 +282,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const streamingActionMenuRef = useRef<HTMLDivElement>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
+  const promptOptimizerAbortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
   const lastCompositionEndAtRef = useRef(0);
@@ -483,6 +493,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
     const draft = draftKey ? getDraft(draftKey) : null;
     draftKeyRef.current = draftKey;
+    promptOptimizerAbortRef.current?.abort();
+    promptOptimizerAbortRef.current = null;
+    setPromptOptimization(null);
     setValue(draft?.value ?? "");
     setAtQuery(null);
     setHistoryMenuOpen(false);
@@ -501,6 +514,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   useEffect(() => {
     return () => {
+      promptOptimizerAbortRef.current?.abort();
       attachedImagesRef.current.forEach(revokeImagePreview);
     };
   }, []);
@@ -523,6 +537,47 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     );
     clearInput();
   }, [value, attachedImages, attachedFiles, isStreaming, onBuiltinCommand, onSend, clearInput]);
+
+  const handleOptimizePrompt = useCallback(async () => {
+    const source = value.trim();
+    if (!source || !model || isStreaming || source.startsWith("/") || source.startsWith("!")) return;
+
+    promptOptimizerAbortRef.current?.abort();
+    const controller = new AbortController();
+    promptOptimizerAbortRef.current = controller;
+    setPromptOptimization({ source, loading: true });
+
+    try {
+      const response = await fetch("/api/prompts/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: source,
+          provider: model.provider,
+          modelId: model.modelId,
+          cwd: cwd ?? undefined,
+          systemPrompt: readPromptOptimizerSystemPrompt(window.localStorage),
+        }),
+        signal: controller.signal,
+      });
+      const payload = await response.json().catch(() => ({})) as { optimizedPrompt?: unknown; error?: unknown };
+      if (!response.ok || typeof payload.optimizedPrompt !== "string" || !payload.optimizedPrompt.trim()) {
+        const message = typeof payload.error === "string" ? payload.error : t("chat.optimizePromptFailed");
+        throw new Error(message);
+      }
+      if (valueRef.current.trim() !== source) return;
+      setPromptOptimization({ source, loading: false, result: payload.optimizedPrompt.trim() });
+    } catch (error) {
+      if (controller.signal.aborted || valueRef.current.trim() !== source) return;
+      setPromptOptimization({
+        source,
+        loading: false,
+        error: error instanceof Error ? error.message : t("chat.optimizePromptFailed"),
+      });
+    } finally {
+      if (promptOptimizerAbortRef.current === controller) promptOptimizerAbortRef.current = null;
+    }
+  }, [cwd, isStreaming, model, t, value]);
 
   const slashQuery = value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
@@ -552,6 +607,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = hasInputText && attachedImages.length === 0 && attachedFiles.length === 0;
   const canSend = hasInputText || attachedImages.length > 0 || attachedFiles.length > 0;
+  const canOptimizePrompt = hasInputText
+    && !isStreaming
+    && Boolean(model)
+    && !trimmedValue.startsWith("/")
+    && !trimmedValue.startsWith("!")
+    && !promptOptimization?.loading;
   const queuedMessageCount = (queuedMessages?.steering.length ?? 0) + (queuedMessages?.followUp.length ?? 0);
 
   useEffect(() => {
@@ -1514,6 +1575,41 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             );
           })()}
+          {promptOptimization && !promptOptimization.loading && (
+            <div
+              className={`prompt-optimization-review${promptOptimization.error ? " is-error" : ""}`}
+              role={promptOptimization.error ? "alert" : "region"}
+              aria-label={t("chat.optimizedPrompt")}
+            >
+              <div className="prompt-optimization-header">
+                <span className="prompt-optimization-title">
+                  <AliIcon name={promptOptimization.error ? "warning" : "solution"} size={14} />
+                  {promptOptimization.error ? t("chat.optimizePromptFailed") : t("chat.optimizedPrompt")}
+                </span>
+                <div className="prompt-optimization-actions">
+                  <button type="button" onClick={() => setPromptOptimization(null)}>
+                    {t("chat.keepOriginalPrompt")}
+                  </button>
+                  {promptOptimization.result && (
+                    <button
+                      type="button"
+                      className="is-primary"
+                      onClick={() => {
+                        setValue(promptOptimization.result!);
+                        setPromptOptimization(null);
+                        requestAnimationFrame(() => textareaRef.current?.focus());
+                      }}
+                    >
+                      {t("chat.useOptimizedPrompt")}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="prompt-optimization-content">
+                {promptOptimization.error ?? promptOptimization.result}
+              </div>
+            </div>
+          )}
           <div
             className="chat-composer-surface"
             style={{
@@ -1533,6 +1629,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             ref={textareaRef}
             value={value}
             onChange={(e) => {
+              if (promptOptimization && e.target.value.trim() !== promptOptimization.source) {
+                promptOptimizerAbortRef.current?.abort();
+                promptOptimizerAbortRef.current = null;
+                setPromptOptimization(null);
+              }
               setValue(e.target.value);
               setHistoryMenuOpen(false);
               updateAtQuery(e.target.value, e.target.selectionStart);
@@ -1604,6 +1705,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               }}
             >
               <AliIcon name="plus" size={15} />
+            </button>
+            <button
+              type="button"
+              className="prompt-optimize-button"
+              onClick={() => void handleOptimizePrompt()}
+              disabled={!canOptimizePrompt}
+              data-loading={promptOptimization?.loading || undefined}
+              title={!model ? t("chat.selectModelToOptimize") : t("chat.optimizePromptDescription")}
+              aria-label={t("chat.optimizePrompt")}
+            >
+              <AliIcon name="solution" size={15} />
+              {!isMobile && <span>{promptOptimization?.loading ? t("chat.optimizingPrompt") : t("chat.optimizePrompt")}</span>}
             </button>
             <div style={{ flex: 1 }} />
             <div className="session-stats-control">

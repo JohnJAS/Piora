@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { performance } from "node:perf_hooks";
 import {
   createIsolatedProcessEnvironment,
   prepareIsolatedEnvironment,
@@ -16,6 +17,25 @@ const STRICT_VERSION = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 // payload. On slower Windows disks that cleanup alone can exceed 90 seconds,
 // even after the renderer has written a healthy marker.
 export const DEFAULT_PORTABLE_SMOKE_TIMEOUT_MS = 300_000;
+export const MAX_PORTABLE_STARTUP_MS = 3_000;
+
+export function validateStartupMarker(markerText) {
+  let marker;
+  try {
+    const normalizedText = markerText.replace(/^\uFEFF/, "").replaceAll("\0", "");
+    marker = JSON.parse(normalizedText);
+  } catch (error) {
+    throw new Error(`Portable EXE wrote malformed startup JSON: ${markerText}`, { cause: error });
+  }
+  if (
+    marker?.schema !== "piora-startup-v1"
+    || marker?.ready !== true
+    || !["electron-shell", "portable-splash"].includes(marker?.surface)
+  ) {
+    throw new Error(`Portable EXE wrote an invalid startup marker: ${markerText}`);
+  }
+  return marker;
+}
 
 export function normalizeExpectedVersion(value) {
   if (value === undefined) return undefined;
@@ -77,7 +97,7 @@ function assertSafeTemporaryDirectory(directory) {
   }
 }
 
-async function waitForMarker(markerPath, timeoutMs, signal) {
+async function waitForMarker(markerPath, timeoutMs, signal, markerName = "healthy-service") {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (signal.aborted) throw new Error("Portable EXE marker wait was cancelled.");
@@ -85,7 +105,47 @@ async function waitForMarker(markerPath, timeoutMs, signal) {
     if (marker !== undefined) return marker;
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 150));
   }
-  throw new Error(`Portable EXE did not write its healthy-service marker within ${timeoutMs} ms.`);
+  throw new Error(`Portable EXE did not write its ${markerName} marker within ${timeoutMs} ms.`);
+}
+
+async function waitForVisiblePortableWindow(processId, timeoutMs, signal) {
+  if (process.platform !== "win32") throw new Error("Portable window detection is only available on Windows.");
+  const script = [
+    "$deadline = [DateTime]::UtcNow.AddMilliseconds([int]$env:PIORA_STARTUP_TIMEOUT_MS)",
+    "do {",
+    "  $candidate = Get-Process -Id ([int]$env:PIORA_STARTUP_PROCESS_ID) -ErrorAction SilentlyContinue",
+    "  if ($null -eq $candidate) { exit 2 }",
+    "  $candidate.Refresh()",
+    "  if ($candidate.MainWindowHandle -ne 0) { Write-Output 'visible'; exit 0 }",
+    "  Start-Sleep -Milliseconds 25",
+    "} while ([DateTime]::UtcNow -lt $deadline)",
+    "exit 3",
+  ].join("; ");
+
+  await new Promise((resolveWindow, rejectWindow) => {
+    const detector = execFile(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", script],
+      {
+        env: {
+          ...process.env,
+          PIORA_STARTUP_PROCESS_ID: String(processId),
+          PIORA_STARTUP_TIMEOUT_MS: String(timeoutMs),
+        },
+        windowsHide: true,
+      },
+      (error, stdout) => {
+        if (!error && stdout.trim() === "visible") resolveWindow();
+        else rejectWindow(error ?? new Error("Portable bootstrap window was not visible."));
+      },
+    );
+    const cancel = () => {
+      detector.kill();
+      rejectWindow(new Error("Portable bootstrap window detection was cancelled."));
+    };
+    if (signal.aborted) cancel();
+    else signal.addEventListener("abort", cancel, { once: true });
+  });
 }
 
 async function terminateChild(child) {
@@ -142,17 +202,20 @@ export async function smokeTestPortableExecutable(
   const paths = await prepareIsolatedEnvironment(temporaryDirectory);
   await mkdir(join(temporaryDirectory, "agent"), { recursive: true });
   const markerPath = join(temporaryDirectory, "healthy-service.json");
+  const startupMarkerPath = join(temporaryDirectory, "startup-window.json");
   let stdout = "";
   let stderr = "";
   let child;
   const markerAbort = new AbortController();
 
   try {
+    const launchedAt = performance.now();
     child = spawn(executable, ["--smoke-test", `--user-data-dir=${paths.userData}`], {
       cwd: temporaryDirectory,
       env: createIsolatedProcessEnvironment(temporaryDirectory, {
         PIORA_SMOKE_TEST: "1",
         PIORA_SMOKE_MARKER: markerPath,
+        PIORA_SMOKE_STARTUP_MARKER: startupMarkerPath,
         PIORA_SMOKE_USER_DATA: paths.userData,
         PI_CODING_AGENT_DIR: join(temporaryDirectory, "agent"),
         NEXT_TELEMETRY_DISABLED: "1",
@@ -165,6 +228,24 @@ export async function smokeTestPortableExecutable(
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => { stdout = (stdout + chunk).slice(-16_384); });
     child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-16_384); });
+
+    const markerStartup = waitForMarker(
+      startupMarkerPath,
+      MAX_PORTABLE_STARTUP_MS,
+      markerAbort.signal,
+      "startup-window",
+    ).then(validateStartupMarker);
+    const startupSurface = process.platform === "win32"
+      ? await Promise.any([
+        markerStartup,
+        waitForVisiblePortableWindow(child.pid, MAX_PORTABLE_STARTUP_MS, markerAbort.signal)
+          .then(() => ({ schema: "piora-startup-v1", ready: true, surface: "portable-splash" })),
+      ])
+      : await markerStartup;
+    const startupMs = performance.now() - launchedAt;
+    if (startupMs > MAX_PORTABLE_STARTUP_MS) {
+      throw new Error(`Portable EXE first window took ${startupMs.toFixed(0)} ms; budget is ${MAX_PORTABLE_STARTUP_MS} ms.`);
+    }
 
     // The electron-builder portable wrapper can remain alive while its
     // extracted Electron process is already healthy (and can also outlive the
@@ -183,6 +264,9 @@ export async function smokeTestPortableExecutable(
       rendererLoaded: marker.rendererLoaded,
       preloadBridgeReady: marker.preloadBridgeReady,
       appShellReady: marker.appShellReady,
+      startupMs: Math.round(startupMs),
+      startupBudgetMs: MAX_PORTABLE_STARTUP_MS,
+      startupSurface: startupSurface.surface,
     };
   } catch (error) {
     const logCandidates = [

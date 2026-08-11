@@ -23,12 +23,13 @@
 
 .activityBubbles {
   position: absolute;
-  top: 4px;
+  bottom: 143px;
   left: 4px;
   right: 4px;
   max-height: 210px;
   display: grid;
   gap: 6px;
+  align-content: end;
   overflow-y: auto;
   scrollbar-width: none;
   pointer-events: none;
@@ -58,7 +59,7 @@
   pointer-events: none;
 }
 
-.activityBubble:last-child::after {
+.activityBubble[data-kind="status"]::after {
   position: absolute;
   right: 48px;
   bottom: -5px;

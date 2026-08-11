@@ -473,6 +473,40 @@
   flex: 1;
 }
 
+.promptEditor {
+  width: 100%;
+  min-height: 210px;
+  resize: vertical;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 9px;
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  padding: 10px 11px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+}
+
+.promptEditor:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.promptEditorFooter,
+.promptEditorFooter > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.promptEditorFooter {
+  justify-content: space-between;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
 .secondaryButton {
   min-height: 32px;
   padding: 5px 10px;
