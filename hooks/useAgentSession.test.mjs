@@ -47,3 +47,14 @@ test("refreshes context usage during streaming and after assistant messages", ()
   assert.match(messageUpdateSource, /refreshContextUsage\(sessionIdRef\.current\)/);
   assert.match(messageEndSource, /completed\?\.role === "assistant"[\s\S]*refreshContextUsage/);
 });
+
+test("waits for the session scroll container before consuming the initial bottom scroll", () => {
+  const scrollEffectSource = source.slice(
+    source.indexOf("// Loading may publish the message array"),
+    source.indexOf("// Load model list"),
+  );
+
+  assert.match(scrollEffectSource, /if \(loading \|\| messages\.length === 0\) return/);
+  assert.match(scrollEffectSource, /scrollToBottom\("instant"\)[\s\S]*requestAnimationFrame\(\(\) => scrollToBottom\("instant"\)\)/);
+  assert.match(scrollEffectSource, /\[messages\.length, agentRunning, loading,/);
+});

@@ -1702,19 +1702,28 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [messages.length, loading, handleScrollPositionChange, markUserScrollIntent]);
 
   useEffect(() => {
-    if (messages.length > 0) {
-      if (pendingScrollToUserRef.current) {
-        pendingScrollToUserRef.current = false;
-        initialScrollDoneRef.current = true;
-        scrollUserMsgToTop();
-      } else if (!initialScrollDoneRef.current) {
-        initialScrollDoneRef.current = true;
-        scrollToBottom("instant");
-      } else if (!agentRunningRef.current && completionScrollAllowedRef.current) {
-        scrollToBottom("smooth");
-      }
+    // Loading may publish the message array before the loading shell is
+    // replaced by the scroll container. Do not consume the one-shot initial
+    // scroll until that container is mounted, otherwise switching sessions
+    // can leave the newly selected conversation at the top.
+    if (loading || messages.length === 0) return;
+
+    if (pendingScrollToUserRef.current) {
+      pendingScrollToUserRef.current = false;
+      initialScrollDoneRef.current = true;
+      scrollUserMsgToTop();
+    } else if (!initialScrollDoneRef.current) {
+      initialScrollDoneRef.current = true;
+      scrollToBottom("instant");
+      // Correct once more after the browser has completed the first layout of
+      // the newly mounted message list (markdown and lazy history can change
+      // its measured height during that frame).
+      const frame = requestAnimationFrame(() => scrollToBottom("instant"));
+      return () => cancelAnimationFrame(frame);
+    } else if (!agentRunningRef.current && completionScrollAllowedRef.current) {
+      scrollToBottom("smooth");
     }
-  }, [messages.length, agentRunning, scrollToBottom, scrollUserMsgToTop]);
+  }, [messages.length, agentRunning, loading, scrollToBottom, scrollUserMsgToTop]);
 
   // Load model list
   useEffect(() => {
