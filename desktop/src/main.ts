@@ -39,12 +39,13 @@ const REVEAL_PATH_CHANNEL = "pi:reveal-path";
 const OPEN_PATH_CHANNEL = "pi:open-path";
 const COMPANION_VISIBILITY_CHANNEL = "pi:companion-window-visible";
 const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
+const COMPANION_LAYOUT_CHANNEL = "pi:companion-window-expanded";
 const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
 const DESKTOP_TITLE_BAR_HEIGHT = 40;
-// Reserve a transparent message area above the sprite, following the
-// OpenPets/OpenPetsKit split between pet pixels and transient task bubbles.
-const COMPANION_WINDOW_WIDTH = 236;
-const COMPANION_WINDOW_HEIGHT = 360;
+const COMPANION_COMPACT_WIDTH = 156;
+const COMPANION_COMPACT_HEIGHT = 184;
+const COMPANION_EXPANDED_WIDTH = 236;
+const COMPANION_EXPANDED_HEIGHT = 360;
 const MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80;
 const PORTABLE_SMOKE_TEST = process.env.PIORA_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
@@ -82,6 +83,7 @@ let tray: Tray | null = null;
 let trayPollTimer: NodeJS.Timeout | undefined;
 let applicationToken: string | undefined;
 let runningTaskCount = 0;
+let quitRequested = false;
 
 type ApplicationMenuId = "file" | "edit" | "view" | "window" | "help";
 
@@ -271,6 +273,18 @@ function isTrustedMainWindowSender(event: IpcMainInvokeEvent): boolean {
   );
 }
 
+function isTrustedCompanionWindowSender(event: IpcMainInvokeEvent): boolean {
+  return Boolean(
+    serverUrl
+    && companionWindow
+    && !companionWindow.isDestroyed()
+    && event.sender === companionWindow.webContents
+    && event.senderFrame
+    && event.senderFrame === event.sender.mainFrame
+    && isAllowedAppUrl(event.senderFrame.url, serverUrl.origin),
+  );
+}
+
 function resolveExistingRendererPath(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim() || !isAbsolute(value)) return null;
   const target = resolve(value);
@@ -438,24 +452,55 @@ function getCompanionWindowPosition(): { x: number; y: number } {
     ? screen.getDisplayNearestPoint(saved)
     : screen.getPrimaryDisplay();
   const area = display.workArea;
-  const defaultX = area.x + area.width - COMPANION_WINDOW_WIDTH - 24;
-  const defaultY = area.y + area.height - COMPANION_WINDOW_HEIGHT - 24;
+  const defaultX = area.x + area.width - COMPANION_EXPANDED_WIDTH - 24;
+  const defaultY = area.y + area.height - COMPANION_EXPANDED_HEIGHT - 24;
   return {
-    x: Math.min(Math.max(saved?.x ?? defaultX, area.x), area.x + Math.max(0, area.width - COMPANION_WINDOW_WIDTH)),
-    y: Math.min(Math.max(saved?.y ?? defaultY, area.y), area.y + Math.max(0, area.height - COMPANION_WINDOW_HEIGHT)),
+    x: Math.min(Math.max(saved?.x ?? defaultX, area.x), area.x + Math.max(0, area.width - COMPANION_EXPANDED_WIDTH)),
+    y: Math.min(Math.max(saved?.y ?? defaultY, area.y), area.y + Math.max(0, area.height - COMPANION_EXPANDED_HEIGHT)),
   };
+}
+
+function getNormalizedCompanionPosition(bounds: Electron.Rectangle): { x: number; y: number } {
+  return {
+    x: Math.round(bounds.x + (bounds.width - COMPANION_EXPANDED_WIDTH) / 2),
+    y: Math.round(bounds.y + bounds.height - COMPANION_EXPANDED_HEIGHT),
+  };
+}
+
+function setCompanionWindowExpanded(expanded: boolean): boolean {
+  if (!companionWindow || companionWindow.isDestroyed()) return false;
+  const width = expanded ? COMPANION_EXPANDED_WIDTH : COMPANION_COMPACT_WIDTH;
+  const height = expanded ? COMPANION_EXPANDED_HEIGHT : COMPANION_COMPACT_HEIGHT;
+  const current = companionWindow.getBounds();
+  if (current.width === width && current.height === height) return true;
+
+  const display = screen.getDisplayNearestPoint({
+    x: current.x + Math.round(current.width / 2),
+    y: current.y + current.height,
+  });
+  const area = display.workArea;
+  const target = {
+    x: Math.round(current.x + (current.width - width) / 2),
+    y: current.y + current.height - height,
+    width,
+    height,
+  };
+  target.x = Math.min(Math.max(target.x, area.x), area.x + Math.max(0, area.width - width));
+  target.y = Math.min(Math.max(target.y, area.y), area.y + Math.max(0, area.height - height));
+  companionWindow.setBounds(target);
+  return true;
 }
 
 function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
   const position = getCompanionWindowPosition();
   const window = new BrowserWindow({
     ...position,
-    width: COMPANION_WINDOW_WIDTH,
-    height: COMPANION_WINDOW_HEIGHT,
-    minWidth: COMPANION_WINDOW_WIDTH,
-    minHeight: COMPANION_WINDOW_HEIGHT,
-    maxWidth: COMPANION_WINDOW_WIDTH,
-    maxHeight: COMPANION_WINDOW_HEIGHT,
+    width: COMPANION_EXPANDED_WIDTH,
+    height: COMPANION_EXPANDED_HEIGHT,
+    minWidth: COMPANION_COMPACT_WIDTH,
+    minHeight: COMPANION_COMPACT_HEIGHT,
+    maxWidth: COMPANION_EXPANDED_WIDTH,
+    maxHeight: COMPANION_EXPANDED_HEIGHT,
     show: false,
     frame: false,
     transparent: true,
@@ -525,8 +570,11 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
     if (companionMoveTimer) clearTimeout(companionMoveTimer);
     companionMoveTimer = setTimeout(() => {
       if (!companionWindow || companionWindow.isDestroyed() || !logger) return;
-      const bounds = companionWindow.getBounds();
-      writeCompanionWindowPosition(app.getPath("userData"), { x: bounds.x, y: bounds.y }, logger);
+      writeCompanionWindowPosition(
+        app.getPath("userData"),
+        getNormalizedCompanionPosition(companionWindow.getBounds()),
+        logger,
+      );
     }, 180);
   });
   window.on("closed", () => {
@@ -553,8 +601,11 @@ function closeCompanionWindow(): void {
   companionShouldBeVisible = false;
   if (!companionWindow || companionWindow.isDestroyed()) return;
   if (logger) {
-    const bounds = companionWindow.getBounds();
-    writeCompanionWindowPosition(app.getPath("userData"), { x: bounds.x, y: bounds.y }, logger);
+    writeCompanionWindowPosition(
+      app.getPath("userData"),
+      getNormalizedCompanionPosition(companionWindow.getBounds()),
+      logger,
+    );
   }
   companionWindow.destroy();
   companionWindow = null;
@@ -609,7 +660,10 @@ function reconcileWindowToDisplays(window: BrowserWindow, minimumSize: { width: 
 
 function handleDisplayConfigurationChanged(): void {
   if (mainWindow) reconcileWindowToDisplays(mainWindow, { width: 640, height: 480 });
-  if (companionWindow) reconcileWindowToDisplays(companionWindow, { width: COMPANION_WINDOW_WIDTH, height: COMPANION_WINDOW_HEIGHT });
+  if (companionWindow && !companionWindow.isDestroyed()) {
+    const bounds = companionWindow.getBounds();
+    reconcileWindowToDisplays(companionWindow, { width: bounds.width, height: bounds.height });
+  }
 }
 
 function installDisplayReconciliation(): void {
@@ -645,7 +699,13 @@ function updateTrayMenu(): void {
     { label: isChinese ? "新任务" : "New task", click: () => focusMainWindow("new-session") },
     { label: isChinese ? `运行中任务：${runningTaskCount}` : `Running tasks: ${runningTaskCount}`, enabled: false },
     { type: "separator" },
-    { label: isChinese ? "退出" : "Quit", click: () => app.quit() },
+    {
+      label: isChinese ? "彻底退出 Piora" : "Quit Piora completely",
+      click: () => {
+        quitRequested = true;
+        app.quit();
+      },
+    },
   ]));
 }
 
@@ -661,13 +721,24 @@ async function refreshTrayTaskCount(): Promise<void> {
 }
 
 function installTray(): void {
-  const candidates = [process.execPath, join(app.getAppPath(), "build", "icon.ico"), join(__dirname, "..", "build", "icon.ico")];
+  if (tray) return;
+  const candidates = [
+    join(process.resourcesPath, "tray-icon.ico"),
+    join(app.getAppPath(), "build", "icon.ico"),
+    join(__dirname, "..", "build", "icon.ico"),
+    process.execPath,
+  ];
   const image = candidates.map((candidate) => nativeImage.createFromPath(candidate)).find((candidate) => !candidate.isEmpty());
-  if (!image) return;
+  if (!image) {
+    logger?.warn("Unable to load the system tray icon", { candidates });
+    return;
+  }
   tray = new Tray(image.resize({ width: 16, height: 16 }));
   tray.on("click", () => focusMainWindow());
+  tray.on("double-click", () => focusMainWindow());
   updateTrayMenu();
   trayPollTimer = setInterval(() => { void refreshTrayTaskCount(); }, 2_500);
+  trayPollTimer.unref();
   void refreshTrayTaskCount();
 }
 
@@ -682,11 +753,17 @@ function registerGlobalShortcutHandler(): void {
 
 function registerCompanionWindowHandlers(): void {
   ipcMain.removeHandler(COMPANION_VISIBILITY_CHANNEL);
+  ipcMain.removeHandler(COMPANION_LAYOUT_CHANNEL);
   ipcMain.handle(COMPANION_VISIBILITY_CHANNEL, (event, visible: unknown): boolean => {
     if (!isTrustedCompletionNotificationSender(event) || typeof visible !== "boolean") return false;
     if (visible) return showCompanionWindow();
     closeCompanionWindow();
     return true;
+  });
+
+  ipcMain.handle(COMPANION_LAYOUT_CHANNEL, (event, expanded: unknown): boolean => {
+    if (!isTrustedCompanionWindowSender(event) || typeof expanded !== "boolean") return false;
+    return setCompanionWindowExpanded(expanded);
   });
 
   ipcMain.removeHandler(COMPANION_ACTION_CHANNEL);
@@ -704,11 +781,12 @@ function registerCompanionWindowHandlers(): void {
   });
 }
 
-function createMainWindow(
-  url: URL,
-  log: Logger,
-  { showWhenReady = true }: { showWhenReady?: boolean } = {},
-): BrowserWindow {
+interface MainWindowShell {
+  window: BrowserWindow;
+  initialState: ReturnType<typeof getInitialMainWindowState>;
+}
+
+function createMainWindowShell(log: Logger): MainWindowShell {
   // Windows keeps native resize/minimize/maximize/close behavior, but places
   // those controls over the renderer-owned, Codex-style title strip. The full
   // native title and menu rows stay hidden; the installed Menu still owns
@@ -736,7 +814,7 @@ function createMainWindow(
     minHeight: 640,
     show: false,
     title: "Piora",
-    backgroundColor: "#111318",
+    backgroundColor: STARTUP_SHELL_BACKGROUND,
     autoHideMenuBar: true,
     ...integratedTitleBar,
     webPreferences: {
@@ -755,6 +833,29 @@ function createMainWindow(
     },
   });
 
+  const scheduleWindowStateWrite = () => {
+    if (mainWindowStateTimer) clearTimeout(mainWindowStateTimer);
+    mainWindowStateTimer = setTimeout(() => persistMainWindowState(window), 180);
+  };
+  window.on("move", scheduleWindowStateWrite);
+  window.on("resize", scheduleWindowStateWrite);
+  window.on("maximize", scheduleWindowStateWrite);
+  window.on("unmaximize", scheduleWindowStateWrite);
+  window.on("close", (event) => {
+    if (quitRequested || PORTABLE_SMOKE_TEST) return;
+    event.preventDefault();
+    window.hide();
+  });
+  window.on("closed", () => {
+    if (mainWindowStateTimer) clearTimeout(mainWindowStateTimer);
+    mainWindowStateTimer = undefined;
+    if (mainWindow === window) mainWindow = null;
+  });
+
+  return { window, initialState };
+}
+
+function loadApplicationWindow(window: BrowserWindow, url: URL, log: Logger): Promise<void> {
   const allowedOrigin = url.origin;
   window.webContents.setWindowOpenHandler(({ url: requestedUrl }) => {
     if (!isAllowedAppUrl(requestedUrl, allowedOrigin)) {
@@ -789,52 +890,28 @@ function createMainWindow(
     },
   );
 
+  return window.loadURL(url.toString()).then(() => undefined);
+}
+
+function createMainWindow(
+  url: URL,
+  log: Logger,
+  { showWhenReady = true }: { showWhenReady?: boolean } = {},
+): BrowserWindow {
+  const { window, initialState } = createMainWindowShell(log);
   if (showWhenReady) window.once("ready-to-show", () => {
     if (initialState.maximized) window.maximize();
     window.show();
   });
-  const scheduleWindowStateWrite = () => {
-    if (mainWindowStateTimer) clearTimeout(mainWindowStateTimer);
-    mainWindowStateTimer = setTimeout(() => persistMainWindowState(window), 180);
-  };
-  window.on("move", scheduleWindowStateWrite);
-  window.on("resize", scheduleWindowStateWrite);
-  window.on("maximize", scheduleWindowStateWrite);
-  window.on("unmaximize", scheduleWindowStateWrite);
-  window.on("closed", () => {
-    if (mainWindowStateTimer) clearTimeout(mainWindowStateTimer);
-    mainWindowStateTimer = undefined;
-    if (mainWindow === window) mainWindow = null;
-  });
 
-  void window.loadURL(url.toString());
+  void loadApplicationWindow(window, url, log).catch((error) => {
+    log.error("Unable to load the application page", error);
+  });
   return window;
 }
 
 function createStartupWindow(log: Logger): { window: BrowserWindow; ready: Promise<number> } {
-  const initialState = getInitialMainWindowState(log);
-  const window = new BrowserWindow({
-    ...(initialState.x === undefined ? {} : { x: initialState.x }),
-    ...(initialState.y === undefined ? {} : { y: initialState.y }),
-    width: initialState.width,
-    height: initialState.height,
-    minWidth: 900,
-    minHeight: 640,
-    show: false,
-    title: "Piora",
-    backgroundColor: STARTUP_SHELL_BACKGROUND,
-    autoHideMenuBar: true,
-    ...(process.platform === "win32" ? {
-      titleBarStyle: "hidden" as const,
-      titleBarOverlay: { color: "#00000000", symbolColor: "#737373", height: DESKTOP_TITLE_BAR_HEIGHT },
-    } : {}),
-    webPreferences: {
-      sandbox: true,
-      contextIsolation: true,
-      nodeIntegration: false,
-      devTools: false,
-    },
-  });
+  const { window, initialState } = createMainWindowShell(log);
   const ready = new Promise<number>((resolveReady) => {
     window.once("ready-to-show", () => {
       const readyAt = Date.now();
@@ -925,6 +1002,7 @@ function handleUnexpectedServerExit(exit: ServerExit): void {
 }
 
 async function startApplication(): Promise<void> {
+  const startupStartedAt = Date.now();
   await app.whenReady();
   app.setAppUserModelId("io.github.kexijiang.piora");
 
@@ -935,9 +1013,14 @@ async function startApplication(): Promise<void> {
   });
 
   // Show an app-owned shell immediately while the bundled Next.js service
-  // starts in parallel. This keeps portable EXE launch responsive even on a
-  // cold filesystem and gives the smoke test a true process-to-window gate.
+  // starts in parallel. The same BrowserWindow is then navigated to the app,
+  // avoiding the process and rendering cost of creating a second window.
   const startup = createStartupWindow(logger);
+  mainWindow = startup.window;
+  installTray();
+  void startup.ready.then((readyAt) => {
+    logger?.info("Startup shell is visible", { elapsedMs: readyAt - startupStartedAt });
+  });
 
   const serverEntry = resolveStandaloneServerEntry();
   const serverHostEntry = join(__dirname, "server-host.js");
@@ -960,6 +1043,7 @@ async function startApplication(): Promise<void> {
 
   serverUrl = await server.start();
   writePreferredServerPort(app.getPath("userData"), Number(serverUrl.port), logger);
+  logger.info("Bundled service is ready", { elapsedMs: Date.now() - startupStartedAt });
 
   const runtimeSession = electronSession.fromPartition(DESKTOP_PARTITION, { cache: true });
   configureSession(runtimeSession, serverUrl.origin, token);
@@ -972,7 +1056,7 @@ async function startApplication(): Promise<void> {
     if (!smokeMarker) {
       throw new Error("PIORA_SMOKE_MARKER is required in portable smoke-test mode.");
     }
-    mainWindow = createMainWindow(serverUrl, logger, { showWhenReady: false });
+    await loadApplicationWindow(mainWindow, serverUrl, logger);
     const rendererState = await waitForSmokeRenderer(mainWindow);
     await startup.ready;
     writeFileSync(
@@ -990,7 +1074,6 @@ async function startApplication(): Promise<void> {
     logger.info("Portable smoke test reached a healthy bundled service and renderer");
     await stopApplication();
     shutdownComplete = true;
-    startup.window.destroy();
     mainWindow.destroy();
     app.exit(0);
     return;
@@ -1001,11 +1084,8 @@ async function startApplication(): Promise<void> {
   registerFileShellHandlers();
   installDisplayReconciliation();
 
-  mainWindow = createMainWindow(serverUrl, logger);
-  mainWindow.once("ready-to-show", () => {
-    if (!startup.window.isDestroyed()) startup.window.destroy();
-  });
-  installTray();
+  await loadApplicationWindow(mainWindow, serverUrl, logger);
+  logger.info("Application window is ready", { elapsedMs: Date.now() - startupStartedAt });
 }
 
 async function stopApplication(): Promise<void> {
@@ -1034,12 +1114,19 @@ if (!hasSingleInstanceLock) {
   app.on("activate", () => {
     if (!mainWindow && serverUrl && logger) {
       mainWindow = createMainWindow(serverUrl, logger);
+      return;
     }
+    focusMainWindow();
   });
 
-  app.on("window-all-closed", () => app.quit());
+  // Closing the main window keeps the desktop process available from the tray.
+  // Only an explicit quit (tray/menu/OS shutdown) tears down the local service.
+  app.on("window-all-closed", () => {
+    if (quitRequested) app.quit();
+  });
 
   app.on("before-quit", (event) => {
+    quitRequested = true;
     if (shutdownComplete) return;
     event.preventDefault();
 
@@ -1059,6 +1146,7 @@ if (!hasSingleInstanceLock) {
     await server?.stop().catch((shutdownError) => {
       logger?.error("Unable to stop the web server after a startup failure", shutdownError);
     });
+    quitRequested = true;
     shutdownComplete = true;
     app.exit(1);
   });

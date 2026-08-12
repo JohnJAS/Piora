@@ -9,7 +9,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useCompanionPets } from "@/hooks/useCompanionPets";
 import { useCompanionPreferences } from "@/hooks/useCompanionPreferences";
 import { useI18n } from "@/hooks/useI18n";
@@ -34,6 +34,8 @@ export function DesktopCompanionWindow() {
   const pets = useCompanionPets(true);
   const runningTasks = useRunningTaskSnapshots();
   const [activity, setActivity] = useState<CompanionActivity>(DEFAULT_ACTIVITY);
+  const [bubblesCollapsed, setBubblesCollapsed] = useState(false);
+  const previousBubbleCountRef = useRef(0);
   const activePet = useMemo(
     () => pets.catalog?.installed.find((pet) => pet.id === preferences.selectedPetId) ?? null,
     [pets.catalog?.installed, preferences.selectedPetId],
@@ -85,6 +87,29 @@ export function DesktopCompanionWindow() {
   const cause = displayActivity.cause || t(`companion.activity.${displayActivity.status}Cause`);
   const statusCause = t(`companion.activity.${displayActivity.status}Cause`);
   const petLabel = activePet?.displayName ?? t("companion.builtinPet");
+  const bubbleItems = useMemo(() => {
+    if (taskBubbles.length > 0) return taskBubbles;
+    if (displayActivity.status === "idle") return [];
+    return [{
+      id: "companion-status",
+      status: displayActivity.status,
+      title: statusLabel,
+      cause: statusCause,
+    }];
+  }, [displayActivity.status, statusCause, statusLabel, taskBubbles]);
+  const runningTaskCount = taskBubbles.length || (displayActivity.status === "idle" ? 0 : 1);
+  const bubblesExpanded = bubbleItems.length > 0 && !bubblesCollapsed;
+
+  useEffect(() => {
+    if (bubbleItems.length === 0 || previousBubbleCountRef.current === 0) {
+      setBubblesCollapsed(false);
+    }
+    previousBubbleCountRef.current = bubbleItems.length;
+  }, [bubbleItems.length]);
+
+  useEffect(() => {
+    void window.piDesktop?.setCompanionWindowExpanded?.(bubblesExpanded);
+  }, [bubblesExpanded]);
 
   return (
     <main className={styles.window} aria-label={t("companion.desktopMode")} data-testid="desktop-companion-window">
@@ -93,10 +118,7 @@ export function DesktopCompanionWindow() {
         title={`${petLabel} · ${statusLabel} · ${cause} · ${t("companion.desktopInteractionHint")}`}
       >
         <div className={styles.activityBubbles} aria-live="polite" data-has-active-tasks={taskBubbles.length > 0}>
-          {[
-            ...taskBubbles,
-            { id: "companion-status", status: displayActivity.status, title: statusLabel, cause: statusCause },
-          ].map((item) => (
+          {bubblesExpanded && bubbleItems.map((item) => (
             <div
               key={item.id}
               className={styles.activityBubble}
@@ -121,11 +143,18 @@ export function DesktopCompanionWindow() {
         <div className={styles.pet} aria-label={petLabel} data-testid="companion-pet-viewport">
           {activePet ? <SpritePet pet={activePet} status={displayActivity.status} /> : <BuiltinPet status={displayActivity.status} />}
         </div>
-        <span
-          className={styles.statusDot}
-          aria-label={`${statusLabel}: ${cause}`}
-          style={{ "--pet-status": COMPANION_ACTIVITY_COLORS[displayActivity.status] } as CSSProperties}
-        />
+        {bubbleItems.length > 0 ? (
+          <button
+            className={styles.bubbleToggle}
+            type="button"
+            onClick={() => setBubblesCollapsed(bubblesExpanded)}
+            title={t(bubblesExpanded ? "i18n.collapse" : "i18n.expand")}
+            aria-label={`${t(bubblesExpanded ? "i18n.collapse" : "i18n.expand")} · ${runningTaskCount}`}
+            aria-expanded={bubblesExpanded}
+          >
+            {bubblesExpanded ? <span className={styles.chevron} aria-hidden="true" /> : runningTaskCount}
+          </button>
+        ) : null}
       </div>
     </main>
   );

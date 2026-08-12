@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { AliIcon } from "../AliIcon";
 import styles from "./WorkspacePanel.module.css";
 
 type BrowserState = {
@@ -111,22 +112,21 @@ export function BrowserPanel({ active }: { active: boolean }) {
         title={tab.url}
         onClick={() => void act({ action: "switch_tab", tabIndex: tab.index })}
       >
-        <span aria-hidden="true">◉</span><b>{tab.title}</b>
+        <AliIcon name="earth" size={13} /><b>{tab.title || t("browser.newTab")}</b>
         <span
           className={styles.browserTabClose}
           role="button"
           aria-label={t("browser.closeTab")}
           onClick={(event) => { event.stopPropagation(); void act({ action: "close_tab", tabIndex: tab.index }); }}
-        >×</span>
+        ><AliIcon name="close" size={11} /></span>
       </button>)}
-      <button className={styles.browserNewTab} type="button" aria-label={t("browser.newTab")} onClick={() => void act({ action: "new_tab" })}>+</button>
+      <button className={styles.browserNewTab} type="button" aria-label={t("browser.newTab")} onClick={() => void act({ action: "new_tab" })}><AliIcon name="plus" size={14} /></button>
     </div>
     <div className={styles.browserToolbar}>
-      <button type="button" aria-label={t("browser.back")} disabled={busy} onClick={() => void act({ action: "back" })}>←</button>
-      <button type="button" aria-label={t("browser.forward")} disabled={busy} onClick={() => void act({ action: "forward" })}>→</button>
-      <button type="button" aria-label={t("browser.reload")} disabled={busy} onClick={() => void act({ action: "reload" })}>↻</button>
+      <button type="button" aria-label={t("browser.back")} disabled={busy} onClick={() => void act({ action: "back" })}><AliIcon name="arrowleft" size={14} /></button>
+      <button type="button" aria-label={t("browser.forward")} disabled={busy} onClick={() => void act({ action: "forward" })}><AliIcon name="arrowright" size={14} /></button>
+      <button type="button" aria-label={t("browser.reload")} disabled={busy} onClick={() => void act({ action: "reload" })}><AliIcon name="reload" size={14} /></button>
       <form onSubmit={(event) => { event.preventDefault(); if (address.trim()) void act({ action: "navigate", url: address.trim() }); }}>
-        <span aria-hidden="true">⌕</span>
         <input value={address} aria-label={t("browser.address")} placeholder={t("browser.addressPlaceholder")} onChange={(event) => setAddress(event.target.value)} />
       </form>
     </div>
@@ -135,7 +135,7 @@ export function BrowserPanel({ active }: { active: boolean }) {
       className={styles.browserViewport}
       data-busy={busy}
       onPointerDown={(event) => {
-        if (!state) return;
+        if (!state || state.url === "about:blank") return;
         const bounds = event.currentTarget.getBoundingClientRect();
         void act({
           action: "click",
@@ -146,6 +146,11 @@ export function BrowserPanel({ active }: { active: boolean }) {
       onWheel={(event) => { event.preventDefault(); void act({ action: "scroll", deltaY: event.deltaY }); }}
     >
       {state ? <img src={`/api/browser/screenshot?v=${screenshotKey}`} alt={t("browser.pagePreview")} draggable={false} /> : <div className={styles.browserLoading}>{t("browser.starting")}</div>}
+      {state?.url === "about:blank" ? <div className={styles.browserStart}>
+        <AliIcon name="earth" size={28} />
+        <strong>{t("browser.startTitle")}</strong>
+        <span>{t("browser.startDescription")}</span>
+      </div> : null}
       <textarea
         ref={keyboardRef}
         className={styles.browserKeyboardCapture}

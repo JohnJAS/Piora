@@ -9,6 +9,7 @@ declare global {
       revealPath?: (filePath: string) => Promise<boolean>;
       openPath?: (filePath: string) => Promise<boolean>;
       setCompanionWindowVisible?: (visible: boolean) => Promise<boolean>;
+      setCompanionWindowExpanded?: (expanded: boolean) => Promise<boolean>;
       companionAction?: (action: "focus-main" | "open-settings" | "hide") => Promise<boolean>;
       setGlobalShortcut?: (enabled: boolean) => Promise<boolean>;
       onMenuAction?: (listener: (action: string) => void) => () => void;

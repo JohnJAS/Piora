@@ -8,21 +8,26 @@ const changeList = fs.readFileSync(new URL("./ChangeList.tsx", import.meta.url),
 const shell = fs.readFileSync(new URL("../AppShell.tsx", import.meta.url), "utf8");
 const sidebar = fs.readFileSync(new URL("../SessionSidebar.tsx", import.meta.url), "utf8");
 
-test("moves files and review into an accessible keyboard-operable right workspace", () => {
+test("moves files and review into a Codex-style launcher and tool-tab workspace", () => {
   assert.match(rightPanel, /role="tablist"/);
   assert.match(rightPanel, /role="tab"/);
   assert.match(rightPanel, /role="tabpanel"/);
-  assert.match(rightPanel, /ArrowLeft/);
-  assert.match(rightPanel, /ArrowRight/);
+  assert.match(rightPanel, /className=\{styles\.toolLauncher\}/);
+  assert.match(rightPanel, /className=\{styles\.toolMenu\} role="menu"/);
+  assert.match(rightPanel, /onMaximizedChange/);
   assert.match(rightPanel, /<FileExplorer/);
   assert.match(rightPanel, /<FileViewer/);
   assert.match(rightPanel, /<CommandPanel/);
   assert.match(rightPanel, /<BrowserPanel/);
   assert.doesNotMatch(rightPanel, /<SearchPanel/);
-  assert.match(rightPanel, /"review", "files", "commands", "browser"/);
+  assert.match(rightPanel, /id: "review"/);
+  assert.match(rightPanel, /id: "commands"/);
+  assert.match(rightPanel, /id: "browser"/);
+  assert.match(rightPanel, /id: "files"/);
   assert.doesNotMatch(rightPanel, /workspace-search/);
   assert.match(shell, /piora-right-panel-tab/);
-  assert.match(shell, /useState<RightPanelTab>\("review"\)/);
+  assert.match(shell, /useState<RightPanelTab>\("home"\)/);
+  assert.match(shell, /rightPanelMaximized/);
   assert.match(shell, /rightPanelTabRestored/);
   assert.doesNotMatch(shell, /useState<RightPanelTab>\(\(\) =>/);
   assert.doesNotMatch(sidebar, /<FileExplorer|<SidebarFileArea/);

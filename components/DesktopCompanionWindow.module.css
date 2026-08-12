@@ -23,10 +23,10 @@
 
 .activityBubbles {
   position: absolute;
-  bottom: 143px;
+  bottom: 178px;
   left: 4px;
   right: 4px;
-  max-height: 210px;
+  max-height: 170px;
   display: grid;
   gap: 6px;
   align-content: end;
@@ -114,6 +114,7 @@
 }
 
 .pet {
+  position: relative;
   width: 132px;
   aspect-ratio: 192 / 208;
   display: grid;
@@ -128,20 +129,41 @@
   transform: translateY(-2px);
 }
 
-.statusDot {
-  position: absolute;
-  left: calc(50% + 52px);
-  bottom: 11px;
-  width: 8px;
-  height: 8px;
+.bubbleToggle {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  display: grid;
+  place-items: center;
+  margin-top: 2px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: 50%;
-  background: var(--pet-status);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.82), 0 0 8px var(--pet-status);
-  pointer-events: none;
+  color: #172033;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.16);
+  font: 650 12px/1 var(--font-mono);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.bubbleToggle:hover {
+  background: #fff;
+  transform: translateY(-1px);
+}
+
+.chevron {
+  width: 7px;
+  height: 7px;
+  border-right: 1.8px solid currentColor;
+  border-bottom: 1.8px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .activityBubble { transition: none; }
   .pet { transition: none; }
   .window:hover .pet { transform: none; }
+  .bubbleToggle { transition: none; }
 }

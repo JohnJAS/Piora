@@ -2,7 +2,10 @@ appId: io.github.kexijiang.piora
 productName: Piora
 copyright: Copyright © 2026 Piora contributors
 asar: true
-compression: normal
+# The Windows artifact is a portable executable that expands itself on every
+# launch. Storing the payload avoids spending startup time decompressing the
+# full Next.js/Electron runtime; the trade-off is a larger download.
+compression: store
 afterPack: ../scripts/electron-after-pack-licenses.cjs
 
 directories:
@@ -15,6 +18,10 @@ files:
 
 # `npm run build:web` stages public/ and .next/static/ into this tree.
 extraResources:
+  # Keep a real ICO beside the packaged app. Reading an icon back from the
+  # portable wrapper executable is not reliable across Windows versions.
+  - from: build/icon.ico
+    to: tray-icon.ico
   - from: ../.next/standalone
     to: web
     filter:

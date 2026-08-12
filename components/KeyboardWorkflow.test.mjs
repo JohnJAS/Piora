@@ -29,7 +29,8 @@ test("F6 cycles sidebar, composer, and workspace panel focus", () => {
   assert.match(shell, /sessionSidebarRef\.current\?\.focusTaskSearch\(\)/);
   assert.match(shell, /chatInputRef\.current\?\.focus\(\)/);
   assert.match(shell, /rightPanelRef\.current\?\.focusActiveTab\(\)/);
-  assert.match(rightPanel, /"ArrowLeft", "ArrowRight", "Home", "End"/);
+  assert.match(rightPanel, /activeTab === "home" \? firstLauncherRef\.current : activeTabRef\.current/);
+  assert.match(rightPanel, /role="menuitem"/);
   assert.match(rightPanel, /focusActiveTab/);
   assert.match(shell, /aria-hidden=\{!effectiveRightPanelOpen\}/);
   assert.match(shell, /inert=\{!effectiveRightPanelOpen \? true : undefined\}/);

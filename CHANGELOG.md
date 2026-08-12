@@ -4,6 +4,32 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-12
+
+### Added
+
+- The Windows desktop process now has a reliably packaged system-tray icon
+  with actions to restore Piora, start a task, inspect the running-task count,
+  and quit the application completely.
+- The right workspace now uses a Codex-style tool launcher and single-tool tab
+  flow for Review, Terminal, Browser, and Files, including matching shortcuts,
+  maximize/restore behavior, and a browser start page.
+
+### Changed
+
+- Closing the main desktop window now hides Piora to the system tray instead
+  of stopping active sessions and the bundled local service.
+- Desktop startup reuses its immediately visible shell for the real app instead
+  of allocating a second Chromium window, installs the tray before the service
+  is ready, reacts directly to the Next.js runtime-ready signal instead of
+  waiting on a sequential cold health route, records startup timing, and favors
+  faster portable extraction.
+- The desktop companion now collapses into a running-task count, stays within
+  its compact pet-sized window while idle, and omits the status dot and voice
+  control.
+- The empty conversation screen and composer no longer show obsolete starter
+  prompts, package versions, or the outdated model-settings location.
+
 ## [0.1.1] - 2026-08-11
 
 ### Added
