@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { GitFileDiffResponse, GitStatusResponse } from "@/lib/git-types";
 import { parseUnifiedDiff, type Hunk } from "@/lib/diff-parse";
@@ -43,6 +43,7 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
   const [status, setStatus] = useState<GitStatusResponse>(EMPTY_STATUS);
   const [diffs, setDiffs] = useState<Record<string, GitFileDiffResponse>>({});
   const [loadingDiffs, setLoadingDiffs] = useState<Set<string>>(() => new Set());
+  const [loadingContextKeys, setLoadingContextKeys] = useState<Set<string>>(() => new Set());
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
   const [reviewedKeys, setReviewedKeys] = useState<Set<string>>(() => new Set());
   const [reviewedStorageRoot, setReviewedStorageRoot] = useState<string | null>(null);
@@ -59,6 +60,7 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
   const [toast, setToast] = useState<string | null>(null);
   const [commitMessage, setCommitMessage] = useState("");
   const [amend, setAmend] = useState(false);
+  const [includeUnstaged, setIncludeUnstaged] = useState(true);
   const commitMessageRef = useRef<HTMLTextAreaElement>(null);
   const fileRefs = useRef(new Map<string, HTMLElement>());
   const diffsRef = useRef(diffs);
@@ -113,6 +115,7 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
       setExpandedKeys((current) => new Set([...current].filter((key) => availableKeys.has(key))));
       setDiffs({});
       setLoadingDiffs(new Set());
+      setLoadingContextKeys(new Set());
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setLoading(false); }
   }, [cwd]);
@@ -171,6 +174,25 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
       }
     }));
   }, [cwd, expandedKeys, filteredItems]);
+
+  const expandContext = useCallback(async (item: ChangeListItem) => {
+    if (!cwd || loadingContextKeys.has(item.key)) return;
+    const generation = diffGenerationRef.current;
+    setLoadingContextKeys((current) => new Set(current).add(item.key));
+    setError(null);
+    try {
+      const response = await fetch(`/api/git/diff?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(item.file.filePath)}&scope=${item.group === "staged" ? "staged" : "worktree"}&context=all`, { cache: "no-store" });
+      const data = await response.json() as GitFileDiffResponse & { error?: string };
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      if (generation === diffGenerationRef.current) {
+        setDiffs((current) => ({ ...current, [item.key]: data }));
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLoadingContextKeys((current) => { const next = new Set(current); next.delete(item.key); return next; });
+    }
+  }, [cwd, loadingContextKeys]);
 
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
@@ -233,19 +255,47 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     finally { setBusy(false); }
   }, [busy, cwd, diffs, loadStatus, onRefresh, status.repositoryRoot, t]);
 
-  const commit = useCallback(async () => {
-    if (!cwd || !commitMessage.trim() || busy) return;
+  const push = useCallback(async () => {
+    if (!cwd || busy) return;
     setBusy(true); setError(null);
     try {
-      const response = await fetch("/api/git/commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, message: commitMessage, amend }) });
+      const response = await fetch("/api/git/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      setToast(t("review.pushDone"));
+      setShowCommit(false);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(false); }
+  }, [busy, cwd, t]);
+
+  const commit = useCallback(async (pushAfterCommit = false) => {
+    if (!cwd || busy) return;
+    const resolvedMessage = commitMessage.trim() || t("review.generatedCommitMessage", { count: status.files.length });
+    setBusy(true); setError(null);
+    try {
+      const response = await fetch("/api/git/commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, message: resolvedMessage, amend, includeUnstaged }) });
       const data = await response.json() as { sha?: string; error?: string };
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-      setToast(t("review.commitDone", { sha: data.sha?.slice(0, 8) ?? "" }));
+      const shortSha = data.sha?.slice(0, 8) ?? "";
+      if (pushAfterCommit) {
+        const pushResponse = await fetch("/api/git/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) });
+        const pushData = await pushResponse.json() as { error?: string };
+        if (!pushResponse.ok) {
+          setToast(t("review.commitDone", { sha: shortSha }));
+          setCommitMessage(""); setShowCommit(false);
+          onRefresh();
+          window.dispatchEvent(new CustomEvent("piora:git-status-changed", { detail: { cwd } }));
+          await loadStatus();
+          setError(t("review.commitPushFailed", { error: pushData.error || `HTTP ${pushResponse.status}` }));
+          return;
+        }
+      }
+      setToast(t(pushAfterCommit ? "review.commitPushDone" : "review.commitDone", { sha: shortSha }));
       setCommitMessage(""); setShowCommit(false);
       onRefresh(); window.dispatchEvent(new CustomEvent("piora:git-status-changed", { detail: { cwd } })); await loadStatus();
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); }
-  }, [amend, busy, commitMessage, cwd, loadStatus, onRefresh, t]);
+  }, [amend, busy, commitMessage, cwd, includeUnstaged, loadStatus, onRefresh, status.files.length, t]);
 
   const toggleReviewed = (key: string) => setReviewedKeys((current) => toggleSet(current, key));
 
@@ -280,10 +330,31 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     }
   }, [branchState.currentBranch, cwd, items.length, loadStatus, onRefresh, switchingBranch, t]);
 
+  const commitControl = <CommitControl
+    open={showCommit}
+    onOpenChange={setShowCommit}
+    branch={branchState.currentBranch ?? status.branch ?? t("review.workingTree")}
+    commitMessage={commitMessage}
+    setCommitMessage={setCommitMessage}
+    commitMessageRef={commitMessageRef}
+    includeUnstaged={includeUnstaged}
+    setIncludeUnstaged={setIncludeUnstaged}
+    amend={amend}
+    setAmend={setAmend}
+    stagedCount={stagedItems.length}
+    worktreeCount={worktreeItems.length}
+    additions={status.additions}
+    deletions={status.deletions}
+    busy={busy}
+    onCommit={(pushAfterCommit) => void commit(pushAfterCommit)}
+    onPush={() => void push()}
+    t={t}
+  />;
+
   if (!cwd) return <ReviewEmpty message={t("review.selectProject")} />;
   if (loading && status.files.length === 0) return <ReviewEmpty message={t("review.loading")} loading />;
   if (!status.isGitRepository) return <ReviewEmpty message={error || t("review.notGit")} />;
-  if (items.length === 0) return <div className={styles.reviewRoot}><ReviewTopBar status={status} mode={mode} setMode={setMode} busy={busy} onRefresh={loadStatus} branches={branchState.branches} currentBranch={branchState.currentBranch} switchingBranch={switchingBranch} onSwitchBranch={switchBranch} t={t} /><ReviewEmpty message={error || toast || t("review.clean")} /></div>;
+  if (items.length === 0) return <div className={styles.reviewRoot}><ReviewTopBar status={status} mode={mode} setMode={setMode} busy={busy} onRefresh={loadStatus} branches={branchState.branches} currentBranch={branchState.currentBranch} switchingBranch={switchingBranch} onSwitchBranch={switchBranch} commitControl={commitControl} t={t} /><ReviewEmpty message={error || toast || t("review.clean")} /></div>;
 
   const scopeCounts: Record<ReviewScope, number> = {
     all: items.length,
@@ -297,7 +368,7 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
       {activeKey ? t("review.selectedChange", { path: items.find((item) => item.key === activeKey)?.file.filePath ?? "" }) : t("review.noSelectedChange")}
     </div>
     <ReviewTopBar status={status} mode={mode} setMode={setMode} busy={busy} onRefresh={loadStatus} branches={branchState.branches} currentBranch={branchState.currentBranch} switchingBranch={switchingBranch} onSwitchBranch={switchBranch} t={t}
-      onCollapseAll={() => setExpandedKeys(filteredItems.every((item) => expandedKeys.has(item.key)) ? new Set() : new Set(filteredItems.map((item) => item.key)))} />
+      commitControl={commitControl} onCollapseAll={() => setExpandedKeys(filteredItems.every((item) => expandedKeys.has(item.key)) ? new Set() : new Set(filteredItems.map((item) => item.key)))} />
 
     <div className={styles.reviewFilters}>
       <label className={styles.reviewSearch}>
@@ -330,7 +401,7 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
               t={t}
             />
             {!collapsed ? <div className={styles.reviewFileBody}>
-              {itemDiff?.supported && itemDiff.patch ? <DiffView patch={itemDiff.patch} filePath={item.file.filePath} mode={mode} showFileHeader={false} onOpenFile={(path) => onOpenFile(path)} hunkActions={(hunk) => <span className={styles.hunkActions} onClick={(event) => event.stopPropagation()}><button type="button" disabled={busy} onClick={() => void mutate(item.group === "staged" ? "unstage" : "stage", [item], { hunk })}>{item.group === "staged" ? t("review.unstageHunk") : t("review.stageHunk")}</button>{item.group !== "staged" ? <button type="button" className={styles.danger} disabled={busy} onClick={() => void mutate("revert", [item], { hunk })}>{t("review.revertHunk")}</button> : null}</span>} />
+              {itemDiff?.supported && itemDiff.patch ? <DiffView patch={itemDiff.patch} filePath={item.file.filePath} mode={mode} showFileHeader={false} totalLines={itemDiff.totalLines} contextLoading={loadingContextKeys.has(item.key)} onExpandContext={() => void expandContext(item)} onOpenFile={(path) => onOpenFile(path)} hunkActions={(hunk) => <span className={styles.hunkActions} onClick={(event) => event.stopPropagation()}><button type="button" disabled={busy} onClick={() => void mutate(item.group === "staged" ? "unstage" : "stage", [item], { hunk })}>{item.group === "staged" ? t("review.unstageHunk") : t("review.stageHunk")}</button>{item.group !== "staged" ? <button type="button" className={styles.danger} disabled={busy} onClick={() => void mutate("revert", [item], { hunk })}>{t("review.revertHunk")}</button> : null}</span>} />
                 : loadingDiffs.has(item.key) ? <ReviewFileLoading t={t} /> : <ReviewEmpty message={t("review.diffUnavailable")} compact />}
             </div> : null}
           </section>;
@@ -339,28 +410,20 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     </main>
 
     <footer className={styles.reviewFooter}>
-      {showCommit && stagedItems.length > 0 ? <div className={styles.commitPanel}>
-        <div className={styles.commitPanelHeader}><span>{t("review.commitPreview", { count: stagedItems.length })}</span><button type="button" onClick={() => setShowCommit(false)} aria-label={t("review.closeCommit")}><AliIcon name="close" size={13} /></button></div>
-        <textarea ref={commitMessageRef} value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} onKeyDown={(event) => { if (!isCommitKeyboardShortcut(event.nativeEvent)) return; event.preventDefault(); void commit(); }} placeholder={t("review.commitMessage")} aria-label={t("review.commitMessage")} aria-describedby="review-commit-shortcut" rows={3} />
-        <span id="review-commit-shortcut" className={styles.srOnly}>{t("review.commitShortcut")}</span>
-        <div className={styles.commitFooter}>
-          <label className={styles.amendToggle}><input type="checkbox" checked={amend} onChange={(event) => setAmend(event.target.checked)} />{t("review.amend")}</label>
-          <button className={styles.primaryAction} type="button" disabled={busy || !commitMessage.trim()} aria-keyshortcuts="Control+Enter Meta+Enter" onClick={() => void commit()}><AliIcon name="check" size={13} />{t("review.commit")}</button>
-        </div>
-      </div> : <div className={styles.reviewFooterBar}>
+      <div className={styles.reviewFooterBar}>
         <span>{stagedItems.length ? t("review.readyToCommit", { count: stagedItems.length }) : t("review.nothingStaged")}</span>
         <div>
           {worktreeItems.length ? <button type="button" disabled={busy} onClick={() => void mutate("stage", worktreeItems)}>{t("review.stageAll")}</button> : null}
-          <button className={styles.primaryAction} type="button" disabled={busy || stagedItems.length === 0} onClick={() => { setShowCommit(true); requestAnimationFrame(() => commitMessageRef.current?.focus({ preventScroll: true })); }}><AliIcon name="check" size={13} />{t("review.commitAction", { count: stagedItems.length })}</button>
+          <button className={styles.primaryAction} type="button" disabled={busy} onClick={() => { setShowCommit(true); requestAnimationFrame(() => commitMessageRef.current?.focus({ preventScroll: true })); }}><AliIcon name="check" size={13} />{t("review.commitOrPush")}</button>
         </div>
-      </div>}
+      </div>
       {error ? <div role="alert" className={styles.error}>{error}</div> : null}
       {toast ? <div role="status" className={styles.toast}>{toast}</div> : null}
     </footer>
   </div>;
 }
 
-function ReviewTopBar({ status, mode, setMode, busy, onRefresh, onCollapseAll, branches, currentBranch, switchingBranch, onSwitchBranch, t }: {
+function ReviewTopBar({ status, mode, setMode, busy, onRefresh, onCollapseAll, branches, currentBranch, switchingBranch, onSwitchBranch, commitControl, t }: {
   status: GitStatusResponse;
   mode: DiffMode;
   setMode: (mode: DiffMode) => void;
@@ -371,6 +434,7 @@ function ReviewTopBar({ status, mode, setMode, busy, onRefresh, onCollapseAll, b
   currentBranch: string | null;
   switchingBranch: string | null;
   onSwitchBranch: (branch: string) => void | Promise<void>;
+  commitControl?: ReactNode;
   t: ReturnType<typeof useI18n>["t"];
 }) {
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
@@ -410,23 +474,105 @@ function ReviewTopBar({ status, mode, setMode, busy, onRefresh, onCollapseAll, b
       <button type="button" className={styles.iconAction} aria-pressed={mode === "split"} onClick={() => setMode(mode === "unified" ? "split" : "unified")} title={mode === "unified" ? t("review.splitView") : t("review.unifiedView")} aria-label={mode === "unified" ? t("review.splitView") : t("review.unifiedView")}><AliIcon name="layout" size={14} /></button>
       {onCollapseAll ? <button type="button" className={styles.iconAction} onClick={onCollapseAll} title={t("review.collapseAll")} aria-label={t("review.collapseAll")}><AliIcon name="collapse" size={14} /></button> : null}
       <button type="button" className={styles.iconAction} onClick={() => void onRefresh()} disabled={busy} title={t("review.refresh")} aria-label={t("review.refresh")}><AliIcon name="reload" size={14} /></button>
+      {commitControl}
     </div>
   </header>;
+}
+
+function CommitControl({
+  open,
+  onOpenChange,
+  branch,
+  commitMessage,
+  setCommitMessage,
+  commitMessageRef,
+  includeUnstaged,
+  setIncludeUnstaged,
+  amend,
+  setAmend,
+  stagedCount,
+  worktreeCount,
+  additions,
+  deletions,
+  busy,
+  onCommit,
+  onPush,
+  t,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  branch: string;
+  commitMessage: string;
+  setCommitMessage: (message: string) => void;
+  commitMessageRef: RefObject<HTMLTextAreaElement | null>;
+  includeUnstaged: boolean;
+  setIncludeUnstaged: (include: boolean) => void;
+  amend: boolean;
+  setAmend: (amend: boolean) => void;
+  stagedCount: number;
+  worktreeCount: number;
+  additions: number;
+  deletions: number;
+  busy: boolean;
+  onCommit: (pushAfterCommit: boolean) => void;
+  onPush: () => void;
+  t: ReturnType<typeof useI18n>["t"];
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const canCommit = stagedCount > 0 || (includeUnstaged && worktreeCount > 0) || amend;
+
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) onOpenChange(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onOpenChange(false);
+    };
+    window.addEventListener("pointerdown", dismiss);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", dismiss);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [onOpenChange, open]);
+
+  return <div ref={rootRef} className={styles.commitControl}>
+    <button type="button" className={styles.commitTrigger} aria-haspopup="dialog" aria-expanded={open} disabled={busy} onClick={() => {
+      onOpenChange(!open);
+      if (!open) requestAnimationFrame(() => commitMessageRef.current?.focus({ preventScroll: true }));
+    }}><AliIcon name="branches" size={13} /><span>{t("review.commitOrPush")}</span><AliIcon name={open ? "arrowup" : "arrowdown"} size={10} /></button>
+    {open ? <div className={styles.commitPopover} role="dialog" aria-label={t("review.commitOrPush")}>
+      <div className={styles.commitBranch}><AliIcon name="branches" size={12} /><b>{branch}</b></div>
+      <textarea ref={commitMessageRef} value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} onKeyDown={(event) => {
+        if (!isCommitKeyboardShortcut(event.nativeEvent) || !canCommit) return;
+        event.preventDefault();
+        onCommit(false);
+      }} placeholder={t("review.commitMessagePlaceholder")} aria-label={t("review.commitMessage")} aria-describedby="review-commit-shortcut" rows={4} />
+      <span id="review-commit-shortcut" className={styles.srOnly}>{t("review.commitShortcut")}</span>
+      {worktreeCount > 0 ? <label className={styles.includeUnstagedToggle}><input type="checkbox" checked={includeUnstaged} onChange={(event) => setIncludeUnstaged(event.target.checked)} />{t("review.includeUnstaged")}<span className={styles.commitStats}><span className={styles.additions}>+{additions}</span><span className={styles.deletions}>-{deletions}</span></span></label> : null}
+      <label className={styles.amendToggle}><input type="checkbox" checked={amend} onChange={(event) => setAmend(event.target.checked)} />{t("review.amend")}</label>
+      <div className={styles.commitMenuActions}>
+        <button type="button" disabled={busy || !canCommit} aria-keyshortcuts="Control+Enter Meta+Enter" onClick={() => onCommit(false)}><AliIcon name="check" size={13} />{t("review.commitOnly")}<kbd>Ctrl+↵</kbd></button>
+        <button type="button" disabled={busy || !canCommit} onClick={() => onCommit(true)}><AliIcon name="cloud-upload" size={13} />{t("review.commitAndPush")}</button>
+        <button type="button" disabled={busy} onClick={onPush}><AliIcon name="upload" size={13} />{t("review.pushOnly")}</button>
+      </div>
+    </div> : null}
+  </div>;
 }
 
 function FileReviewHeader({ item, collapsed, reviewed, busy, onToggle, onReview, onOpen, onStage, onRevert, t }: { item: ChangeListItem; collapsed: boolean; reviewed: boolean; busy: boolean; onToggle: () => void; onReview: () => void; onOpen: () => void; onStage: () => void; onRevert: () => void; t: ReturnType<typeof useI18n>["t"] }) {
   const { name, parent } = splitPath(item.file.filePath);
   return <header className={styles.reviewFileHeader}>
-    <button type="button" className={styles.fileCollapse} onClick={onToggle} aria-expanded={!collapsed} aria-label={collapsed ? t("review.expandFile") : t("review.collapseFile")}><AliIcon name="chevron-right" size={13} /></button>
     <span className={styles.reviewFileIcon}>{getFileIcon(name, 14)}</span>
-    <button type="button" className={styles.reviewFilePath} onClick={onToggle} title={item.file.filePath}>{parent ? <small>{parent}/</small> : null}<b>{name}</b></button>
-    <span className={styles.fileGroupBadge} data-group={item.group}>{t(`review.group.${item.group}`)}</span>
+    <button type="button" className={styles.reviewFilePath} onClick={onToggle} title={item.file.filePath} aria-expanded={!collapsed} aria-label={collapsed ? t("review.expandFile") : t("review.collapseFile")}>{parent ? <small>{parent}/</small> : null}<b>{name}</b></button>
     <span className={styles.lineStats}><span className={styles.additions}>+{item.file.additions ?? 0}</span><span className={styles.deletions}>-{item.file.deletions ?? 0}</span></span>
+    <span className={styles.fileStatusMarker} data-group={item.group} role="img" aria-label={t(`review.group.${item.group}`)} title={t(`review.group.${item.group}`)} />
     <div className={styles.fileActions}>
       <button type="button" className={`${styles.reviewCheck} ${reviewed ? styles.reviewCheckDone : ""}`} onClick={onReview} title={reviewed ? t("review.markUnreviewed") : t("review.markReviewed")} aria-label={reviewed ? t("review.markUnreviewed") : t("review.markReviewed")} aria-pressed={reviewed}><AliIcon name="check" size={11} /></button>
       <button type="button" disabled={busy} onClick={onStage} title={item.group === "staged" ? t("review.unstage") : t("review.stage")} aria-label={item.group === "staged" ? t("review.unstage") : t("review.stage")}><AliIcon name={item.group === "staged" ? "minus" : "plus"} size={13} /></button>
       {item.group !== "staged" ? <button type="button" className={styles.danger} disabled={busy} onClick={onRevert} title={t("review.revert")} aria-label={t("review.revert")}><AliIcon name="history" size={13} /></button> : null}
-      <button type="button" onClick={onOpen} title={t("diff.openFile")} aria-label={t("diff.openFile")}><AliIcon name="file" size={13} /></button>
+      <button type="button" className={styles.openFileAction} onClick={onOpen} title={t("diff.openFile")} aria-label={t("diff.openFile")}><AliIcon name="external-link" size={13} /></button>
     </div>
   </header>;
 }

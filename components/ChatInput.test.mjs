@@ -9,7 +9,7 @@ const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
 });
-const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, filterModelOptions, getContextRemainingPercent } = await jiti.import("./ChatInput.tsx");
+const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, filterModelOptions, getContextRemainingPercent, joinSpeechText } = await jiti.import("./ChatInput.tsx");
 // Import through the same tsconfig alias used by the component so Jiti reuses
 // the exact context module instead of creating a second provider instance.
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
@@ -90,6 +90,31 @@ test("derives remaining context from live token counts", () => {
   assert.equal(getContextRemainingPercent({ percent: 35, contextWindow: 200_000, tokens: null }), 65);
   assert.equal(getContextRemainingPercent({ percent: 130, contextWindow: 200_000, tokens: null }), 0);
   assert.equal(getContextRemainingPercent({ percent: null, contextWindow: 200_000, tokens: null }), null);
+});
+
+test("inserts dictated text at the caret with locale-aware spacing", () => {
+  assert.deepEqual(joinSpeechText("请帮我", " 修复这个问题 ", "谢谢", "zh-CN"), {
+    value: "请帮我修复这个问题谢谢",
+    selection: 9,
+  });
+  assert.deepEqual(joinSpeechText("Please", " fix this ", "today", "en-US"), {
+    value: "Please fix this today",
+    selection: 15,
+  });
+  assert.deepEqual(joinSpeechText("", " hello ", "", "en-US"), {
+    value: "hello",
+    selection: 5,
+  });
+});
+
+test("keeps voice dictation user-controlled and progressive", () => {
+  assert.match(chatInputSource, /useLocalDictation/);
+  assert.match(chatInputSource, /voiceTranscribing/);
+  assert.match(chatInputSource, /webkitSpeechRecognition/);
+  assert.match(chatInputSource, /recognition\.continuous = true/);
+  assert.match(chatInputSource, /recognition\.interimResults = true/);
+  assert.match(chatInputSource, /aria-pressed=\{voiceListening\}/);
+  assert.match(chatInputSource, /stopVoiceInput\(true\);[\s\S]*?setValue\(""\)/);
 });
 
 test("renders an icon-only send control and dynamic context ring", () => {

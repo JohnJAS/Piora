@@ -4,6 +4,36 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-08-12
+
+### Added
+
+- Local headset dictation now records from the composer and transcribes fully
+  offline with a checksum-pinned Whisper Base Q5 model and whisper.cpp runtime
+  bundled inside the Windows executable.
+- First desktop launch can select a persistent Pi data directory and safely
+  migrate existing sessions, credentials, model settings, and skills while
+  retaining the old directory as a verified rollback copy.
+- Review now provides a Codex-style commit-or-push menu with optional staging
+  of working-tree changes, amend, commit, commit-and-push, and upstream push.
+- Added a HarmonyOS NEXT device-automation architecture design for future
+  cross-device control work.
+
+### Changed
+
+- Review file rows use compact colored status markers, path-based expansion,
+  and lightweight open-file actions instead of leading disclosure arrows and
+  textual status pills.
+- The desktop companion interaction and animation behavior is more resilient
+  across compact and expanded window states.
+
+### Fixed
+
+- Review can load omitted unchanged source lines on demand, including context
+  after the final diff hunk.
+- Conversation Git line totals exclude untracked file contents while keeping
+  untracked files visible in the changed-file count and Review.
+
 ## [0.1.5] - 2026-08-12
 
 ### Changed

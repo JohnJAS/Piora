@@ -50,6 +50,13 @@ extraResources:
     to: web/node_modules/@earendil-works/pi-coding-agent/dist
     filter:
       - "**/*"
+  # whisper.cpp and the multilingual Base Q5 model are prepared and checksum-
+  # verified by the beforeBuild hook. They ship inside the EXE, so runtime
+  # transcription never downloads an engine or model.
+  - from: build/whisper
+    to: whisper
+    filter:
+      - "**/*"
   - from: ../LICENSE
     to: licenses/LICENSE
   - from: ../NOTICE
@@ -64,6 +71,16 @@ extraResources:
       - "SOURCE.md"
   - from: ../third_party/openpets
     to: licenses/openpets
+    filter:
+      - "LICENSE"
+      - "SOURCE.md"
+  - from: ../third_party/whisper-cpp
+    to: licenses/whisper-cpp
+    filter:
+      - "LICENSE"
+      - "SOURCE.md"
+  - from: ../third_party/openai-whisper
+    to: licenses/openai-whisper
     filter:
       - "LICENSE"
       - "SOURCE.md"

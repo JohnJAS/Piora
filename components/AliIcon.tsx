@@ -29,6 +29,7 @@ const ICONS = {
   "arrowdown": { stroke: ["M12 5v14", "m19 12-7 7-7-7"] },
   "arrowleft": { stroke: ["m12 19-7-7 7-7", "M19 12H5"] },
   "arrowright": { stroke: ["M5 12h14", "m12 5 7 7-7 7"] },
+  "external-link": { stroke: ["M15 3h6v6", "M10 14 21 3", "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"] },
   "arrowup": { stroke: ["m5 12 7-7 7 7", "M12 19V5"] },
   "attachment": {
     stroke: ["m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"],
@@ -195,6 +196,14 @@ const ICONS = {
   "menu": { stroke: ["M4 6h16", "M4 12h16", "M4 18h16"] },
   "message": { stroke: ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"] },
   "message-plus": { stroke: ["M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h6", "M16 3v6", "M13 6h6"] },
+  "microphone": {
+    stroke: [
+      "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z",
+      "M19 10v2a7 7 0 0 1-14 0v-2",
+      "M12 19v3",
+      "M8 22h8",
+    ],
+  },
   "minus": { stroke: ["M5 12h14"] },
   "notification": {
     stroke: [

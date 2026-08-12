@@ -19,6 +19,8 @@ export interface StandaloneServerOptions {
   serverEntry: string;
   serverHostEntry: string;
   homeDirectory: string;
+  agentDirectory: string;
+  whisperDirectory?: string;
   token: string;
   logger: Logger;
   preferredPort?: number;
@@ -290,6 +292,10 @@ export class StandaloneServer {
           PI_WEB_ALLOWED_HOSTS: LOOPBACK_HOST,
           PI_WEB_NO_OPEN: "1",
           PIORA_HOME: this.options.homeDirectory,
+          PI_CODING_AGENT_DIR: this.options.agentDirectory,
+          ...(this.options.whisperDirectory
+            ? { PIORA_WHISPER_DIR: this.options.whisperDirectory }
+            : {}),
           // Desktop requests use the per-launch token below. Do not inherit an
           // unrelated shell-wide Basic Auth password that the renderer and
           // health probe cannot satisfy.

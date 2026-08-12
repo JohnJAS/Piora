@@ -39,6 +39,12 @@
 .hunkToggle:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 36%, transparent); outline-offset: -2px; }
 .hunkChevron { width: 13px; flex: 0 0 auto; display: inline-flex; color: currentColor; transition: transform 120ms ease; }
 .hunkToggle[aria-expanded="true"] .hunkChevron { transform: rotate(90deg); }
+.hunkToggle:disabled { cursor: wait; opacity: .72; }
+.hunkToggle:disabled .hunkChevron,.contextGap:disabled svg { animation: diffContextSpin 900ms linear infinite; }
+.contextGap { width: 100%; min-height: 27px; display: flex; align-items: center; gap: 5px; padding: 0 9px; border: 0; border-radius: 0 8px 8px 0; background: color-mix(in srgb, var(--surface-muted) 88%, var(--bg)); color: var(--text-muted); cursor: pointer; font: inherit; font-family: var(--font-ui, system-ui, sans-serif); font-size: var(--text-xs); text-align: left; }
+.contextGap:hover:not(:disabled) { background: color-mix(in srgb, var(--surface-muted) 72%, var(--bg-hover)); color: var(--text); }
+.contextGap:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 36%, transparent); outline-offset: -2px; }
+@keyframes diffContextSpin { to { transform: rotate(360deg); } }
 .line { display: grid; grid-template-columns: 46px 46px 20px minmax(max-content, 1fr); min-height: 23px; line-height: 23px; content-visibility: auto; contain-intrinsic-block-size: 23px; }
 .line:hover { background-image: linear-gradient(color-mix(in srgb, var(--text) 2.5%, transparent), color-mix(in srgb, var(--text) 2.5%, transparent)); }
 .lineNumber { padding: 0 7px; text-align: right; color: color-mix(in srgb, var(--text-dim) 78%, transparent); background: color-mix(in srgb, var(--surface-muted) 46%, transparent); user-select: none; border-right: 1px solid color-mix(in srgb, var(--border) 54%, transparent); font-variant-numeric: tabular-nums; }

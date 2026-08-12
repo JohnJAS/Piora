@@ -24,6 +24,7 @@ import {
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
+import { useLocalDictation } from "@/hooks/useLocalDictation";
 import { prioritizeProvider } from "@/lib/model-policy";
 import { AliIcon } from "./AliIcon";
 import { ModelProviderIcon } from "./ModelProviderIcon";
@@ -107,6 +108,67 @@ export interface ChatInputHandle {
 
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
 const MODEL_FILTER_THRESHOLD = 8;
+
+interface BrowserSpeechRecognitionResult {
+  readonly isFinal: boolean;
+  readonly length: number;
+  readonly [index: number]: { readonly transcript: string };
+}
+
+interface BrowserSpeechRecognitionEvent extends Event {
+  readonly results: {
+    readonly length: number;
+    readonly [index: number]: BrowserSpeechRecognitionResult;
+  };
+}
+
+interface BrowserSpeechRecognitionErrorEvent extends Event {
+  readonly error: string;
+}
+
+interface BrowserSpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
+  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+
+function getSpeechRecognitionConstructor(): BrowserSpeechRecognitionConstructor | null {
+  if (typeof window === "undefined") return null;
+  const speechWindow = window as typeof window & {
+    SpeechRecognition?: BrowserSpeechRecognitionConstructor;
+    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
+  };
+  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
+}
+
+export function joinSpeechText(before: string, transcript: string, after: string, language: string): {
+  value: string;
+  selection: number;
+} {
+  const text = transcript.trim();
+  if (!text) return { value: before + after, selection: before.length };
+
+  // Mandarin dictation does not normally use spaces between phrases. For
+  // space-delimited languages, keep dictated text readable when inserted at
+  // the caret in the middle of an existing prompt.
+  const usesWordSpaces = !language.toLocaleLowerCase().startsWith("zh");
+  const leadingSpace = usesWordSpaces && before.length > 0 && !/\s$/.test(before) ? " " : "";
+  const trailingSpace = usesWordSpaces && after.length > 0 && !/^\s/.test(after) ? " " : "";
+  const inserted = leadingSpace + text + trailingSpace;
+  return {
+    value: before + inserted + after,
+    selection: before.length + inserted.length - trailingSpace.length,
+  };
+}
 
 export function filterModelOptions(options: ModelOption[], query: string): ModelOption[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -276,6 +338,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [fileIndex, setFileIndex] = useState<{ cwd: string; entries: FileIndexEntry[]; truncated: boolean } | null>(null);
   const [fileIndexLoading, setFileIndexLoading] = useState(false);
   const [atServerResult, setAtServerResult] = useState<{ cwd: string; query: string; matches: FileIndexEntry[] } | null>(null);
+  const [nativeVoiceInputSupported, setNativeVoiceInputSupported] = useState(false);
+  const [isVoiceListening, setIsVoiceListening] = useState(false);
+  const [voiceInputError, setVoiceInputError] = useState<"permission" | "microphone" | "generic" | null>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -283,6 +348,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const streamingActionMenuRef = useRef<HTMLDivElement>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
   const promptOptimizerAbortRef = useRef<AbortController | null>(null);
+  const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const speechInsertionRef = useRef<{ before: string; after: string; language: string } | null>(null);
+  const localVoiceStopRef = useRef<() => Promise<void>>(async () => {});
+  const localVoiceCancelRef = useRef<() => void>(() => {});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
   const lastCompositionEndAtRef = useRef(0);
@@ -300,6 +369,28 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   attachedImagesRef.current = attachedImages;
   const attachedFilesRef = useRef(attachedFiles);
   attachedFilesRef.current = attachedFiles;
+
+  const stopVoiceInput = useCallback((abort = false) => {
+    if (abort) localVoiceCancelRef.current();
+    else void localVoiceStopRef.current();
+    const recognition = speechRecognitionRef.current;
+    setIsVoiceListening(false);
+    if (abort) speechInsertionRef.current = null;
+    if (!recognition) return;
+    if (abort) {
+      speechRecognitionRef.current = null;
+      recognition.onstart = null;
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+    }
+    try {
+      if (abort) recognition.abort();
+      else recognition.stop();
+    } catch {
+      // The browser may already have ended the recognition session.
+    }
+  }, []);
 
   useImperativeHandle(ref, () => ({
     focus() {
@@ -459,6 +550,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const clearInput = useCallback(() => {
+    stopVoiceInput(true);
     setValue("");
     setAtQuery(null);
     setHistoryMenuOpen(false);
@@ -470,7 +562,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [clearImages, draftKey]);
+  }, [clearImages, draftKey, stopVoiceInput]);
 
   useEffect(() => {
     if (!draftKey || draftKeyRef.current !== draftKey) return;
@@ -483,6 +575,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   useEffect(() => {
     const previousDraftKey = draftKeyRef.current;
     if (previousDraftKey === draftKey) return;
+
+    stopVoiceInput(true);
 
     if (previousDraftKey) {
       setDraft(previousDraftKey, {
@@ -503,7 +597,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       prev.forEach(revokeImagePreview);
       return draftImagesToAttachedImages(draft?.images);
     });
-  }, [draftKey]);
+  }, [draftKey, stopVoiceInput]);
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -513,11 +607,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [value]);
 
   useEffect(() => {
+    setNativeVoiceInputSupported(getSpeechRecognitionConstructor() !== null);
+  }, []);
+
+  useEffect(() => {
     return () => {
+      stopVoiceInput(true);
       promptOptimizerAbortRef.current?.abort();
       attachedImagesRef.current.forEach(revokeImagePreview);
     };
-  }, []);
+  }, [stopVoiceInput]);
 
   const handleSend = useCallback(async () => {
     const msg = value.trim();
@@ -630,6 +729,126 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const pos = cursor ?? text.length;
     setAtQuery(extractAtQuery(text.slice(0, pos)));
   }, [cwd]);
+
+  const applyVoiceTranscript = useCallback((transcript: string) => {
+    const insertion = speechInsertionRef.current;
+    if (!insertion) return;
+    const next = joinSpeechText(insertion.before, transcript, insertion.after, insertion.language);
+    setValue(next.value);
+    setVoiceInputError(null);
+    updateAtQuery(next.value, next.selection);
+    requestAnimationFrame(() => {
+      const element = textareaRef.current;
+      if (!element) return;
+      element.focus({ preventScroll: true });
+      element.setSelectionRange(next.selection, next.selection);
+      element.style.height = "auto";
+      element.style.height = `${Math.min(element.scrollHeight, 200)}px`;
+    });
+  }, [updateAtQuery]);
+
+  const prepareVoiceInsertion = useCallback(() => {
+    const textarea = textareaRef.current;
+    const currentValue = textarea?.value ?? valueRef.current;
+    const selectionStart = textarea?.selectionStart ?? currentValue.length;
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+    speechInsertionRef.current = {
+      before: currentValue.slice(0, selectionStart),
+      after: currentValue.slice(selectionEnd),
+      language: locale === "zh-CN" ? "zh-CN" : "en-US",
+    };
+    setVoiceInputError(null);
+    setHistoryMenuOpen(false);
+    setSlashMenuOpen(false);
+    setAtMenuOpen(false);
+    if (promptOptimization) {
+      promptOptimizerAbortRef.current?.abort();
+      promptOptimizerAbortRef.current = null;
+      setPromptOptimization(null);
+    }
+  }, [locale, promptOptimization]);
+
+  const localDictation = useLocalDictation({
+    language: locale === "zh-CN" ? "zh" : "en",
+    onTranscript: applyVoiceTranscript,
+  });
+  localVoiceStopRef.current = localDictation.stop;
+  localVoiceCancelRef.current = localDictation.cancel;
+  const localVoiceEnabled = localDictation.available && localDictation.supported;
+  const localVoiceRecording = localVoiceEnabled
+    && (localDictation.phase === "starting" || localDictation.phase === "recording");
+  const voiceTranscribing = localVoiceEnabled && localDictation.phase === "transcribing";
+  const voiceInputSupported = localVoiceEnabled || nativeVoiceInputSupported;
+  const voiceListening = localVoiceEnabled ? localVoiceRecording : isVoiceListening;
+  const effectiveVoiceError = localVoiceEnabled ? localDictation.error : voiceInputError;
+
+  const toggleNativeVoiceInput = useCallback(() => {
+    if (speechRecognitionRef.current) {
+      stopVoiceInput();
+      return;
+    }
+
+    const SpeechRecognitionConstructor = getSpeechRecognitionConstructor();
+    if (!SpeechRecognitionConstructor) {
+      setNativeVoiceInputSupported(false);
+      return;
+    }
+
+    const language = locale === "zh-CN" ? "zh-CN" : "en-US";
+    const recognition = new SpeechRecognitionConstructor();
+
+    prepareVoiceInsertion();
+    speechRecognitionRef.current = recognition;
+    setIsVoiceListening(true);
+
+    recognition.lang = language;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onstart = () => setIsVoiceListening(true);
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let index = 0; index < event.results.length; index += 1) {
+        transcript += event.results[index]?.[0]?.transcript ?? "";
+      }
+      applyVoiceTranscript(transcript);
+    };
+    recognition.onerror = (event) => {
+      if (event.error === "aborted") return;
+      setIsVoiceListening(false);
+      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+        setVoiceInputError("permission");
+      } else if (event.error === "audio-capture") {
+        setVoiceInputError("microphone");
+      } else {
+        setVoiceInputError("generic");
+      }
+    };
+    recognition.onend = () => {
+      if (speechRecognitionRef.current === recognition) {
+        speechRecognitionRef.current = null;
+        speechInsertionRef.current = null;
+        setIsVoiceListening(false);
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      speechRecognitionRef.current = null;
+      speechInsertionRef.current = null;
+      setIsVoiceListening(false);
+      setVoiceInputError("generic");
+    }
+  }, [applyVoiceTranscript, locale, prepareVoiceInsertion, stopVoiceInput]);
+
+  const toggleVoiceInput = useCallback(() => {
+    if (!localVoiceEnabled) {
+      toggleNativeVoiceInput();
+      return;
+    }
+    if (localDictation.phase === "idle") prepareVoiceInsertion();
+    void localDictation.toggle();
+  }, [localDictation, localVoiceEnabled, prepareVoiceInsertion, toggleNativeVoiceInput]);
 
   const atQueryText = atQuery?.query ?? null;
   const atLocalMatches: FileIndexEntry[] = React.useMemo(() => (
@@ -966,6 +1185,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return;
       }
 
+      if (e.key === "Escape" && !isComposing && (speechRecognitionRef.current || localVoiceRecording)) {
+        e.preventDefault();
+        stopVoiceInput();
+        return;
+      }
+
       // Esc stops the agent when no slash/@/history menu or IME composition is active.
       if (e.key === "Escape" && !isComposing && isStreaming && onAbort) {
         e.preventDefault();
@@ -982,7 +1207,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       }
     },
-    [isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, canQueueStreamingMessage]
+    [isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, canQueueStreamingMessage, stopVoiceInput, localVoiceRecording]
   );
 
   const handleInput = useCallback(() => {
@@ -1629,6 +1854,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             ref={textareaRef}
             value={value}
             onChange={(e) => {
+              if (speechRecognitionRef.current || localVoiceRecording || voiceTranscribing) stopVoiceInput(true);
+              if (voiceInputError) setVoiceInputError(null);
+              if (localDictation.error) localDictation.clearError();
               if (promptOptimization && e.target.value.trim() !== promptOptimization.source) {
                 promptOptimizerAbortRef.current?.abort();
                 promptOptimizerAbortRef.current = null;
@@ -1706,6 +1934,40 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             >
               <AliIcon name="plus" size={15} />
             </button>
+            {voiceInputSupported && (
+              <>
+                <button
+                  type="button"
+                  className={`voice-input-button${voiceListening ? " is-listening" : ""}${voiceTranscribing ? " is-transcribing" : ""}${effectiveVoiceError ? " is-error" : ""}`}
+                  onClick={toggleVoiceInput}
+                  disabled={voiceTranscribing}
+                  aria-pressed={voiceListening}
+                  aria-label={voiceListening ? t("chat.stopVoiceInput") : t("chat.startVoiceInput")}
+                  title={voiceListening ? t("chat.stopVoiceInput") : t("chat.startVoiceInput")}
+                >
+                  <AliIcon name="microphone" size={15} />
+                </button>
+                {(voiceListening || voiceTranscribing || effectiveVoiceError) && (
+                  <span
+                    className={`voice-input-status${effectiveVoiceError ? " is-error" : ""}`}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {voiceListening
+                      ? t("chat.voiceListening")
+                      : voiceTranscribing
+                        ? t("chat.voiceTranscribing")
+                      : effectiveVoiceError === "permission"
+                        ? t("chat.voicePermissionDenied")
+                        : effectiveVoiceError === "microphone"
+                          ? t("chat.voiceMicrophoneUnavailable")
+                          : effectiveVoiceError === "no-speech"
+                            ? t("chat.voiceNoSpeech")
+                            : t("chat.voiceInputFailed")}
+                  </span>
+                )}
+              </>
+            )}
             <button
               type="button"
               className="prompt-optimize-button"

@@ -29,6 +29,13 @@ test("uses syntax highlighting and exposes copy and open-file actions", () => {
   assert.match(source, /onOpenFile\(displayPath, firstLine\(file\)\)/);
 });
 
+test("loads omitted unchanged context instead of treating its bar as a hunk collapse", () => {
+  assert.match(source, /onExpandContext\?: \(\) => void/);
+  assert.match(source, /hiddenAfter/);
+  assert.match(source, /diff\.loadingContext/);
+  assert.match(source, /className=\{styles\.contextGap\}/);
+});
+
 test("both existing diff surfaces use the shared DiffView", () => {
   assert.match(fileViewer, /import \{ DiffView \} from "\.\/DiffView"/);
   assert.match(fileViewer, /<DiffView patch=\{gitDiff\.patch!\}/);

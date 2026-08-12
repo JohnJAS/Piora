@@ -11,7 +11,8 @@ export async function POST(request: NextRequest) {
     validateGitWritePaths(cwd, ["."], await getAllowedFileRoots());
     if (typeof body.message !== "string") throw new GitWriteError("message is required");
     if (body.amend !== undefined && typeof body.amend !== "boolean") throw new GitWriteError("amend must be boolean");
-    const sha = await commitGit(cwd, body.message, body.amend === true);
+    if (body.includeUnstaged !== undefined && typeof body.includeUnstaged !== "boolean") throw new GitWriteError("includeUnstaged must be boolean");
+    const sha = await commitGit(cwd, body.message, body.amend === true, body.includeUnstaged === true);
     return NextResponse.json({ ok: true, sha });
   } catch (error) { const result = gitErrorResponse(error); return NextResponse.json(result, { status: result.status }); }
 }

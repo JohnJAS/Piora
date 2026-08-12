@@ -173,12 +173,20 @@ export async function revertGitPaths(cwd: string, paths: string[], expectedHash:
   }
 }
 
-export async function commitGit(cwd: string, message: string, amend = false): Promise<string> {
+export async function commitGit(cwd: string, message: string, amend = false, includeUnstaged = false): Promise<string> {
   await assertRepositoryReady(cwd);
   const normalized = message.trim();
   if (!normalized || normalized.length > 100_000) throw new GitWriteError("Commit message must be between 1 and 100000 characters");
+  if (includeUnstaged) await runGit(cwd, ["add", "--all", "--", "."]);
   const args = ["commit", "--file=-"];
   if (amend) args.push("--amend");
   await runGit(cwd, args, `${normalized}\n`);
   return (await runGit(cwd, ["rev-parse", "HEAD"])).stdout.trim();
+}
+
+export async function pushGit(cwd: string): Promise<void> {
+  await assertRepositoryReady(cwd);
+  // Never infer a remote or use force. Git's configured upstream remains the
+  // single source of truth and its error is returned when no upstream exists.
+  await runGit(cwd, ["push"]);
 }

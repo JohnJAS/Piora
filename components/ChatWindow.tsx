@@ -269,9 +269,48 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           ? (isCompacting ? t("companion.activity.compactingCause") : phaseLabel(agentPhase, t))
           : t("companion.activity.idleCause");
 
+  const companionSessionId = session?.id ?? sessionIdRef.current ?? undefined;
+  const companionWasBusyRef = useRef(false);
+  const companionPreviousStatusRef = useRef<CompanionActivity["status"]>("idle");
+  const companionRunIdRef = useRef(0);
+  const [companionActivityEvent, setCompanionActivityEvent] = useState<CompanionActivity["event"]>();
+
   useEffect(() => {
-    onCompanionActivityChange?.({ status: companionActivityStatus, cause: companionActivityCause });
-  }, [companionActivityCause, companionActivityStatus, onCompanionActivityChange]);
+    const wasBusy = companionWasBusyRef.current;
+    const previousStatus = companionPreviousStatusRef.current;
+    let kind: NonNullable<CompanionActivity["event"]>["kind"] | null = null;
+
+    if (companionActivityStatus === "failed" && previousStatus !== "failed") {
+      kind = "failed";
+    } else if (sessionBusy && !wasBusy) {
+      companionRunIdRef.current += 1;
+      kind = "started";
+    } else if (!sessionBusy && wasBusy && companionActivityStatus !== "failed") {
+      kind = "completed";
+    }
+
+    companionWasBusyRef.current = sessionBusy;
+    companionPreviousStatusRef.current = companionActivityStatus;
+    if (!kind) return;
+
+    const runId = companionRunIdRef.current;
+    const occurredAt = Date.now();
+    setCompanionActivityEvent({
+      kind,
+      occurredAt,
+      key: `${companionSessionId ?? "draft"}:${runId}:${kind}:${occurredAt}`,
+    });
+  }, [companionActivityStatus, companionSessionId, sessionBusy]);
+
+  useEffect(() => {
+    onCompanionActivityChange?.({
+      status: companionActivityStatus,
+      cause: companionActivityCause,
+      ...(companionSessionId ? { sessionId: companionSessionId } : {}),
+      ...(companionRunIdRef.current > 0 ? { runId: companionRunIdRef.current } : {}),
+      ...(companionActivityEvent ? { event: companionActivityEvent } : {}),
+    });
+  }, [companionActivityCause, companionActivityEvent, companionActivityStatus, companionSessionId, onCompanionActivityChange]);
 
   useEffect(() => () => {
     onCompanionActivityChange?.({ status: "idle", cause: t("companion.activity.idleCause") });
