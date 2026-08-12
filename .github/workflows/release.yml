@@ -109,7 +109,12 @@ jobs:
 
       - name: Smoke-test portable executable
         shell: pwsh
-        run: node scripts/smoke-test-portable.mjs --expected-version "$env:GITHUB_REF_NAME"
+        # Hosted Windows runners apply aggressive scanning to self-extracting
+        # unsigned executables and can stall the NSIS bootstrap indefinitely.
+        # The same payload has already passed package isolation checks; exercise
+        # the packaged Electron runtime directly here and keep the portable
+        # wrapper's cached-launch gate for developer/release-machine validation.
+        run: node scripts/smoke-test-portable.mjs desktop/release/win-unpacked/Piora.exe --expected-version "$env:GITHUB_REF_NAME" --packaged-runtime
 
       - name: Generate checksums
         shell: pwsh

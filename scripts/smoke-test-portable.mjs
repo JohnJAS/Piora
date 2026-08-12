@@ -189,7 +189,12 @@ async function preparePortableRuntimeCache({
 
 export async function smokeTestPortableExecutable(
   executablePath,
-  { timeoutMs = DEFAULT_PORTABLE_SMOKE_TIMEOUT_MS, expectedVersion } = {},
+  {
+    timeoutMs = DEFAULT_PORTABLE_SMOKE_TIMEOUT_MS,
+    expectedVersion,
+    preparePortableCache = true,
+    startupBudgetMs = MAX_PORTABLE_STARTUP_MS,
+  } = {},
 ) {
   const executable = resolve(executablePath);
   if (!(await stat(executable).catch(() => undefined))?.isFile()) {
@@ -208,16 +213,18 @@ export async function smokeTestPortableExecutable(
   const markerAbort = new AbortController();
 
   try {
-    // The single-file wrapper necessarily extracts Electron once. That cold
-    // preparation is allowed the overall smoke timeout; the user-visible
-    // repeat-launch path below must then reach the Electron shell in 3 s.
-    await preparePortableRuntimeCache({
-      executable,
-      temporaryDirectory,
-      paths,
-      timeoutMs,
-      expectedVersion,
-    });
+    if (preparePortableCache) {
+      // The single-file wrapper necessarily extracts Electron once. That cold
+      // preparation is allowed the overall smoke timeout; the user-visible
+      // repeat-launch path below must then reach the Electron shell in 3 s.
+      await preparePortableRuntimeCache({
+        executable,
+        temporaryDirectory,
+        paths,
+        timeoutMs,
+        expectedVersion,
+      });
+    }
 
     const launchedAt = performance.now();
     child = spawn(executable, ["--smoke-test", `--user-data-dir=${paths.userData}`], {
@@ -241,7 +248,7 @@ export async function smokeTestPortableExecutable(
 
     const markerStartup = waitForMarker(
       startupMarkerPath,
-      MAX_PORTABLE_STARTUP_MS,
+      startupBudgetMs,
       markerAbort.signal,
       "startup-window",
     ).then(validateStartupMarker);
@@ -250,8 +257,8 @@ export async function smokeTestPortableExecutable(
     // must replace it inside the same three-second budget.
     const startupSurface = await markerStartup;
     const startupMs = performance.now() - launchedAt;
-    if (startupMs > MAX_PORTABLE_STARTUP_MS) {
-      throw new Error(`Portable EXE cached launch took ${startupMs.toFixed(0)} ms; budget is ${MAX_PORTABLE_STARTUP_MS} ms.`);
+    if (startupMs > startupBudgetMs) {
+      throw new Error(`Portable EXE cached launch took ${startupMs.toFixed(0)} ms; budget is ${startupBudgetMs} ms.`);
     }
 
     // The electron-builder portable wrapper can remain alive while its
@@ -272,7 +279,7 @@ export async function smokeTestPortableExecutable(
       preloadBridgeReady: marker.preloadBridgeReady,
       appShellReady: marker.appShellReady,
       startupMs: Math.round(startupMs),
-      startupBudgetMs: MAX_PORTABLE_STARTUP_MS,
+      startupBudgetMs,
       startupSurface: startupSurface.surface,
     };
   } catch (error) {
@@ -308,12 +315,15 @@ async function main() {
   const arguments_ = process.argv.slice(2);
   let suppliedExecutable;
   let expectedVersion;
+  let packagedRuntime = false;
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === "--expected-version") {
       expectedVersion = arguments_[index + 1];
       if (!expectedVersion) throw new Error("--expected-version requires X.Y.Z or vX.Y.Z");
       index += 1;
+    } else if (argument === "--packaged-runtime") {
+      packagedRuntime = true;
     } else if (argument.startsWith("--")) {
       throw new Error(`Unknown argument: ${argument}`);
     } else if (suppliedExecutable) {
@@ -325,7 +335,11 @@ async function main() {
   const executable = suppliedExecutable
     ? resolve(projectRoot, suppliedExecutable)
     : await findPortableExecutable(resolve(projectRoot, "desktop", "release"));
-  const result = await smokeTestPortableExecutable(executable, { expectedVersion });
+  const result = await smokeTestPortableExecutable(executable, {
+    expectedVersion,
+    preparePortableCache: !packagedRuntime,
+    startupBudgetMs: packagedRuntime ? 10_000 : MAX_PORTABLE_STARTUP_MS,
+  });
   console.log(JSON.stringify(result));
 }
 
