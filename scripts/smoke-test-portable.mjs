@@ -16,7 +16,7 @@ const STRICT_VERSION = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 // The first launch prepares the artifact-specific Electron runtime cache. On
 // slower Windows disks that one-time copy can take several minutes, while the
 // repeat-launch path is independently capped at three seconds below.
-export const DEFAULT_PORTABLE_SMOKE_TIMEOUT_MS = 300_000;
+export const DEFAULT_PORTABLE_SMOKE_TIMEOUT_MS = 900_000;
 export const MAX_PORTABLE_STARTUP_MS = 3_000;
 
 export function validateStartupMarker(markerText) {

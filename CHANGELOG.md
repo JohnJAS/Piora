@@ -9,9 +9,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 ### Changed
 
 - The Windows portable executable now removes duplicate runtime trees and
-  unused Chromium locale packs, prepares an artifact-isolated runtime cache
-  once, and enforces that cached launches replace the bootstrap splash with
-  the Electron-owned shell within three seconds.
+  unused Chromium locale packs, uses a smaller compressed first-run payload,
+  prepares an artifact-isolated runtime cache once, and enforces that cached
+  launches replace the bootstrap splash with the Electron-owned shell within
+  three seconds.
 - The built-in Browser workspace now matches Chromium's viewport to the panel
   size and forwards hover, pointer-button, drag, wheel, keyboard, and cursor
   feedback instead of behaving like a stretched clickable screenshot.

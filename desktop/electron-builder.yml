@@ -2,10 +2,10 @@ appId: io.github.kexijiang.piora
 productName: Piora
 copyright: Copyright © 2026 Piora contributors
 asar: true
-# The portable launcher extracts the application before Electron can display
-# its reusable shell. The packaged tree is aggressively pruned below; storing
-# it avoids CPU-bound decompression on each launch.
-compression: store
+# The portable launcher prepares its runtime cache only once. Normal zlib
+# compression keeps that first-time download/extraction small, while cached
+# launches below no longer pay any decompression cost.
+compression: normal
 afterPack: ../scripts/electron-after-pack-licenses.cjs
 beforeBuild: ../scripts/electron-before-build.cjs
 
