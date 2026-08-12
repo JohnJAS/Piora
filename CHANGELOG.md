@@ -4,6 +4,26 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-08-12
+
+### Changed
+
+- The Windows portable executable now removes duplicate runtime trees and
+  unused Chromium locale packs, prepares an artifact-isolated runtime cache
+  once, and enforces that cached launches replace the bootstrap splash with
+  the Electron-owned shell within three seconds.
+- The built-in Browser workspace now matches Chromium's viewport to the panel
+  size and forwards hover, pointer-button, drag, wheel, keyboard, and cursor
+  feedback instead of behaving like a stretched clickable screenshot.
+
+### Fixed
+
+- Right-workspace tool tabs can be reordered by dragging.
+- The right-workspace add-tool menu is rendered at the viewport level and
+  stays fully visible when the panel or remaining screen space is narrow.
+- Conversation Git line totals exclude untracked file contents while keeping
+  those files visible in Review and Files.
+
 ## [0.1.4] - 2026-08-12
 
 ### Added

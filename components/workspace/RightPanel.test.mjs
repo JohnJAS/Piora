@@ -17,6 +17,11 @@ test("moves files and review into a Codex-style launcher and tool-tab workspace"
   assert.match(rightPanel, /const \[openTools, setOpenTools\]/);
   assert.match(rightPanel, /current\.includes\(tab\) \? current : \[\.\.\.current, tab\]/);
   assert.match(rightPanel, /openTools\.map/);
+  assert.match(rightPanel, /draggable/);
+  assert.match(rightPanel, /text\/piora-tool-tab/);
+  assert.match(rightPanel, /moveTool\(source, tool\.id\)/);
+  assert.match(rightPanel, /createPortal/);
+  assert.match(rightPanel, /window\.innerWidth - width - inset/);
   assert.match(rightPanel, /closeTool\(tool\.id\)/);
   assert.match(rightPanel, /event\.key === "ArrowRight"/);
   assert.match(rightPanel, /onMaximizedChange/);
@@ -49,6 +54,17 @@ test("the command panel reuses Pi channels while file lookup stays in Files", ()
   assert.match(commandPanel, /Interactive commands|commandPanel\.limit/);
   assert.match(shell, /navigate\.searchFiles[\s\S]*?setRightPanelTab\("files"\)/);
   assert.match(shell, /focusFileSearch/);
+});
+
+test("the browser panel matches its Chromium viewport and forwards native pointer phases", () => {
+  const browser = fs.readFileSync(new URL("./BrowserPanel.tsx", import.meta.url), "utf8");
+  assert.match(browser, /new ResizeObserver/);
+  assert.match(browser, /action: "resize"/);
+  assert.match(browser, /onPointerMove/);
+  assert.match(browser, /action: "mouse_down"/);
+  assert.match(browser, /action: "mouse_up"/);
+  assert.match(browser, /setPointerCapture/);
+  assert.match(browser, /state\?\.cursor/);
 });
 
 test("review groups changes, supports keyboard navigation, diff rendering, and safe mutations", () => {

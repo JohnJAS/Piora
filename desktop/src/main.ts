@@ -1103,7 +1103,10 @@ async function stopApplication(): Promise<void> {
   logger?.info("Piora stopped");
 }
 
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
+// Smoke tests run in isolated user-data directories and may execute beside a
+// user's installed Piora. They must not lose their startup marker to the
+// installed app's single-instance lock.
+const hasSingleInstanceLock = PORTABLE_SMOKE_TEST || app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();
 } else {

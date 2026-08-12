@@ -2,8 +2,12 @@ appId: io.github.kexijiang.piora
 productName: Piora
 copyright: Copyright © 2026 Piora contributors
 asar: true
-compression: normal
+# The portable launcher extracts the application before Electron can display
+# its reusable shell. The packaged tree is aggressively pruned below; storing
+# it avoids CPU-bound decompression on each launch.
+compression: store
 afterPack: ../scripts/electron-after-pack-licenses.cjs
+beforeBuild: ../scripts/electron-before-build.cjs
 
 directories:
   buildResources: build
@@ -66,6 +70,12 @@ extraResources:
 
 win:
   icon: icon.ico
+  # Piora renders its own localized interface. Keep only the Chromium locale
+  # packs used by the shipped English and Simplified-Chinese defaults instead
+  # of extracting every Electron locale on every portable launch.
+  electronLanguages:
+    - en-US
+    - zh-CN
   target:
     - target: portable
       arch:
@@ -81,3 +91,5 @@ artifactName: ${productName}-${version}-${os}-${arch}-portable.${ext}
 
 portable:
   splashImage: build/portable-splash.bmp
+  # The build hook installs a fail-closed portable template that reuses
+  # electron-builder's random, artifact-specific UNPACK_DIR_NAME as a cache.

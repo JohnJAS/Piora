@@ -172,19 +172,6 @@ async function readTrackedLineStats(
   }
 }
 
-function countUntrackedTextLines(filePath: string): number {
-  try {
-    const stat = fs.lstatSync(filePath);
-    if (!stat.isFile() || stat.size > TEXT_PREVIEW_MAX_BYTES) return 0;
-    const content = fs.readFileSync(filePath);
-    if (hasNullByte(content) || content.length === 0) return 0;
-    const text = content.toString("utf8");
-    return text.endsWith("\n") ? text.split("\n").length - 1 : text.split("\n").length;
-  } catch {
-    return 0;
-  }
-}
-
 export async function getGitStatus(cwd: string): Promise<GitStatusResponse> {
   const resolvedCwd = resolveExistingPath(cwd);
   const repositoryRoot = await findRepositoryRoot(resolvedCwd);
@@ -208,27 +195,25 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResponse> {
     if (!isWithinPath(resolvedCwd, filePath)) return [];
     const classified = classifyGitStatus(entry);
     const lineStats = trackedLineStats.byPath.get(entry.path);
-    const untrackedLines = classified.status === "untracked" ? countUntrackedTextLines(filePath) : 0;
     return [{
       filePath,
       ...classified,
       indexStatus: entry.indexStatus,
       worktreeStatus: entry.worktreeStatus,
-      additions: lineStats?.additions ?? untrackedLines,
+      // Untracked files are visible as changes, but they are not part of the
+      // repository diff until Git starts tracking them. Keep their line stats
+      // at zero so the conversation header reports only tracked changes.
+      additions: lineStats?.additions ?? 0,
       deletions: lineStats?.deletions ?? 0,
     }];
   });
-  const untrackedAdditions = files.reduce(
-    (total, file) => total + (file.status === "untracked" ? countUntrackedTextLines(file.filePath) : 0),
-    0,
-  );
 
   return {
     isGitRepository: true,
     repositoryRoot,
     branch,
     files,
-    additions: trackedLineStats.additions + untrackedAdditions,
+    additions: trackedLineStats.additions,
     deletions: trackedLineStats.deletions,
   };
 }

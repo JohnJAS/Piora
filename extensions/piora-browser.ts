@@ -390,9 +390,28 @@ export type BrowserViewState = {
   title: string;
   url: string;
   viewport: { width: number; height: number };
+  cursor: string;
   activeTabIndex: number;
   tabs: Array<{ index: number; title: string; url: string }>;
 };
+
+const SAFE_BROWSER_CURSORS = new Set([
+  "auto", "default", "none", "context-menu", "help", "pointer", "progress", "wait",
+  "cell", "crosshair", "text", "vertical-text", "alias", "copy", "move", "no-drop",
+  "not-allowed", "grab", "grabbing", "all-scroll", "col-resize", "row-resize",
+  "n-resize", "e-resize", "s-resize", "w-resize", "ne-resize", "nw-resize",
+  "se-resize", "sw-resize", "ew-resize", "ns-resize", "nesw-resize", "nwse-resize",
+  "zoom-in", "zoom-out",
+]);
+
+async function readPageCursor(page: Page): Promise<string> {
+  const cursor = await page.evaluate(() => {
+    const hovered = document.querySelectorAll(":hover");
+    const target = hovered.item(hovered.length - 1);
+    return target ? getComputedStyle(target).cursor : "default";
+  }).catch(() => "default");
+  return SAFE_BROWSER_CURSORS.has(cursor) ? cursor : "default";
+}
 
 async function getVisibleSession(): Promise<{ id: string; session: BrowserSession }> {
   const activeId = runtime.activeSessionId;
@@ -419,7 +438,8 @@ export async function getBrowserViewState(): Promise<BrowserViewState> {
     revision: runtime.revision,
     title: (await activePage.title().catch(() => "")) || "New tab",
     url: activePage.url(),
-    viewport: BROWSER_VIEWPORT,
+    viewport: activePage.viewportSize() ?? BROWSER_VIEWPORT,
+    cursor: await readPageCursor(activePage),
     activeTabIndex: Math.max(0, pages.indexOf(activePage)),
     tabs,
   };
@@ -431,7 +451,7 @@ export async function getBrowserViewScreenshot(): Promise<Buffer> {
 }
 
 type BrowserViewAction = {
-  action: "navigate" | "back" | "forward" | "reload" | "click" | "type" | "press" | "scroll" | "new_tab" | "switch_tab" | "close_tab";
+  action: "navigate" | "back" | "forward" | "reload" | "click" | "mouse_move" | "mouse_down" | "mouse_up" | "resize" | "type" | "press" | "scroll" | "new_tab" | "switch_tab" | "close_tab";
   url?: string;
   x?: number;
   y?: number;
@@ -439,6 +459,9 @@ type BrowserViewAction = {
   key?: string;
   deltaY?: number;
   tabIndex?: number;
+  button?: "left" | "middle" | "right";
+  width?: number;
+  height?: number;
 };
 
 export async function performBrowserViewAction(input: BrowserViewAction): Promise<BrowserViewState> {
@@ -465,6 +488,35 @@ export async function performBrowserViewAction(input: BrowserViewAction): Promis
         Math.max(0, Math.min(BROWSER_VIEWPORT.height, Number(input.y) || 0)),
       );
       break;
+    case "mouse_move":
+      await page.mouse.move(
+        Math.max(0, Math.min(page.viewportSize()?.width ?? BROWSER_VIEWPORT.width, Number(input.x) || 0)),
+        Math.max(0, Math.min(page.viewportSize()?.height ?? BROWSER_VIEWPORT.height, Number(input.y) || 0)),
+      );
+      break;
+    case "mouse_down":
+      await page.mouse.move(
+        Math.max(0, Math.min(page.viewportSize()?.width ?? BROWSER_VIEWPORT.width, Number(input.x) || 0)),
+        Math.max(0, Math.min(page.viewportSize()?.height ?? BROWSER_VIEWPORT.height, Number(input.y) || 0)),
+      );
+      await page.mouse.down({ button: input.button ?? "left" });
+      break;
+    case "mouse_up":
+      await page.mouse.move(
+        Math.max(0, Math.min(page.viewportSize()?.width ?? BROWSER_VIEWPORT.width, Number(input.x) || 0)),
+        Math.max(0, Math.min(page.viewportSize()?.height ?? BROWSER_VIEWPORT.height, Number(input.y) || 0)),
+      );
+      await page.mouse.up({ button: input.button ?? "left" });
+      break;
+    case "resize": {
+      const width = Math.max(160, Math.min(1920, Math.round(Number(input.width) || 0)));
+      const height = Math.max(120, Math.min(1200, Math.round(Number(input.height) || 0)));
+      const currentViewport = page.viewportSize();
+      if (currentViewport?.width !== width || currentViewport.height !== height) {
+        await page.setViewportSize({ width, height });
+      }
+      break;
+    }
     case "type":
       if (typeof input.text !== "string") throw new Error("Text is required.");
       await page.keyboard.insertText(input.text);
@@ -500,8 +552,11 @@ export async function performBrowserViewAction(input: BrowserViewAction): Promis
     }
   }
   markActive(id, session);
-  await page.waitForTimeout(80);
-  await persistBrowserState(session.context);
+  const transientPointerAction = input.action === "mouse_move" || input.action === "mouse_down" || input.action === "mouse_up" || input.action === "scroll" || input.action === "resize";
+  if (!transientPointerAction) {
+    await page.waitForTimeout(80);
+    await persistBrowserState(session.context);
+  }
   return getBrowserViewState();
 }
 

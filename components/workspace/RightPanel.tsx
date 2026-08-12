@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
 import { FileExplorer, type FileExplorerHandle } from "../FileExplorer";
 import { FileViewer } from "../FileViewer";
@@ -57,9 +58,14 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
   const activeTabRef = useRef<HTMLButtonElement | null>(null);
   const firstLauncherRef = useRef<HTMLButtonElement | null>(null);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
+  const addButtonRef = useRef<HTMLButtonElement | null>(null);
+  const toolMenuRef = useRef<HTMLDivElement | null>(null);
   const { activeTab, onActiveTabChange, cwd, refreshKey, active, fileTabs, activeFileTabId } = props;
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [addMenuPosition, setAddMenuPosition] = useState({ left: 8, top: 48, width: 278 });
   const [openTools, setOpenTools] = useState<ToolTab[]>(() => activeTab === "home" ? [] : [activeTab]);
+  const [draggedTool, setDraggedTool] = useState<ToolTab | null>(null);
+  const [dropTargetTool, setDropTargetTool] = useState<ToolTab | null>(null);
   useImperativeHandle(ref, () => ({
     focusActiveTab: () => (activeTab === "home" ? firstLauncherRef.current : activeTabRef.current)?.focus({ preventScroll: true }),
     focusFileSearch: () => explorerRef.current?.focusSearch(),
@@ -68,7 +74,7 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
   useEffect(() => {
     if (!addMenuOpen) return;
     const dismiss = (event: PointerEvent) => {
-      if (!addMenuRef.current?.contains(event.target as Node)) setAddMenuOpen(false);
+      if (!addMenuRef.current?.contains(event.target as Node) && !toolMenuRef.current?.contains(event.target as Node)) setAddMenuOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setAddMenuOpen(false);
@@ -78,6 +84,31 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     return () => {
       window.removeEventListener("pointerdown", dismiss);
       window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [addMenuOpen]);
+
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    const placeMenu = () => {
+      const rect = addButtonRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const inset = 8;
+      const gap = 6;
+      const width = Math.min(278, Math.max(180, window.innerWidth - inset * 2));
+      const estimatedHeight = toolMenuRef.current?.offsetHeight ?? 164;
+      const left = Math.min(Math.max(inset, rect.left), Math.max(inset, window.innerWidth - width - inset));
+      const below = rect.bottom + gap;
+      const top = below + estimatedHeight <= window.innerHeight - inset
+        ? below
+        : Math.max(inset, rect.top - estimatedHeight - gap);
+      setAddMenuPosition({ left, top, width });
+    };
+    placeMenu();
+    window.addEventListener("resize", placeMenu);
+    window.addEventListener("scroll", placeMenu, true);
+    return () => {
+      window.removeEventListener("resize", placeMenu);
+      window.removeEventListener("scroll", placeMenu, true);
     };
   }, [addMenuOpen]);
 
@@ -100,6 +131,19 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     onActiveTabChange(remaining[Math.min(closingIndex, remaining.length - 1)] ?? "home");
   };
 
+  const moveTool = (source: ToolTab, target: ToolTab) => {
+    if (source === target) return;
+    setOpenTools((current) => {
+      const sourceIndex = current.indexOf(source);
+      const targetIndex = current.indexOf(target);
+      if (sourceIndex < 0 || targetIndex < 0) return current;
+      const reordered = [...current];
+      reordered.splice(sourceIndex, 1);
+      reordered.splice(targetIndex, 0, source);
+      return reordered;
+    });
+  };
+
   const moveToolTabFocus = (event: React.KeyboardEvent<HTMLButtonElement>, tab: ToolTab) => {
     const currentIndex = openTools.indexOf(tab);
     let nextIndex: number;
@@ -120,7 +164,33 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
           const tool = TOOLS.find((candidate) => candidate.id === toolId);
           if (!tool) return null;
           const selected = activeTab === tool.id;
-          return <div key={tool.id} className={styles.activeToolTab} data-active={selected ? "true" : "false"}>
+          return <div
+            key={tool.id}
+            className={styles.activeToolTab}
+            data-active={selected ? "true" : "false"}
+            data-dragging={draggedTool === tool.id ? "true" : undefined}
+            data-drop-target={dropTargetTool === tool.id ? "true" : undefined}
+            draggable
+            onDragStart={(event) => {
+              setDraggedTool(tool.id);
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData("text/piora-tool-tab", tool.id);
+            }}
+            onDragOver={(event) => {
+              if (!draggedTool || draggedTool === tool.id) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "move";
+              setDropTargetTool(tool.id);
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              const source = (draggedTool ?? event.dataTransfer.getData("text/piora-tool-tab")) as ToolTab;
+              if (TOOLS.some((candidate) => candidate.id === source)) moveTool(source, tool.id);
+              setDraggedTool(null);
+              setDropTargetTool(null);
+            }}
+            onDragEnd={() => { setDraggedTool(null); setDropTargetTool(null); }}
+          >
             <button ref={selected ? activeTabRef : undefined} type="button" role="tab" aria-selected={selected} aria-controls={`workspace-${tool.id}`} id={`workspace-${tool.id}-tab`} tabIndex={selected ? 0 : -1} onClick={() => onActiveTabChange(tool.id)} onKeyDown={(event) => moveToolTabFocus(event, tool.id)}>
               <AliIcon name={tool.icon} size={14} />
               <span>{t(`workspace.${tool.id}`)}</span>
@@ -129,14 +199,14 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
           </div>;
         })}
         <div ref={addMenuRef} className={styles.addToolWrap}>
-          <button className={styles.addToolButton} type="button" aria-label={t("workspace.addTool")} aria-haspopup="menu" aria-expanded={addMenuOpen} onClick={() => setAddMenuOpen((open) => !open)}><AliIcon name="plus" size={15} /></button>
-          {addMenuOpen ? <div className={styles.toolMenu} role="menu">
+          <button ref={addButtonRef} className={styles.addToolButton} type="button" aria-label={t("workspace.addTool")} aria-haspopup="menu" aria-expanded={addMenuOpen} onClick={() => setAddMenuOpen((open) => !open)}><AliIcon name="plus" size={15} /></button>
+          {addMenuOpen ? createPortal(<div ref={toolMenuRef} className={styles.toolMenu} role="menu" style={addMenuPosition}>
             {TOOLS.map((tool) => <button key={tool.id} type="button" role="menuitem" data-active={activeTab === tool.id ? "true" : "false"} onClick={() => selectTool(tool.id)}>
               <AliIcon name={tool.icon} size={15} />
               <span>{t(`workspace.${tool.id}`)}</span>
               {tool.shortcut ? <kbd>{tool.shortcut}</kbd> : null}
             </button>)}
-          </div> : null}
+          </div>, document.body) : null}
         </div>
       </div>
       <div className={styles.panelChromeActions}>

@@ -153,6 +153,16 @@ async function main() {
   ]);
   console.log(JSON.stringify({ standaloneRuntimePatches: runtimePatches }));
 
+  // playwright-core supports driving Electron applications, but Piora only
+  // launches Chromium. Next's broad trace follows Playwright's optional
+  // `require("electron")` path and would embed a second full Electron runtime
+  // inside resources/web (hundreds of megabytes). It is not reachable through
+  // Piora's browser extension, so remove the complete optional package family
+  // before packaging and verify that it stays absent downstream.
+  for (const optionalPackage of ["electron", "@electron", "@electron-internal"]) {
+    await rm(join(standaloneDirectory, "node_modules", optionalPackage), { recursive: true, force: true });
+  }
+
   const stagedAssets = [];
   for (const asset of assets) {
     assertInside(standaloneDirectory, asset.destination);

@@ -4,13 +4,15 @@
 .activeToolTab { min-width: 46px; max-width: 190px; height: 30px; display: flex; flex: 1 1 110px; align-items: center; border-radius: 8px; background: transparent; }
 .activeToolTab[data-active="true"] { background: color-mix(in srgb, var(--bg-selected) 72%, var(--bg)); }
 .activeToolTab:hover { background: var(--bg-hover); }
+.activeToolTab[data-dragging="true"] { opacity: .46; }
+.activeToolTab[data-drop-target="true"] { box-shadow: inset 2px 0 var(--accent); }
 .activeToolTab > button:first-child { min-width: 0; height: 100%; display: flex; flex: 1; align-items: center; gap: 7px; padding: 0 5px 0 9px; border: 0; background: transparent; color: var(--text-muted); cursor: pointer; font: inherit; font-size: var(--text-xs); }
 .activeToolTab[data-active="true"] > button:first-child { color: var(--text); }
 .activeToolTab > button:first-child span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .closeToolTab,.addToolButton,.panelChromeActions button { width: 27px; height: 27px; display: inline-grid; flex: 0 0 27px; place-items: center; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--text-muted); cursor: pointer; }
 .closeToolTab:hover,.addToolButton:hover,.panelChromeActions button:hover { background: var(--bg-hover); color: var(--text); }
 .addToolWrap { position: relative; flex: 0 0 auto; }
-.toolMenu { position: absolute; z-index: 80; top: calc(100% + 6px); left: 0; width: 278px; display: grid; gap: 2px; padding: 5px; border: 1px solid color-mix(in srgb, var(--border) 82%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--surface-raised) 96%, transparent); box-shadow: var(--shadow-popover); backdrop-filter: blur(18px) saturate(1.06); }
+.toolMenu { position: fixed; z-index: 10000; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; display: grid; gap: 2px; padding: 5px; border: 1px solid color-mix(in srgb, var(--border) 82%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--surface-raised) 96%, transparent); box-shadow: var(--shadow-popover); backdrop-filter: blur(18px) saturate(1.06); }
 .toolMenu > button,.toolLauncher > button { min-width: 0; display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--text); cursor: pointer; font: inherit; text-align: left; }
 .toolMenu > button { min-height: 34px; padding: 5px 8px; border-radius: 7px; font-size: var(--text-xs); }
 .toolMenu > button:hover,.toolMenu > button[data-active="true"] { background: var(--bg-selected); }
@@ -196,7 +198,7 @@
 .browserToolbar input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: #202124; font: inherit; font-size: var(--text-xs); text-align: center; }
 .browserViewport { position: relative; width: 100%; min-height: 0; flex: 1 1 auto; overflow: hidden; background: white; cursor: default; outline: none; }
 .browserViewport[data-busy="true"] { cursor: progress; }
-.browserViewport img { width: 100%; height: 100%; display: block; object-fit: fill; user-select: none; }
+.browserViewport img { width: 100%; height: 100%; display: block; object-fit: fill; pointer-events: none; user-select: none; }
 .browserKeyboardCapture { position: absolute; left: 1px; bottom: 1px; width: 1px; height: 1px; overflow: hidden; padding: 0; border: 0; opacity: .01; resize: none; }
 .browserLoading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #737373; background: #fff; font-size: var(--text-xs); }
 .browserStart { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px; color: #73777f; background: #fff; text-align: center; pointer-events: none; }

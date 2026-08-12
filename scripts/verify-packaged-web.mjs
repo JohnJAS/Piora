@@ -37,6 +37,12 @@ export const forbiddenPackagedDependencies = Object.freeze([
   "@giscus/react",
   "@lobehub/ui",
   "@splinetool/runtime",
+  // Playwright's optional Electron-driver path is not used by Piora's
+  // Chromium-only browser extension. Shipping it would duplicate Electron's
+  // complete runtime inside the portable payload.
+  "electron",
+  "@electron/get",
+  "@electron-internal/extract-zip",
 ]);
 
 const requiredPaths = [
