@@ -22,8 +22,7 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 - Desktop startup reuses its immediately visible shell for the real app instead
   of allocating a second Chromium window, installs the tray before the service
   is ready, reacts directly to the Next.js runtime-ready signal instead of
-  waiting on a sequential cold health route, records startup timing, and favors
-  faster portable extraction.
+  waiting on a sequential cold health route, and records startup timing.
 - The desktop companion now collapses into a running-task count, stays within
   its compact pet-sized window while idle, and omits the status dot and voice
   control.
