@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { FileExplorer, type FileExplorerHandle } from "../FileExplorer";
 import { FileViewer } from "../FileViewer";
@@ -9,9 +9,10 @@ import { ReviewPanel } from "./ReviewPanel";
 import { CommandPanel } from "./CommandPanel";
 import { BrowserPanel } from "./BrowserPanel";
 import type { TaskControls } from "../ChatWindow";
+import { AliIcon, type AliIconName } from "../AliIcon";
 import styles from "./WorkspacePanel.module.css";
 
-export type RightPanelTab = "review" | "files" | "commands" | "browser";
+export type RightPanelTab = "home" | "review" | "files" | "commands" | "browser";
 export interface RightPanelHandle { focusActiveTab: () => void; focusFileSearch: () => void; }
 
 interface Props {
@@ -20,6 +21,9 @@ interface Props {
   cwd: string | null;
   refreshKey: number;
   active: boolean;
+  maximized: boolean;
+  onMaximizedChange: (maximized: boolean) => void;
+  onClosePanel: () => void;
   fileTabs: Tab[];
   activeFileTabId: string | null;
   canReopenClosedFileTab: boolean;
@@ -38,34 +42,82 @@ interface Props {
   taskControls: TaskControls | null;
 }
 
-const TABS: RightPanelTab[] = ["review", "files", "commands", "browser"];
+const TOOLS: Array<{ id: Exclude<RightPanelTab, "home">; icon: AliIconName; shortcut?: string }> = [
+  { id: "review", icon: "diff", shortcut: "Ctrl+Shift+G" },
+  { id: "commands", icon: "code" },
+  { id: "browser", icon: "earth", shortcut: "Ctrl+T" },
+  { id: "files", icon: "folder-open", shortcut: "Ctrl+P" },
+];
 
 export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPanel(props, ref) {
   const { t } = useI18n();
   const explorerRef = useRef<FileExplorerHandle>(null);
-  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const activeTabRef = useRef<HTMLButtonElement | null>(null);
+  const firstLauncherRef = useRef<HTMLButtonElement | null>(null);
+  const addMenuRef = useRef<HTMLDivElement | null>(null);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   const { activeTab, onActiveTabChange, cwd, refreshKey, active, fileTabs, activeFileTabId } = props;
   useImperativeHandle(ref, () => ({
-    focusActiveTab: () => tabRefs.current[TABS.indexOf(activeTab)]?.focus({ preventScroll: true }),
+    focusActiveTab: () => (activeTab === "home" ? firstLauncherRef.current : activeTabRef.current)?.focus({ preventScroll: true }),
     focusFileSearch: () => explorerRef.current?.focusSearch(),
   }), [activeTab]);
 
-  const onTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const next = event.key === "Home"
-      ? 0
-      : event.key === "End"
-        ? TABS.length - 1
-        : (index + (event.key === "ArrowRight" ? 1 : -1) + TABS.length) % TABS.length;
-    onActiveTabChange(TABS[next]);
-    tabRefs.current[next]?.focus({ preventScroll: true });
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!addMenuRef.current?.contains(event.target as Node)) setAddMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAddMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", dismiss);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", dismiss);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [addMenuOpen]);
+
+  const selectTool = (tab: Exclude<RightPanelTab, "home">) => {
+    onActiveTabChange(tab);
+    setAddMenuOpen(false);
   };
 
+  const activeTool = activeTab === "home" ? null : TOOLS.find((tool) => tool.id === activeTab) ?? null;
+
   return <div className={styles.root}>
-    <div className={styles.tabs} role="tablist" aria-label={t("workspace.panelTabs")}>
-      {TABS.map((tab, index) => <button ref={(node) => { tabRefs.current[index] = node; }} key={tab} type="button" role="tab" tabIndex={activeTab === tab ? 0 : -1} aria-selected={activeTab === tab} aria-controls={`workspace-${tab}`} id={`workspace-${tab}-tab`} className={styles.tab} onClick={() => onActiveTabChange(tab)} onKeyDown={(event) => onTabKeyDown(event, index)}>{t(`workspace.${tab}`)}</button>)}
+    <div className={styles.panelChrome}>
+      <div className={styles.toolTabs} role="tablist" aria-label={t("workspace.panelTabs")}>
+        {activeTool ? <div className={styles.activeToolTab}>
+          <button ref={activeTabRef} type="button" role="tab" aria-selected="true" aria-controls={`workspace-${activeTool.id}`} id={`workspace-${activeTool.id}-tab`}>
+            <AliIcon name={activeTool.icon} size={14} />
+            <span>{t(`workspace.${activeTool.id}`)}</span>
+          </button>
+          <button className={styles.closeToolTab} type="button" aria-label={t("workspace.closeTool")} onClick={() => onActiveTabChange("home")}><AliIcon name="close" size={12} /></button>
+        </div> : null}
+        <div ref={addMenuRef} className={styles.addToolWrap}>
+          <button className={styles.addToolButton} type="button" aria-label={t("workspace.addTool")} aria-haspopup="menu" aria-expanded={addMenuOpen} onClick={() => setAddMenuOpen((open) => !open)}><AliIcon name="plus" size={15} /></button>
+          {addMenuOpen ? <div className={styles.toolMenu} role="menu">
+            {TOOLS.map((tool) => <button key={tool.id} type="button" role="menuitem" data-active={activeTab === tool.id ? "true" : "false"} onClick={() => selectTool(tool.id)}>
+              <AliIcon name={tool.icon} size={15} />
+              <span>{t(`workspace.${tool.id}`)}</span>
+              {tool.shortcut ? <kbd>{tool.shortcut}</kbd> : null}
+            </button>)}
+          </div> : null}
+        </div>
+      </div>
+      <div className={styles.panelChromeActions}>
+        <button type="button" title={t(props.maximized ? "workspace.restorePanel" : "workspace.maximizePanel")} aria-label={t(props.maximized ? "workspace.restorePanel" : "workspace.maximizePanel")} onClick={() => props.onMaximizedChange(!props.maximized)}><AliIcon name={props.maximized ? "fullscreen-exit" : "fullscreen"} size={14} /></button>
+        <button type="button" title={t("files.hidePanel")} aria-label={t("files.hidePanel")} onClick={props.onClosePanel}><AliIcon name="layout" size={15} /></button>
+      </div>
     </div>
+    {activeTab === "home" ? <div className={styles.toolLauncher} aria-label={t("workspace.panelTabs")}>
+      {TOOLS.map((tool, index) => <button ref={index === 0 ? firstLauncherRef : undefined} key={tool.id} type="button" onClick={() => selectTool(tool.id)}>
+        <AliIcon name={tool.icon} size={15} />
+        <span>{t(`workspace.${tool.id}`)}</span>
+        {tool.shortcut ? <kbd>{tool.shortcut}</kbd> : null}
+      </button>)}
+    </div> : null}
     <section id="workspace-review" role="tabpanel" aria-labelledby="workspace-review-tab" hidden={activeTab !== "review"} className={styles.panel}>
       {activeTab === "review" ? <ReviewPanel cwd={cwd} refreshKey={refreshKey} onRefresh={props.onRefresh} onOpenFile={(path) => { props.onOpenFile(path, path.replace(/\\/g, "/").split("/").pop() ?? path); onActiveTabChange("files"); }} /> : null}
     </section>

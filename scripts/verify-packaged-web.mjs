@@ -239,11 +239,13 @@ async function inspectElectronShell(webRoot, required) {
   const resourcesRoot = dirname(webRoot);
   const unpackedRoot = dirname(resourcesRoot);
   const appAsarPath = join(resourcesRoot, "app.asar");
+  const trayIconPath = join(resourcesRoot, "tray-icon.ico");
   const appAsar = await stat(appAsarPath).catch(() => undefined);
 
   if (!appAsar?.isFile()) {
     throw new Error(`Electron app.asar is missing beside the packaged web tree: ${appAsarPath}`);
   }
+  await assertFile(trayIconPath);
 
   await generateLicenseInventory({ projectRoot, check: true });
   for (const fileName of ["LICENSE", "NOTICE", "THIRD_PARTY_LICENSES.md"]) {

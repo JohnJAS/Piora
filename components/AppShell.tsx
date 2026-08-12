@@ -110,9 +110,10 @@ export function AppShell() {
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [rightPanelMaximized, setRightPanelMaximized] = useState(false);
   // Keep the server and first client render identical. The persisted tab is
   // restored after hydration so React never has to replace this subtree.
-  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("review");
+  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("home");
   const [rightPanelTabRestored, setRightPanelTabRestored] = useState(false);
   const [rightPanelOverlayMode, setRightPanelOverlayMode] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -213,7 +214,7 @@ export function AppShell() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem("piora-right-panel-tab");
-    setRightPanelTab(stored === "files" || stored === "commands" || stored === "browser" ? stored : "review");
+    setRightPanelTab(stored === "review" || stored === "files" || stored === "commands" || stored === "browser" ? stored : "home");
     setRightPanelTabRestored(true);
   }, []);
 
@@ -221,6 +222,10 @@ export function AppShell() {
     if (!rightPanelTabRestored) return;
     window.localStorage.setItem("piora-right-panel-tab", rightPanelTab);
   }, [rightPanelTab, rightPanelTabRestored]);
+
+  useEffect(() => {
+    if (!rightPanelOpen) setRightPanelMaximized(false);
+  }, [rightPanelOpen]);
 
   useEffect(() => {
     const showBrowser = () => {
@@ -1157,6 +1162,7 @@ export function AppShell() {
     "panel.review": () => { setRightPanelTab("review"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "panel.files": () => { setRightPanelTab("files"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "panel.commands": () => { setRightPanelTab("commands"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
+    "panel.browser": () => { setRightPanelTab("browser"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "panel.toggleSidebar": () => setSidebarOpen((open) => !open),
     "panel.close": () => setRightPanelOpen(false),
     "settings.general": () => openSettings("general"),
@@ -1233,6 +1239,24 @@ export function AppShell() {
     };
     window.addEventListener("keydown", handleQuickOpen);
     return () => window.removeEventListener("keydown", handleQuickOpen);
+  }, []);
+
+  useEffect(() => {
+    const handleWorkspaceShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || (!event.ctrlKey && !event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      if (key === "g" && event.shiftKey) {
+        event.preventDefault();
+        setRightPanelTab("review");
+        setRightPanelOpen(true);
+      } else if (key === "t" && !event.shiftKey) {
+        event.preventDefault();
+        setRightPanelTab("browser");
+        setRightPanelOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handleWorkspaceShortcut);
+    return () => window.removeEventListener("keydown", handleWorkspaceShortcut);
   }, []);
 
   const sidebarContent = (
@@ -1503,7 +1527,7 @@ export function AppShell() {
           "--sidebar-width": `${sidebarResizer.width}px`,
           background: "var(--bg-panel)",
           borderRight: "1px solid var(--border)",
-          display: "flex",
+          display: rightPanelMaximized ? "none" : "flex",
           flexDirection: "column",
           flexShrink: 0,
           zIndex: 200,
@@ -1511,7 +1535,7 @@ export function AppShell() {
       >
         {sidebarContent}
       </div>
-      {sidebarOpen && (
+      {sidebarOpen && !rightPanelMaximized && (
         <div
           {...sidebarResizer.separatorProps}
           aria-controls="session-sidebar"
@@ -1522,7 +1546,7 @@ export function AppShell() {
       )}
 
       {/* Center: chat */}
-      <div id="piora-main-content" role="main" tabIndex={-1} className="workspace-main" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+      <div id="piora-main-content" role="main" tabIndex={-1} className="workspace-main" style={{ flex: 1, display: rightPanelMaximized ? "none" : "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
         {/* Quiet conversation chrome: identity on the left, contextual actions on the right. */}
         <div ref={topBarRef} className="app-topbar">
           <button
@@ -2197,10 +2221,10 @@ export function AppShell() {
 
       <div
         aria-hidden="true"
-        className={`right-panel-overlay-backdrop${effectiveRightPanelOpen ? " is-open" : ""}`}
+        className={`right-panel-overlay-backdrop${effectiveRightPanelOpen && !rightPanelMaximized ? " is-open" : ""}`}
         onClick={() => setRightPanelOpen(false)}
       />
-      {effectiveRightPanelOpen && (
+      {effectiveRightPanelOpen && !rightPanelMaximized && (
         <div
           {...rightPanelResizer.separatorProps}
           aria-controls="file-panel"
@@ -2216,7 +2240,7 @@ export function AppShell() {
         id="file-panel"
         aria-hidden={!effectiveRightPanelOpen}
         inert={!effectiveRightPanelOpen ? true : undefined}
-        className={`right-panel-container${effectiveRightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
+        className={`right-panel-container${effectiveRightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelMaximized ? " right-panel-maximized" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
         style={{
           "--right-panel-width": `${rightPanelResizer.width}px`,
           display: "flex",
@@ -2229,6 +2253,9 @@ export function AppShell() {
           ref={rightPanelRef}
           activeTab={rightPanelTab}
           onActiveTabChange={setRightPanelTab}
+          maximized={rightPanelMaximized}
+          onMaximizedChange={setRightPanelMaximized}
+          onClosePanel={() => setRightPanelOpen(false)}
           cwd={activeCwd}
           refreshKey={explorerRefreshKey}
           active={effectiveRightPanelOpen}

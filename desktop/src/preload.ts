@@ -24,6 +24,9 @@ const runtime = Object.freeze({
   setCompanionWindowVisible(visible: boolean): Promise<boolean> {
     return ipcRenderer.invoke("pi:companion-window-visible", visible) as Promise<boolean>;
   },
+  setCompanionWindowExpanded(expanded: boolean): Promise<boolean> {
+    return ipcRenderer.invoke("pi:companion-window-expanded", expanded) as Promise<boolean>;
+  },
   companionAction(action: "focus-main" | "open-settings" | "hide"): Promise<boolean> {
     return ipcRenderer.invoke("pi:companion-window-action", action) as Promise<boolean>;
   },

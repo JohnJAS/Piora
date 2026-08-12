@@ -106,6 +106,7 @@ function attachLineLogger(
   stream: Readable | null,
   logger: Logger,
   level: "info" | "warn",
+  onLine?: (line: string) => void,
 ): void {
   if (!stream) return;
 
@@ -118,12 +119,20 @@ function attachLineLogger(
 
     for (const line of lines) {
       if (!line) continue;
+      onLine?.(line);
       logger[level]("[web] " + line.slice(0, MAX_LOG_LINE_LENGTH));
     }
   });
   stream.on("end", () => {
-    if (pending) logger[level]("[web] " + pending.slice(0, MAX_LOG_LINE_LENGTH));
+    if (pending) {
+      onLine?.(pending);
+      logger[level]("[web] " + pending.slice(0, MAX_LOG_LINE_LENGTH));
+    }
   });
+}
+
+export function isNextServerReadyLine(line: string): boolean {
+  return /(?:^|\s)(?:✓\s*)?Ready in\s+\d/i.test(line.trim());
 }
 
 function waitForExit(child: ChildProcess): Promise<ServerExit> {
@@ -197,7 +206,11 @@ export class StandaloneServer {
       }
 
       const url = new URL(`http://${LOOPBACK_HOST}:${port}/`);
-      const child = this.spawnServer(port);
+      let resolveRuntimeReady!: () => void;
+      const runtimeReady = new Promise<void>((resolveReady) => {
+        resolveRuntimeReady = resolveReady;
+      });
+      const child = this.spawnServer(port, resolveRuntimeReady);
       this.child = child;
       const healthAbort = new AbortController();
 
@@ -209,19 +222,24 @@ export class StandaloneServer {
       });
 
       try {
-        await Promise.race([
+        const readinessSource = await Promise.race([
           waitUntilHealthy(
             new URL("/api/health", url),
             this.options.token,
             this.options.startupTimeoutMs ?? 30_000,
             healthAbort.signal,
-          ),
+          ).then(() => "health" as const),
+          runtimeReady.then(() => "next-ready" as const),
           earlyExit,
         ]);
         healthAbort.abort();
         this.ready = true;
         this.serverUrl = url;
-        this.options.logger.info("Web server is ready", { origin: url.origin, pid: child.pid });
+        this.options.logger.info("Web server is ready", {
+          origin: url.origin,
+          pid: child.pid,
+          readinessSource,
+        });
         return url;
       } catch (error) {
         healthAbort.abort();
@@ -255,7 +273,7 @@ export class StandaloneServer {
     await stopChild(child, this.options.logger, 6_000);
   }
 
-  private spawnServer(port: number): ChildProcess {
+  private spawnServer(port: number, onRuntimeReady: () => void): ChildProcess {
     const child = spawn(
       process.execPath,
       [this.options.serverHostEntry, this.options.serverEntry],
@@ -284,7 +302,12 @@ export class StandaloneServer {
       },
     );
 
-    attachLineLogger(child.stdout, this.options.logger, "info");
+    let runtimeReady = false;
+    attachLineLogger(child.stdout, this.options.logger, "info", (line) => {
+      if (runtimeReady || !isNextServerReadyLine(line)) return;
+      runtimeReady = true;
+      onRuntimeReady();
+    });
     attachLineLogger(child.stderr, this.options.logger, "warn");
     this.options.logger.info("Starting web server", {
       entry: this.options.serverEntry,

@@ -903,6 +903,22 @@ select:focus-visible,
   background: var(--surface) !important;
 }
 
+.right-panel-container.right-panel-maximized {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+  margin-left: 0 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.right-panel-container.right-panel-maximized > * {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
 .right-panel-tabs,
 .file-tab-list {
   background: color-mix(in srgb, var(--surface-muted) 82%, var(--surface)) !important;

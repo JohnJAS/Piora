@@ -229,7 +229,7 @@ async function waitForCompanionReady(client) {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
     const state = await inspectCompanion(client);
-    if (state.rootFound && state.bubbleFound && state.petFound && state.spriteFound) return state;
+    if (state.rootFound && state.petFound && state.spriteFound) return state;
     await delay(150);
   }
   throw new Error("Packaged companion renderer did not become ready with its bundled sprite");
@@ -319,7 +319,7 @@ async function main() {
     assert.match(ready.bodyClass, /desktop-pet-document/);
     assert.equal(ready.bodyBackground, "rgba(0, 0, 0, 0)");
     assert.equal(ready.rootBackground, "rgba(0, 0, 0, 0)");
-    assert.ok(ready.bubbleRect.width >= 180 && ready.bubbleRect.height >= 40);
+    assert.equal(ready.bubbleFound, false);
     assert.ok(ready.petRect.width >= 120 && ready.petRect.height >= 130);
     assert.match(ready.spriteBackgroundImage, /companion-pets/);
     assert.notEqual(ready.spriteImageRendering, "pixelated");
@@ -359,8 +359,8 @@ async function main() {
     assert.ok(alpha && alpha.min === 0 && alpha.max === 255, "Companion screenshot did not preserve transparent pixels");
     await writeFile(screenshotPath, screenshotBytes);
 
-    assert.equal(ready.windowBounds.width, 236);
-    assert.equal(ready.windowBounds.height, 230);
+    assert.equal(ready.windowBounds.width, 156);
+    assert.equal(ready.windowBounds.height, 184);
     const movedLeft = Number(ready.windowBounds.left ?? 0) + 12;
     const movedTop = Number(ready.windowBounds.top ?? 0) + 12;
     await evaluate(companionClient, `window.moveTo(${movedLeft}, ${movedTop}); true`);
@@ -373,9 +373,10 @@ async function main() {
 
     await publishActivity(mainClient, "idle", "packaged-ui-idle");
     await delay(200);
-    assert.equal((await inspectCompanion(companionClient)).bubbleVisible, "true");
-    await delay(3_300);
-    assert.equal((await inspectCompanion(companionClient)).bubbleVisible, "false");
+    const idle = await inspectCompanion(companionClient);
+    assert.equal(idle.bubbleFound, false);
+    assert.equal(idle.windowBounds.width, 156);
+    assert.equal(idle.windowBounds.height, 184);
 
     assert.equal(
       await evaluate(mainClient, "window.piDesktop.setCompanionWindowVisible(false)"),
@@ -403,7 +404,7 @@ async function main() {
       bundledSpriteLoaded: true,
       animationAdvanced: true,
       activityStates: observedStates,
-      idleBubbleAutoDismissed: true,
+      idleBubbleHidden: true,
       positionPersisted: true,
       hideAndWakePassed: true,
       screenshot: screenshotPath,
