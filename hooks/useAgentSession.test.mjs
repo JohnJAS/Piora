@@ -48,6 +48,16 @@ test("refreshes context usage during streaming and after assistant messages", ()
   assert.match(messageEndSource, /completed\?\.role === "assistant"[\s\S]*refreshContextUsage/);
 });
 
+test("browser tool execution does not force open the workspace panel", () => {
+  const toolStartSource = source.slice(
+    source.indexOf('case "tool_execution_start"'),
+    source.indexOf('case "tool_execution_end"'),
+  );
+
+  assert.doesNotMatch(toolStartSource, /dispatchEvent|piora:show-browser/);
+  assert.match(toolStartSource, /setAgentPhase/);
+});
+
 test("waits for the session scroll container before consuming the initial bottom scroll", () => {
   const scrollEffectSource = source.slice(
     source.indexOf("// Loading may publish the message array"),
@@ -55,6 +65,22 @@ test("waits for the session scroll container before consuming the initial bottom
   );
 
   assert.match(scrollEffectSource, /if \(loading \|\| messages\.length === 0\) return/);
-  assert.match(scrollEffectSource, /scrollToBottom\("instant"\)[\s\S]*requestAnimationFrame\(\(\) => scrollToBottom\("instant"\)\)/);
+  assert.match(scrollEffectSource, /startInitialBottomPin\(\)/);
   assert.match(scrollEffectSource, /\[messages\.length, agentRunning, loading,/);
+});
+
+test("pins a newly selected session to the bottom while async content settles", () => {
+  const pinSource = source.slice(
+    source.indexOf("const startInitialBottomPin"),
+    source.indexOf("const handleScrollToBottom"),
+  );
+  const userIntentSource = source.slice(
+    source.indexOf("const markUserScrollIntent"),
+    source.indexOf("const handleScrollPositionChange"),
+  );
+
+  assert.match(pinSource, /new ResizeObserver\(schedulePin\)/);
+  assert.match(pinSource, /container\.addEventListener\("load", schedulePin, true\)/);
+  assert.match(pinSource, /pinToBottom\(\)[\s\S]*schedulePin\(\)/);
+  assert.match(userIntentSource, /stopInitialBottomPin\(\)/);
 });

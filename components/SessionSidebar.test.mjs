@@ -72,6 +72,7 @@ test("renders sessions inside persisted project folders", () => {
   assert.match(source, /piora:sidebar-project-aliases:v1/);
   assert.match(source, /piora:sidebar-remembered-projects:v1/);
   assert.match(source, /piora:sidebar-hidden-projects:v1/);
+  assert.match(source, /piora:sidebar-project-order:v1/);
 });
 
 test("keeps empty projects and lets stale renamed paths be removed from the list", () => {
@@ -106,7 +107,7 @@ test("project session overflow is accessible and attention-aware", () => {
   assert.match(source, /aria-expanded=\{sessionsExpanded\}/);
   assert.match(source, /sidebar\.showMoreSessions/);
   assert.match(source, /sidebar\.showFewerSessions/);
-  assert.match(source, /if \(isSelectedProject\) onToggleProject\(\)/);
+  assert.match(source, /onSelectProject\(\); onToggleProject\(\);/);
 });
 
 test("project creation lives in the projects header without a duplicate list", () => {

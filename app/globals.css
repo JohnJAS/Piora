@@ -1602,6 +1602,7 @@ select:focus-visible,
 
 .app-shell-dialog {
   border-color: var(--border-soft) !important;
+  border-radius: var(--radius-panel) !important;
   background: var(--bg-panel) !important;
   box-shadow: var(--shadow-popover) !important;
 }

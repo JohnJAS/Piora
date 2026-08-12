@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useMemo, useReducer } from "react";
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
 import type {
   AgentMessage,
   ExtensionStatusItem,
@@ -397,6 +397,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const executeBashRef = useRef<(command: string, excludeFromContext: boolean) => Promise<void> | undefined>(undefined);
   const userScrollIntentUntilRef = useRef(0);
   const ignoreProgrammaticScrollUntilRef = useRef(0);
+  const initialBottomPinCleanupRef = useRef<(() => void) | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const ensuringNewSessionRef = useRef<Promise<string | null> | null>(null);
@@ -1067,7 +1068,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "tool_execution_start": {
         const id = event.toolCallId as string;
         const name = event.toolName as string;
-        if (name === "browser") window.dispatchEvent(new CustomEvent("piora:show-browser"));
         setAgentPhase((prev) => {
           const tools = prev?.kind === "running_tools" ? [...prev.tools] : [];
           if (!tools.some((t) => t.id === id)) tools.push({ id, name });
@@ -1600,27 +1600,74 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     });
   }, []);
 
+  const stopInitialBottomPin = useCallback(() => {
+    initialBottomPinCleanupRef.current?.();
+  }, []);
+
+  const startInitialBottomPin = useCallback(() => {
+    stopInitialBottomPin();
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    let frame = 0;
+    let stopped = false;
+    const pinToBottom = () => {
+      frame = 0;
+      if (!stopped) scrollToBottom("instant");
+    };
+    const schedulePin = () => {
+      if (stopped || frame !== 0) return;
+      frame = requestAnimationFrame(pinToBottom);
+    };
+    const resizeObserver = new ResizeObserver(schedulePin);
+    resizeObserver.observe(container);
+    const content = container.firstElementChild;
+    if (content) resizeObserver.observe(content);
+    // Lazy markdown images can finish after the first layout/resize pass.
+    container.addEventListener("load", schedulePin, true);
+
+    const cleanup = () => {
+      if (stopped) return;
+      stopped = true;
+      resizeObserver.disconnect();
+      container.removeEventListener("load", schedulePin, true);
+      if (frame !== 0) cancelAnimationFrame(frame);
+      if (initialBottomPinCleanupRef.current === cleanup) {
+        initialBottomPinCleanupRef.current = null;
+      }
+    };
+    initialBottomPinCleanupRef.current = cleanup;
+
+    // Set the position synchronously, then verify it after layout. The observer
+    // keeps it correct while markdown, Mermaid, fonts, or lazy media settle.
+    pinToBottom();
+    schedulePin();
+  }, [scrollToBottom, stopInitialBottomPin]);
+
   const handleScrollToBottom = useCallback(() => {
+    stopInitialBottomPin();
     completionScrollAllowedRef.current = true;
     scrollToBottom("smooth");
-  }, [scrollToBottom]);
+  }, [scrollToBottom, stopInitialBottomPin]);
 
   const scrollUserMsgToTop = useCallback(() => {
+    stopInitialBottomPin();
     const container = scrollContainerRef.current;
     const el = lastUserMsgRef.current;
     if (!container || !el) return;
     const elAbsTop = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
     ignoreProgrammaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_IGNORE_MS;
     container.scrollTo({ top: elAbsTop - 16, behavior: "smooth" });
-  }, []);
+  }, [stopInitialBottomPin]);
 
   const markUserScrollIntent = useCallback((event: Event) => {
     if (event instanceof KeyboardEvent) {
       if (!SCROLL_KEYS.has(event.key)) return;
       if (event.target instanceof Element && event.target.closest("input, textarea, [contenteditable='true']")) return;
     }
+    stopInitialBottomPin();
     userScrollIntentUntilRef.current = Date.now() + USER_SCROLL_INTENT_MS;
-  }, []);
+  }, [stopInitialBottomPin]);
 
   const handleScrollPositionChange = useCallback(() => {
     if (!agentRunningRef.current) return;
@@ -1701,7 +1748,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     };
   }, [messages.length, loading, handleScrollPositionChange, markUserScrollIntent]);
 
-  useEffect(() => {
+  useEffect(() => stopInitialBottomPin, [stopInitialBottomPin]);
+
+  useLayoutEffect(() => {
     // Loading may publish the message array before the loading shell is
     // replaced by the scroll container. Do not consume the one-shot initial
     // scroll until that container is mounted, otherwise switching sessions
@@ -1714,16 +1763,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       scrollUserMsgToTop();
     } else if (!initialScrollDoneRef.current) {
       initialScrollDoneRef.current = true;
-      scrollToBottom("instant");
-      // Correct once more after the browser has completed the first layout of
-      // the newly mounted message list (markdown and lazy history can change
-      // its measured height during that frame).
-      const frame = requestAnimationFrame(() => scrollToBottom("instant"));
-      return () => cancelAnimationFrame(frame);
+      startInitialBottomPin();
     } else if (!agentRunningRef.current && completionScrollAllowedRef.current) {
       scrollToBottom("smooth");
     }
-  }, [messages.length, agentRunning, loading, scrollToBottom, scrollUserMsgToTop]);
+  }, [messages.length, agentRunning, loading, scrollToBottom, scrollUserMsgToTop, startInitialBottomPin]);
 
   // Load model list
   useEffect(() => {

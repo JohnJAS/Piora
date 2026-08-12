@@ -7,6 +7,7 @@ export const PINNED_PROJECTS_STORAGE_KEY = "piora:sidebar-pinned-projects:v1";
 export const PROJECT_ALIASES_STORAGE_KEY = "piora:sidebar-project-aliases:v1";
 export const REMEMBERED_PROJECTS_STORAGE_KEY = "piora:sidebar-remembered-projects:v1";
 export const HIDDEN_PROJECTS_STORAGE_KEY = "piora:sidebar-hidden-projects:v1";
+export const PROJECT_ORDER_STORAGE_KEY = "piora:sidebar-project-order:v1";
 export const RUNNING_SESSIONS_POLL_MS = 2500;
 
 export function loadUnreadSessionIds(): Set<string> {
@@ -35,6 +36,50 @@ export function saveStoredStringSet(key: string, values: Set<string>): void {
     if (values.size === 0) window.localStorage.removeItem(key);
     else window.localStorage.setItem(key, JSON.stringify([...values]));
   } catch { /* Sidebar remains usable without persistence. */ }
+}
+
+export function loadStoredStringList(key: string): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) ?? "[]") as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return [...new Set(parsed.filter((value): value is string => typeof value === "string" && value.length > 0))];
+  } catch { return []; }
+}
+
+export function saveStoredStringList(key: string, values: readonly string[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (values.length === 0) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, JSON.stringify(values));
+  } catch { /* Sidebar remains usable without persistence. */ }
+}
+
+/** Apply the saved order first and append newly discovered projects naturally. */
+export function applyProjectOrder<T>(items: readonly T[], order: readonly string[], getRoot: (item: T) => string): T[] {
+  const rank = new Map(order.map((root, index) => [root, index]));
+  return items
+    .map((item, index) => ({ item, index, rank: rank.get(getRoot(item)) }))
+    .sort((left, right) => {
+      if (left.rank !== undefined && right.rank !== undefined) return left.rank - right.rank;
+      if (left.rank !== undefined) return -1;
+      if (right.rank !== undefined) return 1;
+      return left.index - right.index;
+    })
+    .map(({ item }) => item);
+}
+
+export function moveProjectRoot(
+  roots: readonly string[],
+  sourceRoot: string,
+  targetRoot: string,
+  position: "before" | "after",
+): string[] {
+  if (sourceRoot === targetRoot || !roots.includes(sourceRoot) || !roots.includes(targetRoot)) return [...roots];
+  const next = roots.filter((root) => root !== sourceRoot);
+  const targetIndex = next.indexOf(targetRoot);
+  next.splice(targetIndex + (position === "after" ? 1 : 0), 0, sourceRoot);
+  return next;
 }
 
 export function loadProjectAliases(): Record<string, string> {

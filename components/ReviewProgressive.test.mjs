@@ -39,7 +39,18 @@ test("review files start collapsed and expand independently", () => {
   assert.match(reviewPanel, /const \[expandedKeys, setExpandedKeys\] = useState<Set<string>>\(\(\) => new Set\(\)\)/);
   assert.match(reviewPanel, /const collapsed = !expandedKeys\.has\(item\.key\)/);
   assert.match(reviewPanel, /setExpandedKeys\(\(current\) => toggleSet\(current, item\.key\)\)/);
-  assert.match(reviewPanel, /setExpandedKeys\(\(current\) => new Set\(current\)\.add\(item\.key\)\)/);
-  assert.match(reviewPanel, /visibleItems\.filter\(\(item\) => expandedKeys\.has\(item\.key\)/);
+  assert.match(reviewPanel, /setExpandedKeys\(\(current\) => new Set\(current\)\.add\(nextItem\.key\)\)/);
+  assert.match(reviewPanel, /filteredItems\.filter\(\(item\) => expandedKeys\.has\(item\.key\)/);
   assert.doesNotMatch(reviewPanel, /collapsedKeys/);
+});
+
+test("review renders every filtered file directly without a duplicate overview", () => {
+  assert.match(reviewPanel, /filteredItems\.map\(\(item\) =>/);
+  assert.doesNotMatch(reviewPanel, /reviewOverview|FileIndexRow|visibleCount|loadMoreFiles/);
+});
+
+test("long review diffs use a visible Codex-style scrollbar", () => {
+  assert.match(styles, /\.reviewStream::\-webkit-scrollbar \{ width: 10px; height: 10px;/);
+  assert.match(styles, /scrollbar-color:/);
+  assert.match(styles, /background-clip: padding-box/);
 });

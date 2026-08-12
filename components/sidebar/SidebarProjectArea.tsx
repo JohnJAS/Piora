@@ -1,6 +1,6 @@
 "use client";
 
-import type { Dispatch, SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type SetStateAction } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { getProjectLabel, type SessionProjectGroup } from "@/lib/session-project-groups";
 import type { SessionFlags } from "@/lib/session-flags";
@@ -25,14 +25,131 @@ interface Props {
   patchSessionFlag: (session: SessionInfo, patch: { pinned?: boolean; archived?: boolean }) => Promise<void>;
   duplicateSession: (session: SessionInfo) => Promise<void>; pinnedProjectRoots: Set<string>; projectAliases: Record<string, string>;
   togglePinnedProject: (root: string) => void; renameProject: (root: string, alias: string) => void; removeProject: (root: string) => void;
+  onReorderProjects: (sourceRoot: string, targetRoot: string, position: "before" | "after") => void;
+}
+
+const PROJECT_DRAG_HOLD_MS = 250;
+const PROJECT_DRAG_CANCEL_DISTANCE = 7;
+
+interface ProjectDragState {
+  sourceRoot: string;
+  targetRoot: string | null;
+  position: "before" | "after";
 }
 
 export function SidebarProjectArea(props: Props) {
   const { t } = useI18n();
-  const { loading, error, projectsHovered, setProjectsHovered, handleDefaultCwd, handleCustomPathClick, projectGroups, searchedProjectGroups, selectedProject, collapsedProjectKeys, expandedProjectSessionKeys, setCollapsedProjectKeys, setExpandedProjectSessionKeys, selectedSessionId, runningSessionIds, unreadSessionIds, attentionSessionIds, setSelectedCwd, homeDir, handleSelectSessionFromList, handleNewSessionInProject, loadSessions, handleSessionDeletedWithUndo, sessionFlags, taskSearch, patchSessionFlag, duplicateSession, pinnedProjectRoots, projectAliases, togglePinnedProject, renameProject, removeProject } = props;
+  const { loading, error, projectsHovered, setProjectsHovered, handleDefaultCwd, handleCustomPathClick, projectGroups, searchedProjectGroups, selectedProject, collapsedProjectKeys, expandedProjectSessionKeys, setCollapsedProjectKeys, setExpandedProjectSessionKeys, selectedSessionId, runningSessionIds, unreadSessionIds, attentionSessionIds, setSelectedCwd, homeDir, handleSelectSessionFromList, handleNewSessionInProject, loadSessions, handleSessionDeletedWithUndo, sessionFlags, taskSearch, patchSessionFlag, duplicateSession, pinnedProjectRoots, projectAliases, togglePinnedProject, renameProject, removeProject, onReorderProjects } = props;
+  const projectScrollRef = useRef<HTMLDivElement>(null);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const candidateRef = useRef<{ pointerId: number; root: string; x: number; y: number } | null>(null);
+  const dragRef = useRef<ProjectDragState | null>(null);
+  const suppressClickRef = useRef<{ root: string; until: number } | null>(null);
+  const [dragState, setDragState] = useState<ProjectDragState | null>(null);
+
+  const clearHoldTimer = useCallback(() => {
+    if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    holdTimerRef.current = null;
+  }, []);
+
+  const stopDragging = useCallback(() => {
+    clearHoldTimer();
+    candidateRef.current = null;
+    dragRef.current = null;
+    setDragState(null);
+  }, [clearHoldTimer]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const candidate = candidateRef.current;
+      if (!candidate || event.pointerId !== candidate.pointerId) return;
+      const activeDrag = dragRef.current;
+      if (!activeDrag) {
+        if (Math.hypot(event.clientX - candidate.x, event.clientY - candidate.y) > PROJECT_DRAG_CANCEL_DISTANCE) {
+          clearHoldTimer();
+          candidateRef.current = null;
+        }
+        return;
+      }
+
+      event.preventDefault();
+      const scroll = projectScrollRef.current;
+      if (scroll) {
+        const bounds = scroll.getBoundingClientRect();
+        if (event.clientY < bounds.top + 32) scroll.scrollTop -= 12;
+        else if (event.clientY > bounds.bottom - 32) scroll.scrollTop += 12;
+      }
+
+      const element = document.elementFromPoint(event.clientX, event.clientY);
+      const target = element?.closest<HTMLElement>("[data-project-drag-root]");
+      const targetRoot = target?.dataset.projectDragRoot ?? null;
+      if (!target || !targetRoot || targetRoot === activeDrag.sourceRoot) {
+        if (activeDrag.targetRoot !== null) {
+          const next = { ...activeDrag, targetRoot: null };
+          dragRef.current = next;
+          setDragState(next);
+        }
+        return;
+      }
+      const row = target.querySelector<HTMLElement>("[data-project-drag-handle]");
+      const rect = (row ?? target).getBoundingClientRect();
+      const position = event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+      if (activeDrag.targetRoot !== targetRoot || activeDrag.position !== position) {
+        const next: ProjectDragState = { ...activeDrag, targetRoot, position };
+        dragRef.current = next;
+        setDragState(next);
+      }
+    };
+    const finishPointer = (event: PointerEvent) => {
+      const candidate = candidateRef.current;
+      if (!candidate || event.pointerId !== candidate.pointerId) return;
+      const activeDrag = dragRef.current;
+      if (activeDrag) {
+        suppressClickRef.current = { root: activeDrag.sourceRoot, until: Date.now() + 500 };
+        if (activeDrag.targetRoot) {
+          onReorderProjects(activeDrag.sourceRoot, activeDrag.targetRoot, activeDrag.position);
+        }
+      }
+      stopDragging();
+    };
+    window.addEventListener("pointermove", handlePointerMove, { passive: false });
+    window.addEventListener("pointerup", finishPointer);
+    window.addEventListener("pointercancel", finishPointer);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishPointer);
+      window.removeEventListener("pointercancel", finishPointer);
+    };
+  }, [clearHoldTimer, onReorderProjects, stopDragging]);
+
+  useEffect(() => stopDragging, [stopDragging]);
+
+  const beginProjectDrag = useCallback((root: string, event: ReactPointerEvent<HTMLDivElement>) => {
+    if (taskSearch.trim() || !event.isPrimary || event.button !== 0) return;
+    if ((event.target as Element).closest("[data-project-drag-ignore]")) return;
+    clearHoldTimer();
+    candidateRef.current = { pointerId: event.pointerId, root, x: event.clientX, y: event.clientY };
+    holdTimerRef.current = setTimeout(() => {
+      const candidate = candidateRef.current;
+      if (!candidate || candidate.pointerId !== event.pointerId || candidate.root !== root) return;
+      const next: ProjectDragState = { sourceRoot: root, targetRoot: null, position: "after" };
+      dragRef.current = next;
+      setDragState(next);
+      window.getSelection()?.removeAllRanges();
+    }, PROJECT_DRAG_HOLD_MS);
+  }, [clearHoldTimer, taskSearch]);
+
+  const suppressProjectClick = useCallback((root: string, event: ReactMouseEvent<HTMLElement>) => {
+    const suppressed = suppressClickRef.current;
+    if (!suppressed || suppressed.root !== root || Date.now() > suppressed.until) return;
+    suppressClickRef.current = null;
+    event.preventDefault();
+    event.stopPropagation();
+  }, []);
+
   return <>
       {/* Codex-style project folders with their conversations nested below. */}
-      <div className="sidebar-project-scroll" style={{ flex: "1 1 auto", overflowY: "auto", padding: "4px 0 8px", minHeight: 80 }}>
+      <div ref={projectScrollRef} className="sidebar-project-scroll" style={{ flex: "1 1 auto", overflowY: "auto", padding: "4px 0 8px", minHeight: 80 }}>
         {!loading && !error && (
           <div
             className={`${styles.sectionLabel} ${styles.projectsHeader}`}
@@ -91,11 +208,6 @@ export function SidebarProjectArea(props: Props) {
             attentionSessionIds={attentionSessionIds}
             onSelectProject={() => {
               setSelectedCwd(group.preferredCwd);
-              setCollapsedProjectKeys((previous) => {
-                const next = new Set(previous);
-                next.delete(group.key);
-                return next;
-              });
             }}
             onToggleProject={() => {
               setCollapsedProjectKeys((previous) => {
@@ -126,6 +238,10 @@ export function SidebarProjectArea(props: Props) {
             onTogglePinned={() => togglePinnedProject(group.projectRoot)}
             onRenameProject={(alias) => renameProject(group.projectRoot, alias)}
             onRemoveProject={() => removeProject(group.projectRoot)}
+            isDragging={dragState?.sourceRoot === group.projectRoot}
+            dropPosition={dragState?.targetRoot === group.projectRoot ? dragState.position : null}
+            onProjectPointerDown={(event) => beginProjectDrag(group.projectRoot, event)}
+            onProjectClickCapture={(event) => suppressProjectClick(group.projectRoot, event)}
           />
         ))}
       </div>

@@ -8,6 +8,7 @@ import { buildPatchForHunk } from "@/lib/hunk-patch";
 import { getReviewNavigationIndex, isCommitKeyboardShortcut } from "@/lib/review-keyboard";
 import { DiffView } from "../DiffView";
 import { AliIcon } from "../AliIcon";
+import { requestConfirmation } from "../ConfirmDialog";
 import { getFileIcon } from "../FileIcons";
 import type { ChangeGroup, ChangeListItem } from "./ChangeList";
 import styles from "./WorkspacePanel.module.css";
@@ -21,8 +22,8 @@ interface Props {
 
 type ReviewScope = "all" | ChangeGroup;
 type DiffMode = "unified" | "split";
+type GitBranchesState = { currentBranch: string | null; branches: string[] };
 
-const INITIAL_FILE_LIMIT = 12;
 const EMPTY_STATUS: GitStatusResponse = { isGitRepository: false, repositoryRoot: null, files: [], additions: 0, deletions: 0 };
 
 function createItems(status: GitStatusResponse): ChangeListItem[] {
@@ -48,10 +49,11 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<ReviewScope>("all");
   const [mode, setMode] = useState<DiffMode>("unified");
-  const [visibleCount, setVisibleCount] = useState(INITIAL_FILE_LIMIT);
+  const [branchState, setBranchState] = useState<GitBranchesState>({ currentBranch: null, branches: [] });
+  const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [showCommit, setShowCommit] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -71,10 +73,8 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     return items.filter((item) => (scope === "all" || item.group === scope)
       && (!needle || item.file.filePath.toLocaleLowerCase().includes(needle)));
   }, [items, query, scope]);
-  const visibleItems = useMemo(() => filteredItems.slice(0, visibleCount), [filteredItems, visibleCount]);
   const stagedItems = useMemo(() => items.filter((item) => item.group === "staged"), [items]);
   const worktreeItems = useMemo(() => items.filter((item) => item.group !== "staged"), [items]);
-  const reviewedCount = items.filter((item) => reviewedKeys.has(item.key)).length;
 
   useEffect(() => {
     const prefill = (event: Event) => {
@@ -113,12 +113,28 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
       setExpandedKeys((current) => new Set([...current].filter((key) => availableKeys.has(key))));
       setDiffs({});
       setLoadingDiffs(new Set());
-      setVisibleCount(INITIAL_FILE_LIMIT);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setLoading(false); }
   }, [cwd]);
 
   useEffect(() => { void loadStatus(); }, [loadStatus, refreshKey]);
+
+  const loadBranches = useCallback(async () => {
+    if (!cwd) { setBranchState({ currentBranch: null, branches: [] }); return; }
+    try {
+      const response = await fetch(`/api/git/branches?cwd=${encodeURIComponent(cwd)}`, { cache: "no-store" });
+      const data = await response.json() as GitBranchesState & { error?: string };
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      setBranchState(data);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [cwd]);
+
+  useEffect(() => {
+    if (!status.repositoryRoot) return;
+    void loadBranches();
+  }, [loadBranches, status.branch, status.repositoryRoot]);
 
   useEffect(() => {
     if (!status.repositoryRoot) return;
@@ -136,7 +152,7 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
 
   useEffect(() => {
     if (!cwd) return;
-    const missing = visibleItems.filter((item) => expandedKeys.has(item.key)
+    const missing = filteredItems.filter((item) => expandedKeys.has(item.key)
       && !diffsRef.current[item.key]
       && !loadingDiffsRef.current.has(item.key));
     if (missing.length === 0) return;
@@ -154,7 +170,7 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
         setLoadingDiffs((current) => { const next = new Set(current); next.delete(item.key); return next; });
       }
     }));
-  }, [cwd, expandedKeys, visibleItems]);
+  }, [cwd, expandedKeys, filteredItems]);
 
   useEffect(() => {
     const onShortcut = (event: KeyboardEvent) => {
@@ -166,17 +182,15 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
       if (nextIndex === null) return;
       event.preventDefault();
       const nextItem = filteredItems[nextIndex];
-      if (nextIndex >= visibleCount) setVisibleCount(Math.min(filteredItems.length, nextIndex + INITIAL_FILE_LIMIT));
       setActiveKey(nextItem.key);
       setExpandedKeys((current) => new Set(current).add(nextItem.key));
       requestAnimationFrame(() => fileRefs.current.get(nextItem.key)?.scrollIntoView({ block: "start", behavior: "smooth" }));
     };
     window.addEventListener("keydown", onShortcut);
     return () => window.removeEventListener("keydown", onShortcut);
-  }, [activeKey, filteredItems, visibleCount]);
+  }, [activeKey, filteredItems]);
 
   useEffect(() => {
-    setVisibleCount(INITIAL_FILE_LIMIT);
     setActiveKey(null);
   }, [query, scope]);
 
@@ -192,7 +206,12 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     if (action === "revert") {
       const changedLines = options?.hunk?.lines.filter((line) => line.kind === "added" || line.kind === "removed").length
         ?? (itemDiff?.patch ? parseUnifiedDiff(itemDiff.patch).lineCount : targetItems.reduce((sum, item) => sum + (item.file.additions ?? 0) + (item.file.deletions ?? 0), 0));
-      if (!window.confirm(t("review.confirmRevert", { count: changedLines }))) return;
+      if (!await requestConfirmation({
+        title: t("review.revertTitle"),
+        message: t("review.confirmRevert", { count: changedLines }),
+        confirmLabel: t("review.revert"),
+        tone: "danger",
+      })) return;
     }
     if (action === "revert" || options?.hunk) {
       const hashResponse = await fetch("/api/git/diff-hash", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, paths: relativePaths }) });
@@ -229,18 +248,42 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
   }, [amend, busy, commitMessage, cwd, loadStatus, onRefresh, t]);
 
   const toggleReviewed = (key: string) => setReviewedKeys((current) => toggleSet(current, key));
-  const scrollToItem = (item: ChangeListItem) => {
-    const itemIndex = filteredItems.findIndex((candidate) => candidate.key === item.key);
-    if (itemIndex >= visibleCount) setVisibleCount(Math.min(filteredItems.length, itemIndex + INITIAL_FILE_LIMIT));
-    setActiveKey(item.key);
-    setExpandedKeys((current) => new Set(current).add(item.key));
-    requestAnimationFrame(() => fileRefs.current.get(item.key)?.scrollIntoView({ block: "start", behavior: "smooth" }));
-  };
+
+  const switchBranch = useCallback(async (branch: string) => {
+    if (!cwd || branch === branchState.currentBranch || switchingBranch) return;
+    if (items.length > 0 && !await requestConfirmation({
+      title: t("review.switchBranchTitle"),
+      message: t("review.switchBranchConfirm", { branch }),
+      confirmLabel: t("review.switchBranch"),
+    })) return;
+    setSwitchingBranch(branch);
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/git/branches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd, branch }),
+      });
+      const data = await response.json() as GitBranchesState & { error?: string };
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      setBranchState(data);
+      setToast(t("review.branchSwitched", { branch }));
+      onRefresh();
+      window.dispatchEvent(new CustomEvent("piora:git-status-changed", { detail: { cwd } }));
+      await loadStatus();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+      setSwitchingBranch(null);
+    }
+  }, [branchState.currentBranch, cwd, items.length, loadStatus, onRefresh, switchingBranch, t]);
 
   if (!cwd) return <ReviewEmpty message={t("review.selectProject")} />;
   if (loading && status.files.length === 0) return <ReviewEmpty message={t("review.loading")} loading />;
   if (!status.isGitRepository) return <ReviewEmpty message={error || t("review.notGit")} />;
-  if (items.length === 0) return <div className={styles.reviewRoot}><ReviewTopBar status={status} mode={mode} setMode={setMode} busy={busy} onRefresh={loadStatus} t={t} /><ReviewEmpty message={t("review.clean")} /></div>;
+  if (items.length === 0) return <div className={styles.reviewRoot}><ReviewTopBar status={status} mode={mode} setMode={setMode} busy={busy} onRefresh={loadStatus} branches={branchState.branches} currentBranch={branchState.currentBranch} switchingBranch={switchingBranch} onSwitchBranch={switchBranch} t={t} /><ReviewEmpty message={error || toast || t("review.clean")} /></div>;
 
   const scopeCounts: Record<ReviewScope, number> = {
     all: items.length,
@@ -253,8 +296,8 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     <div className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">
       {activeKey ? t("review.selectedChange", { path: items.find((item) => item.key === activeKey)?.file.filePath ?? "" }) : t("review.noSelectedChange")}
     </div>
-    <ReviewTopBar status={status} mode={mode} setMode={setMode} busy={busy} onRefresh={loadStatus} t={t}
-      onCollapseAll={() => setExpandedKeys(visibleItems.every((item) => expandedKeys.has(item.key)) ? new Set() : new Set(visibleItems.map((item) => item.key)))} />
+    <ReviewTopBar status={status} mode={mode} setMode={setMode} busy={busy} onRefresh={loadStatus} branches={branchState.branches} currentBranch={branchState.currentBranch} switchingBranch={switchingBranch} onSwitchBranch={switchBranch} t={t}
+      onCollapseAll={() => setExpandedKeys(filteredItems.every((item) => expandedKeys.has(item.key)) ? new Set() : new Set(filteredItems.map((item) => item.key)))} />
 
     <div className={styles.reviewFilters}>
       <label className={styles.reviewSearch}>
@@ -268,22 +311,9 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     </div>
 
     <main className={styles.reviewStream} role="region" aria-label={t("review.diffRegion")}>
-      <section className={styles.reviewOverview} aria-label={t("review.changesTree")}>
-        <div className={styles.reviewProgressRow}>
-          <span>{t("review.progress", { reviewed: reviewedCount, total: items.length })}</span>
-          <span className={styles.reviewStats}><span className={styles.additions}>+{status.additions}</span><span className={styles.deletions}>-{status.deletions}</span></span>
-        </div>
-        <div className={styles.reviewProgressTrack} aria-hidden="true"><span style={{ width: `${items.length ? reviewedCount / items.length * 100 : 0}%` }} /></div>
-        <div className={styles.reviewFileIndex}>
-          {filteredItems.map((item) => <FileIndexRow key={item.key} item={item} reviewed={reviewedKeys.has(item.key)} active={activeKey === item.key} onSelect={() => scrollToItem(item)} onReview={() => toggleReviewed(item.key)} t={t} />)}
-          {filteredItems.length === 0 ? <div className={styles.reviewNoResults}>{t("review.noMatches")}</div> : null}
-        </div>
-      </section>
-
-      <div className={styles.reviewDivider}><span>{t("review.filesChanged", { count: filteredItems.length })}</span></div>
-
       <div className={styles.reviewFiles}>
-        {visibleItems.map((item) => {
+        {filteredItems.length === 0 ? <div className={styles.reviewNoResults}>{t("review.noMatches")}</div> : null}
+        {filteredItems.map((item) => {
           const itemDiff = diffs[item.key];
           const collapsed = !expandedKeys.has(item.key);
           return <section key={item.key} ref={(node) => { if (node) fileRefs.current.set(item.key, node); else fileRefs.current.delete(item.key); }} className={`${styles.reviewFile} ${reviewedKeys.has(item.key) ? styles.reviewedFile : ""}`} data-review-key={item.key}>
@@ -305,7 +335,6 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
             </div> : null}
           </section>;
         })}
-        {visibleCount < filteredItems.length ? <button className={styles.loadMoreFiles} type="button" onClick={() => setVisibleCount((count) => Math.min(filteredItems.length, count + INITIAL_FILE_LIMIT))}>{t("review.loadMoreFiles", { shown: visibleItems.length, total: filteredItems.length })}</button> : null}
       </div>
     </main>
 
@@ -331,19 +360,51 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
   </div>;
 }
 
-function ReviewTopBar({ status, mode, setMode, busy, onRefresh, onCollapseAll, t }: {
+function ReviewTopBar({ status, mode, setMode, busy, onRefresh, onCollapseAll, branches, currentBranch, switchingBranch, onSwitchBranch, t }: {
   status: GitStatusResponse;
   mode: DiffMode;
   setMode: (mode: DiffMode) => void;
   busy: boolean;
   onRefresh: () => void | Promise<void>;
   onCollapseAll?: () => void;
+  branches: string[];
+  currentBranch: string | null;
+  switchingBranch: string | null;
+  onSwitchBranch: (branch: string) => void | Promise<void>;
   t: ReturnType<typeof useI18n>["t"];
 }) {
+  const [branchMenuOpen, setBranchMenuOpen] = useState(false);
+  const branchPickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!branchMenuOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!branchPickerRef.current?.contains(event.target as Node)) setBranchMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setBranchMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", dismiss);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("pointerdown", dismiss);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [branchMenuOpen]);
+
   return <header className={styles.reviewToolbar}>
-    <div className={styles.reviewHeading}>
-      <span className={styles.branchBadge}><AliIcon name="branches" size={13} /></span>
-      <span><b>{status.branch || t("review.workingTree")}</b><small>{t("review.changes", { count: status.files.length })}</small></span>
+    <div ref={branchPickerRef} className={styles.branchPicker}>
+      <button type="button" className={styles.reviewHeading} aria-haspopup="listbox" aria-expanded={branchMenuOpen} disabled={busy || branches.length === 0} onClick={() => setBranchMenuOpen((open) => !open)}>
+        <span className={styles.branchBadge}><AliIcon name="branches" size={13} /></span>
+        <span><b>{switchingBranch ?? currentBranch ?? status.branch ?? t("review.workingTree")}</b><small>{switchingBranch ? t("review.switchingBranch") : t("review.changes", { count: status.files.length })}</small></span>
+        <AliIcon name={branchMenuOpen ? "arrowup" : "arrowdown"} size={11} />
+      </button>
+      {branchMenuOpen ? <div className={styles.branchMenu} role="listbox" aria-label={t("review.branchMenu")}>
+        {branches.map((branch) => <button key={branch} type="button" role="option" aria-selected={branch === currentBranch} onClick={() => { setBranchMenuOpen(false); void onSwitchBranch(branch); }}>
+          <AliIcon name={branch === currentBranch ? "check" : "branches"} size={12} />
+          <span>{branch}</span>
+        </button>)}
+      </div> : null}
     </div>
     <div className={styles.reviewToolbarActions}>
       <button type="button" className={styles.iconAction} aria-pressed={mode === "split"} onClick={() => setMode(mode === "unified" ? "split" : "unified")} title={mode === "unified" ? t("review.splitView") : t("review.unifiedView")} aria-label={mode === "unified" ? t("review.splitView") : t("review.unifiedView")}><AliIcon name="layout" size={14} /></button>
@@ -351,18 +412,6 @@ function ReviewTopBar({ status, mode, setMode, busy, onRefresh, onCollapseAll, t
       <button type="button" className={styles.iconAction} onClick={() => void onRefresh()} disabled={busy} title={t("review.refresh")} aria-label={t("review.refresh")}><AliIcon name="reload" size={14} /></button>
     </div>
   </header>;
-}
-
-function FileIndexRow({ item, reviewed, active, onSelect, onReview, t }: { item: ChangeListItem; reviewed: boolean; active: boolean; onSelect: () => void; onReview: () => void; t: ReturnType<typeof useI18n>["t"] }) {
-  const { name, parent } = splitPath(item.file.filePath);
-  return <div className={`${styles.fileIndexRow} ${active ? styles.fileIndexActive : ""}`}>
-    <button type="button" className={styles.fileIndexMain} onClick={onSelect}>
-      <span className={styles.fileIndexIcon} data-status={item.file.status}>{getFileIcon(name, 14)}</span>
-      <span className={styles.fileIndexPath} title={item.file.filePath}>{parent ? <small>{parent}/</small> : null}<b>{name}</b></span>
-      <span className={styles.lineStats}><span className={styles.additions}>+{item.file.additions ?? 0}</span><span className={styles.deletions}>-{item.file.deletions ?? 0}</span></span>
-    </button>
-    <button type="button" className={`${styles.reviewCheck} ${reviewed ? styles.reviewCheckDone : ""}`} onClick={onReview} title={reviewed ? t("review.markUnreviewed") : t("review.markReviewed")} aria-label={reviewed ? t("review.markUnreviewed") : t("review.markReviewed")} aria-pressed={reviewed}><AliIcon name="check" size={11} /></button>
-  </div>;
 }
 
 function FileReviewHeader({ item, collapsed, reviewed, busy, onToggle, onReview, onOpen, onStage, onRevert, t }: { item: ChangeListItem; collapsed: boolean; reviewed: boolean; busy: boolean; onToggle: () => void; onReview: () => void; onOpen: () => void; onStage: () => void; onRevert: () => void; t: ReturnType<typeof useI18n>["t"] }) {
@@ -387,8 +436,12 @@ function ReviewFileLoading({ t }: { t: ReturnType<typeof useI18n>["t"] }) {
 }
 
 function ReviewEmpty({ message, loading = false, compact = false }: { message: string; loading?: boolean; compact?: boolean }) {
+  if (loading) return <div className={styles.reviewLoading} role="status">
+    <span className={styles.reviewLoadingSpinner} aria-hidden="true"><AliIcon name="reload" size={14} /></span>
+    <span>{message}</span>
+  </div>;
   return <div className={`${styles.reviewEmpty} ${compact ? styles.reviewEmptyCompact : ""}`}>
-    <span className={`${styles.emptyIcon} ${loading ? styles.emptyIconLoading : ""}`} aria-hidden="true"><AliIcon name={loading ? "reload" : "diff"} size={17} /></span>
+    <span className={styles.emptyIcon} aria-hidden="true"><AliIcon name="diff" size={17} /></span>
     <span>{message}</span>
   </div>;
 }

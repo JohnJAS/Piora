@@ -179,7 +179,36 @@
 }
 
 .projectGroup {
+  position: relative;
   margin: 0 7px 3px;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.projectGroupDragging {
+  z-index: 2;
+  opacity: 0.55;
+  transform: scale(0.985);
+}
+
+.projectDropBefore::before,
+.projectDropAfter::after {
+  position: absolute;
+  z-index: 4;
+  left: 5px;
+  right: 5px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  content: "";
+  pointer-events: none;
+}
+
+.projectDropBefore::before {
+  top: -2px;
+}
+
+.projectDropAfter::after {
+  bottom: -2px;
 }
 
 .projectRow {
@@ -192,6 +221,8 @@
   border-radius: 7px;
   background: transparent;
   transition: background 100ms ease;
+  touch-action: pan-y;
+  user-select: none;
 }
 
 .projectRow:hover,
@@ -344,7 +375,8 @@ button.menuItem:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .projectRow,
-  .projectActions {
+  .projectActions,
+  .projectGroup {
     transition: none;
   }
 }

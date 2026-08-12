@@ -17,7 +17,7 @@ import { SidebarProjectArea } from "./sidebar/SidebarProjectArea";
 import { SidebarFooter } from "./sidebar/SidebarFooter";
 import { useSessionCatalog } from "./sidebar/useSessionCatalog";
 import { useProjectPicker } from "./sidebar/useProjectPicker";
-import { getRecentProjects } from "./sidebar/sidebar-utils";
+import { applyProjectOrder, getRecentProjects, moveProjectRoot } from "./sidebar/sidebar-utils";
 import { useSidebarState } from "./sidebar/useSidebarState";
 import { SidebarShell } from "./sidebar/SidebarShell";
 
@@ -41,6 +41,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     rememberedProjectRoots, setRememberedProjectRoots,
     hiddenProjectRoots, setHiddenProjectRoots,
     projectAliases, setProjectAliases,
+    projectOrder, setProjectOrder,
   } = useSidebarState();
   const {
     customPathOpen, setCustomPathOpen, customPathError, setCustomPathError,
@@ -250,14 +251,14 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     [hiddenProjectRoots, rememberedProjectRoots],
   );
   const projectGroups = useMemo(
-    () => buildSessionProjectGroups(
+    () => applyProjectOrder(buildSessionProjectGroups(
       visibleSessions,
       selectedCwd && selectedProject && !hiddenProjectRoots.has(selectedProject)
         ? { cwd: selectedCwd, projectRoot: selectedProject }
         : null,
       visibleRememberedProjects,
-    ),
-    [hiddenProjectRoots, selectedCwd, selectedProject, visibleRememberedProjects, visibleSessions],
+    ), projectOrder, (group) => group.projectRoot),
+    [hiddenProjectRoots, projectOrder, selectedCwd, selectedProject, visibleRememberedProjects, visibleSessions],
   );
   const searchedProjectGroups = useMemo(() => {
     const query = taskSearch.trim().toLocaleLowerCase();
@@ -283,6 +284,14 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       return next;
     });
   }, [setPinnedProjectRoots]);
+  const reorderProjects = useCallback((sourceRoot: string, targetRoot: string, position: "before" | "after") => {
+    setProjectOrder(() => moveProjectRoot(
+      projectGroups.map((group) => group.projectRoot),
+      sourceRoot,
+      targetRoot,
+      position,
+    ));
+  }, [projectGroups, setProjectOrder]);
   const renameProject = useCallback((projectRoot: string, alias: string) => {
     setProjectAliases((previous) => {
       const next = { ...previous };
@@ -336,7 +345,11 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     };
     setCollapsedProjectKeys(prune);
     setExpandedProjectSessionKeys(prune);
-  }, [projectGroups, loading, error, setCollapsedProjectKeys, setExpandedProjectSessionKeys]);
+    setProjectOrder((previous) => {
+      const next = previous.filter((root) => validKeys.has(root));
+      return next.length === previous.length ? previous : next;
+    });
+  }, [projectGroups, loading, error, setCollapsedProjectKeys, setExpandedProjectSessionKeys, setProjectOrder]);
 
   const showWorktreeSwitcher = Boolean(
     worktreeState?.isGit
@@ -418,6 +431,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         sessionFlags={sessionFlags} taskSearch={taskSearch} patchSessionFlag={patchSessionFlag}
         duplicateSession={duplicateSession} pinnedProjectRoots={pinnedProjectRoots} projectAliases={projectAliases}
         togglePinnedProject={togglePinnedProject} renameProject={renameProject} removeProject={removeProject}
+        onReorderProjects={reorderProjects}
       />
       <SidebarFooter
         deletedToast={deletedSessionToast}
