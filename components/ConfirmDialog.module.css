@@ -1,0 +1,99 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: var(--overlay-scrim);
+  backdrop-filter: blur(8px) saturate(.92);
+}
+
+.dialog {
+  width: min(430px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-panel);
+  outline: 0;
+  background: var(--surface-raised);
+  color: var(--text);
+  box-shadow: var(--shadow-popover);
+}
+
+.body {
+  display: grid;
+  gap: 8px;
+  padding: 18px 18px 16px;
+}
+
+.body h2 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 650;
+  letter-spacing: -.01em;
+}
+
+.body p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border-soft);
+  background: color-mix(in srgb, var(--surface-muted) 64%, transparent);
+}
+
+.actions button {
+  min-height: 31px;
+  padding: 5px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.actions button:hover,
+.actions button:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.actions button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 34%, transparent);
+  outline-offset: 1px;
+}
+
+.actions .primary {
+  border-color: color-mix(in srgb, var(--text) 14%, transparent);
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 620;
+}
+
+.actions .primary:hover,
+.actions .primary:focus-visible {
+  background: color-mix(in srgb, var(--text) 88%, var(--bg));
+  color: var(--bg);
+}
+
+.actions .danger {
+  border-color: color-mix(in srgb, var(--status-failed) 34%, var(--border-soft));
+  background: color-mix(in srgb, var(--status-failed) 12%, var(--surface-raised));
+  color: var(--status-failed);
+}
+
+.actions .danger:hover,
+.actions .danger:focus-visible {
+  background: color-mix(in srgb, var(--status-failed) 18%, var(--surface-raised));
+  color: var(--status-failed);
+}

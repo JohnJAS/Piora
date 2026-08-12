@@ -994,6 +994,7 @@ function ExtensionDialog({
 
   return (
     <div
+      className="app-shell-dialog-backdrop"
       style={{
         position: "absolute",
         inset: 0,
@@ -1006,12 +1007,13 @@ function ExtensionDialog({
       }}
     >
       <div
+        className="app-shell-dialog"
         role="dialog"
         aria-modal="true"
         style={{
           width: "min(560px, 100%)",
           border: "1px solid var(--border)",
-          borderRadius: 8,
+          borderRadius: "var(--radius-panel)",
           background: "var(--bg)",
           boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
           overflow: "hidden",
@@ -1175,6 +1177,7 @@ function ExtensionCustomPanel({
 
   return (
     <div
+      className="app-shell-dialog-backdrop"
       style={{
         position: "absolute",
         inset: 0,
@@ -1187,6 +1190,7 @@ function ExtensionCustomPanel({
       }}
     >
       <div
+        className="app-shell-dialog"
         role="dialog"
         aria-modal="true"
         onClick={(event) => {
@@ -1197,7 +1201,7 @@ function ExtensionCustomPanel({
           width: "min(920px, 100%)",
           maxHeight: "min(760px, calc(100vh - 40px))",
           border: "1px solid var(--border)",
-          borderRadius: 8,
+          borderRadius: "var(--radius-panel)",
           background: "var(--bg)",
           boxShadow: "0 20px 60px rgba(0,0,0,0.28)",
           overflow: "hidden",

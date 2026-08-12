@@ -4,6 +4,34 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-08-12
+
+### Added
+
+- Project folders can be reordered directly with a long-press drag gesture,
+  and the chosen order persists across restarts without adding a separate
+  drag handle.
+- Review can list and safely switch between local Git branches while retaining
+  uncommitted changes whenever Git can apply them.
+- Destructive and unsaved-change flows now use an accessible, application-owned
+  confirmation dialog instead of browser-native prompts.
+
+### Changed
+
+- The right workspace keeps multiple opened tool tabs available, improves the
+  Review layout for large change sets, and uses more consistent panel styling.
+- Clicking a project folder now selects it and toggles expansion in the same
+  interaction instead of requiring a second click.
+- Browser tool execution stays in the background until the user explicitly
+  opens the Browser workspace.
+
+### Fixed
+
+- Switching conversations reliably lands at the real message bottom and stays
+  anchored while Markdown, diagrams, fonts, and lazy media finish laying out.
+- Unsaved editor tabs are preserved or discarded consistently when closing
+  tabs and switching projects.
+
 ## [0.1.2] - 2026-08-12
 
 ### Added

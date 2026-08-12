@@ -50,6 +50,7 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import { canSendCompanionPhrase, type CompanionActivity } from "@/lib/companion";
 import { AliIcon } from "./AliIcon";
 import { CommandPalette } from "./CommandPalette";
+import { ConfirmationHost, requestConfirmation } from "./ConfirmDialog";
 import { useCommands } from "@/hooks/useCommands";
 import { filterGuiCommands, type Command, type CommandContext, type PiSlashCommand } from "@/lib/commands";
 import { SETTINGS_REOPEN_STORAGE_KEY } from "@/lib/settings-portability";
@@ -227,14 +228,6 @@ export function AppShell() {
     if (!rightPanelOpen) setRightPanelMaximized(false);
   }, [rightPanelOpen]);
 
-  useEffect(() => {
-    const showBrowser = () => {
-      setRightPanelTab("browser");
-      setRightPanelOpen(true);
-    };
-    window.addEventListener("piora:show-browser", showBrowser);
-    return () => window.removeEventListener("piora:show-browser", showBrowser);
-  }, []);
   const {
     preferences: companionPreferences,
     setPreferences: setCompanionPreferences,
@@ -521,12 +514,17 @@ export function AppShell() {
     });
   }, []);
 
-  const confirmDiscardFileTabs = useCallback((tabs: readonly Tab[]) => {
+  const confirmDiscardFileTabs = useCallback(async (tabs: readonly Tab[]) => {
     const dirtyTabs = tabs.filter((tab) => tab.isDirty);
     if (dirtyTabs.length === 0) return true;
-    return window.confirm(dirtyTabs.length === 1
-      ? translate("files.discardUnsavedFile", { name: dirtyTabs[0].label })
-      : translate("files.discardUnsavedFiles", { count: dirtyTabs.length }));
+    return await requestConfirmation({
+      title: translate("files.discardTitle"),
+      message: dirtyTabs.length === 1
+        ? translate("files.discardUnsavedFile", { name: dirtyTabs[0].label })
+        : translate("files.discardUnsavedFiles", { count: dirtyTabs.length }),
+      confirmLabel: translate("files.discard"),
+      tone: "danger",
+    });
   }, [translate]);
 
   // Same @mention format as the chat input's @ autocomplete, so the agent's
@@ -588,10 +586,9 @@ export function AppShell() {
     return () => controller.abort();
   }, [initialNavigation]);
 
-  const handleCwdChange = useCallback((cwd: string | null, projectRoot?: string | null) => {
-    setActiveCwd(cwd);
+  const handleCwdChange = useCallback(async (cwd: string | null, projectRoot?: string | null) => {
     // Skip if cwd is null (initial mount).
-    if (!cwd) return;
+    if (!cwd) { setActiveCwd(null); return; }
     const newProject = projectRoot ?? cwd;
     const currentProject = activeProjectRootRef.current
       ?? (selectedSession ? (selectedSession.projectRoot ?? selectedSession.cwd) : null);
@@ -600,12 +597,16 @@ export function AppShell() {
     // that selected session; it must not turn the transition into an empty chat.
     const cwdBelongsToSelectedSession = selectedSession?.cwd === cwd;
     const dirtyTabs = fileTabs.filter((tab) => tab.isDirty);
-    const keepDirtyTabs = currentProject !== null
-      && currentProject !== newProject
-      && dirtyTabs.length > 0
-      && !window.confirm(
-        `Discard unsaved changes in ${dirtyTabs.length} file${dirtyTabs.length === 1 ? "" : "s"} before switching projects?\n\nCancel keeps the edited file tabs open.`,
-      );
+    let keepDirtyTabs = false;
+    if (currentProject !== null && currentProject !== newProject && dirtyTabs.length > 0) {
+      keepDirtyTabs = !await requestConfirmation({
+        title: translate("files.discardTitle"),
+        message: translate("files.discardBeforeSwitch", { count: dirtyTabs.length, countSuffix: dirtyTabs.length === 1 ? "" : "s" }),
+        confirmLabel: translate("files.discard"),
+        tone: "danger",
+      });
+    }
+    setActiveCwd(cwd);
     activeProjectRootRef.current = newProject;
     setActiveProjectRoot(newProject);
     let restored = parseWorkspaceContinuity(null, newProject);
@@ -662,7 +663,7 @@ export function AppShell() {
     if (!cwdBelongsToSelectedSession) {
       router.replace("/", { scroll: false });
     }
-  }, [activeFileTabId, fileTabs, router, selectedSession]);
+  }, [activeFileTabId, fileTabs, router, selectedSession, translate]);
 
   useEffect(() => {
     if (!activeProjectRoot) return;
@@ -991,12 +992,12 @@ export function AppShell() {
     handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null });
   }, [handleOpenFile, selectedSession?.id]);
 
-  const handleCloseFileTab = useCallback((tabId: string) => {
+  const handleCloseFileTab = useCallback(async (tabId: string) => {
     const closingIndex = fileTabs.findIndex((tab) => tab.id === tabId);
     if (closingIndex < 0) return;
 
     const closingTab = fileTabs[closingIndex];
-    if (!confirmDiscardFileTabs([closingTab])) return;
+    if (!await confirmDiscardFileTabs([closingTab])) return;
 
     const remaining = fileTabs.filter((tab) => tab.id !== tabId);
     setClosedFileTabs((current) => rememberClosedFileTabs(current, [closingTab]));
@@ -1008,21 +1009,21 @@ export function AppShell() {
     }
   }, [activeFileTabId, confirmDiscardFileTabs, fileTabs]);
 
-  const handleCloseOtherFileTabs = useCallback((tabId: string) => {
+  const handleCloseOtherFileTabs = useCallback(async (tabId: string) => {
     const target = fileTabs.find((tab) => tab.id === tabId);
     if (!target) return;
     const closingTabs = tabsExcept(fileTabs, tabId);
-    if (closingTabs.length === 0 || !confirmDiscardFileTabs(closingTabs)) return;
+    if (closingTabs.length === 0 || !await confirmDiscardFileTabs(closingTabs)) return;
     setClosedFileTabs((current) => rememberClosedFileTabs(current, closingTabs));
     setFileTabs([target]);
     setActiveFileTabId(tabId);
   }, [confirmDiscardFileTabs, fileTabs]);
 
-  const handleCloseFileTabsToRight = useCallback((tabId: string) => {
+  const handleCloseFileTabsToRight = useCallback(async (tabId: string) => {
     const targetIndex = fileTabs.findIndex((tab) => tab.id === tabId);
     if (targetIndex < 0) return;
     const closingTabs = tabsAfter(fileTabs, tabId);
-    if (closingTabs.length === 0 || !confirmDiscardFileTabs(closingTabs)) return;
+    if (closingTabs.length === 0 || !await confirmDiscardFileTabs(closingTabs)) return;
     const remaining = fileTabs.slice(0, targetIndex + 1);
     setClosedFileTabs((current) => rememberClosedFileTabs(current, closingTabs));
     setFileTabs(remaining);
@@ -2295,6 +2296,7 @@ export function AppShell() {
         onClose={() => setHistoryDialogOpen(false)}
       />
     ) : null}
+    <ConfirmationHost />
     </>
   );
 }

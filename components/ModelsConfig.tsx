@@ -8,6 +8,7 @@ import type { ModelCatalogPreset, ModelCatalogRecommendation } from "@/lib/model
 import type { DiscoveredModel } from "@/lib/model-discovery";
 import { prioritizeProvider } from "@/lib/model-policy";
 import { AliIcon } from "./AliIcon";
+import { requestConfirmation } from "./ConfirmDialog";
 import { ModelProviderIcon } from "./ModelProviderIcon";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -342,8 +343,8 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
          <SectionTitle>{t("i18n.provider")}</SectionTitle>
-        <button onClick={() => {
-          if (window.confirm(t("models.deleteProviderConfirm", { name }))) onDelete();
+        <button onClick={async () => {
+          if (await requestConfirmation({ title: t("i18n.delete"), message: t("models.deleteProviderConfirm", { name }), confirmLabel: t("i18n.delete"), tone: "danger" })) onDelete();
         }}
           style={{ padding: "3px 8px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: "#ef4444", cursor: "pointer", fontSize: "var(--text-xs)" }}>
            {t("i18n.delete")}
@@ -1262,8 +1263,8 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
             </button>
             {provider.loggedIn && (
               <button
-                onClick={() => {
-                  if (!window.confirm(t("models.removeCredentialConfirm", { name: provider.name }))) return;
+                onClick={async () => {
+                  if (!await requestConfirmation({ title: t("models.removeConfiguration"), message: t("models.removeCredentialConfirm", { name: provider.name }), confirmLabel: t("models.removeConfiguration"), tone: "danger" })) return;
                   void handleLogout();
                 }}
                 style={{ padding: "5px 12px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 5, color: "#ef4444", cursor: "pointer", fontSize: "var(--text-sm)" }}
@@ -1394,8 +1395,8 @@ function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRef
 
       {provider.configured && provider.canRemoveStoredCredential && (
         <button
-          onClick={() => {
-            if (!window.confirm(t("models.removeCredentialConfirm", { name: provider.displayName }))) return;
+          onClick={async () => {
+            if (!await requestConfirmation({ title: t("models.removeConfiguration"), message: t("models.removeCredentialConfirm", { name: provider.displayName }), confirmLabel: t("models.removeConfiguration"), tone: "danger" })) return;
             void handleRemove();
           }}
           disabled={removing}
@@ -2016,8 +2017,8 @@ export function ModelsConfig({
             <button
               type="button"
               disabled={scopeMutationBusy || modelScope?.projectOverride}
-              onClick={() => {
-                if (!window.confirm(t("models.hideProviderConfirm", { name: providerId }))) return;
+              onClick={async () => {
+                if (!await requestConfirmation({ title: t("models.hideProvider"), message: t("models.hideProviderConfirm", { name: providerId }), confirmLabel: t("models.hideProvider") })) return;
                 void updateModelScope("hide-provider", { provider: providerId });
               }}
               style={{
@@ -2177,9 +2178,9 @@ export function ModelsConfig({
                   <button
                     type="button"
                     disabled={scopeMutationBusy || modelScope?.projectOverride}
-                    onClick={() => {
+                    onClick={async () => {
                       if (model.enabled) {
-                        if (!window.confirm(t("models.hideModelConfirm", { id: model.name || model.id }))) return;
+                        if (!await requestConfirmation({ title: t("models.hideModel"), message: t("models.hideModelConfirm", { id: model.name || model.id }), confirmLabel: t("models.hideModel") })) return;
                         void updateModelScope("hide", model);
                       } else {
                         void updateModelScope("restore", model);
@@ -2399,9 +2400,9 @@ export function ModelsConfig({
                       </span>
                       <button
                         type="button"
-                        onClick={(e) => {
+                        onClick={async (e) => {
                           e.stopPropagation();
-                          if (window.confirm(t("models.deleteProviderConfirm", { name: pName }))) deleteProvider(pName);
+                          if (await requestConfirmation({ title: t("i18n.delete"), message: t("models.deleteProviderConfirm", { name: pName }), confirmLabel: t("i18n.delete"), tone: "danger" })) deleteProvider(pName);
                         }}
                         title={t("i18n.delete")}
                         aria-label={t("i18n.delete")}
@@ -2445,10 +2446,10 @@ export function ModelsConfig({
                           )}
                           <button
                             type="button"
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               e.stopPropagation();
                               const label = m.id || t("i18n.newModel");
-                              if (window.confirm(t("models.deleteModelConfirm", { id: label }))) removeModel(pName, i);
+                              if (await requestConfirmation({ title: t("i18n.delete"), message: t("models.deleteModelConfirm", { id: label }), confirmLabel: t("i18n.delete"), tone: "danger" })) removeModel(pName, i);
                             }}
                             title={t("i18n.delete")}
                             aria-label={t("i18n.delete")}

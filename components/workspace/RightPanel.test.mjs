@@ -14,6 +14,11 @@ test("moves files and review into a Codex-style launcher and tool-tab workspace"
   assert.match(rightPanel, /role="tabpanel"/);
   assert.match(rightPanel, /className=\{styles\.toolLauncher\}/);
   assert.match(rightPanel, /className=\{styles\.toolMenu\} role="menu"/);
+  assert.match(rightPanel, /const \[openTools, setOpenTools\]/);
+  assert.match(rightPanel, /current\.includes\(tab\) \? current : \[\.\.\.current, tab\]/);
+  assert.match(rightPanel, /openTools\.map/);
+  assert.match(rightPanel, /closeTool\(tool\.id\)/);
+  assert.match(rightPanel, /event\.key === "ArrowRight"/);
   assert.match(rightPanel, /onMaximizedChange/);
   assert.match(rightPanel, /<FileExplorer/);
   assert.match(rightPanel, /<FileViewer/);
@@ -53,8 +58,13 @@ test("review groups changes, supports keyboard navigation, diff rendering, and s
   assert.match(review, /group: "untracked"/);
   assert.match(changeList, /event\.altKey/);
   assert.match(review, /<DiffView/);
+  assert.doesNotMatch(review, /reviewOverview|FileIndexRow|loadMoreFiles/);
   assert.match(review, /`\/api\/git\/\$\{action\}`/);
   assert.match(review, /"\/api\/git\/commit"/);
-  assert.match(review, /window\.confirm/);
+  assert.match(review, /requestConfirmation/);
+  assert.doesNotMatch(review, /window\.confirm/);
+  assert.match(review, /"\/api\/git\/branches"/);
+  assert.match(review, /className=\{styles\.branchMenu\}/);
+  assert.match(review, /className=\{styles\.reviewLoading\}/);
   assert.match(review, /piora:git-status-changed/);
 });

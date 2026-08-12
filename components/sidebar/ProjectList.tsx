@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
 import { getVisibleSessionRoots, type SessionProjectGroup as SessionProjectGroupData } from "@/lib/session-project-groups";
@@ -41,6 +41,10 @@ export function ProjectSessionGroup({
   onTogglePinned,
   onRenameProject,
   onRemoveProject,
+  isDragging,
+  dropPosition,
+  onProjectPointerDown,
+  onProjectClickCapture,
 }: {
   group: SessionProjectGroupData;
   homeDir: string;
@@ -67,6 +71,10 @@ export function ProjectSessionGroup({
   onTogglePinned: () => void;
   onRenameProject: (alias: string) => void;
   onRemoveProject: () => void;
+  isDragging: boolean;
+  dropPosition: "before" | "after" | null;
+  onProjectPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  onProjectClickCapture: (event: ReactMouseEvent<HTMLElement>) => void;
 }) {
   const { t } = useI18n();
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
@@ -79,10 +87,20 @@ export function ProjectSessionGroup({
   const unreadCount = group.sessions.filter((session) => unreadSessionIds.has(session.id)).length;
 
   return (
-    <section className={styles.projectGroup} aria-label={displayLabel}>
-      <div className={`${styles.projectRow}${isSelectedProject ? ` ${styles.projectRowSelected}` : ""}`}>
+    <section
+      className={`${styles.projectGroup}${isDragging ? ` ${styles.projectGroupDragging}` : ""}${dropPosition === "before" ? ` ${styles.projectDropBefore}` : ""}${dropPosition === "after" ? ` ${styles.projectDropAfter}` : ""}`}
+      aria-label={displayLabel}
+      data-project-drag-root={group.projectRoot}
+    >
+      <div
+        className={`${styles.projectRow}${isSelectedProject ? ` ${styles.projectRowSelected}` : ""}`}
+        data-project-drag-handle
+        onPointerDown={onProjectPointerDown}
+        onClickCapture={onProjectClickCapture}
+        onContextMenu={(event) => { if (isDragging) event.preventDefault(); }}
+      >
         <button
-          onClick={onToggleProject}
+          onClick={() => { onSelectProject(); onToggleProject(); }}
           title={projectOpen ? t("sidebar.collapseProject") : t("sidebar.expandProject")}
           aria-label={projectOpen ? t("sidebar.collapseProject") : t("sidebar.expandProject")}
           aria-expanded={projectOpen}
@@ -92,10 +110,7 @@ export function ProjectSessionGroup({
         </button>
 
         <button
-          onClick={() => {
-            if (isSelectedProject) onToggleProject();
-            else onSelectProject();
-          }}
+          onClick={() => { onSelectProject(); onToggleProject(); }}
           title={group.projectRoot}
           className={styles.projectMain}
           aria-expanded={projectOpen}
@@ -104,7 +119,7 @@ export function ProjectSessionGroup({
           {runningCount > 0 && <RunningSessionIndicator />}
           {runningCount === 0 && unreadCount > 0 && <UnreadSessionIndicator />}
         </button>
-        <div className={styles.projectActions}>
+        <div className={styles.projectActions} data-project-drag-ignore>
           <button
             type="button"
             className={styles.rowAction}
