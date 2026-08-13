@@ -79,11 +79,13 @@ jobs:
           $releaseTag = $env:GITHUB_REF_NAME.Substring('harmony-'.Length)
           node scripts/smoke-test-portable.mjs desktop/release/win-unpacked/Piora.exe --expected-version $releaseTag --packaged-runtime
 
-      - name: Smoke-test final portable executable
+      - name: Verify final portable wrapper
         shell: pwsh
         run: |
           $releaseTag = $env:GITHUB_REF_NAME.Substring('harmony-'.Length)
-          node scripts/smoke-test-portable.mjs --expected-version $releaseTag
+          node scripts/verify-portable-artifact.mjs --expected-version $releaseTag
+          $artifact = @(Get-ChildItem -LiteralPath desktop/release -Filter '*-portable.exe' -File)
+          7z t $artifact[0].FullName
 
       - name: Generate checksums
         shell: pwsh

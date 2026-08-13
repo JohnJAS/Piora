@@ -71,6 +71,7 @@
     "pack:win": "npm run build:app && npm run pack --workspace @piora/desktop",
     "dist:win": "npm run build:app && npm run dist --workspace @piora/desktop",
     "verify:package": "node scripts/verify-packaged-web.mjs",
+    "verify:portable": "node scripts/verify-portable-artifact.mjs",
     "verify:release": "node scripts/verify-release-metadata.mjs",
     "verify:hygiene": "node scripts/verify-release-hygiene.mjs",
     "smoke:portable": "node scripts/smoke-test-portable.mjs",

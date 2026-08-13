@@ -105,3 +105,8 @@ Piora 不把输入正文、截图字节或完整控件树写入 Harmony 审计�
 GitHub 的 `harmony-v*` 预览工作流会在 Windows runner 上执行 lint、TypeScript、单元测试、standalone 打包验证和 packaged-runtime smoke，并发布带 SHA-256 的 portable prerelease。
 
 CI 没有连接实体 HarmonyOS 手机，因此它不能证明某一具体机型、系统版本和第三方 App 的行为。发布包首次使用时仍必须完成上面的手动检查。真正的硬件验收至少应覆盖目标机型上的 UI 树、截图、点击、中文输入、旋转、拔插、重启和连续操作。
+
+GitHub 托管 runner 会对解包后的 Electron 应用执行完整端到端启动烟测，
+并对最终 portable wrapper 执行 PE 结构和 7-Zip 内嵌归档完整性检查。
+最终单文件 EXE 的完整首次自解压启动在发布机本地执行；托管 runner 不以
+NSIS 首次提取耗时作为应用可运行性的判断，因为该路径会受共享主机防病毒扫描影响。
