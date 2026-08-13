@@ -37,10 +37,13 @@ async function findRepositoryRoot(cwd: string): Promise<string | null> {
 }
 
 function resolveExistingPath(candidate: string): string {
+  const resolvedCandidate = path.resolve(candidate);
   try {
-    return fs.realpathSync.native(candidate);
+    return fs.realpathSync.native(resolvedCandidate);
   } catch {
-    return path.resolve(candidate);
+    const parent = path.dirname(resolvedCandidate);
+    if (parent === resolvedCandidate) return resolvedCandidate;
+    return path.join(resolveExistingPath(parent), path.basename(resolvedCandidate));
   }
 }
 
@@ -294,9 +297,14 @@ export async function getGitFileDiff(
   contextLines: number | "all" = 3,
 ): Promise<GitFileDiffResponse> {
   const repositoryRoot = await findRepositoryRoot(cwd);
-  if (!repositoryRoot || !isWithinPath(repositoryRoot, filePath)) return { supported: false };
+  if (!repositoryRoot) return { supported: false };
 
-  const resolvedFilePath = path.resolve(filePath);
+  // Git for Windows reports the canonical long repository path even when the
+  // caller arrived through an 8.3 short path or a directory junction. Resolve
+  // the requested path (including the nearest existing parent for deletions)
+  // before applying the repository containment boundary.
+  const resolvedFilePath = resolveExistingPath(filePath);
+  if (!isWithinPath(repositoryRoot, resolvedFilePath)) return { supported: false };
   const relativePath = toGitPath(path.relative(repositoryRoot, resolvedFilePath));
   const entries = await readVisibleStatusEntries(repositoryRoot);
   const entry = entries.find((candidate) => candidate.path === relativePath);
