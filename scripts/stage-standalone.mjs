@@ -44,6 +44,9 @@ const assets = [
   },
   ...[
     ["Piora browser extension", "extensions/piora-browser.ts"],
+    ["Piora Harmony device extension", "extensions/piora-harmony.ts"],
+    ["Piora Harmony runtime", "lib/harmony"],
+    ["Piora prompt-run identity registry", "lib/prompt-run-registry.ts"],
   ].map(([name, relativePath]) => ({
     name,
     source: join(projectRoot, relativePath),

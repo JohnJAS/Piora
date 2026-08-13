@@ -307,6 +307,7 @@ export const enLocale: LocalePlugin = {
     "workspace.files": "Files",
     "workspace.commands": "Terminal",
     "workspace.browser": "Browser",
+    "workspace.harmony": "Harmony device",
     "workspace.addTool": "Open tool",
     "workspace.closeTool": "Close current tool",
     "workspace.maximizePanel": "Maximize right workspace",

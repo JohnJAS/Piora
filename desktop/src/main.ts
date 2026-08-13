@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import {
   app,
@@ -23,9 +23,11 @@ import {
   readCompanionWindowPosition,
   readMainWindowState,
   readPreferredServerPort,
+  runtimeProfileDataDirectory,
   writeCompanionWindowPosition,
   writeMainWindowState,
   writePreferredServerPort,
+  type RuntimeProfile,
 } from "./desktop-state.js";
 import { FileLogger, type Logger } from "./logger.js";
 import { StandaloneServer, type ServerExit } from "./server-supervisor.js";
@@ -41,6 +43,7 @@ const COMPANION_VISIBILITY_CHANNEL = "pi:companion-window-visible";
 const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
 const COMPANION_LAYOUT_CHANNEL = "pi:companion-window-expanded";
 const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
+const RUNTIME_PROFILE_SWITCH_CHANNEL = "pi:runtime-profile-switch";
 const DESKTOP_TITLE_BAR_HEIGHT = 40;
 const COMPANION_COMPACT_WIDTH = 156;
 const COMPANION_COMPACT_HEIGHT = 184;
@@ -84,6 +87,10 @@ let trayPollTimer: NodeJS.Timeout | undefined;
 let applicationToken: string | undefined;
 let runningTaskCount = 0;
 let quitRequested = false;
+let currentRuntimeProfile: RuntimeProfile = "normal";
+let serverEntryPath: string | undefined;
+let serverHostEntryPath: string | undefined;
+let runtimeProfileSwitchPromise: Promise<{ accepted: boolean; profile: RuntimeProfile; error?: string }> | undefined;
 
 type ApplicationMenuId = "file" | "edit" | "view" | "window" | "help";
 
@@ -751,6 +758,146 @@ function registerGlobalShortcutHandler(): void {
   });
 }
 
+function createStandaloneForProfile(profile: RuntimeProfile): {
+  instance: StandaloneServer;
+  dataDirectory: string;
+} {
+  if (!logger || !serverEntryPath || !serverHostEntryPath || !applicationToken) {
+    throw new Error("Desktop runtime is not ready for a profile switch");
+  }
+  const dataDirectory = runtimeProfileDataDirectory(app.getPath("userData"), profile);
+  mkdirSync(dataDirectory, { recursive: true });
+  const preferredPort = readPreferredServerPort(app.getPath("userData"), logger);
+  const instance = new StandaloneServer({
+    serverEntry: serverEntryPath,
+    serverHostEntry: serverHostEntryPath,
+    homeDirectory: app.getPath("home"),
+    token: applicationToken,
+    logger,
+    runtimeProfile: profile,
+    desktopDataDirectory: dataDirectory,
+    ...(preferredPort === undefined ? {} : { preferredPort }),
+    onUnexpectedExit: handleUnexpectedServerExit,
+  });
+  return { instance, dataDirectory };
+}
+
+function activateStandaloneProfile(profile: RuntimeProfile, dataDirectory: string, nextUrl: URL): URL {
+  if (!logger || !applicationToken) throw new Error("Desktop runtime is not ready to activate a profile");
+  currentRuntimeProfile = profile;
+  process.env.PIORA_RUNTIME_PROFILE = profile;
+  process.env.PIORA_DESKTOP_DATA_DIR = dataDirectory;
+  writePreferredServerPort(app.getPath("userData"), Number(nextUrl.port), logger);
+  const runtimeSession = electronSession.fromPartition(DESKTOP_PARTITION, { cache: true });
+  configureSession(runtimeSession, nextUrl.origin, applicationToken);
+  return nextUrl;
+}
+
+async function startStandaloneForProfile(profile: RuntimeProfile): Promise<URL> {
+  const prepared = createStandaloneForProfile(profile);
+  server = prepared.instance;
+  const nextUrl = await prepared.instance.start();
+  serverUrl = nextUrl;
+  return activateStandaloneProfile(profile, prepared.dataDirectory, nextUrl);
+}
+
+async function requestHarmonyEmergencyStop(reason: string): Promise<void> {
+  if (currentRuntimeProfile !== "device-control" || !serverUrl || !applicationToken) return;
+  try {
+    const response = await fetch(new URL("/api/harmony/action", serverUrl), {
+      method: "POST",
+      headers: {
+        [DESKTOP_TOKEN_HEADER]: applicationToken,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action: "emergency_stop", reason }),
+      signal: AbortSignal.timeout(2_000),
+    });
+    if (!response.ok) logger?.warn("Harmony emergency stop was rejected during runtime shutdown", { status: response.status });
+  } catch (error) {
+    logger?.warn("Unable to request Harmony emergency stop during runtime shutdown", error);
+  }
+}
+
+async function restartRuntimeProfile(target: RuntimeProfile): Promise<{ accepted: boolean; profile: RuntimeProfile; error?: string }> {
+  if (!logger || !mainWindow || mainWindow.isDestroyed()) {
+    return { accepted: false, profile: currentRuntimeProfile, error: "Main window is unavailable" };
+  }
+  const previousProfile = currentRuntimeProfile;
+  const previousServer = server;
+  closeCompanionWindow();
+  await requestHarmonyEmergencyStop("runtime_profile_switch");
+  server = undefined;
+  serverUrl = undefined;
+  await previousServer?.stop();
+
+  try {
+    const nextUrl = await startStandaloneForProfile(target);
+    await loadApplicationWindow(mainWindow, nextUrl, logger);
+    logger.info("Runtime profile switched", { from: previousProfile, to: target });
+    return { accepted: true, profile: target };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error("Runtime profile switch failed", { from: previousProfile, to: target, error: message });
+    try {
+      const rollbackUrl = await startStandaloneForProfile(previousProfile);
+      await loadApplicationWindow(mainWindow, rollbackUrl, logger);
+    } catch (rollbackError) {
+      logger.error("Runtime profile rollback failed", rollbackError);
+    }
+    return { accepted: false, profile: currentRuntimeProfile, error: message };
+  }
+}
+
+function registerRuntimeProfileSwitchHandler(): void {
+  ipcMain.removeHandler(RUNTIME_PROFILE_SWITCH_CHANNEL);
+  ipcMain.handle(
+    RUNTIME_PROFILE_SWITCH_CHANNEL,
+    async (event, requestedProfile: unknown): Promise<{ accepted: boolean; profile: RuntimeProfile; error?: string }> => {
+      if (!isTrustedMainWindowSender(event)) {
+        return { accepted: false, profile: currentRuntimeProfile, error: "Untrusted renderer" };
+      }
+      if (requestedProfile === undefined) {
+        return { accepted: true, profile: currentRuntimeProfile };
+      }
+      if (requestedProfile !== "normal" && requestedProfile !== "device-control") {
+        return { accepted: false, profile: currentRuntimeProfile, error: "Invalid runtime profile" };
+      }
+      if (requestedProfile === currentRuntimeProfile) {
+        return { accepted: true, profile: currentRuntimeProfile };
+      }
+      if (runtimeProfileSwitchPromise) return runtimeProfileSwitchPromise;
+      const ownerWindow = mainWindow;
+      if (!ownerWindow || ownerWindow.isDestroyed()) {
+        return { accepted: false, profile: currentRuntimeProfile, error: "Main window is unavailable" };
+      }
+
+      const toDeviceControl = requestedProfile === "device-control";
+      const isChinese = app.getLocale().toLowerCase().startsWith("zh");
+      const result = await dialog.showMessageBox(ownerWindow, {
+        type: "warning",
+        title: "Piora",
+        message: isChinese
+          ? (toDeviceControl ? "切换到鸿蒙设备控制模式？" : "退出鸿蒙设备控制模式？")
+          : (toDeviceControl ? "Switch to Harmony device-control mode?" : "Leave Harmony device-control mode?"),
+        detail: isChinese
+          ? "切换会停止当前 AI 任务并重启本地服务。设备控制模式可让 AI 操作已授权的手机；请仅连接测试设备。"
+          : "Switching stops current AI tasks and restarts the local service. Device-control mode lets AI operate authorized phones; connect test devices only.",
+        buttons: isChinese ? ["切换并重启", "取消"] : ["Switch and restart", "Cancel"],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      });
+      if (result.response !== 0) return { accepted: false, profile: currentRuntimeProfile };
+
+      runtimeProfileSwitchPromise = restartRuntimeProfile(requestedProfile).finally(() => {
+        runtimeProfileSwitchPromise = undefined;
+      });
+      return runtimeProfileSwitchPromise;
+    },
+  );
+}
+
 function registerCompanionWindowHandlers(): void {
   ipcMain.removeHandler(COMPANION_VISIBILITY_CHANNEL);
   ipcMain.removeHandler(COMPANION_LAYOUT_CHANNEL);
@@ -1022,34 +1169,26 @@ async function startApplication(): Promise<void> {
     logger?.info("Startup shell is visible", { elapsedMs: readyAt - startupStartedAt });
   });
 
-  const serverEntry = resolveStandaloneServerEntry();
-  const serverHostEntry = join(__dirname, "server-host.js");
-  if (!existsSync(serverHostEntry)) {
-    throw new Error(`Desktop server host was not found: ${serverHostEntry}`);
+  serverEntryPath = resolveStandaloneServerEntry();
+  serverHostEntryPath = join(__dirname, "server-host.js");
+  if (!existsSync(serverHostEntryPath)) {
+    throw new Error(`Desktop server host was not found: ${serverHostEntryPath}`);
   }
 
   const token = randomBytes(32).toString("base64url");
   applicationToken = token;
-  const preferredPort = readPreferredServerPort(app.getPath("userData"), logger);
-  server = new StandaloneServer({
-    serverEntry,
-    serverHostEntry,
-    homeDirectory: app.getPath("home"),
-    token,
-    logger,
-    ...(preferredPort === undefined ? {} : { preferredPort }),
-    onUnexpectedExit: handleUnexpectedServerExit,
-  });
-
+  // Runtime mode is intentionally reset on every application launch. Device
+  // control can only be entered after an explicit native confirmation.
+  const initialRuntime = createStandaloneForProfile("normal");
+  server = initialRuntime.instance;
   serverUrl = await server.start();
-  writePreferredServerPort(app.getPath("userData"), Number(serverUrl.port), logger);
+  activateStandaloneProfile("normal", initialRuntime.dataDirectory, serverUrl);
   logger.info("Bundled service is ready", { elapsedMs: Date.now() - startupStartedAt });
 
-  const runtimeSession = electronSession.fromPartition(DESKTOP_PARTITION, { cache: true });
-  configureSession(runtimeSession, serverUrl.origin, token);
   registerCompletionNotificationHandler();
   registerCompanionWindowHandlers();
   registerGlobalShortcutHandler();
+  registerRuntimeProfileSwitchHandler();
 
   if (PORTABLE_SMOKE_TEST) {
     const smokeMarker = process.env.PIORA_SMOKE_MARKER?.trim();
@@ -1090,6 +1229,7 @@ async function startApplication(): Promise<void> {
 
 async function stopApplication(): Promise<void> {
   logger?.info("Stopping Piora");
+  await requestHarmonyEmergencyStop("desktop_shutdown");
   await server?.stop();
   server = undefined;
   serverUrl = undefined;

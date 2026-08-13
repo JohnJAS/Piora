@@ -85,7 +85,7 @@ const SYSTEM_PROMPT_MENU_WIDTH = 480;
 export function AppShell() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [initialNavigation] = useState(() => getInitialNavigation(searchParams));
+  const [initialNavigation] = useState(() => getInitialNavigation(searchParams ?? new URLSearchParams()));
   const { theme, themes, setTheme } = useTheme();
   const { locale, setLocale, t: translate, supportedLocales } = useI18n();
   const {
@@ -215,7 +215,7 @@ export function AppShell() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem("piora-right-panel-tab");
-    setRightPanelTab(stored === "review" || stored === "files" || stored === "commands" || stored === "browser" ? stored : "home");
+    setRightPanelTab(stored === "review" || stored === "files" || stored === "commands" || stored === "browser" || stored === "harmony" ? stored : "home");
     setRightPanelTabRestored(true);
   }, []);
 

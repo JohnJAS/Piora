@@ -12,6 +12,11 @@ declare global {
       setCompanionWindowExpanded?: (expanded: boolean) => Promise<boolean>;
       companionAction?: (action: "focus-main" | "open-settings" | "hide") => Promise<boolean>;
       setGlobalShortcut?: (enabled: boolean) => Promise<boolean>;
+      requestRuntimeProfileSwitch?: (profile?: "normal" | "device-control") => Promise<{
+        accepted: boolean;
+        profile: "normal" | "device-control";
+        error?: string;
+      }>;
       onMenuAction?: (listener: (action: string) => void) => () => void;
     };
   }

@@ -29,10 +29,12 @@ test("moves files and review into a Codex-style launcher and tool-tab workspace"
   assert.match(rightPanel, /<FileViewer/);
   assert.match(rightPanel, /<CommandPanel/);
   assert.match(rightPanel, /<BrowserPanel/);
+  assert.match(rightPanel, /<HarmonyPanel/);
   assert.doesNotMatch(rightPanel, /<SearchPanel/);
   assert.match(rightPanel, /id: "review"/);
   assert.match(rightPanel, /id: "commands"/);
   assert.match(rightPanel, /id: "browser"/);
+  assert.match(rightPanel, /id: "harmony"/);
   assert.match(rightPanel, /id: "files"/);
   assert.doesNotMatch(rightPanel, /workspace-search/);
   assert.match(shell, /piora-right-panel-tab/);

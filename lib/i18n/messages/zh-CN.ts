@@ -307,6 +307,7 @@ export const zhCNLocale: LocalePlugin = {
     "workspace.files": "文件",
     "workspace.commands": "终端",
     "workspace.browser": "浏览器",
+    "workspace.harmony": "鸿蒙设备",
     "workspace.addTool": "打开工具",
     "workspace.closeTool": "关闭当前工具",
     "workspace.maximizePanel": "最大化右侧工作区",

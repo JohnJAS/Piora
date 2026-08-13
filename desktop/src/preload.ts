@@ -33,6 +33,17 @@ const runtime = Object.freeze({
   setGlobalShortcut(enabled: boolean): Promise<boolean> {
     return ipcRenderer.invoke("pi:set-global-shortcut", enabled) as Promise<boolean>;
   },
+  requestRuntimeProfileSwitch(profile?: "normal" | "device-control"): Promise<{
+    accepted: boolean;
+    profile: "normal" | "device-control";
+    error?: string;
+  }> {
+    return ipcRenderer.invoke("pi:runtime-profile-switch", profile) as Promise<{
+      accepted: boolean;
+      profile: "normal" | "device-control";
+      error?: string;
+    }>;
+  },
   onMenuAction(listener: (action: string) => void) {
     const handler = (_event: Electron.IpcRendererEvent, action: unknown) => {
       if (typeof action === "string") listener(action);

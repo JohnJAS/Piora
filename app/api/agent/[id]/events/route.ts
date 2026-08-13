@@ -1,6 +1,8 @@
 import { resolveSessionPath } from "@/lib/session-reader";
 import { getRpcSession, startRpcSession, type AgentSessionWrapper } from "@/lib/rpc-manager";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { getAgentRuntimeProfile } from "@/lib/agent-runtime-profile";
+import { resolveSessionAgentRuntimeProfile } from "@/lib/agent-profile-store";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +12,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const runtimeProfile = getAgentRuntimeProfile();
 
   // Resolve the session without blocking the HTTP response: creating an
   // AgentSession for a cold session takes seconds (model runtime + resource
@@ -19,14 +22,19 @@ export async function GET(
   const session = getRpcSession(id);
   let sessionReady: Promise<AgentSessionWrapper | null>;
   if (session?.isAlive()) {
+    await resolveSessionAgentRuntimeProfile(id, runtimeProfile);
+    if (session.runtimeProfile !== runtimeProfile) {
+      return new Response("Session runtime profile mismatch", { status: 409 });
+    }
     sessionReady = Promise.resolve(session);
   } else {
     const filePath = await resolveSessionPath(id);
     if (!filePath) {
       return new Response("Session not found", { status: 404 });
     }
+    await resolveSessionAgentRuntimeProfile(id, runtimeProfile);
     const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? process.cwd();
-    sessionReady = startRpcSession(id, filePath, cwd)
+    sessionReady = startRpcSession(id, filePath, cwd, { runtimeProfile })
       .then(({ session: started }) => started)
       .catch((error) => {
         console.error(`[pi-web] failed to start agent for events: ${error}`);
@@ -51,7 +59,7 @@ export async function GET(
       }
 
       // Send initial connected event once the session is actually ready
-      encode({ type: "connected", sessionId: id });
+      encode({ type: "connected", sessionId: id, runtimeProfile });
 
       const unsubscribe = resolved.onEvent((event) => {
         encode(event);

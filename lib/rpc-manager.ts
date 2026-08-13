@@ -15,6 +15,26 @@ import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-ty
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS } from "./custom-ui-terminal";
 import type { Runtime, TaskRuntimeActivity, TaskRuntimeActivityKind, TaskRuntimeSnapshot } from "./task-status";
+import {
+  assertCurrentAgentRuntimeProfile,
+  getAgentRuntimeProfile,
+  type AgentRuntimeProfile,
+} from "./agent-runtime-profile";
+import {
+  bindSessionAgentRuntimeProfile,
+  quarantineUnboundSessionFile,
+  readAgentProfileStore,
+  resolveSessionAgentRuntimeProfile,
+} from "./agent-profile-store";
+import {
+  beginPromptRun,
+  finishPromptRun,
+  type PromptRunIdentity,
+} from "./prompt-run-registry";
+import {
+  DEVICE_CONTROL_AGENT_TOOLS,
+  resolveAgentToolsForRuntimeProfile,
+} from "./tool-presets";
 
 // ============================================================================
 // Types
@@ -69,6 +89,7 @@ export interface RpcSessionStartOptions {
   toolNames?: string[];
   initialModel?: { provider: string; modelId: string };
   thinkingLevel?: ThinkingLevel;
+  runtimeProfile?: AgentRuntimeProfile;
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
@@ -154,6 +175,19 @@ function withExtensionTools(session: AgentSessionLike, toolNames: string[]): str
   return [...new Set([...toolNames, ...extensionToolNames])];
 }
 
+const DEVICE_CONTROL_DENIED_RPC_COMMANDS = new Set(["bash", "abort_bash"]);
+
+function activeToolsForProfile(
+  session: AgentSessionLike,
+  runtimeProfile: AgentRuntimeProfile,
+  requestedToolNames: readonly string[],
+): string[] {
+  if (runtimeProfile === "device-control") {
+    return requestedToolNames.length === 0 ? [] : [...DEVICE_CONTROL_AGENT_TOOLS];
+  }
+  return withExtensionTools(session, [...requestedToolNames]);
+}
+
 // ============================================================================
 // AgentSessionWrapper
 // Wraps AgentSession with the same interface the rest of the app expects
@@ -181,9 +215,13 @@ export class AgentSessionWrapper {
   private unsubscribe: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
+  private activePromptRun: PromptRunIdentity | undefined;
   private _alive = true;
 
-  constructor(public readonly inner: AgentSessionLike) {}
+  constructor(
+    public readonly inner: AgentSessionLike,
+    public readonly runtimeProfile: AgentRuntimeProfile = "normal",
+  ) {}
 
   get sessionId(): string {
     return this.inner.sessionId;
@@ -451,6 +489,9 @@ export class AgentSessionWrapper {
   async send(command: Record<string, unknown>): Promise<unknown> {
     this.resetIdleTimer();
     const type = command.type as string;
+    if (this.runtimeProfile === "device-control" && DEVICE_CONTROL_DENIED_RPC_COMMANDS.has(type)) {
+      throw new Error(`RPC command ${type} is disabled by the device-control runtime profile.`);
+    }
     if (this.shouldWaitForExtensions(type)) await this.waitForExtensionsBound();
 
     if (type === "prompt" || type === "steer" || type === "follow_up") {
@@ -471,18 +512,32 @@ export class AgentSessionWrapper {
         this.beginRun("prompt", promptText || "Processing request");
         this.lastPromptFailed = false;
         this.lastPromptErrorSummary = undefined;
+        const ownsPromptRun = !streamingBehavior || !this.activePromptRun;
+        const promptRun = ownsPromptRun
+          ? beginPromptRun(this.inner.sessionId)
+          : this.activePromptRun!;
+        if (ownsPromptRun) this.activePromptRun = promptRun;
         this.promptRunning = true;
         notifyRunningChange();
-        this.inner.prompt(command.message as string, {
-          ...(promptImages?.length ? { images: promptImages } : {}),
-          ...(streamingBehavior ? { streamingBehavior } : {}),
-          source: "rpc",
-        }).then(() => {
+        Promise.resolve().then(() => this.inner.prompt(command.message as string, {
+            ...(promptImages?.length ? { images: promptImages } : {}),
+            ...(streamingBehavior ? { streamingBehavior } : {}),
+            source: "rpc",
+          }))
+          .then(async () => {
           this.promptRunning = false;
+          if (ownsPromptRun) {
+            await finishPromptRun(promptRun, "idle");
+            if (this.activePromptRun?.runId === promptRun.runId) this.activePromptRun = undefined;
+          }
           if (!streamingBehavior) this.emit({ type: "prompt_done" });
           notifyRunningChange();
-        }).catch((error) => {
+        }).catch(async (error) => {
           this.promptRunning = false;
+          if (ownsPromptRun) {
+            await finishPromptRun(promptRun, "error");
+            if (this.activePromptRun?.runId === promptRun.runId) this.activePromptRun = undefined;
+          }
           this.lastPromptFailed = true;
           this.lastPromptErrorSummary = error instanceof Error ? error.message : String(error);
           invalidateSessionListCache();
@@ -497,11 +552,14 @@ export class AgentSessionWrapper {
       }
 
       case "abort": {
+        const promptRun = this.activePromptRun;
         this.stopping = true;
         notifyRunningChange();
         try {
           await this.withFinalRunningNotification(() => this.inner.abort());
         } finally {
+          await finishPromptRun(promptRun, "abort");
+          if (this.activePromptRun?.runId === promptRun?.runId) this.activePromptRun = undefined;
           this.stopping = false;
           notifyRunningChange();
         }
@@ -513,6 +571,7 @@ export class AgentSessionWrapper {
         const contextUsage = this.inner.getContextUsage();
         return {
           sessionId: this.inner.sessionId,
+          runtimeProfile: this.runtimeProfile,
           sessionFile: this.inner.sessionFile ?? "",
           isStreaming: this.inner.isStreaming,
           isPromptRunning: this.promptRunning,
@@ -586,10 +645,18 @@ export class AgentSessionWrapper {
         }
 
         const newSessionId = SessionManager.open(newSessionFile, sessionDir).getSessionId();
+        try {
+          await bindSessionAgentRuntimeProfile(newSessionId, this.runtimeProfile);
+        } catch (profileError) {
+          quarantineUnboundSessionFile(newSessionFile);
+          throw profileError;
+        }
         cacheSessionPath(newSessionId, newSessionFile);
         invalidateSessionListCache();
+        await finishPromptRun(this.activePromptRun, "fork");
+        this.activePromptRun = undefined;
         this.destroy();
-        return { cancelled: false, newSessionId };
+        return { cancelled: false, newSessionId, runtimeProfile: this.runtimeProfile };
       }
 
       case "navigate_tree": {
@@ -706,9 +773,12 @@ export class AgentSessionWrapper {
       }
 
       case "set_tools": {
-        const toolNames = command.toolNames as string[];
+        const requested = Array.isArray(command.toolNames)
+          ? command.toolNames.filter((name): name is string => typeof name === "string")
+          : [];
+        const toolNames = resolveAgentToolsForRuntimeProfile(this.runtimeProfile, requested) ?? [];
         this.setForceEmptySystemPrompt(toolNames.length === 0);
-        this.inner.setActiveToolsByName(withExtensionTools(this.inner, toolNames));
+        this.inner.setActiveToolsByName(activeToolsForProfile(this.inner, this.runtimeProfile, toolNames));
         this.applyForcedEmptySystemPrompt();
         return null;
       }
@@ -796,6 +866,9 @@ export class AgentSessionWrapper {
     this._alive = false;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     if (this.inner.isBashRunning) this.inner.abortBash();
+    const promptRun = this.activePromptRun;
+    this.activePromptRun = undefined;
+    void finishPromptRun(promptRun, "destroy");
     this.unsubscribe?.();
     for (const pending of this.pendingUiResponses.values()) pending.cancel();
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
@@ -1393,14 +1466,31 @@ export async function startRpcSession(
   cwd: string,
   options: RpcSessionStartOptions = {},
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
-  const { toolNames, initialModel, thinkingLevel } = options;
+  const { initialModel, thinkingLevel } = options;
+  const processRuntimeProfile = getAgentRuntimeProfile();
+  const runtimeProfile = options.runtimeProfile ?? processRuntimeProfile;
+  assertCurrentAgentRuntimeProfile(runtimeProfile);
+  if (sessionFile) {
+    await resolveSessionAgentRuntimeProfile(sessionId, runtimeProfile);
+  } else {
+    // Validate the authoritative store before the SDK creates a new session
+    // file. Device-control never falls back to an unbound session.
+    readAgentProfileStore();
+  }
+  const toolNames = resolveAgentToolsForRuntimeProfile(runtimeProfile, options.toolNames);
   const registry = getRegistry();
   const locks = getLocks();
 
   const existing = registry.get(sessionId);
-  if (existing?.isAlive()) return { session: existing, realSessionId: sessionId };
+  if (existing?.isAlive()) {
+    if (existing.runtimeProfile !== runtimeProfile) {
+      throw new Error(`Live session ${sessionId} has a mismatched or unknown runtime profile.`);
+    }
+    return { session: existing, realSessionId: sessionId };
+  }
 
-  const inflight = locks.get(sessionId);
+  const lockKey = `${runtimeProfile}:${sessionId}`;
+  const inflight = locks.get(lockKey);
   if (inflight) return inflight;
 
   const finishStartingSession = trackStartingSession(cwd);
@@ -1416,7 +1506,12 @@ export async function startRpcSession(
     // Determine which tools to pass based on requested toolNames.
     // Since v0.68.0, session creation expects string[] tool names instead of Tool[] instances.
     let toolsOption: string[] | undefined;
-    if (toolNames !== undefined) {
+    if (runtimeProfile === "device-control") {
+      // Passing the exact allow-list prevents built-in coding tools from even
+      // entering the AgentSession registry. This is stronger than merely
+      // marking them inactive after extensions have loaded.
+      toolsOption = toolNames ?? [...DEVICE_CONTROL_AGENT_TOOLS];
+    } else if (toolNames !== undefined) {
       // toolNames === [] -> "all off" (an empty allow-list disables every tool).
       // Otherwise DO NOT pass a builtin-only allow-list: passing CODING_TOOL_NAMES
       // set allowedToolNames to coding builtins only, which filtered every
@@ -1433,18 +1528,55 @@ export async function startRpcSession(
     // turns a ~5-8s session start into milliseconds and stops session creation
     // from blocking the event loop (which stalled session loading and left the
     // composer hidden while switching sessions).
-    const cwdKey = normalizeRpcCwd(cwd);
+    const cwdKey = `${runtimeProfile}:${normalizeRpcCwd(cwd)}`;
     let services = getServicesCache().get(cwdKey);
     if (!services) {
       const bundledBrowserExtension = resolve(process.cwd(), "extensions", "piora-browser.ts");
+      const bundledHarmonyExtension = resolve(process.cwd(), "extensions", "piora-harmony.ts");
+      if (runtimeProfile === "device-control" && !existsSync(bundledHarmonyExtension)) {
+        throw new Error(`The required first-party Harmony extension is missing: ${bundledHarmonyExtension}`);
+      }
       services = await createAgentSessionServices({
         cwd,
         agentDir,
-        ...(existsSync(bundledBrowserExtension) ? { resourceLoaderOptions: { additionalExtensionPaths: [bundledBrowserExtension] } } : {}),
+        ...(runtimeProfile === "device-control"
+          ? {
+              resourceLoaderOptions: {
+                additionalExtensionPaths: [bundledHarmonyExtension],
+                noExtensions: true,
+                noSkills: true,
+                noPromptTemplates: true,
+                noThemes: true,
+                noContextFiles: true,
+                systemPromptOverride: () => undefined,
+                appendSystemPromptOverride: () => [],
+                agentsFilesOverride: () => ({ agentsFiles: [] }),
+              },
+            }
+          : existsSync(bundledBrowserExtension)
+            ? { resourceLoaderOptions: { additionalExtensionPaths: [bundledBrowserExtension] } }
+            : {}),
       });
+      if (runtimeProfile === "device-control") {
+        const extensionResult = services.resourceLoader.getExtensions();
+        const loadedPaths = extensionResult.extensions.map((extension) => realpathSync(extension.resolvedPath));
+        const expectedPath = realpathSync(bundledHarmonyExtension);
+        if (extensionResult.errors.length > 0 || loadedPaths.length !== 1 || loadedPaths[0] !== expectedPath) {
+          throw new Error("The device-control resource loader did not resolve exactly the first-party Harmony extension.");
+        }
+        if (
+          services.resourceLoader.getSkills().skills.length > 0
+          || services.resourceLoader.getPrompts().prompts.length > 0
+          || services.resourceLoader.getAgentsFiles().agentsFiles.length > 0
+          || services.resourceLoader.getSystemPrompt() !== undefined
+          || services.resourceLoader.getAppendSystemPrompt().length > 0
+        ) {
+          throw new Error("The device-control resource loader admitted user skills, prompts, system prompts, or context files.");
+        }
+      }
       getServicesCache().set(cwdKey, services);
     }
-    ensureWindowsBashShellPath(services.settingsManager);
+    if (runtimeProfile === "normal") ensureWindowsBashShellPath(services.settingsManager);
     const scope = await resolveVisibleModels(
       services.modelRuntime,
       services.settingsManager.getEnabledModels(),
@@ -1477,10 +1609,19 @@ export async function startRpcSession(
     // requested builtin coding tools PLUS all extension/package tools, so installed
     // extensions stay usable in Pi Web just like in the `pi` CLI.
     if (toolNames && toolNames.length > 0) {
-      inner.setActiveToolsByName(withExtensionTools(inner, toolNames));
+      inner.setActiveToolsByName(activeToolsForProfile(inner, runtimeProfile, toolNames));
     }
 
-    const wrapper = new AgentSessionWrapper(inner);
+    const realSessionId = inner.sessionId as string;
+    const realSessionFile = inner.sessionFile as string | undefined;
+    try {
+      await bindSessionAgentRuntimeProfile(realSessionId, runtimeProfile);
+    } catch (error) {
+      if (!sessionFile && realSessionFile) quarantineUnboundSessionFile(realSessionFile);
+      throw error;
+    }
+
+    const wrapper = new AgentSessionWrapper(inner, runtimeProfile);
     // When all tools are disabled, clear the system prompt entirely.
     // pi's buildSystemPrompt always produces a non-empty prompt even with no tools;
     // keep this forced after extension resource discovery and reloads as well.
@@ -1489,8 +1630,6 @@ export async function startRpcSession(
     }
     wrapper.start();
 
-    const realSessionId = inner.sessionId as string;
-    const realSessionFile = inner.sessionFile as string | undefined;
     if (realSessionFile) cacheSessionPath(realSessionId, realSessionFile);
 
     wrapper.onDestroy(() => { registry.delete(realSessionId); });
@@ -1499,10 +1638,10 @@ export async function startRpcSession(
 
     return { session: wrapper, realSessionId };
   })().finally(() => {
-    locks.delete(sessionId);
+    locks.delete(lockKey);
     finishStartingSession();
   });
 
-  locks.set(sessionId, starting);
+  locks.set(lockKey, starting);
   return starting;
 }

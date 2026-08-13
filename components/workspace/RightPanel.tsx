@@ -9,11 +9,12 @@ import { TabBar, type Tab } from "../TabBar";
 import { ReviewPanel } from "./ReviewPanel";
 import { CommandPanel } from "./CommandPanel";
 import { BrowserPanel } from "./BrowserPanel";
+import { HarmonyPanel } from "./HarmonyPanel";
 import type { TaskControls } from "../ChatWindow";
 import { AliIcon, type AliIconName } from "../AliIcon";
 import styles from "./WorkspacePanel.module.css";
 
-export type RightPanelTab = "home" | "review" | "files" | "commands" | "browser";
+export type RightPanelTab = "home" | "review" | "files" | "commands" | "browser" | "harmony";
 export interface RightPanelHandle { focusActiveTab: () => void; focusFileSearch: () => void; }
 
 interface Props {
@@ -47,6 +48,7 @@ const TOOLS: Array<{ id: Exclude<RightPanelTab, "home">; icon: AliIconName; shor
   { id: "review", icon: "diff", shortcut: "Ctrl+Shift+G" },
   { id: "commands", icon: "code" },
   { id: "browser", icon: "earth", shortcut: "Ctrl+T" },
+  { id: "harmony", icon: "mobile" },
   { id: "files", icon: "folder-open", shortcut: "Ctrl+P" },
 ];
 
@@ -251,6 +253,9 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     </section>
     <section id="workspace-browser" role="tabpanel" aria-labelledby="workspace-browser-tab" hidden={activeTab !== "browser"} className={styles.panel}>
       <BrowserPanel active={active && activeTab === "browser"} />
+    </section>
+    <section id="workspace-harmony" role="tabpanel" aria-labelledby="workspace-harmony-tab" hidden={activeTab !== "harmony"} className={styles.panel}>
+      <HarmonyPanel active={active && activeTab === "harmony"} />
     </section>
   </div>;
 });

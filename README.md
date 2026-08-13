@@ -22,6 +22,7 @@ Piora 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面
 - 左侧继续保留会话/项目导航与下方文件树。
 - 主聊天消息、Markdown、工具调用和 Process 展示格式保持不变。
 - 右侧文件工作区可以直接编辑文本、代码和 Markdown，不再只是预览。
+- 右侧 Harmony 工具可显示已授权 HarmonyOS NEXT 测试手机的本地投屏，并支持受控 AI 自动化。
 - 保存采用内容版本校验；外部修改不会静默覆盖本地草稿。
 - 内置 20 张原创背景，并支持选择本机图片、遮罩、模糊和一键恢复。
 - 可选桌宠面板展示 Pi 运行状态、待办事项和可配置快捷短语，并可显式导入本机 Codex 宠物素材。
@@ -44,6 +45,19 @@ Piora 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面
 文件写入只允许发生在已授权项目根目录中的普通 UTF-8 文本文件。后端使用 SHA-256
 内容版本、HTTP 409 冲突、大小限制、路径/符号链接校验、文件锁和原子替换；会话中引用的
 项目外文件不会因为可预览而获得写权限。
+
+### HarmonyOS NEXT 设备自动化（0.2.0 预览）
+
+- 通过用户安装的官方 HDC/UiTest 发现 USB 设备、读取 UI 树和 PNG 屏幕帧。
+- 右侧工作区提供约 1 FPS 的本地设备投屏、人工点击/滑动、按键、文本和应用启动。
+- AI 只在原生确认后的独立 `device-control` 运行模式工作；该模式只加载第一方
+  `harmony_device` 工具，不加载编码工具、项目扩展、skills 或 prompts。
+- 每台设备使用独占租约、全局串行队列、generation/ref 陈旧保护和紧急停止。
+- 安装包不内置 Huawei SDK，也不支持绕过锁屏、验证码、支付、系统授权或应用权限。
+
+使用准备和真机验收见
+[HarmonyOS 设备自动化指南](docs/HARMONYOS_DEVICE_AUTOMATION.md)，架构与安全边界见
+[技术设计](docs/HARMONYOS_NEXT_DEVICE_AUTOMATION_DESIGN.md)。
 
 ### 主题与背景
 

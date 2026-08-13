@@ -4,6 +4,7 @@ import { createServer } from "node:net";
 import { dirname } from "node:path";
 import type { Readable } from "node:stream";
 import type { Logger } from "./logger.js";
+import type { RuntimeProfile } from "./desktop-state.js";
 
 const LOOPBACK_HOST = "127.0.0.1";
 const MAX_START_ATTEMPTS = 5;
@@ -23,6 +24,8 @@ export interface StandaloneServerOptions {
   logger: Logger;
   preferredPort?: number;
   startupTimeoutMs?: number;
+  runtimeProfile?: RuntimeProfile;
+  desktopDataDirectory?: string;
   onUnexpectedExit?: (exit: ServerExit) => void;
 }
 
@@ -290,6 +293,10 @@ export class StandaloneServer {
           PI_WEB_ALLOWED_HOSTS: LOOPBACK_HOST,
           PI_WEB_NO_OPEN: "1",
           PIORA_HOME: this.options.homeDirectory,
+          PIORA_RUNTIME_PROFILE: this.options.runtimeProfile ?? "normal",
+          ...(this.options.desktopDataDirectory
+            ? { PIORA_DESKTOP_DATA_DIR: this.options.desktopDataDirectory }
+            : {}),
           // Desktop requests use the per-launch token below. Do not inherit an
           // unrelated shell-wide Basic Auth password that the renderer and
           // health probe cannot satisfy.

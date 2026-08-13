@@ -4,6 +4,26 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-13
+
+### Added
+
+- Added a desktop-only HarmonyOS NEXT device workspace with USB/HDC runtime
+  discovery, connection diagnostics, a visible local device projection,
+  UI snapshots, structured manual actions, and an emergency stop.
+- Added a restricted AI device-control runtime with explicit per-run consent,
+  device leases, serialized actions, stale-snapshot protection, and no raw HDC
+  shell surface.
+- Added a dedicated GitHub Harmony preview pipeline that verifies and publishes
+  an independently versioned Windows portable prerelease.
+
+### Security
+
+- Harmony device APIs fail closed outside the packaged desktop runtime and the
+  restricted device-control profile.
+- Screen data sharing, write actions, process timeouts, output bounds, and
+  device identifiers use explicit local policy and data-minimization rules.
+
 ## [0.1.5] - 2026-08-12
 
 ### Changed

@@ -8,3 +8,20 @@ export const BUILTIN_AGENT_TOOLS: readonly string[] = [
   "find",
   "ls",
 ];
+
+/** The sole Agent tool admitted by the cold-start device-control profile. */
+export const DEVICE_CONTROL_AGENT_TOOLS: readonly string[] = ["harmony_device"];
+
+/**
+ * Clamp a client-requested tool set to the process profile. Device-control
+ * intentionally treats any non-empty UI preset as "enable device control" so
+ * existing clients that send the coding preset cannot accidentally disable
+ * the only safe tool. An explicit empty preset still disables every tool.
+ */
+export function resolveAgentToolsForRuntimeProfile(
+  profile: "normal" | "device-control",
+  requested: readonly string[] | undefined,
+): string[] | undefined {
+  if (profile === "normal") return requested ? [...requested] : undefined;
+  return requested?.length === 0 ? [] : [...DEVICE_CONTROL_AGENT_TOOLS];
+}

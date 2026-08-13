@@ -1,0 +1,132 @@
+name: Harmony automation Windows preview
+
+on:
+  push:
+    tags:
+      - "harmony-v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: harmony-preview-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-preview:
+    name: Build and publish Harmony preview
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Verify preview tag and package metadata
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_NAME -notmatch '^harmony-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+            throw "Harmony preview tag must match harmony-vX.Y.Z: $env:GITHUB_REF_NAME"
+          }
+          $releaseTag = $env:GITHUB_REF_NAME.Substring('harmony-'.Length)
+          node scripts/verify-release-metadata.mjs $releaseTag
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify release-tree hygiene
+        run: npm run verify:hygiene
+
+      - name: Verify license inventory freshness
+        run: npm run licenses:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Verify bundled backgrounds
+        run: npm run verify:backgrounds
+
+      - name: Verify performance budgets
+        run: npm run perf:check
+
+      - name: Build portable Windows application
+        run: npm run dist:win
+
+      - name: Verify packaged standalone service
+        run: npm run verify:package
+
+      - name: Verify packaged license bundle
+        run: npm run licenses:package:check
+
+      - name: Smoke-test packaged Electron runtime
+        shell: pwsh
+        run: |
+          $releaseTag = $env:GITHUB_REF_NAME.Substring('harmony-'.Length)
+          node scripts/smoke-test-portable.mjs desktop/release/win-unpacked/Piora.exe --expected-version $releaseTag --packaged-runtime
+
+      - name: Smoke-test final portable executable
+        shell: pwsh
+        run: |
+          $releaseTag = $env:GITHUB_REF_NAME.Substring('harmony-'.Length)
+          node scripts/smoke-test-portable.mjs --expected-version $releaseTag
+
+      - name: Generate checksums
+        shell: pwsh
+        run: |
+          $artifacts = @(Get-ChildItem -LiteralPath desktop/release -Filter '*-portable.exe' -File)
+          if ($artifacts.Count -ne 1) {
+            throw "Expected exactly one portable Windows executable; found $($artifacts.Count)."
+          }
+          $lines = foreach ($artifact in $artifacts) {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName).Hash.ToLowerInvariant()
+            "$hash  $($artifact.Name)"
+          }
+          Set-Content -LiteralPath desktop/release/SHA256SUMS.txt -Value $lines -Encoding ascii
+
+      - name: Upload verified preview artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: piora-harmony-windows-${{ github.ref_name }}
+          path: |
+            desktop/release/*-portable.exe
+            desktop/release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
+      - name: Create prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(Get-ChildItem -LiteralPath desktop/release -Filter '*-portable.exe' -File | ForEach-Object FullName)
+          $assets += (Resolve-Path -LiteralPath desktop/release/SHA256SUMS.txt).Path
+          $releaseTag = $env:GITHUB_REF_NAME.Substring('harmony-'.Length)
+          $notes = @"
+          HarmonyOS NEXT automation preview ($releaseTag).
+
+          This preview adds USB/HDC device discovery, UI snapshots, structured device actions, an approximately 1 FPS local device projection in the right workspace, and a restricted AI device-control runtime. It requires a user-owned test device with developer/USB debugging authorization and an installed Huawei HDC runtime. Low-latency video streaming and redistribution of Huawei SDK binaries are intentionally not bundled.
+
+          This build is unsigned. Verify SHA256SUMS.txt before running. Device and third-party-app compatibility still depends on the connected phone's HarmonyOS/UiTest version.
+          "@
+          gh release create $env:GITHUB_REF_NAME @assets `
+            --repo $env:GITHUB_REPOSITORY `
+            --title "Piora Harmony Automation $releaseTag" `
+            --notes $notes `
+            --verify-tag `
+            --prerelease
