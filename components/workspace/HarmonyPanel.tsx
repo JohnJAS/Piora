@@ -95,6 +95,7 @@ export function HarmonyPanel({ active }: { active: boolean }) {
     [devices, selectedSerial],
   );
   const selectedOnline = selected?.state === "online";
+  const desktopAvailable = profile !== "web";
   const selectedGeneration = selected?.generation;
   const canScreenshot = Boolean(selectedOnline && selected?.capabilities.screenshot);
   const {
@@ -103,7 +104,7 @@ export function HarmonyPanel({ active }: { active: boolean }) {
     error: frameLoadError,
     refresh: requestFrame,
   } = useHarmonyLiveFrame({
-    active: active && profile === "device-control",
+    active: active && desktopAvailable,
     enabled: canScreenshot,
     serial: selectedSerial,
     generation: selectedGeneration,
@@ -111,7 +112,7 @@ export function HarmonyPanel({ active }: { active: boolean }) {
   });
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
-    if (profile !== "device-control") return;
+    if (!desktopAvailable) return;
     try {
       const devicePayload = await jsonRequest<{ devices: HarmonyDevice[]; state: HarmonyState }>("/api/harmony/devices", { signal });
       setDevices(devicePayload.devices);
@@ -124,10 +125,10 @@ export function HarmonyPanel({ active }: { active: boolean }) {
       if (signal?.aborted) return;
       setError(messageOf(refreshError, copy("无法读取设备状态", "Unable to read device state")));
     }
-  }, [copy, profile]);
+  }, [copy, desktopAvailable]);
 
   const loadConfig = useCallback(async () => {
-    if (profile !== "device-control") return;
+    if (!desktopAvailable) return;
     try {
       const [payload, modelPayload] = await Promise.all([
         jsonRequest<{ config: HarmonyConfig; diagnostics: HarmonyState & { runtime?: { hdcPath?: string } }; candidates: RuntimeCandidate[] }>("/api/harmony/config"),
@@ -145,10 +146,10 @@ export function HarmonyPanel({ active }: { active: boolean }) {
     } catch (configError) {
       setError(messageOf(configError, copy("无法读取 SDK 配置", "Unable to read SDK configuration")));
     }
-  }, [copy, profile]);
+  }, [copy, desktopAvailable]);
 
   useEffect(() => {
-    if (!active || profile !== "device-control") return;
+    if (!active || !desktopAvailable) return;
     void loadConfig();
     let pollTimer: number | undefined;
     let pollController: AbortController | undefined;
@@ -192,7 +193,7 @@ export function HarmonyPanel({ active }: { active: boolean }) {
       pollController?.abort();
       if (pollTimer !== undefined) window.clearTimeout(pollTimer);
     };
-  }, [active, loadConfig, profile, refresh, selectedSerial]);
+  }, [active, desktopAvailable, loadConfig, refresh, selectedSerial]);
 
   useEffect(() => {
     if (!lease) return;
@@ -312,27 +313,11 @@ export function HarmonyPanel({ active }: { active: boolean }) {
     return { x, y };
   };
 
-  const switchProfile = (target: RuntimeProfile) => void run(async () => {
-    const result = await window.piDesktop?.requestRuntimeProfileSwitch?.(target);
-    if (!result) throw new Error(copy("请使用 Piora 桌面版", "Use the Piora desktop app"));
-    if (!result.accepted) {
-      if (result.error) throw new Error(result.error);
-      return result;
-    }
-    setProfile(result.profile);
-    return result;
-  });
-
-  if (profile !== "device-control") {
+  if (profile === "web") {
     return <div className={styles.gate}>
       <AliIcon name="mobile" size={34} />
       <h2>{copy("鸿蒙设备控制", "Harmony device control")}</h2>
-      <p>{profile === "web"
-        ? copy("该能力仅在 Piora 桌面应用中提供。", "This capability is available only in the Piora desktop app.")
-        : copy("为隔离普通编码会话，设备自动化需要切换到专用模式。切换会停止当前 AI 任务并重启本地服务。", "Device automation uses an isolated runtime profile. Switching stops current AI tasks and restarts the local service.")}</p>
-      {profile === "normal" ? <button type="button" className={styles.primary} disabled={busy} onClick={() => switchProfile("device-control")}>
-        {copy("切换到设备控制模式", "Switch to device-control mode")}
-      </button> : null}
+      <p>{copy("该能力仅在 Piora 桌面应用中提供。", "This capability is available only in the Piora desktop app.")}</p>
       {error ? <div className={styles.error} role="alert">{error}</div> : null}
     </div>;
   }
@@ -350,7 +335,6 @@ export function HarmonyPanel({ active }: { active: boolean }) {
       <div><strong>{copy("鸿蒙设备", "Harmony device")}</strong><span>{managerState?.runtime.status ?? "…"}</span></div>
       <div className={styles.headerActions}>
         <button type="button" onClick={() => { requestFrame(); void refresh(); }} disabled={busy} title={copy("刷新", "Refresh")}><AliIcon name="reload" size={14} /></button>
-        <button type="button" onClick={() => switchProfile("normal")}>{copy("退出控制模式", "Leave control mode")}</button>
       </div>
     </header>
 

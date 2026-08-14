@@ -164,7 +164,8 @@ export function isSessionVisibleInAgentRuntimeProfile(
 ): boolean {
   assertSessionId(sessionId);
   const binding = store.sessions[sessionId];
-  return binding?.profile === currentProfile || (binding === undefined && currentProfile === "normal");
+  if (currentProfile === "normal") return true;
+  return binding?.profile === currentProfile;
 }
 
 async function withStoreLock<T>(path: string, operation: () => T | Promise<T>): Promise<T> {
@@ -193,6 +194,12 @@ export async function bindSessionAgentRuntimeProfile(
     const existing = store.sessions[sessionId];
     if (existing) {
       if (existing.profile !== profile) {
+        if (existing.profile === "device-control" && profile === "normal") {
+          const migrated: AgentProfileBinding = { profile: "normal", boundAt: new Date().toISOString() };
+          store.sessions[sessionId] = migrated;
+          writePrivateFileAtomicSync(path, `${JSON.stringify(store, null, 2)}\n`);
+          return migrated;
+        }
         throw new AgentProfileStoreError(
           "SESSION_PROFILE_MISMATCH",
           `Session ${sessionId} is bound to ${existing.profile}, not ${profile}.`,
@@ -234,6 +241,10 @@ export async function resolveSessionAgentRuntimeProfile(
     return "normal";
   }
   if (stored !== currentProfile) {
+    if (stored === "device-control" && currentProfile === "normal") {
+      await bindSessionAgentRuntimeProfile(sessionId, "normal", path);
+      return "normal";
+    }
     throw new AgentProfileStoreError(
       "SESSION_PROFILE_MISMATCH",
       `Session ${sessionId} is bound to ${stored} and cannot run in the ${currentProfile} process.`,

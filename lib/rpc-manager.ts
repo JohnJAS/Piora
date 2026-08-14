@@ -1527,9 +1527,11 @@ export async function startRpcSession(
                 agentsFilesOverride: () => ({ agentsFiles: [] }),
               },
             }
-          : existsSync(bundledGoalExtension)
-            ? { resourceLoaderOptions: { additionalExtensionPaths: [bundledBrowserExtension, bundledGoalExtension].filter(existsSync) } }
-            : {}),
+          : {
+              resourceLoaderOptions: {
+                additionalExtensionPaths: [bundledBrowserExtension, bundledHarmonyExtension, bundledGoalExtension].filter(existsSync),
+              },
+            }),
       });
       if (runtimeProfile === "device-control") {
         const extensionResult = services.resourceLoader.getExtensions();
