@@ -4,6 +4,11 @@ import { getRunningRpcSessionIds, getUnpersistedSessionInfos } from "@/lib/rpc-m
 import { resolveProject } from "@/lib/worktree";
 import { sessionPathKey } from "@/lib/session-path";
 import type { SessionInfo } from "@/lib/types";
+import { getAgentRuntimeProfile } from "@/lib/agent-runtime-profile";
+import {
+  isSessionVisibleInAgentRuntimeProfile,
+  readAgentProfileStore,
+} from "@/lib/agent-profile-store";
 
 // pi only writes a session file once an assistant message exists, so a
 // brand-new session is missing from the disk scan until its first turn
@@ -41,8 +46,15 @@ async function withUnpersistedSessions(sessions: SessionInfo[]): Promise<Session
 
 export async function GET() {
   try {
-    const sessions = await withUnpersistedSessions(await listAllSessions());
-    return NextResponse.json({ sessions, runningSessionIds: getRunningRpcSessionIds() });
+    const runtimeProfile = getAgentRuntimeProfile();
+    const profileStore = readAgentProfileStore();
+    const allSessions = await withUnpersistedSessions(await listAllSessions());
+    const sessions = allSessions.filter((session) =>
+      isSessionVisibleInAgentRuntimeProfile(session.id, runtimeProfile, profileStore)
+    );
+    const visibleIds = new Set(sessions.map((session) => session.id));
+    const runningSessionIds = getRunningRpcSessionIds().filter((id) => visibleIds.has(id));
+    return NextResponse.json({ sessions, runningSessionIds, runtimeProfile });
   } catch (error) {
     return NextResponse.json(
       { error: String(error) },

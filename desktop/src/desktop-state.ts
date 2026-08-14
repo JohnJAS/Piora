@@ -9,6 +9,21 @@ interface DesktopState {
   mainWindowState?: MainWindowState;
 }
 
+export type RuntimeProfile = "normal" | "device-control";
+
+/**
+ * Runtime profiles intentionally do not live in desktop-state.json: every new
+ * application launch starts in the normal profile. The directory separation
+ * prevents the device-control service from sharing transient state with the
+ * everyday coding runtime.
+ */
+export function runtimeProfileDataDirectory(
+  userDataDirectory: string,
+  profile: RuntimeProfile,
+): string {
+  return join(userDataDirectory, "runtime", profile);
+}
+
 function isAbsoluteDirectoryPath(value: unknown): value is string {
   return typeof value === "string"
     && value.length > 0

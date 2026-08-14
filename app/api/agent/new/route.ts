@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { allowFileRoot } from "@/lib/file-access";
 import { invalidateSessionListCache } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
+import { getAgentRuntimeProfile } from "@/lib/agent-runtime-profile";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -21,6 +22,7 @@ function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
 // Returns pi's real session id plus the model/thinking state selected at startup.
 export async function POST(req: Request) {
   try {
+    const runtimeProfile = getAgentRuntimeProfile();
     const body = await req.json() as { cwd?: string; [key: string]: unknown };
     const { cwd, ...command } = body;
 
@@ -32,7 +34,10 @@ export async function POST(req: Request) {
     }
 
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
-    const { provider, modelId, toolNames, thinkingLevel, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; [key: string]: unknown };
+    const { provider, modelId, toolNames, thinkingLevel, runtimeProfile: requestedRuntimeProfile, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; runtimeProfile?: unknown; [key: string]: unknown };
+    if (requestedRuntimeProfile !== undefined) {
+      return NextResponse.json({ error: "runtimeProfile is selected only at process startup" }, { status: 400 });
+    }
     if ((provider && !modelId) || (!provider && modelId)) {
       throw new Error("provider and modelId must be provided together");
     }
@@ -46,6 +51,7 @@ export async function POST(req: Request) {
       ...(toolNames ? { toolNames } : {}),
       ...(provider && modelId ? { initialModel: { provider, modelId } } : {}),
       ...(explicitThinkingLevel ? { thinkingLevel: explicitThinkingLevel } : {}),
+      runtimeProfile,
     });
 
     // Keep the files-route allowed-roots cache (see app/api/files/[...path]/route.ts)
@@ -68,6 +74,7 @@ export async function POST(req: Request) {
           ? { provider: state.model.provider, modelId: state.model.id }
           : null,
         thinkingLevel: state.thinkingLevel,
+        runtimeProfile,
       });
     }
 
@@ -81,6 +88,7 @@ export async function POST(req: Request) {
         ? { provider: state.model.provider, modelId: state.model.id }
         : null,
       thinkingLevel: state.thinkingLevel,
+      runtimeProfile,
     });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

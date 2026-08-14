@@ -4,6 +4,46 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-14
+
+### Added
+
+- Added automatic Harmony SDK/HDC candidate discovery, a visible installation
+  chooser, and native Windows pickers for either an SDK folder or `hdc.exe`.
+- Added split-model phone perception: a configured image-capable model receives
+  screenshots and returns structured observations while the action model receives
+  the UI tree and observation text. Raw screenshot forwarding stays off by default.
+- Added persistent target mode to the composer. Target-mode prompts continue across
+  model turns until the agent verifies completion, reports a concrete blocker, the
+  user stops the run, or the continuation safety limit is reached.
+
+### Security
+
+- Phone screenshots sent for perception use an explicit model selection, no prompt
+  cache retention, and contain no conversation history, device input text, lease
+  tokens, or credentials.
+- The device-control profile admits only the first-party Harmony and target-mode
+  tools; target completion is bound to the active server-generated prompt run.
+
+## [0.2.0] - 2026-08-13
+
+### Added
+
+- Added a desktop-only HarmonyOS NEXT device workspace with USB/HDC runtime
+  discovery, connection diagnostics, a visible local device projection,
+  UI snapshots, structured manual actions, and an emergency stop.
+- Added a restricted AI device-control runtime with explicit per-run consent,
+  device leases, serialized actions, stale-snapshot protection, and no raw HDC
+  shell surface.
+- Added a dedicated GitHub Harmony preview pipeline that verifies and publishes
+  an independently versioned Windows portable prerelease.
+
+### Security
+
+- Harmony device APIs fail closed outside the packaged desktop runtime and the
+  restricted device-control profile.
+- Screen data sharing, write actions, process timeouts, output bounds, and
+  device identifiers use explicit local policy and data-minimization rules.
 ## [0.1.6] - 2026-08-12
 
 ### Added
