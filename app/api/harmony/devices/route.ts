@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   if (denied) return denied;
   try {
     const manager = getHarmonyDeviceManager();
-    const devices = await manager.listDevices();
+    const devices = await manager.listDevices(request.signal);
     return noStoreJson({ devices, state: publicManagerState(manager.getState()) });
   } catch (error) {
     return harmonyErrorResponse(error);

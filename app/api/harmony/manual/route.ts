@@ -29,6 +29,7 @@ export async function POST(request: Request) {
         serial: body.serial,
         owner: { kind: "manual", id: body.ownerId },
         ttlMs: 5 * 60_000,
+        signal: request.signal,
       });
       return noStoreJson({ lease });
     }
@@ -38,8 +39,7 @@ export async function POST(request: Request) {
     }
     if (body.action === "release") {
       if (!validIdentity(body.leaseToken)) throw new HarmonyError("INVALID_ARGUMENT", "A valid leaseToken is required");
-      await manager.releaseLease(body.leaseToken);
-      return noStoreJson({ released: true });
+      return noStoreJson({ released: manager.releaseLease(body.leaseToken) });
     }
     throw new HarmonyError("INVALID_ARGUMENT", "Unsupported manual lease action");
   } catch (error) {

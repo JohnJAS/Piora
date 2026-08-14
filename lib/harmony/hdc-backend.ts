@@ -127,6 +127,7 @@ export class HdcBackend implements HarmonyAutomationBackend {
   private readonly execute: CommandExecutor;
   private readonly commandTimeoutMs: number;
   private readonly capabilitiesBySerial = new Map<string, HarmonyCapabilities>();
+  private readonly deviceInfoBySerial = new Map<string, Omit<BackendDevice, "state">>();
 
   constructor(options: HdcBackendOptions = {}) {
     const config = readHarmonyConfig();
@@ -179,11 +180,20 @@ export class HdcBackend implements HarmonyAutomationBackend {
       state: HarmonyDeviceConnectionState;
     }>;
     const unique = [...new Map(parsed.map((device) => [device.serial, device])).values()];
+    const online = new Set(unique.filter((device) => device.state === "online").map((device) => device.serial));
+    for (const serial of this.deviceInfoBySerial.keys()) {
+      if (!online.has(serial)) {
+        this.deviceInfoBySerial.delete(serial);
+        this.capabilitiesBySerial.delete(serial);
+      }
+    }
 
     return await Promise.all(unique.map(async ({ serial, state }): Promise<BackendDevice> => {
       if (state !== "online") {
         return { serial, state, capabilities: { ...NO_UITEST_CAPABILITIES, launchApp: false } };
       }
+      const cached = this.deviceInfoBySerial.get(serial);
+      if (cached) return { ...cached, state };
       const [model, product, name, osVersion, apiVersion, uitestVersion] = await Promise.all([
         this.safeInfo(serial, ["param", "get", "const.product.model"], signal),
         this.safeInfo(serial, ["param", "get", "const.product.name"], signal),
@@ -194,9 +204,8 @@ export class HdcBackend implements HarmonyAutomationBackend {
       ]);
       const capabilities = capabilitiesForUiTest(uitestVersion);
       this.capabilitiesBySerial.set(serial, capabilities);
-      return {
+      const deviceInfo: Omit<BackendDevice, "state"> = {
         serial,
-        state,
         model,
         product,
         name: name ?? model ?? product,
@@ -205,6 +214,8 @@ export class HdcBackend implements HarmonyAutomationBackend {
         uitestVersion,
         capabilities,
       };
+      this.deviceInfoBySerial.set(serial, deviceInfo);
+      return { ...deviceInfo, state };
     }));
   }
 
