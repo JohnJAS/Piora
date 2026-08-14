@@ -1,24 +1,15 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar, type SessionSidebarHandle } from "./SessionSidebar";
 import { ChatWindow, type TaskControls } from "./ChatWindow";
 import type { Tab } from "./TabBar";
 import { RightPanel, type RightPanelHandle, type RightPanelTab } from "./workspace/RightPanel";
-import { ModelsConfig } from "./ModelsConfig";
-import { SkillsConfig } from "./SkillsConfig";
-import { PluginsConfig } from "./PluginsConfig";
-import { SettingsDialog, type SettingsKey } from "./SettingsDialog";
-import { BranchNavigator } from "./BranchNavigator";
-import { BackgroundSettings } from "./BackgroundSettings";
-import { AppearanceLooks } from "./AppearanceLooks";
-import { AppearanceResetButton } from "./AppearanceResetButton";
-import { FontSettings } from "./FontSettings";
+import type { SettingsKey } from "./SettingsDialog";
 import { CompanionPet } from "./CompanionPet";
-import { CompanionSettingsDialog } from "./CompanionSettingsDialog";
-import { SessionHistoryDialog } from "./SessionHistoryDialog";
 import { isDarkTheme, useTheme, type Theme, type ThemePreset } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -44,12 +35,11 @@ import {
   SIDEBAR_MIN_WIDTH,
   WORKSPACE_MIN_WIDTH,
 } from "@/lib/panel-layout";
-import type { SessionInfo, SessionTreeNode } from "@/lib/types";
+import type { SessionInfo } from "@/lib/types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { canSendCompanionPhrase, type CompanionActivity } from "@/lib/companion";
 import { AliIcon } from "./AliIcon";
-import { CommandPalette } from "./CommandPalette";
 import { ConfirmationHost, requestConfirmation } from "./ConfirmDialog";
 import { useCommands } from "@/hooks/useCommands";
 import { filterGuiCommands, type Command, type CommandContext, type PiSlashCommand } from "@/lib/commands";
@@ -73,7 +63,7 @@ type AutoNameStatus =
   | { kind: "naming" }
   | { kind: "success" }
   | { kind: "error"; message: string };
-type TopPanel = "branches" | "project" | "system" | "session" | "language" | "taskControls";
+type TopPanel = "project" | "system" | "session" | "language" | "taskControls";
 type DesktopMenuId = "file" | "edit" | "view" | "window" | "help";
 
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
@@ -81,6 +71,21 @@ const LANGUAGE_MENU_WIDTH = 176;
 const PROJECT_MENU_WIDTH = 360;
 const TASK_CONTROLS_MENU_WIDTH = 336;
 const SYSTEM_PROMPT_MENU_WIDTH = 480;
+
+// Settings and secondary dialogs are not part of the first usable frame.
+// Keeping them out of the startup chunk avoids parsing their large management
+// surfaces while the desktop splash is still visible.
+const SettingsDialog = dynamic(() => import("./SettingsDialog").then((module) => module.SettingsDialog), { ssr: false });
+const ModelsConfig = dynamic(() => import("./ModelsConfig").then((module) => module.ModelsConfig), { ssr: false });
+const SkillsConfig = dynamic(() => import("./SkillsConfig").then((module) => module.SkillsConfig), { ssr: false });
+const PluginsConfig = dynamic(() => import("./PluginsConfig").then((module) => module.PluginsConfig), { ssr: false });
+const BackgroundSettings = dynamic(() => import("./BackgroundSettings").then((module) => module.BackgroundSettings), { ssr: false });
+const AppearanceLooks = dynamic(() => import("./AppearanceLooks").then((module) => module.AppearanceLooks), { ssr: false });
+const AppearanceResetButton = dynamic(() => import("./AppearanceResetButton").then((module) => module.AppearanceResetButton), { ssr: false });
+const FontSettings = dynamic(() => import("./FontSettings").then((module) => module.FontSettings), { ssr: false });
+const CompanionSettingsDialog = dynamic(() => import("./CompanionSettingsDialog").then((module) => module.CompanionSettingsDialog), { ssr: false });
+const SessionHistoryDialog = dynamic(() => import("./SessionHistoryDialog").then((module) => module.SessionHistoryDialog), { ssr: false });
+const CommandPalette = dynamic(() => import("./CommandPalette").then((module) => module.CommandPalette), { ssr: false });
 
 export function AppShell() {
   const router = useRouter();
@@ -234,6 +239,7 @@ export function AppShell() {
     setOpen: setCompanionOpen,
   } = useCompanionPreferences();
   const companionOpen = companionPreferences.open;
+  const companionAlwaysOnTop = companionPreferences.alwaysOnTop;
   const companionPets = useCompanionPets(companionOpen || (settingsDialogOpen && settingsKey === "companion"));
   const activeCompanionPet = companionPets.catalog?.installed.find(
     (pet) => pet.id === companionPreferences.selectedPetId,
@@ -248,21 +254,6 @@ export function AppShell() {
   const taskControlsBtnRef = useRef<HTMLButtonElement>(null);
   const topPanelFrameRef = useRef<HTMLDivElement>(null);
   const autoFocusedTopPanelRef = useRef<TopPanel | null>(null);
-
-  // Branch navigator state — populated by ChatWindow via onBranchDataChange
-  const [branchTree, setBranchTree] = useState<SessionTreeNode[]>([]);
-  const [branchActiveLeafId, setBranchActiveLeafId] = useState<string | null>(null);
-  const branchLeafChangeFnRef = useRef<((leafId: string | null) => void) | null>(null);
-
-  const handleBranchDataChange = useCallback((tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => {
-    setBranchTree(tree);
-    setBranchActiveLeafId(activeLeafId);
-    branchLeafChangeFnRef.current = onLeafChange;
-  }, []);
-
-  const handleBranchLeafChange = useCallback((leafId: string | null) => {
-    branchLeafChangeFnRef.current?.(leafId);
-  }, []);
 
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
 
@@ -325,7 +316,7 @@ export function AppShell() {
 
   // Single active panel — only one dropdown open at a time
   const [activeTopPanel, setActiveTopPanel] = useState<TopPanel | null>(null);
-  useFocusTrap(topPanelFrameRef, activeTopPanel !== null && activeTopPanel !== "branches", {
+  useFocusTrap(topPanelFrameRef, activeTopPanel !== null, {
     onEscape: () => setActiveTopPanel(null),
   });
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -644,8 +635,6 @@ export function AppShell() {
       });
       setSessionKey((k) => k + 1);
     }
-    setBranchTree([]);
-    setBranchActiveLeafId(null);
     setSystemPrompt(null);
     setActiveTopPanel(null);
     const retainedTabs = keepDirtyTabs ? dirtyTabs : [];
@@ -724,8 +713,6 @@ export function AppShell() {
     setSelectedSession(null);
     setNewSessionCwd(cwd);
     setSessionKey((k) => k + 1);
-    setBranchTree([]);
-    setBranchActiveLeafId(null);
     setSystemPrompt(null);
     setActiveTopPanel(null);
     if (isMobile) setSidebarOpen(false);
@@ -807,6 +794,11 @@ export function AppShell() {
     if (!desktopChrome) return;
     void window.piDesktop?.setCompanionWindowVisible?.(companionOpen);
   }, [companionOpen, desktopChrome]);
+
+  useEffect(() => {
+    if (!desktopChrome) return;
+    void window.piDesktop?.setCompanionWindowAlwaysOnTop?.(companionAlwaysOnTop);
+  }, [companionAlwaysOnTop, desktopChrome]);
 
   useEffect(() => {
     if (!desktopChrome || typeof BroadcastChannel === "undefined") return;
@@ -938,8 +930,6 @@ export function AppShell() {
       setSelectedSession(null);
       setNewSessionCwd(cwd ?? null);
       setSessionKey((k) => k + 1);
-      setBranchTree([]);
-      setBranchActiveLeafId(null);
       setSystemPrompt(null);
       setActiveTopPanel(null);
       router.replace("/", { scroll: false });
@@ -1282,7 +1272,7 @@ export function AppShell() {
     />
   );
 
-  const settingsPage = (
+  const settingsPage = settingsDialogOpen ? (
     <SettingsDialog
       open={settingsDialogOpen}
       onClose={() => setSettingsDialogOpen(false)}
@@ -1363,6 +1353,10 @@ export function AppShell() {
             onClose={() => setSettingsKey("general")}
             companionOpen={companionOpen}
             onCompanionOpenChange={setCompanionOpen}
+            alwaysOnTop={companionAlwaysOnTop}
+            onAlwaysOnTopChange={(alwaysOnTop) => {
+              setCompanionPreferences((current) => ({ ...current, alwaysOnTop }));
+            }}
             desktopMode={desktopChrome}
             selectedPetId={companionPreferences.selectedPetId}
             onSelectPet={handleSelectCompanionPet}
@@ -1395,7 +1389,7 @@ export function AppShell() {
         onGlobalShortcutToggle: toggleGlobalShortcut,
       }}
     />
-  );
+  ) : null;
   const effectiveRightPanelOpen = rightPanelOpen && !settingsDialogOpen;
 
   return (
@@ -1635,17 +1629,6 @@ export function AppShell() {
                 <AliIcon name="history" size={15} />
                 {!isMobile && <span className="topbar-action-label">{translate("history.label")}</span>}
               </button>
-              <BranchNavigator
-                tree={branchTree}
-                activeLeafId={branchActiveLeafId}
-                onLeafChange={handleBranchLeafChange}
-                inline
-                compact={isMobile}
-                containerRef={topBarRef}
-                open={activeTopPanel === "branches"}
-                onToggle={() => toggleTopPanel("branches")}
-                hasSession={Boolean(selectedSession)}
-              />
               <button
                 className={`topbar-control topbar-icon-button right-panel-toggle ${rightPanelOpen ? "is-open" : "is-closed"}`}
                 type="button"
@@ -1676,7 +1659,7 @@ export function AppShell() {
             </div>
           )}
           {/* Top panel dropdown — shared, only one active at a time */}
-          {activeTopPanel && activeTopPanel !== "branches" && topPanelPos && (
+          {activeTopPanel && topPanelPos && (
             <div ref={topPanelFrameRef} className="app-top-panel-frame" style={{
               position: "absolute",
               top: topPanelPos.top,
@@ -2149,7 +2132,6 @@ export function AppShell() {
                 onSessionForked={handleSessionForked}
                 modelsRefreshKey={modelsRefreshKey}
                 chatInputRef={chatInputRef}
-                onBranchDataChange={handleBranchDataChange}
                 onSystemPromptChange={handleSystemPromptChange}
                 onSessionStatsChange={handleSessionStatsChange}
                 onSessionStatsPanelOpen={openSessionStatsPanel}
@@ -2280,14 +2262,16 @@ export function AppShell() {
       </div>
     {/* File panel toggle — always visible at top-right */}
     </div>
-    <CommandPalette
-      open={commandPaletteOpen}
-      commands={paletteCommands}
-      context={commandContext}
-      search={searchPaletteCommands}
-      onRun={runPaletteCommand}
-      onClose={() => setCommandPaletteOpen(false)}
-    />
+    {commandPaletteOpen ? (
+      <CommandPalette
+        open
+        commands={paletteCommands}
+        context={commandContext}
+        search={searchPaletteCommands}
+        onRun={runPaletteCommand}
+        onClose={() => setCommandPaletteOpen(false)}
+      />
+    ) : null}
     {historyDialogOpen && selectedSession ? (
       <SessionHistoryDialog
         sessionId={selectedSession.id}

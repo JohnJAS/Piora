@@ -44,6 +44,44 @@ All notable changes to Piora are documented here. The project follows [Semantic 
   restricted device-control profile.
 - Screen data sharing, write actions, process timeouts, output bounds, and
   device identifiers use explicit local policy and data-minimization rules.
+
+## [0.1.7] - 2026-08-14
+
+### Added
+
+- The desktop companion can optionally stop floating above every window while
+  preserving the always-on-top behavior as the default.
+- Appearance settings include a restrained Codex-inspired dark preset without
+  requiring a background image.
+- Mandarin dictation normalizes Traditional Chinese output to Simplified
+  Chinese and supplies Whisper with a Simplified Chinese transcription hint.
+
+### Changed
+
+- Secondary settings and management dialogs load on demand so the first usable
+  desktop frame parses less client code.
+- The desktop uses Pi's standard data directory unless an explicit
+  `PI_CODING_AGENT_DIR` is configured, removing the first-launch migration
+  prompt and its duplicate data-copy path.
+- The Dream skin uses quieter surfaces, borders, shadows, and focus treatments,
+  and the startup shell uses a short reduced-motion-aware progress pulse.
+- Pi SDK packages moved to 0.84.1, with compatible Next.js, React, Tailwind,
+  Electron, icon, and document-reader maintenance updates.
+
+### Fixed
+
+- Windows worktree removal now compares normalized paths, allowing dirty
+  worktrees to return the intended HTTP 409 response and explicit force retry.
+- The headless extension UI adapter now supplies the complete background-color
+  contract required by Pi SDK 0.84.1.
+
+### Security
+
+- Updated vulnerable `nanoid`, `undici`, and `brace-expansion` dependency paths;
+  production `npm audit` now reports zero known vulnerabilities.
+- CI now gates high-severity production dependency findings and enforces the
+  existing performance budgets.
+
 ## [0.1.6] - 2026-08-12
 
 ### Added

@@ -3,11 +3,13 @@ import { availableParallelism, tmpdir } from "node:os";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import OpenCC from "opencc-js";
 
 const MODEL_FILE = "ggml-base-q5_1.bin";
 const EXECUTABLE_FILE = process.platform === "win32" ? "whisper-cli.exe" : "whisper-cli";
 const MAX_PROCESS_OUTPUT = 64 * 1024;
 const TRANSCRIPTION_TIMEOUT_MS = 120_000;
+const toSimplifiedChinese = OpenCC.Converter({ from: "twp", to: "cn" });
 
 declare global {
   var __pioraWhisperBusy: boolean | undefined;
@@ -44,6 +46,10 @@ export function validateWhisperWav(bytes: Uint8Array): void {
   if (view.getUint16(20, true) !== 1 || view.getUint16(22, true) !== 1 || view.getUint32(24, true) !== 16_000 || view.getUint16(34, true) !== 16) {
     throw new Error("Audio must be 16 kHz mono PCM16 WAV");
   }
+}
+
+export function simplifyChineseTranscript(text: string): string {
+  return toSimplifiedChinese(text);
 }
 
 function runWhisper(executable: string, args: string[], cwd: string): Promise<void> {
@@ -86,6 +92,7 @@ export async function transcribeWhisperWav(bytes: Uint8Array, language: "zh" | "
       "-m", join(directory, MODEL_FILE),
       "-f", inputPath,
       "-l", language,
+      ...(language === "zh" ? ["--prompt", "以下是普通话的简体中文转写。"] : []),
       "-t", threads,
       "-nt",
       "-np",
@@ -96,7 +103,7 @@ export async function transcribeWhisperWav(bytes: Uint8Array, language: "zh" | "
     const text = (await readFile(`${outputPrefix}.txt`, "utf8"))
       .replace(/\[(?:BLANK_AUDIO|MUSIC|NOISE|SILENCE)\]/gi, "")
       .trim();
-    return text;
+    return language === "zh" ? simplifyChineseTranscript(text) : text;
   } finally {
     globalThis.__pioraWhisperBusy = false;
     if (workDirectory) await rm(workDirectory, { recursive: true, force: true }).catch(() => {});

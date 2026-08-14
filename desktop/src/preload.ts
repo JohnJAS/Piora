@@ -24,6 +24,9 @@ const runtime = Object.freeze({
   setCompanionWindowVisible(visible: boolean): Promise<boolean> {
     return ipcRenderer.invoke("pi:companion-window-visible", visible) as Promise<boolean>;
   },
+  setCompanionWindowAlwaysOnTop(alwaysOnTop: boolean): Promise<boolean> {
+    return ipcRenderer.invoke("pi:companion-window-always-on-top", alwaysOnTop) as Promise<boolean>;
+  },
   setCompanionWindowExpanded(expanded: boolean): Promise<boolean> {
     return ipcRenderer.invoke("pi:companion-window-expanded", expanded) as Promise<boolean>;
   },

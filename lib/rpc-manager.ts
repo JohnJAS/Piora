@@ -1,6 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, Theme, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
-import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
+import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
 import { resolve } from "path";
@@ -42,6 +41,12 @@ import {
   DEVICE_CONTROL_AGENT_TOOLS,
   resolveAgentToolsForRuntimeProfile,
 } from "./tool-presets";
+import {
+  TASK_ACTIVITY_STREAM_INTERVAL_MS,
+  activityFromMessage,
+  compactTaskActivityText,
+} from "./rpc-task-activity";
+import { CUSTOM_UI_KEYBINDINGS, PLAIN_TEXT_THEME } from "./rpc-ui-adapter";
 
 // ============================================================================
 // Types
@@ -100,81 +105,12 @@ export interface RpcSessionStartOptions {
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
-const TASK_ACTIVITY_MAX_LENGTH = 240;
-const TASK_ACTIVITY_STREAM_INTERVAL_MS = 300;
 const GOAL_MODE_MAX_CONTINUATIONS = 64;
 const GOAL_MODE_CONTINUATION = [
   "Piora target mode is still active. Continue working toward the original user objective now.",
   "Inspect current evidence and take the next useful action. Do not stop merely because this model turn can end.",
   "Use piora_goal progress after material milestones, complete only after verifying the outcome, or blocked only when an external change or user input is genuinely required.",
 ].join(" ");
-
-function compactTaskActivityText(value: unknown, maxLength = TASK_ACTIVITY_MAX_LENGTH): string {
-  const text = typeof value === "string" ? value : (() => {
-    try { return JSON.stringify(value); } catch { return String(value ?? ""); }
-  })();
-  const compact = text.replace(/\s+/g, " ").trim();
-  if (compact.length <= maxLength) return compact;
-  return `…${compact.slice(-(maxLength - 1))}`;
-}
-
-function activityFromMessage(message: unknown): Pick<TaskRuntimeActivity, "kind" | "message"> | null {
-  if (!message || typeof message !== "object") return null;
-  const content = (message as { content?: unknown }).content;
-  if (typeof content === "string") {
-    const text = compactTaskActivityText(content);
-    return text ? { kind: "assistant", message: text } : null;
-  }
-  if (!Array.isArray(content)) return null;
-  for (let index = content.length - 1; index >= 0; index -= 1) {
-    const block = content[index];
-    if (!block || typeof block !== "object") continue;
-    const candidate = block as Record<string, unknown>;
-    if (candidate.type === "toolCall") {
-      const name = compactTaskActivityText(candidate.toolName ?? candidate.name, 64);
-      const input = compactTaskActivityText(candidate.input ?? candidate.arguments, 160);
-      const detail = [name, input].filter(Boolean).join(": ");
-      if (detail) return { kind: "tool", message: detail };
-    }
-    if (candidate.type === "text") {
-      const text = compactTaskActivityText(candidate.text);
-      if (text) return { kind: "assistant", message: text };
-    }
-    if (candidate.type === "thinking") {
-      const thinking = compactTaskActivityText(candidate.thinking);
-      if (thinking) return { kind: "thinking", message: thinking };
-    }
-  }
-  return null;
-}
-
-// Extensions require a complete Theme, while the web UI applies its own styling.
-class PlainTextTheme extends Theme {
-  constructor() {
-    super(
-      { thinkingXhigh: "" } as ConstructorParameters<typeof Theme>[0],
-      {} as ConstructorParameters<typeof Theme>[1],
-      "truecolor",
-    );
-  }
-
-  override fg(...[, text]: Parameters<Theme["fg"]>): string { return text; }
-  override bg(...[, text]: Parameters<Theme["bg"]>): string { return text; }
-  override bold(text: string): string { return text; }
-  override italic(text: string): string { return text; }
-  override underline(text: string): string { return text; }
-  override inverse(text: string): string { return text; }
-  override strikethrough(text: string): string { return text; }
-  override getFgAnsi(): string { return ""; }
-  override getBgAnsi(): string { return ""; }
-  override getThinkingBorderColor(): (text: string) => string {
-    return (text) => text;
-  }
-  override getBashModeBorderColor(): (text: string) => string { return (text) => text; }
-}
-
-const PLAIN_TEXT_THEME = new PlainTextTheme();
-const CUSTOM_UI_KEYBINDINGS = new TuiKeybindingsManager(TUI_KEYBINDINGS);
 
 function withExtensionTools(session: AgentSessionLike, toolNames: string[]): string[] {
   if (toolNames.length === 0) return [];

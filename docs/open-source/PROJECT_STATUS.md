@@ -1,14 +1,18 @@
 # Open-source project status
 
-Status date: **2026-08-09 (Asia/Shanghai)**
+Status date: **2026-08-14 (Asia/Shanghai)**
 
 ## Identity and repository
 
-The first public preview uses the name **Piora** and the repository
+The public preview uses the name **Piora** and the repository
 [`kexijiang/piora`](https://github.com/kexijiang/piora). Package metadata and the Windows
 application identity use that repository and the application ID `io.github.kexijiang.piora`.
 The public repository has been created and the local checkout has both `origin` and the retained
 `agegr/pi-web` `upstream` remote.
+
+Draft Windows prereleases through **v0.1.6** have been built from tagged commits
+on `main`. The current source candidate is **v0.1.7**; it is not considered
+published until its tag workflow and draft prerelease complete successfully.
 
 Piora is independently maintained. It is not an official application from agegr,
 earendil-works, OpenAI, or Codex, and it must not use their trademarks or artwork in a way that
@@ -36,7 +40,8 @@ implies endorsement.
   Overlay with a safe draggable web title strip instead of reimplementing system window buttons;
 - an optional, closable companion dock displays existing Pi/session status, TODO progress, and
   user-configured quick phrases through the normal message-send path; it does not create another
-  Agent/SubAgent or autonomous execution path;
+  Agent/SubAgent or autonomous execution path. Desktop users can choose whether the companion
+  remains above other windows;
 - known local Codex pets can be discovered, previewed, and explicitly imported from the current
   pets directory, legacy avatars directory, and built-in `tui-pets` cache. The importer supports
   declarative V1/V2 PNG/WebP sprite resources, copies only normalized data into Piora-managed
@@ -50,6 +55,9 @@ implies endorsement.
   with an opt-in native/browser completion notification replacing the latter;
 - the conversation header exposes a restrained project menu, and model settings expose real
   availability tests through the current trusted Pi runtime without bypassing extension providers;
+- secondary settings and management dialogs are loaded on demand, while the desktop uses Pi's
+  standard data directory unless `PI_CODING_AGENT_DIR` explicitly selects another location;
+- Mandarin dictation normalizes the local Whisper transcript to Simplified Chinese;
 - historical Pi reasoning retains its raw content-block index and can recover from rapid
   collapse/reopen, request timeout, and live-message reconciliation instead of remaining on a
   loading placeholder;
@@ -61,7 +69,7 @@ implies endorsement.
 
 - `npm run typecheck`: passed for the web and desktop TypeScript projects;
 - `npm run lint`: passed;
-- `npm test` under the required Node.js 22.19.0 runtime: 552 tests, 547 passed, 0 failed,
+- `npm test` under the required Node.js 22.19.0 runtime: 671 tests, 666 passed, 0 failed,
   5 skipped because Windows did not grant symlink-creation privileges;
 - `npm run licenses:check` and `npm run verify:backgrounds` passed; the latter verified 20 unique
   WebP assets totaling 2,274,482 bytes. `npm audit --omit=dev --audit-level=high` against the
@@ -92,10 +100,9 @@ implies endorsement.
   Native double-click maximize strongly confirms Windows treated the blank point as a caption area,
   but standard-mouse continuous drag remains part of the clean-machine matrix rather than being
   overstated as complete;
-- the current local candidate `Piora-0.1.0-win-x64-portable.exe`, built from runtime commit
-  `626b632`, is 181,199,599 bytes with SHA-256
-  `74AA29B1937B2840544427D7DA2B064D78F4F081BC5E4BCF5F3B6DF0E19648F4`; its Authenticode
-  status is `NotSigned`;
+- tagged v0.1.0 through v0.1.6 builds produced unsigned draft Windows prereleases with generated
+  SHA-256 manifests; v0.1.7 must pass the same source, package, and portable-runtime workflow
+  before it is recorded as another verified artifact;
 - an artifact string scan found no developer-home or development-checkout private build paths. High-confidence
   token-pattern candidates were confined to upstream binary byte sequences, Next.js identifiers,
   and a dependency documentation marker rather than stored credentials;
@@ -128,14 +135,14 @@ rejected instead of executed or fetched.
   the current packaged EXE evidence covers the integrated top row, double-click maximize,
   restore/close, and the appearance panel;
 - clean-machine portable replacement, data-retention, and uninstall checks;
-- the current final working-tree batch has an isolated local package build and portable smoke
-  result, but still needs a reviewed push/PR into `main`, its own public CI result, and GitHub
-  Release download/checksum verification. The public repository, default `main`, and prior
-  successful Ubuntu/Windows CI are already established;
+- the v0.1.7 working-tree batch still needs a reviewed push/PR into `main`, its own public CI
+  result, and GitHub Release download/checksum verification. The public repository, default
+  `main`, and prior successful Ubuntu/Windows workflows are already established;
 - branch protection/rulesets remain an administrative hardening task and are not yet enabled.
 
-Until those items are recorded, the locally produced executable is an unsigned prerelease
-candidate, not an official stable release. Track the detailed acceptance record in
+Until those items are recorded, v0.1.7 is an unsigned prerelease candidate, not an official
+stable release. Historical Stage 0–4 acceptance records are indexed in
+[the August 2026 archive](../archive/STAGE_ACCEPTANCE_2026-08.md). Track the release goal in
 [the release goal](../RELEASE_GOAL_2026-07-31.md) and the administrative gates in
 [the public launch checklist](LAUNCH_CHECKLIST.md).
 

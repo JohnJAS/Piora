@@ -76,6 +76,18 @@
   background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
 }
 
+.displayCard + .displayCard {
+  margin-top: 8px;
+}
+
+.displayCard[data-disabled="true"] {
+  opacity: 0.58;
+}
+
+.displayCard[data-disabled="true"] .switch {
+  cursor: not-allowed;
+}
+
 .modeCard {
   display: flex;
   align-items: center;

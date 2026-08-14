@@ -646,7 +646,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     eventSourceRef.current = null;
   }, []);
 
-  const connectEvents = useCallback((sid: string): Promise<EventStreamConnectionResult> => {
+  const connectEvents = useCallback(function connectEvents(
+    sid: string,
+  ): Promise<EventStreamConnectionResult> {
     closeEvents();
     const es = new EventSource(`/api/agent/${encodeURIComponent(sid)}/events`);
     eventSourceRef.current = es;

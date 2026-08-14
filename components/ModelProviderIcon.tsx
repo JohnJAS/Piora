@@ -31,7 +31,7 @@ import OpenRouterIcon from "@lobehub/icons/es/OpenRouter/components/Mono";
 import PerplexityColorIcon from "@lobehub/icons/es/Perplexity/components/Color";
 import QwenColorIcon from "@lobehub/icons/es/Qwen/components/Color";
 import SiliconCloudColorIcon from "@lobehub/icons/es/SiliconCloud/components/Color";
-import StepfunColorIcon from "@lobehub/icons/es/Stepfun/components/Color";
+import StepfunIcon from "@lobehub/icons/es/Stepfun/components/Mono";
 import TencentCloudColorIcon from "@lobehub/icons/es/TencentCloud/components/Color";
 import TogetherColorIcon from "@lobehub/icons/es/Together/components/Color";
 import VercelIcon from "@lobehub/icons/es/Vercel/components/Mono";
@@ -80,7 +80,7 @@ const MODEL_BRAND_ICONS = {
   baidu: { Icon: BaiduColorIcon, hasColor: true },
   doubao: { Icon: DoubaoColorIcon, hasColor: true },
   siliconcloud: { Icon: SiliconCloudColorIcon, hasColor: true },
-  stepfun: { Icon: StepfunColorIcon, hasColor: true },
+  stepfun: { Icon: StepfunIcon, hasColor: false },
   tencent: { Icon: TencentCloudColorIcon, hasColor: true },
   yi: { Icon: YiColorIcon, hasColor: true },
 } satisfies Record<string, { Icon: IconComponent; hasColor: boolean }>;
