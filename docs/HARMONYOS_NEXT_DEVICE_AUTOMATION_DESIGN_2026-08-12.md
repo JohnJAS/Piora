@@ -5,6 +5,8 @@
 > 适用项目：Piora Windows EXE
 > 前置调研：Codex 会话 `019ff602-345e-7fd2-9e61-87785e1159ac`
 
+> 2026-08-15 产品决策覆盖：0.2.2 取消本文设计的独立 `device-control` 冷启动 profile，现有普通会话直接加载 Harmony 工具。本文关于进程/工具隔离的章节仅保留为历史设计记录；实际边界以 `HARMONYOS_NEXT_DEVICE_AUTOMATION_DESIGN.md` 为准。
+
 本文把“鸿蒙单框架手机”理解为纯血鸿蒙/HarmonyOS NEXT 原生系统手机，而不是仍可运行 Android 应用的旧兼容栈设备。如果实际目标含义不同，应先调整 P0 设备矩阵和 Provider 判断。
 
 ## 1. 结论先行

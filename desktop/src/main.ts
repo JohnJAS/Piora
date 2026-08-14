@@ -44,7 +44,6 @@ const COMPANION_ALWAYS_ON_TOP_CHANNEL = "pi:companion-window-always-on-top";
 const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
 const COMPANION_LAYOUT_CHANNEL = "pi:companion-window-expanded";
 const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
-const RUNTIME_PROFILE_SWITCH_CHANNEL = "pi:runtime-profile-switch";
 const HARMONY_RUNTIME_PICKER_CHANNEL = "pi:harmony-runtime-picker";
 const DESKTOP_TITLE_BAR_HEIGHT = 40;
 const COMPANION_COMPACT_WIDTH = 156;
@@ -91,11 +90,9 @@ let trayPollTimer: NodeJS.Timeout | undefined;
 let applicationToken: string | undefined;
 let runningTaskCount = 0;
 let quitRequested = false;
-let currentRuntimeProfile: RuntimeProfile = "normal";
 let serverEntryPath: string | undefined;
 let serverHostEntryPath: string | undefined;
 let piAgentDirectoryPath: string | undefined;
-let runtimeProfileSwitchPromise: Promise<{ accepted: boolean; profile: RuntimeProfile; error?: string }> | undefined;
 
 function prepareWritableDirectory(directory: string): string {
   const resolvedDirectory = resolve(directory);
@@ -837,7 +834,6 @@ function createStandaloneForProfile(profile: RuntimeProfile): {
 
 function activateStandaloneProfile(profile: RuntimeProfile, dataDirectory: string, nextUrl: URL): URL {
   if (!logger || !applicationToken) throw new Error("Desktop runtime is not ready to activate a profile");
-  currentRuntimeProfile = profile;
   process.env.PIORA_RUNTIME_PROFILE = profile;
   process.env.PIORA_DESKTOP_DATA_DIR = dataDirectory;
   writePreferredServerPort(app.getPath("userData"), Number(nextUrl.port), logger);
@@ -846,16 +842,8 @@ function activateStandaloneProfile(profile: RuntimeProfile, dataDirectory: strin
   return nextUrl;
 }
 
-async function startStandaloneForProfile(profile: RuntimeProfile): Promise<URL> {
-  const prepared = createStandaloneForProfile(profile);
-  server = prepared.instance;
-  const nextUrl = await prepared.instance.start();
-  serverUrl = nextUrl;
-  return activateStandaloneProfile(profile, prepared.dataDirectory, nextUrl);
-}
-
 async function requestHarmonyEmergencyStop(reason: string): Promise<void> {
-  if (currentRuntimeProfile !== "device-control" || !serverUrl || !applicationToken) return;
+  if (!serverUrl || !applicationToken) return;
   try {
     const response = await fetch(new URL("/api/harmony/action", serverUrl), {
       method: "POST",
@@ -872,89 +860,10 @@ async function requestHarmonyEmergencyStop(reason: string): Promise<void> {
   }
 }
 
-async function restartRuntimeProfile(target: RuntimeProfile): Promise<{ accepted: boolean; profile: RuntimeProfile; error?: string }> {
-  if (!logger || !mainWindow || mainWindow.isDestroyed()) {
-    return { accepted: false, profile: currentRuntimeProfile, error: "Main window is unavailable" };
-  }
-  const previousProfile = currentRuntimeProfile;
-  const previousServer = server;
-  closeCompanionWindow();
-  await requestHarmonyEmergencyStop("runtime_profile_switch");
-  server = undefined;
-  serverUrl = undefined;
-  await previousServer?.stop();
-
-  try {
-    const nextUrl = await startStandaloneForProfile(target);
-    await loadApplicationWindow(mainWindow, nextUrl, logger);
-    logger.info("Runtime profile switched", { from: previousProfile, to: target });
-    return { accepted: true, profile: target };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error("Runtime profile switch failed", { from: previousProfile, to: target, error: message });
-    try {
-      const rollbackUrl = await startStandaloneForProfile(previousProfile);
-      await loadApplicationWindow(mainWindow, rollbackUrl, logger);
-    } catch (rollbackError) {
-      logger.error("Runtime profile rollback failed", rollbackError);
-    }
-    return { accepted: false, profile: currentRuntimeProfile, error: message };
-  }
-}
-
-function registerRuntimeProfileSwitchHandler(): void {
-  ipcMain.removeHandler(RUNTIME_PROFILE_SWITCH_CHANNEL);
-  ipcMain.handle(
-    RUNTIME_PROFILE_SWITCH_CHANNEL,
-    async (event, requestedProfile: unknown): Promise<{ accepted: boolean; profile: RuntimeProfile; error?: string }> => {
-      if (!isTrustedMainWindowSender(event)) {
-        return { accepted: false, profile: currentRuntimeProfile, error: "Untrusted renderer" };
-      }
-      if (requestedProfile === undefined) {
-        return { accepted: true, profile: currentRuntimeProfile };
-      }
-      if (requestedProfile !== "normal" && requestedProfile !== "device-control") {
-        return { accepted: false, profile: currentRuntimeProfile, error: "Invalid runtime profile" };
-      }
-      if (requestedProfile === currentRuntimeProfile) {
-        return { accepted: true, profile: currentRuntimeProfile };
-      }
-      if (runtimeProfileSwitchPromise) return runtimeProfileSwitchPromise;
-      const ownerWindow = mainWindow;
-      if (!ownerWindow || ownerWindow.isDestroyed()) {
-        return { accepted: false, profile: currentRuntimeProfile, error: "Main window is unavailable" };
-      }
-
-      const toDeviceControl = requestedProfile === "device-control";
-      const isChinese = app.getLocale().toLowerCase().startsWith("zh");
-      const result = await dialog.showMessageBox(ownerWindow, {
-        type: "warning",
-        title: "Piora",
-        message: isChinese
-          ? (toDeviceControl ? "切换到鸿蒙设备控制模式？" : "退出鸿蒙设备控制模式？")
-          : (toDeviceControl ? "Switch to Harmony device-control mode?" : "Leave Harmony device-control mode?"),
-        detail: isChinese
-          ? "切换会停止当前 AI 任务并重启本地服务。设备控制模式可让 AI 操作已授权的手机；请仅连接测试设备。"
-          : "Switching stops current AI tasks and restarts the local service. Device-control mode lets AI operate authorized phones; connect test devices only.",
-        buttons: isChinese ? ["切换并重启", "取消"] : ["Switch and restart", "Cancel"],
-        defaultId: 1,
-        cancelId: 1,
-        noLink: true,
-      });
-      if (result.response !== 0) return { accepted: false, profile: currentRuntimeProfile };
-
-      runtimeProfileSwitchPromise = restartRuntimeProfile(requestedProfile).finally(() => {
-        runtimeProfileSwitchPromise = undefined;
-      });
-      return runtimeProfileSwitchPromise;
-    },
-  );
-}
-
 function registerHarmonyRuntimePickerHandler(): void {
   ipcMain.removeHandler(HARMONY_RUNTIME_PICKER_CHANNEL);
   ipcMain.handle(HARMONY_RUNTIME_PICKER_CHANNEL, async (event, kind: unknown): Promise<string | null> => {
-    if (!isTrustedMainWindowSender(event) || currentRuntimeProfile !== "device-control") return null;
+    if (!isTrustedMainWindowSender(event)) return null;
     if (kind !== "sdk" && kind !== "hdc") return null;
     const ownerWindow = mainWindow;
     if (!ownerWindow || ownerWindow.isDestroyed()) return null;
@@ -1259,8 +1168,7 @@ async function startApplication(): Promise<void> {
 
   const token = randomBytes(32).toString("base64url");
   applicationToken = token;
-  // Runtime mode is intentionally reset on every application launch. Device
-  // control can only be entered after an explicit native confirmation.
+  // Harmony tools run in the same desktop service as ordinary sessions.
   const initialRuntime = createStandaloneForProfile("normal");
   server = initialRuntime.instance;
   serverUrl = await server.start();
@@ -1270,7 +1178,6 @@ async function startApplication(): Promise<void> {
   registerCompletionNotificationHandler();
   registerCompanionWindowHandlers();
   registerGlobalShortcutHandler();
-  registerRuntimeProfileSwitchHandler();
   registerHarmonyRuntimePickerHandler();
 
   if (PORTABLE_SMOKE_TEST) {

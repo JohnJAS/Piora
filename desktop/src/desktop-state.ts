@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Logger } from "./logger.js";
 
@@ -11,16 +11,27 @@ interface DesktopState {
 export type RuntimeProfile = "normal" | "device-control";
 
 /**
- * Runtime profiles intentionally do not live in desktop-state.json: every new
- * application launch starts in the normal profile. The directory separation
- * prevents the device-control service from sharing transient state with the
- * everyday coding runtime.
+ * Device control now shares the ordinary desktop service. Preserve a legacy
+ * device-control harmony.json on first launch so existing HDC/vision choices
+ * survive the unified-runtime migration.
  */
 export function runtimeProfileDataDirectory(
   userDataDirectory: string,
   profile: RuntimeProfile,
 ): string {
-  return join(userDataDirectory, "runtime", profile);
+  void profile; // Kept for source compatibility with pre-0.2.2 callers.
+  const unifiedDirectory = join(userDataDirectory, "runtime", "normal");
+  const unifiedConfig = join(unifiedDirectory, "harmony.json");
+  const legacyConfig = join(userDataDirectory, "runtime", "device-control", "harmony.json");
+  if (!existsSync(unifiedConfig) && existsSync(legacyConfig)) {
+    try {
+      mkdirSync(unifiedDirectory, { recursive: true });
+      copyFileSync(legacyConfig, unifiedConfig);
+    } catch {
+      // Automatic HDC discovery remains available if the one-time migration fails.
+    }
+  }
+  return unifiedDirectory;
 }
 export interface CompanionWindowPosition {
   x: number;

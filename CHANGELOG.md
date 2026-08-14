@@ -4,6 +4,32 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-15
+
+### Changed
+
+- Unified the main Piora desktop release and HarmonyOS NEXT automation preview
+  into one `0.2.2` version and one standard Windows release artifact.
+- Existing ordinary sessions now load `harmony_device` directly without a
+  device-control profile switch or standalone-service restart.
+- Made device projection polling abortable, non-overlapping, visibility-aware,
+  generation-bound, and failure-backoff aware to reduce HDC load and stale input.
+- Added capability-aware device controls, recoverable manual ownership, and
+  immediate lease cleanup when a device becomes unavailable.
+
+### Security
+
+- Removing the dedicated device-control runtime also removes its tool/resource
+  isolation; per-run confirmation, leases, stale-state checks, sensitive-action
+  limits, and emergency stop remain as misuse guards rather than a sandbox.
+
+- UI-reference taps now re-read and uniquely match a fresh device tree before
+  execution; every write invalidates cached references.
+- HDC selections must pass a real read-only probe before replacing the working
+  configuration, and vision screenshots/output have explicit size and format bounds.
+- Phone UI and perception output are delimited as untrusted data, while AI
+  coordinate actions require the current device generation.
+
 ## [0.2.1] - 2026-08-14
 
 ### Added

@@ -1,7 +1,7 @@
 # Piora HarmonyOS NEXT 真机自动化技术设计
 
-> 状态：0.2.1 预览实现基线
-> 更新：2026-08-14
+> 状态：0.2.2 统一桌面版本实现基线
+> 更新：2026-08-15
 > 目标：让 Piora Windows EXE 中的 AI 在用户明确授权后，通过电脑控制 HarmonyOS NEXT 测试手机，并在右侧工作区显示设备投屏。
 
 ## 1. 可行性结论
@@ -46,7 +46,7 @@
 ```mermaid
 flowchart LR
   UI["Piora 右侧 Harmony 面板"] --> API["受桌面令牌保护的 /api/harmony"]
-  AI["device-control Agent"] --> Tool["第一方 harmony_device 工具"]
+  AI["现有普通 Agent 会话"] --> Tool["第一方 harmony_device 工具"]
   API --> Manager["HarmonyDeviceManager"]
   Tool --> Manager
   Manager --> Queue["全局串行队列 + 设备租约"]
@@ -56,27 +56,13 @@ flowchart LR
   Frames --> UI
 ```
 
-Electron main 进程只负责运行模式切换、进程监督和每次启动随机生成的桌面令牌。Next standalone 子进程负责 API、AgentSession、设备管理器和 HDC 子进程。Renderer 没有通用进程启动 IPC。
+Electron main 进程负责进程监督、HDC/SDK 原生路径选择和每次启动随机生成的桌面令牌。Next standalone 子进程同时负责普通 AgentSession、Harmony API、设备管理器和 HDC 子进程。Renderer 没有通用进程启动 IPC。
 
-## 4. 运行模式与工具隔离
+## 4. 统一运行模式
 
-Piora 每次启动都进入 `normal`。用户在原生 Electron 确认框中选择设备控制后，Electron：
+Piora 0.2.2 取消单独的 `device-control` 运行模式。普通 AgentSession 直接加载第一方 `piora-harmony.ts`，现有会话无需重启即可使用 `harmony_device`，并继续保留编码工具、项目/用户扩展、skills、prompts 和 context files。
 
-1. 请求当前 Harmony manager 紧急停止。
-2. 停止 normal standalone 子进程。
-3. 以 `PIORA_RUNTIME_PROFILE=device-control` 和独立数据目录启动新子进程。
-4. 重新加载原窗口。
-
-`device-control` 进程采取 fail-closed 策略：
-
-- Agent 工具只允许 `harmony_device`。
-- 不注册 bash/read/edit/write/grep/find/ls。
-- 只加载仓库内固定路径的 `piora-harmony.ts`。
-- 不加载项目或用户 extensions、skills、prompts、themes、AGENTS/context files。
-- 普通和设备会话使用不同 service cache key。
-- 会话 id 与 profile 原子绑定；恢复、SSE、复制和 fork 都校验或继承绑定。
-
-这是一种“新 Node 进程与资源加载隔离/防误操作模式”，不是 Windows 安全沙箱。它不能阻止同一 Windows 用户下已经存在的其他进程直接执行 HDC，也不清除切换前由其他程序留下的后台进程。
+因此工具确认不再被描述为进程或权限隔离。项目内容、第三方扩展和手机屏幕文字都可能影响同一 Agent；产品只提供防误操作控制：每次 run 的本地授权、不可见租约令牌、全局串行队列、fresh generation/ref、敏感操作限制、急停和 run 结束自动回收。用户应只连接自有测试设备，不应把普通会话视为针对恶意项目或扩展的安全沙箱。
 
 ## 5. 设备管理器
 
@@ -119,7 +105,7 @@ Harmony 作为右侧工作区的独立工具标签，与 Files、Review、Browse
 - 仅当该标签可见且所选设备在线时刷新。
 - 下一帧在上一帧完成后才允许发起，避免请求堆积。
 - 目标频率约 1 FPS；实际频率受 HDC/UiTest 截图耗时限制。
-- 切走标签、关闭面板或切换 profile 后立即停止轮询。
+- 切走标签或关闭面板后立即停止轮询。
 - 帧响应为 `private, no-store` PNG，不进入 SSE。
 - 使用图片 natural size 与实际渲染矩形把指针映射为设备坐标。
 - 短距离指针操作映射为 tap，长距离映射为 swipe。
@@ -156,7 +142,7 @@ Harmony 作为右侧工作区的独立工具标签，与 Files、Review、Browse
 
 - 要求同源请求检查。
 - 要求 Electron 每次启动随机生成并注入的 `X-Pi-Desktop-Token`。
-- 除 `/profile` 外，要求进程处于 `device-control`。
+- 不要求单独 runtime profile；现有会话与设备面板共用同一服务。
 - JSON 写接口限制 Content-Type 和正文大小。
 - 不提供 raw command 或 shell 参数。
 
@@ -187,16 +173,15 @@ SSE 只发送设备、租约和操作元数据；不发送截图、完整 UI 树
 - Piora 打包第一方 Harmony extension、manager/backend 源码和 run identity registry。
 - 不打包 Huawei HDC、Hypium、第三方 agent.so 或投屏二进制。
 - 用户从 DevEco Studio 或官方 Command Line Tools 提供 `hdc.exe`。
-- Windows portable 预览版本使用 `harmony-vX.Y.Z` 独立 tag。
+- Windows portable 使用统一的标准 `vX.Y.Z` tag，不再维护独立 Harmony 版本线。
 - GitHub Actions 在干净依赖环境执行 lint、typecheck、unit tests、license/hygiene、standalone 校验、portable smoke，并发布 SHA-256。
 
 ## 12. 验证矩阵
 
 ### 自动化发布 Gate
 
-- device-control 无编码/进程工具。
-- 只加载第一方 extension，普通与设备缓存不共享。
-- 会话 new/resume/events/fork/duplicate 的 profile 均 fail closed。
+- 普通 new/resume/events/fork/duplicate 会话均可发现 `harmony_device`。
+- 不存在模式切换、服务重启或会话列表分区。
 - 设备租约冲突、过期、owner 释放和紧急停止。
 - 全局队列串行及取消。
 - HDC 路径解析、旧版 target list fallback。
@@ -204,7 +189,7 @@ SSE 只发送设备、租约和操作元数据；不发送截图、完整 UI 树
 - 文本元字符不进入 HDC/remote-shell argv。
 - UI ref generation/revision 陈旧保护。
 - 投屏不覆盖 AI UI tree，隐藏时停止。
-- Desktop profile 切换、独立数据目录和托盘启动。
+- Desktop 统一数据目录、旧 Harmony 配置迁移和托盘启动。
 - 最终 portable packaged-runtime smoke。
 
 ### 真机 Gate

@@ -34,12 +34,7 @@ export function requireHarmonyDesktopAccess(request: Request): NextResponse | nu
 }
 
 export function requireHarmonyAccess(request: Request): NextResponse | null {
-  const denied = requireHarmonyDesktopAccess(request);
-  if (denied) return denied;
-  if (process.env.PIORA_RUNTIME_PROFILE !== "device-control") {
-    return NextResponse.json({ error: { code: "DEVICE_CONTROL_PROFILE_REQUIRED", message: "Harmony APIs require the device-control runtime profile" } }, { status: 409 });
-  }
-  return null;
+  return requireHarmonyDesktopAccess(request);
 }
 
 export function harmonyErrorResponse(error: unknown): NextResponse {
