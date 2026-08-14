@@ -46,7 +46,7 @@ Piora 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面
 内容版本、HTTP 409 冲突、大小限制、路径/符号链接校验、文件锁和原子替换；会话中引用的
 项目外文件不会因为可预览而获得写权限。
 
-### HarmonyOS NEXT 设备自动化（0.2.0 预览）
+### HarmonyOS NEXT 设备自动化（0.2.1 预览）
 
 - 通过用户安装的官方 HDC/UiTest 发现 USB 设备、读取 UI 树和 PNG 屏幕帧。
 - 右侧工作区提供约 1 FPS 的本地设备投屏、人工点击/滑动、按键、文本和应用启动。
@@ -54,6 +54,9 @@ Piora 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面
   `harmony_device` 工具，不加载编码工具、项目扩展、skills 或 prompts。
 - 每台设备使用独占租约、全局串行队列、generation/ref 陈旧保护和紧急停止。
 - 安装包不内置 Huawei SDK，也不支持绕过锁屏、验证码、支付、系统授权或应用权限。
+- 自动扫描 DevEco Studio/Command Line Tools、环境变量和 `PATH` 中的 HDC，并可从候选列表或 Windows 原生选择器指定 SDK 文件夹/`hdc.exe`。
+- 可将手机截图交给独立视觉模型分析，操作模型默认只接收 UI 树和视觉观察文本；原始截图跨模型转发默认关闭。
+- 输入框支持目标模式：未明确完成或阻塞时自动继续下一模型回合，用户可随时停止。
 
 使用准备和真机验收见
 [HarmonyOS 设备自动化指南](docs/HARMONYOS_DEVICE_AUTOMATION.md)，架构与安全边界见

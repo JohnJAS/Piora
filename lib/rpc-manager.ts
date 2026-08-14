@@ -32,6 +32,13 @@ import {
   type PromptRunIdentity,
 } from "./prompt-run-registry";
 import {
+  advanceGoalIteration,
+  beginGoalRun,
+  forceBlockGoal,
+  getGoalRun,
+  type GoalRunState,
+} from "./goal-run-registry";
+import {
   DEVICE_CONTROL_AGENT_TOOLS,
   resolveAgentToolsForRuntimeProfile,
 } from "./tool-presets";
@@ -95,6 +102,12 @@ export interface RpcSessionStartOptions {
 const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 const TASK_ACTIVITY_MAX_LENGTH = 240;
 const TASK_ACTIVITY_STREAM_INTERVAL_MS = 300;
+const GOAL_MODE_MAX_CONTINUATIONS = 64;
+const GOAL_MODE_CONTINUATION = [
+  "Piora target mode is still active. Continue working toward the original user objective now.",
+  "Inspect current evidence and take the next useful action. Do not stop merely because this model turn can end.",
+  "Use piora_goal progress after material milestones, complete only after verifying the outcome, or blocked only when an external change or user input is genuinely required.",
+].join(" ");
 
 function compactTaskActivityText(value: unknown, maxLength = TASK_ACTIVITY_MAX_LENGTH): string {
   const text = typeof value === "string" ? value : (() => {
@@ -216,6 +229,7 @@ export class AgentSessionWrapper {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private onDestroyCallback: (() => void) | null = null;
   private activePromptRun: PromptRunIdentity | undefined;
+  private goalState: GoalRunState | undefined;
   private _alive = true;
 
   constructor(
@@ -507,23 +521,45 @@ export class AgentSessionWrapper {
         // Fire and forget — events come via subscribe
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
+        const goalMode = command.goalMode === true && !streamingBehavior;
         const promptText = compactTaskActivityText(command.message);
         this.fallbackTaskTitle = compactTaskActivityText(command.message, 80) || this.fallbackTaskTitle;
         this.beginRun("prompt", promptText || "Processing request");
         this.lastPromptFailed = false;
         this.lastPromptErrorSummary = undefined;
         const ownsPromptRun = !streamingBehavior || !this.activePromptRun;
+        if (!goalMode && ownsPromptRun) this.goalState = undefined;
         const promptRun = ownsPromptRun
           ? beginPromptRun(this.inner.sessionId)
           : this.activePromptRun!;
         if (ownsPromptRun) this.activePromptRun = promptRun;
+        if (goalMode) {
+          this.goalState = beginGoalRun(promptRun, String(command.message ?? ""));
+          this.emit({ type: "goal_start", goal: this.goalState });
+        }
         this.promptRunning = true;
         notifyRunningChange();
-        Promise.resolve().then(() => this.inner.prompt(command.message as string, {
+        Promise.resolve().then(async () => {
+          await this.inner.prompt(command.message as string, {
             ...(promptImages?.length ? { images: promptImages } : {}),
             ...(streamingBehavior ? { streamingBehavior } : {}),
             source: "rpc",
-          }))
+          });
+          if (goalMode) {
+            while (getGoalRun(this.inner.sessionId)?.status === "active") {
+              const current = getGoalRun(this.inner.sessionId)!;
+              if (current.iteration >= GOAL_MODE_MAX_CONTINUATIONS) {
+                this.goalState = forceBlockGoal(promptRun, `Target mode reached its ${GOAL_MODE_MAX_CONTINUATIONS}-continuation safety limit. Review progress and start a new target-mode run to continue.`);
+                break;
+              }
+              this.goalState = advanceGoalIteration(promptRun);
+              this.emit({ type: "goal_progress", goal: this.goalState });
+              await this.inner.prompt(GOAL_MODE_CONTINUATION, { source: "rpc" });
+            }
+            this.goalState = getGoalRun(this.inner.sessionId) ?? this.goalState;
+            this.emit({ type: "goal_done", goal: this.goalState });
+          }
+        })
           .then(async () => {
           this.promptRunning = false;
           if (ownsPromptRun) {
@@ -577,6 +613,7 @@ export class AgentSessionWrapper {
           isPromptRunning: this.promptRunning,
           isBashRunning: this.inner.isBashRunning,
           isCompacting: this.inner.isCompacting,
+          goal: this.goalState,
           runtime: this.getRuntime(),
           pendingApproval: this.pendingUiResponses.size > 0 || this.activeCustomUis.size > 0,
           lastPromptFailed: this.lastPromptFailed,
@@ -1533,8 +1570,9 @@ export async function startRpcSession(
     if (!services) {
       const bundledBrowserExtension = resolve(process.cwd(), "extensions", "piora-browser.ts");
       const bundledHarmonyExtension = resolve(process.cwd(), "extensions", "piora-harmony.ts");
-      if (runtimeProfile === "device-control" && !existsSync(bundledHarmonyExtension)) {
-        throw new Error(`The required first-party Harmony extension is missing: ${bundledHarmonyExtension}`);
+      const bundledGoalExtension = resolve(process.cwd(), "extensions", "piora-goal.ts");
+      if (runtimeProfile === "device-control" && (!existsSync(bundledHarmonyExtension) || !existsSync(bundledGoalExtension))) {
+        throw new Error("A required first-party device-control extension is missing.");
       }
       services = await createAgentSessionServices({
         cwd,
@@ -1542,7 +1580,7 @@ export async function startRpcSession(
         ...(runtimeProfile === "device-control"
           ? {
               resourceLoaderOptions: {
-                additionalExtensionPaths: [bundledHarmonyExtension],
+                additionalExtensionPaths: [bundledHarmonyExtension, bundledGoalExtension],
                 noExtensions: true,
                 noSkills: true,
                 noPromptTemplates: true,
@@ -1553,16 +1591,16 @@ export async function startRpcSession(
                 agentsFilesOverride: () => ({ agentsFiles: [] }),
               },
             }
-          : existsSync(bundledBrowserExtension)
-            ? { resourceLoaderOptions: { additionalExtensionPaths: [bundledBrowserExtension] } }
+          : existsSync(bundledGoalExtension)
+            ? { resourceLoaderOptions: { additionalExtensionPaths: [bundledBrowserExtension, bundledGoalExtension].filter(existsSync) } }
             : {}),
       });
       if (runtimeProfile === "device-control") {
         const extensionResult = services.resourceLoader.getExtensions();
         const loadedPaths = extensionResult.extensions.map((extension) => realpathSync(extension.resolvedPath));
-        const expectedPath = realpathSync(bundledHarmonyExtension);
-        if (extensionResult.errors.length > 0 || loadedPaths.length !== 1 || loadedPaths[0] !== expectedPath) {
-          throw new Error("The device-control resource loader did not resolve exactly the first-party Harmony extension.");
+        const expectedPaths = [bundledHarmonyExtension, bundledGoalExtension].map((path) => realpathSync(path)).sort();
+        if (extensionResult.errors.length > 0 || loadedPaths.length !== expectedPaths.length || loadedPaths.sort().some((path, index) => path !== expectedPaths[index])) {
+          throw new Error("The device-control resource loader did not resolve exactly the first-party Harmony and target-mode extensions.");
         }
         if (
           services.resourceLoader.getSkills().skills.length > 0

@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { HarmonyError } from "./errors";
-import type { HarmonyConfig } from "./types";
+import type { HarmonyConfig, HarmonyRuntimeCandidate } from "./types";
 
 export interface HarmonyRuntimeResolution {
   hdcPath: string;
@@ -19,6 +19,10 @@ export interface ResolveHdcOptions {
   platform?: NodeJS.Platform;
   exists?: (path: string) => boolean;
   listDirectory?: (path: string) => string[];
+}
+
+export interface DiscoverHdcOptions extends ResolveHdcOptions {
+  selectionPath?: string;
 }
 
 const HDC_ENV_NAMES = ["PIORA_HARMONY_HDC_PATH", "HARMONY_HDC_PATH", "HDC_PATH"] as const;
@@ -74,6 +78,61 @@ function devecoCandidates(
       result.push(join(sdkRoot, version, "openharmony", "toolchains", executable));
       result.push(join(sdkRoot, version, "toolchains", executable));
     }
+  }
+  return result;
+}
+
+function selectedCandidates(selectionPath: string, platform: NodeJS.Platform, listDirectory: (path: string) => string[]): string[] {
+  const selected = normalizeCandidate(selectionPath);
+  if (!selected) return [];
+  const executable = platform === "win32" ? "hdc.exe" : "hdc";
+  if (basename(selected).toLocaleLowerCase() === executable.toLocaleLowerCase()) return [selected];
+  const roots = [selected];
+  for (const version of versionDirectories(selected, listDirectory)) roots.push(join(selected, version));
+  return roots.flatMap((root) => [
+    join(root, executable),
+    join(root, "toolchains", executable),
+    join(root, "openharmony", "toolchains", executable),
+    join(root, "default", "toolchains", executable),
+    join(root, "default", "openharmony", "toolchains", executable),
+  ]);
+}
+
+function inferSdkPath(hdcPath: string): string {
+  const toolchains = dirname(hdcPath);
+  return basename(toolchains).toLocaleLowerCase() === "toolchains"
+    ? dirname(toolchains)
+    : toolchains;
+}
+
+export function discoverHdcCandidates(options: DiscoverHdcOptions = {}): HarmonyRuntimeCandidate[] {
+  const env = options.env ?? process.env;
+  const platform = options.platform ?? process.platform;
+  const homeDir = options.homeDir ?? homedir();
+  const exists = options.exists ?? isUsableFile;
+  const listDirectory = options.listDirectory ?? ((path) => readdirSync(path));
+  const executable = platform === "win32" ? "hdc.exe" : "hdc";
+  const candidates: Array<{ path: string | undefined; source: HarmonyRuntimeCandidate["source"] }> = [];
+
+  if (options.selectionPath) {
+    candidates.push(...selectedCandidates(options.selectionPath, platform, listDirectory).map((path) => ({ path, source: "selection" as const })));
+  }
+  for (const name of HDC_ENV_NAMES) candidates.push({ path: env[name], source: "environment" });
+  candidates.push({ path: options.config?.hdcPath, source: "config" });
+  candidates.push(...devecoCandidates(homeDir, env, platform, listDirectory).map((path) => ({ path, source: "deveco" as const })));
+  for (const directory of (env.PATH ?? "").split(delimiter)) {
+    if (directory.trim()) candidates.push({ path: join(directory.replace(/^"|"$/g, ""), executable), source: "path" });
+  }
+
+  const seen = new Set<string>();
+  const result: HarmonyRuntimeCandidate[] = [];
+  for (const candidate of candidates) {
+    const hdcPath = normalizeCandidate(candidate.path);
+    if (!hdcPath || !exists(hdcPath)) continue;
+    const key = platform === "win32" ? hdcPath.toLocaleLowerCase() : hdcPath;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push({ hdcPath, sdkPath: inferSdkPath(hdcPath), source: candidate.source });
   }
   return result;
 }
@@ -134,10 +193,25 @@ export function readHarmonyConfig(path = defaultHarmonyConfigPath()): HarmonyCon
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const hdcPath = (parsed as { hdcPath?: unknown }).hdcPath;
-    return typeof hdcPath === "string" && hdcPath.trim()
-      ? { hdcPath: normalizeCandidate(hdcPath) }
-      : {};
+    const record = parsed as { hdcPath?: unknown; vision?: unknown };
+    const config: HarmonyConfig = {};
+    if (typeof record.hdcPath === "string" && record.hdcPath.trim()) config.hdcPath = normalizeCandidate(record.hdcPath);
+    if (record.vision && typeof record.vision === "object" && !Array.isArray(record.vision)) {
+      const vision = record.vision as Record<string, unknown>;
+      if (typeof vision.enabled === "boolean" && typeof vision.provider === "string" && typeof vision.modelId === "string") {
+        const provider = vision.provider.trim();
+        const modelId = vision.modelId.trim();
+        if (provider && modelId) {
+          config.vision = {
+            enabled: vision.enabled,
+            provider,
+            modelId,
+            ...(vision.shareScreenshotWithActionModel === true ? { shareScreenshotWithActionModel: true } : {}),
+          };
+        }
+      }
+    }
+    return config;
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "ENOENT" || error instanceof SyntaxError) return {};
@@ -155,6 +229,19 @@ export function writeHarmonyConfig(config: HarmonyConfig, path = defaultHarmonyC
     const absolute = normalizeCandidate(requested);
     if (!absolute) throw new HarmonyError("INVALID_ARGUMENT", "HDC path must be absolute");
     normalized.hdcPath = absolute;
+  }
+  if (config.vision) {
+    const provider = config.vision.provider.trim();
+    const modelId = config.vision.modelId.trim();
+    if (!provider || !modelId || provider.length > 160 || modelId.length > 240) {
+      throw new HarmonyError("INVALID_ARGUMENT", "Vision provider and model are required and must be within limits");
+    }
+    normalized.vision = {
+      enabled: Boolean(config.vision.enabled),
+      provider,
+      modelId,
+      ...(config.vision.shareScreenshotWithActionModel ? { shareScreenshotWithActionModel: true } : {}),
+    };
   }
   try {
     mkdirSync(dirname(path), { recursive: true });

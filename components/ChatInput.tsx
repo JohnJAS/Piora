@@ -56,7 +56,7 @@ interface PromptOptimizationState {
 }
 
 interface Props {
-  onSend: (message: string, images?: AttachedImage[], files?: AttachedFile[]) => void;
+  onSend: (message: string, images?: AttachedImage[], files?: AttachedFile[], options?: PromptRunOptions) => void;
   onAbort: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => void;
   onFollowUp?: (message: string, images?: AttachedImage[]) => void;
@@ -92,6 +92,10 @@ interface Props {
   cwd?: string | null;
   contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
   sessionStats?: SessionStatsInfo | null;
+}
+
+export interface PromptRunOptions {
+  goalMode?: boolean;
 }
 
 export interface ChatInputHandle {
@@ -259,6 +263,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [modelFilter, setModelFilter] = useState("");
   const [promptOptimization, setPromptOptimization] = useState<PromptOptimizationState | null>(null);
   const [streamingActionMenuOpen, setStreamingActionMenuOpen] = useState(false);
+  const [goalMode, setGoalMode] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
   ));
@@ -513,6 +518,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [value]);
 
   useEffect(() => {
+    setGoalMode(window.localStorage.getItem("piora-goal-mode-enabled") === "true");
+  }, []);
+
+  useEffect(() => {
     return () => {
       promptOptimizerAbortRef.current?.abort();
       attachedImagesRef.current.forEach(revokeImagePreview);
@@ -534,9 +543,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       msg,
       attachedImages.length ? attachedImages : undefined,
       attachedFiles.length ? attachedFiles : undefined,
+      { goalMode: goalMode && !msg.startsWith("/") && !msg.startsWith("!") },
     );
     clearInput();
-  }, [value, attachedImages, attachedFiles, isStreaming, onBuiltinCommand, onSend, clearInput]);
+  }, [value, attachedImages, attachedFiles, isStreaming, onBuiltinCommand, onSend, clearInput, goalMode]);
 
   const handleOptimizePrompt = useCallback(async () => {
     const source = value.trim();
@@ -1717,6 +1727,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             >
               <AliIcon name="solution" size={15} />
               {!isMobile && <span>{promptOptimization?.loading ? t("chat.optimizingPrompt") : t("chat.optimizePrompt")}</span>}
+            </button>
+            <button
+              type="button"
+              className="prompt-optimize-button"
+              data-loading={goalMode || undefined}
+              disabled={isStreaming || bashMode}
+              aria-pressed={goalMode}
+              title={goalMode ? t("chat.goalModeOnDescription") : t("chat.goalModeOffDescription")}
+              onClick={() => setGoalMode((enabled) => {
+                const next = !enabled;
+                window.localStorage.setItem("piora-goal-mode-enabled", String(next));
+                return next;
+              })}
+              style={goalMode ? { color: "var(--accent)", borderColor: "color-mix(in srgb, var(--accent) 45%, var(--border))" } : undefined}
+            >
+              <AliIcon name="check-circle" size={15} />
+              {!isMobile && <span>{t("chat.goalMode")}</span>}
             </button>
             <div style={{ flex: 1 }} />
             <div className="session-stats-control">

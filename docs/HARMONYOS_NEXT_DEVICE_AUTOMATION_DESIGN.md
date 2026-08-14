@@ -1,7 +1,7 @@
 # Piora HarmonyOS NEXT 真机自动化技术设计
 
-> 状态：0.2.0 预览实现基线
-> 更新：2026-08-13
+> 状态：0.2.1 预览实现基线
+> 更新：2026-08-14
 > 目标：让 Piora Windows EXE 中的 AI 在用户明确授权后，通过电脑控制 HarmonyOS NEXT 测试手机，并在右侧工作区显示设备投屏。
 
 ## 1. 可行性结论
@@ -230,3 +230,17 @@ CI 没有实体手机，因此不能替代这组硬件验收。
 - 多设备可以被发现，但底层 UiTest 稳定并行尚未证明，所以首版采用全局串行。
 - 若后续引入 Hypium Node backend，从 P0 起必须运行在受监督 worker；P3 只负责长稳、Windows Job Object 和恢复加固。
 - 若产品要把“阻止同用户其他进程调用 HDC”作为安全承诺，必须另加 OS 级进程/凭据/设备访问隔离；当前实现不作此承诺。
+
+## 14. 0.2.1 增量：运行时发现、双模型感知和目标模式
+
+### 14.1 HDC/SDK 发现
+
+`discoverHdcCandidates()` 统一枚举用户选择、环境变量、已保存配置、DevEco 常见安装目录和 `PATH`。候选项同时携带 `hdcPath`、推断的 `sdkPath` 和来源，渲染器只通过受信 Electron IPC 请求原生文件/目录选择；渲染器不能读取任意目录。用户选择 SDK 根目录时仅检查固定相对路径和直接版本子目录，不递归扫描磁盘。
+
+### 14.2 双模型感知
+
+设备快照仍由 `HarmonyDeviceManager` 一次生成。启用视觉路由时，截图作为独立、无历史的图片请求发送给用户选择的 image-capable 模型，返回受提示约束的观察文本；操作模型继续使用 revision-scoped UI refs、UI 树和观察文本。默认不把原图加入操作模型 tool result，避免同一屏幕被发送给两个提供商。视觉失败会作为结构化 warning 返回，UI 树路径仍可继续。
+
+### 14.3 目标模式
+
+`goalMode` 由 composer 随初始 prompt 发送。服务端以真实 `sessionId/runId` 建立内存状态机，并在每个 Agent turn 完成后检查状态；只要状态仍为 active，就由同一 `AgentSessionWrapper` 发起下一 turn，同时保持 `promptRunning` 和同一 prompt run identity。`piora_goal` 只允许当前 run 更新 progress、complete 或 blocked。abort、provider error、wrapper destroy 和最终 idle 都沿用 prompt-run cleanup。64 次自动续接是失控保护，触达后状态为 blocked，不得伪报 complete。

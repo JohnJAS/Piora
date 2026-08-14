@@ -5,6 +5,7 @@ export * from "./types";
 export * from "./runtime";
 export * from "./command-runner";
 export * from "./hdc-backend";
+export * from "./vision";
 export { HarmonyDeviceManager, type HarmonyDeviceManagerOptions } from "./device-manager";
 
 declare global {

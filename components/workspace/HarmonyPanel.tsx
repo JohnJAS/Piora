@@ -27,6 +27,12 @@ type HarmonyState = {
 };
 type ManualLease = { token: string; serial: string; expiresAt: string };
 type FrameStatus = "idle" | "loading" | "live" | "error";
+type RuntimeCandidate = { hdcPath: string; sdkPath: string; source: "selection" | "environment" | "config" | "deveco" | "path" };
+type VisionModel = { provider: string; modelId: string; name: string };
+type HarmonyConfig = {
+  hdcPath?: string;
+  vision?: { enabled: boolean; provider: string; modelId: string; shareScreenshotWithActionModel?: boolean };
+};
 
 function messageOf(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
@@ -52,6 +58,11 @@ export function HarmonyPanel({ active }: { active: boolean }) {
   const [selectedSerial, setSelectedSerial] = useState("");
   const [lease, setLease] = useState<ManualLease | null>(null);
   const [sdkPath, setSdkPath] = useState("");
+  const [runtimeCandidates, setRuntimeCandidates] = useState<RuntimeCandidate[]>([]);
+  const [visionModels, setVisionModels] = useState<VisionModel[]>([]);
+  const [visionEnabled, setVisionEnabled] = useState(false);
+  const [visionModelKey, setVisionModelKey] = useState("");
+  const [shareScreenshot, setShareScreenshot] = useState(false);
   const [diagnostics, setDiagnostics] = useState<unknown>(null);
   const [tree, setTree] = useState<unknown>(null);
   const [text, setText] = useState("");
@@ -101,8 +112,18 @@ export function HarmonyPanel({ active }: { active: boolean }) {
   const loadConfig = useCallback(async () => {
     if (profile !== "device-control") return;
     try {
-      const payload = await jsonRequest<{ config: { hdcPath?: string }; diagnostics: unknown }>("/api/harmony/config");
-      setSdkPath(payload.config.hdcPath ?? "");
+      const [payload, modelPayload] = await Promise.all([
+        jsonRequest<{ config: HarmonyConfig; diagnostics: HarmonyState & { runtime?: { hdcPath?: string } }; candidates: RuntimeCandidate[] }>("/api/harmony/config"),
+        jsonRequest<{ models: VisionModel[]; error?: string }>("/api/harmony/vision-models"),
+      ]);
+      const candidates = payload.candidates ?? [];
+      setRuntimeCandidates(candidates);
+      setSdkPath(payload.config.hdcPath ?? payload.diagnostics?.runtime?.hdcPath ?? candidates[0]?.hdcPath ?? "");
+      setVisionModels(modelPayload.models ?? []);
+      const vision = payload.config.vision;
+      setVisionEnabled(Boolean(vision?.enabled));
+      setVisionModelKey(vision ? `${vision.provider}\u0000${vision.modelId}` : "");
+      setShareScreenshot(Boolean(vision?.shareScreenshotWithActionModel));
       setDiagnostics(payload.diagnostics);
     } catch (configError) {
       setError(messageOf(configError, copy("无法读取 SDK 配置", "Unable to read SDK configuration")));
@@ -184,6 +205,22 @@ export function HarmonyPanel({ active }: { active: boolean }) {
       setBusy(false);
     }
   }, [copy]);
+
+  const chooseRuntimePath = useCallback(async (kind: "sdk" | "hdc") => {
+    const selectedPath = await window.piDesktop?.selectHarmonyRuntimePath?.(kind);
+    if (!selectedPath) return;
+    await run(async () => {
+      const payload = await jsonRequest<{ candidates: RuntimeCandidate[] }>("/api/harmony/runtime-candidates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selectionPath: selectedPath }),
+      });
+      const selected = payload.candidates.find((candidate) => candidate.source === "selection");
+      if (!selected) throw new Error(copy("所选位置中没有找到 hdc", "No hdc executable was found in the selected location"));
+      setRuntimeCandidates(payload.candidates);
+      setSdkPath(selected.hdcPath);
+    });
+  }, [copy, run]);
 
   const requestFrame = useCallback(() => {
     if (frameLoadingRef.current) return;
@@ -287,14 +324,48 @@ export function HarmonyPanel({ active }: { active: boolean }) {
       </div>
     </header>
 
-    <section className={styles.settings}>
-      <label><span>{copy("HDC / SDK 路径", "HDC / SDK path")}</span><input value={sdkPath} placeholder="C:\\...\\hdc.exe" onChange={(event) => setSdkPath(event.target.value)} /></label>
-      <button type="button" disabled={busy} onClick={() => void run(
-        () => jsonRequest<{ config: { hdcPath?: string }; diagnostics: unknown }>("/api/harmony/config", {
-          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hdcPath: sdkPath.trim() || null }),
-        }),
-        (payload) => { setSdkPath(payload.config.hdcPath ?? ""); setDiagnostics(payload.diagnostics); void refresh(); },
-      )}>{copy("保存并重新检测", "Save and rediscover")}</button>
+    <section className={styles.settingsStack}>
+      <div className={styles.settings}>
+        <label><span>{copy("已选择的 HDC", "Selected HDC")}</span><input value={sdkPath} placeholder="C:\\...\\hdc.exe" onChange={(event) => setSdkPath(event.target.value)} /></label>
+        <div className={styles.settingActions}>
+          <button type="button" disabled={busy} onClick={() => void chooseRuntimePath("sdk")}>{copy("选择 SDK 文件夹", "Choose SDK folder")}</button>
+          <button type="button" disabled={busy} onClick={() => void chooseRuntimePath("hdc")}>{copy("选择 hdc.exe", "Choose hdc.exe")}</button>
+          <button type="button" disabled={busy} onClick={() => void run(
+            () => jsonRequest<{ config: HarmonyConfig; diagnostics: unknown; candidates: RuntimeCandidate[] }>("/api/harmony/config", {
+              method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hdcPath: sdkPath.trim() || null }),
+            }),
+            (payload) => { setSdkPath(payload.config.hdcPath ?? payload.candidates[0]?.hdcPath ?? ""); setRuntimeCandidates(payload.candidates); setDiagnostics(payload.diagnostics); void refresh(); },
+          )}>{copy("保存并重新检测", "Save and rediscover")}</button>
+        </div>
+      </div>
+      {runtimeCandidates.length ? <div className={styles.candidates}>
+        <span>{copy("自动检测结果", "Detected installations")}</span>
+        {runtimeCandidates.map((candidate) => <button type="button" key={candidate.hdcPath} data-selected={candidate.hdcPath === sdkPath} onClick={() => setSdkPath(candidate.hdcPath)}>
+          <strong>{candidate.source}</strong><span>{candidate.hdcPath}</span><small>SDK: {candidate.sdkPath}</small>
+        </button>)}
+      </div> : <div className={styles.hint}>{copy("未自动找到 HDC，请选择 DevEco SDK 文件夹或 hdc.exe。", "HDC was not found automatically. Choose a DevEco SDK folder or hdc executable.")}</div>}
+      <div className={styles.visionSettings}>
+        <label className={styles.check}><input type="checkbox" checked={visionEnabled} onChange={(event) => setVisionEnabled(event.target.checked)} />{copy("启用独立视觉模型读取手机截图", "Use a separate vision model for phone screenshots")}</label>
+        <select value={visionModelKey} onChange={(event) => setVisionModelKey(event.target.value)} disabled={!visionEnabled}>
+          <option value="">{copy("选择视觉模型", "Select vision model")}</option>
+          {visionModelKey && !visionModels.some((model) => `${model.provider}\u0000${model.modelId}` === visionModelKey)
+            ? <option value={visionModelKey}>{copy("已配置但当前不可用", "Configured but currently unavailable")} · {visionModelKey.replace("\u0000", "/")}</option>
+            : null}
+          {visionModels.map((model) => <option key={`${model.provider}\u0000${model.modelId}`} value={`${model.provider}\u0000${model.modelId}`}>{model.name} · {model.provider}/{model.modelId}</option>)}
+        </select>
+        <label className={styles.check}><input type="checkbox" checked={shareScreenshot} disabled={!visionEnabled} onChange={(event) => setShareScreenshot(event.target.checked)} />{copy("同时把原始截图发送给操作模型（默认关闭）", "Also send the raw screenshot to the action model (off by default)")}</label>
+        <button type="button" disabled={busy || (visionEnabled && !visionModelKey)} onClick={() => void run(async () => {
+          const [provider, modelId] = visionModelKey.split("\u0000");
+          const payload = await jsonRequest<{ config: HarmonyConfig; diagnostics: unknown; candidates: RuntimeCandidate[] }>("/api/harmony/config", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ vision: visionEnabled ? { enabled: true, provider, modelId, shareScreenshotWithActionModel: shareScreenshot } : null }),
+          });
+          setDiagnostics(payload.diagnostics);
+          return payload;
+        })}>{copy("保存视觉分工", "Save model routing")}</button>
+        <p>{copy("截图只发送给所选视觉模型；操作模型默认只收到 UI 树和视觉观察文本。右侧投屏始终在本机获取。", "Screenshots go only to the selected vision model; the action model receives the UI tree and observation text by default. The right-side live view remains local.")}</p>
+      </div>
     </section>
 
     <div className={styles.deviceBar}>

@@ -44,6 +44,9 @@ const runtime = Object.freeze({
       error?: string;
     }>;
   },
+  selectHarmonyRuntimePath(kind: "sdk" | "hdc"): Promise<string | null> {
+    return ipcRenderer.invoke("pi:harmony-runtime-picker", kind) as Promise<string | null>;
+  },
   onMenuAction(listener: (action: string) => void) {
     const handler = (_event: Electron.IpcRendererEvent, action: unknown) => {
       if (typeof action === "string") listener(action);

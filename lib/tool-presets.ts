@@ -9,8 +9,8 @@ export const BUILTIN_AGENT_TOOLS: readonly string[] = [
   "ls",
 ];
 
-/** The sole Agent tool admitted by the cold-start device-control profile. */
-export const DEVICE_CONTROL_AGENT_TOOLS: readonly string[] = ["harmony_device"];
+/** The only Agent tools admitted by the cold-start device-control profile. */
+export const DEVICE_CONTROL_AGENT_TOOLS: readonly string[] = ["harmony_device", "piora_goal"];
 
 /**
  * Clamp a client-requested tool set to the process profile. Device-control

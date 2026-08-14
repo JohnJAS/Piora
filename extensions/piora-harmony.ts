@@ -2,6 +2,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   getHarmonyDeviceManager,
+  analyzeHarmonyScreenshot,
   isHarmonyError,
   type HarmonyLease,
   type HarmonySnapshot,
@@ -136,11 +137,26 @@ function snapshotText(snapshot: HarmonySnapshot): string {
     : output;
 }
 
-function snapshotResult(snapshot: HarmonySnapshot, identity: PromptToolIdentity, action: string) {
+async function snapshotResult(snapshot: HarmonySnapshot, identity: PromptToolIdentity, action: string, signal?: AbortSignal) {
+  const vision = getHarmonyDeviceManager().getConfig().vision;
+  let observation: Awaited<ReturnType<typeof analyzeHarmonyScreenshot>> | undefined;
+  let visionError: string | undefined;
+  if (snapshot.screenshot && vision?.enabled) {
+    try {
+      observation = await analyzeHarmonyScreenshot(snapshot.screenshot, vision, signal);
+    } catch (error) {
+      visionError = error instanceof Error ? error.message : String(error);
+    }
+  }
   return {
     content: [
       { type: "text" as const, text: snapshotText(snapshot) },
-      ...(snapshot.screenshot
+      ...(observation ? [{
+        type: "text" as const,
+        text: `\nPerception model observation (${observation.provider}/${observation.modelId}):\n${observation.text}`,
+      }] : []),
+      ...(visionError ? [{ type: "text" as const, text: `\nPerception model warning: ${visionError}` }] : []),
+      ...(snapshot.screenshot && (!vision?.enabled || vision.shareScreenshotWithActionModel)
         ? [{
             type: "image" as const,
             data: snapshot.screenshot.data.toString("base64"),
@@ -154,6 +170,14 @@ function snapshotResult(snapshot: HarmonySnapshot, identity: PromptToolIdentity,
       generation: snapshot.generation,
       revision: snapshot.revision,
       capturedAt: snapshot.capturedAt,
+      ...(vision?.enabled ? {
+        perception: {
+          provider: vision.provider,
+          modelId: vision.modelId,
+          succeeded: Boolean(observation),
+          rawScreenshotSharedWithActionModel: Boolean(vision.shareScreenshotWithActionModel),
+        },
+      } : {}),
       identity: {
         sessionId: identity.sessionId,
         runId: identity.runId,
@@ -316,7 +340,7 @@ const harmonyDeviceTool = defineTool({
             includeScreenshot: params.includeScreenshot ?? true,
             signal,
           });
-          return snapshotResult(snapshot, identity, params.action);
+          return await snapshotResult(snapshot, identity, params.action, signal);
         }
         case "tap_ref": {
           const result = await manager.tapRef({
@@ -394,7 +418,7 @@ const harmonyDeviceTool = defineTool({
               includeScreenshot: false,
               signal,
             });
-            if (snapshotMatches(latest, condition)) return snapshotResult(latest, identity, params.action);
+            if (snapshotMatches(latest, condition)) return await snapshotResult(latest, identity, params.action, signal);
             if (Date.now() >= deadline) break;
             await abortedDelay(Math.min(intervalMs, deadline - Date.now()), signal);
           } while (Date.now() <= deadline);

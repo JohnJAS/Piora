@@ -105,6 +105,19 @@ export interface HarmonyManagerState {
 
 export interface HarmonyConfig {
   hdcPath?: string;
+  vision?: {
+    enabled: boolean;
+    provider: string;
+    modelId: string;
+    /** Keep the raw phone screenshot out of the action model by default. */
+    shareScreenshotWithActionModel?: boolean;
+  };
+}
+
+export interface HarmonyRuntimeCandidate {
+  hdcPath: string;
+  sdkPath: string;
+  source: "selection" | "environment" | "config" | "deveco" | "path";
 }
 
 export interface HarmonyDiagnostics {

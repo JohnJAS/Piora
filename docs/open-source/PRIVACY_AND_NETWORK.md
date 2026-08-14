@@ -65,6 +65,7 @@ for example:
 - provider OAuth/device-code login or API-key validation;
 - fetching a configured provider's model catalog;
 - testing a model connection;
+- analyzing a Harmony phone screenshot after the user enables a specific vision model and the Agent requests a screenshot snapshot; this request contains the screenshot but no conversation history, input text, device lease token, or credential, and raw screenshot forwarding to the action model is off by default;
 - searching, installing, or updating Pi packages and skills;
 - an installed Pi extension or tool performing its documented network action;
 - the operating system or GitHub Actions downloading npm dependencies during a source build.
@@ -94,6 +95,7 @@ credentials, settings, and installed resources used by Pi itself. Source pet dat
 
 - no analytics, crash-report upload, or behavioral tracking;
 - no automatic upload of conversations, projects, TODOs, quick phrases, pets, or backgrounds;
+- no phone screenshot upload merely from opening the local Harmony live-view panel;
 - no remote theme CSS, theme JavaScript, or background URL loading;
 - no separate Project Trust or per-tool approval layer; project resources follow Pi's direct local-agent loading model;
 - the built-in browser accesses websites only when an Agent invokes its browser tool, in a private headless context that does not inherit normal browser logins;

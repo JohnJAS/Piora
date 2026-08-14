@@ -44,6 +44,7 @@ const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
 const COMPANION_LAYOUT_CHANNEL = "pi:companion-window-expanded";
 const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
 const RUNTIME_PROFILE_SWITCH_CHANNEL = "pi:runtime-profile-switch";
+const HARMONY_RUNTIME_PICKER_CHANNEL = "pi:harmony-runtime-picker";
 const DESKTOP_TITLE_BAR_HEIGHT = 40;
 const COMPANION_COMPACT_WIDTH = 156;
 const COMPANION_COMPACT_HEIGHT = 184;
@@ -898,6 +899,26 @@ function registerRuntimeProfileSwitchHandler(): void {
   );
 }
 
+function registerHarmonyRuntimePickerHandler(): void {
+  ipcMain.removeHandler(HARMONY_RUNTIME_PICKER_CHANNEL);
+  ipcMain.handle(HARMONY_RUNTIME_PICKER_CHANNEL, async (event, kind: unknown): Promise<string | null> => {
+    if (!isTrustedMainWindowSender(event) || currentRuntimeProfile !== "device-control") return null;
+    if (kind !== "sdk" && kind !== "hdc") return null;
+    const ownerWindow = mainWindow;
+    if (!ownerWindow || ownerWindow.isDestroyed()) return null;
+    const result = await dialog.showOpenDialog(ownerWindow, kind === "sdk"
+      ? { title: "Select HarmonyOS SDK directory", properties: ["openDirectory"] }
+      : {
+          title: "Select hdc executable",
+          properties: ["openFile"],
+          ...(process.platform === "win32"
+            ? { filters: [{ name: "Harmony Device Connector", extensions: ["exe"] }] }
+            : {}),
+        });
+    return result.canceled ? null : result.filePaths[0] ?? null;
+  });
+}
+
 function registerCompanionWindowHandlers(): void {
   ipcMain.removeHandler(COMPANION_VISIBILITY_CHANNEL);
   ipcMain.removeHandler(COMPANION_LAYOUT_CHANNEL);
@@ -1189,6 +1210,7 @@ async function startApplication(): Promise<void> {
   registerCompanionWindowHandlers();
   registerGlobalShortcutHandler();
   registerRuntimeProfileSwitchHandler();
+  registerHarmonyRuntimePickerHandler();
 
   if (PORTABLE_SMOKE_TEST) {
     const smokeMarker = process.env.PIORA_SMOKE_MARKER?.trim();

@@ -17,6 +17,7 @@ declare global {
         profile: "normal" | "device-control";
         error?: string;
       }>;
+      selectHarmonyRuntimePath?: (kind: "sdk" | "hdc") => Promise<string | null>;
       onMenuAction?: (listener: (action: string) => void) => () => void;
     };
   }

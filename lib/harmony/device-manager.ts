@@ -481,18 +481,23 @@ export class HarmonyDeviceManager {
     return { ...this.config };
   }
 
-  async updateConfig(patch: { hdcPath?: string | null }): Promise<HarmonyConfig> {
+  async updateConfig(patch: { hdcPath?: string | null; vision?: HarmonyConfig["vision"] | null }): Promise<HarmonyConfig> {
     if (this.injectedBackend) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Injected Harmony backends cannot be reconfigured");
     const next: HarmonyConfig = { ...this.config };
     if (patch.hdcPath === null || patch.hdcPath === "") delete next.hdcPath;
     else if (patch.hdcPath !== undefined) next.hdcPath = patch.hdcPath;
+    if (patch.vision === null) delete next.vision;
+    else if (patch.vision !== undefined) next.vision = patch.vision;
     const normalized = writeHarmonyConfig(next, this.configPath);
-    await this.emergencyStop("configuration_changed");
-    await this.backend?.dispose?.();
-    this.backend = undefined;
+    const runtimeChanged = normalized.hdcPath !== this.config.hdcPath;
     this.config = normalized;
-    this.tryCreateBackend();
-    if (!this.backend) throw this.runtimeError;
+    if (runtimeChanged) {
+      await this.emergencyStop("configuration_changed");
+      await this.backend?.dispose?.();
+      this.backend = undefined;
+      this.tryCreateBackend();
+      if (!this.backend) throw this.runtimeError;
+    }
     return this.getConfig();
   }
 

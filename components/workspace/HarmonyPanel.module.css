@@ -12,6 +12,19 @@
 .root button, .gate button { min-height: 30px; padding: 4px 9px; cursor: pointer; }
 .root button:disabled, .gate button:disabled { opacity: .45; cursor: default; }
 .settings { display: grid; grid-template-columns: minmax(220px, 1fr) auto; align-items: end; gap: 8px; padding: 10px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; }
+.settingsStack { display: grid; gap: 8px; }
+.settingActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.candidates { display: grid; gap: 5px; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); }
+.candidates > span, .hint { color: var(--text-muted); font-size: var(--text-xs); }
+.candidates button { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 8px; text-align: left; }
+.candidates button[data-selected="true"] { border-color: var(--accent); background: var(--bg-selected); }
+.candidates button span, .candidates button small { overflow: hidden; color: var(--text-muted); text-overflow: ellipsis; white-space: nowrap; }
+.candidates button small { grid-column: 2; }
+.visionSettings { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(260px, 1fr) auto; align-items: center; gap: 8px; padding: 10px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; }
+.visionSettings select { min-width: 0; padding: 7px 8px; }
+.visionSettings .check { display: flex; grid-auto-flow: column; justify-content: start; align-items: center; gap: 7px; }
+.visionSettings .check input { min-width: auto; }
+.visionSettings p { grid-column: 1 / -1; margin: 0; color: var(--text-muted); font-size: var(--text-xs); line-height: 1.45; }
 .settings label, .controls label { display: grid; gap: 5px; font-size: var(--text-xs); color: var(--text-muted); }
 .settings input, .controls input, .controls textarea, .deviceBar select { min-width: 0; padding: 7px 8px; }
 .deviceBar select { flex: 1; }
@@ -35,4 +48,4 @@
 .diagnostics summary { cursor: pointer; color: var(--text-muted); }
 .diagnostics pre { max-height: 260px; margin: 8px 0 0; overflow: auto; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.45; white-space: pre-wrap; }
 .root footer { padding-bottom: 6px; }
-@media (max-width: 760px) { .settings, .deviceArea { grid-template-columns: 1fr; } .deviceArea { min-height: 0; } .frame { min-height: 300px; } .deviceBar { flex-wrap: wrap; } .deviceBar select { flex-basis: 100%; } }
+@media (max-width: 760px) { .settings, .visionSettings, .deviceArea { grid-template-columns: 1fr; } .deviceArea { min-height: 0; } .frame { min-height: 300px; } .deviceBar { flex-wrap: wrap; } .deviceBar select { flex-basis: 100%; } }
