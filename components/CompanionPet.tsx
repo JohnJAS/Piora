@@ -7,8 +7,12 @@ import {
   advanceCompanionAnimation,
   getCompanionAnimationFrameIndices,
   getCompanionAtlasFramePosition,
+  prepareCompanionPersistentAnimation,
+  prepareCompanionTransientAnimation,
   selectCompanionSpriteState,
+  selectCompanionTransientSpriteState,
   type CompanionActivity,
+  type CompanionActivityEvent,
 } from "@/lib/companion";
 import { MAX_COMPANION_PHRASES, MAX_COMPANION_TODOS, createCompanionId, type CompanionPreferences } from "@/lib/companion-store";
 import { STATUS_PRESENTATION, type TaskStatusPresentationKey } from "@/lib/task-status";
@@ -73,20 +77,30 @@ function usePrefersReducedMotion(): boolean {
 export function BuiltinPet({ status }: { status: CompanionActivity["status"] }) {
   return (
     <div className={styles.builtinPet} data-status={status} aria-hidden="true">
-      <svg width="65" height="70" viewBox="0 0 72 76" fill="none">
-        <path d="M19 24 13 10l15 8M53 24l6-14-15 8" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-        <rect x="9" y="18" width="54" height="47" rx="23" fill="color-mix(in srgb, currentColor 13%, var(--bg))" stroke="currentColor" strokeWidth="3" />
-        <circle cx="27" cy="39" r="3.5" fill="currentColor" />
-        <circle cx="45" cy="39" r="3.5" fill="currentColor" />
-        <path d={status === "failed" ? "m30 53 6-4 6 4" : status === "idle" ? "M30 50c3.5 4 8.5 4 12 0" : "M29 49c4 5 10 5 14 0"} stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-        <path d="M36 18V9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-        <circle cx="36" cy="6" r="3" fill="currentColor" />
-      </svg>
+      <div className={styles.builtinPetMotion}>
+        <svg width="65" height="70" viewBox="0 0 72 76" fill="none">
+          <path d="M19 24 13 10l15 8M53 24l6-14-15 8" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+          <rect x="9" y="18" width="54" height="47" rx="23" fill="color-mix(in srgb, currentColor 13%, var(--bg))" stroke="currentColor" strokeWidth="3" />
+          <circle cx="27" cy="39" r="3.5" fill="currentColor" />
+          <circle cx="45" cy="39" r="3.5" fill="currentColor" />
+          <path d={status === "failed" ? "m30 53 6-4 6 4" : status === "idle" ? "M30 50c3.5 4 8.5 4 12 0" : "M29 49c4 5 10 5 14 0"} stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          <path d="M36 18V9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          <circle cx="36" cy="6" r="3" fill="currentColor" />
+        </svg>
+      </div>
     </div>
   );
 }
 
-export function SpritePet({ pet, status }: { pet: CompanionPetMetadata; status: CompanionActivity["status"] }) {
+export function SpritePet({
+  pet,
+  status,
+  event,
+}: {
+  pet: CompanionPetMetadata;
+  status: CompanionActivity["status"];
+  event?: CompanionActivityEvent;
+}) {
   const reducedMotion = usePrefersReducedMotion();
   const renderablePet = pet as unknown as RenderablePet;
   const grid = renderablePet.frame ?? {
@@ -95,22 +109,46 @@ export function SpritePet({ pet, status }: { pet: CompanionPetMetadata; status: 
     columns: pet.columns,
     rows: pet.rows,
   };
-  const requestedAnimation = useMemo(
+  const selectedBaseAnimation = useMemo(
     () => selectCompanionSpriteState(renderablePet.states, status),
     [renderablePet.states, status],
   );
-  const [animationId, setAnimationId] = useState<string | null>(requestedAnimation?.id ?? null);
+  const idleAnimation = useMemo(
+    () => renderablePet.states.find((state) => state.id === "idle") ?? null,
+    [renderablePet.states],
+  );
+  const baseAnimation = useMemo(
+    () => selectedBaseAnimation
+      ? prepareCompanionPersistentAnimation(selectedBaseAnimation, idleAnimation, status)
+      : null,
+    [idleAnimation, selectedBaseAnimation, status],
+  );
+  const eventKey = event?.key;
+  const eventKind = event?.kind;
+  const selectedTransientAnimation = useMemo(
+    () => eventKind ? selectCompanionTransientSpriteState(renderablePet.states, eventKind) : null,
+    [eventKind, renderablePet.states],
+  );
+  const transientAnimation = useMemo(() => {
+    if (reducedMotion || !eventKey || !selectedTransientAnimation || !baseAnimation) return null;
+    return {
+      ...prepareCompanionTransientAnimation(selectedTransientAnimation, idleAnimation, baseAnimation.id),
+      id: `${selectedTransientAnimation.id}::${eventKey}`,
+    };
+  }, [baseAnimation, eventKey, idleAnimation, reducedMotion, selectedTransientAnimation]);
+  const [completedEventKey, setCompletedEventKey] = useState<string | null>(null);
+  const pendingTransientAnimation = eventKey !== completedEventKey ? transientAnimation : null;
+  const requestedAnimation = pendingTransientAnimation ?? baseAnimation;
+  const [animation, setAnimation] = useState<RenderableAnimationState | null>(requestedAnimation);
   const [frameOffset, setFrameOffset] = useState(0);
   const [failed, setFailed] = useState(false);
-  const activeAnimation = renderablePet.states.find((state) => state.id === animationId) ?? requestedAnimation;
-  const animation = reducedMotion ? requestedAnimation : activeAnimation;
   const frameCount = Math.max(1, grid.columns * grid.rows);
   const frameIndices = getCompanionAnimationFrameIndices(animation, grid.columns, frameCount);
 
   useEffect(() => {
-    setAnimationId(requestedAnimation?.id ?? null);
+    setAnimation(requestedAnimation);
     setFrameOffset(0);
-  }, [pet.atlasUrl, requestedAnimation?.id, reducedMotion, status]);
+  }, [pet.atlasUrl, reducedMotion, requestedAnimation]);
 
   useEffect(() => {
     setFailed(false);
@@ -129,14 +167,20 @@ export function SpritePet({ pet, status }: { pet: CompanionPetMetadata; status: 
         setFrameOffset(next);
         return;
       }
+      if (pendingTransientAnimation && animation.id === pendingTransientAnimation.id && eventKey) {
+        setCompletedEventKey(eventKey);
+        setAnimation(baseAnimation);
+        setFrameOffset(0);
+        return;
+      }
       const fallback = renderablePet.states.find((state) => state.id === animation.fallback);
       if (fallback && fallback.id !== animation.id) {
-        setAnimationId(fallback.id);
+        setAnimation(fallback.id === baseAnimation?.id ? baseAnimation : fallback);
         setFrameOffset(0);
       }
     }, Math.max(60, durations?.[frameOffset] ?? 150));
     return () => window.clearTimeout(timeout);
-  }, [animation, frameIndices.length, frameOffset, reducedMotion, renderablePet.states]);
+  }, [animation, baseAnimation, eventKey, frameIndices.length, frameOffset, pendingTransientAnimation, reducedMotion, renderablePet.states]);
 
   if (!pet.atlasUrl || !animation || frameIndices.length === 0 || failed) return <BuiltinPet status={status} />;
   const absoluteFrame = frameIndices[reducedMotion ? 0 : Math.min(frameOffset, frameIndices.length - 1)];
@@ -241,7 +285,9 @@ export function CompanionPet({
     <aside className={styles.dock} aria-label={t("companion.title")} data-testid="companion-dock">
       <div className={styles.header}>
         <div className={styles.petViewport}>
-          {activePet ? <SpritePet pet={activePet} status={activity.status} /> : <BuiltinPet status={activity.status} />}
+          {activePet
+            ? <SpritePet pet={activePet} status={activity.status} event={activity.event} />
+            : <BuiltinPet status={activity.status} />}
         </div>
         <div className={styles.activityCopy} aria-live="polite">
           <div className={styles.activityRow}>

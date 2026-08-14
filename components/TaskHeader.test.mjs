@@ -21,6 +21,12 @@ test("polls git changes only while a running task is visible", () => {
   assert.match(source, /3_000/);
 });
 
+test("shows tracked-only Git line totals in the conversation header", () => {
+  assert.match(source, /getTrackedGitLineStats\(gitStatus\)/);
+  assert.match(source, /\+\{trackedLineStats\.additions\}/);
+  assert.match(source, /trackedLineStats\.deletions/);
+});
+
 test("keeps elapsed time anchored to the server run across task switches", () => {
   assert.match(source, /optimisticRunStarts = new Map<string, number>/);
   assert.match(source, /const authoritativeStart = taskStatus\.startedAt/);

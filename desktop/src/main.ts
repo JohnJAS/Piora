@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { accessSync, constants as fsConstants, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import {
   app,
@@ -22,16 +22,19 @@ import {
 import {
   readCompanionWindowPosition,
   readMainWindowState,
+  readPiAgentDirectory,
   readPreferredServerPort,
   runtimeProfileDataDirectory,
   writeCompanionWindowPosition,
   writeMainWindowState,
+  writePiAgentDirectory,
   writePreferredServerPort,
   type RuntimeProfile,
 } from "./desktop-state.js";
 import { FileLogger, type Logger } from "./logger.js";
 import { StandaloneServer, type ServerExit } from "./server-supervisor.js";
 import { fitBoundsToVisibleDisplays } from "./window-bounds.js";
+import { directoryHasData, migratePiDataDirectory } from "./pi-data-migration.js";
 
 const DESKTOP_PARTITION = "persist:piora";
 const DESKTOP_TOKEN_HEADER = "X-Pi-Desktop-Token";
@@ -54,6 +57,7 @@ const MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80;
 const PORTABLE_SMOKE_TEST = process.env.PIORA_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
 const STARTUP_SHELL_BACKGROUND = "#111318";
+const PI_AGENT_DIRECTORY_ENV = "PI_CODING_AGENT_DIR";
 
 const requestedSmokeUserData = process.env.PIORA_SMOKE_USER_DATA?.trim();
 const requestedCompanionUiTestUserData = process.env.PIORA_COMPANION_UI_TEST === "1"
@@ -91,7 +95,100 @@ let quitRequested = false;
 let currentRuntimeProfile: RuntimeProfile = "normal";
 let serverEntryPath: string | undefined;
 let serverHostEntryPath: string | undefined;
+let piAgentDirectoryPath: string | undefined;
 let runtimeProfileSwitchPromise: Promise<{ accepted: boolean; profile: RuntimeProfile; error?: string }> | undefined;
+
+function prepareWritableDirectory(directory: string): string {
+  const resolvedDirectory = resolve(directory);
+  mkdirSync(resolvedDirectory, { recursive: true });
+  accessSync(resolvedDirectory, fsConstants.R_OK | fsConstants.W_OK);
+  return resolvedDirectory;
+}
+
+async function choosePiAgentDirectory(log: Logger): Promise<string> {
+  const configuredByEnvironment = process.env[PI_AGENT_DIRECTORY_ENV]?.trim();
+  if (configuredByEnvironment) return prepareWritableDirectory(configuredByEnvironment);
+
+  const userDataDirectory = app.getPath("userData");
+  const savedDirectory = readPiAgentDirectory(userDataDirectory, log);
+  if (savedDirectory) {
+    try {
+      return prepareWritableDirectory(savedDirectory);
+    } catch (error) {
+      log.warn("Saved Pi data directory is unavailable; asking again", error);
+    }
+  }
+
+  if (PORTABLE_SMOKE_TEST || requestedCompanionUiTestUserData) {
+    return prepareWritableDirectory(join(app.getPath("home"), ".pi", "agent"));
+  }
+
+  const isChinese = app.getLocale().toLowerCase().startsWith("zh");
+  const legacyDirectory = resolve(app.getPath("home"), ".pi", "agent");
+  const hasLegacyData = directoryHasData(legacyDirectory);
+  const selection = await dialog.showOpenDialog({
+    title: isChinese ? "选择 Pi 数据存储目录" : "Choose Pi data storage directory",
+    buttonLabel: isChinese ? "使用此目录" : "Use this folder",
+    message: isChinese
+      ? hasLegacyData
+        ? "检测到现有 Pi 数据。选择新目录后，可将会话、登录信息、模型配置和技能迁移过去。"
+        : "会话、登录信息、模型配置和技能都将保存在所选目录中。"
+      : hasLegacyData
+        ? "Existing Pi data was found. Sessions, credentials, model settings, and skills can be migrated to the selected folder."
+        : "Sessions, credentials, model settings, and skills will be stored in the selected folder.",
+    defaultPath: app.getPath("documents"),
+    properties: ["openDirectory", "createDirectory", "promptToCreate"],
+  });
+
+  if (!selection.canceled && selection.filePaths[0]) {
+    try {
+      const selectedDirectory = prepareWritableDirectory(selection.filePaths[0]);
+      const usesLegacyDirectory = process.platform === "win32"
+        ? selectedDirectory.toLowerCase() === legacyDirectory.toLowerCase()
+        : selectedDirectory === legacyDirectory;
+      if (hasLegacyData && !usesLegacyDirectory) {
+        const migrationChoice = await dialog.showMessageBox({
+          type: "question",
+          title: "Piora",
+          message: isChinese ? "是否迁移现有 Pi 数据？" : "Migrate your existing Pi data?",
+          detail: isChinese
+            ? `将从 ${legacyDirectory} 复制到 ${selectedDirectory}。迁移验证成功后，旧目录仍会保留作为备份。`
+            : `Data will be copied from ${legacyDirectory} to ${selectedDirectory}. The old folder is retained as a backup after verification.`,
+          buttons: isChinese
+            ? ["迁移并使用新目录", "使用空的新目录", "重新选择"]
+            : ["Migrate and use new folder", "Use empty new folder", "Choose again"],
+          defaultId: 0,
+          cancelId: 2,
+        });
+        if (migrationChoice.response === 2) return choosePiAgentDirectory(log);
+        if (migrationChoice.response === 0) {
+          const migrated = migratePiDataDirectory(legacyDirectory, selectedDirectory);
+          log.info("Migrated existing Pi data", {
+            source: legacyDirectory,
+            destination: selectedDirectory,
+            files: migrated.files,
+            bytes: migrated.bytes,
+          });
+        }
+      }
+      writePiAgentDirectory(userDataDirectory, selectedDirectory, log);
+      return selectedDirectory;
+    } catch (error) {
+      log.warn("Selected Pi data directory is not writable", error);
+      await dialog.showMessageBox({
+        type: "error",
+        title: "Piora",
+        message: isChinese ? "无法使用所选目录" : "The selected folder cannot be used",
+        detail: isChinese ? "请确认该目录存在且具有读写权限。" : "Make sure the folder exists and is writable.",
+      });
+      return choosePiAgentDirectory(log);
+    }
+  }
+
+  // Cancelling keeps the current default for this launch, but does not persist
+  // it, so the chooser is offered again next time.
+  return prepareWritableDirectory(join(app.getPath("home"), ".pi", "agent"));
+}
 
 type ApplicationMenuId = "file" | "edit" | "view" | "window" | "help";
 
@@ -414,8 +511,8 @@ function openExternalUrl(rawUrl: string, log: Logger): void {
 }
 
 function configureSession(runtimeSession: Session, origin: string, token: string): void {
-  const isAllowedClipboardWrite = (permission: string, rawOrigin: string | undefined): boolean => {
-    if (permission !== "clipboard-sanitized-write" || !rawOrigin) return false;
+  const isAllowedOrigin = (rawOrigin: string | undefined): boolean => {
+    if (!rawOrigin) return false;
     try {
       return new URL(rawOrigin).origin === origin;
     } catch {
@@ -424,13 +521,32 @@ function configureSession(runtimeSession: Session, origin: string, token: string
   };
 
   runtimeSession.setPermissionCheckHandler(
-    (_webContents, permission, requestingOrigin, details) => (
-      details.isMainFrame && isAllowedClipboardWrite(permission, requestingOrigin)
-    ),
+    (_webContents, permission, requestingOrigin, details) => {
+      if (!details.isMainFrame || !isAllowedOrigin(requestingOrigin)) return false;
+      if (permission === "clipboard-sanitized-write") return true;
+      // Voice input only needs the headset microphone. Keep camera and any
+      // unknown media permission denied by default.
+      return permission === "media" && details.mediaType === "audio";
+    },
   );
   runtimeSession.setPermissionRequestHandler((_webContents, permission, callback, details) => {
     const requestingUrl = "requestingUrl" in details ? details.requestingUrl : undefined;
-    callback(details.isMainFrame && isAllowedClipboardWrite(permission, requestingUrl));
+    const securityOrigin = "securityOrigin" in details ? details.securityOrigin : undefined;
+    const rawOrigin = securityOrigin ?? requestingUrl;
+    if (!details.isMainFrame || !isAllowedOrigin(rawOrigin)) {
+      callback(false);
+      return;
+    }
+    if (permission === "clipboard-sanitized-write") {
+      callback(true);
+      return;
+    }
+    const mediaTypes = "mediaTypes" in details ? details.mediaTypes : undefined;
+    callback(
+      permission === "media"
+      && Boolean(mediaTypes?.length)
+      && mediaTypes?.every((mediaType) => mediaType === "audio") === true,
+    );
   });
 
   // The token never enters renderer JavaScript. Electron injects it only for
@@ -763,7 +879,7 @@ function createStandaloneForProfile(profile: RuntimeProfile): {
   instance: StandaloneServer;
   dataDirectory: string;
 } {
-  if (!logger || !serverEntryPath || !serverHostEntryPath || !applicationToken) {
+  if (!logger || !serverEntryPath || !serverHostEntryPath || !applicationToken || !piAgentDirectoryPath) {
     throw new Error("Desktop runtime is not ready for a profile switch");
   }
   const dataDirectory = runtimeProfileDataDirectory(app.getPath("userData"), profile);
@@ -773,6 +889,10 @@ function createStandaloneForProfile(profile: RuntimeProfile): {
     serverEntry: serverEntryPath,
     serverHostEntry: serverHostEntryPath,
     homeDirectory: app.getPath("home"),
+    agentDirectory: piAgentDirectoryPath,
+    whisperDirectory: app.isPackaged
+      ? join(process.resourcesPath, "whisper")
+      : join(process.cwd(), "desktop", "build", "whisper"),
     token: applicationToken,
     logger,
     runtimeProfile: profile,
@@ -1179,6 +1299,9 @@ async function startApplication(): Promise<void> {
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron,
   });
+
+  piAgentDirectoryPath = await choosePiAgentDirectory(logger);
+  logger.info("Using Pi data directory", { directory: piAgentDirectoryPath });
 
   // Show an app-owned shell immediately while the bundled Next.js service
   // starts in parallel. The same BrowserWindow is then navigated to the app,

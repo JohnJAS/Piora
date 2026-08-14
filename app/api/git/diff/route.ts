@@ -8,6 +8,7 @@ export async function GET(request: NextRequest) {
     const filePath = request.nextUrl.searchParams.get("path")?.trim() ?? "";
     const requestedScope = request.nextUrl.searchParams.get("scope");
     const scope = requestedScope === "staged" || requestedScope === "worktree" ? requestedScope : "combined";
+    const contextLines = request.nextUrl.searchParams.get("context") === "all" ? "all" : 3;
     if (!cwd || (!cwd.startsWith("/") && !isWindowsAbsolutePath(cwd))) {
       return NextResponse.json({ error: "cwd must be an absolute path" }, { status: 400 });
     }
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
-    return NextResponse.json(await getGitFileDiff(cwd, filePath, scope));
+    return NextResponse.json(await getGitFileDiff(cwd, filePath, scope, contextLines));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }

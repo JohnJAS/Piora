@@ -33,7 +33,11 @@ const nextConfig: NextConfig = {
     "@earendil-works/pi-tui",
     "playwright-core",
   ],
-  webpack(config, { isServer }) {
+  webpack(config, { isServer, dev }) {
+    // Release builds are one-shot and never reuse this cache. Disabling the
+    // multi-hundred-megabyte filesystem cache also avoids a Webpack cache
+    // finalization stall observed on Windows packaging machines.
+    if (!dev) config.cache = false;
     // The instrumentation entry is compiled through a separate webpack path
     // that does not apply serverExternalPackages consistently. Keep undici as
     // a Node runtime dependency there as well; bundling it pulls in node:console

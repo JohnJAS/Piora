@@ -20,6 +20,9 @@ export interface DiffViewProps {
   showFileHeader?: boolean;
   hunkActions?: (hunk: Hunk) => ReactNode;
   onOpenFile?: (path: string, line: number) => void;
+  onExpandContext?: () => void;
+  contextLoading?: boolean;
+  totalLines?: number;
 }
 
 const HIGHLIGHT_LIMIT = 600;
@@ -34,6 +37,9 @@ export function DiffView({
   showFileHeader = true,
   hunkActions,
   onOpenFile,
+  onExpandContext,
+  contextLoading = false,
+  totalLines,
 }: DiffViewProps) {
   const { t } = useI18n();
   const parsed = useMemo(() => parseUnifiedDiff(patch), [patch]);
@@ -66,6 +72,10 @@ export function DiffView({
     return () => observer.disconnect();
   }, [limited, loadMore]);
 
+  useEffect(() => {
+    setCollapsedHunks(new Set());
+  }, [patch]);
+
   if (parsed.files.length === 0) return <div className={styles.notice}>{t("diff.empty")}</div>;
 
   return (
@@ -95,6 +105,14 @@ export function DiffView({
               const hiddenBefore = previousHunk
                 ? Math.max(0, hunk.oldStart - (previousHunk.oldStart + previousHunk.oldCount))
                 : Math.max(0, Math.min(hunk.oldStart, hunk.newStart) - 1);
+              const isLastHunk = hunkIndex === file.hunks.length - 1;
+              const displayedEnd = file.status === "deleted"
+                ? hunk.oldStart + hunk.oldCount - 1
+                : hunk.newStart + hunk.newCount - 1;
+              const hiddenAfter = isLastHunk && totalLines !== undefined
+                ? Math.max(0, totalLines - displayedEnd)
+                : 0;
+              const expandsContext = hiddenBefore > 0 && Boolean(onExpandContext);
               const lines = hunk.lines.slice(0, remaining);
               remaining -= lines.length;
               return (
@@ -104,14 +122,19 @@ export function DiffView({
                       type="button"
                       className={styles.hunkToggle}
                       title={hunk.header}
-                      onClick={() => setCollapsedHunks((current) => toggleSet(current, key))}
-                      aria-expanded={!isCollapsed}
-                    ><span className={styles.hunkChevron} aria-hidden="true"><AliIcon name="chevron-right" size={12} /></span>{hiddenBefore > 0 ? t("diff.unchangedLines", { count: hiddenBefore }) : t("diff.changeBlock", { index: hunkIndex + 1 })}</button>
+                      disabled={expandsContext && contextLoading}
+                      onClick={() => {
+                        if (expandsContext) onExpandContext?.();
+                        else setCollapsedHunks((current) => toggleSet(current, key));
+                      }}
+                      aria-expanded={expandsContext ? false : !isCollapsed}
+                    ><span className={styles.hunkChevron} aria-hidden="true"><AliIcon name={contextLoading && expandsContext ? "reload" : "chevron-right"} size={12} /></span>{contextLoading && expandsContext ? t("diff.loadingContext") : hiddenBefore > 0 ? t("diff.unchangedLines", { count: hiddenBefore }) : t("diff.changeBlock", { index: hunkIndex + 1 })}</button>
                     {hunkActions?.(hunk)}
                   </div>
                   {!isCollapsed && (mode === "split"
                     ? <SplitLines lines={lines} language={language ?? languageFor(displayPath)} highlight={parsed.lineCount <= HIGHLIGHT_LIMIT} />
                     : <UnifiedLines lines={lines} language={language ?? languageFor(displayPath)} highlight={parsed.lineCount <= HIGHLIGHT_LIMIT} />)}
+                  {hiddenAfter > 0 && onExpandContext ? <button type="button" className={styles.contextGap} disabled={contextLoading} onClick={onExpandContext} aria-label={t("diff.expandUnchangedLines", { count: hiddenAfter })}><AliIcon name={contextLoading ? "reload" : "chevron-right"} size={12} />{contextLoading ? t("diff.loadingContext") : t("diff.unchangedLines", { count: hiddenAfter })}</button> : null}
                 </div>
               );
             })}

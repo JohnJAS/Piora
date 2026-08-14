@@ -1,8 +1,19 @@
 export type CompanionActivityStatus = "idle" | "running" | "waiting" | "review" | "failed";
 
+export type CompanionActivityEventKind = "started" | "completed" | "failed";
+
+export interface CompanionActivityEvent {
+  kind: CompanionActivityEventKind;
+  key: string;
+  occurredAt: number;
+}
+
 export interface CompanionActivity {
   status: CompanionActivityStatus;
   cause: string;
+  sessionId?: string;
+  runId?: number;
+  event?: CompanionActivityEvent;
 }
 
 export interface CompanionActivityInput {
@@ -21,6 +32,20 @@ const SPRITE_STATE_FALLBACKS: Record<CompanionActivityStatus, readonly string[]>
   review: ["review", "waving", "look-directions-b", "idle"],
   failed: ["failed", "idle"],
 };
+
+const TRANSIENT_SPRITE_STATE_FALLBACKS: Record<CompanionActivityEventKind, readonly string[]> = {
+  started: ["waving", "wave", "jumping", "bounce", "running", "idle"],
+  completed: ["jumping", "bounce", "waving", "wave", "idle"],
+  failed: ["failed", "sad", "idle"],
+};
+
+export interface CompanionAnimationTimeline {
+  id: string;
+  frameIndices?: readonly number[];
+  durationsMs?: readonly number[];
+  loopStart?: number | null;
+  fallback?: string;
+}
 
 /**
  * Maps Pi runtime signals to a deliberately small presentation state. This is
@@ -47,6 +72,95 @@ export function selectCompanionSpriteState<T extends { id: string }>(
     if (match) return match;
   }
   return states[0] ?? null;
+}
+
+export function selectCompanionTransientSpriteState<T extends { id: string }>(
+  states: readonly T[],
+  event: CompanionActivityEventKind,
+): T | null {
+  for (const id of TRANSIENT_SPRITE_STATE_FALLBACKS[event]) {
+    const match = states.find((state) => state.id === id);
+    if (match) return match;
+  }
+  return states[0] ?? null;
+}
+
+function appendedIdleStart(
+  animation: CompanionAnimationTimeline,
+  idle: CompanionAnimationTimeline | null,
+): number | null {
+  if (!idle?.frameIndices?.length || !animation.frameIndices?.length) return null;
+  if (!Number.isInteger(animation.loopStart) || (animation.loopStart ?? 0) <= 0) return null;
+  const start = animation.loopStart as number;
+  const tail = animation.frameIndices.slice(start);
+  if (tail.length !== idle.frameIndices.length) return null;
+  return tail.every((frame, index) => frame === idle.frameIndices?.[index]) ? start : null;
+}
+
+function shortestRepeatingPrefixLength(frames: readonly number[]): number {
+  for (let length = 1; length <= frames.length; length += 1) {
+    if (frames.length % length !== 0) continue;
+    if (frames.every((frame, index) => frame === frames[index % length])) return length;
+  }
+  return frames.length;
+}
+
+/**
+ * Adapts the older Codex-compatible "action x3, then idle forever" timeline
+ * to Piora's persistent task states. Custom timelines without that exact idle
+ * suffix keep their declared loop contract.
+ */
+export function prepareCompanionPersistentAnimation<T extends CompanionAnimationTimeline>(
+  animation: T,
+  idle: CompanionAnimationTimeline | null,
+  activity: CompanionActivityStatus,
+): T {
+  if (activity === "failed" && idle) {
+    // Failure is announced by a transient sad animation; keep the persistent
+    // state calm while the status color and error copy remain visible.
+    return { ...animation, ...idle };
+  }
+
+  const idleStart = appendedIdleStart(animation, idle);
+  if (idleStart === null) return animation;
+
+  if (activity === "running" || activity === "waiting") {
+    const actionFrames = animation.frameIndices?.slice(0, idleStart) ?? [];
+    const cycleLength = shortestRepeatingPrefixLength(actionFrames);
+    return {
+      ...animation,
+      frameIndices: actionFrames.slice(0, cycleLength),
+      durationsMs: animation.durationsMs?.slice(0, cycleLength),
+      loopStart: 0,
+    };
+  }
+
+  if (activity === "review") {
+    // Replay the full action-plus-rest sequence as a low-frequency reminder.
+    return { ...animation, loopStart: 0 };
+  }
+
+  return animation;
+}
+
+/** Builds a single short action cycle before returning to the persistent state. */
+export function prepareCompanionTransientAnimation<T extends CompanionAnimationTimeline>(
+  animation: T,
+  idle: CompanionAnimationTimeline | null,
+  fallback: string,
+): T {
+  const idleStart = appendedIdleStart(animation, idle);
+  const actionFrames = idleStart === null
+    ? [...(animation.frameIndices ?? [])]
+    : animation.frameIndices?.slice(0, idleStart) ?? [];
+  const cycleLength = shortestRepeatingPrefixLength(actionFrames);
+  return {
+    ...animation,
+    frameIndices: actionFrames.slice(0, cycleLength),
+    durationsMs: animation.durationsMs?.slice(0, cycleLength),
+    loopStart: null,
+    fallback,
+  };
 }
 
 export function getCompanionFramePosition(

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useI18n } from "@/hooks/useI18n";
 import { useTaskStatus } from "@/hooks/useTaskStatus";
 import type { GitStatusResponse } from "@/lib/git-types";
+import { getTrackedGitLineStats } from "@/lib/git-line-stats";
 import { STATUS_PRESENTATION, getTaskStatusPresentationKey } from "@/lib/task-status";
 import { AliIcon } from "./AliIcon";
 import styles from "./TaskHeader.module.css";
@@ -201,6 +202,7 @@ export function TaskHeader({
   const branch = worktreeBranch ?? projectInfo.branch;
   const environmentLabel = worktreeBranch ? t("taskHeader.worktree") : t("taskHeader.local");
   const projectLabel = projectInfo.repository ?? getPathName(cwd);
+  const trackedLineStats = useMemo(() => getTrackedGitLineStats(gitStatus), [gitStatus]);
 
   return (
     <header className={styles.header} aria-label={t("taskHeader.title")}>
@@ -230,8 +232,8 @@ export function TaskHeader({
 
       <div className={styles.changesSlot}>
         <button className={styles.slotButton} type="button" onClick={onOpenChanges} disabled={!gitStatus.isGitRepository}>
-          <span style={{ color: "var(--status-ready)" }}>+{gitStatus.additions}</span>
-          <span style={{ color: "var(--status-failed)" }}>−{gitStatus.deletions}</span>
+          <span style={{ color: "var(--status-ready)" }}>+{trackedLineStats.additions}</span>
+          <span style={{ color: "var(--status-failed)" }}>−{trackedLineStats.deletions}</span>
           <span>{t("taskHeader.files", { count: gitStatus.files.length })}</span>
         </button>
       </div>

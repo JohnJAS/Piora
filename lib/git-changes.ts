@@ -37,10 +37,13 @@ async function findRepositoryRoot(cwd: string): Promise<string | null> {
 }
 
 function resolveExistingPath(candidate: string): string {
+  const resolvedCandidate = path.resolve(candidate);
   try {
-    return fs.realpathSync.native(candidate);
+    return fs.realpathSync.native(resolvedCandidate);
   } catch {
-    return path.resolve(candidate);
+    const parent = path.dirname(resolvedCandidate);
+    if (parent === resolvedCandidate) return resolvedCandidate;
+    return path.join(resolveExistingPath(parent), path.basename(resolvedCandidate));
   }
 }
 
@@ -245,12 +248,13 @@ async function createTrackedFilePatch(
   relativePath: string,
   originalPath?: string,
   scope: "combined" | "staged" | "worktree" = "combined",
+  contextLines: number | "all" = 3,
 ): Promise<string | null> {
   const paths = originalPath && originalPath !== relativePath
     ? [originalPath, relativePath]
     : [relativePath];
   try {
-    const args = ["diff", "--no-color", "--no-ext-diff", "--unified=3"];
+    const args = ["diff", "--no-color", "--no-ext-diff", `--unified=${contextLines === "all" ? 1_000_000 : contextLines}`];
     if (scope === "staged") args.push("--cached");
     else if (scope === "combined") args.push("HEAD");
     args.push("--", ...paths);
@@ -260,11 +264,47 @@ async function createTrackedFilePatch(
   }
 }
 
-export async function getGitFileDiff(cwd: string, filePath: string, scope: "combined" | "staged" | "worktree" = "combined"): Promise<GitFileDiffResponse> {
-  const repositoryRoot = await findRepositoryRoot(cwd);
-  if (!repositoryRoot || !isWithinPath(repositoryRoot, filePath)) return { supported: false };
+function countTextLines(content: string): number {
+  if (!content) return 0;
+  const lines = content.split("\n");
+  return lines.at(-1) === "" ? lines.length - 1 : lines.length;
+}
 
-  const resolvedFilePath = path.resolve(filePath);
+async function readDisplayedLineCount(
+  repositoryRoot: string,
+  relativePath: string,
+  status: GitFileStatus["status"],
+  scope: "combined" | "staged" | "worktree",
+  worktreeContent?: string,
+): Promise<number | undefined> {
+  if (status !== "deleted" && scope !== "staged" && worktreeContent !== undefined) {
+    return countTextLines(worktreeContent);
+  }
+  const revision = status === "deleted" && scope !== "worktree"
+    ? `HEAD:${relativePath}`
+    : `:${relativePath}`;
+  try {
+    return countTextLines(await git(repositoryRoot, ["show", revision], TEXT_PREVIEW_MAX_BYTES * 2));
+  } catch {
+    return undefined;
+  }
+}
+
+export async function getGitFileDiff(
+  cwd: string,
+  filePath: string,
+  scope: "combined" | "staged" | "worktree" = "combined",
+  contextLines: number | "all" = 3,
+): Promise<GitFileDiffResponse> {
+  const repositoryRoot = await findRepositoryRoot(cwd);
+  if (!repositoryRoot) return { supported: false };
+
+  // Git for Windows reports the canonical long repository path even when the
+  // caller arrived through an 8.3 short path or a directory junction. Resolve
+  // the requested path (including the nearest existing parent for deletions)
+  // before applying the repository containment boundary.
+  const resolvedFilePath = resolveExistingPath(filePath);
+  if (!isWithinPath(repositoryRoot, resolvedFilePath)) return { supported: false };
   const relativePath = toGitPath(path.relative(repositoryRoot, resolvedFilePath));
   const entries = await readVisibleStatusEntries(repositoryRoot);
   const entry = entries.find((candidate) => candidate.path === relativePath);
@@ -272,9 +312,14 @@ export async function getGitFileDiff(cwd: string, filePath: string, scope: "comb
 
   const { status } = classifyGitStatus(entry);
   if (status === "deleted") {
-    const patch = await createTrackedFilePatch(repositoryRoot, relativePath, entry.originalPath, scope);
+    const patch = await createTrackedFilePatch(repositoryRoot, relativePath, entry.originalPath, scope, contextLines);
     if (!patch?.includes("\n@@ ")) return { supported: false };
-    return { supported: true, status, patch };
+    return {
+      supported: true,
+      status,
+      patch,
+      totalLines: await readDisplayedLineCount(repositoryRoot, relativePath, status, scope),
+    };
   }
 
   let stat: fs.Stats;
@@ -293,7 +338,7 @@ export async function getGitFileDiff(cwd: string, filePath: string, scope: "comb
   if (status === "untracked") {
     patch = createAddedFilePatch(relativePath, newContent);
   } else {
-    const trackedPatch = await createTrackedFilePatch(repositoryRoot, relativePath, entry.originalPath, scope);
+    const trackedPatch = await createTrackedFilePatch(repositoryRoot, relativePath, entry.originalPath, scope, contextLines);
     if (trackedPatch === null) {
       if (status !== "added") return { supported: false };
       patch = createAddedFilePatch(relativePath, newContent);
@@ -303,5 +348,10 @@ export async function getGitFileDiff(cwd: string, filePath: string, scope: "comb
   }
 
   if (!patch.includes("\n@@ ")) return { supported: false };
-  return { supported: true, status, patch };
+  return {
+    supported: true,
+    status,
+    patch,
+    totalLines: await readDisplayedLineCount(repositoryRoot, relativePath, status, scope, newContent),
+  };
 }

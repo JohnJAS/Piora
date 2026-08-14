@@ -30,4 +30,6 @@ export interface GitFileDiffResponse {
   status?: GitFileStatusKind;
   patch?: string;
   diffHash?: string;
+  /** Total lines in the displayed side of the file, used for trailing context gaps. */
+  totalLines?: number;
 }

@@ -4,6 +4,7 @@ import type { Logger } from "./logger.js";
 
 interface DesktopState {
   serverPort?: number;
+  piAgentDirectory?: string;
   companionWindowPosition?: CompanionWindowPosition;
   mainWindowState?: MainWindowState;
 }
@@ -21,6 +22,30 @@ export function runtimeProfileDataDirectory(
   profile: RuntimeProfile,
 ): string {
   return join(userDataDirectory, "runtime", profile);
+}
+
+function isAbsoluteDirectoryPath(value: unknown): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= 32_767
+    && /^(?:[a-zA-Z]:[\\/]|\\\\|\/)/.test(value);
+}
+
+export function readPiAgentDirectory(
+  userDataDirectory: string,
+  logger: Logger,
+): string | undefined {
+  const state = readDesktopState(userDataDirectory, logger);
+  return isAbsoluteDirectoryPath(state.piAgentDirectory) ? state.piAgentDirectory : undefined;
+}
+
+export function writePiAgentDirectory(
+  userDataDirectory: string,
+  directory: string,
+  logger: Logger,
+): void {
+  if (!isAbsoluteDirectoryPath(directory)) return;
+  writeDesktopState(userDataDirectory, { piAgentDirectory: directory }, logger);
 }
 
 export interface CompanionWindowPosition {

@@ -34,8 +34,11 @@ export function DesktopCompanionWindow() {
   const pets = useCompanionPets(true);
   const runningTasks = useRunningTaskSnapshots();
   const [activity, setActivity] = useState<CompanionActivity>(DEFAULT_ACTIVITY);
+  const [runtimeEvent, setRuntimeEvent] = useState<CompanionActivity["event"]>();
   const [bubblesCollapsed, setBubblesCollapsed] = useState(false);
   const previousBubbleCountRef = useRef(0);
+  const previousTasksRef = useRef(new Map<string, TaskRuntimeSnapshot>());
+  const runtimeEventSequenceRef = useRef(0);
   const activePet = useMemo(
     () => pets.catalog?.installed.find((pet) => pet.id === preferences.selectedPetId) ?? null,
     [pets.catalog?.installed, preferences.selectedPetId],
@@ -71,18 +74,56 @@ export function DesktopCompanionWindow() {
       id: snapshot.id,
       status,
       title: snapshot.title || snapshot.id.slice(0, 8),
+      startedAt: snapshot.startedAt ?? 0,
       cause: snapshot.activity?.message
         || snapshot.errorSummary
         || t(`companion.activity.${status}Cause`),
     };
   }), [runningTasks, t]);
+
+  useEffect(() => {
+    const previous = previousTasksRef.current;
+    const current = new Map(runningTasks.map((snapshot) => [snapshot.id, snapshot]));
+    const failed = runningTasks.find((snapshot) => (
+      snapshot.lastPromptFailed && !previous.get(snapshot.id)?.lastPromptFailed
+    ));
+    const completed = [...previous.values()].find((snapshot) => (
+      snapshot.runtime !== "idle" && !current.has(snapshot.id)
+    ));
+    const started = runningTasks.find((snapshot) => (
+      snapshot.runtime !== "idle" && !previous.has(snapshot.id)
+    ));
+    const kind = failed ? "failed" : completed ? "completed" : started ? "started" : null;
+    const subject = failed ?? completed ?? started;
+
+    previousTasksRef.current = current;
+    if (!kind || !subject) return;
+    runtimeEventSequenceRef.current += 1;
+    const occurredAt = Date.now();
+    setRuntimeEvent({
+      kind,
+      occurredAt,
+      key: `${subject.id}:${runtimeEventSequenceRef.current}:${kind}:${occurredAt}`,
+    });
+  }, [runningTasks]);
+
   const displayActivity = useMemo<CompanionActivity>(() => {
-    if (taskBubbles.length === 0) return activity;
-    const priority = ["failed", "review", "running", "waiting", "idle"] as const;
-    const status = priority.find((candidate) => taskBubbles.some((item) => item.status === candidate)) ?? "running";
-    const active = taskBubbles.find((item) => item.status === status) ?? taskBubbles[0];
-    return { status, cause: active.cause };
-  }, [activity, taskBubbles]);
+    const event = (activity.event?.occurredAt ?? 0) >= (runtimeEvent?.occurredAt ?? 0)
+      ? activity.event
+      : runtimeEvent;
+    if (taskBubbles.length === 0) return { ...activity, ...(event ? { event } : {}) };
+
+    const active = taskBubbles.find((item) => item.status === "review")
+      ?? taskBubbles.find((item) => item.status === "failed")
+      ?? taskBubbles.find((item) => item.id === activity.sessionId)
+      ?? [...taskBubbles].sort((left, right) => right.startedAt - left.startedAt)[0];
+    return {
+      status: active?.status ?? "running",
+      cause: active?.cause ?? t("companion.activity.runningCause"),
+      ...(active ? { sessionId: active.id } : {}),
+      ...(event ? { event } : {}),
+    };
+  }, [activity, runtimeEvent, taskBubbles, t]);
   const statusLabel = t(`companion.activity.${displayActivity.status}`);
   const cause = displayActivity.cause || t(`companion.activity.${displayActivity.status}Cause`);
   const statusCause = t(`companion.activity.${displayActivity.status}Cause`);
@@ -141,7 +182,9 @@ export function DesktopCompanionWindow() {
           ))}
         </div>
         <div className={styles.pet} aria-label={petLabel} data-testid="companion-pet-viewport">
-          {activePet ? <SpritePet pet={activePet} status={displayActivity.status} /> : <BuiltinPet status={displayActivity.status} />}
+          {activePet
+            ? <SpritePet pet={activePet} status={displayActivity.status} event={displayActivity.event} />
+            : <BuiltinPet status={displayActivity.status} />}
         </div>
         {bubbleItems.length > 0 ? (
           <button
