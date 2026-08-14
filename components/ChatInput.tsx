@@ -397,77 +397,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     }
   }, []);
 
-  useImperativeHandle(ref, () => ({
-    focus() {
-      textareaRef.current?.focus({ preventScroll: true });
-    },
-    sendText(text: string) {
-      const message = text.trim();
-      if (!message || isStreaming) return false;
-      onSend(message);
-      return true;
-    },
-    insertIfEmpty(text: string) {
-      const ta = textareaRef.current;
-      const current = ta ? ta.value : value;
-      if (current.trim()) return;
-      setValue(text);
-      setAtQuery(null);
-      requestAnimationFrame(() => {
-        if (!ta) return;
-        ta.focus();
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
-      });
-    },
-    prependText(text: string) {
-      if (!text.trim()) return;
-      const ta = textareaRef.current;
-      const current = ta ? ta.value : value;
-      // Mirrors the TUI's queue restore: queued text first, then whatever
-      // the user already typed, separated by a blank line.
-      const combined = [text, current].filter((t) => t.trim()).join("\n\n");
-      setValue(combined);
-      setAtQuery(null);
-      requestAnimationFrame(() => {
-        if (!ta) return;
-        ta.focus();
-        ta.setSelectionRange(combined.length, combined.length);
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
-      });
-    },
-    insertText(text: string) {
-      const ta = textareaRef.current;
-      if (!ta) {
-        setValue((v) => v + (v ? " " : "") + text);
-        return;
-      }
-      const start = ta.selectionStart ?? ta.value.length;
-      const end = ta.selectionEnd ?? ta.value.length;
-      const before = ta.value.slice(0, start);
-      const after = ta.value.slice(end);
-      const sep = before.length > 0 && !before.endsWith(" ") ? " " : "";
-      const newVal = before + sep + text + after;
-      setValue(newVal);
-      setAtQuery(null);
-      requestAnimationFrame(() => {
-        if (!ta) return;
-        const pos = start + sep.length + text.length;
-        ta.setSelectionRange(pos, pos);
-        ta.focus();
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
-      });
-    },
-    addImages(files: File[]) {
-      processImageFiles(files);
-    },
-    addFiles(files: File[]) {
-      void processFileSelection(files);
-    },
-  }));
-
   const processImageFiles = useCallback(async (files: File[]) => {
     if (isStreaming) return;
     const remaining = Math.max(
@@ -542,6 +471,77 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     );
     setAttachedFiles((prev) => [...prev, ...prepared].slice(0, MAX_ATTACHED_FILES));
   }, [isStreaming, processImageFiles]);
+
+  useImperativeHandle(ref, () => ({
+    focus() {
+      textareaRef.current?.focus({ preventScroll: true });
+    },
+    sendText(text: string) {
+      const message = text.trim();
+      if (!message || isStreaming) return false;
+      onSend(message);
+      return true;
+    },
+    insertIfEmpty(text: string) {
+      const ta = textareaRef.current;
+      const current = ta ? ta.value : value;
+      if (current.trim()) return;
+      setValue(text);
+      setAtQuery(null);
+      requestAnimationFrame(() => {
+        if (!ta) return;
+        ta.focus();
+        ta.style.height = "auto";
+        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      });
+    },
+    prependText(text: string) {
+      if (!text.trim()) return;
+      const ta = textareaRef.current;
+      const current = ta ? ta.value : value;
+      // Mirrors the TUI's queue restore: queued text first, then whatever
+      // the user already typed, separated by a blank line.
+      const combined = [text, current].filter((item) => item.trim()).join("\n\n");
+      setValue(combined);
+      setAtQuery(null);
+      requestAnimationFrame(() => {
+        if (!ta) return;
+        ta.focus();
+        ta.setSelectionRange(combined.length, combined.length);
+        ta.style.height = "auto";
+        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      });
+    },
+    insertText(text: string) {
+      const ta = textareaRef.current;
+      if (!ta) {
+        setValue((current) => current + (current ? " " : "") + text);
+        return;
+      }
+      const start = ta.selectionStart ?? ta.value.length;
+      const end = ta.selectionEnd ?? ta.value.length;
+      const before = ta.value.slice(0, start);
+      const after = ta.value.slice(end);
+      const separator = before.length > 0 && !before.endsWith(" ") ? " " : "";
+      const newValue = before + separator + text + after;
+      setValue(newValue);
+      setAtQuery(null);
+      requestAnimationFrame(() => {
+        if (!ta) return;
+        const position = start + separator.length + text.length;
+        ta.setSelectionRange(position, position);
+        ta.focus();
+        ta.style.height = "auto";
+        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      });
+    },
+    addImages(files: File[]) {
+      void processImageFiles(files);
+    },
+    addFiles(files: File[]) {
+      void processFileSelection(files);
+    },
+  }));
 
   const removeFile = useCallback((index: number) => {
     setAttachedFiles((prev) => prev.filter((_, i) => i !== index));

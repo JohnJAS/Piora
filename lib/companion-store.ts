@@ -25,6 +25,7 @@ export interface CompanionQuickPhrase {
 export interface CompanionPreferences {
   version: typeof COMPANION_SCHEMA_VERSION;
   open: boolean;
+  alwaysOnTop: boolean;
   selectedPetId: string;
   todos: CompanionTodo[];
   phrases: CompanionQuickPhrase[];
@@ -53,6 +54,7 @@ export function createDefaultCompanionPreferences(seeds: CompanionPhraseSeed[] =
   return {
     version: COMPANION_SCHEMA_VERSION,
     open: false,
+    alwaysOnTop: true,
     selectedPetId: DEFAULT_COMPANION_PET_ID,
     todos: [],
     phrases: seeds.slice(0, MAX_COMPANION_PHRASES).flatMap((seed, index) => {
@@ -100,6 +102,7 @@ export function normalizeCompanionPreferences(
   return {
     version: COMPANION_SCHEMA_VERSION,
     open: record.open === true,
+    alwaysOnTop: record.alwaysOnTop !== false,
     selectedPetId: safeId(record.selectedPetId, "builtin"),
     todos,
     phrases,

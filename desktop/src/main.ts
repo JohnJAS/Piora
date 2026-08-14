@@ -22,19 +22,16 @@ import {
 import {
   readCompanionWindowPosition,
   readMainWindowState,
-  readPiAgentDirectory,
   readPreferredServerPort,
   runtimeProfileDataDirectory,
   writeCompanionWindowPosition,
   writeMainWindowState,
-  writePiAgentDirectory,
   writePreferredServerPort,
   type RuntimeProfile,
 } from "./desktop-state.js";
 import { FileLogger, type Logger } from "./logger.js";
 import { StandaloneServer, type ServerExit } from "./server-supervisor.js";
 import { fitBoundsToVisibleDisplays } from "./window-bounds.js";
-import { directoryHasData, migratePiDataDirectory } from "./pi-data-migration.js";
 
 const DESKTOP_PARTITION = "persist:piora";
 const DESKTOP_TOKEN_HEADER = "X-Pi-Desktop-Token";
@@ -43,6 +40,7 @@ const APPLICATION_MENU_CHANNEL = "pi:open-application-menu";
 const REVEAL_PATH_CHANNEL = "pi:reveal-path";
 const OPEN_PATH_CHANNEL = "pi:open-path";
 const COMPANION_VISIBILITY_CHANNEL = "pi:companion-window-visible";
+const COMPANION_ALWAYS_ON_TOP_CHANNEL = "pi:companion-window-always-on-top";
 const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
 const COMPANION_LAYOUT_CHANNEL = "pi:companion-window-expanded";
 const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
@@ -86,6 +84,7 @@ let shutdownComplete = false;
 let applicationMenu: Menu | null = null;
 let companionMoveTimer: NodeJS.Timeout | undefined;
 let companionShouldBeVisible = false;
+let companionAlwaysOnTop = true;
 let mainWindowStateTimer: NodeJS.Timeout | undefined;
 let tray: Tray | null = null;
 let trayPollTimer: NodeJS.Timeout | undefined;
@@ -105,88 +104,9 @@ function prepareWritableDirectory(directory: string): string {
   return resolvedDirectory;
 }
 
-async function choosePiAgentDirectory(log: Logger): Promise<string> {
+function resolvePiAgentDirectory(): string {
   const configuredByEnvironment = process.env[PI_AGENT_DIRECTORY_ENV]?.trim();
   if (configuredByEnvironment) return prepareWritableDirectory(configuredByEnvironment);
-
-  const userDataDirectory = app.getPath("userData");
-  const savedDirectory = readPiAgentDirectory(userDataDirectory, log);
-  if (savedDirectory) {
-    try {
-      return prepareWritableDirectory(savedDirectory);
-    } catch (error) {
-      log.warn("Saved Pi data directory is unavailable; asking again", error);
-    }
-  }
-
-  if (PORTABLE_SMOKE_TEST || requestedCompanionUiTestUserData) {
-    return prepareWritableDirectory(join(app.getPath("home"), ".pi", "agent"));
-  }
-
-  const isChinese = app.getLocale().toLowerCase().startsWith("zh");
-  const legacyDirectory = resolve(app.getPath("home"), ".pi", "agent");
-  const hasLegacyData = directoryHasData(legacyDirectory);
-  const selection = await dialog.showOpenDialog({
-    title: isChinese ? "选择 Pi 数据存储目录" : "Choose Pi data storage directory",
-    buttonLabel: isChinese ? "使用此目录" : "Use this folder",
-    message: isChinese
-      ? hasLegacyData
-        ? "检测到现有 Pi 数据。选择新目录后，可将会话、登录信息、模型配置和技能迁移过去。"
-        : "会话、登录信息、模型配置和技能都将保存在所选目录中。"
-      : hasLegacyData
-        ? "Existing Pi data was found. Sessions, credentials, model settings, and skills can be migrated to the selected folder."
-        : "Sessions, credentials, model settings, and skills will be stored in the selected folder.",
-    defaultPath: app.getPath("documents"),
-    properties: ["openDirectory", "createDirectory", "promptToCreate"],
-  });
-
-  if (!selection.canceled && selection.filePaths[0]) {
-    try {
-      const selectedDirectory = prepareWritableDirectory(selection.filePaths[0]);
-      const usesLegacyDirectory = process.platform === "win32"
-        ? selectedDirectory.toLowerCase() === legacyDirectory.toLowerCase()
-        : selectedDirectory === legacyDirectory;
-      if (hasLegacyData && !usesLegacyDirectory) {
-        const migrationChoice = await dialog.showMessageBox({
-          type: "question",
-          title: "Piora",
-          message: isChinese ? "是否迁移现有 Pi 数据？" : "Migrate your existing Pi data?",
-          detail: isChinese
-            ? `将从 ${legacyDirectory} 复制到 ${selectedDirectory}。迁移验证成功后，旧目录仍会保留作为备份。`
-            : `Data will be copied from ${legacyDirectory} to ${selectedDirectory}. The old folder is retained as a backup after verification.`,
-          buttons: isChinese
-            ? ["迁移并使用新目录", "使用空的新目录", "重新选择"]
-            : ["Migrate and use new folder", "Use empty new folder", "Choose again"],
-          defaultId: 0,
-          cancelId: 2,
-        });
-        if (migrationChoice.response === 2) return choosePiAgentDirectory(log);
-        if (migrationChoice.response === 0) {
-          const migrated = migratePiDataDirectory(legacyDirectory, selectedDirectory);
-          log.info("Migrated existing Pi data", {
-            source: legacyDirectory,
-            destination: selectedDirectory,
-            files: migrated.files,
-            bytes: migrated.bytes,
-          });
-        }
-      }
-      writePiAgentDirectory(userDataDirectory, selectedDirectory, log);
-      return selectedDirectory;
-    } catch (error) {
-      log.warn("Selected Pi data directory is not writable", error);
-      await dialog.showMessageBox({
-        type: "error",
-        title: "Piora",
-        message: isChinese ? "无法使用所选目录" : "The selected folder cannot be used",
-        detail: isChinese ? "请确认该目录存在且具有读写权限。" : "Make sure the folder exists and is writable.",
-      });
-      return choosePiAgentDirectory(log);
-    }
-  }
-
-  // Cancelling keeps the current default for this launch, but does not persist
-  // it, so the chooser is offered again next time.
   return prepareWritableDirectory(join(app.getPath("home"), ".pi", "agent"));
 }
 
@@ -615,6 +535,19 @@ function setCompanionWindowExpanded(expanded: boolean): boolean {
   return true;
 }
 
+function applyCompanionWindowAlwaysOnTop(window: BrowserWindow, alwaysOnTop: boolean): void {
+  window.setAlwaysOnTop(alwaysOnTop, alwaysOnTop ? "screen-saver" : "normal");
+  window.setVisibleOnAllWorkspaces(alwaysOnTop, { visibleOnFullScreen: alwaysOnTop });
+}
+
+function setCompanionWindowAlwaysOnTop(alwaysOnTop: boolean): boolean {
+  companionAlwaysOnTop = alwaysOnTop;
+  if (companionWindow && !companionWindow.isDestroyed()) {
+    applyCompanionWindowAlwaysOnTop(companionWindow, alwaysOnTop);
+  }
+  return true;
+}
+
 function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
   const position = getCompanionWindowPosition();
   const window = new BrowserWindow({
@@ -634,7 +567,7 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
     fullscreenable: false,
     skipTaskbar: true,
     hasShadow: false,
-    alwaysOnTop: true,
+    alwaysOnTop: companionAlwaysOnTop,
     backgroundColor: "#00000000",
     webPreferences: {
       preload: join(__dirname, "preload.js"),
@@ -652,8 +585,7 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
     },
   });
 
-  window.setAlwaysOnTop(true, "floating");
-  window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
+  applyCompanionWindowAlwaysOnTop(window, companionAlwaysOnTop);
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, requestedUrl) => {
     if (!isAllowedAppUrl(requestedUrl, url.origin)) event.preventDefault();
@@ -1041,12 +973,18 @@ function registerHarmonyRuntimePickerHandler(): void {
 
 function registerCompanionWindowHandlers(): void {
   ipcMain.removeHandler(COMPANION_VISIBILITY_CHANNEL);
+  ipcMain.removeHandler(COMPANION_ALWAYS_ON_TOP_CHANNEL);
   ipcMain.removeHandler(COMPANION_LAYOUT_CHANNEL);
   ipcMain.handle(COMPANION_VISIBILITY_CHANNEL, (event, visible: unknown): boolean => {
     if (!isTrustedCompletionNotificationSender(event) || typeof visible !== "boolean") return false;
     if (visible) return showCompanionWindow();
     closeCompanionWindow();
     return true;
+  });
+
+  ipcMain.handle(COMPANION_ALWAYS_ON_TOP_CHANNEL, (event, alwaysOnTop: unknown): boolean => {
+    if (!isTrustedMainWindowSender(event) || typeof alwaysOnTop !== "boolean") return false;
+    return setCompanionWindowAlwaysOnTop(alwaysOnTop);
   });
 
   ipcMain.handle(COMPANION_LAYOUT_CHANNEL, (event, expanded: unknown): boolean => {
@@ -1216,8 +1154,8 @@ function createStartupWindow(log: Logger): { window: BrowserWindow; ready: Promi
   });
   const startupDocument = `<!doctype html><html><head><meta charset="utf-8"><style>
     *{box-sizing:border-box}html,body{height:100%;margin:0;background:#111318;color:#e7e7e7;font-family:Segoe UI,system-ui,sans-serif}
-    body{display:grid;grid-template-columns:250px 1fr}.sidebar{border-right:1px solid #282b31;padding:58px 14px 20px}.brand{display:flex;align-items:center;gap:10px;font-weight:650}.mark{width:24px;height:24px;border-radius:7px;background:#e7e7e7;color:#111318;display:grid;place-items:center}.lines{margin-top:38px;display:grid;gap:12px}.line{height:9px;border-radius:5px;background:#22252b}.line:nth-child(2){width:78%}.line:nth-child(3){width:62%}.main{display:grid;place-items:center}.loading{display:grid;justify-items:center;gap:14px;color:#9a9da5;font-size:13px}.spinner{width:22px;height:22px;border:2px solid #32363e;border-top-color:#d8d8d8;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
-  </style></head><body><aside class="sidebar"><div class="brand"><span class="mark">P</span><span>Piora</span></div><div class="lines"><span class="line"></span><span class="line"></span><span class="line"></span></div></aside><main class="main"><div class="loading"><span class="spinner"></span><span>Starting Piora…</span></div></main></body></html>`;
+    body{display:grid;grid-template-columns:250px 1fr}.sidebar{border-right:1px solid #282b31;padding:58px 14px 20px}.brand{display:flex;align-items:center;gap:10px;font-weight:650}.mark{width:24px;height:24px;border-radius:7px;background:#e7e7e7;color:#111318;display:grid;place-items:center}.lines{margin-top:38px;display:grid;gap:12px}.line{height:9px;border-radius:5px;background:#22252b}.line:nth-child(2){width:78%}.line:nth-child(3){width:62%}.main{display:grid;place-items:center}.loading{display:grid;justify-items:center;gap:10px;color:#9a9da5;font-size:13px}.pulse{width:36px;height:3px;overflow:hidden;border-radius:999px;background:#2c3037}.pulse:after{content:"";display:block;width:45%;height:100%;border-radius:inherit;background:#d8d8d8;animation:pulse .65s ease-out 2 both}@keyframes pulse{from{transform:translateX(-110%)}to{transform:translateX(245%)}}@media(prefers-reduced-motion:reduce){.pulse:after{animation:none;transform:translateX(62%)}}
+  </style></head><body><aside class="sidebar"><div class="brand"><span class="mark">P</span><span>Piora</span></div><div class="lines"><span class="line"></span><span class="line"></span><span class="line"></span></div></aside><main class="main"><div class="loading"><span class="pulse"></span><span>Starting Piora…</span></div></main></body></html>`;
   void window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(startupDocument)}`);
   return { window, ready };
 }
@@ -1300,7 +1238,7 @@ async function startApplication(): Promise<void> {
     electronVersion: process.versions.electron,
   });
 
-  piAgentDirectoryPath = await choosePiAgentDirectory(logger);
+  piAgentDirectoryPath = resolvePiAgentDirectory();
   logger.info("Using Pi data directory", { directory: piAgentDirectoryPath });
 
   // Show an app-owned shell immediately while the bundled Next.js service

@@ -10,15 +10,27 @@ import { AliIcon } from "./AliIcon";
 interface AppearanceLook {
   id: string;
   theme: Theme;
-  backgroundId: string;
+  backgroundId: string | null;
   overlay: number;
   blur: number;
   previewOverlay: string;
+  previewBackground?: string;
   nameKey: string;
   descriptionKey: string;
 }
 
 const APPEARANCE_LOOKS: readonly AppearanceLook[] = [
+  {
+    id: "codex",
+    theme: "dream",
+    backgroundId: null,
+    overlay: 58,
+    blur: 0,
+    previewOverlay: "transparent",
+    previewBackground: "radial-gradient(circle at 72% 0%, rgba(136, 157, 146, 0.16), transparent 43%), linear-gradient(145deg, #111214, #17191c 55%, #101113)",
+    nameKey: "appearance.look.codex",
+    descriptionKey: "appearance.look.codexDescription",
+  },
   {
     id: "starlight",
     theme: "starlight",
@@ -65,7 +77,7 @@ export function AppearanceLooks() {
   const titleId = useId();
   const { t } = useI18n();
   const { theme, setThemeWithAction } = useTheme();
-  const { preference, hydrated, busy, applyBuiltinPreset } = useBackground();
+  const { preference, hydrated, busy, applyBuiltinPreset, setNone } = useBackground();
 
   return (
     <section aria-labelledby={titleId} style={{ paddingBottom: 16 }}>
@@ -83,15 +95,16 @@ export function AppearanceLooks() {
         style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(148px, 1fr))", gap: 9 }}
       >
         {APPEARANCE_LOOKS.map((look) => {
-          const background = getBackgroundPreset(look.backgroundId);
+          const background = look.backgroundId ? getBackgroundPreset(look.backgroundId) : undefined;
           const selected = theme === look.theme
-            && preference.source === "builtin"
-            && preference.presetId === look.backgroundId
-            && preference.overlay === look.overlay
-            && preference.blur === look.blur;
+            && (look.backgroundId
+              ? preference.source === "builtin" && preference.presetId === look.backgroundId
+              : preference.source === "none")
+            && (!look.backgroundId
+              || (preference.overlay === look.overlay && preference.blur === look.blur));
           const artwork = background
             ? `linear-gradient(${look.previewOverlay}, ${look.previewOverlay}), url("${background.asset}")`
-            : undefined;
+            : look.previewBackground;
 
           return (
             <button
@@ -104,7 +117,11 @@ export function AppearanceLooks() {
               onClick={(event) => {
                 const rect = event.currentTarget.getBoundingClientRect();
                 setThemeWithAction(look.theme, () => {
-                  applyBuiltinPreset(look.backgroundId, { overlay: look.overlay, blur: look.blur });
+                  if (look.backgroundId) {
+                    applyBuiltinPreset(look.backgroundId, { overlay: look.overlay, blur: look.blur });
+                  } else {
+                    setNone();
+                  }
                 }, {
                   x: rect.left + rect.width / 2,
                   y: rect.top + rect.height / 2,

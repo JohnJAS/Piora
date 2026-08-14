@@ -33,6 +33,8 @@ interface Props {
   embedded?: boolean;
   companionOpen: boolean;
   onCompanionOpenChange: (open: boolean) => void;
+  alwaysOnTop: boolean;
+  onAlwaysOnTopChange: (alwaysOnTop: boolean) => void;
   desktopMode: boolean;
   selectedPetId: string;
   onSelectPet: (petId: string) => void;
@@ -52,6 +54,8 @@ export function CompanionSettingsDialog({
   embedded = false,
   companionOpen,
   onCompanionOpenChange,
+  alwaysOnTop,
+  onAlwaysOnTopChange,
   desktopMode,
   selectedPetId,
   onSelectPet,
@@ -133,6 +137,27 @@ export function CompanionSettingsDialog({
               aria-checked={companionOpen}
               aria-label={t("companion.showCompanion")}
               onClick={() => onCompanionOpenChange(!companionOpen)}
+            >
+              <span className={styles.switchThumb} />
+            </button>
+          </div>
+
+          <div className={styles.displayCard} data-disabled={desktopMode ? undefined : "true"}>
+            <span className={styles.displayIcon} aria-hidden="true">
+              <AliIcon name="pushpin" size={18} />
+            </span>
+            <div className={styles.copy}>
+              <div className={styles.label}>{t("companion.alwaysOnTop")}</div>
+              <div className={styles.description}>{t("companion.alwaysOnTopDescription")}</div>
+            </div>
+            <button
+              className={styles.switch}
+              type="button"
+              role="switch"
+              aria-checked={alwaysOnTop}
+              aria-label={t("companion.alwaysOnTop")}
+              disabled={!desktopMode}
+              onClick={() => onAlwaysOnTopChange(!alwaysOnTop)}
             >
               <span className={styles.switchThumb} />
             </button>

@@ -57,15 +57,17 @@ test("settings search stays inside the settings page and navigates to matching s
 });
 
 test("anchors soft top-bar panels inside the top bar coordinate system", () => {
-  const branchNavigator = readFileSync(new URL("./BranchNavigator.tsx", import.meta.url), "utf8");
   assert.match(appShell, /position:\s*"absolute"/);
-  assert.match(appShell, /activeTopPanel !== "branches"/);
   assert.match(appShell, /left:\s*leftInViewport - topBarRect\.left/);
   assert.match(appShell, /className="soft-top-panel"/);
-  assert.match(branchNavigator, /top:\s*boundaryRect\.height \+ inset/);
-  assert.match(branchNavigator, /className="app-floating-panel branch-floating-panel"/);
   assert.match(globalCss, /\.soft-top-panel-header/);
   assert.match(globalCss, /\.soft-menu-item:hover/);
+});
+
+test("keeps the conversation branch navigator out of the main top bar", () => {
+  assert.doesNotMatch(appShell, /<BranchNavigator/);
+  assert.doesNotMatch(appShell, /onBranchDataChange=/);
+  assert.doesNotMatch(appShell, /"branches"\s*\|/);
 });
 
 test("always enables Pi's coding tools without exposing permission tiers", () => {

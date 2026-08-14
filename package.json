@@ -1,6 +1,6 @@
 {
   "name": "piora",
-  "version": "0.2.1",
+  "version": "0.1.7",
   "private": true,
   "description": "Open-source Pi coding agent desktop application",
   "author": {
@@ -36,7 +36,7 @@
     "dompurify": "3.4.13",
     "js-yaml": "4.3.1",
     "postcss": "$postcss",
-    "nanoid": "3.3.17",
+    "nanoid": "3.3.18",
     "sharp@0.34.5": "0.35.3",
     "undici": "$undici"
   },
@@ -88,21 +88,22 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "0.83.0",
-    "@earendil-works/pi-ai": "0.83.0",
-    "@earendil-works/pi-coding-agent": "0.83.0",
-    "@earendil-works/pi-tui": "0.83.0",
-    "@lobehub/icons": "^5.6.0",
+    "@earendil-works/pi-agent-core": "0.84.1",
+    "@earendil-works/pi-ai": "0.84.1",
+    "@earendil-works/pi-coding-agent": "0.84.1",
+    "@earendil-works/pi-tui": "0.84.1",
+    "@lobehub/icons": "^5.16.0",
     "brace-expansion": "5.0.9",
     "jszip": "^3.10.1",
     "katex": "^0.16.47",
-    "mammoth": "^1.12.0",
+    "mammoth": "^1.12.1",
     "mermaid": "^11.16.1",
-    "next": "^16.2.12",
+    "next": "^16.3.1",
+    "opencc-js": "^1.4.1",
     "playwright-core": "^1.62.1",
     "proper-lockfile": "4.1.2",
-    "react": "^19.2.4",
-    "react-dom": "^19.2.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^16.1.1",
     "rehype-katex": "^7.0.1",
@@ -113,17 +114,18 @@
     "undici": "8.9.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.2.2",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^25",
     "@types/proper-lockfile": "4.1.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-syntax-highlighter": "^15.5.13",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.3.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "jiti": "^2.7.0",
     "postcss": "^8.5.25",
-    "tailwindcss": "^4.2.2",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5"
   }
 }

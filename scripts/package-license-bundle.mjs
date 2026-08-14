@@ -296,23 +296,41 @@ async function readApplicationVersion(webRoot) {
 }
 
 async function collectLicenseFiles(packageRoot) {
-  const files = [];
+  const licensePaths = [];
   const packageEntries = (await readdir(packageRoot, { withFileTypes: true }))
     .sort((left, right) => compareText(left.name, right.name));
   const licenseEntries = packageEntries.filter((entry) => LICENSE_NAME.test(entry.name));
-  if (licenseEntries.length > LICENSE_FILES_PER_PACKAGE_LIMIT) {
-    throw new Error(
-      `Package contains more than ${LICENSE_FILES_PER_PACKAGE_LIMIT} top-level license files: ${packageRoot}`,
-    );
-  }
   for (const entry of licenseEntries) {
     const licensePath = join(packageRoot, entry.name);
-    if (entry.isSymbolicLink() || !entry.isFile()) {
+    if (entry.isSymbolicLink()) {
       throw new Error(`Package license material must be a regular file: ${licensePath}`);
     }
-    const bytes = await readBounded(licensePath, LICENSE_FILE_LIMIT, "Package license material");
+    if (entry.isFile()) {
+      licensePaths.push({ path: licensePath, sourceName: entry.name });
+    } else if (entry.isDirectory()) {
+      const children = (await readdir(licensePath, { withFileTypes: true }))
+        .sort((left, right) => compareText(left.name, right.name));
+      for (const child of children) {
+        const childPath = join(licensePath, child.name);
+        if (child.isSymbolicLink() || !child.isFile()) {
+          throw new Error(`Package license directory entries must be regular files: ${childPath}`);
+        }
+        licensePaths.push({ path: childPath, sourceName: `${entry.name}/${child.name}` });
+      }
+    } else {
+      throw new Error(`Package license material must be a regular file or directory: ${licensePath}`);
+    }
+    if (licensePaths.length > LICENSE_FILES_PER_PACKAGE_LIMIT) {
+      throw new Error(
+        `Package contains more than ${LICENSE_FILES_PER_PACKAGE_LIMIT} license files: ${packageRoot}`,
+      );
+    }
+  }
+  const files = [];
+  for (const licenseFile of licensePaths) {
+    const bytes = await readBounded(licenseFile.path, LICENSE_FILE_LIMIT, "Package license material");
     files.push({
-      sourceName: entry.name,
+      sourceName: licenseFile.sourceName,
       sha256: sha256(bytes),
       size: bytes.length,
       bytes,
