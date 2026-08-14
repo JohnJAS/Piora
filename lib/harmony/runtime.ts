@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { posix, win32 } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { HarmonyError } from "./errors";
@@ -35,9 +35,18 @@ function isUsableFile(path: string): boolean {
   }
 }
 
-function normalizeCandidate(candidate: string | undefined): string | undefined {
+function pathApi(platform: NodeJS.Platform) {
+  return platform === "win32" ? win32 : posix;
+}
+
+function inferredPlatform(path: string | undefined): NodeJS.Platform {
+  return path && /^[A-Za-z]:[\\/]/.test(path.trim()) ? "win32" : process.platform;
+}
+
+function normalizeCandidate(candidate: string | undefined, platform: NodeJS.Platform = process.platform): string | undefined {
   if (!candidate?.trim()) return undefined;
-  const absolute = isAbsolute(candidate.trim()) ? candidate.trim() : resolve(candidate.trim());
+  const paths = pathApi(platform);
+  const absolute = paths.isAbsolute(candidate.trim()) ? candidate.trim() : paths.resolve(candidate.trim());
   return absolute;
 }
 
@@ -57,51 +66,54 @@ function devecoCandidates(
   platform: NodeJS.Platform,
   listDirectory: (path: string) => string[],
 ): string[] {
+  const paths = pathApi(platform);
   const executable = platform === "win32" ? "hdc.exe" : "hdc";
-  const localAppData = env.LOCALAPPDATA || join(homeDir, "AppData", "Local");
+  const localAppData = env.LOCALAPPDATA || paths.join(homeDir, "AppData", "Local");
   const programFiles = env.ProgramFiles || "C:\\Program Files";
   const sdkRoots = [
-    join(localAppData, "Huawei", "Sdk"),
-    join(localAppData, "Huawei", "Sdk", "openharmony"),
-    join(homeDir, "Huawei", "Sdk"),
+    paths.join(localAppData, "Huawei", "Sdk"),
+    paths.join(localAppData, "Huawei", "Sdk", "openharmony"),
+    paths.join(homeDir, "Huawei", "Sdk"),
   ];
   const result = [
-    join(programFiles, "Huawei", "DevEco Studio", "sdk", "default", "openharmony", "toolchains", executable),
-    join(programFiles, "Huawei", "DevEco Studio", "sdk", "default", "toolchains", executable),
-    join(localAppData, "Programs", "Huawei", "DevEco Studio", "sdk", "default", "openharmony", "toolchains", executable),
+    paths.join(programFiles, "Huawei", "DevEco Studio", "sdk", "default", "openharmony", "toolchains", executable),
+    paths.join(programFiles, "Huawei", "DevEco Studio", "sdk", "default", "toolchains", executable),
+    paths.join(localAppData, "Programs", "Huawei", "DevEco Studio", "sdk", "default", "openharmony", "toolchains", executable),
   ];
 
   for (const sdkRoot of sdkRoots) {
-    result.push(join(sdkRoot, "default", "openharmony", "toolchains", executable));
-    result.push(join(sdkRoot, "default", "toolchains", executable));
+    result.push(paths.join(sdkRoot, "default", "openharmony", "toolchains", executable));
+    result.push(paths.join(sdkRoot, "default", "toolchains", executable));
     for (const version of versionDirectories(sdkRoot, listDirectory)) {
-      result.push(join(sdkRoot, version, "openharmony", "toolchains", executable));
-      result.push(join(sdkRoot, version, "toolchains", executable));
+      result.push(paths.join(sdkRoot, version, "openharmony", "toolchains", executable));
+      result.push(paths.join(sdkRoot, version, "toolchains", executable));
     }
   }
   return result;
 }
 
 function selectedCandidates(selectionPath: string, platform: NodeJS.Platform, listDirectory: (path: string) => string[]): string[] {
-  const selected = normalizeCandidate(selectionPath);
+  const paths = pathApi(platform);
+  const selected = normalizeCandidate(selectionPath, platform);
   if (!selected) return [];
   const executable = platform === "win32" ? "hdc.exe" : "hdc";
-  if (basename(selected).toLocaleLowerCase() === executable.toLocaleLowerCase()) return [selected];
+  if (paths.basename(selected).toLocaleLowerCase() === executable.toLocaleLowerCase()) return [selected];
   const roots = [selected];
-  for (const version of versionDirectories(selected, listDirectory)) roots.push(join(selected, version));
+  for (const version of versionDirectories(selected, listDirectory)) roots.push(paths.join(selected, version));
   return roots.flatMap((root) => [
-    join(root, executable),
-    join(root, "toolchains", executable),
-    join(root, "openharmony", "toolchains", executable),
-    join(root, "default", "toolchains", executable),
-    join(root, "default", "openharmony", "toolchains", executable),
+    paths.join(root, executable),
+    paths.join(root, "toolchains", executable),
+    paths.join(root, "openharmony", "toolchains", executable),
+    paths.join(root, "default", "toolchains", executable),
+    paths.join(root, "default", "openharmony", "toolchains", executable),
   ]);
 }
 
-function inferSdkPath(hdcPath: string): string {
-  const toolchains = dirname(hdcPath);
-  return basename(toolchains).toLocaleLowerCase() === "toolchains"
-    ? dirname(toolchains)
+function inferSdkPath(hdcPath: string, platform: NodeJS.Platform): string {
+  const paths = pathApi(platform);
+  const toolchains = paths.dirname(hdcPath);
+  return paths.basename(toolchains).toLocaleLowerCase() === "toolchains"
+    ? paths.dirname(toolchains)
     : toolchains;
 }
 
@@ -111,6 +123,7 @@ export function discoverHdcCandidates(options: DiscoverHdcOptions = {}): Harmony
   const homeDir = options.homeDir ?? homedir();
   const exists = options.exists ?? isUsableFile;
   const listDirectory = options.listDirectory ?? ((path) => readdirSync(path));
+  const paths = pathApi(platform);
   const executable = platform === "win32" ? "hdc.exe" : "hdc";
   const candidates: Array<{ path: string | undefined; source: HarmonyRuntimeCandidate["source"] }> = [];
 
@@ -120,19 +133,19 @@ export function discoverHdcCandidates(options: DiscoverHdcOptions = {}): Harmony
   for (const name of HDC_ENV_NAMES) candidates.push({ path: env[name], source: "environment" });
   candidates.push({ path: options.config?.hdcPath, source: "config" });
   candidates.push(...devecoCandidates(homeDir, env, platform, listDirectory).map((path) => ({ path, source: "deveco" as const })));
-  for (const directory of (env.PATH ?? "").split(delimiter)) {
-    if (directory.trim()) candidates.push({ path: join(directory.replace(/^"|"$/g, ""), executable), source: "path" });
+  for (const directory of (env.PATH ?? "").split(paths.delimiter)) {
+    if (directory.trim()) candidates.push({ path: paths.join(directory.replace(/^"|"$/g, ""), executable), source: "path" });
   }
 
   const seen = new Set<string>();
   const result: HarmonyRuntimeCandidate[] = [];
   for (const candidate of candidates) {
-    const hdcPath = normalizeCandidate(candidate.path);
+    const hdcPath = normalizeCandidate(candidate.path, platform);
     if (!hdcPath || !exists(hdcPath)) continue;
     const key = platform === "win32" ? hdcPath.toLocaleLowerCase() : hdcPath;
     if (seen.has(key)) continue;
     seen.add(key);
-    result.push({ hdcPath, sdkPath: inferSdkPath(hdcPath), source: candidate.source });
+    result.push({ hdcPath, sdkPath: inferSdkPath(hdcPath, platform), source: candidate.source });
   }
   return result;
 }
@@ -143,10 +156,11 @@ export function resolveHdcPath(options: ResolveHdcOptions = {}): HarmonyRuntimeR
   const homeDir = options.homeDir ?? homedir();
   const exists = options.exists ?? isUsableFile;
   const listDirectory = options.listDirectory ?? ((path) => readdirSync(path));
+  const paths = pathApi(platform);
   const executable = platform === "win32" ? "hdc.exe" : "hdc";
 
   const check = (candidate: string | undefined): string | undefined => {
-    const normalized = normalizeCandidate(candidate);
+    const normalized = normalizeCandidate(candidate, platform);
     return normalized && exists(normalized) ? normalized : undefined;
   };
 
@@ -171,9 +185,9 @@ export function resolveHdcPath(options: ResolveHdcOptions = {}): HarmonyRuntimeR
     if (discovered) return { hdcPath: discovered, source: "deveco" };
   }
 
-  for (const directory of (env.PATH ?? "").split(delimiter)) {
+  for (const directory of (env.PATH ?? "").split(paths.delimiter)) {
     if (!directory.trim()) continue;
-    const fromPath = check(join(directory.replace(/^"|"$/g, ""), executable));
+    const fromPath = check(paths.join(directory.replace(/^"|"$/g, ""), executable));
     if (fromPath) return { hdcPath: fromPath, source: "path" };
   }
 
@@ -183,10 +197,17 @@ export function resolveHdcPath(options: ResolveHdcOptions = {}): HarmonyRuntimeR
 }
 
 export function defaultHarmonyConfigPath(env: NodeJS.ProcessEnv = process.env): string {
-  if (env.PIORA_HARMONY_CONFIG_PATH?.trim()) return resolve(env.PIORA_HARMONY_CONFIG_PATH.trim());
-  if (env.PIORA_DESKTOP_DATA_DIR?.trim()) return join(resolve(env.PIORA_DESKTOP_DATA_DIR.trim()), "harmony.json");
-  const base = env.APPDATA?.trim() || join(homedir(), ".piora");
-  return join(base, "Piora", "harmony.json");
+  const requested = env.PIORA_HARMONY_CONFIG_PATH?.trim();
+  if (requested) return pathApi(inferredPlatform(requested)).resolve(requested);
+  const desktopData = env.PIORA_DESKTOP_DATA_DIR?.trim();
+  if (desktopData) {
+    const paths = pathApi(inferredPlatform(desktopData));
+    return paths.join(paths.resolve(desktopData), "harmony.json");
+  }
+  const appData = env.APPDATA?.trim();
+  const paths = pathApi(inferredPlatform(appData));
+  const base = appData || paths.join(homedir(), ".piora");
+  return paths.join(base, "Piora", "harmony.json");
 }
 
 export function readHarmonyConfig(path = defaultHarmonyConfigPath()): HarmonyConfig {
@@ -223,10 +244,11 @@ export function writeHarmonyConfig(config: HarmonyConfig, path = defaultHarmonyC
   const normalized: HarmonyConfig = {};
   if (config.hdcPath?.trim()) {
     const requested = config.hdcPath.trim();
-    if (!isAbsolute(requested)) {
+    const paths = pathApi(inferredPlatform(requested));
+    if (!paths.isAbsolute(requested)) {
       throw new HarmonyError("INVALID_ARGUMENT", "HDC path must be absolute");
     }
-    const absolute = normalizeCandidate(requested);
+    const absolute = normalizeCandidate(requested, inferredPlatform(requested));
     if (!absolute) throw new HarmonyError("INVALID_ARGUMENT", "HDC path must be absolute");
     normalized.hdcPath = absolute;
   }
@@ -244,7 +266,7 @@ export function writeHarmonyConfig(config: HarmonyConfig, path = defaultHarmonyC
     };
   }
   try {
-    mkdirSync(dirname(path), { recursive: true });
+    mkdirSync(pathApi(inferredPlatform(path)).dirname(path), { recursive: true });
     const temporary = `${path}.${randomUUID()}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(normalized, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     renameSync(temporary, path);
