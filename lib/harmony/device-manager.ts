@@ -55,6 +55,38 @@ interface StoredSnapshot extends HarmonySnapshot {
   nodeByRef: Map<string, HarmonyUiNode>;
 }
 
+function normalizedLabel(value: string | undefined): string | undefined {
+  const normalized = value?.replace(/\s+/g, " ").trim();
+  return normalized || undefined;
+}
+
+function boundsDistance(left: HarmonyUiNode, right: Omit<HarmonyUiNode, "ref" | "parentRef">): number {
+  if (!left.bounds || !right.bounds) return Number.POSITIVE_INFINITY;
+  const leftX = (left.bounds.left + left.bounds.right) / 2;
+  const leftY = (left.bounds.top + left.bounds.bottom) / 2;
+  const rightX = (right.bounds.left + right.bounds.right) / 2;
+  const rightY = (right.bounds.top + right.bounds.bottom) / 2;
+  return Math.hypot(leftX - rightX, leftY - rightY);
+}
+
+function isSameUiTarget(target: HarmonyUiNode, candidate: Omit<HarmonyUiNode, "ref" | "parentRef">): boolean {
+  if (!candidate.bounds || candidate.enabled === false || candidate.visible === false) return false;
+  if (target.clickable === true && candidate.clickable !== true) return false;
+  if (target.type && candidate.type !== target.type) return false;
+  if (target.id && candidate.id !== target.id) return false;
+
+  const labels = ["text", "hint", "description"] as const;
+  const stableLabels = labels.filter((key) => normalizedLabel(target[key]) !== undefined);
+  if (!target.id && stableLabels.length === 0 && !target.bounds) return false;
+  if (stableLabels.some((key) => normalizedLabel(candidate[key]) !== normalizedLabel(target[key]))) return false;
+
+  if (!target.bounds) return Boolean(target.id || stableLabels.length > 0);
+  const width = Math.max(1, target.bounds.right - target.bounds.left);
+  const height = Math.max(1, target.bounds.bottom - target.bounds.top);
+  const tolerance = Math.max(8, Math.min(width, height) * 0.15);
+  return boundsDistance(target, candidate) <= tolerance;
+}
+
 function iso(timestamp: number): string {
   return new Date(timestamp).toISOString();
 }
@@ -261,6 +293,10 @@ export class HarmonyDeviceManager {
       this.devices.set(device.serial, current);
       normalized.push(current);
       if (!previous || previous.generation !== generation) this.snapshots.delete(device.serial);
+      if (current.state !== "online") {
+        const lease = this.leasesBySerial.get(device.serial);
+        if (lease) this.removeLease(lease, "device_offline");
+      }
     }
     for (const serial of [...this.presentLastRefresh]) {
       if (!presentNow.has(serial)) {
@@ -412,6 +448,7 @@ export class HarmonyDeviceManager {
     generation: number | undefined,
     signal: AbortSignal | undefined,
     invoke: (backend: HarmonyAutomationBackend, queuedSignal: AbortSignal) => Promise<void>,
+    expectedSnapshotRevision?: number,
   ): Promise<HarmonyOperationResult> {
     validateSerial(serial);
     const lease = this.requireLease(serial, leaseToken);
@@ -424,6 +461,15 @@ export class HarmonyDeviceManager {
           retryable: true,
         });
       }
+      if (expectedSnapshotRevision !== undefined) {
+        const current = this.snapshots.get(serial);
+        if (!current || current.revision !== expectedSnapshotRevision) {
+          throw new HarmonyError("STALE_SNAPSHOT", "The UI reference was replaced by a newer snapshot", { retryable: true });
+        }
+      }
+      // Any write may change the page, even when the device command later fails.
+      // Force callers to capture a new tree before reusing a UI reference.
+      this.snapshots.delete(serial);
       await invoke(this.requireBackend(), queuedSignal);
       this.emit({ type: "operation", timestamp: iso(this.now()), serial, operation, operationId });
       return { serial, operationId, generation: device.generation, completedAt: iso(this.now()) };
@@ -443,16 +489,28 @@ export class HarmonyDeviceManager {
     const node = snapshot.nodeByRef.get(options.ref);
     if (!node?.bounds) throw new HarmonyError("INVALID_ARGUMENT", "UI reference does not have tappable bounds");
     if (node.enabled === false || node.visible === false) throw new HarmonyError("INVALID_ARGUMENT", "UI reference is not enabled or visible");
-    const x = Math.round((node.bounds.left + node.bounds.right) / 2);
-    const y = Math.round((node.bounds.top + node.bounds.bottom) / 2);
+    if (node.clickable === false) throw new HarmonyError("INVALID_ARGUMENT", "UI reference is not clickable");
     return await this.action("tap_ref", options.serial, options.leaseToken, options.generation, options.signal,
       async (backend, signal) => {
-        const current = this.snapshots.get(options.serial);
-        if (!current || current.revision !== snapshot.revision || !current.nodeByRef.has(options.ref)) {
-          throw new HarmonyError("STALE_SNAPSHOT", "The UI reference was replaced by a newer snapshot", { retryable: true });
+        // Snapshot revisions are local bookkeeping, not an atomic device-side
+        // transaction. Re-read the tree immediately before tapping and require
+        // the same uniquely identifiable target at nearly the same location.
+        const fresh = await backend.snapshot(options.serial, { includeTree: true, includeScreenshot: false, signal });
+        const matches = (fresh.nodes ?? []).filter((candidate) => isSameUiTarget(node, candidate));
+        if (matches.length !== 1 || !matches[0].bounds) {
+          throw new HarmonyError("STALE_SNAPSHOT", "The referenced UI target changed or became ambiguous before the tap", {
+            details: { matchCount: matches.length },
+            retryable: true,
+          });
         }
-        await backend.tap(options.serial, x, y, signal);
-      });
+        const bounds = matches[0].bounds;
+        await backend.tap(
+          options.serial,
+          Math.round((bounds.left + bounds.right) / 2),
+          Math.round((bounds.top + bounds.bottom) / 2),
+          signal,
+        );
+      }, snapshot.revision);
   }
 
   async swipe(options: HarmonySwipeOptions): Promise<HarmonyOperationResult> {
@@ -481,22 +539,44 @@ export class HarmonyDeviceManager {
     return { ...this.config };
   }
 
-  async updateConfig(patch: { hdcPath?: string | null; vision?: HarmonyConfig["vision"] | null }): Promise<HarmonyConfig> {
+  async updateConfig(
+    patch: { hdcPath?: string | null; vision?: HarmonyConfig["vision"] | null },
+    signal?: AbortSignal,
+  ): Promise<HarmonyConfig> {
     if (this.injectedBackend) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Injected Harmony backends cannot be reconfigured");
     const next: HarmonyConfig = { ...this.config };
     if (patch.hdcPath === null || patch.hdcPath === "") delete next.hdcPath;
     else if (patch.hdcPath !== undefined) next.hdcPath = patch.hdcPath;
     if (patch.vision === null) delete next.vision;
     else if (patch.vision !== undefined) next.vision = patch.vision;
-    const normalized = writeHarmonyConfig(next, this.configPath);
-    const runtimeChanged = normalized.hdcPath !== this.config.hdcPath;
-    this.config = normalized;
+    const previousConfig = this.config;
+    const runtimeChanged = next.hdcPath !== previousConfig.hdcPath;
+    let candidateBackend: HarmonyAutomationBackend | undefined;
     if (runtimeChanged) {
+      // Validate the candidate before persisting it or disturbing the working
+      // backend. A bad picker choice must not strand the user on restart.
+      candidateBackend = this.backendFactory(next);
+      try {
+        await candidateBackend.listDevices(signal);
+      } catch (error) {
+        await Promise.resolve(candidateBackend.dispose?.()).catch(() => undefined);
+        throw error;
+      }
+    }
+    let normalized: HarmonyConfig;
+    try {
+      normalized = writeHarmonyConfig(next, this.configPath);
+    } catch (error) {
+      await candidateBackend?.dispose?.();
+      throw error;
+    }
+    this.config = normalized;
+    if (runtimeChanged && candidateBackend) {
+      const previousBackend = this.backend;
       await this.emergencyStop("configuration_changed");
-      await this.backend?.dispose?.();
-      this.backend = undefined;
-      this.tryCreateBackend();
-      if (!this.backend) throw this.runtimeError;
+      this.backend = candidateBackend;
+      this.runtimeError = undefined;
+      await Promise.resolve(previousBackend?.dispose?.()).catch(() => undefined);
     }
     return this.getConfig();
   }

@@ -18,6 +18,7 @@ export async function GET(request: Request) {
     return new Response(new Uint8Array(snapshot.screenshot.data), {
       headers: {
         "Content-Type": snapshot.screenshot.mimeType,
+        "Content-Length": String(snapshot.screenshot.data.byteLength),
         "Cache-Control": "private, no-store",
         "X-Content-Type-Options": "nosniff",
         "X-Harmony-Generation": String(snapshot.generation),

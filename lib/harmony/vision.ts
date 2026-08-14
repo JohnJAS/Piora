@@ -5,6 +5,9 @@ import type { HarmonyConfig } from "./types";
 
 const VISION_TIMEOUT_MS = 45_000;
 const VISION_MAX_TOKENS = 2_048;
+const VISION_MAX_SCREENSHOT_BYTES = 12 * 1024 * 1024;
+const VISION_MAX_SCREENSHOT_PIXELS = 20_000_000;
+const VISION_MAX_OBSERVATION_CHARS = 12_000;
 
 let runtimePromise: Promise<ModelRuntime> | undefined;
 
@@ -36,16 +39,32 @@ export async function analyzeHarmonyScreenshot(
   vision: NonNullable<HarmonyConfig["vision"]>,
   signal?: AbortSignal,
 ): Promise<HarmonyVisionObservation> {
+  if (screenshot.mimeType !== "image/png" || screenshot.data.length === 0 || screenshot.data.length > VISION_MAX_SCREENSHOT_BYTES) {
+    throw new Error(`Vision screenshot must be a non-empty PNG no larger than ${VISION_MAX_SCREENSHOT_BYTES} bytes`);
+  }
+  if (screenshot.data.length < 24 || !screenshot.data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    throw new Error("Vision screenshot is not a valid PNG");
+  }
+  const width = screenshot.data.readUInt32BE(16);
+  const height = screenshot.data.readUInt32BE(20);
+  if (width === 0 || height === 0 || width * height > VISION_MAX_SCREENSHOT_PIXELS) {
+    throw new Error(`Vision screenshot dimensions exceed the ${VISION_MAX_SCREENSHOT_PIXELS}-pixel limit`);
+  }
   const runtime = await modelRuntime();
   const loadError = runtime.getError();
   if (loadError) throw new Error(loadError);
   const model = runtime.getModel(vision.provider, vision.modelId);
   if (!model) throw new Error(`Vision model not found: ${vision.provider}/${vision.modelId}`);
+  if (!model.input.includes("image")) throw new Error(`Configured vision model does not accept images: ${vision.provider}/${vision.modelId}`);
 
   const controller = new AbortController();
   const abort = () => controller.abort();
   signal?.addEventListener("abort", abort, { once: true });
-  const timeout = setTimeout(abort, VISION_TIMEOUT_MS);
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, VISION_TIMEOUT_MS);
   try {
     const message = await runtime.completeSimple(model, {
       systemPrompt: [
@@ -71,11 +90,11 @@ export async function analyzeHarmonyScreenshot(
       signal: controller.signal,
     });
     if (message.stopReason === "error" || message.stopReason === "aborted") {
-      throw new Error(message.errorMessage ?? (controller.signal.aborted ? "Vision analysis timed out" : "Vision analysis failed"));
+      throw new Error(message.errorMessage ?? (timedOut ? "Vision analysis timed out" : controller.signal.aborted ? "Vision analysis was cancelled" : "Vision analysis failed"));
     }
     const text = assistantText(message);
     if (!text) throw new Error("Vision model returned no observation text");
-    return { provider: vision.provider, modelId: vision.modelId, text };
+    return { provider: vision.provider, modelId: vision.modelId, text: text.slice(0, VISION_MAX_OBSERVATION_CHARS) };
   } finally {
     clearTimeout(timeout);
     signal?.removeEventListener("abort", abort);

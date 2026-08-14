@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { useHarmonyLiveFrame } from "@/hooks/useHarmonyLiveFrame";
 import { AliIcon } from "../AliIcon";
 import styles from "./HarmonyPanel.module.css";
 
@@ -26,7 +27,6 @@ type HarmonyState = {
   snapshots: Array<{ serial: string; generation: number; revision: number; capturedAt: string; hasTree: boolean; hasScreenshot: boolean }>;
 };
 type ManualLease = { token: string; serial: string; expiresAt: string };
-type FrameStatus = "idle" | "loading" | "live" | "error";
 type RuntimeCandidate = { hdcPath: string; sdkPath: string; source: "selection" | "environment" | "config" | "deveco" | "path" };
 type VisionModel = { provider: string; modelId: string; name: string };
 type HarmonyConfig = {
@@ -70,16 +70,21 @@ export function HarmonyPanel({ active }: { active: boolean }) {
   const [abilityName, setAbilityName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [frameKey, setFrameKey] = useState(0);
-  const [frameStatus, setFrameStatus] = useState<FrameStatus>("idle");
+  const [frameInteractionError, setFrameInteractionError] = useState<string | null>(null);
   const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(null);
   const ownerIdRef = useRef("");
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const frameRef = useRef<HTMLImageElement>(null);
-  const frameLoadingRef = useRef(false);
+  const leaseRef = useRef<ManualLease | null>(null);
 
   useEffect(() => {
-    ownerIdRef.current ||= `manual:${crypto.randomUUID()}`;
+    const ownerKey = "piora-harmony-manual-owner-v1";
+    let existingOwner: string | null = null;
+    try { existingOwner = window.sessionStorage.getItem(ownerKey); } catch { /* Storage may be unavailable in hardened webviews. */ }
+    ownerIdRef.current = existingOwner && /^manual:[A-Za-z0-9-]{1,80}$/.test(existingOwner)
+      ? existingOwner
+      : `manual:${crypto.randomUUID()}`;
+    try { window.sessionStorage.setItem(ownerKey, ownerIdRef.current); } catch { /* The in-memory identity still works. */ }
     void jsonRequest<{ profile: RuntimeProfile }>("/api/harmony/profile")
       .then((result) => setProfile(result.profile))
       .catch(() => setProfile(window.piDesktop ? "normal" : "web"));
@@ -90,24 +95,36 @@ export function HarmonyPanel({ active }: { active: boolean }) {
     [devices, selectedSerial],
   );
   const selectedOnline = selected?.state === "online";
+  const selectedGeneration = selected?.generation;
+  const canScreenshot = Boolean(selectedOnline && selected?.capabilities.screenshot);
+  const {
+    frame: liveFrame,
+    status: frameStatus,
+    error: frameLoadError,
+    refresh: requestFrame,
+  } = useHarmonyLiveFrame({
+    active: active && profile === "device-control",
+    enabled: canScreenshot,
+    serial: selectedSerial,
+    generation: selectedGeneration,
+    fallbackError: copy("投屏暂不可用，请检查设备授权与 HDC。", "Live view unavailable. Check device authorization and HDC."),
+  });
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (signal?: AbortSignal) => {
     if (profile !== "device-control") return;
     try {
-      const [devicePayload, statePayload] = await Promise.all([
-        jsonRequest<{ devices: HarmonyDevice[] }>("/api/harmony/devices"),
-        jsonRequest<{ state: HarmonyState }>(`/api/harmony/state${selectedSerial ? `?serial=${encodeURIComponent(selectedSerial)}` : ""}`),
-      ]);
+      const devicePayload = await jsonRequest<{ devices: HarmonyDevice[]; state: HarmonyState }>("/api/harmony/devices", { signal });
       setDevices(devicePayload.devices);
-      setManagerState(statePayload.state);
+      setManagerState(devicePayload.state);
       setSelectedSerial((current) => current && devicePayload.devices.some((device) => device.serial === current)
         ? current
         : devicePayload.devices.find((device) => device.state === "online")?.serial ?? devicePayload.devices[0]?.serial ?? "");
       setError(null);
     } catch (refreshError) {
+      if (signal?.aborted) return;
       setError(messageOf(refreshError, copy("无法读取设备状态", "Unable to read device state")));
     }
-  }, [copy, profile, selectedSerial]);
+  }, [copy, profile]);
 
   const loadConfig = useCallback(async () => {
     if (profile !== "device-control") return;
@@ -132,8 +149,17 @@ export function HarmonyPanel({ active }: { active: boolean }) {
 
   useEffect(() => {
     if (!active || profile !== "device-control") return;
-    void refresh();
     void loadConfig();
+    let pollTimer: number | undefined;
+    let pollController: AbortController | undefined;
+    let disposed = false;
+    const poll = async () => {
+      pollController = new AbortController();
+      await refresh(pollController.signal).catch(() => undefined);
+      pollController = undefined;
+      if (!disposed) pollTimer = window.setTimeout(() => { void poll(); }, 5_000);
+    };
+    void poll();
     const source = new EventSource("/api/harmony/events");
     source.onmessage = (event) => {
       try {
@@ -150,7 +176,7 @@ export function HarmonyPanel({ active }: { active: boolean }) {
             : metadata.devices?.find((device) => device.state === "online")?.serial ?? metadata.devices?.[0]?.serial ?? "");
         } else if (metadata.type === "state" && metadata.state) {
           setManagerState(metadata.state);
-        } else if (metadata.type !== "connected" && metadata.type !== "heartbeat") {
+        } else if (metadata.type !== "connected" && metadata.type !== "heartbeat" && metadata.type !== "snapshot") {
           void jsonRequest<{ state: HarmonyState }>(`/api/harmony/state${selectedSerial ? `?serial=${encodeURIComponent(selectedSerial)}` : ""}`)
             .then((payload) => setManagerState(payload.state))
             .catch(() => undefined);
@@ -160,10 +186,11 @@ export function HarmonyPanel({ active }: { active: boolean }) {
       }
     };
     source.onerror = () => { /* Polling below remains the recovery path. */ };
-    const timer = window.setInterval(() => { void refresh(); }, 2_500);
     return () => {
+      disposed = true;
       source.close();
-      window.clearInterval(timer);
+      pollController?.abort();
+      if (pollTimer !== undefined) window.clearTimeout(pollTimer);
     };
   }, [active, loadConfig, profile, refresh, selectedSerial]);
 
@@ -178,6 +205,29 @@ export function HarmonyPanel({ active }: { active: boolean }) {
     }, 60_000);
     return () => window.clearInterval(timer);
   }, [lease]);
+
+  useEffect(() => {
+    leaseRef.current = lease;
+  }, [lease]);
+
+  useEffect(() => {
+    const releaseCurrentLease = () => {
+      const current = leaseRef.current;
+      if (!current) return;
+      leaseRef.current = null;
+      void fetch("/api/harmony/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "release", leaseToken: current.token }),
+        keepalive: true,
+      }).catch(() => undefined);
+    };
+    window.addEventListener("pagehide", releaseCurrentLease);
+    return () => {
+      window.removeEventListener("pagehide", releaseCurrentLease);
+      releaseCurrentLease();
+    };
+  }, []);
 
   useEffect(() => {
     if (active || !lease) return;
@@ -222,27 +272,6 @@ export function HarmonyPanel({ active }: { active: boolean }) {
     });
   }, [copy, run]);
 
-  const requestFrame = useCallback(() => {
-    if (frameLoadingRef.current) return;
-    frameLoadingRef.current = true;
-    setFrameStatus("loading");
-    setFrameKey((key) => key + 1);
-  }, []);
-
-  useEffect(() => {
-    if (!active || profile !== "device-control" || !selectedSerial || !selectedOnline) {
-      frameLoadingRef.current = false;
-      setFrameStatus("idle");
-      return;
-    }
-    requestFrame();
-    const timer = window.setInterval(requestFrame, 1_000);
-    return () => {
-      window.clearInterval(timer);
-      frameLoadingRef.current = false;
-    };
-  }, [active, profile, requestFrame, selectedOnline, selectedSerial]);
-
   const acquire = () => selectedSerial && void run(
     () => jsonRequest<{ lease: ManualLease }>("/api/harmony/manual", {
       method: "POST",
@@ -268,7 +297,6 @@ export function HarmonyPanel({ active }: { active: boolean }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ serial: selectedSerial, leaseToken: lease.token, ...input }),
     }), () => {
-      frameLoadingRef.current = false;
       requestFrame();
       void refresh();
     });
@@ -278,10 +306,10 @@ export function HarmonyPanel({ active }: { active: boolean }) {
     const image = frameRef.current;
     if (!image?.naturalWidth || !image.naturalHeight) return null;
     const bounds = image.getBoundingClientRect();
-    return {
-      x: Math.round(((event.clientX - bounds.left) / bounds.width) * image.naturalWidth),
-      y: Math.round(((event.clientY - bounds.top) / bounds.height) * image.naturalHeight),
-    };
+    const x = Math.round(((event.clientX - bounds.left) / bounds.width) * image.naturalWidth);
+    const y = Math.round(((event.clientY - bounds.top) / bounds.height) * image.naturalHeight);
+    if (x < 0 || y < 0 || x >= image.naturalWidth || y >= image.naturalHeight) return null;
+    return { x, y };
   };
 
   const switchProfile = (target: RuntimeProfile) => void run(async () => {
@@ -311,15 +339,17 @@ export function HarmonyPanel({ active }: { active: boolean }) {
 
   const snapshot = managerState?.snapshots.find((item) => item.serial === selectedSerial);
   const holder = managerState?.leases.find((item) => item.serial === selectedSerial);
-  const frameUrl = selectedSerial && selectedOnline
-    ? `/api/harmony/frame?serial=${encodeURIComponent(selectedSerial)}&v=${frameKey}`
-    : "";
+  const frameMatchesDevice = Boolean(liveFrame && selected && liveFrame.serial === selected.serial && liveFrame.generation === selected.generation);
+  const frameUrl = active && canScreenshot && frameMatchesDevice ? liveFrame?.url ?? "" : "";
+  const frameError = frameInteractionError ?? frameLoadError;
+  const ownsRecoverableLease = Boolean(holder?.owner.kind === "manual" && holder.owner.id === ownerIdRef.current);
+  const canPointControl = Boolean(lease?.serial === selectedSerial && frameStatus === "live" && frameMatchesDevice && selected?.capabilities.tap);
 
   return <div className={styles.root}>
     <header className={styles.header}>
       <div><strong>{copy("鸿蒙设备", "Harmony device")}</strong><span>{managerState?.runtime.status ?? "…"}</span></div>
       <div className={styles.headerActions}>
-        <button type="button" onClick={() => { frameLoadingRef.current = false; requestFrame(); void refresh(); }} disabled={busy} title={copy("刷新", "Refresh")}><AliIcon name="reload" size={14} /></button>
+        <button type="button" onClick={() => { requestFrame(); void refresh(); }} disabled={busy} title={copy("刷新", "Refresh")}><AliIcon name="reload" size={14} /></button>
         <button type="button" onClick={() => switchProfile("normal")}>{copy("退出控制模式", "Leave control mode")}</button>
       </div>
     </header>
@@ -387,7 +417,9 @@ export function HarmonyPanel({ active }: { active: boolean }) {
       </select>
       {lease?.serial === selectedSerial
         ? <button type="button" onClick={release}>{copy("释放手动控制", "Release manual control")}</button>
-        : <button type="button" disabled={!selected || selected.state !== "online" || Boolean(holder)} onClick={acquire}>{copy("取得手动控制", "Acquire manual control")}</button>}
+        : <button type="button" disabled={!selected || selected.state !== "online" || (Boolean(holder) && !ownsRecoverableLease)} onClick={acquire}>
+          {ownsRecoverableLease ? copy("恢复手动控制", "Resume manual control") : copy("取得手动控制", "Acquire manual control")}
+        </button>}
       <button className={styles.stop} type="button" onClick={() => void run(
         () => jsonRequest("/api/harmony/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "emergency_stop", reason: "desktop-panel" }) }),
         () => { setLease(null); void refresh(); },
@@ -396,8 +428,8 @@ export function HarmonyPanel({ active }: { active: boolean }) {
     {holder ? <div className={styles.lease}>{copy("当前控制者", "Current holder")}: {holder.owner.kind === "agent" ? "AI" : copy("手动面板", "manual panel")} · {new Date(holder.expiresAt).toLocaleTimeString()}</div> : null}
 
     <div className={styles.deviceArea}>
-      <div className={styles.frame} data-enabled={lease?.serial === selectedSerial ? "true" : "false"}>
-        {selectedOnline ? <div className={styles.frameStatus} data-status={frameStatus} aria-live="polite">
+      <div className={styles.frame} data-enabled={canPointControl ? "true" : "false"}>
+        {canScreenshot ? <div className={styles.frameStatus} data-status={frameStatus} aria-live="polite">
           <span />{frameStatus === "error" ? copy("投屏重连中", "Reconnecting") : frameStatus === "loading" ? copy("投屏更新中", "Updating") : copy("实时投屏", "Live view")}
           {frameSize ? ` · ${frameSize.width}×${frameSize.height}` : ""}
         </div> : null}
@@ -407,46 +439,52 @@ export function HarmonyPanel({ active }: { active: boolean }) {
           alt={copy("手机实时截图", "Live device screenshot")}
           draggable={false}
           onLoad={() => {
-            frameLoadingRef.current = false;
-            setFrameStatus("live");
             const image = frameRef.current;
             setFrameSize(image ? { width: image.naturalWidth, height: image.naturalHeight } : null);
-            setError(null);
+            setFrameInteractionError(null);
           }}
           onError={() => {
-            frameLoadingRef.current = false;
-            setFrameStatus("error");
-            setError(copy("投屏暂不可用，正在重试；请检查设备授权与 HDC。", "Live view unavailable; retrying. Check device authorization and HDC."));
+            setFrameInteractionError(copy("投屏图片无法解码，正在重试。", "The live-view image could not be decoded; retrying."));
           }}
-          onPointerDown={(event) => { pointerStartRef.current = imagePoint(event); event.currentTarget.setPointerCapture(event.pointerId); }}
+          onPointerDown={(event) => {
+            if (!canPointControl) return;
+            pointerStartRef.current = imagePoint(event);
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
           onPointerUp={(event) => {
             const from = pointerStartRef.current;
             const to = imagePoint(event);
             pointerStartRef.current = null;
-            if (!from || !to || !lease) return;
+            if (!from || !to || !lease || !liveFrame || !frameMatchesDevice) return;
             const distance = Math.hypot(to.x - from.x, to.y - from.y);
+            if (distance > 12 && !selected?.capabilities.swipe) {
+              setFrameInteractionError(copy("当前设备不支持滑动注入。", "This device does not support swipe injection."));
+              return;
+            }
             void action(distance > 12
-              ? { action: "swipe", fromX: from.x, fromY: from.y, toX: to.x, toY: to.y, durationMs: 300, generation: selected?.generation }
-              : { action: "tap", x: to.x, y: to.y, generation: selected?.generation });
+              ? { action: "swipe", fromX: from.x, fromY: from.y, toX: to.x, toY: to.y, durationMs: 300, generation: liveFrame.generation }
+              : { action: "tap", x: to.x, y: to.y, generation: liveFrame.generation });
           }}
-        /> : <div>{copy("连接设备后显示截图", "Connect a device to view its screen")}</div>}
+        /> : <div>{selectedOnline && !selected?.capabilities.screenshot
+          ? copy("当前 UiTest 版本不支持截图投屏", "This UiTest version does not support screen capture")
+          : copy("连接设备后显示截图", "Connect a device to view its screen")}</div>}
       </div>
       <aside className={styles.controls}>
         <div className={styles.keyRow}>
-          {(["back", "home", "recents"] as const).map((key) => <button key={key} type="button" disabled={!lease || busy} onClick={() => void action({ action: "press_key", key })}>{key}</button>)}
+          {(["back", "home", "recents"] as const).map((key) => <button key={key} type="button" disabled={!lease || busy || !selected?.capabilities.keys} onClick={() => void action({ action: "press_key", key })}>{key}</button>)}
         </div>
-        <form onSubmit={(event) => { event.preventDefault(); if (text) void action({ action: "input_text", text }).then(() => setText("")); }}>
+        <form onSubmit={(event) => { event.preventDefault(); if (text) void action({ action: "input_text", text }).then((result) => { if (result !== undefined) setText(""); }); }}>
           <label>{copy("文本输入（内容不会写入日志）", "Text input (never logged)")}<textarea value={text} onChange={(event) => setText(event.target.value)} /></label>
-          <button type="submit" disabled={!lease || !text || busy}>{copy("输入到手机", "Type on device")}</button>
+          <button type="submit" disabled={!lease || !text || busy || !selected?.capabilities.inputText}>{copy("输入到手机", "Type on device")}</button>
         </form>
         <form onSubmit={(event) => { event.preventDefault(); if (bundleName) void action({ action: "launch_app", bundleName, abilityName: abilityName || undefined }); }}>
           <label>Bundle<input value={bundleName} onChange={(event) => setBundleName(event.target.value)} placeholder="com.example.app" /></label>
           <label>Ability<input value={abilityName} onChange={(event) => setAbilityName(event.target.value)} /></label>
-          <button type="submit" disabled={!lease || !bundleName || busy}>{copy("启动应用", "Launch app")}</button>
+          <button type="submit" disabled={!lease || !bundleName || busy || !selected?.capabilities.launchApp}>{copy("启动应用", "Launch app")}</button>
         </form>
         <div className={styles.inspectRow}>
-          <button type="button" disabled={!selectedOnline || busy} onClick={() => { frameLoadingRef.current = false; requestFrame(); }}>{copy("刷新投屏", "Refresh live view")}</button>
-          <button type="button" disabled={!selectedOnline || busy} onClick={() => void run(
+          <button type="button" disabled={!canScreenshot || busy} onClick={requestFrame}>{copy("刷新投屏", "Refresh live view")}</button>
+          <button type="button" disabled={!selectedOnline || busy || !selected?.capabilities.uiTree} onClick={() => void run(
             () => jsonRequest<{ snapshot: unknown }>(`/api/harmony/tree?serial=${encodeURIComponent(selectedSerial)}`),
             (payload) => setTree(payload.snapshot),
           )}>{copy("读取 UI 树", "Read UI tree")}</button>
@@ -454,6 +492,7 @@ export function HarmonyPanel({ active }: { active: boolean }) {
       </aside>
     </div>
 
+    {frameError ? <div className={styles.frameError} role="status">{frameError}</div> : null}
     {error ? <div className={styles.error} role="alert">{error}</div> : null}
     <details className={styles.diagnostics}>
       <summary>{copy("诊断信息", "Diagnostics")}</summary>

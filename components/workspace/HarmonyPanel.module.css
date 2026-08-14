@@ -44,6 +44,7 @@
 .keyRow button { flex: 1; text-transform: capitalize; }
 .inspectRow { flex-wrap: wrap; }
 .error { padding: 8px 10px; color: #ffb4ab; background: color-mix(in srgb, #b42318 26%, var(--bg-panel)); border: 1px solid color-mix(in srgb, #b42318 60%, var(--border)); border-radius: 7px; }
+.frameError { padding: 7px 9px; color: var(--text-muted); background: var(--bg-panel); border: 1px solid var(--border); border-radius: 7px; font-size: var(--text-xs); }
 .diagnostics { padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; }
 .diagnostics summary { cursor: pointer; color: var(--text-muted); }
 .diagnostics pre { max-height: 260px; margin: 8px 0 0; overflow: auto; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.45; white-space: pre-wrap; }

@@ -43,7 +43,7 @@ export async function PUT(request: Request) {
     const config = await manager.updateConfig({
       ...(body.hdcPath !== undefined ? { hdcPath: body.hdcPath as string | null } : {}),
       ...(body.vision !== undefined ? { vision: body.vision as import("@/lib/harmony").HarmonyConfig["vision"] | null } : {}),
-    });
+    }, request.signal);
     return noStoreJson({ config, diagnostics: await manager.getDiagnostics(), candidates: discoverHdcCandidates({ config }) });
   } catch (error) {
     if (error instanceof JsonBodyTooLargeError) return noStoreJson({ error: "Request body is too large" }, { status: 413 });
