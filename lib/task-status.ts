@@ -1,3 +1,5 @@
+import type { GoalRunState } from "./goal-run-registry";
+
 export type Lifecycle = "draft" | "active" | "archived";
 export type Runtime = "idle" | "running" | "compacting" | "stopping";
 export type Attention = "none" | "needs_input" | "needs_approval" | "failed" | "unread";
@@ -8,6 +10,7 @@ export interface TaskStatus {
   attention: Attention;
   /** Server-owned start time for the current run. Survives task switches. */
   startedAt?: number;
+  goal?: GoalRunState;
 }
 
 export interface TaskStatusInput {
@@ -32,6 +35,7 @@ export interface TaskRuntimeSnapshot {
   startedAt?: number;
   title?: string;
   activity?: TaskRuntimeActivity;
+  goal?: GoalRunState;
 }
 
 export type TaskRuntimeActivityKind =

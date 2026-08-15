@@ -10,13 +10,14 @@ const cwdHandler = source.slice(
 
 test("selecting a session in another project survives cwd synchronization", () => {
   assert.match(cwdHandler, /const cwdBelongsToSelectedSession = selectedSession\?\.cwd === cwd/);
+  assert.match(cwdHandler, /const cwdBelongsToSelectedRoom = Boolean/);
   assert.match(
     cwdHandler,
-    /if \(!cwdBelongsToSelectedSession\) \{[\s\S]*?setSelectedSession\(null\);[\s\S]*?setSessionKey/,
+    /if \(!cwdBelongsToCurrentSelection\) \{[\s\S]*?setSelectedSession\(null\);[\s\S]*?setSelectedRoom\(null\);[\s\S]*?setSessionKey/,
   );
   assert.match(
     cwdHandler,
-    /if \(!cwdBelongsToSelectedSession\) \{\s*router\.replace\("\/", \{ scroll: false \}\);\s*\}/,
+    /if \(!cwdBelongsToCurrentSelection\) \{\s*router\.replace\("\/", \{ scroll: false \}\);\s*\}/,
   );
 });
 

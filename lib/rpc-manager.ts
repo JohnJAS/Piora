@@ -31,10 +31,15 @@ import {
   type PromptRunIdentity,
 } from "./prompt-run-registry";
 import {
+  GOAL_RUN_ENTRY_TYPE,
   advanceGoalIteration,
   beginGoalRun,
+  forgetGoalRun,
   forceBlockGoal,
   getGoalRun,
+  cancelGoalRun,
+  pauseGoalRun,
+  restoreGoalRunFromEntries,
   type GoalRunState,
 } from "./goal-run-registry";
 import {
@@ -171,7 +176,9 @@ export class AgentSessionWrapper {
   constructor(
     public readonly inner: AgentSessionLike,
     public readonly runtimeProfile: AgentRuntimeProfile = "normal",
-  ) {}
+  ) {
+    this.goalState = getGoalRun(inner.sessionId);
+  }
 
   get sessionId(): string {
     return this.inner.sessionId;
@@ -218,6 +225,7 @@ export class AgentSessionWrapper {
       ...(this.runStartedAt !== null ? { startedAt: this.runStartedAt } : {}),
       ...(title ? { title } : {}),
       ...(this.taskActivity ? { activity: this.taskActivity } : {}),
+      ...(this.goalState ? { goal: this.goalState } : {}),
     };
   }
 
@@ -423,6 +431,20 @@ export class AgentSessionWrapper {
     cacheSessionPath(this.inner.sessionId, sessionFile);
   }
 
+  private persistGoalState(state: GoalRunState | undefined = this.goalState): void {
+    if (!state) return;
+    this.goalState = state;
+    this.inner.sessionManager.appendCustomEntry(GOAL_RUN_ENTRY_TYPE, state);
+    invalidateSessionListCache();
+    notifyRunningChange();
+  }
+
+  private pauseActiveGoal(reason: string): void {
+    const current = getGoalRun(this.inner.sessionId);
+    if (current?.status !== "active") return;
+    this.persistGoalState(pauseGoalRun(this.inner.sessionId, reason));
+  }
+
   onEvent(listener: EventListener): () => void {
     this.listeners.push(listener);
     for (const event of this.pendingUiRequests.values()) listener(event);
@@ -464,13 +486,13 @@ export class AgentSessionWrapper {
         this.lastPromptFailed = false;
         this.lastPromptErrorSummary = undefined;
         const ownsPromptRun = !streamingBehavior || !this.activePromptRun;
-        if (!goalMode && ownsPromptRun) this.goalState = undefined;
         const promptRun = ownsPromptRun
           ? beginPromptRun(this.inner.sessionId)
           : this.activePromptRun!;
         if (ownsPromptRun) this.activePromptRun = promptRun;
         if (goalMode) {
           this.goalState = beginGoalRun(promptRun, String(command.message ?? ""));
+          this.persistGoalState();
           this.emit({ type: "goal_start", goal: this.goalState });
         }
         this.promptRunning = true;
@@ -486,13 +508,16 @@ export class AgentSessionWrapper {
               const current = getGoalRun(this.inner.sessionId)!;
               if (current.iteration >= GOAL_MODE_MAX_CONTINUATIONS) {
                 this.goalState = forceBlockGoal(promptRun, `Target mode reached its ${GOAL_MODE_MAX_CONTINUATIONS}-continuation safety limit. Review progress and start a new target-mode run to continue.`);
+                this.persistGoalState();
                 break;
               }
               this.goalState = advanceGoalIteration(promptRun);
+              this.persistGoalState();
               this.emit({ type: "goal_progress", goal: this.goalState });
               await this.inner.prompt(GOAL_MODE_CONTINUATION, { source: "rpc" });
             }
             this.goalState = getGoalRun(this.inner.sessionId) ?? this.goalState;
+            this.persistGoalState();
             this.emit({ type: "goal_done", goal: this.goalState });
           }
         })
@@ -506,6 +531,7 @@ export class AgentSessionWrapper {
           notifyRunningChange();
         }).catch(async (error) => {
           this.promptRunning = false;
+          this.pauseActiveGoal(`Target mode paused after a model or runtime error: ${error instanceof Error ? error.message : String(error)}`);
           if (ownsPromptRun) {
             await finishPromptRun(promptRun, "error");
             if (this.activePromptRun?.runId === promptRun.runId) this.activePromptRun = undefined;
@@ -530,6 +556,7 @@ export class AgentSessionWrapper {
         try {
           await this.withFinalRunningNotification(() => this.inner.abort());
         } finally {
+          this.pauseActiveGoal("Target mode was paused because the user stopped the active run.");
           await finishPromptRun(promptRun, "abort");
           if (this.activePromptRun?.runId === promptRun?.runId) this.activePromptRun = undefined;
           this.stopping = false;
@@ -538,7 +565,27 @@ export class AgentSessionWrapper {
         return null;
       }
 
+      case "goal_pause": {
+        this.persistGoalState(pauseGoalRun(this.inner.sessionId));
+        this.emit({ type: "goal_progress", goal: this.goalState });
+        notifyRunningChange();
+        return this.goalState;
+      }
+
+      case "goal_cancel": {
+        this.persistGoalState(cancelGoalRun(this.inner.sessionId));
+        this.emit({ type: "goal_done", goal: this.goalState });
+        notifyRunningChange();
+        return this.goalState;
+      }
+
+      case "get_goal": {
+        this.goalState = getGoalRun(this.inner.sessionId) ?? this.goalState;
+        return this.goalState ?? null;
+      }
+
       case "get_state": {
+        this.goalState = getGoalRun(this.inner.sessionId) ?? this.goalState;
         const model = this.inner.model;
         const contextUsage = this.inner.getContextUsage();
         return {
@@ -637,6 +684,9 @@ export class AgentSessionWrapper {
           throw new Error("Cannot navigate while a shell command is running");
         }
         const result = await this.inner.navigateTree(command.targetId as string, {});
+        this.goalState = restoreGoalRunFromEntries(this.inner.sessionId, this.inner.sessionManager.getBranch());
+        this.emit({ type: "goal_progress", goal: this.goalState });
+        notifyRunningChange();
         return { cancelled: result.cancelled };
       }
 
@@ -841,12 +891,14 @@ export class AgentSessionWrapper {
     if (this.inner.isBashRunning) this.inner.abortBash();
     const promptRun = this.activePromptRun;
     this.activePromptRun = undefined;
+    this.pauseActiveGoal("Target mode was paused because the session runtime stopped.");
     void finishPromptRun(promptRun, "destroy");
     this.unsubscribe?.();
     for (const pending of this.pendingUiResponses.values()) pending.cancel();
     for (const id of Array.from(this.activeCustomUis.keys())) this.closeCustomUi(id, undefined);
     this.pendingUiResponses.clear();
     this.pendingUiRequests.clear();
+    forgetGoalRun(this.inner.sessionId);
     this.onDestroyCallback?.();
     notifyRunningChange();
   }
@@ -1311,7 +1363,7 @@ export function getRunningRpcSessionStatuses(): TaskRuntimeSnapshot[] {
           pendingApproval: false,
           lastPromptFailed: false,
         };
-    if (snapshot.runtime !== "idle" || snapshot.pendingApproval || snapshot.lastPromptFailed) {
+    if (snapshot.runtime !== "idle" || snapshot.pendingApproval || snapshot.lastPromptFailed || snapshot.goal) {
       statuses.push(snapshot);
     }
   }
@@ -1507,6 +1559,7 @@ export async function startRpcSession(
       const bundledBrowserExtension = resolve(process.cwd(), "extensions", "piora-browser.ts");
       const bundledHarmonyExtension = resolve(process.cwd(), "extensions", "piora-harmony.ts");
       const bundledGoalExtension = resolve(process.cwd(), "extensions", "piora-goal.ts");
+      const bundledRoomExtension = resolve(process.cwd(), "extensions", "piora-room.ts");
       if (runtimeProfile === "device-control" && (!existsSync(bundledHarmonyExtension) || !existsSync(bundledGoalExtension))) {
         throw new Error("A required first-party device-control extension is missing.");
       }
@@ -1529,7 +1582,12 @@ export async function startRpcSession(
             }
           : {
               resourceLoaderOptions: {
-                additionalExtensionPaths: [bundledBrowserExtension, bundledHarmonyExtension, bundledGoalExtension].filter(existsSync),
+                additionalExtensionPaths: [
+                  bundledBrowserExtension,
+                  bundledHarmonyExtension,
+                  bundledGoalExtension,
+                  bundledRoomExtension,
+                ].filter(existsSync),
               },
             }),
       });
@@ -1580,6 +1638,8 @@ export async function startRpcSession(
       ...(initial.scopedModels.length > 0 ? { scopedModels: initial.scopedModels } : {}),
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
+
+    restoreGoalRunFromEntries(inner.sessionId, inner.sessionManager.getBranch());
 
     // If specific tool names were requested (non-empty), set the active tools to the
     // requested builtin coding tools PLUS all extension/package tools, so installed

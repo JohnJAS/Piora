@@ -20,10 +20,11 @@ import { useProjectPicker } from "./sidebar/useProjectPicker";
 import { applyProjectOrder, getRecentProjects, moveProjectRoot } from "./sidebar/sidebar-utils";
 import { useSidebarState } from "./sidebar/useSidebarState";
 import { SidebarShell } from "./sidebar/SidebarShell";
+import { RoomSidebarSection } from "./RoomSidebarSection";
 
 export type { SessionSidebarHandle } from "./sidebar/sidebar-types";
 
-export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onFocusFileSearch, onOpenSettings }, ref) {
+export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, selectedRoomId, onSelectSession, onSelectRoom, onNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onFocusFileSearch, onOpenSettings, activeProjectRoot }, ref) {
   const { t } = useI18n();
   const [sessionFlags, setSessionFlags] = useState<SessionFlags>({});
   const [taskSearch, setTaskSearch] = useState("");
@@ -418,6 +419,17 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         handleCreateWorktree={handleCreateWorktree}
         handleRemoveWorktree={handleRemoveWorktree}
       />
+      {onSelectRoom ? (
+        <RoomSidebarSection
+          sessions={allSessions}
+          selectedSessionId={selectedSessionId}
+          selectedRoomId={selectedRoomId ?? null}
+          activeProjectRoot={activeProjectRoot}
+          initialRoomId={initialRoomId}
+          onSelectRoom={onSelectRoom}
+          onInitialRestoreDone={onInitialRoomRestoreDone}
+        />
+      ) : null}
       <SidebarProjectArea
         loading={loading} error={error} projectsHovered={projectsHovered} setProjectsHovered={setProjectsHovered}
         handleDefaultCwd={handleDefaultCwd} handleCustomPathClick={handleCustomPathClick}

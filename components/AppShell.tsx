@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar, type SessionSidebarHandle } from "./SessionSidebar";
 import { ChatWindow, type TaskControls } from "./ChatWindow";
+import { RoomWorkspace } from "./RoomWorkspace";
 import type { Tab } from "./TabBar";
 import { RightPanel, type RightPanelHandle, type RightPanelTab } from "./workspace/RightPanel";
 import type { SettingsKey } from "./SettingsDialog";
@@ -36,6 +37,7 @@ import {
   WORKSPACE_MIN_WIDTH,
 } from "@/lib/panel-layout";
 import type { SessionInfo } from "@/lib/types";
+import type { CollaborationRoom } from "@/lib/room-types";
 import type { ChatInputHandle } from "./ChatInput";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { canSendCompanionPhrase, type CompanionActivity } from "@/lib/companion";
@@ -101,6 +103,7 @@ export function AppShell() {
   } = useCompletionNotification();
   const isMobile = useIsMobile();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
+  const [selectedRoom, setSelectedRoom] = useState<CollaborationRoom | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
   const [initialCwdStatus, setInitialCwdStatus] = useState<"idle" | "validating" | "ready" | "error">(
@@ -534,11 +537,12 @@ export function AppShell() {
   }, []);
 
   const initialSessionId = initialNavigation.sessionId;
+  const initialRoomId = searchParams?.get("room") ?? null;
   const [activeCwd, setActiveCwd] = useState<string | null>(null);
   const [activeProjectRoot, setActiveProjectRoot] = useState<string | null>(null);
   const activeProjectRootRef = useRef<string | null>(null);
   // True once the initial ?session= URL param has been resolved (or confirmed absent)
-  const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId);
+  const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId && !initialRoomId);
   // Suppresses sessionKey bump in handleCwdChange during the initial URL restore
   const suppressCwdBumpRef = useRef(false);
 
@@ -582,11 +586,17 @@ export function AppShell() {
     if (!cwd) { setActiveCwd(null); return; }
     const newProject = projectRoot ?? cwd;
     const currentProject = activeProjectRootRef.current
+      ?? selectedRoom?.projectRoot
       ?? (selectedSession ? (selectedSession.projectRoot ?? selectedSession.cwd) : null);
     // Selecting a session in another project updates the session and sidebar
     // cwd in the same React event. The following cwd notification synchronizes
     // that selected session; it must not turn the transition into an empty chat.
     const cwdBelongsToSelectedSession = selectedSession?.cwd === cwd;
+    const cwdBelongsToSelectedRoom = Boolean(
+      selectedRoom?.projectRoot
+      && selectedRoom.projectRoot.toLocaleLowerCase() === newProject.toLocaleLowerCase(),
+    );
+    const cwdBelongsToCurrentSelection = cwdBelongsToSelectedSession || cwdBelongsToSelectedRoom;
     const dirtyTabs = fileTabs.filter((tab) => tab.isDirty);
     let keepDirtyTabs = false;
     if (currentProject !== null && currentProject !== newProject && dirtyTabs.length > 0) {
@@ -627,8 +637,9 @@ export function AppShell() {
     }
     // Close any session that belongs to a different project — it no longer
     // matches the selected project directory.
-    if (!cwdBelongsToSelectedSession) {
+    if (!cwdBelongsToCurrentSelection) {
       setSelectedSession(null);
+      setSelectedRoom(null);
       setNewSessionCwd((prev) => {
         if (prev && prev !== cwd) return null;
         return prev;
@@ -649,10 +660,10 @@ export function AppShell() {
     setFileTabs(nextTabs);
     setActiveFileTabId(nextActiveId);
     setRightPanelOpen(nextTabs.length > 0);
-    if (!cwdBelongsToSelectedSession) {
+    if (!cwdBelongsToCurrentSelection) {
       router.replace("/", { scroll: false });
     }
-  }, [activeFileTabId, fileTabs, router, selectedSession, translate]);
+  }, [activeFileTabId, fileTabs, router, selectedRoom, selectedSession, translate]);
 
   useEffect(() => {
     if (!activeProjectRoot) return;
@@ -683,6 +694,7 @@ export function AppShell() {
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     setSettingsDialogOpen(false);
+    setSelectedRoom(null);
     setNewSessionCwd(null);
     setSelectedSession(session);
     setSessionKey((k) => k + 1);
@@ -710,6 +722,7 @@ export function AppShell() {
 
   const handleNewSession = useCallback((_sessionId: string, cwd: string) => {
     setSettingsDialogOpen(false);
+    setSelectedRoom(null);
     setSelectedSession(null);
     setNewSessionCwd(cwd);
     setSessionKey((k) => k + 1);
@@ -718,6 +731,19 @@ export function AppShell() {
     if (isMobile) setSidebarOpen(false);
     router.replace("/", { scroll: false });
   }, [router, isMobile]);
+
+  const handleSelectRoom = useCallback((room: CollaborationRoom, isRestore = false) => {
+    setSettingsDialogOpen(false);
+    setSelectedSession(null);
+    setNewSessionCwd(null);
+    setSelectedRoom(room);
+    setSessionKey((key) => key + 1);
+    setSystemPrompt(null);
+    setActiveTopPanel(null);
+    setInitialSessionRestored(true);
+    if (isMobile && !isRestore) setSidebarOpen(false);
+    if (!isRestore) router.replace(`?room=${encodeURIComponent(room.id)}`, { scroll: false });
+  }, [isMobile, router]);
 
   // Native Electron menus stay deliberately thin: the renderer owns all
   // application state and receives only a small action name from preload.
@@ -1076,14 +1102,16 @@ export function AppShell() {
   }, [rightPanelOverlayMode]);
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
-  const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && activeCwd ? activeCwd : null);
+  const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && selectedRoom === null && activeCwd ? activeCwd : null);
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
-  const projectCwd = selectedSession?.cwd ?? effectiveNewSessionCwd;
-  const currentProjectCwd = selectedSession?.cwd ?? effectiveNewSessionCwd ?? activeCwd;
-  const currentProjectPath = selectedSession?.projectRoot ?? activeProjectRootRef.current ?? currentProjectCwd;
+  const showRoom = selectedRoom !== null;
+  const showConversation = showChat || showRoom;
+  const projectCwd = selectedRoom?.projectRoot ?? selectedSession?.cwd ?? effectiveNewSessionCwd;
+  const currentProjectCwd = selectedRoom?.projectRoot ?? selectedSession?.cwd ?? effectiveNewSessionCwd ?? activeCwd;
+  const currentProjectPath = selectedRoom?.projectRoot ?? selectedSession?.projectRoot ?? activeProjectRootRef.current ?? currentProjectCwd;
   const currentProjectName = currentProjectPath ? getFileName(currentProjectPath) || currentProjectPath : null;
   // While restoring initial session from URL, don't show the placeholder
-  const showPlaceholder = initialSessionRestored && !showChat;
+  const showPlaceholder = initialSessionRestored && !showConversation;
 
   const handleNewSessionInCurrentProject = useCallback(() => {
     if (!currentProjectCwd) return;
@@ -1254,14 +1282,19 @@ export function AppShell() {
     <SessionSidebar
       ref={sessionSidebarRef}
       selectedSessionId={selectedSession?.id ?? null}
+      selectedRoomId={selectedRoom?.id ?? null}
       onSelectSession={handleSelectSession}
+      onSelectRoom={handleSelectRoom}
       onNewSession={handleNewSession}
       initialSessionId={initialSessionId}
+      initialRoomId={initialRoomId}
       skipInitialProjectSelection={initialNavigation.requestedCwd !== null}
       onInitialRestoreDone={handleInitialRestoreDone}
+      onInitialRoomRestoreDone={handleInitialRestoreDone}
       refreshKey={refreshKey}
       onSessionDeleted={handleSessionDeleted}
-      selectedCwd={selectedSession?.cwd ?? newSessionCwd ?? null}
+      selectedCwd={selectedRoom?.projectRoot ?? selectedSession?.cwd ?? newSessionCwd ?? null}
+      activeProjectRoot={currentProjectPath}
       onCwdChange={handleCwdChange}
       onFocusFileSearch={() => {
         setRightPanelTab("files");
@@ -1577,15 +1610,15 @@ export function AppShell() {
               </span>
               <AliIcon name="arrowdown" size={12} style={{ color: "var(--text-dim)" }} />
             </button>
-            {showChat || settingsDialogOpen ? <span className="app-topbar-title-separator" aria-hidden="true">/</span> : null}
+            {showConversation || settingsDialogOpen ? <span className="app-topbar-title-separator" aria-hidden="true">/</span> : null}
             {settingsDialogOpen ? (
               <span className="app-topbar-title-path">{translate("sidebar.settings")}</span>
-            ) : showChat ? (
+            ) : showConversation ? (
               <span
-                className={`app-topbar-title-path${selectedSession?.name ? "" : " is-placeholder"}`}
-                title={selectedSession?.name ?? translate("i18n.newSession")}
+                className={`app-topbar-title-path${selectedRoom || selectedSession?.name ? "" : " is-placeholder"}`}
+                title={selectedRoom?.name ?? selectedSession?.name ?? translate("i18n.newSession")}
               >
-                {selectedSession?.name ?? translate("i18n.newSession")}
+                {selectedRoom?.name ?? selectedSession?.name ?? translate("i18n.newSession")}
               </span>
             ) : null}
           </div>
@@ -2122,7 +2155,13 @@ export function AppShell() {
             {/* Chat content */}
             <div className="workspace-chat">
             <div style={{ height: "100%", display: settingsDialogOpen ? "none" : "block" }} aria-hidden={settingsDialogOpen}>
-            {showChat ? (
+            {selectedRoom ? (
+              <RoomWorkspace
+                key={`${sessionKey}:${selectedRoom.id}`}
+                initialRoom={selectedRoom}
+                onRoomChange={setSelectedRoom}
+              />
+            ) : showChat ? (
               <ChatWindow
                 key={sessionKey}
                 session={selectedSession}

@@ -1,4 +1,5 @@
 import type { SessionInfo } from "@/lib/types";
+import type { CollaborationRoom } from "@/lib/room-types";
 
 declare global {
   interface Window {
@@ -21,7 +22,11 @@ declare global {
 
 export interface SessionSidebarProps {
   selectedSessionId: string | null;
+  selectedRoomId?: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
+  onSelectRoom?: (room: CollaborationRoom, isRestore?: boolean) => void;
+  initialRoomId?: string | null;
+  onInitialRoomRestoreDone?: () => void;
   onNewSession?: (sessionId: string, cwd: string) => void;
   initialSessionId?: string | null;
   skipInitialProjectSelection?: boolean;
@@ -32,6 +37,7 @@ export interface SessionSidebarProps {
   onCwdChange?: (cwd: string | null, projectRoot?: string | null) => void;
   onFocusFileSearch?: () => void;
   onOpenSettings?: () => void;
+  activeProjectRoot?: string | null;
 }
 
 export interface SessionSidebarHandle {

@@ -46,9 +46,13 @@ const assets = [
     ["Piora browser extension", "extensions/piora-browser.ts"],
     ["Piora Harmony device extension", "extensions/piora-harmony.ts"],
     ["Piora target-mode extension", "extensions/piora-goal.ts"],
+    ["Piora collaboration-room extension", "extensions/piora-room.ts"],
     ["Piora Harmony runtime", "lib/harmony"],
     ["Piora prompt-run identity registry", "lib/prompt-run-registry.ts"],
     ["Piora target-mode registry", "lib/goal-run-registry.ts"],
+    ["Piora collaboration-room store", "lib/room-store.ts"],
+    ["Piora collaboration-room types", "lib/room-types.ts"],
+    ["Piora room coordinator", "lib/room-coordinator.ts"],
   ].map(([name, relativePath]) => ({
     name,
     source: join(projectRoot, relativePath),

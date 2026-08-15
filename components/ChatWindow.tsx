@@ -25,6 +25,7 @@ import {
 } from "@/lib/chat-lazy-load";
 import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
 import { TaskHeader } from "./TaskHeader";
+import { GoalPanel } from "./GoalPanel";
 
 interface Props {
   session: SessionInfo | null;
@@ -201,14 +202,14 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, sessionStats,
-    slashCommands, slashCommandsLoading, queuedMessages,
+    slashCommands, slashCommandsLoading, queuedMessages, goal,
     notices, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection,
     agentPhase,
     isNew,
     sessionIdRef, messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
-    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange, handleScrollToBottom,
+    handleSend, handleAbort, handleGoalPause, handleGoalCancel, handleFork, handleNavigate, handleModelChange, handleScrollToBottom,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
@@ -531,8 +532,9 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     />
   );
 
-  const aboveEditorWidgets = extensionWidgets.filter((widget) => widget.placement !== "belowEditor");
-  const belowEditorWidgets = extensionWidgets.filter((widget) => widget.placement === "belowEditor");
+  const aboveEditorWidgets = extensionWidgets.filter((widget) => widget.key !== "piora-goal" && widget.placement !== "belowEditor");
+  const belowEditorWidgets = extensionWidgets.filter((widget) => widget.key !== "piora-goal" && widget.placement === "belowEditor");
+  const visibleExtensionStatuses = extensionStatuses.filter((status) => status.key !== "piora-goal");
 
   if (loading) {
     return (
@@ -612,6 +614,16 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         onRename={(name) => onRenameTask?.(name)}
         onExport={() => onExportTask?.()}
       />
+
+      {goal ? (
+        <GoalPanel
+          goal={goal}
+          busy={sessionBusy}
+          onPause={() => { void handleGoalPause(); }}
+          onResume={() => { void handleSend(t("goal.resumePrompt"), undefined, undefined, { goalMode: true }); }}
+          onCancel={() => { void handleGoalCancel(); }}
+        />
+      ) : null}
 
       {isEmptyNew ? (
         <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
@@ -904,7 +916,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           </div>
         </div>
         {chatInputElement}
-        <ExtensionStatusBar statuses={extensionStatuses} />
+        <ExtensionStatusBar statuses={visibleExtensionStatuses} />
       </div>
       </>
       )}

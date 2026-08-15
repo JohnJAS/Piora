@@ -1,0 +1,282 @@
+import { NextResponse } from "next/server";
+import {
+  addRoomMember,
+  appendPrivateNote,
+  appendRoomMessage,
+  claimRoomTask,
+  configureRoomCoordination,
+  createRoomTask,
+  deleteRoom,
+  finishRoomTask,
+  getRoom,
+  heartbeatRoomTask,
+  listPrivateNotes,
+  listRoomMessages,
+  listRoomTasks,
+  listRoomArtifacts,
+  listRoomAudit,
+  publishRoomArtifact,
+  removeRoomMember,
+  updateRoomMember,
+  updateRoomProfile,
+  updateRoomWorkspace,
+} from "@/lib/room-store";
+import { dispatchRoomChat } from "@/lib/room-chat";
+import { dispatchReadyRoomTasks } from "@/lib/room-coordinator";
+import type { RoomMemberRole } from "@/lib/room-types";
+import type { RoomArtifactKind } from "@/lib/room-types";
+import { listAllSessions } from "@/lib/session-reader";
+import type { SessionInfo } from "@/lib/types";
+import { resolveProject } from "@/lib/worktree";
+
+export const dynamic = "force-dynamic";
+
+async function resolveBinding(sessionId: string): Promise<SessionInfo> {
+  const session = (await listAllSessions()).find((candidate) => candidate.id === sessionId);
+  if (!session) throw new Error("The selected Session no longer exists.");
+  return session;
+}
+
+function requireCoordinator(roomId: string, sessionId: string): void {
+  const room = getRoom(roomId);
+  const member = room.members.find((candidate) => candidate.sessionId === sessionId);
+  if (!member || (member.role !== "coordinator" && room.coordination.coordinatorSessionId !== sessionId)) {
+    throw new Error("Only the room coordinator can perform this action.");
+  }
+}
+
+function errorResponse(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  const status = /only the room coordinator|not a member|coordinator-managed/i.test(message)
+    ? 403
+    : /not found|no longer exists/i.test(message)
+      ? 404
+      : /already|active task|finish or release|concurrency limit/i.test(message)
+        ? 409
+        : 400;
+  return NextResponse.json({ error: message }, { status });
+}
+
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const query = new URL(request.url).searchParams;
+    const afterSeq = Number(query.get("afterSeq") ?? 0);
+    const privateSessionId = query.get("privateSessionId");
+    const room = getRoom(id);
+    if (privateSessionId) {
+      const requesterSessionId = query.get("sessionId");
+      const requester = room.members.find((member) => member.sessionId === requesterSessionId);
+      if (!requester || (requester.sessionId !== privateSessionId && requester.role !== "coordinator" && room.coordination.coordinatorSessionId !== requester.sessionId)) {
+        return NextResponse.json({ error: "Private room memory is available only to that Agent or the coordinator." }, { status: 403 });
+      }
+    }
+    return NextResponse.json({
+      room,
+      messages: listRoomMessages(id, { afterSeq: Number.isFinite(afterSeq) ? afterSeq : 0 }),
+      tasks: listRoomTasks(id),
+      artifacts: listRoomArtifacts(id),
+      audit: listRoomAudit(id),
+      ...(privateSessionId ? { privateNotes: listPrivateNotes(id, privateSessionId) } : {}),
+    }, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const body = await request.json() as {
+      action?: "join" | "add_member" | "update_member" | "leave" | "update_room" | "update_workspace" | "message" | "chat" | "private_note" | "configure" | "create_task" | "claim_task" | "heartbeat_task" | "finish_task" | "dispatch" | "publish_artifact";
+      sessionId?: string;
+      targetSessionId?: string;
+      memberId?: string;
+      sessionName?: string;
+      instructions?: string;
+      cwd?: string;
+      projectRoot?: string;
+      role?: RoomMemberRole;
+      content?: string;
+      replyTo?: string;
+      authorKind?: "user" | "session";
+      mode?: "manual" | "coordinator";
+      maxConcurrency?: number;
+      leaseDurationMs?: number;
+      taskId?: string;
+      title?: string;
+      description?: string;
+      assignedTo?: string;
+      dedupeKey?: string;
+      priority?: number;
+      dependsOn?: string[];
+      leaseToken?: string;
+      taskStatus?: "completed" | "failed" | "blocked";
+      artifactKind?: RoomArtifactKind;
+      artifactName?: string;
+      sourcePath?: string;
+      targetSessionIds?: string[];
+      workspaceMode?: "managed" | "custom";
+      workspacePath?: string;
+      workspaceLabel?: string;
+    };
+    if (!body.action || !body.sessionId) {
+      return NextResponse.json({ error: "action and sessionId are required" }, { status: 400 });
+    }
+    if (body.action === "join") {
+      const room = getRoom(id);
+      const existing = room.members.find((member) => member.sessionId === body.sessionId);
+      if (!existing) return NextResponse.json({ error: "Use the coordinator-managed Add Agent flow to join this room." }, { status: 403 });
+      const session = await resolveBinding(body.sessionId);
+      const project = await resolveProject(session.cwd);
+      return NextResponse.json({ room: addRoomMember(id, {
+        sessionId: body.sessionId,
+        name: body.sessionName,
+        cwd: session.cwd,
+        projectRoot: project.projectRoot,
+        worktreeBranch: project.isWorktree ? project.branch ?? undefined : undefined,
+        role: existing.role,
+        instructions: existing.instructions,
+        requestedBy: body.sessionId,
+      }) });
+    }
+    if (body.action === "add_member") {
+      if (!body.targetSessionId) return NextResponse.json({ error: "targetSessionId is required" }, { status: 400 });
+      requireCoordinator(id, body.sessionId);
+      const session = await resolveBinding(body.targetSessionId);
+      const project = await resolveProject(session.cwd);
+      return NextResponse.json({ room: addRoomMember(id, {
+        sessionId: body.targetSessionId,
+        name: body.sessionName,
+        instructions: body.instructions,
+        cwd: session.cwd,
+        projectRoot: project.projectRoot,
+        worktreeBranch: project.isWorktree ? project.branch ?? undefined : undefined,
+        role: body.role,
+        requestedBy: body.sessionId,
+      }) });
+    }
+    if (body.action === "update_member") {
+      if (!body.memberId) return NextResponse.json({ error: "memberId is required" }, { status: 400 });
+      requireCoordinator(id, body.sessionId);
+      const current = getRoom(id).members.find((member) => member.memberId === body.memberId);
+      if (!current) return NextResponse.json({ error: "Collaboration Agent was not found." }, { status: 404 });
+      const targetSessionId = body.targetSessionId ?? current.sessionId;
+      const session = await resolveBinding(targetSessionId);
+      const project = await resolveProject(session.cwd);
+      return NextResponse.json({ room: updateRoomMember(id, body.sessionId, body.memberId, {
+        sessionId: targetSessionId,
+        name: body.sessionName,
+        instructions: body.instructions,
+        role: body.role,
+        cwd: session.cwd,
+        projectRoot: project.projectRoot,
+        worktreeBranch: project.isWorktree ? project.branch ?? undefined : undefined,
+      }) });
+    }
+    if (body.action === "leave") {
+      return NextResponse.json({ room: removeRoomMember(id, body.targetSessionId ?? body.sessionId, body.sessionId) });
+    }
+    if (body.action === "update_room") {
+      if (!body.title) return NextResponse.json({ error: "title is required" }, { status: 400 });
+      return NextResponse.json({ room: updateRoomProfile(id, body.sessionId, { name: body.title, description: body.description }) });
+    }
+    if (body.action === "update_workspace") {
+      if (!body.workspaceMode) return NextResponse.json({ error: "workspaceMode is required" }, { status: 400 });
+      return NextResponse.json({ room: updateRoomWorkspace(id, body.sessionId, {
+        mode: body.workspaceMode,
+        path: body.workspacePath,
+        label: body.workspaceLabel,
+        instructions: body.instructions,
+      }) });
+    }
+    if (body.action === "configure") {
+      return NextResponse.json({ room: configureRoomCoordination(id, {
+        mode: body.mode ?? "manual",
+        coordinatorSessionId: body.targetSessionId ?? body.sessionId,
+        maxConcurrency: body.maxConcurrency,
+        leaseDurationMs: body.leaseDurationMs,
+        requestedBy: body.sessionId,
+      }) });
+    }
+    if (body.action === "create_task") {
+      if (!body.title || !body.description) return NextResponse.json({ error: "title and description are required" }, { status: 400 });
+      return NextResponse.json({ task: createRoomTask(id, {
+        title: body.title,
+        description: body.description,
+        createdBy: body.sessionId,
+        assignedTo: body.assignedTo,
+        dedupeKey: body.dedupeKey,
+        priority: body.priority,
+        dependsOn: body.dependsOn,
+      }) });
+    }
+    if (body.action === "claim_task") {
+      if (!body.taskId) return NextResponse.json({ error: "taskId is required" }, { status: 400 });
+      return NextResponse.json({ task: claimRoomTask(id, body.taskId, body.sessionId) });
+    }
+    if (body.action === "heartbeat_task") {
+      if (!body.taskId || !body.leaseToken) return NextResponse.json({ error: "taskId and leaseToken are required" }, { status: 400 });
+      return NextResponse.json({ task: heartbeatRoomTask(id, body.taskId, body.sessionId, body.leaseToken) });
+    }
+    if (body.action === "finish_task") {
+      if (!body.taskId || !body.leaseToken || !body.taskStatus || !body.content) {
+        return NextResponse.json({ error: "taskId, leaseToken, taskStatus and content are required" }, { status: 400 });
+      }
+      return NextResponse.json({ task: finishRoomTask(id, body.taskId, body.sessionId, body.leaseToken, { status: body.taskStatus, result: body.content }) });
+    }
+    if (body.action === "dispatch") {
+      requireCoordinator(id, body.sessionId);
+      return NextResponse.json({ dispatch: await dispatchReadyRoomTasks(id) });
+    }
+    if (body.action === "publish_artifact") {
+      if (!body.artifactKind || !body.artifactName || !body.content) {
+        return NextResponse.json({ error: "artifactKind, artifactName and content are required" }, { status: 400 });
+      }
+      return NextResponse.json({ artifact: publishRoomArtifact(id, body.sessionId, {
+        taskId: body.taskId,
+        kind: body.artifactKind,
+        name: body.artifactName,
+        summary: body.content,
+        sourcePath: body.sourcePath,
+      }) });
+    }
+    if (!body.content) return NextResponse.json({ error: "content is required" }, { status: 400 });
+    if (body.action === "private_note") {
+      return NextResponse.json({ note: appendPrivateNote(id, body.sessionId, body.content) });
+    }
+    const room = getRoom(id);
+    const member = room.members.find((item) => item.sessionId === body.sessionId);
+    if (!member) return NextResponse.json({ error: "Session is not a room member" }, { status: 403 });
+    const message = appendRoomMessage(id, {
+      authorKind: body.authorKind ?? "user",
+      authorId: body.sessionId,
+      authorName: body.sessionName ?? member.name,
+      content: body.content,
+      replyTo: body.replyTo,
+    });
+    if (body.action === "chat") {
+      const dispatch = await dispatchRoomChat(id, {
+        messageId: message.id,
+        content: message.content,
+        targetSessionIds: body.targetSessionIds,
+      });
+      return NextResponse.json({ message, dispatch });
+    }
+    return NextResponse.json({ message });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    const sessionId = new URL(request.url).searchParams.get("sessionId");
+    if (!sessionId) return NextResponse.json({ error: "sessionId is required" }, { status: 400 });
+    deleteRoom(id, sessionId);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
