@@ -63,6 +63,7 @@ export function HarmonyPanel({ active }: { active: boolean }) {
   const [visionEnabled, setVisionEnabled] = useState(false);
   const [visionModelKey, setVisionModelKey] = useState("");
   const [shareScreenshot, setShareScreenshot] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [diagnostics, setDiagnostics] = useState<unknown>(null);
   const [tree, setTree] = useState<unknown>(null);
   const [text, setText] = useState("");
@@ -303,6 +304,23 @@ export function HarmonyPanel({ active }: { active: boolean }) {
     });
   };
 
+  const saveSettings = () => void run(async () => {
+    const [provider, modelId] = visionModelKey.split("\u0000");
+    const payload = await jsonRequest<{ config: HarmonyConfig; diagnostics: unknown; candidates: RuntimeCandidate[] }>("/api/harmony/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        hdcPath: sdkPath.trim() || null,
+        vision: visionEnabled ? { enabled: true, provider, modelId, shareScreenshotWithActionModel: shareScreenshot } : null,
+      }),
+    });
+    setSdkPath(payload.config.hdcPath ?? payload.candidates[0]?.hdcPath ?? "");
+    setRuntimeCandidates(payload.candidates);
+    setDiagnostics(payload.diagnostics);
+    await refresh();
+    return payload;
+  }, () => setSettingsOpen(false));
+
   const imagePoint = (event: React.PointerEvent<HTMLImageElement>) => {
     const image = frameRef.current;
     if (!image?.naturalWidth || !image.naturalHeight) return null;
@@ -329,59 +347,73 @@ export function HarmonyPanel({ active }: { active: boolean }) {
   const frameError = frameInteractionError ?? frameLoadError;
   const ownsRecoverableLease = Boolean(holder?.owner.kind === "manual" && holder.owner.id === ownerIdRef.current);
   const canPointControl = Boolean(lease?.serial === selectedSerial && frameStatus === "live" && frameMatchesDevice && selected?.capabilities.tap);
+  const runtimeReady = managerState?.runtime.status === "ready";
+  const deviceStateLabel = selected?.state === "online"
+    ? copy("已连接", "Connected")
+    : selected?.state === "unauthorized"
+      ? copy("等待手机授权", "Authorization needed")
+      : selected
+        ? copy("设备离线", "Offline")
+        : copy("未连接", "Not connected");
+  const visionModel = visionModels.find((model) => `${model.provider}\u0000${model.modelId}` === visionModelKey);
 
   return <div className={styles.root}>
-    <header className={styles.header}>
-      <div><strong>{copy("鸿蒙设备", "Harmony device")}</strong><span>{managerState?.runtime.status ?? "…"}</span></div>
-      <div className={styles.headerActions}>
-        <button type="button" onClick={() => { requestFrame(); void refresh(); }} disabled={busy} title={copy("刷新", "Refresh")}><AliIcon name="reload" size={14} /></button>
+    <header className={styles.toolbar}>
+      <div className={styles.toolbarTitle}>
+        <span className={styles.deviceMark}><AliIcon name="mobile" size={15} /></span>
+        <span><strong>{copy("鸿蒙设备", "Harmony device")}</strong><small data-state={runtimeReady ? "ready" : "idle"}>{runtimeReady ? copy("服务已就绪", "Ready") : copy("需要设置", "Setup needed")}</small></span>
+      </div>
+      <div className={styles.toolbarActions}>
+        <button className={styles.iconButton} type="button" onClick={() => { requestFrame(); void refresh(); }} disabled={busy} title={copy("刷新设备", "Refresh devices")} aria-label={copy("刷新设备", "Refresh devices")}><AliIcon name="reload" size={14} /></button>
+        <button className={styles.iconButton} type="button" onClick={() => setSettingsOpen((open) => !open)} aria-pressed={settingsOpen} title={copy("设备设置", "Device settings")} aria-label={copy("设备设置", "Device settings")}><AliIcon name="setting" size={15} /></button>
       </div>
     </header>
 
-    <section className={styles.settingsStack}>
-      <div className={styles.settings}>
-        <label><span>{copy("已选择的 HDC", "Selected HDC")}</span><input value={sdkPath} placeholder="C:\\...\\hdc.exe" onChange={(event) => setSdkPath(event.target.value)} /></label>
-        <div className={styles.settingActions}>
-          <button type="button" disabled={busy} onClick={() => void chooseRuntimePath("sdk")}>{copy("选择 SDK 文件夹", "Choose SDK folder")}</button>
-          <button type="button" disabled={busy} onClick={() => void chooseRuntimePath("hdc")}>{copy("选择 hdc.exe", "Choose hdc.exe")}</button>
-          <button type="button" disabled={busy} onClick={() => void run(
-            () => jsonRequest<{ config: HarmonyConfig; diagnostics: unknown; candidates: RuntimeCandidate[] }>("/api/harmony/config", {
-              method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hdcPath: sdkPath.trim() || null }),
-            }),
-            (payload) => { setSdkPath(payload.config.hdcPath ?? payload.candidates[0]?.hdcPath ?? ""); setRuntimeCandidates(payload.candidates); setDiagnostics(payload.diagnostics); void refresh(); },
-          )}>{copy("保存并重新检测", "Save and rediscover")}</button>
-        </div>
+    {settingsOpen ? <section className={styles.settingsPanel} aria-label={copy("设备设置", "Device settings")}>
+      <div className={styles.settingsHeading}>
+        <span><strong>{copy("设备设置", "Device settings")}</strong><small>{copy("通常只需设置一次", "Usually a one-time setup")}</small></span>
+        <button className={styles.iconButton} type="button" onClick={() => setSettingsOpen(false)} aria-label={copy("关闭设置", "Close settings")}><AliIcon name="close" size={13} /></button>
       </div>
-      {runtimeCandidates.length ? <div className={styles.candidates}>
-        <span>{copy("自动检测结果", "Detected installations")}</span>
-        {runtimeCandidates.map((candidate) => <button type="button" key={candidate.hdcPath} data-selected={candidate.hdcPath === sdkPath} onClick={() => setSdkPath(candidate.hdcPath)}>
-          <strong>{candidate.source}</strong><span>{candidate.hdcPath}</span><small>SDK: {candidate.sdkPath}</small>
-        </button>)}
-      </div> : <div className={styles.hint}>{copy("未自动找到 HDC，请选择 DevEco SDK 文件夹或 hdc.exe。", "HDC was not found automatically. Choose a DevEco SDK folder or hdc executable.")}</div>}
-      <div className={styles.visionSettings}>
-        <label className={styles.check}><input type="checkbox" checked={visionEnabled} onChange={(event) => setVisionEnabled(event.target.checked)} />{copy("启用独立视觉模型读取手机截图", "Use a separate vision model for phone screenshots")}</label>
-        <select value={visionModelKey} onChange={(event) => setVisionModelKey(event.target.value)} disabled={!visionEnabled}>
-          <option value="">{copy("选择视觉模型", "Select vision model")}</option>
-          {visionModelKey && !visionModels.some((model) => `${model.provider}\u0000${model.modelId}` === visionModelKey)
-            ? <option value={visionModelKey}>{copy("已配置但当前不可用", "Configured but currently unavailable")} · {visionModelKey.replace("\u0000", "/")}</option>
-            : null}
-          {visionModels.map((model) => <option key={`${model.provider}\u0000${model.modelId}`} value={`${model.provider}\u0000${model.modelId}`}>{model.name} · {model.provider}/{model.modelId}</option>)}
-        </select>
-        <label className={styles.check}><input type="checkbox" checked={shareScreenshot} disabled={!visionEnabled} onChange={(event) => setShareScreenshot(event.target.checked)} />{copy("同时把原始截图发送给操作模型（默认关闭）", "Also send the raw screenshot to the action model (off by default)")}</label>
-        <button type="button" disabled={busy || (visionEnabled && !visionModelKey)} onClick={() => void run(async () => {
-          const [provider, modelId] = visionModelKey.split("\u0000");
-          const payload = await jsonRequest<{ config: HarmonyConfig; diagnostics: unknown; candidates: RuntimeCandidate[] }>("/api/harmony/config", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ vision: visionEnabled ? { enabled: true, provider, modelId, shareScreenshotWithActionModel: shareScreenshot } : null }),
-          });
-          setDiagnostics(payload.diagnostics);
-          return payload;
-        })}>{copy("保存视觉分工", "Save model routing")}</button>
-        <p>{copy("截图只发送给所选视觉模型；操作模型默认只收到 UI 树和视觉观察文本。右侧投屏始终在本机获取。", "Screenshots go only to the selected vision model; the action model receives the UI tree and observation text by default. The right-side live view remains local.")}</p>
-      </div>
-    </section>
 
+      <div className={styles.settingGroup}>
+        <div className={styles.settingCopy}><strong>{copy("连接工具", "Connection")}</strong><small>{copy("选择 DevEco 中的 HDC", "Choose HDC from DevEco")}</small></div>
+        {runtimeCandidates.length ? <select aria-label={copy("检测到的 HDC", "Detected HDC installations")} value={sdkPath} onChange={(event) => setSdkPath(event.target.value)}>
+          {sdkPath && !runtimeCandidates.some((candidate) => candidate.hdcPath === sdkPath) ? <option value={sdkPath}>{sdkPath}</option> : null}
+          {runtimeCandidates.map((candidate) => <option key={candidate.hdcPath} value={candidate.hdcPath}>{candidate.hdcPath}</option>)}
+        </select> : null}
+        <div className={styles.pathRow}>
+          <input aria-label={copy("HDC 路径", "HDC path")} value={sdkPath} placeholder={copy("选择 DevEco SDK 或 hdc.exe", "Choose DevEco SDK or hdc.exe")} onChange={(event) => setSdkPath(event.target.value)} />
+          <button className={styles.iconButton} type="button" disabled={busy} onClick={() => void chooseRuntimePath("sdk")} title={copy("选择 SDK 文件夹", "Choose SDK folder")} aria-label={copy("选择 SDK 文件夹", "Choose SDK folder")}><AliIcon name="folder-open" size={14} /></button>
+          <button className={styles.iconButton} type="button" disabled={busy} onClick={() => void chooseRuntimePath("hdc")} title={copy("选择 hdc.exe", "Choose hdc.exe")} aria-label={copy("选择 hdc.exe", "Choose hdc.exe")}><AliIcon name="file" size={14} /></button>
+        </div>
+        {!runtimeCandidates.length ? <p className={styles.inlineHint}>{copy("没有自动找到，请手动选择。", "Nothing detected. Choose it manually.")}</p> : null}
+      </div>
+
+      <div className={styles.settingGroup}>
+        <label className={styles.settingToggle}>
+          <span className={styles.settingCopy}><strong>{copy("视觉模型", "Vision model")}</strong><small>{copy("只负责看手机屏幕", "Only reads the phone screen")}</small></span>
+          <input type="checkbox" checked={visionEnabled} onChange={(event) => setVisionEnabled(event.target.checked)} />
+        </label>
+        {visionEnabled ? <>
+          <select aria-label={copy("选择视觉模型", "Select vision model")} value={visionModelKey} onChange={(event) => setVisionModelKey(event.target.value)}>
+            <option value="">{copy("选择模型", "Choose model")}</option>
+            {visionModelKey && !visionModels.some((model) => `${model.provider}\u0000${model.modelId}` === visionModelKey)
+              ? <option value={visionModelKey}>{copy("当前不可用", "Currently unavailable")} · {visionModelKey.replace("\u0000", "/")}</option>
+              : null}
+            {visionModels.map((model) => <option key={`${model.provider}\u0000${model.modelId}`} value={`${model.provider}\u0000${model.modelId}`}>{model.name} · {model.provider}</option>)}
+          </select>
+          <p className={styles.modelFlow}>{copy(`视觉模型看屏幕${visionModel ? `（${visionModel.name}）` : ""}，当前对话模型负责操作。`, `The vision model reads the screen${visionModel ? ` (${visionModel.name})` : ""}; the current chat model takes action.`)}</p>
+          <label className={styles.compactCheck}><input type="checkbox" checked={shareScreenshot} onChange={(event) => setShareScreenshot(event.target.checked)} />{copy("也让对话模型查看原图", "Let the chat model see the raw image too")}</label>
+        </> : null}
+      </div>
+
+      <div className={styles.settingsFooter}>
+        <button type="button" onClick={() => setSettingsOpen(false)}>{copy("取消", "Cancel")}</button>
+        <button className={styles.primaryButton} type="button" disabled={busy || (visionEnabled && !visionModelKey)} onClick={saveSettings}>{copy("保存", "Save")}</button>
+      </div>
+    </section> : null}
+
+    <main className={styles.content}>
     <div className={styles.deviceBar}>
       <select aria-label={copy("选择设备", "Select device")} value={selectedSerial} onChange={(event) => {
         const nextSerial = event.target.value;
@@ -396,20 +428,21 @@ export function HarmonyPanel({ active }: { active: boolean }) {
         setTree(null);
         setFrameSize(null);
       }}>
-        {!devices.length ? <option value="">{copy("未检测到设备", "No device detected")}</option> : null}
-        {devices.map((device) => <option key={device.serial} value={device.serial}>{device.name || device.model || device.serial} · {device.state}</option>)}
+        {!devices.length ? <option value="">{copy("没有设备", "No device")}</option> : null}
+        {devices.map((device) => <option key={device.serial} value={device.serial}>{device.name || device.model || device.serial}</option>)}
       </select>
+      <span className={styles.deviceState} data-state={selected?.state ?? "unknown"}><i />{deviceStateLabel}</span>
       {lease?.serial === selectedSerial
-        ? <button type="button" onClick={release}>{copy("释放手动控制", "Release manual control")}</button>
-        : <button type="button" disabled={!selected || selected.state !== "online" || (Boolean(holder) && !ownsRecoverableLease)} onClick={acquire}>
-          {ownsRecoverableLease ? copy("恢复手动控制", "Resume manual control") : copy("取得手动控制", "Acquire manual control")}
+        ? <button className={styles.controlButton} type="button" onClick={release}>{copy("结束控制", "Release")}</button>
+        : <button className={styles.controlButton} type="button" disabled={!selected || selected.state !== "online" || (Boolean(holder) && !ownsRecoverableLease)} onClick={acquire}>
+          {ownsRecoverableLease ? copy("继续控制", "Resume") : copy("控制设备", "Control")}
         </button>}
-      <button className={styles.stop} type="button" onClick={() => void run(
+      <button className={`${styles.iconButton} ${styles.stopButton}`} type="button" onClick={() => void run(
         () => jsonRequest("/api/harmony/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "emergency_stop", reason: "desktop-panel" }) }),
         () => { setLease(null); void refresh(); },
-      )}>{copy("急停", "STOP")}</button>
+      )} title={copy("停止所有设备操作", "Stop all device actions")} aria-label={copy("停止所有设备操作", "Stop all device actions")}><AliIcon name="stop" size={13} /></button>
     </div>
-    {holder ? <div className={styles.lease}>{copy("当前控制者", "Current holder")}: {holder.owner.kind === "agent" ? "AI" : copy("手动面板", "manual panel")} · {new Date(holder.expiresAt).toLocaleTimeString()}</div> : null}
+    {holder ? <div className={styles.controlNotice}><AliIcon name={holder.owner.kind === "agent" ? "robot" : "mobile"} size={13} />{holder.owner.kind === "agent" ? copy("AI 正在控制这台设备", "AI is controlling this device") : copy("你正在控制这台设备", "You are controlling this device")}</div> : null}
 
     <div className={styles.deviceArea}>
       <div className={styles.frame} data-enabled={canPointControl ? "true" : "false"}>
@@ -449,39 +482,53 @@ export function HarmonyPanel({ active }: { active: boolean }) {
               ? { action: "swipe", fromX: from.x, fromY: from.y, toX: to.x, toY: to.y, durationMs: 300, generation: liveFrame.generation }
               : { action: "tap", x: to.x, y: to.y, generation: liveFrame.generation });
           }}
-        /> : <div>{selectedOnline && !selected?.capabilities.screenshot
-          ? copy("当前 UiTest 版本不支持截图投屏", "This UiTest version does not support screen capture")
-          : copy("连接设备后显示截图", "Connect a device to view its screen")}</div>}
+        /> : <div className={styles.frameEmpty}>
+          <AliIcon name="mobile" size={28} />
+          <strong>{selectedOnline && !selected?.capabilities.screenshot ? copy("无法显示屏幕", "Screen unavailable") : copy("连接一台设备", "Connect a device")}</strong>
+          <span>{selectedOnline && !selected?.capabilities.screenshot ? copy("当前设备不支持截图", "Screen capture is not supported") : copy("画面会显示在这里", "Its screen will appear here")}</span>
+          {!runtimeReady ? <button type="button" onClick={() => setSettingsOpen(true)}>{copy("打开设置", "Open settings")}</button> : null}
+        </div>}
       </div>
-      <aside className={styles.controls}>
-        <div className={styles.keyRow}>
-          {(["back", "home", "recents"] as const).map((key) => <button key={key} type="button" disabled={!lease || busy || !selected?.capabilities.keys} onClick={() => void action({ action: "press_key", key })}>{key}</button>)}
-        </div>
-        <form onSubmit={(event) => { event.preventDefault(); if (text) void action({ action: "input_text", text }).then((result) => { if (result !== undefined) setText(""); }); }}>
-          <label>{copy("文本输入（内容不会写入日志）", "Text input (never logged)")}<textarea value={text} onChange={(event) => setText(event.target.value)} /></label>
-          <button type="submit" disabled={!lease || !text || busy || !selected?.capabilities.inputText}>{copy("输入到手机", "Type on device")}</button>
-        </form>
-        <form onSubmit={(event) => { event.preventDefault(); if (bundleName) void action({ action: "launch_app", bundleName, abilityName: abilityName || undefined }); }}>
-          <label>Bundle<input value={bundleName} onChange={(event) => setBundleName(event.target.value)} placeholder="com.example.app" /></label>
-          <label>Ability<input value={abilityName} onChange={(event) => setAbilityName(event.target.value)} /></label>
-          <button type="submit" disabled={!lease || !bundleName || busy || !selected?.capabilities.launchApp}>{copy("启动应用", "Launch app")}</button>
+    </div>
+
+    <div className={styles.quickControls}>
+      <div className={styles.keyRow} aria-label={copy("系统按键", "System keys")}>
+        <button type="button" disabled={!lease || busy || !selected?.capabilities.keys} onClick={() => void action({ action: "press_key", key: "back" })} title={copy("返回", "Back")}><AliIcon name="arrowleft" size={14} /><span>{copy("返回", "Back")}</span></button>
+        <button type="button" disabled={!lease || busy || !selected?.capabilities.keys} onClick={() => void action({ action: "press_key", key: "home" })} title={copy("主页", "Home")}><AliIcon name="home" size={14} /><span>{copy("主页", "Home")}</span></button>
+        <button type="button" disabled={!lease || busy || !selected?.capabilities.keys} onClick={() => void action({ action: "press_key", key: "recents" })} title={copy("最近任务", "Recents")}><AliIcon name="layout" size={14} /><span>{copy("最近", "Recent")}</span></button>
+      </div>
+      <form className={styles.textControl} onSubmit={(event) => { event.preventDefault(); if (text) void action({ action: "input_text", text }).then((result) => { if (result !== undefined) setText(""); }); }}>
+        <input aria-label={copy("输入到手机", "Type on device")} placeholder={copy("输入文字", "Type text")} value={text} onChange={(event) => setText(event.target.value)} />
+        <button className={styles.iconButton} type="submit" disabled={!lease || !text || busy || !selected?.capabilities.inputText} title={copy("发送到手机", "Send to device")} aria-label={copy("发送到手机", "Send to device")}><AliIcon name="enter" size={14} /></button>
+      </form>
+    </div>
+
+    <details className={styles.moreActions}>
+      <summary>{copy("更多操作", "More actions")}</summary>
+      <div className={styles.moreBody}>
+        <form className={styles.launchForm} onSubmit={(event) => { event.preventDefault(); if (bundleName) void action({ action: "launch_app", bundleName, abilityName: abilityName || undefined }); }}>
+          <div className={styles.sectionLabel}><strong>{copy("打开应用", "Open app")}</strong><small>{copy("输入应用标识", "Enter the app identifier")}</small></div>
+          <input aria-label="Bundle" value={bundleName} onChange={(event) => setBundleName(event.target.value)} placeholder="com.example.app" />
+          <input aria-label="Ability" value={abilityName} onChange={(event) => setAbilityName(event.target.value)} placeholder={copy("Ability（可选）", "Ability (optional)")} />
+          <button type="submit" disabled={!lease || !bundleName || busy || !selected?.capabilities.launchApp}>{copy("打开", "Open")}</button>
         </form>
         <div className={styles.inspectRow}>
-          <button type="button" disabled={!canScreenshot || busy} onClick={requestFrame}>{copy("刷新投屏", "Refresh live view")}</button>
+          <button type="button" disabled={!canScreenshot || busy} onClick={requestFrame}><AliIcon name="reload" size={13} />{copy("刷新画面", "Refresh screen")}</button>
           <button type="button" disabled={!selectedOnline || busy || !selected?.capabilities.uiTree} onClick={() => void run(
             () => jsonRequest<{ snapshot: unknown }>(`/api/harmony/tree?serial=${encodeURIComponent(selectedSerial)}`),
             (payload) => setTree(payload.snapshot),
-          )}>{copy("读取 UI 树", "Read UI tree")}</button>
+          )}><AliIcon name="code" size={13} />{copy("读取界面结构", "Read interface structure")}</button>
         </div>
-      </aside>
-    </div>
+        <details className={styles.diagnostics}>
+          <summary>{copy("开发者信息", "Developer details")}</summary>
+          <pre>{JSON.stringify({ selected, holder, snapshot, diagnostics, tree }, null, 2)}</pre>
+        </details>
+      </div>
+    </details>
 
     {frameError ? <div className={styles.frameError} role="status">{frameError}</div> : null}
     {error ? <div className={styles.error} role="alert">{error}</div> : null}
-    <details className={styles.diagnostics}>
-      <summary>{copy("诊断信息", "Diagnostics")}</summary>
-      <pre>{JSON.stringify({ selected, holder, snapshot, diagnostics, tree }, null, 2)}</pre>
-    </details>
-    <footer>{copy("AI 每次取得控制权都会显示 Piora 确认；同一设备同时只允许一个控制者。", "Each AI control request requires a Piora confirmation; one device has only one controller at a time.")}</footer>
+    <p className={styles.safetyNote}><AliIcon name="lock" size={12} />{copy("AI 控制前会先征求你的同意", "AI asks before taking control")}</p>
+    </main>
   </div>;
 }

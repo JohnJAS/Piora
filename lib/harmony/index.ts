@@ -6,6 +6,7 @@ export * from "./runtime";
 export * from "./command-runner";
 export * from "./hdc-backend";
 export * from "./vision";
+export * from "./screenshot-stability";
 export { HarmonyDeviceManager, type HarmonyDeviceManagerOptions } from "./device-manager";
 
 declare global {

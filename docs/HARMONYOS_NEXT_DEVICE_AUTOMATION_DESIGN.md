@@ -131,7 +131,9 @@ Harmony 作为右侧工作区的独立工具标签，与 Files、Review、Browse
 | `swipe` | 是 | 租约、坐标、generation |
 | `input_text` | 是 | 租约；正文不回显 |
 | `press_key` | 是 | 租约、固定键枚举 |
-| `wait_for` | 否 | 租约、文本或 resource id |
+| `wait_ms` | 否 | 租约、100 ms–60 s 有界延迟 |
+| `wait_for` | 否 | 租约、文本/resource id 与可选节点状态 |
+| `wait_until_stable` | 否 | 租约、PNG 截图能力、稳定窗口与可选区域 |
 | `launch_app` | 是 | 租约、严格 bundle/ability 标识符 |
 
 租约令牌只保存在服务进程内存中，永不写入模型结果、浏览器状态、日志或 session JSONL。租约 owner 使用不可由模型指定的真实 `sessionId/runId/toolCallId`。完整 prompt run 最终 idle、失败、abort、fork 或 wrapper destroy 时统一释放。

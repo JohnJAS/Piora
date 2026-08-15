@@ -57,6 +57,8 @@ Piora 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面
 - 自动扫描 DevEco Studio/Command Line Tools、环境变量和 `PATH` 中的 HDC，并可从候选列表或 Windows 原生选择器指定 SDK 文件夹/`hdc.exe`。
 - 可将手机截图交给独立视觉模型分析，操作模型默认只接收 UI 树和视觉观察文本；原始截图跨模型转发默认关闭。
 - 输入框支持目标模式：未明确完成或阻塞时自动继续下一模型回合，用户可随时停止。
+- AI 可等待控件出现、消失或状态变化，也可在指定屏幕区域连续稳定后继续；
+  固定等待只作为没有可观察完成条件时的有界兜底。
 
 使用准备和真机验收见
 [HarmonyOS 设备自动化指南](docs/HARMONYOS_DEVICE_AUTOMATION.md)，架构与安全边界见
