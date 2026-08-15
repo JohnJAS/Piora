@@ -1135,7 +1135,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [addNotice, handleExtensionUiRequest, loadSession, refreshContextUsage, waitForPromptSettlement]);
   handleAgentEventRef.current = handleAgentEvent;
 
-  const handleSend = useCallback(async (message: string, images?: AttachedImage[], files?: AttachedFile[], options?: { goalMode?: boolean }) => {
+  const handleSend = useCallback(async (message: string, images?: AttachedImage[], files?: AttachedFile[], options?: { goalMode?: boolean; planMode?: boolean }) => {
     const trimmedMessage = message.trim();
     if (!trimmedMessage && !images?.length && !files?.length) return;
     if (agentRunningRef.current || bashRunningRef.current) return;
@@ -1203,6 +1203,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             type: "prompt",
             message: effectiveMessage,
             ...(options?.goalMode ? { goalMode: true } : {}),
+            ...(options?.planMode ? { planMode: true } : {}),
             ...(piImages?.length ? { images: piImages } : {}),
           });
           promoteNewSession(1, effectiveMessage);
@@ -1215,6 +1216,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           type: "prompt",
           message: effectiveMessage,
           ...(options?.goalMode ? { goalMode: true } : {}),
+          ...(options?.planMode ? { planMode: true } : {}),
           ...(piImages?.length ? { images: piImages } : {}),
         });
       }

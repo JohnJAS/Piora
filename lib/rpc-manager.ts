@@ -116,6 +116,18 @@ const GOAL_MODE_CONTINUATION = [
   "Inspect current evidence and take the next useful action. Do not stop merely because this model turn can end.",
   "Use piora_goal progress after material milestones, complete only after verifying the outcome, or blocked only when an external change or user input is genuinely required.",
 ].join(" ");
+const PLAN_MODE_SYSTEM_INSTRUCTION = `You are in plan mode. Analyze the request and return a concrete, decision-complete implementation plan.
+
+Plan-mode rules:
+- Inspect the relevant code and context before proposing the plan.
+- Do not modify files, configuration, repositories, or external state.
+- Do not run commands or tools that can write, install, delete, commit, push, deploy, or otherwise mutate state.
+- Resolve straightforward details from the available code instead of asking unnecessary questions.
+- If a missing user decision would materially change the implementation, state that decision clearly.
+- End with an ordered plan whose steps name the important files or components, expected behavior, and verification.
+
+This instruction applies only to the current prompt.`;
+const PLAN_MODE_READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
 
 function withExtensionTools(session: AgentSessionLike, toolNames: string[]): string[] {
   if (toolNames.length === 0) return [];
@@ -480,6 +492,10 @@ export class AgentSessionWrapper {
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
         const goalMode = command.goalMode === true && !streamingBehavior;
+        const planMode = command.planMode === true && !streamingBehavior;
+        if (goalMode && planMode) {
+          throw new Error("Target mode and plan mode cannot be enabled for the same prompt.");
+        }
         const promptText = compactTaskActivityText(command.message);
         this.fallbackTaskTitle = compactTaskActivityText(command.message, 80) || this.fallbackTaskTitle;
         this.beginRun("prompt", promptText || "Processing request");
@@ -498,27 +514,46 @@ export class AgentSessionWrapper {
         this.promptRunning = true;
         notifyRunningChange();
         Promise.resolve().then(async () => {
-          await this.inner.prompt(command.message as string, {
-            ...(promptImages?.length ? { images: promptImages } : {}),
-            ...(streamingBehavior ? { streamingBehavior } : {}),
-            source: "rpc",
-          });
-          if (goalMode) {
-            while (getGoalRun(this.inner.sessionId)?.status === "active") {
-              const current = getGoalRun(this.inner.sessionId)!;
-              if (current.iteration >= GOAL_MODE_MAX_CONTINUATIONS) {
-                this.goalState = forceBlockGoal(promptRun, `Target mode reached its ${GOAL_MODE_MAX_CONTINUATIONS}-continuation safety limit. Review progress and start a new target-mode run to continue.`);
+          const toolsBeforePlanMode = planMode ? this.inner.getActiveToolNames() : undefined;
+          const agentState = planMode ? this.inner.agent.state : undefined;
+          const systemPromptBeforePlanMode = agentState?.systemPrompt;
+          if (planMode) {
+            if (!agentState) throw new Error("Plan mode could not access the active agent state.");
+            const readOnlyTools = toolsBeforePlanMode!.filter((name) => PLAN_MODE_READ_ONLY_TOOLS.has(name));
+            this.inner.setActiveToolsByName(readOnlyTools);
+            agentState.systemPrompt = [systemPromptBeforePlanMode, PLAN_MODE_SYSTEM_INSTRUCTION]
+              .filter(Boolean)
+              .join("\n\n");
+          }
+          try {
+            await this.inner.prompt(command.message as string, {
+              ...(promptImages?.length ? { images: promptImages } : {}),
+              ...(streamingBehavior ? { streamingBehavior } : {}),
+              source: "rpc",
+            });
+            if (goalMode) {
+              while (getGoalRun(this.inner.sessionId)?.status === "active") {
+                const current = getGoalRun(this.inner.sessionId)!;
+                if (current.iteration >= GOAL_MODE_MAX_CONTINUATIONS) {
+                  this.goalState = forceBlockGoal(promptRun, `Target mode reached its ${GOAL_MODE_MAX_CONTINUATIONS}-continuation safety limit. Review progress and start a new target-mode run to continue.`);
+                  this.persistGoalState();
+                  break;
+                }
+                this.goalState = advanceGoalIteration(promptRun);
                 this.persistGoalState();
-                break;
+                this.emit({ type: "goal_progress", goal: this.goalState });
+                await this.inner.prompt(GOAL_MODE_CONTINUATION, { source: "rpc" });
               }
-              this.goalState = advanceGoalIteration(promptRun);
+              this.goalState = getGoalRun(this.inner.sessionId) ?? this.goalState;
               this.persistGoalState();
-              this.emit({ type: "goal_progress", goal: this.goalState });
-              await this.inner.prompt(GOAL_MODE_CONTINUATION, { source: "rpc" });
+              this.emit({ type: "goal_done", goal: this.goalState });
             }
-            this.goalState = getGoalRun(this.inner.sessionId) ?? this.goalState;
-            this.persistGoalState();
-            this.emit({ type: "goal_done", goal: this.goalState });
+          } finally {
+            if (planMode) {
+              this.inner.setActiveToolsByName(toolsBeforePlanMode!);
+              agentState!.systemPrompt = systemPromptBeforePlanMode ?? "";
+              this.applyForcedEmptySystemPrompt();
+            }
           }
         })
           .then(async () => {

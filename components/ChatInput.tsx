@@ -97,7 +97,10 @@ interface Props {
 
 export interface PromptRunOptions {
   goalMode?: boolean;
+  planMode?: boolean;
 }
+
+type PromptMode = "normal" | "goal" | "plan";
 
 export interface ChatInputHandle {
   focus: () => void;
@@ -325,7 +328,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [modelFilter, setModelFilter] = useState("");
   const [promptOptimization, setPromptOptimization] = useState<PromptOptimizationState | null>(null);
   const [streamingActionMenuOpen, setStreamingActionMenuOpen] = useState(false);
-  const [goalMode, setGoalMode] = useState(false);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [promptMode, setPromptMode] = useState<PromptMode>("normal");
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
   ));
@@ -351,6 +355,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const streamingActionMenuRef = useRef<HTMLDivElement>(null);
+  const attachmentMenuRef = useRef<HTMLDivElement>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
   const promptOptimizerAbortRef = useRef<AbortController | null>(null);
   const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
@@ -560,6 +565,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setAtQuery(null);
     setHistoryMenuOpen(false);
     setStreamingActionMenuOpen(false);
+    setAttachmentMenuOpen(false);
     if (draftKey) clearDraft(draftKey);
     if (draftKeyRef.current && draftKeyRef.current !== draftKey) clearDraft(draftKeyRef.current);
     clearImages();
@@ -595,6 +601,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     promptOptimizerAbortRef.current?.abort();
     promptOptimizerAbortRef.current = null;
     setPromptOptimization(null);
+    setPromptMode("normal");
+    setAttachmentMenuOpen(false);
     setValue(draft?.value ?? "");
     setAtQuery(null);
     setHistoryMenuOpen(false);
@@ -612,7 +620,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, [value]);
 
   useEffect(() => {
-    setGoalMode(window.localStorage.getItem("piora-goal-mode-enabled") === "true");
+    // Composer modes are intentionally one-shot. Remove the legacy sticky
+    // target-mode preference so an old browser setting cannot affect a later prompt.
+    window.localStorage.removeItem("piora-goal-mode-enabled");
     setNativeVoiceInputSupported(getSpeechRecognitionConstructor() !== null);
   }, []);
 
@@ -639,10 +649,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       msg,
       attachedImages.length ? attachedImages : undefined,
       attachedFiles.length ? attachedFiles : undefined,
-      { goalMode: goalMode && !msg.startsWith("/") && !msg.startsWith("!") },
+      {
+        goalMode: promptMode === "goal" && !msg.startsWith("/") && !msg.startsWith("!"),
+        planMode: promptMode === "plan" && !msg.startsWith("/") && !msg.startsWith("!"),
+      },
     );
+    setPromptMode("normal");
     clearInput();
-  }, [value, attachedImages, attachedFiles, isStreaming, onBuiltinCommand, onSend, clearInput, goalMode]);
+  }, [value, attachedImages, attachedFiles, isStreaming, onBuiltinCommand, onSend, clearInput, promptMode]);
 
   const handleOptimizePrompt = useCallback(async () => {
     const source = value.trim();
@@ -1198,6 +1212,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return;
       }
 
+      if (e.key === "Escape" && !isComposing && attachmentMenuOpen) {
+        e.preventDefault();
+        setAttachmentMenuOpen(false);
+        return;
+      }
+
       // Esc stops the agent when no slash/@/history menu or IME composition is active.
       if (e.key === "Escape" && !isComposing && isStreaming && onAbort) {
         e.preventDefault();
@@ -1214,7 +1234,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         }
       }
     },
-    [isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, canQueueStreamingMessage, stopVoiceInput, localVoiceRecording]
+    [isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, canQueueStreamingMessage, stopVoiceInput, localVoiceRecording, attachmentMenuOpen]
   );
 
   const handleInput = useCallback(() => {
@@ -1344,6 +1364,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       }
       if (streamingActionMenuRef.current && !streamingActionMenuRef.current.contains(e.target as Node)) {
         setStreamingActionMenuOpen(false);
+      }
+      if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(e.target as Node)) {
+        setAttachmentMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
@@ -1914,33 +1937,90 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
           {/* Composer footer: attach + model selector (bottom-right of the input) */}
           <div style={{ flexBasis: "100%", display: "flex", alignItems: "center", gap: 6, marginTop: 6, minWidth: 0 }}>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isStreaming}
-              title={t("chat.attachTitle")}
-              aria-label={t("chat.attachTitle")}
-              style={{
-                flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                width: 28, height: 28, padding: 0,
-                background: "none", border: "none",
-                borderRadius: 8,
-                color: (attachedImages.length || attachedFiles.length) ? "var(--accent)" : "var(--text-muted)",
-                cursor: isStreaming ? "not-allowed" : "pointer",
-                opacity: isStreaming ? 0.5 : 1,
-                transition: "background 0.12s, color 0.12s",
-              }}
-              onMouseEnter={(e) => {
-                if (isStreaming) return;
-                e.currentTarget.style.background = "var(--bg-hover)";
-                e.currentTarget.style.color = (attachedImages.length || attachedFiles.length) ? "var(--accent)" : "var(--text)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "none";
-                e.currentTarget.style.color = (attachedImages.length || attachedFiles.length) ? "var(--accent)" : "var(--text-muted)";
-              }}
-            >
-              <AliIcon name="plus" size={15} />
-            </button>
+            <div ref={attachmentMenuRef} className="composer-add-control">
+              {attachmentMenuOpen && (
+                <div className="composer-add-menu" role="menu" aria-label={t("chat.addMenu")}>
+                  <div className="composer-add-menu-title">{t("chat.add")}</div>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="composer-add-option"
+                    onClick={() => {
+                      setAttachmentMenuOpen(false);
+                      fileInputRef.current?.click();
+                    }}
+                  >
+                    <span className="composer-add-option-icon"><AliIcon name="attachment" size={15} /></span>
+                    <span className="composer-add-option-copy">
+                      <strong>{t("chat.attachFiles")}</strong>
+                      <small>{t("chat.attachFilesDescription")}</small>
+                    </span>
+                  </button>
+                  <div className="composer-add-divider" />
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={promptMode === "goal"}
+                    className={`composer-add-option${promptMode === "goal" ? " is-selected" : ""}`}
+                    onClick={() => {
+                      setPromptMode((mode) => mode === "goal" ? "normal" : "goal");
+                      setAttachmentMenuOpen(false);
+                      textareaRef.current?.focus();
+                    }}
+                  >
+                    <span className="composer-add-option-icon"><AliIcon name="check-circle" size={15} /></span>
+                    <span className="composer-add-option-copy">
+                      <strong>{t("chat.goalMode")}</strong>
+                      <small>{t("chat.goalModeMenuDescription")}</small>
+                    </span>
+                    {promptMode === "goal" && <AliIcon name="check" size={13} />}
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={promptMode === "plan"}
+                    className={`composer-add-option${promptMode === "plan" ? " is-selected" : ""}`}
+                    onClick={() => {
+                      setPromptMode((mode) => mode === "plan" ? "normal" : "plan");
+                      setAttachmentMenuOpen(false);
+                      textareaRef.current?.focus();
+                    }}
+                  >
+                    <span className="composer-add-option-icon"><AliIcon name="solution" size={15} /></span>
+                    <span className="composer-add-option-copy">
+                      <strong>{t("chat.planMode")}</strong>
+                      <small>{t("chat.planModeMenuDescription")}</small>
+                    </span>
+                    {promptMode === "plan" && <AliIcon name="check" size={13} />}
+                  </button>
+                </div>
+              )}
+              <button
+                type="button"
+                className={`composer-add-trigger${attachmentMenuOpen ? " is-open" : ""}${attachedImages.length || attachedFiles.length ? " has-attachments" : ""}`}
+                onClick={() => setAttachmentMenuOpen((open) => !open)}
+                disabled={isStreaming}
+                title={t("chat.add")}
+                aria-label={t("chat.add")}
+                aria-haspopup="menu"
+                aria-expanded={attachmentMenuOpen}
+              >
+                <AliIcon name="plus" size={15} />
+              </button>
+            </div>
+            {promptMode !== "normal" && (
+              <button
+                type="button"
+                className={`composer-mode-chip is-${promptMode}`}
+                onClick={() => setPromptMode("normal")}
+                title={t("chat.clearMode")}
+                aria-label={t("chat.clearMode")}
+              >
+                <AliIcon name={promptMode === "goal" ? "check-circle" : "solution"} size={14} />
+                <span>{promptMode === "goal" ? t("chat.goalMode") : t("chat.planMode")}</span>
+                <AliIcon name="close" size={10} />
+              </button>
+            )}
             {voiceInputSupported && (
               <>
                 <button
@@ -1986,23 +2066,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             >
               <AliIcon name="solution" size={15} />
               {!isMobile && <span>{promptOptimization?.loading ? t("chat.optimizingPrompt") : t("chat.optimizePrompt")}</span>}
-            </button>
-            <button
-              type="button"
-              className="prompt-optimize-button"
-              data-loading={goalMode || undefined}
-              disabled={isStreaming || bashMode}
-              aria-pressed={goalMode}
-              title={goalMode ? t("chat.goalModeOnDescription") : t("chat.goalModeOffDescription")}
-              onClick={() => setGoalMode((enabled) => {
-                const next = !enabled;
-                window.localStorage.setItem("piora-goal-mode-enabled", String(next));
-                return next;
-              })}
-              style={goalMode ? { color: "var(--accent)", borderColor: "color-mix(in srgb, var(--accent) 45%, var(--border))" } : undefined}
-            >
-              <AliIcon name="check-circle" size={15} />
-              {!isMobile && <span>{t("chat.goalMode")}</span>}
             </button>
             <div style={{ flex: 1 }} />
             <div className="session-stats-control">
