@@ -4,6 +4,27 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-15
+
+### Added
+
+- Added a Codex-style composer add menu with mutually exclusive, one-shot target
+  and plan modes. Plan mode temporarily limits the agent to read-only inspection
+  tools and restores the session configuration after the response.
+- Added multi-session collaboration rooms with shared tasks, artifacts, messages,
+  and optional coordinator-driven dispatch.
+- Added bounded Harmony automation waits for fixed delays, richer UI-node state
+  conditions, and locally sampled PNG screen stability with optional regions.
+- Harmony wait results now report elapsed time and polling evidence, while timeouts
+  include bounded diagnostics without forwarding additional frames to a model.
+- Redesigned the Harmony workspace around a full, proportionally fitted phone
+  screen, compact primary controls, progressive settings, and shorter copy.
+
+### Changed
+
+- Refined the Harmony device workspace into a compact Codex-style control surface
+  with progressive settings and a larger live device frame.
+
 ## [0.2.2] - 2026-08-15
 
 ### Changed
