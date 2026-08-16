@@ -51,6 +51,7 @@ const COMPANION_COMPACT_HEIGHT = 184;
 const COMPANION_EXPANDED_WIDTH = 236;
 const COMPANION_EXPANDED_HEIGHT = 360;
 const MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80;
+const MAX_RENDERER_CONSOLE_MESSAGE_LENGTH = 8_192;
 const PORTABLE_SMOKE_TEST = process.env.PIORA_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
 const STARTUP_SHELL_BACKGROUND = "#111318";
@@ -93,6 +94,38 @@ let quitRequested = false;
 let serverEntryPath: string | undefined;
 let serverHostEntryPath: string | undefined;
 let piAgentDirectoryPath: string | undefined;
+
+function installRendererDiagnostics(window: BrowserWindow, surface: "Main" | "Companion", log: Logger): void {
+  window.webContents.on("console-message", (event) => {
+    if (event.level !== "error") return;
+    log.error(`${surface} renderer console error`, {
+      message: event.message.slice(0, MAX_RENDERER_CONSOLE_MESSAGE_LENGTH),
+      lineNumber: event.lineNumber,
+      sourceId: event.sourceId,
+    });
+  });
+  window.on("unresponsive", () => {
+    log.error(`${surface} renderer became unresponsive`);
+  });
+}
+
+async function clearObsoleteDesktopWebCaches(log: Logger): Promise<void> {
+  const runtimeSession = electronSession.fromPartition(DESKTOP_PARTITION, { cache: true });
+  try {
+    // Piora used to register its browser PWA service worker inside Electron's
+    // persistent partition. Across desktop upgrades that worker could retain
+    // an older Next.js asset graph and crash hydration before the app mounted.
+    // This partition is app-owned, and these two stores contain no user data.
+    await runtimeSession.clearStorageData({
+      storages: ["serviceworkers", "cachestorage"],
+    });
+    log.info("Cleared obsolete desktop service worker caches");
+  } catch (error) {
+    // Cache cleanup is hardening, not a startup dependency. The renderer-side
+    // cleanup in PwaRegistration gets another chance after a successful mount.
+    log.warn("Unable to clear obsolete desktop service worker caches", error);
+  }
+}
 
 function prepareWritableDirectory(directory: string): string {
   const resolvedDirectory = resolve(directory);
@@ -582,6 +615,8 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
     },
   });
 
+  installRendererDiagnostics(window, "Companion", log);
+
   applyCompanionWindowAlwaysOnTop(window, companionAlwaysOnTop);
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, requestedUrl) => {
@@ -968,6 +1003,8 @@ function createMainWindowShell(log: Logger): MainWindowShell {
     },
   });
 
+  installRendererDiagnostics(window, "Main", log);
+
   const scheduleWindowStateWrite = () => {
     if (mainWindowStateTimer) clearTimeout(mainWindowStateTimer);
     mainWindowStateTimer = setTimeout(() => persistMainWindowState(window), 180);
@@ -1146,6 +1183,7 @@ async function startApplication(): Promise<void> {
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron,
   });
+  await clearObsoleteDesktopWebCaches(logger);
 
   piAgentDirectoryPath = resolvePiAgentDirectory();
   logger.info("Using Pi data directory", { directory: piAgentDirectoryPath });

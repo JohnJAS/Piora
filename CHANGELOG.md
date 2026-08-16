@@ -4,6 +4,17 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-08-16
+
+### Fixed
+
+- Removed obsolete PWA service workers and Cache Storage from the persistent
+  Electron partition before loading the desktop UI, preventing older Next.js
+  assets from resurfacing after an upgrade when opening workspace tools such as
+  the Harmony device panel.
+- Added recoverable application error screens and desktop renderer diagnostics
+  so an unexpected client failure can be reloaded and traced from the Piora log.
+
 ## [0.2.5] - 2026-08-16
 
 ### Added
