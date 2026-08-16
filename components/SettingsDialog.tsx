@@ -40,7 +40,7 @@ interface Props {
   };
 }
 
-export type SettingsKey = "general" | "conversation" | "models" | "skills" | "plugins" | "appearance" | "language" | "companion";
+export type SettingsKey = "general" | "conversation" | "models" | "extensions" | "skills" | "plugins" | "appearance" | "language" | "companion";
 
 interface SettingsEntry {
   key: SettingsKey;
@@ -52,7 +52,7 @@ interface SettingsEntry {
 function getSettingsParentKey(key: SettingsKey): SettingsKey {
   if (key === "language") return "general";
   if (key === "models") return "conversation";
-  if (key === "plugins") return "skills";
+  if (key === "skills" || key === "plugins") return "extensions";
   if (key === "companion") return "appearance";
   return key;
 }
@@ -89,10 +89,10 @@ export function SettingsDialog({
       icon: <AliIcon name="message" size={16} />,
     },
     {
-      key: "skills",
+      key: "extensions",
       labelKey: "settings.extensions",
-      descriptionKey: "settings.extensionsDescription",
-      icon: <AliIcon name="solution" size={16} />,
+      descriptionKey: "settings.manageExtensionsDescription",
+      icon: <AliIcon name="setting" size={16} />,
     },
     {
       key: "appearance",
@@ -122,6 +122,7 @@ export function SettingsDialog({
       descriptionKey: "settings.modelsDescription",
       icon: <AliIcon name="api" size={16} />,
     },
+    primaryEntries[2]!,
     {
       key: "skills",
       labelKey: "common.skills",

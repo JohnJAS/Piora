@@ -1,8 +1,11 @@
 # Piora release procedure
 
-The Piora release process is configured to publish source code and an unsigned Windows x64 portable application from
+The Piora release process is configured to publish source code and two unsigned Windows x64 no-install packages from
 [`kexijiang/piora`](https://github.com/kexijiang/piora). It does not publish the former
 `@agegr/pi-web` npm package.
+
+Each release contains an extract-and-run ZIP whose root includes `Piora.exe`, a
+single-file portable executable, and `SHA256SUMS.txt` covering both packages.
 
 ## Prerequisites
 
@@ -63,8 +66,8 @@ git push origin v0.1.0
 
 The tag workflow first runs the complete source gate on Ubuntu with Node.js 22.19.0. The Windows
 build starts only after that gate passes, repeats the source checks on Windows, builds the portable
-artifact, verifies the packaged service through the packaged Electron runtime, smoke-tests the final
-EXE and its embedded version in an isolated profile, creates
+artifact and extract-and-run ZIP, verifies the packaged service through the packaged Electron runtime,
+smoke-tests the final EXE and its embedded version in an isolated profile, verifies the ZIP structure, creates
 `SHA256SUMS.txt`, and creates a **draft** GitHub prerelease. A maintainer must inspect the draft,
 download and verify its assets, complete the checks below, and explicitly publish it. The workflow
 never publishes the draft automatically. Never manually mark an unsigned artifact as a signed or
@@ -79,8 +82,9 @@ identity does not imply that the executable is signed or that clean-machine vali
 
 ## Review the draft before publication
 
-- Download the artifact and checksum from the draft Release page.
-- Verify SHA-256 on a separate path.
+- Download both packages and the checksum from the draft Release page.
+- Verify both SHA-256 entries on a separate path and confirm that the ZIP opens
+  directly to `Piora.exe` plus its runtime files rather than an extra wrapper folder.
 - Start on a clean Windows 10/11 x64 environment and verify first launch, project selection, chat,
   file editing/conflicts, portable-folder replacement, data retention/removal behavior,
   backgrounds, companion opt-in/import, and an external Pi extension package. If the first

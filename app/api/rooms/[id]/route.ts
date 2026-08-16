@@ -23,8 +23,8 @@ import {
 } from "@/lib/room-store";
 import { dispatchRoomChat } from "@/lib/room-chat";
 import { dispatchReadyRoomTasks } from "@/lib/room-coordinator";
-import type { RoomMemberRole } from "@/lib/room-types";
-import type { RoomArtifactKind } from "@/lib/room-types";
+import type { RoomArtifactKind, RoomMemberRole, RoomTask } from "@/lib/room-types";
+import { projectRoomTaskRun } from "@/lib/task-run";
 import { listAllSessions } from "@/lib/session-reader";
 import type { SessionInfo } from "@/lib/types";
 import { resolveProject } from "@/lib/worktree";
@@ -57,6 +57,13 @@ function errorResponse(error: unknown) {
   return NextResponse.json({ error: message }, { status });
 }
 
+function taskResponse(task: RoomTask) {
+  return {
+    task,
+    taskRun: projectRoomTaskRun(task, listRoomArtifacts(task.roomId)),
+  };
+}
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
@@ -71,11 +78,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
         return NextResponse.json({ error: "Private room memory is available only to that Agent or the coordinator." }, { status: 403 });
       }
     }
+    const tasks = listRoomTasks(id);
+    const artifacts = listRoomArtifacts(id);
     return NextResponse.json({
       room,
       messages: listRoomMessages(id, { afterSeq: Number.isFinite(afterSeq) ? afterSeq : 0 }),
-      tasks: listRoomTasks(id),
-      artifacts: listRoomArtifacts(id),
+      tasks,
+      taskRuns: tasks.map((task) => projectRoomTaskRun(task, artifacts)),
+      artifacts,
       audit: listRoomAudit(id),
       ...(privateSessionId ? { privateNotes: listPrivateNotes(id, privateSessionId) } : {}),
     }, { headers: { "Cache-Control": "no-store" } });
@@ -201,7 +211,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
     if (body.action === "create_task") {
       if (!body.title || !body.description) return NextResponse.json({ error: "title and description are required" }, { status: 400 });
-      return NextResponse.json({ task: createRoomTask(id, {
+      return NextResponse.json(taskResponse(createRoomTask(id, {
         title: body.title,
         description: body.description,
         createdBy: body.sessionId,
@@ -209,21 +219,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         dedupeKey: body.dedupeKey,
         priority: body.priority,
         dependsOn: body.dependsOn,
-      }) });
+      })));
     }
     if (body.action === "claim_task") {
       if (!body.taskId) return NextResponse.json({ error: "taskId is required" }, { status: 400 });
-      return NextResponse.json({ task: claimRoomTask(id, body.taskId, body.sessionId) });
+      return NextResponse.json(taskResponse(claimRoomTask(id, body.taskId, body.sessionId)));
     }
     if (body.action === "heartbeat_task") {
       if (!body.taskId || !body.leaseToken) return NextResponse.json({ error: "taskId and leaseToken are required" }, { status: 400 });
-      return NextResponse.json({ task: heartbeatRoomTask(id, body.taskId, body.sessionId, body.leaseToken) });
+      return NextResponse.json(taskResponse(heartbeatRoomTask(id, body.taskId, body.sessionId, body.leaseToken)));
     }
     if (body.action === "finish_task") {
       if (!body.taskId || !body.leaseToken || !body.taskStatus || !body.content) {
         return NextResponse.json({ error: "taskId, leaseToken, taskStatus and content are required" }, { status: 400 });
       }
-      return NextResponse.json({ task: finishRoomTask(id, body.taskId, body.sessionId, body.leaseToken, { status: body.taskStatus, result: body.content }) });
+      return NextResponse.json(taskResponse(finishRoomTask(id, body.taskId, body.sessionId, body.leaseToken, { status: body.taskStatus, result: body.content })));
     }
     if (body.action === "dispatch") {
       requireCoordinator(id, body.sessionId);

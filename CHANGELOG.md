@@ -4,6 +4,23 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-08-16
+
+### Added
+
+- Added structured Plan Mode artifacts with editable drafts, explicit approval,
+  dependency-ordered execution, step evidence, verification coverage, and
+  recoverable interrupted-run state.
+- Added a unified extension inventory and per-extension controls backed by the
+  same resolved load plan used when agent sessions start.
+- Added a second unsigned Windows release format: an extract-and-run ZIP beside
+  the existing single-file portable executable.
+
+### Changed
+
+- Expanded task and room runtime state so planned and executing TaskRuns remain
+  visible and consistent across polling, SSE updates, and restored sessions.
+
 ## [0.2.4] - 2026-08-15
 
 ### Changed

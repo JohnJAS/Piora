@@ -330,6 +330,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [streamingActionMenuOpen, setStreamingActionMenuOpen] = useState(false);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [promptMode, setPromptMode] = useState<PromptMode>("normal");
+  const [promptModeAvailability, setPromptModeAvailability] = useState({ goalMode: true, planMode: true });
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
   ));
@@ -344,6 +345,36 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [atActiveIndex, setAtActiveIndex] = useState(0);
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [historyActiveIndex, setHistoryActiveIndex] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const response = await fetch("/api/prompt-modes");
+        const next = await response.json() as { goalMode?: boolean; planMode?: boolean };
+        if (!active || !response.ok) return;
+        const availability = {
+          goalMode: next.goalMode !== false,
+          planMode: next.planMode !== false,
+        };
+        setPromptModeAvailability(availability);
+        setPromptMode((current) => (
+          (current === "goal" && !availability.goalMode) || (current === "plan" && !availability.planMode)
+            ? "normal"
+            : current
+        ));
+      } catch {
+        // Keep the default availability when the settings endpoint is unavailable.
+      }
+    };
+    const handleExtensionsChanged = () => { void refresh(); };
+    void refresh();
+    window.addEventListener("piora:extensions-changed", handleExtensionsChanged);
+    return () => {
+      active = false;
+      window.removeEventListener("piora:extensions-changed", handleExtensionsChanged);
+    };
+  }, []);
   const [fileIndex, setFileIndex] = useState<{ cwd: string; entries: FileIndexEntry[]; truncated: boolean } | null>(null);
   const [fileIndexLoading, setFileIndexLoading] = useState(false);
   const [atServerResult, setAtServerResult] = useState<{ cwd: string; query: string; matches: FileIndexEntry[] } | null>(null);
@@ -1956,8 +1987,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       <small>{t("chat.attachFilesDescription")}</small>
                     </span>
                   </button>
-                  <div className="composer-add-divider" />
-                  <button
+                  {(promptModeAvailability.goalMode || promptModeAvailability.planMode) && <div className="composer-add-divider" />}
+                  {promptModeAvailability.goalMode && <button
                     type="button"
                     role="menuitemradio"
                     aria-checked={promptMode === "goal"}
@@ -1974,8 +2005,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       <small>{t("chat.goalModeMenuDescription")}</small>
                     </span>
                     {promptMode === "goal" && <AliIcon name="check" size={13} />}
-                  </button>
-                  <button
+                  </button>}
+                  {promptModeAvailability.planMode && <button
                     type="button"
                     role="menuitemradio"
                     aria-checked={promptMode === "plan"}
@@ -1992,7 +2023,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       <small>{t("chat.planModeMenuDescription")}</small>
                     </span>
                     {promptMode === "plan" && <AliIcon name="check" size={13} />}
-                  </button>
+                  </button>}
                 </div>
               )}
               <button

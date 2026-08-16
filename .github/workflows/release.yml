@@ -1,4 +1,4 @@
-name: Release Windows portable app
+name: Release Windows portable packages
 
 on:
   push:
@@ -54,7 +54,7 @@ jobs:
         run: npm run verify:backgrounds
 
   windows-build:
-    name: Build and verify Windows portable app
+    name: Build and verify Windows portable packages
     needs: source-gate
     runs-on: windows-latest
     timeout-minutes: 75
@@ -116,12 +116,50 @@ jobs:
         # wrapper's cached-launch gate for developer/release-machine validation.
         run: node scripts/smoke-test-portable.mjs desktop/release/win-unpacked/Piora.exe --expected-version "$env:GITHUB_REF_NAME" --packaged-runtime
 
+      - name: Create and verify extract-and-run archive
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $source = (Resolve-Path -LiteralPath desktop/release/win-unpacked).Path
+          $archive = Join-Path (Resolve-Path -LiteralPath desktop/release).Path "Piora-$version-win-x64.zip"
+          Compress-Archive -Path (Join-Path $source '*') -DestinationPath $archive -CompressionLevel Optimal
+
+          & 7z t $archive
+          if ($LASTEXITCODE -ne 0) {
+            throw "7z archive verification failed with exit code $LASTEXITCODE"
+          }
+
+          $verificationRoot = Join-Path (Resolve-Path -LiteralPath desktop/release).Path 'zip-verification'
+          Expand-Archive -LiteralPath $archive -DestinationPath $verificationRoot
+          foreach ($requiredPath in @(
+            'Piora.exe',
+            'resources/app.asar',
+            'resources/web/server.js'
+          )) {
+            if (-not (Test-Path -LiteralPath (Join-Path $verificationRoot $requiredPath) -PathType Leaf)) {
+              throw "Extract-and-run archive is missing $requiredPath"
+            }
+          }
+          Remove-Item -LiteralPath $verificationRoot -Recurse -Force
+
       - name: Generate checksums
         shell: pwsh
         run: |
-          $artifacts = @(Get-ChildItem -LiteralPath desktop/release -Filter '*-portable.exe' -File)
-          if ($artifacts.Count -ne 1) {
-            throw "Expected exactly one portable Windows executable; found $($artifacts.Count)."
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $releaseRoot = (Resolve-Path -LiteralPath desktop/release).Path
+          $expectedNames = @(
+            "Piora-$version-win-x64-portable.exe",
+            "Piora-$version-win-x64.zip"
+          )
+          $artifacts = @($expectedNames | ForEach-Object {
+            $path = Join-Path $releaseRoot $_
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Expected release artifact is missing: $_"
+            }
+            Get-Item -LiteralPath $path
+          })
+          if ($artifacts.Count -ne $expectedNames.Count) {
+            throw "Release artifact count does not match the expected package set."
           }
           $lines = foreach ($artifact in $artifacts) {
             $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName).Hash.ToLowerInvariant()
@@ -135,6 +173,7 @@ jobs:
           name: piora-windows-${{ github.ref_name }}
           path: |
             desktop/release/*-portable.exe
+            desktop/release/*-win-x64.zip
             desktop/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
@@ -166,7 +205,7 @@ jobs:
 
           $expected = @{}
           foreach ($line in Get-Content -LiteralPath $checksumPath) {
-            if ($line -notmatch '^([0-9a-fA-F]{64})  ([^\\/]+\.exe)$') {
+            if ($line -notmatch '^([0-9a-fA-F]{64})  ([^\\/]+\.(?:exe|zip))$') {
               throw "Malformed checksum line: $line"
             }
             $name = $Matches[2]
@@ -176,17 +215,24 @@ jobs:
             $expected[$name] = $Matches[1].ToLowerInvariant()
           }
 
-          $executables = @(Get-ChildItem -LiteralPath $root -Filter '*-portable.exe' -File)
-          if ($executables.Count -ne 1 -or $executables.Count -ne $expected.Count) {
-            throw 'Executable count does not match SHA256SUMS.txt.'
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $expectedNames = @(
+            "Piora-$version-win-x64-portable.exe",
+            "Piora-$version-win-x64.zip"
+          )
+          $artifacts = @(Get-ChildItem -LiteralPath $root -File | Where-Object {
+            $_.Name -in $expectedNames
+          })
+          if ($artifacts.Count -ne $expectedNames.Count -or $artifacts.Count -ne $expected.Count) {
+            throw 'Release artifact count does not match SHA256SUMS.txt.'
           }
-          foreach ($executable in $executables) {
-            if (-not $expected.ContainsKey($executable.Name)) {
-              throw "Executable is not listed in SHA256SUMS.txt: $($executable.Name)"
+          foreach ($artifact in $artifacts) {
+            if (-not $expected.ContainsKey($artifact.Name)) {
+              throw "Release artifact is not listed in SHA256SUMS.txt: $($artifact.Name)"
             }
-            $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $executable.FullName).Hash.ToLowerInvariant()
-            if ($actual -ne $expected[$executable.Name]) {
-              throw "SHA-256 mismatch for $($executable.Name)"
+            $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName).Hash.ToLowerInvariant()
+            if ($actual -ne $expected[$artifact.Name]) {
+              throw "SHA-256 mismatch for $($artifact.Name)"
             }
           }
 
@@ -196,9 +242,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $root = (Resolve-Path -LiteralPath release-payload).Path
-          $assets = @(Get-ChildItem -LiteralPath $root -Filter '*-portable.exe' -File | ForEach-Object FullName)
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $assets = @(
+            (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-win-x64-portable.exe")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-win-x64.zip")).Path
+          )
           $assets += (Resolve-Path -LiteralPath (Join-Path $root 'SHA256SUMS.txt')).Path
-          $releaseNotes = "Unsigned Windows preview: the executable is not code-signed, so Windows may show a reputation warning. Verify it against SHA256SUMS.txt before running.`n`nValidation boundary: automated source, package, portable-startup, and packaged Pi-extension checks passed. Continuous mouse dragging, edge/corner resizing, transient Alt menu behavior, 100/125/150% DPI, portable-folder replacement, and the full editor conflict flow have not yet been re-run on a clean Windows 10/11 machine. This is a prerelease, not a stable build."
+          $releaseNotes = "Unsigned Windows preview with two no-install packages:`n- ZIP: extract the archive, then run Piora.exe.`n- Portable EXE: run the single executable directly.`n`nNeither package is code-signed, so Windows may show a reputation warning. Verify the selected package against SHA256SUMS.txt before running. Updates are manual: download a newer package from Releases when available.`n`nValidation boundary: automated source, package, portable-startup, archive-integrity, and packaged Pi-extension checks passed. Continuous mouse dragging, edge/corner resizing, transient Alt menu behavior, 100/125/150% DPI, portable-folder replacement, and the full editor conflict flow have not yet been re-run on a clean Windows 10/11 machine. This is a prerelease, not a stable build."
           & gh release create $env:GITHUB_REF_NAME @assets `
             --repo $env:GITHUB_REPOSITORY `
             --title "Piora $env:GITHUB_REF_NAME" `

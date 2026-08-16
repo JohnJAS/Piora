@@ -26,6 +26,7 @@ import {
 import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
 import { TaskHeader } from "./TaskHeader";
 import { GoalPanel } from "./GoalPanel";
+import { PlanPanel } from "./PlanPanel";
 
 interface Props {
   session: SessionInfo | null;
@@ -202,14 +203,14 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, sessionStats,
-    slashCommands, slashCommandsLoading, queuedMessages, goal,
+    slashCommands, slashCommandsLoading, queuedMessages, goal, planArtifact,
     notices, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection,
     agentPhase,
     isNew,
     sessionIdRef, messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
-    handleSend, handleAbort, handleGoalPause, handleGoalCancel, handleFork, handleNavigate, handleModelChange, handleScrollToBottom,
+    handleSend, handleAbort, handleGoalPause, handleGoalCancel, handlePlanUpdate, handlePlanApprove, handlePlanCancel, handlePlanExecute, handleFork, handleNavigate, handleModelChange, handleScrollToBottom,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
@@ -622,6 +623,17 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           onPause={() => { void handleGoalPause(); }}
           onResume={() => { void handleSend(t("goal.resumePrompt"), undefined, undefined, { goalMode: true }); }}
           onCancel={() => { void handleGoalCancel(); }}
+        />
+      ) : null}
+
+      {planArtifact ? (
+        <PlanPanel
+          artifact={planArtifact}
+          busy={sessionBusy}
+          onSave={handlePlanUpdate}
+          onApprove={handlePlanApprove}
+          onCancel={handlePlanCancel}
+          onExecute={handlePlanExecute}
         />
       ) : null}
 

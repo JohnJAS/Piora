@@ -156,6 +156,7 @@ export function useTaskStatus({
     hasUnreadResult,
     archived,
     isViewing,
+    taskRun: snapshot?.taskRun,
   });
   const statusWithStartedAt = {
     ...status,

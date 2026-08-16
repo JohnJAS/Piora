@@ -81,6 +81,7 @@ const SettingsDialog = dynamic(() => import("./SettingsDialog").then((module) =>
 const ModelsConfig = dynamic(() => import("./ModelsConfig").then((module) => module.ModelsConfig), { ssr: false });
 const SkillsConfig = dynamic(() => import("./SkillsConfig").then((module) => module.SkillsConfig), { ssr: false });
 const PluginsConfig = dynamic(() => import("./PluginsConfig").then((module) => module.PluginsConfig), { ssr: false });
+const ExtensionsConfig = dynamic(() => import("./ExtensionsConfig").then((module) => module.ExtensionsConfig), { ssr: false });
 const BackgroundSettings = dynamic(() => import("./BackgroundSettings").then((module) => module.BackgroundSettings), { ssr: false });
 const AppearanceLooks = dynamic(() => import("./AppearanceLooks").then((module) => module.AppearanceLooks), { ssr: false });
 const AppearanceResetButton = dynamic(() => import("./AppearanceResetButton").then((module) => module.AppearanceResetButton), { ssr: false });
@@ -1312,6 +1313,13 @@ export function AppShell() {
       activeKey={settingsKey}
       onActiveKeyChange={setSettingsKey}
       sections={{
+        extensions: projectCwd ? (
+          <ExtensionsConfig
+            cwd={projectCwd}
+            sessionId={selectedSession?.id ?? null}
+            onReloaded={() => setSessionKey((key) => key + 1)}
+          />
+        ) : undefined,
         models: (
           <ModelsConfig
             embedded

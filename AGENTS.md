@@ -33,80 +33,82 @@ Browser                Next.js Server              AgentSession (in-process)
 **Session browsing** (read-only): reads `.jsonl` files through SDK `SessionManager` helpers and `lib/session-reader.ts` — no AgentSession created.  
 **Sending a message**: `startRpcSession()` in `lib/rpc-manager.ts` creates an AgentSession in-process.
 
+Additional server-side subsystems share the same Next.js process but have separate state boundaries:
+
+- **Rooms** coordinate multiple agent sessions through `room-store`, `room-coordinator`, and room SSE routes.
+- **Harmony** controls OpenHarmony devices through an explicit runtime profile, approval queue, device manager, HDC backend, screenshots, UI trees, and vision helpers.
+- **Companion pets** keep imported sprite metadata in the companion store and serve runtime spritesheets through dedicated routes; desktop companion windows are separate renderer entry points.
+- **Prompt modes** are runtime concerns: target state is persisted through the goal extension/registry, while plan mode combines the `piora-plan` extension with a scoped read-only lease in `lib/prompt-mode-runtime.ts`. Session mutations are rejected while a prompt owns that lease.
+
 ---
 
 ## File Map
 
 ```
 app/api/
-  sessions/route.ts               GET  list all sessions
-  sessions/[id]/route.ts          GET/PATCH/DELETE session
-  sessions/[id]/context/route.ts  GET ?leafId= — context for a specific leaf
-  sessions/[id]/export/route.ts   GET exported HTML for a session
-  agent/new/route.ts              POST { cwd, message, toolNames?, provider?, modelId? }
-  agent/[id]/route.ts             GET state | POST any command
-  agent/[id]/events/route.ts      GET SSE stream
-  agent/running/route.ts          GET currently-running session ids
-  agent/running/events/route.ts   GET SSE stream of currently-running session ids
-  auth/all-providers/route.ts     GET API-key provider list
-  auth/api-key/[provider]/route.ts GET/POST/DELETE provider API key status/storage
-  auth/login/[provider]/route.ts  GET OAuth/device-code SSE | POST manual code
-  auth/logout/[provider]/route.ts POST OAuth logout
-  auth/providers/route.ts         GET OAuth provider list
-  cwd/validate/route.ts           POST validate/select a cwd
-  default-cwd/route.ts            POST create ~/pi-cwd-YYYYMMDD
-  files/[...path]/route.ts        GET file contents for viewer
-  home/route.ts                   GET user home directory
-  models/route.ts                 GET { models, modelList, defaultModel }
-  models-config/route.ts          GET/PUT — read/write ~/.pi/agent/models.json
-  models-config/catalog/route.ts  GET models.dev pricing presets
-  models-config/discover/route.ts POST fetch a configured provider's upstream model list
-  models-config/test/route.ts     POST test a configured model/provider
-  plugins/route.ts                GET/POST package plugin management
-  skills/route.ts                 GET/PATCH loaded skills and disable-model-invocation
-  skills/install/route.ts         POST install skills through npx skills add
-  skills/search/route.ts          GET/POST skills.sh search
-  worktrees/route.ts              GET/POST/DELETE git worktrees
+  agent/                  session creation, commands, per-session SSE, running snapshots
+  sessions/               list/read/mutate, context branches, export, duplicate/restore, flags
+  rooms/                  room CRUD, coordinator input, and room event streams
+  harmony/                device/config/state/action/approval/frame/tree/vision APIs
+  companion-pets/         pet catalog/import plus spritesheet serving
+  git/                    status/diff/branches and stage/commit/push/revert mutations
+  browser/                private headless browser state and screenshots
+  files/, file-index/     allow-listed file reads and indexed workspace search
+  cwd/, default-cwd/      cwd selection/validation and managed default workspaces
+  models/, models-config/ model scope, provider catalogs, discovery, config, and tests
+  auth/                   provider listing, API keys, OAuth/device-code login, logout
+  extensions/             unified extension inventory and per-extension enable/disable
+  plugins/, skills/       package/resource management, search, install, update checks
+  prompts/, speech/       prompt optimization and local transcription
+  worktrees/              git worktree list/create/remove
+  health/, home/, project-info/, search/ supporting workspace endpoints
 
 lib/
-  agent-client.ts      typed fetch helper for /api/agent commands
-  draft-store.ts       local draft persistence helpers
-  file-access.ts       allowed file roots for /api/files and worktrees
-  file-paths.ts        client/server path encoding helpers
-  markdown.ts          shared markdown helpers
-  npx.ts               npx runner used by skill install
-  pi-types.ts          local structural types for pi SDK objects
-  rpc-manager.ts      AgentSessionWrapper + registry + startRpcSession
-  session-reader.ts   SessionManager wrappers + path cache + buildSessionContext adapter
-  tool-presets.ts     PRESET_NONE/DEFAULT/FULL + getPresetFromTools()
-  types.ts            shared TypeScript types
-  normalize.ts        normalizeToolCalls() — field name mismatch between file format and our types
-  worktree.ts         project/worktree resolution and git worktree operations
+  rpc-manager.ts             AgentSessionWrapper, lifecycle registry, and session startup
+  prompt-mode-runtime.ts     active mode registry, plan lease, and goal continuation runner
+  prompt-modes.ts            compatibility facade for goal/plan enabled settings
+  extension-config.ts        extension inventory, stable ids, load plan, and preferences
+  first-party-extensions.ts  bundled extension descriptors and profile membership
+  prompt-run-registry.ts     active prompt identity and terminal cleanup
+  goal-run-registry.ts       persistent target-mode state machine
+  task-status.ts             normalized running/task/goal snapshots
+  session-reader.ts          read-only session loading, context building, and caches
+  session-{path,flags,trash}.ts session lookup, metadata flags, and recoverable deletion
+  room-{store,coordinator,chat-routing,chat,types}.ts multi-agent room subsystem
+  harmony/                   runtime, device manager, HDC, approvals/errors, UI tree, vision
+  companion-pets.ts          pet validation/import and sprite processing
+  companion-store.ts         companion persistence boundary
+  companion.ts               active companion preferences/state helpers
+  model-*.ts, provider-*.ts  model scope/policy/runtime/discovery and credential listing
+  file-*.ts, path-security.ts allow-list, paths, editing, upload, indexing helpers
+  git-*.ts, worktree.ts      git status/write helpers and project/worktree resolution
+  api-types.ts, types.ts     API/shared UI types; pi-types.ts isolates SDK structural types
+  i18n/                      typed registry, formatter, and en/zh-CN message catalogs
+  rpc-*.ts                   task activity and headless extension UI adapters
 
 components/
-  AppShell.tsx        layout + URL state + tab management
-  SessionSidebar.tsx  session tree + FileExplorer
-  ChatWindow.tsx      chat composition + task-control registration
-  ChatInput.tsx       input bar + model/thinking/compact controls
-  MessageView.tsx     renders one message (user/assistant/toolCall/toolResult)
-  BranchNavigator.tsx in-session branch switcher
-  ChatMinimap.tsx     scroll minimap alongside the message list
-  MarkdownBody.tsx    markdown renderer
-  ModelsConfig.tsx    modal for editing models.json (opened from sidebar bottom)
-  PluginsConfig.tsx   modal for installed package plugins
-  SkillsConfig.tsx    modal for loaded/search/installable skills
-  FileExplorer.tsx    file tree inside sidebar
-  FileIcons.tsx       file icon helpers
-  FileViewer.tsx      file content in a tab
-  TabBar.tsx          tab bar (Chat + open file tabs)
+  AppShell.tsx              top-level layout, URL/project/tab state, workspace composition
+  ChatWindow.tsx            chat rendering, session hook, and task-control registration
+  ChatInput.tsx             composer, model/thinking controls, one-shot goal/plan selection
+  MessageView.tsx           user/assistant/tool message rendering
+  SessionSidebar.tsx        sidebar composition; details live under components/sidebar/
+  Room*.tsx                 room navigation, settings, and multi-agent workspace
+  Companion*.tsx            companion settings, pet renderer, and desktop companion window
+  FileExplorer/FileViewer   allow-listed file navigation, editing, and previews
+  Models/Extensions/Plugins/SkillsConfig model, extension, package, and skill settings
+  workspace/                browser, command, change/review, search, and Harmony panels
+  MarkdownBody/MermaidBlock markdown and diagram rendering
 
 hooks/
-  useAgentSession.ts  messages + streaming + SSE + fork/navigate/reconciliation logic
-  useCompletionNotification.ts opt-in desktop/browser completion notifications
-  useFontPreferences.ts safe built-in font and text-size preferences
-  useDragDrop.ts      shared drag/drop state
-  useIsMobile.ts      responsive breakpoint hook
-  useTheme.ts         theme state
+  useAgentSession.ts       messages, streaming/SSE, forks, tree navigation, reconciliation
+  useTaskStatus.ts         global running-task SSE/polling state
+  useHarmonyLiveFrame.ts   Harmony frame/event polling and stability handling
+  useCompanion*.ts         companion catalog and preference state
+  useCommands.ts           slash-command discovery and execution state
+  useI18n.tsx              locale context and typed message lookup
+  useLocalDictation.ts     recording/transcription orchestration
+  useBackground/useTheme/useFontPreferences appearance state
+  useKeyboardShortcuts/useFocusTrap/useResizablePanel interaction/layout helpers
 ```
 
 ---
@@ -117,6 +119,20 @@ hooks/
 - One `AgentSessionWrapper` per session id, keyed in `globalThis.__piSessions`
 - `globalThis` survives Next.js hot-reload; plain module-level Map does not
 - Idle timeout: 10 minutes. Concurrent `startRpcSession()` calls share a single start Promise (`globalThis.__piStartLocks`)
+
+### Prompt modes (`lib/prompt-mode-runtime.ts`)
+- `promptMode` is explicit wrapper runtime state (`normal | goal | plan`) and is returned by `get_state` while a prompt is active.
+- Goal and plan are first-party Pi extensions (`extensions/piora-goal.ts` and `extensions/piora-plan.ts`) and can be disabled in Settings > Extensions.
+- Plan mode is one-shot. `enterPlanMode()` applies the hard workspace read-only tool allow-list plus the metadata-only `piora_plan` submission tool, and returns an idempotent restoration lease; the plan extension supplies the hidden planning context through `before_agent_start`.
+- The wrapper is the concurrency boundary: ordinary prompts, forks, tree navigation, tool changes, and reloads reject while the session is busy. Destroy aborts an active prompt and never restores a lease into a dead wrapper.
+- Target mode state lives in `goal-run-registry.ts` and is persisted by `extensions/piora-goal.ts`. `runGoalModeContinuations()` owns the continuation loop; 64 is a documented runaway-loop fuse, not a task-length heuristic.
+- Structured plan state lives in `plan-artifact-registry.ts` and is persisted as `piora-plan-artifact` custom session entries. Draft edits use optimistic revision checks; approval projects the artifact into a `planned` TaskRun but never starts execution. The explicit Start execution action launches Target Mode with a plan execution identity; `piora_plan_execution` enforces dependency-ordered step transitions, requires step evidence before completion, records bounded artifacts, and requires verification coverage for every success criterion plus a change summary before final completion. Goal is the continuation engine, while the public TaskRun remains plan-owned and receives the execution evidence/artifact projection. Restored in-flight executions become `interrupted`, never falsely `running`. Plan Mode may write only session metadata and must remain read-only for workspace and external state.
+
+### Extension inventory and toggles
+- `lib/extension-config.ts` resolves Pi's first-party, user, project, and package extension paths before session construction. Disabled extensions are removed from the load plan, so their modules are not executed.
+- Per-extension preferences live in `~/.pi/agent/piora/extensions.json`; ids are stable across first-party builds and package version updates. A user file cannot acquire a first-party id merely by copying its filename.
+- `/api/extensions` and `components/ExtensionsConfig.tsx` expose the same resolved load plan used by session startup. Package-level filters remain managed by `/api/plugins`.
+- Changing an extension invalidates the shared services cache. An idle current session uses `restart_extensions` to destroy its wrapper and rebuild from the new load plan; a busy session keeps running and applies the setting on its next restart.
 
 ### Fork must destroy the wrapper immediately
 `AgentSession.fork()` **mutates the wrapper's inner state in-place** — after fork, `inner.sessionId` is the *new* session's id. If the wrapper stays alive in the registry under the old id, the next request gets the already-forked state and subsequent forks produce a corrupt `parentSession` chain.

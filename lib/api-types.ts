@@ -1,4 +1,7 @@
 import type { ResourceDiagnostic } from "@earendil-works/pi-coding-agent";
+import type { ExtensionInventoryItem, ExtensionsResponse } from "./extension-config";
+
+export type { ExtensionInventoryItem, ExtensionsResponse };
 
 export interface SkillSearchResult {
   package: string;

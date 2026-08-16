@@ -62,6 +62,10 @@ interface SkillLike {
 
 interface ResourceLoaderLike {
   getSkills(): { skills: SkillLike[] };
+  getExtensions(): {
+    extensions: Array<{ resolvedPath: string }>;
+    errors: Array<{ path: string; error: string }>;
+  };
 }
 
 interface ExtensionRunnerLike {

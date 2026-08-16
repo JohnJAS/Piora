@@ -1,4 +1,5 @@
 import type { GoalRunState } from "./goal-run-registry";
+import type { TaskRunState } from "./task-run";
 
 export type Lifecycle = "draft" | "active" | "archived";
 export type Runtime = "idle" | "running" | "compacting" | "stopping";
@@ -11,6 +12,7 @@ export interface TaskStatus {
   /** Server-owned start time for the current run. Survives task switches. */
   startedAt?: number;
   goal?: GoalRunState;
+  taskRun?: TaskRunState;
 }
 
 export interface TaskStatusInput {
@@ -22,6 +24,7 @@ export interface TaskStatusInput {
   hasUnreadResult: boolean;
   archived: boolean;
   isViewing: boolean;
+  taskRun?: TaskRunState;
 }
 
 export type TaskStatusPresentationKey = Attention | "running";
@@ -36,6 +39,7 @@ export interface TaskRuntimeSnapshot {
   title?: string;
   activity?: TaskRuntimeActivity;
   goal?: GoalRunState;
+  taskRun?: TaskRunState;
 }
 
 export type TaskRuntimeActivityKind =
@@ -87,12 +91,18 @@ export function deriveTaskStatus(input: TaskStatusInput): TaskStatus {
 
   let attention: Attention = "none";
   if (!input.isViewing) {
-    if (input.pendingApprovalIds.has(input.sessionId)) attention = "needs_approval";
-    else if (input.lastPromptFailed) attention = "failed";
+    if (input.pendingApprovalIds.has(input.sessionId) || input.taskRun?.phase === "waiting_approval") attention = "needs_approval";
+    else if (input.taskRun?.phase === "waiting_user") attention = "needs_input";
+    else if (input.lastPromptFailed || input.taskRun?.phase === "failed") attention = "failed";
     else if (input.hasUnreadResult) attention = "unread";
   }
 
-  return { lifecycle, runtime, attention };
+  return {
+    lifecycle,
+    runtime,
+    attention,
+    ...(input.taskRun ? { taskRun: input.taskRun } : {}),
+  };
 }
 
 export function getTaskStatusPresentationKey(status: TaskStatus): TaskStatusPresentationKey {

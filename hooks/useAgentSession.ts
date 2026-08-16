@@ -15,6 +15,7 @@ import { BUILTIN_AGENT_TOOLS } from "@/lib/tool-presets";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { estimateSessionContextUsage } from "@/lib/context-usage";
 import type { GoalRunState } from "@/lib/goal-run-registry";
+import type { PlanArtifactState, PlanDraftInput } from "@/lib/plan-artifact-registry";
 
 export interface SessionData {
   sessionId: string;
@@ -74,12 +75,14 @@ type AgentStateResponse = {
   thinkingLevel?: string;
   isStreaming?: boolean;
   isPromptRunning?: boolean;
+  promptMode?: "normal" | "goal" | "plan";
   isBashRunning?: boolean;
   isCompacting?: boolean;
   extensionStatuses?: ExtensionStatusItem[];
   extensionWidgets?: ExtensionWidgetItem[];
   queuedMessages?: { steering?: string[]; followUp?: string[] } | null;
   goal?: GoalRunState | null;
+  plan?: PlanArtifactState | null;
 };
 
 export interface QueuedMessages {
@@ -386,6 +389,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [extensionWidgets, setExtensionWidgets] = useState<ExtensionWidgetItem[]>([]);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessages>({ steering: [], followUp: [] });
   const [goal, setGoal] = useState<GoalRunState | null>(null);
+  const [planArtifact, setPlanArtifact] = useState<PlanArtifactState | null>(null);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
@@ -516,6 +520,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (liveState.extensionWidgets !== undefined) setExtensionWidgets(liveState.extensionWidgets ?? []);
           if (liveState.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(liveState.queuedMessages));
           if (liveState.goal !== undefined) setGoal(liveState.goal ?? null);
+          if (liveState.plan !== undefined) setPlanArtifact(liveState.plan ?? null);
         } else if (!agentState.running) {
           setQueuedMessages({ steering: [], followUp: [] });
         }
@@ -911,6 +916,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setIsCompacting(state?.isCompacting ?? false);
       setQueuedMessages(normalizeQueuedMessages(state?.queuedMessages));
       if (state?.goal !== undefined) setGoal(state.goal ?? null);
+      if (state?.plan !== undefined) setPlanArtifact(state.plan ?? null);
       const busy = data.running && state
         && (state.isStreaming || state.isPromptRunning || state.isCompacting);
       // Context usage is useful while the run is still active (especially
@@ -922,6 +928,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (state.extensionStatuses !== undefined) setExtensionStatuses(state.extensionStatuses ?? []);
         if (state.extensionWidgets !== undefined) setExtensionWidgets(state.extensionWidgets ?? []);
         if (state.goal !== undefined) setGoal(state.goal ?? null);
+        if (state.plan !== undefined) setPlanArtifact(state.plan ?? null);
       }
       await finishPromptWithoutStream(sid, runId);
     } catch {
@@ -983,6 +990,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               if (d.state?.extensionStatuses !== undefined) setExtensionStatuses(d.state.extensionStatuses ?? []);
               if (d.state?.extensionWidgets !== undefined) setExtensionWidgets(d.state.extensionWidgets ?? []);
               if (d.state?.goal !== undefined) setGoal(d.state.goal ?? null);
+              if (d.state?.plan !== undefined) setPlanArtifact(d.state.plan ?? null);
               // Aborted turns can leave messages queued in pi (delivered with the
               // next turn); dead wrapper (no state) means the queue is gone.
               setQueuedMessages(normalizeQueuedMessages(d.state?.queuedMessages));
@@ -1105,6 +1113,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "goal_done":
         setGoal((event.goal as GoalRunState | undefined) ?? null);
         break;
+      case "plan_ready":
+      case "plan_progress":
+      case "plan_approved":
+      case "plan_cancelled":
+      case "plan_execution_start":
+        setPlanArtifact((event.plan as PlanArtifactState | undefined) ?? null);
+        break;
       case "auto_retry_start":
         setRetryInfo({ attempt: event.attempt as number, maxAttempts: event.maxAttempts as number, errorMessage: event.errorMessage as string | undefined });
         break;
@@ -1135,7 +1150,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [addNotice, handleExtensionUiRequest, loadSession, refreshContextUsage, waitForPromptSettlement]);
   handleAgentEventRef.current = handleAgentEvent;
 
-  const handleSend = useCallback(async (message: string, images?: AttachedImage[], files?: AttachedFile[], options?: { goalMode?: boolean; planMode?: boolean }) => {
+  const handleSend = useCallback(async (
+    message: string,
+    images?: AttachedImage[],
+    files?: AttachedFile[],
+    options?: {
+      goalMode?: boolean;
+      planMode?: boolean;
+      planExecution?: { planId: string; expectedRevision: number };
+    },
+  ) => {
     const trimmedMessage = message.trim();
     if (!trimmedMessage && !images?.length && !files?.length) return;
     if (agentRunningRef.current || bashRunningRef.current) return;
@@ -1204,6 +1228,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             message: effectiveMessage,
             ...(options?.goalMode ? { goalMode: true } : {}),
             ...(options?.planMode ? { planMode: true } : {}),
+            ...(options?.planExecution ? { planExecution: options.planExecution } : {}),
             ...(piImages?.length ? { images: piImages } : {}),
           });
           promoteNewSession(1, effectiveMessage);
@@ -1217,6 +1242,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           message: effectiveMessage,
           ...(options?.goalMode ? { goalMode: true } : {}),
           ...(options?.planMode ? { planMode: true } : {}),
+          ...(options?.planExecution ? { planExecution: options.planExecution } : {}),
           ...(piImages?.length ? { images: piImages } : {}),
         });
       }
@@ -1334,6 +1360,67 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
     }
   }, [addNotice, handleAbort]);
+
+  const handlePlanUpdate = useCallback(async (plan: PlanDraftInput): Promise<boolean> => {
+    const sid = sessionIdRef.current;
+    if (!sid || !planArtifact) return false;
+    try {
+      const result = await sendAgentCommand<{ plan: PlanArtifactState }>(sid, {
+        type: "plan_update",
+        expectedRevision: planArtifact.revision,
+        plan,
+      });
+      setPlanArtifact(result.plan);
+      return true;
+    } catch (e) {
+      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      return false;
+    }
+  }, [addNotice, planArtifact]);
+
+  const handlePlanApprove = useCallback(async (): Promise<void> => {
+    const sid = sessionIdRef.current;
+    if (!sid || !planArtifact) return;
+    try {
+      const result = await sendAgentCommand<{ plan: PlanArtifactState }>(sid, {
+        type: "plan_approve",
+        expectedRevision: planArtifact.revision,
+      });
+      setPlanArtifact(result.plan);
+    } catch (e) {
+      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+    }
+  }, [addNotice, planArtifact]);
+
+  const handlePlanCancel = useCallback(async (): Promise<void> => {
+    const sid = sessionIdRef.current;
+    if (!sid || !planArtifact) return;
+    try {
+      const result = await sendAgentCommand<{ plan: PlanArtifactState }>(sid, {
+        type: "plan_cancel",
+        expectedRevision: planArtifact.revision,
+      });
+      setPlanArtifact(result.plan);
+    } catch (e) {
+      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+    }
+  }, [addNotice, planArtifact]);
+
+  const handlePlanExecute = useCallback(async (): Promise<void> => {
+    if (!planArtifact || planArtifact.status !== "approved") return;
+    await handleSend(
+      `Execute the approved structured plan: ${planArtifact.plan.objective}`,
+      undefined,
+      undefined,
+      {
+        goalMode: true,
+        planExecution: {
+          planId: planArtifact.plan.id,
+          expectedRevision: planArtifact.revision,
+        },
+      },
+    );
+  }, [handleSend, planArtifact]);
 
   const handleFork = useCallback(async (entryId: string) => {
     if (bashRunningRef.current) return;
@@ -1724,6 +1811,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   useEffect(() => {
     if (session) {
       setGoal(null);
+      setPlanArtifact(null);
       sessionIdRef.current = session.id;
       void enableAllTools(session.id);
       loadSession(session.id, true, true).then((agentState) => {
@@ -1753,6 +1841,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (agentState.state.extensionWidgets !== undefined) setExtensionWidgets(agentState.state.extensionWidgets ?? []);
           if (agentState.state.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(agentState.state.queuedMessages));
           if (agentState.state.goal !== undefined) setGoal(agentState.state.goal ?? null);
+          if (agentState.state.plan !== undefined) setPlanArtifact(agentState.state.plan ?? null);
         }
       });
     }
@@ -1857,7 +1946,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     agentRunning, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
     retryInfo, contextUsage: effectiveContextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, sessionStats,
-    slashCommands, slashCommandsLoading, queuedMessages, goal,
+    slashCommands, slashCommandsLoading, queuedMessages, goal, planArtifact,
     notices: noticeState.visible, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection: isNew && newSessionModel === null,
     agentPhase,
@@ -1866,7 +1955,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,
     lastUserMsgRef, pendingScrollToUserRef, initialScrollDoneRef,
     // Actions
-    handleSend, handleAbort, handleGoalPause, handleGoalCancel, handleFork, handleNavigate, handleModelChange,
+    handleSend, handleAbort, handleGoalPause, handleGoalCancel, handlePlanUpdate, handlePlanApprove, handlePlanCancel, handlePlanExecute, handleFork, handleNavigate, handleModelChange,
     handleScrollToBottom,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,

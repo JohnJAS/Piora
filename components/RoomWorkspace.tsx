@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CollaborationRoom, RoomArtifact, RoomMessage, RoomTask } from "@/lib/room-types";
+import type { TaskRunState } from "@/lib/task-run";
 import { resolveRoomChatTargets } from "@/lib/room-chat-routing";
 import { AliIcon } from "./AliIcon";
 import { MarkdownBody } from "./MarkdownBody";
@@ -12,6 +13,7 @@ type RoomResponse = {
   room?: CollaborationRoom;
   messages?: RoomMessage[];
   tasks?: RoomTask[];
+  taskRuns?: TaskRunState[];
   artifacts?: RoomArtifact[];
   dispatch?: {
     dispatched?: Array<{ sessionId: string; behavior?: string; taskId?: string }>;
@@ -48,6 +50,7 @@ export function RoomWorkspace({
   const [room, setRoom] = useState(initialRoom);
   const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [tasks, setTasks] = useState<RoomTask[]>([]);
+  const [taskRuns, setTaskRuns] = useState<Map<string, TaskRunState>>(new Map());
   const [artifacts, setArtifacts] = useState<RoomArtifact[]>([]);
   const [draft, setDraft] = useState("");
   const [taskTitle, setTaskTitle] = useState("");
@@ -75,6 +78,7 @@ export function RoomWorkspace({
   useEffect(() => {
     setMessages([]);
     setTasks([]);
+    setTaskRuns(new Map());
     setArtifacts([]);
     setDraft("");
     setError(null);
@@ -87,11 +91,12 @@ export function RoomWorkspace({
     };
     events.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data) as RoomResponse & { type?: string; message?: RoomMessage; task?: RoomTask; artifact?: RoomArtifact };
+        const data = JSON.parse(event.data) as RoomResponse & { type?: string; message?: RoomMessage; task?: RoomTask; taskRun?: TaskRunState; artifact?: RoomArtifact };
         if (data.type === "snapshot") {
           if (data.room) updateRoom(data.room);
           setMessages(data.messages ?? []);
           setTasks(data.tasks ?? []);
+          setTaskRuns(new Map((data.taskRuns ?? []).map((taskRun) => [taskRun.taskId, taskRun])));
           setArtifacts(data.artifacts ?? []);
         } else if (data.type === "room" && data.room) {
           updateRoom(data.room);
@@ -99,8 +104,10 @@ export function RoomWorkspace({
           setMessages((current) => current.some((item) => item.id === data.message?.id) ? current : [...current, data.message!].slice(-500));
         } else if (data.type === "task" && data.task) {
           setTasks((current) => [...current.filter((item) => item.id !== data.task?.id), data.task!].sort((left, right) => right.priority - left.priority || left.createdAt - right.createdAt));
+          if (data.taskRun) setTaskRuns((current) => new Map(current).set(data.taskRun!.taskId, data.taskRun!));
         } else if (data.type === "artifact" && data.artifact) {
           setArtifacts((current) => current.some((item) => item.id === data.artifact?.id) ? current : [...current, data.artifact!]);
+          if (data.taskRun) setTaskRuns((current) => new Map(current).set(data.taskRun!.taskId, data.taskRun!));
         }
       } catch {
         // Ignore malformed frames and let EventSource continue reconnecting.
@@ -382,7 +389,7 @@ export function RoomWorkspace({
               <div className={styles.taskList}>
                 {tasks.slice().reverse().slice(0, 8).map((task) => (
                   <div key={task.id} className={styles.taskCard}>
-                    <span data-status={task.status}>{task.status}</span>
+                    <span data-status={taskRuns.get(task.id)?.phase ?? task.status}>{taskRuns.get(task.id)?.phase ?? task.status}</span>
                     <strong>{task.title}</strong>
                     <small>{memberName(room, task.assignedTo)}</small>
                   </div>
