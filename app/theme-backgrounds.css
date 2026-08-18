@@ -3,7 +3,9 @@
  *
  * Background preferences only drive these host-owned selectors and custom
  * properties. They never replace semantic palette tokens, execute theme code,
- * or reach the Pi runtime. The editor/file panel stays intentionally opaque.
+ * or reach the Pi runtime. The chat canvas is transparent; the project area
+ * and the file panel share the artwork through user-controlled washes
+ * (--app-background-sidebar-overlay / --app-background-file-panel-overlay).
  */
 html[data-app-background-active="true"] body {
   isolation: isolate;
@@ -63,13 +65,31 @@ html[data-app-background-active="true"] .app-topbar {
 }
 
 html[data-app-background-active="true"] .sidebar-container {
-  background: color-mix(in srgb, var(--bg-panel) 94%, transparent) !important;
-  backdrop-filter: blur(20px);
+  /* The project area shows the same artwork but keeps its own readable wash so
+     small session/project text stays legible; strength is user-controlled
+     through --app-background-sidebar-overlay. */
+  background: color-mix(in srgb, var(--bg-panel) var(--app-background-sidebar-overlay, 70%), transparent) !important;
+  backdrop-filter: blur(5px);
+}
+
+html[data-app-background-active="true"] .session-sidebar-content {
+  /* The sidebar's inner shell is an opaque surface by default; make it share
+     the project-area wash so the artwork is actually visible through it. */
+  background: color-mix(in srgb, var(--bg-panel) var(--app-background-sidebar-overlay, 70%), transparent) !important;
 }
 
 html[data-app-background-active="true"] #file-panel {
-  /* Keep file previews and editors visually stable against decorative art. */
-  background: color-mix(in srgb, var(--bg) 98%, transparent) !important;
+  /* The file panel now shares the artwork with a user-controlled wash instead
+     of staying fully opaque. Editor surfaces below switch to the mixed tokens
+     defined here so file content stays readable at any wash strength. */
+  background: color-mix(in srgb, var(--bg) var(--app-background-file-panel-overlay, 88%), transparent) !important;
+  backdrop-filter: blur(5px);
+  --file-panel-surface: color-mix(in srgb, var(--bg) var(--app-background-file-panel-overlay, 88%), transparent);
+  --file-panel-surface-panel: color-mix(in srgb, var(--bg-panel) var(--app-background-file-panel-overlay, 88%), transparent);
+}
+
+html[data-app-background-active="true"] #file-panel .right-panel-surface {
+  background: color-mix(in srgb, var(--bg) var(--app-background-file-panel-overlay, 88%), transparent) !important;
 }
 
 @supports not (background: color-mix(in srgb, black 50%, transparent)) {
@@ -82,14 +102,20 @@ html[data-app-background-active="true"] #file-panel {
     background: var(--bg) !important;
   }
 
-  html[data-app-background-active="true"] .sidebar-container {
+  html[data-app-background-active="true"] .sidebar-container,
+  html[data-app-background-active="true"] .session-sidebar-content {
     background: var(--bg-panel) !important;
+  }
+
+  html[data-app-background-active="true"] #file-panel {
+    background: var(--bg) !important;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   html[data-app-background-active="true"] .app-topbar,
-  html[data-app-background-active="true"] .sidebar-container {
+  html[data-app-background-active="true"] .sidebar-container,
+  html[data-app-background-active="true"] #file-panel {
     backdrop-filter: none;
   }
 }

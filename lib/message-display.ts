@@ -76,14 +76,21 @@ export function subscribeToThinkingLoad(
 }
 
 export function isEmptyThinkingBlock(block: AssistantContentBlock, options: DisplayOptions = {}): block is ThinkingContent {
-  return block.type === "thinking" && !block.deferred && !options.isStreaming && block.thinking.trim() === "";
+  // Sessions restored across versions can carry thinking blocks whose text is
+  // missing entirely; treat those as non-empty so the block still renders.
+  return block.type === "thinking"
+    && !block.deferred
+    && !options.isStreaming
+    && typeof block.thinking === "string"
+    && block.thinking.trim() === "";
 }
 
 export function getDisplayableAssistantBlocks(
   message: AssistantMessage,
   options: DisplayOptions = {},
 ): AssistantContentBlock[] {
-  return (message.content ?? []).filter((block) => !isEmptyThinkingBlock(block, options));
+  const content = Array.isArray(message.content) ? message.content : [];
+  return content.filter((block) => !isEmptyThinkingBlock(block, options));
 }
 
 export function getAssistantErrorMessage(
@@ -91,7 +98,10 @@ export function getAssistantErrorMessage(
   options: DisplayOptions = {},
 ): string | null {
   if (options.isStreaming || message.stopReason !== "error") return null;
-  return message.errorMessage?.trim() || "Unknown provider error";
+  const errorMessage = typeof message.errorMessage === "string" && message.errorMessage.trim()
+    ? message.errorMessage.trim()
+    : "";
+  return errorMessage || "Unknown provider error";
 }
 
 function isFinalAnswerBlock(block: AssistantContentBlock): boolean {

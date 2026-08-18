@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { extractAll, listPackage } from "@electron/asar";
 import { generateLicenseInventory } from "./generate-license-inventory.mjs";
 import { generatePackageLicenseBundle } from "./package-license-bundle.mjs";
 import {
@@ -32,6 +33,8 @@ const expectedBackgroundCount = 20;
 const safeBackgroundAsset = /^\/themes\/dream-backgrounds\/[A-Za-z0-9][A-Za-z0-9._-]*\.webp$/;
 const bundledPetRelativeRoot = "companion-pets/bundled/pekka-pal.codex-pet";
 const bundledPetId = "pekka-pal.codex-pet";
+const packagedRuntimeArchive = join(packagedWebRoot, "runtime.asar");
+let activeServerStderr = "";
 
 export const forbiddenPackagedDependencies = Object.freeze([
   "@giscus/react",
@@ -59,11 +62,6 @@ const requiredPaths = [
 async function assertFile(path) {
   const entry = await stat(path).catch(() => undefined);
   if (!entry?.isFile()) throw new Error(`Required packaged file is missing: ${path}`);
-}
-
-async function assertDirectory(path) {
-  const entry = await stat(path).catch(() => undefined);
-  if (!entry?.isDirectory()) throw new Error(`Required packaged directory is missing: ${path}`);
 }
 
 async function assertRegularFile(path, description) {
@@ -213,6 +211,19 @@ export async function findForbiddenPackagedDependencies(
   dependencyNames = forbiddenPackagedDependencies,
 ) {
   const matches = [];
+  const archivePath = join(resolve(root), "node_modules.asar");
+  const archiveEntry = await stat(archivePath).catch(() => undefined);
+  if (archiveEntry?.isFile()) {
+    const archivePaths = new Set(
+      listPackage(archivePath).map((entry) => entry.replace(/^[/\\]+/, "").replaceAll("\\", "/")),
+    );
+    for (const dependency of dependencyNames) {
+      const match = [...archivePaths].find(
+        (entry) => entry === dependency || entry.endsWith(`/node_modules/${dependency}`),
+      );
+      if (match) matches.push({ dependency, path: `${archivePath}!/${match}` });
+    }
+  }
 
   async function walk(directory) {
     const entries = await readdir(directory, { withFileTypes: true });
@@ -342,7 +353,10 @@ async function fetchJson(origin, path, init = {}) {
     body = { error: responseText || "Response did not contain JSON" };
   }
   if (!response.ok) {
-    throw new Error(`${path} returned HTTP ${response.status}: ${JSON.stringify(body)}`);
+    throw new Error(
+      `${path} returned HTTP ${response.status}: ${JSON.stringify(body)}` +
+      (activeServerStderr ? `\nPackaged server stderr:\n${activeServerStderr}` : ""),
+    );
   }
   return { response, body };
 }
@@ -417,40 +431,56 @@ async function stopChild(child) {
 }
 
 async function main() {
+  await assertFile(packagedRuntimeArchive);
+  await assertFile(join(packagedWebRoot, "server.js"));
+  const packagedWebEntries = (await readdir(packagedWebRoot)).sort();
+  if (JSON.stringify(packagedWebEntries) !== JSON.stringify(["runtime.asar", "server.js"])) {
+    throw new Error(`Packaged web container must contain only the launcher and runtime archive: ${packagedWebEntries.join(", ")}`);
+  }
+  const launcherSource = await readFile(join(packagedWebRoot, "server.js"), "utf8");
+  if (!launcherSource.includes("const dir = path.join(__dirname, 'runtime.asar')")) {
+    throw new Error("Packaged web launcher does not point Next at runtime.asar");
+  }
+  const inspectionDirectory = await mkdtemp(join(tmpdir(), "piora-runtime-inspection-"));
+  const runtimeWebRoot = join(inspectionDirectory, "web");
+  await extractAll(packagedRuntimeArchive, runtimeWebRoot);
+  try {
   for (const requiredPath of requiredPaths) {
-    await assertFile(join(packagedWebRoot, requiredPath));
+    await assertFile(join(runtimeWebRoot, requiredPath));
   }
   const patchedBundledDependencies = [
     { name: "brace-expansion", version: "5.0.9" },
     { name: "undici", version: "8.9.0" },
   ];
   for (const expected of patchedBundledDependencies) {
-    const manifestPath = join(
-      packagedWebRoot,
+    const manifestPath = [
       "node_modules",
       "@earendil-works",
       "pi-coding-agent",
       "node_modules",
       expected.name,
       "package.json",
-    );
-    await assertFile(manifestPath);
-    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    ].join("/");
+    await assertFile(join(runtimeWebRoot, ...manifestPath.split("/")));
+    const manifest = JSON.parse(await readFile(join(runtimeWebRoot, ...manifestPath.split("/")), "utf8"));
     if (manifest?.name !== expected.name || manifest?.version !== expected.version) {
       throw new Error(
         `Packaged Pi runtime must contain the reviewed ${expected.name}@${expected.version}.`,
       );
     }
   }
-  await assertDirectory(join(packagedWebRoot, "node_modules"));
+  const looseNodeModules = await stat(join(packagedWebRoot, "node_modules")).catch(() => undefined);
+  if (looseNodeModules) {
+    throw new Error("Packaged web dependencies must be archived; loose node_modules would regress portable startup");
+  }
   await assertFile(join(fixtureSourceRoot, "package.json"));
   await assertFile(join(fixtureSourceRoot, "extensions", "package-probe.js"));
   await assertFile(join(fixtureSourceRoot, "skills", "package-probe", "SKILL.md"));
-  const packagedBackgrounds = await verifyPackagedBackgroundAssets(packagedWebRoot);
-  const packagedCompanion = await verifyPackagedCompanionAssets(packagedWebRoot);
+  const packagedBackgrounds = await verifyPackagedBackgroundAssets(runtimeWebRoot);
+  const packagedCompanion = await verifyPackagedCompanionAssets(runtimeWebRoot);
 
   const electronShell = await inspectElectronShell(packagedWebRoot, requireElectronShell);
-  const forbiddenDependencyCopies = await findForbiddenPackagedDependencies(packagedWebRoot);
+  const forbiddenDependencyCopies = await findForbiddenPackagedDependencies(runtimeWebRoot);
   if (forbiddenDependencyCopies.length > 0) {
     throw new Error(
       `Packaged output contains development-only dependencies:\n${forbiddenDependencyCopies
@@ -519,7 +549,7 @@ async function main() {
         HOSTNAME: "127.0.0.1",
         PORT: String(port),
         NODE_ENV: "production",
-        NODE_PATH: "",
+        NODE_PATH: join(isolatedWebRoot, "runtime.asar", "node_modules"),
         NEXT_TELEMETRY_DISABLED: "1",
         HOME: isolatedHomeDir,
         USERPROFILE: isolatedHomeDir,
@@ -539,6 +569,7 @@ async function main() {
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
       stderr = (stderr + chunk).slice(-16_384);
+      activeServerStderr = stderr;
     });
 
     const earlyExit = new Promise((_, rejectExit) => {
@@ -661,6 +692,9 @@ async function main() {
   } finally {
     if (child) await stopChild(child);
     await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+  } finally {
+    await rm(inspectionDirectory, { recursive: true, force: true });
   }
 }
 

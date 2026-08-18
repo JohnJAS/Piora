@@ -43,6 +43,8 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
     selectStoredCustom,
     uploadCustom,
     setOverlay,
+    setSidebarOverlay,
+    setFilePanelOverlay,
     setBlur,
     reset,
   } = useBackground();
@@ -174,6 +176,40 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
           value={preference.overlay}
           disabled={preference.source === "none" || busy}
           onChange={(event) => setOverlay(Number(event.currentTarget.value))}
+        />
+      </label>
+
+      <label className={styles.field}>
+        <span className={styles.fieldHeader}>
+          <span>{t("background.sidebarOverlay")}</span>
+          <span>{preference.sidebarOverlay}%</span>
+        </span>
+        <input
+          className={styles.range}
+          type="range"
+          min={0}
+          max={90}
+          step={1}
+          value={preference.sidebarOverlay}
+          disabled={preference.source === "none" || busy}
+          onChange={(event) => setSidebarOverlay(Number(event.currentTarget.value))}
+        />
+      </label>
+
+      <label className={styles.field}>
+        <span className={styles.fieldHeader}>
+          <span>{t("background.filePanelOverlay")}</span>
+          <span>{preference.filePanelOverlay}%</span>
+        </span>
+        <input
+          className={styles.range}
+          type="range"
+          min={0}
+          max={90}
+          step={1}
+          value={preference.filePanelOverlay}
+          disabled={preference.source === "none" || busy}
+          onChange={(event) => setFilePanelOverlay(Number(event.currentTarget.value))}
         />
       </label>
 

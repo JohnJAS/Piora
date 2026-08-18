@@ -17,8 +17,14 @@ test("selecting a session in another project survives cwd synchronization", () =
   );
   assert.match(
     cwdHandler,
-    /if \(!cwdBelongsToCurrentSelection\) \{\s*router\.replace\("\/", \{ scroll: false \}\);\s*\}/,
+    /if \(!cwdBelongsToCurrentSelection\) \{\s*replaceUrlWithoutNextNavigation\("\/"\);\s*\}/,
   );
+});
+
+test("selection URL updates bypass Next router restoration", () => {
+  assert.match(source, /function replaceUrlWithoutNextNavigation/);
+  assert.match(source, /\{ \.\.\.currentState, __NA: true \}/);
+  assert.doesNotMatch(source, /history\.replaceState\(window\.history\.state/);
 });
 
 test("session selection restores focus to the remounted composer", () => {

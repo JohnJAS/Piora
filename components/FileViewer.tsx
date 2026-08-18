@@ -90,7 +90,7 @@ const FILE_LINE_NUMBER_STYLE: CSSProperties = {
   padding: "0 10px",
   textAlign: "right",
   color: "var(--text-dim)",
-  background: "var(--bg-panel)",
+  background: "var(--file-panel-surface-panel, var(--bg-panel))",
   borderRight: "1px solid var(--border)",
   fontFamily: "var(--font-mono)",
   fontSize: "var(--text-xs)",
@@ -340,7 +340,7 @@ function ImageViewer({ filePath, cwd, sourceSessionId, active = true }: Props) {
           borderBottom: "1px solid var(--border)",
           fontSize: "var(--text-xs)",
           color: "var(--text-dim)",
-          background: "var(--bg)",
+          background: "var(--file-panel-surface, var(--bg))",
           flexShrink: 0,
         }}
       >
@@ -373,7 +373,7 @@ function ImageViewer({ filePath, cwd, sourceSessionId, active = true }: Props) {
         style={{
           flex: 1,
           overflow: "auto",
-          background: "var(--bg-panel)",
+          background: "var(--file-panel-surface-panel, var(--bg-panel))",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -477,7 +477,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId, active = true }: Props) {
           borderBottom: "1px solid var(--border)",
           fontSize: "var(--text-xs)",
           color: "var(--text-dim)",
-          background: "var(--bg)",
+          background: "var(--file-panel-surface, var(--bg))",
           flexShrink: 0,
         }}
       >
@@ -513,7 +513,7 @@ function AudioViewer({ filePath, cwd, sourceSessionId, active = true }: Props) {
           alignItems: "center",
           justifyContent: "center",
           padding: 24,
-          background: "var(--bg-panel)",
+          background: "var(--file-panel-surface-panel, var(--bg-panel))",
         }}
       >
         <div style={{ width: "min(680px, 100%)" }}>
@@ -615,7 +615,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, active = true }: Props
           borderBottom: "1px solid var(--border)",
           fontSize: "var(--text-xs)",
           color: "var(--text-dim)",
-          background: "var(--bg)",
+          background: "var(--file-panel-surface, var(--bg))",
           flexShrink: 0,
         }}
       >
@@ -643,7 +643,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, active = true }: Props
         </span>
       </div>
       <ReadOnlyNotice />
-      <div style={{ flex: 1, minHeight: 0, background: "var(--bg-panel)" }}>
+      <div style={{ flex: 1, minHeight: 0, background: "var(--file-panel-surface-panel, var(--bg-panel))" }}>
         {error ? (
           <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, color: "#f87171", fontSize: "var(--text-base)", textAlign: "center" }}>
             {error}
@@ -654,7 +654,7 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, active = true }: Props
             src={previewUrl}
             sandbox={isPdf ? undefined : ""}
             title={t("i18n.previewFile", { file: getFileName(filePath) })}
-            style={{ width: "100%", height: "100%", border: "none", background: isPdf ? "var(--bg)" : "#eef1f5" }}
+            style={{ width: "100%", height: "100%", border: "none", background: isPdf ? "var(--file-panel-surface, var(--bg))" : "#eef1f5" }}
           />
         )}
       </div>
@@ -1268,7 +1268,7 @@ function TextFileViewer({
           borderBottom: "1px solid var(--border)",
           fontSize: "var(--text-xs)",
           color: "var(--text-dim)",
-          background: "var(--bg)",
+          background: "var(--file-panel-surface, var(--bg))",
           flexShrink: 0,
         }}
       >
@@ -1459,7 +1459,7 @@ function TextFileViewer({
         style={{
           flex: 1,
           overflow: effectiveDisplayMode === "edit" ? "hidden" : "auto",
-          background: "var(--bg)",
+          background: "var(--file-panel-surface, var(--bg))",
         }}
       >
         {effectiveDisplayMode === "edit" ? (
@@ -1512,7 +1512,7 @@ function TextFileViewer({
           <iframe
             srcDoc={content}
             sandbox="allow-scripts"
-            style={{ width: "100%", height: "100%", border: "none", background: "var(--bg)" }}
+            style={{ width: "100%", height: "100%", border: "none", background: "var(--file-panel-surface, var(--bg))" }}
              title={t("i18n.htmlPreview")}
           />
         ) : isMarkdown && effectiveDisplayMode === "preview" ? (
@@ -1593,7 +1593,7 @@ function TextFileViewer({
               margin: 0,
               padding: 0,
               border: 0,
-              background: "var(--bg)",
+              background: "var(--file-panel-surface, var(--bg))",
               ...FILE_CODE_STYLE,
               width: wrapLines ? "100%" : "max-content",
               minWidth: "100%",

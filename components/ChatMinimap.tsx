@@ -42,12 +42,17 @@ interface NodeLayout {
 }
 
 function getUserPreview(message: UserMessage): string {
+  // Content blocks restored from older session files can be missing or hold
+  // non-string text; flatten defensively so the minimap can never crash the
+  // whole renderer for one malformed message.
   const content = typeof message.content === "string"
     ? message.content
-    : message.content
-      .filter((block): block is TextContent => block.type === "text")
-      .map((block) => block.text)
-      .join(" ");
+    : Array.isArray(message.content)
+      ? message.content
+        .filter((block): block is TextContent => block?.type === "text" && typeof block.text === "string")
+        .map((block) => block.text as string)
+        .join(" ")
+      : "";
   return content.replace(/\s+/g, " ").trim();
 }
 

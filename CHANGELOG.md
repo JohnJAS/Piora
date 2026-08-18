@@ -4,6 +4,30 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-08-18
+
+### Added
+
+- The project area and the right file panel now share the selected background
+  artwork, each with an independent opacity control in appearance settings.
+- Render isolation boundaries keep one malformed chat message or workspace
+  panel from taking down the whole application; the Harmony device panel
+  recovers automatically as soon as a fresh poll delivers valid data.
+
+### Fixed
+
+- Fragmented streaming tool calls (common with DeepSeek responses) and
+  malformed sessions restored across versions can no longer crash the chat
+  renderer with "Cannot read properties of undefined" errors.
+- The Harmony device panel validates every poll and event payload before
+  rendering, so an open panel can no longer trigger the global reload screen.
+- Session creation and selection no longer navigate through the Next.js
+  router in production, avoiding Suspense remount loops and renderer crashes.
+- Mounting a running session no longer tries to mutate its active tool set.
+- Client assets are versioned per release and the packaged runtime is
+  validated, preventing stale assets from mixing across upgrades.
+- The bundled dependency patch no longer fails with EEXIST on newer Node.js.
+
 ## [0.2.6] - 2026-08-16
 
 ### Fixed

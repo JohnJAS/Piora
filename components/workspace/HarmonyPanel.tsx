@@ -3,7 +3,7 @@
 /* Device frames are live, no-store screenshots; Next Image caching is intentionally not applicable. */
 /* eslint-disable @next/next/no-img-element */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useHarmonyLiveFrame } from "@/hooks/useHarmonyLiveFrame";
 import { AliIcon } from "../AliIcon";
@@ -29,10 +29,108 @@ type HarmonyState = {
 type ManualLease = { token: string; serial: string; expiresAt: string };
 type RuntimeCandidate = { hdcPath: string; sdkPath: string; source: "selection" | "environment" | "config" | "deveco" | "path" };
 type VisionModel = { provider: string; modelId: string; name: string };
-type HarmonyConfig = {
-  hdcPath?: string;
-  vision?: { enabled: boolean; provider: string; modelId: string; shareScreenshotWithActionModel?: boolean };
-};
+function recordOf(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function normalizeDevices(value: unknown): HarmonyDevice[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const source = recordOf(item);
+    const serial = optionalString(source?.serial);
+    if (!source || !serial) return [];
+    const rawState = source.state;
+    const state: HarmonyDevice["state"] = rawState === "online" || rawState === "unauthorized" || rawState === "offline"
+      ? rawState
+      : "unknown";
+    const rawCapabilities = recordOf(source.capabilities);
+    const capabilities = Object.fromEntries(
+      Object.entries(rawCapabilities ?? {}).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean"),
+    );
+    return [{
+      serial,
+      state,
+      ...(optionalString(source.name) ? { name: optionalString(source.name) } : {}),
+      ...(optionalString(source.model) ? { model: optionalString(source.model) } : {}),
+      ...(optionalString(source.osVersion) ? { osVersion: optionalString(source.osVersion) } : {}),
+      generation: typeof source.generation === "number" && Number.isFinite(source.generation) ? source.generation : 0,
+      capabilities,
+    }];
+  });
+}
+
+function normalizeHarmonyState(value: unknown, fallbackDevices: HarmonyDevice[] = []): HarmonyState {
+  const source = recordOf(value);
+  const runtimeSource = recordOf(source?.runtime);
+  const errorSource = recordOf(runtimeSource?.error);
+  const leases = Array.isArray(source?.leases) ? source.leases.flatMap((item) => {
+    const lease = recordOf(item);
+    const owner = recordOf(lease?.owner);
+    const serial = optionalString(lease?.serial);
+    const ownerId = optionalString(owner?.id);
+    const expiresAt = optionalString(lease?.expiresAt);
+    if (!lease || !owner || !serial || !ownerId || !expiresAt) return [];
+    const kind: PublicLease["owner"]["kind"] | null = owner.kind === "agent" ? "agent" : owner.kind === "manual" ? "manual" : null;
+    if (!kind) return [];
+    return [{ serial, expiresAt, owner: { kind, id: ownerId, ...(optionalString(owner.sessionId) ? { sessionId: optionalString(owner.sessionId) } : {}) } }];
+  }) : [];
+  const snapshots = Array.isArray(source?.snapshots) ? source.snapshots.flatMap((item) => {
+    const snapshot = recordOf(item);
+    const serial = optionalString(snapshot?.serial);
+    const capturedAt = optionalString(snapshot?.capturedAt);
+    if (!snapshot || !serial || !capturedAt) return [];
+    return [{
+      serial,
+      generation: typeof snapshot.generation === "number" ? snapshot.generation : 0,
+      revision: typeof snapshot.revision === "number" ? snapshot.revision : 0,
+      capturedAt,
+      hasTree: snapshot.hasTree === true,
+      hasScreenshot: snapshot.hasScreenshot === true,
+    }];
+  }) : [];
+  return {
+    runtime: {
+      status: optionalString(runtimeSource?.status) ?? "unavailable",
+      ...(optionalString(runtimeSource?.hdcPath) ? { hdcPath: optionalString(runtimeSource?.hdcPath) } : {}),
+      ...(errorSource ? { error: { code: optionalString(errorSource.code), message: optionalString(errorSource.message) } } : {}),
+    },
+    devices: Array.isArray(source?.devices) ? normalizeDevices(source.devices) : fallbackDevices,
+    leases,
+    snapshots,
+  };
+}
+
+function normalizeRuntimeCandidates(value: unknown): RuntimeCandidate[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const source = recordOf(item);
+    const hdcPath = optionalString(source?.hdcPath);
+    const sdkPath = optionalString(source?.sdkPath);
+    if (!source || !hdcPath || !sdkPath) return [];
+    const validSources: RuntimeCandidate["source"][] = ["selection", "environment", "config", "deveco", "path"];
+    const candidateSource = validSources.includes(source.source as RuntimeCandidate["source"])
+      ? source.source as RuntimeCandidate["source"]
+      : "path";
+    return [{ hdcPath, sdkPath, source: candidateSource }];
+  });
+}
+
+function normalizeVisionModels(value: unknown): VisionModel[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const source = recordOf(item);
+    const provider = optionalString(source?.provider);
+    const modelId = optionalString(source?.modelId);
+    if (!source || !provider || !modelId) return [];
+    return [{ provider, modelId, name: optionalString(source.name) ?? modelId }];
+  });
+}
 
 function messageOf(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
@@ -48,7 +146,7 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
   return payload;
 }
 
-export function HarmonyPanel({ active }: { active: boolean }) {
+export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapshot?: (fingerprint: number) => void }) {
   const { locale } = useI18n();
   const chinese = locale === "zh-CN";
   const copy = useCallback((zh: string, en: string) => chinese ? zh : en, [chinese]);
@@ -99,6 +197,17 @@ export function HarmonyPanel({ active }: { active: boolean }) {
   const desktopAvailable = profile !== "web";
   const selectedGeneration = selected?.generation;
   const canScreenshot = Boolean(selectedOnline && selected?.capabilities.screenshot);
+
+  // Tell the isolating boundary whenever a fresh poll replaced the panel data
+  // so it can automatically retry rendering after transient bad payloads.
+  useEffect(() => {
+    if (!onSnapshot) return;
+    const fingerprint = devices.reduce((acc, device) => acc + device.serial.length + device.generation, 0)
+      + (managerState?.runtime.status.length ?? 0)
+      + (managerState?.leases.length ?? 0)
+      + (managerState?.snapshots.length ?? 0);
+    onSnapshot(fingerprint);
+  }, [devices, managerState, onSnapshot]);
   const {
     frame: liveFrame,
     status: frameStatus,
@@ -115,12 +224,17 @@ export function HarmonyPanel({ active }: { active: boolean }) {
   const refresh = useCallback(async (signal?: AbortSignal) => {
     if (!desktopAvailable) return;
     try {
-      const devicePayload = await jsonRequest<{ devices: HarmonyDevice[]; state: HarmonyState }>("/api/harmony/devices", { signal });
-      setDevices(devicePayload.devices);
-      setManagerState(devicePayload.state);
-      setSelectedSerial((current) => current && devicePayload.devices.some((device) => device.serial === current)
+      const devicePayload = await jsonRequest<unknown>("/api/harmony/devices", { signal });
+      const payloadRecord = recordOf(devicePayload);
+      const stateRecord = recordOf(payloadRecord?.state);
+      const rawDevices = Array.isArray(payloadRecord?.devices) ? payloadRecord.devices : stateRecord?.devices;
+      if (!Array.isArray(rawDevices)) throw new Error(copy("设备服务返回了无效数据", "The device service returned invalid data"));
+      const nextDevices = normalizeDevices(rawDevices);
+      setDevices(nextDevices);
+      setManagerState(normalizeHarmonyState(payloadRecord?.state, nextDevices));
+      setSelectedSerial((current) => current && nextDevices.some((device) => device.serial === current)
         ? current
-        : devicePayload.devices.find((device) => device.state === "online")?.serial ?? devicePayload.devices[0]?.serial ?? "");
+        : nextDevices.find((device) => device.state === "online")?.serial ?? nextDevices[0]?.serial ?? "");
       setError(null);
     } catch (refreshError) {
       if (signal?.aborted) return;
@@ -131,19 +245,25 @@ export function HarmonyPanel({ active }: { active: boolean }) {
   const loadConfig = useCallback(async () => {
     if (!desktopAvailable) return;
     try {
-      const [payload, modelPayload] = await Promise.all([
-        jsonRequest<{ config: HarmonyConfig; diagnostics: HarmonyState & { runtime?: { hdcPath?: string } }; candidates: RuntimeCandidate[] }>("/api/harmony/config"),
-        jsonRequest<{ models: VisionModel[]; error?: string }>("/api/harmony/vision-models"),
+      const [payloadValue, modelPayloadValue] = await Promise.all([
+        jsonRequest<unknown>("/api/harmony/config"),
+        jsonRequest<unknown>("/api/harmony/vision-models"),
       ]);
-      const candidates = payload.candidates ?? [];
+      const payload = recordOf(payloadValue);
+      const modelPayload = recordOf(modelPayloadValue);
+      const config = recordOf(payload?.config);
+      const diagnostics = normalizeHarmonyState(payload?.diagnostics);
+      const candidates = normalizeRuntimeCandidates(payload?.candidates);
       setRuntimeCandidates(candidates);
-      setSdkPath(payload.config.hdcPath ?? payload.diagnostics?.runtime?.hdcPath ?? candidates[0]?.hdcPath ?? "");
-      setVisionModels(modelPayload.models ?? []);
-      const vision = payload.config.vision;
-      setVisionEnabled(Boolean(vision?.enabled));
-      setVisionModelKey(vision ? `${vision.provider}\u0000${vision.modelId}` : "");
-      setShareScreenshot(Boolean(vision?.shareScreenshotWithActionModel));
-      setDiagnostics(payload.diagnostics);
+      setSdkPath(optionalString(config?.hdcPath) ?? diagnostics.runtime.hdcPath ?? candidates[0]?.hdcPath ?? "");
+      setVisionModels(normalizeVisionModels(modelPayload?.models));
+      const vision = recordOf(config?.vision);
+      const provider = optionalString(vision?.provider);
+      const modelId = optionalString(vision?.modelId);
+      setVisionEnabled(vision?.enabled === true && Boolean(provider && modelId));
+      setVisionModelKey(provider && modelId ? `${provider}\u0000${modelId}` : "");
+      setShareScreenshot(vision?.shareScreenshotWithActionModel === true);
+      setDiagnostics(payload?.diagnostics ?? null);
     } catch (configError) {
       setError(messageOf(configError, copy("无法读取 SDK 配置", "Unable to read SDK configuration")));
     }
@@ -165,22 +285,19 @@ export function HarmonyPanel({ active }: { active: boolean }) {
     const source = new EventSource("/api/harmony/events");
     source.onmessage = (event) => {
       try {
-        const metadata = JSON.parse(event.data) as {
-          type?: string;
-          serial?: string;
-          devices?: HarmonyDevice[];
-          state?: HarmonyState;
-        };
+        const metadata = recordOf(JSON.parse(event.data));
+        if (!metadata) return;
         if (metadata.type === "devices" && Array.isArray(metadata.devices)) {
-          setDevices(metadata.devices);
-          setSelectedSerial((current) => current && metadata.devices?.some((device) => device.serial === current)
+          const nextDevices = normalizeDevices(metadata.devices);
+          setDevices(nextDevices);
+          setSelectedSerial((current) => current && nextDevices.some((device) => device.serial === current)
             ? current
-            : metadata.devices?.find((device) => device.state === "online")?.serial ?? metadata.devices?.[0]?.serial ?? "");
+            : nextDevices.find((device) => device.state === "online")?.serial ?? nextDevices[0]?.serial ?? "");
         } else if (metadata.type === "state" && metadata.state) {
-          setManagerState(metadata.state);
+          setManagerState(normalizeHarmonyState(metadata.state));
         } else if (metadata.type !== "connected" && metadata.type !== "heartbeat" && metadata.type !== "snapshot") {
-          void jsonRequest<{ state: HarmonyState }>(`/api/harmony/state${selectedSerial ? `?serial=${encodeURIComponent(selectedSerial)}` : ""}`)
-            .then((payload) => setManagerState(payload.state))
+          void jsonRequest<unknown>(`/api/harmony/state${selectedSerial ? `?serial=${encodeURIComponent(selectedSerial)}` : ""}`)
+            .then((payload) => setManagerState(normalizeHarmonyState(recordOf(payload)?.state)))
             .catch(() => undefined);
         }
       } catch {
@@ -262,14 +379,15 @@ export function HarmonyPanel({ active }: { active: boolean }) {
     const selectedPath = await window.piDesktop?.selectHarmonyRuntimePath?.(kind);
     if (!selectedPath) return;
     await run(async () => {
-      const payload = await jsonRequest<{ candidates: RuntimeCandidate[] }>("/api/harmony/runtime-candidates", {
+      const payload = await jsonRequest<unknown>("/api/harmony/runtime-candidates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ selectionPath: selectedPath }),
       });
-      const selected = payload.candidates.find((candidate) => candidate.source === "selection");
+      const candidates = normalizeRuntimeCandidates(recordOf(payload)?.candidates);
+      const selected = candidates.find((candidate) => candidate.source === "selection");
       if (!selected) throw new Error(copy("所选位置中没有找到 hdc", "No hdc executable was found in the selected location"));
-      setRuntimeCandidates(payload.candidates);
+      setRuntimeCandidates(candidates);
       setSdkPath(selected.hdcPath);
     });
   }, [copy, run]);
@@ -306,7 +424,7 @@ export function HarmonyPanel({ active }: { active: boolean }) {
 
   const saveSettings = () => void run(async () => {
     const [provider, modelId] = visionModelKey.split("\u0000");
-    const payload = await jsonRequest<{ config: HarmonyConfig; diagnostics: unknown; candidates: RuntimeCandidate[] }>("/api/harmony/config", {
+    const payloadValue = await jsonRequest<unknown>("/api/harmony/config", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -314,11 +432,14 @@ export function HarmonyPanel({ active }: { active: boolean }) {
         vision: visionEnabled ? { enabled: true, provider, modelId, shareScreenshotWithActionModel: shareScreenshot } : null,
       }),
     });
-    setSdkPath(payload.config.hdcPath ?? payload.candidates[0]?.hdcPath ?? "");
-    setRuntimeCandidates(payload.candidates);
-    setDiagnostics(payload.diagnostics);
+    const payload = recordOf(payloadValue);
+    const config = recordOf(payload?.config);
+    const candidates = normalizeRuntimeCandidates(payload?.candidates);
+    setSdkPath(optionalString(config?.hdcPath) ?? candidates[0]?.hdcPath ?? "");
+    setRuntimeCandidates(candidates);
+    setDiagnostics(payload?.diagnostics ?? null);
     await refresh();
-    return payload;
+    return payloadValue;
   }, () => setSettingsOpen(false));
 
   const imagePoint = (event: React.PointerEvent<HTMLImageElement>) => {
@@ -531,4 +652,48 @@ export function HarmonyPanel({ active }: { active: boolean }) {
     <p className={styles.safetyNote}><AliIcon name="lock" size={12} />{copy("AI 控制前会先征求你的同意", "AI asks before taking control")}</p>
     </main>
   </div>;
+}
+
+type HarmonyPanelBoundaryProps = { active: boolean; resetKey?: string; children: ReactNode };
+type HarmonyPanelBoundaryState = { error: Error | null };
+
+class HarmonyPanelErrorBoundary extends Component<HarmonyPanelBoundaryProps, HarmonyPanelBoundaryState> {
+  state: HarmonyPanelBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): HarmonyPanelBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error("Harmony panel render failed", error, info.componentStack);
+  }
+
+  componentDidUpdate(previous: HarmonyPanelBoundaryProps): void {
+    if (!this.state.error) return;
+    // Reset when the tab closes, or when a fresh poll delivered new data.
+    if ((previous.active && !this.props.active) || previous.resetKey !== this.props.resetKey) {
+      this.setState({ error: null });
+    }
+  }
+
+  render(): ReactNode {
+    if (!this.state.error) return this.props.children;
+    const chinese = typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("zh");
+    return <div className={styles.gate} role="alert">
+      <AliIcon name="warning" size={34} />
+      <h2>{chinese ? "鸿蒙设备面板暂不可用" : "Harmony panel is temporarily unavailable"}</h2>
+      <p>{chinese ? "设备面板已被隔离，当前会话不会中断。" : "The device panel was isolated; your active session is still running."}</p>
+      <button type="button" onClick={() => this.setState({ error: null })}>{chinese ? "重试面板" : "Retry panel"}</button>
+    </div>;
+  }
+}
+
+export function SafeHarmonyPanel({ active }: { active: boolean }) {
+  const [snapshot, setSnapshot] = useState(0);
+  const handleSnapshot = useCallback((fingerprint: number) => {
+    setSnapshot((current) => (current === fingerprint ? current : fingerprint));
+  }, []);
+  return <HarmonyPanelErrorBoundary active={active} resetKey={String(snapshot)}>
+    <HarmonyPanel active={active} onSnapshot={handleSnapshot} />
+  </HarmonyPanelErrorBoundary>;
 }

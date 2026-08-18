@@ -26,9 +26,10 @@ export function summarizeToolCall(
   result: unknown,
   t: Translate,
 ): ToolSummary {
+  const safeName = typeof name === "string" ? name : "";
   const recordInput = isRecord(input) ? input : {};
-  const call = { type: "tool_call", toolCallId: "summary", toolName: name, input: recordInput } as ToolCallEvent;
-  const resultEvent = toResultEvent(name, recordInput, result);
+  const call = { type: "tool_call", toolCallId: "summary", toolName: safeName, input: recordInput } as ToolCallEvent;
+  const resultEvent = toResultEvent(safeName, recordInput, result);
   const status = !result ? "running" : resultEvent?.isError ? "error" : "ok";
 
   if (isToolCallEventType("read", call)) {
@@ -45,7 +46,8 @@ export function summarizeToolCall(
   }
   if (isToolCallEventType("write", call)) {
     touchResultGuard(resultEvent, isWriteToolResult);
-    return { title: t("toolSummary.write", { path: call.input.path }), detail: t("toolSummary.characters", { count: call.input.content.length }), icon: "save", status };
+    const contentLength = typeof call.input.content === "string" ? call.input.content.length : 0;
+    return { title: t("toolSummary.write", { path: call.input.path }), detail: t("toolSummary.characters", { count: contentLength }), icon: "save", status };
   }
   if (isToolCallEventType("grep", call)) {
     touchResultGuard(resultEvent, isGrepToolResult);
@@ -61,7 +63,7 @@ export function summarizeToolCall(
   }
 
   return {
-    title: name || t("toolSummary.unknown"),
+    title: safeName || t("toolSummary.unknown"),
     detail: firstStringValue(recordInput),
     icon: "wrench",
     status,
@@ -85,8 +87,8 @@ function touchResultGuard<T extends ToolResultEvent>(event: ToolResultEvent | nu
   return event && guard(event) ? event : null;
 }
 
-function patchStats(patch: string | undefined): string | undefined {
-  if (!patch) return undefined;
+function patchStats(patch: unknown): string | undefined {
+  if (typeof patch !== "string" || !patch) return undefined;
   let added = 0;
   let removed = 0;
   for (const line of patch.replace(/\r\n?/g, "\n").split("\n")) {
@@ -106,8 +108,10 @@ function firstStringValue(input: Record<string, unknown>): string | undefined {
   return value ? truncate(value) : undefined;
 }
 
-function truncate(value: string, max = 120): string {
+function truncate(value: unknown, max = 120): string | undefined {
+  if (typeof value !== "string") return undefined;
   const normalized = value.replace(/\s+/g, " ").trim();
+  if (!normalized) return undefined;
   return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
 }
 

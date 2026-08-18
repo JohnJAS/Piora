@@ -218,11 +218,12 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
 
   const mutate = useCallback(async (action: "stage" | "unstage" | "revert", targetItems: ChangeListItem[], options?: { hunk?: Hunk }) => {
     if (!cwd || targetItems.length === 0 || busy) return;
-    const root = (status.repositoryRoot ?? cwd).replace(/\\/g, "/").replace(/\/$/, "");
+    const root = (typeof status.repositoryRoot === "string" ? status.repositoryRoot : (cwd ?? "")).replace(/\\/g, "/").replace(/\/$/, "");
     const relativePaths = [...new Set(targetItems.map((item) => {
-      const normalized = item.file.filePath.replace(/\\/g, "/");
+      const rawPath = typeof item.file?.filePath === "string" ? item.file.filePath : "";
+      const normalized = rawPath.replace(/\\/g, "/");
       return normalized.toLocaleLowerCase().startsWith(`${root.toLocaleLowerCase()}/`) ? normalized.slice(root.length + 1) : normalized;
-    }))];
+    }).filter((path) => path.length > 0))];
     const body: Record<string, unknown> = { cwd, paths: relativePaths };
     const itemDiff = targetItems.length === 1 ? diffs[targetItems[0].key] : undefined;
     if (action === "revert") {

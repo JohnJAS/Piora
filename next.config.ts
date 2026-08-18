@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 const { version } = JSON.parse(readFileSync(join(__dirname, "package.json"), "utf8")) as { version: string };
+const deploymentId = `piora-${version.replace(/[^A-Za-z0-9_-]/g, "-")}`;
 let piVersion = "unknown";
 try {
   const piPkgPath = join(__dirname, "node_modules/@earendil-works/pi-coding-agent/package.json");
@@ -11,6 +12,11 @@ try {
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Electron keeps one persistent renderer partition across upgrades. Attach
+  // the release identity to every client asset request so an older HTTP cache
+  // entry can never be combined with the current Next.js runtime graph.
+  // Next also uses this value to force a hard navigation if it detects skew.
+  deploymentId,
   // Keep webpack/nft tracing inside the repository on Windows. Without an
   // explicit root, monorepo/workspace detection can broaden the standalone
   // trace and make the packaged output less deterministic.

@@ -1813,7 +1813,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setGoal(null);
       setPlanArtifact(null);
       sessionIdRef.current = session.id;
-      void enableAllTools(session.id);
       loadSession(session.id, true, true).then((agentState) => {
         if (agentState?.running) {
           if (agentState.state?.isStreaming || agentState.state?.isPromptRunning) {

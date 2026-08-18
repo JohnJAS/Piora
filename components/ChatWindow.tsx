@@ -6,6 +6,7 @@ import { normalizeCustomPanelLines, parseAnsiLine } from "@/lib/ansi";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { MessageView } from "./MessageView";
+import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
@@ -61,7 +62,7 @@ export interface TaskControls {
 
 function phaseLabel(phase: AgentPhase, t: (key: string, params?: Record<string, string | number>) => string): string {
   if (phase?.kind === "running_tools") {
-    const names = phase.tools.map((t) => t.name);
+    const names = (Array.isArray(phase.tools) ? phase.tools : []).map((t) => (typeof t?.name === "string" ? t.name : ""));
     if (names.length === 0) return t("chat.runningTool");
     if (names.length === 1) return t("chat.runningNamedTool", { name: names[0] });
     if (names.length <= 3) return t("chat.runningTools", { names: names.join(", ") });
@@ -77,10 +78,42 @@ const CHAT_COLUMN_PADDING = 16;
 const CHAT_INPUT_RIGHT_PADDING = CHAT_COLUMN_PADDING + CHAT_MINIMAP_WIDTH;
 const SCROLL_TO_BOTTOM_THRESHOLD = 96;
 
+/**
+ * Cheap, collision-tolerant fingerprint of a message's renderable payload.
+ * Changes whenever streaming appends another fragment, so the per-message
+ * error boundary can retry as soon as new data arrives instead of staying
+ * stuck on the fallback row.
+ */
+function messageFingerprint(message: AgentMessage, entryId: string | undefined): string {
+  const content = (message as { content?: unknown }).content;
+  let size = 0;
+  if (typeof content === "string") {
+    size = content.length;
+  } else if (Array.isArray(content)) {
+    size = content.length;
+    for (const block of content as Array<Record<string, unknown>>) {
+      if (!block || typeof block !== "object") continue;
+      for (const key of ["text", "thinking"]) {
+        const value = block[key];
+        if (typeof value === "string") size += value.length;
+      }
+      const input = block.input;
+      if (input !== undefined && input !== null) {
+        try {
+          size += JSON.stringify(input).length;
+        } catch {
+          size += 8;
+        }
+      }
+    }
+  }
+  return `${entryId ?? "stream"}:${size}`;
+}
+
 function hasFinalAssistantAnswer(message: AgentMessage): boolean {
   if (message.role !== "assistant") return false;
   return splitFinalAssistantBlocks(message as AssistantMessage).answerBlocks.some((block) => (
-    block.type === "image" || (block.type === "text" && block.text.trim().length > 0)
+    block.type === "image" || (block.type === "text" && typeof block.text === "string" && block.text.trim().length > 0)
   ));
 }
 
@@ -100,11 +133,13 @@ function getUserInputText(message: AgentMessage): string | null {
     const text = message.content.trim();
     return text.length > 0 ? text : null;
   }
-  const text = message.content
-    .filter((block) => block.type === "text")
-    .map((block) => block.text)
-    .join("\n")
-    .trim();
+  const text = Array.isArray(message.content)
+    ? message.content
+      .filter((block): block is { type: "text"; text: string } => block?.type === "text" && typeof block.text === "string")
+      .map((block) => block.text)
+      .join("\n")
+      .trim()
+    : "";
   return text.length > 0 ? text : null;
 }
 
@@ -747,10 +782,20 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                     sessionId={session?.id ?? sessionIdRef.current ?? undefined}
                   />
                 );
-                if (!isVisible || options.attachRef === false || currentRefIdx === undefined) return view;
+                const boundedView = (
+                  <RenderErrorBoundary
+                    key={`${keyPrefix}-boundary-${idx}`}
+                    resetKey={messageFingerprint(msg, entryIds[idx])}
+                    fallbackLabel={t("chat.messageRenderFailed")}
+                    errorTitle={t("chat.messageRenderError")}
+                  >
+                    {view}
+                  </RenderErrorBoundary>
+                );
+                if (!isVisible || options.attachRef === false || currentRefIdx === undefined) return boundedView;
                 return (
                   <div key={`${keyPrefix}-${idx}`} ref={attachVisibleRef(idx, currentRefIdx)} className="chat-message-shell">
-                    {view}
+                    {boundedView}
                   </div>
                 );
               };
@@ -891,12 +936,17 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           </div>
         </div>
         {isMobile ? null : (
-          <ChatMinimap
-            messages={messages}
-            scrollContainer={scrollContainerRef}
-            messageRefs={messageRefs}
-            onRevealHistory={revealHistoryForMinimap}
-          />
+          <RenderErrorBoundary
+            resetKey={`minimap:${messages.length}:${messages.length > 0 ? messageFingerprint(messages[messages.length - 1], entryIds[entryIds.length - 1]) : "empty"}`}
+            fallbackLabel={t("chat.messageRenderFailed")}
+          >
+            <ChatMinimap
+              messages={messages}
+              scrollContainer={scrollContainerRef}
+              messageRefs={messageRefs}
+              onRevealHistory={revealHistoryForMinimap}
+            />
+          </RenderErrorBoundary>
         )}
         {showScrollToBottom ? (
           <div

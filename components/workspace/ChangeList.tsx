@@ -85,7 +85,7 @@ export function ChangeList({ items, selectedKey, checkedPaths, onSelect, onToggl
       return <section key={group} className={styles.changeGroup} role="group" aria-labelledby={titleId}>
         <div id={titleId} className={styles.groupTitle}>{t(`review.group.${group}`)}<span>{groupSize}</span></div>
         {groupEntries.map(({ item, positionInGroup }) => {
-          const path = item.file.filePath;
+          const path = typeof item.file?.filePath === "string" ? item.file.filePath : "";
           const name = path.replace(/\\/g, "/").split("/").pop() ?? path;
           const parent = path.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
           const parentLabel = compactParentPath(parent);

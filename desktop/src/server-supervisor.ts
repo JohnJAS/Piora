@@ -19,6 +19,7 @@ export interface ServerExit {
 export interface StandaloneServerOptions {
   serverEntry: string;
   serverHostEntry: string;
+  nodePath?: string;
   homeDirectory: string;
   agentDirectory: string;
   whisperDirectory?: string;
@@ -290,6 +291,7 @@ export class StandaloneServer {
           HOSTNAME: LOOPBACK_HOST,
           PORT: String(port),
           NODE_ENV: "production",
+          ...(this.options.nodePath ? { NODE_PATH: this.options.nodePath } : {}),
           NEXT_TELEMETRY_DISABLED: "1",
           PI_WEB_HOSTNAME: LOOPBACK_HOST,
           PI_WEB_ALLOWED_HOSTS: LOOPBACK_HOST,

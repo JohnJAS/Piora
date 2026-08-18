@@ -96,7 +96,9 @@ async function patchBundledPackage({
     await cp(source, temporaryDirectory, {
       recursive: true,
       dereference: false,
-      errorOnExist: true,
+      // mkdtemp above guarantees a fresh unique destination, so errorOnExist
+      // would only reject the directory mkdtemp just created (Node >=22.15
+      // honours the option and makes every patch fail with EEXIST).
       force: false,
     });
     await rm(target, { recursive: true, force: false });

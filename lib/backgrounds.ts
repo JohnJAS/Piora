@@ -56,6 +56,8 @@ export interface BackgroundPreference {
   presetId: string | null;
   overlay: number;
   blur: number;
+  sidebarOverlay: number;
+  filePanelOverlay: number;
 }
 
 export const DEFAULT_BACKGROUND_PREFERENCE: Readonly<BackgroundPreference> = Object.freeze({
@@ -64,6 +66,8 @@ export const DEFAULT_BACKGROUND_PREFERENCE: Readonly<BackgroundPreference> = Obj
   presetId: null,
   overlay: 58,
   blur: 0,
+  sidebarOverlay: 70,
+  filePanelOverlay: 88,
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -160,7 +164,7 @@ const BACKGROUND_PREPAINT_PRESETS = JSON.stringify(Object.fromEntries(
 )).replace(/</g, "\\u003c");
 
 /** Restores a validated built-in background before React/IndexedDB hydration. */
-export const BACKGROUND_INITIALIZATION_SCRIPT = `(function(){try{var p=${BACKGROUND_PREPAINT_PRESETS},v=localStorage.getItem("${BACKGROUND_PREFERENCE_STORAGE_KEY}");if(!v)return;var s=JSON.parse(v),b=s&&s.source==="builtin"&&typeof s.presetId==="string"?p[s.presetId]:null;if(!b)return;var n=function(x,d,a,z){return typeof x==="number"&&isFinite(x)?Math.min(z,Math.max(a,Math.round(x))):d},o=n(s.overlay,58,0,90),l=n(s.blur,0,0,24),r=document.documentElement;r.dataset.appBackgroundActive="true";r.dataset.appBackgroundSource="builtin";r.dataset.appBackgroundPreset=s.presetId;r.style.setProperty("--app-background-image",b.asset?'url("'+b.asset+'")':"none");r.style.setProperty("--app-background-fallback",b.fallback);r.style.setProperty("--app-background-overlay",o+"%");r.style.setProperty("--app-background-blur",l+"px")}catch(_){}})();`;
+export const BACKGROUND_INITIALIZATION_SCRIPT = `(function(){try{var p=${BACKGROUND_PREPAINT_PRESETS},v=localStorage.getItem("${BACKGROUND_PREFERENCE_STORAGE_KEY}");if(!v)return;var s=JSON.parse(v),b=s&&s.source==="builtin"&&typeof s.presetId==="string"?p[s.presetId]:null;if(!b)return;var n=function(x,d,a,z){return typeof x==="number"&&isFinite(x)?Math.min(z,Math.max(a,Math.round(x))):d},o=n(s.overlay,58,0,90),l=n(s.blur,0,0,24),u=n(s.sidebarOverlay,70,0,90),f=n(s.filePanelOverlay,88,0,90),r=document.documentElement;r.dataset.appBackgroundActive="true";r.dataset.appBackgroundSource="builtin";r.dataset.appBackgroundPreset=s.presetId;r.style.setProperty("--app-background-image",b.asset?'url("'+b.asset+'")':"none");r.style.setProperty("--app-background-fallback",b.fallback);r.style.setProperty("--app-background-overlay",o+"%");r.style.setProperty("--app-background-blur",l+"px");r.style.setProperty("--app-background-sidebar-overlay",u+"%");r.style.setProperty("--app-background-file-panel-overlay",f+"%")}catch(_){}})();`;
 
 const PRESETS_BY_ID = new Map(BACKGROUND_PRESETS.map((preset) => [preset.id, preset]));
 
@@ -178,14 +182,16 @@ export function normalizeBackgroundPreference(value: unknown): BackgroundPrefere
 
   const overlay = clampInteger(value.overlay, DEFAULT_BACKGROUND_PREFERENCE.overlay, 0, 90);
   const blur = clampInteger(value.blur, DEFAULT_BACKGROUND_PREFERENCE.blur, 0, 24);
+  const sidebarOverlay = clampInteger(value.sidebarOverlay, DEFAULT_BACKGROUND_PREFERENCE.sidebarOverlay, 0, 90);
+  const filePanelOverlay = clampInteger(value.filePanelOverlay, DEFAULT_BACKGROUND_PREFERENCE.filePanelOverlay, 0, 90);
 
   if (value.source === "builtin" && typeof value.presetId === "string" && getBackgroundPreset(value.presetId)) {
-    return { schemaVersion: 1, source: "builtin", presetId: value.presetId, overlay, blur };
+    return { schemaVersion: 1, source: "builtin", presetId: value.presetId, overlay, blur, sidebarOverlay, filePanelOverlay };
   }
   if (value.source === "custom") {
-    return { schemaVersion: 1, source: "custom", presetId: null, overlay, blur };
+    return { schemaVersion: 1, source: "custom", presetId: null, overlay, blur, sidebarOverlay, filePanelOverlay };
   }
-  return { schemaVersion: 1, source: "none", presetId: null, overlay, blur };
+  return { schemaVersion: 1, source: "none", presetId: null, overlay, blur, sidebarOverlay, filePanelOverlay };
 }
 
 export function parseStoredBackgroundPreference(value: string | null): BackgroundPreference {

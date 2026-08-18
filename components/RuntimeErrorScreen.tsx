@@ -16,7 +16,10 @@ export function RuntimeErrorScreen({ error, reset }: RuntimeErrorScreenProps) {
   useEffect(() => {
     // Electron forwards renderer console errors into the local Piora log. In a
     // normal browser this still leaves a useful entry in DevTools.
-    console.error("Piora caught an unrecoverable render error", error);
+    console.error(
+      "Piora caught an unrecoverable render error",
+      error.stack ?? error.message,
+    );
   }, [error]);
 
   const reference = error.digest ? ` · ${error.digest}` : "";

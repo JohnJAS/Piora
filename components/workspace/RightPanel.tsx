@@ -9,7 +9,8 @@ import { TabBar, type Tab } from "../TabBar";
 import { ReviewPanel } from "./ReviewPanel";
 import { CommandPanel } from "./CommandPanel";
 import { BrowserPanel } from "./BrowserPanel";
-import { HarmonyPanel } from "./HarmonyPanel";
+import { SafeHarmonyPanel } from "./HarmonyPanel";
+import { RenderErrorBoundary } from "../RenderErrorBoundary";
 import type { TaskControls } from "../ChatWindow";
 import { AliIcon, type AliIconName } from "../AliIcon";
 import styles from "./WorkspacePanel.module.css";
@@ -159,7 +160,7 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     requestAnimationFrame(() => activeTabRef.current?.focus({ preventScroll: true }));
   };
 
-  return <div className={styles.root}>
+  return <div className={`${styles.root} right-panel-surface`}>
     <div className={styles.panelChrome}>
       <div className={styles.toolTabs} role="tablist" aria-label={t("workspace.panelTabs")}>
         {openTools.map((toolId) => {
@@ -224,9 +225,10 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
       </button>)}
     </div> : null}
     <section id="workspace-review" role="tabpanel" aria-labelledby="workspace-review-tab" hidden={activeTab !== "review"} className={styles.panel}>
-      {activeTab === "review" ? <ReviewPanel cwd={cwd} refreshKey={refreshKey} onRefresh={props.onRefresh} onOpenFile={(path) => { props.onOpenFile(path, path.replace(/\\/g, "/").split("/").pop() ?? path); onActiveTabChange("files"); }} /> : null}
+      {activeTab === "review" ? <RenderErrorBoundary resetKey={`review:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><ReviewPanel cwd={cwd} refreshKey={refreshKey} onRefresh={props.onRefresh} onOpenFile={(path) => { props.onOpenFile(path, path.replace(/\\/g, "/").split("/").pop() ?? path); onActiveTabChange("files"); }} /></RenderErrorBoundary> : null}
     </section>
     <section id="workspace-files" role="tabpanel" aria-labelledby="workspace-files-tab" hidden={activeTab !== "files"} className={styles.panel}>
+      {activeTab === "files" ? <RenderErrorBoundary resetKey={`files:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}>
       <div className={styles.filesRoot}>
         <div className={styles.explorer}>{cwd ? <FileExplorer ref={explorerRef} cwd={cwd} selectedFilePath={fileTabs.find((tab) => tab.id === activeFileTabId)?.filePath ?? null} onOpenFile={props.onOpenFile} refreshKey={refreshKey} onAtMention={props.onMention} onAtMentions={props.onMentions} changesCollapsed /> : <div className={styles.empty}>{t("workspace.selectProject")}</div>}</div>
         <div className={styles.fileViewer}>
@@ -247,15 +249,16 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
           }) : <div className={styles.empty}>{t("files.noneOpen")}</div>}</div>
         </div>
       </div>
+      </RenderErrorBoundary> : null}
     </section>
     <section id="workspace-commands" role="tabpanel" aria-labelledby="workspace-commands-tab" hidden={activeTab !== "commands"} className={styles.panel}>
-      <CommandPanel controls={props.taskControls} />
+      {activeTab === "commands" ? <RenderErrorBoundary resetKey={`commands:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><CommandPanel controls={props.taskControls} /></RenderErrorBoundary> : null}
     </section>
     <section id="workspace-browser" role="tabpanel" aria-labelledby="workspace-browser-tab" hidden={activeTab !== "browser"} className={styles.panel}>
-      <BrowserPanel active={active && activeTab === "browser"} />
+      {activeTab === "browser" ? <RenderErrorBoundary resetKey={`browser:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><BrowserPanel active={active && activeTab === "browser"} /></RenderErrorBoundary> : null}
     </section>
     <section id="workspace-harmony" role="tabpanel" aria-labelledby="workspace-harmony-tab" hidden={activeTab !== "harmony"} className={styles.panel}>
-      <HarmonyPanel active={active && activeTab === "harmony"} />
+      {activeTab === "harmony" ? <RenderErrorBoundary resetKey={`harmony:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><SafeHarmonyPanel active={active && activeTab === "harmony"} /></RenderErrorBoundary> : null}
     </section>
   </div>;
 });

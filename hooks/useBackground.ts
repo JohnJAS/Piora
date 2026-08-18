@@ -77,6 +77,8 @@ function applyBackgroundToDocument(preference: BackgroundPreference): void {
     root.style.removeProperty("--app-background-image");
     root.style.removeProperty("--app-background-fallback");
     root.style.removeProperty("--app-background-overlay");
+    root.style.removeProperty("--app-background-sidebar-overlay");
+    root.style.removeProperty("--app-background-file-panel-overlay");
     root.style.removeProperty("--app-background-blur");
     return;
   }
@@ -99,6 +101,8 @@ function applyBackgroundToDocument(preference: BackgroundPreference): void {
   );
   root.style.setProperty("--app-background-fallback", preset?.fallback ?? CUSTOM_BACKGROUND_FALLBACK);
   root.style.setProperty("--app-background-overlay", `${preference.overlay}%`);
+  root.style.setProperty("--app-background-sidebar-overlay", `${preference.sidebarOverlay}%`);
+  root.style.setProperty("--app-background-file-panel-overlay", `${preference.filePanelOverlay}%`);
   root.style.setProperty("--app-background-blur", `${preference.blur}px`);
 }
 
@@ -290,6 +294,20 @@ export function useBackground() {
     });
   }, [snapshot.preference]);
 
+  const setSidebarOverlay = useCallback((sidebarOverlay: number) => {
+    commitPreference({
+      ...snapshot.preference,
+      sidebarOverlay: Math.min(90, Math.max(0, Math.round(sidebarOverlay))),
+    });
+  }, [snapshot.preference]);
+
+  const setFilePanelOverlay = useCallback((filePanelOverlay: number) => {
+    commitPreference({
+      ...snapshot.preference,
+      filePanelOverlay: Math.min(90, Math.max(0, Math.round(filePanelOverlay))),
+    });
+  }, [snapshot.preference]);
+
   const setBlur = useCallback((blur: number) => {
     commitPreference({
       ...snapshot.preference,
@@ -319,6 +337,8 @@ export function useBackground() {
     selectStoredCustom,
     uploadCustom,
     setOverlay,
+    setSidebarOverlay,
+    setFilePanelOverlay,
     setBlur,
     reset,
   };

@@ -4,6 +4,7 @@ import { parseAnsiLine, stripAnsi } from "@/lib/ansi";
 import type { ExtensionStatusItem } from "@/lib/types";
 
 export function sanitizeExtensionStatusText(text: string): string {
+  if (typeof text !== "string") return "";
   return text
     .replace(/[\r\n\t]/g, " ")
     .replace(/ +/g, " ")
@@ -11,14 +12,15 @@ export function sanitizeExtensionStatusText(text: string): string {
 }
 
 export function formatExtensionStatusLine(statuses: ExtensionStatusItem[]): string {
+  if (!Array.isArray(statuses)) return "";
   return [...statuses]
-    .sort((a, b) => a.key.localeCompare(b.key))
+    .sort((a, b) => String(a?.key ?? "").localeCompare(String(b?.key ?? "")))
     .map(({ text }) => sanitizeExtensionStatusText(text))
     .join(" ");
 }
 
 export function ExtensionStatusBar({ statuses }: { statuses: ExtensionStatusItem[] }) {
-  if (statuses.length === 0) return null;
+  if (!Array.isArray(statuses) || statuses.length === 0) return null;
 
   const statusLine = formatExtensionStatusLine(statuses);
   const plainStatusLine = stripAnsi(statusLine);

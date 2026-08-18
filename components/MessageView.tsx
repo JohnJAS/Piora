@@ -201,15 +201,17 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   const content =
     typeof message.content === "string"
       ? message.content
-      : message.content
-          .filter((b): b is TextContent => b.type === "text")
-          .map((b) => b.text)
-          .join("\n");
+      : Array.isArray(message.content)
+        ? message.content
+          .filter((b): b is TextContent => b?.type === "text" && typeof b.text === "string")
+          .map((b) => b.text as string)
+          .join("\n")
+        : "";
 
   const imageBlocks: ImageContent[] =
-    typeof message.content === "string"
-      ? []
-      : message.content.filter((b): b is ImageContent => b.type === "image");
+    Array.isArray(message.content)
+      ? message.content.filter((b): b is ImageContent => b?.type === "image")
+      : [];
 
   const time = formatTime(message.timestamp);
   const canFork = !!entryId && !!onFork;
@@ -401,7 +403,7 @@ function AssistantMessageView({
   const { t } = useI18n();
   const time = showTimestamp ? formatTime(message.timestamp) : null;
   const responseDuration = showTimestamp ? formatResponseDuration(responseStartedAt, message.timestamp) : null;
-  const blockItems = (message.content ?? [])
+  const blockItems = (Array.isArray(message.content) ? message.content : [])
     .map((block, originalIndex) => ({ block, originalIndex }))
     .filter(({ block }) => !isEmptyThinkingBlock(block, { isStreaming }));
   const blocks = blockItems.map(({ block }) => block);
@@ -441,8 +443,8 @@ function AssistantMessageView({
   }, [toolResults, message.timestamp]);
 
   const textContent = blocks
-    .filter((b): b is TextContent => b.type === "text")
-    .map((b) => b.text)
+    .filter((b): b is TextContent => b?.type === "text")
+    .map((b) => (typeof b.text === "string" ? b.text : ""))
     .join("\n");
 
   const copyContent = () => {
@@ -763,8 +765,11 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
   const summary = summarizeToolCall(block.toolName, block.input, result, t);
 
   // Result display
-  const resultText = result
-    ? result.content.filter((b): b is { type: "text"; text: string } => b.type === "text").map((b) => b.text).join("\n")
+  const resultText = result && Array.isArray(result.content)
+    ? result.content
+      .filter((b): b is { type: "text"; text: string } => b?.type === "text" && typeof b.text === "string")
+      .map((b) => b.text as string)
+      .join("\n")
     : null;
   const resultIsEmpty = resultText === null ? false : (resultText.trim() === "(no output)" || resultText.trim() === "");
   const isError = result?.isError ?? false;
@@ -1170,15 +1175,16 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
 
 function getMessageText(content: CustomMessage["content"] | UserMessage["content"]): string {
   if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
   return content
-    .filter((b): b is TextContent => b.type === "text")
-    .map((b) => b.text)
+    .filter((b): b is TextContent => b?.type === "text" && typeof b.text === "string")
+    .map((b) => b.text as string)
     .join("\n");
 }
 
 function getMessageImages(content: CustomMessage["content"] | UserMessage["content"]): ImageContent[] {
-  if (typeof content === "string") return [];
-  return content.filter((b): b is ImageContent => b.type === "image");
+  if (!Array.isArray(content)) return [];
+  return content.filter((b): b is ImageContent => b?.type === "image");
 }
 
 function imageSource(img: ImageContent): string {
@@ -1200,10 +1206,11 @@ function safeJson(value: unknown): string {
 }
 
 function formatCustomType(type: string): string {
-  return type || "extension";
+  return typeof type === "string" && type ? type : "extension";
 }
 
 function previewText(text: string): string {
+  if (typeof text !== "string") return "Show extension message";
   const normalized = text.replace(/\s+/g, " ").trim();
   if (!normalized) return "Show extension message";
   return normalized.length > 140 ? `${normalized.slice(0, 140)}...` : normalized;

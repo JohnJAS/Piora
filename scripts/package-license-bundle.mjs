@@ -2,8 +2,10 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import {
+  copyFile,
   lstat,
   mkdir,
+  mkdtemp,
   readFile,
   readdir,
   realpath,
@@ -11,9 +13,11 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { extractAll } from "@electron/asar";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const projectRoot = resolve(dirname(scriptPath), "..");
@@ -1007,7 +1011,44 @@ export async function generatePackageLicenseBundle({
   licenseSourceRoot = projectRoot,
   check = false,
 } = {}) {
-  const inspected = await inspectPackagedNpmDependencies(webRoot, { licenseSourceRoot });
+  const resolvedWebRoot = resolve(webRoot);
+  let inspectionRoot = resolvedWebRoot;
+  let extractedRoot;
+  if (!(await optionalDirectory(join(resolvedWebRoot, "node_modules")))) {
+    const runtimeArchivePath = join(resolvedWebRoot, "runtime.asar");
+    const nodeModulesArchivePath = join(resolvedWebRoot, "node_modules.asar");
+    const runtimeArchiveEntry = await lstat(runtimeArchivePath).catch(() => undefined);
+    const nodeModulesArchiveEntry = await lstat(nodeModulesArchivePath).catch(() => undefined);
+    const archivePath = runtimeArchiveEntry?.isFile()
+      ? runtimeArchivePath
+      : nodeModulesArchiveEntry?.isFile()
+        ? nodeModulesArchivePath
+        : undefined;
+    const archiveEntry = runtimeArchiveEntry?.isFile() ? runtimeArchiveEntry : nodeModulesArchiveEntry;
+    if (!archivePath || !archiveEntry || archiveEntry.isSymbolicLink()) {
+      throw new Error(
+        `Packaged dependency tree is missing: expected node_modules, runtime.asar, or node_modules.asar in ${resolvedWebRoot}`,
+      );
+    }
+    extractedRoot = await mkdtemp(join(tmpdir(), "piora-license-asar-"));
+    inspectionRoot = extractedRoot;
+    if (archivePath === runtimeArchivePath) {
+      await extractAll(archivePath, inspectionRoot);
+    } else {
+      await extractAll(archivePath, join(inspectionRoot, "node_modules"));
+      const packagedManifest = join(resolvedWebRoot, "package.json");
+      if (await lstat(packagedManifest).then((entry) => entry.isFile()).catch(() => false)) {
+        await copyFile(packagedManifest, join(inspectionRoot, "package.json"));
+      }
+    }
+  }
+
+  let inspected;
+  try {
+    inspected = await inspectPackagedNpmDependencies(inspectionRoot, { licenseSourceRoot });
+  } finally {
+    if (extractedRoot) await rm(extractedRoot, { recursive: true, force: true });
+  }
   const artifacts = buildArtifacts(inspected);
   const resolvedOutputRoot = resolve(outputRoot);
   const bundleRoot = join(resolvedOutputRoot, "third-party");

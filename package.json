@@ -1,6 +1,6 @@
 {
   "name": "piora",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "private": true,
   "description": "Open-source Pi coding agent desktop application",
   "author": {
@@ -114,6 +114,7 @@
     "undici": "8.9.0"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^25",
     "@types/proper-lockfile": "4.1.4",

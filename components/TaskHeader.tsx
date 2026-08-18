@@ -41,6 +41,7 @@ const EMPTY_GIT_STATUS: GitStatusResponse = {
 const optimisticRunStarts = new Map<string, number>();
 
 function getPathName(path: string): string {
+  if (typeof path !== "string") return "";
   return path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
 }
 

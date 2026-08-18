@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar, type SessionSidebarHandle } from "./SessionSidebar";
 import { ChatWindow, type TaskControls } from "./ChatWindow";
@@ -38,6 +38,20 @@ import {
 } from "@/lib/panel-layout";
 import type { SessionInfo } from "@/lib/types";
 import type { CollaborationRoom } from "@/lib/room-types";
+
+function replaceUrlWithoutNextNavigation(url: string): void {
+  // Next patches history.replaceState and treats an ordinary call as an App
+  // Router navigation. Piora's query string is only desktop selection state;
+  // dispatching a route restore while a newly-created session starts can feed
+  // an incomplete router tree into Next and crash the whole renderer. Preserve
+  // Next's current state and set its native-history marker so the patched
+  // method performs only the underlying URL replacement.
+  const currentState = window.history.state;
+  const nextState = currentState && typeof currentState === "object"
+    ? { ...currentState, __NA: true }
+    : { __NA: true };
+  window.history.replaceState(nextState, "", url);
+}
 import type { ChatInputHandle } from "./ChatInput";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { canSendCompanionPhrase, type CompanionActivity } from "@/lib/companion";
@@ -91,7 +105,6 @@ const SessionHistoryDialog = dynamic(() => import("./SessionHistoryDialog").then
 const CommandPalette = dynamic(() => import("./CommandPalette").then((module) => module.CommandPalette), { ssr: false });
 
 export function AppShell() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [initialNavigation] = useState(() => getInitialNavigation(searchParams ?? new URLSearchParams()));
   const { theme, themes, setTheme } = useTheme();
@@ -662,9 +675,9 @@ export function AppShell() {
     setActiveFileTabId(nextActiveId);
     setRightPanelOpen(nextTabs.length > 0);
     if (!cwdBelongsToCurrentSelection) {
-      router.replace("/", { scroll: false });
+      replaceUrlWithoutNextNavigation("/");
     }
-  }, [activeFileTabId, fileTabs, router, selectedRoom, selectedSession, translate]);
+  }, [activeFileTabId, fileTabs, selectedRoom, selectedSession, translate]);
 
   useEffect(() => {
     if (!activeProjectRoot) return;
@@ -708,10 +721,10 @@ export function AppShell() {
       // onCwdChange effect firing after setSelectedCwd in the sidebar
       suppressCwdBumpRef.current = true;
     }
-    // Skip router.replace when restoring from URL — the param is already correct
+    // Skip history replacement when restoring from URL — the param is already correct.
     // and calling replace in production Next.js triggers a Suspense remount loop
     if (!isRestore) {
-      router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
+      replaceUrlWithoutNextNavigation(`?session=${encodeURIComponent(session.id)}`);
       // Session changes remount ChatWindow. Restore focus after that mount so
       // dismissing a native dialog or leaving a streaming session can never
       // strand keyboard input on the old, detached composer.
@@ -719,7 +732,7 @@ export function AppShell() {
         window.requestAnimationFrame(() => chatInputRef.current?.focus());
       });
     }
-  }, [router, isMobile]);
+  }, [isMobile]);
 
   const handleNewSession = useCallback((_sessionId: string, cwd: string) => {
     setSettingsDialogOpen(false);
@@ -730,8 +743,8 @@ export function AppShell() {
     setSystemPrompt(null);
     setActiveTopPanel(null);
     if (isMobile) setSidebarOpen(false);
-    router.replace("/", { scroll: false });
-  }, [router, isMobile]);
+    replaceUrlWithoutNextNavigation("/");
+  }, [isMobile]);
 
   const handleSelectRoom = useCallback((room: CollaborationRoom, isRestore = false) => {
     setSettingsDialogOpen(false);
@@ -743,8 +756,8 @@ export function AppShell() {
     setActiveTopPanel(null);
     setInitialSessionRestored(true);
     if (isMobile && !isRestore) setSidebarOpen(false);
-    if (!isRestore) router.replace(`?room=${encodeURIComponent(room.id)}`, { scroll: false });
-  }, [isMobile, router]);
+    if (!isRestore) replaceUrlWithoutNextNavigation(`?room=${encodeURIComponent(room.id)}`);
+  }, [isMobile]);
 
   // Native Electron menus stay deliberately thin: the renderer owns all
   // application state and receives only a small action name from preload.
@@ -879,8 +892,8 @@ export function AppShell() {
     setSelectedSession(session);
     setRefreshKey((k) => k + 1);
     hydrateSelectedSession(session.id);
-    router.replace(`?session=${encodeURIComponent(session.id)}`, { scroll: false });
-  }, [router, hydrateSelectedSession]);
+    replaceUrlWithoutNextNavigation(`?session=${encodeURIComponent(session.id)}`);
+  }, [hydrateSelectedSession]);
 
   const handleAgentEnd = useCallback(() => {
     setRefreshKey((k) => k + 1);
@@ -943,8 +956,8 @@ export function AppShell() {
       id: newSessionId,
     }));
     hydrateSelectedSession(newSessionId);
-    router.replace(`?session=${encodeURIComponent(newSessionId)}`, { scroll: false });
-  }, [router, hydrateSelectedSession]);
+    replaceUrlWithoutNextNavigation(`?session=${encodeURIComponent(newSessionId)}`);
+  }, [hydrateSelectedSession]);
 
   const handleInitialRestoreDone = useCallback(() => {
     setInitialSessionRestored(true);
@@ -959,9 +972,9 @@ export function AppShell() {
       setSessionKey((k) => k + 1);
       setSystemPrompt(null);
       setActiveTopPanel(null);
-      router.replace("/", { scroll: false });
+      replaceUrlWithoutNextNavigation("/");
     }
-  }, [selectedSession, router]);
+  }, [selectedSession]);
 
   const handleOpenFile = useCallback((
     filePath: string,

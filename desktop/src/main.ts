@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { accessSync, constants as fsConstants, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import {
   app,
   BrowserWindow,
@@ -849,9 +849,14 @@ function createStandaloneForProfile(profile: RuntimeProfile): {
   const dataDirectory = runtimeProfileDataDirectory(app.getPath("userData"), profile);
   mkdirSync(dataDirectory, { recursive: true });
   const preferredPort = readPreferredServerPort(app.getPath("userData"), logger);
+  const packagedRuntimeArchive = join(dirname(serverEntryPath), "runtime.asar");
+  if (app.isPackaged && !existsSync(packagedRuntimeArchive)) {
+    throw new Error(`Packaged web runtime archive is missing: ${packagedRuntimeArchive}`);
+  }
   const instance = new StandaloneServer({
     serverEntry: serverEntryPath,
     serverHostEntry: serverHostEntryPath,
+    ...(app.isPackaged ? { nodePath: join(packagedRuntimeArchive, "node_modules") } : {}),
     homeDirectory: app.getPath("home"),
     agentDirectory: piAgentDirectoryPath,
     whisperDirectory: app.isPackaged
