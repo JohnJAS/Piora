@@ -4,6 +4,31 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-08-18
+
+### Added
+
+- Harmony device operations execute directly: acquiring AI control no longer
+  shows a per-run confirmation dialog, while the bounded lease keeps the same
+  automatic release guarantees.
+- Collaboration rooms can add sessions from any project; the agent picker
+  labels every session with its project path.
+- Builtin slash-command results (compact, reload, name, copy, session) echo
+  into the conversation area as readable rows instead of transient notices.
+
+### Changed
+
+- The slash command palette uses a Codex-style single-column list with
+  grouped rows, source badges, and keyboard hints.
+- The streaming-action menu (steer vs. queue) supports arrow-key navigation
+  and Enter/Escape, and both the menu and queued-message rows follow the
+  Codex visual style.
+
+### Fixed
+
+- Confirmation dialogs opened from the settings models page now appear above
+  the settings dialog instead of behind it.
+
 ## [0.2.7] - 2026-08-18
 
 ### Added

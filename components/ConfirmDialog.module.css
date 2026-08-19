@@ -1,7 +1,10 @@
 .backdrop {
   position: fixed;
   inset: 0;
-  z-index: 2200;
+  /* Must stay above modal surfaces such as the settings dialog (z-index 3000)
+     so confirmation dialogs requested from inside a settings page appear over
+     that page instead of behind it. */
+  z-index: 3400;
   display: grid;
   place-items: center;
   padding: 20px;

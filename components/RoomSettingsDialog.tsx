@@ -24,9 +24,9 @@ function sessionName(session: SessionInfo): string {
   return session.name?.trim() || session.firstMessage?.trim().slice(0, 64) || session.id.slice(0, 8);
 }
 
-function sameProject(room: CollaborationRoom, session: SessionInfo): boolean {
-  if (!room.projectRoot) return true;
-  return (session.projectRoot ?? session.cwd).toLocaleLowerCase() === room.projectRoot.toLocaleLowerCase();
+function sessionLabel(session: SessionInfo): string {
+  const project = session.projectRoot ?? session.cwd;
+  return `${sessionName(session)} · ${session.worktreeBranch ?? project}`;
 }
 
 function actorSessionId(room: CollaborationRoom): string | undefined {
@@ -105,7 +105,7 @@ export function RoomSettingsDialog({
     ])
       .then(([nextSessions, nextAudit]) => {
         if (cancelled) return;
-        setSessions(nextSessions.filter((session) => sameProject(room, session)));
+        setSessions(nextSessions);
         setAudit(nextAudit);
       })
       .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason)); });
@@ -259,7 +259,7 @@ export function RoomSettingsDialog({
                         <div className={styles.agentGrid}>
                           <label className={styles.field}><span>显示名称</span><input value={draft.name ?? ""} onChange={(event) => updateDraft(member.memberId, { name: event.target.value })} /></label>
                           <label className={styles.field}><span>团队角色</span><select value={draft.role} onChange={(event) => updateDraft(member.memberId, { role: event.target.value as RoomMemberRole })}>{roleOptions.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select></label>
-                          <label className={`${styles.field} ${styles.full}`}><span>绑定 Session</span><select value={draft.sessionId} onChange={(event) => updateDraft(member.memberId, { sessionId: event.target.value })}>{sessions.filter((session) => session.id === member.sessionId || !room.members.some((candidate) => candidate.sessionId === session.id)).map((session) => <option key={session.id} value={session.id}>{sessionName(session)} · {session.worktreeBranch ?? session.cwd}</option>)}</select></label>
+                          <label className={`${styles.field} ${styles.full}`}><span>绑定 Session</span><select value={draft.sessionId} onChange={(event) => updateDraft(member.memberId, { sessionId: event.target.value })}>{sessions.filter((session) => session.id === member.sessionId || !room.members.some((candidate) => candidate.sessionId === session.id)).map((session) => <option key={session.id} value={session.id}>{sessionLabel(session)}</option>)}</select></label>
                           <label className={`${styles.field} ${styles.full}`}><span>职责与约束</span><textarea value={draft.instructions ?? ""} onChange={(event) => updateDraft(member.memberId, { instructions: event.target.value })} rows={3} placeholder="例如：只负责审查，不直接修改代码；重点检查安全和回归。" /></label>
                         </div>
                         <div className={styles.cardActions}><button type="button" disabled={Boolean(busy)} onClick={() => removeAgent(member)}>{removeConfirmId === member.memberId ? "再次点击确认移出" : "移出"}</button><button type="button" className={styles.primary} disabled={Boolean(busy) || !draft.name?.trim()} onClick={() => saveMember(member)}>保存 Agent</button></div>
@@ -268,8 +268,8 @@ export function RoomSettingsDialog({
                   })}
                 </div>
                 <section className={styles.addAgent}>
-                  <div><h4>添加 Agent</h4><p>只能选择同一项目中尚未加入的 Session。</p></div>
-                  <label className={styles.field}><span>Session</span><select value={newSessionId} onChange={(event) => { const id = event.target.value; setNewSessionId(id); const session = sessions.find((candidate) => candidate.id === id); if (session) setNewName(sessionName(session)); }}><option value="">选择 Session</option>{availableSessions.map((session) => <option key={session.id} value={session.id}>{sessionName(session)} · {session.worktreeBranch ?? session.cwd}</option>)}</select></label>
+                  <div><h4>添加 Agent</h4><p>可以选择任意项目中的 Session；Agent 会在其所属项目目录中执行任务。</p></div>
+                  <label className={styles.field}><span>Session</span><select value={newSessionId} onChange={(event) => { const id = event.target.value; setNewSessionId(id); const session = sessions.find((candidate) => candidate.id === id); if (session) setNewName(sessionName(session)); }}><option value="">选择 Session</option>{availableSessions.map((session) => <option key={session.id} value={session.id}>{sessionLabel(session)}</option>)}</select></label>
                   <div className={styles.agentGrid}><label className={styles.field}><span>显示名称</span><input value={newName} onChange={(event) => setNewName(event.target.value)} /></label><label className={styles.field}><span>角色</span><select value={newRole} onChange={(event) => setNewRole(event.target.value as RoomMemberRole)}>{roleOptions.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}</select></label></div>
                   <label className={styles.field}><span>职责与约束</span><textarea rows={3} value={newInstructions} onChange={(event) => setNewInstructions(event.target.value)} /></label>
                   <div className={styles.actions}><button type="button" className={styles.primary} disabled={Boolean(busy) || !newSessionId || !newName.trim()} onClick={addAgent}>添加到团队</button></div>

@@ -328,6 +328,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [modelFilter, setModelFilter] = useState("");
   const [promptOptimization, setPromptOptimization] = useState<PromptOptimizationState | null>(null);
   const [streamingActionMenuOpen, setStreamingActionMenuOpen] = useState(false);
+  const [streamingActionIndex, setStreamingActionIndex] = useState(0);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [promptMode, setPromptMode] = useState<PromptMode>("normal");
   const [promptModeAvailability, setPromptModeAvailability] = useState({ goalMode: true, planMode: true });
@@ -1249,6 +1250,25 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return;
       }
 
+      // Streaming action (steer / queue) menu — full keyboard navigation.
+      if (streamingActionMenuOpen && canQueueStreamingMessage && !isComposing) {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          setStreamingActionIndex((index) => (index + 1) % 2);
+          return;
+        }
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendQueued(streamingActionIndex === 0 ? "steer" : "followup");
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setStreamingActionMenuOpen(false);
+          return;
+        }
+      }
+
       // Esc stops the agent when no slash/@/history menu or IME composition is active.
       if (e.key === "Escape" && !isComposing && isStreaming && onAbort) {
         e.preventDefault();
@@ -1259,13 +1279,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         if (isStreaming && (onSteer || onFollowUp)) {
-          if (canQueueStreamingMessage) setStreamingActionMenuOpen(true);
+          if (canQueueStreamingMessage) {
+            setStreamingActionIndex(0);
+            setStreamingActionMenuOpen(true);
+          }
         } else {
           handleSend();
         }
       }
     },
-    [isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, canQueueStreamingMessage, stopVoiceInput, localVoiceRecording, attachmentMenuOpen]
+    [isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, canQueueStreamingMessage, stopVoiceInput, localVoiceRecording, attachmentMenuOpen, streamingActionMenuOpen, streamingActionIndex, sendQueued]
   );
 
   const handleInput = useCallback(() => {
@@ -1636,128 +1659,46 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             </div>
           )}
           {slashMenuOpen && slashQuery !== null && (
-            <div
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                bottom: "calc(100% + 8px)",
-                zIndex: 120,
-                background: "var(--bg)",
-                border: "1px solid var(--border)",
-                borderRadius: 8,
-                boxShadow: "0 -6px 20px rgba(0,0,0,0.12)",
-                overflow: "hidden",
-                maxHeight: "min(56vh, 460px)",
-              }}
-            >
-              <div
-                style={{
-                  padding: "8px 10px",
-                  borderBottom: "1px solid var(--border)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  fontSize: "var(--text-xs)",
-                  color: "var(--text-dim)",
-                }}
-              >
-                 <span>{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.slashCommands", { label: slashCommandCountLabel })}</span>
-                 <span style={{ fontFamily: "var(--font-mono)" }}>{t("chat.tabEnter")}</span>
+            <div className="slash-command-menu" role="listbox" aria-label={t("chat.slashCommands", { label: slashCommandCountLabel })}>
+              <div className="slash-command-menu-header">
+                <span>{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.slashCommands", { label: slashCommandCountLabel })}</span>
+                <span className="slash-command-menu-hints" aria-hidden="true"><kbd>↑</kbd><kbd>↓</kbd> {t("chat.commandSwitch")} · <kbd>↵</kbd> {t("chat.commandRun")} · <kbd>esc</kbd> {t("chat.commandClose")}</span>
               </div>
-              <div style={{ maxHeight: "calc(min(56vh, 460px) - 34px)", overflowY: "auto", padding: 10 }}>
+              <div className="slash-command-menu-list">
                 {!slashCommandsLoading && filteredSlashCommands.length === 0 ? (
-                  <div style={{ padding: "2px 2px 4px", fontSize: "var(--text-sm)", color: "var(--text-dim)" }}>
-                     {t("chat.noCommands")}
-                  </div>
+                  <div className="slash-command-menu-empty">{t("chat.noCommands")}</div>
                 ) : (
                   groupedSlashCommands.map((group) => (
-                    <section key={group.source} style={{ marginBottom: 12 }}>
-                      <div
-                        style={{
-                          position: "sticky",
-                          top: -10,
-                          zIndex: 1,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          gap: 8,
-                          padding: "4px 0 6px",
-                          background: "var(--bg)",
-                          color: "var(--text-dim)",
-                          fontSize: "var(--text-xs)",
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                        }}
-                      >
-                           <span>{t(SLASH_SOURCE_GROUP_LABEL_KEYS[group.source])}</span>
-                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}>{group.items.length}</span>
+                    <section key={group.source} className="slash-command-group">
+                      <div className="slash-command-group-header">
+                        <span>{t(SLASH_SOURCE_GROUP_LABEL_KEYS[group.source])}</span>
+                        <span>{group.items.length}</span>
                       </div>
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                          gap: 8,
-                        }}
-                      >
-                        {group.items.map(({ command, index }) => {
-                          const active = index === slashActiveIndex;
-                          return (
-                            <button
-                              key={`${command.source}:${command.name}`}
-                              ref={(node) => {
-                                slashItemRefs.current[index] = node;
-                              }}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                applySlashCommand(command);
-                              }}
-                              onMouseEnter={() => setSlashActiveIndex(index)}
-                              style={{
-                                width: "100%",
-                                minWidth: 0,
-                                minHeight: 58,
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 4,
-                                justifyContent: "center",
-                                padding: "9px 10px",
-                                border: `1px solid ${active ? "var(--accent)" : "var(--border)"}`,
-                                borderRadius: 7,
-                                background: active ? "var(--bg-selected)" : "var(--bg-panel)",
-                                color: "var(--text)",
-                                cursor: "pointer",
-                                textAlign: "left",
-                                boxShadow: active ? "0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent)" : "none",
-                              }}
-                            >
-                              <span style={{
-                                fontSize: "var(--text-base)",
-                                fontFamily: "var(--font-mono)",
-                                overflowWrap: "anywhere",
-                                wordBreak: "break-word",
-                              }}>
-                                /{command.name}
-                              </span>
-                               {command.description && (
-                                <span style={{
-                                  display: "-webkit-box",
-                                  WebkitBoxOrient: "vertical",
-                                  WebkitLineClamp: 2,
-                                  overflow: "hidden",
-                                  fontSize: "var(--text-xs)",
-                                  lineHeight: 1.35,
-                                  color: "var(--text-dim)",
-                                }}>
-                                {getSlashCommandDescription(command, t)}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
+                      {group.items.map(({ command, index }) => {
+                        const active = index === slashActiveIndex;
+                        return (
+                          <button
+                            key={`${command.source}:${command.name}`}
+                            ref={(node) => {
+                              slashItemRefs.current[index] = node;
+                            }}
+                            type="button"
+                            role="option"
+                            aria-selected={active}
+                            className="slash-command-item"
+                            data-active={active ? "true" : "false"}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              applySlashCommand(command);
+                            }}
+                            onMouseEnter={() => setSlashActiveIndex(index)}
+                          >
+                            <span className="slash-command-item-name">/{command.name}</span>
+                            <span className="slash-command-item-desc">{getSlashCommandDescription(command, t)}</span>
+                            <span className="slash-command-item-source">{t(SLASH_SOURCE_GROUP_LABEL_KEYS[command.source])}</span>
+                          </button>
+                        );
+                      })}
                     </section>
                   ))
                 )}
@@ -2405,7 +2346,31 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 </div>
             )}
             {isStreaming ? (
-              <div ref={streamingActionMenuRef} className="streaming-action-control">
+              <div
+                ref={streamingActionMenuRef}
+                className="streaming-action-control"
+                onKeyDown={(event) => {
+                  if (!streamingActionMenuOpen || !canQueueStreamingMessage) return;
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setStreamingActionIndex((index) => (index + 1) % 2);
+                    return;
+                  }
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    sendQueued(streamingActionIndex === 0 ? "steer" : "followup");
+                    return;
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setStreamingActionMenuOpen(false);
+                    return;
+                  }
+                }}
+              >
                 {canQueueStreamingMessage && streamingActionMenuOpen && (
                   <div
                     className="streaming-action-menu"
@@ -2416,6 +2381,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       type="button"
                       role="menuitem"
                       className="streaming-action-option is-steer"
+                      data-active={streamingActionIndex === 0 ? "true" : "false"}
+                      onMouseEnter={() => setStreamingActionIndex(0)}
                       onClick={() => sendQueued("steer")}
                     >
                       <span className="streaming-action-option-icon"><AliIcon name="arrowright" size={13} /></span>
@@ -2429,6 +2396,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       type="button"
                       role="menuitem"
                       className="streaming-action-option"
+                      data-active={streamingActionIndex === 1 ? "true" : "false"}
+                      onMouseEnter={() => setStreamingActionIndex(1)}
                       onClick={() => sendQueued("followup")}
                     >
                       <span className="streaming-action-option-icon"><AliIcon name="arrowdown" size={13} /></span>
@@ -2437,11 +2406,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                         <small>{t("chat.sendDirectlyDescription")}</small>
                       </span>
                     </button>
+                    <div className="streaming-action-menu-hint" aria-hidden="true">
+                      <span><kbd>↑</kbd><kbd>↓</kbd> {t("chat.commandSwitch")}</span>
+                      <span><kbd>↵</kbd> {t("chat.commandRun")}</span>
+                      <span><kbd>esc</kbd> {t("chat.commandClose")}</span>
+                    </div>
                   </div>
                 )}
                 <button
                   type="button"
-                  onClick={canQueueStreamingMessage ? () => setStreamingActionMenuOpen((open) => !open) : onAbort}
+                  onClick={canQueueStreamingMessage ? () => { setStreamingActionIndex(0); setStreamingActionMenuOpen((open) => !open); } : onAbort}
                   title={canQueueStreamingMessage ? t("chat.chooseStreamingAction") : t("chat.stopAgent")}
                   aria-label={canQueueStreamingMessage ? t("chat.chooseStreamingAction") : t("chat.stopAgent")}
                   aria-haspopup={canQueueStreamingMessage ? "menu" : undefined}

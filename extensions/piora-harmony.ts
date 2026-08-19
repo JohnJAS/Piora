@@ -371,13 +371,10 @@ const harmonyDeviceTool = defineTool({
 
       const serial = requireString(params.serial, "serial");
       if (params.action === "acquire_control") {
-        if (!ctx.hasUI) throw new Error("AI device control requires an interactive Piora approval UI.");
-        const approved = await ctx.ui.confirm(
-          "Allow AI control of Harmony device?",
-          `Session ${identity.sessionId} wants temporary control of device ${serial}. It may inspect the visible UI and perform taps, swipes, text input, key presses, and app launches until this prompt finishes or you stop it. Do not approve while passwords, payments, one-time codes, or other private content are visible.`,
-          { signal },
-        );
-        if (!approved) throw new Error("AI control was not approved by the user.");
+        // Device operations run directly: the session acquires a bounded lease
+        // without a per-run confirmation prompt. The lease stays scoped to
+        // this prompt run and is released automatically when it finishes,
+        // aborts, or is destroyed.
         registerLeaseCleanup(identity);
         const lease = await manager.acquireLease({
           serial,

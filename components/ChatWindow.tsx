@@ -11,7 +11,7 @@ import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { useI18n } from "@/hooks/useI18n";
-import { useAgentSession, type AgentPhase, type NoticeItem, type SlashCommandInfo } from "@/hooks/useAgentSession";
+import { useAgentSession, type AgentPhase, type BuiltinSlashCommandResult, type NoticeItem, type SlashCommandInfo } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import type { SessionStatsInfo } from "@/lib/pi-types";
@@ -255,6 +255,30 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   });
   const sessionBusy = agentRunning || bashRunning;
+
+  // Builtin slash-command results echo into the conversation area instead of
+  // only appearing as transient notices, so the user can see what a command
+  // did without opening panels or reading toasts.
+  const [commandEchoes, setCommandEchoes] = useState<Array<{ id: number; text: string; message?: string; error?: string }>>([]);
+  const commandEchoCounterRef = useRef(0);
+  useEffect(() => {
+    setCommandEchoes([]);
+    commandEchoCounterRef.current = 0;
+  }, [session?.id]);
+  const handleBuiltinCommandWithEcho = useCallback(async (message: string): Promise<BuiltinSlashCommandResult> => {
+    const result = await handleBuiltinSlashCommand(message);
+    if (result.handled) {
+      commandEchoCounterRef.current += 1;
+      const echo = {
+        id: commandEchoCounterRef.current,
+        text: message,
+        ...(result.error ? { error: result.error } : {}),
+        ...(result.message ? { message: result.message } : {}),
+      };
+      setCommandEchoes((current) => [...current.slice(-39), echo]);
+    }
+    return result;
+  }, [handleBuiltinSlashCommand]);
   const latestBash = useMemo(() => {
     if (streamState.streamingMessage?.role === "bashExecution") {
       return streamState.streamingMessage as BashExecutionMessage;
@@ -560,7 +584,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       slashCommands={slashCommands}
       slashCommandsLoading={slashCommandsLoading}
       onLoadSlashCommands={loadSlashCommands}
-      onBuiltinCommand={handleBuiltinSlashCommand}
+      onBuiltinCommand={handleBuiltinCommandWithEcho}
       draftKey={session?.id ?? (newSessionCwd ? `new:${newSessionCwd}` : undefined)}
       cwd={session?.cwd ?? newSessionCwd}
       contextUsage={contextUsage}
@@ -929,6 +953,18 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                 aria-hidden="true"
                 style={{ height: scrollContainerRef.current ? scrollContainerRef.current.clientHeight : "80vh" }}
               />
+            )}
+
+            {commandEchoes.length > 0 && (
+              <div className="command-echo-list" role="log" aria-label={t("chat.commands")}>
+                {commandEchoes.map((echo) => (
+                  <div key={echo.id} className={`command-echo-row${echo.error ? " is-error" : ""}`}>
+                    <AliIcon name={echo.error ? "warning" : "check"} size={12} className="command-echo-icon" />
+                    <span className="command-echo-command">{echo.text}</span>
+                    <span className="command-echo-result">{echo.error ?? echo.message ?? t("chat.commandCompleted")}</span>
+                  </div>
+                ))}
+              </div>
             )}
 
             <div ref={messagesEndRef} />
