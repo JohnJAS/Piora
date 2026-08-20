@@ -103,6 +103,7 @@ const AppearanceLooks = dynamic(() => import("./AppearanceLooks").then((module) 
 const AppearanceResetButton = dynamic(() => import("./AppearanceResetButton").then((module) => module.AppearanceResetButton), { ssr: false });
 const FontSettings = dynamic(() => import("./FontSettings").then((module) => module.FontSettings), { ssr: false });
 const CompanionSettingsDialog = dynamic(() => import("./CompanionSettingsDialog").then((module) => module.CompanionSettingsDialog), { ssr: false });
+const RemoteControlSettings = dynamic(() => import("./RemoteControlSettings").then((module) => module.RemoteControlSettings), { ssr: false });
 const SessionHistoryDialog = dynamic(() => import("./SessionHistoryDialog").then((module) => module.SessionHistoryDialog), { ssr: false });
 const CommandPalette = dynamic(() => import("./CommandPalette").then((module) => module.CommandPalette), { ssr: false });
 
@@ -1432,6 +1433,9 @@ export function AppShell() {
               ))}
             </div>
           </div>
+        ),
+        remote: (
+          <RemoteControlSettings sessionId={selectedSession?.id ?? null} />
         ),
         companion: (
           <CompanionSettingsDialog

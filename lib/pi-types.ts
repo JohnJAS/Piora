@@ -75,6 +75,7 @@ interface ExtensionRunnerLike {
     sourceInfo: SlashCommandInfo["sourceInfo"];
   }>;
   setUIContext?(uiContext?: unknown, mode?: "tui" | "rpc" | "json" | "print"): void;
+  emit?(event: unknown): Promise<unknown>;
 }
 
 type DialogOptionsLike = {
@@ -138,6 +139,8 @@ export interface AgentSessionLike {
 
   readonly bindExtensions?: unknown;
   reload(options?: { beforeSessionStart?: () => void | Promise<void> }): Promise<void>;
+  /** Release the SDK session, extension runner, and event subscriptions. */
+  dispose?(): void;
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
   prompt(text: string, options?: {
     images?: Array<{ type: "image"; data: string; mimeType: string }>;

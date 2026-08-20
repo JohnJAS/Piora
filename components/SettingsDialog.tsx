@@ -40,7 +40,7 @@ interface Props {
   };
 }
 
-export type SettingsKey = "general" | "conversation" | "models" | "extensions" | "skills" | "plugins" | "appearance" | "language" | "companion";
+export type SettingsKey = "general" | "conversation" | "models" | "extensions" | "skills" | "plugins" | "appearance" | "language" | "companion" | "remote";
 
 interface SettingsEntry {
   key: SettingsKey;
@@ -51,6 +51,7 @@ interface SettingsEntry {
 
 function getSettingsParentKey(key: SettingsKey): SettingsKey {
   if (key === "language") return "general";
+  if (key === "remote") return "general";
   if (key === "models") return "conversation";
   if (key === "skills" || key === "plugins") return "extensions";
   if (key === "companion") return "appearance";
@@ -109,6 +110,12 @@ export function SettingsDialog({
       labelKey: "common.language",
       descriptionKey: "settings.languageDescription",
       icon: <AliIcon name="translate" size={16} />,
+    },
+    {
+      key: "remote",
+      labelKey: "remote.title",
+      descriptionKey: "remote.description",
+      icon: <AliIcon name="external-link" size={16} />,
     },
     {
       key: "conversation",

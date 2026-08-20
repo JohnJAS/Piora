@@ -4,6 +4,28 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-20
+
+### Added
+
+- Added reliable target-Session message routing with per-Session FIFO queues,
+  cross-Session parallelism, idempotency, tracked command/run lifecycle events,
+  restart recovery, and bounded JSONL journals.
+- Added scoped remote control over HTTP/SSE with Bearer capability tokens,
+  revocation, rate limiting, command status, state, steer, abort, and event
+  subscription endpoints.
+- Added a process-level outbound WebSocket connector and remote-control settings
+  UI with English and Simplified Chinese translations.
+- Added Room fan-out correlation, bounded parallel dispatch, and routing loop
+  protection.
+
+### Changed
+
+- Isolated AgentSession extension runtimes and service caches per Session, with
+  deterministic runtime resolution for cold Session restoration.
+- Routed UI, Room chat, and Coordinator prompt delivery through the unified
+  SessionMessageRouter.
+
 ## [0.2.9] - 2026-08-20
 
 ### Added

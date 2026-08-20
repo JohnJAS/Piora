@@ -1,9 +1,27 @@
 import { NextResponse } from "next/server";
+import { getRpcSession } from "@/lib/rpc-manager";
+import { resolveOrStartRpcSession } from "@/lib/session-runtime-resolver";
 import { resolveSessionPath } from "@/lib/session-reader";
-import { startRpcSession, getRpcSession } from "@/lib/rpc-manager";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { getAgentRuntimeProfile } from "@/lib/agent-runtime-profile";
 import { resolveSessionAgentRuntimeProfile } from "@/lib/agent-profile-store";
+import { getSessionMessageRouter, SessionMessageRouterError } from "@/lib/session-message-router";
+import { randomUUID } from "node:crypto";
+
+function messageIdempotency(id: string, body: Record<string, unknown>): string {
+  return typeof body.idempotencyKey === "string" && body.idempotencyKey.trim()
+    ? body.idempotencyKey.trim()
+    : `ui:${id}:${randomUUID()}`;
+}
+
+function errorStatus(error: unknown): number {
+  if (error instanceof SessionMessageRouterError) {
+    if (["SESSION_NOT_FOUND", "SESSION_FILE_INVALID"].includes(error.code)) return 404;
+    if (["SESSION_BUSY", "STEER_REQUIRES_RUNNING_SESSION", "SESSION_QUEUE_FULL"].includes(error.code)) return 409;
+    if (error.code === "SESSION_MESSAGE_TOO_LARGE") return 413;
+    if (["INVALID_SESSION_MESSAGE", "COMMAND_EXPIRED"].includes(error.code)) return 400;
+  }
+  return 500;
+}
 
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(
@@ -16,6 +34,28 @@ export async function POST(
     const runtimeProfile = getAgentRuntimeProfile();
     const body = await req.json() as { type: string; [key: string]: unknown };
 
+    if (body.type === "prompt" || body.type === "steer" || body.type === "follow_up") {
+      const router = getSessionMessageRouter();
+      const input = {
+        targetSessionId: id,
+        content: typeof body.message === "string" ? body.message : "",
+        source: "ui" as const,
+        idempotencyKey: messageIdempotency(id, body),
+        ...(Array.isArray(body.images) ? { images: body.images } : {}),
+        ...(body.goalMode === true ? { goalMode: true } : {}),
+        ...(body.planMode === true ? { planMode: true } : {}),
+        ...(body.planExecution && typeof body.planExecution === "object" ? { planExecution: body.planExecution as { planId: string; expectedRevision: number } } : {}),
+      };
+      const result = body.type === "steer"
+        ? await router.steerSession(input)
+        : body.type === "follow_up" || body.streamingBehavior === "followUp"
+          ? await router.followUpSession(input)
+          : body.streamingBehavior === "steer"
+            ? await router.steerSession(input)
+            : await router.dispatchSessionMessage({ ...input, delivery: "next_turn" });
+      return NextResponse.json({ success: true, data: result, commandId: result.commandId, ...(result.runId ? { runId: result.runId } : {}), ...(result.attachedRunId ? { attachedRunId: result.attachedRunId } : {}) });
+    }
+
     // Fast path: already-running session
     const existing = getRpcSession(id);
     if (existing?.isAlive()) {
@@ -27,20 +67,12 @@ export async function POST(
       return NextResponse.json({ success: true, data: result });
     }
 
-    const filePath = await resolveSessionPath(id);
-    if (!filePath) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
-    }
-    await resolveSessionAgentRuntimeProfile(id, runtimeProfile);
-
-    const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? process.cwd();
-
-    const { session } = await startRpcSession(id, filePath, cwd, { runtimeProfile });
+    const { session } = await resolveOrStartRpcSession(id, { runtimeProfile });
     const result = await session.send(body);
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    return NextResponse.json({ error: String(error), ...(error instanceof SessionMessageRouterError ? { code: error.code } : {}) }, { status: errorStatus(error) });
   }
 }
 

@@ -481,6 +481,10 @@ export function appendRoomMessage(roomId: string, input: {
   authorName?: string;
   content: string;
   replyTo?: string;
+  correlationId?: string;
+  forwardDepth?: number;
+  autoRound?: number;
+  maxAutoRounds?: number;
 }): RoomMessage {
   const room = getRoom(roomId);
   if (input.authorKind === "session") requireMember(room, input.authorId);
@@ -492,6 +496,10 @@ export function appendRoomMessage(roomId: string, input: {
     content: cleanText(input.content, MAX_MESSAGE_LENGTH),
     createdAt: Date.now(),
     ...(input.replyTo ? { replyTo: input.replyTo } : {}),
+    ...(input.correlationId ? { correlationId: cleanText(input.correlationId, 240) } : {}),
+    ...(input.forwardDepth !== undefined ? { forwardDepth: Math.max(0, Math.min(4, Math.floor(input.forwardDepth))) } : {}),
+    ...(input.autoRound !== undefined ? { autoRound: Math.max(0, Math.min(8, Math.floor(input.autoRound))) } : {}),
+    ...(input.maxAutoRounds !== undefined ? { maxAutoRounds: Math.max(0, Math.min(8, Math.floor(input.maxAutoRounds))) } : {}),
   };
   const paths = roomPaths(roomId);
   mkdirSync(paths.shared, { recursive: true });

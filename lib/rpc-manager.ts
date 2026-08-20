@@ -179,6 +179,9 @@ export class AgentSessionWrapper {
   private extensionStatuses = new Map<string, string>();
   private extensionWidgets = new Map<string, ExtensionWidgetItem>();
   private promptRunning = false;
+  // Synchronous admission guard shared by UI and routed prompts. The guard is
+  // set before the async SDK call so two callers cannot both observe idle.
+  private promptAdmissionBusy = false;
   private stopping = false;
   private lastPromptFailed = false;
   private lastPromptErrorSummary: string | undefined;
@@ -192,8 +195,9 @@ export class AgentSessionWrapper {
   private forceEmptySystemPrompt = false;
   private unsubscribe: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
-  private onDestroyCallback: (() => void) | null = null;
+  private onDestroyCallbacks = new Set<() => void>();
   private activePromptRun: PromptRunIdentity | undefined;
+  private activeCommandId: string | undefined;
   private runtimeToolCalls = new Map<string, { toolName: string; args: unknown }>();
   private goalState: GoalRunState | undefined;
   private planState: PlanArtifactState | undefined;
@@ -226,6 +230,25 @@ export class AgentSessionWrapper {
 
   isRunning(): boolean {
     return this._alive && this.getRuntime() !== "idle";
+  }
+
+  getActivePromptRunId(): string | undefined {
+    return this.activePromptRun?.runId;
+  }
+
+  /** Start one ordinary prompt with a stable command correlation id. */
+  async startTrackedPrompt(input: {
+    commandId: string;
+    message: string;
+    images?: Array<{ type: "image"; data: string; mimeType: string }>;
+    goalMode?: boolean;
+    planMode?: boolean;
+    planExecution?: { planId: string; expectedRevision: number };
+  }): Promise<{ accepted: true; sessionId: string; commandId: string; runId: string }> {
+    await this.send({ type: "prompt", ...input });
+    const runId = this.activePromptRun?.runId;
+    if (!runId) throw new Error("Prompt was not admitted by the target session.");
+    return { accepted: true, sessionId: this.sessionId, commandId: input.commandId, runId };
   }
 
   getRuntime(): Runtime {
@@ -567,8 +590,9 @@ export class AgentSessionWrapper {
     };
   }
 
-  onDestroy(cb: () => void): void {
-    this.onDestroyCallback = cb;
+  onDestroy(cb: () => void): () => void {
+    this.onDestroyCallbacks.add(cb);
+    return () => this.onDestroyCallbacks.delete(cb);
   }
 
   async send(command: Record<string, unknown>): Promise<unknown> {
@@ -589,7 +613,10 @@ export class AgentSessionWrapper {
         // Fire and forget — events come via subscribe
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
-        if (!streamingBehavior) this.assertSessionIdle("send a prompt");
+        if (!streamingBehavior) {
+          this.assertSessionIdle("send a prompt");
+          if (this.promptAdmissionBusy) throw new Error("Cannot send a prompt while the session is starting another prompt");
+        }
         const goalMode = command.goalMode === true && !streamingBehavior;
         const planMode = command.planMode === true && !streamingBehavior;
         const planExecution = command.planExecution as { planId?: unknown; expectedRevision?: unknown } | undefined;
@@ -616,6 +643,10 @@ export class AgentSessionWrapper {
           }
           this.planState = currentPlan;
         }
+        const commandId = typeof command.commandId === "string" && command.commandId.trim()
+          ? command.commandId.trim()
+          : `cmd_${randomUUID()}`;
+        if (!streamingBehavior) this.promptAdmissionBusy = true;
         const promptText = compactTaskActivityText(command.message);
         this.fallbackTaskTitle = compactTaskActivityText(command.message, 80) || this.fallbackTaskTitle;
         this.beginRun("prompt", promptText || "Processing request");
@@ -625,7 +656,17 @@ export class AgentSessionWrapper {
         const promptRun = ownsPromptRun
           ? beginPromptRun(this.inner.sessionId)
           : this.activePromptRun!;
-        if (ownsPromptRun) this.activePromptRun = promptRun;
+        if (ownsPromptRun) {
+          this.activePromptRun = promptRun;
+          this.activeCommandId = commandId;
+          this.emit({
+            type: "prompt_started",
+            sessionId: this.sessionId,
+            commandId,
+            runId: promptRun.runId,
+            timestamp: Date.now(),
+          });
+        }
         if (goalMode || planMode) beginActivePromptMode(promptRun, goalMode ? "goal" : "plan");
         if (planExecution) {
           this.persistPlanState(beginPlanExecution(
@@ -730,8 +771,12 @@ export class AgentSessionWrapper {
           if (ownsPromptRun) {
             await finishPromptRun(promptRun, "idle");
             if (this.activePromptRun?.runId === promptRun.runId) this.activePromptRun = undefined;
+            if (this.activeCommandId === commandId) this.activeCommandId = undefined;
           }
-          if (!streamingBehavior) this.emit({ type: "prompt_done" });
+          if (!streamingBehavior) {
+            this.promptAdmissionBusy = false;
+            this.emit({ type: "prompt_done", sessionId: this.sessionId, commandId, runId: promptRun.runId, timestamp: Date.now() });
+          }
           notifyRunningChange();
         }).catch(async (error) => {
           this.promptRunning = false;
@@ -750,15 +795,21 @@ export class AgentSessionWrapper {
           if (ownsPromptRun) {
             await finishPromptRun(promptRun, "error");
             if (this.activePromptRun?.runId === promptRun.runId) this.activePromptRun = undefined;
+            if (this.activeCommandId === commandId) this.activeCommandId = undefined;
           }
+          if (!streamingBehavior) this.promptAdmissionBusy = false;
           this.lastPromptFailed = true;
           this.lastPromptErrorSummary = error instanceof Error ? error.message : String(error);
           invalidateSessionListCache();
           this.emit({
             type: "prompt_error",
+            sessionId: this.sessionId,
+            commandId,
+            runId: promptRun.runId,
+            timestamp: Date.now(),
             errorMessage: error instanceof Error ? error.message : String(error),
           });
-          if (!streamingBehavior) this.emit({ type: "prompt_done" });
+          if (!streamingBehavior) this.emit({ type: "prompt_done", sessionId: this.sessionId, commandId, runId: promptRun.runId, timestamp: Date.now() });
           notifyRunningChange();
         });
         return null;
@@ -1175,6 +1226,8 @@ export class AgentSessionWrapper {
     if (this.inner.isBashRunning) this.inner.abortBash();
     const promptRun = this.activePromptRun;
     this.activePromptRun = undefined;
+    this.activeCommandId = undefined;
+    this.promptAdmissionBusy = false;
     if (promptRun) finishActivePromptMode(promptRun);
     this.pauseActiveGoal("Target mode was paused because the session runtime stopped.");
     const interruptedPlan = promptRun
@@ -1197,7 +1250,26 @@ export class AgentSessionWrapper {
     this.runtimeToolCalls.clear();
     forgetGoalRun(this.inner.sessionId);
     forgetPlanArtifact(this.inner.sessionId);
-    this.onDestroyCallback?.();
+    for (const callback of this.onDestroyCallbacks) {
+      try { callback(); } catch (error) {
+        console.error("[pi-web] session destroy callback failed:", error instanceof Error ? error.message : error);
+      }
+    }
+    this.onDestroyCallbacks.clear();
+    // AgentSession.dispose() is synchronous in the SDK, but extension
+    // session_shutdown handlers are async. Run the lifecycle in order so a
+    // session's handlers finish before its runner is invalidated and disposed.
+    void (async () => {
+      try {
+        await this.inner.extensionRunner.emit?.({ type: "session_shutdown", reason: "shutdown" });
+      } catch (error) {
+        console.error("[pi-web] session_shutdown handler failed:", error instanceof Error ? error.message : error);
+      } finally {
+        try { this.inner.dispose?.(); } catch (error) {
+          console.error("[pi-web] AgentSession dispose failed:", error instanceof Error ? error.message : error);
+        }
+      }
+    })();
     notifyRunningChange();
   }
 
@@ -1551,22 +1623,17 @@ declare global {
   var __piServicesCache: Map<string, AgentSessionServices> | undefined;
 }
 
-// ============================================================================
-// Per-cwd session services cache
+// ==========================================================================
+// Per-session services cache.
 //
-// `createAgentSessionServices()` is expensive (~5-8s: ModelRuntime.create +
-// resource loader reload + model runtime refresh). Every session start used to
-// pay that cost again, and its synchronous work blocks the Node event loop, so
-// switching sessions (which creates the AgentSession for the target session)
-// stalled unrelated requests — including the session-messages GET the UI needs
-// to render the composer — leaving the chat stuck in "loading" with no input
-// for many seconds.
-//
-// Sessions of the same cwd share the SDK services object safely: each
-// AgentSession builds its own extension runner from the shared resource
-// loader. Invalidate via invalidateServicesCache() whenever models, auth,
-// settings, skills, or plugins change.
-// ============================================================================
+// The SDK's ResourceLoader owns an ExtensionRuntime. ExtensionRunner.bindCore
+// mutates that runtime's sendMessage/sendUserMessage actions, so sharing a
+// services object by cwd cross-wires sessions even though each AgentSession
+// has a separate runner. Correctness wins over the old warm-start optimization:
+// every live session gets a private ResourceLoader/runtime. The cache remains
+// useful for repeated calls that race while the same session is being started;
+// start locks prevent duplicate construction.
+// ==========================================================================
 
 function getServicesCache(): Map<string, AgentSessionServices> {
   if (!globalThis.__piServicesCache) globalThis.__piServicesCache = new Map();
@@ -1854,8 +1921,8 @@ export async function startRpcSession(
     // turns a ~5-8s session start into milliseconds and stops session creation
     // from blocking the event loop (which stalled session loading and left the
     // composer hidden while switching sessions).
-    const cwdKey = `${runtimeProfile}:${normalizeRpcCwd(cwd)}`;
-    let services = getServicesCache().get(cwdKey);
+    const sessionServicesKey = `${runtimeProfile}:${sessionId}`;
+    let services = getServicesCache().get(sessionServicesKey);
     if (!services) {
       assertRequiredFirstPartyExtensionsEnabled(runtimeProfile);
       const bundledExtensions = firstPartyExtensionPaths(runtimeProfile);
@@ -1908,7 +1975,7 @@ export async function startRpcSession(
           throw new Error("The device-control resource loader admitted user skills, prompts, system prompts, or context files.");
         }
       }
-      getServicesCache().set(cwdKey, services);
+      getServicesCache().set(sessionServicesKey, services);
     }
     if (runtimeProfile === "normal") ensureWindowsBashShellPath(services.settingsManager);
     const scope = await resolveVisibleModels(
@@ -1969,7 +2036,12 @@ export async function startRpcSession(
 
     if (realSessionFile) cacheSessionPath(realSessionId, realSessionFile);
 
-    wrapper.onDestroy(() => { registry.delete(realSessionId); });
+    wrapper.onDestroy(() => {
+      registry.delete(realSessionId);
+      // A disposed AgentSession owns the ResourceLoader/runtime binding held by
+      // its service bundle. Never reuse that bundle after the wrapper dies.
+      getServicesCache().delete(sessionServicesKey);
+    });
     registry.set(realSessionId, wrapper);
     wrapper.beginExtensionBinding({ forceEmptySystemPrompt: toolNames?.length === 0 });
 

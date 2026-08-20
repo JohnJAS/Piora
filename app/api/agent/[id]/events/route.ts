@@ -1,8 +1,5 @@
-import { resolveSessionPath } from "@/lib/session-reader";
-import { getRpcSession, startRpcSession, type AgentSessionWrapper } from "@/lib/rpc-manager";
-import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { getAgentRuntimeProfile } from "@/lib/agent-runtime-profile";
-import { resolveSessionAgentRuntimeProfile } from "@/lib/agent-profile-store";
+import { resolveOrStartRpcSession } from "@/lib/session-runtime-resolver";
 
 export const dynamic = "force-dynamic";
 
@@ -14,33 +11,12 @@ export async function GET(
   const { id } = await params;
   const runtimeProfile = getAgentRuntimeProfile();
 
-  // Resolve the session without blocking the HTTP response: creating an
-  // AgentSession for a cold session takes seconds (model runtime + resource
-  // loader setup), and doing it synchronously here stalled every other request
-  // in flight (including the session-messages GET the UI needs to render the
-  // composer) and made the client's EventSource connection time out.
-  const session = getRpcSession(id);
-  let sessionReady: Promise<AgentSessionWrapper | null>;
-  if (session?.isAlive()) {
-    await resolveSessionAgentRuntimeProfile(id, runtimeProfile);
-    if (session.runtimeProfile !== runtimeProfile) {
-      return new Response("Session runtime profile mismatch", { status: 409 });
-    }
-    sessionReady = Promise.resolve(session);
-  } else {
-    const filePath = await resolveSessionPath(id);
-    if (!filePath) {
-      return new Response("Session not found", { status: 404 });
-    }
-    await resolveSessionAgentRuntimeProfile(id, runtimeProfile);
-    const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? process.cwd();
-    sessionReady = startRpcSession(id, filePath, cwd, { runtimeProfile })
-      .then(({ session: started }) => started)
+  const sessionReady = resolveOrStartRpcSession(id, { runtimeProfile })
+      .then(({ session }) => session)
       .catch((error) => {
         console.error(`[pi-web] failed to start agent for events: ${error}`);
         return null;
       });
-  }
 
   const stream = new ReadableStream({
     async start(controller) {

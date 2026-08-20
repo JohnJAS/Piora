@@ -25,8 +25,15 @@ export function proxy(request: NextRequest) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
 
+  // Remote control has its own capability-token boundary. Do not make a
+  // remote client possess the local Desktop Token or Basic Auth secret as a
+  // second credential; the route handlers still require Bearer capabilities.
+  const isRemoteControlApi = request.nextUrl.pathname.startsWith("/api/remote/v1/");
+
   const desktopToken = process.env.PI_DESKTOP_TOKEN;
   if (
+    !isRemoteControlApi
+    &&
     isDesktopTokenEnabled(desktopToken)
     && !isValidDesktopToken(request.headers.get(PI_DESKTOP_TOKEN_HEADER), desktopToken)
   ) {
@@ -38,6 +45,8 @@ export function proxy(request: NextRequest) {
 
   const password = process.env.PI_WEB_PASSWORD;
   if (
+    !isRemoteControlApi
+    &&
     isWebPasswordEnabled(password)
     && !isValidBasicAuthorization(request.headers.get("authorization"), password)
   ) {

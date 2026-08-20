@@ -109,6 +109,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       role?: RoomMemberRole;
       content?: string;
       replyTo?: string;
+      correlationId?: string;
+      forwardDepth?: number;
+      autoRound?: number;
+      maxAutoRounds?: number;
       authorKind?: "user" | "session";
       mode?: "manual" | "coordinator";
       maxConcurrency?: number;
@@ -264,12 +268,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       authorName: body.sessionName ?? member.name,
       content: body.content,
       replyTo: body.replyTo,
+      correlationId: body.correlationId,
+      forwardDepth: body.forwardDepth,
+      autoRound: body.autoRound,
+      maxAutoRounds: body.maxAutoRounds,
     });
     if (body.action === "chat") {
       const dispatch = await dispatchRoomChat(id, {
         messageId: message.id,
         content: message.content,
         targetSessionIds: body.targetSessionIds,
+        replyTo: message.replyTo,
+        correlationId: message.correlationId ?? message.id,
+        forwardDepth: message.forwardDepth,
+        autoRound: message.autoRound,
+        maxAutoRounds: message.maxAutoRounds,
       });
       return NextResponse.json({ message, dispatch });
     }

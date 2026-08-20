@@ -1,19 +1,15 @@
-import { SessionManager } from "@earendil-works/pi-coding-agent";
-import { getAgentRuntimeProfile } from "./agent-runtime-profile";
-import { resolveSessionAgentRuntimeProfile } from "./agent-profile-store";
-import { getRpcSession, startRpcSession } from "./rpc-manager";
 import {
   claimRoomTask,
   getRoom,
   listRoomTasks,
   releaseRoomTaskLease,
 } from "./room-store";
-import { resolveSessionPath } from "./session-reader";
+import { getSessionMessageRouter, type SessionMessageRouterError } from "./session-message-router";
 import type { RoomMember, RoomTask } from "./room-types";
 
 export interface RoomDispatchResult {
-  dispatched: Array<{ taskId: string; sessionId: string }>;
-  skipped: Array<{ taskId: string; reason: string }>;
+  dispatched: Array<{ taskId: string; sessionId: string; commandId: string; status: string }>;
+  skipped: Array<{ taskId: string; reason: string; code?: string }>;
 }
 
 function candidateMembers(room: ReturnType<typeof getRoom>, task: RoomTask): RoomMember[] {
@@ -24,24 +20,17 @@ function candidateMembers(room: ReturnType<typeof getRoom>, task: RoomTask): Roo
   return task.assignedTo ? ordered.filter((member) => member.sessionId === task.assignedTo) : ordered;
 }
 
-async function dispatchTask(roomId: string, task: RoomTask, member: RoomMember): Promise<void> {
+async function dispatchTask(roomId: string, task: RoomTask, member: RoomMember): Promise<{ commandId: string; status: string }> {
   const room = getRoom(roomId);
-  const runtimeProfile = getAgentRuntimeProfile();
-  const existing = getRpcSession(member.sessionId);
-  if (existing?.isRunning()) throw new Error("Session is already busy.");
-  let session = existing;
-  if (!session?.isAlive()) {
-    const filePath = await resolveSessionPath(member.sessionId);
-    if (!filePath) throw new Error("Session file was not found.");
-    await resolveSessionAgentRuntimeProfile(member.sessionId, runtimeProfile);
-    const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? member.cwd ?? process.cwd();
-    session = (await startRpcSession(member.sessionId, filePath, cwd, { runtimeProfile })).session;
-  }
   const claimed = claimRoomTask(roomId, task.id, member.sessionId);
+  const router = getSessionMessageRouter();
   try {
-    await session.send({
-      type: "prompt",
-      message: [
+    const receipt = await router.dispatchSessionMessage({
+      targetSessionId: member.sessionId,
+      source: "room",
+      delivery: "next_turn",
+      idempotencyKey: `${roomId}:${claimed.id}:${member.sessionId}:${claimed.attempt}`,
+      content: [
         "[PIORA COORDINATOR TASK]",
         `Room ID: ${roomId}`,
         `Task ID: ${claimed.id}`,
@@ -57,6 +46,7 @@ async function dispatchTask(roomId: string, task: RoomTask, member: RoomMember):
         "Work only on this leased task. Use piora_room heartbeat_task during long work, then complete_task, fail_task, or block_task with the exact lease token. Broadcast reusable results to the room.",
       ].join("\n"),
     });
+    return { commandId: receipt.commandId, status: receipt.status };
   } catch (error) {
     releaseRoomTaskLease(roomId, claimed.id, member.sessionId, claimed.lease!.token, `Dispatch failed: ${error instanceof Error ? error.message : String(error)}`);
     throw error;
@@ -74,23 +64,24 @@ export async function dispatchReadyRoomTasks(roomId: string): Promise<RoomDispat
       .filter((id): id is string => Boolean(id)),
   );
   const pending = listRoomTasks(roomId).filter((task) => task.status === "pending");
+  const selected: Array<{ task: RoomTask; member: RoomMember }> = [];
   for (const task of pending) {
-    let dispatched = false;
-    for (const member of candidateMembers(room, task)) {
-      if (busyMembers.has(member.sessionId)) continue;
-      try {
-        await dispatchTask(roomId, task, member);
-        busyMembers.add(member.sessionId);
-        result.dispatched.push({ taskId: task.id, sessionId: member.sessionId });
-        dispatched = true;
-        break;
-      } catch (error) {
-        result.skipped.push({ taskId: task.id, reason: error instanceof Error ? error.message : String(error) });
-      }
-    }
-    if (!dispatched && !result.skipped.some((item) => item.taskId === task.id)) {
+    const member = candidateMembers(room, task).find((candidate) => !busyMembers.has(candidate.sessionId) && !selected.some((item) => item.member.sessionId === candidate.sessionId));
+    if (member) {
+      selected.push({ task, member });
+      if (selected.length >= room.coordination.maxConcurrency - busyMembers.size) break;
+    } else {
       result.skipped.push({ taskId: task.id, reason: "No available room member." });
     }
   }
+  const settled = await Promise.allSettled(selected.map(({ task, member }) => dispatchTask(roomId, task, member)));
+  settled.forEach((outcome, index) => {
+    const { task, member } = selected[index];
+    if (outcome.status === "fulfilled") result.dispatched.push({ taskId: task.id, sessionId: member.sessionId, ...outcome.value });
+    else {
+      const error = outcome.reason as SessionMessageRouterError;
+      result.skipped.push({ taskId: task.id, reason: error instanceof Error ? error.message : String(error), ...(error?.code ? { code: error.code } : {}) });
+    }
+  });
   return result;
 }

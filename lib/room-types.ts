@@ -128,6 +128,11 @@ export interface RoomMessage {
   content: string;
   createdAt: number;
   replyTo?: string;
+  correlationId?: string;
+  /** Bounded automatic-routing metadata used to prevent reply storms. */
+  forwardDepth?: number;
+  autoRound?: number;
+  maxAutoRounds?: number;
 }
 
 export interface PrivateRoomNote {
