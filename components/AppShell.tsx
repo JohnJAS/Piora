@@ -1687,8 +1687,7 @@ export function AppShell() {
                 aria-label={translate("review.changesTree")}
               >
                 <AliIcon name="code" size={14} />
-                {!isMobile ? <span>{translate("review.changes", { count: topbarGitStatus?.files.length ?? 0 })}</span> : null}
-                {(topbarLineStats.additions > 0 || topbarLineStats.deletions > 0) ? <span className="topbar-changes-lines"><b>+{topbarLineStats.additions}</b><i>−{topbarLineStats.deletions}</i></span> : null}
+                {topbarGitStatus?.isGitRepository ? <span className="topbar-changes-lines"><b>+{topbarLineStats.additions}</b><i>−{topbarLineStats.deletions}</i></span> : null}
               </button>
               <button
                 className="topbar-control topbar-history-button"
