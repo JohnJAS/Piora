@@ -380,9 +380,9 @@ html.desktop-pet-document[data-app-background-active="true"] body::after {
   position: relative;
   z-index: 100;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
-  background: color-mix(in srgb, var(--surface-glass) 92%, var(--bg-panel)) !important;
-  box-shadow: 0 1px 0 var(--surface-highlight);
-  backdrop-filter: blur(18px) saturate(1.15);
+  background: transparent !important;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .app-topbar-identity {
