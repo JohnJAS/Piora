@@ -7,6 +7,7 @@ import { Component, useCallback, useEffect, useMemo, useRef, useState, type Erro
 import { useI18n } from "@/hooks/useI18n";
 import { useHarmonyLiveFrame } from "@/hooks/useHarmonyLiveFrame";
 import { AliIcon } from "../AliIcon";
+import { HarmonyLogViewer } from "./HarmonyLogViewer";
 import styles from "./HarmonyPanel.module.css";
 
 type RuntimeProfile = "normal" | "device-control";
@@ -162,6 +163,7 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
   const [visionModelKey, setVisionModelKey] = useState("");
   const [shareScreenshot, setShareScreenshot] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<"screen" | "logs">("screen");
   const [diagnostics, setDiagnostics] = useState<unknown>(null);
   const [tree, setTree] = useState<unknown>(null);
   const [text, setText] = useState("");
@@ -214,7 +216,7 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
     error: frameLoadError,
     refresh: requestFrame,
   } = useHarmonyLiveFrame({
-    active: active && desktopAvailable,
+    active: active && desktopAvailable && viewMode === "screen",
     enabled: canScreenshot,
     serial: selectedSerial,
     generation: selectedGeneration,
@@ -565,7 +567,12 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
     </div>
     {holder ? <div className={styles.controlNotice}><AliIcon name={holder.owner.kind === "agent" ? "robot" : "mobile"} size={13} />{holder.owner.kind === "agent" ? copy("AI 正在控制这台设备", "AI is controlling this device") : copy("你正在控制这台设备", "You are controlling this device")}</div> : null}
 
-    <div className={styles.deviceArea}>
+    <div className={styles.deviceTabs} role="tablist" aria-label={copy("设备工具", "Device tools")}>
+      <button type="button" role="tab" aria-selected={viewMode === "screen"} onClick={() => setViewMode("screen")}><AliIcon name="mobile" size={13} />{copy("投屏", "Screen")}</button>
+      <button type="button" role="tab" aria-selected={viewMode === "logs"} onClick={() => setViewMode("logs")}><AliIcon name="code" size={13} />{copy("日志", "Logs")}</button>
+    </div>
+
+    {viewMode === "screen" ? <><div className={styles.deviceArea}>
       <div className={styles.frame} data-enabled={canPointControl ? "true" : "false"}>
         {canScreenshot ? <div className={styles.frameStatus} data-status={frameStatus} aria-live="polite">
           <span />{frameStatus === "error" ? copy("投屏重连中", "Reconnecting") : frameStatus === "loading" ? copy("投屏更新中", "Updating") : copy("实时投屏", "Live view")}
@@ -645,7 +652,7 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
           <pre>{JSON.stringify({ selected, holder, snapshot, diagnostics, tree }, null, 2)}</pre>
         </details>
       </div>
-    </details>
+    </details></> : <HarmonyLogViewer active={active && viewMode === "logs"} serial={selectedSerial} online={Boolean(selectedOnline)} copy={copy} />}
 
     {frameError ? <div className={styles.frameError} role="status">{frameError}</div> : null}
     {error ? <div className={styles.error} role="alert">{error}</div> : null}

@@ -223,7 +223,7 @@ test("renders queued guidance as a compact composer tray", () => {
   assert.match(html, /class="composer-queue-row is-steer"/);
   assert.match(html, /class="composer-queue-row is-follow-up"/);
   assert.match(html, />Steer</);
-  assert.match(html, />Follow-up</);
+  assert.match(html, />Queue</);
   assert.match(html, /aria-label="Recall to input"/);
   assert.doesNotMatch(html, /class="composer-shell" title="Adjust the spacing/);
 });

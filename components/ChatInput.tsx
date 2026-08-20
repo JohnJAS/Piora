@@ -2413,26 +2413,36 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     </div>
                   </div>
                 )}
-                <button
+                {canQueueStreamingMessage ? <div className="streaming-action-split">
+                  <button
+                    type="button"
+                    className="streaming-action-primary"
+                    onClick={() => sendQueued("steer")}
+                    title={t("chat.steerDescription")}
+                    aria-label={t("chat.steer")}
+                  >
+                    <AliIcon name="send" size={15} /><span>{t("chat.steer")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="streaming-action-toggle"
+                    onClick={() => { setStreamingActionIndex(0); setStreamingActionMenuOpen((open) => !open); }}
+                    title={t("chat.chooseStreamingAction")}
+                    aria-label={t("chat.chooseStreamingAction")}
+                    aria-haspopup="menu"
+                    aria-expanded={streamingActionMenuOpen}
+                  >
+                    <AliIcon name="arrowdown" size={11} />
+                  </button>
+                </div> : <button
                   type="button"
-                  onClick={canQueueStreamingMessage ? () => { setStreamingActionIndex(0); setStreamingActionMenuOpen((open) => !open); } : onAbort}
-                  title={canQueueStreamingMessage ? t("chat.chooseStreamingAction") : t("chat.stopAgent")}
-                  aria-label={canQueueStreamingMessage ? t("chat.chooseStreamingAction") : t("chat.stopAgent")}
-                  aria-haspopup={canQueueStreamingMessage ? "menu" : undefined}
-                  aria-expanded={canQueueStreamingMessage ? streamingActionMenuOpen : undefined}
-                  style={{
-                    width: 32, height: 32, padding: 0,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    border: "none", borderRadius: "50%",
-                    background: "var(--text)", color: "var(--bg)", cursor: "pointer",
-                  }}
+                  onClick={onAbort}
+                  title={t("chat.stopAgent")}
+                  aria-label={t("chat.stopAgent")}
+                  className="streaming-stop-button"
                 >
-                  {canQueueStreamingMessage ? (
-                    <AliIcon name="send" size={16} />
-                  ) : (
-                    <AliIcon name="stop" size={16} />
-                  )}
-                </button>
+                  <AliIcon name="stop" size={15} />
+                </button>}
               </div>
             ) : (
               <button

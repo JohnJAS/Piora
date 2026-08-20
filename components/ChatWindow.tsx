@@ -25,7 +25,6 @@ import {
   VISIBLE_PAGE_SIZE,
 } from "@/lib/chat-lazy-load";
 import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
-import { TaskHeader } from "./TaskHeader";
 import { GoalPanel } from "./GoalPanel";
 import { PlanPanel } from "./PlanPanel";
 
@@ -224,7 +223,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onOpenTaskChanges, onRenameTask, onExportTask, onSlashCommandsChange }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
 
@@ -661,20 +660,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
         />
       )}
 
-      <TaskHeader
-        sessionId={session?.id ?? sessionIdRef.current ?? ""}
-        cwd={session?.cwd ?? newSessionCwd ?? ""}
-        taskName={session?.name ?? session?.firstMessage?.slice(0, 50) ?? t("i18n.newSession")}
-        worktreeBranch={session?.worktreeBranch}
-        busy={sessionBusy}
-        compacting={isCompacting}
-        onStop={handleAbort}
-        onOpenChanges={() => onOpenTaskChanges?.()}
-        onOpenDetails={() => onSessionStatsPanelOpen?.()}
-        onRename={(name) => onRenameTask?.(name)}
-        onExport={() => onExportTask?.()}
-      />
-
       {goal ? (
         <GoalPanel
           goal={goal}
@@ -1051,63 +1036,22 @@ function ExtensionWidgets({ widgets }: { widgets: Array<{ key: string; lines: st
 function NoticeShelf({ notices, floating = false, align = "left" }: { notices: NoticeItem[]; floating?: boolean; align?: "left" | "right" }) {
   if (notices.length === 0) return null;
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: align === "right" ? "flex-end" : "stretch",
-        marginBottom: floating ? 0 : 10,
-      }}
-    >
+    <div className={`notice-shelf${floating ? " is-floating" : ""}${align === "right" ? " is-right" : ""}`}>
       {notices.map((notice, index) => {
-        const color = notice.type === "error"
-          ? "#ef4444"
-          : notice.type === "warning"
-            ? "#d97706"
-            : notice.type === "success"
-              ? "#10b981"
-              : "var(--accent)";
         return (
           <div
             key={notice.id}
             className="notice-shelf-item"
+            data-tone={notice.type}
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              minHeight: 60,
-              height: 60,
-              maxHeight: 60,
               marginBottom: index === notices.length - 1 ? 0 : 6,
-              overflow: "hidden",
-              borderRadius: 14,
-              border: "1px solid color-mix(in srgb, var(--border) 70%, transparent)",
-              background: "var(--bg)",
-              color: "var(--text-muted)",
-              width: "fit-content",
-              maxWidth: "min(100%, 620px)",
-              boxShadow: floating
-                ? "0 1px 2px rgba(15,23,42,0.05), 0 10px 28px -14px rgba(15,23,42,0.24)"
-                : "0 1px 2px rgba(15,23,42,0.04), 0 8px 24px -12px rgba(15,23,42,0.10)",
-              fontSize: "var(--text-lg)",
-              lineHeight: 1.45,
-              transformOrigin: "top center",
               animation: notice.exiting
                 ? "notice-shelf-out 0.18s ease-in forwards"
                 : "notice-shelf-in 0.18s ease-out both",
-              padding: "0 12px",
             }}
           >
-            <span
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: "50%",
-                background: color,
-                flexShrink: 0,
-              }}
-            />
-            <span style={{ padding: "14px 0", minWidth: 0, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <AliIcon name={notice.type === "error" || notice.type === "warning" ? "warning" : notice.type === "success" ? "check" : "info"} size={13} className="notice-shelf-icon" />
+            <span className="notice-shelf-message">
               {notice.message}
             </span>
           </div>
@@ -1168,12 +1112,12 @@ function ExtensionDialog({
           overflow: "hidden",
         }}
       >
-        <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)" }}>
+        <div className="extension-prompt-header" style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)" }}>
           <div style={{ color: "var(--text)", fontSize: "var(--text-base)", fontWeight: 650 }}>{request.title}</div>
           <div style={{ marginTop: 3, color: "var(--text-dim)", fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>{t("chat.extensionRequest")}</div>
         </div>
 
-        <div style={{ padding: 14 }}>
+        <div className="extension-prompt-body" style={{ padding: 14 }}>
           {request.method === "confirm" && (
             <div style={{ color: "var(--text-muted)", fontSize: "var(--text-base)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{request.message}</div>
           )}
@@ -1182,6 +1126,7 @@ function ExtensionDialog({
               {request.options.map((option) => (
                 <button
                   key={option}
+                  className="extension-prompt-option"
                   onClick={() => onRespond(request, { value: option })}
                   style={{
                     width: "100%",
@@ -1202,6 +1147,7 @@ function ExtensionDialog({
           )}
           {request.method === "input" && (
             <input
+              className="extension-prompt-field"
               autoFocus
               value={value}
               placeholder={request.placeholder}
@@ -1224,6 +1170,7 @@ function ExtensionDialog({
           )}
           {request.method === "editor" && (
             <textarea
+              className="extension-prompt-field"
               autoFocus
               value={value}
               onChange={(e) => setValue(e.target.value)}
@@ -1249,8 +1196,9 @@ function ExtensionDialog({
           )}
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid var(--border)", background: "var(--bg-panel)" }}>
+        <div className="extension-prompt-footer" style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid var(--border)", background: "var(--bg-panel)" }}>
           <button
+            className="extension-prompt-button"
             onClick={() => onRespond(request, { cancelled: true })}
             style={{
               padding: "6px 10px",
@@ -1265,6 +1213,7 @@ function ExtensionDialog({
           </button>
           {request.method === "confirm" ? (
             <button
+              className="extension-prompt-button is-primary"
               onClick={submitValue}
               style={{
                 padding: "6px 10px",
@@ -1279,6 +1228,7 @@ function ExtensionDialog({
             </button>
           ) : request.method !== "select" ? (
             <button
+              className="extension-prompt-button is-primary"
               onClick={submitValue}
               style={{
                 padding: "6px 10px",

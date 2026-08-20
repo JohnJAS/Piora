@@ -13,6 +13,9 @@ import type {
   HarmonyAutomationBackend,
   HarmonyCapabilities,
   HarmonyDeviceConnectionState,
+  HarmonyLogEntry,
+  HarmonyLogLevel,
+  HarmonyProcess,
   HarmonyScreenshot,
 } from "./types";
 
@@ -21,6 +24,8 @@ const MAX_SCREENSHOT_BYTES = 32 * 1024 * 1024;
 const MAX_INPUT_TEXT_BYTES = 16 * 1024;
 const SERIAL_PATTERN = /^[A-Za-z0-9._:\[\]-]{1,256}$/;
 const APP_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_.]{0,255}$/;
+const MAX_LOG_QUERY_LENGTH = 256;
+const MAX_LOG_LINES = 2_000;
 
 const NO_UITEST_CAPABILITIES: HarmonyCapabilities = {
   uiTree: false,
@@ -82,6 +87,54 @@ function parseDeviceLine(line: string): { serial: string; state: HarmonyDeviceCo
 function cleanOutput(output: Buffer): string | undefined {
   const value = output.toString("utf8").replace(/\0/g, "").trim();
   return value && !/^(unknown|null|undefined)$/i.test(value) ? value.slice(0, 512) : undefined;
+}
+
+function preferredDeviceName(values: Array<string | undefined>, model?: string, product?: string): string | undefined {
+  return values.find((value) => value && value !== model && value !== product && !/^(unknown|null|undefined)$/i.test(value))
+    ?? values.find(Boolean)
+    ?? model
+    ?? product;
+}
+
+function parseProcessList(output: Buffer): HarmonyProcess[] {
+  const processes = new Map<number, HarmonyProcess>();
+  for (const line of output.toString("utf8").replace(/\0/g, "").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || /^(?:pid|uid)\b/i.test(trimmed)) continue;
+    const columns = trimmed.split(/\s+/);
+    const pidIndex = columns.findIndex((column) => /^\d+$/.test(column));
+    if (pidIndex < 0) continue;
+    const pid = Number(columns[pidIndex]);
+    if (!Number.isSafeInteger(pid) || pid <= 0) continue;
+    const name = columns.at(-1)?.replace(/^\[|\]$/g, "") || `PID ${pid}`;
+    if (!name || /^\d+$/.test(name)) continue;
+    processes.set(pid, { pid, name: name.slice(0, 256) });
+  }
+  return [...processes.values()].sort((left, right) => left.name.localeCompare(right.name) || left.pid - right.pid);
+}
+
+const LOG_LEVELS: Record<string, HarmonyLogLevel> = {
+  D: "debug",
+  I: "info",
+  W: "warn",
+  E: "error",
+  F: "fatal",
+};
+
+function parseLogLine(raw: string): HarmonyLogEntry {
+  const line = raw.replace(/\0/g, "").trimEnd();
+  const match = line.match(/^(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+(\d+)\s+(\d+)\s+([DIWEF])\s+(?:(\S+)\/)?([^:]+):\s?(.*)$/);
+  if (!match) return { level: "unknown", message: line, raw: line };
+  return {
+    timestamp: match[1],
+    pid: Number(match[2]),
+    tid: Number(match[3]),
+    level: LOG_LEVELS[match[4]] ?? "unknown",
+    ...(match[5] ? { domain: match[5] } : {}),
+    tag: match[6].trim(),
+    message: match[7],
+    raw: line,
+  };
 }
 
 function versionAtLeast(version: string | undefined, minimum: readonly number[]): boolean {
@@ -152,9 +205,9 @@ export class HdcBackend implements HarmonyAutomationBackend {
     });
   }
 
-  private async shell(serial: string, args: readonly string[], operation: string, signal?: AbortSignal) {
+  private async shell(serial: string, args: readonly string[], operation: string, signal?: AbortSignal, timeoutMs?: number) {
     validateSerial(serial);
-    return await this.run(["-t", serial, "shell", ...args], operation, signal);
+    return await this.run(["-t", serial, "shell", ...args], operation, signal, timeoutMs);
   }
 
   private async safeInfo(serial: string, args: readonly string[], signal?: AbortSignal): Promise<string | undefined> {
@@ -194,9 +247,11 @@ export class HdcBackend implements HarmonyAutomationBackend {
       }
       const cached = this.deviceInfoBySerial.get(serial);
       if (cached) return { ...cached, state };
-      const [model, product, name, osVersion, apiVersion, uitestVersion] = await Promise.all([
+      const [model, product, userName, persistedName, deviceName, osVersion, apiVersion, uitestVersion] = await Promise.all([
         this.safeInfo(serial, ["param", "get", "const.product.model"], signal),
         this.safeInfo(serial, ["param", "get", "const.product.name"], signal),
+        this.safeInfo(serial, ["settings", "get", "secure", "unified_device_name"], signal),
+        this.safeInfo(serial, ["param", "get", "persist.sys.device_name"], signal),
         this.safeInfo(serial, ["param", "get", "const.product.devicename"], signal),
         this.safeInfo(serial, ["param", "get", "const.product.software.version"], signal),
         this.safeInfo(serial, ["param", "get", "const.ohos.apiversion"], signal),
@@ -208,7 +263,7 @@ export class HdcBackend implements HarmonyAutomationBackend {
         serial,
         model,
         product,
-        name: name ?? model ?? product,
+        name: preferredDeviceName([userName, persistedName, deviceName], model, product),
         osVersion,
         apiVersion,
         uitestVersion,
@@ -217,6 +272,38 @@ export class HdcBackend implements HarmonyAutomationBackend {
       this.deviceInfoBySerial.set(serial, deviceInfo);
       return { ...deviceInfo, state };
     }));
+  }
+
+  async listProcesses(serial: string, signal?: AbortSignal): Promise<HarmonyProcess[]> {
+    validateSerial(serial);
+    try {
+      return parseProcessList((await this.shell(serial, ["ps", "-A", "-o", "PID,NAME"], "list_processes", signal,)).stdout);
+    } catch (error) {
+      if (isHarmonyError(error) && error.code === "COMMAND_ABORTED") throw error;
+      return parseProcessList((await this.shell(serial, ["ps", "-ef"], "list_processes_legacy", signal)).stdout);
+    }
+  }
+
+  async readLogs(
+    serial: string,
+    options: { pid?: number; level?: Exclude<HarmonyLogLevel, "unknown">; query?: string; limit?: number; signal?: AbortSignal },
+  ): Promise<HarmonyLogEntry[]> {
+    validateSerial(serial);
+    const limit = Math.max(1, Math.min(MAX_LOG_LINES, Math.round(options.limit ?? 400)));
+    if (options.pid !== undefined && (!Number.isSafeInteger(options.pid) || options.pid <= 0)) {
+      throw new HarmonyError("INVALID_ARGUMENT", "Harmony log PID must be a positive integer");
+    }
+    const query = options.query?.trim().slice(0, MAX_LOG_QUERY_LENGTH).toLocaleLowerCase();
+    const args = ["hilog", "-n", String(limit), "-v", "time"];
+    if (options.pid !== undefined) args.push("-p", String(options.pid));
+    const result = await this.shell(serial, args, "read_logs", options.signal, 10_000);
+    return result.stdout.toString("utf8")
+      .split(/\r?\n/)
+      .map(parseLogLine)
+      .filter((entry) => entry.raw.length > 0)
+      .filter((entry) => !options.level || entry.level === options.level)
+      .filter((entry) => !query || entry.raw.toLocaleLowerCase().includes(query))
+      .slice(-limit);
   }
 
   private async pullGeneratedFile(
@@ -229,7 +316,13 @@ export class HdcBackend implements HarmonyAutomationBackend {
     const directory = await mkdtemp(join(tmpdir(), "piora-harmony-"));
     const localPath = join(directory, operation === "screenshot" ? "screen.png" : "layout.json");
     try {
-      await this.shell(serial, ["chmod", "600", remotePath], `${operation}_protect`, signal);
+      // UiTest creates screenshots under /data/local/tmp with permissions that
+      // HDC can read. Avoiding a redundant chmod removes one full HDC process
+      // launch from every live-view frame; layout dumps keep the defensive
+      // permission normalization because they may contain application text.
+      if (operation !== "screenshot") {
+        await this.shell(serial, ["chmod", "600", remotePath], `${operation}_protect`, signal);
+      }
       await this.run(["-t", serial, "file", "recv", remotePath, localPath], `${operation}_pull`, signal, 20_000);
       const info = await stat(localPath);
       if (info.size <= 0 || info.size > maxBytes) {
@@ -240,8 +333,10 @@ export class HdcBackend implements HarmonyAutomationBackend {
       return await readFile(localPath);
     } finally {
       // This path is generated locally and never contains user input.
-      await this.shell(serial, ["rm", remotePath], `${operation}_cleanup`).catch(() => undefined);
-      await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+      await Promise.all([
+        this.shell(serial, ["rm", remotePath], `${operation}_cleanup`).catch(() => undefined),
+        rm(directory, { recursive: true, force: true }).catch(() => undefined),
+      ]);
     }
   }
 

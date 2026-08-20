@@ -57,7 +57,10 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       }
       const requestController = new AbortController();
       controller = requestController;
-      setStatus("loading");
+      // Keep the previous frame visibly "live" while the next screenshot is
+      // in flight. Flipping to loading on every poll made a ~1fps HDC capture
+      // look much more sluggish than it was.
+      if (!frameUrlRef.current) setStatus("loading");
       try {
         const response = await fetch(`/api/harmony/frame?serial=${encodeURIComponent(options.serial)}&v=${Date.now()}`, {
           cache: "no-store",
@@ -85,7 +88,9 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         setError(frameFailure instanceof Error ? frameFailure.message : options.fallbackError);
       } finally {
         if (controller === requestController) controller = undefined;
-        schedule(failures === 0 ? 1_200 : Math.min(8_000, 1_500 * (2 ** Math.min(failures, 3))));
+        schedule(failures === 0
+          ? (document.hidden ? 3_000 : 250)
+          : Math.min(8_000, 1_000 * (2 ** Math.min(failures, 3))));
       }
     };
     const onVisibilityChange = () => {

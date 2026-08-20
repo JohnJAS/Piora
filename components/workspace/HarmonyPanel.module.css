@@ -128,6 +128,10 @@
 .stopButton:hover:not(:disabled) { border-color: color-mix(in srgb, var(--status-failed) 28%, var(--border)); background: color-mix(in srgb, var(--status-failed) 8%, transparent); color: var(--status-failed); }
 .controlNotice { min-height: 28px; flex: 0 0 auto; justify-content: center; gap: 6px; padding: 5px 8px; border-radius: 7px; background: color-mix(in srgb, var(--accent) 6%, transparent); color: var(--text-muted); font-size: var(--text-xs); }
 
+.deviceTabs { display: inline-flex; width: fit-content; flex: 0 0 auto; gap: 2px; padding: 2px; border-radius: 8px; background: var(--surface-muted); }
+.deviceTabs button { min-height: 26px; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 0; border-radius: 6px; background: transparent; color: var(--text-dim); font-size: var(--text-xs); }
+.deviceTabs button[aria-selected="true"] { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 8%); }
+
 .deviceArea { min-height: 0; display: flex; flex: 1 1 auto; justify-content: center; }
 .frame { position: relative; width: 100%; height: 100%; min-height: 160px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid color-mix(in srgb, var(--border) 76%, transparent); border-radius: 12px; background: #090a0d; color: #8b8f97; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 2%); touch-action: none; user-select: none; }
 .frame img { width: auto; height: auto; max-width: 100%; max-height: 100%; display: block; object-fit: contain; flex: 0 1 auto; cursor: crosshair; }
@@ -165,6 +169,31 @@
 .frameError { border-color: color-mix(in srgb, var(--border) 70%, transparent); background: var(--surface-muted); color: var(--text-muted); }
 .error { border-color: color-mix(in srgb, var(--status-failed) 24%, transparent); background: color-mix(in srgb, var(--status-failed) 8%, transparent); color: var(--status-failed); }
 .safetyNote { min-height: 18px; flex: 0 0 auto; justify-content: center; gap: 5px; margin: 0; color: var(--text-dim); font-size: var(--text-xs); }
+
+.logViewer { min-height: 0; display: flex; flex: 1 1 auto; flex-direction: column; overflow: hidden; border: 1px solid color-mix(in srgb, var(--border) 76%, transparent); border-radius: 10px; background: #0d0f12; }
+.logToolbar { display: grid; grid-template-columns: minmax(130px, .8fr) 94px minmax(130px, 1fr) 28px 28px; gap: 5px; align-items: center; padding: 7px; border-bottom: 1px solid rgb(255 255 255 / 8%); background: #13161a; }
+.logToolbar select,.logToolbar input { min-width: 0; height: 28px; border: 1px solid rgb(255 255 255 / 10%); border-radius: 6px; outline: none; background: #0d0f12; color: #d8dbe0; padding: 4px 7px; font-size: var(--text-xs); }
+.logToolbar .iconButton { border-color: rgb(255 255 255 / 10%); color: #aeb3bb; }
+.logSearch { min-width: 0; display: flex; align-items: center; gap: 5px; padding-left: 7px; border: 1px solid rgb(255 255 255 / 10%); border-radius: 6px; color: #777e88; background: #0d0f12; }
+.logSearch input { width: 100%; padding-left: 0; border: 0; background: transparent; }
+.logMeta { min-height: 27px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 9px; border-bottom: 1px solid rgb(255 255 255 / 7%); color: #777e88; font-family: var(--font-mono); font-size: var(--text-xs); }
+.logOutput { min-height: 0; flex: 1 1 auto; overflow: auto; padding: 5px 0 10px; color: #c7cbd1; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.48; scrollbar-gutter: stable; }
+.logLine { display: grid; grid-template-columns: 106px 14px 52px minmax(70px, 120px) minmax(180px, 1fr); gap: 7px; padding: 1px 8px; }
+.logLine { content-visibility: auto; contain-intrinsic-size: auto 17px; }
+.logLine:hover { background: rgb(255 255 255 / 4%); }
+.logTime,.logPid,.logTag { overflow: hidden; color: #6f7680; text-overflow: ellipsis; white-space: nowrap; }
+.logLevel { color: #65a9ff; font-weight: 700; }
+.logLine[data-level="warn"] .logLevel { color: #e3b341; }
+.logLine[data-level="error"] .logLevel,.logLine[data-level="fatal"] .logLevel { color: #f47067; }
+.logMessage { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.logEmpty { display: grid; min-height: 160px; place-items: center; color: #676d76; }
+
+@media (max-width: 680px) {
+  .logToolbar { grid-template-columns: 1fr 94px 28px 28px; }
+  .logSearch { grid-column: 1 / -1; grid-row: 2; }
+  .logLine { grid-template-columns: 88px 12px 42px minmax(0, 1fr); }
+  .logTag { display: none; }
+}
 
 @media (max-height: 620px) {
   .content { gap: 6px; padding-block: 7px; }

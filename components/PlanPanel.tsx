@@ -48,7 +48,7 @@ export function PlanPanel({
   onExecute: () => Promise<void>;
 }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [objective, setObjective] = useState(artifact.plan.objective);

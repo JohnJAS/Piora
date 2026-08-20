@@ -75,6 +75,33 @@ export interface HarmonyScreenshot {
   height?: number;
 }
 
+export interface HarmonyProcess {
+  pid: number;
+  name: string;
+}
+
+export type HarmonyLogLevel = "debug" | "info" | "warn" | "error" | "fatal" | "unknown";
+
+export interface HarmonyLogEntry {
+  timestamp?: string;
+  level: HarmonyLogLevel;
+  pid?: number;
+  tid?: number;
+  domain?: string;
+  tag?: string;
+  message: string;
+  raw: string;
+}
+
+export interface HarmonyLogOptions {
+  serial: string;
+  pid?: number;
+  level?: Exclude<HarmonyLogLevel, "unknown">;
+  query?: string;
+  limit?: number;
+  signal?: AbortSignal;
+}
+
 export interface HarmonySnapshot {
   serial: string;
   generation: number;
@@ -226,6 +253,11 @@ export interface HarmonyAutomationBackend {
   readonly kind: string;
   readonly hdcPath?: string;
   listDevices(signal?: AbortSignal): Promise<BackendDevice[]>;
+  listProcesses?(serial: string, signal?: AbortSignal): Promise<HarmonyProcess[]>;
+  readLogs?(
+    serial: string,
+    options: Omit<HarmonyLogOptions, "serial" | "signal"> & { signal?: AbortSignal },
+  ): Promise<HarmonyLogEntry[]>;
   snapshot(
     serial: string,
     options: { includeTree: boolean; includeScreenshot: boolean; signal?: AbortSignal },

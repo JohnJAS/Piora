@@ -4,6 +4,33 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-08-20
+
+### Added
+
+- Added a DevEco-style Harmony log workspace with process selection, log-level
+  and text filters, bounded live polling, and the same read-only process/log
+  actions exposed to the agent.
+- Added proactive discovery hints so browser and Harmony troubleshooting
+  requests reliably select their bundled extension tools.
+
+### Changed
+
+- Restyled Goal and Plan panels, running-message steer/queue controls, queued
+  messages, slash-command results, notices, extension prompts, and workspace
+  alerts to use the compact neutral Codex visual language.
+- Reduced the conversation toolbar to Git changes, history, and the right-panel
+  toggle, with live tracked-change totals.
+- Improved Harmony frame polling responsiveness while avoiding screenshot/log
+  contention, and preferred the user-visible device name over the product model.
+
+### Fixed
+
+- Strengthened Target Mode instructions so active goals must record progress,
+  evidence, or an explicit terminal/waiting state before a turn can settle.
+- Removed the slash-command palette's accent selection rail and aligned command
+  completion feedback with the rest of the application UI.
+
 ## [0.2.8] - 2026-08-18
 
 ### Added

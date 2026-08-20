@@ -163,9 +163,9 @@
 .reviewEmptyCompact { min-height: 92px; }
 .emptyIcon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid color-mix(in srgb, var(--border) 76%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--surface-raised) 72%, transparent); color: var(--text-muted); box-shadow: 0 1px 2px color-mix(in srgb, #000 6%, transparent); }
 @keyframes reviewSpin { to { transform: rotate(360deg); } }
-.error,.toast { margin: 0 10px 8px; padding: 7px 9px; border: 1px solid transparent; border-radius: 7px; font-size: var(--text-xs); }
+.error,.toast { margin: 0 10px 8px; padding: 7px 9px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--surface-raised); box-shadow: 0 1px 2px rgb(0 0 0 / 5%); font-size: var(--text-xs); }
 .error { color: var(--status-failed); background: color-mix(in srgb, var(--status-failed) 10%, transparent); }
-.toast { color: var(--status-ready); background: color-mix(in srgb, var(--status-ready) 10%, transparent); }
+.toast { color: var(--text-muted); }
 .hunkActions { flex: 0 0 auto; display: inline-flex; gap: 2px; }
 .hunkActions button { min-height: 23px; padding: 2px 6px; border-radius: 5px; }
 .srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }

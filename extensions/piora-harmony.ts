@@ -287,10 +287,11 @@ function screenshotRegion(params: {
 const harmonyDeviceTool = defineTool({
   name: "harmony_device",
   label: "Harmony Device",
-  description: "Control an authorized HarmonyOS NEXT test phone connected to Piora. First list devices, then acquire explicit AI control. Prefer snapshot refs over screen coordinates. No raw shell, install, permission, file, credential, unlock, or payment operations are available.",
-  promptSnippet: "Inspect and control an explicitly authorized HarmonyOS NEXT test phone",
+  description: "Inspect, debug, and control a HarmonyOS NEXT phone connected to Piora. Use this tool proactively when the user mentions a Harmony/OpenHarmony app, connected phone, device UI, crash, freeze, or device logs. It can list processes and filter hilog output without control; UI actions require acquiring control. No raw shell, install, permission, file, credential, unlock, or payment operations are available.",
+  promptSnippet: "Debug connected HarmonyOS devices, inspect UI and filtered process logs, and perform authorized device actions",
   promptGuidelines: [
-    "Always list devices and acquire control before viewing or changing device content.",
+    "For HarmonyOS app or device troubleshooting, call list_devices instead of assuming no device capability exists. Use list_processes and read_logs early for crashes, errors, startup failures, freezes, or unexpected behavior.",
+    "Always list devices first. Process and log inspection are read-only and do not require control; acquire control before snapshots or state-changing UI actions.",
     "Use snapshot followed by tap_ref whenever a UI node ref is available; refs and generations become stale after reconnects or newer snapshots.",
     "Coordinate taps and swipes are weaker than UI refs. Use them only when a fresh snapshot has no usable ref, always pass that snapshot generation, and never use coordinates for sensitive or ambiguous actions.",
     "After an action, prefer wait_for for a meaningful UI condition. Use wait_until_stable for visual-only transitions and wait_ms only as a bounded fallback when no observable completion condition exists.",
@@ -302,6 +303,8 @@ const harmonyDeviceTool = defineTool({
   parameters: Type.Object({
     action: Type.Union([
       Type.Literal("list_devices"),
+      Type.Literal("list_processes"),
+      Type.Literal("read_logs"),
       Type.Literal("acquire_control"),
       Type.Literal("release_control"),
       Type.Literal("snapshot"),
@@ -316,6 +319,16 @@ const harmonyDeviceTool = defineTool({
       Type.Literal("launch_app"),
     ]),
     serial: Type.Optional(Type.String({ description: "Exact device serial returned by list_devices" })),
+    pid: Type.Optional(Type.Number({ minimum: 1, description: "Exact process id returned by list_processes" })),
+    logLevel: Type.Optional(Type.Union([
+      Type.Literal("debug"),
+      Type.Literal("info"),
+      Type.Literal("warn"),
+      Type.Literal("error"),
+      Type.Literal("fatal"),
+    ])),
+    query: Type.Optional(Type.String({ maxLength: 256, description: "Case-insensitive text filter for device logs" })),
+    limit: Type.Optional(Type.Number({ minimum: 1, maximum: 2_000, description: "Maximum log lines; defaults to 400" })),
     generation: Type.Optional(Type.Number({ description: "Snapshot generation used to reject stale actions" })),
     ref: Type.Optional(Type.String({ description: "UI ref returned by the latest snapshot" })),
     x: Type.Optional(Type.Number()),
@@ -370,6 +383,36 @@ const harmonyDeviceTool = defineTool({
       }
 
       const serial = requireString(params.serial, "serial");
+      if (params.action === "list_processes") {
+        const processes = await manager.listProcesses(serial, signal);
+        const lines = processes.map((process) => `${process.pid}\t${process.name}`);
+        return textResult(lines.join("\n") || `No processes were reported by ${serial}.`, identity, {
+          action: params.action,
+          serial,
+          count: processes.length,
+        });
+      }
+
+      if (params.action === "read_logs") {
+        const entries = await manager.readLogs({
+          serial,
+          ...(params.pid === undefined ? {} : { pid: Math.round(params.pid) }),
+          ...(params.logLevel ? { level: params.logLevel } : {}),
+          ...(params.query ? { query: params.query } : {}),
+          limit: params.limit === undefined ? 400 : Math.round(params.limit),
+          signal,
+        });
+        const output = entries.map((entry) => entry.raw).join("\n");
+        return textResult(output || `No device logs matched the requested filters on ${serial}.`, identity, {
+          action: params.action,
+          serial,
+          count: entries.length,
+          ...(params.pid === undefined ? {} : { pid: Math.round(params.pid) }),
+          ...(params.logLevel ? { logLevel: params.logLevel } : {}),
+          filtered: Boolean(params.query),
+        });
+      }
+
       if (params.action === "acquire_control") {
         // Device operations run directly: the session acquires a bounded lease
         // without a per-run confirmation prompt. The lease stays scoped to
@@ -600,4 +643,14 @@ const harmonyDeviceTool = defineTool({
 
 export default function pioraHarmony(api: ExtensionAPI) {
   api.registerTool(harmonyDeviceTool);
+  api.on?.("before_agent_start", (event) => {
+    if (!/(?:harmony(?:os)?|openharmony|鸿蒙|hdc|hilog|手机|设备|真机|模拟器|崩溃|闪退|日志)/i.test(event.prompt)) return;
+    return {
+      message: {
+        customType: "piora-harmony-discovery",
+        display: false,
+        content: "[PIORA HARMONY AVAILABLE]\nA bounded harmony_device tool is available for connected-device debugging. For HarmonyOS/device issues, proactively call list_devices, then inspect list_processes/read_logs as appropriate. Do not claim device access or logs are unavailable before checking the tool.",
+      },
+    };
+  });
 }

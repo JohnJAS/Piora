@@ -14,6 +14,9 @@ import type {
   HarmonyDevice,
   HarmonyDiagnostics,
   HarmonyInputTextOptions,
+  HarmonyLogEntry,
+  HarmonyLogOptions,
+  HarmonyProcess,
   HarmonyLaunchAppOptions,
   HarmonyLease,
   HarmonyLeaseOwner,
@@ -327,6 +330,32 @@ export class HarmonyDeviceManager {
 
   async listDevices(signal?: AbortSignal): Promise<HarmonyDevice[]> {
     return await this.enqueue("list_devices", async (queuedSignal) => await this.refreshDevices(queuedSignal), signal);
+  }
+
+  async listProcesses(serial: string, signal?: AbortSignal): Promise<HarmonyProcess[]> {
+    validateSerial(serial);
+    return await this.enqueue("list_processes", async (queuedSignal) => {
+      await this.onlineDevice(serial, queuedSignal);
+      const backend = this.requireBackend();
+      if (!backend.listProcesses) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Harmony process discovery is unavailable");
+      return await backend.listProcesses(serial, queuedSignal);
+    }, signal);
+  }
+
+  async readLogs(options: HarmonyLogOptions): Promise<HarmonyLogEntry[]> {
+    validateSerial(options.serial);
+    return await this.enqueue("read_logs", async (queuedSignal) => {
+      await this.onlineDevice(options.serial, queuedSignal);
+      const backend = this.requireBackend();
+      if (!backend.readLogs) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Harmony device logs are unavailable");
+      return await backend.readLogs(options.serial, {
+        ...(options.pid !== undefined ? { pid: options.pid } : {}),
+        ...(options.level ? { level: options.level } : {}),
+        ...(options.query ? { query: options.query } : {}),
+        ...(options.limit ? { limit: options.limit } : {}),
+        signal: queuedSignal,
+      });
+    }, options.signal);
   }
 
   private async onlineDevice(serial: string, signal?: AbortSignal): Promise<HarmonyDevice> {

@@ -38,6 +38,8 @@ import {
 } from "@/lib/panel-layout";
 import type { SessionInfo } from "@/lib/types";
 import type { CollaborationRoom } from "@/lib/room-types";
+import type { GitStatusResponse } from "@/lib/git-types";
+import { getTrackedGitLineStats } from "@/lib/git-line-stats";
 
 function replaceUrlWithoutNextNavigation(url: string): void {
   // Next patches history.replaceState and treats an ordinary call as an App
@@ -1124,6 +1126,37 @@ export function AppShell() {
   const currentProjectCwd = selectedRoom?.projectRoot ?? selectedSession?.cwd ?? effectiveNewSessionCwd ?? activeCwd;
   const currentProjectPath = selectedRoom?.projectRoot ?? selectedSession?.projectRoot ?? activeProjectRootRef.current ?? currentProjectCwd;
   const currentProjectName = currentProjectPath ? getFileName(currentProjectPath) || currentProjectPath : null;
+  const [topbarGitStatus, setTopbarGitStatus] = useState<GitStatusResponse | null>(null);
+  useEffect(() => {
+    if (!currentProjectCwd || selectedRoom) {
+      setTopbarGitStatus(null);
+      return;
+    }
+    let disposed = false;
+    let timer: number | undefined;
+    let controller: AbortController | undefined;
+    const load = async () => {
+      controller?.abort();
+      controller = new AbortController();
+      try {
+        const response = await fetch(`/api/git/status?cwd=${encodeURIComponent(currentProjectCwd)}`, { cache: "no-store", signal: controller.signal });
+        if (response.ok && !disposed) setTopbarGitStatus(await response.json() as GitStatusResponse);
+      } catch { /* The button remains available without counts. */ }
+      if (!disposed && taskControls?.disabled && document.visibilityState === "visible") {
+        timer = window.setTimeout(() => { void load(); }, 2_500);
+      }
+    };
+    const refresh = () => { if (!disposed) void load(); };
+    void load();
+    window.addEventListener("piora:git-status-changed", refresh);
+    return () => {
+      disposed = true;
+      controller?.abort();
+      if (timer !== undefined) window.clearTimeout(timer);
+      window.removeEventListener("piora:git-status-changed", refresh);
+    };
+  }, [currentProjectCwd, selectedRoom, taskControls?.disabled]);
+  const topbarLineStats = useMemo(() => topbarGitStatus ? getTrackedGitLineStats(topbarGitStatus) : { additions: 0, deletions: 0 }, [topbarGitStatus]);
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showConversation;
 
@@ -1645,6 +1678,18 @@ export function AppShell() {
           </div>
           {!settingsDialogOpen && showChat && (
             <div className="conversation-toolbar-actions">
+              <button
+                className="topbar-control topbar-changes-button"
+                type="button"
+                onClick={handleOpenTaskChanges}
+                disabled={!topbarGitStatus?.isGitRepository}
+                title={translate("review.changesTree")}
+                aria-label={translate("review.changesTree")}
+              >
+                <AliIcon name="code" size={14} />
+                {!isMobile ? <span>{translate("review.changes", { count: topbarGitStatus?.files.length ?? 0 })}</span> : null}
+                {(topbarLineStats.additions > 0 || topbarLineStats.deletions > 0) ? <span className="topbar-changes-lines"><b>+{topbarLineStats.additions}</b><i>−{topbarLineStats.deletions}</i></span> : null}
+              </button>
               <button
                 className="topbar-control topbar-history-button"
                 type="button"

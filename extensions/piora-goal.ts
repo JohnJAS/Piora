@@ -168,7 +168,7 @@ export default function pioraGoal(api: ExtensionAPI) {
       message: {
         customType: "piora-goal-context",
         display: false,
-        content: `[PIORA TARGET MODE ACTIVE]\nObjective: ${state.objective}\n\nSuccess criteria:\n${state.successCriteria.map((item) => `- ${item}`).join("\n")}\n\nRecent checkpoints:\n${recent}\n\nRecorded evidence:\n${evidence}\n\nContinue until the objective is verified. Record material progress and evidence with piora_goal.`,
+        content: `[PIORA TARGET MODE ACTIVE]\nObjective: ${state.objective}\n\nSuccess criteria:\n${state.successCriteria.map((item) => `- ${item}`).join("\n")}\n\nRecent checkpoints:\n${recent}\n\nRecorded evidence:\n${evidence}\n\nContinue until the objective is verified. This is a persistent execution run, not a single-response hint. Before ending every target-mode turn, you MUST call piora_goal with progress, evidence, complete, waiting_user, or blocked. Do not leave the goal active merely because the response can end.`,
       },
     };
   });
