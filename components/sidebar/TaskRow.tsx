@@ -9,7 +9,6 @@ import {
   type TaskStatus,
 } from "@/lib/task-status";
 import type { SessionInfo } from "@/lib/types";
-import type { GoalRunStatus } from "@/lib/goal-run-registry";
 import { AliIcon } from "../AliIcon";
 import { TaskContextMenu } from "./TaskContextMenu";
 
@@ -56,35 +55,6 @@ export function RunningSessionIndicator() {
 
 export function UnreadSessionIndicator() {
   return <TaskStatusIndicator status={{ lifecycle: "active", runtime: "idle", attention: "unread" }} />;
-}
-
-const GOAL_STATUS_KEYS: Record<GoalRunStatus, string> = {
-  active: "goal.status.active",
-  paused: "goal.status.paused",
-  waiting_user: "goal.status.waitingUser",
-  blocked: "goal.status.blocked",
-  complete: "goal.status.complete",
-  cancelled: "goal.status.cancelled",
-};
-
-function GoalStatusIndicator({ status }: { status: GoalRunStatus }) {
-  const { t } = useI18n();
-  const color = status === "complete"
-    ? "var(--status-ready)"
-    : status === "waiting_user" || status === "blocked"
-      ? "var(--status-attention)"
-      : status === "active"
-        ? "var(--accent)"
-        : "var(--text-dim)";
-  const label = `${t("chat.goalMode")}: ${t(GOAL_STATUS_KEYS[status])}`;
-  return (
-    <span title={label} aria-label={label} style={{ display: "inline-flex", color, flexShrink: 0 }}>
-      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
-        <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.4" />
-        <circle cx="6.5" cy="6.5" r="1.8" fill="currentColor" />
-      </svg>
-    </span>
-  );
 }
 
 export function TaskRow({
@@ -138,7 +108,6 @@ export function TaskRow({
     hasUnreadResult: Boolean(isUnread),
     fallbackRuntime: isRunning ? "running" : "idle",
   });
-  const goal = taskStatus.goal ?? session.goal;
   const taskStatusPresentationKey = getTaskStatusPresentationKey(taskStatus);
   const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
@@ -298,8 +267,7 @@ export function TaskRow({
           {taskStatusPresentationKey !== "none" ? (
             <TaskStatusIndicator status={taskStatus} />
           ) : null}
-          {goal ? <GoalStatusIndicator status={goal.status} /> : null}
-          {taskStatusPresentationKey === "none" && !goal && session.worktreeBranch ? (
+          {taskStatusPresentationKey === "none" && session.worktreeBranch ? (
             <span title={`Worktree: ${session.worktreeBranch}`} style={{ color: "var(--text-dim)", display: "inline-flex" }}>
               <AliIcon name="branches" size={11} />
             </span>

@@ -25,8 +25,6 @@ import {
   VISIBLE_PAGE_SIZE,
 } from "@/lib/chat-lazy-load";
 import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
-import { GoalPanel } from "./GoalPanel";
-import { PlanPanel } from "./PlanPanel";
 
 interface Props {
   session: SessionInfo | null;
@@ -237,14 +235,14 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, sessionStats,
-    slashCommands, slashCommandsLoading, queuedMessages, goal, planArtifact,
+    slashCommands, slashCommandsLoading, queuedMessages,
     notices, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection,
     agentPhase,
     isNew,
     sessionIdRef, messagesEndRef, scrollContainerRef,
     lastUserMsgRef,
-    handleSend, handleAbort, handleGoalPause, handleGoalCancel, handlePlanUpdate, handlePlanApprove, handlePlanCancel, handlePlanExecute, handleFork, handleNavigate, handleModelChange, handleScrollToBottom,
+    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange, handleScrollToBottom,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
@@ -659,27 +657,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           onInput={sendExtensionCustomInput}
         />
       )}
-
-      {goal ? (
-        <GoalPanel
-          goal={goal}
-          busy={sessionBusy}
-          onPause={() => { void handleGoalPause(); }}
-          onResume={() => { void handleSend(t("goal.resumePrompt"), undefined, undefined, { goalMode: true }); }}
-          onCancel={() => { void handleGoalCancel(); }}
-        />
-      ) : null}
-
-      {planArtifact ? (
-        <PlanPanel
-          artifact={planArtifact}
-          busy={sessionBusy}
-          onSave={handlePlanUpdate}
-          onApprove={handlePlanApprove}
-          onCancel={handlePlanCancel}
-          onExecute={handlePlanExecute}
-        />
-      ) : null}
 
       {isEmptyNew ? (
         <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">

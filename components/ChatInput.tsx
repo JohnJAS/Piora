@@ -331,7 +331,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [streamingActionIndex, setStreamingActionIndex] = useState(0);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [promptMode, setPromptMode] = useState<PromptMode>("normal");
-  const [promptModeAvailability, setPromptModeAvailability] = useState({ goalMode: true, planMode: true });
+  // Goal/Plan prompt modes are intentionally retired from the composer. Keep
+  // the compatibility fields in the send contract for older sessions, but do
+  // not advertise or activate those modes in the UI.
+  const promptModeAvailability = { goalMode: false, planMode: false };
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
   ));
@@ -347,35 +350,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [historyActiveIndex, setHistoryActiveIndex] = useState(0);
 
-  useEffect(() => {
-    let active = true;
-    const refresh = async () => {
-      try {
-        const response = await fetch("/api/prompt-modes");
-        const next = await response.json() as { goalMode?: boolean; planMode?: boolean };
-        if (!active || !response.ok) return;
-        const availability = {
-          goalMode: next.goalMode !== false,
-          planMode: next.planMode !== false,
-        };
-        setPromptModeAvailability(availability);
-        setPromptMode((current) => (
-          (current === "goal" && !availability.goalMode) || (current === "plan" && !availability.planMode)
-            ? "normal"
-            : current
-        ));
-      } catch {
-        // Keep the default availability when the settings endpoint is unavailable.
-      }
-    };
-    const handleExtensionsChanged = () => { void refresh(); };
-    void refresh();
-    window.addEventListener("piora:extensions-changed", handleExtensionsChanged);
-    return () => {
-      active = false;
-      window.removeEventListener("piora:extensions-changed", handleExtensionsChanged);
-    };
-  }, []);
   const [fileIndex, setFileIndex] = useState<{ cwd: string; entries: FileIndexEntry[]; truncated: boolean } | null>(null);
   const [fileIndexLoading, setFileIndexLoading] = useState(false);
   const [atServerResult, setAtServerResult] = useState<{ cwd: string; query: string; matches: FileIndexEntry[] } | null>(null);
