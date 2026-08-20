@@ -562,13 +562,12 @@ export async function performBrowserViewAction(input: BrowserViewAction): Promis
 
 export default function pioraBrowser(api: ExtensionAPI) {
   api.registerTool(browserTool);
-  api.on?.("before_agent_start", (event) => {
-    if (!/(?:https?:\/\/|www\.|网站|网页|浏览器|上网|在线|最新|搜索|查一下|查询|官网|登录|链接|页面|web|browser|online|latest|search|website|site|url)/i.test(event.prompt)) return;
+  api.on?.("before_agent_start", () => {
     return {
       message: {
         customType: "piora-browser-discovery",
         display: false,
-        content: "[PIORA BROWSER AVAILABLE]\nA visible built-in browser tool is available. When this request depends on current online information or website interaction, use browser open/snapshot and element refs. Do not say browsing is unavailable before checking the tool.",
+        content: "[PIORA BROWSER AVAILABLE]\nThe `browser` tool is available in this session. Use it proactively whenever the user asks about current online information, a URL, a webpage, website interaction, search, login, or web verification. Start with browser open or browser tabs, then browser snapshot before interacting. Do not claim browsing is unavailable before checking this tool.",
       },
     };
   });
