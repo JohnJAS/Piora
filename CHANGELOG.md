@@ -4,6 +4,37 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-21
+
+### Added
+
+- Added an explicit project picker for new conversations, including project
+  search and a system-folder chooser instead of silently inheriting the active
+  Session's project.
+- Added Room mention completion for manually typed `@`, keyboard selection,
+  immediate Agent processing presence, and automatic reply projection back
+  into the shared conversation.
+- Added persistent pin indicators to pinned Sessions.
+
+### Changed
+
+- Room creation now supports cross-project Session selection with grouped
+  project labels and a fixed action footer that remains reachable for long
+  Session lists.
+- Room shared workspace paths can be edited or selected from the desktop folder
+  chooser and may live within any member Session's project.
+- Browser and Harmony extensions now advertise their exact built-in tool names
+  and invocation shapes to every compatible Agent prompt.
+
+### Fixed
+
+- Conversation chrome and Room workspaces now preserve the configured artwork
+  instead of covering it with opaque white surfaces.
+- Removed the inactive sidebar-header search button while retaining functional
+  Session search.
+- Room replies now remain correlated with the addressed message and are shown
+  in the Room even when an Agent omits the explicit shared-reply tool call.
+
 ## [0.3.0] - 2026-08-20
 
 ### Added
