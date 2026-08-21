@@ -78,7 +78,11 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: "Extension not found" }, { status: 404 });
     }
     if (!extension.configurable) {
-      return NextResponse.json({ error: "This extension is controlled by its package plugin setting" }, { status: 409 });
+      return NextResponse.json({
+        error: extension.required
+          ? "This extension is a required Piora core capability"
+          : "This extension is controlled by its package plugin setting",
+      }, { status: 409 });
     }
     setExtensionEnabled(id, body.enabled);
     invalidateServicesCache();

@@ -4,6 +4,30 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-22
+
+### Added
+
+- Added remote HTTP APIs for creating Sessions, discovering core capabilities,
+  reading Session history, and listing the tools available to a Session.
+- Added archived-conversation management directly in Settings.
+- Added configurable automatic Session naming with a dedicated title prompt.
+
+### Changed
+
+- Redesigned the Windows application menu and Settings workspace around a
+  compact four-menu desktop layout and grouped, capability-aware navigation.
+- Made the bundled Browser and Harmony integrations discoverable in packaged
+  builds without making their successful startup a hard Session requirement.
+- Expanded remote-control capability metadata and packaged-runtime verification
+  for third-party HTTP extensions.
+
+### Fixed
+
+- Improved task-list density, status rendering, and Session title consistency.
+- Kept packaged runtime extension and server startup behavior aligned with the
+  development environment.
+
 ## [0.3.1] - 2026-08-21
 
 ### Added

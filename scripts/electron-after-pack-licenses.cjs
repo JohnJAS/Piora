@@ -27,7 +27,7 @@ module.exports = async function generatePackagedLicenses(context) {
   const originalServerSource = await readFile(join(webRoot, "server.js"), "utf8");
   const launcherSource = originalServerSource.replace(
     "const dir = path.join(__dirname)",
-    "const dir = path.join(__dirname, 'runtime.asar')",
+    "const dir = path.join(__dirname, 'runtime.asar');process.env.PIORA_WEB_RUNTIME_ROOT=process.env.PIORA_WEB_RUNTIME_ROOT||dir",
   );
   if (launcherSource === originalServerSource) {
     throw new Error("Unable to create the packaged ASAR server launcher");

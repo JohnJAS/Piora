@@ -2527,7 +2527,7 @@ select:focus-visible,
 
 .app-shell.desktop-chrome {
   position: relative;
-  padding-top: 40px;
+  padding-top: 36px;
 }
 
 .app-shell.desktop-chrome .desktop-titlebar {
@@ -2537,7 +2537,7 @@ select:focus-visible,
   left: 0;
   right: 0;
   display: flex;
-  height: 40px;
+  height: 36px;
   align-items: center;
   gap: 3px;
   padding-left: calc(env(titlebar-area-x, 0px) + 10px);
@@ -2557,13 +2557,10 @@ select:focus-visible,
   height: 22px;
   place-items: center;
   margin-right: 2px;
-  border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--surface-raised) 86%, transparent);
-  color: var(--text);
-  font-family: Georgia, serif;
-  font-size: var(--text-md);
-  font-weight: 600;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
   line-height: 1;
 }
 
@@ -2600,10 +2597,10 @@ select:focus-visible,
   flex: 1 1 auto;
 }
 
-@media (min-width: 960px) {
-  .app-shell.desktop-chrome {
-    padding-top: 48px;
-  }
+.settings-embedded-surface {
+  width: min(100%, 820px);
+  margin-inline: auto;
+  box-sizing: border-box;
 }
 
 ::-webkit-scrollbar {
@@ -2981,14 +2978,14 @@ pre, code {
   background: rgba(0, 0, 0, 0.35);
 }
 .mermaid-zoom-dialog[data-desktop-chrome="true"] {
-  inset: 40px 0 0;
-  height: calc(100dvh - 40px);
+  inset: 36px 0 0;
+  height: calc(100dvh - 36px);
 }
 .mermaid-zoom-dialog[data-desktop-chrome="true"]::backdrop {
   background: linear-gradient(
     to bottom,
-    transparent 0 40px,
-    rgba(0, 0, 0, 0.35) 40px
+    transparent 0 36px,
+    rgba(0, 0, 0, 0.35) 36px
   );
 }
 .mermaid-zoom-layout {

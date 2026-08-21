@@ -33,6 +33,7 @@ export interface ExtensionInventoryItem {
   scope: "user" | "project" | "temporary";
   origin: "package" | "top-level";
   builtIn: boolean;
+  required: boolean;
   enabled: boolean;
   tools: string[];
   commands: string[];
@@ -70,6 +71,10 @@ export function setExtensionEnabled(
   enabled: boolean,
   path = extensionPreferencesPath(),
 ): ExtensionPreferences {
+  const required = FIRST_PARTY_EXTENSIONS.find((descriptor) => descriptor.id === id)?.required === true;
+  if (required && !enabled) {
+    throw new Error("Piora core capability extensions cannot be disabled.");
+  }
   const current = readExtensionPreferences(path);
   const disabled = new Set(current.disabled);
   if (enabled) disabled.delete(id);
@@ -108,6 +113,7 @@ export function isExtensionEnabled(
   extension: Extension,
   preferences = readExtensionPreferences(),
 ): boolean {
+  if (getFirstPartyExtensionByPath(extension.resolvedPath)?.required) return true;
   return !preferences.disabled.includes(extensionId(extension));
 }
 
@@ -115,6 +121,7 @@ export function isExtensionIdEnabled(
   id: string,
   preferences = readExtensionPreferences(),
 ): boolean {
+  if (FIRST_PARTY_EXTENSIONS.some((descriptor) => descriptor.id === id && descriptor.required)) return true;
   return !preferences.disabled.includes(id);
 }
 
@@ -134,7 +141,7 @@ export function enabledFirstPartyExtensionPaths(
 ): string[] {
   const disabled = new Set(preferences.disabled);
   return FIRST_PARTY_EXTENSIONS
-    .filter((descriptor) => descriptor.profiles.includes(profile) && !disabled.has(descriptor.id))
+    .filter((descriptor) => descriptor.profiles.includes(profile) && (descriptor.required || !disabled.has(descriptor.id)))
     .map(firstPartyExtensionPath);
 }
 
@@ -142,18 +149,6 @@ export function firstPartyExtensionPaths(profile: "normal" | "device-control"): 
   return FIRST_PARTY_EXTENSIONS
     .filter((descriptor) => descriptor.profiles.includes(profile))
     .map(firstPartyExtensionPath);
-}
-
-export function assertRequiredFirstPartyExtensionsEnabled(
-  profile: "normal" | "device-control",
-  preferences = readExtensionPreferences(),
-): void {
-  if (profile !== "device-control") return;
-  const disabled = new Set(preferences.disabled);
-  const missing = FIRST_PARTY_EXTENSIONS.filter((descriptor) => descriptor.requiredInDeviceControl && disabled.has(descriptor.id));
-  if (missing.length > 0) {
-    throw new Error(`Device control requires ${missing.map((descriptor) => descriptor.name).join(", ")}. Enable it in Settings > Extensions.`);
-  }
 }
 
 function inventoryName(extension: Extension, firstParty?: FirstPartyExtensionDescriptor): string {
@@ -177,10 +172,11 @@ export function buildExtensionInventory(
       scope: extension.sourceInfo.scope,
       origin: extension.sourceInfo.origin,
       builtIn: Boolean(firstParty),
+      required: firstParty?.required === true,
       enabled: isExtensionEnabled(extension, preferences),
       tools: [...extension.tools.keys()].sort(),
       commands: [...extension.commands.keys()].sort(),
-      configurable: true,
+      configurable: firstParty?.required !== true,
     };
   }).sort((left, right) => Number(right.builtIn) - Number(left.builtIn) || left.name.localeCompare(right.name));
 }
@@ -190,6 +186,7 @@ export interface ResolvedExtensionCandidate {
   path: string;
   metadata: PathMetadata;
   builtIn: boolean;
+  required: boolean;
   description?: string;
   name: string;
   enabled: boolean;
@@ -223,10 +220,11 @@ export async function resolveExtensionLoadPlan(options: {
       path,
       metadata: { source: "piora", scope: "temporary", origin: "top-level", baseDir: dirname(path) },
       builtIn: true,
+      required: descriptor.required === true,
       description: descriptor.description,
       name: descriptor.name,
       enabled: isExtensionIdEnabled(descriptor.id, preferences),
-      configurable: true,
+      configurable: descriptor.required !== true,
     });
   }
 
@@ -237,6 +235,7 @@ export async function resolveExtensionLoadPlan(options: {
       path: resource.path,
       metadata: resource.metadata,
       builtIn: false,
+      required: false,
       name: basename(resource.path).replace(/\.(?:[cm]?[jt]s)$/i, "") || basename(resource.path),
       enabled: resource.enabled && isExtensionIdEnabled(id, preferences),
       configurable: resource.enabled,
@@ -290,6 +289,7 @@ export function buildExtensionInventoryFromPlan(
       scope: candidate.metadata.scope,
       origin: candidate.metadata.origin,
       builtIn: candidate.builtIn,
+      required: candidate.required,
       enabled: candidate.enabled,
       tools: extension ? [...extension.tools.keys()].sort() : [],
       commands: extension ? [...extension.commands.keys()].sort() : [],

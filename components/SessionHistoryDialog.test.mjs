@@ -29,8 +29,8 @@ test("isolates the interactive exported history while retaining download and rel
 test("reduces the conversation toolbar to progressive-disclosure actions", () => {
   assert.match(appShell, /className="conversation-toolbar-actions"/);
   assert.match(appShell, /conversationMenu\.title/);
-  assert.match(appShell, /conversationMenu\.generateTitleDescription/);
   assert.match(appShell, /conversationMenu\.systemPromptDescription/);
+  assert.doesNotMatch(appShell, /handleAutoName|conversationMenu\.generateTitleDescription/);
   assert.doesNotMatch(appShell, /topbar-auto-name|topbar-system-button|topbar-stats-control/);
   assert.doesNotMatch(globalStyles, /topbar-auto-name|topbar-system-button|topbar-stats-control/);
 });

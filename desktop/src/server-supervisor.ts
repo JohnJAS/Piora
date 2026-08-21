@@ -19,6 +19,8 @@ export interface ServerExit {
 export interface StandaloneServerOptions {
   serverEntry: string;
   serverHostEntry: string;
+  /** Absolute root containing Piora's staged `extensions/` directory. */
+  runtimeRoot: string;
   nodePath?: string;
   homeDirectory: string;
   agentDirectory: string;
@@ -297,6 +299,7 @@ export class StandaloneServer {
           PI_WEB_ALLOWED_HOSTS: LOOPBACK_HOST,
           PI_WEB_NO_OPEN: "1",
           PIORA_HOME: this.options.homeDirectory,
+          PIORA_WEB_RUNTIME_ROOT: this.options.runtimeRoot,
           PIORA_RUNTIME_PROFILE: this.options.runtimeProfile ?? "normal",
           ...(this.options.desktopDataDirectory
             ? { PIORA_DESKTOP_DATA_DIR: this.options.desktopDataDirectory }

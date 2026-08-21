@@ -147,7 +147,7 @@ export type BuiltinSlashCommandResult =
 export interface UseAgentSessionOptions {
   session: SessionInfo | null;
   newSessionCwd: string | null;
-  onAgentEnd?: () => void;
+  onAgentEnd?: (sessionId: string) => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
   modelsRefreshKey?: number;
@@ -824,7 +824,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       dispatch({ type: "end" });
       const shouldNotify = !suppressCompletionNotificationRef.current;
       suppressCompletionNotificationRef.current = false;
-      if (shouldNotify) onAgentEnd?.();
+      if (shouldNotify && sid) onAgentEnd?.(sid);
     }
   }, [closeEvents, loadSession, onAgentEnd]);
 

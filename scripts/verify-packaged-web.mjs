@@ -50,6 +50,8 @@ export const forbiddenPackagedDependencies = Object.freeze([
 
 const requiredPaths = [
   "server.js",
+  "extensions/piora-browser.ts",
+  "extensions/piora-harmony.ts",
   ".next/server/app/desktop-pet/page_client-reference-manifest.js",
   "node_modules/next/package.json",
   "node_modules/@earendil-works/pi-agent-core/package.json",
@@ -438,8 +440,11 @@ async function main() {
     throw new Error(`Packaged web container must contain only the launcher and runtime archive: ${packagedWebEntries.join(", ")}`);
   }
   const launcherSource = await readFile(join(packagedWebRoot, "server.js"), "utf8");
-  if (!launcherSource.includes("const dir = path.join(__dirname, 'runtime.asar')")) {
-    throw new Error("Packaged web launcher does not point Next at runtime.asar");
+  if (
+    !launcherSource.includes("const dir = path.join(__dirname, 'runtime.asar')")
+    || !launcherSource.includes("process.env.PIORA_WEB_RUNTIME_ROOT")
+  ) {
+    throw new Error("Packaged web launcher does not point Next and Piora capabilities at runtime.asar");
   }
   const inspectionDirectory = await mkdtemp(join(tmpdir(), "piora-runtime-inspection-"));
   const runtimeWebRoot = join(inspectionDirectory, "web");
@@ -659,6 +664,11 @@ async function main() {
       throw new Error(`Fixture extension tool is loaded but inactive: ${JSON.stringify(fixtureTool)}`);
     }
 
+    const coreExtensionTools = ["browser", "harmony_device"].map((name) => {
+      const tool = tools.find((entry) => entry.name === name);
+      return { name, loaded: Boolean(tool), active: tool?.active === true };
+    });
+
     const pioraOwnedSubagentEntries = [...commands, ...tools].filter((entry) => (
       typeof entry.name === "string" && /^(?:pi[-_]?gui)[-_]?sub[-_]?agents?$/i.test(entry.name)
     ));
@@ -686,6 +696,7 @@ async function main() {
       piPackage: fixturePackageName,
       extensionCommand: fixtureCommandName,
       extensionTool: fixtureToolName,
+      coreExtensionTools,
       skill: fixtureSkillName,
       pioraOwnedSubagentFeatures: 0,
     }));

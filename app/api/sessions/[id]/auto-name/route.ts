@@ -1,22 +1,64 @@
 import { NextResponse } from "next/server";
 import { SessionManager, type AgentSession } from "@earendil-works/pi-coding-agent";
 import { generateSessionTitle } from "@/lib/session-title";
+import {
+  SESSION_TITLE_PROMPT_MAX_LENGTH,
+  normalizeSessionTitlePrompt,
+} from "@/lib/session-title-prompt";
 import { getRpcSession, startRpcSession } from "@/lib/rpc-manager";
 import { invalidateSessionListCache, resolveSessionPath } from "@/lib/session-reader";
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
 
   try {
+    const requestText = await req.text();
+    let body: { instructions?: unknown; currentTitle?: unknown; apply?: unknown; onlyIfUnnamed?: unknown } = {};
+    if (requestText) {
+      try {
+        const parsed = JSON.parse(requestText) as unknown;
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          return NextResponse.json({ error: "Request body must be a JSON object" }, { status: 400 });
+        }
+        body = parsed as typeof body;
+      } catch {
+        return NextResponse.json({ error: "Request body must be valid JSON" }, { status: 400 });
+      }
+    }
+    if (typeof body.instructions === "string" && Array.from(body.instructions).length > SESSION_TITLE_PROMPT_MAX_LENGTH) {
+      return NextResponse.json(
+        { error: `Session title instructions must not exceed ${SESSION_TITLE_PROMPT_MAX_LENGTH} characters` },
+        { status: 400 },
+      );
+    }
+    if (body.instructions !== undefined && typeof body.instructions !== "string") {
+      return NextResponse.json({ error: "Session title instructions must be a string" }, { status: 400 });
+    }
+    if (body.currentTitle !== undefined && typeof body.currentTitle !== "string") {
+      return NextResponse.json({ error: "Current title must be a string" }, { status: 400 });
+    }
+    if (body.apply !== undefined && typeof body.apply !== "boolean") {
+      return NextResponse.json({ error: "Apply must be a boolean" }, { status: 400 });
+    }
+    if (body.onlyIfUnnamed !== undefined && typeof body.onlyIfUnnamed !== "boolean") {
+      return NextResponse.json({ error: "Only if unnamed must be a boolean" }, { status: 400 });
+    }
+
     const filePath = await resolveSessionPath(id);
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const cwd = SessionManager.open(filePath).getHeader()?.cwd ?? process.cwd();
+    const manager = SessionManager.open(filePath);
+    const currentName = manager.getSessionName()?.trim();
+    if (body.onlyIfUnnamed === true && currentName) {
+      return NextResponse.json({ title: currentName, applied: false, skipped: true, usage: null });
+    }
+
+    const cwd = manager.getHeader()?.cwd ?? process.cwd();
     const existing = getRpcSession(id);
     const { session } = existing?.isAlive()
       ? { session: existing }
@@ -25,7 +67,10 @@ export async function POST(
     // globalThis keeps wrappers alive across dev hot reloads; older instances
     // may predate waitUntilReady(), but those have already completed startup.
     await session.waitUntilReady?.();
-    const result = await generateSessionTitle(session.inner as unknown as AgentSession);
+    const result = await generateSessionTitle(session.inner as unknown as AgentSession, {
+      ...(typeof body.instructions === "string" ? { instructions: normalizeSessionTitlePrompt(body.instructions) } : {}),
+      ...(typeof body.currentTitle === "string" ? { currentTitle: Array.from(body.currentTitle).slice(0, 200).join("") } : {}),
+    });
 
     if (!session.isAlive()) {
       return NextResponse.json(
@@ -34,9 +79,21 @@ export async function POST(
       );
     }
 
-    session.inner.setSessionName(result.title);
-    invalidateSessionListCache();
-    return NextResponse.json({ title: result.title, usage: result.usage ?? null });
+    const apply = body.apply !== false;
+    if (apply) {
+      // A manual rename may land while the model is generating. Re-read the
+      // append-only session file immediately before applying so automatic
+      // naming can never overwrite a title chosen by the user.
+      const latestName = body.onlyIfUnnamed === true
+        ? SessionManager.open(filePath).getSessionName()?.trim()
+        : undefined;
+      if (latestName) {
+        return NextResponse.json({ title: latestName, applied: false, skipped: true, usage: result.usage ?? null });
+      }
+      session.inner.setSessionName(result.title);
+      invalidateSessionListCache();
+    }
+    return NextResponse.json({ title: result.title, applied: apply, skipped: false, usage: result.usage ?? null });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : String(error) },

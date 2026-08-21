@@ -8,9 +8,11 @@ import {
   getTaskStatusPresentationKey,
   type TaskStatus,
 } from "@/lib/task-status";
+import { readSessionTitlePrompt } from "@/lib/session-title-settings";
 import type { SessionInfo } from "@/lib/types";
 import { AliIcon } from "../AliIcon";
 import { TaskContextMenu } from "./TaskContextMenu";
+import styles from "./TaskRow.module.css";
 
 export function TaskStatusIndicator({ status }: { status: TaskStatus }) {
   const { t } = useI18n();
@@ -98,6 +100,8 @@ export function TaskRow({
   const [hovered, setHovered] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
+  const [optimizingTitle, setOptimizingTitle] = useState(false);
+  const [titleOptimizationError, setTitleOptimizationError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
@@ -115,15 +119,17 @@ export function TaskRow({
 
   const startRename = useCallback((event: React.MouseEvent) => {
     event.stopPropagation();
-    setRenameValue(session.name ?? "");
+    setRenameValue(title);
+    setTitleOptimizationError(null);
     setRenaming(true);
     setTimeout(() => inputRef.current?.select(), 0);
-  }, [session.name]);
+  }, [title]);
 
   const commitRename = useCallback(async () => {
+    if (optimizingTitle) return;
     const name = renameValue.trim();
     setRenaming(false);
-    if (name === (session.name ?? "")) return;
+    if (name === title) return;
     try {
       await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, {
         method: "PATCH",
@@ -134,7 +140,33 @@ export function TaskRow({
     } catch {
       // Preserve the current row and let the next refresh retry.
     }
-  }, [onRenamed, renameValue, session.id, session.name]);
+  }, [onRenamed, optimizingTitle, renameValue, session.id, title]);
+
+  const optimizeTitle = useCallback(async (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (optimizingTitle) return;
+    setOptimizingTitle(true);
+    setTitleOptimizationError(null);
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/auto-name`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apply: false,
+          currentTitle: renameValue.trim() || title,
+          instructions: readSessionTitlePrompt(window.localStorage),
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as { title?: string; error?: string };
+      if (!response.ok || !body.title?.trim()) throw new Error(body.error || `HTTP ${response.status}`);
+      setRenameValue(body.title.trim());
+      requestAnimationFrame(() => inputRef.current?.focus());
+    } catch (reason) {
+      setTitleOptimizationError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setOptimizingTitle(false);
+    }
+  }, [optimizingTitle, renameValue, session.id, title]);
 
   const performDelete = useCallback(async () => {
     setConfirmDelete(false);
@@ -231,23 +263,42 @@ export function TaskRow({
           </div>
         </>
       ) : renaming ? (
-        <input
-          ref={inputRef}
-          value={renameValue}
-          onChange={(event) => setRenameValue(event.target.value)}
-          onBlur={commitRename}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") void commitRename();
-            if (event.key === "Escape") setRenaming(false);
+        <div
+          className={`${styles.renameEditor}${titleOptimizationError ? ` ${styles.renameEditorError}` : ""}`}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) void commitRename();
           }}
-          autoFocus
-          style={{
-            flex: 1, fontSize: "var(--text-sm)", padding: "5px 8px",
-            border: "1px solid var(--accent)", borderRadius: 5, outline: "none",
-            background: "var(--bg)", color: "var(--text)",
-            minHeight: "max(28px, calc(var(--text-sm) + 16px))",
-          }}
-        />
+        >
+          <input
+            className={styles.renameInput}
+            ref={inputRef}
+            value={renameValue}
+            onChange={(event) => {
+              setRenameValue(event.target.value);
+              setTitleOptimizationError(null);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void commitRename();
+              if (event.key === "Escape") setRenaming(false);
+            }}
+            autoFocus
+            aria-invalid={Boolean(titleOptimizationError)}
+          />
+          <button
+            className={`${styles.renameAiButton}${optimizingTitle ? ` ${styles.renameAiButtonLoading}` : ""}${titleOptimizationError ? ` ${styles.renameAiButtonError}` : ""}`}
+            type="button"
+            disabled={optimizingTitle}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={(event) => { void optimizeTitle(event); }}
+            title={titleOptimizationError ? t("sidebar.optimizeTitleFailed", { error: titleOptimizationError }) : t("sidebar.optimizeTitle")}
+            aria-label={optimizingTitle ? t("sidebar.optimizingTitle") : t("sidebar.optimizeTitle")}
+          >
+            <AliIcon className={styles.renameAiIcon} name="sparkles" size={15} strokeWidth={1.75} />
+          </button>
+          <span className={styles.srOnly} aria-live="polite">
+            {titleOptimizationError ? t("sidebar.optimizeTitleFailed", { error: titleOptimizationError }) : optimizingTitle ? t("sidebar.optimizingTitle") : ""}
+          </span>
+        </div>
       ) : (
         <>
           {depth > 0 ? <AliIcon name="fork" size={10} style={{ color: "var(--text-dim)" }} /> : null}
@@ -325,7 +376,8 @@ export function TaskRow({
           archived={archived}
           onPin={() => onTogglePinned?.()}
           onRename={() => {
-            setRenameValue(session.name ?? "");
+            setRenameValue(title);
+            setTitleOptimizationError(null);
             setRenaming(true);
             setTimeout(() => inputRef.current?.select(), 0);
           }}

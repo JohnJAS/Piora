@@ -30,7 +30,7 @@ import { getProjectLabel } from "@/lib/session-project-groups";
 interface Props {
   session: SessionInfo | null;
   newSessionCwd: string | null;
-  onAgentEnd?: () => void;
+  onAgentEnd?: (sessionId: string) => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
   modelsRefreshKey?: number;

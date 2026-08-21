@@ -562,13 +562,14 @@ export async function performBrowserViewAction(input: BrowserViewAction): Promis
 
 export default function pioraBrowser(api: ExtensionAPI) {
   api.registerTool(browserTool);
-  api.on?.("before_agent_start", () => {
+  api.on?.("before_agent_start", (event) => {
+    if (!event.systemPromptOptions.selectedTools?.includes("browser")) return;
+    const capability = `<piora_runtime_capability name="browser" availability="active">
+Piora's built-in visible browser is available through the \`browser\` tool in this session. Use it proactively for current online information, URLs, webpages, search, login, navigation, forms, and web verification. Start with \`browser({ action: "open", url })\` or \`browser({ action: "tabs" })\`, then take a snapshot and use its element refs for reliable interaction. Piora browser sign-ins persist in its dedicated profile. Never claim browsing is unavailable before checking this tool.
+</piora_runtime_capability>`;
+    if (event.systemPrompt.includes('<piora_runtime_capability name="browser"')) return;
     return {
-      message: {
-        customType: "piora-browser-discovery",
-        display: false,
-        content: "[PIORA BUILT-IN CAPABILITY: BROWSER]\nThe `browser` tool is available in this session on every prompt. Invoke it as browser({ action: 'open', url }) or browser({ action: 'tabs' }), then call browser({ action: 'snapshot' }) before interacting. Use it proactively for current online information, URLs, webpages, search, login, navigation, forms, or web verification. Do not claim browsing is unavailable before checking this tool.",
-      },
+      systemPrompt: `${event.systemPrompt}\n\n${capability}`,
     };
   });
 }
