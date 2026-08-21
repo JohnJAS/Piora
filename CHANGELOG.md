@@ -4,6 +4,13 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Added
+
+- Windows portable and ZIP-extracted releases now create a `Piora` Desktop
+  shortcut on launch. Later versions advance the shortcut target, older
+  versions cannot downgrade it, and missing targets are repaired to the newest
+  available version that the user launches.
+
 ### Changed
 
 - Redesigned the new-conversation landing screen around the composer, with an

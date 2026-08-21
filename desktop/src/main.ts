@@ -30,6 +30,7 @@ import {
   type RuntimeProfile,
 } from "./desktop-state.js";
 import { FileLogger, type Logger } from "./logger.js";
+import { ensurePortableDesktopShortcut } from "./portable-shortcut.js";
 import { StandaloneServer, type ServerExit } from "./server-supervisor.js";
 import { fitBoundsToVisibleDisplays } from "./window-bounds.js";
 
@@ -138,6 +139,37 @@ function resolvePiAgentDirectory(): string {
   const configuredByEnvironment = process.env[PI_AGENT_DIRECTORY_ENV]?.trim();
   if (configuredByEnvironment) return prepareWritableDirectory(configuredByEnvironment);
   return prepareWritableDirectory(join(app.getPath("home"), ".pi", "agent"));
+}
+
+function installPortableDesktopShortcut(log: Logger): void {
+  try {
+    const description = app.getLocale().toLowerCase().startsWith("zh")
+      ? "启动已运行过的最新 Piora 版本"
+      : "Launch the latest Piora version that has been run";
+    const result = ensurePortableDesktopShortcut({
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      isSmokeTest: PORTABLE_SMOKE_TEST,
+      appVersion: app.getVersion(),
+      ...(process.env.PORTABLE_EXECUTABLE_FILE
+        ? { portableExecutablePath: process.env.PORTABLE_EXECUTABLE_FILE }
+        : {}),
+      packagedExecutablePath: process.execPath,
+      desktopDirectory: app.getPath("desktop"),
+      iconPath: join(process.resourcesPath, "tray-icon.ico"),
+      description,
+      shell: {
+        readShortcutLink: (path) => shell.readShortcutLink(path),
+        writeShortcutLink: (path, operation, details) => (
+          shell.writeShortcutLink(path, operation, details)
+        ),
+      },
+    });
+    if (result.status !== "skipped") log.info("Portable desktop shortcut is current", result);
+  } catch (error) {
+    // A locked-down or redirected Desktop must not prevent Piora from starting.
+    log.warn("Unable to create or update the portable desktop shortcut", error);
+  }
 }
 
 type ApplicationMenuId = "file" | "edit" | "view" | "window" | "help";
@@ -1188,6 +1220,7 @@ async function startApplication(): Promise<void> {
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron,
   });
+  installPortableDesktopShortcut(logger);
   await clearObsoleteDesktopWebCaches(logger);
 
   piAgentDirectoryPath = resolvePiAgentDirectory();
@@ -1281,7 +1314,14 @@ async function stopApplication(): Promise<void> {
 // installed app's single-instance lock.
 const hasSingleInstanceLock = PORTABLE_SMOKE_TEST || app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
-  app.quit();
+  // A newly downloaded portable version may be opened while an older Piora is
+  // still resident in the tray. It cannot take over that live single-instance
+  // process, but it can still advance the Desktop shortcut for the next launch.
+  void app.whenReady().then(() => {
+    const secondaryLogger = new FileLogger(app.getPath("userData"));
+    installPortableDesktopShortcut(secondaryLogger);
+    app.quit();
+  }).catch(() => app.exit(1));
 } else {
   app.on("second-instance", () => {
     focusMainWindow();
