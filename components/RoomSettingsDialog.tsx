@@ -152,6 +152,13 @@ export function RoomSettingsDialog({
     instructions: workspaceInstructions,
   }, "共享工作区已更新").catch(() => {});
 
+  const chooseWorkspacePath = async () => {
+    const selected = await window.piDesktop?.selectDirectory?.();
+    if (!selected) return;
+    setWorkspaceMode("custom");
+    setWorkspacePath(selected);
+  };
+
   const saveMember = (member: RoomMember) => {
     const draft = memberDrafts[member.memberId];
     if (!draft) return;
@@ -282,7 +289,7 @@ export function RoomSettingsDialog({
                 <div className={styles.pageHeading}><h3>共享工作区</h3><p>Agent 在这里交换文件；消息、任务与审计仍由 Piora 独立托管。</p></div>
                 <div className={styles.segmented}><button type="button" className={workspaceMode === "managed" ? styles.selected : ""} onClick={() => setWorkspaceMode("managed")}>Piora 托管</button><button type="button" className={workspaceMode === "custom" ? styles.selected : ""} onClick={() => setWorkspaceMode("custom")}>项目内目录</button></div>
                 <label className={styles.field}><span>工作区名称</span><input value={workspaceLabel} onChange={(event) => setWorkspaceLabel(event.target.value)} /></label>
-                <label className={styles.field}><span>目录</span><input value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} disabled={workspaceMode === "managed"} aria-describedby="workspace-path-help" /><small id="workspace-path-help">自定义目录必须位于 {room.projectRoot ?? "房间项目"} 内；保存时会自动创建。</small></label>
+                <label className={styles.field}><span>目录</span><div className={styles.pathField}><input value={workspacePath} onChange={(event) => { setWorkspacePath(event.target.value); setWorkspaceMode("custom"); }} aria-describedby="workspace-path-help" /><button type="button" onClick={() => { void chooseWorkspacePath(); }}>浏览…</button></div><small id="workspace-path-help">编辑目录会切换为自定义模式；目录必须位于任一群成员的项目内，保存时会自动创建。</small></label>
                 <label className={styles.field}><span>协作约定</span><textarea rows={6} value={workspaceInstructions} onChange={(event) => setWorkspaceInstructions(event.target.value)} placeholder="文件命名、目录分工、交付方式和禁止覆盖的范围" /></label>
                 <div className={styles.actions}><button type="button" className={styles.primary} disabled={Boolean(busy) || !workspaceLabel.trim() || (workspaceMode === "custom" && !workspacePath.trim())} onClick={saveWorkspace}>保存工作区</button></div>
               </div>

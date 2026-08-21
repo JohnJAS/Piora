@@ -264,6 +264,12 @@ export function TaskRow({
             </div>
           </div>
 
+          {pinned ? (
+            <span title={t("sidebar.pinned")} aria-label={t("sidebar.pinned")} style={{ color: "var(--accent)", display: "inline-flex", flexShrink: 0 }}>
+              <AliIcon name="pushpin" size={11} />
+            </span>
+          ) : null}
+
           {taskStatusPresentationKey !== "none" ? (
             <TaskStatusIndicator status={taskStatus} />
           ) : null}

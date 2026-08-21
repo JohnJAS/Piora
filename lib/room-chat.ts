@@ -1,5 +1,11 @@
-import { getRoom } from "./room-store";
-import { getSessionMessageRouter, type SessionMessageRouterError } from "./session-message-router";
+import { getRpcSession } from "./rpc-manager";
+import { appendRoomMessage, emitRoomPresence, getRoom, listRoomMessages } from "./room-store";
+import {
+  getSessionMessageRouter,
+  type SessionMessageRouter,
+  type SessionMessageRouterError,
+} from "./session-message-router";
+import type { SessionCommandEvent, SessionCommandStatus } from "./session-message-types";
 import type { CollaborationRoom, RoomMember } from "./room-types";
 
 export interface RoomChatDispatchResult {
@@ -21,10 +27,72 @@ function groupChatPrompt(room: CollaborationRoom, member: RoomMember, input: { m
     `Workspace contract: ${room.workspace.instructions || "Publish reusable work and avoid overwriting another Agent's active changes."}`,
     `User message: ${input.content}`,
     "You were addressed in a Piora group conversation.",
-    "Respond to the group, not only to your private session: use the piora_room tool with action send_shared and this exact room ID.",
+    "Respond to the group, not only to your private session: use the piora_room tool with action send_shared, this exact room ID, and replyTo set to the Message ID above.",
     "Keep the shared reply concise, include replyTo/correlation context when replying, and do not repeat a reply for the same message ID.",
     "Do not automatically rebroadcast another Agent's shared reply; only respond when explicitly mentioned or routed by the Coordinator.",
   ].join("\n");
+}
+
+function isTerminalStatus(status: SessionCommandStatus): boolean {
+  return ["completed", "failed", "cancelled", "expired", "interrupted"].includes(status);
+}
+
+function relayRoomReply(
+  router: SessionMessageRouter,
+  room: CollaborationRoom,
+  member: RoomMember,
+  messageId: string,
+  commandId: string,
+  initialStatus: SessionCommandStatus,
+): void {
+  const startedAt = Date.now();
+  let settled = false;
+  let unsubscribe = () => {};
+
+  const finish = (status: "completed" | "error", detail?: string) => {
+    if (settled) return;
+    settled = true;
+    unsubscribe();
+    if (status === "completed") {
+      const alreadyShared = listRoomMessages(room.id).some((message) => (
+        message.author.id === member.sessionId
+        && (message.replyTo === messageId || message.createdAt >= startedAt)
+      ));
+      if (!alreadyShared) {
+        const content = getRpcSession(member.sessionId)?.inner.getLastAssistantText()?.trim();
+        if (content) {
+          appendRoomMessage(room.id, {
+            authorKind: "session",
+            authorId: member.sessionId,
+            authorName: member.name,
+            content,
+            replyTo: messageId,
+          });
+        }
+      }
+    }
+    emitRoomPresence(room.id, { sessionId: member.sessionId, messageId, status, detail });
+  };
+
+  const handleEvent = (event: SessionCommandEvent) => {
+    if (event.commandId !== commandId) return;
+    if (event.type === "command_completed") finish("completed");
+    else if (["command_failed", "command_cancelled", "command_expired", "command_interrupted"].includes(event.type)) {
+      finish("error", event.errorMessage || "Agent 处理失败");
+    }
+  };
+
+  unsubscribe = router.subscribeEvents(member.sessionId, handleEvent);
+  if (initialStatus === "completed") finish("completed");
+  else if (isTerminalStatus(initialStatus)) finish("error", "Agent 处理失败");
+  else {
+    void router.getCommand(commandId).then((command) => {
+      if (command.status === "completed") finish("completed");
+      else if (isTerminalStatus(command.status)) finish("error", command.errorMessage || "Agent 处理失败");
+    }).catch(() => {
+      // The event subscription remains authoritative if the status snapshot races persistence.
+    });
+  }
 }
 
 export async function dispatchRoomChat(
@@ -50,11 +118,14 @@ export async function dispatchRoomChat(
     return member ? [{ sessionId, member }] : (result.skipped.push({ sessionId, reason: "Session is not a room member." }), []);
   });
   const maxConcurrency = Math.max(1, Math.min(16, room.coordination.maxConcurrency));
-  // The legacy `{ type: behavior }` command shape is normalized by the Router
-  // for older Room callers; new deliveries are always next_turn.
+  // The legacy `{ type: behavior }` command shape is normalized by the Router;
+  // new Room deliveries are always queued as next_turn commands.
   const behavior = "next_turn" as const;
   for (let index = 0; index < targets.length; index += maxConcurrency) {
     const batch = targets.slice(index, index + maxConcurrency);
+    batch.forEach(({ sessionId }) => {
+      emitRoomPresence(room.id, { sessionId, messageId: input.messageId, status: "processing" });
+    });
     const settled = await Promise.allSettled(batch.map(({ sessionId, member }) => router.dispatchSessionMessage({
       targetSessionId: sessionId,
       content: groupChatPrompt(room, member, input),
@@ -65,10 +136,13 @@ export async function dispatchRoomChat(
     settled.forEach((outcome, batchIndex) => {
       const target = batch[batchIndex];
       if (outcome.status === "fulfilled") {
-        result.dispatched.push({ sessionId: target.sessionId, behavior: "next_turn", commandId: outcome.value.commandId, status: outcome.value.status });
+        result.dispatched.push({ sessionId: target.sessionId, behavior, commandId: outcome.value.commandId, status: outcome.value.status });
+        relayRoomReply(router, room, target.member, input.messageId, outcome.value.commandId, outcome.value.status);
       } else {
         const error = outcome.reason as SessionMessageRouterError;
-        result.skipped.push({ sessionId: target.sessionId, reason: error instanceof Error ? error.message : String(error), ...(error?.code ? { code: error.code } : {}) });
+        const reason = error instanceof Error ? error.message : String(error);
+        emitRoomPresence(room.id, { sessionId: target.sessionId, messageId: input.messageId, status: "error", detail: reason });
+        result.skipped.push({ sessionId: target.sessionId, reason, ...(error?.code ? { code: error.code } : {}) });
       }
     });
   }

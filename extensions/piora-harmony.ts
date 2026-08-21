@@ -643,13 +643,12 @@ const harmonyDeviceTool = defineTool({
 
 export default function pioraHarmony(api: ExtensionAPI) {
   api.registerTool(harmonyDeviceTool);
-  api.on?.("before_agent_start", (event) => {
-    if (!/(?:harmony(?:os)?|openharmony|鸿蒙|hdc|hilog|手机|设备|真机|模拟器|崩溃|闪退|日志)/i.test(event.prompt)) return;
+  api.on?.("before_agent_start", () => {
     return {
       message: {
         customType: "piora-harmony-discovery",
         display: false,
-        content: "[PIORA HARMONY AVAILABLE]\nA bounded harmony_device tool is available for connected-device debugging. For HarmonyOS/device issues, proactively call list_devices, then inspect list_processes/read_logs as appropriate. Do not claim device access or logs are unavailable before checking the tool.",
+        content: "[PIORA BUILT-IN CAPABILITY: HARMONY]\nThe `harmony_device` tool is available in this session on every prompt. For HarmonyOS, OpenHarmony, phones, devices, crashes, UI, HDC, or hilog work, proactively invoke harmony_device({ action: 'list_devices' }) first, then list_processes/read_logs or acquire_control and snapshot as appropriate. Do not claim device access or logs are unavailable before checking this tool.",
       },
     };
   });

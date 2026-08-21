@@ -21,6 +21,7 @@ import type {
   RoomMessageAuthorKind,
   RoomMemberRole,
   RoomEvent,
+  RoomPresence,
   RoomTask,
   RoomArtifact,
   RoomArtifactKind,
@@ -233,9 +234,6 @@ export function addRoomMember(roomId: string, input: {
   requestedBy?: string;
 }): CollaborationRoom {
   const room = getRoom(roomId);
-  if (room.projectRoot && input.projectRoot && resolve(room.projectRoot) !== resolve(input.projectRoot)) {
-    throw new Error("The session belongs to a different project and cannot join this room.");
-  }
   const existing = room.members.find((member) => member.sessionId === input.sessionId);
   if (existing) {
     existing.name = input.name ?? existing.name;
@@ -383,8 +381,9 @@ export function updateRoomWorkspace(roomId: string, requestedBy: string, input: 
   requireCoordinator(room, requestedBy);
   const paths = roomPaths(roomId);
   const workspacePath = input.mode === "managed" ? paths.workspace : resolve(cleanText(input.path ?? "", 2_000));
-  if (input.mode === "custom" && (!room.projectRoot || !isInside(room.projectRoot, workspacePath))) {
-    throw new Error("The shared workspace must stay inside the room project.");
+  const memberRoots = room.members.flatMap((member) => [member.projectRoot, member.cwd]).filter((root): root is string => Boolean(root));
+  if (input.mode === "custom" && !memberRoots.some((root) => isInside(root, workspacePath))) {
+    throw new Error("The shared workspace must stay inside one of the room members' projects.");
   }
   mkdirSync(workspacePath, { recursive: true });
   room.workspace = {
@@ -510,6 +509,15 @@ export function appendRoomMessage(roomId: string, input: {
   for (const listener of roomListeners().get(roomId) ?? []) listener(message);
   emitRoomEvent({ type: "message", roomId, message });
   return message;
+}
+
+export function emitRoomPresence(roomId: string, presence: Omit<RoomPresence, "updatedAt"> & { updatedAt?: number }): void {
+  getRoom(roomId);
+  emitRoomEvent({
+    type: "presence",
+    roomId,
+    presence: { ...presence, updatedAt: presence.updatedAt ?? Date.now() },
+  });
 }
 
 export function configureRoomCoordination(roomId: string, input: {

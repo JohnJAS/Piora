@@ -21,7 +21,6 @@ export function RoomSidebarSection({
   sessions,
   selectedSessionId,
   selectedRoomId,
-  activeProjectRoot,
   initialRoomId,
   onSelectRoom,
   onInitialRestoreDone,
@@ -38,7 +37,6 @@ export function RoomSidebarSection({
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [projectRoot, setProjectRoot] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -91,40 +89,24 @@ export function RoomSidebarSection({
     }
   }, [initialRoomId, loaded, onInitialRestoreDone, onSelectRoom, rooms]);
 
-  const projectRoots = useMemo(() => {
-    const result: string[] = [];
-    const seen = new Set<string>();
+  const groupedSessions = useMemo(() => {
+    const result = new Map<string, SessionInfo[]>();
     for (const session of sessions) {
       const root = sessionProject(session);
-      const key = root.toLocaleLowerCase();
-      if (!seen.has(key)) {
-        seen.add(key);
-        result.push(root);
-      }
+      const current = result.get(root) ?? [];
+      current.push(session);
+      result.set(root, current);
     }
-    return result;
+    return [...result.entries()];
   }, [sessions]);
-
-  const projectSessions = useMemo(
-    () => sessions.filter((session) => sessionProject(session).toLocaleLowerCase() === projectRoot.toLocaleLowerCase()),
-    [projectRoot, sessions],
-  );
 
   const openCreate = () => {
     const selectedSession = sessions.find((session) => session.id === selectedSessionId);
-    const initialProject = selectedSession ? sessionProject(selectedSession) : activeProjectRoot ?? projectRoots[0] ?? "";
-    setProjectRoot(initialProject);
     setSelectedIds(new Set(selectedSession ? [selectedSession.id] : []));
     setName("");
     setDescription("");
     setError(null);
     setCreateOpen(true);
-  };
-
-  const changeProject = (nextProject: string) => {
-    setProjectRoot(nextProject);
-    const selectedSession = sessions.find((session) => session.id === selectedSessionId && sessionProject(session).toLocaleLowerCase() === nextProject.toLocaleLowerCase());
-    setSelectedIds(new Set(selectedSession ? [selectedSession.id] : []));
   };
 
   const toggleSession = (sessionId: string) => {
@@ -137,7 +119,7 @@ export function RoomSidebarSection({
   };
 
   const createRoom = async () => {
-    const selected = projectSessions.filter((session) => selectedIds.has(session.id));
+    const selected = sessions.filter((session) => selectedIds.has(session.id));
     if (!name.trim() || selected.length === 0) return;
     const preferredCreator = selected.find((session) => session.id === selectedSessionId) ?? selected[0];
     setBusy(true);
@@ -205,43 +187,44 @@ export function RoomSidebarSection({
             <div className={styles.dialogHeader}>
               <div>
                 <h2 id="room-create-title">新建群聊</h2>
-                <p>选择同一项目中的 Session；创建后可设置每个 Agent 的身份、职责和绑定。</p>
+                <p>可以跨项目选择 Session；创建后可设置每个 Agent 的身份、职责和绑定。</p>
               </div>
               <button type="button" className={styles.closeButton} onClick={() => setCreateOpen(false)} aria-label="关闭" disabled={busy}>
                 <AliIcon name="close" size={15} />
               </button>
             </div>
-            <label className={styles.field}>
-              <span>群名称</span>
-              <input ref={nameInputRef} value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：Piora 重构讨论组" maxLength={120} />
-            </label>
-            <label className={styles.field}>
-              <span>团队目标</span>
-              <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="这个 Agent 团队要完成什么，以及最终交付标准" rows={3} maxLength={2_000} />
-            </label>
-            <label className={styles.field}>
-              <span>项目</span>
-              <select value={projectRoot} onChange={(event) => changeProject(event.target.value)}>
-                {projectRoots.map((root) => <option key={root} value={root}>{root}</option>)}
-              </select>
-            </label>
-            <div className={styles.memberHeader}>
-              <span>初始 Agent</span>
-              <small>已选择 {selectedIds.size} 个 Session</small>
+            <div className={styles.dialogBody}>
+              <label className={styles.field}>
+                <span>群名称</span>
+                <input ref={nameInputRef} value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：Piora 重构讨论组" maxLength={120} />
+              </label>
+              <label className={styles.field}>
+                <span>团队目标</span>
+                <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="这个 Agent 团队要完成什么，以及最终交付标准" rows={3} maxLength={2_000} />
+              </label>
+              <div className={styles.memberHeader}>
+                <span>初始 Agent</span>
+                <small>已选择 {selectedIds.size} 个 Session</small>
+              </div>
+              <div className={styles.members}>
+                {groupedSessions.map(([root, projectSessions]) => (
+                  <section key={root} className={styles.projectGroup}>
+                    <div className={styles.projectHeading}><AliIcon name="folder" size={13} /><span>{root}</span></div>
+                    {projectSessions.map((session) => (
+                      <label key={session.id} className={styles.memberRow}>
+                        <input type="checkbox" checked={selectedIds.has(session.id)} onChange={() => toggleSession(session.id)} />
+                        <span className={styles.avatar}>{sessionLabel(session).slice(0, 1).toLocaleUpperCase()}</span>
+                        <span className={styles.memberCopy}>
+                          <strong>{sessionLabel(session)}</strong>
+                          <small>{session.worktreeBranch ?? session.cwd}</small>
+                        </span>
+                      </label>
+                    ))}
+                  </section>
+                ))}
+              </div>
+              {error ? <p className={styles.error} role="alert">{error}</p> : null}
             </div>
-            <div className={styles.members}>
-              {projectSessions.map((session) => (
-                <label key={session.id} className={styles.memberRow}>
-                  <input type="checkbox" checked={selectedIds.has(session.id)} onChange={() => toggleSession(session.id)} />
-                  <span className={styles.avatar}>{sessionLabel(session).slice(0, 1).toLocaleUpperCase()}</span>
-                  <span className={styles.memberCopy}>
-                    <strong>{sessionLabel(session)}</strong>
-                    <small>{session.worktreeBranch ?? session.cwd}</small>
-                  </span>
-                </label>
-              ))}
-            </div>
-            {error ? <p className={styles.error} role="alert">{error}</p> : null}
             <div className={styles.dialogActions}>
               <button type="button" onClick={() => setCreateOpen(false)} disabled={busy}>取消</button>
               <button type="button" className={styles.primary} onClick={() => { void createRoom(); }} disabled={busy || !name.trim() || selectedIds.size === 0}>

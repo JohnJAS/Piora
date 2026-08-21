@@ -7,6 +7,7 @@ import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar, type SessionSidebarHandle } from "./SessionSidebar";
 import { ChatWindow, type TaskControls } from "./ChatWindow";
 import { RoomWorkspace } from "./RoomWorkspace";
+import { NewSessionProjectPicker } from "./NewSessionProjectPicker";
 import type { Tab } from "./TabBar";
 import { RightPanel, type RightPanelHandle, type RightPanelTab } from "./workspace/RightPanel";
 import type { SettingsKey } from "./SettingsDialog";
@@ -749,6 +750,26 @@ export function AppShell() {
     replaceUrlWithoutNextNavigation("/");
   }, [isMobile]);
 
+  const handleRequestNewSession = useCallback(() => {
+    setSettingsDialogOpen(false);
+    setSelectedRoom(null);
+    setSelectedSession(null);
+    setNewSessionCwd(null);
+    setSessionKey((key) => key + 1);
+    setSystemPrompt(null);
+    setActiveTopPanel(null);
+    setInitialSessionRestored(true);
+    if (isMobile) setSidebarOpen(false);
+    replaceUrlWithoutNextNavigation("/");
+  }, [isMobile]);
+
+  const handleNewSessionProjectSelected = useCallback((cwd: string, projectRoot: string) => {
+    activeProjectRootRef.current = projectRoot;
+    setActiveProjectRoot(projectRoot);
+    setActiveCwd(cwd);
+    handleNewSession(`project-picker-${Date.now()}`, cwd);
+  }, [handleNewSession]);
+
   const handleSelectRoom = useCallback((room: CollaborationRoom, isRestore = false) => {
     setSettingsDialogOpen(false);
     setSelectedSession(null);
@@ -1119,7 +1140,7 @@ export function AppShell() {
   }, [rightPanelOverlayMode]);
 
   // Show chat area if a session is selected, or if we have a cwd to start a new session in
-  const effectiveNewSessionCwd = newSessionCwd ?? (selectedSession === null && selectedRoom === null && activeCwd ? activeCwd : null);
+  const effectiveNewSessionCwd = newSessionCwd;
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   const showRoom = selectedRoom !== null;
   const showConversation = showChat || showRoom;
@@ -1334,6 +1355,7 @@ export function AppShell() {
       onSelectSession={handleSelectSession}
       onSelectRoom={handleSelectRoom}
       onNewSession={handleNewSession}
+      onRequestNewSession={handleRequestNewSession}
       initialSessionId={initialSessionId}
       initialRoomId={initialRoomId}
       skipInitialProjectSelection={initialNavigation.requestedCwd !== null}
@@ -2274,24 +2296,12 @@ export function AppShell() {
                 <div style={{ maxWidth: 720, fontSize: "var(--text-sm)" }}>{initialCwdError}</div>
               </div>
             ) : showPlaceholder ? (
-              activeCwd ? (
-                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", fontSize: "var(--text-md)" }}>
-                   {translate("workspace.selectSession")}
-                </div>
-              ) : (
-                <div className="workspace-empty-state">
-                  <div className="workspace-empty-mark" aria-hidden="true">
-                    <AliIcon name="folder-open" size={22} />
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="workspace-empty-title">{translate("workspace.getStarted")}</div>
-                    <div className="workspace-empty-steps">
-                      <span><b>1</b>{translate("workspace.selectProject")}</span>
-                      <span><b>2</b>{translate("workspace.addModels")}</span>
-                    </div>
-                  </div>
-                </div>
-              )
+              <NewSessionProjectPicker
+                activeCwd={activeCwd}
+                activeProjectRoot={activeProjectRoot}
+                onSelect={handleNewSessionProjectSelected}
+                onBrowse={() => sessionSidebarRef.current?.openProjectPicker()}
+              />
             ) : null}
             </div>
             {settingsPage}

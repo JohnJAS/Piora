@@ -81,6 +81,7 @@ export default function pioraRoom(api: ExtensionAPI) {
       ])),
       artifactName: Type.Optional(Type.String({ maxLength: 240 })),
       sourcePath: Type.Optional(Type.String()),
+      replyTo: Type.Optional(Type.String()),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const sessionId = ctx.sessionManager.getSessionId();
@@ -161,6 +162,7 @@ export default function pioraRoom(api: ExtensionAPI) {
         authorId: sessionId,
         authorName: member.name,
         content: params.content,
+        replyTo: params.replyTo,
       });
       return textResult(`Sent shared room message #${message.seq}.`, { roomId: room.id, messageId: message.id, seq: message.seq });
     },

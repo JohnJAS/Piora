@@ -102,6 +102,7 @@ export interface RoomArtifact {
 
 export type RoomEvent =
   | { type: "message"; roomId: string; message: RoomMessage }
+  | { type: "presence"; roomId: string; presence: RoomPresence }
   | { type: "task"; roomId: string; task: RoomTask }
   | { type: "room"; roomId: string; room: CollaborationRoom }
   | { type: "artifact"; roomId: string; artifact: RoomArtifact }
@@ -133,6 +134,14 @@ export interface RoomMessage {
   forwardDepth?: number;
   autoRound?: number;
   maxAutoRounds?: number;
+}
+
+export interface RoomPresence {
+  sessionId: string;
+  messageId: string;
+  status: "processing" | "completed" | "error";
+  detail?: string;
+  updatedAt: number;
 }
 
 export interface PrivateRoomNote {

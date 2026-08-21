@@ -567,7 +567,7 @@ export default function pioraBrowser(api: ExtensionAPI) {
       message: {
         customType: "piora-browser-discovery",
         display: false,
-        content: "[PIORA BROWSER AVAILABLE]\nThe `browser` tool is available in this session. Use it proactively whenever the user asks about current online information, a URL, a webpage, website interaction, search, login, or web verification. Start with browser open or browser tabs, then browser snapshot before interacting. Do not claim browsing is unavailable before checking this tool.",
+        content: "[PIORA BUILT-IN CAPABILITY: BROWSER]\nThe `browser` tool is available in this session on every prompt. Invoke it as browser({ action: 'open', url }) or browser({ action: 'tabs' }), then call browser({ action: 'snapshot' }) before interacting. Use it proactively for current online information, URLs, webpages, search, login, navigation, forms, or web verification. Do not claim browsing is unavailable before checking this tool.",
       },
     };
   });

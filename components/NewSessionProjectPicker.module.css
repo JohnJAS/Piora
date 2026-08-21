@@ -1,0 +1,126 @@
+.root {
+  display: flex;
+  width: min(660px, calc(100% - 40px));
+  height: 100%;
+  margin: 0 auto;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  color: var(--text);
+}
+
+.mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
+  color: var(--text-muted);
+  font-size: 28px;
+}
+
+.root h1 {
+  margin: 18px 0 16px;
+  font-size: clamp(22px, 3vw, 32px);
+  font-weight: 560;
+  letter-spacing: -.02em;
+  text-align: center;
+}
+
+.picker {
+  width: min(520px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--bg-panel) 88%, transparent);
+  box-shadow: 0 16px 50px rgb(0 0 0 / 12%);
+  backdrop-filter: blur(14px);
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.search input {
+  width: 100%;
+  height: 44px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.list {
+  max-height: min(340px, 42vh);
+  padding: 5px;
+  overflow-y: auto;
+}
+
+.list > button {
+  display: grid;
+  width: 100%;
+  min-height: 46px;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.list > button:hover,
+.list > button:focus-visible {
+  outline: none;
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.list > button > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.list strong,
+.list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list strong { color: var(--text); font-size: var(--text-sm); font-weight: 570; }
+.list small { color: var(--text-dim); font-size: var(--text-xs); }
+.list > p { margin: 18px; color: var(--text-dim); font-size: var(--text-sm); text-align: center; }
+
+.footer {
+  padding: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.footer button {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.footer button:hover { background: var(--bg-hover); color: var(--text); }

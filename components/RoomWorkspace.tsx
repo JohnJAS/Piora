@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CollaborationRoom, RoomArtifact, RoomMessage, RoomTask } from "@/lib/room-types";
+import type { CollaborationRoom, RoomArtifact, RoomMessage, RoomPresence, RoomTask } from "@/lib/room-types";
 import type { TaskRunState } from "@/lib/task-run";
 import { resolveRoomChatTargets } from "@/lib/room-chat-routing";
 import { AliIcon } from "./AliIcon";
@@ -15,6 +15,7 @@ type RoomResponse = {
   tasks?: RoomTask[];
   taskRuns?: TaskRunState[];
   artifacts?: RoomArtifact[];
+  message?: RoomMessage;
   dispatch?: {
     dispatched?: Array<{ sessionId: string; behavior?: string; taskId?: string }>;
     skipped?: Array<{ sessionId?: string; taskId?: string; reason: string }>;
@@ -62,6 +63,9 @@ export function RoomWorkspace({
   const [busy, setBusy] = useState(false);
   const [connectionState, setConnectionState] = useState<"connecting" | "connected" | "reconnecting">("connecting");
   const [runningIds, setRunningIds] = useState<Set<string>>(new Set());
+  const [presenceBySession, setPresenceBySession] = useState<Map<string, RoomPresence>>(new Map());
+  const [mentionQuery, setMentionQuery] = useState<{ start: number; end: number; query: string } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -80,6 +84,8 @@ export function RoomWorkspace({
     setTasks([]);
     setTaskRuns(new Map());
     setArtifacts([]);
+    setPresenceBySession(new Map());
+    setMentionQuery(null);
     setDraft("");
     setError(null);
     setConnectionState("connecting");
@@ -91,7 +97,7 @@ export function RoomWorkspace({
     };
     events.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data) as RoomResponse & { type?: string; message?: RoomMessage; task?: RoomTask; taskRun?: TaskRunState; artifact?: RoomArtifact };
+        const data = JSON.parse(event.data) as RoomResponse & { type?: string; presence?: RoomPresence; task?: RoomTask; taskRun?: TaskRunState; artifact?: RoomArtifact };
         if (data.type === "snapshot") {
           if (data.room) updateRoom(data.room);
           setMessages(data.messages ?? []);
@@ -102,6 +108,13 @@ export function RoomWorkspace({
           updateRoom(data.room);
         } else if (data.type === "message" && data.message) {
           setMessages((current) => current.some((item) => item.id === data.message?.id) ? current : [...current, data.message!].slice(-500));
+        } else if (data.type === "presence" && data.presence) {
+          setPresenceBySession((current) => {
+            const next = new Map(current);
+            if (data.presence?.status === "processing") next.set(data.presence.sessionId, data.presence);
+            else next.delete(data.presence!.sessionId);
+            return next;
+          });
         } else if (data.type === "task" && data.task) {
           setTasks((current) => [...current.filter((item) => item.id !== data.task?.id), data.task!].sort((left, right) => right.priority - left.priority || left.createdAt - right.createdAt));
           if (data.taskRun) setTaskRuns((current) => new Map(current).set(data.taskRun!.taskId, data.taskRun!));
@@ -169,6 +182,15 @@ export function RoomWorkspace({
     setBusy(true);
     setError(null);
     setDraft("");
+    setMentionQuery(null);
+    const targetSessionIds = resolveRoomChatTargets(room, content);
+    setPresenceBySession((current) => {
+      const next = new Map(current);
+      for (const sessionId of targetSessionIds) {
+        next.set(sessionId, { sessionId, messageId: `pending-${Date.now()}`, status: "processing", updatedAt: Date.now() });
+      }
+      return next;
+    });
     try {
       const data = await postAction({
         action: "chat",
@@ -176,12 +198,24 @@ export function RoomWorkspace({
         sessionName: "你",
         authorKind: "user",
         content,
-        targetSessionIds: resolveRoomChatTargets(room, content),
+        targetSessionIds,
       });
       const skipped = data.dispatch?.skipped ?? [];
-      if (skipped.length > 0) setError(skipped.map((item) => `${memberName(room, item.sessionId)}：${item.reason}`).join("；"));
+      if (skipped.length > 0) {
+        setError(skipped.map((item) => `${memberName(room, item.sessionId)}：${item.reason}`).join("；"));
+        setPresenceBySession((current) => {
+          const next = new Map(current);
+          for (const item of skipped) if (item.sessionId) next.delete(item.sessionId);
+          return next;
+        });
+      }
     } catch (reason) {
       setDraft(content);
+      setPresenceBySession((current) => {
+        const next = new Map(current);
+        for (const sessionId of targetSessionIds) next.delete(sessionId);
+        return next;
+      });
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
@@ -189,9 +223,41 @@ export function RoomWorkspace({
     }
   };
 
+  const syncMentionQuery = (value: string, caret: number) => {
+    const match = /(?:^|\s)@([^\s@]*)$/u.exec(value.slice(0, caret));
+    if (!match) {
+      setMentionQuery(null);
+      return;
+    }
+    const start = caret - match[1].length - 1;
+    setMentionQuery({ start, end: caret, query: match[1] });
+    setMentionIndex(0);
+  };
+
+  const mentionCandidates = useMemo(() => {
+    const candidates = [
+      { id: "all", name: "所有人", detail: "通知全部成员" },
+      ...room.members.map((member) => ({ id: member.sessionId, name: member.name || member.sessionId.slice(0, 8), detail: roleLabel(member.role) })),
+    ];
+    const query = mentionQuery?.query.trim().toLocaleLowerCase() ?? "";
+    return query ? candidates.filter((candidate) => candidate.name.toLocaleLowerCase().includes(query)) : candidates;
+  }, [mentionQuery?.query, room.members]);
+
   const mention = (name: string) => {
-    setDraft((current) => `${current}${current && !current.endsWith(" ") ? " " : ""}@${name} `);
-    window.requestAnimationFrame(() => textareaRef.current?.focus());
+    const textarea = textareaRef.current;
+    const caret = textarea?.selectionStart ?? draft.length;
+    const range = mentionQuery ?? { start: caret, end: caret, query: "" };
+    const prefix = draft.slice(0, range.start);
+    const needsSpace = prefix.length > 0 && !/\s$/u.test(prefix);
+    const replacement = `${needsSpace ? " " : ""}@${name} `;
+    const next = `${prefix}${replacement}${draft.slice(range.end)}`;
+    const nextCaret = prefix.length + replacement.length;
+    setDraft(next);
+    setMentionQuery(null);
+    window.requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(nextCaret, nextCaret);
+    });
   };
 
   const createTask = async () => {
@@ -261,8 +327,8 @@ export function RoomWorkspace({
   const memberMap = useMemo(() => new Map(room.members.map((member) => [member.sessionId, member])), [room.members]);
 
   return (
-    <section className={styles.workspace} aria-label={`群聊：${room.name}`}>
-      <header className={styles.header}>
+    <section className={`${styles.workspace} room-workspace`} aria-label={`群聊：${room.name}`}>
+      <header className={`${styles.header} room-workspace-header`}>
         <div className={styles.headerIdentity}>
           <span className={styles.groupAvatar} aria-hidden="true"><AliIcon name="message" size={17} /></span>
           <div>
@@ -313,20 +379,65 @@ export function RoomWorkspace({
                 </article>
               );
             })}
+            {presenceBySession.size > 0 ? (
+              <div className={styles.processingList} role="status" aria-live="polite">
+                {[...presenceBySession.keys()].map((sessionId) => (
+                  <span key={sessionId}><i aria-hidden="true" />{memberName(room, sessionId)} 正在处理…</span>
+                ))}
+              </div>
+            ) : null}
           </div>
 
-          <div className={styles.composerWrap}>
+          <div className={`${styles.composerWrap} room-workspace-composer`}>
             <div className={styles.mentions}>
               <button type="button" onClick={() => mention("所有人")}>@所有人</button>
               {room.members.map((member) => <button key={member.sessionId} type="button" onClick={() => mention(member.name || member.sessionId.slice(0, 8))}>@{member.name || member.sessionId.slice(0, 8)}</button>)}
             </div>
             {error ? <div className={styles.error} role="alert">{error}</div> : null}
             <div className={styles.composer}>
+              {mentionQuery && mentionCandidates.length > 0 ? (
+                <div className={styles.mentionMenu} role="listbox" aria-label="选择群成员">
+                  {mentionCandidates.map((candidate, index) => (
+                    <button
+                      key={candidate.id}
+                      type="button"
+                      role="option"
+                      aria-selected={index === mentionIndex}
+                      className={index === mentionIndex ? styles.active : ""}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => mention(candidate.name)}
+                    >
+                      <span>{initials(candidate.name)}</span><strong>@{candidate.name}</strong><small>{candidate.detail}</small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <textarea
                 ref={textareaRef}
                 value={draft}
-                onChange={(event) => setDraft(event.target.value)}
+                onChange={(event) => {
+                  setDraft(event.target.value);
+                  syncMentionQuery(event.target.value, event.target.selectionStart);
+                }}
+                onClick={(event) => syncMentionQuery(event.currentTarget.value, event.currentTarget.selectionStart)}
                 onKeyDown={(event) => {
+                  if (mentionQuery && mentionCandidates.length > 0) {
+                    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                      event.preventDefault();
+                      setMentionIndex((current) => (current + (event.key === "ArrowDown" ? 1 : -1) + mentionCandidates.length) % mentionCandidates.length);
+                      return;
+                    }
+                    if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) {
+                      event.preventDefault();
+                      mention(mentionCandidates[mentionIndex]?.name ?? mentionCandidates[0].name);
+                      return;
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setMentionQuery(null);
+                      return;
+                    }
+                  }
                   if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                     event.preventDefault();
                     void sendMessage();
@@ -348,7 +459,7 @@ export function RoomWorkspace({
         {detailsOpen ? (
           <>
           {detailsOverlay ? <button type="button" className={styles.detailsBackdrop} aria-label="关闭群聊详情" onClick={() => setDetailsOpen(false)} /> : null}
-          <aside className={styles.details} aria-label="群聊详情">
+          <aside className={`${styles.details} room-workspace-details`} aria-label="群聊详情">
             <section className={styles.detailSection}>
               <div className={styles.detailHeading}><h2>成员</h2><span>{room.members.length}</span></div>
               <div className={styles.memberList}>

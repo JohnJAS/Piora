@@ -24,7 +24,7 @@ import { RoomSidebarSection } from "./RoomSidebarSection";
 
 export type { SessionSidebarHandle } from "./sidebar/sidebar-types";
 
-export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, selectedRoomId, onSelectSession, onSelectRoom, onNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onFocusFileSearch, onOpenSettings, activeProjectRoot }, ref) {
+export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, selectedRoomId, onSelectSession, onSelectRoom, onNewSession, onRequestNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onFocusFileSearch, onOpenSettings, activeProjectRoot }, ref) {
   const { t } = useI18n();
   const [sessionFlags, setSessionFlags] = useState<SessionFlags>({});
   const [taskSearch, setTaskSearch] = useState("");
@@ -392,6 +392,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         setSelectedCwd={setSelectedCwd}
         setCollapsedProjectKeys={setCollapsedProjectKeys}
         handleNewSessionInProject={handleNewSessionInProject}
+        onRequestNewSession={onRequestNewSession}
         handleDefaultCwd={handleDefaultCwd}
         togglePinnedProject={togglePinnedProject}
       />

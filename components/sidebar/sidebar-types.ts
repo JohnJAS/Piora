@@ -28,6 +28,7 @@ export interface SessionSidebarProps {
   initialRoomId?: string | null;
   onInitialRoomRestoreDone?: () => void;
   onNewSession?: (sessionId: string, cwd: string) => void;
+  onRequestNewSession?: () => void;
   initialSessionId?: string | null;
   skipInitialProjectSelection?: boolean;
   onInitialRestoreDone?: () => void;

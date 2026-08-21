@@ -20,13 +20,14 @@ interface Props {
   setSelectedCwd: Dispatch<SetStateAction<string | null>>;
   setCollapsedProjectKeys: Dispatch<SetStateAction<Set<string>>>;
   handleNewSessionInProject: (cwd: string) => void;
+  onRequestNewSession?: () => void;
   handleDefaultCwd: () => Promise<void>;
   togglePinnedProject: (root: string) => void;
 }
 
 export function SidebarNavigation(props: Props) {
   const { t } = useI18n();
-  const { onFocusFileSearch, taskSearchRef, taskSearch, setTaskSearch, onOpenSettings, selectedCwd, selectedCwdProp, projectGroups, pinnedProjectGroups, projectAliases, setSelectedCwd, setCollapsedProjectKeys, handleNewSessionInProject, handleDefaultCwd, togglePinnedProject } = props;
+  const { onFocusFileSearch, taskSearchRef, taskSearch, setTaskSearch, onOpenSettings, selectedCwd, selectedCwdProp, projectGroups, pinnedProjectGroups, projectAliases, setSelectedCwd, setCollapsedProjectKeys, handleNewSessionInProject, onRequestNewSession, handleDefaultCwd, togglePinnedProject } = props;
   return <>
       <div className={styles.brandRow}>
         <button type="button" className={styles.brandButton} aria-label={t("sidebar.appMenu")}>
@@ -34,15 +35,6 @@ export function SidebarNavigation(props: Props) {
           <span>Piora</span>
         </button>
         <div className={styles.brandActions}>
-          <button
-            type="button"
-            className={styles.iconButton}
-            onClick={() => taskSearchRef.current?.focus()}
-            title={t("sidebar.search")}
-            aria-label={t("sidebar.search")}
-          >
-            <AliIcon name="search" size={15} />
-          </button>
           <button
             type="button"
             className={styles.iconButton}
@@ -60,6 +52,10 @@ export function SidebarNavigation(props: Props) {
           type="button"
           className={styles.navButton}
           onClick={() => {
+            if (onRequestNewSession) {
+              onRequestNewSession();
+              return;
+            }
             const cwd = selectedCwd ?? selectedCwdProp ?? projectGroups[0]?.preferredCwd;
             if (cwd) handleNewSessionInProject(cwd);
             else void handleDefaultCwd();
