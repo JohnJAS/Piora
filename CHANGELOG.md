@@ -42,6 +42,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
   in the Room even when an Agent omits the explicit shared-reply tool call.
 - Restored the right workspace toggle while a new conversation is waiting for
   its explicit project selection.
+- Added a confirmed delete action for collaboration rooms and synchronized the
+  active workspace, URL, and sidebar immediately after deletion.
 
 ## [0.3.0] - 2026-08-20
 

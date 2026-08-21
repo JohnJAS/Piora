@@ -427,6 +427,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
           selectedRoomId={selectedRoomId ?? null}
           activeProjectRoot={activeProjectRoot}
           initialRoomId={initialRoomId}
+          refreshKey={refreshKey}
           onSelectRoom={onSelectRoom}
           onInitialRestoreDone={onInitialRoomRestoreDone}
         />

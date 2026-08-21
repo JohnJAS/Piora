@@ -783,6 +783,14 @@ export function AppShell() {
     if (!isRestore) replaceUrlWithoutNextNavigation(`?room=${encodeURIComponent(room.id)}`);
   }, [isMobile]);
 
+  const handleRoomDeleted = useCallback((roomId: string) => {
+    setSelectedRoom((current) => current?.id === roomId ? null : current);
+    setRefreshKey((key) => key + 1);
+    setSessionKey((key) => key + 1);
+    setSystemPrompt(null);
+    replaceUrlWithoutNextNavigation("/");
+  }, []);
+
   // Native Electron menus stay deliberately thin: the renderer owns all
   // application state and receives only a small action name from preload.
   useEffect(() => {
@@ -2255,6 +2263,7 @@ export function AppShell() {
                 key={`${sessionKey}:${selectedRoom.id}`}
                 initialRoom={selectedRoom}
                 onRoomChange={setSelectedRoom}
+                onRoomDeleted={handleRoomDeleted}
               />
             ) : showChat ? (
               <ChatWindow

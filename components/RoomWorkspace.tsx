@@ -44,9 +44,11 @@ function roleLabel(role: CollaborationRoom["members"][number]["role"]): string {
 export function RoomWorkspace({
   initialRoom,
   onRoomChange,
+  onRoomDeleted,
 }: {
   initialRoom: CollaborationRoom;
   onRoomChange?: (room: CollaborationRoom) => void;
+  onRoomDeleted: (roomId: string) => void;
 }) {
   const [room, setRoom] = useState(initialRoom);
   const [messages, setMessages] = useState<RoomMessage[]>([]);
@@ -522,7 +524,7 @@ export function RoomWorkspace({
           </>
         ) : null}
       </div>
-      {settingsOpen ? <RoomSettingsDialog room={room} onClose={() => setSettingsOpen(false)} onRoomChange={updateRoom} /> : null}
+      {settingsOpen ? <RoomSettingsDialog room={room} onClose={() => setSettingsOpen(false)} onRoomChange={updateRoom} onRoomDeleted={onRoomDeleted} /> : null}
     </section>
   );
 }
