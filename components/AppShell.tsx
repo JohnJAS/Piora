@@ -1702,57 +1702,61 @@ export function AppShell() {
               </span>
             ) : null}
           </div>
-          {!settingsDialogOpen && showChat && (
+          {!settingsDialogOpen && (
             <div className="conversation-toolbar-actions">
-              <button
-                className="topbar-control topbar-changes-button"
-                type="button"
-                onClick={handleOpenTaskChanges}
-                disabled={!topbarGitStatus?.isGitRepository}
-                title={translate("review.changesTree")}
-                aria-label={translate("review.changesTree")}
-              >
-                <AliIcon name="code" size={14} />
-                {topbarGitStatus?.isGitRepository ? <span className="topbar-changes-lines"><b>+{topbarLineStats.additions}</b><i>−{topbarLineStats.deletions}</i></span> : null}
-              </button>
-              <button
-                className="topbar-control topbar-history-button"
-                type="button"
-                onClick={handleViewFullHistory}
-                disabled={!selectedSession}
-                title={selectedSession ? translate("history.full") : translate("history.unsaved")}
-                aria-label={translate("history.full")}
-                aria-haspopup="dialog"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  height: "100%",
-                  padding: "0 12px",
-                  background: "none",
-                  border: "none",
-                  borderTop: "2px solid transparent",
-                  color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
-                  cursor: selectedSession ? "pointer" : "not-allowed",
-                  opacity: selectedSession ? 1 : 0.45,
-                  flexShrink: 0,
-                  fontSize: "var(--text-xs)",
-                  whiteSpace: "nowrap",
-                  transition: "color 0.1s, background 0.1s, opacity 0.1s",
-                }}
-                onMouseEnter={(e) => {
-                  if (!selectedSession) return;
-                  e.currentTarget.style.color = "var(--text)";
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = selectedSession ? "var(--text-muted)" : "var(--text-dim)";
-                  e.currentTarget.style.background = "none";
-                }}
-              >
-                <AliIcon name="history" size={15} />
-                {!isMobile && <span className="topbar-action-label">{translate("history.label")}</span>}
-              </button>
+              {showChat ? (
+                <>
+                  <button
+                    className="topbar-control topbar-changes-button"
+                    type="button"
+                    onClick={handleOpenTaskChanges}
+                    disabled={!topbarGitStatus?.isGitRepository}
+                    title={translate("review.changesTree")}
+                    aria-label={translate("review.changesTree")}
+                  >
+                    <AliIcon name="code" size={14} />
+                    {topbarGitStatus?.isGitRepository ? <span className="topbar-changes-lines"><b>+{topbarLineStats.additions}</b><i>−{topbarLineStats.deletions}</i></span> : null}
+                  </button>
+                  <button
+                    className="topbar-control topbar-history-button"
+                    type="button"
+                    onClick={handleViewFullHistory}
+                    disabled={!selectedSession}
+                    title={selectedSession ? translate("history.full") : translate("history.unsaved")}
+                    aria-label={translate("history.full")}
+                    aria-haspopup="dialog"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      height: "100%",
+                      padding: "0 12px",
+                      background: "none",
+                      border: "none",
+                      borderTop: "2px solid transparent",
+                      color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
+                      cursor: selectedSession ? "pointer" : "not-allowed",
+                      opacity: selectedSession ? 1 : 0.45,
+                      flexShrink: 0,
+                      fontSize: "var(--text-xs)",
+                      whiteSpace: "nowrap",
+                      transition: "color 0.1s, background 0.1s, opacity 0.1s",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!selectedSession) return;
+                      e.currentTarget.style.color = "var(--text)";
+                      e.currentTarget.style.background = "var(--bg-hover)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = selectedSession ? "var(--text-muted)" : "var(--text-dim)";
+                      e.currentTarget.style.background = "none";
+                    }}
+                  >
+                    <AliIcon name="history" size={15} />
+                    {!isMobile && <span className="topbar-action-label">{translate("history.label")}</span>}
+                  </button>
+                </>
+              ) : null}
               <button
                 className={`topbar-control topbar-icon-button right-panel-toggle ${rightPanelOpen ? "is-open" : "is-closed"}`}
                 type="button"

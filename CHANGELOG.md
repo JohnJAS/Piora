@@ -4,6 +4,16 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Changed
+
+- Redesigned the new-conversation landing screen around the composer, with an
+  anchored searchable project menu and draft handoff after project selection.
+
+### Fixed
+
+- Restored the right workspace toggle while a new conversation is waiting for
+  its explicit project selection.
+
 ## [0.3.1] - 2026-08-21
 
 ### Added
