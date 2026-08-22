@@ -4,6 +4,30 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-08-22
+
+### Added
+
+- Added runtime MCP Server and cached tool-capability discovery to the
+  `pi-mcp-adapter` plugin details view without exposing credentials or tool
+  input schemas.
+- Added real idle-frame thumbnails for installed and locally discovered
+  companion pets.
+- Added an introductory comparison of Pi extensions, skills, and plugins to
+  each capability settings page.
+
+### Changed
+
+- Redesigned plugin package details and resource cards to separate packaged
+  resources from runtime MCP capabilities.
+- Extended the validated companion-pet spritesheet route so local Codex pets
+  can be previewed safely before import.
+
+### Fixed
+
+- Removed the modal-backdrop styling that incorrectly rendered plugin resource
+  groups as large gray blocks.
+
 ## [0.3.2] - 2026-08-22
 
 ### Added

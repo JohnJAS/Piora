@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
 import {
   CompanionPetError,
+  readCodexPetSpritesheet,
   readInstalledPetSpritesheet,
+  type CodexPetSourceKind,
 } from "@/lib/companion-pets";
 import { isApiRequestAllowed } from "@/lib/request-security";
 
 export const dynamic = "force-dynamic";
+
+const CODEX_SOURCE_KINDS = new Set<CodexPetSourceKind>([
+  "codex-builtin-cache",
+  "codex-custom",
+  "codex-legacy-avatar",
+]);
 
 export async function GET(
   request: Request,
@@ -16,7 +24,16 @@ export async function GET(
   }
   try {
     const { id } = await params;
-    const { bytes, mimeType } = readInstalledPetSpritesheet(id);
+    const requestedSourceKind = new URL(request.url).searchParams.get("sourceKind");
+    if (requestedSourceKind !== null && !CODEX_SOURCE_KINDS.has(requestedSourceKind as CodexPetSourceKind)) {
+      return NextResponse.json(
+        { error: "sourceKind is invalid", code: "INVALID_PET_SOURCE" },
+        { status: 400 },
+      );
+    }
+    const { bytes, mimeType } = requestedSourceKind
+      ? readCodexPetSpritesheet(id, requestedSourceKind as CodexPetSourceKind)
+      : readInstalledPetSpritesheet(id);
     return new Response(new Uint8Array(bytes), {
       headers: {
         "Content-Type": mimeType,

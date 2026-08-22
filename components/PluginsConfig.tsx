@@ -7,6 +7,8 @@ import { useFocusTrap } from "@/hooks/useFocusTrap";
 import type { PluginPackageInfo, PluginsResponse } from "@/lib/api-types";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
+import { CapabilityPrimer } from "./CapabilityPrimer";
+import styles from "./PluginsConfig.module.css";
 
 type PluginScope = PluginPackageInfo["scope"];
 type PluginAction = "install" | "remove" | "update" | "disable" | "enable";
@@ -86,69 +88,84 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
   }
 
   return (
-    <div
-      className="app-shell-dialog-backdrop"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 12,
-      }}
-    >
-      {groups.map((group, groupIndex) => (
-        <div
-          key={group.kind}
-          style={{
-            borderTop: groupIndex === 0 ? "none" : "1px solid var(--border)",
-            paddingTop: groupIndex === 0 ? 0 : 12,
-          }}
-        >
-          <div
-            style={{
-              fontSize: "var(--text-xs)",
-              fontWeight: 700,
-              color: "var(--text-dim)",
-              textTransform: "uppercase",
-              marginBottom: 6,
-            }}
-          >
-            {group.label}
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {group.resources.map((resource) => (
-              <div key={`${resource.kind}:${resource.path}`} style={{ minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: "var(--text-sm)",
-                    color: "var(--text)",
-                    fontFamily: "var(--font-mono)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                  title={resource.path}
-                >
-                  {resource.name}
-                </div>
-                <div
-                  style={{
-                    fontSize: "var(--text-xs)",
-                    color: "var(--text-dim)",
-                    fontFamily: "var(--font-mono)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    marginTop: 1,
-                  }}
-                  title={resource.path}
-                >
-                  {resource.relativePath}
-                </div>
-              </div>
-            ))}
-          </div>
+    <div className={styles.resourceGrid}>
+      {groups.map((group) => (
+        <div className={styles.resourceCard} key={group.kind}>
+          <div className={styles.resourceKind}>{group.label}</div>
+          {group.resources.map((resource) => (
+            <div className={styles.resourceEntry} key={`${resource.kind}:${resource.path}`}>
+              <div className={styles.resourceName} title={resource.path}>{resource.name}</div>
+              <div className={styles.resourcePath} title={resource.path}>{resource.relativePath}</div>
+            </div>
+          ))}
         </div>
       ))}
     </div>
+  );
+}
+
+function McpCapabilities({ info }: { info: NonNullable<PluginPackageInfo["mcpCapabilities"]> }) {
+  const { t } = useI18n();
+  return (
+    <section className={styles.section} aria-labelledby="plugin-mcp-capabilities-title">
+      <div className={styles.sectionHeading}>
+        <div>
+          <div className={styles.sectionTitle} id="plugin-mcp-capabilities-title">{t("plugins.mcpCapabilities")}</div>
+          <div className={styles.sectionDescription}>{t("plugins.mcpCapabilitiesDescription")}</div>
+        </div>
+        <div className={styles.capabilityStats}>
+          <span className={styles.statBadge}>{t("plugins.mcpServerCount", { count: info.enabledServerCount })}</span>
+          <span className={styles.statBadge}>{t("plugins.mcpToolCount", { count: info.discoveredToolCount })}</span>
+        </div>
+      </div>
+
+      {info.serverCount === 0 ? (
+        <div className={styles.emptyCapability}>
+          <div className={styles.emptyTitle}>{t("plugins.mcpNoServersTitle")}</div>
+          <div className={styles.emptyCopy}>{t("plugins.mcpNoServersDescription")}</div>
+          <code className={styles.configPath}>{info.setupPath}</code>
+          <div className={styles.emptyCopy}>{t("plugins.mcpSetupHint")}</div>
+        </div>
+      ) : (
+        <>
+          <div className={styles.cacheNotice}>{t("plugins.mcpCacheNotice")}</div>
+          <div className={styles.serverList}>
+            {info.servers.map((server) => (
+              <details className={styles.serverCard} key={server.name} open={info.servers.length === 1}>
+                <summary className={styles.serverSummary}>
+                  <span className={styles.serverName}>{server.name}</span>
+                  <span className={styles.metaBadge}>{t(`plugins.mcpTransport.${server.transport}`)}</span>
+                  <span className={styles.metaBadge}>{t("plugins.mcpToolCount", { count: server.toolCount })}</span>
+                  <span className={styles.statusBadge} data-status={server.status}>{t(`plugins.mcpStatus.${server.status}`)}</span>
+                </summary>
+                <div className={styles.serverBody}>
+                  <div className={styles.serverSource}>{t("plugins.mcpConfigSource", { source: server.source })}</div>
+                  {server.tools.length > 0 ? (
+                    <ul className={styles.toolList}>
+                      {server.tools.map((tool) => (
+                        <li className={styles.toolItem} key={tool.name}>
+                          <div className={styles.toolName}>{tool.name}</div>
+                          {tool.description ? <div className={styles.toolDescription}>{tool.description}</div> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <div className={styles.emptyCopy}>{t("plugins.mcpNoMetadata")}</div>
+                  )}
+                </div>
+              </details>
+            ))}
+          </div>
+        </>
+      )}
+
+      {info.diagnostics.length > 0 ? (
+        <details className={styles.diagnostics}>
+          <summary>{t("plugins.mcpDiagnostics", { count: info.diagnostics.length })}</summary>
+          <ul>{info.diagnostics.map((diagnostic, index) => <li key={`${diagnostic}:${index}`}>{diagnostic}</li>)}</ul>
+        </details>
+      ) : null}
+    </section>
   );
 }
 
@@ -433,7 +450,7 @@ function PackageDetail({
   const enabled = !pkg.disabled;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 680 }}>
+    <div className={styles.detail}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, minWidth: 0, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 180, flex: 1 }}>
           <Toggle
@@ -508,16 +525,7 @@ function PackageDetail({
         </div>
       </div>
 
-      <div
-        className="app-shell-dialog"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(96px, 130px) minmax(0, 1fr)",
-          gap: "9px 14px",
-          fontSize: "var(--text-sm)",
-          lineHeight: 1.45,
-        }}
-      >
+      <div className={styles.summaryCard}>
         <div style={{ color: "var(--text-dim)" }}>{t("i18n.status")}</div>
         <div style={{ color: statusColor(pkg.status), textTransform: "capitalize" }}>{pkg.status}</div>
         <div style={{ color: "var(--text-dim)" }}>{t("i18n.version")}</div>
@@ -529,14 +537,7 @@ function PackageDetail({
         <div style={{ color: "var(--text-dim)" }}>{t("i18n.resources")}</div>
          <div style={{ color: "var(--text-muted)" }}>{resourceSummary(pkg, t)}</div>
         <div style={{ color: "var(--text-dim)" }}>{t("i18n.installedPath")}</div>
-        <div
-          className="app-shell-dialog-header"
-          style={{
-            color: pkg.installedPath ? "var(--text-muted)" : "#ef4444",
-            fontFamily: "var(--font-mono)",
-            overflowWrap: "anywhere",
-          }}
-        >
+        <div style={{ color: pkg.installedPath ? "var(--text-muted)" : "#ef4444", fontFamily: "var(--font-mono)", overflowWrap: "anywhere" }}>
           {pkg.installedPath ? shortenPath(pkg.installedPath) : t("i18n.notFound")}
         </div>
         <div style={{ color: "var(--text-dim)" }}>{t("i18n.cwd")}</div>
@@ -545,12 +546,15 @@ function PackageDetail({
         </div>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: "var(--text-sm)", fontWeight: 700, color: "var(--text)" }}>
-          {t("i18n.resolvedResources")}
+      {pkg.mcpCapabilities ? <McpCapabilities info={pkg.mcpCapabilities} /> : null}
+
+      <section className={styles.section} aria-labelledby="plugin-package-contents-title">
+        <div>
+          <div className={styles.sectionTitle} id="plugin-package-contents-title">{t("plugins.packageContents")}</div>
+          <div className={styles.sectionDescription}>{t("plugins.packageContentsDescription")}</div>
         </div>
         <ResourceList pkg={pkg} />
-      </div>
+      </section>
 
       {actionMessage && (
         <div style={{ fontSize: "var(--text-sm)", color: "#16a34a" }}>
@@ -955,6 +959,7 @@ export function PluginsConfig({
           </div>
 
           <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+            <CapabilityPrimer current="plugin" />
             {addMode ? (
               <AddPluginPanel
                 cwd={cwd}

@@ -6,6 +6,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { ExtensionInventoryItem, ExtensionsResponse } from "@/lib/api-types";
 import { AliIcon } from "./AliIcon";
+import { CapabilityPrimer } from "./CapabilityPrimer";
 
 interface Props {
   cwd: string;
@@ -93,6 +94,8 @@ export function ExtensionsConfig({ cwd, sessionId, onReloaded }: Props) {
           <AliIcon name="reload" size={14} /> {t("i18n.refresh")}
         </button>
       </div>
+
+      <CapabilityPrimer current="extension" />
 
       {error && <div role="alert" style={{ marginBottom: 12, color: "#dc2626", fontSize: "var(--text-sm)" }}>{error}</div>}
       {message && <div role="status" style={{ marginBottom: 12, color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>{message}</div>}

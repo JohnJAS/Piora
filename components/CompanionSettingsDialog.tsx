@@ -9,7 +9,9 @@ import {
   type CompanionPetSource,
 } from "@/hooks/useCompanionPets";
 import type { CompanionPet, CompanionPetSourceKind, CompanionPetsResponse } from "@/lib/companion-pets";
+import { getCompanionAtlasFramePosition } from "@/lib/companion";
 import { AliIcon } from "./AliIcon";
+import { BuiltinPet } from "./CompanionPet";
 import styles from "./CompanionSettingsDialog.module.css";
 
 const SOURCE_MESSAGE_KEYS: Record<CompanionPetSourceKind, string> = {
@@ -25,6 +27,28 @@ function resolvePetSourceKind(pet: CompanionPetSource): CompanionPetSourceKind {
   if (pet.installed && pet.origin && pet.origin in SOURCE_MESSAGE_KEYS) return pet.origin;
   if (pet.sourceKind && pet.sourceKind in SOURCE_MESSAGE_KEYS) return pet.sourceKind;
   return pet.source === "codex" ? "codex-custom" : "piora-installed";
+}
+
+function PetPreview({ pet }: { pet?: CompanionPet }) {
+  if (!pet?.atlasUrl) {
+    return <span className={styles.petPreview} aria-hidden="true"><BuiltinPet status="idle" /></span>;
+  }
+  const idle = pet.states.find((state) => state.id === "idle");
+  const frameIndex = idle?.frameIndices[0] ?? 0;
+  const position = getCompanionAtlasFramePosition(pet.columns, pet.rows, frameIndex);
+  return (
+    <span className={styles.petPreview} aria-hidden="true">
+      <span className={styles.previewFallback}><AliIcon name="robot" size={18} /></span>
+      <span
+        className={styles.previewSprite}
+        style={{
+          backgroundImage: `url(${JSON.stringify(pet.atlasUrl).slice(1, -1)})`,
+          backgroundSize: `${pet.columns * 100}% ${pet.rows * 100}%`,
+          backgroundPosition: `${position.xPercent}% ${position.yPercent}%`,
+        }}
+      />
+    </span>
+  );
 }
 
 interface Props {
@@ -229,7 +253,7 @@ export function CompanionSettingsDialog({
             </div>
             <ul className={styles.petList}>
               <li className={styles.petRow}>
-                <span className={styles.petIcon} aria-hidden="true"><AliIcon name="robot" size={17} /></span>
+                <PetPreview />
                 <div className={styles.copy}>
                   <div className={styles.petName}>{t("companion.builtinPet")}</div>
                   <div className={styles.petMeta}>{t("companion.builtinPetDescription")}</div>
@@ -249,7 +273,7 @@ export function CompanionSettingsDialog({
                 const selected = selectedPetId === pet.id;
                 return (
                   <li className={styles.petRow} key={`installed:${getCompanionPetSourceKey(sourcedPet)}`}>
-                    <span className={styles.petIcon} aria-hidden="true"><AliIcon name="robot" size={17} /></span>
+                    <PetPreview pet={pet} />
                     <div className={styles.copy}>
                       <div className={styles.petName}>{pet.displayName}</div>
                       <div className={styles.petMeta}>
@@ -292,7 +316,7 @@ export function CompanionSettingsDialog({
                 const sourceLabel = t(SOURCE_MESSAGE_KEYS[resolvePetSourceKind(sourcedPet)]);
                 return (
                   <li className={styles.petRow} key={`source:${sourceKey}`}>
-                    <span className={styles.petIcon} aria-hidden="true"><AliIcon name="robot" size={17} /></span>
+                    <PetPreview pet={pet} />
                     <div className={styles.copy}>
                       <div className={styles.petName}>{pet.displayName}</div>
                       <div className={styles.petMeta}>

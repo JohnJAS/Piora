@@ -1084,7 +1084,7 @@ function petFromManifest(
       ? `${BUNDLED_COMPANION_PETS_PUBLIC_PATH}/${encodeURIComponent(manifest.id)}/${manifest.spritesheetPath}`
       : source === "piora"
         ? `/api/companion-pets/${encodeURIComponent(manifest.id)}/spritesheet`
-        : null,
+        : `/api/companion-pets/${encodeURIComponent(manifest.id)}/spritesheet?sourceKind=${encodeURIComponent(sourceKind)}`,
     width,
     height,
     frame: { ...manifest.frame },
@@ -1519,6 +1519,19 @@ function loadCodexSourcePet(
     if (source) return source;
   }
   throw new CompanionPetError("Codex pet source was not found", "PET_NOT_FOUND", 404);
+}
+
+export function readCodexPetSpritesheet(
+  id: string,
+  sourceKind: CodexPetSourceKind,
+  environment: CompanionPetEnvironment = process.env,
+): { bytes: Buffer; mimeType: "image/png" | "image/webp"; pet: CompanionPet } {
+  const validated = loadCodexSourcePet(id, environment, sourceKind);
+  return {
+    bytes: validated.spritesheetBytes,
+    mimeType: validated.mimeType,
+    pet: validated.pet,
+  };
 }
 
 function installValidatedPet(

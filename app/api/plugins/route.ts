@@ -11,6 +11,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { invalidateServicesCache } from "@/lib/rpc-manager";
+import { inspectMcpCapabilities } from "@/lib/mcp-capabilities";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import type {
   PluginDiagnostic,
@@ -250,6 +251,7 @@ async function readPlugins(cwd: string): Promise<PluginsResponse> {
         message: "Configured package path was not found.",
       });
     }
+    const isMcpAdapter = packageMetadata.packageName === "pi-mcp-adapter";
     return {
       source: pkg.source,
       scope,
@@ -262,6 +264,7 @@ async function readPlugins(cwd: string): Promise<PluginsResponse> {
       counts,
       resources,
       status: disabled ? "disabled" : resourceCount > 0 ? "loaded" : pkg.installedPath ? "installed" : "missing",
+      ...(isMcpAdapter ? { mcpCapabilities: inspectMcpCapabilities(cwd, agentDir) } : {}),
     } satisfies PluginPackageInfo;
   });
 
