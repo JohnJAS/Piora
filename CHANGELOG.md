@@ -4,6 +4,11 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Changed
+
+- Publish verified release artifacts as public GitHub prereleases immediately
+  instead of leaving each version in a maintainer-only draft state.
+
 ## [0.3.5] - 2026-08-22
 
 ### Fixed
