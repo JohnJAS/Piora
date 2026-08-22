@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
 import { readPromptOptimizerSystemPrompt } from "@/lib/prompt-optimizer-settings";
 import type { AttachedFile, BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import { clearDraft, getDraft, setDraft, type ChatDraftImage } from "@/lib/draft-store";
@@ -29,6 +30,8 @@ import { prioritizeProvider } from "@/lib/model-policy";
 import { AliIcon } from "./AliIcon";
 import { ModelProviderIcon } from "./ModelProviderIcon";
 import type { SessionStatsInfo } from "@/lib/pi-types";
+import type { ExtensionStatusItem } from "@/lib/types";
+import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import {
   buildSlashCommandRegistry,
   filterSlashCommandRegistry,
@@ -93,6 +96,7 @@ interface Props {
   cwd?: string | null;
   contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
   sessionStats?: SessionStatsInfo | null;
+  extensionStatuses?: ExtensionStatusItem[];
 }
 
 export interface PromptRunOptions {
@@ -189,9 +193,15 @@ export function filterModelOptions(options: ModelOption[], query: string): Model
 }
 
 const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+type ThinkingLevel = typeof THINKING_LEVELS[number];
+type ModelMenuSection = "models" | "reasoning" | null;
 const THINKING_LEVEL_DESC_KEYS: Record<typeof THINKING_LEVELS[number], string> = {
   auto: "chat.thinkingUseDefault", off: "chat.thinkingOff", minimal: "chat.thinkingMinimal", low: "chat.thinkingLow",
   medium: "chat.thinkingMedium", high: "chat.thinkingHigh", xhigh: "chat.thinkingXhigh", max: "chat.thinkingMax",
+};
+const THINKING_LEVEL_LABEL_KEYS: Record<ThinkingLevel, string> = {
+  auto: "chat.thinkingLevelAuto", off: "chat.thinkingLevelOff", minimal: "chat.thinkingLevelMinimal", low: "chat.thinkingLevelLow",
+  medium: "chat.thinkingLevelMedium", high: "chat.thinkingLevelHigh", xhigh: "chat.thinkingLevelXhigh", max: "chat.thinkingLevelMax",
 };
 
 function formatTokenCount(tokens: number): string {
@@ -319,12 +329,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   cwd,
   contextUsage,
   sessionStats,
+  extensionStatuses = [],
 }: Props, ref) {
   const { t, locale } = useI18n();
   const isMobile = useIsMobile();
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey)?.value ?? "" : ""));
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [modelMenuSection, setModelMenuSection] = useState<ModelMenuSection>(null);
   const [modelFilter, setModelFilter] = useState("");
   const [promptOptimization, setPromptOptimization] = useState<PromptOptimizationState | null>(null);
   const [streamingActionMenuOpen, setStreamingActionMenuOpen] = useState(false);
@@ -1345,6 +1357,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     ? (modelOptions.find((o) => o.modelId === model.modelId && o.provider === model.provider)?.name ?? model.modelId)
     : null;
   const currentName = displayModelName;
+  const activeThinkingLevel = (thinkingLevel ?? "auto") as ThinkingLevel;
+  const thinkingLevelLabel = t(THINKING_LEVEL_LABEL_KEYS[activeThinkingLevel] ?? THINKING_LEVEL_LABEL_KEYS.auto);
   const contextRemainingPercent = getContextRemainingPercent(contextUsage);
   const contextUsedPercent = contextRemainingPercent === null ? null : 100 - contextRemainingPercent;
   const contextUsageLabel = contextUsedPercent === null
@@ -1385,6 +1399,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         modelDropdownPanelRef.current && !modelDropdownPanelRef.current.contains(e.target as Node)
       ) {
         setModelDropdownOpen(false);
+        setModelMenuSection(null);
         setModelFilter("");
       }
       if (historyMenuRef.current && !historyMenuRef.current.contains(e.target as Node) && !textareaRef.current?.contains(e.target as Node)) {
@@ -2014,6 +2029,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               {!isMobile && <span>{promptOptimization?.loading ? t("chat.optimizingPrompt") : t("chat.optimizePrompt")}</span>}
             </button>
             <div style={{ flex: 1 }} />
+            <ExtensionStatusBar statuses={extensionStatuses} />
             <div className="session-stats-control">
               <div className="session-stats-trigger" tabIndex={0} aria-label={t("session.title")}>
                 <AliIcon name="chart-no-axes-column" size={18} />
@@ -2074,250 +2090,199 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <div className="context-usage-tooltip-value">{contextTokenLabel}</div>
               </div>
             </div>
-            {/* Model selector — visible always, disabled during streaming */}
+            {/* Codex-style model settings: one compact summary chip with focused submenus. */}
             {(modelOptions.length > 0 || currentName || modelError) && onModelChange && (
-                <div ref={dropdownRef} style={{ position: "relative", flex: isMobile ? "1 1 auto" : undefined, minWidth: 0 }}>
-                  <button
-                    onClick={(e) => {
-                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                      setModelDropdownRect({ top: rect.top, left: rect.left, width: rect.width });
-                      setModelDropdownOpen((open) => {
-                        if (open) setModelFilter("");
-                        return !open;
-                      });
-                    }}
-                    disabled={isStreaming}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 6,
-                      justifyContent: isMobile ? "flex-start" : undefined,
-                      padding: isMobile ? "8px 10px" : "5px 9px",
-                      height: 28,
-                      width: isMobile ? "100%" : undefined,
-                      maxWidth: isMobile ? "100%" : 240,
-                      overflow: "hidden",
-                      background: modelDropdownOpen ? "var(--bg-hover)" : "color-mix(in srgb, var(--bg-panel) 75%, var(--bg))",
-                      border: `1px solid ${modelDropdownOpen ? "color-mix(in srgb, var(--accent) 45%, var(--border))" : "color-mix(in srgb, var(--border) 72%, transparent)"}`,
-                      borderRadius: 8,
-                      color: modelDropdownOpen ? "var(--text)" : "var(--text-muted)",
-                      cursor: isStreaming ? "not-allowed" : "pointer",
-                      fontSize: "var(--text-xs)",
-                      opacity: isStreaming ? 0.5 : 1,
-                      transition: "background 0.12s, color 0.12s, border-color 0.12s",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (isStreaming) return;
-                      e.currentTarget.style.background = "var(--bg-hover)";
-                      e.currentTarget.style.color = "var(--text)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = modelDropdownOpen ? "var(--bg-hover)" : "color-mix(in srgb, var(--bg-panel) 75%, var(--bg))";
-                      e.currentTarget.style.color = modelDropdownOpen ? "var(--text)" : "var(--text-muted)";
-                    }}
-                    title={modelOptions.length > 0 ? "Change model" : "No available models"}
-                  >
-                    <ModelProviderIcon
-                      provider={model?.provider}
-                      modelId={model?.modelId}
-                      modelName={currentName}
-                      size={14}
-                    />
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-                      {currentName ?? (modelOptions.length > 0 ? "Select model" : "No models")}
-                    </span>
-                    <AliIcon name="arrowdown" size={10} />
-                  </button>
-                  {modelDropdownOpen && modelDropdownRect && (() => {
-                    const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-                    const bottom = viewportHeight - modelDropdownRect.top + 6;
-                    const maxH = Math.max(120, Math.min(modelDropdownRect.top - 8, viewportHeight * 0.6));
-                    // On mobile, pin to a small left margin and cap width to the
-                    // viewport so long model names never push the panel off-screen.
-                    const panelPos: React.CSSProperties = isMobile
-                      ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
-                      : { left: modelDropdownRect.left, width: "max-content", minWidth: modelDropdownRect.width };
-                    return (
-                      <div ref={modelDropdownPanelRef} style={{
-                      position: "fixed",
-                      bottom,
-                      ...panelPos,
-                      zIndex: 500, background: "var(--bg)", border: "1px solid var(--border)",
-                      borderRadius: 8, boxShadow: "0 -4px 16px rgba(0,0,0,0.10)",
-                      overflow: "hidden", maxHeight: maxH, display: "flex", flexDirection: "column",
-                      }}>
-                      {showModelFilter && (
-                        <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
+              <div ref={dropdownRef} className="model-settings-control">
+                <button
+                  type="button"
+                  className={`model-settings-trigger${modelDropdownOpen ? " is-open" : ""}`}
+                  onClick={(event) => {
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    setModelDropdownRect({ top: rect.top, left: rect.left, width: rect.width });
+                    setModelDropdownOpen((open) => {
+                      if (!open) setModelMenuSection(null);
+                      else {
+                        setModelMenuSection(null);
+                        setModelFilter("");
+                      }
+                      return !open;
+                    });
+                  }}
+                  disabled={isStreaming}
+                  aria-haspopup="menu"
+                  aria-expanded={modelDropdownOpen}
+                  title={modelOptions.length > 0 ? "Change model" : "No available models"}
+                >
+                  <ModelProviderIcon provider={model?.provider} modelId={model?.modelId} modelName={currentName} size={14} />
+                  <span className="model-settings-trigger-label">
+                    {currentName ?? (modelOptions.length > 0 ? t("chat.selectModel") : t("chat.noModels"))}
+                  </span>
+                  {onThinkingLevelChange ? <span className="model-settings-trigger-reasoning">{thinkingLevelLabel}</span> : null}
+                  <AliIcon name="arrowdown" size={10} />
+                </button>
+                {modelDropdownOpen && modelDropdownRect && (() => {
+                  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+                  const bottom = viewportHeight - modelDropdownRect.top + 7;
+                  const maxH = Math.max(160, Math.min(modelDropdownRect.top - 12, viewportHeight * 0.68));
+                  const desktopRight = Math.max(8, window.innerWidth - modelDropdownRect.left - modelDropdownRect.width);
+                  const panelPos: React.CSSProperties = isMobile
+                    ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
+                    : { right: desktopRight, width: 230 };
+                  const visibleSection = isMobile ? modelMenuSection : null;
+                  const selectableThinkingLevels = THINKING_LEVELS.filter((level) => (
+                    !availableThinkingLevels || level === "auto" || availableThinkingLevels.includes(level)
+                  ));
+                  const renderModelChoices = () => (
+                    <>
+                      {showModelFilter ? (
+                        <div className="model-settings-search">
+                          <AliIcon name="search" size={13} />
                           <input
                             value={modelFilter}
-                            onChange={(e) => setModelFilter(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Escape") {
-                                setModelFilter("");
-                                setModelDropdownOpen(false);
-                              }
-                            }}
+                            onChange={(event) => setModelFilter(event.target.value)}
                             placeholder={t("chat.filterModels")}
                             aria-label={t("chat.filterModels")}
-                            autoFocus
                             autoComplete="off"
                             spellCheck={false}
-                            style={{
-                              width: "100%",
-                              minWidth: isMobile ? 0 : 220,
-                              fontSize: "var(--text-xs)",
-                              fontFamily: "var(--font-mono)",
-                              padding: "5px 8px",
-                              border: "1px solid var(--border)",
-                              borderRadius: 5,
-                              outline: "none",
-                              background: "var(--bg)",
-                              color: "var(--text)",
-                              boxSizing: "border-box",
-                            }}
                           />
                         </div>
-                      )}
-                      <div style={{ minHeight: 0, overflowY: "auto" }}>
+                      ) : null}
+                      <div className="model-settings-list">
                         {modelsByProvider.length === 0 ? (
-                          <div style={{ padding: "8px 12px", color: "var(--text-dim)", fontSize: "var(--text-sm)", whiteSpace: "nowrap" }}>
-                            {modelFilter.trim() ? t("chat.noMatchingModels") : "No available models"}
+                          <div className="model-settings-empty">
+                            {modelFilter.trim() ? t("chat.noMatchingModels") : t("chat.noModels")}
                           </div>
-                        ) : modelsByProvider.map((group, gi) => (
+                        ) : modelsByProvider.map((group) => (
                           <div key={group.provider}>
-                            {(modelsByProvider.length > 1) && (
-                              <div style={{
-                                padding: "6px 12px 4px",
-                                fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--text-dim)",
-                                textTransform: "uppercase", letterSpacing: "0.07em",
-                                borderTop: gi > 0 ? "1px solid var(--border)" : "none",
-                              }}>
-                                {group.provider}
-                              </div>
-                            )}
-                            {group.options.map((opt) => {
-                              const isActive = opt.modelId === model?.modelId && opt.provider === model?.provider;
+                            {modelsByProvider.length > 1 ? <div className="model-settings-provider">{group.provider}</div> : null}
+                            {group.options.map((option) => {
+                              const isActive = option.modelId === model?.modelId && option.provider === model?.provider;
                               return (
                                 <button
-                                  key={`${opt.provider}:${opt.modelId}`}
+                                  key={`${option.provider}:${option.modelId}`}
+                                  type="button"
+                                  className={`model-settings-choice${isActive ? " is-active" : ""}`}
                                   onClick={() => {
                                     setModelDropdownOpen(false);
+                                    setModelMenuSection(null);
                                     setModelFilter("");
-                                    if (!isActive || isAutoModelSelection) onModelChange(opt.provider, opt.modelId);
+                                    if (!isActive || isAutoModelSelection) onModelChange(option.provider, option.modelId);
                                   }}
-                                  style={{
-                                    display: "flex", alignItems: "center", gap: 8,
-                                    width: "100%", padding: "7px 12px",
-                                    background: isActive ? "var(--bg-selected)" : "none",
-                                    border: "none",
-                                    color: isActive ? "var(--text)" : "var(--text-muted)",
-                                    cursor: "pointer", fontSize: "var(--text-sm)", textAlign: "left",
-                                    fontWeight: isActive ? 600 : 400,
-                                    whiteSpace: "nowrap",
-                                  }}
-                                  onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                                  onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
+                                  role="menuitemradio"
+                                  aria-checked={isActive}
                                 >
-                                  <ModelProviderIcon
-                                    provider={opt.provider}
-                                    modelId={opt.modelId}
-                                    modelName={opt.name}
-                                    size={15}
-                                  />
-                                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-                                    {opt.name}
-                                  </span>
-                                  {isActive ? (
-                                    <AliIcon name="check" size={10} style={{ color: "var(--accent)", flexShrink: 0 }} />
-                                  ) : null}
+                                  <ModelProviderIcon provider={option.provider} modelId={option.modelId} modelName={option.name} size={15} />
+                                  <span>{option.name}</span>
+                                  {isActive ? <AliIcon name="check" size={11} /> : null}
                                 </button>
                               );
                             })}
                           </div>
                         ))}
-                        {/* Reasoning effort inside the model settings */}
-                        {!isStreaming && onThinkingLevelChange && (
-                          <div style={{ borderTop: "1px solid var(--border)", paddingBottom: 4 }}>
-                            <div style={{
-                              padding: "6px 12px 4px",
-                              fontSize: "var(--text-xs)", fontWeight: 600, color: "var(--text-dim)",
-                              textTransform: "uppercase", letterSpacing: "0.07em",
-                            }}>
-                              {t("chat.reasoningEffort")}
-                            </div>
-                            {THINKING_LEVELS.filter((lvl) => {
-                              if (!availableThinkingLevels) return true;
-                              if (lvl === "auto") return true;
-                              return availableThinkingLevels.includes(lvl);
-                            }).map((lvl) => {
-                              const isActive = (thinkingLevel ?? "auto") === lvl;
-                              const desc = t(THINKING_LEVEL_DESC_KEYS[lvl]);
-                              const mappedVal = (lvl !== "auto" && thinkingLevelMap) ? thinkingLevelMap[lvl] : undefined;
-                              const displayLabel = (mappedVal != null && mappedVal !== lvl) ? mappedVal : lvl;
-                              const showOriginal = mappedVal != null && mappedVal !== lvl;
-                              return (
-                                <button
-                                  key={lvl}
-                                  onClick={() => { setModelDropdownOpen(false); if (!isActive) onThinkingLevelChange(lvl); }}
-                                  style={{
-                                    display: "flex", alignItems: "center", gap: 8,
-                                    width: "100%", padding: "7px 12px",
-                                    background: isActive ? "var(--bg-selected)" : "none",
-                                    border: "none",
-                                    color: isActive ? "var(--text)" : "var(--text-muted)",
-                                    cursor: "pointer", fontSize: "var(--text-sm)", textAlign: "left",
-                                    fontWeight: isActive ? 600 : 400,
-                                    whiteSpace: "nowrap",
-                                  }}
-                                  onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
-                                  onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
-                                >
-                                  {isActive
-                                    ? <AliIcon name="check" size={10} style={{ color: "var(--accent)" }} />
-                                    : <span style={{ width: 10, flexShrink: 0 }} />}
-                                  <span style={{ flex: 1 }}>
-                                    {displayLabel}
-                                    {showOriginal && <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", fontFamily: "var(--font-mono)", marginLeft: 5 }}>({lvl})</span>}
-                                  </span>
-                                  <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", marginLeft: 8 }}>{desc}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                        {/* Compact context inside the model settings */}
-                        {!isStreaming && onCompact && (
-                          <div style={{ borderTop: "1px solid var(--border)", paddingBottom: 4 }}>
-                            <button
-                              onClick={isCompacting ? onAbortCompaction : onCompact}
-                              disabled={isStreaming && !isCompacting}
-                              title={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
-                              style={{
-                                display: "flex", alignItems: "center", gap: 8,
-                                width: "100%", padding: "7px 12px",
-                                background: "none", border: "none",
-                                color: isCompacting ? "#ef4444" : "var(--text-muted)",
-                                cursor: (isStreaming && !isCompacting) ? "not-allowed" : "pointer",
-                                fontSize: "var(--text-sm)", textAlign: "left",
-                              }}
-                              onMouseEnter={(e) => {
-                                e.currentTarget.style.background = "var(--bg-hover)";
-                                e.currentTarget.style.color = isCompacting ? "#ef4444" : "var(--text)";
-                              }}
-                              onMouseLeave={(e) => {
-                                e.currentTarget.style.background = "none";
-                                e.currentTarget.style.color = isCompacting ? "#ef4444" : "var(--text-muted)";
-                              }}
-                            >
-                              {isCompacting
-                                ? <><AliIcon name="stop" size={11} /><span style={{ whiteSpace: "nowrap" }}>{t("chat.compacting")}</span></>
-                                : <><AliIcon name="shrink" size={11} /><span style={{ whiteSpace: "nowrap" }}>{t("chat.compact")}</span></>}
-                            </button>
-                          </div>
-                        )}
                       </div>
+                    </>
+                  );
+                  const renderReasoningChoices = () => (
+                    <div className="model-settings-list">
+                      {selectableThinkingLevels.map((level) => {
+                        const isActive = activeThinkingLevel === level;
+                        const mappedValue = level !== "auto" && thinkingLevelMap ? thinkingLevelMap[level] : undefined;
+                        return (
+                          <button
+                            key={level}
+                            type="button"
+                            className={`model-settings-choice model-settings-reasoning-choice${isActive ? " is-active" : ""}`}
+                            onClick={() => {
+                              setModelDropdownOpen(false);
+                              setModelMenuSection(null);
+                              if (!isActive) onThinkingLevelChange?.(level);
+                            }}
+                            role="menuitemradio"
+                            aria-checked={isActive}
+                            title={t(THINKING_LEVEL_DESC_KEYS[level])}
+                          >
+                            <span>{t(THINKING_LEVEL_LABEL_KEYS[level])}</span>
+                            {mappedValue != null && mappedValue !== level ? <small>{mappedValue}</small> : null}
+                            {isActive ? <AliIcon name="check" size={11} /> : null}
+                          </button>
+                        );
+                      })}
                     </div>
-                    );
-                  })()}
-                </div>
+                  );
+                  return createPortal(
+                    <div
+                      ref={modelDropdownPanelRef}
+                      className="model-settings-popover"
+                      style={{ position: "fixed", bottom, maxHeight: maxH, ...panelPos }}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Escape") return;
+                        event.stopPropagation();
+                        if (modelMenuSection) setModelMenuSection(null);
+                        else setModelDropdownOpen(false);
+                      }}
+                    >
+                      {visibleSection ? (
+                        <div className="model-settings-subview" role="menu">
+                          <button type="button" className="model-settings-back" onClick={() => { setModelMenuSection(null); setModelFilter(""); }}>
+                            <AliIcon name="arrowleft" size={13} />
+                            <span>{visibleSection === "models" ? t("i18n.model") : t("chat.reasoningEffort")}</span>
+                          </button>
+                          {visibleSection === "models" ? renderModelChoices() : renderReasoningChoices()}
+                        </div>
+                      ) : (
+                        <div className="model-settings-root" role="menu">
+                          <button
+                            type="button"
+                            className={`model-settings-row${modelMenuSection === "models" ? " is-active" : ""}`}
+                            onMouseEnter={() => { if (!isMobile) setModelMenuSection("models"); }}
+                            onClick={() => setModelMenuSection("models")}
+                            role="menuitem"
+                          >
+                            <span>{t("i18n.model")}</span>
+                            <span className="model-settings-row-value">{currentName ?? t("chat.selectModel")}</span>
+                            <AliIcon name="arrowright" size={11} />
+                          </button>
+                          {onThinkingLevelChange ? (
+                            <button
+                              type="button"
+                              className={`model-settings-row${modelMenuSection === "reasoning" ? " is-active" : ""}`}
+                              onMouseEnter={() => { if (!isMobile) setModelMenuSection("reasoning"); }}
+                              onClick={() => setModelMenuSection("reasoning")}
+                              role="menuitem"
+                            >
+                              <span>{t("chat.reasoningEffort")}</span>
+                              <span className="model-settings-row-value">{thinkingLevelLabel}</span>
+                              <AliIcon name="arrowright" size={11} />
+                            </button>
+                          ) : null}
+                          {!isStreaming && onCompact ? (
+                            <div className="model-settings-footer">
+                              <button
+                                type="button"
+                                className={`model-settings-row${isCompacting ? " is-danger" : ""}`}
+                                onClick={isCompacting ? onAbortCompaction : onCompact}
+                                title={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
+                              >
+                                <span>{isCompacting ? t("chat.compacting") : t("chat.compactContext")}</span>
+                                <AliIcon name={isCompacting ? "stop" : "shrink"} size={12} />
+                              </button>
+                            </div>
+                          ) : null}
+                          {!isMobile && modelMenuSection ? (
+                            <div className="model-settings-submenu" role="menu" style={{ maxHeight: maxH }}>
+                              <div className="model-settings-submenu-title">
+                                {modelMenuSection === "models" ? t("i18n.model") : t("chat.reasoningEffort")}
+                              </div>
+                              {modelMenuSection === "models" ? renderModelChoices() : renderReasoningChoices()}
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>,
+                    document.body,
+                  );
+                })()}
+              </div>
             )}
             {isStreaming ? (
               <div

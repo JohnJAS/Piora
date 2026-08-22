@@ -16,7 +16,14 @@ export async function POST(
 
   try {
     const requestText = await req.text();
-    let body: { instructions?: unknown; currentTitle?: unknown; apply?: unknown; onlyIfUnnamed?: unknown } = {};
+    let body: {
+      instructions?: unknown;
+      currentTitle?: unknown;
+      apply?: unknown;
+      onlyIfUnnamed?: unknown;
+      provider?: unknown;
+      modelId?: unknown;
+    } = {};
     if (requestText) {
       try {
         const parsed = JSON.parse(requestText) as unknown;
@@ -46,6 +53,17 @@ export async function POST(
     if (body.onlyIfUnnamed !== undefined && typeof body.onlyIfUnnamed !== "boolean") {
       return NextResponse.json({ error: "Only if unnamed must be a boolean" }, { status: 400 });
     }
+    if (body.provider !== undefined && typeof body.provider !== "string") {
+      return NextResponse.json({ error: "Provider must be a string" }, { status: 400 });
+    }
+    if (body.modelId !== undefined && typeof body.modelId !== "string") {
+      return NextResponse.json({ error: "Model id must be a string" }, { status: 400 });
+    }
+    const provider = typeof body.provider === "string" ? body.provider.trim() : "";
+    const modelId = typeof body.modelId === "string" ? body.modelId.trim() : "";
+    if (Boolean(provider) !== Boolean(modelId)) {
+      return NextResponse.json({ error: "Provider and model id must be selected together" }, { status: 400 });
+    }
 
     const filePath = await resolveSessionPath(id);
     if (!filePath) {
@@ -67,9 +85,18 @@ export async function POST(
     // globalThis keeps wrappers alive across dev hot reloads; older instances
     // may predate waitUntilReady(), but those have already completed startup.
     await session.waitUntilReady?.();
-    const result = await generateSessionTitle(session.inner as unknown as AgentSession, {
+    const agentSession = session.inner as unknown as AgentSession;
+    const titleModel = provider && modelId
+      ? agentSession.modelRuntime.getModel(provider, modelId)
+      : undefined;
+    if (provider && modelId && !titleModel) {
+      return NextResponse.json({ error: `Model not found: ${provider}/${modelId}` }, { status: 404 });
+    }
+    const result = await generateSessionTitle(agentSession, {
       ...(typeof body.instructions === "string" ? { instructions: normalizeSessionTitlePrompt(body.instructions) } : {}),
       ...(typeof body.currentTitle === "string" ? { currentTitle: Array.from(body.currentTitle).slice(0, 200).join("") } : {}),
+      ...(titleModel ? { model: titleModel } : {}),
+      signal: req.signal,
     });
 
     if (!session.isAlive()) {
@@ -95,6 +122,9 @@ export async function POST(
     }
     return NextResponse.json({ title: result.title, applied: apply, skipped: false, usage: result.usage ?? null });
   } catch (error) {
+    if (req.signal.aborted) {
+      return NextResponse.json({ error: "Session title generation was cancelled" }, { status: 499 });
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : String(error) },
       { status: 500 },

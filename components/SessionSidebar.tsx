@@ -24,6 +24,8 @@ import { RoomSidebarSection } from "./RoomSidebarSection";
 
 export type { SessionSidebarHandle } from "./sidebar/sidebar-types";
 
+const ARCHIVED_SESSION_TOAST_DURATION_MS = 5_000;
+
 export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, selectedRoomId, onSelectSession, onSelectRoom, onNewSession, onRequestNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onFocusFileSearch, onOpenSettings, activeProjectRoot }, ref) {
   const { t } = useI18n();
   const [sessionFlags, setSessionFlags] = useState<SessionFlags>({});
@@ -81,6 +83,15 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       if (d.home) setHomeDir(d.home);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!archivedSessionToast) return;
+    const archivedSessionId = archivedSessionToast.id;
+    const timer = window.setTimeout(() => {
+      setArchivedSessionToast((current) => current?.id === archivedSessionId ? null : current);
+    }, ARCHIVED_SESSION_TOAST_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [archivedSessionToast]);
 
   const restoredRef = useRef(false);
 

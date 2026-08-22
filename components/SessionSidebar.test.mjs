@@ -35,6 +35,12 @@ test("polls running sessions only while the tab is visible", () => {
   assert.match(source, /document\.addEventListener\("visibilitychange", (?:onVisibilityChange|visibility)\)/);
 });
 
+test("settles the project loading state when a background refresh supersedes the initial request", () => {
+  assert.match(source, /if \(loadSessionsRequestIdRef\.current === requestId\) setLoading\(false\)/);
+  assert.doesNotMatch(source, /if \(showLoading && loadSessionsRequestIdRef\.current === requestId\) setLoading\(false\)/);
+  assert.match(globalStyles, /\.sidebar-project-scroll\s*\{[^}]*background:\s*inherit/s);
+});
+
 test("switches sessions immediately while another session is running", () => {
   const switchSource = source.slice(
     source.indexOf("const handleSelectSessionFromList"),

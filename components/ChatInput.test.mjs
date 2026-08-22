@@ -66,8 +66,33 @@ test("keeps the model selector visible when a model error leaves no options", ()
     ),
   );
 
-  assert.match(html, />No models</);
+  assert.match(html, />No available models</);
   assert.match(html, /title="No available models"/);
+});
+
+test("uses one composer chip for model and reasoning without a speed setting", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(ChatInput, {
+        onSend() {},
+        onAbort() {},
+        onModelChange() {},
+        onThinkingLevelChange() {},
+        isStreaming: false,
+        model: { provider: "openai", modelId: "gpt-5" },
+        modelList: [{ provider: "openai", id: "gpt-5", name: "GPT-5" }],
+        thinkingLevel: "high",
+      }),
+    ),
+  );
+
+  assert.match(html, /class="model-settings-trigger-label">GPT-5/);
+  assert.match(html, /class="model-settings-trigger-reasoning">High/);
+  assert.match(chatInputSource, /createPortal\(/);
+  assert.match(chatInputSource, /model-settings-row-value/);
+  assert.doesNotMatch(chatInputSource, /chat\.speed|model-settings-speed/);
 });
 
 test("filters model options by name and id", () => {

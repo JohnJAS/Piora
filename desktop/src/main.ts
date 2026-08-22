@@ -40,6 +40,7 @@ const COMPLETION_NOTIFICATION_CHANNEL = "pi:completion-notification";
 const APPLICATION_MENU_CHANNEL = "pi:open-application-menu";
 const REVEAL_PATH_CHANNEL = "pi:reveal-path";
 const OPEN_PATH_CHANNEL = "pi:open-path";
+const DIRECTORY_PICKER_CHANNEL = "pi:directory-picker";
 const COMPANION_VISIBILITY_CHANNEL = "pi:companion-window-visible";
 const COMPANION_ALWAYS_ON_TOP_CHANNEL = "pi:companion-window-always-on-top";
 const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
@@ -429,6 +430,23 @@ function registerFileShellHandlers(): void {
       logger?.warn("Unable to open local path", error);
       return false;
     }
+  });
+}
+
+function registerDirectoryPickerHandler(): void {
+  ipcMain.removeHandler(DIRECTORY_PICKER_CHANNEL);
+  ipcMain.handle(DIRECTORY_PICKER_CHANNEL, async (event): Promise<string | null> => {
+    if (!isTrustedMainWindowSender(event)) {
+      logger?.warn("Blocked directory picker request from an untrusted renderer");
+      return null;
+    }
+    const ownerWindow = mainWindow;
+    if (!ownerWindow || ownerWindow.isDestroyed()) return null;
+    const result = await dialog.showOpenDialog(ownerWindow, {
+      title: app.getLocale().toLowerCase().startsWith("zh") ? "选择项目文件夹" : "Select project folder",
+      properties: ["openDirectory", "createDirectory"],
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
   });
 }
 
@@ -1271,6 +1289,7 @@ async function startApplication(): Promise<void> {
   registerCompanionWindowHandlers();
   registerGlobalShortcutHandler();
   registerHarmonyRuntimePickerHandler();
+  registerDirectoryPickerHandler();
 
   if (PORTABLE_SMOKE_TEST) {
     const smokeMarker = process.env.PIORA_SMOKE_MARKER?.trim();

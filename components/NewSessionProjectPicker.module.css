@@ -1,15 +1,22 @@
 .root {
-  display: grid;
+  display: flex;
   width: 100%;
   min-height: 100%;
-  place-items: center;
-  padding: clamp(24px, 6vh, 72px) clamp(16px, 4vw, 48px);
+  align-items: center;
+  justify-content: center;
+  padding: clamp(28px, 5vh, 64px) clamp(16px, 4vw, 48px) clamp(18px, 3vh, 36px);
   color: var(--text);
 }
 
 .hero {
-  width: min(820px, 100%);
-  transform: translateY(-3vh);
+  display: flex;
+  width: min(780px, 100%);
+  min-height: min(660px, 82vh);
+  flex-direction: column;
+}
+
+.intro {
+  margin-top: clamp(24px, 7vh, 78px);
 }
 
 .mark {
@@ -31,12 +38,50 @@
 }
 
 .hero h1 {
-  margin: 0 0 clamp(28px, 5vh, 52px);
-  font-size: clamp(calc(var(--text-xl) * 1.15), 3.1vw, calc(var(--text-xl) * 1.8));
+  margin: 0;
+  font-size: clamp(calc(var(--text-xl) * 1.12), 2.45vw, calc(var(--text-xl) * 1.62));
   font-weight: 470;
   letter-spacing: -.035em;
   line-height: 1.2;
   text-align: center;
+}
+
+.workspaceDock {
+  position: relative;
+  margin-top: auto;
+  padding-top: 38px;
+}
+
+.contextRail {
+  position: absolute;
+  inset: 0 14px auto;
+  display: flex;
+  height: 58px;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 10px 0;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-bottom: 0;
+  border-radius: 18px 18px 0 0;
+  background: color-mix(in srgb, var(--bg-panel) 72%, var(--bg));
+  color: var(--text-muted);
+}
+
+.brandChip,
+.contextChip {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border-radius: 9px;
+  font-size: var(--text-sm);
+}
+
+.brandChip {
+  background: color-mix(in srgb, var(--bg-hover) 72%, transparent);
+  color: var(--text);
+  font-weight: 560;
 }
 
 .hero h1 > button {
@@ -60,10 +105,11 @@
 
 .composer {
   position: relative;
-  min-height: 174px;
+  z-index: 2;
+  min-height: 126px;
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 20px;
-  background: color-mix(in srgb, var(--bg-panel) 88%, transparent);
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--bg) 94%, var(--bg-panel));
   box-shadow: var(--shadow-composer);
   backdrop-filter: blur(18px) saturate(1.08);
   transition: border-color .16s ease, box-shadow .16s ease;
@@ -77,7 +123,7 @@
 .composer textarea {
   display: block;
   width: 100%;
-  min-height: 122px;
+  min-height: 76px;
   resize: none;
   padding: 18px 20px 8px;
   border: 0;
@@ -93,7 +139,7 @@
 
 .composerBar {
   display: flex;
-  min-height: 50px;
+  min-height: 48px;
   align-items: center;
   gap: 5px;
   padding: 7px 9px 9px;
@@ -134,16 +180,6 @@
 .projectChip:hover,
 .projectChip:focus-visible { outline: 0; background: var(--bg-hover); color: var(--text); }
 
-.contextChip {
-  display: inline-flex;
-  min-height: 32px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-
 .selectionHint {
   margin-left: auto;
   color: var(--text-dim);
@@ -165,8 +201,8 @@
 .projectPopover {
   position: absolute;
   z-index: 30;
-  bottom: calc(100% + 9px);
-  left: -42px;
+  bottom: calc(100% + 10px);
+  left: -58px;
   width: min(320px, calc(100vw - 42px));
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
@@ -272,13 +308,23 @@
 }
 
 @media (max-width: 680px) {
-  .root { place-items: start center; padding-top: clamp(32px, 8vh, 72px); }
-  .hero { transform: none; }
-  .hero h1 { margin-bottom: 28px; font-size: calc(var(--text-xl) * 1.25); }
-  .composer { min-height: 154px; }
-  .composer textarea { min-height: 102px; }
+  .root { align-items: flex-start; padding-top: clamp(28px, 7vh, 58px); }
+  .hero { min-height: calc(100dvh - 112px); }
+  .intro { margin-top: 0; }
+  .hero h1 { font-size: calc(var(--text-xl) * 1.25); }
+  .composer { min-height: 132px; }
+  .composer textarea { min-height: 82px; }
   .selectionHint { display: none; }
-  .projectPopover { left: -41px; width: min(310px, calc(100vw - 32px)); }
+  .sendButton { margin-left: auto; }
+  .contextRail { inset-inline: 8px; overflow: visible; }
+  .brandChip { display: none; }
+  .projectPopover { left: -10px; width: min(310px, calc(100vw - 32px)); }
+}
+
+@media (max-height: 680px) and (min-width: 681px) {
+  .hero { min-height: min(540px, 78vh); }
+  .intro { margin-top: 8px; }
+  .mark { margin-bottom: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

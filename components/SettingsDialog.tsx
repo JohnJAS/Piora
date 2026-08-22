@@ -15,9 +15,13 @@ import {
 import { SESSION_TITLE_PROMPT_MAX_LENGTH } from "@/lib/session-title-prompt";
 import {
   SESSION_TITLE_PROMPT,
+  readSessionTitleModel,
   readSessionTitlePrompt,
+  resetSessionTitleModel,
   resetSessionTitlePrompt,
+  writeSessionTitleModel,
   writeSessionTitlePrompt,
+  type SessionTitleModelPreference,
 } from "@/lib/session-title-settings";
 import styles from "./SettingsDialog.module.css";
 
@@ -26,6 +30,7 @@ interface Props {
   onClose: () => void;
   activeKey: SettingsKey;
   onActiveKeyChange: (key: SettingsKey) => void;
+  modelCwd?: string;
   sections?: Partial<Record<SettingsKey, ReactNode>>;
   conversation: {
     systemPrompt: string | null;
@@ -38,6 +43,16 @@ interface Props {
     globalShortcutEnabled: boolean;
     onGlobalShortcutToggle: () => void | Promise<void>;
   };
+}
+
+interface TitleModelOption {
+  id: string;
+  name: string;
+  provider: string;
+}
+
+function titleModelValue(model: SessionTitleModelPreference): string {
+  return JSON.stringify(model);
 }
 
 export type SettingsKey = "general" | "conversation" | "models" | "extensions" | "skills" | "plugins" | "appearance" | "language" | "companion" | "remote" | "archived";
@@ -54,6 +69,7 @@ export function SettingsDialog({
   onClose,
   activeKey,
   onActiveKeyChange,
+  modelCwd,
   sections = {},
   conversation,
   desktop,
@@ -67,6 +83,10 @@ export function SettingsDialog({
   const [titlePromptDraft, setTitlePromptDraft] = useState(SESSION_TITLE_PROMPT);
   const [titlePromptSaved, setTitlePromptSaved] = useState(SESSION_TITLE_PROMPT);
   const [titlePromptStatus, setTitlePromptStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [titleModel, setTitleModel] = useState<SessionTitleModelPreference | null>(null);
+  const [titleModelOptions, setTitleModelOptions] = useState<TitleModelOption[]>([]);
+  const [titleModelsLoading, setTitleModelsLoading] = useState(false);
+  const [titleModelsError, setTitleModelsError] = useState<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   useFocusTrap(dialogRef, open, { onEscape: onClose });
 
@@ -163,7 +183,30 @@ export function SettingsDialog({
     setTitlePromptDraft(savedTitlePrompt);
     setTitlePromptSaved(savedTitlePrompt);
     setTitlePromptStatus("idle");
+    setTitleModel(readSessionTitleModel(window.localStorage));
   }, [open]);
+
+  useEffect(() => {
+    if (!open || activeKey !== "conversation") return;
+    const controller = new AbortController();
+    setTitleModelsLoading(true);
+    setTitleModelsError(null);
+    setTitleModelOptions([]);
+    const query = modelCwd ? `?cwd=${encodeURIComponent(modelCwd)}` : "";
+    void fetch(`/api/models${query}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json() as { modelList?: TitleModelOption[]; error?: string };
+        if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+        setTitleModelOptions(body.modelList ?? []);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setTitleModelsError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setTitleModelsLoading(false);
+      });
+    return () => controller.abort();
+  }, [activeKey, modelCwd, open]);
 
   const saveOptimizerPrompt = () => {
     try {
@@ -206,6 +249,20 @@ export function SettingsDialog({
       setTitlePromptStatus("saved");
     } catch {
       setTitlePromptStatus("error");
+    }
+  };
+
+  const selectTitleModel = (value: string) => {
+    try {
+      if (!value) {
+        setTitleModel(resetSessionTitleModel(window.localStorage));
+        return;
+      }
+      const selected = titleModelOptions.find((model) => titleModelValue({ provider: model.provider, modelId: model.id }) === value);
+      if (!selected) return;
+      setTitleModel(writeSessionTitleModel({ provider: selected.provider, modelId: selected.id }, window.localStorage));
+    } catch {
+      setTitleModelsError(t("settings.sessionTitleModelSaveFailed"));
     }
   };
 
@@ -333,6 +390,33 @@ export function SettingsDialog({
                       <div className={styles.rowTitle}>{t("settings.sessionTitlePromptTitle")}</div>
                       <div className={styles.rowDescription}>{t("settings.sessionTitlePromptDescription")}</div>
                     </div>
+                    <label className={styles.modelSelectField}>
+                      <span>{t("settings.sessionTitleModelTitle")}</span>
+                      <select
+                        value={titleModel ? titleModelValue(titleModel) : ""}
+                        disabled={titleModelsLoading}
+                        onChange={(event) => selectTitleModel(event.target.value)}
+                      >
+                        <option value="">{t("settings.sessionTitleModelCurrent")}</option>
+                        {titleModel && !titleModelOptions.some((model) => model.provider === titleModel.provider && model.id === titleModel.modelId) ? (
+                          <option value={titleModelValue(titleModel)} disabled>
+                            {t("settings.sessionTitleModelUnavailable", { model: `${titleModel.provider}/${titleModel.modelId}` })}
+                          </option>
+                        ) : null}
+                        {titleModelOptions.map((model) => (
+                          <option key={`${model.provider}:${model.id}`} value={titleModelValue({ provider: model.provider, modelId: model.id })}>
+                            {model.name || model.id} · {model.provider}
+                          </option>
+                        ))}
+                      </select>
+                      <small role="status">
+                        {titleModelsLoading
+                          ? t("settings.sessionTitleModelsLoading")
+                          : titleModelsError
+                            ? t("settings.sessionTitleModelsLoadFailed", { error: titleModelsError })
+                            : t("settings.sessionTitleModelDescription")}
+                      </small>
+                    </label>
                     <textarea
                       className={styles.promptEditor}
                       value={titlePromptDraft}

@@ -9,7 +9,6 @@ import { MessageView } from "./MessageView";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
-import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type BuiltinSlashCommandResult, type NoticeItem, type SlashCommandInfo } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -551,6 +550,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     ? (modelThinkingLevelMaps[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
     : null;
 
+  const visibleExtensionStatuses = extensionStatuses.filter((status) => status.key !== "piora-goal");
+
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
@@ -588,12 +589,12 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       cwd={session?.cwd ?? newSessionCwd}
       contextUsage={contextUsage}
       sessionStats={sessionStats}
+      extensionStatuses={visibleExtensionStatuses}
     />
   );
 
   const aboveEditorWidgets = extensionWidgets.filter((widget) => widget.key !== "piora-goal" && widget.placement !== "belowEditor");
   const belowEditorWidgets = extensionWidgets.filter((widget) => widget.key !== "piora-goal" && widget.placement === "belowEditor");
-  const visibleExtensionStatuses = extensionStatuses.filter((status) => status.key !== "piora-goal");
 
   if (loading) {
     return (
@@ -968,7 +969,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           </div>
         </div>
         {chatInputElement}
-        <ExtensionStatusBar statuses={visibleExtensionStatuses} />
       </div>
       </>
       )}

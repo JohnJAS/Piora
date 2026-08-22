@@ -4,6 +4,30 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-08-22
+
+### Added
+
+- Added a dedicated model preference for automatic Session title generation,
+  including safe cancellation while a title request is in progress.
+- Added a native Windows folder chooser for selecting a new-conversation
+  project in the packaged desktop application.
+
+### Changed
+
+- Redesigned the new-conversation landing screen, composer model and reasoning
+  controls, extension status indicator, and common action buttons around a
+  quieter Codex-inspired visual language.
+- Moved MCP and extension runtime status into a compact composer control instead
+  of reserving a full-width bar below the input.
+
+### Fixed
+
+- Kept the model menu anchored above the composer on both desktop and narrow
+  layouts, with no unsupported speed setting.
+- Prevented background Session refreshes from leaving the Projects area in a
+  permanent loading state when Rooms and Projects are both present.
+
 ## [0.3.3] - 2026-08-22
 
 ### Added

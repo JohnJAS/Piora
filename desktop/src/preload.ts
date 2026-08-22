@@ -21,6 +21,9 @@ const runtime = Object.freeze({
   openPath(filePath: string): Promise<boolean> {
     return ipcRenderer.invoke("pi:open-path", filePath) as Promise<boolean>;
   },
+  selectDirectory(): Promise<string | null> {
+    return ipcRenderer.invoke("pi:directory-picker") as Promise<string | null>;
+  },
   setCompanionWindowVisible(visible: boolean): Promise<boolean> {
     return ipcRenderer.invoke("pi:companion-window-visible", visible) as Promise<boolean>;
   },

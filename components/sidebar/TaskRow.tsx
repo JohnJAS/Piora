@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useTaskStatus } from "@/hooks/useTaskStatus";
 import {
@@ -8,7 +8,7 @@ import {
   getTaskStatusPresentationKey,
   type TaskStatus,
 } from "@/lib/task-status";
-import { readSessionTitlePrompt } from "@/lib/session-title-settings";
+import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
 import type { SessionInfo } from "@/lib/types";
 import { AliIcon } from "../AliIcon";
 import { TaskContextMenu } from "./TaskContextMenu";
@@ -106,6 +106,7 @@ export function TaskRow({
   const [deleting, setDeleting] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const titleOptimizationAbortRef = useRef<AbortController | null>(null);
   const taskStatus = useTaskStatus({
     sessionId: session.id,
     isViewing: isSelected,
@@ -116,6 +117,8 @@ export function TaskRow({
   const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
   const matchIndex = normalizedQuery ? title.toLocaleLowerCase().indexOf(normalizedQuery) : -1;
+
+  useEffect(() => () => titleOptimizationAbortRef.current?.abort(), []);
 
   const startRename = useCallback((event: React.MouseEvent) => {
     event.stopPropagation();
@@ -145,16 +148,22 @@ export function TaskRow({
   const optimizeTitle = useCallback(async (event: React.MouseEvent) => {
     event.stopPropagation();
     if (optimizingTitle) return;
+    const controller = new AbortController();
+    titleOptimizationAbortRef.current?.abort();
+    titleOptimizationAbortRef.current = controller;
     setOptimizingTitle(true);
     setTitleOptimizationError(null);
     try {
+      const titleModel = readSessionTitleModel(window.localStorage);
       const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/auto-name`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           apply: false,
           currentTitle: renameValue.trim() || title,
           instructions: readSessionTitlePrompt(window.localStorage),
+          ...(titleModel ?? {}),
         }),
       });
       const body = (await response.json().catch(() => ({}))) as { title?: string; error?: string };
@@ -162,11 +171,23 @@ export function TaskRow({
       setRenameValue(body.title.trim());
       requestAnimationFrame(() => inputRef.current?.focus());
     } catch (reason) {
+      if (controller.signal.aborted) return;
       setTitleOptimizationError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      setOptimizingTitle(false);
+      if (titleOptimizationAbortRef.current === controller) {
+        titleOptimizationAbortRef.current = null;
+        setOptimizingTitle(false);
+      }
     }
   }, [optimizingTitle, renameValue, session.id, title]);
+
+  const cancelTitleOptimization = useCallback((event?: React.SyntheticEvent) => {
+    event?.stopPropagation();
+    titleOptimizationAbortRef.current?.abort();
+    titleOptimizationAbortRef.current = null;
+    setOptimizingTitle(false);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
 
   const performDelete = useCallback(async () => {
     setConfirmDelete(false);
@@ -279,7 +300,10 @@ export function TaskRow({
             }}
             onKeyDown={(event) => {
               if (event.key === "Enter") void commitRename();
-              if (event.key === "Escape") setRenaming(false);
+              if (event.key === "Escape") {
+                cancelTitleOptimization();
+                setRenaming(false);
+              }
             }}
             autoFocus
             aria-invalid={Boolean(titleOptimizationError)}
@@ -287,13 +311,12 @@ export function TaskRow({
           <button
             className={`${styles.renameAiButton}${optimizingTitle ? ` ${styles.renameAiButtonLoading}` : ""}${titleOptimizationError ? ` ${styles.renameAiButtonError}` : ""}`}
             type="button"
-            disabled={optimizingTitle}
             onMouseDown={(event) => event.preventDefault()}
-            onClick={(event) => { void optimizeTitle(event); }}
-            title={titleOptimizationError ? t("sidebar.optimizeTitleFailed", { error: titleOptimizationError }) : t("sidebar.optimizeTitle")}
-            aria-label={optimizingTitle ? t("sidebar.optimizingTitle") : t("sidebar.optimizeTitle")}
+            onClick={(event) => { if (optimizingTitle) cancelTitleOptimization(event); else void optimizeTitle(event); }}
+            title={optimizingTitle ? t("sidebar.cancelTitleOptimization") : titleOptimizationError ? t("sidebar.optimizeTitleFailed", { error: titleOptimizationError }) : t("sidebar.optimizeTitle")}
+            aria-label={optimizingTitle ? t("sidebar.cancelTitleOptimization") : t("sidebar.optimizeTitle")}
           >
-            <AliIcon className={styles.renameAiIcon} name="sparkles" size={15} strokeWidth={1.75} />
+            <AliIcon className={styles.renameAiIcon} name={optimizingTitle ? "close" : "sparkles"} size={15} strokeWidth={1.75} />
           </button>
           <span className={styles.srOnly} aria-live="polite">
             {titleOptimizationError ? t("sidebar.optimizeTitleFailed", { error: titleOptimizationError }) : optimizingTitle ? t("sidebar.optimizingTitle") : ""}

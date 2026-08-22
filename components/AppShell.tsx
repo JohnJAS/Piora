@@ -41,7 +41,7 @@ import type { SessionInfo } from "@/lib/types";
 import type { CollaborationRoom } from "@/lib/room-types";
 import type { GitStatusResponse } from "@/lib/git-types";
 import { getTrackedGitLineStats } from "@/lib/git-line-stats";
-import { readSessionTitlePrompt } from "@/lib/session-title-settings";
+import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
 
 function replaceUrlWithoutNextNavigation(url: string): void {
   // Next patches history.replaceState and treats an ordinary call as an App
@@ -941,12 +941,14 @@ export function AppShell() {
     if (automaticTitleRequestsRef.current.has(sessionId)) return;
     automaticTitleRequestsRef.current.add(sessionId);
     try {
+      const titleModel = readSessionTitleModel(window.localStorage);
       const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/auto-name`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           onlyIfUnnamed: true,
           instructions: readSessionTitlePrompt(window.localStorage),
+          ...(titleModel ?? {}),
         }),
       });
       const body = (await response.json().catch(() => ({}))) as { title?: string; error?: string };
@@ -1389,6 +1391,7 @@ export function AppShell() {
       onClose={() => setSettingsDialogOpen(false)}
       activeKey={settingsKey}
       onActiveKeyChange={setSettingsKey}
+      modelCwd={projectCwd ?? activeCwd ?? undefined}
       sections={{
         extensions: projectCwd ? (
           <ExtensionsConfig

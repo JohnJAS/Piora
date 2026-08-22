@@ -28,8 +28,9 @@ export function NewSessionProjectPicker({
   const [query, setQuery] = useState("");
   const [draft, setLandingDraft] = useState("");
   const [loading, setLoading] = useState(true);
-  const [menuOpen, setMenuOpen] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const projectSelectorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +49,22 @@ export function NewSessionProjectPicker({
     if (!menuOpen) return;
     const frame = window.requestAnimationFrame(() => searchRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!projectSelectorRef.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
   }, [menuOpen]);
 
   const projects = useMemo(() => {
@@ -84,43 +101,34 @@ export function NewSessionProjectPicker({
     onSelect(choice.cwd, choice.root);
   };
 
-  const requestProjectChoice = () => {
+  const openProjectChoice = () => {
     setMenuOpen(true);
-    window.requestAnimationFrame(() => searchRef.current?.focus());
+  };
+
+  const browseForProject = () => {
+    setMenuOpen(false);
+    onBrowse();
   };
 
   return (
     <main className={styles.root} aria-labelledby="new-session-heading">
       <section className={styles.hero}>
-        <div className={styles.mark} aria-hidden="true">
-          <AliIcon name="cloud" size={50} />
-          <span>&gt;_</span>
+        <div className={styles.intro}>
+          <div className={styles.mark} aria-hidden="true">
+            <AliIcon name="cloud" size={50} />
+            <span>&gt;_</span>
+          </div>
+          <h1 id="new-session-heading">
+            你想在
+            <button type="button" onClick={openProjectChoice} aria-haspopup="listbox" aria-expanded={menuOpen}>选择项目</button>
+            中构建什么？
+          </h1>
         </div>
-        <h1 id="new-session-heading">
-          你想在
-          <button type="button" onClick={requestProjectChoice} aria-haspopup="listbox" aria-expanded={menuOpen}>选择项目</button>
-          中构建什么？
-        </h1>
 
-        <div className={styles.composer}>
-          <textarea
-            value={draft}
-            onChange={(event) => setLandingDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                requestProjectChoice();
-              }
-            }}
-            onFocus={() => { if (!menuOpen) setMenuOpen(true); }}
-            placeholder="描述你想构建或修复的内容…"
-            aria-label="新对话内容"
-          />
-          <div className={styles.composerBar}>
-            <button className={styles.iconButton} type="button" disabled title="选择项目后可添加附件" aria-label="添加附件">
-              <AliIcon name="plus" size={16} />
-            </button>
-            <div className={styles.projectAnchor}>
+        <div className={styles.workspaceDock}>
+          <div className={styles.contextRail}>
+            <span className={styles.brandChip}><AliIcon name="cloud" size={14} />Piora</span>
+            <div ref={projectSelectorRef} className={styles.projectAnchor}>
               {menuOpen ? (
                 <div className={styles.projectPopover}>
                   <label className={styles.search}>
@@ -139,7 +147,7 @@ export function NewSessionProjectPicker({
                     {loading ? <p>正在加载项目…</p> : null}
                   </div>
                   <div className={styles.footer}>
-                    <button type="button" onClick={onBrowse}><AliIcon name="plus" size={14} />新建或选择其他项目</button>
+                    <button type="button" onClick={browseForProject}><AliIcon name="folder-open" size={14} />选择其他文件夹</button>
                   </div>
                 </div>
               ) : null}
@@ -150,10 +158,29 @@ export function NewSessionProjectPicker({
               </button>
             </div>
             <span className={styles.contextChip}><AliIcon name="desktop" size={14} />本地</span>
-            <span className={styles.selectionHint}>先选择项目再开始</span>
-            <button className={styles.sendButton} type="button" onClick={requestProjectChoice} title="请先选择项目" aria-label="发送">
-              <AliIcon name="arrowup" size={16} />
-            </button>
+          </div>
+          <div className={styles.composer}>
+            <textarea
+              value={draft}
+              onChange={(event) => setLandingDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  openProjectChoice();
+                }
+              }}
+              placeholder="描述你想构建或修复的内容…"
+              aria-label="新对话内容"
+            />
+            <div className={styles.composerBar}>
+              <button className={styles.iconButton} type="button" disabled title="选择项目后可添加附件" aria-label="添加附件">
+                <AliIcon name="plus" size={16} />
+              </button>
+              <span className={styles.selectionHint}>先选择项目再开始</span>
+              <button className={styles.sendButton} type="button" onClick={openProjectChoice} title="请先选择项目" aria-label="发送">
+                <AliIcon name="arrowup" size={16} />
+              </button>
+            </div>
           </div>
         </div>
       </section>

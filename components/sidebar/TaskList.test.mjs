@@ -10,6 +10,8 @@ const sidebarSource = [
   await readFile(new URL("../SessionSidebar.tsx", import.meta.url), "utf8"),
   await readFile(new URL("./SidebarFooter.tsx", import.meta.url), "utf8"),
 ].join("\n");
+const settingsSource = await readFile(new URL("../SettingsDialog.tsx", import.meta.url), "utf8");
+const appShellSource = await readFile(new URL("../AppShell.tsx", import.meta.url), "utf8");
 
 test("pins active tasks and removes archived tasks from the project sidebar", () => {
   assert.match(listSource, /compareFlags/);
@@ -31,14 +33,23 @@ test("keeps AI title optimization inside the Codex-style rename editor", () => {
   assert.match(rowSource, /currentTitle: renameValue\.trim\(\) \|\| title/);
   assert.match(rowSource, /styles\.renameEditor/);
   assert.match(rowSource, /styles\.renameAiButton/);
-  assert.match(rowSource, /name="sparkles"/);
+  assert.match(rowSource, /optimizingTitle \? "close" : "sparkles"/);
   assert.doesNotMatch(rowSource, /name=\{optimizingTitle \? "reload" : "robot"\}/);
   assert.match(rowSource, /if \(name === title\) return/);
   assert.ok(rowSource.indexOf("className={styles.renameInput}") < rowSource.indexOf("styles.renameAiButton"));
   assert.match(rowStyles, /\.renameEditor:focus-within/);
   assert.match(rowStyles, /var\(--text-muted\) 52%/);
   assert.doesNotMatch(rowStyles, /\.renameEditor[^}]*border:[^;]*var\(--accent\)/s);
-  assert.match(rowStyles, /@keyframes rename-ai-sparkle/);
+  assert.match(rowStyles, /\.renameAiButtonLoading/);
+});
+
+test("allows title generation to be cancelled and chooses its model in settings", () => {
+  assert.match(rowSource, /titleOptimizationAbortRef\.current\?\.abort\(\)/);
+  assert.match(rowSource, /signal: controller\.signal/);
+  assert.match(rowSource, /optimizingTitle \? "close" : "sparkles"/);
+  assert.match(settingsSource, /settings\.sessionTitleModelTitle/);
+  assert.match(settingsSource, /writeSessionTitleModel/);
+  assert.match(appShellSource, /readSessionTitleModel\(window\.localStorage\)/);
 });
 
 test("focuses task search with Ctrl+Shift+F and highlights matches", () => {
@@ -51,4 +62,11 @@ test("persists flags through the flags API and offers archive undo", () => {
   assert.match(sidebarSource, /fetch\("\/api\/sessions\/flags"/);
   assert.match(sidebarSource, /const undoArchive/);
   assert.match(sidebarSource, /sidebar\.taskArchived/);
+});
+
+test("automatically dismisses the archive success notice", () => {
+  assert.match(sidebarSource, /ARCHIVED_SESSION_TOAST_DURATION_MS = 5_000/);
+  assert.match(sidebarSource, /window\.setTimeout\(\(\) => \{/);
+  assert.match(sidebarSource, /setArchivedSessionToast\(\(current\) => current\?\.id === archivedSessionId \? null : current\)/);
+  assert.match(sidebarSource, /return \(\) => window\.clearTimeout\(timer\)/);
 });

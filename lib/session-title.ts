@@ -4,6 +4,7 @@ import {
   type AgentOptions,
   type AgentTool,
 } from "@earendil-works/pi-agent-core";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import {
   SESSION_TITLE_PROMPT,
@@ -33,18 +34,34 @@ function createShadowTools(tools: AgentTool[]): AgentTool[] {
   }));
 }
 
+function waitForAbortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(new Error("Session title generation was cancelled"));
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(new Error("Session title generation was cancelled"));
+    signal.addEventListener("abort", abort, { once: true });
+    void promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
 /**
  * Build a temporary Agent configuration whose provider-facing prefix matches
  * the source Agent. Tool implementations are replaced without changing their
  * names, descriptions, or schemas, so a naming run cannot mutate the project.
  */
-export function buildSessionTitleAgentOptions(source: Agent): AgentOptions {
+export function buildSessionTitleAgentOptions(
+  source: Agent,
+  options: { model?: Model<Api> } = {},
+): AgentOptions {
   const state = source.state;
   return {
     initialState: {
       systemPrompt: state.systemPrompt,
-      model: state.model,
-      thinkingLevel: state.thinkingLevel,
+      model: options.model ?? state.model,
+      // Title generation is intentionally a lightweight utility request. A
+      // separately selected model should not inherit the conversation's deep
+      // reasoning level and turn a short rename into a long-running task.
+      thinkingLevel: options.model ? "off" : state.thinkingLevel,
       tools: createShadowTools(state.tools),
       messages: state.messages,
     },
@@ -208,10 +225,15 @@ export function sanitizeTitleMessages(messages: AgentMessage[]): AgentMessage[] 
 
 export async function generateSessionTitle(
   source: AgentSession,
-  request: { instructions?: string; currentTitle?: string } = {},
+  request: {
+    instructions?: string;
+    currentTitle?: string;
+    model?: Model<Api>;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<GeneratedSessionTitle> {
   const sourceAgent = source.agent;
-  await sourceAgent.waitForIdle();
+  await waitForAbortable(sourceAgent.waitForIdle(), request.signal);
 
   const sanitizedMessages = sanitizeTitleMessages(sourceAgent.state.messages);
   const historyLength = sanitizedMessages.length;
@@ -220,7 +242,7 @@ export async function generateSessionTitle(
   }
 
   const titleRequest = buildSessionTitleRequest(request.instructions ?? SESSION_TITLE_PROMPT, request.currentTitle);
-  const agentOptions = buildSessionTitleAgentOptions(sourceAgent);
+  const agentOptions = buildSessionTitleAgentOptions(sourceAgent, { model: request.model });
   agentOptions.initialState!.messages = sanitizedMessages;
   const continuesFromTrailingUser = sanitizedMessages.at(-1)?.role === "user";
   if (continuesFromTrailingUser) {
@@ -232,10 +254,25 @@ export async function generateSessionTitle(
     ? temporaryAgent.continue()
     : temporaryAgent.prompt(titleRequest);
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  let removeAbortListener: (() => void) | undefined;
+  const abortPromise = new Promise<never>((_, reject) => {
+    if (!request.signal) return;
+    const abort = () => {
+      temporaryAgent.abort();
+      reject(new Error("Session title generation was cancelled"));
+    };
+    if (request.signal.aborted) {
+      abort();
+      return;
+    }
+    request.signal.addEventListener("abort", abort, { once: true });
+    removeAbortListener = () => request.signal?.removeEventListener("abort", abort);
+  });
 
   try {
     await Promise.race([
       runPromise,
+      abortPromise,
       new Promise<never>((_, reject) => {
         timeout = setTimeout(() => {
           temporaryAgent.abort();
@@ -249,6 +286,7 @@ export async function generateSessionTitle(
     throw error;
   } finally {
     if (timeout) clearTimeout(timeout);
+    removeAbortListener?.();
   }
 
   return getAssistantResult(temporaryAgent, historyLength);

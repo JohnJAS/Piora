@@ -69,26 +69,17 @@
   transform: scale(.94);
 }
 
-.renameAiButton:disabled {
-  cursor: wait;
-  opacity: .72;
-}
-
 .renameAiIcon {
   display: block;
 }
 
-.renameAiButtonLoading .renameAiIcon {
-  animation: rename-ai-sparkle 900ms ease-in-out infinite;
+.renameAiButtonLoading {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-hover));
 }
 
 .renameAiButtonError {
   color: var(--status-failed);
-}
-
-@keyframes rename-ai-sparkle {
-  0%, 100% { opacity: .48; transform: scale(.88) rotate(-5deg); }
-  50% { opacity: 1; transform: scale(1.04) rotate(5deg); }
 }
 
 .srOnly {
