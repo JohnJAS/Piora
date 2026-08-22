@@ -4,6 +4,13 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-08-22
+
+### Fixed
+
+- Regenerated the deterministic third-party license inventory after the
+  application version update so the release source gate can complete.
+
 ## [0.3.4] - 2026-08-22
 
 ### Added
