@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
-import type { TaskControls } from "./ChatWindow";
 import { SettingsPortabilityCard } from "./SettingsPortabilityCard";
 import { PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH, PROMPT_OPTIMIZER_SYSTEM_PROMPT } from "@/lib/prompt-optimizer";
 import {
@@ -15,6 +14,17 @@ import {
   writePromptOptimizerModel,
   writePromptOptimizerSystemPrompt,
 } from "@/lib/prompt-optimizer-settings";
+import { SESSION_TITLE_PROMPT_MAX_LENGTH } from "@/lib/session-title-prompt";
+import {
+  SESSION_TITLE_PROMPT,
+  readSessionTitleModel,
+  readSessionTitlePrompt,
+  resetSessionTitleModel,
+  resetSessionTitlePrompt,
+  writeSessionTitleModel,
+  writeSessionTitlePrompt,
+  type SessionTitleModelPreference,
+} from "@/lib/session-title-settings";
 import styles from "./SettingsDialog.module.css";
 
 interface Props {
@@ -22,17 +32,12 @@ interface Props {
   onClose: () => void;
   activeKey: SettingsKey;
   onActiveKeyChange: (key: SettingsKey) => void;
+  modelCwd?: string;
   sections?: Partial<Record<SettingsKey, ReactNode>>;
   conversation: {
-    hasSession: boolean;
-    hasMessages: boolean;
-    autoNameStatus: "idle" | "naming" | "success" | "error";
-    autoNameError?: string;
     systemPrompt: string | null;
-    taskControls: TaskControls | null;
     notificationEnabled: boolean;
     notificationCapability: "desktop" | "browser" | "unsupported";
-    onGenerateTitle: () => void;
     onNotificationToggle: () => void | Promise<void>;
   };
   desktop: {
@@ -42,7 +47,17 @@ interface Props {
   };
 }
 
-export type SettingsKey = "general" | "conversation" | "models" | "extensions" | "skills" | "plugins" | "appearance" | "language" | "companion" | "remote";
+interface TitleModelOption {
+  id: string;
+  name: string;
+  provider: string;
+}
+
+function titleModelValue(model: SessionTitleModelPreference): string {
+  return JSON.stringify(model);
+}
+
+export type SettingsKey = "general" | "conversation" | "models" | "extensions" | "skills" | "plugins" | "appearance" | "language" | "companion" | "remote" | "archived";
 
 interface SettingsEntry {
   key: SettingsKey;
@@ -51,20 +66,12 @@ interface SettingsEntry {
   icon: ReactNode;
 }
 
-function getSettingsParentKey(key: SettingsKey): SettingsKey {
-  if (key === "language") return "general";
-  if (key === "remote") return "general";
-  if (key === "models") return "conversation";
-  if (key === "skills" || key === "plugins") return "extensions";
-  if (key === "companion") return "appearance";
-  return key;
-}
-
 export function SettingsDialog({
   open,
   onClose,
   activeKey,
   onActiveKeyChange,
+  modelCwd,
   sections = {},
   conversation,
   desktop,
@@ -77,49 +84,22 @@ export function SettingsDialog({
   const [optimizerPromptStatus, setOptimizerPromptStatus] = useState<"idle" | "saved" | "error">("idle");
   const [optimizerModels, setOptimizerModels] = useState<Array<{ provider: string; id: string; name: string }>>([]);
   const [optimizerModelValue, setOptimizerModelValue] = useState("");
+  const [titlePromptDraft, setTitlePromptDraft] = useState(SESSION_TITLE_PROMPT);
+  const [titlePromptSaved, setTitlePromptSaved] = useState(SESSION_TITLE_PROMPT);
+  const [titlePromptStatus, setTitlePromptStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [titleModel, setTitleModel] = useState<SessionTitleModelPreference | null>(null);
+  const [titleModelOptions, setTitleModelOptions] = useState<TitleModelOption[]>([]);
+  const [titleModelsLoading, setTitleModelsLoading] = useState(false);
+  const [titleModelsError, setTitleModelsError] = useState<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   useFocusTrap(dialogRef, open, { onEscape: onClose });
 
-  const primaryEntries = useMemo<SettingsEntry[]>(() => [
+  const detailEntries = useMemo<SettingsEntry[]>(() => [
     {
       key: "general",
       labelKey: "settings.general",
       descriptionKey: "settings.generalDescription",
       icon: <AliIcon name="layout" size={16} />,
-    },
-    {
-      key: "conversation",
-      labelKey: "settings.agent",
-      descriptionKey: "settings.agentDescription",
-      icon: <AliIcon name="message" size={16} />,
-    },
-    {
-      key: "extensions",
-      labelKey: "settings.extensions",
-      descriptionKey: "settings.manageExtensionsDescription",
-      icon: <AliIcon name="setting" size={16} />,
-    },
-    {
-      key: "appearance",
-      labelKey: "appearance.title",
-      descriptionKey: "settings.appearanceDescription",
-      icon: <AliIcon name="skin" size={16} />,
-    },
-  ], []);
-
-  const detailEntries = useMemo<SettingsEntry[]>(() => [
-    primaryEntries[0]!,
-    {
-      key: "language",
-      labelKey: "common.language",
-      descriptionKey: "settings.languageDescription",
-      icon: <AliIcon name="translate" size={16} />,
-    },
-    {
-      key: "remote",
-      labelKey: "remote.title",
-      descriptionKey: "remote.description",
-      icon: <AliIcon name="external-link" size={16} />,
     },
     {
       key: "conversation",
@@ -133,7 +113,30 @@ export function SettingsDialog({
       descriptionKey: "settings.modelsDescription",
       icon: <AliIcon name="api" size={16} />,
     },
-    primaryEntries[2]!,
+    {
+      key: "appearance",
+      labelKey: "appearance.title",
+      descriptionKey: "settings.appearanceDescription",
+      icon: <AliIcon name="skin" size={16} />,
+    },
+    {
+      key: "language",
+      labelKey: "common.language",
+      descriptionKey: "settings.languageDescription",
+      icon: <AliIcon name="translate" size={16} />,
+    },
+    {
+      key: "companion",
+      labelKey: "companion.settingsTitle",
+      descriptionKey: "settings.companionDescription",
+      icon: <AliIcon name="robot" size={16} />,
+    },
+    {
+      key: "extensions",
+      labelKey: "settings.extensions",
+      descriptionKey: "settings.manageExtensionsDescription",
+      icon: <AliIcon name="setting" size={16} />,
+    },
     {
       key: "skills",
       labelKey: "common.skills",
@@ -146,14 +149,29 @@ export function SettingsDialog({
       descriptionKey: "settings.pluginsDescription",
       icon: <AliIcon name="appstore-add" size={16} />,
     },
-    primaryEntries[3]!,
     {
-      key: "companion",
-      labelKey: "companion.settingsTitle",
-      descriptionKey: "settings.companionDescription",
-      icon: <AliIcon name="robot" size={16} />,
+      key: "remote",
+      labelKey: "remote.title",
+      descriptionKey: "remote.description",
+      icon: <AliIcon name="external-link" size={16} />,
     },
-  ], [primaryEntries]);
+    {
+      key: "archived",
+      labelKey: "archive.title",
+      descriptionKey: "archive.description",
+      icon: <AliIcon name="archive" size={16} />,
+    },
+  ], []);
+
+  const entryGroups = useMemo(() => [
+    { labelKey: "settings.group.personal", keys: ["general", "conversation", "models", "appearance", "language", "companion"] as SettingsKey[] },
+    { labelKey: "settings.group.capabilities", keys: ["extensions", "skills", "plugins", "remote"] as SettingsKey[] },
+    { labelKey: "settings.group.history", keys: ["archived"] as SettingsKey[] },
+  ], []);
+
+  const availableEntries = useMemo(() => detailEntries.filter((entry) => (
+    entry.key === "general" || entry.key === "conversation" || sections[entry.key] !== undefined
+  )), [detailEntries, sections]);
 
   useEffect(() => {
     if (!open) setSearchQuery("");
@@ -171,7 +189,34 @@ export function SettingsDialog({
       .then((response) => response.ok ? response.json() : null)
       .then((data: { modelList?: Array<{ provider: string; id: string; name: string }> } | null) => setOptimizerModels(data?.modelList ?? []))
       .catch(() => setOptimizerModels([]));
+    const savedTitlePrompt = readSessionTitlePrompt(window.localStorage);
+    setTitlePromptDraft(savedTitlePrompt);
+    setTitlePromptSaved(savedTitlePrompt);
+    setTitlePromptStatus("idle");
+    setTitleModel(readSessionTitleModel(window.localStorage));
   }, [open]);
+
+  useEffect(() => {
+    if (!open || activeKey !== "conversation") return;
+    const controller = new AbortController();
+    setTitleModelsLoading(true);
+    setTitleModelsError(null);
+    setTitleModelOptions([]);
+    const query = modelCwd ? `?cwd=${encodeURIComponent(modelCwd)}` : "";
+    void fetch(`/api/models${query}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const body = await response.json() as { modelList?: TitleModelOption[]; error?: string };
+        if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+        setTitleModelOptions(body.modelList ?? []);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setTitleModelsError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setTitleModelsLoading(false);
+      });
+    return () => controller.abort();
+  }, [activeKey, modelCwd, open]);
 
   const saveOptimizerPrompt = () => {
     try {
@@ -205,22 +250,55 @@ export function SettingsDialog({
     }
   };
 
+  const saveTitlePrompt = () => {
+    try {
+      const saved = writeSessionTitlePrompt(titlePromptDraft, window.localStorage);
+      setTitlePromptDraft(saved);
+      setTitlePromptSaved(saved);
+      setTitlePromptStatus("saved");
+    } catch {
+      setTitlePromptStatus("error");
+    }
+  };
+
+  const restoreTitlePrompt = () => {
+    try {
+      const restored = resetSessionTitlePrompt(window.localStorage);
+      setTitlePromptDraft(restored);
+      setTitlePromptSaved(restored);
+      setTitlePromptStatus("saved");
+    } catch {
+      setTitlePromptStatus("error");
+    }
+  };
+
+  const selectTitleModel = (value: string) => {
+    try {
+      if (!value) {
+        setTitleModel(resetSessionTitleModel(window.localStorage));
+        return;
+      }
+      const selected = titleModelOptions.find((model) => titleModelValue({ provider: model.provider, modelId: model.id }) === value);
+      if (!selected) return;
+      setTitleModel(writeSessionTitleModel({ provider: selected.provider, modelId: selected.id }, window.localStorage));
+    } catch {
+      setTitleModelsError(t("settings.sessionTitleModelSaveFailed"));
+    }
+  };
+
   const normalizedSearch = deferredSearchQuery.trim().toLocaleLowerCase();
   const filteredEntries = useMemo(() => {
-    if (!normalizedSearch) return detailEntries;
-    return detailEntries.filter((entry) => [
+    if (!normalizedSearch) return availableEntries;
+    return availableEntries.filter((entry) => [
       t(entry.labelKey),
       t(entry.descriptionKey),
-      t(primaryEntries.find((parent) => parent.key === getSettingsParentKey(entry.key))?.labelKey ?? entry.labelKey),
+      ...entryGroups.filter((group) => group.keys.includes(entry.key)).map((group) => t(group.labelKey)),
     ].join(" ").toLocaleLowerCase().includes(normalizedSearch));
-  }, [detailEntries, normalizedSearch, primaryEntries, t]);
+  }, [availableEntries, entryGroups, normalizedSearch, t]);
 
   if (!open || typeof document === "undefined") return null;
 
-  const activeParentKey = getSettingsParentKey(activeKey);
-  const activeEntry = detailEntries.find((entry) => entry.key === activeKey) ?? detailEntries[0];
-  const activeSubEntries = detailEntries.filter((entry) => getSettingsParentKey(entry.key) === activeParentKey);
-  const filteredParentKeys = new Set(filteredEntries.map((entry) => getSettingsParentKey(entry.key)));
+  const activeEntry = availableEntries.find((entry) => entry.key === activeKey) ?? availableEntries[0] ?? detailEntries[0]!;
   const searching = searchQuery.trim().length > 0;
   const sectionContent = searching ? undefined : sections[activeEntry.key];
   const selectEntry = (entry: SettingsEntry) => {
@@ -236,50 +314,48 @@ export function SettingsDialog({
       aria-label={t("sidebar.settings")}
     >
       <div ref={dialogRef} className={styles.dialog}>
-        <header className={styles.header}>
-          <button
-            className={styles.backButton}
-            type="button"
-            onClick={onClose}
-            title={t("settings.back")}
-            aria-label={t("settings.back")}
-          >
-            <AliIcon name="arrowleft" size={17} />
-            <span className={styles.backLabel}>{t("settings.back")}</span>
-          </button>
-          <div className={styles.headerCopy}>
-            <div className={styles.title}>{t("sidebar.settings")}</div>
-            <div className={styles.subtitle}>{t("settings.description")}</div>
-          </div>
-          <button className={styles.closeButton} type="button" onClick={onClose} title={t("i18n.close")} aria-label={t("i18n.close")}>
-            <AliIcon name="close" size={15} />
-          </button>
-        </header>
-
         <div className={styles.workspace}>
           <nav className={styles.navigation} aria-label={t("settings.navigation")}>
+            <button
+              className={styles.backButton}
+              type="button"
+              onClick={onClose}
+              title={t("settings.back")}
+              aria-label={t("settings.back")}
+            >
+              <AliIcon name="arrowleft" size={16} />
+              <span className={styles.backLabel}>{t("settings.back")}</span>
+            </button>
             <label className={styles.navSearch}>
               <AliIcon name="search" size={14} />
               <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={t("settings.searchPlaceholder")} aria-label={t("settings.searchPlaceholder")} />
             </label>
-            <div className={styles.navGroup}>
-              {primaryEntries.filter((entry) => !normalizedSearch || filteredParentKeys.has(entry.key)).map((entry) => (
-                <button
-                  className={styles.navItem}
-                  type="button"
-                  key={entry.key}
-                  aria-current={activeParentKey === entry.key ? "page" : undefined}
-                  onClick={() => selectEntry(entry)}
-                >
-                  <span className={styles.navIcon}>{entry.icon}</span>
-                  <span>{t(entry.labelKey)}</span>
-                </button>
-              ))}
-            </div>
+            {entryGroups.map((group) => {
+              const entries = filteredEntries.filter((entry) => group.keys.includes(entry.key));
+              if (entries.length === 0) return null;
+              return <div className={styles.navGroup} key={group.labelKey}>
+                <div className={styles.navGroupLabel}>{t(group.labelKey)}</div>
+                {entries.map((entry) => (
+                  <button
+                    className={styles.navItem}
+                    type="button"
+                    key={entry.key}
+                    aria-current={activeEntry.key === entry.key ? "page" : undefined}
+                    onClick={() => selectEntry(entry)}
+                  >
+                    <span className={styles.navIcon}>{entry.icon}</span>
+                    <span>{t(entry.labelKey)}</span>
+                  </button>
+                ))}
+              </div>;
+            })}
             {filteredEntries.length === 0 ? <div className={styles.navEmpty} role="status">{t("settings.searchEmpty")}</div> : null}
           </nav>
 
-          <main className={`${styles.content}${sectionContent ? ` ${styles.contentEmbedded}` : ""}`}>
+          <main className={styles.content}>
+            <div className={styles.contentToolbar} aria-hidden="true" />
+            <div className={`${styles.contentBody}${sectionContent ? ` ${styles.contentBodyEmbedded}` : ""}`}>
+            <div className={sectionContent ? styles.embeddedSection : styles.contentCanvas}>
             {searching ? (
               <>
                 <div className={styles.contentHeading}>
@@ -300,13 +376,6 @@ export function SettingsDialog({
                 </section> : <div className={styles.searchEmpty} role="status">{t("settings.searchEmpty")}</div>}
               </>
             ) : <>
-              <nav className={`${styles.subnavigation}${sectionContent ? ` ${styles.subnavigationEmbedded}` : ""}`} aria-label={t("settings.sectionNavigation")}>
-                {activeSubEntries.map((entry) => (
-                  <button type="button" key={entry.key} aria-current={activeKey === entry.key ? "page" : undefined} onClick={() => selectEntry(entry)}>
-                    {t(entry.labelKey)}
-                  </button>
-                ))}
-              </nav>
               {activeEntry.key === "general" ? (
               <>
                 <div className={styles.contentHeading}>
@@ -336,27 +405,68 @@ export function SettingsDialog({
                 </div>
 
                 <section className={styles.conversationSection}>
-                  <div className={styles.conversationRow}>
+                  <div className={styles.conversationRowStacked}>
                     <div className={styles.conversationCopy}>
-                      <div className={styles.rowTitle}>{t("title.generate")}</div>
-                      <div className={styles.rowDescription}>
-                        {!conversation.hasSession
-                          ? t("title.unsaved")
-                          : !conversation.hasMessages
-                            ? t("title.noMessages")
-                            : conversation.autoNameStatus === "error"
-                              ? conversation.autoNameError ?? t("title.failed")
-                              : t("conversationMenu.generateTitleDescription")}
+                      <div className={styles.rowTitle}>{t("settings.sessionTitlePromptTitle")}</div>
+                      <div className={styles.rowDescription}>{t("settings.sessionTitlePromptDescription")}</div>
+                    </div>
+                    <label className={styles.modelSelectField}>
+                      <span>{t("settings.sessionTitleModelTitle")}</span>
+                      <select
+                        value={titleModel ? titleModelValue(titleModel) : ""}
+                        disabled={titleModelsLoading}
+                        onChange={(event) => selectTitleModel(event.target.value)}
+                      >
+                        <option value="">{t("settings.sessionTitleModelCurrent")}</option>
+                        {titleModel && !titleModelOptions.some((model) => model.provider === titleModel.provider && model.id === titleModel.modelId) ? (
+                          <option value={titleModelValue(titleModel)} disabled>
+                            {t("settings.sessionTitleModelUnavailable", { model: `${titleModel.provider}/${titleModel.modelId}` })}
+                          </option>
+                        ) : null}
+                        {titleModelOptions.map((model) => (
+                          <option key={`${model.provider}:${model.id}`} value={titleModelValue({ provider: model.provider, modelId: model.id })}>
+                            {model.name || model.id} · {model.provider}
+                          </option>
+                        ))}
+                      </select>
+                      <small role="status">
+                        {titleModelsLoading
+                          ? t("settings.sessionTitleModelsLoading")
+                          : titleModelsError
+                            ? t("settings.sessionTitleModelsLoadFailed", { error: titleModelsError })
+                            : t("settings.sessionTitleModelDescription")}
+                      </small>
+                    </label>
+                    <textarea
+                      className={styles.promptEditor}
+                      value={titlePromptDraft}
+                      maxLength={SESSION_TITLE_PROMPT_MAX_LENGTH}
+                      aria-label={t("settings.sessionTitlePromptTitle")}
+                      onChange={(event) => {
+                        setTitlePromptDraft(event.target.value);
+                        setTitlePromptStatus("idle");
+                      }}
+                    />
+                    <div className={styles.promptEditorFooter}>
+                      <span role="status">
+                        {titlePromptStatus === "saved"
+                          ? t("settings.sessionTitlePromptSaved")
+                          : titlePromptStatus === "error"
+                            ? t("settings.sessionTitlePromptSaveFailed")
+                            : `${Array.from(titlePromptDraft).length.toLocaleString()} / ${SESSION_TITLE_PROMPT_MAX_LENGTH.toLocaleString()}`}
+                      </span>
+                      <div>
+                        <button className={styles.secondaryButton} type="button" onClick={restoreTitlePrompt}>{t("settings.sessionTitlePromptRestore")}</button>
+                        <button
+                          className={styles.primaryButton}
+                          type="button"
+                          disabled={!titlePromptDraft.trim() || titlePromptDraft.trim() === titlePromptSaved}
+                          onClick={saveTitlePrompt}
+                        >
+                          {t("settings.sessionTitlePromptSave")}
+                        </button>
                       </div>
                     </div>
-                    <button
-                      className={styles.secondaryButton}
-                      type="button"
-                      disabled={!conversation.hasSession || !conversation.hasMessages || conversation.autoNameStatus === "naming"}
-                      onClick={conversation.onGenerateTitle}
-                    >
-                      {conversation.autoNameStatus === "naming" ? t("title.generating") : t("title.generate")}
-                    </button>
                   </div>
 
                   <div className={styles.conversationRow}>
@@ -435,7 +545,7 @@ export function SettingsDialog({
                 </section>
               </>
               ) : sectionContent ? (
-              <div className={styles.embeddedSection}>{sectionContent}</div>
+              sectionContent
               ) : (
               <>
                 <div className={styles.contentHeading}>
@@ -453,6 +563,8 @@ export function SettingsDialog({
               </>
               )}
             </>}
+            </div>
+            </div>
           </main>
         </div>
       </div>

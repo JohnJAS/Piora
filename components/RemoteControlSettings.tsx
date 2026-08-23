@@ -15,7 +15,11 @@ type Token = {
 };
 
 const SCOPE_OPTIONS = [
+  ["capabilities.read", "remote.scopeCapabilities"],
+  ["session.create", "remote.scopeCreate"],
   ["session.state.read", "remote.scopeState"],
+  ["session.history.read", "remote.scopeHistory"],
+  ["session.tools.read", "remote.scopeTools"],
   ["session.message.send", "remote.scopeMessage"],
   ["session.steer", "remote.scopeSteer"],
   ["session.abort", "remote.scopeAbort"],
@@ -27,8 +31,17 @@ export function RemoteControlSettings({ sessionId }: { sessionId?: string | null
   const { t } = useI18n();
   const [tokens, setTokens] = useState<Token[]>([]);
   const [name, setName] = useState("Remote client");
-  const [scopes, setScopes] = useState<string[]>(["session.state.read", "session.message.send", "session.events.read"]);
+  const [scopes, setScopes] = useState<string[]>([
+    "capabilities.read",
+    "session.create",
+    "session.state.read",
+    "session.history.read",
+    "session.tools.read",
+    "session.message.send",
+    "session.events.read",
+  ]);
   const [newToken, setNewToken] = useState<string | null>(null);
+  const [apiBase, setApiBase] = useState("/api/remote/v1");
   const [connector, setConnector] = useState<{ state?: string; enabled?: boolean; lastError?: string }>({});
   const [queueLength, setQueueLength] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,16 +61,19 @@ export function RemoteControlSettings({ sessionId }: { sessionId?: string | null
     } catch { /* settings remains usable while the server is restarting */ }
   }, [sessionId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    setApiBase(`${window.location.origin}/api/remote/v1`);
+    void load();
+  }, [load]);
 
   const create = async () => {
-    if (!sessionId || scopes.length === 0) return;
+    if ((!sessionId && !scopes.includes("session.create")) || scopes.length === 0) return;
     setError(null);
     try {
       const response = await fetch("/api/remote/tokens", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, scopes, allowedSessionIds: [sessionId] }),
+        body: JSON.stringify({ name, scopes, allowedSessionIds: sessionId ? [sessionId] : [] }),
       });
       const data = await response.json() as { token?: string; error?: string };
       if (!response.ok || !data.token) throw new Error(data.error ?? `HTTP ${response.status}`);
@@ -73,21 +89,26 @@ export function RemoteControlSettings({ sessionId }: { sessionId?: string | null
   };
 
   const copyToken = async () => { if (newToken) await navigator.clipboard?.writeText(newToken); };
+  const copyApiBase = async () => { await navigator.clipboard?.writeText(apiBase); };
   const date = useMemo(() => new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }), []);
 
   return (
-    <div style={{ height: "100%", overflowY: "auto", padding: "26px 30px 34px" }}>
+    <div className="settings-embedded-surface" style={{ height: "100%", overflowY: "auto", padding: "26px 30px 34px" }}>
       <div style={{ marginBottom: 22 }}>
         <h2 style={{ margin: 0, color: "var(--text)", fontSize: "calc(var(--text-lg) * 1.22)", fontWeight: 680 }}>{t("remote.title")}</h2>
         <p style={{ margin: "7px 0 0", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>{t("remote.description")}</p>
       </div>
       <section className="settings-conversation-section">
         <p style={{ color: "var(--status-attention)", lineHeight: 1.5 }}>{t("remote.warning")}</p>
+        <label style={{ display: "grid", gap: 6, maxWidth: 720, marginBottom: 14 }}>
+          <span>{t("remote.apiBase")}</span>
+          <span style={{ display: "flex", gap: 8 }}><code style={{ flex: 1, overflowWrap: "anywhere" }}>{apiBase}</code><button type="button" onClick={() => void copyApiBase()}>{t("remote.copyBase")}</button></span>
+        </label>
         <label style={{ display: "grid", gap: 6, maxWidth: 520 }}><span>{t("remote.tokenName")}</span><input value={name} onChange={(event) => setName(event.target.value)} /></label>
         <div style={{ display: "grid", gap: 7, marginTop: 14 }}>
           {SCOPE_OPTIONS.map(([scope, key]) => <label key={scope} style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={scopes.includes(scope)} onChange={() => setScopes((current) => current.includes(scope) ? current.filter((item) => item !== scope) : [...current, scope])} /><span>{t(key)}</span></label>)}
         </div>
-        <button type="button" disabled={!sessionId || scopes.length === 0} onClick={() => void create()}>{t("remote.create")}</button>
+        <button type="button" disabled={(!sessionId && !scopes.includes("session.create")) || scopes.length === 0} onClick={() => void create()}>{t("remote.create")}</button>
         {!sessionId ? <p>{t("remote.noSession")}</p> : null}
         {newToken ? <div style={{ marginTop: 14, padding: 12, border: "1px solid var(--accent)", borderRadius: 8 }}><strong>{t("remote.tokenOnce")}</strong><code style={{ display: "block", margin: "8px 0", overflowWrap: "anywhere" }}>{newToken}</code><button type="button" onClick={() => void copyToken()}>{t("remote.copy")}</button><button type="button" onClick={() => setNewToken(null)} style={{ marginLeft: 8 }}>{t("remote.dismiss")}</button></div> : null}
         {error ? <p role="alert" style={{ color: "var(--status-failed)" }}>{error}</p> : null}

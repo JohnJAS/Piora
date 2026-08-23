@@ -31,6 +31,7 @@ import {
 } from "./desktop-state.js";
 import { DesktopBrowserManager } from "./browser-manager.js";
 import { FileLogger, type Logger } from "./logger.js";
+import { ensurePortableDesktopShortcut } from "./portable-shortcut.js";
 import { StandaloneServer, type ServerExit } from "./server-supervisor.js";
 import { fitBoundsToVisibleDisplays } from "./window-bounds.js";
 
@@ -40,13 +41,14 @@ const COMPLETION_NOTIFICATION_CHANNEL = "pi:completion-notification";
 const APPLICATION_MENU_CHANNEL = "pi:open-application-menu";
 const REVEAL_PATH_CHANNEL = "pi:reveal-path";
 const OPEN_PATH_CHANNEL = "pi:open-path";
+const DIRECTORY_PICKER_CHANNEL = "pi:directory-picker";
 const COMPANION_VISIBILITY_CHANNEL = "pi:companion-window-visible";
 const COMPANION_ALWAYS_ON_TOP_CHANNEL = "pi:companion-window-always-on-top";
 const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
 const COMPANION_LAYOUT_CHANNEL = "pi:companion-window-expanded";
 const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
 const HARMONY_RUNTIME_PICKER_CHANNEL = "pi:harmony-runtime-picker";
-const DESKTOP_TITLE_BAR_HEIGHT = 40;
+const DESKTOP_TITLE_BAR_HEIGHT = 36;
 const COMPANION_COMPACT_WIDTH = 156;
 const COMPANION_COMPACT_HEIGHT = 184;
 const COMPANION_EXPANDED_WIDTH = 236;
@@ -147,7 +149,38 @@ function resolvePiAgentDirectory(): string {
   return prepareWritableDirectory(join(app.getPath("home"), ".pi", "agent"));
 }
 
-type ApplicationMenuId = "file" | "edit" | "view" | "window" | "help";
+function installPortableDesktopShortcut(log: Logger): void {
+  try {
+    const description = app.getLocale().toLowerCase().startsWith("zh")
+      ? "启动已运行过的最新 Piora 版本"
+      : "Launch the latest Piora version that has been run";
+    const result = ensurePortableDesktopShortcut({
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      isSmokeTest: PORTABLE_SMOKE_TEST,
+      appVersion: app.getVersion(),
+      ...(process.env.PORTABLE_EXECUTABLE_FILE
+        ? { portableExecutablePath: process.env.PORTABLE_EXECUTABLE_FILE }
+        : {}),
+      packagedExecutablePath: process.execPath,
+      desktopDirectory: app.getPath("desktop"),
+      iconPath: join(process.resourcesPath, "tray-icon.ico"),
+      description,
+      shell: {
+        readShortcutLink: (path) => shell.readShortcutLink(path),
+        writeShortcutLink: (path, operation, details) => (
+          shell.writeShortcutLink(path, operation, details)
+        ),
+      },
+    });
+    if (result.status !== "skipped") log.info("Portable desktop shortcut is current", result);
+  } catch (error) {
+    // A locked-down or redirected Desktop must not prevent Piora from starting.
+    log.warn("Unable to create or update the portable desktop shortcut", error);
+  }
+}
+
+type ApplicationMenuId = "file" | "edit" | "view" | "help";
 
 function sanitizeNotificationTaskTitle(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -214,68 +247,83 @@ function sendMenuAction(action: string): void {
 }
 
 function installApplicationMenu(): void {
+  const zh = app.getLocale().toLowerCase().startsWith("zh");
+  const copy = zh ? {
+    file: "文件", edit: "编辑", view: "视图", help: "帮助",
+    newSession: "新聊天", openFolder: "打开文件夹", close: "关闭", quit: "退出 Piora",
+    undo: "撤销", redo: "重做", cut: "剪切", copy: "复制", paste: "粘贴", delete: "删除", selectAll: "全选", settings: "设置",
+    sidebar: "切换侧栏", files: "切换文件面板", commands: "打开命令面板", review: "打开审查面板", browser: "浏览器", companion: "显示/隐藏桌面宠物", find: "查找",
+    actualSize: "实际大小", zoomIn: "放大", zoomOut: "缩小", fullscreen: "切换全屏",
+    documentation: "文档", about: "关于 Piora", aboutDetail: "基于 Pi Agent 与 pi-web 的开源桌面应用。",
+  } : {
+    file: "File", edit: "Edit", view: "View", help: "Help",
+    newSession: "New chat", openFolder: "Open folder", close: "Close", quit: "Quit Piora",
+    undo: "Undo", redo: "Redo", cut: "Cut", copy: "Copy", paste: "Paste", delete: "Delete", selectAll: "Select all", settings: "Settings",
+    sidebar: "Toggle sidebar", files: "Toggle Files panel", commands: "Open Commands panel", review: "Open Review panel", browser: "Browser", companion: "Show/hide desktop pet", find: "Find",
+    actualSize: "Actual size", zoomIn: "Zoom in", zoomOut: "Zoom out", fullscreen: "Toggle full screen",
+    documentation: "Documentation", about: "About Piora", aboutDetail: "An open-source desktop application built with Pi Agent and pi-web.",
+  };
   const editRoles: MenuItemConstructorOptions[] = [
-    { role: "undo", label: "撤销" },
-    { role: "redo", label: "重做" },
+    { role: "undo", label: copy.undo },
+    { role: "redo", label: copy.redo },
     { type: "separator" },
-    { role: "cut", label: "剪切" },
-    { role: "copy", label: "复制" },
-    { role: "paste", label: "粘贴" },
-    { role: "selectAll", label: "全选" },
+    { role: "cut", label: copy.cut },
+    { role: "copy", label: copy.copy },
+    { role: "paste", label: copy.paste },
+    { role: "delete", label: copy.delete },
+    { type: "separator" },
+    { role: "selectAll", label: copy.selectAll },
+    { type: "separator" },
+    { label: copy.settings, accelerator: "CmdOrCtrl+,", click: () => sendMenuAction("settings") },
   ];
 
   const template: MenuItemConstructorOptions[] = [
     {
       id: "app-menu-file",
-      label: "文件",
+      label: copy.file,
       submenu: [
-        { label: "新对话", accelerator: "CmdOrCtrl+N", click: () => sendMenuAction("new-session") },
-        { label: "选择项目", accelerator: "CmdOrCtrl+O", click: () => sendMenuAction("choose-project") },
+        { label: copy.newSession, accelerator: "CmdOrCtrl+N", click: () => sendMenuAction("new-session") },
+        { label: copy.openFolder, accelerator: "CmdOrCtrl+O", click: () => sendMenuAction("choose-project") },
         { type: "separator" },
-        { label: "设置", accelerator: "CmdOrCtrl+,", click: () => sendMenuAction("settings") },
+        { role: "close", label: copy.close, accelerator: "CmdOrCtrl+W" },
         { type: "separator" },
-        { role: "quit", label: "退出 Piora" },
+        { role: "quit", label: copy.quit, accelerator: "CmdOrCtrl+Q" },
       ],
     },
-    { id: "app-menu-edit", label: "编辑", submenu: editRoles },
+    { id: "app-menu-edit", label: copy.edit, submenu: editRoles },
     {
       id: "app-menu-view",
-      label: "视图",
+      label: copy.view,
       submenu: [
-        { label: "显示/隐藏侧栏", accelerator: "CmdOrCtrl+Shift+B", click: () => sendMenuAction("toggle-sidebar") },
-        { label: "显示/隐藏文件面板", accelerator: "CmdOrCtrl+Shift+E", click: () => sendMenuAction("toggle-files") },
-        { label: "实际大小", role: "resetZoom" },
-        { label: "放大", role: "zoomIn" },
-        { label: "缩小", role: "zoomOut" },
+        { label: copy.sidebar, accelerator: "CmdOrCtrl+B", click: () => sendMenuAction("toggle-sidebar") },
+        { label: copy.files, accelerator: "CmdOrCtrl+J", click: () => sendMenuAction("toggle-files") },
+        { label: copy.commands, accelerator: "CmdOrCtrl+`", click: () => sendMenuAction("open-commands") },
+        { label: copy.review, accelerator: "CmdOrCtrl+Alt+B", click: () => sendMenuAction("open-review") },
+        { label: copy.browser, click: () => sendMenuAction("open-browser") },
+        { label: copy.companion, click: () => sendMenuAction("toggle-companion") },
         { type: "separator" },
-        { label: "切换全屏", role: "togglefullscreen" },
+        { label: copy.find, accelerator: "CmdOrCtrl+F", click: () => sendMenuAction("find") },
         { type: "separator" },
-        { label: "重新加载", role: "reload" },
-      ],
-    },
-    {
-      id: "app-menu-window",
-      label: "窗口",
-      submenu: [
-        { label: "显示/隐藏桌面宠物", click: () => sendMenuAction("toggle-companion") },
+        { label: copy.zoomIn, role: "zoomIn" },
+        { label: copy.zoomOut, role: "zoomOut" },
+        { label: copy.actualSize, role: "resetZoom" },
         { type: "separator" },
-        { role: "minimize", label: "最小化" },
-        { role: "close", label: "关闭窗口" },
+        { label: copy.fullscreen, role: "togglefullscreen" },
       ],
     },
     {
       id: "app-menu-help",
-      label: "帮助",
+      label: copy.help,
       submenu: [
-        { label: "打开项目主页", click: () => shell.openExternal("https://github.com/kexijiang/piora") },
+        { label: copy.documentation, click: () => shell.openExternal("https://github.com/kexijiang/piora#readme") },
         {
-          label: "关于 Piora",
+          label: copy.about,
           click: () => {
             const options: MessageBoxOptions = {
               type: "info",
-              title: "关于 Piora",
+              title: copy.about,
               message: `Piora ${app.getVersion()}`,
-              detail: "基于 Pi Agent 与 pi-web 的开源桌面应用。",
+              detail: copy.aboutDetail,
             };
             void (mainWindow
               ? dialog.showMessageBox(mainWindow, options)
@@ -305,7 +353,7 @@ function registerApplicationMenuPopupHandler(): void {
         return false;
       }
 
-      const allowedMenus: readonly ApplicationMenuId[] = ["file", "edit", "view", "window", "help"];
+      const allowedMenus: readonly ApplicationMenuId[] = ["file", "edit", "view", "help"];
       if (typeof requestedMenu !== "string" || !allowedMenus.includes(requestedMenu as ApplicationMenuId)) {
         return false;
       }
@@ -389,6 +437,23 @@ function registerFileShellHandlers(): void {
       logger?.warn("Unable to open local path", error);
       return false;
     }
+  });
+}
+
+function registerDirectoryPickerHandler(): void {
+  ipcMain.removeHandler(DIRECTORY_PICKER_CHANNEL);
+  ipcMain.handle(DIRECTORY_PICKER_CHANNEL, async (event): Promise<string | null> => {
+    if (!isTrustedMainWindowSender(event)) {
+      logger?.warn("Blocked directory picker request from an untrusted renderer");
+      return null;
+    }
+    const ownerWindow = mainWindow;
+    if (!ownerWindow || ownerWindow.isDestroyed()) return null;
+    const result = await dialog.showOpenDialog(ownerWindow, {
+      title: app.getLocale().toLowerCase().startsWith("zh") ? "选择项目文件夹" : "Select project folder",
+      properties: ["openDirectory", "createDirectory"],
+    });
+    return result.canceled ? null : result.filePaths[0] ?? null;
   });
 }
 
@@ -863,6 +928,7 @@ function createStandaloneForProfile(profile: RuntimeProfile): {
   const instance = new StandaloneServer({
     serverEntry: serverEntryPath,
     serverHostEntry: serverHostEntryPath,
+    runtimeRoot: app.isPackaged ? packagedRuntimeArchive : dirname(serverEntryPath),
     ...(app.isPackaged ? { nodePath: join(packagedRuntimeArchive, "node_modules") } : {}),
     homeDirectory: app.getPath("home"),
     agentDirectory: piAgentDirectoryPath,
@@ -1195,6 +1261,7 @@ async function startApplication(): Promise<void> {
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron,
   });
+  installPortableDesktopShortcut(logger);
   await clearObsoleteDesktopWebCaches(logger);
 
   piAgentDirectoryPath = resolvePiAgentDirectory();
@@ -1230,6 +1297,7 @@ async function startApplication(): Promise<void> {
   registerGlobalShortcutHandler();
   registerHarmonyRuntimePickerHandler();
   attachDesktopBrowserManager(mainWindow, logger);
+  registerDirectoryPickerHandler();
 
   if (PORTABLE_SMOKE_TEST) {
     const smokeMarker = process.env.PIORA_SMOKE_MARKER?.trim();
@@ -1291,7 +1359,14 @@ async function stopApplication(): Promise<void> {
 // installed app's single-instance lock.
 const hasSingleInstanceLock = PORTABLE_SMOKE_TEST || app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
-  app.quit();
+  // A newly downloaded portable version may be opened while an older Piora is
+  // still resident in the tray. It cannot take over that live single-instance
+  // process, but it can still advance the Desktop shortcut for the next launch.
+  void app.whenReady().then(() => {
+    const secondaryLogger = new FileLogger(app.getPath("userData"));
+    installPortableDesktopShortcut(secondaryLogger);
+    app.quit();
+  }).catch(() => app.exit(1));
 } else {
   app.on("second-instance", () => {
     focusMainWindow();

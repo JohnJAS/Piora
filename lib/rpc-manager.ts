@@ -9,9 +9,6 @@ import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import { resolveDefaultModelPreference } from "./model-policy";
 import {
   applyExtensionLoadPlan,
-  assertRequiredFirstPartyExtensionsEnabled,
-  enabledFirstPartyExtensionPaths,
-  firstPartyExtensionPaths,
   resolveExtensionLoadPlan,
 } from "./extension-config";
 import { getFirstPartyExtensionByPath } from "./first-party-extensions";
@@ -1981,11 +1978,6 @@ export async function startRpcSession(
     const sessionServicesKey = `${runtimeProfile}:${sessionId}`;
     let services = getServicesCache().get(sessionServicesKey);
     if (!services) {
-      assertRequiredFirstPartyExtensionsEnabled(runtimeProfile);
-      const bundledExtensions = firstPartyExtensionPaths(runtimeProfile);
-      if (runtimeProfile === "device-control" && bundledExtensions.filter(existsSync).length !== bundledExtensions.length) {
-        throw new Error("A required first-party device-control extension is missing.");
-      }
       const settingsManager = SettingsManager.create(cwd, agentDir);
       const extensionPlan = await resolveExtensionLoadPlan({ cwd, agentDir, settingsManager, profile: runtimeProfile, installMissing: true });
       services = await createAgentSessionServices({
@@ -2016,12 +2008,6 @@ export async function startRpcSession(
             }),
       });
       if (runtimeProfile === "device-control") {
-        const extensionResult = services.resourceLoader.getExtensions();
-        const loadedPaths = extensionResult.extensions.map((extension) => realpathSync(extension.resolvedPath));
-        const expectedPaths = enabledFirstPartyExtensionPaths(runtimeProfile).map((path) => realpathSync(path)).sort();
-        if (extensionResult.errors.length > 0 || loadedPaths.length !== expectedPaths.length || loadedPaths.sort().some((path, index) => path !== expectedPaths[index])) {
-          throw new Error("The device-control resource loader did not resolve exactly the first-party Harmony and target-mode extensions.");
-        }
         if (
           services.resourceLoader.getSkills().skills.length > 0
           || services.resourceLoader.getPrompts().prompts.length > 0

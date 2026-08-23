@@ -22,6 +22,7 @@ export function RoomSidebarSection({
   selectedSessionId,
   selectedRoomId,
   initialRoomId,
+  refreshKey,
   onSelectRoom,
   onInitialRestoreDone,
 }: {
@@ -30,6 +31,7 @@ export function RoomSidebarSection({
   selectedRoomId: string | null;
   activeProjectRoot?: string | null;
   initialRoomId?: string | null;
+  refreshKey?: number;
   onSelectRoom: (room: CollaborationRoom, isRestore?: boolean) => void;
   onInitialRestoreDone?: () => void;
 }) {
@@ -72,7 +74,7 @@ export function RoomSidebarSection({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [loadRooms]);
+  }, [loadRooms, refreshKey]);
 
   useEffect(() => {
     if (restoredRef.current || !initialRoomId) return;

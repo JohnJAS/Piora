@@ -12,7 +12,7 @@ const runtime = Object.freeze({
       typeof taskTitle === "string" ? taskTitle : undefined,
     ) as Promise<boolean>;
   },
-  openMenu(menu: "file" | "edit" | "view" | "window" | "help", x: number, y: number): Promise<boolean> {
+  openMenu(menu: "file" | "edit" | "view" | "help", x: number, y: number): Promise<boolean> {
     return ipcRenderer.invoke("pi:open-application-menu", menu, x, y) as Promise<boolean>;
   },
   revealPath(filePath: string): Promise<boolean> {
@@ -20,6 +20,9 @@ const runtime = Object.freeze({
   },
   openPath(filePath: string): Promise<boolean> {
     return ipcRenderer.invoke("pi:open-path", filePath) as Promise<boolean>;
+  },
+  selectDirectory(): Promise<string | null> {
+    return ipcRenderer.invoke("pi:directory-picker") as Promise<string | null>;
   },
   setCompanionWindowVisible(visible: boolean): Promise<boolean> {
     return ipcRenderer.invoke("pi:companion-window-visible", visible) as Promise<boolean>;

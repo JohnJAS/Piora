@@ -179,8 +179,8 @@ jobs:
           retention-days: 14
           compression-level: 0
 
-  publish-draft:
-    name: Create draft prerelease
+  publish-release:
+    name: Publish prerelease
     needs: windows-build
     runs-on: windows-latest
     timeout-minutes: 10
@@ -236,7 +236,7 @@ jobs:
             }
           }
 
-      - name: Create draft prerelease
+      - name: Publish prerelease
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -255,8 +255,7 @@ jobs:
             --notes $releaseNotes `
             --generate-notes `
             --verify-tag `
-            --prerelease `
-            --draft
+            --prerelease
           if ($LASTEXITCODE -ne 0) {
             throw "gh release create failed with exit code $LASTEXITCODE"
           }

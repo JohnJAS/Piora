@@ -4,6 +4,90 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Changed
+
+- Publish verified release artifacts as public GitHub prereleases immediately
+  instead of leaving each version in a maintainer-only draft state.
+
+## [0.3.5] - 2026-08-22
+
+### Fixed
+
+- Regenerated the deterministic third-party license inventory after the
+  application version update so the release source gate can complete.
+
+## [0.3.4] - 2026-08-22
+
+### Added
+
+- Added a dedicated model preference for automatic Session title generation,
+  including safe cancellation while a title request is in progress.
+- Added a native Windows folder chooser for selecting a new-conversation
+  project in the packaged desktop application.
+
+### Changed
+
+- Redesigned the new-conversation landing screen, composer model and reasoning
+  controls, extension status indicator, and common action buttons around a
+  quieter Codex-inspired visual language.
+- Moved MCP and extension runtime status into a compact composer control instead
+  of reserving a full-width bar below the input.
+
+### Fixed
+
+- Kept the model menu anchored above the composer on both desktop and narrow
+  layouts, with no unsupported speed setting.
+- Prevented background Session refreshes from leaving the Projects area in a
+  permanent loading state when Rooms and Projects are both present.
+
+## [0.3.3] - 2026-08-22
+
+### Added
+
+- Added runtime MCP Server and cached tool-capability discovery to the
+  `pi-mcp-adapter` plugin details view without exposing credentials or tool
+  input schemas.
+- Added real idle-frame thumbnails for installed and locally discovered
+  companion pets.
+- Added an introductory comparison of Pi extensions, skills, and plugins to
+  each capability settings page.
+
+### Changed
+
+- Redesigned plugin package details and resource cards to separate packaged
+  resources from runtime MCP capabilities.
+- Extended the validated companion-pet spritesheet route so local Codex pets
+  can be previewed safely before import.
+
+### Fixed
+
+- Removed the modal-backdrop styling that incorrectly rendered plugin resource
+  groups as large gray blocks.
+
+## [0.3.2] - 2026-08-22
+
+### Added
+
+- Added remote HTTP APIs for creating Sessions, discovering core capabilities,
+  reading Session history, and listing the tools available to a Session.
+- Added archived-conversation management directly in Settings.
+- Added configurable automatic Session naming with a dedicated title prompt.
+
+### Changed
+
+- Redesigned the Windows application menu and Settings workspace around a
+  compact four-menu desktop layout and grouped, capability-aware navigation.
+- Made the bundled Browser and Harmony integrations discoverable in packaged
+  builds without making their successful startup a hard Session requirement.
+- Expanded remote-control capability metadata and packaged-runtime verification
+  for third-party HTTP extensions.
+
+### Fixed
+
+- Improved task-list density, status rendering, and Session title consistency.
+- Kept packaged runtime extension and server startup behavior aligned with the
+  development environment.
+
 ## [0.3.1] - 2026-08-21
 
 ### Added
@@ -15,6 +99,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
   immediate Agent processing presence, and automatic reply projection back
   into the shared conversation.
 - Added persistent pin indicators to pinned Sessions.
+- Windows portable and ZIP-extracted releases now create a `Piora` Desktop
+  shortcut on launch. Later versions advance the shortcut target, older
+  versions cannot downgrade it, and missing targets are repaired to the newest
+  available version that the user launches.
 
 ### Changed
 
@@ -25,6 +113,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
   chooser and may live within any member Session's project.
 - Browser and Harmony extensions now advertise their exact built-in tool names
   and invocation shapes to every compatible Agent prompt.
+- Redesigned the new-conversation landing screen around the composer, with an
+  anchored searchable project menu and draft handoff after project selection.
 
 ### Fixed
 
@@ -34,6 +124,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
   Session search.
 - Room replies now remain correlated with the addressed message and are shown
   in the Room even when an Agent omits the explicit shared-reply tool call.
+- Restored the right workspace toggle while a new conversation is waiting for
+  its explicit project selection.
+- Added a confirmed delete action for collaboration rooms and synchronized the
+  active workspace, URL, and sidebar immediately after deletion.
 
 ## [0.3.0] - 2026-08-20
 

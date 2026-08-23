@@ -14,6 +14,7 @@ import type { TeamAgentProfile, TeamThinkingLevel } from "@/lib/team-types";
 import type { SessionInfo } from "@/lib/types";
 import { AliIcon } from "./AliIcon";
 import { AITextAreaField } from "./AITextAreaField";
+import { requestConfirmation } from "./ConfirmDialog";
 import styles from "./RoomSettingsDialog.module.css";
 
 type Section = "overview" | "agents" | "workspace" | "coordination";
@@ -63,10 +64,12 @@ export function RoomSettingsDialog({
   room,
   onClose,
   onRoomChange,
+  onRoomDeleted,
 }: {
   room: CollaborationRoom;
   onClose: () => void;
   onRoomChange: (room: CollaborationRoom) => void;
+  onRoomDeleted: (roomId: string) => void;
 }) {
   const [section, setSection] = useState<Section>("overview");
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -171,6 +174,36 @@ export function RoomSettingsDialog({
   };
 
   const saveOverview = () => void postAction({ action: "update_room", title: name, description }, "群聊资料已保存").catch(() => {});
+
+  const deleteCurrentRoom = async () => {
+    const confirmed = await requestConfirmation({
+      title: "删除群聊",
+      message: `确定删除“${room.name}”吗？群聊消息、任务、共享产物和配置记录都会被永久删除。`,
+      confirmLabel: "删除群聊",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    const actor = actorSessionId(room);
+    if (!actor) {
+      setError("群聊没有可用的协调者 Session，无法删除。");
+      return;
+    }
+    setBusy("delete_room");
+    setError(null);
+    setSaved(null);
+    try {
+      const response = await fetch(`/api/rooms/${encodeURIComponent(room.id)}?sessionId=${encodeURIComponent(actor)}`, {
+        method: "DELETE",
+      });
+      const data = await response.json() as { success?: boolean; error?: string };
+      if (!response.ok || !data.success) throw new Error(data.error ?? `HTTP ${response.status}`);
+      onRoomDeleted(room.id);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const saveWorkspace = () => void postAction({
     action: "update_workspace",
@@ -353,6 +386,12 @@ export function RoomSettingsDialog({
                   ))}
                 </section>
                 <div className={styles.actions}><button type="button" className={styles.primary} disabled={Boolean(busy) || !name.trim()} onClick={saveOverview}>保存概览</button></div>
+                <section className={styles.dangerZone}>
+                  <div><h4>删除群聊</h4><p>永久删除群聊消息、任务、共享产物和所有协作配置。</p></div>
+                  <button type="button" disabled={Boolean(busy)} onClick={() => { void deleteCurrentRoom(); }}>
+                    {busy === "delete_room" ? "删除中…" : "删除群聊"}
+                  </button>
+                </section>
               </div>
             ) : null}
 

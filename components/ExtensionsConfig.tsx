@@ -6,6 +6,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { sendAgentCommand } from "@/lib/agent-client";
 import type { ExtensionInventoryItem, ExtensionsResponse } from "@/lib/api-types";
 import { AliIcon } from "./AliIcon";
+import { CapabilityPrimer } from "./CapabilityPrimer";
 
 interface Props {
   cwd: string;
@@ -83,7 +84,7 @@ export function ExtensionsConfig({ cwd, sessionId, onReloaded }: Props) {
   }, [cwd, onReloaded, sessionId, t]);
 
   return (
-    <div style={{ height: "100%", overflowY: "auto", padding: "26px 30px 34px" }}>
+    <div className="settings-embedded-surface" style={{ height: "100%", overflowY: "auto", padding: "26px 30px 34px" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 22 }}>
         <div>
           <h2 style={{ margin: 0, color: "var(--text)", fontSize: "calc(var(--text-lg) * 1.22)", fontWeight: 680 }}>{t("extensions.title")}</h2>
@@ -93,6 +94,8 @@ export function ExtensionsConfig({ cwd, sessionId, onReloaded }: Props) {
           <AliIcon name="reload" size={14} /> {t("i18n.refresh")}
         </button>
       </div>
+
+      <CapabilityPrimer current="extension" />
 
       {error && <div role="alert" style={{ marginBottom: 12, color: "#dc2626", fontSize: "var(--text-sm)" }}>{error}</div>}
       {message && <div role="status" style={{ marginBottom: 12, color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>{message}</div>}
@@ -120,7 +123,7 @@ export function ExtensionsConfig({ cwd, sessionId, onReloaded }: Props) {
                     </div>
                   </div>
                   <button type="button" role="switch" aria-checked={extension.enabled} aria-label={`${extension.name}: ${extension.enabled ? t("extensions.enabled") : t("extensions.disabled")}`} disabled={busyId !== null || !extension.configurable} onClick={() => void toggle(extension)} style={{ minWidth: 76, padding: "7px 10px", border: `1px solid ${extension.enabled ? "var(--accent)" : "var(--border)"}`, borderRadius: 999, background: extension.enabled ? "var(--bg-selected)" : "transparent", color: extension.enabled ? "var(--accent)" : "var(--text-muted)", cursor: busyId === null && extension.configurable ? "pointer" : "default", fontSize: "var(--text-xs)" }}>
-                    {busy ? t("extensions.saving") : !extension.configurable ? t("extensions.managedByPlugin") : extension.enabled ? t("extensions.enabled") : t("extensions.disabled")}
+                    {busy ? t("extensions.saving") : extension.required ? t("extensions.required") : !extension.configurable ? t("extensions.managedByPlugin") : extension.enabled ? t("extensions.enabled") : t("extensions.disabled")}
                   </button>
                 </div>
               );

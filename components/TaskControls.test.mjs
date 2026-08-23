@@ -9,15 +9,25 @@ const agentSession = readFileSync(new URL("../hooks/useAgentSession.ts", import.
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const settingsDialog = readFileSync(new URL("./SettingsDialog.tsx", import.meta.url), "utf8");
 const settingsCss = readFileSync(new URL("./SettingsDialog.module.css", import.meta.url), "utf8");
+const archivedChats = readFileSync(new URL("./ArchivedChatsSettings.tsx", import.meta.url), "utf8");
 
 test("keeps conversation metadata and notifications out of the composer", () => {
   assert.doesNotMatch(chatInput, /TOOL_PRESETS|toolDropdown|soundEnabled|onAudioUnlock/);
   assert.match(settingsDialog, /key:\s*"conversation"/);
-  assert.match(settingsDialog, /conversation\.onGenerateTitle/);
+  assert.match(settingsDialog, /settings\.sessionTitlePromptTitle/);
+  assert.match(settingsDialog, /writeSessionTitlePrompt/);
   assert.match(settingsDialog, /conversation\.onNotificationToggle/);
   assert.doesNotMatch(settingsDialog, /taskControls\.preset/);
   assert.doesNotMatch(appShell, /model\.permissions/);
   assert.doesNotMatch(appShell, /topbar-more-button/);
+});
+
+test("automatically optimizes an unnamed session title after a completed turn", () => {
+  assert.match(appShell, /onlyIfUnnamed: true/);
+  assert.match(appShell, /readSessionTitlePrompt\(window\.localStorage\)/);
+  assert.match(appShell, /automaticTitleRequestsRef/);
+  assert.match(appShell, /if \(selectedSession\?\.id === sessionId && !selectedSession\.name\?\.trim\(\)\)/);
+  assert.match(agentSession, /onAgentEnd\?\.\(sid\)/);
 });
 
 test("opens settings as a viewport-wide page above the complete application shell", () => {
@@ -44,8 +54,19 @@ test("settings exposes a Codex-style back button on the left", () => {
   assert.match(settingsDialog, /className=\{styles\.backButton\}[\s\S]*?onClick=\{onClose\}/);
   assert.match(settingsDialog, /className=\{styles\.backLabel\}>\{t\("settings\.back"\)\}/);
   assert.match(settingsDialog, /styles\.desktopBackdrop/);
-  assert.match(settingsCss, /\.desktopBackdrop\s*\{[^}]*top:\s*40px/);
-  assert.match(settingsCss, /\.backButton\s*\{[^}]*min-width:\s*112px;[^}]*min-height:\s*40px/);
+  assert.match(settingsCss, /\.desktopBackdrop\s*\{[^}]*top:\s*36px/);
+  assert.match(settingsCss, /\.backButton\s*\{[^}]*min-height:\s*36px/);
+});
+
+test("settings owns archived chats instead of rendering them in project lists", () => {
+  assert.match(settingsDialog, /key: "archived"/);
+  assert.match(settingsDialog, /settings\.group\.history/);
+  assert.match(settingsDialog, /name="archive"/);
+  assert.match(appShell, /archived:\s*\([\s\S]*?<ArchivedChatsSettings/);
+  assert.match(archivedChats, /Promise\.all\(\[/);
+  assert.match(archivedChats, /flags\[session\.id\]\?\.archived/);
+  assert.match(archivedChats, /archived: false/);
+  assert.match(archivedChats, /method: "DELETE"/);
 });
 
 test("settings search stays inside the settings page and navigates to matching sections", () => {

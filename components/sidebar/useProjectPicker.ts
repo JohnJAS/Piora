@@ -36,7 +36,21 @@ export function useProjectPicker({ setSelectedCwd, setRememberedProjectRoots, se
     finally { setCustomPathValidating(false); }
   }, [customPathValidating, customPathValue, rememberProject, setSelectedCwd]);
 
-  const handleCustomPathClick = useCallback(() => { setCustomPathOpen(true); setCustomPathError(null); }, []);
+  const handleCustomPathClick = useCallback(() => {
+    setCustomPathError(null);
+    const selectDirectory = window.piDesktop?.selectDirectory;
+    if (!selectDirectory) {
+      setCustomPathOpen(true);
+      return;
+    }
+    void selectDirectory()
+      .then((path) => {
+        if (path) void commitCustomPath(path);
+      })
+      .catch((error: unknown) => {
+        setCustomPathError(error instanceof Error ? error.message : String(error));
+      });
+  }, [commitCustomPath]);
   const handleDefaultCwd = useCallback(async () => {
     try {
       const response = await fetch("/api/default-cwd", { method: "POST" });

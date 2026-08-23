@@ -40,7 +40,11 @@ export function useSessionCatalog({ selectedSessionId, refreshKey }: { selectedS
     } catch (caught) {
       if (loadSessionsRequestIdRef.current === requestId) setError(String(caught));
     } finally {
-      if (showLoading && loadSessionsRequestIdRef.current === requestId) setLoading(false);
+      // A background refresh can supersede the initial, loading-visible request
+      // (for example when a room member finishes while the sidebar mounts).
+      // Whichever request is newest owns settlement, even if it did not itself
+      // turn the loading indicator on.
+      if (loadSessionsRequestIdRef.current === requestId) setLoading(false);
     }
   }, []);
 

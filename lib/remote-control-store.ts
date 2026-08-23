@@ -9,6 +9,14 @@ import { REMOTE_CONTROL_SCOPES, type PublicRemoteCapabilityToken, type RemoteCon
 interface RemoteControlStoreFile {
   version: 1;
   tokens: RemoteCapabilityTokenRecord[];
+  sessionCreations: RemoteSessionCreationRecord[];
+}
+
+interface RemoteSessionCreationRecord {
+  tokenId: string;
+  idempotencyKey: string;
+  sessionId: string;
+  createdAt: number;
 }
 
 function rootPath(): string {
@@ -32,13 +40,21 @@ function parseStore(raw: string): RemoteControlStoreFile {
       allowedRoomIds: Array.isArray(token.allowedRoomIds) ? token.allowedRoomIds.filter((id): id is string => typeof id === "string") : [],
     }];
   });
-  return { version: 1, tokens };
+  const rawCreations = (value as Partial<RemoteControlStoreFile>).sessionCreations;
+  const sessionCreations = Array.isArray(rawCreations) ? rawCreations.filter((entry): entry is RemoteSessionCreationRecord => (
+    Boolean(entry)
+    && typeof entry.tokenId === "string"
+    && typeof entry.idempotencyKey === "string"
+    && typeof entry.sessionId === "string"
+    && typeof entry.createdAt === "number"
+  )) : [];
+  return { version: 1, tokens, sessionCreations };
 }
 
 export function readRemoteCapabilityStore(path = getRemoteControlStorePath()): RemoteControlStoreFile {
-  if (!existsSync(path)) return { version: 1, tokens: [] };
+  if (!existsSync(path)) return { version: 1, tokens: [], sessionCreations: [] };
   try { return parseStore(readFileSync(path, "utf8")); }
-  catch { return { version: 1, tokens: [] }; }
+  catch { return { version: 1, tokens: [], sessionCreations: [] }; }
 }
 
 async function withStoreLock<T>(path: string, operation: () => T | Promise<T>): Promise<T> {
@@ -142,6 +158,39 @@ export async function touchRemoteCapabilityToken(id: string, path = getRemoteCon
     const record = store.tokens.find((candidate) => candidate.id === id);
     if (!record || record.revokedAt) return;
     record.lastUsedAt = Date.now();
+    persist(path, store);
+  });
+}
+
+export function findRemoteSessionCreation(
+  tokenId: string,
+  idempotencyKey: string,
+  path = getRemoteControlStorePath(),
+): string | undefined {
+  return readRemoteCapabilityStore(path).sessionCreations.find((entry) => (
+    entry.tokenId === tokenId && entry.idempotencyKey === idempotencyKey
+  ))?.sessionId;
+}
+
+/** Atomically makes a remotely-created Session controllable by its creating token. */
+export async function grantRemoteCapabilitySession(
+  tokenId: string,
+  sessionId: string,
+  idempotencyKey: string,
+  path = getRemoteControlStorePath(),
+): Promise<void> {
+  if (!sessionId || !idempotencyKey || idempotencyKey.length > 512) throw new Error("Invalid remote Session grant.");
+  await withStoreLock(path, () => {
+    const store = readRemoteCapabilityStore(path);
+    const token = store.tokens.find((candidate) => candidate.id === tokenId);
+    if (!token || token.revokedAt || (token.expiresAt !== undefined && token.expiresAt <= Date.now())) {
+      throw new Error("Remote capability token is no longer active.");
+    }
+    if (!token.scopes.includes("session.create")) throw new Error("Remote capability does not grant Session creation.");
+    if (!token.allowedSessionIds.includes(sessionId)) token.allowedSessionIds.push(sessionId);
+    if (!store.sessionCreations.some((entry) => entry.tokenId === tokenId && entry.idempotencyKey === idempotencyKey)) {
+      store.sessionCreations.push({ tokenId, idempotencyKey, sessionId, createdAt: Date.now() });
+    }
     persist(path, store);
   });
 }

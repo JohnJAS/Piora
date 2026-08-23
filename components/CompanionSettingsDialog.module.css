@@ -175,8 +175,7 @@
   line-height: 1.4;
 }
 
-.displayIcon,
-.petIcon {
+.displayIcon {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -290,11 +289,39 @@
   background: color-mix(in srgb, var(--bg-panel) 48%, transparent);
 }
 
-.petIcon {
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  background: var(--bg);
+.petPreview {
+  position: relative;
+  width: 56px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+}
+
+.previewFallback,
+.previewSprite {
+  position: absolute;
+  inset: 3px;
+}
+
+.previewFallback {
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+}
+
+.previewSprite {
+  background-repeat: no-repeat;
+  image-rendering: auto;
+}
+
+.petPreview svg {
+  width: 48px;
+  height: auto;
 }
 
 .secondaryButton,

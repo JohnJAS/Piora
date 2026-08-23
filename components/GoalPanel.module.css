@@ -44,8 +44,8 @@
 .detailBlock ul { padding-left: 18px; }
 .detailBlock li + li { margin-top: 3px; }
 .actions { display: flex; flex-wrap: wrap; gap: 7px; padding-top: 2px; }
-.actions button { min-height: 29px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); cursor: pointer; font: inherit; font-size: var(--text-sm); }
-.actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.actions button { min-height: 30px; padding: 4px 11px; border: 1px solid var(--border-soft); border-radius: var(--radius-control); background: transparent; color: var(--text-muted); cursor: pointer; font: inherit; font-size: var(--text-sm); }
+.actions button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 28%, var(--border)); background: var(--bg-hover); color: var(--text); }
 .actions button:disabled { opacity: .5; cursor: default; }
 .actions button.danger:hover { border-color: var(--status-failed); color: var(--status-failed); }
 

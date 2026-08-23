@@ -643,13 +643,14 @@ const harmonyDeviceTool = defineTool({
 
 export default function pioraHarmony(api: ExtensionAPI) {
   api.registerTool(harmonyDeviceTool);
-  api.on?.("before_agent_start", () => {
+  api.on?.("before_agent_start", (event) => {
+    if (!event.systemPromptOptions.selectedTools?.includes("harmony_device")) return;
+    const capability = `<piora_runtime_capability name="harmony_device" availability="active">
+Piora's bounded HarmonyOS/OpenHarmony device capability is available through the \`harmony_device\` tool in this session. For HarmonyOS apps, connected phones, device UI, crashes, freezes, HDC, hilog, or device logs, proactively call \`harmony_device({ action: "list_devices" })\` first. Then use \`list_processes\`/\`read_logs\`, or acquire control and take a snapshot for UI work. Never claim device access or logs are unavailable before checking this tool.
+</piora_runtime_capability>`;
+    if (event.systemPrompt.includes('<piora_runtime_capability name="harmony_device"')) return;
     return {
-      message: {
-        customType: "piora-harmony-discovery",
-        display: false,
-        content: "[PIORA BUILT-IN CAPABILITY: HARMONY]\nThe `harmony_device` tool is available in this session on every prompt. For HarmonyOS, OpenHarmony, phones, devices, crashes, UI, HDC, or hilog work, proactively invoke harmony_device({ action: 'list_devices' }) first, then list_processes/read_logs or acquire_control and snapshot as appropriate. Do not claim device access or logs are unavailable before checking this tool.",
-      },
+      systemPrompt: `${event.systemPrompt}\n\n${capability}`,
     };
   });
 }

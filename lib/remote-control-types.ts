@@ -1,5 +1,9 @@
 export const REMOTE_CONTROL_SCOPES = [
+  "capabilities.read",
+  "session.create",
   "session.state.read",
+  "session.history.read",
+  "session.tools.read",
   "session.message.send",
   "session.steer",
   "session.abort",

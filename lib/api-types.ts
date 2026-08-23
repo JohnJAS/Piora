@@ -81,6 +81,35 @@ export interface PluginResourceInfo {
   relativePath: string;
 }
 
+export type McpCapabilityStatus = "disabled" | "configured" | "cached" | "stale";
+export type McpTransportKind = "stdio" | "http" | "socket" | "unknown";
+
+export interface McpToolCapability {
+  name: string;
+  description?: string;
+}
+
+export interface McpServerCapability {
+  name: string;
+  source: string;
+  transport: McpTransportKind;
+  status: McpCapabilityStatus;
+  tools: McpToolCapability[];
+  toolCount: number;
+  resourceCount: number;
+  promptCount: number;
+  cachedAt?: string;
+}
+
+export interface McpCapabilitiesInfo {
+  serverCount: number;
+  enabledServerCount: number;
+  discoveredToolCount: number;
+  setupPath: string;
+  servers: McpServerCapability[];
+  diagnostics: string[];
+}
+
 export interface PluginPackageInfo {
   source: string;
   scope: PluginScope;
@@ -93,6 +122,7 @@ export interface PluginPackageInfo {
   counts: PluginResourceCounts;
   resources: PluginResourceInfo[];
   status: "loaded" | "installed" | "missing" | "disabled";
+  mcpCapabilities?: McpCapabilitiesInfo;
 }
 
 export interface PluginsResponse {

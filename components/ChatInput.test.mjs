@@ -29,7 +29,7 @@ test("renders the upstream model error", () => {
   );
 
   assert.match(html, /role="alert"/);
-  assert.match(html, /Model error/);
+  assert.match(html, /模型错误/);
   assert.match(html, /providers\.custom\.models\.0\.id must not be empty/);
 });
 
@@ -44,7 +44,7 @@ test("renders enabledModels scope warnings", () => {
     }),
   );
 
-  assert.match(html, /Model scope warning/);
+  assert.match(html, /模型范围警告/);
   assert.match(html, /ghost-gateway/);
   assert.equal(renderToStaticMarkup(React.createElement(ModelScopeWarningBanner, { warnings: [] })), "");
 });
@@ -66,14 +66,33 @@ test("keeps the model selector visible when a model error leaves no options", ()
     ),
   );
 
-  assert.match(html, />No models</);
-  assert.match(html, /title="No available models"/);
+  assert.match(html, />没有可用模型</);
+  assert.match(html, /title="没有可用模型"/);
 });
 
-test("keeps the model menu inside the viewport and removes the redundant local shell label", () => {
-  assert.match(chatInputSource, /right: Math\.max\(8, viewportWidth - \(modelDropdownRect\.left \+ modelDropdownRect\.width\)\)/);
-  assert.match(chatInputSource, /width: "min\(300px, calc\(100vw - 16px\)\)"/);
-  assert.doesNotMatch(chatInputSource, /bashExcluded \? t\("chat\.outputLocal"\)/);
+test("uses one composer chip for model and reasoning without a speed setting", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(ChatInput, {
+        onSend() {},
+        onAbort() {},
+        onModelChange() {},
+        onThinkingLevelChange() {},
+        isStreaming: false,
+        model: { provider: "openai", modelId: "gpt-5" },
+        modelList: [{ provider: "openai", id: "gpt-5", name: "GPT-5" }],
+        thinkingLevel: "high",
+      }),
+    ),
+  );
+
+  assert.match(html, /class="model-settings-trigger-label">GPT-5/);
+  assert.match(html, /class="model-settings-trigger-reasoning">高/);
+  assert.match(chatInputSource, /createPortal\(/);
+  assert.match(chatInputSource, /model-settings-row-value/);
+  assert.doesNotMatch(chatInputSource, /chat\.speed|model-settings-speed/);
 });
 
 test("filters model options by name and id", () => {
@@ -160,7 +179,7 @@ test("renders an icon-only send control and dynamic context ring", () => {
   assert.match(html, /已用 40k 个令牌，共 100k/);
   assert.match(html, /data-model-brand="openai"/);
   assert.doesNotMatch(html, /<button[^>]*data-context-used/);
-  assert.ok(html.indexOf("data-context-used") < html.indexOf('title="Change model"'));
+  assert.ok(html.indexOf("data-context-used") < html.indexOf('title="选择模型"'));
   assert.match(html, /class="session-stats-tooltip"/);
   assert.match(html, /class="session-stats-tooltip-title">会话信息</);
   assert.doesNotMatch(html, /class="session-stats-tooltip-title">Icon migration task</);

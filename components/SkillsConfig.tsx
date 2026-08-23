@@ -12,6 +12,7 @@ import type {
   SkillUpdateResult,
 } from "@/lib/api-types";
 import { AliIcon } from "./AliIcon";
+import { CapabilityPrimer } from "./CapabilityPrimer";
 
 function shortenPath(p: string): string {
   // Match common home dir patterns: /Users/xxx, /home/xxx
@@ -1185,6 +1186,7 @@ export function SkillsConfig({
 
           {/* Right: detail or add panel */}
           <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+            <CapabilityPrimer current="skill" />
             {addMode ? (
               <AddSkillPanel
                 cwd={cwd}

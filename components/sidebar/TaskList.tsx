@@ -1,12 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useI18n } from "@/hooks/useI18n";
 import type { SessionFlag, SessionFlags } from "@/lib/session-flags";
 import type { SessionInfo } from "@/lib/types";
 import type { SessionTreeNode } from "@/lib/session-project-groups";
 import { sessionMatchesSearch } from "@/lib/session-search";
-import { AliIcon } from "../AliIcon";
 import { TaskRow } from "./TaskRow";
 
 interface CommonProps {
@@ -24,40 +22,16 @@ interface CommonProps {
 }
 
 export function TaskList({ nodes, ...props }: CommonProps & { nodes: SessionTreeNode[] }) {
-  const { t } = useI18n();
-  const [archivedOpen, setArchivedOpen] = useState(false);
+  const activeNodes = useMemo(() => withoutArchivedNodes(nodes, props.flags), [nodes, props.flags]);
   const matchingNodes = useMemo(
-    () => filterNodes(nodes, props.searchQuery ?? "", props.projectLabel ?? ""),
-    [nodes, props.projectLabel, props.searchQuery],
+    () => filterNodes(activeNodes, props.searchQuery ?? "", props.projectLabel ?? ""),
+    [activeNodes, props.projectLabel, props.searchQuery],
   );
-  const normal = matchingNodes.filter((node) => !props.flags[node.session.id]?.archived);
-  const archived = matchingNodes.filter((node) => props.flags[node.session.id]?.archived);
-  const ordered = [...normal].sort((left, right) => compareFlags(props.flags[left.session.id], props.flags[right.session.id]));
+  const ordered = [...matchingNodes].sort((left, right) => compareFlags(props.flags[left.session.id], props.flags[right.session.id]));
 
   return (
     <>
       {ordered.map((node) => <SessionTreeItem key={node.session.id} node={node} depth={0} {...props} />)}
-      {archived.length > 0 && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setArchivedOpen((value) => !value)}
-            aria-expanded={archivedOpen}
-            style={{
-              width: "calc(100% - 12px)", margin: "3px 6px", padding: "6px 8px",
-              display: "flex", alignItems: "center", gap: 6, border: 0, borderRadius: 6,
-              background: "transparent", color: "var(--text-dim)", cursor: "pointer",
-              fontSize: "var(--text-xs)", textAlign: "left",
-            }}
-          >
-            <AliIcon name="folder" size={12} />
-            <span style={{ flex: 1 }}>{t("sidebar.archivedTasks")}</span>
-            <span>{archived.length}</span>
-            <AliIcon name="arrowdown" size={10} style={{ transform: archivedOpen ? "none" : "rotate(-90deg)" }} />
-          </button>
-          {archivedOpen && archived.map((node) => <SessionTreeItem key={node.session.id} node={node} depth={0} {...props} />)}
-        </div>
-      )}
     </>
   );
 }
@@ -84,10 +58,10 @@ export function SessionTreeItem({ node, depth, ...props }: CommonProps & { node:
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((value) => !value)}
           pinned={Boolean(flag.pinned)}
-          archived={Boolean(flag.archived)}
+          archived={false}
           searchQuery={props.searchQuery}
           onTogglePinned={() => props.onFlagChange?.(node.session, { pinned: !flag.pinned })}
-          onToggleArchived={() => props.onFlagChange?.(node.session, { archived: !flag.archived })}
+          onToggleArchived={() => props.onFlagChange?.(node.session, { archived: true })}
           onDuplicate={() => props.onDuplicate?.(node.session)}
         />
       </div>
@@ -96,6 +70,14 @@ export function SessionTreeItem({ node, depth, ...props }: CommonProps & { node:
       ))}
     </div>
   );
+}
+
+function withoutArchivedNodes(nodes: SessionTreeNode[], flags: SessionFlags): SessionTreeNode[] {
+  return nodes.flatMap((node) => {
+    const children = withoutArchivedNodes(node.children, flags);
+    if (flags[node.session.id]?.archived) return children;
+    return [{ ...node, children }];
+  });
 }
 
 function compareFlags(left: SessionFlag | undefined, right: SessionFlag | undefined): number {

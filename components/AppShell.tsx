@@ -41,6 +41,7 @@ import type { SessionInfo } from "@/lib/types";
 import type { CollaborationRoom } from "@/lib/room-types";
 import type { GitStatusResponse } from "@/lib/git-types";
 import { getTrackedGitLineStats } from "@/lib/git-line-stats";
+import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
 
 function replaceUrlWithoutNextNavigation(url: string): void {
   // Next patches history.replaceState and treats an ordinary call as an App
@@ -77,13 +78,8 @@ import {
 } from "@/lib/workspace-continuity";
 
 type SessionCopyField = "file" | "id";
-type AutoNameStatus =
-  | { kind: "idle" }
-  | { kind: "naming" }
-  | { kind: "success" }
-  | { kind: "error"; message: string };
 type TopPanel = "project" | "system" | "session" | "language" | "taskControls";
-type DesktopMenuId = "file" | "edit" | "view" | "window" | "help";
+type DesktopMenuId = "file" | "edit" | "view" | "help";
 
 const TOP_BAR_ICON_BUTTON_SIZE = 36;
 const LANGUAGE_MENU_WIDTH = 176;
@@ -105,6 +101,7 @@ const AppearanceResetButton = dynamic(() => import("./AppearanceResetButton").th
 const FontSettings = dynamic(() => import("./FontSettings").then((module) => module.FontSettings), { ssr: false });
 const CompanionSettingsDialog = dynamic(() => import("./CompanionSettingsDialog").then((module) => module.CompanionSettingsDialog), { ssr: false });
 const RemoteControlSettings = dynamic(() => import("./RemoteControlSettings").then((module) => module.RemoteControlSettings), { ssr: false });
+const ArchivedChatsSettings = dynamic(() => import("./ArchivedChatsSettings").then((module) => module.ArchivedChatsSettings), { ssr: false });
 const SessionHistoryDialog = dynamic(() => import("./SessionHistoryDialog").then((module) => module.SessionHistoryDialog), { ssr: false });
 const CommandPalette = dynamic(() => import("./CommandPalette").then((module) => module.CommandPalette), { ssr: false });
 
@@ -121,6 +118,7 @@ export function AppShell() {
   } = useCompletionNotification();
   const isMobile = useIsMobile();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
+  const automaticTitleRequestsRef = useRef<Set<string>>(new Set());
   const [selectedRoom, setSelectedRoom] = useState<CollaborationRoom | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
@@ -284,10 +282,6 @@ export function AppShell() {
 
   // Session stats (tokens + cost) — populated by ChatWindow, displayed in top bar
   const [sessionStats, setSessionStats] = useState<SessionStatsInfo | null>(null);
-  const [autoNameStatus, setAutoNameStatus] = useState<AutoNameStatus>({ kind: "idle" });
-  const autoNameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const activeSessionIdRef = useRef<string | null>(selectedSession?.id ?? null);
-  activeSessionIdRef.current = selectedSession?.id ?? null;
   const handleSessionStatsChange = useCallback((stats: SessionStatsInfo | null) => {
     setSessionStats(stats);
   }, []);
@@ -307,7 +301,6 @@ export function AppShell() {
     return () => {
       if (sessionCopyTimerRef.current) clearTimeout(sessionCopyTimerRef.current);
       if (projectPathCopyTimerRef.current) clearTimeout(projectPathCopyTimerRef.current);
-      if (autoNameTimerRef.current) clearTimeout(autoNameTimerRef.current);
     };
   }, []);
 
@@ -783,6 +776,14 @@ export function AppShell() {
     if (!isRestore) replaceUrlWithoutNextNavigation(`?room=${encodeURIComponent(room.id)}`);
   }, [isMobile]);
 
+  const handleRoomDeleted = useCallback((roomId: string) => {
+    setSelectedRoom((current) => current?.id === roomId ? null : current);
+    setRefreshKey((key) => key + 1);
+    setSessionKey((key) => key + 1);
+    setSystemPrompt(null);
+    replaceUrlWithoutNextNavigation("/");
+  }, []);
+
   // Native Electron menus stay deliberately thin: the renderer owns all
   // application state and receives only a small action name from preload.
   useEffect(() => {
@@ -800,6 +801,23 @@ export function AppShell() {
           break;
         case "toggle-files":
           setRightPanelOpen((open) => !open);
+          break;
+        case "open-commands":
+          setRightPanelTab("commands");
+          setRightPanelOpen(true);
+          break;
+        case "open-review":
+          setRightPanelTab("review");
+          setRightPanelOpen(true);
+          break;
+        case "open-browser":
+          setRightPanelTab("browser");
+          setRightPanelOpen(true);
+          break;
+        case "find":
+          setRightPanelTab("files");
+          setRightPanelOpen(true);
+          requestAnimationFrame(() => rightPanelRef.current?.focusFileSearch());
           break;
         case "settings":
           openSettings();
@@ -919,53 +937,47 @@ export function AppShell() {
     replaceUrlWithoutNextNavigation(`?session=${encodeURIComponent(session.id)}`);
   }, [hydrateSelectedSession]);
 
-  const handleAgentEnd = useCallback(() => {
+  const optimizeUnnamedSessionTitle = useCallback(async (sessionId: string) => {
+    if (automaticTitleRequestsRef.current.has(sessionId)) return;
+    automaticTitleRequestsRef.current.add(sessionId);
+    try {
+      const titleModel = readSessionTitleModel(window.localStorage);
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/auto-name`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          onlyIfUnnamed: true,
+          instructions: readSessionTitlePrompt(window.localStorage),
+          ...(titleModel ?? {}),
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as { title?: string; error?: string };
+      if (!response.ok || !body.title?.trim()) throw new Error(body.error || `HTTP ${response.status}`);
+      const title = body.title.trim();
+      setSelectedSession((current) => current?.id === sessionId ? { ...current, name: title } : current);
+      setSessionStats((current) => current?.sessionId === sessionId ? { ...current, sessionName: title } : current);
+      setRefreshKey((current) => current + 1);
+    } catch (error) {
+      // A later completed turn may retry a transient provider/network failure.
+      automaticTitleRequestsRef.current.delete(sessionId);
+      console.warn("Automatic session title optimization failed:", error);
+    }
+  }, []);
+
+  const handleAgentEnd = useCallback((sessionId: string) => {
     setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
+    if (selectedSession?.id === sessionId && !selectedSession.name?.trim()) {
+      void optimizeUnnamedSessionTitle(sessionId);
+    }
     const taskTitle = selectedSession?.name
       || (activeCwd ? getFileName(activeCwd) || activeCwd : undefined);
     void notifyCompletion(taskTitle);
-  }, [activeCwd, notifyCompletion, selectedSession?.name]);
+  }, [activeCwd, notifyCompletion, optimizeUnnamedSessionTitle, selectedSession?.id, selectedSession?.name]);
 
   const handleTaskControlsChange = useCallback((controls: TaskControls | null) => {
     setTaskControls(controls);
   }, []);
-
-  const handleAutoName = useCallback(async () => {
-    const sessionId = selectedSession?.id;
-    if (!sessionId || autoNameStatus.kind === "naming") return;
-    if (autoNameTimerRef.current) clearTimeout(autoNameTimerRef.current);
-    setActiveTopPanel(null);
-    setAutoNameStatus({ kind: "naming" });
-
-    try {
-      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/auto-name`, {
-        method: "POST",
-      });
-      const body = (await response.json().catch(() => ({}))) as { title?: string; error?: string };
-      if (!response.ok || !body.title) {
-        throw new Error(body.error || `HTTP ${response.status}`);
-      }
-
-      const title = body.title.trim();
-      setRefreshKey((key) => key + 1);
-      if (activeSessionIdRef.current !== sessionId) return;
-      setSelectedSession((current) => current?.id === sessionId ? { ...current, name: title } : current);
-      setSessionStats((current) => current?.sessionId === sessionId ? { ...current, sessionName: title } : current);
-      setAutoNameStatus({ kind: "success" });
-      autoNameTimerRef.current = setTimeout(() => setAutoNameStatus({ kind: "idle" }), 1800);
-    } catch (error) {
-      if (activeSessionIdRef.current !== sessionId) return;
-      const message = error instanceof Error ? error.message : String(error);
-      setAutoNameStatus({ kind: "error", message });
-      autoNameTimerRef.current = setTimeout(() => setAutoNameStatus({ kind: "idle" }), 5000);
-    }
-  }, [autoNameStatus.kind, selectedSession?.id]);
-
-  useEffect(() => {
-    if (autoNameTimerRef.current) clearTimeout(autoNameTimerRef.current);
-    setAutoNameStatus({ kind: "idle" });
-  }, [selectedSession?.id]);
 
   const handleExplorerRefresh = useCallback(() => {
     setExplorerRefreshKey((k) => k + 1);
@@ -1294,14 +1306,12 @@ export function AppShell() {
         { id: "file", label: "文件" },
         { id: "edit", label: "编辑" },
         { id: "view", label: "视图" },
-        { id: "window", label: "窗口" },
         { id: "help", label: "帮助" },
       ]
     : [
         { id: "file", label: "File" },
         { id: "edit", label: "Edit" },
         { id: "view", label: "View" },
-        { id: "window", label: "Window" },
         { id: "help", label: "Help" },
       ];
 
@@ -1381,6 +1391,7 @@ export function AppShell() {
       onClose={() => setSettingsDialogOpen(false)}
       activeKey={settingsKey}
       onActiveKeyChange={setSettingsKey}
+      modelCwd={projectCwd ?? activeCwd ?? undefined}
       sections={{
         extensions: projectCwd ? (
           <ExtensionsConfig
@@ -1410,7 +1421,7 @@ export function AppShell() {
           />
         ) : undefined,
         appearance: (
-          <div style={{ height: "100%", overflowY: "auto", padding: "26px 30px 34px" }}>
+          <div className="settings-embedded-surface" style={{ height: "100%", overflowY: "auto", padding: "26px 30px 34px" }}>
             <div style={{ marginBottom: 22 }}>
               <h2 style={{ margin: 0, color: "var(--text)", fontSize: "calc(var(--text-lg) * 1.22)", fontWeight: 680 }}>{translate("appearance.title")}</h2>
               <p style={{ margin: "7px 0 0", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>{translate("appearance.description")}</p>
@@ -1443,7 +1454,7 @@ export function AppShell() {
           </div>
         ),
         language: (
-          <div style={{ height: "100%", overflowY: "auto", padding: "26px 30px" }}>
+          <div className="settings-embedded-surface" style={{ height: "100%", overflowY: "auto", padding: "26px 30px" }}>
             <h2 style={{ margin: 0, color: "var(--text)", fontSize: "calc(var(--text-lg) * 1.22)", fontWeight: 680 }}>{translate("common.language")}</h2>
             <p style={{ margin: "7px 0 22px", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>{translate("settings.languageDescription")}</p>
             <div role="radiogroup" aria-label={translate("common.language")} style={{ display: "grid", gap: 8, maxWidth: 520 }}>
@@ -1458,6 +1469,12 @@ export function AppShell() {
         ),
         remote: (
           <RemoteControlSettings sessionId={selectedSession?.id ?? null} />
+        ),
+        archived: (
+          <ArchivedChatsSettings
+            onChanged={() => setRefreshKey((key) => key + 1)}
+            onSessionDeleted={handleSessionDeleted}
+          />
         ),
         companion: (
           <CompanionSettingsDialog
@@ -1485,15 +1502,9 @@ export function AppShell() {
         ),
       }}
       conversation={{
-        hasSession: Boolean(selectedSession),
-        hasMessages: Boolean(selectedSession && (sessionStats?.userMessages ?? selectedSession.messageCount) > 0),
-        autoNameStatus: autoNameStatus.kind,
-        ...(autoNameStatus.kind === "error" ? { autoNameError: autoNameStatus.message } : {}),
         systemPrompt,
-        taskControls,
         notificationEnabled,
         notificationCapability,
-        onGenerateTitle: () => { void handleAutoName(); },
         onNotificationToggle: () => { void onNotificationToggle(); },
       }}
       desktop={{
@@ -1592,7 +1603,7 @@ export function AppShell() {
       <a className="skip-to-content" href="#piora-main-content">{translate("a11y.skipToContent")}</a>
       {desktopChrome ? (
         <header className="desktop-titlebar" aria-label={windowTitle}>
-          <div className="desktop-titlebar-mark" aria-hidden="true">π</div>
+          <div className="desktop-titlebar-mark" aria-hidden="true"><AliIcon name="layout" size={14} /></div>
           <nav className="desktop-titlebar-menus" aria-label={locale === "zh-CN" ? "应用菜单" : "Application menu"}>
             {desktopMenus.map((menu) => (
               <button
@@ -1702,57 +1713,61 @@ export function AppShell() {
               </span>
             ) : null}
           </div>
-          {!settingsDialogOpen && showChat && (
+          {!settingsDialogOpen && (
             <div className="conversation-toolbar-actions">
-              <button
-                className="topbar-control topbar-changes-button"
-                type="button"
-                onClick={handleOpenTaskChanges}
-                disabled={!topbarGitStatus?.isGitRepository}
-                title={translate("review.changesTree")}
-                aria-label={translate("review.changesTree")}
-              >
-                <AliIcon name="code" size={14} />
-                {topbarGitStatus?.isGitRepository ? <span className="topbar-changes-lines"><b>+{topbarLineStats.additions}</b><i>−{topbarLineStats.deletions}</i></span> : null}
-              </button>
-              <button
-                className="topbar-control topbar-history-button"
-                type="button"
-                onClick={handleViewFullHistory}
-                disabled={!selectedSession}
-                title={selectedSession ? translate("history.full") : translate("history.unsaved")}
-                aria-label={translate("history.full")}
-                aria-haspopup="dialog"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  height: "100%",
-                  padding: "0 12px",
-                  background: "none",
-                  border: "none",
-                  borderTop: "2px solid transparent",
-                  color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
-                  cursor: selectedSession ? "pointer" : "not-allowed",
-                  opacity: selectedSession ? 1 : 0.45,
-                  flexShrink: 0,
-                  fontSize: "var(--text-xs)",
-                  whiteSpace: "nowrap",
-                  transition: "color 0.1s, background 0.1s, opacity 0.1s",
-                }}
-                onMouseEnter={(e) => {
-                  if (!selectedSession) return;
-                  e.currentTarget.style.color = "var(--text)";
-                  e.currentTarget.style.background = "var(--bg-hover)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = selectedSession ? "var(--text-muted)" : "var(--text-dim)";
-                  e.currentTarget.style.background = "none";
-                }}
-              >
-                <AliIcon name="history" size={15} />
-                {!isMobile && <span className="topbar-action-label">{translate("history.label")}</span>}
-              </button>
+              {showChat ? (
+                <>
+                  <button
+                    className="topbar-control topbar-changes-button"
+                    type="button"
+                    onClick={handleOpenTaskChanges}
+                    disabled={!topbarGitStatus?.isGitRepository}
+                    title={translate("review.changesTree")}
+                    aria-label={translate("review.changesTree")}
+                  >
+                    <AliIcon name="code" size={14} />
+                    {topbarGitStatus?.isGitRepository ? <span className="topbar-changes-lines"><b>+{topbarLineStats.additions}</b><i>−{topbarLineStats.deletions}</i></span> : null}
+                  </button>
+                  <button
+                    className="topbar-control topbar-history-button"
+                    type="button"
+                    onClick={handleViewFullHistory}
+                    disabled={!selectedSession}
+                    title={selectedSession ? translate("history.full") : translate("history.unsaved")}
+                    aria-label={translate("history.full")}
+                    aria-haspopup="dialog"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      height: "100%",
+                      padding: "0 12px",
+                      background: "none",
+                      border: "none",
+                      borderTop: "2px solid transparent",
+                      color: selectedSession ? "var(--text-muted)" : "var(--text-dim)",
+                      cursor: selectedSession ? "pointer" : "not-allowed",
+                      opacity: selectedSession ? 1 : 0.45,
+                      flexShrink: 0,
+                      fontSize: "var(--text-xs)",
+                      whiteSpace: "nowrap",
+                      transition: "color 0.1s, background 0.1s, opacity 0.1s",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!selectedSession) return;
+                      e.currentTarget.style.color = "var(--text)";
+                      e.currentTarget.style.background = "var(--bg-hover)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = selectedSession ? "var(--text-muted)" : "var(--text-dim)";
+                      e.currentTarget.style.background = "none";
+                    }}
+                  >
+                    <AliIcon name="history" size={15} />
+                    {!isMobile && <span className="topbar-action-label">{translate("history.label")}</span>}
+                  </button>
+                </>
+              ) : null}
               <button
                 className={`topbar-control topbar-icon-button right-panel-toggle ${rightPanelOpen ? "is-open" : "is-closed"}`}
                 type="button"
@@ -1924,61 +1939,6 @@ export function AppShell() {
                   </div>
                   <div className="soft-top-panel-body">
                     <div className="soft-top-panel-section-label">{translate("conversationMenu.actions")}</div>
-                    {(() => {
-                      const hasMessages = Boolean(
-                        selectedSession
-                        && (sessionStats?.userMessages ?? selectedSession.messageCount) > 0,
-                      );
-                      const disabled = !selectedSession || !hasMessages || autoNameStatus.kind === "naming";
-                      const label = autoNameStatus.kind === "naming"
-                        ? translate("title.generating")
-                        : autoNameStatus.kind === "success"
-                          ? translate("title.updated")
-                          : autoNameStatus.kind === "error"
-                            ? translate("title.failed")
-                            : translate("title.generate");
-                      const description = !selectedSession
-                        ? translate("title.unsaved")
-                        : !hasMessages
-                          ? translate("title.noMessages")
-                          : autoNameStatus.kind === "error"
-                            ? autoNameStatus.message
-                            : translate("conversationMenu.generateTitleDescription");
-
-                      return (
-                        <button
-                          className="soft-menu-item"
-                          type="button"
-                          role="menuitem"
-                          disabled={disabled}
-                          onClick={() => {
-                            setActiveTopPanel(null);
-                            void handleAutoName();
-                          }}
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "18px minmax(0, 1fr)",
-                            columnGap: 8,
-                            cursor: disabled ? "not-allowed" : "pointer",
-                            opacity: disabled ? 0.5 : 1,
-                          }}
-                        >
-                          <span aria-hidden="true" style={{ paddingTop: 2, color: autoNameStatus.kind === "error" ? "#dc2626" : "var(--text-muted)" }}>
-                            {autoNameStatus.kind === "naming" ? (
-                              <AliIcon className="animate-spin" name="reload" size={14} />
-                            ) : autoNameStatus.kind === "success" ? (
-                              <AliIcon name="check" size={14} />
-                            ) : (
-                              <AliIcon name="edit" size={14} />
-                            )}
-                          </span>
-                          <span style={{ minWidth: 0 }}>
-                            <span className="soft-menu-item-title">{label}</span>
-                            <span className="soft-menu-item-description">{description}</span>
-                          </span>
-                        </button>
-                      );
-                    })()}
                     <button
                       className="soft-menu-item"
                       type="button"
@@ -2251,6 +2211,7 @@ export function AppShell() {
                 key={`${sessionKey}:${selectedRoom.id}`}
                 initialRoom={selectedRoom}
                 onRoomChange={setSelectedRoom}
+                onRoomDeleted={handleRoomDeleted}
               />
             ) : showChat ? (
               <ChatWindow

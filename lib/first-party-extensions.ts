@@ -1,4 +1,5 @@
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 export interface FirstPartyExtensionDescriptor {
   id: string;
@@ -6,7 +7,8 @@ export interface FirstPartyExtensionDescriptor {
   name: string;
   description: string;
   profiles: readonly ("normal" | "device-control")[];
-  requiredInDeviceControl?: boolean;
+  /** Core capabilities stay enabled in settings; runtime loading remains best-effort. */
+  required?: boolean;
 }
 
 export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = [
@@ -16,6 +18,7 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
     name: "Piora Browser",
     description: "Private headless browser and page inspection tools.",
     profiles: ["normal"],
+    required: true,
   },
   {
     id: "piora:harmony",
@@ -23,7 +26,7 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
     name: "Piora Harmony",
     description: "Approved OpenHarmony device inspection and control tools.",
     profiles: ["normal", "device-control"],
-    requiredInDeviceControl: true,
+    required: true,
   },
   {
     id: "piora:goal",
@@ -48,8 +51,27 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
   },
 ] as const;
 
+/**
+ * Resolve Piora-owned resources independently from the user's project cwd.
+ *
+ * In a packaged desktop build the tiny launcher lives in `resources/web`,
+ * while the complete Next runtime (including `extensions/`) lives inside
+ * `resources/web/runtime.asar`. Electron's patched filesystem accepts paths
+ * beneath that archive, but `process.cwd()/extensions` points at the empty
+ * outer container. The desktop supervisor provides the authoritative root;
+ * the candidates keep CLI and unpacked standalone launches working too.
+ */
+export function firstPartyRuntimeRoot(environment: NodeJS.ProcessEnv = process.env): string {
+  const configured = environment.PIORA_WEB_RUNTIME_ROOT?.trim();
+  if (configured) return resolve(configured);
+
+  const cwd = process.cwd();
+  const candidates = [cwd, join(cwd, "runtime.asar")];
+  return candidates.find((candidate) => existsSync(join(candidate, "extensions"))) ?? cwd;
+}
+
 export function firstPartyExtensionPath(descriptor: FirstPartyExtensionDescriptor): string {
-  return resolve(process.cwd(), "extensions", descriptor.fileName);
+  return resolve(firstPartyRuntimeRoot(), "extensions", descriptor.fileName);
 }
 
 export function getFirstPartyExtensionByPath(path: string): FirstPartyExtensionDescriptor | undefined {

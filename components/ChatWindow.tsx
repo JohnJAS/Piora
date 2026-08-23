@@ -9,7 +9,6 @@ import { MessageView } from "./MessageView";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
-import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type BuiltinSlashCommandResult, type NoticeItem, type SlashCommandInfo } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -25,11 +24,12 @@ import {
   VISIBLE_PAGE_SIZE,
 } from "@/lib/chat-lazy-load";
 import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
+import { getProjectLabel } from "@/lib/session-project-groups";
 
 interface Props {
   session: SessionInfo | null;
   newSessionCwd: string | null;
-  onAgentEnd?: () => void;
+  onAgentEnd?: (sessionId: string) => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
   modelsRefreshKey?: number;
@@ -540,6 +540,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   }, [isEmptyNew, loading, scrollContainerRef, session?.id]);
 
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
+  const newSessionProjectLabel = messageCwd ? getProjectLabel(messageCwd) : "当前项目";
 
   const availableThinkingLevels = displayModelValue
     ? (modelThinkingLevels[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
@@ -548,6 +549,8 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   const currentThinkingLevelMap = displayModelValue
     ? (modelThinkingLevelMaps[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
     : null;
+
+  const visibleExtensionStatuses = extensionStatuses.filter((status) => status.key !== "piora-goal");
 
   const chatInputElement = (
     <ChatInput
@@ -586,12 +589,12 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       cwd={session?.cwd ?? newSessionCwd}
       contextUsage={contextUsage}
       sessionStats={sessionStats}
+      extensionStatuses={visibleExtensionStatuses}
     />
   );
 
   const aboveEditorWidgets = extensionWidgets.filter((widget) => widget.key !== "piora-goal" && widget.placement !== "belowEditor");
   const belowEditorWidgets = extensionWidgets.filter((widget) => widget.key !== "piora-goal" && widget.placement === "belowEditor");
-  const visibleExtensionStatuses = extensionStatuses.filter((status) => status.key !== "piora-goal");
 
   if (loading) {
     return (
@@ -659,25 +662,15 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
       )}
 
       {isEmptyNew ? (
-        <div className="flex flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-8">
-          <div className="w-full max-w-[820px]">
-            <div
-              className="mb-3"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                marginLeft: 16,
-                marginRight: 52,
-                fontFamily: "var(--font-mono)",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0, flex: 1, lineHeight: 1.4, overflow: "hidden" }}>
-                <span style={{ fontSize: "var(--text-xl)", fontWeight: 700, letterSpacing: 0, color: "var(--text)", flexShrink: 0, whiteSpace: "nowrap" }}>π</span>
-                <span style={{ fontSize: "var(--text-xl)", color: "var(--text)", fontWeight: 700, letterSpacing: 0, flexShrink: 0, whiteSpace: "nowrap" }}>Piora</span>
-              </div>
+        <div className="new-session-chat">
+          <div className="new-session-chat-inner">
+            <div className="new-session-chat-mark" aria-hidden="true">
+              <AliIcon name="cloud" size={50} />
+              <span>&gt;_</span>
             </div>
+            <h1 className="new-session-chat-heading">
+              你想在 <span title={messageCwd}>{newSessionProjectLabel}</span> 中构建什么？
+            </h1>
             <NoticeShelf notices={notices} align="right" />
             {chatInputElement}
           </div>
@@ -976,7 +969,6 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
           </div>
         </div>
         {chatInputElement}
-        <ExtensionStatusBar statuses={visibleExtensionStatuses} />
       </div>
       </>
       )}

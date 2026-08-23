@@ -21,12 +21,17 @@ test("the sidebar keeps task state in Projects without a duplicate Activity feed
   assert.match(sidebarNavigation, /onOpenSettings/);
 });
 
-test("settings expose four primary categories with contextual subsections", () => {
-  assert.match(settings, /labelKey: "settings\.agent"/);
+test("settings expose every available feature directly in grouped navigation", () => {
+  assert.match(settings, /labelKey: "settings\.general"/);
+  assert.match(settings, /labelKey: "settings\.conversation"/);
   assert.match(settings, /labelKey: "settings\.extensions"/);
-  assert.match(settings, /getSettingsParentKey/);
-  assert.match(settings, /className=\{`\$\{styles\.subnavigation\}/);
-  assert.match(settingsCss, /\.subnavigation/);
+  assert.match(settings, /settings\.group\.personal/);
+  assert.match(settings, /settings\.group\.capabilities/);
+  assert.match(settings, /settings\.group\.history/);
+  assert.match(settings, /sections\[entry\.key\] !== undefined/);
+  assert.doesNotMatch(settings, /getSettingsParentKey|styles\.subnavigation/);
+  assert.match(settingsCss, /grid-template-columns:\s*258px minmax\(0, 1fr\)/);
+  assert.match(settingsCss, /\.contentCanvas/);
   assert.match(settingsCss, /@media \(max-width: 760px\)/);
   assert.match(settingsCss, /@media \(max-width: 520px\)/);
 });

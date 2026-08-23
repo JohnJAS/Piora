@@ -46,7 +46,7 @@ test("desktop and browser notifications use application-owned completion copy", 
 test("a user-stopped run does not emit a successful completion notification", () => {
   assert.match(agentSessionSource, /suppressCompletionNotificationRef\.current = true/);
   assert.match(agentSessionSource, /const shouldNotify = !suppressCompletionNotificationRef\.current/);
-  assert.match(agentSessionSource, /if \(shouldNotify\) onAgentEnd\?\.\(\)/);
+  assert.match(agentSessionSource, /if \(shouldNotify && sid\) onAgentEnd\?\.\(sid\)/);
   assert.match(agentSessionSource, /completed\?\.role === "assistant" && completed\.stopReason === "error"/);
   assert.match(agentSessionSource, /case "prompt_error":[\s\S]{0,120}suppressCompletionNotificationRef\.current = true/);
 });

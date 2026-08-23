@@ -4,19 +4,15 @@ import {
   type AgentOptions,
   type AgentTool,
 } from "@earendil-works/pi-agent-core";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import {
+  SESSION_TITLE_PROMPT,
+  buildSessionTitleRequest,
+} from "./session-title-prompt";
 
 const TITLE_TIMEOUT_MS = 90_000;
 const MAX_TITLE_LENGTH = 80;
-
-const TITLE_PROMPT = `Create a concise title for this session based on the conversation above.
-
-Requirements:
-- Match the primary language used by the user.
-- Describe the user's concrete goal or the outcome, not the act of chatting.
-- Use 4-12 words for space-separated languages, or 8-24 characters for CJK text when practical.
-- Do not call any tools.
-- Return only the title as plain text, with no quotes, label, markdown, or explanation.`;
 
 export interface GeneratedSessionTitle {
   title: string;
@@ -38,18 +34,34 @@ function createShadowTools(tools: AgentTool[]): AgentTool[] {
   }));
 }
 
+function waitForAbortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(new Error("Session title generation was cancelled"));
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(new Error("Session title generation was cancelled"));
+    signal.addEventListener("abort", abort, { once: true });
+    void promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
 /**
  * Build a temporary Agent configuration whose provider-facing prefix matches
  * the source Agent. Tool implementations are replaced without changing their
  * names, descriptions, or schemas, so a naming run cannot mutate the project.
  */
-export function buildSessionTitleAgentOptions(source: Agent): AgentOptions {
+export function buildSessionTitleAgentOptions(
+  source: Agent,
+  options: { model?: Model<Api> } = {},
+): AgentOptions {
   const state = source.state;
   return {
     initialState: {
       systemPrompt: state.systemPrompt,
-      model: state.model,
-      thinkingLevel: state.thinkingLevel,
+      model: options.model ?? state.model,
+      // Title generation is intentionally a lightweight utility request. A
+      // separately selected model should not inherit the conversation's deep
+      // reasoning level and turn a short rename into a long-running task.
+      thinkingLevel: options.model ? "off" : state.thinkingLevel,
       tools: createShadowTools(state.tools),
       messages: state.messages,
     },
@@ -74,13 +86,16 @@ export function buildSessionTitleAgentOptions(source: Agent): AgentOptions {
  * answered. Fold the title request into a copy of that message so the title
  * request does not send two consecutive user messages to the provider.
  */
-export function appendTitleRequestToTrailingUser(messages: AgentMessage[]): AgentMessage[] {
+export function appendTitleRequestToTrailingUser(
+  messages: AgentMessage[],
+  titleRequest = SESSION_TITLE_PROMPT,
+): AgentMessage[] {
   const lastMessage = messages.at(-1);
   if (!lastMessage || lastMessage.role !== "user") return messages;
 
   const content = typeof lastMessage.content === "string"
-    ? `${lastMessage.content}\n\n${TITLE_PROMPT}`
-    : [...lastMessage.content, { type: "text" as const, text: TITLE_PROMPT }];
+    ? `${lastMessage.content}\n\n${titleRequest}`
+    : [...lastMessage.content, { type: "text" as const, text: titleRequest }];
 
   return [
     ...messages.slice(0, -1),
@@ -208,9 +223,17 @@ export function sanitizeTitleMessages(messages: AgentMessage[]): AgentMessage[] 
   return sanitized;
 }
 
-export async function generateSessionTitle(source: AgentSession): Promise<GeneratedSessionTitle> {
+export async function generateSessionTitle(
+  source: AgentSession,
+  request: {
+    instructions?: string;
+    currentTitle?: string;
+    model?: Model<Api>;
+    signal?: AbortSignal;
+  } = {},
+): Promise<GeneratedSessionTitle> {
   const sourceAgent = source.agent;
-  await sourceAgent.waitForIdle();
+  await waitForAbortable(sourceAgent.waitForIdle(), request.signal);
 
   const sanitizedMessages = sanitizeTitleMessages(sourceAgent.state.messages);
   const historyLength = sanitizedMessages.length;
@@ -218,22 +241,38 @@ export async function generateSessionTitle(source: AgentSession): Promise<Genera
     throw new Error("The session has no user messages to name");
   }
 
-  const options = buildSessionTitleAgentOptions(sourceAgent);
-  options.initialState!.messages = sanitizedMessages;
+  const titleRequest = buildSessionTitleRequest(request.instructions ?? SESSION_TITLE_PROMPT, request.currentTitle);
+  const agentOptions = buildSessionTitleAgentOptions(sourceAgent, { model: request.model });
+  agentOptions.initialState!.messages = sanitizedMessages;
   const continuesFromTrailingUser = sanitizedMessages.at(-1)?.role === "user";
   if (continuesFromTrailingUser) {
-    options.initialState!.messages = appendTitleRequestToTrailingUser(sanitizedMessages);
+    agentOptions.initialState!.messages = appendTitleRequestToTrailingUser(sanitizedMessages, titleRequest);
   }
 
-  const temporaryAgent = new Agent(options);
+  const temporaryAgent = new Agent(agentOptions);
   const runPromise = continuesFromTrailingUser
     ? temporaryAgent.continue()
-    : temporaryAgent.prompt(TITLE_PROMPT);
+    : temporaryAgent.prompt(titleRequest);
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  let removeAbortListener: (() => void) | undefined;
+  const abortPromise = new Promise<never>((_, reject) => {
+    if (!request.signal) return;
+    const abort = () => {
+      temporaryAgent.abort();
+      reject(new Error("Session title generation was cancelled"));
+    };
+    if (request.signal.aborted) {
+      abort();
+      return;
+    }
+    request.signal.addEventListener("abort", abort, { once: true });
+    removeAbortListener = () => request.signal?.removeEventListener("abort", abort);
+  });
 
   try {
     await Promise.race([
       runPromise,
+      abortPromise,
       new Promise<never>((_, reject) => {
         timeout = setTimeout(() => {
           temporaryAgent.abort();
@@ -247,6 +286,7 @@ export async function generateSessionTitle(source: AgentSession): Promise<Genera
     throw error;
   } finally {
     if (timeout) clearTimeout(timeout);
+    removeAbortListener?.();
   }
 
   return getAssistantResult(temporaryAgent, historyLength);

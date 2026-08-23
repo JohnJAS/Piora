@@ -47,15 +47,15 @@
 .planSteps small, .dependencies { display: block; margin-top: 3px; color: var(--text-dim); font-size: var(--text-xs); }
 .stepId { flex: none; border-radius: 4px; padding: 1px 5px; background: var(--bg-hover); color: var(--text-muted); font-family: var(--font-mono); font-size: var(--text-xs); }
 .actions { display: flex; flex-wrap: wrap; gap: 7px; padding-top: 3px; }
-.actions button { min-height: 29px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); cursor: pointer; font: inherit; font-size: var(--text-sm); }
-.actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.actions button { min-height: 30px; padding: 4px 11px; border: 1px solid var(--border-soft); border-radius: var(--radius-control); background: transparent; color: var(--text-muted); cursor: pointer; font: inherit; font-size: var(--text-sm); }
+.actions button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 28%, var(--border)); background: var(--bg-hover); color: var(--text); }
 .actions button:disabled { opacity: .5; cursor: default; }
-.actions button.primary { border-color: color-mix(in srgb, var(--accent) 65%, var(--border)); background: color-mix(in srgb, var(--accent) 11%, var(--bg)); color: var(--accent); }
+.actions button.primary { border-color: var(--text); background: var(--text); color: var(--bg); font-weight: 620; }
 .actions button.danger:hover { border-color: var(--status-failed); color: var(--status-failed); }
 .ready { margin: 2px 0 0; color: var(--status-ready); font-size: var(--text-sm); }
 .executionReady { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 10px; border-radius: 8px; background: var(--surface-muted); }
-.execute { min-height: 31px; padding: 5px 12px; border: 1px solid color-mix(in srgb, var(--accent) 65%, var(--border)); border-radius: 6px; background: color-mix(in srgb, var(--accent) 11%, var(--bg)); color: var(--accent); cursor: pointer; font: inherit; font-size: var(--text-sm); font-weight: 600; }
-.execute:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 17%, var(--bg)); }
+.execute { min-height: 32px; padding: 5px 13px; border: 1px solid var(--text); border-radius: var(--radius-control); background: var(--text); color: var(--bg); cursor: pointer; font: inherit; font-size: var(--text-sm); font-weight: 620; }
+.execute:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 88%, var(--bg)); color: var(--bg); }
 .execute:disabled { opacity: .5; cursor: default; }
 .executionSummary { display: grid; grid-template-columns: auto 1fr; gap: 4px 9px; align-items: baseline; padding: 9px 10px; border: 1px solid var(--border-soft); border-radius: 8px; background: var(--surface-muted); font-size: var(--text-sm); }
 .executionSummary > span { color: var(--text-dim); font-size: var(--text-xs); }

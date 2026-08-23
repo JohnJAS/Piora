@@ -24,6 +24,8 @@ import { RoomSidebarSection } from "./RoomSidebarSection";
 
 export type { SessionSidebarHandle } from "./sidebar/sidebar-types";
 
+const ARCHIVED_SESSION_TOAST_DURATION_MS = 5_000;
+
 export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, selectedRoomId, onSelectSession, onSelectRoom, onNewSession, onRequestNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onFocusFileSearch, onOpenSettings, activeProjectRoot }, ref) {
   const { t } = useI18n();
   const [sessionFlags, setSessionFlags] = useState<SessionFlags>({});
@@ -63,7 +65,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       .then((data: { flags?: SessionFlags }) => { if (!cancelled) setSessionFlags(data.flags ?? {}); })
       .catch(() => { /* Flags are optional; the task list remains usable. */ });
     return () => { cancelled = true; };
-  }, []);
+  }, [refreshKey]);
 
   useEffect(() => {
     const focusTaskSearch = (event: KeyboardEvent) => {
@@ -81,6 +83,15 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       if (d.home) setHomeDir(d.home);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!archivedSessionToast) return;
+    const archivedSessionId = archivedSessionToast.id;
+    const timer = window.setTimeout(() => {
+      setArchivedSessionToast((current) => current?.id === archivedSessionId ? null : current);
+    }, ARCHIVED_SESSION_TOAST_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [archivedSessionToast]);
 
   const restoredRef = useRef(false);
 
@@ -135,14 +146,15 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         onInitialRestoreDone?.();
       }
       const projects = getRecentProjects(allSessions.filter((session) => (
-        !hiddenProjectRoots.has(session.projectRoot ?? session.cwd)
+        !sessionFlags[session.id]?.archived
+        && !hiddenProjectRoots.has(session.projectRoot ?? session.cwd)
       )));
       for (const projectRoot of rememberedProjectRoots) {
         if (!hiddenProjectRoots.has(projectRoot) && !projects.includes(projectRoot)) projects.push(projectRoot);
       }
       if (projects.length > 0) setSelectedCwd(projects[0]);
     }
-  }, [allSessions, hiddenProjectRoots, initialSessionId, loading, onInitialRestoreDone, onSelectSession, rememberedProjectRoots, selectedCwd, skipInitialProjectSelection]);
+  }, [allSessions, hiddenProjectRoots, initialSessionId, loading, onInitialRestoreDone, onSelectSession, rememberedProjectRoots, selectedCwd, sessionFlags, skipInitialProjectSelection]);
 
   useImperativeHandle(ref, () => ({
     openProjectPicker: handleCustomPathClick,
@@ -241,9 +253,13 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   }, [onNewSession]);
 
   const selectedProject = projectRootFor(selectedCwd);
+  const activeSessions = useMemo(
+    () => allSessions.filter((session) => !sessionFlags[session.id]?.archived),
+    [allSessions, sessionFlags],
+  );
   const visibleSessions = useMemo(
-    () => allSessions.filter((session) => !hiddenProjectRoots.has(session.projectRoot ?? session.cwd)),
-    [allSessions, hiddenProjectRoots],
+    () => activeSessions.filter((session) => !hiddenProjectRoots.has(session.projectRoot ?? session.cwd)),
+    [activeSessions, hiddenProjectRoots],
   );
   const visibleRememberedProjects = useMemo(
     () => [...rememberedProjectRoots]
@@ -422,11 +438,12 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       />
       {onSelectRoom ? (
         <RoomSidebarSection
-          sessions={allSessions}
+          sessions={activeSessions}
           selectedSessionId={selectedSessionId}
           selectedRoomId={selectedRoomId ?? null}
           activeProjectRoot={activeProjectRoot}
           initialRoomId={initialRoomId}
+          refreshKey={refreshKey}
           onSelectRoom={onSelectRoom}
           onInitialRestoreDone={onInitialRoomRestoreDone}
         />
