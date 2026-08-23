@@ -4,10 +4,39 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-08-23
+
+### Added
+
+- Added a production Agent Team runtime with durable plans, dependency-aware
+  scheduling, bounded retries, evidence and artifact tracking, independent
+  review, recovery after interruption, and authenticated Room APIs and events.
+- Added first-class Team progress, questions, approvals, and final results to
+  Room chat, plus a floating activity card, a complete message navigator, and
+  one-click navigation to the latest message.
+- Added AI-assisted editing for team descriptions, Agent responsibilities,
+  prompts, constraints, and collaboration conventions, with a separately
+  configurable optimization model.
+
 ### Changed
 
 - Publish verified release artifacts as public GitHub prereleases immediately
   instead of leaving each version in a maintainer-only draft state.
+- Simplified Team setup and goal submission, defaulted the interface and
+  optimization instructions to Simplified Chinese, and aligned icons, buttons,
+  hover feedback, activity controls, and status surfaces with the Codex visual
+  language.
+- Reused the normal Target execution path for approved Team plans, while
+  automatically starting user-authored plans without an extra approval step.
+
+### Fixed
+
+- Fixed silent Room submissions, missing user-question prompts, non-responsive
+  resume controls, capability mismatch dead ends, stale hot-reload coordinator
+  instances, and legacy English error messages.
+- Fixed long-conversation navigation, misleading status icons, inaccessible
+  progress placement, and forms that previously required unexplained manual
+  detail before a Team could start.
 
 ## [0.3.5] - 2026-08-22
 
