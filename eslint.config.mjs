@@ -23,6 +23,19 @@ const eslintConfig = [
       "react-hooks/set-state-in-effect": "off",
     },
   },
+  {
+    files: ["lib/team-*.ts"],
+    rules: {
+      complexity: ["error", 25],
+      "max-lines-per-function": ["error", { max: 180, skipBlankLines: true, skipComments: true }],
+    },
+  },
+  {
+    files: ["components/Room*.tsx"],
+    rules: {
+      complexity: ["error", 25],
+    },
+  },
 ];
 
 export default eslintConfig;

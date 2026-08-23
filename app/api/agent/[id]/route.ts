@@ -72,7 +72,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
-    return NextResponse.json({ error: String(error), ...(error instanceof SessionMessageRouterError ? { code: error.code } : {}) }, { status: errorStatus(error) });
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error), ...(error instanceof SessionMessageRouterError ? { code: error.code } : {}) }, { status: errorStatus(error) });
   }
 }
 

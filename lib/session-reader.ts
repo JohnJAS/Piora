@@ -4,8 +4,8 @@ import {
   buildSessionContext as piBuildSessionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { closeSync, openSync, readSync, statSync } from "fs";
-import { normalize as normalizePath } from "path";
+import { closeSync, openSync, readSync, statSync } from "node:fs";
+import { normalize as normalizePath } from "node:path";
 import type { AgentMessage, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { normalizeToolCalls } from "./normalize";

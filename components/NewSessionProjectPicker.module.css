@@ -3,10 +3,13 @@
   width: min(660px, calc(100% - 40px));
   height: 100%;
   margin: 0 auto;
+  padding-block: 24px;
   align-items: center;
   justify-content: center;
   flex-direction: column;
+  box-sizing: border-box;
   color: var(--text);
+  overflow-y: auto;
 }
 
 .mark {
@@ -22,11 +25,72 @@
 }
 
 .root h1 {
-  margin: 18px 0 16px;
+  margin: 18px 0 6px;
   font-size: clamp(var(--text-xl), 3vw, calc(var(--text-xl) * 1.6));
   font-weight: 560;
   letter-spacing: -.02em;
   text-align: center;
+}
+
+.intro {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  text-align: center;
+}
+
+.steps {
+  display: grid;
+  width: min(520px, 100%);
+  margin: 18px 0 14px;
+  padding: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  list-style: none;
+}
+
+.steps li {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 10px;
+  background: transparent;
+}
+
+.stepNumber {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.stepCopy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stepCopy strong {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 620;
+}
+
+.stepCopy small {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: 1.45;
 }
 
 .picker {
@@ -34,9 +98,7 @@
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 13px;
-  background: color-mix(in srgb, var(--bg-panel) 88%, transparent);
-  box-shadow: 0 16px 50px rgb(0 0 0 / 12%);
-  backdrop-filter: blur(14px);
+  background: transparent;
 }
 
 .search {
@@ -124,3 +186,13 @@
 }
 
 .footer button:hover { background: var(--bg-hover); color: var(--text); }
+
+@media (max-width: 620px) {
+  .root {
+    justify-content: flex-start;
+  }
+
+  .steps {
+    grid-template-columns: 1fr;
+  }
+}

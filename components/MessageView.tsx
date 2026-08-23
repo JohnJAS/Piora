@@ -37,8 +37,25 @@ const DiffView = dynamic(
 
 const MAX_THINKING_CACHE_ENTRIES = 100;
 const THINKING_LOAD_TIMEOUT_MS = 15_000;
+const USER_MESSAGE_COLLAPSE_LINE_THRESHOLD = 12;
+const USER_MESSAGE_PREVIEW_LINES = 8;
+const USER_MESSAGE_COLLAPSE_CHAR_THRESHOLD = 2_400;
+const USER_MESSAGE_PREVIEW_CHARS = 1_800;
 type ThinkingCacheEntry = { promise: Promise<string> };
 const thinkingContentCache = new Map<string, ThinkingCacheEntry>();
+
+export function getUserMessagePreview(content: string): { collapsible: boolean; preview: string; lineCount: number } {
+  const lines = content.split(/\r\n|\r|\n/);
+  const collapsible = lines.length > USER_MESSAGE_COLLAPSE_LINE_THRESHOLD
+    || content.length > USER_MESSAGE_COLLAPSE_CHAR_THRESHOLD;
+  if (!collapsible) return { collapsible: false, preview: content, lineCount: lines.length };
+
+  const linePreview = lines.slice(0, USER_MESSAGE_PREVIEW_LINES).join("\n");
+  const preview = linePreview.length > USER_MESSAGE_PREVIEW_CHARS
+    ? `${linePreview.slice(0, USER_MESSAGE_PREVIEW_CHARS).trimEnd()}…`
+    : linePreview;
+  return { collapsible: true, preview, lineCount: lines.length };
+}
 
 function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number): Promise<string> {
   const key = `${sessionId}:${entryId}:${blockIndex}`;
@@ -197,6 +214,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [contentExpanded, setContentExpanded] = useState(false);
 
   const content =
     typeof message.content === "string"
@@ -216,6 +234,10 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   const time = formatTime(message.timestamp);
   const canFork = !!entryId && !!onFork;
   const canNavigate = !!prevAssistantEntryId && !!onNavigate;
+  const contentPreview = useMemo(() => getUserMessagePreview(content), [content]);
+  const displayedContent = contentPreview.collapsible && !contentExpanded
+    ? contentPreview.preview
+    : content;
 
   const copyContent = () => {
     copyText(content).then(() => {
@@ -272,7 +294,27 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
               })}
             </div>
           )}
-          {content && <MarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{content}</MarkdownBody>}
+          {content && (
+            <>
+              <MarkdownBody className="markdown-user-message" cwd={cwd} onOpenFile={onOpenFile}>{displayedContent}</MarkdownBody>
+              {contentPreview.collapsible && (
+                <button
+                  type="button"
+                  className="message-user-expand"
+                  aria-expanded={contentExpanded}
+                  aria-label={t(contentExpanded ? "chat.collapseLongMessage" : "chat.expandLongMessage", { count: contentPreview.lineCount })}
+                  onClick={() => setContentExpanded((expanded) => !expanded)}
+                >
+                  <AliIcon
+                    name="arrowdown"
+                    size={11}
+                    style={{ transform: contentExpanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}
+                  />
+                  {t(contentExpanded ? "chat.collapseLongMessage" : "chat.expandLongMessage", { count: contentPreview.lineCount })}
+                </button>
+              )}
+            </>
+          )}
         </div>
 
       </div>
@@ -786,6 +828,7 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
     >
       {/* ── Tool call header ── */}
       <button
+        className="tool-call-toggle"
         onClick={(event) => togglePreservingScroll(event.currentTarget, () => setExpanded((value) => !value))}
         style={{
           display: "flex",

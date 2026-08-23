@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CollaborationRoom } from "@/lib/room-types";
+import { getRoomMemberName, getRoomMemberSessionId, type CollaborationRoom } from "@/lib/room-types";
 import type { SessionInfo } from "@/lib/types";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { AliIcon } from "./AliIcon";
@@ -101,8 +101,14 @@ export function RoomSidebarSection({
   }, [sessions]);
 
   const openCreate = () => {
-    const selectedSession = sessions.find((session) => session.id === selectedSessionId);
-    setSelectedIds(new Set(selectedSession ? [selectedSession.id] : []));
+    const currentRoom = rooms.find((room) => room.id === selectedRoomId);
+    const fallbackMember = currentRoom?.members.find((member) => member.memberId === currentRoom.coordination.coordinatorMemberId)
+      ?? currentRoom?.members[0];
+    const selectedSession = sessions.find((session) => session.id === selectedSessionId)
+      ?? sessions.find((session) => session.id === (fallbackMember ? getRoomMemberSessionId(fallbackMember) : undefined))
+      ?? sessions[0];
+    const creatorId = selectedSession?.id ?? (fallbackMember ? getRoomMemberSessionId(fallbackMember) : undefined);
+    setSelectedIds(new Set(creatorId ? [creatorId] : []));
     setName("");
     setDescription("");
     setError(null);
@@ -120,8 +126,22 @@ export function RoomSidebarSection({
 
   const createRoom = async () => {
     const selected = sessions.filter((session) => selectedIds.has(session.id));
-    if (!name.trim() || selected.length === 0) return;
+    const currentRoom = rooms.find((room) => room.id === selectedRoomId);
+    const fallbackMember = currentRoom?.members.find((member) => member.memberId === currentRoom.coordination.coordinatorMemberId)
+      ?? currentRoom?.members[0];
     const preferredCreator = selected.find((session) => session.id === selectedSessionId) ?? selected[0];
+    const creator = preferredCreator ? {
+      sessionId: preferredCreator.id,
+      sessionName: sessionLabel(preferredCreator),
+      cwd: preferredCreator.cwd,
+      projectRoot: sessionProject(preferredCreator),
+    } : fallbackMember ? {
+      sessionId: getRoomMemberSessionId(fallbackMember),
+      sessionName: getRoomMemberName(fallbackMember),
+      cwd: fallbackMember.binding.cwd ?? currentRoom?.projectRoot,
+      projectRoot: fallbackMember.binding.projectRoot ?? currentRoom?.projectRoot,
+    } : null;
+    if (!name.trim() || !creator?.cwd) return;
     setBusy(true);
     setError(null);
     try {
@@ -131,11 +151,11 @@ export function RoomSidebarSection({
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim(),
-          sessionId: preferredCreator.id,
-          sessionName: sessionLabel(preferredCreator),
-          cwd: preferredCreator.cwd,
-          projectRoot: sessionProject(preferredCreator),
-          members: selected.filter((session) => session.id !== preferredCreator.id).map((session) => ({
+          sessionId: creator.sessionId,
+          sessionName: creator.sessionName,
+          cwd: creator.cwd,
+          projectRoot: creator.projectRoot,
+          members: selected.filter((session) => session.id !== creator.sessionId).map((session) => ({
             sessionId: session.id,
             sessionName: sessionLabel(session),
             cwd: session.cwd,
@@ -166,17 +186,17 @@ export function RoomSidebarSection({
         </button>
       </div>
       <div className={styles.list}>
-        {rooms.length === 0 ? <div className={styles.empty}>创建一个多 Session 群聊</div> : rooms.map((room) => (
+        {rooms.length === 0 ? <div className={styles.empty}>创建一个多会话群聊</div> : rooms.map((room) => (
           <button
             key={room.id}
             type="button"
             className={`${styles.roomRow}${room.id === selectedRoomId ? ` ${styles.selected}` : ""}`}
             onClick={() => onSelectRoom(room)}
           >
-            <span className={styles.roomIcon} aria-hidden="true"><AliIcon name="message" size={14} /></span>
+              <span className={styles.roomIcon} aria-hidden="true"><AliIcon name="messages" size={14} /></span>
             <span className={styles.roomCopy}>
               <strong>{room.name}</strong>
-              <small>{room.members.length} 个 Agent · {room.workspace.label}</small>
+              <small>{room.members.length} 个智能体 · {room.workspace.label}</small>
             </span>
           </button>
         ))}
@@ -187,7 +207,7 @@ export function RoomSidebarSection({
             <div className={styles.dialogHeader}>
               <div>
                 <h2 id="room-create-title">新建群聊</h2>
-                <p>可以跨项目选择 Session；创建后可设置每个 Agent 的身份、职责和绑定。</p>
+                <p>只需填写名称即可创建；其他成员和说明都可以稍后设置。</p>
               </div>
               <button type="button" className={styles.closeButton} onClick={() => setCreateOpen(false)} aria-label="关闭" disabled={busy}>
                 <AliIcon name="close" size={15} />
@@ -198,31 +218,34 @@ export function RoomSidebarSection({
                 <span>群名称</span>
                 <input ref={nameInputRef} value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：Piora 重构讨论组" maxLength={120} />
               </label>
-              <label className={styles.field}>
-                <span>团队目标</span>
-                <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="这个 Agent 团队要完成什么，以及最终交付标准" rows={3} maxLength={2_000} />
-              </label>
-              <div className={styles.memberHeader}>
-                <span>初始 Agent</span>
-                <small>已选择 {selectedIds.size} 个 Session</small>
-              </div>
-              <div className={styles.members}>
-                {groupedSessions.map(([root, projectSessions]) => (
-                  <section key={root} className={styles.projectGroup}>
-                    <div className={styles.projectHeading}><AliIcon name="folder" size={13} /><span>{root}</span></div>
-                    {projectSessions.map((session) => (
-                      <label key={session.id} className={styles.memberRow}>
-                        <input type="checkbox" checked={selectedIds.has(session.id)} onChange={() => toggleSession(session.id)} />
-                        <span className={styles.avatar}>{sessionLabel(session).slice(0, 1).toLocaleUpperCase()}</span>
-                        <span className={styles.memberCopy}>
-                          <strong>{sessionLabel(session)}</strong>
-                          <small>{session.worktreeBranch ?? session.cwd}</small>
-                        </span>
-                      </label>
-                    ))}
-                  </section>
-                ))}
-              </div>
+              <details className={styles.advancedCreate}>
+                <summary>更多设置（可选）<small>当前 {selectedIds.size} 个智能体</small></summary>
+                <label className={styles.field}>
+                  <span>团队说明</span>
+                  <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="团队要完成什么，以及最终交付标准" rows={3} maxLength={2_000} />
+                </label>
+                <div className={styles.memberHeader}>
+                  <span>初始智能体</span>
+                  <small>已选择 {selectedIds.size} 个会话</small>
+                </div>
+                <div className={styles.members}>
+                  {groupedSessions.map(([root, projectSessions]) => (
+                    <section key={root} className={styles.projectGroup}>
+                      <div className={styles.projectHeading}><AliIcon name="folder" size={13} /><span>{root}</span></div>
+                      {projectSessions.map((session) => (
+                        <label key={session.id} className={styles.memberRow}>
+                          <input type="checkbox" checked={selectedIds.has(session.id)} onChange={() => toggleSession(session.id)} />
+                          <span className={styles.avatar}>{sessionLabel(session).slice(0, 1).toLocaleUpperCase()}</span>
+                          <span className={styles.memberCopy}>
+                            <strong>{sessionLabel(session)}</strong>
+                            <small>{session.worktreeBranch ?? session.cwd}</small>
+                          </span>
+                        </label>
+                      ))}
+                    </section>
+                  ))}
+                </div>
+              </details>
               {error ? <p className={styles.error} role="alert">{error}</p> : null}
             </div>
             <div className={styles.dialogActions}>

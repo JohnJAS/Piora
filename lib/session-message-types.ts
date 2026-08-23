@@ -1,3 +1,5 @@
+import type { PersistedTeamExecutionRef, TeamExecutionContext } from "./team-types";
+
 export type SessionMessageSourceKind = "ui" | "room" | "remote" | "extension" | "system";
 export type SessionDeliveryMode = "next_turn" | "steer";
 export type SessionCommandStatus =
@@ -28,6 +30,7 @@ export interface SessionMessageInput {
   goalMode?: boolean;
   planMode?: boolean;
   planExecution?: { planId: string; expectedRevision: number };
+  teamExecution?: TeamExecutionContext;
 }
 
 export interface SessionCommandRecord {
@@ -49,6 +52,7 @@ export interface SessionCommandRecord {
   goalMode?: boolean;
   planMode?: boolean;
   planExecution?: { planId: string; expectedRevision: number };
+  teamExecution?: PersistedTeamExecutionRef;
 }
 
 export interface DispatchReceipt {

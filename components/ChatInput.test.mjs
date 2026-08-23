@@ -70,6 +70,12 @@ test("keeps the model selector visible when a model error leaves no options", ()
   assert.match(html, /title="No available models"/);
 });
 
+test("keeps the model menu inside the viewport and removes the redundant local shell label", () => {
+  assert.match(chatInputSource, /right: Math\.max\(8, viewportWidth - \(modelDropdownRect\.left \+ modelDropdownRect\.width\)\)/);
+  assert.match(chatInputSource, /width: "min\(300px, calc\(100vw - 16px\)\)"/);
+  assert.doesNotMatch(chatInputSource, /bashExcluded \? t\("chat\.outputLocal"\)/);
+});
+
 test("filters model options by name and id", () => {
   const options = [
     { provider: "ollama", modelId: "qwen3:latest", name: "Qwen 3" },
@@ -145,21 +151,21 @@ test("renders an icon-only send control and dynamic context ring", () => {
     ),
   );
 
-  assert.match(html, /aria-label="Send"/);
+  assert.match(html, /aria-label="发送"/);
   assert.doesNotMatch(html, />Send<\/button>/);
   assert.match(html, /data-context-used="40\.00"/);
   assert.match(html, /stroke-dasharray="40 60"/);
-  assert.match(html, /Context window/);
-  assert.match(html, /40% used/);
-  assert.match(html, /40k tokens used, 100k total/);
+  assert.match(html, /上下文窗口/);
+  assert.match(html, /40% 已用/);
+  assert.match(html, /已用 40k 个令牌，共 100k/);
   assert.match(html, /data-model-brand="openai"/);
   assert.doesNotMatch(html, /<button[^>]*data-context-used/);
   assert.ok(html.indexOf("data-context-used") < html.indexOf('title="Change model"'));
   assert.match(html, /class="session-stats-tooltip"/);
-  assert.match(html, /class="session-stats-tooltip-title">Session info</);
+  assert.match(html, /class="session-stats-tooltip-title">会话信息</);
   assert.doesNotMatch(html, /class="session-stats-tooltip-title">Icon migration task</);
   assert.match(html, /width="18" height="18"[^>]*stroke-width="1\.75"[^>]*><path d="M5 21v-6"/);
-  assert.match(html, /Messages/);
+  assert.match(html, /消息/);
   assert.match(html, /1,750/);
 });
 
@@ -196,7 +202,7 @@ test("renders an icon-only stop control", () => {
     ),
   );
 
-  assert.match(html, /aria-label="Stop agent"/);
+  assert.match(html, /aria-label="停止智能体"/);
   assert.doesNotMatch(html, />Steer</);
   assert.doesNotMatch(html, />Send directly</);
 });
@@ -222,9 +228,9 @@ test("renders queued guidance as a compact composer tray", () => {
   assert.match(html, /class="composer-queue-tray"/);
   assert.match(html, /class="composer-queue-row is-steer"/);
   assert.match(html, /class="composer-queue-row is-follow-up"/);
-  assert.match(html, />Steer</);
-  assert.match(html, />Queue</);
-  assert.match(html, /aria-label="Recall to input"/);
+  assert.match(html, />引导</);
+  assert.match(html, />排队</);
+  assert.match(html, /aria-label="移回输入框"/);
   assert.doesNotMatch(html, /class="composer-shell" title="Adjust the spacing/);
 });
 
@@ -259,7 +265,7 @@ test("designs prompt optimization as a preview before replacing the draft", () =
     ),
   );
 
-  assert.match(html, /aria-label="Optimize prompt"/);
+  assert.match(html, /aria-label="优化提示词"/);
   assert.match(html, /class="prompt-optimize-button"/);
   assert.match(chatInputSource, /fetch\("\/api\/prompts\/optimize"/);
   assert.match(chatInputSource, /prompt-optimization-review/);

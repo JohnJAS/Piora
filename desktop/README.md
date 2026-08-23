@@ -60,8 +60,9 @@ do not hand-edit it or replace it with the broader source lockfile inventory.
   injected into requests by Electron's network layer. The renderer cannot read
   the token.
 - Cross-origin navigation, new Electron windows, webviews, and permission
-  requests are denied. Regular HTTP(S) links opened with `target=_blank` are
-  delegated to the operating system browser.
+  requests are denied in the privileged application renderer. The right-side
+  Browser tool uses a separate sandboxed `WebContentsView` and persistent
+  partition; untrusted pages never receive the application preload bridge.
 - Child stdout/stderr and lifecycle events are written to
   `<userData>/logs/piora.log` with one rotated backup.
 

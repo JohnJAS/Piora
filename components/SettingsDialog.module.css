@@ -468,6 +468,39 @@
   gap: 11px;
 }
 
+.optimizerModelField {
+  display: grid;
+  gap: 6px;
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.optimizerModelField select {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 450;
+}
+
+.optimizerModelField select:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.optimizerModelField small {
+  color: var(--text-dim);
+  font-weight: 400;
+  line-height: 1.45;
+}
+
 .conversationCopy {
   min-width: 0;
   flex: 1;

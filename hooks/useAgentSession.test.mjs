@@ -21,8 +21,9 @@ test("closes the session event stream only after prompt settlement or a pre-prom
   assert.match(finishSource, /closeEvents\(\)/);
   assert.doesNotMatch(agentEndSource, /closeEvents\(\)/);
   assert.match(agentEndSource, /Keep the stream open until prompt_done/);
-  assert.match(sendSource, /if \(promptRequestStarted && sentSessionId\) \{[\s\S]*?waitForPromptSettlement/);
-  assert.match(sendSource, /if \(promptRequestStarted && sentSessionId\) \{[\s\S]*?return;[\s\S]*?\}[\s\S]*?closeEvents\(\)/);
+  assert.match(sendSource, /e instanceof AgentCommandError && e\.status >= 400 && e\.status < 500/);
+  assert.match(sendSource, /if \(promptRequestStarted && sentSessionId && !definitivelyRejected\) \{[\s\S]*?waitForPromptSettlement/);
+  assert.match(sendSource, /if \(promptRequestStarted && sentSessionId && !definitivelyRejected\) \{[\s\S]*?return;[\s\S]*?\}[\s\S]*?closeEvents\(\)/);
 });
 
 test("refreshes context usage during streaming and after assistant messages", () => {

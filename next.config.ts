@@ -38,6 +38,7 @@ const nextConfig: NextConfig = {
     "@earendil-works/pi-ai",
     "@earendil-works/pi-tui",
     "playwright-core",
+    "proper-lockfile",
   ],
   webpack(config, { isServer, dev }) {
     // Release builds are one-shot and never reuse this cache. Disabling the
@@ -49,7 +50,16 @@ const nextConfig: NextConfig = {
     // a Node runtime dependency there as well; bundling it pulls in node:console
     // from its mock tooling and breaks the dev compiler.
     if (isServer && Array.isArray(config.externals)) {
-      config.externals.push("undici");
+      config.externals.push(
+        /^node:/,
+        "undici",
+        "proper-lockfile",
+        "@earendil-works/pi-coding-agent",
+        "@earendil-works/pi-agent-core",
+        "@earendil-works/pi-ai",
+        "@earendil-works/pi-tui",
+        "playwright-core",
+      );
     }
     return config;
   },

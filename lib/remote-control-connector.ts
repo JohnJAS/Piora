@@ -1,5 +1,4 @@
 import { WebSocket } from "undici";
-import { getSessionMessageRouter } from "./session-message-router";
 import type { SessionCommandEvent } from "./session-message-types";
 
 interface ConnectorSocket {
@@ -142,6 +141,7 @@ export class RemoteControlConnector {
       this.send({ type: "command.rejected", externalCommandId, code: "SESSION_NOT_ALLOWED" });
       return;
     }
+    const { getSessionMessageRouter } = await import("./session-message-router");
     const router = getSessionMessageRouter();
     try {
       const receipt = await router.dispatchSessionMessage({

@@ -29,6 +29,7 @@ import {
   writePreferredServerPort,
   type RuntimeProfile,
 } from "./desktop-state.js";
+import { DesktopBrowserManager } from "./browser-manager.js";
 import { FileLogger, type Logger } from "./logger.js";
 import { StandaloneServer, type ServerExit } from "./server-supervisor.js";
 import { fitBoundsToVisibleDisplays } from "./window-bounds.js";
@@ -94,6 +95,12 @@ let quitRequested = false;
 let serverEntryPath: string | undefined;
 let serverHostEntryPath: string | undefined;
 let piAgentDirectoryPath: string | undefined;
+let desktopBrowserManager: DesktopBrowserManager | undefined;
+
+function attachDesktopBrowserManager(window: BrowserWindow, log: Logger): void {
+  desktopBrowserManager?.destroy();
+  desktopBrowserManager = new DesktopBrowserManager(window, log, isTrustedMainWindowSender);
+}
 
 function installRendererDiagnostics(window: BrowserWindow, surface: "Main" | "Companion", log: Logger): void {
   window.webContents.on("console-message", (event) => {
@@ -1222,6 +1229,7 @@ async function startApplication(): Promise<void> {
   registerCompanionWindowHandlers();
   registerGlobalShortcutHandler();
   registerHarmonyRuntimePickerHandler();
+  attachDesktopBrowserManager(mainWindow, logger);
 
   if (PORTABLE_SMOKE_TEST) {
     const smokeMarker = process.env.PIORA_SMOKE_MARKER?.trim();
@@ -1262,6 +1270,8 @@ async function startApplication(): Promise<void> {
 
 async function stopApplication(): Promise<void> {
   logger?.info("Stopping Piora");
+  desktopBrowserManager?.destroy();
+  desktopBrowserManager = undefined;
   await requestHarmonyEmergencyStop("desktop_shutdown");
   await server?.stop();
   server = undefined;
@@ -1290,6 +1300,7 @@ if (!hasSingleInstanceLock) {
   app.on("activate", () => {
     if (!mainWindow && serverUrl && logger) {
       mainWindow = createMainWindow(serverUrl, logger);
+      attachDesktopBrowserManager(mainWindow, logger);
       return;
     }
     focusMainWindow();

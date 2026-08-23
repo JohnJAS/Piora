@@ -1,7 +1,7 @@
-import { execFile } from "child_process";
-import { existsSync, mkdirSync, realpathSync } from "fs";
-import { basename, dirname, join, resolve } from "path";
-import { promisify } from "util";
+import { execFile } from "node:child_process";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { allowFileRoot } from "./allowed-roots";
 
 const execFileAsync = promisify(execFile);

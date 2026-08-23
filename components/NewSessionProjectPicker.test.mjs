@@ -13,7 +13,10 @@ test("new chat requires an explicit project choice instead of inheriting the act
   assert.doesNotMatch(shell, /newSessionCwd \?\? \(selectedSession === null/);
   assert.match(shell, /<NewSessionProjectPicker/);
   assert.match(navigation, /onRequestNewSession\(\)/);
-  assert.match(picker, /你想在哪个项目中构建什么/);
+  assert.match(picker, /开始一个新会话/);
+  assert.match(picker, /配置模型/);
+  assert.match(picker, /智能体 → 模型/);
+  assert.match(picker, /选择项目文件夹/);
   assert.match(picker, /fetch\("\/api\/sessions"/);
 });
 

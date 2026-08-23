@@ -1,45 +1,65 @@
-export type RoomMemberRole = "coordinator" | "planner" | "worker" | "reviewer" | "participant";
+import type {
+  CollaborationRoomV3,
+  RoomMemberV3,
+  TeamAgentRole,
+} from "./team-types";
+
+export const ROOM_SCHEMA_VERSION = 3 as const;
+export type RoomMemberRole = TeamAgentRole;
 export type RoomMessageAuthorKind = "user" | "session" | "system";
 
-export interface RoomMember {
-  memberId: string;
+/**
+ * Runtime v3 member with non-enumerable v2 aliases attached by room-store.
+ * New code should use profile/binding or the compatibility helpers below.
+ */
+export interface RoomMember extends RoomMemberV3 {
+  /** @deprecated use binding.sessionId */
   sessionId: string;
+  /** @deprecated use profile.name */
   name?: string;
+  /** @deprecated use profile.roleDescription */
   instructions?: string;
+  /** @deprecated use binding.cwd */
   cwd?: string;
+  /** @deprecated use binding.projectRoot */
   projectRoot?: string;
+  /** @deprecated use binding.worktreeBranch */
   worktreeBranch?: string;
+  /** @deprecated use profile.role */
   role: RoomMemberRole;
-  joinedAt: number;
 }
 
-export interface CollaborationRoom {
-  schemaVersion: 2;
-  id: string;
-  name: string;
-  description?: string;
-  projectRoot?: string;
-  createdAt: number;
-  updatedAt: number;
-  nextSeq: number;
+export interface CollaborationRoom extends Omit<CollaborationRoomV3, "members" | "coordination"> {
   members: RoomMember[];
   coordination: {
-    mode: "manual" | "coordinator";
+    mode: "manual" | "team";
+    coordinatorMemberId: string;
+    plannerMemberId?: string;
+    defaultReviewerMemberIds: string[];
+    /** @deprecated runtime alias derived from coordinatorMemberId */
     coordinatorSessionId?: string;
     maxConcurrency: number;
     leaseDurationMs: number;
+    maxRunSteps: number;
+    maxTaskAttempts: number;
+    requireReviewForCodeChanges: boolean;
   };
-  workspace: {
-    mode: "managed" | "custom";
-    path: string;
-    label: string;
-    instructions?: string;
-  };
-  paths: {
-    root: string;
-    shared: string;
-    privateRoot: string;
-  };
+}
+
+export function getRoomMemberName(member: RoomMemberV3 | RoomMember): string {
+  return member.profile.name;
+}
+
+export function getRoomMemberRole(member: RoomMemberV3 | RoomMember): RoomMemberRole {
+  return member.profile.role;
+}
+
+export function getRoomMemberSessionId(member: RoomMemberV3 | RoomMember): string {
+  return member.binding.sessionId;
+}
+
+export function getRoomMemberInstructions(member: RoomMemberV3 | RoomMember): string {
+  return member.profile.roleDescription;
 }
 
 export type RoomTaskStatus = "pending" | "leased" | "running" | "completed" | "failed" | "blocked" | "cancelled";
@@ -127,6 +147,7 @@ export interface RoomMessage {
     name?: string;
   };
   content: string;
+  payload: RoomMessagePayloadMetadata;
   createdAt: number;
   replyTo?: string;
   correlationId?: string;
@@ -134,6 +155,14 @@ export interface RoomMessage {
   forwardDepth?: number;
   autoRound?: number;
   maxAutoRounds?: number;
+}
+
+export interface RoomMessagePayloadMetadata {
+  byteLength: number;
+  lineCount: number;
+  sha256: string;
+  truncated: boolean;
+  payloadRef?: string;
 }
 
 export interface RoomPresence {

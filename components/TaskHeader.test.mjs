@@ -14,6 +14,11 @@ test("renders the four task header slots from shared task status", () => {
   assert.match(source, /styles\.actions/);
 });
 
+test("does not label the current project as local", () => {
+  assert.doesNotMatch(source, /t\("taskHeader\.local"\)/);
+  assert.match(source, /worktreeBranch \? t\("taskHeader\.worktree"\) : null/);
+});
+
 test("polls git changes only while a running task is visible", () => {
   assert.match(source, /if \(!active\) return/);
   assert.match(source, /document\.visibilityState !== "visible"/);

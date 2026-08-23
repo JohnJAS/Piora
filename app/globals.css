@@ -463,6 +463,43 @@ select {
   font-family: inherit;
 }
 
+/* Codex-style interaction baseline: every button gets the same quiet gray
+   hover wash without erasing its local primary/secondary color hierarchy. */
+button {
+  transition:
+    background-color 120ms ease,
+    background-image 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease,
+    opacity 120ms ease,
+    transform 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+button:not(:disabled):hover {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--text) 6%, transparent),
+    color-mix(in srgb, var(--text) 6%, transparent)
+  );
+}
+
+button:not(:disabled):active {
+  background-image: linear-gradient(
+    color-mix(in srgb, var(--text) 9%, transparent),
+    color-mix(in srgb, var(--text) 9%, transparent)
+  );
+  transform: scale(0.98);
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
@@ -2031,6 +2068,14 @@ select:focus-visible,
   line-height: 1.4;
 }
 
+/* Tool rows, including MCP-provided tools, are expandable controls. Force an
+   ordinary pointer on the whole row so nested labels never inherit a help
+   cursor from browser or extension-provided metadata. */
+.tool-call-toggle,
+.tool-call-toggle * {
+  cursor: pointer !important;
+}
+
 .app-tooltip {
   position: fixed;
   z-index: 1600;
@@ -2728,6 +2773,27 @@ pre, code {
 }
 .markdown-user-message p {
   white-space: pre-wrap;
+}
+
+.message-user-expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  margin-top: 7px;
+  padding: 5px 8px 1px;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.message-user-expand:hover {
+  color: var(--accent);
 }
 
 .markdown-custom-message {

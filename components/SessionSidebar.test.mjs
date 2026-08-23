@@ -5,6 +5,7 @@ import test from "node:test";
 const mainSource = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
 const taskRowSource = await readFile(new URL("./sidebar/TaskRow.tsx", import.meta.url), "utf8");
 const globalStyles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const sidebarStyles = await readFile(new URL("./SessionSidebar.module.css", import.meta.url), "utf8");
 const splitSources = await Promise.all([
   "ProjectList.tsx", "SidebarNavigation.tsx", "SidebarProjectArea.tsx", "SidebarFileArea.tsx",
   "useSessionCatalog.ts", "sidebar-utils.ts", "sidebar-types.ts", "useProjectPicker.ts", "WorktreeSection.tsx",
@@ -61,6 +62,15 @@ test("selected sessions use a neutral Codex-style background without an accent r
   assert.match(selectedStyles, /background:\s*var\(--bg-selected\)/);
   assert.match(selectedStyles, /box-shadow:\s*none/);
   assert.doesNotMatch(selectedStyles, /inset|var\(--accent\)/);
+});
+
+test("project headings stay transparent while selected sessions keep their fill", () => {
+  const projectStyles = sidebarStyles.slice(
+    sidebarStyles.indexOf(".projectRow"),
+    sidebarStyles.indexOf(".projectMain"),
+  );
+  assert.match(projectStyles, /\.projectRowSelected\s*\{\s*background:\s*transparent/);
+  assert.doesNotMatch(projectStyles, /\.projectRow:hover[\s\S]*?background:/);
 });
 
 test("renders sessions inside persisted project folders", () => {

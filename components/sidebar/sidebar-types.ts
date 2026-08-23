@@ -16,8 +16,51 @@ declare global {
       setGlobalShortcut?: (enabled: boolean) => Promise<boolean>;
       selectHarmonyRuntimePath?: (kind: "sdk" | "hdc") => Promise<string | null>;
       onMenuAction?: (listener: (action: string) => void) => () => void;
+      browser?: {
+        getState: () => Promise<DesktopBrowserState | null>;
+        action: (input: DesktopBrowserAction) => Promise<DesktopBrowserState | null>;
+        setViewport: (bounds: { x: number; y: number; width: number; height: number }, visible: boolean) => Promise<boolean>;
+        importChromeBookmarks: () => Promise<ChromeBookmarkImportResult | null>;
+        onState: (listener: (state: DesktopBrowserState) => void) => () => void;
+        onDownload: (listener: (download: DesktopBrowserDownload) => void) => () => void;
+      };
     };
   }
+}
+
+export interface DesktopBrowserState {
+  activeTabId: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  loading: boolean;
+  tabs: Array<{ id: string; title: string; url: string }>;
+  title: string;
+  url: string;
+}
+
+export interface DesktopBrowserAction {
+  action: "back" | "close_tab" | "forward" | "navigate" | "new_tab" | "reload" | "switch_tab";
+  tabId?: string;
+  url?: string;
+}
+
+export interface ImportedChromeBookmark {
+  folder: string;
+  profile: string;
+  title: string;
+  url: string;
+}
+
+export interface ChromeBookmarkImportResult {
+  bookmarks: ImportedChromeBookmark[];
+  profiles: number;
+}
+
+export interface DesktopBrowserDownload {
+  filename: string;
+  path: string;
+  percent: number;
+  state: "cancelled" | "completed" | "interrupted" | "progressing";
 }
 
 export interface SessionSidebarProps {

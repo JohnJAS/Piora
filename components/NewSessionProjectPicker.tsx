@@ -66,7 +66,24 @@ export function NewSessionProjectPicker({
   return (
     <div className={styles.root}>
       <div className={styles.mark} aria-hidden="true">π</div>
-      <h1>你想在哪个项目中构建什么？</h1>
+      <h1>开始一个新会话</h1>
+      <p className={styles.intro}>完成下面两步，就可以让 Piora 在你的项目中开始工作。</p>
+      <ol className={styles.steps} aria-label="开始使用 Piora">
+        <li>
+          <span className={styles.stepNumber}>1</span>
+          <span className={styles.stepCopy}>
+            <strong>配置模型</strong>
+            <small>打开左上角“设置”，进入“智能体 → 模型”添加并启用模型。</small>
+          </span>
+        </li>
+        <li>
+          <span className={styles.stepNumber}>2</span>
+          <span className={styles.stepCopy}>
+            <strong>选择项目文件夹</strong>
+            <small>从已有项目中选择，或打开一个文件夹作为新项目。</small>
+          </span>
+        </li>
+      </ol>
       <div className={styles.picker}>
         <label className={styles.search}>
           <AliIcon name="search" size={14} />

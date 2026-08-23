@@ -1,12 +1,13 @@
-import { getRoom, getRoomTask, listRoomArtifacts, listRoomAudit, listRoomMessages, listRoomTasks, subscribeRoomEvents } from "@/lib/room-store";
+import { getRoomTask, listRoomArtifacts, listRoomAudit, listRoomMessages, listRoomTasks, subscribeRoomEvents } from "@/lib/room-store";
 import { projectRoomTaskRun } from "@/lib/task-run";
+import { requireRoomMemberBySession } from "@/lib/team-agent-api";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   try {
-    const room = getRoom(id);
+    const room = requireRoomMemberBySession(id, new URL(request.url).searchParams.get("sessionId")).room;
     const stream = new ReadableStream({
       start(controller) {
         const encoder = new TextEncoder();

@@ -10,7 +10,9 @@ import { SettingsPortabilityCard } from "./SettingsPortabilityCard";
 import { PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH, PROMPT_OPTIMIZER_SYSTEM_PROMPT } from "@/lib/prompt-optimizer";
 import {
   readPromptOptimizerSystemPrompt,
+  readPromptOptimizerModel,
   resetPromptOptimizerSystemPrompt,
+  writePromptOptimizerModel,
   writePromptOptimizerSystemPrompt,
 } from "@/lib/prompt-optimizer-settings";
 import styles from "./SettingsDialog.module.css";
@@ -73,6 +75,8 @@ export function SettingsDialog({
   const [optimizerPromptDraft, setOptimizerPromptDraft] = useState(PROMPT_OPTIMIZER_SYSTEM_PROMPT);
   const [optimizerPromptSaved, setOptimizerPromptSaved] = useState(PROMPT_OPTIMIZER_SYSTEM_PROMPT);
   const [optimizerPromptStatus, setOptimizerPromptStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [optimizerModels, setOptimizerModels] = useState<Array<{ provider: string; id: string; name: string }>>([]);
+  const [optimizerModelValue, setOptimizerModelValue] = useState("");
   const deferredSearchQuery = useDeferredValue(searchQuery);
   useFocusTrap(dialogRef, open, { onEscape: onClose });
 
@@ -161,6 +165,12 @@ export function SettingsDialog({
     setOptimizerPromptDraft(saved);
     setOptimizerPromptSaved(saved);
     setOptimizerPromptStatus("idle");
+    const selectedModel = readPromptOptimizerModel(window.localStorage);
+    setOptimizerModelValue(selectedModel ? JSON.stringify(selectedModel) : "");
+    void fetch("/api/models", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: { modelList?: Array<{ provider: string; id: string; name: string }> } | null) => setOptimizerModels(data?.modelList ?? []))
+      .catch(() => setOptimizerModels([]));
   }, [open]);
 
   const saveOptimizerPrompt = () => {
@@ -179,6 +189,16 @@ export function SettingsDialog({
       const restored = resetPromptOptimizerSystemPrompt(window.localStorage);
       setOptimizerPromptDraft(restored);
       setOptimizerPromptSaved(restored);
+      setOptimizerPromptStatus("saved");
+    } catch {
+      setOptimizerPromptStatus("error");
+    }
+  };
+
+  const saveOptimizerModel = (value: string) => {
+    setOptimizerModelValue(value);
+    try {
+      writePromptOptimizerModel(value ? JSON.parse(value) : null, window.localStorage);
       setOptimizerPromptStatus("saved");
     } catch {
       setOptimizerPromptStatus("error");
@@ -365,6 +385,17 @@ export function SettingsDialog({
                       <div className={styles.rowTitle}>{t("settings.promptOptimizerTitle")}</div>
                       <div className={styles.rowDescription}>{t("settings.promptOptimizerDescription")}</div>
                     </div>
+                    <label className={styles.optimizerModelField}>
+                      <span>{t("settings.promptOptimizerModel")}</span>
+                      <select value={optimizerModelValue} onChange={(event) => saveOptimizerModel(event.target.value)}>
+                        <option value="">{t("settings.promptOptimizerModelDefault")}</option>
+                        {optimizerModels.map((candidate) => {
+                          const value = JSON.stringify({ provider: candidate.provider, modelId: candidate.id });
+                          return <option key={`${candidate.provider}/${candidate.id}`} value={value}>{candidate.name} · {candidate.provider}</option>;
+                        })}
+                      </select>
+                      <small>{t("settings.promptOptimizerModelDescription")}</small>
+                    </label>
                     <textarea
                       className={styles.promptEditor}
                       value={optimizerPromptDraft}

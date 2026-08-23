@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { PromptRunIdentity, PromptToolIdentity } from "./prompt-run-registry";
 import { getActivePromptRun } from "./prompt-run-registry";
 import type { GitStatusResponse } from "./git-types";
+import { runtimeToolArgument, runtimeToolResultText, runtimeVerificationLabel } from "./runtime-evidence";
 import {
   TASK_PLAN_SCHEMA_VERSION,
   type TaskPlanArtifact,
@@ -707,58 +708,6 @@ export function recordPlanChangeSummary(identity: PromptToolIdentity, summary: s
   return copy(state);
 }
 
-const RUNTIME_VERIFICATION_COMMANDS = [
-  { pattern: /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?:\s|$)/i, label: "test suite" },
-  { pattern: /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*node\s+--test(?:\s|$)/i, label: "Node.js test suite" },
-  { pattern: /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*pytest(?:\s|$)/i, label: "Python test suite" },
-  { pattern: /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*cargo\s+test(?:\s|$)/i, label: "Rust test suite" },
-  { pattern: /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*go\s+test(?:\s|$)/i, label: "Go test suite" },
-  { pattern: /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*dotnet\s+test(?:\s|$)/i, label: ".NET test suite" },
-  { pattern: /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*(?:npm|pnpm|yarn|bun)\s+run\s+typecheck(?:\s|$)/i, label: "typecheck" },
-  { pattern: /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*(?:npm|pnpm|yarn|bun)\s+run\s+lint(?:\s|$)/i, label: "lint check" },
-  { pattern: /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*tsc\s+--noEmit(?:\s|$)/i, label: "TypeScript typecheck" },
-  { pattern: /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*eslint(?:\s|$)/i, label: "ESLint check" },
-  { pattern: /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*git\s+diff\s+--check(?:\s|$)/i, label: "Git diff integrity check" },
-] as const;
-
-function toolArgument(args: unknown, keys: readonly string[]): string | undefined {
-  if (!args || typeof args !== "object") return undefined;
-  const record = args as Record<string, unknown>;
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === "string" && value.trim()) return cleanText(value, 2_000);
-  }
-  return undefined;
-}
-
-function runtimeVerificationLabel(command: string): string | undefined {
-  // Only accept a simple command or an && chain. Separators that can mask a
-  // failing check (for example `npm test || true`) deliberately downgrade the
-  // event to an observation instead of trusted verification.
-  if (/[;\r\n|]/.test(command)) return undefined;
-  const segments = command.split("&&").map((segment) => segment.trim());
-  if (segments.some((segment) => !segment || segment.includes("&"))) return undefined;
-  for (const segment of segments) {
-    const match = RUNTIME_VERIFICATION_COMMANDS.find(({ pattern }) => pattern.test(segment));
-    if (match) return match.label;
-  }
-  return undefined;
-}
-
-function toolResultText(result: unknown): string {
-  if (typeof result === "string") return result;
-  if (!result || typeof result !== "object") return "";
-  const content = (result as { content?: unknown }).content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((item) => {
-      if (!item || typeof item !== "object") return "";
-      const text = (item as { text?: unknown }).text;
-      return typeof text === "string" ? text : "";
-    })
-    .join("\n");
-}
-
 export function capturePlanRuntimeToolResult(
   identity: PromptRunIdentity,
   toolCallId: string,
@@ -779,7 +728,7 @@ export function capturePlanRuntimeToolResult(
   const stepId = execution.currentStepId;
   const now = Date.now();
   if (toolName === "bash") {
-    const command = toolArgument(args, ["command"]);
+    const command = runtimeToolArgument(args, ["command"]);
     if (!command) return copy(state);
     const verificationLabel = runtimeVerificationLabel(command);
     execution.evidence.push({
@@ -796,7 +745,7 @@ export function capturePlanRuntimeToolResult(
       toolCallId,
     });
     if (/(?:^|\s)git\s+commit(?:\s|$)/i.test(command)) {
-      const commitId = toolResultText(result).match(/\[[^\]]+\s+([0-9a-f]{7,40})\]/i)?.[1];
+      const commitId = runtimeToolResultText(result).match(/\[[^\]]+\s+([0-9a-f]{7,40})\]/i)?.[1];
       execution.artifacts.push({
         id: randomUUID(),
         ...(stepId ? { stepId } : {}),
@@ -810,7 +759,7 @@ export function capturePlanRuntimeToolResult(
       });
     }
   } else if (toolName === "edit" || toolName === "write") {
-    const fileName = toolArgument(args, ["path", "filePath", "file_path"]);
+    const fileName = runtimeToolArgument(args, ["path", "filePath", "file_path"]);
     if (!fileName) return copy(state);
     execution.artifacts.push({
       id: randomUUID(),

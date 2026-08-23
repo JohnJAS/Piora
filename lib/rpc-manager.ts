@@ -1,8 +1,8 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
-import { randomUUID } from "crypto";
-import { existsSync, realpathSync, writeFileSync } from "fs";
-import { resolve } from "path";
+import { randomUUID } from "node:crypto";
+import { existsSync, realpathSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { validateAgentImages } from "./image-attachments";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
@@ -39,6 +39,11 @@ import {
   finishPromptRun,
   type PromptRunIdentity,
 } from "./prompt-run-registry";
+import { bindTeamPromptContext, validateTeamExecutionContext } from "./team-prompt-context";
+import type { TeamExecutionContext } from "./team-types";
+import { captureTeamRuntimeToolResult } from "./team-runtime-evidence";
+import { getRoom } from "./room-store";
+import { TeamError } from "./team-errors";
 import {
   GOAL_RUN_ENTRY_TYPE,
   beginGoalRun,
@@ -244,11 +249,35 @@ export class AgentSessionWrapper {
     goalMode?: boolean;
     planMode?: boolean;
     planExecution?: { planId: string; expectedRevision: number };
+    teamExecution?: TeamExecutionContext;
   }): Promise<{ accepted: true; sessionId: string; commandId: string; runId: string }> {
+    if (input.teamExecution) this.validateTeamRuntimePolicy(input.teamExecution);
     await this.send({ type: "prompt", ...input });
     const runId = this.activePromptRun?.runId;
     if (!runId) throw new Error("Prompt was not admitted by the target session.");
     return { accepted: true, sessionId: this.sessionId, commandId: input.commandId, runId };
+  }
+
+  private validateTeamRuntimePolicy(context: TeamExecutionContext): void {
+    validateTeamExecutionContext(context, this.sessionId);
+    const member = getRoom(context.roomId).members.find((candidate) => candidate.memberId === context.memberId)!;
+    if (member.binding.cwd) {
+      const normalize = (value: string) => process.platform === "win32" ? resolve(value).toLocaleLowerCase() : resolve(value);
+      if (normalize(member.binding.cwd) !== normalize(this.cwd)) throw new TeamError("TEAM_WORKSPACE_CONFLICT", "Team Agent Session cwd does not match its workspace binding.");
+    }
+    if (member.profile.modelPolicy.mode === "pinned") {
+      const model = this.inner.model;
+      if (!model || model.provider !== member.profile.modelPolicy.provider || model.id !== member.profile.modelPolicy.modelId) {
+        throw new TeamError("TEAM_INVALID_CONTEXT", "Managed Team Agent model drifted from its pinned Profile.");
+      }
+    }
+    if (member.profile.toolPolicy.mode === "allowlist") {
+      const expected = [...new Set([...member.profile.toolPolicy.toolNames, "piora_room"])].sort();
+      const actual = [...this.inner.getActiveToolNames()].sort();
+      if (expected.length !== actual.length || expected.some((name, index) => name !== actual[index])) {
+        throw new TeamError("TEAM_INVALID_CONTEXT", "Managed Team Agent tools drifted from its Profile allowlist.");
+      }
+    }
   }
 
   getRuntime(): Runtime {
@@ -375,6 +404,13 @@ export class AgentSessionWrapper {
             this.persistPlanState(capturedPlan);
             runtimePlanProgress = capturedPlan;
           }
+          void captureTeamRuntimeToolResult(
+            this.activePromptRun,
+            toolCallId,
+            toolName,
+            started?.args ?? event.args,
+            event.isError === true,
+          ).catch((error) => console.error("[pi-web] failed to capture Team runtime evidence:", error instanceof Error ? error.message : String(error)));
         }
       }
       if (event.type === "agent_start") {
@@ -620,9 +656,12 @@ export class AgentSessionWrapper {
         const goalMode = command.goalMode === true && !streamingBehavior;
         const planMode = command.planMode === true && !streamingBehavior;
         const planExecution = command.planExecution as { planId?: unknown; expectedRevision?: unknown } | undefined;
+        const teamExecution = command.teamExecution as TeamExecutionContext | undefined;
         if (goalMode && planMode) {
           throw new Error("Target mode and plan mode cannot be enabled for the same prompt.");
         }
+        if (teamExecution && streamingBehavior) throw new Error("Team execution context cannot be attached to a follow-up prompt.");
+        if (teamExecution) this.validateTeamRuntimePolicy(teamExecution);
         if (planExecution && !goalMode) {
           throw new Error("An approved plan must execute through Target Mode.");
         }
@@ -666,6 +705,10 @@ export class AgentSessionWrapper {
             runId: promptRun.runId,
             timestamp: Date.now(),
           });
+        }
+        if (teamExecution) {
+          if (!ownsPromptRun) throw new Error("Team execution requires a new PromptRun.");
+          bindTeamPromptContext(promptRun, teamExecution);
         }
         if (goalMode || planMode) beginActivePromptMode(promptRun, goalMode ? "goal" : "plan");
         if (planExecution) {
@@ -1128,6 +1171,20 @@ export class AgentSessionWrapper {
         this.setForceEmptySystemPrompt(toolNames.length === 0);
         this.inner.setActiveToolsByName(activeToolsForProfile(this.inner, this.runtimeProfile, toolNames));
         this.applyForcedEmptySystemPrompt();
+        return null;
+      }
+
+      case "set_team_tools": {
+        this.assertSessionIdle("change Team tools");
+        if (this.runtimeProfile !== "normal") throw new Error("Team Agent tools require the normal runtime profile.");
+        const available = new Set(this.inner.getAllTools().map((tool) => tool.name));
+        const requested = Array.isArray(command.toolNames)
+          ? command.toolNames.filter((name): name is string => typeof name === "string")
+          : [];
+        const exact = [...new Set([...requested, "piora_room"])];
+        if (exact.some((name) => !available.has(name))) throw new Error("Team tool allowlist contains an unavailable tool.");
+        this.setForceEmptySystemPrompt(false);
+        this.inner.setActiveToolsByName(exact);
         return null;
       }
 

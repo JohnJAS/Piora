@@ -52,6 +52,15 @@ export class SessionInboxRegistry {
     return command;
   }
 
+  removeCommand(sessionId: string, commandId: string): SessionCommandRecord | undefined {
+    const inbox = this.get(sessionId);
+    const index = inbox.queue.findIndex((command) => command.commandId === commandId);
+    if (index < 0) return undefined;
+    const [command] = inbox.queue.splice(index, 1);
+    if (command) inbox.queuedBytes = Math.max(0, inbox.queuedBytes - sessionCommandBytes(command));
+    return command;
+  }
+
   remove(sessionId: string): void {
     this.map().delete(sessionId);
   }

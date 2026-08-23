@@ -225,9 +225,16 @@
   user-select: none;
 }
 
-.projectRow:hover,
 .projectRowSelected {
-  background: var(--bg-hover);
+  background: transparent;
+}
+
+.projectRowSelected .projectName {
+  font-weight: 620;
+}
+
+.projectRowSelected > .rowAction:first-child {
+  color: var(--accent);
 }
 
 .projectMain {

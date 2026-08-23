@@ -39,6 +39,30 @@ const runtime = Object.freeze({
   selectHarmonyRuntimePath(kind: "sdk" | "hdc"): Promise<string | null> {
     return ipcRenderer.invoke("pi:harmony-runtime-picker", kind) as Promise<string | null>;
   },
+  browser: Object.freeze({
+    getState() {
+      return ipcRenderer.invoke("pi:browser-get-state");
+    },
+    action(input: unknown) {
+      return ipcRenderer.invoke("pi:browser-action", input);
+    },
+    setViewport(bounds: { x: number; y: number; width: number; height: number }, visible: boolean) {
+      return ipcRenderer.invoke("pi:browser-viewport", bounds, visible) as Promise<boolean>;
+    },
+    importChromeBookmarks() {
+      return ipcRenderer.invoke("pi:browser-import-chrome-bookmarks");
+    },
+    onState(listener: (state: unknown) => void) {
+      const handler = (_event: Electron.IpcRendererEvent, state: unknown) => listener(state);
+      ipcRenderer.on("pi:browser-state", handler);
+      return () => ipcRenderer.removeListener("pi:browser-state", handler);
+    },
+    onDownload(listener: (download: unknown) => void) {
+      const handler = (_event: Electron.IpcRendererEvent, download: unknown) => listener(download);
+      ipcRenderer.on("pi:browser-download", handler);
+      return () => ipcRenderer.removeListener("pi:browser-download", handler);
+    },
+  }),
   onMenuAction(listener: (action: string) => void) {
     const handler = (_event: Electron.IpcRendererEvent, action: unknown) => {
       if (typeof action === "string") listener(action);

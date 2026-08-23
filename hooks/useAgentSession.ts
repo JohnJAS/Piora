@@ -10,7 +10,7 @@ import type {
   SessionTreeNode,
 } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
-import { sendAgentCommand } from "@/lib/agent-client";
+import { AgentCommandError, sendAgentCommand } from "@/lib/agent-client";
 import { BUILTIN_AGENT_TOOLS } from "@/lib/tool-presets";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { estimateSessionContextUsage } from "@/lib/context-usage";
@@ -1254,7 +1254,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // A failed prompt POST is ambiguous: the server may have accepted it
       // before the response connection was lost. Keep SSE alive until the
       // server confirms idle so a real run cannot continue unseen.
-      if (promptRequestStarted && sentSessionId) {
+      const definitivelyRejected = e instanceof AgentCommandError && e.status >= 400 && e.status < 500;
+      if (promptRequestStarted && sentSessionId && !definitivelyRejected) {
         void waitForPromptSettlement(sentSessionId, promptRunId);
         return;
       }

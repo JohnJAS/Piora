@@ -222,11 +222,27 @@
 .browserViewport img { width: 100%; height: 100%; display: block; object-fit: fill; pointer-events: none; user-select: none; }
 .browserKeyboardCapture { position: absolute; left: 1px; bottom: 1px; width: 1px; height: 1px; overflow: hidden; padding: 0; border: 0; opacity: .01; resize: none; }
 .browserLoading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #737373; background: #fff; font-size: var(--text-xs); }
-.browserStart { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px; color: #73777f; background: #fff; text-align: center; pointer-events: none; }
+.browserStart { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px; overflow: auto; padding: 28px; color: #73777f; background: #fff; text-align: center; }
 .browserStart strong { color: #202124; font-size: var(--text-lg); font-weight: 600; }
 .browserStart span { font-size: var(--text-sm); }
+.browserRoot:not([data-native-browser="true"]) .browserStart { pointer-events: none; }
+.browserOnboardingActions { width: min(360px, 100%); display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.browserOnboardingActions button,.browserImportLink { min-height: 32px; border: 1px solid #dfe2e7; border-radius: 8px; background: #fff; color: #404348; cursor: pointer; font: inherit; font-size: var(--text-xs); }
+.browserOnboardingActions button:first-child { border-color: #202124; background: #202124; color: #fff; }
+.browserOnboardingActions button:hover:not(:disabled),.browserImportLink:hover:not(:disabled) { background: #f1f3f5; color: #202124; }
+.browserOnboardingActions button:first-child:hover:not(:disabled) { background: #34373c; color: #fff; }
+.browserOnboardingActions button:disabled,.browserImportLink:disabled { cursor: default; opacity: .55; }
+.browserOnboardingActions small { grid-column: 1 / -1; color: #969aa2; font-size: var(--text-xs); line-height: 1.45; }
+.browserBookmarks { width: min(520px, 100%); max-height: min(310px, 48vh); display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 7px; overflow: auto; margin-top: 10px; padding: 2px; }
+.browserBookmarks button { min-width: 0; min-height: 68px; display: grid; place-items: center; gap: 5px; padding: 8px; border: 1px solid #eceef1; border-radius: 9px; background: #fff; color: #51555c; cursor: pointer; font: inherit; }
+.browserBookmarks button:hover { border-color: #d7dae0; background: #f8f9fb; color: #202124; }
+.browserBookmarks button > span { width: 25px; height: 25px; display: grid; place-items: center; border-radius: 7px; background: #f0f2f5; color: #555a62; font-size: var(--text-xs); font-weight: 650; }
+.browserBookmarks b { width: 100%; overflow: hidden; font-size: var(--text-xs); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.browserImportLink { margin-top: 8px; padding: 0 11px; }
 .browserError { padding: 7px 9px; border-bottom: 1px solid color-mix(in srgb, var(--status-failed) 24%, var(--border)); background: color-mix(in srgb, var(--status-failed) 8%, var(--bg)); color: var(--status-failed); font-size: var(--text-xs); }
 .browserPrivacy { min-height: 24px; display: flex; align-items: center; justify-content: center; padding: 0 9px; border-top: 1px solid #f0f1f3; color: #9a9da3; background: #fff; font-size: var(--text-xs); }
+.browserPrivacy button { max-width: 100%; overflow: hidden; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; font: inherit; font-size: inherit; text-overflow: ellipsis; white-space: nowrap; }
+.browserPrivacy button:hover { color: #50545b; text-decoration: underline; }
 @media (max-width: 780px) {
   .changeList { min-height: 0; }
   .reviewFilters { align-items: stretch; flex-direction: column; }

@@ -811,7 +811,7 @@ export function PluginsConfig({
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 6px" }}>
               {loading ? (
                 <div style={{ padding: "10px 8px", fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
-                  Loading...
+                  {t("i18n.loading")}
                 </div>
               ) : error ? (
                 <div style={{ padding: "10px 8px", fontSize: "var(--text-xs)", color: "#ef4444" }}>
@@ -819,7 +819,7 @@ export function PluginsConfig({
                 </div>
               ) : packages.length === 0 ? (
                 <div style={{ padding: "10px 8px", fontSize: "var(--text-xs)", color: "var(--text-dim)" }}>
-                  No plugins configured
+                  {t("i18n.noPlugins")}
                 </div>
               ) : (
                 groupedPackages.map((group) => (

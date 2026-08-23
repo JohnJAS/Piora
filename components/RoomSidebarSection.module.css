@@ -205,6 +205,25 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
+.advancedCreate {
+  margin-top: 13px;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
+}
+
+.advancedCreate summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.advancedCreate summary small { color: var(--text-dim); }
+
 .memberHeader {
   display: flex;
   align-items: center;

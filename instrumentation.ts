@@ -1,8 +1,5 @@
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
-
-  const { configureHttpDispatcher } = await import("@/lib/http-dispatcher");
-  configureHttpDispatcher();
-  const { startRemoteControlConnector } = await import("@/lib/remote-control-connector");
-  startRemoteControlConnector();
+  const { registerNodeInstrumentation } = await import("./instrumentation-node");
+  registerNodeInstrumentation();
 }

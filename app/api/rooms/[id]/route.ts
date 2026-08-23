@@ -23,6 +23,8 @@ import {
 } from "@/lib/room-store";
 import { dispatchRoomChat } from "@/lib/room-chat";
 import { dispatchReadyRoomTasks } from "@/lib/room-coordinator";
+import { getTeamCoordinatorService } from "@/lib/team-coordinator-service";
+import { getTeamRunStore } from "@/lib/team-run-store";
 import type { RoomArtifactKind, RoomMemberRole, RoomTask } from "@/lib/room-types";
 import { projectRoomTaskRun } from "@/lib/task-run";
 import { listAllSessions } from "@/lib/session-reader";
@@ -114,7 +116,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       autoRound?: number;
       maxAutoRounds?: number;
       authorKind?: "user" | "session";
-      mode?: "manual" | "coordinator";
+      mode?: "manual" | "coordinator" | "team";
       maxConcurrency?: number;
       leaseDurationMs?: number;
       taskId?: string;
@@ -274,6 +276,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       maxAutoRounds: body.maxAutoRounds,
     });
     if (body.action === "chat") {
+      const waitingRun = body.authorKind !== "session" && room.coordination.mode === "team"
+        ? getTeamRunStore().listTeamRuns(id, { limit: 100, includeTerminal: false }).find((run) => run.phase === "waiting_user")
+        : undefined;
+      if (waitingRun) {
+        const teamRun = await getTeamCoordinatorService().resumeRun(id, waitingRun.id, message.content);
+        return NextResponse.json({ message, teamRun, dispatch: { dispatched: [], skipped: [] } });
+      }
       const dispatch = await dispatchRoomChat(id, {
         messageId: message.id,
         content: message.content,

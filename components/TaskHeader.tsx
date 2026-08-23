@@ -201,7 +201,7 @@ export function TaskHeader({
   };
 
   const branch = worktreeBranch ?? projectInfo.branch;
-  const environmentLabel = worktreeBranch ? t("taskHeader.worktree") : t("taskHeader.local");
+  const environmentLabel = worktreeBranch ? t("taskHeader.worktree") : null;
   const projectLabel = projectInfo.repository ?? getPathName(cwd);
   const trackedLineStats = useMemo(() => getTrackedGitLineStats(gitStatus), [gitStatus]);
 
@@ -222,9 +222,8 @@ export function TaskHeader({
             <button className={styles.iconButton} type="submit" aria-label={t("taskHeader.saveName")}><AliIcon name="check" size={14} /></button>
           </form>
         ) : (
-          <button className={styles.slotButton} type="button" onClick={onOpenDetails} title={`${environmentLabel} · ${projectLabel}${branch ? ` · ${branch}` : ""}`}>
-            <span>{environmentLabel}</span>
-            <span className={styles.separator}>·</span>
+          <button className={styles.slotButton} type="button" onClick={onOpenDetails} title={[environmentLabel, projectLabel, branch].filter(Boolean).join(" · ")}>
+            {environmentLabel ? <><span>{environmentLabel}</span><span className={styles.separator}>·</span></> : null}
             <span className={`${styles.environmentText} ${styles.environmentDetail}`}>{projectLabel}</span>
             {branch ? <><span className={styles.separator}>·</span><span className={styles.environmentText}>{branch}</span></> : null}
           </button>

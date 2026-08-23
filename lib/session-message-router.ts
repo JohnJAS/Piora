@@ -1,11 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { validateAgentImages } from "./image-attachments";
 import { getSessionCommandEventHub, SessionCommandEventHub } from "./session-command-events";
-import { getSessionInboxRegistry, sessionCommandBytes, type SessionInboxState } from "./session-inbox";
+import { getSessionInboxRegistry, SESSION_COMMAND_MAX_BYTES, sessionCommandBytes, type SessionInboxState } from "./session-inbox";
 import { getRpcSession, type AgentSessionWrapper } from "./rpc-manager";
 import { resolveSessionPath } from "./session-reader";
 import { resolveOrStartRpcSession, SessionRuntimeResolverError } from "./session-runtime-resolver";
 import { SessionControlStore } from "./session-control-store";
+import {
+  deleteTeamExecutionSecret,
+  persistTeamExecutionContext,
+  resolveTeamExecutionContext,
+} from "./team-execution-secrets";
 import type {
   AbortReceipt,
   DispatchReceipt,
@@ -38,7 +43,9 @@ export type SessionMessageRouterErrorCode =
   | "SESSION_MESSAGE_TOO_LARGE"
   | "INVALID_SESSION_MESSAGE"
   | "RUNTIME_START_FAILED"
-  | "RUN_INTERRUPTED";
+  | "RUN_INTERRUPTED"
+  | "TEAM_INVALID_CONTEXT"
+  | "TEAM_LEASE_INVALID";
 
 export class SessionMessageRouterError extends Error {
   constructor(readonly code: SessionMessageRouterErrorCode, message: string, options?: { cause?: unknown }) {
@@ -64,6 +71,8 @@ function safeErrorMessage(error: unknown): string {
 function errorCode(error: unknown): SessionMessageRouterErrorCode {
   if (error instanceof SessionMessageRouterError) return error.code;
   if (error instanceof SessionRuntimeResolverError) return error.code === "RUNTIME_START_FAILED" ? "RUNTIME_START_FAILED" : error.code;
+  const stableCode = (error as { code?: unknown } | null)?.code;
+  if (stableCode === "TEAM_INVALID_CONTEXT" || stableCode === "TEAM_LEASE_INVALID") return stableCode;
   const message = safeErrorMessage(error);
   if (/busy|starting another prompt/i.test(message)) return "SESSION_BUSY";
   if (/queue full/i.test(message)) return "SESSION_QUEUE_FULL";
@@ -74,8 +83,16 @@ function validateInput(input: SessionMessageInput, maxMessageBytes: number): voi
   if (!input.targetSessionId || typeof input.targetSessionId !== "string") throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "targetSessionId is required.");
   if (!input.idempotencyKey || typeof input.idempotencyKey !== "string" || input.idempotencyKey.length > 512) throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "A bounded idempotency key is required.");
   if (typeof input.content !== "string" || !input.content.trim()) throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "Message content cannot be empty.");
-  if (Buffer.byteLength(input.content, "utf8") > maxMessageBytes) throw new SessionMessageRouterError("SESSION_MESSAGE_TOO_LARGE", "Message content is too large.");
+  if (Buffer.byteLength(input.content, "utf8") > maxMessageBytes) {
+    throw new SessionMessageRouterError(
+      "SESSION_MESSAGE_TOO_LARGE",
+      `Message content exceeds the ${Math.floor(maxMessageBytes / 1024)} KiB limit.`,
+    );
+  }
   if (input.expiresAt !== undefined && (!Number.isFinite(input.expiresAt) || input.expiresAt <= Date.now())) throw new SessionMessageRouterError("COMMAND_EXPIRED", "The message expiry is in the past.");
+  if (input.teamExecution && input.source !== "room" && input.source !== "system") {
+    throw new SessionMessageRouterError("TEAM_INVALID_CONTEXT", "Only the Team runtime may dispatch a Team execution context.");
+  }
   const imageError = validateAgentImages(input.images);
   if (imageError) throw new SessionMessageRouterError("SESSION_MESSAGE_TOO_LARGE", imageError);
 }
@@ -100,7 +117,7 @@ export class SessionMessageRouter {
     this.store = options.store ?? new SessionControlStore();
     this.events = options.events ?? getSessionCommandEventHub();
     this.resolver = options.resolver ?? resolveOrStartRpcSession;
-    this.maxMessageBytes = Math.max(1_024, Math.min(256 * 1024, options.maxMessageBytes ?? 64 * 1024));
+    this.maxMessageBytes = Math.max(1_024, Math.min(SESSION_COMMAND_MAX_BYTES, options.maxMessageBytes ?? SESSION_COMMAND_MAX_BYTES));
     this.maxConcurrency = Math.max(1, Math.min(32, options.maxConcurrency ?? 4));
   }
 
@@ -165,6 +182,10 @@ export class SessionMessageRouter {
       ...(command.errorCode ? { errorCode: command.errorCode } : {}),
       ...(command.errorMessage ? { errorMessage: command.errorMessage } : {}),
     });
+    if (TERMINAL_STATUSES.has(status) && command.teamExecution) {
+      try { deleteTeamExecutionSecret(command.teamExecution); }
+      catch (error) { console.error("[pi-web] failed to remove Team execution secret:", safeErrorMessage(error)); }
+    }
   }
 
   private makeRecord(input: SessionMessageInput): SessionCommandRecord {
@@ -184,6 +205,7 @@ export class SessionMessageRouter {
       ...(input.goalMode ? { goalMode: true } : {}),
       ...(input.planMode ? { planMode: true } : {}),
       ...(input.planExecution ? { planExecution: input.planExecution } : {}),
+      ...(input.teamExecution ? { teamExecution: persistTeamExecutionContext(input.teamExecution) } : {}),
     };
   }
 
@@ -343,10 +365,11 @@ export class SessionMessageRouter {
   }
 
   private async drain(sessionId: string): Promise<void> {
-    const inbox = await this.ensureLoaded(sessionId);
+    const inbox = this.inbox(sessionId);
     if (inbox.draining) return inbox.drainPromise;
     inbox.draining = true;
     const run = (async () => {
+      await this.ensureLoaded(sessionId);
       while (inbox.queue.length > 0) {
         const command = inbox.queue[0];
         if (!command) break;
@@ -377,6 +400,7 @@ export class SessionMessageRouter {
         await this.transition(command, "dispatching", {}, "command_dispatching");
         const terminal = this.waitForTerminal(session, command);
         try {
+          const teamExecution = command.teamExecution ? resolveTeamExecutionContext(command.teamExecution) : undefined;
           const started = await session.startTrackedPrompt({
             commandId: command.commandId,
             message: command.content,
@@ -384,6 +408,7 @@ export class SessionMessageRouter {
             goalMode: command.goalMode,
             planMode: command.planMode,
             planExecution: command.planExecution,
+            teamExecution,
           });
           command.runId = started.runId;
           this.activeCommands.set(sessionId, command);
@@ -452,6 +477,28 @@ export class SessionMessageRouter {
     }
     await session.send({ type: "abort", commandId: command?.commandId });
     return { accepted: true, sessionId: input.targetSessionId, status: command ? "cancelled" : "interrupted", ...(command?.commandId ? { commandId: command.commandId } : {}), ...(runId ? { runId } : {}) };
+  }
+
+  async cancelCommand(commandId: string, principal?: SessionRoutePrincipal): Promise<AbortReceipt> {
+    const command = await this.getCommand(commandId);
+    assertPrincipal({ targetSessionId: command.targetSessionId, content: "", source: "system", idempotencyKey: command.idempotencyKey }, principal);
+    if (TERMINAL_STATUSES.has(command.status)) {
+      return { accepted: true, sessionId: command.targetSessionId, status: command.status === "cancelled" ? "cancelled" : "idle", commandId, ...(command.runId ? { runId: command.runId } : {}) };
+    }
+    const removed = getSessionInboxRegistry().removeCommand(command.targetSessionId, commandId);
+    if (removed || ["accepted", "queued", "dispatching"].includes(command.status)) {
+      await this.transition(command, "cancelled", {}, "command_cancelled");
+      return { accepted: true, sessionId: command.targetSessionId, status: "cancelled", commandId };
+    }
+    const active = this.activeCommands.get(command.targetSessionId);
+    if (!active || active.commandId !== commandId) {
+      throw new SessionMessageRouterError("COMMAND_NOT_FOUND", "The command is not the active command for this Session.");
+    }
+    command.status = "cancelled";
+    await this.transition(command, "cancelled", {}, "command_cancelled");
+    const session = getRpcSession(command.targetSessionId);
+    if (session?.isAlive()) await session.send({ type: "abort", commandId });
+    return { accepted: true, sessionId: command.targetSessionId, status: "cancelled", commandId, ...(command.runId ? { runId: command.runId } : {}) };
   }
 
   async getState(sessionId: string): Promise<SessionControlState> {

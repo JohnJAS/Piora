@@ -55,7 +55,7 @@ async function dispatchTask(roomId: string, task: RoomTask, member: RoomMember):
 
 export async function dispatchReadyRoomTasks(roomId: string): Promise<RoomDispatchResult> {
   const room = getRoom(roomId);
-  if (room.coordination.mode !== "coordinator") throw new Error("Coordinator mode is not enabled for this room.");
+  if (room.coordination.mode !== "team") throw new Error("Coordinator mode is not enabled for this room.");
   const result: RoomDispatchResult = { dispatched: [], skipped: [] };
   const busyMembers = new Set(
     listRoomTasks(roomId)

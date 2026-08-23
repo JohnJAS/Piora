@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
-import { readPromptOptimizerSystemPrompt } from "@/lib/prompt-optimizer-settings";
+import { readPromptOptimizerModel, readPromptOptimizerSystemPrompt } from "@/lib/prompt-optimizer-settings";
 import type { AttachedFile, BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
 import { clearDraft, getDraft, setDraft, type ChatDraftImage } from "@/lib/draft-store";
 import {
@@ -666,7 +666,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const handleOptimizePrompt = useCallback(async () => {
     const source = value.trim();
-    if (!source || !model || isStreaming || source.startsWith("/") || source.startsWith("!")) return;
+    const configuredModel = readPromptOptimizerModel(window.localStorage);
+    const optimizerModel = configuredModel ?? (model ? { provider: model.provider, modelId: model.modelId } : null);
+    if (!source || !optimizerModel || isStreaming || source.startsWith("/") || source.startsWith("!")) return;
 
     promptOptimizerAbortRef.current?.abort();
     const controller = new AbortController();
@@ -679,8 +681,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           prompt: source,
-          provider: model.provider,
-          modelId: model.modelId,
+          provider: optimizerModel.provider,
+          modelId: optimizerModel.modelId,
           cwd: cwd ?? undefined,
           systemPrompt: readPromptOptimizerSystemPrompt(window.localStorage),
         }),
@@ -2128,13 +2130,19 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   </button>
                   {modelDropdownOpen && modelDropdownRect && (() => {
                     const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+                    const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
                     const bottom = viewportHeight - modelDropdownRect.top + 6;
                     const maxH = Math.max(120, Math.min(modelDropdownRect.top - 8, viewportHeight * 0.6));
-                    // On mobile, pin to a small left margin and cap width to the
-                    // viewport so long model names never push the panel off-screen.
+                    // Anchor desktop panels to the trigger's right edge. The
+                    // bounded width keeps provider and model names inside the
+                    // viewport even when the composer sits near its edge.
                     const panelPos: React.CSSProperties = isMobile
-                      ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
-                      : { left: modelDropdownRect.left, width: "max-content", minWidth: modelDropdownRect.width };
+                      ? { left: 8, right: 8, width: "auto" }
+                      : {
+                          right: Math.max(8, viewportWidth - (modelDropdownRect.left + modelDropdownRect.width)),
+                          width: "min(300px, calc(100vw - 16px))",
+                          minWidth: Math.min(modelDropdownRect.width, 300),
+                        };
                     return (
                       <div ref={modelDropdownPanelRef} style={{
                       position: "fixed",
@@ -2162,7 +2170,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             spellCheck={false}
                             style={{
                               width: "100%",
-                              minWidth: isMobile ? 0 : 220,
+                              minWidth: 0,
                               fontSize: "var(--text-xs)",
                               fontFamily: "var(--font-mono)",
                               padding: "5px 8px",
@@ -2211,7 +2219,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                     color: isActive ? "var(--text)" : "var(--text-muted)",
                                     cursor: "pointer", fontSize: "var(--text-sm)", textAlign: "left",
                                     fontWeight: isActive ? 600 : 400,
-                                    whiteSpace: "nowrap",
+                                    whiteSpace: "nowrap", overflow: "hidden",
                                   }}
                                   onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
                                   onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
@@ -2265,7 +2273,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                     color: isActive ? "var(--text)" : "var(--text-muted)",
                                     cursor: "pointer", fontSize: "var(--text-sm)", textAlign: "left",
                                     fontWeight: isActive ? 600 : 400,
-                                    whiteSpace: "nowrap",
+                                    whiteSpace: "nowrap", overflow: "hidden",
                                   }}
                                   onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
                                   onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "none"; }}
@@ -2445,7 +2453,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         {/* Bash mode status label */}
         {bashMode && (
           <div className="text-xs px-2 py-1" style={{ color: bashExcluded ? "var(--text-muted)" : "var(--accent)", marginTop: 4 }}>
-             {t("chat.shell")} · {bashExcluded ? t("chat.outputLocal") : t("chat.outputModel")}
+             {t("chat.shell")}{bashExcluded ? null : <> · {t("chat.outputModel")}</>}
           </div>
         )}
       </div>

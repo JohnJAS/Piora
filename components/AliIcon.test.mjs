@@ -45,6 +45,13 @@ test("renders the settings icon as a gear rather than sliders", () => {
   assert.doesNotMatch(settings, /M20 7h-9|M14 17H5/);
 });
 
+test("renders team activity as a pulse instead of a layout toggle", () => {
+  const activity = renderToStaticMarkup(React.createElement(AliIcon, { name: "activity", size: 16 }));
+
+  assert.match(activity, /M22 12h-4l-3 9L9 3l-3 9H2/);
+  assert.doesNotMatch(activity, /M9 3v18/);
+});
+
 test("scales custom file icon strokes to the same optical weight", () => {
   assert.equal(getFileIconStrokeWidth(14), 2 * (14 / 24));
   assert.equal(getFileIconStrokeWidth(16), 1.75 * (14 / 24));

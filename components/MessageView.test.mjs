@@ -8,7 +8,7 @@ const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
 });
-const { MessageView } = await jiti.import("./MessageView.tsx");
+const { MessageView, getUserMessagePreview } = await jiti.import("./MessageView.tsx");
 // Import through the same tsconfig alias used by the component so Jiti reuses
 // the exact context module instead of creating a second provider instance.
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
@@ -22,6 +22,26 @@ function renderMessage(message, props = {}) {
     ),
   );
 }
+
+test("collapses long user queries to an eight-line preview", () => {
+  const content = Array.from({ length: 20 }, (_, index) => `log line ${index + 1}`).join("\n");
+  const preview = getUserMessagePreview(content);
+  const html = renderMessage({ role: "user", content, timestamp: Date.now() });
+
+  assert.equal(preview.collapsible, true);
+  assert.equal(preview.lineCount, 20);
+  assert.match(preview.preview, /log line 8$/);
+  assert.doesNotMatch(preview.preview, /log line 9/);
+  assert.match(html, /class="message-user-expand"/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.match(html, /展开完整消息 · 20 行/);
+  assert.doesNotMatch(html, /log line 9/);
+});
+
+test("renders short user queries without an expand control", () => {
+  const html = renderMessage({ role: "user", content: "one\ntwo\nthree", timestamp: Date.now() });
+  assert.doesNotMatch(html, /message-user-expand/);
+});
 
 test("renders a provider error when the assistant message has no content", () => {
   const html = renderMessage({
@@ -47,7 +67,7 @@ test("renders the final response duration in the assistant footer", () => {
     content: [{ type: "text", text: "Done" }],
   }, { showTimestamp: true, responseStartedAt: 10_000 });
 
-  assert.match(html, /Response time 2\.5s/);
+  assert.match(html, /响应耗时 2\.5s/);
   assert.match(html, /message-response-meta/);
 });
 
