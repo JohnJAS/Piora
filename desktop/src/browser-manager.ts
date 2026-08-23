@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   app,
@@ -225,7 +225,22 @@ export class DesktopBrowserManager {
   }
 
   private configureSession(): void {
-    this.browserSession.setDownloadPath(app.getPath("downloads"));
+    try {
+      this.browserSession.setDownloadPath(app.getPath("downloads"));
+    } catch (error) {
+      // Headless Windows profiles (including hosted release runners) may not
+      // expose a shell Downloads folder. Browser setup is optional startup
+      // hardening, so fall back to an app-owned directory instead of making
+      // the entire desktop application fail before its renderer can mount.
+      try {
+        const fallbackDirectory = join(app.getPath("userData"), "Downloads");
+        mkdirSync(fallbackDirectory, { recursive: true });
+        this.browserSession.setDownloadPath(fallbackDirectory);
+        this.log.warn("System Downloads folder is unavailable; using Piora Downloads", error);
+      } catch (fallbackError) {
+        this.log.warn("Unable to configure the browser download directory", fallbackError);
+      }
+    }
     this.browserSession.setPermissionCheckHandler(() => false);
     this.browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     this.browserSession.on("will-download", this.handleDownload);

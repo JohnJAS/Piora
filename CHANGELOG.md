@@ -4,6 +4,14 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-08-24
+
+### Fixed
+
+- Prevented the built-in browser's download-directory setup from aborting
+  desktop startup when Windows does not expose a shell Downloads folder; Piora
+  now falls back to an app-owned Downloads directory.
+
 ## [0.3.6] - 2026-08-23
 
 ### Added
