@@ -33,6 +33,11 @@ test("desktop project browsing delegates to the operating system directory picke
     readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8"),
   ]);
   assert.match(projectPickerHook, /window\.piDesktop\?\.selectDirectory/);
+  assert.match(projectPickerHook, /rememberProject\(cwd\); setSelectedCwd\(cwd\); onProjectSelected\?\.\(cwd\)/);
+  assert.match(shell, /onBrowse=\{\(\) => sessionSidebarRef\.current\?\.openProjectPicker\(\)\}/);
+  const sidebar = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
+  assert.match(sidebar, /onProjectSelected:\s*handlePickedProject/);
+  assert.match(sidebar, /handlePickedProject[\s\S]*?onNewSession\?\.\(createTemporarySessionId\(\), cwd\)/);
   assert.match(preload, /selectDirectory\(\)[\s\S]*pi:directory-picker/);
   assert.match(desktopMain, /DIRECTORY_PICKER_CHANNEL[\s\S]*showOpenDialog[\s\S]*openDirectory/);
 });

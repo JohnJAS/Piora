@@ -2,10 +2,11 @@
 
 import { useCallback, useState, type Dispatch, type SetStateAction } from "react";
 
-export function useProjectPicker({ setSelectedCwd, setRememberedProjectRoots, setHiddenProjectRoots }: {
+export function useProjectPicker({ setSelectedCwd, setRememberedProjectRoots, setHiddenProjectRoots, onProjectSelected }: {
   setSelectedCwd: Dispatch<SetStateAction<string | null>>;
   setRememberedProjectRoots: Dispatch<SetStateAction<Set<string>>>;
   setHiddenProjectRoots: Dispatch<SetStateAction<Set<string>>>;
+  onProjectSelected?: (cwd: string) => void;
 }) {
   const [customPathOpen, setCustomPathOpen] = useState(false);
   const [customPathValue, setCustomPathValue] = useState("");
@@ -31,10 +32,10 @@ export function useProjectPicker({ setSelectedCwd, setRememberedProjectRoots, se
       const data = await response.json().catch(() => ({})) as { cwd?: string; error?: string };
       if (!response.ok || data.error) { setCustomPathError(data.error ?? `HTTP ${response.status}`); return; }
       const cwd = data.cwd ?? path;
-      rememberProject(cwd); setSelectedCwd(cwd); setCustomPathOpen(false); setCustomPathValue("");
+      rememberProject(cwd); setSelectedCwd(cwd); onProjectSelected?.(cwd); setCustomPathOpen(false); setCustomPathValue("");
     } catch (error) { setCustomPathError(error instanceof Error ? error.message : String(error)); }
     finally { setCustomPathValidating(false); }
-  }, [customPathValidating, customPathValue, rememberProject, setSelectedCwd]);
+  }, [customPathValidating, customPathValue, onProjectSelected, rememberProject, setSelectedCwd]);
 
   const handleCustomPathClick = useCallback(() => {
     setCustomPathError(null);

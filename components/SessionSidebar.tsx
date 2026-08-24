@@ -26,6 +26,12 @@ export type { SessionSidebarHandle } from "./sidebar/sidebar-types";
 
 const ARCHIVED_SESSION_TOAST_DURATION_MS = 5_000;
 
+function createTemporarySessionId(): string {
+  return typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
 export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, selectedRoomId, onSelectSession, onSelectRoom, onNewSession, onRequestNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onFocusFileSearch, onOpenSettings, activeProjectRoot }, ref) {
   const { t } = useI18n();
   const [sessionFlags, setSessionFlags] = useState<SessionFlags>({});
@@ -45,10 +51,13 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     projectAliases, setProjectAliases,
     projectOrder, setProjectOrder,
   } = useSidebarState();
+  const handlePickedProject = useCallback((cwd: string) => {
+    onNewSession?.(createTemporarySessionId(), cwd);
+  }, [onNewSession]);
   const {
     customPathOpen, setCustomPathOpen, customPathError, setCustomPathError,
     customPathValidating, commitCustomPath, handleCustomPathClick, handleDefaultCwd,
-  } = useProjectPicker({ setSelectedCwd, setRememberedProjectRoots, setHiddenProjectRoots });
+  } = useProjectPicker({ setSelectedCwd, setRememberedProjectRoots, setHiddenProjectRoots, onProjectSelected: handlePickedProject });
   const { allSessions, loading, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions } = useSessionCatalog({ selectedSessionId, refreshKey });
   const {
     worktreeState, wtFilter, setWtFilter, wtDropdownOpen, setWtDropdownOpen,
@@ -232,12 +241,8 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   }, [loadSessions]);
 
   const handleNewSessionInProject = useCallback((cwd: string) => {
-    // Generate a temporary UUID client-side — no backend call needed.
     // Pi will be spawned lazily when the user sends the first message.
-    const tempId = typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-    onNewSession?.(tempId, cwd);
+    onNewSession?.(createTemporarySessionId(), cwd);
   }, [onNewSession]);
 
   const selectedProject = projectRootFor(selectedCwd);

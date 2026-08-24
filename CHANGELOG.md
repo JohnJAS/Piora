@@ -13,6 +13,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 - Keep the model submenu attached to its parent menu, align every provider icon
   with its model name, and truncate long model ids without compressing labels.
+- Open a project-bound new conversation immediately after the native folder
+  picker validates a newly selected project directory.
 
 ## [0.3.9] - 2026-08-24
 
