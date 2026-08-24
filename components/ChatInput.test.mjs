@@ -126,6 +126,14 @@ test("derives remaining context from live token counts", () => {
   assert.equal(getContextRemainingPercent({ percent: null, contextWindow: 200_000, tokens: null }), null);
 });
 
+test("turns long clipboard text into an editable material instead of filling the textarea", () => {
+  assert.match(chatInputSource, /LARGE_PASTE_CHARACTER_THRESHOLD/);
+  assert.match(chatInputSource, /pastedText\.length <= LARGE_PASTE_CHARACTER_THRESHOLD/);
+  assert.match(chatInputSource, /kind: "paste" as const/);
+  assert.match(chatInputSource, /restorePastedFile/);
+  assert.match(chatInputSource, /maxHeight: "min\(38vh, 360px\)"/);
+});
+
 test("inserts dictated text at the caret with locale-aware spacing", () => {
   assert.deepEqual(joinSpeechText("请帮我", " 修复这个问题 ", "谢谢", "zh-CN"), {
     value: "请帮我修复这个问题谢谢",

@@ -1,4 +1,5 @@
 import type { PersistedTeamExecutionRef, TeamExecutionContext } from "./team-types";
+import type { PromptMaterialReference } from "./prompt-material-format";
 
 export type SessionMessageSourceKind = "ui" | "room" | "remote" | "extension" | "system";
 export type SessionDeliveryMode = "next_turn" | "steer";
@@ -26,6 +27,7 @@ export interface SessionMessageInput {
   source: SessionMessageSourceKind;
   idempotencyKey: string;
   images?: SessionMessageImage[];
+  materials?: PromptMaterialReference[];
   expiresAt?: number;
   goalMode?: boolean;
   planMode?: boolean;
@@ -49,6 +51,7 @@ export interface SessionCommandRecord {
   errorCode?: string;
   errorMessage?: string;
   images?: SessionMessageImage[];
+  materials?: PromptMaterialReference[];
   goalMode?: boolean;
   planMode?: boolean;
   planExecution?: { planId: string; expectedRevision: number };

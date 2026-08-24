@@ -150,9 +150,9 @@ export async function GET(
         ? (() => {
             const msg = context.messages.find((m) => m.role === "user")!;
             const c = (msg as { content: unknown }).content;
-            return typeof c === "string" ? c : (Array.isArray(c) ? (c.find((b: { type: string }) => b.type === "text") as { text: string } | undefined)?.text ?? "" : "") || "(no messages)";
+            return typeof c === "string" ? c : (Array.isArray(c) ? (c.find((b: { type: string }) => b.type === "text") as { text: string } | undefined)?.text ?? "" : "");
           })()
-        : "(no messages)",
+        : "",
       parentSessionId,
     } : null;
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { setDraft } from "@/lib/draft-store";
+import { setDraft, type ChatDraft, type ChatDraftFile } from "@/lib/draft-store";
+import { LARGE_PASTE_CHARACTER_THRESHOLD } from "@/lib/prompt-input-policy";
 import { getProjectLabel } from "@/lib/session-project-groups";
 import type { SessionInfo } from "@/lib/types";
 import { AliIcon } from "./AliIcon";
@@ -13,6 +14,13 @@ interface ProjectChoice {
   sessionCount: number;
 }
 
+const MAX_LANDING_PASTES = 8;
+
+function resizeLandingComposer(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = "auto";
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 360)}px`;
+}
+
 export function NewSessionProjectPicker({
   activeCwd,
   activeProjectRoot,
@@ -22,14 +30,16 @@ export function NewSessionProjectPicker({
   activeCwd?: string | null;
   activeProjectRoot?: string | null;
   onSelect: (cwd: string, projectRoot: string) => void;
-  onBrowse: () => void;
+  onBrowse: (draft: ChatDraft) => void;
 }) {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [query, setQuery] = useState("");
   const [draft, setLandingDraft] = useState("");
+  const [pastedMaterials, setPastedMaterials] = useState<ChatDraftFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const projectSelectorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -96,8 +106,10 @@ export function NewSessionProjectPicker({
       });
   }, [activeCwd, activeProjectRoot, query, sessions]);
 
+  const getLandingDraft = (): ChatDraft => ({ value: draft, images: [], files: pastedMaterials });
+
   const chooseProject = (choice: ProjectChoice) => {
-    if (draft.trim()) setDraft(`new:${choice.cwd}`, { value: draft, images: [] });
+    if (draft.trim() || pastedMaterials.length > 0) setDraft(`new:${choice.cwd}`, getLandingDraft());
     onSelect(choice.cwd, choice.root);
   };
 
@@ -107,7 +119,21 @@ export function NewSessionProjectPicker({
 
   const browseForProject = () => {
     setMenuOpen(false);
-    onBrowse();
+    onBrowse(getLandingDraft());
+  };
+
+  const restorePastedMaterial = (index: number) => {
+    const material = pastedMaterials[index];
+    if (!material?.text) return;
+    setPastedMaterials((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setLandingDraft((current) => current ? `${current}\n\n${material.text}` : material.text!);
+    window.requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      resizeLandingComposer(textarea);
+    });
   };
 
   return (
@@ -178,9 +204,44 @@ export function NewSessionProjectPicker({
             </div>
           </div>
           <div className={styles.composer}>
+            {pastedMaterials.length > 0 ? (
+              <div className={styles.materials} aria-label="粘贴的长内容">
+                {pastedMaterials.map((material, index) => (
+                  <div className={styles.material} key={`${material.name}:${index}`}>
+                    <AliIcon name="file" size={13} />
+                    <span>{material.name}</span>
+                    <button type="button" onClick={() => restorePastedMaterial(index)}>展开编辑</button>
+                    <button
+                      type="button"
+                      className={styles.removeMaterial}
+                      onClick={() => setPastedMaterials((current) => current.filter((_, currentIndex) => currentIndex !== index))}
+                      aria-label={`移除 ${material.name}`}
+                    >
+                      <AliIcon name="close" size={9} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <textarea
+              ref={textareaRef}
               value={draft}
-              onChange={(event) => setLandingDraft(event.target.value)}
+              onChange={(event) => {
+                setLandingDraft(event.target.value);
+                resizeLandingComposer(event.currentTarget);
+              }}
+              onPaste={(event) => {
+                const text = event.clipboardData.getData("text/plain");
+                if (text.length <= LARGE_PASTE_CHARACTER_THRESHOLD || pastedMaterials.length >= MAX_LANDING_PASTES) return;
+                event.preventDefault();
+                const index = pastedMaterials.length + 1;
+                setPastedMaterials((current) => [...current, {
+                  name: `粘贴内容 ${index}.txt`,
+                  size: new TextEncoder().encode(text).byteLength,
+                  text,
+                  kind: "paste",
+                }]);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();

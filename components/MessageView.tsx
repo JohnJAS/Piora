@@ -162,7 +162,7 @@ function haveSameRelevantToolResults(
 
 export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp, responseStartedAt, sessionId }: Props) {
   if (message.role === "user") {
-    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} />;
+    return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} sessionId={sessionId} />;
   }
   if (message.role === "assistant") {
     return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} responseStartedAt={responseStartedAt} sessionId={sessionId} entryId={entryId} />;
@@ -200,7 +200,7 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.sessionId === next.sessionId;
 });
 
-function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent }: {
+function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, sessionId }: {
   message: UserMessage;
   cwd?: string;
   onOpenFile?: (filePath: string) => void;
@@ -210,13 +210,17 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   onNavigate?: (entryId: string) => void;
   prevAssistantEntryId?: string;
   onEditContent?: (content: string) => void;
+  sessionId?: string;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
   const [contentExpanded, setContentExpanded] = useState(false);
+  const [loadedContent, setLoadedContent] = useState<string | null>(null);
+  const [contentLoading, setContentLoading] = useState(false);
+  const [contentLoadError, setContentLoadError] = useState<string | null>(null);
 
-  const content =
+  const initialContent =
     typeof message.content === "string"
       ? message.content
       : Array.isArray(message.content)
@@ -225,6 +229,8 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
           .map((b) => b.text as string)
           .join("\n")
         : "";
+  const content = loadedContent ?? initialContent;
+  const hasDeferredContent = message.deferredContent === true && loadedContent === null;
 
   const imageBlocks: ImageContent[] =
     Array.isArray(message.content)
@@ -234,16 +240,56 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   const time = formatTime(message.timestamp);
   const canFork = !!entryId && !!onFork;
   const canNavigate = !!prevAssistantEntryId && !!onNavigate;
-  const contentPreview = useMemo(() => getUserMessagePreview(content), [content]);
+  const contentPreview = useMemo(() => {
+    const preview = getUserMessagePreview(content);
+    return hasDeferredContent
+      ? { ...preview, collapsible: true, lineCount: message.deferredLineCount ?? preview.lineCount }
+      : preview;
+  }, [content, hasDeferredContent, message.deferredLineCount]);
   const displayedContent = contentPreview.collapsible && !contentExpanded
     ? contentPreview.preview
     : content;
+  const contentLineCount = contentPreview.lineCount.toLocaleString(locale);
+
+  const loadFullContent = async (): Promise<string> => {
+    if (!hasDeferredContent) return content;
+    if (!sessionId || !entryId) throw new Error(t("chat.longMessageUnavailable"));
+    setContentLoading(true);
+    setContentLoadError(null);
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/prompt-material`);
+      const body = await response.json().catch(() => ({})) as { content?: unknown; error?: unknown };
+      if (!response.ok || typeof body.content !== "string") {
+        throw new Error(typeof body.error === "string" ? body.error : `HTTP ${response.status}`);
+      }
+      setLoadedContent(body.content);
+      return body.content;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      setContentLoadError(errorMessage);
+      throw error;
+    } finally {
+      setContentLoading(false);
+    }
+  };
 
   const copyContent = () => {
-    copyText(content).then(() => {
+    Promise.resolve(loadFullContent()).then((fullContent) => copyText(fullContent)).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    });
+    }).catch(() => {});
+  };
+
+  const toggleContent = () => {
+    if (contentExpanded) {
+      setContentExpanded(false);
+      return;
+    }
+    if (!hasDeferredContent) {
+      setContentExpanded(true);
+      return;
+    }
+    void loadFullContent().then(() => setContentExpanded(true)).catch(() => {});
   };
 
   return (
@@ -302,17 +348,21 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                   type="button"
                   className="message-user-expand"
                   aria-expanded={contentExpanded}
-                  aria-label={t(contentExpanded ? "chat.collapseLongMessage" : "chat.expandLongMessage", { count: contentPreview.lineCount })}
-                  onClick={() => setContentExpanded((expanded) => !expanded)}
+                  aria-label={t(contentExpanded ? "chat.collapseLongMessage" : "chat.expandLongMessage", { count: contentLineCount })}
+                  onClick={toggleContent}
+                  disabled={contentLoading}
                 >
                   <AliIcon
                     name="arrowdown"
                     size={11}
                     style={{ transform: contentExpanded ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}
                   />
-                  {t(contentExpanded ? "chat.collapseLongMessage" : "chat.expandLongMessage", { count: contentPreview.lineCount })}
+                  {contentLoading
+                    ? t("chat.loadingLongMessage")
+                    : t(contentExpanded ? "chat.collapseLongMessage" : "chat.expandLongMessage", { count: contentLineCount })}
                 </button>
               )}
+              {contentLoadError && <div role="alert" style={{ marginTop: 6, color: "var(--status-failed)", fontSize: "var(--text-xs)" }}>{contentLoadError}</div>}
             </>
           )}
         </div>
@@ -365,7 +415,12 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
             }}>
               {canNavigate && (
                 <button
-                  onClick={() => { onNavigate!(prevAssistantEntryId!); onEditContent?.(content); }}
+                  onClick={() => {
+                    void loadFullContent().then((fullContent) => {
+                      onNavigate!(prevAssistantEntryId!);
+                      onEditContent?.(fullContent);
+                    }).catch(() => {});
+                  }}
                    title={t("i18n.editFromHereTitle")}
                   style={{
                     display: "flex", alignItems: "center", gap: 4,

@@ -85,6 +85,8 @@ import {
 } from "./rpc-task-activity";
 import { CUSTOM_UI_KEYBINDINGS, PLAIN_TEXT_THEME } from "./rpc-ui-adapter";
 import { readSystemPromptConfig } from "./system-prompt-config";
+import { buildPromptWithMaterials, resolvePromptMaterialReferences, restorePromptMaterialDisplayPreview } from "./prompt-materials";
+import type { PromptMaterialReference } from "./prompt-material-format";
 
 // ============================================================================
 // Types
@@ -259,6 +261,7 @@ export class AgentSessionWrapper {
     commandId: string;
     message: string;
     images?: Array<{ type: "image"; data: string; mimeType: string }>;
+    materials?: PromptMaterialReference[];
     goalMode?: boolean;
     planMode?: boolean;
     planExecution?: { planId: string; expectedRevision: number };
@@ -702,6 +705,7 @@ export class AgentSessionWrapper {
       case "prompt": {
         // Fire and forget — events come via subscribe
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
+        const promptMaterials = command.materials as PromptMaterialReference[] | undefined;
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
         if (!streamingBehavior) {
           this.assertSessionIdle("send a prompt");
@@ -739,9 +743,13 @@ export class AgentSessionWrapper {
         const commandId = typeof command.commandId === "string" && command.commandId.trim()
           ? command.commandId.trim()
           : `cmd_${randomUUID()}`;
+        const originalPromptMessage = String(command.message ?? "");
+        const runtimePromptMessage = promptMaterials?.length
+          ? buildPromptWithMaterials(originalPromptMessage, resolvePromptMaterialReferences(promptMaterials))
+          : originalPromptMessage;
         if (!streamingBehavior) this.promptAdmissionBusy = true;
-        const promptText = compactTaskActivityText(command.message);
-        this.fallbackTaskTitle = compactTaskActivityText(command.message, 80) || this.fallbackTaskTitle;
+        const promptText = compactTaskActivityText(originalPromptMessage);
+        this.fallbackTaskTitle = compactTaskActivityText(originalPromptMessage, 80) || this.fallbackTaskTitle;
         this.beginRun("prompt", promptText || "Processing request");
         this.lastPromptFailed = false;
         this.lastPromptErrorSummary = undefined;
@@ -789,7 +797,7 @@ export class AgentSessionWrapper {
           });
         }
         if (goalMode) {
-          this.goalState = beginGoalRun(promptRun, String(command.message ?? ""));
+          this.goalState = beginGoalRun(promptRun, originalPromptMessage);
           this.persistGoalState();
           this.emit({ type: "goal_start", goal: this.goalState });
         }
@@ -800,7 +808,7 @@ export class AgentSessionWrapper {
           let planModeLease: PlanModeLease | undefined;
           try {
             if (planMode) planModeLease = enterPlanMode(this.inner);
-            await this.inner.prompt(command.message as string, {
+            await this.inner.prompt(runtimePromptMessage, {
               ...(promptImages?.length ? { images: promptImages } : {}),
               ...(streamingBehavior ? { streamingBehavior } : {}),
               source: "rpc",
@@ -1912,10 +1920,10 @@ export function getUnpersistedSessionInfos(excludeIds?: ReadonlySet<string>): Un
       if (!Number.isNaN(activityMs)) lastActivityMs = Math.max(lastActivityMs, activityMs);
       if (!firstMessage && message.role === "user") {
         firstMessage = typeof message.content === "string"
-          ? message.content
+          ? restorePromptMaterialDisplayPreview(message.content)
           : message.content
               .filter((block): block is { type: "text"; text: string } => (block as { type?: unknown }).type === "text")
-              .map((block) => block.text)
+              .map((block) => restorePromptMaterialDisplayPreview(block.text))
               .join(" ");
       }
     }
@@ -1928,7 +1936,7 @@ export function getUnpersistedSessionInfos(excludeIds?: ReadonlySet<string>): Un
       created: header.timestamp,
       modified: new Date(Number.isNaN(lastActivityMs) ? Date.now() : lastActivityMs).toISOString(),
       messageCount,
-      firstMessage: firstMessage || "(no messages)",
+      firstMessage,
       ...(header.parentSession ? { parentSessionPath: header.parentSession } : {}),
     });
   }

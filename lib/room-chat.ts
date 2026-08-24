@@ -1,19 +1,26 @@
 import { getRpcSession } from "./rpc-manager";
 import { appendRoomMessage, emitRoomPresence, getRoom, listRoomMessages } from "./room-store";
+import { resolveExplicitRoomChatTargets } from "./room-chat-routing";
 import {
   getSessionMessageRouter,
   type SessionMessageRouter,
   type SessionMessageRouterError,
 } from "./session-message-router";
 import type { SessionCommandEvent, SessionCommandStatus } from "./session-message-types";
-import type { CollaborationRoom, RoomMember } from "./room-types";
+import { getRoomMemberName, type CollaborationRoom, type RoomMember, type RoomMessage } from "./room-types";
+
+const DEFAULT_ROOM_AUTO_ROUNDS = 6;
+const MAX_ROOM_AUTO_ROUNDS = 8;
 
 export interface RoomChatDispatchResult {
   dispatched: Array<{ sessionId: string; behavior: "prompt" | "next_turn"; commandId: string; status: string }>;
   skipped: Array<{ sessionId: string; reason: string; code?: string }>;
 }
 
-function groupChatPrompt(room: CollaborationRoom, member: RoomMember, input: { messageId: string; content: string; replyTo?: string; correlationId?: string; forwardDepth?: number; autoRound?: number; maxAutoRounds?: number }): string {
+function groupChatPrompt(room: CollaborationRoom, member: RoomMember, input: { messageId: string; content: string; authorName?: string; authorSessionId?: string; replyTo?: string; correlationId?: string; forwardDepth?: number; autoRound?: number; maxAutoRounds?: number }): string {
+  const coordinator = room.members.find((candidate) => candidate.memberId === room.coordination.coordinatorMemberId);
+  const coordinatorName = coordinator ? getRoomMemberName(coordinator) : "协调者";
+  const isCoordinator = member.memberId === room.coordination.coordinatorMemberId;
   return [
     "[PIORA GROUP CHAT]",
     `Room: ${room.name} (${room.id})`,
@@ -21,16 +28,35 @@ function groupChatPrompt(room: CollaborationRoom, member: RoomMember, input: { m
     `Correlation ID: ${input.correlationId || input.messageId}`,
     `Reply to: ${input.replyTo || "(root message)"}`,
     `Automatic response round: ${input.autoRound ?? 0}/${input.maxAutoRounds ?? 1}`,
+    `Shared message from: ${input.authorName || input.authorSessionId || "User"}`,
     `Your team identity: ${member.name || member.sessionId} (${member.role})`,
     `Your responsibility: ${member.instructions || "Collaborate according to your assigned role."}`,
     `Shared workspace: ${room.workspace.path}`,
     `Workspace contract: ${room.workspace.instructions || "Publish reusable work and avoid overwriting another Agent's active changes."}`,
-    `User message: ${input.content}`,
+    `Shared message: ${input.content}`,
     "You were addressed in a Piora group conversation.",
     "Respond to the group, not only to your private session: use the piora_room tool with action send_shared, this exact room ID, and replyTo set to the Message ID above.",
     "Keep the shared reply concise, include replyTo/correlation context when replying, and do not repeat a reply for the same message ID.",
     "Do not automatically rebroadcast another Agent's shared reply; only respond when explicitly mentioned or routed by the Coordinator.",
+    ...(isCoordinator ? [
+      "You are the runtime scheduler for this group. Decide which Agent should act next and do not wake a dependent Agent before its prerequisite result arrives.",
+      "To actually invoke an Agent, send a separate shared message beginning with that Agent's exact @name. Merely describing who should work does not dispatch anything.",
+      "Each delegation message must contain exactly one @name anywhere in its content. Send another message for another Agent; refer to prerequisites without typing their @name.",
+      "For implementation followed by review: @mention the implementer first, wait for their @completion report, inspect that report, and only then @mention the reviewer.",
+    ] : [
+      `Complete only the work requested in this message. When finished, send a concise shared completion report beginning with @${coordinatorName} so the scheduler is actually invoked for the next step.`,
+      `If a prerequisite is missing, do not pretend to wait in this turn; report the blocker to @${coordinatorName} and stop.`,
+    ]),
   ].join("\n");
+}
+
+export function deriveRoomReplyRoutingMetadata(roomId: string, replyTo?: string): Pick<RoomMessage, "forwardDepth" | "autoRound" | "maxAutoRounds"> {
+  const parent = replyTo ? listRoomMessages(roomId, { limit: 500 }).find((message) => message.id === replyTo) : undefined;
+  return {
+    forwardDepth: Math.min(MAX_ROOM_AUTO_ROUNDS, (parent?.forwardDepth ?? -1) + 1),
+    autoRound: Math.min(MAX_ROOM_AUTO_ROUNDS, (parent?.autoRound ?? -1) + 1),
+    maxAutoRounds: parent?.maxAutoRounds ?? DEFAULT_ROOM_AUTO_ROUNDS,
+  };
 }
 
 function isTerminalStatus(status: SessionCommandStatus): boolean {
@@ -61,12 +87,21 @@ function relayRoomReply(
       if (!alreadyShared) {
         const content = getRpcSession(member.sessionId)?.inner.getLastAssistantText()?.trim();
         if (content) {
-          appendRoomMessage(room.id, {
+          const reply = appendRoomMessage(room.id, {
             authorKind: "session",
             authorId: member.sessionId,
             authorName: member.name,
             content,
             replyTo: messageId,
+            ...deriveRoomReplyRoutingMetadata(room.id, messageId),
+          });
+          void dispatchExplicitRoomMentions(room.id, reply, router).catch((error) => {
+            emitRoomPresence(room.id, {
+              sessionId: member.sessionId,
+              messageId: reply.id,
+              status: "error",
+              detail: error instanceof Error ? error.message : String(error),
+            });
           });
         }
       }
@@ -97,7 +132,7 @@ function relayRoomReply(
 
 export async function dispatchRoomChat(
   roomId: string,
-  input: { messageId: string; content: string; targetSessionIds?: string[]; attempt?: number; replyTo?: string; correlationId?: string; forwardDepth?: number; autoRound?: number; maxAutoRounds?: number },
+  input: { messageId: string; content: string; authorName?: string; authorSessionId?: string; targetSessionIds?: string[]; attempt?: number; replyTo?: string; correlationId?: string; forwardDepth?: number; autoRound?: number; maxAutoRounds?: number; router?: SessionMessageRouter },
 ): Promise<RoomChatDispatchResult> {
   const room = getRoom(roomId);
   const requested = new Set(input.targetSessionIds?.filter(Boolean));
@@ -107,12 +142,12 @@ export async function dispatchRoomChat(
   const result: RoomChatDispatchResult = { dispatched: [], skipped: [] };
   const forwardDepth = Math.max(0, Math.floor(input.forwardDepth ?? 0));
   const autoRound = Math.max(0, Math.floor(input.autoRound ?? 0));
-  const maxAutoRounds = Math.max(0, Math.min(8, Math.floor(input.maxAutoRounds ?? 1)));
-  if (forwardDepth > 4 || autoRound > maxAutoRounds) {
+  const maxAutoRounds = Math.max(0, Math.min(MAX_ROOM_AUTO_ROUNDS, Math.floor(input.maxAutoRounds ?? DEFAULT_ROOM_AUTO_ROUNDS)));
+  if (forwardDepth > MAX_ROOM_AUTO_ROUNDS || autoRound > maxAutoRounds) {
     result.skipped.push({ sessionId: "*", reason: "Room automatic routing limit reached.", code: "ROOM_ROUTING_LIMIT" });
     return result;
   }
-  const router = getSessionMessageRouter();
+  const router = input.router ?? getSessionMessageRouter();
   const targets = [...requested].flatMap((sessionId) => {
     const member = room.members.find((item) => item.sessionId === sessionId);
     return member ? [{ sessionId, member }] : (result.skipped.push({ sessionId, reason: "Session is not a room member." }), []);
@@ -147,4 +182,53 @@ export async function dispatchRoomChat(
     });
   }
   return result;
+}
+
+export async function dispatchExplicitRoomMentions(
+  roomId: string,
+  message: RoomMessage,
+  router: SessionMessageRouter = getSessionMessageRouter(),
+): Promise<RoomChatDispatchResult> {
+  const room = getRoom(roomId);
+  const explicitlyMentioned = resolveExplicitRoomChatTargets(room, message.content, {
+    excludeSessionId: message.author.kind === "session" ? message.author.id : undefined,
+  });
+  if (explicitlyMentioned.length === 0) return { dispatched: [], skipped: [] };
+  const coordinator = room.members.find((member) => member.memberId === room.coordination.coordinatorMemberId);
+  const coordinatorSessionId = coordinator?.binding.sessionId;
+  const isCoordinatorMessage = message.author.kind === "session" && message.author.id === coordinatorSessionId;
+  let targetSessionIds = explicitlyMentioned;
+  const schedulerSkips: RoomChatDispatchResult["skipped"] = [];
+  if (room.coordination.mode === "team" && message.author.kind === "session") {
+    if (isCoordinatorMessage && explicitlyMentioned.length > 1) {
+      targetSessionIds = [];
+      schedulerSkips.push(...explicitlyMentioned.map((sessionId) => ({
+        sessionId,
+        reason: "协调者必须用每条只包含一名成员的 @消息逐个派工，当前消息未唤起任何成员。",
+        code: "ROOM_COORDINATOR_ONE_TARGET",
+      })));
+    } else if (!isCoordinatorMessage && coordinatorSessionId) {
+      targetSessionIds = [coordinatorSessionId];
+      schedulerSkips.push(...explicitlyMentioned.filter((sessionId) => sessionId !== coordinatorSessionId).map((sessionId) => ({
+        sessionId,
+        reason: "团队成员的完成或协作消息先回报协调者，由协调者决定下一位智能体的启动时机。",
+        code: "ROOM_COORDINATOR_SCHEDULED",
+      })));
+    }
+  }
+  if (targetSessionIds.length === 0) return { dispatched: [], skipped: schedulerSkips };
+  const routed = await dispatchRoomChat(roomId, {
+    messageId: message.id,
+    content: message.content,
+    authorName: message.author.name,
+    authorSessionId: message.author.id,
+    targetSessionIds,
+    replyTo: message.replyTo,
+    correlationId: message.correlationId ?? message.id,
+    forwardDepth: message.forwardDepth,
+    autoRound: message.autoRound,
+    maxAutoRounds: message.maxAutoRounds,
+    router,
+  });
+  return { dispatched: routed.dispatched, skipped: [...schedulerSkips, ...routed.skipped] };
 }

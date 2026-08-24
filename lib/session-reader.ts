@@ -12,6 +12,7 @@ import { normalizeToolCalls } from "./normalize";
 import { sessionPathKey } from "./session-path";
 import { resolveProject, type ProjectInfo } from "./worktree";
 import { GOAL_RUN_ENTRY_TYPE, parseGoalRunState, type GoalRunState } from "./goal-run-registry";
+import { getPromptMaterialDisplayMetadata, restorePromptMaterialDisplayPreview } from "./prompt-materials";
 
 export { getAgentDir };
 
@@ -40,7 +41,7 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
       created: s.created instanceof Date ? s.created.toISOString() : String(s.created),
       modified: s.modified instanceof Date ? s.modified.toISOString() : String(s.modified),
       messageCount: s.messageCount,
-      firstMessage: s.firstMessage || "(no messages)",
+      firstMessage: s.firstMessage ? restorePromptMaterialDisplayPreview(s.firstMessage) : "",
       parentSessionId: s.parentSessionPath ? pathToId.get(sessionPathKey(s.parentSessionPath)) : undefined,
       projectRoot: project?.projectRoot ?? s.cwd,
       ...(project?.isWorktree && project.branch ? { worktreeBranch: project.branch } : {}),
@@ -337,9 +338,45 @@ function entryToUiMessage(
   // normalizeToolCalls is a secondary guard (returns non-assistant messages as-is).
   switch (entry.type) {
     case "message": {
-      const message = options.deferToolResultImages
+      let message = options.deferToolResultImages
         ? omitToolResultBase64Images(normalizeToolCalls(entry.message))
         : normalizeToolCalls(entry.message);
+      if (message.role === "user") {
+        if (typeof message.content === "string") {
+          const metadata = getPromptMaterialDisplayMetadata(message.content);
+          message = metadata
+            ? {
+                ...message,
+                content: restorePromptMaterialDisplayPreview(message.content),
+                deferredContent: true,
+                deferredByteLength: metadata.byteLength,
+                deferredLineCount: metadata.lineCount,
+              }
+            : message;
+        } else if (Array.isArray(message.content)) {
+          const deferredMetadata = message.content.reduce<{ byteLength: number; lineCount: number } | null>(
+            (found, block) => found ?? (block.type === "text" ? getPromptMaterialDisplayMetadata(block.text) : null),
+            null,
+          );
+          message = {
+            ...message,
+            content: message.content.map((block) => {
+              if (block.type !== "text") return block;
+              const metadata = getPromptMaterialDisplayMetadata(block.text);
+              if (!metadata) return block;
+              return { ...block, text: restorePromptMaterialDisplayPreview(block.text) };
+            }),
+          };
+          if (deferredMetadata) {
+            message = {
+              ...message,
+              deferredContent: true,
+              deferredByteLength: deferredMetadata.byteLength,
+              deferredLineCount: deferredMetadata.lineCount,
+            };
+          }
+        }
+      }
       if (!options.deferThinking || message.role !== "assistant") return message;
       return {
         ...message,

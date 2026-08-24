@@ -184,6 +184,8 @@ button.stepCopy:focus-visible strong {
   display: block;
   width: 100%;
   min-height: 76px;
+  max-height: min(38vh, 360px);
+  overflow-y: auto;
   resize: none;
   padding: 18px 20px 8px;
   border: 0;
@@ -196,6 +198,60 @@ button.stepCopy:focus-visible strong {
 }
 
 .composer textarea::placeholder { color: var(--text-dim); }
+
+.materials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 14px 0;
+}
+
+.material {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 310px;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.material > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.material > button {
+  flex: none;
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.material > button:hover,
+.material > button:focus-visible {
+  outline: 0;
+  background: var(--bg-hover);
+}
+
+.material > .removeMaterial {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text-muted);
+}
 
 .composerBar {
   display: flex;

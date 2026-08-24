@@ -82,7 +82,9 @@ function errorCode(error: unknown): SessionMessageRouterErrorCode {
 function validateInput(input: SessionMessageInput, maxMessageBytes: number): void {
   if (!input.targetSessionId || typeof input.targetSessionId !== "string") throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "targetSessionId is required.");
   if (!input.idempotencyKey || typeof input.idempotencyKey !== "string" || input.idempotencyKey.length > 512) throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "A bounded idempotency key is required.");
-  if (typeof input.content !== "string" || !input.content.trim()) throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "Message content cannot be empty.");
+  if (typeof input.content !== "string" || (!input.content.trim() && !input.materials?.length)) {
+    throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "Message content cannot be empty without prompt materials.");
+  }
   if (Buffer.byteLength(input.content, "utf8") > maxMessageBytes) {
     throw new SessionMessageRouterError(
       "SESSION_MESSAGE_TOO_LARGE",
@@ -95,6 +97,14 @@ function validateInput(input: SessionMessageInput, maxMessageBytes: number): voi
   }
   const imageError = validateAgentImages(input.images);
   if (imageError) throw new SessionMessageRouterError("SESSION_MESSAGE_TOO_LARGE", imageError);
+  if (input.materials !== undefined && (
+    !Array.isArray(input.materials)
+    || input.materials.length === 0
+    || input.materials.length > 8
+    || input.materials.some((material) => !material || typeof material.id !== "string" || !/^[0-9a-f-]{36}$/i.test(material.id))
+  )) {
+    throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "Prompt material references are invalid.");
+  }
 }
 
 function assertPrincipal(input: SessionMessageInput, principal?: SessionRoutePrincipal): void {
@@ -202,6 +212,7 @@ export class SessionMessageRouter {
       ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
       status: "accepted",
       ...(input.images?.length ? { images: input.images } : {}),
+      ...(input.materials?.length ? { materials: input.materials } : {}),
       ...(input.goalMode ? { goalMode: true } : {}),
       ...(input.planMode ? { planMode: true } : {}),
       ...(input.planExecution ? { planExecution: input.planExecution } : {}),
@@ -405,6 +416,7 @@ export class SessionMessageRouter {
             commandId: command.commandId,
             message: command.content,
             images: command.images,
+            materials: command.materials,
             goalMode: command.goalMode,
             planMode: command.planMode,
             planExecution: command.planExecution,

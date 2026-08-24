@@ -26,6 +26,16 @@ test("closes the session event stream only after prompt settlement or a pre-prom
   assert.match(sendSource, /if \(promptRequestStarted && sentSessionId && !definitivelyRejected\) \{[\s\S]*?return;[\s\S]*?\}[\s\S]*?closeEvents\(\)/);
 });
 
+test("keeps the first prompt as the new-session title and restores failed material drafts", () => {
+  const sendSource = source.slice(
+    source.indexOf("  const handleSend = useCallback"),
+    source.indexOf("  const executeBash = useCallback"),
+  );
+  assert.ok(sendSource.indexOf("promoteNewSession(0, displayMessage.slice(0, 2_000))") < sendSource.indexOf("await ensureEventsConnected(sid)"));
+  assert.match(sendSource, /uploadPromptMaterialFiles\(pasteFiles\)/);
+  assert.match(sendSource, /restoreFailedPrompt\(message, files\)/);
+});
+
 test("refreshes context usage during streaming and after assistant messages", () => {
   const reconcileSource = source.slice(
     source.indexOf("const reconcileAgentState"),

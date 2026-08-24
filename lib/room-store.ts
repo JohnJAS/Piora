@@ -804,7 +804,7 @@ export function appendRoomMessage(roomId: string, input: {
       createdAt: Date.now(),
       ...(input.replyTo ? { replyTo: input.replyTo } : {}),
       ...(correlationId ? { correlationId } : {}),
-      ...(input.forwardDepth !== undefined ? { forwardDepth: Math.max(0, Math.min(4, Math.floor(input.forwardDepth))) } : {}),
+      ...(input.forwardDepth !== undefined ? { forwardDepth: Math.max(0, Math.min(8, Math.floor(input.forwardDepth))) } : {}),
       ...(input.autoRound !== undefined ? { autoRound: Math.max(0, Math.min(8, Math.floor(input.autoRound))) } : {}),
       ...(input.maxAutoRounds !== undefined ? { maxAutoRounds: Math.max(0, Math.min(8, Math.floor(input.maxAutoRounds))) } : {}),
     };

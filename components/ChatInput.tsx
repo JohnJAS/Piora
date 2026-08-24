@@ -4,14 +4,25 @@ import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, f
 import { createPortal } from "react-dom";
 import { readPromptOptimizerModel, readPromptOptimizerSystemPrompt } from "@/lib/prompt-optimizer-settings";
 import type { AttachedFile, BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
-import { clearDraft, getDraft, setDraft, type ChatDraftImage } from "@/lib/draft-store";
+import { clearDraft, getDraft, setDraft, type ChatDraftFile, type ChatDraftImage } from "@/lib/draft-store";
 import {
   MAX_ATTACHED_IMAGE_BYTES,
   MAX_ATTACHED_IMAGES,
   isBase64ImageWithinLimits,
 } from "@/lib/image-attachments";
+import {
+  LARGE_PASTE_CHARACTER_THRESHOLD,
+  shouldMaterializeDirectPrompt,
+} from "@/lib/prompt-input-policy";
 const MAX_ATTACHED_FILES = 8;
 const MAX_ATTACHED_TEXT_FILE_BYTES = 64 * 1024;
+const COMPOSER_MAX_HEIGHT = 360;
+
+function resizeComposerTextarea(textarea: HTMLTextAreaElement): void {
+  textarea.style.height = "auto";
+  const viewportLimit = typeof window === "undefined" ? COMPOSER_MAX_HEIGHT : Math.round(window.innerHeight * 0.38);
+  textarea.style.height = `${Math.min(textarea.scrollHeight, Math.max(200, Math.min(COMPOSER_MAX_HEIGHT, viewportLimit)))}px`;
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -113,6 +124,7 @@ export interface ChatInputHandle {
   prependText: (text: string) => void;
   addImages: (files: File[]) => void;
   addFiles: (files: File[]) => void;
+  restoreFailedPrompt: (text: string, files?: AttachedFile[]) => void;
   /** Send a separate local UI shortcut without replacing the user's draft. */
   sendText: (text: string) => boolean;
 }
@@ -249,6 +261,14 @@ function draftImagesToAttachedImages(images: ChatDraftImage[] | undefined): Atta
     .map(draftImageToAttachedImage);
 }
 
+function attachedFileToDraftFile(file: AttachedFile): ChatDraftFile {
+  return { ...file };
+}
+
+function draftFilesToAttachedFiles(files: ChatDraftFile[] | undefined): AttachedFile[] {
+  return (files ?? []).slice(0, MAX_ATTACHED_FILES).map((file) => ({ ...file }));
+}
+
 function revokeImagePreview(image: AttachedImage): void {
   if (image.previewUrl.startsWith("blob:")) {
     URL.revokeObjectURL(image.previewUrl);
@@ -354,7 +374,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
   ));
-  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>(() => (
+    draftKey ? draftFilesToAttachedFiles(getDraft(draftKey)?.files) : []
+  ));
   const trimmedValue = value.trimStart();
   const bashMode = attachedImages.length === 0 && attachedFiles.length === 0 && trimmedValue.startsWith("!");
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
@@ -518,8 +540,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       requestAnimationFrame(() => {
         if (!ta) return;
         ta.focus();
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        resizeComposerTextarea(ta);
       });
     },
     prependText(text: string) {
@@ -535,8 +556,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         if (!ta) return;
         ta.focus();
         ta.setSelectionRange(combined.length, combined.length);
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        resizeComposerTextarea(ta);
       });
     },
     insertText(text: string) {
@@ -558,8 +578,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         const position = start + separator.length + text.length;
         ta.setSelectionRange(position, position);
         ta.focus();
-        ta.style.height = "auto";
-        ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+        resizeComposerTextarea(ta);
       });
     },
     addImages(files: File[]) {
@@ -568,10 +587,34 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     addFiles(files: File[]) {
       void processFileSelection(files);
     },
+    restoreFailedPrompt(text: string, files?: AttachedFile[]) {
+      setValue((current) => current.trim() ? [text, current].filter((item) => item.trim()).join("\n\n") : text);
+      if (files?.length) setAttachedFiles((current) => [...files, ...current].slice(0, MAX_ATTACHED_FILES));
+      requestAnimationFrame(() => {
+        const textarea = textareaRef.current;
+        if (!textarea) return;
+        textarea.focus();
+        resizeComposerTextarea(textarea);
+      });
+    },
   }));
 
   const removeFile = useCallback((index: number) => {
     setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const restorePastedFile = useCallback((index: number) => {
+    const file = attachedFilesRef.current[index];
+    if (file?.kind !== "paste" || file.text == null) return;
+    setAttachedFiles((current) => current.filter((_, currentIndex) => currentIndex !== index));
+    setValue((current) => current ? `${current}\n\n${file.text}` : file.text!);
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+      resizeComposerTextarea(textarea);
+    });
   }, []);
 
   const clearImages = useCallback(() => {
@@ -602,8 +645,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setDraft(draftKey, {
       value,
       images: attachedImages.map(imageToDraftImage),
+      files: attachedFiles.map(attachedFileToDraftFile),
     });
-  }, [attachedImages, draftKey, value]);
+  }, [attachedFiles, attachedImages, draftKey, value]);
 
   useEffect(() => {
     const previousDraftKey = draftKeyRef.current;
@@ -615,6 +659,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       setDraft(previousDraftKey, {
         value: valueRef.current,
         images: attachedImagesRef.current.map(imageToDraftImage),
+        files: attachedFilesRef.current.map(attachedFileToDraftFile),
       });
     }
 
@@ -632,13 +677,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       prev.forEach(revokeImagePreview);
       return draftImagesToAttachedImages(draft?.images);
     });
+    setAttachedFiles(draftFilesToAttachedFiles(draft?.files));
   }, [draftKey, stopVoiceInput]);
 
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    if (value) ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    if (value) resizeComposerTextarea(ta);
   }, [value]);
 
   useEffect(() => {
@@ -667,10 +713,26 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return;
       }
     }
+    let messageToSend = msg;
+    let filesToSend = attachedFiles;
+    if (msg && shouldMaterializeDirectPrompt(msg, contextUsage)) {
+      const existingPastes = attachedFiles.filter((file) => file.kind === "paste" && file.text != null);
+      const combined = [msg, ...existingPastes.map((file) => file.text!)].join("\n\n");
+      filesToSend = [
+        ...attachedFiles.filter((file) => file.kind !== "paste"),
+        {
+          name: t("chat.pastedContentName", { count: 1 }),
+          size: new TextEncoder().encode(combined).byteLength,
+          text: combined,
+          kind: "paste" as const,
+        },
+      ];
+      messageToSend = "";
+    }
     onSend(
-      msg,
+      messageToSend,
       attachedImages.length ? attachedImages : undefined,
-      attachedFiles.length ? attachedFiles : undefined,
+      filesToSend.length ? filesToSend : undefined,
       {
         goalMode: promptMode === "goal" && !msg.startsWith("/") && !msg.startsWith("!"),
         planMode: promptMode === "plan" && !msg.startsWith("/") && !msg.startsWith("!"),
@@ -678,7 +740,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     );
     setPromptMode("normal");
     clearInput();
-  }, [value, attachedImages, attachedFiles, isStreaming, onBuiltinCommand, onSend, clearInput, promptMode]);
+  }, [value, attachedImages, attachedFiles, isStreaming, onBuiltinCommand, onSend, clearInput, promptMode, contextUsage, t]);
 
   const handleOptimizePrompt = useCallback(async () => {
     const source = value.trim();
@@ -787,8 +849,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (!element) return;
       element.focus({ preventScroll: true });
       element.setSelectionRange(next.selection, next.selection);
-      element.style.height = "auto";
-      element.style.height = `${Math.min(element.scrollHeight, 200)}px`;
+      resizeComposerTextarea(element);
     });
   }, [updateAtQuery]);
 
@@ -1000,8 +1061,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (!el) return;
       el.focus();
       el.setSelectionRange(newPos, newPos);
-      el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+      resizeComposerTextarea(el);
     });
   }, [atQuery, value]);
 
@@ -1046,7 +1106,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       ta.focus();
       ta.setSelectionRange(text.length, text.length);
       ta.style.height = "auto";
-      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      resizeComposerTextarea(ta);
     });
   }, []);
 
@@ -1061,7 +1121,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       ta.focus();
       ta.setSelectionRange(nextValue.length, nextValue.length);
       ta.style.height = "auto";
-      ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+      resizeComposerTextarea(ta);
     });
   }, []);
 
@@ -1286,18 +1346,29 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const handleInput = useCallback(() => {
     const ta = textareaRef.current;
     if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+    resizeComposerTextarea(ta);
   }, []);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = Array.from(e.clipboardData?.items ?? []);
     const imageItems = items.filter((item) => item.type.startsWith("image/"));
-    if (!imageItems.length) return;
+    if (imageItems.length) {
+      e.preventDefault();
+      const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
+      processImageFiles(files);
+      return;
+    }
+    const pastedText = e.clipboardData?.getData("text/plain") ?? "";
+    if (pastedText.length <= LARGE_PASTE_CHARACTER_THRESHOLD || attachedFilesRef.current.length >= MAX_ATTACHED_FILES) return;
     e.preventDefault();
-    const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
-    processImageFiles(files);
-  }, [processImageFiles]);
+    const index = attachedFilesRef.current.filter((file) => file.kind === "paste").length + 1;
+    setAttachedFiles((current) => [...current, {
+      name: t("chat.pastedContentName", { count: index }),
+      size: new TextEncoder().encode(pastedText).byteLength,
+      text: pastedText,
+      kind: "paste" as const,
+    }].slice(0, MAX_ATTACHED_FILES));
+  }, [processImageFiles, t]);
 
   useEffect(() => {
     if (slashQuery === null) {
@@ -1565,6 +1636,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>
                   {file.name}
                 </span>
+                {file.kind === "paste" && (
+                  <button
+                    type="button"
+                    onClick={() => restorePastedFile(i)}
+                    title={t("chat.restorePasteToComposer")}
+                    aria-label={t("chat.restorePasteToComposer")}
+                    style={{
+                      flexShrink: 0, padding: "1px 4px", border: "none", borderRadius: 4,
+                      background: "transparent", color: "var(--accent)", cursor: "pointer",
+                      fontSize: "var(--text-xs)", whiteSpace: "nowrap",
+                    }}
+                  >
+                    {t("chat.showInComposer")}
+                  </button>
+                )}
                 <button
                   onClick={() => removeFile(i)}
                   title={t("chat.removeAttachment")}
@@ -1901,7 +1987,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               lineHeight: "var(--chat-line-height)",
               fontFamily: "inherit",
               minHeight: 24,
-              maxHeight: 200,
+              maxHeight: "min(38vh, 360px)",
               overflow: "auto",
             }}
           />

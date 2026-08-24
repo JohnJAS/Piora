@@ -112,7 +112,7 @@ export function TaskRow({
     fallbackRuntime: isRunning ? "running" : "idle",
   });
   const taskStatusPresentationKey = getTaskStatusPresentationKey(taskStatus);
-  const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
+  const title = session.name || session.firstMessage.slice(0, 50) || t("sidebar.newConversation");
 
   useEffect(() => () => titleOptimizationAbortRef.current?.abort(), []);
 

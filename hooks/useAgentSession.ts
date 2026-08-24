@@ -16,6 +16,7 @@ import type { SessionStatsInfo } from "@/lib/pi-types";
 import { estimateSessionContextUsage } from "@/lib/context-usage";
 import type { GoalRunState } from "@/lib/goal-run-registry";
 import type { PlanArtifactState, PlanDraftInput } from "@/lib/plan-artifact-registry";
+import { isPromptMaterialRuntimeMessage, type PromptMaterialReference } from "@/lib/prompt-material-format";
 
 export interface SessionData {
   sessionId: string;
@@ -308,6 +309,7 @@ export interface ChatInputHandle {
   insertIfEmpty: (content: string) => void;
   prependText: (text: string) => void;
   addImages: (files: File[]) => void;
+  restoreFailedPrompt: (text: string, files?: AttachedFile[]) => void;
 }
 
 export interface AttachedImage {
@@ -323,6 +325,38 @@ export interface AttachedFile {
   name: string;
   size: number;
   text: string | null;
+  kind?: "file" | "paste";
+}
+
+function userMessageHasPromptMaterialMarker(message: AgentMessage): boolean {
+  if (message.role !== "user") return false;
+  if (isPromptMaterialRuntimeMessage(message.content)) return true;
+  return Array.isArray(message.content) && message.content.some((block) => (
+    block.type === "text" && isPromptMaterialRuntimeMessage(block.text)
+  ));
+}
+
+async function uploadPromptMaterialFiles(files: AttachedFile[]): Promise<PromptMaterialReference[]> {
+  if (!files.length) return [];
+  const response = await fetch("/api/prompt-materials", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      materials: files.map((file) => ({ name: file.name, content: file.text ?? "" })),
+    }),
+  });
+  const body = await response.json().catch(() => ({})) as {
+    materials?: Array<{ id?: unknown }>;
+    error?: unknown;
+  };
+  if (!response.ok || !Array.isArray(body.materials)) {
+    throw new Error(typeof body.error === "string" ? body.error : `HTTP ${response.status}`);
+  }
+  const references = body.materials
+    .filter((material): material is { id: string } => typeof material.id === "string")
+    .map(({ id }) => ({ id }));
+  if (references.length !== files.length) throw new Error("Prompt material upload returned an incomplete result.");
+  return references;
 }
 
 type SelectedModel = { provider: string; modelId: string };
@@ -560,7 +594,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, []);
 
-  const promoteNewSession = useCallback((messageCount = 0, firstMessage = "(no messages)") => {
+  const promoteNewSession = useCallback((messageCount = 0, firstMessage = "") => {
     const sid = sessionIdRef.current;
     if (!isNew || !newSessionCwd || !sid || newSessionPromotedRef.current) return;
     newSessionPromotedRef.current = true;
@@ -1060,16 +1094,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           // already appended it optimistically. Consume only the still-adjacent
           // optimistic bubble; later same-text queue deliveries must render.
           const delivered = normalizeToolCalls(completed);
+          const materializedDelivery = userMessageHasPromptMaterialMarker(delivered);
           const deliveredKey = userMessageKey(delivered);
           const optimisticKey = optimisticUserMessageKeyRef.current;
           optimisticUserMessageKeyRef.current = null;
           setMessages((prev) => {
             const last = prev[prev.length - 1];
             if (optimisticKey && last?.role === "user" && userMessageKey(last) === optimisticKey) {
+              if (materializedDelivery) return prev;
               return optimisticKey === deliveredKey
                 ? prev
                 : [...prev.slice(0, -1), delivered];
             }
+            if (materializedDelivery) return prev;
             return [...prev, delivered];
           });
         } else if (completed) {
@@ -1176,20 +1213,24 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
     const promptRunId = promptRunIdRef.current + 1;
 
-    const fileTexts = (files ?? []).map((file) =>
+    const pasteFiles = (files ?? []).filter((file) => file.kind === "paste" && file.text != null);
+    const inlineFiles = (files ?? []).filter((file) => file.kind !== "paste");
+    const fileTexts = inlineFiles.map((file) =>
       file.text != null
         ? `附件: ${file.name}\n\`\`\`\n${file.text}\n\`\`\``
         : `附件: ${file.name}（二进制或超大文件，仅提供文件名）`,
     ).join("\n\n");
     const effectiveMessage = fileTexts ? `${fileTexts}\n\n${message}` : message;
-    const effectiveTrimmed = fileTexts ? effectiveMessage.trim() : trimmedMessage;
+    const displayMessage = [effectiveMessage.trim(), ...pasteFiles.map((file) => file.text!.trim())]
+      .filter(Boolean)
+      .join("\n\n");
 
     const imageBlocks = images?.map((img) => ({ type: "image" as const, source: { type: "base64" as const, media_type: img.mimeType, data: img.data } }));
     const userMsg: AgentMessage = {
       role: "user",
       content: imageBlocks?.length
-        ? [...(effectiveTrimmed ? [{ type: "text" as const, text: effectiveMessage }] : []), ...imageBlocks]
-        : effectiveMessage,
+        ? [...(displayMessage ? [{ type: "text" as const, text: displayMessage }] : []), ...imageBlocks]
+        : displayMessage,
       timestamp: Date.now(),
     };
     setMessages((prev) => [...prev, userMsg]);
@@ -1208,6 +1249,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     let promptRequestStarted = false;
 
     try {
+      const promptMaterials = pasteFiles.length ? await uploadPromptMaterialFiles(pasteFiles) : [];
       if (isNew && newSessionCwd) {
         const selectedModel = newSessionModel;
         const existingSid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
@@ -1215,6 +1257,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
         if (sid) {
           sentSessionId = sid;
+          promoteNewSession(0, displayMessage.slice(0, 2_000));
           if (selectedModel) {
             setPendingModel(selectedModel);
             if (existingSid) {
@@ -1226,12 +1269,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           await sendAgentCommand(sid, {
             type: "prompt",
             message: effectiveMessage,
+            ...(promptMaterials.length ? { materials: promptMaterials } : {}),
             ...(options?.goalMode ? { goalMode: true } : {}),
             ...(options?.planMode ? { planMode: true } : {}),
             ...(options?.planExecution ? { planExecution: options.planExecution } : {}),
             ...(piImages?.length ? { images: piImages } : {}),
           });
-          promoteNewSession(1, effectiveMessage);
         }
       } else if (session) {
         sentSessionId = session.id;
@@ -1240,6 +1283,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         await sendAgentCommand(session.id, {
           type: "prompt",
           message: effectiveMessage,
+          ...(promptMaterials.length ? { materials: promptMaterials } : {}),
           ...(options?.goalMode ? { goalMode: true } : {}),
           ...(options?.planMode ? { planMode: true } : {}),
           ...(options?.planExecution ? { planExecution: options.planExecution } : {}),
@@ -1279,7 +1323,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           ? e.message
           : e instanceof Error ? e.message : String(e),
       });
-      if (message) opts.chatInputRef?.current?.insertIfEmpty(message);
+      opts.chatInputRef?.current?.restoreFailedPrompt(message, files);
       optimisticUserMessageKeyRef.current = null;
       setAgentRunning(false);
       setAgentPhase(null);

@@ -14,6 +14,11 @@ const source = [mainSource, taskRowSource, ...splitSources].join("\n");
 const sessionItemSource = taskRowSource.slice(taskRowSource.indexOf("export function TaskRow("));
 const sidebarSource = source;
 
+test("empty sessions use a friendly localized title instead of an internal placeholder", () => {
+  assert.match(taskRowSource, /t\("sidebar\.newConversation"\)/);
+  assert.doesNotMatch(taskRowSource, /\(no messages\)/);
+});
+
 test("always confirms session deletion and offers undo (no Shift+click bypass)", () => {
   // Task T-01: Shift+click no longer skips the confirmation — every delete
   // goes through the confirm state first, and deletion stays reversible.

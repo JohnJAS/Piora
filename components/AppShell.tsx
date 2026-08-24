@@ -22,6 +22,7 @@ import { useCompanionPreferences } from "@/hooks/useCompanionPreferences";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { SystemPromptEditor } from "./SystemPromptEditor";
 import { copyText } from "@/lib/clipboard";
+import { setDraft, type ChatDraft } from "@/lib/draft-store";
 import { getFileName } from "@/lib/file-paths";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import { getInitialNavigation } from "@/lib/initial-navigation";
@@ -119,6 +120,7 @@ export function AppShell() {
   } = useCompletionNotification();
   const isMobile = useIsMobile();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
+  const pendingLandingDraftRef = useRef<ChatDraft | null>(null);
   const automaticTitleRequestsRef = useRef<Set<string>>(new Set());
   const [selectedRoom, setSelectedRoom] = useState<CollaborationRoom | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
@@ -738,6 +740,11 @@ export function AppShell() {
   }, [isMobile]);
 
   const handleNewSession = useCallback((_sessionId: string, cwd: string) => {
+    const pendingLandingDraft = pendingLandingDraftRef.current;
+    if (pendingLandingDraft) {
+      setDraft(`new:${cwd}`, pendingLandingDraft);
+      pendingLandingDraftRef.current = null;
+    }
     setSettingsDialogOpen(false);
     setSelectedRoom(null);
     setSelectedSession(null);
@@ -2265,7 +2272,10 @@ export function AppShell() {
                 activeCwd={activeCwd}
                 activeProjectRoot={activeProjectRoot}
                 onSelect={handleNewSessionProjectSelected}
-                onBrowse={() => sessionSidebarRef.current?.openProjectPicker()}
+                onBrowse={(draft) => {
+                  pendingLandingDraftRef.current = draft;
+                  sessionSidebarRef.current?.openProjectPicker();
+                }}
               />
             ) : null}
             </div>

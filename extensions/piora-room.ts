@@ -17,6 +17,7 @@ import {
   publishRoomArtifact,
 } from "../lib/room-store.ts";
 import { getRoomMemberInstructions, getRoomMemberName, getRoomMemberRole } from "../lib/room-types.ts";
+import { deriveRoomReplyRoutingMetadata, dispatchExplicitRoomMentions } from "../lib/room-chat.ts";
 import { getActiveTeamPromptContext } from "../lib/team-prompt-context.ts";
 import { getTeamRun } from "../lib/team-run-store.ts";
 import {
@@ -347,8 +348,12 @@ export default function pioraRoom(api: ExtensionAPI) {
         authorName: member.name,
         content: params.content,
         replyTo: params.replyTo,
+        ...deriveRoomReplyRoutingMetadata(room.id, params.replyTo),
       });
-      return textResult(`Sent shared room message #${message.seq}.`, { roomId: room.id, messageId: message.id, seq: message.seq });
+      const dispatch = getActiveTeamPromptContext(sessionId)
+        ? { dispatched: [], skipped: [] }
+        : await dispatchExplicitRoomMentions(room.id, message);
+      return textResult(`Sent shared room message #${message.seq}.`, { roomId: room.id, messageId: message.id, seq: message.seq, dispatch });
     },
   }));
 

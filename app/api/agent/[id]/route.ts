@@ -42,6 +42,7 @@ export async function POST(
         source: "ui" as const,
         idempotencyKey: messageIdempotency(id, body),
         ...(Array.isArray(body.images) ? { images: body.images } : {}),
+        ...(Array.isArray(body.materials) ? { materials: body.materials as Array<{ id: string }> } : {}),
         ...(body.goalMode === true ? { goalMode: true } : {}),
         ...(body.planMode === true ? { planMode: true } : {}),
         ...(body.planExecution && typeof body.planExecution === "object" ? { planExecution: body.planExecution as { planId: string; expectedRevision: number } } : {}),

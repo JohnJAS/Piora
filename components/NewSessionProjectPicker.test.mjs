@@ -21,6 +21,12 @@ test("new chat requires an explicit project choice instead of inheriting the act
   assert.match(picker, /className=\{styles\.composer\}/);
   assert.match(picker, /className=\{styles\.projectPopover\}/);
   assert.match(picker, /setDraft\(`new:\$\{choice\.cwd\}`/);
+  assert.match(picker, /LARGE_PASTE_CHARACTER_THRESHOLD/);
+  assert.match(picker, /setPastedMaterials/);
+  assert.match(picker, /展开编辑/);
+  assert.match(picker, /files: pastedMaterials/);
+  assert.match(shell, /pendingLandingDraftRef/);
+  assert.match(shell, /setDraft\(`new:\$\{cwd\}`/);
   assert.match(picker, /const \[menuOpen, setMenuOpen\] = useState\(false\)/);
   assert.doesNotMatch(picker, /onFocus=\{\(\) => \{ if \(!menuOpen\) setMenuOpen\(true\); \}\}/);
   assert.match(picker, /选择其他文件夹/);
@@ -34,7 +40,7 @@ test("desktop project browsing delegates to the operating system directory picke
   ]);
   assert.match(projectPickerHook, /window\.piDesktop\?\.selectDirectory/);
   assert.match(projectPickerHook, /rememberProject\(cwd\); setSelectedCwd\(cwd\); onProjectSelected\?\.\(cwd\)/);
-  assert.match(shell, /onBrowse=\{\(\) => sessionSidebarRef\.current\?\.openProjectPicker\(\)\}/);
+  assert.match(shell, /onBrowse=\{\(draft\) => \{[\s\S]*?pendingLandingDraftRef\.current = draft;[\s\S]*?openProjectPicker\(\)/);
   const sidebar = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
   assert.match(sidebar, /onProjectSelected:\s*handlePickedProject/);
   assert.match(sidebar, /handlePickedProject[\s\S]*?onNewSession\?\.\(createTemporarySessionId\(\), cwd\)/);

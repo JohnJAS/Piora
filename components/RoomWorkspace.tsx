@@ -174,7 +174,7 @@ function RoomMessageList({
       {messages.length === 0 ? <div className={styles.emptyState}>
         <span className={styles.groupAvatar}><AliIcon name="messages" size={19} /></span>
         <h2>开始群聊</h2>
-        <p>直接发送消息会交给协调者；使用 @成员 或 @所有人 指定响应者。</p>
+        <p>直接发送消息会交给协调者；单独 @成员可直接沟通，同时提及多名成员时由协调者按依赖顺序调度。</p>
       </div> : messages.map((message) => {
         const isPioraQuestion = message.author.kind === "system" && message.author.id === "piora" && message.content.startsWith("需要你的回答");
         const registerMessage = (element: HTMLElement | null) => {
@@ -313,7 +313,7 @@ function RoomComposer({
           <AliIcon name="send" size={16} />
         </button>
       </div>
-      <div className={styles.composerHint}>{mode === "goal" ? "Enter 启动 · Shift+Enter 换行 · 目标将自动规划、分派、审查并汇总" : "Enter 发送 · Shift+Enter 换行 · 未提及成员时由协调者响应"}</div>
+      <div className={styles.composerHint}>{mode === "goal" ? "Enter 启动 · Shift+Enter 换行 · 协调者将按依赖自动分派、等待完成、审查并汇总" : "Enter 发送 · 单独 @ 可直接沟通 · 多成员任务由协调者按顺序调度"}</div>
     </div>
   );
 }

@@ -22,6 +22,7 @@ import {
   updateRoomWorkspace,
 } from "@/lib/room-store";
 import { dispatchRoomChat } from "@/lib/room-chat";
+import { resolveRoomChatTargets } from "@/lib/room-chat-routing";
 import { dispatchReadyRoomTasks } from "@/lib/room-coordinator";
 import { getTeamCoordinatorService } from "@/lib/team-coordinator-service";
 import { getTeamRunStore } from "@/lib/team-run-store";
@@ -271,9 +272,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       content: body.content,
       replyTo: body.replyTo,
       correlationId: body.correlationId,
-      forwardDepth: body.forwardDepth,
-      autoRound: body.autoRound,
-      maxAutoRounds: body.maxAutoRounds,
+      forwardDepth: body.forwardDepth ?? 0,
+      autoRound: body.autoRound ?? 0,
+      maxAutoRounds: body.maxAutoRounds ?? 6,
     });
     if (body.action === "chat") {
       const waitingRun = body.authorKind !== "session" && room.coordination.mode === "team"
@@ -286,7 +287,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       const dispatch = await dispatchRoomChat(id, {
         messageId: message.id,
         content: message.content,
-        targetSessionIds: body.targetSessionIds,
+        authorName: message.author.name,
+        authorSessionId: message.author.id,
+        targetSessionIds: message.author.kind === "user"
+          ? resolveRoomChatTargets(room, message.content)
+          : body.targetSessionIds,
         replyTo: message.replyTo,
         correlationId: message.correlationId ?? message.id,
         forwardDepth: message.forwardDepth,

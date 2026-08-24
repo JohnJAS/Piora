@@ -156,8 +156,9 @@ export class TeamCoordinatorService {
   }
 
   private publishVisibleMilestones(state: TeamRunState, room: CollaborationRoomV3): void {
+    const coordinator = room.members.find((member) => member.memberId === state.coordinatorMemberId);
+    const coordinatorName = coordinator?.profile.name ?? "协调者";
     if (state.plan) {
-      const coordinator = room.members.find((member) => member.memberId === state.coordinatorMemberId);
       const taskLines = state.plan.taskIds.map((taskId, index) => `${index + 1}. ${state.tasks[taskId]?.title ?? taskId}`);
       this.publishRoomStatus(
         state,
@@ -173,7 +174,15 @@ export class TeamCoordinatorService {
         this.publishRoomStatus(
           state,
           `task:${task.id}:attempt:${task.attempt}:started`,
-          `开始执行：**${task.title}**\n\n${task.description}`,
+          `@${member.profile.name} 请开始执行：**${task.title}**\n\n${task.description}`,
+          coordinator,
+        );
+      }
+      if (task.submission && member) {
+        this.publishRoomStatus(
+          state,
+          `task:${task.id}:submitted:${task.submission.submittedAt}`,
+          `@${coordinatorName} 我已完成并提交：**${task.title}**\n\n${task.submission.summary}`,
           member,
         );
       }
@@ -181,10 +190,34 @@ export class TeamCoordinatorService {
         this.publishRoomStatus(
           state,
           `task:${task.id}:completed`,
-          `已完成：**${task.title}**${task.submission?.summary ? `\n\n${task.submission.summary}` : ""}`,
-          member,
+          `已确认完成：**${task.title}**${task.submission?.summary ? `\n\n${task.submission.summary}` : ""}`,
+          coordinator,
         );
       }
+    }
+    for (const dispatch of Object.values(state.activeDispatches)) {
+      if (dispatch.purpose !== "review") continue;
+      const task = state.tasks[dispatch.taskId];
+      const reviewer = room.members.find((member) => member.memberId === dispatch.memberId);
+      const worker = task ? room.members.find((member) => member.memberId === task.assignedMemberId) : undefined;
+      if (!task || !reviewer) continue;
+      this.publishRoomStatus(
+        state,
+        `review:${dispatch.dispatchId}:requested`,
+        `@${reviewer.profile.name} 请现在审查 ${worker?.profile.name ?? "执行者"} 已提交的：**${task.title}**\n\n编码任务已提交，审查从此刻开始。`,
+        coordinator,
+      );
+    }
+    for (const decision of Object.values(state.reviewDecisions)) {
+      const task = state.tasks[decision.taskId];
+      const reviewer = room.members.find((member) => member.memberId === decision.reviewerMemberId);
+      if (!task || !reviewer) continue;
+      this.publishRoomStatus(
+        state,
+        `review:${decision.id}:submitted`,
+        `@${coordinatorName} 审查已完成：**${task.title}**\n\n结论：${decision.verdict === "approved" ? "通过" : "需要修改"}\n\n${decision.summary}`,
+        reviewer,
+      );
     }
   }
 

@@ -43,6 +43,18 @@ test("renders short user queries without an expand control", () => {
   assert.doesNotMatch(html, /message-user-expand/);
 });
 
+test("renders deferred prompt material as a collapsed preview with its full line count", () => {
+  const html = renderMessage({
+    role: "user",
+    content: "preview only",
+    deferredContent: true,
+    deferredLineCount: 12_345,
+    deferredByteLength: 500_000,
+  }, { sessionId: "session-1", entryId: "entry-1" });
+  assert.match(html, /message-user-expand/);
+  assert.match(html, /展开完整消息 · 12,345 行/);
+});
+
 test("renders a provider error when the assistant message has no content", () => {
   const html = renderMessage({
     role: "assistant",

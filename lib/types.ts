@@ -53,6 +53,10 @@ export interface UserMessage {
   role: "user";
   content: string | (TextContent | ImageContent)[];
   timestamp?: number;
+  /** Large prompt material is previewed initially and fetched only when expanded. */
+  deferredContent?: boolean;
+  deferredByteLength?: number;
+  deferredLineCount?: number;
 }
 
 export interface AssistantMessage {
