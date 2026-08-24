@@ -4,6 +4,27 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-08-24
+
+### Added
+
+- Added Chrome bookmark import to the built-in browser, preserving the complete
+  bookmark folder hierarchy in its bookmark bar and folder browser.
+
+### Changed
+
+- Reworked the new-conversation guidance around configuring a model first and
+  then opening a project folder, and removed the unsupported local/cloud label.
+- Simplified the Projects sidebar by removing its redundant task search field
+  and keeping unselected project rows visually transparent.
+
+### Fixed
+
+- Kept the composer model selector inside the visible viewport and removed the
+  misleading help cursor from MCP tool status.
+- Restored the intended onboarding and browser bookmark experience after
+  concurrent interface work had overwritten parts of those changes.
+
 ## [0.3.8] - 2026-08-24
 
 ### Fixed
