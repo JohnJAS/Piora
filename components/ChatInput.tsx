@@ -2140,9 +2140,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     Math.max(8, modelDropdownRect.left),
                     Math.max(8, viewportWidth - desktopPanelWidth - 8),
                   );
-                  const viewportLeft = window.visualViewport?.offsetLeft ?? 0;
-                  const submenuWidth = Math.min(292, Math.max(160, viewportWidth - 16));
-                  const submenuCenter = viewportLeft + viewportWidth / 2;
+                  const submenuLeftSpace = desktopPanelLeft - 8;
+                  const submenuRightSpace = viewportWidth - desktopPanelLeft - desktopPanelWidth - 8;
+                  const submenuOpensRight = submenuRightSpace >= submenuLeftSpace;
+                  const submenuWidth = Math.min(
+                    292,
+                    Math.max(160, (submenuOpensRight ? submenuRightSpace : submenuLeftSpace) - 7),
+                  );
                   const panelPos: React.CSSProperties = isMobile
                     ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
                     : { left: desktopPanelLeft, right: "auto", width: desktopPanelWidth };
@@ -2189,8 +2193,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                   role="menuitemradio"
                                   aria-checked={isActive}
                                 >
-                                  <ModelProviderIcon provider={option.provider} modelId={option.modelId} modelName={option.name} size={15} />
-                                  <span>{option.name}</span>
+                                  <ModelProviderIcon className="model-settings-choice-icon" provider={option.provider} modelId={option.modelId} modelName={option.name} size={15} />
+                                  <span className="model-settings-choice-label">{option.name}</span>
                                   {isActive ? <AliIcon name="check" size={11} /> : null}
                                 </button>
                               );
@@ -2256,7 +2260,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             onClick={() => setModelMenuSection("models")}
                             role="menuitem"
                           >
-                            <span>{t("i18n.model")}</span>
+                            <span className="model-settings-row-label">{t("i18n.model")}</span>
                             <span className="model-settings-row-value">{currentName ?? t("chat.selectModel")}</span>
                             <AliIcon name="arrowright" size={11} />
                           </button>
@@ -2268,7 +2272,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                               onClick={() => setModelMenuSection("reasoning")}
                               role="menuitem"
                             >
-                              <span>{t("chat.reasoningEffort")}</span>
+                              <span className="model-settings-row-label">{t("chat.reasoningEffort")}</span>
                               <span className="model-settings-row-value">{thinkingLevelLabel}</span>
                               <AliIcon name="arrowright" size={11} />
                             </button>
@@ -2291,13 +2295,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                               className="model-settings-submenu"
                               role="menu"
                               style={{
-                                position: "fixed",
                                 maxHeight: maxH,
                                 width: submenuWidth,
-                                left: submenuCenter,
-                                right: "auto",
-                                bottom,
-                                transform: "translateX(-50%)",
+                                ...(submenuOpensRight
+                                  ? { left: "calc(100% + 7px)", right: "auto" }
+                                  : { right: "calc(100% + 7px)", left: "auto" }),
                               }}
                             >
                               <div className="model-settings-submenu-title">

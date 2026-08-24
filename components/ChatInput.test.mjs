@@ -93,10 +93,14 @@ test("uses one composer chip for model and reasoning without a speed setting", (
   assert.match(chatInputSource, /createPortal\(/);
   assert.match(chatInputSource, /model-settings-row-value/);
   assert.match(chatInputSource, /desktopPanelLeft/);
-  assert.match(chatInputSource, /submenuCenter/);
-  assert.match(chatInputSource, /position: "fixed"/);
-  assert.match(chatInputSource, /transform: "translateX\(-50%\)"/);
+  assert.match(chatInputSource, /submenuOpensRight/);
   assert.match(chatInputSource, /width: submenuWidth/);
+  assert.match(chatInputSource, /className="model-settings-row-label"/);
+  assert.match(chatInputSource, /className="model-settings-choice-icon"/);
+  assert.match(chatInputSource, /className="model-settings-choice-label"/);
+  assert.match(globalCss, /\.model-settings-row-label\s*\{[^}]*flex:\s*0 0 auto;[^}]*white-space:\s*nowrap;/s);
+  assert.match(globalCss, /\.model-settings-row-value\s*\{[^}]*flex:\s*1 1 auto;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
+  assert.doesNotMatch(globalCss, /\.model-settings-choice\s*>\s*span:not/);
   assert.doesNotMatch(chatInputSource, /chat\.speed|model-settings-speed/);
 });
 

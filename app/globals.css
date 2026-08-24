@@ -1347,6 +1347,11 @@ select:focus-visible,
   font-size: var(--text-sm);
 }
 
+.model-settings-row-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .model-settings-row:hover,
 .model-settings-row:focus-visible,
 .model-settings-row.is-active,
@@ -1362,8 +1367,10 @@ select:focus-visible,
 .model-settings-row-value {
   overflow: hidden;
   min-width: 0;
+  flex: 1 1 auto;
   margin-left: auto;
   color: var(--text-dim);
+  text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1437,7 +1444,11 @@ select:focus-visible,
   font-weight: 600;
 }
 
-.model-settings-choice > span:not(.model-provider-icon) {
+.model-settings-choice-icon {
+  flex: 0 0 auto;
+}
+
+.model-settings-choice-label {
   overflow: hidden;
   min-width: 0;
   flex: 1;

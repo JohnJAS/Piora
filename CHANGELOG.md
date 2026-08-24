@@ -11,8 +11,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ### Fixed
 
-- Center the expanded model list against the application viewport instead of
-  leaving it visually offset toward the composer trigger.
+- Keep the model submenu attached to its parent menu, align every provider icon
+  with its model name, and truncate long model ids without compressing labels.
 
 ## [0.3.9] - 2026-08-24
 
