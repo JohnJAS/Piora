@@ -20,6 +20,7 @@ import { useCompletionNotification } from "@/hooks/useCompletionNotification";
 import { useCompanionPets } from "@/hooks/useCompanionPets";
 import { useCompanionPreferences } from "@/hooks/useCompanionPreferences";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { SystemPromptEditor } from "./SystemPromptEditor";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
@@ -278,6 +279,11 @@ export function AppShell() {
 
   const handleSystemPromptChange = useCallback((prompt: string | null) => {
     setSystemPrompt(prompt);
+  }, []);
+
+  const handleSystemPromptSaved = useCallback(() => {
+    setSystemPrompt(null);
+    setSessionKey((key) => key + 1);
   }, []);
 
   // Session stats (tokens + cost) — populated by ChatWindow, displayed in top bar
@@ -1502,6 +1508,7 @@ export function AppShell() {
       }}
       conversation={{
         systemPrompt,
+        onSystemPromptSaved: handleSystemPromptSaved,
         notificationEnabled,
         notificationCapability,
         onNotificationToggle: () => { void onNotificationToggle(); },
@@ -2038,13 +2045,11 @@ export function AppShell() {
                     </span>
                   </div>
                   <div className="soft-top-panel-body">
-                    {systemPrompt ? (
-                      <div className="system-prompt-content">{systemPrompt}</div>
-                    ) : systemPrompt === "" ? (
-                      <div className="soft-top-panel-empty">{translate("system.empty")}</div>
-                    ) : (
-                      <div className="soft-top-panel-empty">{translate("system.load")}</div>
-                    )}
+                    <SystemPromptEditor
+                      compact
+                      effectivePrompt={systemPrompt}
+                      onSaved={handleSystemPromptSaved}
+                    />
                   </div>
                 </div>
               )}

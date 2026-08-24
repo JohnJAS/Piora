@@ -84,6 +84,7 @@ import {
   compactTaskActivityText,
 } from "./rpc-task-activity";
 import { CUSTOM_UI_KEYBINDINGS, PLAIN_TEXT_THEME } from "./rpc-ui-adapter";
+import { readSystemPromptConfig } from "./system-prompt-config";
 
 // ============================================================================
 // Types
@@ -197,6 +198,10 @@ export class AgentSessionWrapper {
   private forceEmptySystemPrompt = false;
   private unsubscribe: (() => void) | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private systemPromptReloadTimer: ReturnType<typeof setTimeout> | null = null;
+  private systemPromptReloadRequested = 0;
+  private systemPromptReloadApplied = 0;
+  private systemPromptReloading = false;
   private onDestroyCallbacks = new Set<() => void>();
   private activePromptRun: PromptRunIdentity | undefined;
   private activeCommandId: string | undefined;
@@ -232,6 +237,17 @@ export class AgentSessionWrapper {
 
   isRunning(): boolean {
     return this._alive && this.getRuntime() !== "idle";
+  }
+
+  async requestSystemPromptReload(): Promise<"reloaded" | "deferred" | "skipped"> {
+    if (!this._alive || this.runtimeProfile !== "normal") return "skipped";
+    this.systemPromptReloadRequested += 1;
+    if (this.isRunning() || this.systemPromptReloading) {
+      this.scheduleSystemPromptReload();
+      return "deferred";
+    }
+    await this.flushSystemPromptReload();
+    return "reloaded";
   }
 
   getActivePromptRunId(): string | undefined {
@@ -539,6 +555,47 @@ export class AgentSessionWrapper {
   private applyForcedEmptySystemPrompt(): void {
     if (this.forceEmptySystemPrompt && this.inner.agent.state) {
       this.inner.agent.state.systemPrompt = "";
+    }
+  }
+
+  private scheduleSystemPromptReload(): void {
+    if (!this._alive || this.systemPromptReloadTimer) return;
+    this.systemPromptReloadTimer = setTimeout(() => {
+      this.systemPromptReloadTimer = null;
+      void this.flushSystemPromptReload().catch((error) => {
+        console.error("[pi-web] deferred system prompt reload failed:", error instanceof Error ? error.message : error);
+        this.scheduleSystemPromptReload();
+      });
+    }, 250);
+  }
+
+  private async flushSystemPromptReload(): Promise<void> {
+    if (!this._alive || this.systemPromptReloadApplied >= this.systemPromptReloadRequested) return;
+    if (this.isRunning() || this.systemPromptReloading) {
+      this.scheduleSystemPromptReload();
+      return;
+    }
+    this.systemPromptReloading = true;
+    const revision = this.systemPromptReloadRequested;
+    try {
+      await this.waitForExtensionsBound();
+      this.extensionStatuses.clear();
+      this.extensionWidgets.clear();
+      await this.inner.reload();
+      if (typeof this.inner.bindExtensions !== "function") {
+        this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
+      }
+      this.applyForcedEmptySystemPrompt();
+      this.systemPromptReloadApplied = revision;
+      invalidateModelsCache();
+      this.emit({
+        type: "system_prompt_reloaded",
+        sessionId: this.sessionId,
+        systemPrompt: this.inner.agent.state?.systemPrompt ?? "",
+      });
+    } finally {
+      this.systemPromptReloading = false;
+      if (this.systemPromptReloadApplied < this.systemPromptReloadRequested) this.scheduleSystemPromptReload();
     }
   }
 
@@ -1277,6 +1334,7 @@ export class AgentSessionWrapper {
       void this.inner.abort().catch(() => undefined);
     }
     if (this.idleTimer) clearTimeout(this.idleTimer);
+    if (this.systemPromptReloadTimer) clearTimeout(this.systemPromptReloadTimer);
     if (this.inner.isBashRunning) this.inner.abortBash();
     const promptRun = this.activePromptRun;
     this.activePromptRun = undefined;
@@ -1699,6 +1757,20 @@ export function invalidateServicesCache(): void {
   getServicesCache().clear();
 }
 
+export async function reloadAllNormalSessionSystemPrompts(): Promise<{
+  reloadedSessions: number;
+  deferredSessions: number;
+}> {
+  const sessions = Array.from(getRegistry().values()).filter(
+    (session) => session.isAlive() && session.runtimeProfile === "normal",
+  );
+  const results = await Promise.all(sessions.map((session) => session.requestSystemPromptReload()));
+  return {
+    reloadedSessions: results.filter((result) => result === "reloaded").length,
+    deferredSessions: results.filter((result) => result === "deferred").length,
+  };
+}
+
 function getRegistry(): Map<string, AgentSessionWrapper> {
   if (!globalThis.__piSessions) {
     globalThis.__piSessions = new Map();
@@ -2004,6 +2076,7 @@ export async function startRpcSession(
                 additionalExtensionPaths: extensionPlan.enabledPaths,
                 noExtensions: true,
                 extensionsOverride: (result) => applyExtensionLoadPlan(result, extensionPlan),
+                systemPromptOverride: (base) => readSystemPromptConfig().prompt ?? base,
               },
             }),
       });

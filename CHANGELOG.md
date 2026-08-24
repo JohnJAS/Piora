@@ -4,10 +4,17 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-24
+
 ### Changed
 
 - Flatten Chrome bookmark imports so the contents of each Chrome bookmarks bar
   appear directly in Piora, without profile or bookmarks-bar wrapper folders.
+- Make the global system prompt editable from the conversation controls and
+  settings, then reload every idle Session immediately and every busy Session
+  as soon as its active task finishes.
+- Promote the verified `v*` release pipeline from preview publishing to stable
+  GitHub Releases, with the newest successful release marked as latest.
 
 ### Fixed
 

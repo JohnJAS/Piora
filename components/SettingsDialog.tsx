@@ -6,6 +6,7 @@ import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
 import { SettingsPortabilityCard } from "./SettingsPortabilityCard";
+import { SystemPromptEditor } from "./SystemPromptEditor";
 import { PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH, PROMPT_OPTIMIZER_SYSTEM_PROMPT } from "@/lib/prompt-optimizer";
 import {
   readPromptOptimizerSystemPrompt,
@@ -36,6 +37,7 @@ interface Props {
   sections?: Partial<Record<SettingsKey, ReactNode>>;
   conversation: {
     systemPrompt: string | null;
+    onSystemPromptSaved: () => void;
     notificationEnabled: boolean;
     notificationCapability: "desktop" | "browser" | "unsupported";
     onNotificationToggle: () => void | Promise<void>;
@@ -541,7 +543,10 @@ export function SettingsDialog({
 
                 <section className={styles.promptCard}>
                   <div className={styles.sectionEyebrow}>{t("system.prompt")}</div>
-                  <pre>{conversation.systemPrompt === null ? t("system.load") : conversation.systemPrompt || t("system.empty")}</pre>
+                  <SystemPromptEditor
+                    effectivePrompt={conversation.systemPrompt}
+                    onSaved={conversation.onSystemPromptSaved}
+                  />
                 </section>
               </>
               ) : sectionContent ? (

@@ -180,7 +180,7 @@ jobs:
           compression-level: 0
 
   publish-release:
-    name: Publish prerelease
+    name: Publish stable release
     needs: windows-build
     runs-on: windows-latest
     timeout-minutes: 10
@@ -236,7 +236,7 @@ jobs:
             }
           }
 
-      - name: Publish prerelease
+      - name: Publish stable release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -248,14 +248,14 @@ jobs:
             (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-win-x64.zip")).Path
           )
           $assets += (Resolve-Path -LiteralPath (Join-Path $root 'SHA256SUMS.txt')).Path
-          $releaseNotes = "Unsigned Windows preview with two no-install packages:`n- ZIP: extract the archive, then run Piora.exe.`n- Portable EXE: run the single executable directly.`n`nNeither package is code-signed, so Windows may show a reputation warning. Verify the selected package against SHA256SUMS.txt before running. Updates are manual: download a newer package from Releases when available.`n`nValidation boundary: automated source, package, portable-startup, archive-integrity, and packaged Pi-extension checks passed. Continuous mouse dragging, edge/corner resizing, transient Alt menu behavior, 100/125/150% DPI, portable-folder replacement, and the full editor conflict flow have not yet been re-run on a clean Windows 10/11 machine. This is a prerelease, not a stable build."
+          $releaseNotes = "Stable Windows x64 release with two no-install packages:`n- ZIP: extract the archive, then run Piora.exe.`n- Portable EXE: run the single executable directly.`n`nThese packages are not code-signed, so Windows may show a reputation warning. Verify the selected package against SHA256SUMS.txt before running. Updates are manual: download a newer package from Releases when available.`n`nRelease validation includes source hygiene, license inventory, lint, type checking, unit tests, packaged-service isolation, portable-runtime startup, archive integrity, and SHA-256 verification."
           & gh release create $env:GITHUB_REF_NAME @assets `
             --repo $env:GITHUB_REPOSITORY `
             --title "Piora $env:GITHUB_REF_NAME" `
             --notes $releaseNotes `
             --generate-notes `
             --verify-tag `
-            --prerelease
+            --latest
           if ($LASTEXITCODE -ne 0) {
             throw "gh release create failed with exit code $LASTEXITCODE"
           }
