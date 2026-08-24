@@ -41,7 +41,7 @@ type BrowserAction = {
 };
 
 const BROWSER_ONBOARDING_KEY = "piora-desktop-browser-onboarding-v1";
-const BROWSER_BOOKMARKS_KEY = "piora-desktop-browser-bookmarks-v1";
+const BROWSER_BOOKMARKS_KEY = "piora-desktop-browser-bookmarks-v2";
 
 type DesktopBrowserBridge = NonNullable<NonNullable<Window["piDesktop"]>["browser"]>;
 
@@ -127,13 +127,7 @@ function bookmarkCount(nodes: ImportedChromeBookmarkNode[]): number {
 }
 
 function bookmarkBarNodes(profiles: ImportedChromeBookmarkProfile[]): ImportedChromeBookmarkNode[] {
-  if (profiles.length === 1) return profiles[0].children;
-  return profiles.map((profile) => ({
-    children: profile.children,
-    id: `profile:${profile.id}`,
-    title: profile.title,
-    type: "folder",
-  }));
+  return profiles.flatMap((profile) => profile.children);
 }
 
 export function BrowserPanel({ active }: { active: boolean }) {

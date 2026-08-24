@@ -4,6 +4,16 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Changed
+
+- Flatten Chrome bookmark imports so the contents of each Chrome bookmarks bar
+  appear directly in Piora, without profile or bookmarks-bar wrapper folders.
+
+### Fixed
+
+- Center the expanded model list against the application viewport instead of
+  leaving it visually offset toward the composer trigger.
+
 ## [0.3.9] - 2026-08-24
 
 ### Added

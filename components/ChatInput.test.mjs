@@ -93,7 +93,9 @@ test("uses one composer chip for model and reasoning without a speed setting", (
   assert.match(chatInputSource, /createPortal\(/);
   assert.match(chatInputSource, /model-settings-row-value/);
   assert.match(chatInputSource, /desktopPanelLeft/);
-  assert.match(chatInputSource, /submenuOpensRight/);
+  assert.match(chatInputSource, /submenuCenter/);
+  assert.match(chatInputSource, /position: "fixed"/);
+  assert.match(chatInputSource, /transform: "translateX\(-50%\)"/);
   assert.match(chatInputSource, /width: submenuWidth/);
   assert.doesNotMatch(chatInputSource, /chat\.speed|model-settings-speed/);
 });

@@ -2140,13 +2140,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     Math.max(8, modelDropdownRect.left),
                     Math.max(8, viewportWidth - desktopPanelWidth - 8),
                   );
-                  const submenuLeftSpace = desktopPanelLeft - 8;
-                  const submenuRightSpace = viewportWidth - desktopPanelLeft - desktopPanelWidth - 8;
-                  const submenuOpensRight = submenuRightSpace >= submenuLeftSpace;
-                  const submenuWidth = Math.min(
-                    292,
-                    Math.max(160, (submenuOpensRight ? submenuRightSpace : submenuLeftSpace) - 7),
-                  );
+                  const viewportLeft = window.visualViewport?.offsetLeft ?? 0;
+                  const submenuWidth = Math.min(292, Math.max(160, viewportWidth - 16));
+                  const submenuCenter = viewportLeft + viewportWidth / 2;
                   const panelPos: React.CSSProperties = isMobile
                     ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
                     : { left: desktopPanelLeft, right: "auto", width: desktopPanelWidth };
@@ -2295,11 +2291,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                               className="model-settings-submenu"
                               role="menu"
                               style={{
+                                position: "fixed",
                                 maxHeight: maxH,
                                 width: submenuWidth,
-                                ...(submenuOpensRight
-                                  ? { left: "calc(100% + 7px)", right: "auto" }
-                                  : { right: "calc(100% + 7px)", left: "auto" }),
+                                left: submenuCenter,
+                                right: "auto",
+                                bottom,
+                                transform: "translateX(-50%)",
                               }}
                             >
                               <div className="model-settings-submenu-title">

@@ -180,9 +180,10 @@ function readChromeBookmarks(): ChromeBookmarkImportResult {
       const parsed = JSON.parse(readFileSync(join(userData, profile, "Bookmarks"), "utf8")) as {
         roots?: Record<string, ChromeBookmarkNode>;
       };
-      if (!parsed.roots) continue;
-      const children = Object.entries(parsed.roots).flatMap(([rootId, root]) => {
-        const converted = convertNode(root, `${profile}:${rootId}`);
+      const bookmarkBar = parsed.roots?.bookmark_bar;
+      if (!Array.isArray(bookmarkBar?.children)) continue;
+      const children = bookmarkBar.children.flatMap((child, index) => {
+        const converted = convertNode(child, `${profile}:bookmark_bar:${index}`);
         return converted ? [converted] : [];
       });
       profiles.push({ children, id: profile, title: profile });
