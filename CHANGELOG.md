@@ -4,6 +4,17 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-08-24
+
+### Fixed
+
+- Fixed packaged Plan Mode and Agent Team runs failing because first-party
+  extensions could not resolve newly added runtime support modules from
+  `runtime.asar`.
+- Strengthened packaged-app verification to fail the release when any
+  first-party extension reports a load diagnostic or any core Piora tool is
+  missing or inactive.
+
 ## [0.3.7] - 2026-08-24
 
 ### Fixed

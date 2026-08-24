@@ -48,13 +48,10 @@ const assets = [
     ["Piora target-mode extension", "extensions/piora-goal.ts"],
     ["Piora plan-mode extension", "extensions/piora-plan.ts"],
     ["Piora collaboration-room extension", "extensions/piora-room.ts"],
-    ["Piora Harmony runtime", "lib/harmony"],
-    ["Piora prompt-run identity registry", "lib/prompt-run-registry.ts"],
-    ["Piora target-mode registry", "lib/goal-run-registry.ts"],
-    ["Piora prompt-mode runtime", "lib/prompt-mode-runtime.ts"],
-    ["Piora collaboration-room store", "lib/room-store.ts"],
-    ["Piora collaboration-room types", "lib/room-types.ts"],
-    ["Piora room coordinator", "lib/room-coordinator.ts"],
+    // First-party extensions execute from source at runtime and resolve their
+    // relative imports through this tree. Stage the complete Piora library so
+    // adding a transitive helper cannot silently break only packaged builds.
+    ["Piora runtime support modules", "lib"],
   ].map(([name, relativePath]) => ({
     name,
     source: join(projectRoot, relativePath),

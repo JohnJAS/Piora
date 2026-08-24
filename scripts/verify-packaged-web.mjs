@@ -52,6 +52,14 @@ const requiredPaths = [
   "server.js",
   "extensions/piora-browser.ts",
   "extensions/piora-harmony.ts",
+  "extensions/piora-goal.ts",
+  "extensions/piora-plan.ts",
+  "extensions/piora-room.ts",
+  "lib/plan-artifact-registry.ts",
+  "lib/team-agent-templates.ts",
+  "lib/team-prompt-context.ts",
+  "lib/team-run-store.ts",
+  "lib/team-tool-service.ts",
   ".next/server/app/desktop-pet/page_client-reference-manifest.js",
   "node_modules/next/package.json",
   "node_modules/@earendil-works/pi-agent-core/package.json",
@@ -639,6 +647,17 @@ async function main() {
       `Pi package skill ${fixtureSkillName}`,
     );
 
+    const { body: extensionInventory } = await fetchJson(
+      origin,
+      `/api/extensions?cwd=${encodeURIComponent(isolatedProjectDir)}`,
+    );
+    const extensionDiagnostics = Array.isArray(extensionInventory.diagnostics)
+      ? extensionInventory.diagnostics
+      : [];
+    if (extensionDiagnostics.length > 0) {
+      throw new Error(`Packaged first-party extensions failed to load: ${JSON.stringify(extensionDiagnostics)}`);
+    }
+
     const agentPath = `/api/agent/${encodeURIComponent(newSession.sessionId)}`;
     const { body: commandResult } = await postJson(origin, agentPath, { type: "get_commands" });
     const commands = Array.isArray(commandResult.data?.commands) ? commandResult.data.commands : [];
@@ -664,10 +683,21 @@ async function main() {
       throw new Error(`Fixture extension tool is loaded but inactive: ${JSON.stringify(fixtureTool)}`);
     }
 
-    const coreExtensionTools = ["browser", "harmony_device"].map((name) => {
+    const coreExtensionTools = [
+      "browser",
+      "harmony_device",
+      "piora_goal",
+      "piora_plan",
+      "piora_plan_execution",
+      "piora_room",
+    ].map((name) => {
       const tool = tools.find((entry) => entry.name === name);
       return { name, loaded: Boolean(tool), active: tool?.active === true };
     });
+    const unavailableCoreTools = coreExtensionTools.filter((tool) => !tool.loaded || !tool.active);
+    if (unavailableCoreTools.length > 0) {
+      throw new Error(`Packaged first-party tools are unavailable: ${JSON.stringify(unavailableCoreTools)}`);
+    }
 
     const pioraOwnedSubagentEntries = [...commands, ...tools].filter((entry) => (
       typeof entry.name === "string" && /^(?:pi[-_]?gui)[-_]?sub[-_]?agents?$/i.test(entry.name)
