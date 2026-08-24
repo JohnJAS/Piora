@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import type { SessionFlag, SessionFlags } from "@/lib/session-flags";
 import type { SessionInfo } from "@/lib/types";
 import type { SessionTreeNode } from "@/lib/session-project-groups";
-import { sessionMatchesSearch } from "@/lib/session-search";
 import { TaskRow } from "./TaskRow";
 
 interface CommonProps {
@@ -12,8 +11,6 @@ interface CommonProps {
   runningSessionIds: Set<string>;
   unreadSessionIds: Set<string>;
   flags: SessionFlags;
-  searchQuery?: string;
-  projectLabel?: string;
   onSelectSession: (session: SessionInfo) => void;
   onRenamed?: () => void;
   onSessionDeleted?: (session: SessionInfo) => void;
@@ -23,11 +20,7 @@ interface CommonProps {
 
 export function TaskList({ nodes, ...props }: CommonProps & { nodes: SessionTreeNode[] }) {
   const activeNodes = useMemo(() => withoutArchivedNodes(nodes, props.flags), [nodes, props.flags]);
-  const matchingNodes = useMemo(
-    () => filterNodes(activeNodes, props.searchQuery ?? "", props.projectLabel ?? ""),
-    [activeNodes, props.projectLabel, props.searchQuery],
-  );
-  const ordered = [...matchingNodes].sort((left, right) => compareFlags(props.flags[left.session.id], props.flags[right.session.id]));
+  const ordered = [...activeNodes].sort((left, right) => compareFlags(props.flags[left.session.id], props.flags[right.session.id]));
 
   return (
     <>
@@ -59,7 +52,6 @@ export function SessionTreeItem({ node, depth, ...props }: CommonProps & { node:
           onToggleCollapse={() => setCollapsed((value) => !value)}
           pinned={Boolean(flag.pinned)}
           archived={false}
-          searchQuery={props.searchQuery}
           onTogglePinned={() => props.onFlagChange?.(node.session, { pinned: !flag.pinned })}
           onToggleArchived={() => props.onFlagChange?.(node.session, { archived: true })}
           onDuplicate={() => props.onDuplicate?.(node.session)}
@@ -83,14 +75,4 @@ function withoutArchivedNodes(nodes: SessionTreeNode[], flags: SessionFlags): Se
 function compareFlags(left: SessionFlag | undefined, right: SessionFlag | undefined): number {
   if (Boolean(left?.pinned) !== Boolean(right?.pinned)) return left?.pinned ? -1 : 1;
   return (right?.pinnedAt ?? "").localeCompare(left?.pinnedAt ?? "");
-}
-
-function filterNodes(nodes: SessionTreeNode[], query: string, projectLabel: string): SessionTreeNode[] {
-  const needle = query.trim().toLocaleLowerCase();
-  if (!needle) return nodes;
-  return nodes.flatMap((node) => {
-    const children = filterNodes(node.children, query, projectLabel);
-    const matches = sessionMatchesSearch(node.session, projectLabel, needle);
-    return matches || children.length > 0 ? [{ ...node, children }] : [];
-  });
 }

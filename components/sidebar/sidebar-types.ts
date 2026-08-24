@@ -45,15 +45,30 @@ export interface DesktopBrowserAction {
 }
 
 export interface ImportedChromeBookmark {
-  folder: string;
-  profile: string;
+  id: string;
+  type: "bookmark";
   title: string;
   url: string;
 }
 
+export interface ImportedChromeBookmarkFolder {
+  children: ImportedChromeBookmarkNode[];
+  id: string;
+  title: string;
+  type: "folder";
+}
+
+export type ImportedChromeBookmarkNode = ImportedChromeBookmark | ImportedChromeBookmarkFolder;
+
+export interface ImportedChromeBookmarkProfile {
+  children: ImportedChromeBookmarkNode[];
+  id: string;
+  title: string;
+}
+
 export interface ChromeBookmarkImportResult {
-  bookmarks: ImportedChromeBookmark[];
-  profiles: number;
+  bookmarkCount: number;
+  profiles: ImportedChromeBookmarkProfile[];
 }
 
 export interface DesktopBrowserDownload {
@@ -86,7 +101,7 @@ export interface SessionSidebarProps {
 
 export interface SessionSidebarHandle {
   openProjectPicker: () => void;
-  focusTaskSearch: () => void;
+  focusPrimaryNavigation: () => void;
   focusFileSearch: () => void;
 }
 

@@ -92,6 +92,9 @@ test("uses one composer chip for model and reasoning without a speed setting", (
   assert.match(html, /class="model-settings-trigger-reasoning">高/);
   assert.match(chatInputSource, /createPortal\(/);
   assert.match(chatInputSource, /model-settings-row-value/);
+  assert.match(chatInputSource, /desktopPanelLeft/);
+  assert.match(chatInputSource, /submenuOpensRight/);
+  assert.match(chatInputSource, /width: submenuWidth/);
   assert.doesNotMatch(chatInputSource, /chat\.speed|model-settings-speed/);
 });
 

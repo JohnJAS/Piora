@@ -16,7 +16,7 @@
 }
 
 .intro {
-  margin-top: clamp(24px, 7vh, 78px);
+  margin-top: clamp(12px, 4vh, 44px);
 }
 
 .mark {
@@ -46,6 +46,86 @@
   text-align: center;
 }
 
+.introCopy {
+  margin: 8px 0 0;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  text-align: center;
+}
+
+.steps {
+  display: grid;
+  width: min(600px, 100%);
+  margin: 20px auto 0;
+  padding: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  list-style: none;
+}
+
+.steps li {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 10px 11px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 11px;
+  background: transparent;
+  text-align: left;
+}
+
+.stepNumber {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.stepCopy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.stepCopy:hover,
+button.stepCopy:focus-visible {
+  outline: 0;
+  color: var(--accent);
+}
+
+.stepCopy strong {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 620;
+}
+
+button.stepCopy:hover strong,
+button.stepCopy:focus-visible strong {
+  color: var(--accent);
+}
+
+.stepCopy small {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
 .workspaceDock {
   position: relative;
   margin-top: auto;
@@ -67,8 +147,7 @@
   color: var(--text-muted);
 }
 
-.brandChip,
-.contextChip {
+.brandChip {
   display: inline-flex;
   min-height: 30px;
   align-items: center;
@@ -82,25 +161,6 @@
   background: color-mix(in srgb, var(--bg-hover) 72%, transparent);
   color: var(--text);
   font-weight: 560;
-}
-
-.hero h1 > button {
-  margin: 0 .22em;
-  padding: 0;
-  border: 0;
-  border-bottom: 1.5px solid currentColor;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-weight: 520;
-  letter-spacing: inherit;
-  cursor: pointer;
-}
-
-.hero h1 > button:hover,
-.hero h1 > button:focus-visible {
-  outline: 0;
-  color: var(--accent);
 }
 
 .composer {
@@ -312,6 +372,7 @@
   .hero { min-height: calc(100dvh - 112px); }
   .intro { margin-top: 0; }
   .hero h1 { font-size: calc(var(--text-xl) * 1.25); }
+  .steps { grid-template-columns: 1fr; }
   .composer { min-height: 132px; }
   .composer textarea { min-height: 82px; }
   .selectionHint { display: none; }

@@ -26,7 +26,6 @@ export const BROWSER_IMPORT_CHROME_BOOKMARKS_CHANNEL = "pi:browser-import-chrome
 
 const BROWSER_PARTITION = "persist:piora-browser";
 const MAX_TABS = 20;
-const MAX_BOOKMARKS = 5_000;
 
 export interface DesktopBrowserState {
   activeTabId: string;
@@ -39,15 +38,30 @@ export interface DesktopBrowserState {
 }
 
 export interface ImportedChromeBookmark {
-  folder: string;
-  profile: string;
+  id: string;
+  type: "bookmark";
   title: string;
   url: string;
 }
 
+export interface ImportedChromeBookmarkFolder {
+  children: ImportedChromeBookmarkNode[];
+  id: string;
+  title: string;
+  type: "folder";
+}
+
+export type ImportedChromeBookmarkNode = ImportedChromeBookmark | ImportedChromeBookmarkFolder;
+
+export interface ImportedChromeBookmarkProfile {
+  children: ImportedChromeBookmarkNode[];
+  id: string;
+  title: string;
+}
+
 export interface ChromeBookmarkImportResult {
-  bookmarks: ImportedChromeBookmark[];
-  profiles: number;
+  bookmarkCount: number;
+  profiles: ImportedChromeBookmarkProfile[];
 }
 
 export interface DesktopBrowserAction {
@@ -72,6 +86,7 @@ type BrowserTab = {
 
 type ChromeBookmarkNode = {
   children?: ChromeBookmarkNode[];
+  id?: string;
   name?: string;
   type?: string;
   url?: string;
@@ -127,7 +142,7 @@ function chromeUserDataDirectory(): string | null {
 
 function readChromeBookmarks(): ChromeBookmarkImportResult {
   const userData = chromeUserDataDirectory();
-  if (!userData) return { bookmarks: [], profiles: 0 };
+  if (!userData) return { bookmarkCount: 0, profiles: [] };
 
   let profileDirectories: string[];
   try {
@@ -135,28 +150,29 @@ function readChromeBookmarks(): ChromeBookmarkImportResult {
       .filter((entry) => entry.isDirectory() && (entry.name === "Default" || /^Profile \d+$/u.test(entry.name)))
       .map((entry) => entry.name);
   } catch {
-    return { bookmarks: [], profiles: 0 };
+    return { bookmarkCount: 0, profiles: [] };
   }
 
-  const bookmarks: ImportedChromeBookmark[] = [];
-  const seen = new Set<string>();
-  let profiles = 0;
+  const profiles: ImportedChromeBookmarkProfile[] = [];
+  let bookmarkCount = 0;
 
-  const visit = (node: ChromeBookmarkNode, folders: string[], profile: string): void => {
-    if (bookmarks.length >= MAX_BOOKMARKS) return;
-    if (node.type === "url" && typeof node.url === "string" && isBrowserUrl(node.url)) {
-      const title = typeof node.name === "string" && node.name.trim() ? node.name.trim() : node.url;
-      const key = `${node.url}\n${title}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        bookmarks.push({ folder: folders.join(" / "), profile, title, url: node.url });
-      }
-      return;
+  const convertNode = (node: ChromeBookmarkNode, fallbackId: string): ImportedChromeBookmarkNode | null => {
+    const id = `${fallbackId}:${node.id?.trim() || "node"}`;
+    const title = node.name?.trim() || (typeof node.url === "string" ? node.url : "Untitled");
+    if (node.type === "url" && typeof node.url === "string" && node.url.trim()) {
+      bookmarkCount += 1;
+      return { id, type: "bookmark", title, url: node.url.trim() };
     }
-    const nextFolders = typeof node.name === "string" && node.name.trim()
-      ? [...folders, node.name.trim()]
-      : folders;
-    for (const child of node.children ?? []) visit(child, nextFolders, profile);
+    if (!Array.isArray(node.children)) return null;
+    return {
+      children: node.children.flatMap((child, index) => {
+        const converted = convertNode(child, `${id}:${index}`);
+        return converted ? [converted] : [];
+      }),
+      id,
+      title,
+      type: "folder",
+    };
   };
 
   for (const profile of profileDirectories) {
@@ -165,13 +181,16 @@ function readChromeBookmarks(): ChromeBookmarkImportResult {
         roots?: Record<string, ChromeBookmarkNode>;
       };
       if (!parsed.roots) continue;
-      profiles += 1;
-      for (const root of Object.values(parsed.roots)) visit(root, [], profile);
+      const children = Object.entries(parsed.roots).flatMap(([rootId, root]) => {
+        const converted = convertNode(root, `${profile}:${rootId}`);
+        return converted ? [converted] : [];
+      });
+      profiles.push({ children, id: profile, title: profile });
     } catch {
       // A missing, locked, or malformed profile does not block other profiles.
     }
   }
-  return { bookmarks, profiles };
+  return { bookmarkCount, profiles };
 }
 
 export class DesktopBrowserManager {

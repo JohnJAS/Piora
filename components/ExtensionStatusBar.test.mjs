@@ -64,5 +64,7 @@ test("keeps extension status inside the composer instead of rendering a footer b
   assert.doesNotMatch(chatWindow, /<ExtensionStatusBar statuses=/);
   const statusStyles = styles.slice(styles.indexOf(".extension-status-control"), styles.indexOf(".extension-status-control") + 2600);
   assert.match(statusStyles, /width:\s*28px/);
+  assert.match(statusStyles, /cursor:\s*default/);
+  assert.doesNotMatch(statusStyles, /cursor:\s*help/);
   assert.doesNotMatch(statusStyles, /border-top/);
 });

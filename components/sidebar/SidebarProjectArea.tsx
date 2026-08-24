@@ -13,7 +13,7 @@ interface Props {
   loading: boolean; error: string | null; projectsHovered: boolean;
   setProjectsHovered: Dispatch<SetStateAction<boolean>>;
   handleDefaultCwd: () => Promise<void>; handleCustomPathClick: () => void;
-  projectGroups: SessionProjectGroup[]; searchedProjectGroups: SessionProjectGroup[];
+  projectGroups: SessionProjectGroup[];
   selectedProject: string | null; collapsedProjectKeys: Set<string>; expandedProjectSessionKeys: Set<string>;
   setCollapsedProjectKeys: Dispatch<SetStateAction<Set<string>>>;
   setExpandedProjectSessionKeys: Dispatch<SetStateAction<Set<string>>>;
@@ -21,7 +21,7 @@ interface Props {
   setSelectedCwd: Dispatch<SetStateAction<string | null>>; homeDir: string;
   handleSelectSessionFromList: (session: SessionInfo) => void; handleNewSessionInProject: (cwd: string) => void;
   loadSessions: (showLoading?: boolean) => Promise<void>; handleSessionDeletedWithUndo: (session: SessionInfo) => void;
-  sessionFlags: SessionFlags; taskSearch: string;
+  sessionFlags: SessionFlags;
   patchSessionFlag: (session: SessionInfo, patch: { pinned?: boolean; archived?: boolean }) => Promise<void>;
   duplicateSession: (session: SessionInfo) => Promise<void>; pinnedProjectRoots: Set<string>; projectAliases: Record<string, string>;
   togglePinnedProject: (root: string) => void; renameProject: (root: string, alias: string) => void; removeProject: (root: string) => void;
@@ -39,7 +39,7 @@ interface ProjectDragState {
 
 export function SidebarProjectArea(props: Props) {
   const { t } = useI18n();
-  const { loading, error, projectsHovered, setProjectsHovered, handleDefaultCwd, handleCustomPathClick, projectGroups, searchedProjectGroups, selectedProject, collapsedProjectKeys, expandedProjectSessionKeys, setCollapsedProjectKeys, setExpandedProjectSessionKeys, selectedSessionId, runningSessionIds, unreadSessionIds, attentionSessionIds, setSelectedCwd, homeDir, handleSelectSessionFromList, handleNewSessionInProject, loadSessions, handleSessionDeletedWithUndo, sessionFlags, taskSearch, patchSessionFlag, duplicateSession, pinnedProjectRoots, projectAliases, togglePinnedProject, renameProject, removeProject, onReorderProjects } = props;
+  const { loading, error, projectsHovered, setProjectsHovered, handleDefaultCwd, handleCustomPathClick, projectGroups, selectedProject, collapsedProjectKeys, expandedProjectSessionKeys, setCollapsedProjectKeys, setExpandedProjectSessionKeys, selectedSessionId, runningSessionIds, unreadSessionIds, attentionSessionIds, setSelectedCwd, homeDir, handleSelectSessionFromList, handleNewSessionInProject, loadSessions, handleSessionDeletedWithUndo, sessionFlags, patchSessionFlag, duplicateSession, pinnedProjectRoots, projectAliases, togglePinnedProject, renameProject, removeProject, onReorderProjects } = props;
   const projectScrollRef = useRef<HTMLDivElement>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const candidateRef = useRef<{ pointerId: number; root: string; x: number; y: number } | null>(null);
@@ -125,7 +125,7 @@ export function SidebarProjectArea(props: Props) {
   useEffect(() => stopDragging, [stopDragging]);
 
   const beginProjectDrag = useCallback((root: string, event: ReactPointerEvent<HTMLDivElement>) => {
-    if (taskSearch.trim() || !event.isPrimary || event.button !== 0) return;
+    if (!event.isPrimary || event.button !== 0) return;
     if ((event.target as Element).closest("[data-project-drag-ignore]")) return;
     clearHoldTimer();
     candidateRef.current = { pointerId: event.pointerId, root, x: event.clientX, y: event.clientY };
@@ -137,7 +137,7 @@ export function SidebarProjectArea(props: Props) {
       setDragState(next);
       window.getSelection()?.removeAllRanges();
     }, PROJECT_DRAG_HOLD_MS);
-  }, [clearHoldTimer, taskSearch]);
+  }, [clearHoldTimer]);
 
   const suppressProjectClick = useCallback((root: string, event: ReactMouseEvent<HTMLElement>) => {
     const suppressed = suppressClickRef.current;
@@ -194,7 +194,7 @@ export function SidebarProjectArea(props: Props) {
             {t("sidebar.noSessions")}
           </div>
         )}
-        {searchedProjectGroups.map((group) => (
+        {projectGroups.map((group) => (
           <ProjectSessionGroup
             key={group.key}
             group={group}
@@ -230,7 +230,6 @@ export function SidebarProjectArea(props: Props) {
             onRenamed={() => loadSessions()}
             onSessionDeleted={handleSessionDeletedWithUndo}
             sessionFlags={sessionFlags}
-            searchQuery={taskSearch}
             onFlagChange={patchSessionFlag}
             onDuplicateSession={duplicateSession}
             isPinned={pinnedProjectRoots.has(group.projectRoot)}

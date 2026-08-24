@@ -52,10 +52,10 @@ test("allows title generation to be cancelled and chooses its model in settings"
   assert.match(appShellSource, /readSessionTitleModel\(window\.localStorage\)/);
 });
 
-test("focuses task search with Ctrl+Shift+F and highlights matches", () => {
-  assert.match(sidebarSource, /event\.ctrlKey && event\.shiftKey/);
-  assert.match(sidebarSource, /taskSearchRef\.current\?\.focus\(\)/);
-  assert.match(rowSource, /<mark/);
+test("removes the low-value task search field and its filtering path", () => {
+  assert.doesNotMatch(sidebarSource, /taskSearch|Ctrl\+Shift\+F/);
+  assert.doesNotMatch(listSource, /searchQuery|sessionMatchesSearch/);
+  assert.doesNotMatch(rowSource, /searchQuery|<mark/);
 });
 
 test("persists flags through the flags API and offers archive undo", () => {

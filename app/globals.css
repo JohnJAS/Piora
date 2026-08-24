@@ -658,7 +658,7 @@ select:focus-visible,
 }
 
 .new-session-chat-heading {
-  margin: 0 0 clamp(28px, 5vh, 52px);
+  margin: 0 0 9px;
   color: var(--text);
   font-size: clamp(calc(var(--text-xl) * 1.15), 3.1vw, calc(var(--text-xl) * 1.8));
   font-weight: 470;
@@ -667,9 +667,18 @@ select:focus-visible,
   text-align: center;
 }
 
-.new-session-chat-heading > span {
-  border-bottom: 1.5px solid currentColor;
-  font-weight: 520;
+.new-session-chat-guide {
+  max-width: 620px;
+  margin: 0 auto clamp(24px, 4vh, 42px);
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  text-align: center;
+}
+
+.new-session-chat-guide > span {
+  color: var(--text-muted);
+  font-weight: 620;
 }
 
 @media (max-width: 680px) {
@@ -679,7 +688,8 @@ select:focus-visible,
   }
 
   .new-session-chat-inner { transform: none; }
-  .new-session-chat-heading { margin-bottom: 28px; font-size: calc(var(--text-xl) * 1.25); }
+  .new-session-chat-heading { font-size: calc(var(--text-xl) * 1.25); }
+  .new-session-chat-guide { margin-bottom: 28px; }
 }
 
 .conversation-toolbar-actions .topbar-branch-control {
@@ -1179,7 +1189,7 @@ select:focus-visible,
   outline: 0;
   background: transparent;
   color: var(--text-muted);
-  cursor: help;
+  cursor: default;
   transition: background 120ms ease, color 120ms ease;
 }
 

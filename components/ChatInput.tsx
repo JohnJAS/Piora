@@ -2132,12 +2132,24 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 </button>
                 {modelDropdownOpen && modelDropdownRect && (() => {
                   const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+                  const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
                   const bottom = viewportHeight - modelDropdownRect.top + 7;
                   const maxH = Math.max(160, Math.min(modelDropdownRect.top - 12, viewportHeight * 0.68));
-                  const desktopRight = Math.max(8, window.innerWidth - modelDropdownRect.left - modelDropdownRect.width);
+                  const desktopPanelWidth = 230;
+                  const desktopPanelLeft = Math.min(
+                    Math.max(8, modelDropdownRect.left),
+                    Math.max(8, viewportWidth - desktopPanelWidth - 8),
+                  );
+                  const submenuLeftSpace = desktopPanelLeft - 8;
+                  const submenuRightSpace = viewportWidth - desktopPanelLeft - desktopPanelWidth - 8;
+                  const submenuOpensRight = submenuRightSpace >= submenuLeftSpace;
+                  const submenuWidth = Math.min(
+                    292,
+                    Math.max(160, (submenuOpensRight ? submenuRightSpace : submenuLeftSpace) - 7),
+                  );
                   const panelPos: React.CSSProperties = isMobile
                     ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
-                    : { right: desktopRight, width: 230 };
+                    : { left: desktopPanelLeft, right: "auto", width: desktopPanelWidth };
                   const visibleSection = isMobile ? modelMenuSection : null;
                   const selectableThinkingLevels = THINKING_LEVELS.filter((level) => (
                     !availableThinkingLevels || level === "auto" || availableThinkingLevels.includes(level)
@@ -2279,7 +2291,17 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             </div>
                           ) : null}
                           {!isMobile && modelMenuSection ? (
-                            <div className="model-settings-submenu" role="menu" style={{ maxHeight: maxH }}>
+                            <div
+                              className="model-settings-submenu"
+                              role="menu"
+                              style={{
+                                maxHeight: maxH,
+                                width: submenuWidth,
+                                ...(submenuOpensRight
+                                  ? { left: "calc(100% + 7px)", right: "auto" }
+                                  : { right: "calc(100% + 7px)", left: "auto" }),
+                              }}
+                            >
                               <div className="model-settings-submenu-title">
                                 {modelMenuSection === "models" ? t("i18n.model") : t("chat.reasoningEffort")}
                               </div>

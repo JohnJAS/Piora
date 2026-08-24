@@ -26,7 +26,7 @@ test("Review supports complete list navigation and keyboard commit", () => {
 
 test("F6 cycles sidebar, composer, and workspace panel focus", () => {
   assert.match(shell, /event\.key !== "F6"/);
-  assert.match(shell, /sessionSidebarRef\.current\?\.focusTaskSearch\(\)/);
+  assert.match(shell, /sessionSidebarRef\.current\?\.focusPrimaryNavigation\(\)/);
   assert.match(shell, /chatInputRef\.current\?\.focus\(\)/);
   assert.match(shell, /rightPanelRef\.current\?\.focusActiveTab\(\)/);
   assert.match(rightPanel, /activeTab === "home" \? firstLauncherRef\.current : activeTabRef\.current/);

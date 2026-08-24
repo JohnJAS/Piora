@@ -63,7 +63,6 @@ const command = (id: string, group: CommandGroup, title: string, options: { keyw
 export const GUI_COMMANDS: Command[] = [
   command("navigate.newSession", "navigate", "commands.newSession", { shortcut: "Ctrl+Alt+N", needs: "project" }),
   command("navigate.chooseProject", "navigate", "commands.chooseProject"),
-  command("navigate.searchTasks", "navigate", "commands.searchTasks", { shortcut: "Ctrl+Shift+F" }),
   command("navigate.searchFiles", "navigate", "commands.searchFiles", { shortcut: "Ctrl+P", needs: "project" }),
   command("navigate.focusComposer", "navigate", "commands.focusComposer", { needs: "project" }),
   command("navigate.history", "navigate", "commands.history", { needs: "session" }),

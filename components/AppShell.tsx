@@ -1225,7 +1225,7 @@ export function AppShell() {
       if (event.key !== "F6" || event.ctrlKey || event.metaKey || event.altKey || settingsDialogOpen) return;
       if (document.querySelector('[aria-modal="true"]')) return;
       const targets: Array<{ zone: "sidebar" | "composer" | "panel"; focus: () => void }> = [];
-      if (sidebarOpen) targets.push({ zone: "sidebar", focus: () => sessionSidebarRef.current?.focusTaskSearch() });
+      if (sidebarOpen) targets.push({ zone: "sidebar", focus: () => sessionSidebarRef.current?.focusPrimaryNavigation() });
       targets.push({ zone: "composer", focus: () => chatInputRef.current?.focus() });
       if (rightPanelOpen) targets.push({ zone: "panel", focus: () => rightPanelRef.current?.focusActiveTab() });
       if (targets.length < 2) return;
@@ -1249,7 +1249,6 @@ export function AppShell() {
   const commandActions = useMemo<CommandContext["actions"]>(() => ({
     "navigate.newSession": handleNewSessionInCurrentProject,
     "navigate.chooseProject": handleOpenProjectPicker,
-    "navigate.searchTasks": () => { setSidebarOpen(true); window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, shiftKey: true })); },
     "navigate.searchFiles": () => { setRightPanelTab("files"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusFileSearch()); },
     "navigate.focusComposer": () => chatInputRef.current?.focus(),
     "navigate.history": handleViewFullHistory,

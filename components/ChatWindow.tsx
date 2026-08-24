@@ -668,9 +668,11 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               <AliIcon name="cloud" size={50} />
               <span>&gt;_</span>
             </div>
-            <h1 className="new-session-chat-heading">
-              你想在 <span title={messageCwd}>{newSessionProjectLabel}</span> 中构建什么？
-            </h1>
+            <h1 className="new-session-chat-heading">开始一个新会话</h1>
+            <p className="new-session-chat-guide">
+              模型可在左上角“设置 → 智能体 → 模型”中配置；项目可通过顶部项目菜单切换。当前项目：
+              <span title={messageCwd}>{newSessionProjectLabel}</span>
+            </p>
             <NoticeShelf notices={notices} align="right" />
             {chatInputElement}
           </div>

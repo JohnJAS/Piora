@@ -29,8 +29,7 @@ const ARCHIVED_SESSION_TOAST_DURATION_MS = 5_000;
 export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, selectedRoomId, onSelectSession, onSelectRoom, onNewSession, onRequestNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onFocusFileSearch, onOpenSettings, activeProjectRoot }, ref) {
   const { t } = useI18n();
   const [sessionFlags, setSessionFlags] = useState<SessionFlags>({});
-  const [taskSearch, setTaskSearch] = useState("");
-  const taskSearchRef = useRef<HTMLInputElement>(null);
+  const primaryActionRef = useRef<HTMLButtonElement>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const [homeDir, setHomeDir] = useState<string>("");
   const [projectsHovered, setProjectsHovered] = useState(false);
@@ -66,17 +65,6 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       .catch(() => { /* Flags are optional; the task list remains usable. */ });
     return () => { cancelled = true; };
   }, [refreshKey]);
-
-  useEffect(() => {
-    const focusTaskSearch = (event: KeyboardEvent) => {
-      if (event.ctrlKey && event.shiftKey && event.key.toLocaleLowerCase() === "f") {
-        event.preventDefault();
-        taskSearchRef.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", focusTaskSearch);
-    return () => window.removeEventListener("keydown", focusTaskSearch);
-  }, []);
 
   useEffect(() => {
     fetch("/api/home").then((r) => r.json()).then((d: { home?: string }) => {
@@ -158,7 +146,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
 
   useImperativeHandle(ref, () => ({
     openProjectPicker: handleCustomPathClick,
-    focusTaskSearch() { taskSearchRef.current?.focus({ preventScroll: true }); },
+    focusPrimaryNavigation() { primaryActionRef.current?.focus({ preventScroll: true }); },
     focusFileSearch() { onFocusFileSearch?.(); },
   }), [handleCustomPathClick, onFocusFileSearch]);
   const handleSelectSessionFromList = useCallback((s: SessionInfo) => {
@@ -277,18 +265,6 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     ), projectOrder, (group) => group.projectRoot),
     [hiddenProjectRoots, projectOrder, selectedCwd, selectedProject, visibleRememberedProjects, visibleSessions],
   );
-  const searchedProjectGroups = useMemo(() => {
-    const query = taskSearch.trim().toLocaleLowerCase();
-    if (!query) return projectGroups;
-    return projectGroups.filter((group) => {
-      const projectLabel = projectAliases[group.projectRoot] ?? getProjectLabel(group.projectRoot);
-      if (`${projectLabel}\n${group.projectRoot}`.toLocaleLowerCase().includes(query)) return true;
-      return group.sessions.some((session) => {
-        const title = session.name || session.firstMessage || session.id;
-        return `${title}\n${session.cwd}`.toLocaleLowerCase().includes(query);
-      });
-    });
-  }, [projectAliases, projectGroups, taskSearch]);
   const pinnedProjectGroups = useMemo(
     () => projectGroups.filter((group) => pinnedProjectRoots.has(group.projectRoot)),
     [pinnedProjectRoots, projectGroups],
@@ -396,9 +372,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       )}
       <SidebarNavigation
         onFocusFileSearch={onFocusFileSearch}
-        taskSearchRef={taskSearchRef}
-        taskSearch={taskSearch}
-        setTaskSearch={setTaskSearch}
+        primaryActionRef={primaryActionRef}
         onOpenSettings={onOpenSettings}
         selectedCwd={selectedCwd}
         selectedCwdProp={selectedCwdProp}
@@ -451,14 +425,14 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       <SidebarProjectArea
         loading={loading} error={error} projectsHovered={projectsHovered} setProjectsHovered={setProjectsHovered}
         handleDefaultCwd={handleDefaultCwd} handleCustomPathClick={handleCustomPathClick}
-        projectGroups={projectGroups} searchedProjectGroups={searchedProjectGroups} selectedProject={selectedProject}
+        projectGroups={projectGroups} selectedProject={selectedProject}
         collapsedProjectKeys={collapsedProjectKeys} expandedProjectSessionKeys={expandedProjectSessionKeys}
         setCollapsedProjectKeys={setCollapsedProjectKeys} setExpandedProjectSessionKeys={setExpandedProjectSessionKeys}
         selectedSessionId={selectedSessionId} runningSessionIds={runningSessionIds} unreadSessionIds={unreadSessionIds}
         attentionSessionIds={attentionSessionIds} setSelectedCwd={setSelectedCwd} homeDir={homeDir}
         handleSelectSessionFromList={handleSelectSessionFromList} handleNewSessionInProject={handleNewSessionInProject}
         loadSessions={loadSessions} handleSessionDeletedWithUndo={handleSessionDeletedWithUndo}
-        sessionFlags={sessionFlags} taskSearch={taskSearch} patchSessionFlag={patchSessionFlag}
+        sessionFlags={sessionFlags} patchSessionFlag={patchSessionFlag}
         duplicateSession={duplicateSession} pinnedProjectRoots={pinnedProjectRoots} projectAliases={projectAliases}
         togglePinnedProject={togglePinnedProject} renameProject={renameProject} removeProject={removeProject}
         onReorderProjects={reorderProjects}

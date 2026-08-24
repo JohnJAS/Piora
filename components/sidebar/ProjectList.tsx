@@ -33,7 +33,6 @@ export function ProjectSessionGroup({
   onRenamed,
   onSessionDeleted,
   sessionFlags,
-  searchQuery,
   onFlagChange,
   onDuplicateSession,
   isPinned,
@@ -63,7 +62,6 @@ export function ProjectSessionGroup({
   onRenamed: () => void;
   onSessionDeleted: (session: SessionInfo) => void;
   sessionFlags: SessionFlags;
-  searchQuery: string;
   onFlagChange: (session: SessionInfo, patch: { pinned?: boolean; archived?: boolean }) => void;
   onDuplicateSession: (session: SessionInfo) => void;
   isPinned: boolean;
@@ -159,8 +157,6 @@ export function ProjectSessionGroup({
             runningSessionIds={runningSessionIds}
             unreadSessionIds={unreadSessionIds}
             flags={sessionFlags}
-            searchQuery={searchQuery}
-            projectLabel={displayLabel}
             onSelectSession={onSelectSession}
             onRenamed={onRenamed}
             onSessionDeleted={onSessionDeleted}

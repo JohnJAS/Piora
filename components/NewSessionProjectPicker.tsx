@@ -118,11 +118,30 @@ export function NewSessionProjectPicker({
             <AliIcon name="cloud" size={50} />
             <span>&gt;_</span>
           </div>
-          <h1 id="new-session-heading">
-            你想在
-            <button type="button" onClick={openProjectChoice} aria-haspopup="listbox" aria-expanded={menuOpen}>选择项目</button>
-            中构建什么？
-          </h1>
+          <h1 id="new-session-heading">开始一个新会话</h1>
+          <p className={styles.introCopy}>先完成模型配置和项目选择，然后描述任务即可开始。</p>
+          <ol className={styles.steps} aria-label="开始使用 Piora">
+            <li>
+              <span className={styles.stepNumber}>1</span>
+              <span className={styles.stepCopy}>
+                <strong>配置模型</strong>
+                <small>打开左上角“设置”，进入“智能体 → 模型”添加并启用模型。</small>
+              </span>
+            </li>
+            <li>
+              <span className={styles.stepNumber}>2</span>
+              <button
+                type="button"
+                className={styles.stepCopy}
+                onClick={openProjectChoice}
+                aria-haspopup="listbox"
+                aria-expanded={menuOpen}
+              >
+                <strong>选择项目文件夹</strong>
+                <small>从已有项目中选择，或打开一个文件夹作为新项目。</small>
+              </button>
+            </li>
+          </ol>
         </div>
 
         <div className={styles.workspaceDock}>
@@ -157,7 +176,6 @@ export function NewSessionProjectPicker({
                 <AliIcon name="arrowdown" size={11} />
               </button>
             </div>
-            <span className={styles.contextChip}><AliIcon name="desktop" size={14} />本地</span>
           </div>
           <div className={styles.composer}>
             <textarea

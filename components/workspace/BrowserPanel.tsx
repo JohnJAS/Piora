@@ -8,7 +8,8 @@ import type {
   DesktopBrowserAction,
   DesktopBrowserDownload,
   DesktopBrowserState,
-  ImportedChromeBookmark,
+  ImportedChromeBookmarkNode,
+  ImportedChromeBookmarkProfile,
 } from "@/components/sidebar/sidebar-types";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "../AliIcon";
@@ -44,21 +45,95 @@ const BROWSER_BOOKMARKS_KEY = "piora-desktop-browser-bookmarks-v1";
 
 type DesktopBrowserBridge = NonNullable<NonNullable<Window["piDesktop"]>["browser"]>;
 
-function storedBookmarks(): ImportedChromeBookmark[] {
+function normalizeBookmarkNode(value: unknown, depth = 0): ImportedChromeBookmarkNode | null {
+  if (!value || typeof value !== "object" || depth > 100) return null;
+  const candidate = value as Partial<ImportedChromeBookmarkNode>;
+  if (typeof candidate.id !== "string" || typeof candidate.title !== "string") return null;
+  if (candidate.type === "bookmark" && typeof candidate.url === "string") {
+    return { id: candidate.id, title: candidate.title, type: "bookmark", url: candidate.url };
+  }
+  if (candidate.type !== "folder" || !Array.isArray(candidate.children)) return null;
+  return {
+    children: candidate.children.flatMap((child) => {
+      const normalized = normalizeBookmarkNode(child, depth + 1);
+      return normalized ? [normalized] : [];
+    }),
+    id: candidate.id,
+    title: candidate.title,
+    type: "folder",
+  };
+}
+
+function legacyBookmarkProfiles(values: unknown[]): ImportedChromeBookmarkProfile[] {
+  const profiles = new Map<string, ImportedChromeBookmarkProfile>();
+  values.forEach((value, bookmarkIndex) => {
+    if (!value || typeof value !== "object") return;
+    const legacy = value as { folder?: unknown; profile?: unknown; title?: unknown; url?: unknown };
+    if (typeof legacy.profile !== "string" || typeof legacy.title !== "string" || typeof legacy.url !== "string") return;
+    const profile = profiles.get(legacy.profile) ?? { children: [], id: legacy.profile, title: legacy.profile };
+    profiles.set(legacy.profile, profile);
+    let children = profile.children;
+    const folders = typeof legacy.folder === "string" ? legacy.folder.split(" / ").filter(Boolean) : [];
+    folders.forEach((title, folderIndex) => {
+      const folderId = `legacy:${legacy.profile}:${folders.slice(0, folderIndex + 1).join("/")}`;
+      let folder = children.find((node) => node.type === "folder" && node.id === folderId);
+      if (!folder || folder.type !== "folder") {
+        folder = { children: [], id: folderId, title, type: "folder" };
+        children.push(folder);
+      }
+      children = folder.children;
+    });
+    children.push({ id: `legacy:${legacy.profile}:bookmark:${bookmarkIndex}`, title: legacy.title, type: "bookmark", url: legacy.url });
+  });
+  return [...profiles.values()];
+}
+
+function storedBookmarkProfiles(): ImportedChromeBookmarkProfile[] {
   try {
-    const parsed = JSON.parse(window.localStorage.getItem(BROWSER_BOOKMARKS_KEY) ?? "[]") as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((item): item is ImportedChromeBookmark => Boolean(
-      item
-      && typeof item === "object"
-      && typeof (item as ImportedChromeBookmark).title === "string"
-      && typeof (item as ImportedChromeBookmark).url === "string"
-      && typeof (item as ImportedChromeBookmark).folder === "string"
-      && typeof (item as ImportedChromeBookmark).profile === "string",
-    ));
+    const parsed = JSON.parse(window.localStorage.getItem(BROWSER_BOOKMARKS_KEY) ?? "null") as unknown;
+    if (Array.isArray(parsed)) return legacyBookmarkProfiles(parsed);
+    if (!parsed || typeof parsed !== "object") return [];
+    const profiles = (parsed as { profiles?: unknown }).profiles;
+    if (!Array.isArray(profiles)) return [];
+    return profiles.flatMap((value) => {
+      if (!value || typeof value !== "object") return [];
+      const profile = value as Partial<ImportedChromeBookmarkProfile>;
+      if (typeof profile.id !== "string" || typeof profile.title !== "string" || !Array.isArray(profile.children)) return [];
+      return [{
+        children: profile.children.flatMap((child) => {
+          const normalized = normalizeBookmarkNode(child);
+          return normalized ? [normalized] : [];
+        }),
+        id: profile.id,
+        title: profile.title,
+      }];
+    });
   } catch {
     return [];
   }
+}
+
+function storeBookmarkProfiles(profiles: ImportedChromeBookmarkProfile[]): void {
+  try {
+    window.localStorage.setItem(BROWSER_BOOKMARKS_KEY, JSON.stringify({ profiles, version: 2 }));
+  } catch {
+    // Very large Chrome collections still remain available for this run and
+    // are refreshed from Chrome the next time the browser panel opens.
+  }
+}
+
+function bookmarkCount(nodes: ImportedChromeBookmarkNode[]): number {
+  return nodes.reduce((count, node) => count + (node.type === "bookmark" ? 1 : bookmarkCount(node.children)), 0);
+}
+
+function bookmarkBarNodes(profiles: ImportedChromeBookmarkProfile[]): ImportedChromeBookmarkNode[] {
+  if (profiles.length === 1) return profiles[0].children;
+  return profiles.map((profile) => ({
+    children: profile.children,
+    id: `profile:${profile.id}`,
+    title: profile.title,
+    type: "folder",
+  }));
 }
 
 export function BrowserPanel({ active }: { active: boolean }) {
@@ -81,7 +156,8 @@ function DesktopBrowserPanel({ active, bridge }: { active: boolean; bridge: Desk
   const [state, setState] = useState<DesktopBrowserState | null>(null);
   const [address, setAddress] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [bookmarks, setBookmarks] = useState<ImportedChromeBookmark[]>([]);
+  const [bookmarkProfiles, setBookmarkProfiles] = useState<ImportedChromeBookmarkProfile[]>([]);
+  const [openBookmarkFolderId, setOpenBookmarkFolderId] = useState<string | null>(null);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [importing, setImporting] = useState(false);
   const [download, setDownload] = useState<DesktopBrowserDownload | null>(null);
@@ -98,14 +174,24 @@ function DesktopBrowserPanel({ active, bridge }: { active: boolean; bridge: Desk
   }, []);
 
   useEffect(() => {
-    setBookmarks(storedBookmarks());
-    setShowOnboarding(window.localStorage.getItem(BROWSER_ONBOARDING_KEY) !== "done");
+    let cancelled = false;
+    setBookmarkProfiles(storedBookmarkProfiles());
+    const onboardingComplete = window.localStorage.getItem(BROWSER_ONBOARDING_KEY) === "done";
+    setShowOnboarding(!onboardingComplete);
+    if (onboardingComplete) {
+      void bridge.importChromeBookmarks().then((result) => {
+        if (cancelled || !result || result.bookmarkCount === 0) return;
+        storeBookmarkProfiles(result.profiles);
+        setBookmarkProfiles(result.profiles);
+      }).catch(() => {});
+    }
     void bridge.getState().then(applyState).catch((stateError) => {
       setError(stateError instanceof Error ? stateError.message : t("browser.unavailable"));
     });
     const unsubscribeState = bridge.onState(applyState);
     const unsubscribeDownload = bridge.onDownload(setDownload);
     return () => {
+      cancelled = true;
       unsubscribeState();
       unsubscribeDownload();
     };
@@ -158,12 +244,13 @@ function DesktopBrowserPanel({ active, bridge }: { active: boolean; bridge: Desk
     setError(null);
     try {
       const result = await bridge.importChromeBookmarks();
-      if (!result || result.profiles === 0) {
+      if (!result || result.bookmarkCount === 0) {
         setError(t("browser.importNoChrome"));
         return;
       }
-      window.localStorage.setItem(BROWSER_BOOKMARKS_KEY, JSON.stringify(result.bookmarks));
-      setBookmarks(result.bookmarks);
+      storeBookmarkProfiles(result.profiles);
+      setBookmarkProfiles(result.profiles);
+      setOpenBookmarkFolderId(null);
       finishOnboarding();
     } catch (importError) {
       setError(importError instanceof Error ? importError.message : t("browser.importFailed"));
@@ -173,7 +260,8 @@ function DesktopBrowserPanel({ active, bridge }: { active: boolean; bridge: Desk
   };
 
   const blank = !state || state.url === "about:blank";
-  const visibleBookmarks = bookmarks.slice(0, 36);
+  const barNodes = bookmarkBarNodes(bookmarkProfiles);
+  const openBookmarkFolder = barNodes.find((node) => node.type === "folder" && node.id === openBookmarkFolderId);
   const downloadLabel = download?.state === "completed"
     ? t("browser.downloadComplete", { filename: download.filename })
     : download?.state === "cancelled"
@@ -212,6 +300,52 @@ function DesktopBrowserPanel({ active, bridge }: { active: boolean; bridge: Desk
         <input ref={addressRef} value={address} aria-label={t("browser.address")} placeholder={t("browser.addressPlaceholder")} onChange={(event) => setAddress(event.target.value)} />
       </form>
     </div>
+    <div className={styles.browserBookmarkBar} aria-label={t("browser.bookmarkBar")}>
+      <div className={styles.browserBookmarkBarItems}>
+        {barNodes.length ? barNodes.map((node) => node.type === "bookmark" ? (
+          <button key={node.id} type="button" title={`${node.title}\n${node.url}`} onClick={() => void act({ action: "navigate", url: node.url })}>
+            <AliIcon name="earth" size={12} /><span>{node.title}</span>
+          </button>
+        ) : (
+          <button
+            key={node.id}
+            type="button"
+            aria-expanded={openBookmarkFolderId === node.id}
+            title={`${node.title} · ${t("browser.bookmarkCount", { count: bookmarkCount(node.children) })}`}
+            onClick={() => setOpenBookmarkFolderId((current) => current === node.id ? null : node.id)}
+          >
+            <AliIcon name={openBookmarkFolderId === node.id ? "folder-open" : "folder"} size={13} /><span>{node.title}</span>
+          </button>
+        )) : <span className={styles.browserBookmarkBarEmpty}>{t("browser.bookmarkBarEmpty")}</span>}
+      </div>
+      <button
+        className={styles.browserBookmarkRefresh}
+        type="button"
+        disabled={importing}
+        title={t("browser.refreshBookmarks")}
+        aria-label={t("browser.refreshBookmarks")}
+        onClick={() => void importChromeBookmarks()}
+      >
+        <AliIcon name="reload" size={12} />
+      </button>
+    </div>
+    {openBookmarkFolder?.type === "folder" ? (
+      <div className={styles.browserBookmarkDrawer} aria-label={openBookmarkFolder.title}>
+        <div className={styles.browserBookmarkDrawerHeader}>
+          <AliIcon name="folder-open" size={14} />
+          <strong>{openBookmarkFolder.title}</strong>
+          <span>{t("browser.bookmarkCount", { count: bookmarkCount(openBookmarkFolder.children) })}</span>
+          <button type="button" aria-label={t("browser.closeBookmarks")} onClick={() => setOpenBookmarkFolderId(null)}><AliIcon name="close" size={12} /></button>
+        </div>
+        <BookmarkTree
+          nodes={openBookmarkFolder.children}
+          onNavigate={(url) => {
+            setOpenBookmarkFolderId(null);
+            void act({ action: "navigate", url });
+          }}
+        />
+      </div>
+    ) : null}
     {error ? <div className={styles.browserError} role="alert">{error}</div> : null}
     <div ref={viewportRef} className={styles.browserViewport} data-busy={state?.loading ? "true" : undefined}>
       {blank ? <div className={styles.browserStart} data-onboarding={showOnboarding ? "true" : undefined}>
@@ -223,11 +357,6 @@ function DesktopBrowserPanel({ active, bridge }: { active: boolean; bridge: Desk
           <button type="button" onClick={finishOnboarding}>{t("browser.skipImport")}</button>
           <small>{t("browser.importSafety")}</small>
         </div> : <>
-          {visibleBookmarks.length ? <div className={styles.browserBookmarks}>
-            {visibleBookmarks.map((bookmark) => <button key={`${bookmark.profile}:${bookmark.url}:${bookmark.title}`} type="button" title={`${bookmark.folder}\n${bookmark.url}`} onClick={() => void act({ action: "navigate", url: bookmark.url })}>
-              <span>{bookmark.title.slice(0, 1).toUpperCase()}</span><b>{bookmark.title}</b>
-            </button>)}
-          </div> : null}
           <button className={styles.browserImportLink} type="button" disabled={importing} onClick={() => void importChromeBookmarks()}>{t("browser.importChrome")}</button>
         </>}
       </div> : null}
@@ -238,6 +367,25 @@ function DesktopBrowserPanel({ active, bridge }: { active: boolean; bridge: Desk
       </button> : t("browser.profileNotice")}
     </div>
   </div>;
+}
+
+function BookmarkTree({ nodes, onNavigate }: { nodes: ImportedChromeBookmarkNode[]; onNavigate: (url: string) => void }) {
+  return <ul className={styles.browserBookmarkTree}>
+    {nodes.map((node) => node.type === "bookmark" ? (
+      <li key={node.id}>
+        <button type="button" title={node.url} onClick={() => onNavigate(node.url)}>
+          <AliIcon name="earth" size={12} /><span>{node.title}</span><small>{node.url}</small>
+        </button>
+      </li>
+    ) : (
+      <li key={node.id}>
+        <details>
+          <summary><AliIcon name="folder" size={13} /><span>{node.title}</span><small>{bookmarkCount(node.children)}</small></summary>
+          <BookmarkTree nodes={node.children} onNavigate={onNavigate} />
+        </details>
+      </li>
+    ))}
+  </ul>;
 }
 
 function ScreenshotBrowserPanel({ active }: { active: boolean }) {

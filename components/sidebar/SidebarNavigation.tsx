@@ -8,9 +8,7 @@ import styles from "../SessionSidebar.module.css";
 
 interface Props {
   onFocusFileSearch?: () => void;
-  taskSearchRef: RefObject<HTMLInputElement | null>;
-  taskSearch: string;
-  setTaskSearch: Dispatch<SetStateAction<string>>;
+  primaryActionRef: RefObject<HTMLButtonElement | null>;
   onOpenSettings?: () => void;
   selectedCwd: string | null;
   selectedCwdProp?: string | null;
@@ -27,7 +25,7 @@ interface Props {
 
 export function SidebarNavigation(props: Props) {
   const { t } = useI18n();
-  const { onFocusFileSearch, taskSearchRef, taskSearch, setTaskSearch, onOpenSettings, selectedCwd, selectedCwdProp, projectGroups, pinnedProjectGroups, projectAliases, setSelectedCwd, setCollapsedProjectKeys, handleNewSessionInProject, onRequestNewSession, handleDefaultCwd, togglePinnedProject } = props;
+  const { onFocusFileSearch, primaryActionRef, onOpenSettings, selectedCwd, selectedCwdProp, projectGroups, pinnedProjectGroups, projectAliases, setSelectedCwd, setCollapsedProjectKeys, handleNewSessionInProject, onRequestNewSession, handleDefaultCwd, togglePinnedProject } = props;
   return <>
       <div className={styles.brandRow}>
         <button type="button" className={styles.brandButton} aria-label={t("sidebar.appMenu")}>
@@ -49,6 +47,7 @@ export function SidebarNavigation(props: Props) {
 
       <nav className={styles.primaryNav} aria-label={t("sidebar.primaryNavigation")}>
         <button
+          ref={primaryActionRef}
           type="button"
           className={styles.navButton}
           onClick={() => {
@@ -69,33 +68,6 @@ export function SidebarNavigation(props: Props) {
           <span>{t("sidebar.searchFiles")}</span>
         </button>
       </nav>
-
-      <div style={{ padding: "3px 8px 5px", position: "relative" }}>
-        <AliIcon name="search" size={13} style={{ position: "absolute", left: 17, top: 12, color: "var(--text-dim)", pointerEvents: "none" }} />
-        <input
-          ref={taskSearchRef}
-          value={taskSearch}
-          onChange={(event) => setTaskSearch(event.target.value)}
-          placeholder={t("sidebar.searchTasks")}
-          aria-label={t("sidebar.searchTasks")}
-          style={{
-            width: "100%", minHeight: 31, boxSizing: "border-box", padding: "6px 28px",
-            border: "1px solid var(--border)", borderRadius: 7, outline: "none",
-            background: "var(--bg)", color: "var(--text)", fontSize: "var(--text-sm)",
-          }}
-        />
-        {taskSearch && (
-          <button
-            type="button"
-            onClick={() => setTaskSearch("")}
-            title={t("sidebar.clearSearch")}
-            aria-label={t("sidebar.clearSearch")}
-            style={{ position: "absolute", right: 13, top: 8, width: 24, height: 24, border: 0, background: "transparent", color: "var(--text-dim)", cursor: "pointer" }}
-          >
-            <AliIcon name="close" size={12} />
-          </button>
-        )}
-      </div>
 
       {pinnedProjectGroups.length > 0 && (
         <div>

@@ -73,7 +73,6 @@ export function TaskRow({
   onToggleCollapse,
   pinned = false,
   archived = false,
-  searchQuery = "",
   onTogglePinned,
   onToggleArchived,
   onDuplicate,
@@ -91,7 +90,6 @@ export function TaskRow({
   onToggleCollapse?: () => void;
   pinned?: boolean;
   archived?: boolean;
-  searchQuery?: string;
   onTogglePinned?: () => void;
   onToggleArchived?: () => void;
   onDuplicate?: () => void;
@@ -115,8 +113,6 @@ export function TaskRow({
   });
   const taskStatusPresentationKey = getTaskStatusPresentationKey(taskStatus);
   const title = session.name || session.firstMessage.slice(0, 50) || session.id.slice(0, 12);
-  const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
-  const matchIndex = normalizedQuery ? title.toLocaleLowerCase().indexOf(normalizedQuery) : -1;
 
   useEffect(() => () => titleOptimizationAbortRef.current?.abort(), []);
 
@@ -331,9 +327,7 @@ export function TaskRow({
               title={title}
             >
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
-                {matchIndex < 0 ? title : (
-                  <>{title.slice(0, matchIndex)}<mark style={{ background: "color-mix(in srgb, var(--accent) 22%, transparent)", color: "inherit", borderRadius: 2 }}>{title.slice(matchIndex, matchIndex + normalizedQuery.length)}</mark>{title.slice(matchIndex + normalizedQuery.length)}</>
-                )}
+                {title}
               </span>
             </div>
           </div>
