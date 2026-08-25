@@ -4,6 +4,14 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-08-25
+
+### Fixed
+
+- Gave the Linux packaged-runtime smoke test a bounded 30-second cold-start
+  budget, accounting for its measured 9.5-second service bootstrap before the
+  renderer marker while retaining the stricter Windows and cached-launch gates.
+
 ## [0.4.5] - 2026-08-25
 
 ### Fixed

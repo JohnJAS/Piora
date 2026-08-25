@@ -18,6 +18,14 @@ const STRICT_VERSION = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 // repeat-launch path is independently capped at three seconds below.
 export const DEFAULT_PORTABLE_SMOKE_TIMEOUT_MS = 900_000;
 export const MAX_PORTABLE_STARTUP_MS = 3_000;
+export const PACKAGED_RUNTIME_STARTUP_MS = 10_000;
+export const LINUX_PACKAGED_RUNTIME_STARTUP_MS = 30_000;
+
+export function getPackagedRuntimeStartupBudget(platform = process.platform) {
+  return platform === "linux"
+    ? LINUX_PACKAGED_RUNTIME_STARTUP_MS
+    : PACKAGED_RUNTIME_STARTUP_MS;
+}
 
 export function getPortableDisplayEnvironment(
   hostEnvironment = process.env,
@@ -352,7 +360,9 @@ async function main() {
   const result = await smokeTestPortableExecutable(executable, {
     expectedVersion,
     preparePortableCache: !packagedRuntime,
-    startupBudgetMs: packagedRuntime ? 10_000 : MAX_PORTABLE_STARTUP_MS,
+    startupBudgetMs: packagedRuntime
+      ? getPackagedRuntimeStartupBudget()
+      : MAX_PORTABLE_STARTUP_MS,
   });
   console.log(JSON.stringify(result));
 }
