@@ -15,6 +15,7 @@ test("new chat requires an explicit project choice instead of inheriting the act
   assert.match(navigation, /onRequestNewSession\(\)/);
   assert.match(picker, /开始一个新会话/);
   assert.match(picker, /配置模型/);
+  assert.match(picker, /进入“模型”添加并启用模型/);
   assert.match(picker, /选择项目文件夹/);
   assert.doesNotMatch(picker, /你想在|中构建什么|本地/);
   assert.match(picker, /fetch\("\/api\/sessions"/);
@@ -30,6 +31,7 @@ test("new chat requires an explicit project choice instead of inheriting the act
   assert.match(picker, /const \[menuOpen, setMenuOpen\] = useState\(false\)/);
   assert.doesNotMatch(picker, /onFocus=\{\(\) => \{ if \(!menuOpen\) setMenuOpen\(true\); \}\}/);
   assert.match(picker, /选择其他文件夹/);
+  assert.doesNotMatch(picker, /brandChip|name="arrowdown"/);
 });
 
 test("desktop project browsing delegates to the operating system directory picker", async () => {

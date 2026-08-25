@@ -151,7 +151,7 @@ export function NewSessionProjectPicker({
               <span className={styles.stepNumber}>1</span>
               <span className={styles.stepCopy}>
                 <strong>配置模型</strong>
-                <small>打开左上角“设置”，进入“智能体 → 模型”添加并启用模型。</small>
+                <small>打开左上角“设置”，进入“模型”添加并启用模型。</small>
               </span>
             </li>
             <li>
@@ -172,7 +172,6 @@ export function NewSessionProjectPicker({
 
         <div className={styles.workspaceDock}>
           <div className={styles.contextRail}>
-            <span className={styles.brandChip}><AliIcon name="cloud" size={14} />Piora</span>
             <div ref={projectSelectorRef} className={styles.projectAnchor}>
               {menuOpen ? (
                 <div className={styles.projectPopover}>
@@ -199,7 +198,6 @@ export function NewSessionProjectPicker({
               <button className={styles.projectChip} type="button" onClick={() => setMenuOpen((open) => !open)} aria-haspopup="listbox" aria-expanded={menuOpen}>
                 <AliIcon name="folder" size={14} />
                 <span>选择项目</span>
-                <AliIcon name="arrowdown" size={11} />
               </button>
             </div>
           </div>

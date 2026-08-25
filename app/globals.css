@@ -416,7 +416,7 @@ html.desktop-pet-document[data-app-background-active="true"] body::after {
 
 .app-topbar-title:hover,
 .app-topbar-title[data-active="true"] {
-  background: color-mix(in srgb, var(--bg-hover) 84%, transparent);
+  background: transparent;
   color: var(--text);
 }
 
@@ -576,12 +576,20 @@ select:focus-visible,
   transition: background 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease !important;
 }
 
-.sidebar-project-row:hover,
+.sidebar-project-row:hover {
+  background: transparent !important;
+}
+
 .sidebar-session-row:hover {
   background: color-mix(in srgb, var(--bg-hover) 82%, transparent) !important;
 }
 
-.sidebar-project-row.is-selected,
+.sidebar-project-row.is-selected {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
 .sidebar-session-row.is-selected {
   border-color: transparent !important;
   background: var(--bg-selected) !important;

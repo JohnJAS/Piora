@@ -67,8 +67,8 @@ test("hover actions overlay a fixed-height session row without reflow", () => {
 
 test("selected sessions use a neutral Codex-style background without an accent rail", () => {
   const selectedStyles = globalStyles.slice(
-    globalStyles.indexOf(".sidebar-project-row.is-selected"),
-    globalStyles.indexOf("/* No press-down translate", globalStyles.indexOf(".sidebar-project-row.is-selected")),
+    globalStyles.indexOf(".sidebar-session-row.is-selected"),
+    globalStyles.indexOf("/* No press-down translate", globalStyles.indexOf(".sidebar-session-row.is-selected")),
   );
   assert.match(selectedStyles, /background:\s*var\(--bg-selected\)/);
   assert.match(selectedStyles, /box-shadow:\s*none/);
@@ -82,6 +82,8 @@ test("project headings stay transparent while selected sessions keep their fill"
   );
   assert.match(projectStyles, /\.projectRowSelected\s*\{\s*background:\s*transparent/);
   assert.doesNotMatch(projectStyles, /\.projectRow:hover[\s\S]*?background:/);
+  assert.match(globalStyles, /\.sidebar-project-row\.is-selected\s*\{[^}]*background:\s*transparent/s);
+  assert.match(globalStyles, /\.sidebar-project-row:hover\s*\{[^}]*background:\s*transparent/s);
 });
 
 test("renders sessions inside persisted project folders", () => {

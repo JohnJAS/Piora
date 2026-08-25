@@ -30,6 +30,9 @@ All notable changes to Piora are documented here. The project follows [Semantic 
   incorrect hilog arguments and false-success HDC responses, incomplete UiTest
   tree parsing, stale semantic taps, and actions silently reporting success
   without checking the resulting UI.
+- Updated model-configuration guidance to the current Settings → Models path,
+  simplified the new-conversation project picker, and removed persistent fill
+  backgrounds from project headings and selectors.
 
 ## [0.4.0] - 2026-08-24
 
