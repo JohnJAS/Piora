@@ -1,4 +1,4 @@
-name: Release Windows portable packages
+name: Release Windows and Linux desktop packages
 
 on:
   push:
@@ -179,9 +179,74 @@ jobs:
           retention-days: 14
           compression-level: 0
 
+  linux-build:
+    name: Build and verify Linux AppImage
+    needs: source-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Verify release tag and metadata
+        shell: bash
+        run: |
+          git fetch --no-tags --force origin +refs/heads/main:refs/remotes/origin/main
+          node scripts/verify-release-metadata.mjs "$GITHUB_REF_NAME" --require-origin-main
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Linux AppImage
+        run: npm run dist:linux
+
+      - name: Verify packaged standalone service
+        run: node scripts/verify-packaged-web.mjs desktop/release/linux-unpacked/resources/web
+
+      - name: Extract and smoke-test AppImage
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          artifact="desktop/release/Piora-$version-linux-x64-portable.AppImage"
+          test -f "$artifact"
+          chmod +x "$artifact"
+          (cd desktop/release && "./$(basename "$artifact")" --appimage-extract >/dev/null)
+          xvfb-run -a node scripts/smoke-test-portable.mjs desktop/release/squashfs-root/AppRun --expected-version "$GITHUB_REF_NAME" --packaged-runtime
+
+      - name: Generate Linux checksum
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          artifact="desktop/release/Piora-$version-linux-x64-portable.AppImage"
+          hash="$(sha256sum "$artifact" | cut -d' ' -f1)"
+          printf '%s  %s\n' "$hash" "$(basename "$artifact")" > desktop/release/SHA256SUMS-linux.txt
+
+      - name: Upload verified Linux payload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: piora-linux-${{ github.ref_name }}
+          path: |
+            desktop/release/*-linux-x64-portable.AppImage
+            desktop/release/SHA256SUMS-linux.txt
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+
   publish-release:
     name: Publish stable release
-    needs: windows-build
+    needs: [windows-build, linux-build]
     runs-on: windows-latest
     timeout-minutes: 10
     permissions:
@@ -191,8 +256,9 @@ jobs:
       - name: Download verified release payload
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: piora-windows-${{ github.ref_name }}
+          pattern: piora-*-${{ github.ref_name }}
           path: release-payload
+          merge-multiple: true
 
       - name: Verify downloaded SHA-256 checksums
         shell: pwsh
@@ -236,6 +302,32 @@ jobs:
             }
           }
 
+      - name: Verify Linux checksum and combine manifest
+        shell: pwsh
+        run: |
+          $root = (Resolve-Path -LiteralPath release-payload).Path
+          $linuxChecksumPath = Join-Path $root 'SHA256SUMS-linux.txt'
+          $combinedChecksumPath = Join-Path $root 'SHA256SUMS.txt'
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $expectedName = "Piora-$version-linux-x64-portable.AppImage"
+          $line = @(Get-Content -LiteralPath $linuxChecksumPath)
+          if ($line.Count -ne 1 -or $line[0] -notmatch '^([0-9a-fA-F]{64})  ([^\\/]+\.AppImage)$') {
+            throw 'Linux checksum manifest is malformed.'
+          }
+          if ($Matches[2] -ne $expectedName) {
+            throw "Unexpected Linux artifact in checksum manifest: $($Matches[2])"
+          }
+          $artifact = Join-Path $root $expectedName
+          if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) {
+            throw "Expected Linux release artifact is missing: $expectedName"
+          }
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact).Hash.ToLowerInvariant()
+          if ($actual -ne $Matches[1].ToLowerInvariant()) {
+            throw "SHA-256 mismatch for $expectedName"
+          }
+          Add-Content -LiteralPath $combinedChecksumPath -Value $line[0] -Encoding ascii
+          Remove-Item -LiteralPath $linuxChecksumPath -Force
+
       - name: Publish stable release
         shell: pwsh
         env:
@@ -245,10 +337,11 @@ jobs:
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           $assets = @(
             (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-win-x64-portable.exe")).Path,
-            (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-win-x64.zip")).Path
+            (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-win-x64.zip")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-linux-x64-portable.AppImage")).Path
           )
           $assets += (Resolve-Path -LiteralPath (Join-Path $root 'SHA256SUMS.txt')).Path
-          $releaseNotes = "Stable Windows x64 release with two no-install packages:`n- ZIP: extract the archive, then run Piora.exe.`n- Portable EXE: run the single executable directly.`n`nThese packages are not code-signed, so Windows may show a reputation warning. Verify the selected package against SHA256SUMS.txt before running. Updates are manual: download a newer package from Releases when available.`n`nRelease validation includes source hygiene, license inventory, lint, type checking, unit tests, packaged-service isolation, portable-runtime startup, archive integrity, and SHA-256 verification."
+          $releaseNotes = "Stable desktop release:`n- Windows x64 ZIP: extract, then run Piora.exe.`n- Windows x64 portable EXE: run the single executable directly.`n- Linux x64 AppImage: mark executable, then run it.`n`nPackages are not code-signed. Verify the selected package against SHA256SUMS.txt before running. Linux currently reports local speech transcription as unavailable because no reviewed bundled whisper.cpp Linux runtime is shipped; all other desktop capabilities are packaged normally.`n`nRelease validation includes source hygiene, license inventory, lint, type checking, unit tests, packaged-service isolation, Windows and Linux desktop-runtime startup, archive integrity, and SHA-256 verification."
           & gh release create $env:GITHUB_REF_NAME @assets `
             --repo $env:GITHUB_REPOSITORY `
             --title "Piora $env:GITHUB_REF_NAME" `

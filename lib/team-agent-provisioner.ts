@@ -3,7 +3,8 @@ import { existsSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import { getRpcSession, startRpcSession } from "./rpc-manager";
 import { resolveSessionPath } from "./session-reader";
-import { addWorktree, removeWorktree } from "./worktree";
+import { createTeamAgentProfile, validateTeamAgentProfile } from "./team-agent-templates";
+import { addWorktree, canCreateDedicatedWorktree, removeWorktree } from "./worktree";
 import { TeamError } from "./team-errors";
 import type { CollaborationRoomV3, TeamAgentBinding, TeamAgentProfile } from "./team-types";
 
@@ -29,6 +30,32 @@ function roomBaseCwd(room: CollaborationRoomV3): string {
   return resolve(room.projectRoot ?? coordinator?.binding.projectRoot ?? coordinator?.binding.cwd ?? room.workspace.path);
 }
 
+export async function resolveProvisionableTeamAgentProfile(
+  room: CollaborationRoomV3,
+  requestedProfile: TeamAgentProfile,
+): Promise<TeamAgentProfile> {
+  const profile = validateTeamAgentProfile(structuredClone(requestedProfile));
+  if (
+    profile.workspacePolicy.mode !== "dedicated_worktree"
+    || await canCreateDedicatedWorktree(roomBaseCwd(room))
+  ) {
+    return profile;
+  }
+
+  // Non-Git folders and repositories with an unborn HEAD cannot host linked
+  // worktrees. Keep managed Agent creation usable and persist the effective
+  // policy so the settings UI never claims isolation that was not created.
+  return createTeamAgentProfile(profile.role, {
+    ...profile,
+    workspacePolicy: {
+      mode: "shared",
+      integration: profile.role === "coordinator"
+        ? "coordinator_integrates"
+        : profile.workspacePolicy.integration,
+    },
+  });
+}
+
 export async function provisionTeamAgentSession(
   room: CollaborationRoomV3,
   profile: TeamAgentProfile,
@@ -47,8 +74,10 @@ export async function provisionTeamAgentSession(
     }
     const started = await startRpcSession(`team-provision-${memberId}`, "", cwd, sessionOptions(profile));
     sessionId = started.realSessionId;
+    await started.session.waitUntilReady();
     if (profile.toolPolicy.mode === "allowlist") await started.session.send({ type: "set_team_tools", toolNames: profile.toolPolicy.toolNames });
     await started.session.send({ type: "set_session_name", name: `${room.name} · ${profile.name}` });
+    started.session.persistSessionFile();
     return {
       sessionId,
       cwd,
@@ -95,6 +124,7 @@ export async function reconfigureTeamAgentSession(
   const sessionFile = await resolveSessionPath(member.binding.sessionId);
   if (!sessionFile) throw new TeamError("TEAM_MEMBER_NOT_FOUND", "Managed Agent Session file is missing.");
   const started = await startRpcSession(member.binding.sessionId, sessionFile, member.binding.cwd ?? roomBaseCwd(room), sessionOptions(member.profile));
+  await started.session.waitUntilReady();
   if (member.profile.modelPolicy.mode === "pinned") {
     await started.session.send({ type: "set_model", provider: member.profile.modelPolicy.provider, modelId: member.profile.modelPolicy.modelId });
     await started.session.send({ type: "set_thinking_level", level: member.profile.modelPolicy.thinkingLevel });

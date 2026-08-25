@@ -59,9 +59,9 @@ test("switches sessions immediately while another session is running", () => {
 
 test("hover actions overlay a fixed-height session row without reflow", () => {
   assert.match(sessionItemSource, /position:\s*"relative"/);
-  assert.match(sessionItemSource, /data-pinned-actions[^]*position:\s*"absolute"/);
-  assert.match(sessionItemSource, /opacity:\s*hovered \|\| pinned \? 1 : 0/);
-  assert.match(sessionItemSource, /\{hovered \? \(/);
+  assert.match(sessionItemSource, /position:\s*"absolute"/);
+  assert.match(sessionItemSource, /opacity:\s*hovered \? 1 : 0/);
+  assert.doesNotMatch(sessionItemSource, /data-pinned-actions/);
   assert.match(source, /className="sidebar-project-scroll"/);
 });
 

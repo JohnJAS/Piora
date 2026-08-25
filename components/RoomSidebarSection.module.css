@@ -331,3 +331,22 @@
   background: var(--accent);
   color: white;
 }
+
+.section,
+.dialog,
+.dialogHeader,
+.field textarea,
+.advancedCreate,
+.memberRow,
+.dialogActions { border: 0; }
+
+.dialog { box-shadow: var(--shadow-popover); }
+
+.field textarea,
+.advancedCreate,
+.memberRow { background: var(--surface-muted); }
+
+.field textarea:focus {
+  border-color: transparent;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}

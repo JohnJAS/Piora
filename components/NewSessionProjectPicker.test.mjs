@@ -13,10 +13,8 @@ test("new chat requires an explicit project choice instead of inheriting the act
   assert.doesNotMatch(shell, /newSessionCwd \?\? \(selectedSession === null/);
   assert.match(shell, /<NewSessionProjectPicker/);
   assert.match(navigation, /onRequestNewSession\(\)/);
-  assert.match(picker, /开始一个新会话/);
-  assert.match(picker, /配置模型/);
-  assert.match(picker, /进入“模型”添加并启用模型/);
-  assert.match(picker, /选择项目文件夹/);
+  assert.doesNotMatch(picker, /开始使用 Piora|配置模型|进入“模型”添加并启用模型/);
+  assert.match(picker, /<span>选择项目<\/span>/);
   assert.doesNotMatch(picker, /你想在|中构建什么|本地/);
   assert.match(picker, /fetch\("\/api\/sessions"/);
   assert.match(picker, /className=\{styles\.composer\}/);
@@ -61,10 +59,10 @@ test("conversation chrome and rooms share the configured background", () => {
   assert.match(backgrounds, /\.room-workspace-details/);
 });
 
-test("pinned sessions keep a visible right-edge pin and the dead brand search action is gone", () => {
-  assert.match(taskRow, /data-pinned-actions=\{pinned \? "true" : "false"\}/);
-  assert.match(taskRow, /sidebar\.unpinTask/);
-  assert.match(taskRow, /icon="pushpin"/);
+test("pinned sessions use a passive badge and the dead brand search action is gone", () => {
+  assert.match(taskRow, /title=\{t\("sidebar\.pinned"\)\}/);
+  assert.match(taskRow, /name="pushpin"/);
+  assert.doesNotMatch(taskRow, /data-pinned-actions/);
   const brandActions = navigation.match(/<div className=\{styles\.brandActions\}>([\s\S]*?)<\/div>/)?.[1] ?? "";
   assert.doesNotMatch(brandActions, /name="search"/);
   assert.match(brandActions, /name="setting"/);

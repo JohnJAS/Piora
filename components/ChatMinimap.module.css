@@ -69,7 +69,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border: 0;
   border-radius: 13px;
   background: color-mix(in srgb, var(--bg) 94%, transparent);
   box-shadow:
@@ -81,12 +81,18 @@
 
 .previewHeader {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   min-height: 40px;
   padding: 11px 12px 9px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+}
+
+.previewHeading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 10px;
 }
 
 .previewTitle {
@@ -100,6 +106,37 @@
   color: var(--text-dim);
   font-size: var(--text-xs);
   white-space: nowrap;
+}
+
+.pinButton {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.pinButton:hover,
+.pinButton:focus-visible {
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
+}
+
+.pinButton[data-active="true"] {
+  color: var(--accent);
+  transform: rotate(-18deg);
+}
+
+.pinButton:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 36%, transparent);
+  outline-offset: 1px;
 }
 
 .previewList {

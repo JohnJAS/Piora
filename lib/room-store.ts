@@ -16,7 +16,7 @@ import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import lockfile from "proper-lockfile";
 import { createTeamAgentProfile, validateTeamAgentProfile } from "./team-agent-templates";
-import { TEAM_DEFAULTS, type TeamAgentProfile, type TeamAgentRole } from "./team-types";
+import { TEAM_DEFAULTS, type TeamAgentBinding, type TeamAgentProfile, type TeamAgentRole } from "./team-types";
 import type {
   CollaborationRoom,
   PrivateRoomNote,
@@ -458,6 +458,63 @@ export function addRoomMember(roomId: string, input: {
       content: `${input.name || input.sessionId} 加入了协作空间。`,
     });
   }
+  return getRoom(roomId);
+}
+
+export function addManagedRoomMember(roomId: string, input: {
+  memberId: string;
+  profile: TeamAgentProfile;
+  binding: TeamAgentBinding;
+  requestedBy: string;
+}): CollaborationRoom {
+  let saved!: CollaborationRoom;
+  withRoomLockSync(roomId, () => {
+    const room = getRoom(roomId);
+    requireCoordinator(room, input.requestedBy);
+    if (room.members.some((member) => member.memberId === input.memberId)) {
+      throw new Error("该智能体已存在于协作空间中。");
+    }
+    if (room.members.some((member) => member.binding.sessionId === input.binding.sessionId)) {
+      throw new Error("该会话已绑定到协作空间中的其他智能体。");
+    }
+    const profile = validateTeamAgentProfile(structuredClone(input.profile));
+    const binding = structuredClone(input.binding);
+    if (!binding.sessionId || !binding.managedByPiora) {
+      throw new Error("托管智能体必须绑定到由 Piora 创建的会话。");
+    }
+    if (binding.cwd) binding.cwd = resolve(binding.cwd);
+    if (binding.projectRoot) binding.projectRoot = resolve(binding.projectRoot);
+    const member = attachMemberAliases({
+      memberId: input.memberId,
+      profile,
+      binding,
+      joinedAt: Date.now(),
+    } as RoomMember);
+    room.members.push(member);
+    if (profile.role === "coordinator") {
+      for (const candidate of room.members) {
+        if (candidate.memberId !== member.memberId && candidate.profile.role === "coordinator") {
+          candidate.profile.role = "participant";
+        }
+      }
+      room.coordination.coordinatorMemberId = member.memberId;
+    }
+    room.coordination.defaultReviewerMemberIds = room.members
+      .filter((candidate) => candidate.profile.role === "reviewer")
+      .map((candidate) => candidate.memberId);
+    room.updatedAt = Date.now();
+    mkdirSync(join(room.paths.privateRoot, safeMemberDirectory(member.memberId)), { recursive: true });
+    writeRoom(room);
+    saved = room;
+  });
+  appendRoomAudit(roomId, input.requestedBy, "member.added", `托管智能体「${input.profile.name}」加入协作空间。`);
+  emitRoomEvent({ type: "room", roomId, room: saved });
+  appendRoomMessage(roomId, {
+    authorKind: "system",
+    authorId: "piora",
+    authorName: "Piora",
+    content: `${input.profile.name} 加入了协作空间。`,
+  });
   return getRoom(roomId);
 }
 

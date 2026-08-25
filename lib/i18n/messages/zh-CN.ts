@@ -893,6 +893,8 @@ export const zhCNLocale: LocalePlugin = {
     "chat.timelineCount": "{count} 条用户消息",
     "chat.timelineJump": "跳转到第 {index} 条用户消息：{text}",
     "chat.timelineAttachmentOnly": "附件消息",
+    "chat.timelinePin": "固定会话记录",
+    "chat.timelineUnpin": "取消固定，恢复悬浮显示",
     "chat.extensionRequest": "扩展请求",
     "chat.cancel": "取消",
     "chat.confirm": "确认",

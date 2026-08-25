@@ -81,7 +81,7 @@ export async function submitTeamPlan(sessionId: string, toolCallId: string, inpu
     maxAttempts: room.coordination.maxTaskAttempts,
     reviewPolicy: {
       required: reviewRequired,
-      reviewerMemberIds: [...room.coordination.defaultReviewerMemberIds],
+      reviewerMemberIds: reviewRequired ? [...room.coordination.defaultReviewerMemberIds] : [],
       minimumApprovals: reviewRequired ? 1 : 0,
     },
     reviewRound: 0,

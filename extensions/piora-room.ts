@@ -88,6 +88,19 @@ function dynamicTeamContext(sessionId: string): { systemPrompt: string; message:
     : context.purpose === "review" ? "submit_review"
       : context.purpose === "synthesis" ? "complete_run"
         : "submit_task, block_task, or fail_task";
+  const actionContract = context.purpose === "planning" || context.purpose === "replan"
+    ? [
+      "submit_plan contract: put the plan objective in `content` (not `summary`), and provide assumptions, successCriteria, and tasks.",
+      "Set reviewRequired=false for a reviewer-owned independent task; only worker submissions that need an independent approval should use reviewRequired=true.",
+    ]
+    : context.purpose === "review"
+      ? ["submit_review contract: provide verdict, summary, findings, and evidenceIds."]
+      : context.purpose === "synthesis"
+        ? ["complete_run contract: provide summary, artifactIds, and successCriteriaEvidence with evidence for every required criterion."]
+        : [
+          "publish_artifact contract: `content` is the artifact summary; sourcePath is optional and, when present, must stay inside this Session workspace.",
+          "After publishing artifacts and adding evidence, pass their returned IDs to submit_task via artifactIds and evidenceIds.",
+        ];
   return {
     systemPrompt: stableTeamInstructions(room, member),
     message: {
@@ -119,6 +132,7 @@ function dynamicTeamContext(sessionId: string): { systemPrompt: string; message:
           "不要告诉用户‘等待批准’或要求用户再次确认计划。",
           "能力标签只用于优先匹配；即使没有完全匹配的专长，也会回退给可用的通用执行者。",
         ] : []),
+        ...actionContract,
         `Exact next required tool action: ${nextAction}`,
       ].join("\n"),
     },
@@ -180,7 +194,10 @@ export default function pioraRoom(api: ExtensionAPI) {
         Type.Literal("complete_run"),
       ]),
       roomId: Type.Optional(Type.String()),
-      content: Type.Optional(Type.String({ maxLength: 20_000 })),
+      content: Type.Optional(Type.String({
+        maxLength: 20_000,
+        description: "Action payload. For submit_plan this is the plan objective; for publish_artifact this is the artifact summary; for messages it is the message text.",
+      })),
       afterSeq: Type.Optional(Type.Number({ minimum: 0 })),
       taskId: Type.Optional(Type.String()),
       leaseToken: Type.Optional(Type.String()),
@@ -195,7 +212,7 @@ export default function pioraRoom(api: ExtensionAPI) {
         Type.Literal("file"),
       ])),
       artifactName: Type.Optional(Type.String({ maxLength: 240 })),
-      sourcePath: Type.Optional(Type.String()),
+      sourcePath: Type.Optional(Type.String({ description: "Optional artifact source file. It must be inside the current Session workspace." })),
       replyTo: Type.Optional(Type.String()),
       summary: Type.Optional(Type.String({ maxLength: 64_000 })),
       assumptions: Type.Optional(Type.Array(Type.String({ maxLength: 4_000 }), { maxItems: 64 })),
@@ -233,7 +250,7 @@ export default function pioraRoom(api: ExtensionAPI) {
       const sessionId = ctx.sessionManager.getSessionId();
       if (params.action === "get_assignment") return textResult("Loaded the active structured Team assignment.", getTeamAssignment(sessionId, toolCallId));
       if (params.action === "submit_plan") {
-        if (!params.content || !params.assumptions || !params.successCriteria || !params.tasks) throw new Error("content objective, assumptions, successCriteria, and tasks are required.");
+        if (!params.content || !params.assumptions || !params.successCriteria || !params.tasks) throw new Error("submit_plan requires `content` (the plan objective), assumptions, successCriteria, and tasks.");
         const state = await submitTeamPlan(sessionId, toolCallId, { objective: params.content, assumptions: params.assumptions, successCriteria: params.successCriteria, tasks: params.tasks });
         return textResult(`Submitted Team plan revision ${state.revision}.`, { state });
       }
@@ -290,7 +307,7 @@ export default function pioraRoom(api: ExtensionAPI) {
         return textResult(text, { roomId: room.id, artifactCount: artifacts.length });
       }
       if (params.action === "publish_artifact") {
-        if (!params.artifactKind || !params.artifactName || !params.content) throw new Error("artifactKind, artifactName, and content summary are required.");
+        if (!params.artifactKind || !params.artifactName || !params.content) throw new Error("publish_artifact requires artifactKind, artifactName, and `content` (the artifact summary). sourcePath is optional.");
         if (getActiveTeamPromptContext(sessionId)) {
           const result = await publishTeamArtifact(sessionId, toolCallId, { kind: params.artifactKind, name: params.artifactName, summary: params.content, sourcePath: params.sourcePath });
           return textResult(`Published Team artifact ${result.artifact.id}.`, result);

@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto";
 import { parseJsonWithinLimit } from "@/lib/bounded-json";
 import { createTeamAgentProfile, validateTeamAgentProfile } from "@/lib/team-agent-templates";
 import { requireRoomCoordinatorBySession, requireRoomMemberBySession } from "@/lib/team-agent-api";
-import { provisionTeamAgentSession, rollbackProvisionedTeamAgentSession } from "@/lib/team-agent-provisioner";
+import { provisionTeamAgentSession, resolveProvisionableTeamAgentProfile, rollbackProvisionedTeamAgentSession } from "@/lib/team-agent-provisioner";
 import { teamApiError } from "@/lib/team-api";
-import { addRoomMember, removeRoomMember, updateRoomAgentBinding, updateRoomAgentProfile } from "@/lib/room-store";
+import { addManagedRoomMember, removeRoomMember } from "@/lib/room-store";
 import type { CollaborationRoomV3, TeamAgentBinding, TeamAgentProfile, TeamAgentRole } from "@/lib/team-types";
 
 export const dynamic = "force-dynamic";
@@ -24,32 +24,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const body = await parseJsonWithinLimit(request, 256 * 1024) as { sessionId?: unknown; role?: unknown; name?: unknown; roleDescription?: unknown; profile?: unknown };
     const { room, member: requester } = requireRoomCoordinatorBySession(id, body.sessionId);
     const role = typeof body.role === "string" ? body.role as TeamAgentRole : "worker";
-    const profile = body.profile
+    const requestedProfile = body.profile
       ? validateTeamAgentProfile({ ...body.profile as TeamAgentProfile, role })
       : createTeamAgentProfile(role, {
         name: typeof body.name === "string" && body.name.trim() ? body.name : `${role} Agent`,
         roleDescription: typeof body.roleDescription === "string" ? body.roleDescription : undefined,
       });
+    const profile = await resolveProvisionableTeamAgentProfile(room, requestedProfile);
     const memberId = randomUUID();
     const binding = await provisionTeamAgentSession(room, profile, memberId);
     provisioned = { room, binding, requesterSessionId: requester.binding.sessionId, memberAdded: false };
-    addRoomMember(id, {
+    const saved = addManagedRoomMember(id, {
       memberId,
-      sessionId: binding.sessionId,
-      name: profile.name,
-      instructions: profile.roleDescription,
-      role: profile.role,
-      cwd: binding.cwd,
-      projectRoot: binding.projectRoot,
-      worktreeBranch: binding.worktreeBranch,
+      profile,
+      binding,
       requestedBy: requester.binding.sessionId,
     });
     provisioned.memberAdded = true;
-    const patch = structuredClone(profile) as Partial<TeamAgentProfile> & { schemaVersion?: unknown; revision?: unknown };
-    delete patch.schemaVersion;
-    delete patch.revision;
-    updateRoomAgentProfile(id, requester.binding.sessionId, memberId, 1, patch);
-    const saved = updateRoomAgentBinding(id, requester.binding.sessionId, memberId, binding);
+    if (profile.role === "coordinator") provisioned.requesterSessionId = binding.sessionId;
     provisioned = undefined;
     return Response.json({ room: saved, agent: saved.members.find((candidate) => candidate.memberId === memberId) }, { status: 201 });
   } catch (error) {

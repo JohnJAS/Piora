@@ -893,6 +893,8 @@ export const enLocale: LocalePlugin = {
     "chat.timelineCount": "{count} prompts",
     "chat.timelineJump": "Jump to prompt {index}: {text}",
     "chat.timelineAttachmentOnly": "Attachment message",
+    "chat.timelinePin": "Keep timeline open",
+    "chat.timelineUnpin": "Return timeline to hover",
     "chat.extensionRequest": "extension request",
     "chat.cancel": "Cancel",
     "chat.confirm": "Confirm",

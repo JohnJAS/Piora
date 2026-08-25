@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
-import { existsSync, realpathSync, writeFileSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { validateAgentImages } from "./image-attachments";
 import { invalidateModelsCache } from "./models-cache";
@@ -14,6 +14,7 @@ import {
 import { getFirstPartyExtensionByPath } from "./first-party-extensions";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
 import { ensureWindowsBashShellPath } from "./windows-bash";
+import { persistLazySessionManager } from "./session-persistence";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
@@ -617,24 +618,10 @@ export class AgentSessionWrapper {
     }, 10 * 60 * 1000);
   }
 
-  private persistBashOnlySession(): void {
+  persistSessionFile(): void {
     const manager = this.inner.sessionManager;
-    const sessionFile = manager.getSessionFile();
-    if (!sessionFile || existsSync(sessionFile)) return;
-
-    const header = manager.getHeader();
-    if (!header) return;
-
-    const content = [header, ...manager.getEntries()]
-      .map((entry) => JSON.stringify(entry))
-      .join("\n") + "\n";
-    writeFileSync(sessionFile, content, { encoding: "utf8", flag: "wx" });
-
-    // Pi normally delays the first flush until an assistant message exists.
-    // A leading shell command has no assistant message, so mark this SDK
-    // manager as flushed after writing its own generated entries.
-    (manager as unknown as { flushed: boolean }).flushed = true;
-    cacheSessionPath(this.inner.sessionId, sessionFile);
+    const sessionFile = persistLazySessionManager(manager);
+    if (sessionFile) cacheSessionPath(this.inner.sessionId, sessionFile);
   }
 
   private persistGoalState(state: GoalRunState | undefined = this.goalState): void {
@@ -1310,7 +1297,7 @@ export class AgentSessionWrapper {
         notifyRunningChange();
         try {
           const result = await execution;
-          this.persistBashOnlySession();
+          this.persistSessionFile();
           return result;
         } finally {
           invalidateSessionListCache();

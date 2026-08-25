@@ -164,7 +164,7 @@ function installPortableDesktopShortcut(log: Logger): void {
         : {}),
       packagedExecutablePath: process.execPath,
       desktopDirectory: app.getPath("desktop"),
-      iconPath: join(process.resourcesPath, "tray-icon.ico"),
+      iconPath: join(process.resourcesPath, process.platform === "win32" ? "tray-icon.ico" : "tray-icon.png"),
       description,
       shell: {
         readShortcutLink: (path) => shell.readShortcutLink(path),
@@ -883,7 +883,9 @@ async function refreshTrayTaskCount(): Promise<void> {
 function installTray(): void {
   if (tray) return;
   const candidates = [
+    join(process.resourcesPath, process.platform === "win32" ? "tray-icon.ico" : "tray-icon.png"),
     join(process.resourcesPath, "tray-icon.ico"),
+    join(process.resourcesPath, "tray-icon.png"),
     join(app.getAppPath(), "build", "icon.ico"),
     join(__dirname, "..", "build", "icon.ico"),
     process.execPath,

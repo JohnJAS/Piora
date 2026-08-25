@@ -4,6 +4,33 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-25
+
+### Added
+
+- Added a Linux x64 AppImage to the stable release pipeline, including packaged
+  runtime smoke tests and a shared SHA-256 manifest with the Windows artifacts.
+- Added a persistent pin/unpin control to the right-side conversation timeline.
+
+### Changed
+
+- Replaced structural outline boxes with floating surfaces across the main,
+  settings, Room, and workspace panels, and let active wallpapers remain visible
+  through both the project sidebar and the file/review area.
+- Reduced the new-conversation screen to the project picker and composer, removing
+  the obsolete Piora/model-configuration guide and redundant dropdown arrow.
+
+### Fixed
+
+- Made managed Room Agent creation atomic and resilient when a selected folder is
+  not a Git repository or has no `HEAD`, falling back to the shared workspace
+  instead of failing with `could not reset index file to revision HEAD`.
+- Persisted newly provisioned Agent sessions before their first reply and restored
+  their exact Team tool/model policy after a server restart.
+- Corrected Team scheduling so reviewer Agents can own ordinary tasks without
+  incorrectly entering a second review cycle, while review-required work still
+  passes through independent approval and final coordinator synthesis.
+
 ## [0.4.1] - 2026-08-25
 
 ### Added

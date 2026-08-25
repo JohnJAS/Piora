@@ -1012,3 +1012,48 @@
     max-width: 88%;
   }
 }
+
+/* Conversation chrome uses floating, outline-free surfaces. */
+.header,
+.contentActions,
+.detailSection { border: 0; }
+
+.groupAvatar,
+.avatar,
+.miniAvatar,
+.bubble,
+.composerModes,
+.mentions button,
+.composer,
+.mentionMenu,
+.processingList span,
+.activityCard,
+.details,
+.pathButton,
+.coordinationRow button,
+.taskActions button,
+.dispatchButton,
+.detailSection > input,
+.detailSection > textarea,
+.taskActions select,
+.taskCard,
+.teamRunCard,
+.runQuestion,
+.runActions button { border: 0; }
+
+.bubble,
+.composerModes,
+.composer,
+.processingList span,
+.activityCard,
+.details,
+.taskCard,
+.teamRunCard { box-shadow: var(--shadow-surface); }
+
+.composer:focus-within,
+.detailSection > input:focus,
+.detailSection > textarea:focus,
+.taskActions select:focus {
+  border-color: transparent;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent), var(--shadow-surface);
+}

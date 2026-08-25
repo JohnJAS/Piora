@@ -152,3 +152,46 @@
   .dangerZone { align-items: stretch; flex-direction: column; }
   .dangerZone button { align-self: flex-start; }
 }
+
+/* Settings are grouped by elevation and whitespace instead of nested boxes. */
+.dialog,
+.header,
+.nav,
+.field input,
+.field textarea,
+.field select,
+.aiFieldHeading > button,
+.aiPreview,
+.aiPreviewActions button,
+.pathField button,
+.metadata,
+.auditList > div,
+.actions button,
+.cardActions button,
+.dangerZone,
+.dangerZone button,
+.agentCard,
+.addAgent,
+.roleGuide { border: 0; }
+
+.dialog { box-shadow: var(--shadow-popover); }
+
+.metadata,
+.aiPreview,
+.agentCard,
+.addAgent,
+.roleGuide { background: var(--surface-muted); box-shadow: var(--shadow-surface); }
+
+.field input,
+.field textarea,
+.field select,
+.pathField button,
+.actions button,
+.cardActions button { background: var(--surface-muted); }
+
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  border-color: transparent;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}

@@ -38,7 +38,9 @@ Run `npm run build:web` from the repository root to create it and stage
 to unpacked `resources/web/`. The standalone tree remains outside the Electron ASAR so traced packages, Pi
 extensions, and runtime assets can be resolved normally.
 
-After `npm run pack:win`, run `npm run verify:package` from the repository root.
+After `npm run pack:win` or `npm run pack:linux`, run `npm run verify:package`
+from the repository root (pass the Linux unpacked `resources/web` path when
+verifying that target).
 The verifier copies `resources/web/` outside the checkout, confirms the traced
 Next/Pi dependencies are present, starts the service in isolation, and checks
 both desktop-token rejection and authenticated health/root responses.
@@ -48,6 +50,10 @@ Electron Builder runs `scripts/electron-after-pack-licenses.cjs` after the final
 exact package-copy manifest, CycloneDX SBOM, and content-addressed license texts under
 `resources/licenses/third-party/`. The package verifier recomputes and compares this bundle;
 do not hand-edit it or replace it with the broader source lockfile inventory.
+
+Stable tags publish Windows x64 ZIP/portable EXE artifacts and a Linux x64
+AppImage. The Linux package intentionally omits the Windows-only pinned local
+Whisper runtime, so local speech transcription reports unavailable there.
 
 ## Security boundary
 

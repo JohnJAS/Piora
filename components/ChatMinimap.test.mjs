@@ -17,6 +17,10 @@ test("chat timeline lists only user prompts and keeps both jump targets clickabl
   assert.match(component, /if \(message\.role !== "user"\) continue/);
   assert.match(component, /data-minimap-node-index/);
   assert.match(component, /data-minimap-preview-user/);
+  assert.match(component, /piora:chat-timeline-pinned:v1/);
+  assert.match(component, /chat\.timelineUnpin/);
+  assert.match(component, /aria-pressed=\{previewPinned\}/);
+  assert.match(component, /previewOpen \|\| previewPinned/);
   assert.match(component, /onClick=\{\(\) => scrollToNode\(node\)\}/);
   assert.match(component, /scrollEl\.scrollTo/);
   assert.doesNotMatch(component, /ReactMarkdown|AssistantOutline|assistantPreviews|data-minimap-preview-assistant/);
@@ -30,6 +34,8 @@ test("chat timeline labels are available in English and Chinese", () => {
     "chat.timelineCount",
     "chat.timelineJump",
     "chat.timelineAttachmentOnly",
+    "chat.timelinePin",
+    "chat.timelineUnpin",
   ];
 
   for (const locale of [enLocale, zhCNLocale]) {

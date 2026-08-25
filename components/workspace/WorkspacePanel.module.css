@@ -282,3 +282,53 @@
   .reviewFooterBar > div { width: 100%; }
   .reviewFooterBar button { flex: 1; }
 }
+
+/* Structural surfaces float through tone and elevation; borders remain only
+   where they encode source/diff semantics. */
+.panelChrome,
+.explorer,
+.fileTabs,
+.reviewToolbar,
+.reviewFilters,
+.commandToolbar,
+.commandMeta { border: 0; }
+
+.panelChrome,
+.reviewToolbar,
+.reviewFilters { box-shadow: var(--shadow-surface); }
+
+.toolMenu,
+.branchMenu,
+.commitPopover { border: 0; }
+
+.commitPopover textarea,
+.reviewSearch,
+.changePageButton { border: 0; background: var(--surface-muted); }
+
+.commitPopover textarea:focus-visible,
+.reviewSearch:focus-within {
+  border-color: transparent;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+/* A wallpaper wash is owned by #file-panel. Do not stack opaque module
+   surfaces above it or the file/review area looks disconnected from the app. */
+:global(html[data-app-background-active="true"]) .reviewRoot,
+:global(html[data-app-background-active="true"]) .reviewToolbar,
+:global(html[data-app-background-active="true"]) .reviewFilters,
+:global(html[data-app-background-active="true"]) .reviewStream,
+:global(html[data-app-background-active="true"]) .reviewFile,
+:global(html[data-app-background-active="true"]) .reviewFileHeader,
+:global(html[data-app-background-active="true"]) .reviewFooter,
+:global(html[data-app-background-active="true"]) .reviewSearch,
+:global(html[data-app-background-active="true"]) .scopeTabs > button[aria-pressed="true"],
+:global(html[data-app-background-active="true"]) .reviewFooterBar button:not(.primaryAction) {
+  background: transparent;
+}
+
+:global(html[data-app-background-active="true"]) .reviewToolbar,
+:global(html[data-app-background-active="true"]) .reviewFilters,
+:global(html[data-app-background-active="true"]) .reviewFileHeader,
+:global(html[data-app-background-active="true"]) .reviewFooter {
+  backdrop-filter: blur(5px);
+}

@@ -7,6 +7,7 @@
 [![CI](https://github.com/kexijiang/piora/actions/workflows/ci.yml/badge.svg)](https://github.com/kexijiang/piora/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Windows](https://img.shields.io/badge/Desktop-Windows%20x64-2563eb.svg)](desktop/README.md)
+[![Linux](https://img.shields.io/badge/Desktop-Linux%20x64-f59e0b.svg)](docs/release.md)
 
 Piora 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面应用。它基于
 [pi-web](https://github.com/agegr/pi-web) 演进，目标不是重新发明 Agent，而是在保留 Pi
@@ -14,7 +15,7 @@ Piora 是一个面向 [Pi](https://github.com/earendil-works/pi) 的开源桌面
 
 > Piora 由社区独立维护，不隶属于或代表 Pi、pi-web、OpenAI 或 Codex。
 
-> 当前按首个公开预发布版本建设。是否存在可下载的 Windows 产物，以
+> 是否存在可下载的 Windows 或 Linux 产物，以
 > [GitHub Releases](https://github.com/kexijiang/piora/releases) 为准；本地构建配置不等于已发布、已签名或已完成干净机器验证的二进制。
 
 ## 这次版本解决什么
@@ -114,7 +115,7 @@ Portable EXE 不内置 npm、npx、Git、编译器、用户扩展、API Key 或 
 - npm 10 或更高版本
 - Git
 - Windows 上建议安装 Git for Windows，以便 Pi 工具使用 Bash
-- 桌面发行目标：Windows 10/11 x64
+- 桌面发行目标：Windows 10/11 x64、Ubuntu/Linux x64 AppImage
 
 仓库只支持提交的 `package-lock.json` 与 npm 工作流；不维护 Bun、Yarn 或 pnpm 锁文件。
 
@@ -149,7 +150,7 @@ npm run licenses:generate
 正式二进制仍须通过产物级 manifest、SBOM 与许可证文本复核。详见 [NOTICE](NOTICE) 与
 [公开发布检查表](docs/open-source/LAUNCH_CHECKLIST.md)。
 
-## 构建 Windows 应用
+## 构建桌面应用
 
 ```powershell
 # 生成 Web standalone 与 Electron 主进程
@@ -168,9 +169,14 @@ npm run verify:package
 
 # 生成 portable EXE
 npm run dist:win
+
+# Ubuntu/Linux x64 AppImage（在 Linux 构建机运行）
+npm run dist:linux
 ```
 
-产物位于 `desktop/release/`。首批 Windows 产物是未签名预发布包，Windows 可能显示信誉警告；
+产物位于 `desktop/release/`。Windows 产物未签名，系统可能显示信誉警告；Linux
+AppImage 需要先赋予执行权限。Linux 版当前不捆绑经过复核的本地 whisper.cpp 运行时，
+因此本地语音转写会明确显示不可用，其他桌面能力照常打包。
 
 Windows EXE、浏览器 favicon 与 PWA 使用同一套原创 Piora 标志。多尺寸 ICO、透明 PNG、
 完整生成提示词和 MIT 许可记录见 [`desktop/build`](desktop/build/README.md)。

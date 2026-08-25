@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { AgentMessage, TextContent, UserMessage } from "@/lib/types";
+import { AliIcon } from "./AliIcon";
 import styles from "./ChatMinimap.module.css";
 
 interface Props {
@@ -24,6 +25,7 @@ const MAX_NODE_GAP = 44;
 const MINIMAP_PADDING = 16;
 const PREVIEW_HIDE_DELAY = 180;
 const NAVIGATION_ACTIVE_LOCK_MS = 1400;
+const TIMELINE_PINNED_STORAGE_KEY = "piora:chat-timeline-pinned:v1";
 
 interface TurnInfo {
   preview: string;
@@ -98,6 +100,7 @@ export function ChatMinimap({
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [minimapHeight, setMinimapHeight] = useState(600);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewPinned, setPreviewPinned] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const previewListRef = useRef<HTMLDivElement>(null);
   const previewItemRefs = useRef(new Map<number, HTMLButtonElement>());
@@ -109,6 +112,14 @@ export function ChatMinimap({
   const pendingNavigationRef = useRef<number | null>(null);
 
   messagesRef.current = messages;
+
+  useEffect(() => {
+    try {
+      setPreviewPinned(localStorage.getItem(TIMELINE_PINNED_STORAGE_KEY) === "true");
+    } catch {
+      // Storage can be unavailable in hardened browser contexts.
+    }
+  }, []);
 
   const nodeLayout = useMemo(
     () => layoutNodes(allNodes, minimapHeight),
@@ -267,11 +278,28 @@ export function ChatMinimap({
   }, [cancelPreviewHide]);
 
   const schedulePreviewHide = useCallback(() => {
+    if (previewPinned) return;
     cancelPreviewHide();
     previewHideTimerRef.current = setTimeout(() => {
       previewHideTimerRef.current = null;
       setPreviewOpen(false);
     }, PREVIEW_HIDE_DELAY);
+  }, [cancelPreviewHide, previewPinned]);
+
+  const togglePreviewPinned = useCallback(() => {
+    setPreviewPinned((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(TIMELINE_PINNED_STORAGE_KEY, String(next));
+      } catch {
+        // Keep the in-memory preference when storage is unavailable.
+      }
+      if (next) {
+        cancelPreviewHide();
+        setPreviewOpen(true);
+      }
+      return next;
+    });
   }, [cancelPreviewHide]);
 
   const handleBlurCapture = useCallback((event: FocusEvent<HTMLDivElement>) => {
@@ -340,11 +368,24 @@ export function ChatMinimap({
         );
       })}
 
-      {previewOpen ? (
-        <div className={styles.preview} data-minimap-preview-box="">
+      {previewOpen || previewPinned ? (
+        <div className={styles.preview} data-minimap-preview-box="" data-pinned={previewPinned ? "true" : undefined}>
           <div className={styles.previewHeader}>
-            <span className={styles.previewTitle}>{t("chat.timeline")}</span>
-            <span className={styles.previewCount}>{t("chat.timelineCount", { count: allNodes.length })}</span>
+            <div className={styles.previewHeading}>
+              <span className={styles.previewTitle}>{t("chat.timeline")}</span>
+              <span className={styles.previewCount}>{t("chat.timelineCount", { count: allNodes.length })}</span>
+            </div>
+            <button
+              type="button"
+              className={styles.pinButton}
+              data-active={previewPinned ? "true" : undefined}
+              aria-pressed={previewPinned}
+              aria-label={t(previewPinned ? "chat.timelineUnpin" : "chat.timelinePin")}
+              title={t(previewPinned ? "chat.timelineUnpin" : "chat.timelinePin")}
+              onClick={togglePreviewPinned}
+            >
+              <AliIcon name="pushpin" size={14} />
+            </button>
           </div>
           <div ref={previewListRef} className={styles.previewList}>
             {allNodes.map((node) => {

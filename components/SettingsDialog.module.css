@@ -709,3 +709,44 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Outline-free Codex-style hierarchy. */
+.dialog,
+.navigation,
+.navSearch,
+.contentToolbar,
+.embeddedSection,
+.featureCard,
+.searchResults,
+.searchEmpty,
+.settingRow,
+.promptCard,
+.optimizerModelField select,
+.modelSelectField select,
+.promptEditor,
+.secondaryButton,
+.optionGroup,
+.optionButton { border: 0; }
+
+.dialog { box-shadow: var(--shadow-popover); }
+
+.embeddedSection,
+.featureCard,
+.searchResults,
+.searchEmpty,
+.promptCard,
+.optionGroup { background: var(--surface-muted); box-shadow: var(--shadow-surface); }
+
+.navSearch,
+.optimizerModelField select,
+.modelSelectField select,
+.promptEditor,
+.secondaryButton { background: var(--surface-muted); }
+
+.navSearch:focus-within,
+.optimizerModelField select:focus-visible,
+.modelSelectField select:focus-visible,
+.promptEditor:focus-visible {
+  border-color: transparent;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent);
+}

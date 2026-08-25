@@ -137,39 +137,8 @@ export function NewSessionProjectPicker({
   };
 
   return (
-    <main className={styles.root} aria-labelledby="new-session-heading">
+    <main className={styles.root} aria-label="新对话">
       <section className={styles.hero}>
-        <div className={styles.intro}>
-          <div className={styles.mark} aria-hidden="true">
-            <AliIcon name="cloud" size={50} />
-            <span>&gt;_</span>
-          </div>
-          <h1 id="new-session-heading">开始一个新会话</h1>
-          <p className={styles.introCopy}>先完成模型配置和项目选择，然后描述任务即可开始。</p>
-          <ol className={styles.steps} aria-label="开始使用 Piora">
-            <li>
-              <span className={styles.stepNumber}>1</span>
-              <span className={styles.stepCopy}>
-                <strong>配置模型</strong>
-                <small>打开左上角“设置”，进入“模型”添加并启用模型。</small>
-              </span>
-            </li>
-            <li>
-              <span className={styles.stepNumber}>2</span>
-              <button
-                type="button"
-                className={styles.stepCopy}
-                onClick={openProjectChoice}
-                aria-haspopup="listbox"
-                aria-expanded={menuOpen}
-              >
-                <strong>选择项目文件夹</strong>
-                <small>从已有项目中选择，或打开一个文件夹作为新项目。</small>
-              </button>
-            </li>
-          </ol>
-        </div>
-
         <div className={styles.workspaceDock}>
           <div className={styles.contextRail}>
             <div ref={projectSelectorRef} className={styles.projectAnchor}>

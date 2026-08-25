@@ -23,6 +23,8 @@ extraResources:
   # portable wrapper executable is not reliable across Windows versions.
   - from: build/icon.ico
     to: tray-icon.ico
+  - from: build/icon.png
+    to: tray-icon.png
   - from: ../.next/standalone
     to: web
     filter:
@@ -95,6 +97,15 @@ win:
     - zh-CN
   target:
     - target: portable
+      arch:
+        - x64
+
+linux:
+  icon: icon.png
+  category: Development
+  synopsis: Piora coding agent desktop application
+  target:
+    - target: AppImage
       arch:
         - x64
 

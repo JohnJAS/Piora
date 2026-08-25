@@ -1,11 +1,12 @@
 # Piora release procedure
 
-The Piora release process is configured to publish source code and two unsigned Windows x64 no-install packages from
+The Piora release process publishes source code, two unsigned Windows x64 no-install packages, and one Linux x64 AppImage from
 [`kexijiang/piora`](https://github.com/kexijiang/piora). It does not publish the former
 `@agegr/pi-web` npm package.
 
 Each release contains an extract-and-run ZIP whose root includes `Piora.exe`, a
-single-file portable executable, and `SHA256SUMS.txt` covering both packages.
+single-file Windows portable executable, a Linux AppImage, and one `SHA256SUMS.txt`
+covering all three packages.
 
 ## Prerequisites
 
@@ -35,6 +36,7 @@ release checkout, then run:
 ```powershell
 npm ci
 npm run dist:win
+npm run dist:linux # run from a clean Linux checkout
 npm run verify:package
 node scripts/smoke-test-portable.mjs --expected-version 0.1.0
 ```
@@ -60,17 +62,18 @@ After the local gates pass, push `main`, wait for the public CI matrix, then cre
 matching version tag:
 
 ```powershell
-git tag -a v0.4.1 -m "Piora v0.4.1"
-git push origin v0.4.1
+git tag -a v0.4.2 -m "Piora v0.4.2"
+git push origin v0.4.2
 ```
 
-The tag workflow first runs the complete source gate on Ubuntu with Node.js 22.19.0. The Windows
-build starts only after that gate passes, repeats the source checks on Windows, builds the portable
+The tag workflow first runs the complete source gate on Ubuntu with Node.js 22.19.0. Windows and
+Linux builds start only after that gate passes. Windows repeats the source checks and builds the portable
 artifact and extract-and-run ZIP, verifies the packaged service through the packaged Electron runtime,
 smoke-tests the final EXE and its embedded version in an isolated profile, verifies the ZIP structure, creates
-`SHA256SUMS.txt`, and publishes a public GitHub Release marked as the latest stable version. The
-release is created only after every source and Windows packaging gate succeeds. The packages remain
-unsigned, and the Release notes must disclose the Windows reputation warning and manual-update model.
+its checksums, while Linux builds and extracts the AppImage and smoke-tests its packaged runtime under Xvfb.
+The publisher verifies both manifests, combines them into `SHA256SUMS.txt`, and creates a public GitHub
+Release marked as latest only after every gate succeeds. Packages remain unsigned; release notes disclose
+the Windows reputation warning, manual-update model, and Linux local-speech limitation.
 
 The preview uses the original Piora icon recorded in
 [`desktop/build/README.md`](../desktop/build/README.md). Electron Builder consumes the reviewed
@@ -94,7 +97,7 @@ identity does not imply that the executable is signed.
 ## Post-release record
 
 - Confirm the public Release page exposes the reviewed assets and checksums.
-- Download both packages and the checksum, verify both SHA-256 entries on a separate path, and confirm
+- Download all three packages and the checksum, verify every SHA-256 entry on a separate path, and confirm
   that the ZIP opens directly to `Piora.exe` plus its runtime files rather than an extra wrapper folder.
 - Update `docs/open-source/PROJECT_STATUS.md`, `docs/open-source/LAUNCH_CHECKLIST.md`, and the
   release goal with the exact commit, CI run, and Release URL.

@@ -11,124 +11,11 @@
 .hero {
   display: flex;
   width: min(780px, 100%);
-  min-height: min(660px, 82vh);
   flex-direction: column;
-}
-
-.intro {
-  margin-top: clamp(12px, 4vh, 44px);
-}
-
-.mark {
-  position: relative;
-  width: 56px;
-  height: 52px;
-  margin: 0 auto 20px;
-  color: color-mix(in srgb, var(--text-dim) 76%, transparent);
-}
-
-.mark > span {
-  position: absolute;
-  inset: 15px 0 0;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  font-weight: 650;
-  text-align: center;
-}
-
-.hero h1 {
-  margin: 0;
-  font-size: clamp(calc(var(--text-xl) * 1.12), 2.45vw, calc(var(--text-xl) * 1.62));
-  font-weight: 470;
-  letter-spacing: -.035em;
-  line-height: 1.2;
-  text-align: center;
-}
-
-.introCopy {
-  margin: 8px 0 0;
-  color: var(--text-dim);
-  font-size: var(--text-sm);
-  line-height: 1.55;
-  text-align: center;
-}
-
-.steps {
-  display: grid;
-  width: min(600px, 100%);
-  margin: 20px auto 0;
-  padding: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  list-style: none;
-}
-
-.steps li {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 26px minmax(0, 1fr);
-  align-items: start;
-  gap: 9px;
-  padding: 10px 11px;
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  border-radius: 11px;
-  background: transparent;
-  text-align: left;
-}
-
-.stepNumber {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--accent);
-  font-size: var(--text-xs);
-  font-weight: 700;
-}
-
-.stepCopy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-}
-
-button.stepCopy:hover,
-button.stepCopy:focus-visible {
-  outline: 0;
-  color: var(--accent);
-}
-
-.stepCopy strong {
-  color: var(--text);
-  font-size: var(--text-sm);
-  font-weight: 620;
-}
-
-button.stepCopy:hover strong,
-button.stepCopy:focus-visible strong {
-  color: var(--accent);
-}
-
-.stepCopy small {
-  color: var(--text-dim);
-  font-size: var(--text-xs);
-  line-height: 1.45;
 }
 
 .workspaceDock {
   position: relative;
-  margin-top: auto;
   padding-top: 38px;
 }
 
@@ -407,10 +294,6 @@ button.stepCopy:focus-visible strong {
 
 @media (max-width: 680px) {
   .root { align-items: flex-start; padding-top: clamp(28px, 7vh, 58px); }
-  .hero { min-height: calc(100dvh - 112px); }
-  .intro { margin-top: 0; }
-  .hero h1 { font-size: calc(var(--text-xl) * 1.25); }
-  .steps { grid-template-columns: 1fr; }
   .composer { min-height: 132px; }
   .composer textarea { min-height: 82px; }
   .selectionHint { display: none; }
@@ -419,12 +302,25 @@ button.stepCopy:focus-visible strong {
   .projectPopover { left: 0; width: min(310px, calc(100vw - 32px)); }
 }
 
-@media (max-height: 680px) and (min-width: 681px) {
-  .hero { min-height: min(540px, 78vh); }
-  .intro { margin-top: 8px; }
-  .mark { margin-bottom: 12px; }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .projectPopover { animation: none; }
 }
+
+.composer,
+.projectChip,
+.projectPopover,
+.search,
+.list > button,
+.footer { border: 0; }
+
+.composer,
+.projectPopover { box-shadow: var(--shadow-surface); }
+
+.composer:focus-within,
+.search:focus-within {
+  border-color: transparent;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 13%, transparent), var(--shadow-surface);
+}
+
+.projectChip,
+.list > button { background: transparent; box-shadow: none; }

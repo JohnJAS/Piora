@@ -13,7 +13,7 @@ Codex 的视觉气质可以拆成四条可执行的规则。**每写一个样式
 | 规则 | 含义 | 违反的样子 |
 |---|---|---|
 | **中性** | 灰阶不带色偏，颜色只用在真正需要区分的地方 | 暖米色背景、彩色主题包 |
-| **扁平** | 用发丝边框和背景差分层，不用阴影堆叠 | 每个卡片都有 shadow + inset 高光 |
+| **悬浮分层** | 主结构靠留白、明度和克制的软阴影分层，不画常驻轮廓框 | 侧栏、主区、文件区都被 1px 线框圈住 |
 | **克制** | 一屏内颜色 ≤3 种、字号 ≤4 级、圆角 ≤2 种 | 18 级字阶、7 套主题、4 种圆角 |
 | **留白** | 密度靠间距控制，不靠缩小字号 | 10px 文字挤在一起 |
 
@@ -195,23 +195,23 @@ Inter 已本地内置（OFL，`/fonts/inter`）。**把 Inter 从"可选"改为"
 ```
 `--radius-small: 5px` 废弃，映射到 `--radius-control`。
 
-### 4.2 阴影（3 种 → 1 种）
+### 4.2 阴影（两级）
 
 ```css
 --shadow-popover: 0 8px 24px rgba(0,0,0,0.10), 0 2px 6px rgba(0,0,0,0.06);
+--shadow-surface: 0 8px 24px rgba(0,0,0,0.055), 0 1px 4px rgba(0,0,0,0.035);
 ```
-**只有脱离文档流的浮层（下拉、命令面板、模态、右键菜单）能用阴影。**
-`--shadow-surface`、`--shadow-control` 及所有 `inset` 高光 **全部删除** —— 面板靠 `--border` + `--bg-panel` 分层。
+`--shadow-popover` 用于下拉、命令面板、模态和右键菜单；`--shadow-surface` 用于 Composer、主工作区、侧栏、文件面板和少量信息卡。禁止多层 inset 高光。
 
 ### 4.3 边框
 
-- 默认 `1px solid var(--border)`，永远 1px，不用 2px；
-- 分隔线用 `border-top`，不用 `<hr>`，不用渐变；
-- **不用半透明边框**（现有 `--border-soft` 废弃）。
+- 主结构、卡片、Composer、对话框和工具栏默认无边框；
+- 边框只保留给 diff/表格等数据语义、复选控件、错误/焦点状态；
+- 必须分隔连续数据行时使用 1px 发丝线，不用外轮廓框。
 
 ### 4.4 半透明
 
-`--chrome-translucent` / `--panel-translucent` **删除**，顶栏和面板改实色。毛玻璃在 Windows 上渲染成本高且与"扁平"冲突。
+`--chrome-translucent` / `--panel-translucent` 仅供设置了背景图的受控洗色层使用；普通主题下顶栏和面板保持实色，避免大面积毛玻璃的渲染成本。
 
 ---
 
@@ -266,7 +266,7 @@ Inter 已本地内置（OFL，`/fonts/inter`）。**把 Inter 从"可选"改为"
 | 类型 | 样式 |
 |---|---|
 | Primary | `--btn-primary-bg` 底 + `--btn-primary-fg` 字，`--radius-control`，无边框，无阴影 |
-| Secondary | 透明底 + `1px solid var(--border)` + `--text` |
+| Secondary | `--surface-muted` 底 + `--text`，常态无边框 |
 | Ghost | 透明底无边框，hover 时 `--bg-hover` |
 | Danger | 透明底 + `--status-failed` 字；hover 才出红底 |
 
@@ -276,12 +276,11 @@ Inter 已本地内置（OFL，`/fonts/inter`）。**把 Inter 从"可选"改为"
 ### 6.2 输入框 / Composer
 
 ```css
-background: var(--bg);
-border: 1px solid var(--border);
+background: var(--surface-muted);
+border: 0;
 border-radius: var(--radius-surface);
 /* 聚焦：不加粗边框，换颜色 + 外发光 */
 :focus-within {
-  border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-subtle);
 }
 ```
@@ -347,7 +346,7 @@ Composer 常驻控件 ≤5 个（现状已达标，**不要再加**）。
 | S1 | 替换 Light/Dark 中性灰阶 + 强调色 + 状态色（§2） | `contrast.test.mjs` 全绿；截图对比 |
 | S2 | 写 `lib/contrast.test.mjs`，锁死对比度 | 改坏色值时测试必须失败 |
 | S3 | 新增 6 级字阶，旧 18 级设为别名 | 视觉无变化（纯别名） |
-| S4 | 删除 `--shadow-surface` / `--shadow-control` / inset 高光 / 半透明 token | 面板仍有清晰分层 |
+| S4 | 收敛到 `--shadow-surface` / `--shadow-popover`，删除 inset 高光与任意阴影 | 面板无轮廓框且层级清晰 |
 | S5 | 圆角 4→3，`--radius-small` 设别名 | 无视觉突变 |
 | S6 | 默认字体改 Inter | 中文正确回退 |
 | S7 | **取消助手消息气泡背景**，改留白分隔 | 这一步视觉变化最大，单独提交 |
@@ -365,7 +364,7 @@ Composer 常驻控件 ≤5 个（现状已达标，**不要再加**）。
 - [ ] 没有字面 `font-size: Npx`，全部走 6 级字阶
 - [ ] 没有非 4 倍数的 padding/margin
 - [ ] 圆角只用 3 个 token 之一
-- [ ] 非浮层元素没有 `box-shadow`
+- [ ] 阴影只使用 `--shadow-surface` / `--shadow-popover`，没有多重 inset 高光
 - [ ] hover 前后布局零位移
 - [ ] 一屏内颜色 ≤3 种（不含状态点）
 - [ ] `:focus-visible` 可见

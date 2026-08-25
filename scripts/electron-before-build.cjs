@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- electron-builder loads beforeBuild hooks as CommonJS. */
 const { createHash } = require("node:crypto");
-const { readFile, writeFile } = require("node:fs/promises");
+const { mkdir, readFile, rm, writeFile } = require("node:fs/promises");
 const { dirname, join, resolve } = require("node:path");
 const { pathToFileURL } = require("node:url");
 
@@ -13,11 +13,29 @@ function sha256(contents) {
 
 module.exports = async function prepareDesktopBuild(context) {
   const projectRoot = resolve(context.appDir, "..");
-  const whisperScriptUrl = pathToFileURL(
-    join(projectRoot, "scripts", "prepare-whisper-resources.mjs"),
-  ).href;
-  const { prepareWhisperResources } = await import(whisperScriptUrl);
-  await prepareWhisperResources({ projectRoot });
+  const targetPlatform = context.electronPlatformName ?? process.platform;
+  if (targetPlatform === "win32") {
+    const whisperScriptUrl = pathToFileURL(
+      join(projectRoot, "scripts", "prepare-whisper-resources.mjs"),
+    ).href;
+    const { prepareWhisperResources } = await import(whisperScriptUrl);
+    await prepareWhisperResources({ projectRoot });
+  } else {
+    // The pinned upstream runtime archive is Windows-only. Keep Linux builds
+    // deterministic and let the speech API report unavailable instead of
+    // packaging a non-executable binary or downloading at runtime.
+    const whisperDirectory = join(projectRoot, "desktop", "build", "whisper");
+    await rm(whisperDirectory, { recursive: true, force: true });
+    await mkdir(whisperDirectory, { recursive: true });
+    await writeFile(join(whisperDirectory, "manifest.json"), `${JSON.stringify({
+      schema: "piora-whisper-resources-v1",
+      platform: targetPlatform,
+      available: false,
+      reason: "No reviewed bundled whisper.cpp runtime is available for this platform.",
+    }, null, 2)}\n`, "utf8");
+  }
+
+  if (targetPlatform !== "win32") return false;
   const customTemplatePath = join(projectRoot, "desktop", "build", "portable-cache.nsi");
   const builderPackagePath = require.resolve("app-builder-lib/package.json", { paths: [projectRoot] });
   const stockTemplatePath = join(dirname(builderPackagePath), "templates", "nsis", "portable.nsi");

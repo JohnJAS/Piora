@@ -129,6 +129,21 @@ async function getRepoRoot(cwd: string): Promise<string> {
   return dirname(commonDir);
 }
 
+/**
+ * A linked worktree needs a real commit to seed its private HEAD and index.
+ * `git init` directories with an unborn HEAD otherwise fail during
+ * `git worktree add` with "Could not reset index file to revision 'HEAD'".
+ */
+export async function canCreateDedicatedWorktree(cwd: string): Promise<boolean> {
+  try {
+    await git(cwd, ["rev-parse", "--verify", "HEAD"]);
+    await getRepoRoot(cwd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function listWorktrees(cwd: string): Promise<WorktreeInfo[]> {
   const out = await git(cwd, ["worktree", "list", "--porcelain"]);
   const worktrees: WorktreeInfo[] = [];
