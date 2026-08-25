@@ -4,6 +4,14 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-08-25
+
+### Fixed
+
+- Made packaged-runtime verification use the Linux Piora executable and PNG tray
+  icon, so the AppImage runtime is tested through Electron's ASAR-aware Node mode
+  instead of an incompatible host Node process.
+
 ## [0.4.3] - 2026-08-25
 
 ### Fixed

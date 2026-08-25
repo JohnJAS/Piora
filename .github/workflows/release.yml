@@ -213,7 +213,7 @@ jobs:
         run: npm run dist:linux
 
       - name: Verify packaged standalone service
-        run: node scripts/verify-packaged-web.mjs desktop/release/linux-unpacked/resources/web
+        run: node scripts/verify-packaged-web.mjs desktop/release/linux-unpacked/resources/web --require-electron-shell
 
       - name: Extract and smoke-test AppImage
         shell: bash

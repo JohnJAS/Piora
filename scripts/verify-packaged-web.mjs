@@ -260,13 +260,14 @@ export async function findForbiddenPackagedDependencies(
 async function inspectElectronShell(webRoot, required) {
   // Supplying a web root explicitly verifies the standalone payload only.
   // Pass --require-electron-shell (or use the default path) to also require
-  // app.asar, the Windows executable, and bundled license notices.
+  // app.asar, the platform executable, and bundled license notices.
   if (!required) return { checked: false, executable: null, executablePath: null };
 
   const resourcesRoot = dirname(webRoot);
   const unpackedRoot = dirname(resourcesRoot);
   const appAsarPath = join(resourcesRoot, "app.asar");
-  const trayIconPath = join(resourcesRoot, "tray-icon.ico");
+  const isWindowsPackage = /(^|-)win(?:32)?-unpacked$/i.test(unpackedRoot.split(/[\\/]/).at(-1) ?? "");
+  const trayIconPath = join(resourcesRoot, isWindowsPackage ? "tray-icon.ico" : "tray-icon.png");
   const appAsar = await stat(appAsarPath).catch(() => undefined);
 
   if (!appAsar?.isFile()) {
@@ -331,9 +332,10 @@ async function inspectElectronShell(webRoot, required) {
   });
 
   const executableCandidates = (await readdir(unpackedRoot, { withFileTypes: true }))
-    .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".exe"))
+    .filter((entry) => entry.isFile() && (isWindowsPackage ? entry.name.toLowerCase().endsWith(".exe") : true))
     .map((entry) => entry.name);
-  const executable = executableCandidates.find((name) => name.toLowerCase() === "piora.exe");
+  const expectedExecutable = isWindowsPackage ? "piora.exe" : "piora";
+  const executable = executableCandidates.find((name) => name.toLowerCase() === expectedExecutable);
   if (!executable) {
     throw new Error(`The packaged Piora application executable was not found in ${unpackedRoot}`);
   }
