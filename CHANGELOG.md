@@ -34,6 +34,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
   simplified the new-conversation project picker, and removed persistent fill
   backgrounds from project headings and selectors. Active wallpapers now also
   continue through the project and file areas without stacked opaque washes.
+- Added a task-row pin/unpin control that stays visible for pinned conversations
+  and returns to the right-edge hover actions after unpinning.
 
 ## [0.4.0] - 2026-08-24
 

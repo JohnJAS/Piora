@@ -27,6 +27,14 @@ test("provides the complete task context menu", () => {
   assert.match(rowSource, /onContextMenu=/);
 });
 
+test("keeps a pinned task control visible and returns unpinned controls to hover", () => {
+  assert.match(rowSource, /data-pinned-actions=\{pinned \? "true" : "false"\}/);
+  assert.match(rowSource, /opacity: hovered \|\| pinned \? 1 : 0/);
+  assert.match(rowSource, /sidebar\.unpinTask/);
+  assert.match(rowSource, /sidebar\.pinTask/);
+  assert.match(rowSource, /active=\{pinned\}/);
+});
+
 test("keeps AI title optimization inside the Codex-style rename editor", () => {
   assert.match(rowSource, /readSessionTitlePrompt/);
   assert.match(rowSource, /apply: false/);

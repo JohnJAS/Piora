@@ -683,9 +683,33 @@ async function main() {
       throw new Error(`Fixture extension tool is loaded but inactive: ${JSON.stringify(fixtureTool)}`);
     }
 
+    const harmonyTools = [
+      "harmony_list_devices",
+      "harmony_acquire_control",
+      "harmony_observe_screen",
+      "harmony_tap",
+      "harmony_double_tap",
+      "harmony_long_press",
+      "harmony_swipe",
+      "harmony_fling",
+      "harmony_drag",
+      "harmony_input_text",
+      "harmony_back",
+      "harmony_home",
+      "harmony_recent_apps",
+      "harmony_enter",
+      "harmony_launch_app",
+      "harmony_wait_for",
+      "harmony_wait_until_stable",
+      "harmony_wait",
+      "harmony_list_processes",
+      "harmony_get_raw_logs",
+      "harmony_read_logs",
+      "harmony_release_control",
+    ];
     const coreExtensionTools = [
       "browser",
-      "harmony_device",
+      ...harmonyTools,
       "piora_goal",
       "piora_plan",
       "piora_plan_execution",

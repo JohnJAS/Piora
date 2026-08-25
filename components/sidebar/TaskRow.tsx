@@ -201,6 +201,11 @@ export function TaskRow({
     setConfirmDelete(true);
   }, []);
 
+  const handleTogglePinned = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation();
+    onTogglePinned?.();
+  }, [onTogglePinned]);
+
   const handleDeleteConfirm = useCallback((event: React.MouseEvent) => {
     event.stopPropagation();
     void performDelete();
@@ -332,12 +337,6 @@ export function TaskRow({
             </div>
           </div>
 
-          {pinned ? (
-            <span title={t("sidebar.pinned")} aria-label={t("sidebar.pinned")} style={{ color: "var(--accent)", display: "inline-flex", flexShrink: 0 }}>
-              <AliIcon name="pushpin" size={11} />
-            </span>
-          ) : null}
-
           {taskStatusPresentationKey !== "none" ? (
             <TaskStatusIndicator status={taskStatus} />
           ) : null}
@@ -364,24 +363,35 @@ export function TaskRow({
             </button>
           ) : null}
 
-          {/* Action buttons stay absolutely positioned so hover never reflows the row. */}
+          {/* The pin stays visible while active; secondary actions remain hover-only. */}
           <div
-            aria-hidden={!hovered}
+            aria-hidden={!hovered && !pinned}
+            data-pinned-actions={pinned ? "true" : "false"}
             style={{
               position: "absolute", right: 4, top: 0, bottom: 0, zIndex: 2,
               display: "flex", alignItems: "center", gap: 4, paddingLeft: 14,
-              opacity: hovered ? 1 : 0, visibility: hovered ? "visible" : "hidden",
-              pointerEvents: hovered ? "auto" : "none",
+              opacity: hovered || pinned ? 1 : 0, visibility: hovered || pinned ? "visible" : "hidden",
+              pointerEvents: hovered || pinned ? "auto" : "none",
               background: `linear-gradient(to right, transparent, ${isSelected ? "var(--bg-selected)" : "var(--bg-hover)"} 38%)`,
             }}
           >
-            <RowActionButton label={t("sidebar.rename")} icon="edit" onClick={startRename} />
             <RowActionButton
-              label={t("sidebar.delete")}
-              icon="delete"
-              danger
-              onClick={handleDeleteClick}
+              label={t(pinned ? "sidebar.unpinTask" : "sidebar.pinTask")}
+              icon="pushpin"
+              active={pinned}
+              onClick={handleTogglePinned}
             />
+            {hovered ? (
+              <>
+                <RowActionButton label={t("sidebar.rename")} icon="edit" onClick={startRename} />
+                <RowActionButton
+                  label={t("sidebar.delete")}
+                  icon="delete"
+                  danger
+                  onClick={handleDeleteClick}
+                />
+              </>
+            ) : null}
           </div>
         </>
       )}
@@ -412,14 +422,16 @@ function RowActionButton({
   label,
   icon,
   danger = false,
+  active = false,
   onClick,
 }: {
   label: string;
-  icon: "edit" | "delete";
+  icon: "pushpin" | "edit" | "delete";
   danger?: boolean;
+  active?: boolean;
   onClick: (event: React.MouseEvent) => void;
 }) {
-  const normalColor = "var(--text-muted)";
+  const normalColor = active ? "var(--accent)" : "var(--text-muted)";
   const hoverColor = danger ? "var(--status-failed)" : "var(--accent)";
   const hoverBackground = danger
     ? "color-mix(in srgb, var(--status-failed) 8%, transparent)"
