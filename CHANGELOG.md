@@ -4,6 +4,14 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-08-25
+
+### Fixed
+
+- Forwarded the narrowly scoped Xvfb display contract into the isolated Linux
+  AppImage smoke-test process, while continuing to strip credentials, proxies,
+  host npm state, and unrelated session-bus variables.
+
 ## [0.4.4] - 2026-08-25
 
 ### Fixed

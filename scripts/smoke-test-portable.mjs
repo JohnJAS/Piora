@@ -19,6 +19,18 @@ const STRICT_VERSION = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 export const DEFAULT_PORTABLE_SMOKE_TIMEOUT_MS = 900_000;
 export const MAX_PORTABLE_STARTUP_MS = 3_000;
 
+export function getPortableDisplayEnvironment(
+  hostEnvironment = process.env,
+  platform = process.platform,
+) {
+  if (platform !== "linux") return {};
+  return Object.fromEntries(
+    ["DISPLAY", "XAUTHORITY"]
+      .map((key) => [key, hostEnvironment[key]])
+      .filter(([, value]) => typeof value === "string" && value),
+  );
+}
+
 export function validateStartupMarker(markerText) {
   let marker;
   try {
@@ -162,6 +174,7 @@ async function preparePortableRuntimeCache({
     child = spawn(executable, ["--smoke-test", `--user-data-dir=${paths.userData}`], {
       cwd: temporaryDirectory,
       env: createIsolatedProcessEnvironment(temporaryDirectory, {
+        ...getPortableDisplayEnvironment(),
         PIORA_SMOKE_TEST: "1",
         PIORA_SMOKE_MARKER: markerPath,
         PIORA_SMOKE_STARTUP_MARKER: startupMarkerPath,
@@ -230,6 +243,7 @@ export async function smokeTestPortableExecutable(
     child = spawn(executable, ["--smoke-test", `--user-data-dir=${paths.userData}`], {
       cwd: temporaryDirectory,
       env: createIsolatedProcessEnvironment(temporaryDirectory, {
+        ...getPortableDisplayEnvironment(),
         PIORA_SMOKE_TEST: "1",
         PIORA_SMOKE_MARKER: markerPath,
         PIORA_SMOKE_STARTUP_MARKER: startupMarkerPath,
