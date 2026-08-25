@@ -4,6 +4,33 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-25
+
+### Added
+
+- Added explicit Harmony phone tools for observing the screen, tapping,
+  double-tapping, long-pressing, swiping, flinging, dragging, entering text,
+  pressing navigation keys, launching apps, waiting for UI state, and reading
+  structured or raw device logs.
+
+### Changed
+
+- Improved Team orchestration for large prompts with durable prompt materials,
+  clearer composer flows, and more reliable Room message routing.
+- Turned Harmony automation into an observe-act-verify Phone Operator loop that
+  automatically returns fresh UI references and semantic changes after each
+  state-changing action.
+- Prioritized real Harmony product names and certified hardware models in the
+  device selector while keeping user-defined device nicknames as supplemental
+  labels.
+
+### Fixed
+
+- Fixed Harmony live-view polling competing with foreground device actions,
+  incorrect hilog arguments and false-success HDC responses, incomplete UiTest
+  tree parsing, stale semantic taps, and actions silently reporting success
+  without checking the resulting UI.
+
 ## [0.4.0] - 2026-08-24
 
 ### Changed

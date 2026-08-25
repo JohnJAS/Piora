@@ -60,8 +60,8 @@ After the local gates pass, push `main`, wait for the public CI matrix, then cre
 matching version tag:
 
 ```powershell
-git tag -a v0.4.0 -m "Piora v0.4.0"
-git push origin v0.4.0
+git tag -a v0.4.1 -m "Piora v0.4.1"
+git push origin v0.4.1
 ```
 
 The tag workflow first runs the complete source gate on Ubuntu with Node.js 22.19.0. The Windows
