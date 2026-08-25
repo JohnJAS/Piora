@@ -13,6 +13,14 @@ export interface FirstPartyExtensionDescriptor {
 
 export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = [
   {
+    id: "piora:file-changes",
+    fileName: "piora-file-changes.ts",
+    name: "Piora File Changes",
+    description: "Captures per-operation file diffs for the conversation timeline.",
+    profiles: ["normal"],
+    required: true,
+  },
+  {
     id: "piora:browser",
     fileName: "piora-browser.ts",
     name: "Piora Browser",

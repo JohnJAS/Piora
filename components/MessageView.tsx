@@ -7,6 +7,7 @@ import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { parseCompactionSummary } from "@/lib/compaction-summary";
 import { summarizeToolCall } from "@/lib/tool-summary";
+import { getFileChangeInfo, type FileChangeInfo } from "@/lib/file-change";
 import {
   getAssistantErrorMessage,
   getThinkingBlockDisplay,
@@ -753,7 +754,7 @@ function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCal
     const tc = block as ToolCallContent;
     const result = toolResults?.get(tc.toolCallId);
     const duration = toolCallDurations?.get(tc.toolCallId);
-    return <ToolCallBlock block={tc} result={result} duration={duration} />;
+    return <ToolCallBlock block={tc} result={result} duration={duration} onOpenFile={onOpenFile} />;
   }
   return null;
 }
@@ -853,11 +854,12 @@ function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
 }
 
 
-function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number }) {
+function ToolCallBlock({ block, result, duration, onOpenFile }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; onOpenFile?: (filePath: string) => void }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const diagnostics = safeJson({ input: block.input, result: result ?? null });
+  const fileChange = getFileChangeInfo(block, result);
   const resultDiff = result && !result.isError ? getResultDiff(result) : null;
   const summary = summarizeToolCall(block.toolName, block.input, result, t);
 
@@ -870,6 +872,22 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
     : null;
   const resultIsEmpty = resultText === null ? false : (resultText.trim() === "(no output)" || resultText.trim() === "");
   const isError = result?.isError ?? false;
+
+  if (fileChange) {
+    return (
+      <FileChangeBlock
+        change={fileChange}
+        resultText={resultText ?? ""}
+        duration={duration}
+        expanded={expanded}
+        diagnosticsOpen={diagnosticsOpen}
+        diagnostics={diagnostics}
+        onOpenFile={onOpenFile}
+        onExpandedChange={setExpanded}
+        onDiagnosticsOpenChange={setDiagnosticsOpen}
+      />
+    );
+  }
 
   return (
     <div
@@ -942,6 +960,101 @@ function ToolCallBlock({ block, result, duration }: { block: ToolCallContent; re
           {diagnosticsOpen && <pre style={{ margin: 0, padding: "8px 10px", maxHeight: 320, overflow: "auto", background: "var(--bg-subtle)", color: "var(--text-muted)", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontSize: "var(--text-xs)" }}>{diagnostics}</pre>}
         </div>
       )}
+    </div>
+  );
+}
+
+function FileChangeBlock({
+  change,
+  resultText,
+  duration,
+  expanded,
+  diagnosticsOpen,
+  diagnostics,
+  onOpenFile,
+  onExpandedChange,
+  onDiagnosticsOpenChange,
+}: {
+  change: FileChangeInfo;
+  resultText: string;
+  duration?: number;
+  expanded: boolean;
+  diagnosticsOpen: boolean;
+  diagnostics: string;
+  onOpenFile?: (filePath: string) => void;
+  onExpandedChange: (value: boolean) => void;
+  onDiagnosticsOpenChange: (value: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const titleKey = change.status === "running"
+    ? "fileChange.running"
+    : change.status === "failed"
+      ? "fileChange.failed"
+      : change.kind === "created"
+        ? "fileChange.created"
+        : change.kind === "unchanged"
+          ? "fileChange.unchanged"
+          : "fileChange.edited";
+  const icon: AliIconName = change.kind === "created" ? "file-add" : change.status === "failed" ? "error" : "edit";
+  const statusClass = change.status === "failed" ? "is-failed" : change.status === "running" ? "is-running" : "is-complete";
+  const noDiffMessage = change.unavailableReason === "too_large"
+    ? t("fileChange.tooLarge")
+    : change.unavailableReason === "binary"
+      ? t("fileChange.binary")
+      : change.kind === "unchanged"
+        ? t("fileChange.noChanges")
+        : t("fileChange.unavailable");
+
+  return (
+    <div className={`file-change-card ${statusClass}`} data-file-change-path={change.path}>
+      <div className="file-change-header">
+        <button
+          type="button"
+          className="file-change-toggle tool-call-toggle"
+          aria-expanded={expanded}
+          onClick={(event) => togglePreservingScroll(event.currentTarget, () => onExpandedChange(!expanded))}
+        >
+          <span className="file-change-icon" aria-hidden="true"><AliIcon name={icon} size={14} /></span>
+          <span className="file-change-title">{t(titleKey)}</span>
+          <span className="file-change-path" title={change.path}>{change.path}</span>
+          {change.status === "completed" && (change.added > 0 || change.removed > 0) ? (
+            <span className="file-change-stats" aria-label={t("fileChange.stats", { added: change.added, removed: change.removed })}>
+              <span className="file-change-additions">+{change.added}</span>
+              <span className="file-change-deletions">−{change.removed}</span>
+            </span>
+          ) : null}
+          {duration !== undefined ? <span className="file-change-duration">{duration}s</span> : null}
+          <AliIcon name="chevron-right" size={11} style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+        </button>
+        {onOpenFile ? (
+          <button type="button" className="file-change-open" title={t("diff.openFile")} aria-label={t("diff.openFile")} onClick={() => onOpenFile(change.path)}>
+            <AliIcon name="external-link" size={13} />
+          </button>
+        ) : null}
+      </div>
+
+      {expanded ? (
+        <div className="file-change-details">
+          {change.patch ? (
+            <DiffView patch={change.patch} filePath={change.path} mode="unified" showFileHeader={false} />
+          ) : change.status === "failed" ? (
+            <PairedResult text={resultText} isEmpty={!resultText.trim()} isError />
+          ) : (
+            <div className="file-change-notice">{noDiffMessage}</div>
+          )}
+          <button
+            type="button"
+            className="file-change-diagnostics-toggle"
+            onClick={(event) => togglePreservingScroll(event.currentTarget, () => onDiagnosticsOpenChange(!diagnosticsOpen))}
+            aria-expanded={diagnosticsOpen}
+          >
+            <AliIcon name="code" size={12} />
+            <span>{t("toolSummary.diagnostics")}</span>
+            <AliIcon name="chevron-right" size={9} style={{ marginLeft: "auto", transform: diagnosticsOpen ? "rotate(90deg)" : "none" }} />
+          </button>
+          {diagnosticsOpen ? <pre className="file-change-diagnostics">{diagnostics}</pre> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

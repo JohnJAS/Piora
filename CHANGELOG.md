@@ -4,6 +4,17 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-08-25
+
+### Added
+
+- Added collapsed per-file change cards to the main conversation, including
+  running/completed state, added and removed line totals, and expandable inline
+  diffs for edit and write operations.
+- Added local conversation preferences for choosing Enter or Ctrl+Enter as the
+  send shortcut and for optionally sending running-task messages directly with
+  a default Steer or Queue action.
+
 ## [0.4.6] - 2026-08-25
 
 ### Fixed

@@ -126,3 +126,7 @@ export function splitFinalAssistantBlocks(
 export function countToolCallBlocks(blocks: AssistantContentBlock[]): number {
   return blocks.filter((block): block is ToolCallContent => block.type === "toolCall").length;
 }
+
+export function hasFileMutationBlocks(blocks: AssistantContentBlock[]): boolean {
+  return blocks.some((block) => block.type === "toolCall" && (block.toolName === "edit" || block.toolName === "write"));
+}

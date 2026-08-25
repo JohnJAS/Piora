@@ -37,7 +37,10 @@ import { FolderIcon, getFileIcon } from "./FileIcons";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
 import { useLocalDictation } from "@/hooks/useLocalDictation";
+import { useSendShortcut } from "@/hooks/useSendShortcut";
+import { useStreamingSendPreference } from "@/hooks/useStreamingSendPreference";
 import { prioritizeProvider } from "@/lib/model-policy";
+import { isPlainEnter, matchesSendShortcut } from "@/lib/send-shortcut";
 import { AliIcon } from "./AliIcon";
 import { ModelProviderIcon } from "./ModelProviderIcon";
 import type { SessionStatsInfo } from "@/lib/pi-types";
@@ -357,6 +360,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 }: Props, ref) {
   const { t, locale } = useI18n();
   const isMobile = useIsMobile();
+  const { shortcut: sendShortcut } = useSendShortcut();
+  const { preference: streamingSendPreference } = useStreamingSendPreference();
   const [value, setValue] = useState(() => (draftKey ? getDraft(draftKey)?.value ?? "" : ""));
   const [modelDropdownOpen, setModelDropdownOpen] = useState(false);
   const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -812,6 +817,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     : t(slashQuery ? "chat.matches" : "chat.commands", { count: filteredSlashCommands.length });
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = hasInputText && attachedImages.length === 0 && attachedFiles.length === 0;
+  const primaryStreamingMode = streamingSendPreference.enabled ? streamingSendPreference.behavior : "steer";
   const canSend = hasInputText || attachedImages.length > 0 || attachedFiles.length > 0;
   const canOptimizePrompt = hasInputText
     && !isStreaming
@@ -822,8 +828,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const queuedMessageCount = (queuedMessages?.steering.length ?? 0) + (queuedMessages?.followUp.length ?? 0);
 
   useEffect(() => {
-    if (!isStreaming || !canQueueStreamingMessage) setStreamingActionMenuOpen(false);
-  }, [canQueueStreamingMessage, isStreaming]);
+    if (!isStreaming || !canQueueStreamingMessage || streamingSendPreference.enabled) {
+      setStreamingActionMenuOpen(false);
+    }
+  }, [canQueueStreamingMessage, isStreaming, streamingSendPreference.enabled]);
 
   // ── @ file autocomplete ──────────────────────────────────────────────────
   // Recomputed from the text before the caret on every change/caret move.
@@ -1143,6 +1151,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     clearInput();
   }, [value, attachedImages, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput]);
 
+  const submitStreamingMessage = useCallback(() => {
+    if (!canQueueStreamingMessage) return;
+    if (streamingSendPreference.enabled) {
+      sendQueued(streamingSendPreference.behavior);
+      return;
+    }
+    setStreamingActionIndex(0);
+    setStreamingActionMenuOpen(true);
+  }, [canQueueStreamingMessage, sendQueued, streamingSendPreference]);
+
   const getNextSlashIndex = useCallback((direction: "up" | "down" | "left" | "right") => {
     const lastIndex = filteredSlashCommands.length - 1;
     if (lastIndex < 0) return 0;
@@ -1216,7 +1234,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setHistoryMenuOpen(false);
           return;
         }
-        if ((e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) && inputHistory[historyActiveIndex]) {
+        if ((e.key === "Tab" || isPlainEnter(e)) && inputHistory[historyActiveIndex]) {
           e.preventDefault();
           applyHistoryInput(inputHistory[historyActiveIndex]);
           return;
@@ -1249,7 +1267,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setSlashMenuOpen(false);
           return;
         }
-        if ((e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) && filteredSlashCommands[slashActiveIndex]) {
+        if ((e.key === "Tab" || isPlainEnter(e)) && filteredSlashCommands[slashActiveIndex]) {
           e.preventDefault();
           applySlashCommand(filteredSlashCommands[slashActiveIndex]);
           return;
@@ -1274,7 +1292,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setAtMenuOpen(false);
           return;
         }
-        if ((e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) && atMatches[atActiveIndex]) {
+        if ((e.key === "Tab" || isPlainEnter(e)) && atMatches[atActiveIndex]) {
           e.preventDefault();
           applyAtCompletion(atMatches[atActiveIndex]);
           return;
@@ -1309,7 +1327,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           setStreamingActionIndex((index) => (index + 1) % 2);
           return;
         }
-        if (e.key === "Enter" && !e.shiftKey) {
+        if (isPlainEnter(e)) {
           e.preventDefault();
           sendQueued(streamingActionIndex === 0 ? "steer" : "followup");
           return;
@@ -1328,19 +1346,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return;
       }
 
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (matchesSendShortcut(e, sendShortcut)) {
         e.preventDefault();
         if (isStreaming && (onSteer || onFollowUp)) {
-          if (canQueueStreamingMessage) {
-            setStreamingActionIndex(0);
-            setStreamingActionMenuOpen(true);
-          }
+          submitStreamingMessage();
         } else {
           handleSend();
         }
       }
     },
-    [isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, canQueueStreamingMessage, stopVoiceInput, localVoiceRecording, attachmentMenuOpen, streamingActionMenuOpen, streamingActionIndex, sendQueued]
+    [isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, canQueueStreamingMessage, stopVoiceInput, localVoiceRecording, attachmentMenuOpen, streamingActionMenuOpen, streamingActionIndex, sendQueued, sendShortcut, submitStreamingMessage]
   );
 
   const handleInput = useCallback(() => {
@@ -2474,11 +2489,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <button
                     type="button"
                     className="streaming-action-primary"
-                    onClick={() => sendQueued("steer")}
-                    title={t("chat.steerDescription")}
-                    aria-label={t("chat.steer")}
+                    onClick={() => sendQueued(primaryStreamingMode)}
+                    title={t(primaryStreamingMode === "steer" ? "chat.steerDescription" : "chat.sendDirectlyDescription")}
+                    aria-label={t(primaryStreamingMode === "steer" ? "chat.steer" : "chat.followUp")}
                   >
-                    <AliIcon name="send" size={15} /><span>{t("chat.steer")}</span>
+                    <AliIcon name="send" size={15} /><span>{t(primaryStreamingMode === "steer" ? "chat.steer" : "chat.followUp")}</span>
                   </button>
                   <button
                     type="button"

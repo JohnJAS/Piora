@@ -96,3 +96,41 @@ test("renders partial assistant content before the provider error", () => {
   assert.match(html, /Partial response/);
   assert.match(html, /Error: Connection closed/);
 });
+
+test("renders file edits as a collapsed change card with line stats", () => {
+  const toolCallId = "edit-card-1";
+  const patch = [
+    "--- a/components/Card.tsx",
+    "+++ b/components/Card.tsx",
+    "@@ -1 +1,2 @@",
+    "-export const value = 1;",
+    "+export const value = 2;",
+    "+export const ready = true;",
+  ].join("\n");
+  const html = renderMessage({
+    role: "assistant",
+    provider: "openai",
+    model: "gpt-test",
+    content: [{
+      type: "toolCall",
+      toolCallId,
+      toolName: "edit",
+      input: { path: "components/Card.tsx" },
+    }],
+  }, {
+    toolResults: new Map([[toolCallId, {
+      role: "toolResult",
+      toolCallId,
+      content: [{ type: "text", text: "ok" }],
+      details: { patch },
+    }]]),
+  });
+
+  assert.match(html, /class="file-change-card is-complete"/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.match(html, /已编辑/);
+  assert.match(html, /components\/Card\.tsx/);
+  assert.match(html, /\+2/);
+  assert.match(html, /−1/);
+  assert.doesNotMatch(html, /export const ready/);
+});

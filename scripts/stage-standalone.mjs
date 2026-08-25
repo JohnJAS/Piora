@@ -44,6 +44,7 @@ const assets = [
   },
   ...[
     ["Piora browser extension", "extensions/piora-browser.ts"],
+    ["Piora file-change extension", "extensions/piora-file-changes.ts"],
     ["Piora Harmony device extension", "extensions/piora-harmony.ts"],
     ["Piora target-mode extension", "extensions/piora-goal.ts"],
     ["Piora plan-mode extension", "extensions/piora-plan.ts"],

@@ -51,6 +51,7 @@ export const forbiddenPackagedDependencies = Object.freeze([
 const requiredPaths = [
   "server.js",
   "extensions/piora-browser.ts",
+  "extensions/piora-file-changes.ts",
   "extensions/piora-harmony.ts",
   "extensions/piora-goal.ts",
   "extensions/piora-plan.ts",
