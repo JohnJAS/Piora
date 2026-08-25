@@ -1463,9 +1463,9 @@ function TextFileViewer({
         }}
       >
         {effectiveDisplayMode === "edit" ? (
-          <div className={editorStyles.editorShell}>
+          <div className={`${editorStyles.editorShell} file-editor-shell`}>
             <div className={editorStyles.editorBody}>
-              <div className={editorStyles.lineNumberViewport} aria-hidden="true">
+              <div className={`${editorStyles.lineNumberViewport} file-editor-gutter`} aria-hidden="true">
                 <div
                   className={editorStyles.lineNumbers}
                   style={{ transform: `translateY(${-editorScrollTop}px)` }}
@@ -1475,7 +1475,7 @@ function TextFileViewer({
               </div>
               <textarea
                 ref={editorRef}
-                className={editorStyles.textarea}
+                className={`${editorStyles.textarea} file-editor-textarea`}
                 value={draftContent}
                 wrap="off"
                 spellCheck={false}
@@ -1496,7 +1496,7 @@ function TextFileViewer({
                 onScroll={handleEditorScroll}
               />
             </div>
-            <div className={editorStyles.statusBar}>
+            <div className={`${editorStyles.statusBar} file-editor-status`}>
               <span className={dirty ? editorStyles.unsavedStatus : editorStyles.savedStatus}>
                 <span className={editorStyles.statusDot} aria-hidden="true" />
                 {dirty ? t("fileEditor.unsaved") : t("i18n.saved")}

@@ -82,28 +82,45 @@ html[data-app-background-active="true"] .sidebar-container {
   /* The project area shows the same artwork but keeps its own readable wash so
      small session/project text stays legible; strength is user-controlled
      through --app-background-sidebar-overlay. */
-  background: color-mix(in srgb, var(--bg-panel) var(--app-background-sidebar-overlay, 70%), transparent) !important;
+  background: color-mix(in srgb, var(--bg-panel) var(--app-background-sidebar-overlay, 36%), transparent) !important;
   backdrop-filter: blur(5px);
 }
 
 html[data-app-background-active="true"] .session-sidebar-content {
-  /* The sidebar's inner shell is an opaque surface by default; make it share
-     the project-area wash so the artwork is actually visible through it. */
-  background: color-mix(in srgb, var(--bg-panel) var(--app-background-sidebar-overlay, 70%), transparent) !important;
+  /* The outer sidebar already owns the user-controlled wash. Keeping the
+     inner shell transparent avoids multiplying two translucent layers into
+     what is effectively an opaque white panel. */
+  background: transparent !important;
 }
 
 html[data-app-background-active="true"] #file-panel {
-  /* The file panel now shares the artwork with a user-controlled wash instead
-     of staying fully opaque. Editor surfaces below switch to the mixed tokens
-     defined here so file content stays readable at any wash strength. */
-  background: color-mix(in srgb, var(--bg) var(--app-background-file-panel-overlay, 88%), transparent) !important;
+  /* Apply the user-controlled wash exactly once at the panel boundary. Child
+     file surfaces stay transparent so the wallpaper is not hidden by several
+     copies of the same wash. */
+  background: color-mix(in srgb, var(--bg) var(--app-background-file-panel-overlay, 42%), transparent) !important;
   backdrop-filter: blur(5px);
-  --file-panel-surface: color-mix(in srgb, var(--bg) var(--app-background-file-panel-overlay, 88%), transparent);
-  --file-panel-surface-panel: color-mix(in srgb, var(--bg-panel) var(--app-background-file-panel-overlay, 88%), transparent);
+  --file-panel-surface: transparent;
+  --file-panel-surface-panel: transparent;
 }
 
 html[data-app-background-active="true"] #file-panel .right-panel-surface {
-  background: color-mix(in srgb, var(--bg) var(--app-background-file-panel-overlay, 88%), transparent) !important;
+  background: transparent !important;
+}
+
+html[data-app-background-active="true"] #file-panel .right-panel-chrome,
+html[data-app-background-active="true"] #file-panel .file-tab-root,
+html[data-app-background-active="true"] #file-panel .file-tab-list,
+html[data-app-background-active="true"] #file-panel .file-viewer-shell,
+html[data-app-background-active="true"] #file-panel .file-viewer-toolbar,
+html[data-app-background-active="true"] #file-panel .file-viewer-content,
+html[data-app-background-active="true"] #file-panel .file-editor-shell,
+html[data-app-background-active="true"] #file-panel .file-editor-textarea,
+html[data-app-background-active="true"] #file-panel .file-editor-status {
+  background: transparent !important;
+}
+
+html[data-app-background-active="true"] #file-panel .file-editor-gutter {
+  background: color-mix(in srgb, var(--bg-panel) 24%, transparent) !important;
 }
 
 @supports not (background: color-mix(in srgb, black 50%, transparent)) {

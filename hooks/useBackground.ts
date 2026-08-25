@@ -198,6 +198,22 @@ function errorCode(error: unknown): BackgroundStorageErrorCode {
   return error instanceof BackgroundStorageError ? error.code : "storage-unavailable";
 }
 
+function activateBackground(
+  preference: BackgroundPreference,
+  source: "builtin" | "custom",
+  presetId: string | null,
+): BackgroundPreference {
+  return {
+    ...preference,
+    source,
+    presetId,
+    ...(preference.source === "none" ? {
+      sidebarOverlay: DEFAULT_BACKGROUND_PREFERENCE.sidebarOverlay,
+      filePanelOverlay: DEFAULT_BACKGROUND_PREFERENCE.filePanelOverlay,
+    } : {}),
+  };
+}
+
 export function useBackground() {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
@@ -213,7 +229,7 @@ export function useBackground() {
   const setBuiltin = useCallback((presetId: string) => {
     if (!getBackgroundPreset(presetId)) return;
     replaceCustomObjectUrl(null);
-    commitPreference({ ...snapshot.preference, source: "builtin", presetId });
+    commitPreference(activateBackground(snapshot.preference, "builtin", presetId));
   }, [snapshot.preference]);
 
   const applyBuiltinPreset = useCallback((
@@ -223,9 +239,7 @@ export function useBackground() {
     if (!getBackgroundPreset(presetId)) return;
     replaceCustomObjectUrl(null);
     commitPreference({
-      ...snapshot.preference,
-      source: "builtin",
-      presetId,
+      ...activateBackground(snapshot.preference, "builtin", presetId),
       overlay: Math.min(90, Math.max(0, Math.round(options.overlay ?? snapshot.preference.overlay))),
       blur: Math.min(24, Math.max(0, Math.round(options.blur ?? snapshot.preference.blur))),
     });
@@ -240,7 +254,7 @@ export function useBackground() {
       if (revision !== operationRevision) return;
       storedCustom = record;
       replaceCustomObjectUrl(record);
-      const preference = { ...state.preference, source: "custom" as const, presetId: null };
+      const preference = activateBackground(state.preference, "custom", null);
       persistPreference(preference);
       setState({
         preference,
@@ -271,7 +285,7 @@ export function useBackground() {
       if (revision !== operationRevision) return;
       storedCustom = record;
       replaceCustomObjectUrl(record);
-      const preference = { ...state.preference, source: "custom" as const, presetId: null };
+      const preference = activateBackground(state.preference, "custom", null);
       persistPreference(preference);
       setState({
         preference,

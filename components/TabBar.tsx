@@ -150,7 +150,7 @@ export function TabBar({
   const menuTab = menuTabIndex >= 0 ? tabs[menuTabIndex] : null;
 
   return (
-    <div className={styles.root}>
+    <div className={`file-tab-root ${styles.root}`}>
       <div className={`file-tab-list ${styles.list}`} role="tablist" aria-label={t("files.openFiles")}>
         {tabs.map((tab, index) => {
           const isActive = tab.id === activeTabId;

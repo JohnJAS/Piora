@@ -32,7 +32,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
   without checking the resulting UI.
 - Updated model-configuration guidance to the current Settings → Models path,
   simplified the new-conversation project picker, and removed persistent fill
-  backgrounds from project headings and selectors.
+  backgrounds from project headings and selectors. Active wallpapers now also
+  continue through the project and file areas without stacked opaque washes.
 
 ## [0.4.0] - 2026-08-24
 

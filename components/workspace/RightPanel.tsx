@@ -161,7 +161,7 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
   };
 
   return <div className={`${styles.root} right-panel-surface`}>
-    <div className={styles.panelChrome}>
+    <div className={`${styles.panelChrome} right-panel-chrome`}>
       <div className={styles.toolTabs} role="tablist" aria-label={t("workspace.panelTabs")}>
         {openTools.map((toolId) => {
           const tool = TOOLS.find((candidate) => candidate.id === toolId);
