@@ -61,9 +61,10 @@ test("conversation chrome and rooms share the configured background", () => {
   assert.match(backgrounds, /\.room-workspace-details/);
 });
 
-test("pinned sessions keep a visible pin and the dead brand search action is gone", () => {
-  assert.match(taskRow, /pinned \? \(/);
-  assert.match(taskRow, /name="pushpin"/);
+test("pinned sessions keep a visible right-edge pin and the dead brand search action is gone", () => {
+  assert.match(taskRow, /data-pinned-actions=\{pinned \? "true" : "false"\}/);
+  assert.match(taskRow, /sidebar\.unpinTask/);
+  assert.match(taskRow, /icon="pushpin"/);
   const brandActions = navigation.match(/<div className=\{styles\.brandActions\}>([\s\S]*?)<\/div>/)?.[1] ?? "";
   assert.doesNotMatch(brandActions, /name="search"/);
   assert.match(brandActions, /name="setting"/);
