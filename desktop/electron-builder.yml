@@ -104,6 +104,9 @@ linux:
   icon: icon.png
   category: Development
   synopsis: Piora coding agent desktop application
+  executableName: Piora
+  syncDesktopName: true
+  artifactName: ${productName}-${version}-linux-x64-portable.${ext}
   target:
     - target: AppImage
       arch:

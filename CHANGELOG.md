@@ -4,6 +4,14 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-08-25
+
+### Fixed
+
+- Fixed Linux AppImage generation for the scoped desktop workspace by assigning
+  a portable-safe executable name, stable desktop identity, and deterministic
+  `linux-x64` artifact filename.
+
 ## [0.4.2] - 2026-08-25
 
 ### Added
