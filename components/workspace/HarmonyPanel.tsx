@@ -6,6 +6,7 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useHarmonyLiveFrame } from "@/hooks/useHarmonyLiveFrame";
+import { formatHarmonyDeviceLabel } from "@/lib/harmony/device-label";
 import { AliIcon } from "../AliIcon";
 import { HarmonyLogViewer } from "./HarmonyLogViewer";
 import styles from "./HarmonyPanel.module.css";
@@ -16,6 +17,7 @@ type HarmonyDevice = {
   state: "online" | "unauthorized" | "offline" | "unknown";
   name?: string;
   model?: string;
+  product?: string;
   osVersion?: string;
   generation: number;
   capabilities: Record<string, boolean>;
@@ -59,6 +61,7 @@ function normalizeDevices(value: unknown): HarmonyDevice[] {
       state,
       ...(optionalString(source.name) ? { name: optionalString(source.name) } : {}),
       ...(optionalString(source.model) ? { model: optionalString(source.model) } : {}),
+      ...(optionalString(source.product) ? { product: optionalString(source.product) } : {}),
       ...(optionalString(source.osVersion) ? { osVersion: optionalString(source.osVersion) } : {}),
       generation: typeof source.generation === "number" && Number.isFinite(source.generation) ? source.generation : 0,
       capabilities,
@@ -218,6 +221,7 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
   } = useHarmonyLiveFrame({
     active: active && desktopAvailable && viewMode === "screen",
     enabled: canScreenshot,
+    paused: busy,
     serial: selectedSerial,
     generation: selectedGeneration,
     fallbackError: copy("投屏暂不可用，请检查设备授权与 HDC。", "Live view unavailable. Check device authorization and HDC."),
@@ -418,10 +422,7 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ serial: selectedSerial, leaseToken: lease.token, ...input }),
-    }), () => {
-      requestFrame();
-      void refresh();
-    });
+    }), requestFrame);
   };
 
   const saveSettings = () => void run(async () => {
@@ -469,7 +470,7 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
   const frameUrl = active && canScreenshot && frameMatchesDevice ? liveFrame?.url ?? "" : "";
   const frameError = frameInteractionError ?? frameLoadError;
   const ownsRecoverableLease = Boolean(holder?.owner.kind === "manual" && holder.owner.id === ownerIdRef.current);
-  const canPointControl = Boolean(lease?.serial === selectedSerial && frameStatus === "live" && frameMatchesDevice && selected?.capabilities.tap);
+  const canPointControl = Boolean(!busy && lease?.serial === selectedSerial && frameStatus === "live" && frameMatchesDevice && selected?.capabilities.tap);
   const runtimeReady = managerState?.runtime.status === "ready";
   const deviceStateLabel = selected?.state === "online"
     ? copy("已连接", "Connected")
@@ -552,7 +553,7 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
         setFrameSize(null);
       }}>
         {!devices.length ? <option value="">{copy("没有设备", "No device")}</option> : null}
-        {devices.map((device) => <option key={device.serial} value={device.serial}>{device.name || device.model || device.serial}</option>)}
+        {devices.map((device) => <option key={device.serial} value={device.serial}>{formatHarmonyDeviceLabel(device)}</option>)}
       </select>
       <span className={styles.deviceState} data-state={selected?.state ?? "unknown"}><i />{deviceStateLabel}</span>
       {lease?.serial === selectedSerial

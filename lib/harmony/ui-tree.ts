@@ -23,7 +23,8 @@ function finiteNumber(value: unknown): number | undefined {
 }
 
 function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 function booleanValue(value: unknown): boolean | undefined {
@@ -97,18 +98,18 @@ export function flattenUiTree(tree: unknown, maxNodes = 10_000): ParsedUiNode[] 
       result.push({
         ...(parentIndex === undefined ? {} : { parentIndex }),
         text: stringValue(first(merged, ["text", "content", "value"])),
-        id: stringValue(first(merged, ["id", "key", "resourceId", "inspectorId", "uniqueId"])),
-        type: stringValue(first(merged, ["type", "componentType", "className"])),
-        hint: stringValue(first(merged, ["hint", "placeholder"])),
-        description: stringValue(first(merged, ["description", "accessibilityText"])),
-        bounds: parseBounds(first(merged, ["bounds", "rect", "bound", "visibleBounds"])),
+        id: stringValue(first(merged, ["id", "accessibilityId", "key", "resourceId", "inspectorId", "uniqueId", "componentId"])),
+        type: stringValue(first(merged, ["type", "componentType", "className", "componentName"])),
+        hint: stringValue(first(merged, ["hint", "placeholder", "placeholderText"])),
+        description: stringValue(first(merged, ["description", "accessibilityText", "contentDescription"])),
+        bounds: parseBounds(first(merged, ["bounds", "rect", "bound", "visibleBounds", "boundsInScreen", "origBounds"])),
         enabled: booleanValue(merged.enabled),
         clickable: booleanValue(merged.clickable),
         scrollable: booleanValue(merged.scrollable),
         focused: booleanValue(merged.focused),
         selected: booleanValue(merged.selected),
         checked: booleanValue(merged.checked),
-        visible: booleanValue(first(merged, ["visible", "isVisible"])),
+        visible: booleanValue(first(merged, ["visible", "isVisible", "visibleToUser"])),
       });
     }
 
@@ -120,8 +121,14 @@ export function flattenUiTree(tree: unknown, maxNodes = 10_000): ParsedUiNode[] 
         visit(record[key], thisIndex);
       }
     }
-    if (!traversedChildren && thisIndex === parentIndex) {
-      for (const nested of Object.values(record)) visit(nested, parentIndex);
+    // New UiTest releases occasionally add wrapper keys around child arrays.
+    // Traverse unknown object-valued fields too, but never turn the attributes
+    // bag itself into a second node. The visited set prevents duplicates.
+    if (!traversedChildren || thisIndex !== parentIndex) {
+      for (const [key, nested] of Object.entries(record)) {
+        if (key === "attributes" || childKeys.includes(key)) continue;
+        if (nested && typeof nested === "object") visit(nested, thisIndex);
+      }
     }
   };
 

@@ -14,6 +14,8 @@ import type {
   HarmonyDevice,
   HarmonyDiagnostics,
   HarmonyInputTextOptions,
+  HarmonyDragOptions,
+  HarmonyFlingOptions,
   HarmonyLogEntry,
   HarmonyLogOptions,
   HarmonyProcess,
@@ -28,6 +30,7 @@ import type {
   HarmonySnapshotOptions,
   HarmonySwipeOptions,
   HarmonyTapOptions,
+  HarmonyPointGestureOptions,
   HarmonyTapRefOptions,
   HarmonyUiNode,
 } from "./types";
@@ -470,6 +473,19 @@ export class HarmonyDeviceManager {
     }, options.signal);
   }
 
+  getLatestSnapshot(serial: string): HarmonySnapshot | undefined {
+    validateSerial(serial);
+    const snapshot = this.snapshots.get(serial);
+    if (!snapshot) return undefined;
+    return {
+      serial: snapshot.serial,
+      generation: snapshot.generation,
+      revision: snapshot.revision,
+      capturedAt: snapshot.capturedAt,
+      nodes: snapshot.nodes?.map((node) => ({ ...node, ...(node.bounds ? { bounds: { ...node.bounds } } : {}) })),
+    };
+  }
+
   private async action(
     operation: string,
     serial: string,
@@ -510,6 +526,22 @@ export class HarmonyDeviceManager {
       async (backend, signal) => await backend.tap(options.serial, options.x, options.y, signal));
   }
 
+  async doubleTap(options: HarmonyPointGestureOptions): Promise<HarmonyOperationResult> {
+    return await this.action("double_tap", options.serial, options.leaseToken, options.generation, options.signal,
+      async (backend, signal) => {
+        if (!backend.doubleTap) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Harmony double-tap injection is unavailable");
+        await backend.doubleTap(options.serial, options.x, options.y, signal);
+      });
+  }
+
+  async longPress(options: HarmonyPointGestureOptions): Promise<HarmonyOperationResult> {
+    return await this.action("long_press", options.serial, options.leaseToken, options.generation, options.signal,
+      async (backend, signal) => {
+        if (!backend.longPress) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Harmony long-press injection is unavailable");
+        await backend.longPress(options.serial, options.x, options.y, signal);
+      });
+  }
+
   async tapRef(options: HarmonyTapRefOptions): Promise<HarmonyOperationResult> {
     const snapshot = this.snapshots.get(options.serial);
     if (!snapshot || snapshot.generation !== options.generation) {
@@ -519,27 +551,72 @@ export class HarmonyDeviceManager {
     if (!node?.bounds) throw new HarmonyError("INVALID_ARGUMENT", "UI reference does not have tappable bounds");
     if (node.enabled === false || node.visible === false) throw new HarmonyError("INVALID_ARGUMENT", "UI reference is not enabled or visible");
     if (node.clickable === false) throw new HarmonyError("INVALID_ARGUMENT", "UI reference is not clickable");
-    return await this.action("tap_ref", options.serial, options.leaseToken, options.generation, options.signal,
+    let strategy = "semantic_ref";
+    let tappedX = Math.round((node.bounds.left + node.bounds.right) / 2);
+    let tappedY = Math.round((node.bounds.top + node.bounds.bottom) / 2);
+    const result = await this.action("tap_ref", options.serial, options.leaseToken, options.generation, options.signal,
       async (backend, signal) => {
         // Snapshot revisions are local bookkeeping, not an atomic device-side
         // transaction. Re-read the tree immediately before tapping and require
         // the same uniquely identifiable target at nearly the same location.
         const fresh = await backend.snapshot(options.serial, { includeTree: true, includeScreenshot: false, signal });
-        const matches = (fresh.nodes ?? []).filter((candidate) => isSameUiTarget(node, candidate));
-        if (matches.length !== 1 || !matches[0].bounds) {
+        const freshNodes = fresh.nodes ?? [];
+        const exactMatches = freshNodes.filter((candidate) => isSameUiTarget(node, candidate));
+        let match = exactMatches.length === 1 ? exactMatches[0] : undefined;
+        if (!match) {
+          const labels = [node.text, node.hint, node.description].map(normalizedLabel).filter(Boolean);
+          const semanticMatches = freshNodes.filter((candidate) => {
+            if (!candidate.bounds || candidate.enabled === false || candidate.visible === false || candidate.clickable === false) return false;
+            if (node.type && candidate.type !== node.type) return false;
+            if (node.id) return candidate.id === node.id;
+            return labels.length > 0 && [candidate.text, candidate.hint, candidate.description]
+              .map(normalizedLabel).some((label) => label && labels.includes(label));
+          });
+          if (semanticMatches.length === 1) {
+            match = semanticMatches[0];
+            strategy = "semantic_relaxed";
+          }
+        }
+        const freshHasSemanticIdentity = freshNodes.some((candidate) => (
+          candidate.id || candidate.text || candidate.hint || candidate.description
+        ));
+        if (!match && freshNodes.length > 0 && !freshHasSemanticIdentity) {
+          const positionalMatches = freshNodes.filter((candidate) => {
+            if (!candidate.bounds || candidate.enabled === false || candidate.visible === false || candidate.clickable === false) return false;
+            if (node.type && candidate.type !== node.type) return false;
+            const width = Math.max(1, node.bounds!.right - node.bounds!.left);
+            const height = Math.max(1, node.bounds!.bottom - node.bounds!.top);
+            return boundsDistance(node, candidate) <= Math.max(48, Math.min(width, height) * 0.75);
+          });
+          if (positionalMatches.length === 1) {
+            match = positionalMatches[0];
+            strategy = "nearby_bounds";
+          }
+        }
+        // If UiTest returned no parseable nodes, retain a bounded fallback to
+        // the center captured moments ago. A non-empty contradictory tree is
+        // still treated as stale to avoid clicking a different control.
+        if (!match && freshNodes.length === 0) {
+          match = node;
+          strategy = "captured_bounds_fallback";
+        }
+        if (!match?.bounds) {
           throw new HarmonyError("STALE_SNAPSHOT", "The referenced UI target changed or became ambiguous before the tap", {
-            details: { matchCount: matches.length },
+            details: { exactMatchCount: exactMatches.length, parsedNodeCount: freshNodes.length },
             retryable: true,
           });
         }
-        const bounds = matches[0].bounds;
+        const bounds = match.bounds;
+        tappedX = Math.round((bounds.left + bounds.right) / 2);
+        tappedY = Math.round((bounds.top + bounds.bottom) / 2);
         await backend.tap(
           options.serial,
-          Math.round((bounds.left + bounds.right) / 2),
-          Math.round((bounds.top + bounds.bottom) / 2),
+          tappedX,
+          tappedY,
           signal,
         );
       }, snapshot.revision);
+    return { ...result, strategy, x: tappedX, y: tappedY };
   }
 
   async swipe(options: HarmonySwipeOptions): Promise<HarmonyOperationResult> {
@@ -547,6 +624,26 @@ export class HarmonyDeviceManager {
       async (backend, signal) => await backend.swipe(
         options.serial, options.fromX, options.fromY, options.toX, options.toY, options.durationMs, signal,
       ));
+  }
+
+  async drag(options: HarmonyDragOptions): Promise<HarmonyOperationResult> {
+    return await this.action("drag", options.serial, options.leaseToken, options.generation, options.signal,
+      async (backend, signal) => {
+        if (!backend.drag) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Harmony drag injection is unavailable");
+        await backend.drag(
+          options.serial, options.fromX, options.fromY, options.toX, options.toY, options.durationMs, signal,
+        );
+      });
+  }
+
+  async fling(options: HarmonyFlingOptions): Promise<HarmonyOperationResult> {
+    return await this.action("fling", options.serial, options.leaseToken, options.generation, options.signal,
+      async (backend, signal) => {
+        if (!backend.fling) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Harmony fling injection is unavailable");
+        await backend.fling(
+          options.serial, options.fromX, options.fromY, options.toX, options.toY, options.durationMs, signal,
+        );
+      });
   }
 
   async inputText(options: HarmonyInputTextOptions): Promise<HarmonyOperationResult> {

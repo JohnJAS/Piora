@@ -14,6 +14,7 @@ export interface HarmonyLiveFrame {
 interface UseHarmonyLiveFrameOptions {
   active: boolean;
   enabled: boolean;
+  paused?: boolean;
   serial: string;
   generation?: number;
   fallbackError: string;
@@ -38,6 +39,14 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       frameUrlRef.current = null;
       setFrame(null);
       setStatus("idle");
+      setError(null);
+      return;
+    }
+    // Device actions have priority over passive live-view work. Aborting an
+    // in-flight frame lets the manager run the tap/key/text command next, but
+    // keep the last decoded frame on screen so the panel does not flash blank.
+    if (options.paused) {
+      setStatus(frameUrlRef.current ? "live" : "idle");
       setError(null);
       return;
     }
@@ -89,7 +98,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       } finally {
         if (controller === requestController) controller = undefined;
         schedule(failures === 0
-          ? (document.hidden ? 3_000 : 250)
+          ? (document.hidden ? 3_000 : 16)
           : Math.min(8_000, 1_000 * (2 ** Math.min(failures, 3))));
       }
     };
@@ -105,7 +114,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       if (timer !== undefined) window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [options.active, options.enabled, options.fallbackError, options.generation, options.serial, refreshKey]);
+  }, [options.active, options.enabled, options.fallbackError, options.generation, options.paused, options.serial, refreshKey]);
 
   useEffect(() => () => {
     if (frameUrlRef.current) URL.revokeObjectURL(frameUrlRef.current);

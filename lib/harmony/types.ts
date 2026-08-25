@@ -162,6 +162,9 @@ export interface HarmonyOperationResult {
   operationId: number;
   generation: number;
   completedAt: string;
+  strategy?: string;
+  x?: number;
+  y?: number;
 }
 
 export interface HarmonySnapshotOptions {
@@ -180,6 +183,8 @@ export interface HarmonyTapOptions {
   generation?: number;
   signal?: AbortSignal;
 }
+
+export type HarmonyPointGestureOptions = HarmonyTapOptions;
 
 export interface HarmonyTapRefOptions {
   serial: string;
@@ -200,6 +205,10 @@ export interface HarmonySwipeOptions {
   generation?: number;
   signal?: AbortSignal;
 }
+
+export type HarmonyDragOptions = HarmonySwipeOptions;
+
+export type HarmonyFlingOptions = HarmonySwipeOptions;
 
 export interface HarmonyInputTextOptions {
   serial: string;
@@ -263,7 +272,27 @@ export interface HarmonyAutomationBackend {
     options: { includeTree: boolean; includeScreenshot: boolean; signal?: AbortSignal },
   ): Promise<BackendSnapshot>;
   tap(serial: string, x: number, y: number, signal?: AbortSignal): Promise<void>;
+  doubleTap?(serial: string, x: number, y: number, signal?: AbortSignal): Promise<void>;
+  longPress?(serial: string, x: number, y: number, signal?: AbortSignal): Promise<void>;
   swipe(
+    serial: string,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    durationMs?: number,
+    signal?: AbortSignal,
+  ): Promise<void>;
+  drag?(
+    serial: string,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    durationMs?: number,
+    signal?: AbortSignal,
+  ): Promise<void>;
+  fling?(
     serial: string,
     fromX: number,
     fromY: number,

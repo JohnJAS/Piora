@@ -123,7 +123,8 @@ const LOG_LEVELS: Record<string, HarmonyLogLevel> = {
 
 function parseLogLine(raw: string): HarmonyLogEntry {
   const line = raw.replace(/\0/g, "").trimEnd();
-  const match = line.match(/^(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+(\d+)\s+(\d+)\s+([DIWEF])\s+(?:(\S+)\/)?([^:]+):\s?(.*)$/);
+  const match = line.match(/^(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+(\d+)\s+(\d+)\s+([DIWEF])\s+(?:(\S+)\/)?([^:]+):\s?(.*)$/)
+    ?? line.match(/^(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)\s+(\d+)-(\d+)(?:\/\S+)?\s+([DIWEF])\s+(?:(\S+)\/)?([^:]+):\s?(.*)$/);
   if (!match) return { level: "unknown", message: line, raw: line };
   return {
     timestamp: match[1],
@@ -195,7 +196,7 @@ export class HdcBackend implements HarmonyAutomationBackend {
   }
 
   private async run(args: readonly string[], operation: string, signal?: AbortSignal, timeoutMs?: number) {
-    return await this.execute({
+    const result = await this.execute({
       executable: this.hdcPath,
       args,
       timeoutMs: timeoutMs ?? this.commandTimeoutMs,
@@ -203,6 +204,18 @@ export class HdcBackend implements HarmonyAutomationBackend {
       signal,
       operation,
     });
+    // Several HDC releases print a failure marker but still exit with code 0.
+    // Treat that protocol response as an error so taps and pulls cannot report
+    // false success. An empty target list is the one expected bracketed status.
+    const output = Buffer.concat([result.stdout, result.stderr]).toString("utf8").replace(/\0/g, "");
+    if (operation !== "list_devices" && operation !== "list_devices_legacy"
+      && /(?:^|\r?\n)\s*\[(?:Fail|Error|E\d{3,})\]/i.test(output)) {
+      throw new HarmonyError("COMMAND_FAILED", "HDC rejected the device command", {
+        details: { operation },
+        retryable: true,
+      });
+    }
+    return result;
   }
 
   private async shell(serial: string, args: readonly string[], operation: string, signal?: AbortSignal, timeoutMs?: number) {
@@ -294,14 +307,21 @@ export class HdcBackend implements HarmonyAutomationBackend {
       throw new HarmonyError("INVALID_ARGUMENT", "Harmony log PID must be a positive integer");
     }
     const query = options.query?.trim().slice(0, MAX_LOG_QUERY_LENGTH).toLocaleLowerCase();
-    const args = ["hilog", "-n", String(limit), "-v", "time"];
-    if (options.pid !== undefined) args.push("-p", String(options.pid));
+    // -z/--tail is the bounded query option. -n configures the number of
+    // persisted log files and therefore made the former command invalid.
+    const args = ["hilog", "-z", String(limit), "-v", "time"];
+    if (options.pid !== undefined) args.push("-P", String(options.pid));
+    if (options.level) args.push("-L", { debug: "D", info: "I", warn: "W", error: "E", fatal: "F" }[options.level]);
     const result = await this.shell(serial, args, "read_logs", options.signal, 10_000);
     return result.stdout.toString("utf8")
       .split(/\r?\n/)
       .map(parseLogLine)
       .filter((entry) => entry.raw.length > 0)
-      .filter((entry) => !options.level || entry.level === options.level)
+      .filter((entry) => {
+        if (!options.level || entry.level === "unknown") return true;
+        const severity = { debug: 0, info: 1, warn: 2, error: 3, fatal: 4 } as const;
+        return severity[entry.level] >= severity[options.level];
+      })
       .filter((entry) => !query || entry.raw.toLocaleLowerCase().includes(query))
       .slice(-limit);
   }
@@ -396,6 +416,20 @@ export class HdcBackend implements HarmonyAutomationBackend {
     await this.shell(serial, ["uitest", "uiInput", "click", String(validateCoordinate(x, "x")), String(validateCoordinate(y, "y"))], "tap", signal);
   }
 
+  async doubleTap(serial: string, x: number, y: number, signal?: AbortSignal): Promise<void> {
+    if (this.capabilitiesBySerial.get(serial)?.tap === false) {
+      throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Harmony UiTest double-tap injection is unavailable on this device");
+    }
+    await this.shell(serial, ["uitest", "uiInput", "doubleClick", String(validateCoordinate(x, "x")), String(validateCoordinate(y, "y"))], "double_tap", signal);
+  }
+
+  async longPress(serial: string, x: number, y: number, signal?: AbortSignal): Promise<void> {
+    if (this.capabilitiesBySerial.get(serial)?.tap === false) {
+      throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Harmony UiTest long-press injection is unavailable on this device");
+    }
+    await this.shell(serial, ["uitest", "uiInput", "longClick", String(validateCoordinate(x, "x")), String(validateCoordinate(y, "y"))], "long_press", signal);
+  }
+
   async swipe(
     serial: string,
     fromX: number,
@@ -418,6 +452,48 @@ export class HdcBackend implements HarmonyAutomationBackend {
     const distance = Math.hypot(toX - fromX, toY - fromY);
     const velocity = Math.max(200, Math.min(40_000, Math.round(distance / (durationMs / 1000))));
     await this.shell(serial, ["uitest", "uiInput", "swipe", ...values.map(String), String(velocity)], "swipe", signal);
+  }
+
+  async drag(
+    serial: string,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    durationMs = 800,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const values = [
+      validateCoordinate(fromX, "fromX"), validateCoordinate(fromY, "fromY"),
+      validateCoordinate(toX, "toX"), validateCoordinate(toY, "toY"),
+    ];
+    if (!Number.isFinite(durationMs) || durationMs < 50 || durationMs > 30_000) {
+      throw new HarmonyError("INVALID_ARGUMENT", "durationMs must be between 50 and 30000");
+    }
+    const distance = Math.hypot(toX - fromX, toY - fromY);
+    const velocity = Math.max(200, Math.min(40_000, Math.round(distance / (durationMs / 1000))));
+    await this.shell(serial, ["uitest", "uiInput", "drag", ...values.map(String), String(velocity)], "drag", signal);
+  }
+
+  async fling(
+    serial: string,
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    durationMs = 250,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const values = [
+      validateCoordinate(fromX, "fromX"), validateCoordinate(fromY, "fromY"),
+      validateCoordinate(toX, "toX"), validateCoordinate(toY, "toY"),
+    ];
+    if (!Number.isFinite(durationMs) || durationMs < 50 || durationMs > 30_000) {
+      throw new HarmonyError("INVALID_ARGUMENT", "durationMs must be between 50 and 30000");
+    }
+    const distance = Math.hypot(toX - fromX, toY - fromY);
+    const velocity = Math.max(200, Math.min(40_000, Math.round(distance / (durationMs / 1000))));
+    await this.shell(serial, ["uitest", "uiInput", "fling", ...values.map(String), String(velocity)], "fling", signal);
   }
 
   async inputText(serial: string, text: string, signal?: AbortSignal): Promise<void> {

@@ -51,22 +51,35 @@ export async function POST(request: Request) {
       case "tap":
         result = await manager.tap({ ...common, x: coordinate(body, "x"), y: coordinate(body, "y"), generation: generation(body) });
         break;
+      case "double_tap":
+        result = await manager.doubleTap({ ...common, x: coordinate(body, "x"), y: coordinate(body, "y"), generation: generation(body) });
+        break;
+      case "long_press":
+        result = await manager.longPress({ ...common, x: coordinate(body, "x"), y: coordinate(body, "y"), generation: generation(body) });
+        break;
       case "tap_ref":
         if (!Number.isInteger(body.generation) || Number(body.generation) < 0) throw new HarmonyError("INVALID_ARGUMENT", "tap_ref requires generation");
         result = await manager.tapRef({ ...common, ref: requiredString(body, "ref", 256), generation: Number(body.generation) });
         break;
-      case "swipe": {
+      case "swipe":
+      case "fling":
+      case "drag": {
         const duration = body.durationMs === undefined ? undefined : Number(body.durationMs);
         if (duration !== undefined && (!Number.isFinite(duration) || duration < 50 || duration > 30_000)) {
           throw new HarmonyError("INVALID_ARGUMENT", "durationMs must be between 50 and 30000");
         }
-        result = await manager.swipe({
+        const gesture = {
           ...common,
           fromX: coordinate(body, "fromX"), fromY: coordinate(body, "fromY"),
           toX: coordinate(body, "toX"), toY: coordinate(body, "toY"),
           ...(duration === undefined ? {} : { durationMs: Math.round(duration) }),
           generation: generation(body),
-        });
+        };
+        result = body.action === "drag"
+          ? await manager.drag(gesture)
+          : body.action === "fling"
+            ? await manager.fling(gesture)
+            : await manager.swipe(gesture);
         break;
       }
       case "input_text":
