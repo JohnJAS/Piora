@@ -24,6 +24,15 @@ const runtime = Object.freeze({
   selectDirectory(): Promise<string | null> {
     return ipcRenderer.invoke("pi:directory-picker") as Promise<string | null>;
   },
+  getAgentDataDirectory() {
+    return ipcRenderer.invoke("pi:agent-data-directory-get");
+  },
+  selectAgentDataDirectory(defaultPath?: string): Promise<string | null> {
+    return ipcRenderer.invoke("pi:agent-data-directory-picker", defaultPath) as Promise<string | null>;
+  },
+  applyAgentDataDirectory(input: { directory: string; migrate: boolean }) {
+    return ipcRenderer.invoke("pi:agent-data-directory-apply", input);
+  },
   setCompanionWindowVisible(visible: boolean): Promise<boolean> {
     return ipcRenderer.invoke("pi:companion-window-visible", visible) as Promise<boolean>;
   },

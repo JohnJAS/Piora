@@ -11,6 +11,7 @@ const sidebarSource = [
   await readFile(new URL("./SidebarFooter.tsx", import.meta.url), "utf8"),
 ].join("\n");
 const settingsSource = await readFile(new URL("../SettingsDialog.tsx", import.meta.url), "utf8");
+const sessionPrefetchSource = await readFile(new URL("../../lib/session-prefetch.ts", import.meta.url), "utf8");
 const appShellSource = await readFile(new URL("../AppShell.tsx", import.meta.url), "utf8");
 
 test("pins active tasks and removes archived tasks from the project sidebar", () => {
@@ -63,6 +64,14 @@ test("removes the low-value task search field and its filtering path", () => {
   assert.doesNotMatch(sidebarSource, /taskSearch|Ctrl\+Shift\+F/);
   assert.doesNotMatch(listSource, /searchQuery|sessionMatchesSearch/);
   assert.doesNotMatch(rowSource, /searchQuery|<mark/);
+});
+
+test("prefetches a hovered session briefly without retaining stale chat data", () => {
+  assert.match(rowSource, /setTimeout\(\(\) => \{[\s\S]*prefetchSession\(session\)[\s\S]*\}, 100\)/);
+  assert.match(sessionPrefetchSource, /PREFETCH_TTL_MS = 15_000/);
+  assert.match(sessionPrefetchSource, /existing\.modified === session\.modified/);
+  assert.match(sessionPrefetchSource, /data\.info\?\.modified === session\.modified/);
+  assert.match(sessionPrefetchSource, /prefetchedSessions\.delete\(session\.id\)/);
 });
 
 test("persists flags through the flags API and offers archive undo", () => {

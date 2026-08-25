@@ -396,6 +396,125 @@
   gap: 16px;
 }
 
+.agentDataHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+}
+
+.directoryBadge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+.agentDataBody {
+  display: grid;
+  gap: 11px;
+  padding: 14px;
+}
+
+.agentDataField {
+  display: grid;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.agentDataInputRow {
+  display: flex;
+  gap: 8px;
+}
+
+.agentDataInputRow input {
+  min-width: 0;
+  min-height: 34px;
+  flex: 1;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text);
+  font: 500 var(--text-xs)/1.4 var(--font-mono);
+}
+
+.agentDataInputRow input:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  outline: 2px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  outline-offset: 1px;
+}
+
+.agentDataMeta {
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+  font: var(--text-xs)/1.45 var(--font-mono);
+}
+
+.agentDataMigration {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg-hover) 54%, transparent);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.agentDataMigration input {
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.agentDataMigration span {
+  display: grid;
+  gap: 2px;
+}
+
+.agentDataMigration strong {
+  font-size: var(--text-xs);
+  font-weight: 630;
+}
+
+.agentDataMigration small,
+.agentDataNotice,
+.portableCacheNote {
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.agentDataActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.agentDataError {
+  color: var(--status-failed);
+  font-size: var(--text-xs);
+}
+
+.agentDataNotice,
+.portableCacheNote {
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  overflow-wrap: anywhere;
+}
+
+.portableCacheNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
 .sendShortcutRow {
   align-items: flex-start;
 }

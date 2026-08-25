@@ -4,6 +4,24 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-08-25
+
+### Added
+
+- Added a desktop setting for moving Pi's complete data directory, with an
+  optional safe copy of existing sessions and configuration before restart.
+- Added a persistent pin control to the group-chat message navigator.
+
+### Changed
+
+- Reduced perceived session-switch latency by prefetching a hovered session
+  after a short debounce and consuming only version-matched responses.
+
+### Fixed
+
+- Refreshed newly saved custom models into the visible provider scope and added
+  a connection test action while a new model is still being configured.
+
 ## [0.4.7] - 2026-08-25
 
 ### Added

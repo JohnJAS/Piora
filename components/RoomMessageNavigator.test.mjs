@@ -13,6 +13,10 @@ test("room message navigation includes every author type and exposes clickable j
   assert.equal(getRoomMessagePreview({ ...base, author: { kind: "system", id: "piora" } }), "系统：完成 验证");
   assert.match(source, /messages\.map\(\(message, index\)/);
   assert.match(source, /群聊记录/);
+  assert.match(source, /piora:chat-timeline-pinned:v1/);
+  assert.match(source, /aria-pressed=\{previewPinned\}/);
+  assert.match(source, /previewOpen \|\| previewPinned/);
+  assert.match(source, /chat\.timelineUnpin/);
   assert.match(source, /跳转到第 \$\{node\.index \+ 1\} 条消息/);
   assert.match(source, /scrollEl\.scrollTo/);
 });

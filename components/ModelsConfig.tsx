@@ -71,6 +71,26 @@ interface ModelsJson {
   providers?: Record<string, ProviderEntry>;
 }
 
+interface ConfiguredModelRef {
+  provider: string;
+  id: string;
+}
+
+function collectConfiguredModelRefs(config: ModelsJson): ConfiguredModelRef[] {
+  const refs: ConfiguredModelRef[] = [];
+  for (const [provider, entry] of Object.entries(config.providers ?? {})) {
+    for (const model of entry.models ?? []) {
+      const id = model.id.trim();
+      if (id) refs.push({ provider, id });
+    }
+  }
+  return refs;
+}
+
+function configuredModelKey(model: ConfiguredModelRef): string {
+  return `${model.provider}/${model.id}`;
+}
+
 interface ManagedModel {
   provider: string;
   id: string;
@@ -844,65 +864,73 @@ function ModelDetail({
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
          <SectionTitle>{t("i18n.model")}</SectionTitle>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {testSummary && (
-            <span
-              title={testSummary}
-              style={{
-                maxWidth: 260,
-                height: 24,
-                padding: "0 8px",
-                border: `1px solid ${testState.phase === "error" ? "#fecaca" : testState.phase === "success" ? "#bbf7d0" : "var(--border)"}`,
-                borderRadius: 4,
-                background: testState.phase === "error" ? "#fee2e2" : testState.phase === "success" ? "#dcfce7" : "#e5e7eb",
-                color: "#111827",
-                fontSize: "var(--text-xs)",
-                display: "inline-flex",
-                alignItems: "center",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                boxSizing: "border-box",
-              }}
-            >
-              {testSummary}
-            </span>
-          )}
-          <button
-            onClick={handleTest}
-            disabled={!model.id.trim() || testState.phase === "testing"}
-             title={t("i18n.testConnection")}
-            style={{
-              height: 24,
-              padding: "0 8px",
-              background: testState.phase === "success" ? "#16a34a" : "none",
-              border: `1px solid ${testState.phase === "success" ? "#16a34a" : "var(--border)"}`,
-              borderRadius: 4,
-              color: testState.phase === "success" ? "#fff" : (!model.id.trim() || testState.phase === "testing") ? "var(--text-dim)" : "var(--text-muted)",
-              cursor: (!model.id.trim() || testState.phase === "testing") ? "not-allowed" : "pointer",
-              fontSize: "var(--text-xs)",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxSizing: "border-box",
-              gap: 5,
-            }}
-          >
-            {testState.phase === "success" && (
-              <AliIcon name="check" size={11} />
-            )}
-             {testState.phase === "testing" ? t("i18n.checking") : testState.phase === "success" ? t("common.ok") : t("i18n.test")}
-          </button>
-          <button onClick={onDelete}
-            style={{ height: 24, padding: "0 8px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: "#ef4444", cursor: "pointer", fontSize: "var(--text-xs)", boxSizing: "border-box" }}>
-             {t("i18n.remove")}
-          </button>
-        </div>
+        <button onClick={onDelete}
+          style={{ height: 24, padding: "0 8px", background: "none", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 4, color: "#ef4444", cursor: "pointer", fontSize: "var(--text-xs)", boxSizing: "border-box" }}>
+           {t("i18n.remove")}
+        </button>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <Field label="ID *"><TextInput value={model.id} onChange={(v) => set("id", v)} placeholder="model-id" mono /></Field>
         <Field label="Name"><TextInput value={model.name ?? ""} onChange={(v) => set("name", v || undefined)} placeholder="Display name" /></Field>
+      </div>
+
+      <div data-draft-model-test-actions style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 30 }}>
+        <button
+          type="button"
+          onClick={() => void handleTest()}
+          disabled={!model.id.trim() || testState.phase === "testing"}
+          title={model.id.trim() ? t("i18n.testConnection") : t("models.testRequiresId")}
+          aria-label={t("i18n.testConnection")}
+          style={{
+            height: 30,
+            padding: "0 11px",
+            background: testState.phase === "success" ? "#16a34a" : "var(--bg-panel)",
+            border: `1px solid ${testState.phase === "success" ? "#16a34a" : "var(--border)"}`,
+            borderRadius: 5,
+            color: testState.phase === "success" ? "#fff" : (!model.id.trim() || testState.phase === "testing") ? "var(--text-dim)" : "var(--text-muted)",
+            cursor: (!model.id.trim() || testState.phase === "testing") ? "not-allowed" : "pointer",
+            fontSize: "var(--text-xs)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxSizing: "border-box",
+            gap: 5,
+            flexShrink: 0,
+          }}
+        >
+          {testState.phase === "success" && <AliIcon name="check" size={11} />}
+          {testState.phase === "testing"
+            ? t("i18n.checking")
+            : testState.phase === "success"
+              ? t("common.ok")
+              : t("i18n.testConnection")}
+        </button>
+        {testSummary && (
+          <span
+            title={testSummary}
+            aria-live="polite"
+            style={{
+              minWidth: 0,
+              maxWidth: 420,
+              height: 30,
+              padding: "0 9px",
+              border: `1px solid ${testState.phase === "error" ? "#fecaca" : testState.phase === "success" ? "#bbf7d0" : "var(--border)"}`,
+              borderRadius: 5,
+              background: testState.phase === "error" ? "#fee2e2" : testState.phase === "success" ? "#dcfce7" : "#e5e7eb",
+              color: "#111827",
+              fontSize: "var(--text-xs)",
+              display: "inline-flex",
+              alignItems: "center",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              boxSizing: "border-box",
+            }}
+          >
+            {testSummary}
+          </span>
+        )}
       </div>
 
       <div style={{ padding: "10px 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
@@ -1635,6 +1663,7 @@ export function ModelsConfig({
   const [modelScopeBusyKey, setModelScopeBusyKey] = useState<string | null>(null);
   const [managedModelTests, setManagedModelTests] = useState<Record<string, ModelTestState>>({});
   const modelScopeMutationRef = useRef(false);
+  const persistedConfiguredModelKeysRef = useRef<Set<string>>(new Set());
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef, !embedded, {
     onEscape: modelScopeBusyKey === null && !saving ? onClose : undefined,
@@ -1690,6 +1719,9 @@ export function ModelsConfig({
       .then((d: ModelsJson) => {
         const normalized = d.providers ? d : { ...d, providers: {} };
         setConfig(normalized);
+        persistedConfiguredModelKeysRef.current = new Set(
+          collectConfiguredModelRefs(normalized).map(configuredModelKey),
+        );
       })
       .catch(() => setConfig({ providers: {} }))
       .finally(() => setLoading(false));
@@ -1743,17 +1775,14 @@ export function ModelsConfig({
   }, []);
 
   const addModel = useCallback((providerName: string) => {
+    const index = config.providers?.[providerName]?.models?.length ?? 0;
     setConfig((prev) => {
       const provider = prev.providers?.[providerName] ?? {};
       const models = [...(provider.models ?? []), { id: "" }];
       return { ...prev, providers: { ...(prev.providers ?? {}), [providerName]: { ...provider, models } } };
     });
-    setConfig((prev) => {
-      const idx = (prev.providers?.[providerName]?.models?.length ?? 1) - 1;
-      setSelection({ type: "model", providerName, index: idx });
-      return prev;
-    });
-  }, []);
+    setSelection({ type: "model", providerName, index });
+  }, [config.providers]);
 
   const addDiscoveredModels = useCallback((providerName: string, discovered: DiscoveredModel[]) => {
     setConfig((prev) => {
@@ -1891,6 +1920,10 @@ export function ModelsConfig({
   }, [loadModelScope, refreshAuthProviders]);
 
   const handleSave = useCallback(async () => {
+    const configuredModels = collectConfiguredModelRefs(config);
+    const newlyConfiguredModels = configuredModels.filter(
+      (model) => !persistedConfiguredModelKeysRef.current.has(configuredModelKey(model)),
+    );
     setSaving(true);
     setSaveError(null);
     setSavedOk(false);
@@ -1906,7 +1939,13 @@ export function ModelsConfig({
         setSavedOk(true);
         setManagedModelTests({});
         setTimeout(() => setSavedOk(false), 2000);
-        await loadModelScope();
+        for (const model of newlyConfiguredModels) {
+          await updateModelScope("restore", model);
+        }
+        if (newlyConfiguredModels.length === 0) await loadModelScope();
+        persistedConfiguredModelKeysRef.current = new Set(
+          configuredModels.map(configuredModelKey),
+        );
         refreshAuthProviders();
         onModelsChanged?.();
       }
@@ -1915,7 +1954,7 @@ export function ModelsConfig({
     } finally {
       setSaving(false);
     }
-  }, [config, loadModelScope, onModelsChanged, refreshAuthProviders]);
+  }, [config, loadModelScope, onModelsChanged, refreshAuthProviders, updateModelScope]);
 
   const configuredProviders = prioritizeProvider(
     Object.entries(config.providers ?? {}),

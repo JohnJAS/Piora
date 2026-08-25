@@ -6,6 +6,7 @@ interface DesktopState {
   serverPort?: number;
   companionWindowPosition?: CompanionWindowPosition;
   mainWindowState?: MainWindowState;
+  piAgentDirectory?: string | null;
 }
 
 export type RuntimeProfile = "normal" | "device-control";
@@ -71,7 +72,7 @@ function writeDesktopState(
   userDataDirectory: string,
   patch: Partial<DesktopState>,
   logger: Logger,
-): void {
+): boolean {
   try {
     const state = { ...readDesktopState(userDataDirectory, logger), ...patch };
     writeFileSync(
@@ -79,9 +80,24 @@ function writeDesktopState(
       `${JSON.stringify(state, null, 2)}\n`,
       "utf8",
     );
+    return true;
   } catch (error) {
     logger.warn("Unable to persist desktop state", error);
+    return false;
   }
+}
+
+export function readPiAgentDirectory(userDataDirectory: string, logger: Logger): string | undefined {
+  const value = readDesktopState(userDataDirectory, logger).piAgentDirectory;
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+export function writePiAgentDirectory(
+  userDataDirectory: string,
+  directory: string | null,
+  logger: Logger,
+): boolean {
+  return writeDesktopState(userDataDirectory, { piAgentDirectory: directory }, logger);
 }
 
 export function readPreferredServerPort(

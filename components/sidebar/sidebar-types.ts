@@ -5,6 +5,20 @@ declare global {
   interface Window {
     piDesktop?: {
       selectDirectory: () => Promise<string | null>;
+      getAgentDataDirectory?: () => Promise<{
+        currentDirectory: string;
+        defaultDirectory: string;
+        configuredBy: "default" | "settings" | "environment";
+        environmentOverride: boolean;
+        portableRuntimeDirectory?: string;
+      } | null>;
+      selectAgentDataDirectory?: (defaultPath?: string) => Promise<string | null>;
+      applyAgentDataDirectory?: (input: { directory: string; migrate: boolean }) => Promise<{
+        ok: boolean;
+        code?: "busy" | "environment-override" | "invalid-path" | "same-path" | "overlapping-path" | "target-not-empty" | "migration-failed" | "persist-failed";
+        error?: string;
+        sourceDirectory?: string;
+      }>;
       platform?: string;
       openMenu?: (menu: "file" | "edit" | "view" | "help", x: number, y: number) => Promise<boolean>;
       revealPath?: (filePath: string) => Promise<boolean>;

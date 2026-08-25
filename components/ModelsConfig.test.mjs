@@ -36,6 +36,9 @@ test("serializes model-scope mutations and renders Pi diagnostics", () => {
 
 test("offers a real availability test for draft and already-loaded models", () => {
   assert.match(source, /body:\s*JSON\.stringify\(\{ providerName, provider, model \}\)/);
+  assert.match(source, /data-draft-model-test-actions/);
+  assert.match(source, /models\.testRequiresId/);
+  assert.match(source, /aria-label=\{t\("i18n\.testConnection"\)\}/);
   assert.match(source, /providerName:\s*model\.provider/);
   assert.match(source, /modelId:\s*model\.id/);
   assert.match(source, /data-model-test=\{testKey\}/);
@@ -45,4 +48,20 @@ test("offers a real availability test for draft and already-loaded models", () =
   assert.match(testRouteSource, /resolveModelRequestCwd/);
   assert.match(testRouteSource, /\(await createTrustedModelServices\(cwd\)\)\.modelRuntime/);
   assert.match(testRouteSource, /ModelRuntime\.create\(\{ modelsPath \}\)/);
+});
+
+test("saving a new custom model refreshes and restores it into the visible provider scope", () => {
+  assert.match(source, /persistedConfiguredModelKeysRef/);
+  assert.match(source, /const newlyConfiguredModels = configuredModels\.filter/);
+  assert.match(source, /for \(const model of newlyConfiguredModels\) \{\s*await updateModelScope\("restore", model\);\s*\}/);
+  assert.match(source, /persistedConfiguredModelKeysRef\.current = new Set\(\s*configuredModels\.map\(configuredModelKey\)/);
+  assert.match(source, /onModelsChanged\?\.\(\)/);
+});
+
+test("adding a model selects its draft without nesting state updates", () => {
+  assert.match(source, /const index = config\.providers\?\.\[providerName\]\?\.models\?\.length \?\? 0/);
+  assert.match(source, /setSelection\(\{ type: "model", providerName, index \}\)/);
+  const addModelBlock = source.match(/const addModel = useCallback[\s\S]*?\n  \}, \[config\.providers\]\);/)?.[0] ?? "";
+  assert.ok(addModelBlock);
+  assert.equal((addModelBlock.match(/setConfig\(/g) ?? []).length, 1);
 });

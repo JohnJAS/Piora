@@ -11,6 +11,7 @@ import {
 import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
 import type { SessionInfo } from "@/lib/types";
 import { AliIcon } from "../AliIcon";
+import { prefetchSession } from "@/lib/session-prefetch";
 import { TaskContextMenu } from "./TaskContextMenu";
 import styles from "./TaskRow.module.css";
 
@@ -104,7 +105,12 @@ export function TaskRow({
   const [deleting, setDeleting] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleOptimizationAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => {
+    if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
+  }, []);
   const taskStatus = useTaskStatus({
     sessionId: session.id,
     isViewing: isSelected,
@@ -220,8 +226,19 @@ export function TaskRow({
     <div
       className={`sidebar-session-row${isSelected ? " is-selected" : ""}`}
       onClick={confirmDelete || renaming ? undefined : onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={() => {
+        setHovered(true);
+        if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
+        prefetchTimerRef.current = setTimeout(() => {
+          prefetchTimerRef.current = null;
+          prefetchSession(session);
+        }, 100);
+      }}
+      onMouseLeave={() => {
+        setHovered(false);
+        if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
+        prefetchTimerRef.current = null;
+      }}
       onContextMenu={(event) => {
         event.preventDefault();
         setMenuAnchor({ x: event.clientX, y: event.clientY });

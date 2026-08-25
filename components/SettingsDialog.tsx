@@ -57,6 +57,14 @@ interface TitleModelOption {
   provider: string;
 }
 
+interface AgentDataDirectoryInfo {
+  currentDirectory: string;
+  defaultDirectory: string;
+  configuredBy: "default" | "settings" | "environment";
+  environmentOverride: boolean;
+  portableRuntimeDirectory?: string;
+}
+
 function titleModelValue(model: SessionTitleModelPreference): string {
   return JSON.stringify(model);
 }
@@ -101,6 +109,11 @@ export function SettingsDialog({
   const [titleModelOptions, setTitleModelOptions] = useState<TitleModelOption[]>([]);
   const [titleModelsLoading, setTitleModelsLoading] = useState(false);
   const [titleModelsError, setTitleModelsError] = useState<string | null>(null);
+  const [agentDataInfo, setAgentDataInfo] = useState<AgentDataDirectoryInfo | null>(null);
+  const [agentDataDirectoryDraft, setAgentDataDirectoryDraft] = useState("");
+  const [migrateAgentData, setMigrateAgentData] = useState(true);
+  const [agentDataStatus, setAgentDataStatus] = useState<"idle" | "loading" | "applying" | "restarting" | "error">("idle");
+  const [agentDataErrorCode, setAgentDataErrorCode] = useState<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   useFocusTrap(dialogRef, open, { onEscape: onClose });
 
@@ -227,6 +240,53 @@ export function SettingsDialog({
       });
     return () => controller.abort();
   }, [activeKey, modelCwd, open]);
+
+  useEffect(() => {
+    if (!open || activeKey !== "general" || !desktop.available) return;
+    const bridge = window.piDesktop?.getAgentDataDirectory;
+    if (!bridge) return;
+    let cancelled = false;
+    setAgentDataStatus("loading");
+    void bridge()
+      .then((info) => {
+        if (cancelled) return;
+        setAgentDataInfo(info);
+        setAgentDataDirectoryDraft(info?.currentDirectory ?? "");
+        setAgentDataStatus("idle");
+        setAgentDataErrorCode(null);
+      })
+      .catch(() => {
+        if (!cancelled) setAgentDataStatus("error");
+      });
+    return () => { cancelled = true; };
+  }, [activeKey, desktop.available, open]);
+
+  const chooseAgentDataDirectory = async () => {
+    const selected = await window.piDesktop?.selectAgentDataDirectory?.(agentDataDirectoryDraft || agentDataInfo?.currentDirectory);
+    if (selected) {
+      setAgentDataDirectoryDraft(selected);
+      setAgentDataErrorCode(null);
+    }
+  };
+
+  const applyAgentDataDirectory = async () => {
+    const bridge = window.piDesktop?.applyAgentDataDirectory;
+    if (!bridge || !agentDataDirectoryDraft.trim()) return;
+    setAgentDataStatus("applying");
+    setAgentDataErrorCode(null);
+    try {
+      const result = await bridge({ directory: agentDataDirectoryDraft.trim(), migrate: migrateAgentData });
+      if (!result.ok) {
+        setAgentDataStatus("error");
+        setAgentDataErrorCode(result.code ?? "migration-failed");
+        return;
+      }
+      setAgentDataStatus("restarting");
+    } catch {
+      setAgentDataStatus("error");
+      setAgentDataErrorCode("migration-failed");
+    }
+  };
 
   const saveOptimizerPrompt = () => {
     try {
@@ -393,6 +453,47 @@ export function SettingsDialog({
                   <p>{t("settings.generalDescription")}</p>
                 </div>
                 <SettingsPortabilityCard />
+                {desktop.available && window.piDesktop?.getAgentDataDirectory ? <section className={styles.conversationSection}>
+                  <div className={styles.agentDataHeader}>
+                    <div className={styles.conversationCopy}>
+                      <div className={styles.rowTitle}>{t("settings.agentDataDirectory")}</div>
+                      <div className={styles.rowDescription}>{t("settings.agentDataDirectoryDescription")}</div>
+                    </div>
+                    {agentDataInfo?.configuredBy === "environment" ? <span className={styles.directoryBadge}>{t("settings.agentDataDirectoryEnvironment")}</span> : null}
+                  </div>
+                  <div className={styles.agentDataBody}>
+                    <label className={styles.agentDataField}>
+                      <span>{t("settings.agentDataDirectoryPath")}</span>
+                      <span className={styles.agentDataInputRow}>
+                        <input
+                          value={agentDataDirectoryDraft}
+                          onChange={(event) => { setAgentDataDirectoryDraft(event.target.value); setAgentDataErrorCode(null); }}
+                          disabled={agentDataStatus === "loading" || agentDataStatus === "applying" || agentDataInfo?.environmentOverride}
+                          spellCheck={false}
+                          aria-label={t("settings.agentDataDirectoryPath")}
+                        />
+                        <button className={styles.secondaryButton} type="button" disabled={agentDataStatus === "applying" || agentDataInfo?.environmentOverride} onClick={() => { void chooseAgentDataDirectory(); }}>{t("settings.agentDataDirectoryChoose")}</button>
+                      </span>
+                    </label>
+                    {agentDataInfo ? <div className={styles.agentDataMeta}>{t("settings.agentDataDirectoryDefault", { path: agentDataInfo.defaultDirectory })}</div> : null}
+                    <label className={styles.agentDataMigration}>
+                      <input type="checkbox" checked={migrateAgentData} disabled={agentDataStatus === "applying" || agentDataInfo?.environmentOverride} onChange={(event) => setMigrateAgentData(event.target.checked)} />
+                      <span><strong>{t("settings.agentDataMigrate")}</strong><small>{t("settings.agentDataMigrateDescription")}</small></span>
+                    </label>
+                    <div className={styles.agentDataActions}>
+                      <button className={styles.secondaryButton} type="button" disabled={!agentDataInfo || agentDataStatus === "applying" || agentDataInfo.environmentOverride} onClick={() => setAgentDataDirectoryDraft(agentDataInfo?.defaultDirectory ?? "")}>{t("settings.agentDataDirectoryRestoreDefault")}</button>
+                      <button className={styles.primaryButton} type="button" disabled={!agentDataInfo || !agentDataDirectoryDraft.trim() || agentDataDirectoryDraft.trim() === agentDataInfo.currentDirectory || agentDataStatus === "applying" || agentDataStatus === "restarting" || agentDataInfo.environmentOverride} onClick={() => { void applyAgentDataDirectory(); }}>
+                        {agentDataStatus === "applying" ? t("settings.agentDataDirectoryApplying") : agentDataStatus === "restarting" ? t("settings.agentDataDirectoryRestarting") : t("settings.agentDataDirectoryApply")}
+                      </button>
+                    </div>
+                    {agentDataErrorCode ? <div className={styles.agentDataError} role="alert">{t(`settings.agentDataDirectoryError.${agentDataErrorCode}`)}</div> : null}
+                    {agentDataInfo?.environmentOverride ? <div className={styles.agentDataNotice}>{t("settings.agentDataDirectoryEnvironmentDescription")}</div> : null}
+                    {agentDataInfo?.portableRuntimeDirectory ? <div className={styles.portableCacheNote}>
+                      <AliIcon name="info" size={14} />
+                      <span>{t("settings.portableRuntimeCache", { path: agentDataInfo.portableRuntimeDirectory })}</span>
+                    </div> : null}
+                  </div>
+                </section> : null}
                 {desktop.available ? <section className={styles.conversationSection}>
                   <div className={styles.conversationRow}>
                     <div className={styles.conversationCopy}>

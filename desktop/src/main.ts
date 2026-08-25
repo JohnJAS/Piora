@@ -22,13 +22,20 @@ import {
 import {
   readCompanionWindowPosition,
   readMainWindowState,
+  readPiAgentDirectory,
   readPreferredServerPort,
   runtimeProfileDataDirectory,
   writeCompanionWindowPosition,
   writeMainWindowState,
   writePreferredServerPort,
+  writePiAgentDirectory,
   type RuntimeProfile,
 } from "./desktop-state.js";
+import {
+  AgentDataDirectoryError,
+  prepareAgentDataDirectoryChange,
+  validateAgentDataDirectory,
+} from "./agent-data-directory.js";
 import { DesktopBrowserManager } from "./browser-manager.js";
 import { FileLogger, type Logger } from "./logger.js";
 import { ensurePortableDesktopShortcut } from "./portable-shortcut.js";
@@ -42,6 +49,9 @@ const APPLICATION_MENU_CHANNEL = "pi:open-application-menu";
 const REVEAL_PATH_CHANNEL = "pi:reveal-path";
 const OPEN_PATH_CHANNEL = "pi:open-path";
 const DIRECTORY_PICKER_CHANNEL = "pi:directory-picker";
+const AGENT_DATA_DIRECTORY_GET_CHANNEL = "pi:agent-data-directory-get";
+const AGENT_DATA_DIRECTORY_PICKER_CHANNEL = "pi:agent-data-directory-picker";
+const AGENT_DATA_DIRECTORY_APPLY_CHANNEL = "pi:agent-data-directory-apply";
 const COMPANION_VISIBILITY_CHANNEL = "pi:companion-window-visible";
 const COMPANION_ALWAYS_ON_TOP_CHANNEL = "pi:companion-window-always-on-top";
 const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
@@ -143,10 +153,15 @@ function prepareWritableDirectory(directory: string): string {
   return resolvedDirectory;
 }
 
-function resolvePiAgentDirectory(): string {
+function defaultPiAgentDirectory(): string {
+  return resolve(app.getPath("home"), ".pi", "agent");
+}
+
+function resolvePiAgentDirectory(log: Logger): string {
   const configuredByEnvironment = process.env[PI_AGENT_DIRECTORY_ENV]?.trim();
   if (configuredByEnvironment) return prepareWritableDirectory(configuredByEnvironment);
-  return prepareWritableDirectory(join(app.getPath("home"), ".pi", "agent"));
+  const configuredBySettings = readPiAgentDirectory(app.getPath("userData"), log);
+  return prepareWritableDirectory(configuredBySettings ?? defaultPiAgentDirectory());
 }
 
 function installPortableDesktopShortcut(log: Logger): void {
@@ -455,6 +470,116 @@ function registerDirectoryPickerHandler(): void {
     });
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
+}
+
+type AgentDataDirectoryInfo = {
+  currentDirectory: string;
+  defaultDirectory: string;
+  configuredBy: "default" | "settings" | "environment";
+  environmentOverride: boolean;
+  portableRuntimeDirectory?: string;
+};
+
+type AgentDataDirectoryApplyResult = {
+  ok: boolean;
+  code?: "busy" | "environment-override" | "invalid-path" | "same-path" | "overlapping-path" | "target-not-empty" | "migration-failed" | "persist-failed";
+  error?: string;
+  sourceDirectory?: string;
+};
+
+function currentAgentDataDirectoryInfo(): AgentDataDirectoryInfo {
+  if (!piAgentDirectoryPath) throw new Error("Pi data directory is unavailable before desktop startup completes.");
+  const environmentOverride = Boolean(process.env[PI_AGENT_DIRECTORY_ENV]?.trim());
+  const configuredBySettings = readPiAgentDirectory(app.getPath("userData"), logger!);
+  return {
+    currentDirectory: piAgentDirectoryPath,
+    defaultDirectory: defaultPiAgentDirectory(),
+    configuredBy: environmentOverride ? "environment" : configuredBySettings ? "settings" : "default",
+    environmentOverride,
+    ...(process.env.PORTABLE_EXECUTABLE_FILE ? { portableRuntimeDirectory: dirname(process.execPath) } : {}),
+  };
+}
+
+function registerAgentDataDirectoryHandlers(): void {
+  ipcMain.removeHandler(AGENT_DATA_DIRECTORY_GET_CHANNEL);
+  ipcMain.removeHandler(AGENT_DATA_DIRECTORY_PICKER_CHANNEL);
+  ipcMain.removeHandler(AGENT_DATA_DIRECTORY_APPLY_CHANNEL);
+
+  ipcMain.handle(AGENT_DATA_DIRECTORY_GET_CHANNEL, (event): AgentDataDirectoryInfo | null => {
+    if (!isTrustedMainWindowSender(event)) return null;
+    return currentAgentDataDirectoryInfo();
+  });
+
+  ipcMain.handle(
+    AGENT_DATA_DIRECTORY_PICKER_CHANNEL,
+    async (event, requestedDefaultPath: unknown): Promise<string | null> => {
+      if (!isTrustedMainWindowSender(event)) return null;
+      const ownerWindow = mainWindow;
+      if (!ownerWindow || ownerWindow.isDestroyed()) return null;
+      const result = await dialog.showOpenDialog(ownerWindow, {
+        title: app.getLocale().toLowerCase().startsWith("zh") ? "选择 Pi 数据文件夹" : "Select Pi data folder",
+        properties: ["openDirectory", "createDirectory"],
+        ...(typeof requestedDefaultPath === "string" && requestedDefaultPath.trim()
+          ? { defaultPath: resolve(requestedDefaultPath) }
+          : {}),
+      });
+      return result.canceled ? null : result.filePaths[0] ?? null;
+    },
+  );
+
+  ipcMain.handle(
+    AGENT_DATA_DIRECTORY_APPLY_CHANNEL,
+    async (event, request: unknown): Promise<AgentDataDirectoryApplyResult> => {
+      if (!isTrustedMainWindowSender(event) || !logger || !piAgentDirectoryPath) {
+        return { ok: false, code: "invalid-path" };
+      }
+      if (process.env[PI_AGENT_DIRECTORY_ENV]?.trim()) {
+        return { ok: false, code: "environment-override" };
+      }
+      if (runningTaskCount > 0) return { ok: false, code: "busy" };
+      if (!request || typeof request !== "object") return { ok: false, code: "invalid-path" };
+      const candidate = request as { directory?: unknown; migrate?: unknown };
+      if (typeof candidate.directory !== "string" || typeof candidate.migrate !== "boolean") {
+        return { ok: false, code: "invalid-path" };
+      }
+
+      try {
+        const targetDirectory = validateAgentDataDirectory(
+          candidate.directory,
+          piAgentDirectoryPath,
+          app.getPath("home"),
+        );
+        await prepareAgentDataDirectoryChange({
+          currentDirectory: piAgentDirectoryPath,
+          targetDirectory,
+          migrate: candidate.migrate,
+        });
+        const persisted = writePiAgentDirectory(
+          app.getPath("userData"),
+          targetDirectory === defaultPiAgentDirectory() ? null : targetDirectory,
+          logger,
+        );
+        if (!persisted) return { ok: false, code: "persist-failed" };
+
+        logger.info("Pi data directory change is ready; restarting Piora", {
+          sourceDirectory: piAgentDirectoryPath,
+          targetDirectory,
+          migrated: candidate.migrate,
+        });
+        setTimeout(() => {
+          app.relaunch();
+          app.quit();
+        }, 250).unref();
+        return { ok: true, ...(candidate.migrate ? { sourceDirectory: piAgentDirectoryPath } : {}) };
+      } catch (error) {
+        logger.warn("Unable to change the Pi data directory", error);
+        if (error instanceof AgentDataDirectoryError) {
+          return { ok: false, code: error.code, error: error.message };
+        }
+        return { ok: false, code: "migration-failed", error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  );
 }
 
 function isFile(path: string): boolean {
@@ -1266,7 +1391,7 @@ async function startApplication(): Promise<void> {
   installPortableDesktopShortcut(logger);
   await clearObsoleteDesktopWebCaches(logger);
 
-  piAgentDirectoryPath = resolvePiAgentDirectory();
+  piAgentDirectoryPath = resolvePiAgentDirectory(logger);
   logger.info("Using Pi data directory", { directory: piAgentDirectoryPath });
 
   // Show an app-owned shell immediately while the bundled Next.js service
@@ -1300,6 +1425,7 @@ async function startApplication(): Promise<void> {
   registerHarmonyRuntimePickerHandler();
   attachDesktopBrowserManager(mainWindow, logger);
   registerDirectoryPickerHandler();
+  registerAgentDataDirectoryHandlers();
 
   if (PORTABLE_SMOKE_TEST) {
     const smokeMarker = process.env.PIORA_SMOKE_MARKER?.trim();

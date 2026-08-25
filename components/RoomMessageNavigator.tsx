@@ -10,12 +10,15 @@ import {
   type RefObject,
 } from "react";
 import type { RoomMessage } from "@/lib/room-types";
+import { useI18n } from "@/hooks/useI18n";
 import { getRoomMessagePreview } from "@/lib/room-message-navigation";
+import { AliIcon } from "./AliIcon";
 import styles from "./ChatMinimap.module.css";
 
 const MAX_NODE_GAP = 44;
 const MINIMAP_PADDING = 16;
 const PREVIEW_HIDE_DELAY = 180;
+const TIMELINE_PINNED_STORAGE_KEY = "piora:chat-timeline-pinned:v1";
 
 interface NavigatorNode {
   id: string;
@@ -46,16 +49,28 @@ function positionNodes(nodes: NavigatorNode[], height: number): { nodes: Navigat
 }
 
 export function RoomMessageNavigator({ messages, scrollContainer, messageRefs }: Props) {
+  const { t } = useI18n();
   const [visible, setVisible] = useState(false);
   const [nodes, setNodes] = useState<NavigatorNode[]>([]);
   const [height, setHeight] = useState(600);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewPinned, setPreviewPinned] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const previewListRef = useRef<HTMLDivElement>(null);
   const previewItemRefs = useRef(new Map<number, HTMLButtonElement>());
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigationLockRef = useRef<{ index: number; until: number } | null>(null);
+
+  useEffect(() => {
+    try {
+      const pinned = localStorage.getItem(TIMELINE_PINNED_STORAGE_KEY) === "true";
+      setPreviewPinned(pinned);
+      if (pinned) setPreviewOpen(true);
+    } catch {
+      // Keep the default when local storage is unavailable.
+    }
+  }, []);
 
   const positioned = useMemo(() => positionNodes(nodes, height), [height, nodes]);
 
@@ -143,8 +158,24 @@ export function RoomMessageNavigator({ messages, scrollContainer, messageRefs }:
     setPreviewOpen(true);
   }, [cancelHide]);
   const scheduleHide = useCallback(() => {
+    if (previewPinned) return;
     cancelHide();
     hideTimerRef.current = setTimeout(() => setPreviewOpen(false), PREVIEW_HIDE_DELAY);
+  }, [cancelHide, previewPinned]);
+  const togglePreviewPinned = useCallback(() => {
+    setPreviewPinned((current) => {
+      const next = !current;
+      try {
+        localStorage.setItem(TIMELINE_PINNED_STORAGE_KEY, String(next));
+      } catch {
+        // Keep the in-memory preference when storage is unavailable.
+      }
+      if (next) {
+        cancelHide();
+        setPreviewOpen(true);
+      }
+      return next;
+    });
   }, [cancelHide]);
   const handleBlur = useCallback((event: FocusEvent<HTMLDivElement>) => {
     if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
@@ -184,10 +215,23 @@ export function RoomMessageNavigator({ messages, scrollContainer, messageRefs }:
       onClick={() => scrollToNode(node)}
       style={{ top: `${node.topRatio * 100}%`, height: Math.max(14, positioned.gap) }}
     ><span className={styles.dot} aria-hidden="true" /></button>)}
-    {previewOpen ? <div className={styles.preview} data-minimap-preview-box="">
+    {previewOpen || previewPinned ? <div className={styles.preview} data-minimap-preview-box="" data-pinned={previewPinned ? "true" : undefined}>
       <div className={styles.previewHeader}>
-        <span className={styles.previewTitle}>群聊记录</span>
-        <span className={styles.previewCount}>{nodes.length} 条消息</span>
+        <div className={styles.previewHeading}>
+          <span className={styles.previewTitle}>群聊记录</span>
+          <span className={styles.previewCount}>{nodes.length} 条消息</span>
+        </div>
+        <button
+          type="button"
+          className={styles.pinButton}
+          data-active={previewPinned ? "true" : undefined}
+          aria-pressed={previewPinned}
+          aria-label={t(previewPinned ? "chat.timelineUnpin" : "chat.timelinePin")}
+          title={t(previewPinned ? "chat.timelineUnpin" : "chat.timelinePin")}
+          onClick={togglePreviewPinned}
+        >
+          <AliIcon name="pushpin" size={14} />
+        </button>
       </div>
       <div ref={previewListRef} className={styles.previewList}>
         {nodes.map((node) => <button
