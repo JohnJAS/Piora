@@ -46,6 +46,7 @@ interface Props {
   onRenameTask?: (name: string) => void | Promise<void>;
   onExportTask?: () => void;
   onSlashCommandsChange?: (commands: SlashCommandInfo[]) => void;
+  onOpenAutomation?: (automationId: string) => void;
 }
 
 export interface TaskControls {
@@ -221,7 +222,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange }: Props) {
+export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
 
@@ -761,6 +762,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                     prevTimestamp={idx > 0 ? (messages[idx - 1] as AgentMessage & { timestamp?: number }).timestamp : undefined}
                     responseStartedAt={responseStartedAt}
                     sessionId={session?.id ?? sessionIdRef.current ?? undefined}
+                    onOpenAutomation={onOpenAutomation}
                   />
                 );
                 const boundedView = (
@@ -897,7 +899,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
               );
             })()}
             {streamState.isStreaming && streamState.streamingMessage && (
-              <MessageView message={streamState.streamingMessage as AgentMessage} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile} />
+              <MessageView message={streamState.streamingMessage as AgentMessage} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile} onOpenAutomation={onOpenAutomation} />
             )}
 
             {agentRunning && !streamState.streamingMessage && (

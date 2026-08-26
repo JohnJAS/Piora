@@ -7,6 +7,7 @@ const MAX_TASK_TITLE_LENGTH = 80;
 
 type DesktopNotificationBridge = {
   notifyCompletion?: (taskTitle?: string) => Promise<boolean>;
+  notifyAutomation?: (taskTitle: string, status: "succeeded" | "failed" | "interrupted") => Promise<boolean>;
 };
 
 export type CompletionNotificationCapability = "desktop" | "browser" | "unsupported";
@@ -136,6 +137,24 @@ export function useCompletionNotification() {
     }
   }, [commitEnabled]);
 
+  const notifyAutomation = useCallback(async (taskTitle: string, status: "succeeded" | "failed" | "interrupted"): Promise<boolean> => {
+    if (!enabledRef.current) return false;
+    const safeTaskTitle = sanitizeCompletionTaskTitle(taskTitle) ?? "Piora";
+    const desktopBridge = getDesktopNotificationBridge();
+    if (desktopBridge?.notifyAutomation) {
+      try { return await desktopBridge.notifyAutomation(safeTaskTitle, status); } catch { return false; }
+    }
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") {
+      commitEnabled(false);
+      return false;
+    }
+    const chinese = navigator.language.toLowerCase().startsWith("zh");
+    const body = chinese
+      ? status === "succeeded" ? "定时任务已完成，可以回到 Piora 查看结果。" : status === "interrupted" ? "定时任务因 Piora 重启而中断。" : "定时任务执行失败，请回到 Piora 查看详情。"
+      : status === "succeeded" ? "Scheduled task completed. Open Piora to review the result." : status === "interrupted" ? "Scheduled task was interrupted when Piora restarted." : "Scheduled task failed. Open Piora to review the details.";
+    try { new Notification(`${safeTaskTitle} - Piora`, { body, tag: `piora-automation-${status}` }); return true; } catch { return false; }
+  }, [commitEnabled]);
+
   return {
     notificationEnabled: enabled,
     notificationEnabledRef: enabledRef,
@@ -143,5 +162,6 @@ export function useCompletionNotification() {
     setNotificationEnabled,
     onNotificationToggle: toggleNotification,
     notifyCompletion,
+    notifyAutomation,
   };
 }

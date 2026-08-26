@@ -4,6 +4,21 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.18] - 2026-08-27
+
+### Added
+
+- Added persistent scheduled tasks with RRULE and timezone-aware recurrence,
+  pause/resume, run-now controls, missed-run recovery, bounded execution history,
+  and configurable desktop completion notifications.
+- Added chat-scoped heartbeat tasks that continue an existing conversation and
+  project-scoped tasks that create a new conversation for each run.
+- Added a first-party automation tool so agents can create and manage tasks when
+  users explicitly request reminders, monitors, or recurring work.
+- Added Codex-style scheduled-task cards in conversations plus a complete
+  Settings page and right-side task editor for creating, opening, editing,
+  deleting, and inspecting runs.
+
 ## [0.4.17] - 2026-08-26
 
 ### Fixed

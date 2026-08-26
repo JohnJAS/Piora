@@ -69,7 +69,7 @@ function titleModelValue(model: SessionTitleModelPreference): string {
   return JSON.stringify(model);
 }
 
-export type SettingsKey = "general" | "conversation" | "models" | "extensions" | "skills" | "plugins" | "appearance" | "language" | "companion" | "remote" | "archived";
+export type SettingsKey = "general" | "conversation" | "automations" | "models" | "extensions" | "skills" | "plugins" | "appearance" | "language" | "companion" | "remote" | "archived";
 
 interface SettingsEntry {
   key: SettingsKey;
@@ -132,6 +132,12 @@ export function SettingsDialog({
       icon: <AliIcon name="message" size={16} />,
     },
     {
+      key: "automations",
+      labelKey: "automations.title",
+      descriptionKey: "automations.description",
+      icon: <AliIcon name="calendar" size={16} />,
+    },
+    {
       key: "models",
       labelKey: "common.models",
       descriptionKey: "settings.modelsDescription",
@@ -188,7 +194,7 @@ export function SettingsDialog({
   ], []);
 
   const entryGroups = useMemo(() => [
-    { labelKey: "settings.group.personal", keys: ["general", "conversation", "models", "appearance", "language", "companion"] as SettingsKey[] },
+    { labelKey: "settings.group.personal", keys: ["general", "conversation", "automations", "models", "appearance", "language", "companion"] as SettingsKey[] },
     { labelKey: "settings.group.capabilities", keys: ["extensions", "skills", "plugins", "remote"] as SettingsKey[] },
     { labelKey: "settings.group.history", keys: ["archived"] as SettingsKey[] },
   ], []);

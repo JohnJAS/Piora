@@ -106,6 +106,7 @@ const FontSettings = dynamic(() => import("./FontSettings").then((module) => mod
 const CompanionSettingsDialog = dynamic(() => import("./CompanionSettingsDialog").then((module) => module.CompanionSettingsDialog), { ssr: false });
 const RemoteControlSettings = dynamic(() => import("./RemoteControlSettings").then((module) => module.RemoteControlSettings), { ssr: false });
 const ArchivedChatsSettings = dynamic(() => import("./ArchivedChatsSettings").then((module) => module.ArchivedChatsSettings), { ssr: false });
+const AutomationPanel = dynamic(() => import("./AutomationPanel").then((module) => module.AutomationPanel), { ssr: false });
 const SessionHistoryDialog = dynamic(() => import("./SessionHistoryDialog").then((module) => module.SessionHistoryDialog), { ssr: false });
 const CommandPalette = dynamic(() => import("./CommandPalette").then((module) => module.CommandPalette), { ssr: false });
 
@@ -119,7 +120,30 @@ export function AppShell() {
     notificationCapability,
     onNotificationToggle,
     notifyCompletion,
+    notifyAutomation,
   } = useCompletionNotification();
+  useEffect(() => {
+    if (!notificationEnabled) return;
+    let stopped = false;
+    const poll = async () => {
+      try {
+        const response = await fetch("/api/automations/notifications", { cache: "no-store" });
+        if (!response.ok || stopped) return;
+        const payload = await response.json() as { notifications?: Array<{ id: string; title: string; status: "succeeded" | "failed" | "interrupted" }> };
+        const notifications = Array.isArray(payload.notifications) ? payload.notifications : [];
+        const delivered: string[] = [];
+        for (const notification of notifications) {
+          if (await notifyAutomation(notification.title, notification.status)) delivered.push(notification.id);
+        }
+        if (delivered.length > 0 && !stopped) {
+          await fetch("/api/automations/notifications", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: delivered }) });
+        }
+      } catch { /* the scheduler may still be starting */ }
+    };
+    void poll();
+    const timer = setInterval(() => void poll(), 10_000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [notificationEnabled, notifyAutomation]);
   const isMobile = useIsMobile();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   const pendingLandingDraftRef = useRef<ChatDraft | null>(null);
@@ -144,6 +168,7 @@ export function AppShell() {
   // Keep the server and first client render identical. The persisted tab is
   // restored after hydration so React never has to replace this subtree.
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("home");
+  const [selectedAutomationId, setSelectedAutomationId] = useState<string | null>(null);
   const [rightPanelTabRestored, setRightPanelTabRestored] = useState(false);
   const [rightPanelOverlayMode, setRightPanelOverlayMode] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -245,7 +270,7 @@ export function AppShell() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem("piora-right-panel-tab");
-    setRightPanelTab(stored === "review" || stored === "files" || stored === "commands" || stored === "browser" || stored === "harmony" ? stored : "home");
+    setRightPanelTab(stored === "automation" || stored === "review" || stored === "files" || stored === "commands" || stored === "browser" || stored === "harmony" ? stored : "home");
     setRightPanelTabRestored(true);
   }, []);
 
@@ -374,6 +399,12 @@ export function AppShell() {
   const handleOpenProjectPicker = useCallback(() => {
     setActiveTopPanel(null);
     sessionSidebarRef.current?.openProjectPicker();
+  }, []);
+
+  const openAutomation = useCallback((automationId: string) => {
+    setSelectedAutomationId(automationId);
+    setRightPanelTab("automation");
+    setRightPanelOpen(true);
   }, []);
 
   useEffect(() => {
@@ -1434,6 +1465,19 @@ export function AppShell() {
       onActiveKeyChange={setSettingsKey}
       modelCwd={projectCwd ?? activeCwd ?? undefined}
       sections={{
+        automations: (
+          <AutomationPanel
+            embedded
+            sessionId={selectedSession?.id ?? null}
+            sessionName={selectedSession?.name}
+            cwd={projectCwd ?? activeCwd}
+            onSelectAutomation={(id) => {
+              setSettingsDialogOpen(false);
+              openAutomation(id);
+            }}
+            onAutomationChanged={() => setSessionKey((key) => key + 1)}
+          />
+        ),
         extensions: projectCwd ? (
           <ExtensionsConfig
             cwd={projectCwd}
@@ -2280,6 +2324,7 @@ export function AppShell() {
                 onRenameTask={handleTaskRename}
                 onExportTask={handleTaskExport}
                 onSlashCommandsChange={setPiSlashCommands}
+                onOpenAutomation={openAutomation}
               />
             ) : initialCwdStatus === "validating" ? (
               <div
@@ -2386,6 +2431,11 @@ export function AppShell() {
           onMentions={handleAtMentions}
           onMentionLines={handleFileLineMention}
           taskControls={taskControls}
+          selectedAutomationId={selectedAutomationId}
+          sessionId={selectedSession?.id ?? null}
+          sessionName={selectedSession?.name}
+          onSelectAutomation={openAutomation}
+          onAutomationChanged={() => setSessionKey((key) => key + 1)}
         />
       </div>
     {/* File panel toggle — always visible at top-right */}

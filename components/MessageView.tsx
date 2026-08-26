@@ -35,6 +35,10 @@ const DiffView = dynamic(
   () => import("./DiffView").then((module) => module.DiffView),
   { ssr: false },
 );
+const AutomationCard = dynamic(
+  () => import("./AutomationPanel").then((module) => module.AutomationCard),
+  { ssr: false },
+);
 
 const MAX_THINKING_CACHE_ENTRIES = 100;
 const THINKING_LOAD_TIMEOUT_MS = 15_000;
@@ -123,6 +127,7 @@ interface Props {
   prevTimestamp?: number;
   responseStartedAt?: number;
   sessionId?: string;
+  onOpenAutomation?: (automationId: string) => void;
 }
 
 function formatTime(ts?: number): string | null {
@@ -161,7 +166,7 @@ function haveSameRelevantToolResults(
   return true;
 }
 
-export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp, responseStartedAt, sessionId }: Props) {
+export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp, responseStartedAt, sessionId, onOpenAutomation }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} sessionId={sessionId} />;
   }
@@ -175,6 +180,17 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
   if (message.role === "custom") {
     if ((message as CustomMessage).customType === "compaction") {
       return <CompactionMessageView message={message as CustomMessage} />;
+    }
+    if ((message as CustomMessage).customType === "piora-automation") {
+      const details = (message as CustomMessage).details as { automationId?: unknown; name?: unknown; rrule?: unknown } | undefined;
+      return typeof details?.automationId === "string" ? (
+        <AutomationCard
+          automationId={details.automationId}
+          fallbackName={typeof details.name === "string" ? details.name : undefined}
+          fallbackRrule={typeof details.rrule === "string" ? details.rrule : undefined}
+          onOpen={onOpenAutomation}
+        />
+      ) : null;
     }
     return <CustomMessageView message={message as CustomMessage} cwd={cwd} onOpenFile={onOpenFile} />;
   }
@@ -198,7 +214,8 @@ export const MessageView = memo(function MessageView({ message, isStreaming, too
     && prev.onEditContent === next.onEditContent
     && prev.showTimestamp === next.showTimestamp
     && prev.prevTimestamp === next.prevTimestamp
-    && prev.sessionId === next.sessionId;
+    && prev.sessionId === next.sessionId
+    && prev.onOpenAutomation === next.onOpenAutomation;
 });
 
 function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, sessionId }: {

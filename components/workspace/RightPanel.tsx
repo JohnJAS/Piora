@@ -14,8 +14,9 @@ import { RenderErrorBoundary } from "../RenderErrorBoundary";
 import type { TaskControls } from "../ChatWindow";
 import { AliIcon, type AliIconName } from "../AliIcon";
 import styles from "./WorkspacePanel.module.css";
+import { AutomationPanel } from "../AutomationPanel";
 
-export type RightPanelTab = "home" | "review" | "files" | "commands" | "browser" | "harmony";
+export type RightPanelTab = "home" | "automation" | "review" | "files" | "commands" | "browser" | "harmony";
 export interface RightPanelHandle { focusActiveTab: () => void; focusFileSearch: () => void; }
 
 interface Props {
@@ -43,9 +44,15 @@ interface Props {
   onMentions: (relativePaths: string[]) => void;
   onMentionLines: (relativePath: string, startLine: number, endLine: number) => void;
   taskControls: TaskControls | null;
+  selectedAutomationId: string | null;
+  sessionId: string | null;
+  sessionName?: string;
+  onSelectAutomation?: (id: string) => void;
+  onAutomationChanged?: () => void;
 }
 
 const TOOLS: Array<{ id: Exclude<RightPanelTab, "home">; icon: AliIconName; shortcut?: string }> = [
+  { id: "automation", icon: "calendar" },
   { id: "review", icon: "diff", shortcut: "Ctrl+Shift+G" },
   { id: "commands", icon: "code" },
   { id: "browser", icon: "earth", shortcut: "Ctrl+T" },
@@ -259,6 +266,9 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     </section>
     <section id="workspace-harmony" role="tabpanel" aria-labelledby="workspace-harmony-tab" hidden={activeTab !== "harmony"} className={styles.panel}>
       {activeTab === "harmony" ? <RenderErrorBoundary resetKey={`harmony:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><SafeHarmonyPanel active={active && activeTab === "harmony"} /></RenderErrorBoundary> : null}
+    </section>
+    <section id="workspace-automation" role="tabpanel" aria-labelledby="workspace-automation-tab" hidden={activeTab !== "automation"} className={styles.panel}>
+      {activeTab === "automation" ? <RenderErrorBoundary resetKey={`automation:${props.selectedAutomationId ?? "list"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><AutomationPanel automationId={props.selectedAutomationId} sessionId={props.sessionId} sessionName={props.sessionName} cwd={cwd} onSelectAutomation={props.onSelectAutomation} onAutomationChanged={props.onAutomationChanged} /></RenderErrorBoundary> : null}
     </section>
   </div>;
 });

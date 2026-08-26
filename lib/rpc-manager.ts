@@ -625,6 +625,12 @@ export class AgentSessionWrapper {
     if (sessionFile) cacheSessionPath(this.inner.sessionId, sessionFile);
   }
 
+  appendAutomationCard(details: Record<string, unknown>): void {
+    this.persistSessionFile();
+    this.inner.sessionManager.appendCustomMessageEntry("piora-automation", "", true, details);
+    invalidateSessionListCache();
+  }
+
   private persistGoalState(state: GoalRunState | undefined = this.goalState): void {
     if (!state) return;
     this.goalState = state;

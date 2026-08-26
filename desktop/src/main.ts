@@ -243,20 +243,29 @@ function getCompletionNotificationCopy(taskTitle: string | undefined): {
   };
 }
 
+function getAutomationNotificationCopy(taskTitle: string | undefined, status: "succeeded" | "failed" | "interrupted"): { title: string; body: string } {
+  const isChinese = app.getLocale().toLowerCase().startsWith("zh");
+  const body = isChinese
+    ? status === "succeeded" ? "定时任务已完成，可以回到 Piora 查看结果。" : status === "interrupted" ? "定时任务因 Piora 重启而中断。" : "定时任务执行失败，请回到 Piora 查看详情。"
+    : status === "succeeded" ? "Scheduled task completed. Open Piora to review the result." : status === "interrupted" ? "Scheduled task was interrupted when Piora restarted." : "Scheduled task failed. Open Piora to review the details.";
+  return { title: taskTitle ? `${taskTitle} - Piora` : "Piora", body };
+}
+
 function registerCompletionNotificationHandler(): void {
   ipcMain.removeHandler(COMPLETION_NOTIFICATION_CHANNEL);
   ipcMain.handle(
     COMPLETION_NOTIFICATION_CHANNEL,
-    (event, requestedTaskTitle: unknown): boolean => {
+    (event, requested: unknown): boolean => {
       if (!isTrustedCompletionNotificationSender(event)) {
         logger?.warn("Blocked completion notification from an untrusted renderer");
         return false;
       }
       if (!Notification.isSupported()) return false;
 
-      const copy = getCompletionNotificationCopy(
-        sanitizeNotificationTaskTitle(requestedTaskTitle),
-      );
+      const automationRequest = requested && typeof requested === "object" ? requested as { taskTitle?: unknown; status?: unknown } : null;
+      const status = automationRequest && (automationRequest.status === "succeeded" || automationRequest.status === "failed" || automationRequest.status === "interrupted") ? automationRequest.status : null;
+      const title = sanitizeNotificationTaskTitle(automationRequest ? automationRequest.taskTitle : requested);
+      const copy = status ? getAutomationNotificationCopy(title, status) : getCompletionNotificationCopy(title);
       const notification = new Notification({ ...copy, silent: false });
       notification.on("click", () => {
         if (!mainWindow || mainWindow.isDestroyed()) return;

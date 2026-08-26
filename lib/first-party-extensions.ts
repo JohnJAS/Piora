@@ -45,6 +45,14 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
     required: true,
   },
   {
+    id: "piora:automations",
+    fileName: "piora-automations.ts",
+    name: "Piora Scheduled Tasks",
+    description: "Recurring chat heartbeats and standalone project task scheduling.",
+    profiles: ["normal"],
+    required: true,
+  },
+  {
     id: "piora:goal",
     fileName: "piora-goal.ts",
     name: "Piora Target Mode",

@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `692b419f4bb3c0330f410264c646be411be90f075acb1c744091a19602a6256b`
+Lockfile SHA-256: `cf0eee7b6d3821645f24e6ae4a4f5906f38d770e172e7e469bf1371052ce82fe`
 
-Unique locked packages: **1089**. Runtime packages: **584**. Build/development-only packages: **505**.
+Unique locked packages: **1090**. Runtime packages: **585**. Build/development-only packages: **505**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -530,6 +530,7 @@ Every locked package declares a license.
 | `retry` | `0.13.1` | MIT | No |
 | `robust-predicates` | `3.0.3` | Unlicense | No |
 | `roughjs` | `4.6.6` | MIT | No |
+| `rrule` | `2.8.1` | BSD-3-Clause | No |
 | `rw` | `1.3.3` | BSD-3-Clause | No |
 | `safe-buffer` | `5.1.2` | MIT | No |
 | `safe-buffer` | `5.2.1` | MIT | No |

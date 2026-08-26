@@ -12,6 +12,9 @@ const runtime = Object.freeze({
       typeof taskTitle === "string" ? taskTitle : undefined,
     ) as Promise<boolean>;
   },
+  notifyAutomation(taskTitle: string, status: "succeeded" | "failed" | "interrupted"): Promise<boolean> {
+    return ipcRenderer.invoke("pi:completion-notification", { taskTitle, status }) as Promise<boolean>;
+  },
   openMenu(menu: "file" | "edit" | "view" | "help", x: number, y: number): Promise<boolean> {
     return ipcRenderer.invoke("pi:open-application-menu", menu, x, y) as Promise<boolean>;
   },
