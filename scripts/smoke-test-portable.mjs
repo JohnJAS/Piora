@@ -327,7 +327,10 @@ export async function smokeTestPortableExecutable(
     await rm(temporaryDirectory, {
       recursive: true,
       force: true,
-      maxRetries: process.platform === "win32" ? 20 : 0,
+      // Electron may release its Chromium profile asynchronously on every
+      // platform.  Retry cleanup on Linux as well, where Partitions/piora can
+      // briefly remain non-empty after the process has exited.
+      maxRetries: 20,
       retryDelay: 250,
     });
   }
