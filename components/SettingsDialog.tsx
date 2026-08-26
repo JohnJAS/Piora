@@ -111,7 +111,7 @@ export function SettingsDialog({
   const [titleModelsError, setTitleModelsError] = useState<string | null>(null);
   const [agentDataInfo, setAgentDataInfo] = useState<AgentDataDirectoryInfo | null>(null);
   const [agentDataDirectoryDraft, setAgentDataDirectoryDraft] = useState("");
-  const [migrateAgentData, setMigrateAgentData] = useState(true);
+  const [migrateAgentData, setMigrateAgentData] = useState(false);
   const [agentDataStatus, setAgentDataStatus] = useState<"idle" | "loading" | "applying" | "restarting" | "error">("idle");
   const [agentDataErrorCode, setAgentDataErrorCode] = useState<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -252,6 +252,7 @@ export function SettingsDialog({
         if (cancelled) return;
         setAgentDataInfo(info);
         setAgentDataDirectoryDraft(info?.currentDirectory ?? "");
+        setMigrateAgentData(false);
         setAgentDataStatus("idle");
         setAgentDataErrorCode(null);
       })
@@ -275,7 +276,7 @@ export function SettingsDialog({
     setAgentDataStatus("applying");
     setAgentDataErrorCode(null);
     try {
-      const result = await bridge({ directory: agentDataDirectoryDraft.trim(), migrate: migrateAgentData });
+      const result = await bridge({ directory: agentDataDirectoryDraft.trim(), migrate: true });
       if (!result.ok) {
         setAgentDataStatus("error");
         setAgentDataErrorCode(result.code ?? "migration-failed");
@@ -463,26 +464,42 @@ export function SettingsDialog({
                   </div>
                   <div className={styles.agentDataBody}>
                     <label className={styles.agentDataField}>
-                      <span>{t("settings.agentDataDirectoryPath")}</span>
+                      <span>{t("settings.agentDataDirectoryTargetPath")}</span>
                       <span className={styles.agentDataInputRow}>
                         <input
                           value={agentDataDirectoryDraft}
                           onChange={(event) => { setAgentDataDirectoryDraft(event.target.value); setAgentDataErrorCode(null); }}
-                          disabled={agentDataStatus === "loading" || agentDataStatus === "applying" || agentDataInfo?.environmentOverride}
+                          disabled={!migrateAgentData || agentDataStatus === "loading" || agentDataStatus === "applying" || agentDataInfo?.environmentOverride}
                           spellCheck={false}
-                          aria-label={t("settings.agentDataDirectoryPath")}
+                          aria-label={t("settings.agentDataDirectoryTargetPath")}
                         />
-                        <button className={styles.secondaryButton} type="button" disabled={agentDataStatus === "applying" || agentDataInfo?.environmentOverride} onClick={() => { void chooseAgentDataDirectory(); }}>{t("settings.agentDataDirectoryChoose")}</button>
+                        <button className={styles.secondaryButton} type="button" disabled={!migrateAgentData || agentDataStatus === "applying" || agentDataInfo?.environmentOverride} onClick={() => { void chooseAgentDataDirectory(); }}>{t("settings.agentDataDirectoryChoose")}</button>
                       </span>
                     </label>
+                    {agentDataInfo ? <div className={styles.agentDataMeta}>{t("settings.agentDataDirectoryCurrent", { path: agentDataInfo.currentDirectory })}</div> : null}
                     {agentDataInfo ? <div className={styles.agentDataMeta}>{t("settings.agentDataDirectoryDefault", { path: agentDataInfo.defaultDirectory })}</div> : null}
-                    <label className={styles.agentDataMigration}>
-                      <input type="checkbox" checked={migrateAgentData} disabled={agentDataStatus === "applying" || agentDataInfo?.environmentOverride} onChange={(event) => setMigrateAgentData(event.target.checked)} />
+                    <div className={styles.agentDataMigration}>
+                      <button
+                        className={styles.switch}
+                        type="button"
+                        role="switch"
+                        aria-checked={migrateAgentData}
+                        aria-label={t("settings.agentDataMigrate")}
+                        disabled={agentDataStatus === "applying" || agentDataInfo?.environmentOverride}
+                        onClick={() => {
+                          setMigrateAgentData((current) => {
+                            const next = !current;
+                            if (!next) setAgentDataDirectoryDraft(agentDataInfo?.currentDirectory ?? "");
+                            return next;
+                          });
+                          setAgentDataErrorCode(null);
+                        }}
+                      ><span /></button>
                       <span><strong>{t("settings.agentDataMigrate")}</strong><small>{t("settings.agentDataMigrateDescription")}</small></span>
-                    </label>
+                    </div>
                     <div className={styles.agentDataActions}>
-                      <button className={styles.secondaryButton} type="button" disabled={!agentDataInfo || agentDataStatus === "applying" || agentDataInfo.environmentOverride} onClick={() => setAgentDataDirectoryDraft(agentDataInfo?.defaultDirectory ?? "")}>{t("settings.agentDataDirectoryRestoreDefault")}</button>
-                      <button className={styles.primaryButton} type="button" disabled={!agentDataInfo || !agentDataDirectoryDraft.trim() || agentDataDirectoryDraft.trim() === agentDataInfo.currentDirectory || agentDataStatus === "applying" || agentDataStatus === "restarting" || agentDataInfo.environmentOverride} onClick={() => { void applyAgentDataDirectory(); }}>
+                      <button className={styles.secondaryButton} type="button" disabled={!migrateAgentData || !agentDataInfo || agentDataStatus === "applying" || agentDataInfo.environmentOverride} onClick={() => setAgentDataDirectoryDraft(agentDataInfo?.defaultDirectory ?? "")}>{t("settings.agentDataDirectoryRestoreDefault")}</button>
+                      <button className={styles.primaryButton} type="button" disabled={!migrateAgentData || !agentDataInfo || !agentDataDirectoryDraft.trim() || agentDataDirectoryDraft.trim() === agentDataInfo.currentDirectory || agentDataStatus === "applying" || agentDataStatus === "restarting" || agentDataInfo.environmentOverride} onClick={() => { void applyAgentDataDirectory(); }}>
                         {agentDataStatus === "applying" ? t("settings.agentDataDirectoryApplying") : agentDataStatus === "restarting" ? t("settings.agentDataDirectoryRestarting") : t("settings.agentDataDirectoryApply")}
                       </button>
                     </div>
