@@ -1147,6 +1147,9 @@ function ModelDetail({
         <Check label="Image input" checked={model.input?.includes("image") ?? false}
           onChange={(v) => set("input", v ? ["text", "image"] : undefined)} />
       </div>
+      <p style={{ margin: "-8px 0 0", color: "var(--text-dim)", fontSize: "var(--text-xs)", lineHeight: 1.5 }}>
+        勾选“图片输入”后，图片会直接发送给该模型；不勾选时，只有启用了视觉代理且选好了视觉模型，图片才会由视觉模型转成文字说明后再发送。
+      </p>
 
       {model.reasoning && (
         <>
@@ -1818,6 +1821,8 @@ export function ModelsConfig({
   const [modelScopeError, setModelScopeError] = useState<string | null>(null);
   const [modelScopeBusyKey, setModelScopeBusyKey] = useState<string | null>(null);
   const [managedModelTests, setManagedModelTests] = useState<Record<string, ModelTestState>>({});
+  const [modelImageInput, setModelImageInput] = useState<Record<string, boolean>>({});
+  const [modelCapabilityBusyKey, setModelCapabilityBusyKey] = useState<string | null>(null);
   const modelScopeMutationRef = useRef(false);
   const persistedConfiguredModelKeysRef = useRef<Set<string>>(new Set());
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -1860,6 +1865,38 @@ export function ModelsConfig({
     }
   }, [cwd]);
 
+  const loadModelCapabilities = useCallback(async () => {
+    try {
+      const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
+      const response = await fetch(`/api/model-capabilities${query}`);
+      const body = await response.json() as { imageInput?: Record<string, boolean>; error?: string };
+      if (!response.ok || body.error) throw new Error(body.error ?? `HTTP ${response.status}`);
+      setModelImageInput(body.imageInput ?? {});
+    } catch {
+      setModelImageInput({});
+    }
+  }, [cwd]);
+
+  const updateModelImageInput = useCallback(async (model: ManagedModel, imageInput: boolean) => {
+    const key = `${model.provider}/${model.id}`;
+    setModelCapabilityBusyKey(key);
+    try {
+      const response = await fetch("/api/model-capabilities", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...(cwd ? { cwd } : {}), provider: model.provider, id: model.id, imageInput }),
+      });
+      const body = await response.json() as { error?: string };
+      if (!response.ok || body.error) throw new Error(body.error ?? `HTTP ${response.status}`);
+      setModelImageInput((current) => ({ ...current, [key]: imageInput }));
+      onModelsChanged?.();
+    } catch (error) {
+      setModelScopeError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setModelCapabilityBusyKey(null);
+    }
+  }, [cwd, onModelsChanged]);
+
   // A dual-auth provider moves between the two lists when its credential type
   // changes, so any auth change has to reload both — refreshing only one leaves
   // the provider rendered twice, and disconnecting the stale row would delete
@@ -1883,7 +1920,8 @@ export function ModelsConfig({
       .finally(() => setLoading(false));
     refreshAuthProviders();
     void loadModelScope();
-  }, [loadModelScope, refreshAuthProviders]);
+    void loadModelCapabilities();
+  }, [loadModelCapabilities, loadModelScope, refreshAuthProviders]);
 
   useEffect(() => {
     setManagedModelTests({});
@@ -2232,6 +2270,10 @@ export function ModelsConfig({
           )}
         </div>
 
+        <div role="note" style={{ padding: "9px 10px", borderRadius: 6, background: "var(--bg-panel)", color: "var(--text-muted)", fontSize: "var(--text-xs)", lineHeight: 1.5 }}>
+          配置顺序：先确认渠道可用，再在模型行勾选“支持图片输入”（仅在渠道实际支持时勾选），最后可用“测试”验证文本连接。勾选后，聊天会直接发送图片；未勾选的模型则交由你在“视觉代理”中选择的图片模型处理。
+        </div>
+
         {modelScopeError && modelScope && (
           <div role="alert" style={{ padding: "9px 10px", borderRadius: 6, background: "rgba(239,68,68,0.08)", color: "#dc2626", fontSize: "var(--text-sm)" }}>
             {modelScopeError}
@@ -2322,6 +2364,16 @@ export function ModelsConfig({
                         {testSummary}
                       </span>
                     )}
+                    <label title="Declare whether this model accepts image input. This controls direct image sending and visual-agent selection." style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 5, color: "var(--text-muted)", fontSize: "var(--text-xs)", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={modelImageInput[testKey] ?? false}
+                        disabled={modelCapabilityBusyKey === testKey}
+                        onChange={(event) => void updateModelImageInput(model, event.target.checked)}
+                        style={{ width: 13, height: 13, accentColor: "var(--accent)" }}
+                      />
+                      支持图片输入
+                    </label>
                   </span>
                   <button
                     type="button"

@@ -239,6 +239,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
       : [];
 
   const time = formatTime(message.timestamp);
+  const sendError = message.sendError;
   const canFork = !!entryId && !!onFork;
   const canNavigate = !!prevAssistantEntryId && !!onNavigate;
   const contentPreview = useMemo(() => {
@@ -369,6 +370,12 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
         </div>
 
       </div>
+
+      {sendError && (
+        <div role="alert" style={{ marginTop: -10, marginBottom: 10, color: "var(--status-failed, #dc2626)", fontSize: "var(--text-xs)", maxWidth: "85%" }}>
+          发送失败：{sendError}
+        </div>
+      )}
 
       {/* Bottom row: action buttons + timestamp */}
       {(time || canFork || canNavigate || true) && (

@@ -1315,11 +1315,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       agentRunningRef.current = false;
       closeEvents();
       const optimisticKey = optimisticUserMessageKeyRef.current;
+      const sendError = e instanceof EventStreamConnectionError
+        ? e.message
+        : e instanceof Error ? e.message : String(e);
       if (optimisticKey) {
         setMessages((prev) => {
           const last = prev[prev.length - 1];
           return last?.role === "user" && userMessageKey(last) === optimisticKey
-            ? prev.slice(0, -1)
+            ? [...prev.slice(0, -1), { ...last, sendError }]
             : prev;
         });
       }
@@ -1328,9 +1331,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // this branch, so put the text back without clobbering newer input.
       addNotice({
         type: "error",
-        message: e instanceof EventStreamConnectionError
-          ? e.message
-          : e instanceof Error ? e.message : String(e),
+        message: sendError,
       });
       opts.chatInputRef?.current?.restoreFailedPrompt(message, files);
       optimisticUserMessageKeyRef.current = null;

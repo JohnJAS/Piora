@@ -4,10 +4,12 @@ import { join } from "node:path";
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai";
-import { getAgentDir, ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionServices, getAgentDir } from "@earendil-works/pi-coding-agent";
 
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { isBase64ImageWithinLimits } from "./image-attachments";
+import { modelSupportsImages } from "./model-capabilities";
+export { modelSupportsImages } from "./model-capabilities";
 
 export const VISION_AGENT_CONFIG_FILE = "vision-agent.json";
 export const VISION_OBSERVATION_ENTRY_TYPE = "piora-vision-observation";
@@ -44,6 +46,11 @@ export const DEFAULT_VISION_AGENT_CONFIG: VisionAgentConfig = {
   provider: null,
   modelId: null,
 };
+
+/** Use Pi's normal service construction so registered channel providers are visible. */
+async function createVisionModelServices() {
+  return createAgentSessionServices({ cwd: process.cwd(), agentDir: getAgentDir() });
+}
 
 function optionalIdentifier(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -105,12 +112,8 @@ export function writeVisionAgentConfig(config: VisionAgentConfig, baseDir?: stri
   return normalized;
 }
 
-export function modelSupportsImages(model: { input: readonly ("text" | "image")[] } | undefined): boolean {
-  return model?.input.includes("image") === true;
-}
-
 export async function listVisionAgentModels(): Promise<{ models: VisionAgentModelOption[]; error?: string }> {
-  const runtime = await ModelRuntime.create({ refreshOnCreate: false });
+  const { modelRuntime: runtime } = await createVisionModelServices();
   const models = runtime.getModels()
     .filter((model) => modelSupportsImages(model) && runtime.hasConfiguredAuth(model.provider))
     .map((model) => ({ provider: model.provider, modelId: model.id, name: model.name }))
@@ -140,7 +143,7 @@ export async function analyzeImagesWithVisionModel(options: {
     throw new Error("Visual input is invalid or exceeds the attachment limit");
   }
 
-  const runtime = await ModelRuntime.create({ refreshOnCreate: false, signal });
+  const { modelRuntime: runtime } = await createVisionModelServices();
   const loadError = runtime.getError();
   if (loadError) throw new Error(loadError);
   const model = runtime.getModel(config.provider, config.modelId);

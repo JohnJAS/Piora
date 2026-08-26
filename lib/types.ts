@@ -57,6 +57,8 @@ export interface UserMessage {
   deferredContent?: boolean;
   deferredByteLength?: number;
   deferredLineCount?: number;
+  /** Local-only delivery error for an optimistic message; never persisted to Pi. */
+  sendError?: string;
 }
 
 export interface AssistantMessage {

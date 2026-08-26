@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { validateAgentImages } from "./image-attachments";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
+import { applyConfiguredImageInput } from "./model-capabilities";
 import { resolveDefaultModelPreference } from "./model-policy";
 import {
   applyExtensionLoadPlan,
@@ -1042,7 +1043,7 @@ export class AgentSessionWrapper {
           model = this.inner.modelRuntime.getModel(provider, modelId);
         }
         if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
-        await this.inner.setModel(model);
+        await this.inner.setModel(applyConfiguredImageInput(model));
         invalidateModelsCache();
         invalidateSessionListCache();
         return { id: model.id, provider: model.provider };
@@ -2116,6 +2117,7 @@ export async function startRpcSession(
       ...(initial.scopedModels.length > 0 ? { scopedModels: initial.scopedModels } : {}),
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
+    if (inner.model) await inner.setModel(applyConfiguredImageInput(inner.model));
 
     restoreGoalRunFromEntries(inner.sessionId, inner.sessionManager.getBranch());
     restorePlanArtifactFromEntries(inner.sessionId, inner.sessionManager.getBranch());

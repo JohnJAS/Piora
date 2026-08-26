@@ -4,6 +4,23 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.15] - 2026-08-26
+
+### Fixed
+
+- Made image-input capability an explicit per-model setting for both custom
+  and managed channels. The selected capability now drives direct image
+  delivery, visual-agent model selection, and SDK session startup.
+- Restored qwen-token-plan-cn models to the visual-agent discovery path by
+  using the same configured model services as the app runtime.
+- Keep locally submitted text and image messages visible when delivery fails,
+  with an actionable in-chat failure status instead of silently removing them.
+
+### Changed
+
+- Clarified the model settings flow so channel connection, model capability,
+  connection testing, and visual-agent selection are easier to configure.
+
 ## [0.4.14] - 2026-08-26
 
 ### Added
