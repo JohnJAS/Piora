@@ -4,6 +4,13 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.16] - 2026-08-26
+
+### Fixed
+
+- Run the Windows drive-root migration preflight test only on Windows, avoiding
+  an invalid write-permission check against the Linux filesystem root in CI.
+
 ## [0.4.15] - 2026-08-26
 
 ### Fixed
