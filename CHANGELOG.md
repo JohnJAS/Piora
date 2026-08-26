@@ -4,6 +4,23 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-08-26
+
+### Changed
+
+- Made Pi data-directory migration an explicit, disabled-by-default setting,
+  preserving the current directory unless the user opts in and confirms the
+  destination before restart.
+- Extended migration to cover first-party extension data under the configured
+  `PI_CODING_AGENT_DIR`, with staged copy verification, source stability checks,
+  atomic activation, and the original directory retained as a backup.
+
+### Fixed
+
+- Resolved relative file paths from conversation change cards against the
+  originating session workspace, preventing valid file jumps from failing with
+  `Access denied`.
+
 ## [0.4.8] - 2026-08-25
 
 ### Added
