@@ -4,6 +4,21 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.10] - 2026-08-26
+
+### Changed
+
+- Accelerated conversation switching with immediate hover/pointer prefetch,
+  a bounded version-aware client cache, coalesced server projections for
+  unchanged session files, and lazy materialization of only visible history.
+
+### Fixed
+
+- Updated General settings with the migrated Pi data directory as soon as the
+  verified migration succeeds, while preserving that path after restart.
+- Invalidated prefetched history whenever a session becomes active so cached
+  switching cannot hide newly streamed messages.
+
 ## [0.4.9] - 2026-08-26
 
 ### Changed
