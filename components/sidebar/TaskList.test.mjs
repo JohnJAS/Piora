@@ -66,12 +66,17 @@ test("removes the low-value task search field and its filtering path", () => {
   assert.doesNotMatch(rowSource, /searchQuery|<mark/);
 });
 
-test("prefetches a hovered session briefly without retaining stale chat data", () => {
-  assert.match(rowSource, /setTimeout\(\(\) => \{[\s\S]*prefetchSession\(session\)[\s\S]*\}, 100\)/);
-  assert.match(sessionPrefetchSource, /PREFETCH_TTL_MS = 15_000/);
+test("prefetches sessions immediately and retains a bounded versioned switch cache", () => {
+  assert.match(rowSource, /onMouseEnter=\{\(\) => \{[\s\S]*prefetchSession\(session\)/);
+  assert.match(rowSource, /onPointerDown=\{\(\) => \{[\s\S]*prefetchSession\(session\)/);
+  assert.doesNotMatch(rowSource, /prefetchTimerRef/);
+  assert.match(sessionPrefetchSource, /PREFETCH_TTL_MS = 30_000/);
+  assert.match(sessionPrefetchSource, /MAX_PREFETCHED_SESSIONS = 6/);
   assert.match(sessionPrefetchSource, /existing\.modified === session\.modified/);
-  assert.match(sessionPrefetchSource, /data\.info\?\.modified === session\.modified/);
-  assert.match(sessionPrefetchSource, /prefetchedSessions\.delete\(session\.id\)/);
+  assert.match(sessionPrefetchSource, /entry\.modified = data\.info\.modified/);
+  const takeFunction = sessionPrefetchSource.slice(sessionPrefetchSource.indexOf("export function takePrefetchedSession"));
+  assert.match(takeFunction, /return entry\.promise/);
+  assert.doesNotMatch(takeFunction.split("export function invalidatePrefetchedSession")[0], /prefetchedSessions\.delete\(session\.id\)/);
 });
 
 test("persists flags through the flags API and offers archive undo", () => {

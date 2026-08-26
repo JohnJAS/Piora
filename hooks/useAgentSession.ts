@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
-import { takePrefetchedSession } from "@/lib/session-prefetch";
+import { invalidatePrefetchedSession, takePrefetchedSession } from "@/lib/session-prefetch";
 import type {
   AgentMessage,
   ExtensionStatusItem,
@@ -1869,6 +1869,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       sessionIdRef.current = session.id;
       loadSession(session.id, true, true, takePrefetchedSession(session)).then((agentState) => {
         if (agentState?.running) {
+          invalidatePrefetchedSession(session.id);
           if (agentState.state?.isStreaming || agentState.state?.isPromptRunning) {
             agentRunningRef.current = true;
             setAgentRunning(true);
@@ -1904,6 +1905,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const sid = sessionIdRef.current;
+    if (sid && (agentRunning || bashRunning || streamState.isStreaming)) {
+      invalidatePrefetchedSession(sid);
+    }
+  }, [agentRunning, bashRunning, streamState.isStreaming]);
 
   useEffect(() => {
     onSystemPromptChange?.(systemPrompt);

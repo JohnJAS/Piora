@@ -485,6 +485,7 @@ type AgentDataDirectoryApplyResult = {
   code?: "busy" | "environment-override" | "invalid-path" | "migration-required" | "same-path" | "overlapping-path" | "target-not-empty" | "migration-failed" | "persist-failed";
   error?: string;
   sourceDirectory?: string;
+  currentDirectory?: string;
 };
 
 function currentAgentDataDirectoryInfo(): AgentDataDirectoryInfo {
@@ -619,7 +620,11 @@ function registerAgentDataDirectoryHandlers(): void {
           app.relaunch();
           app.quit();
         }, 250).unref();
-        return { ok: true, ...(candidate.migrate ? { sourceDirectory } : {}) };
+        return {
+          ok: true,
+          currentDirectory: targetDirectory,
+          ...(candidate.migrate ? { sourceDirectory } : {}),
+        };
       } catch (error) {
         logger.warn("Unable to change the Pi data directory", error);
         if (runtimeSuspended) {

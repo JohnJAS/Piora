@@ -282,6 +282,14 @@ export function SettingsDialog({
         setAgentDataErrorCode(result.code ?? "migration-failed");
         return;
       }
+      const currentDirectory = result.currentDirectory ?? agentDataDirectoryDraft.trim();
+      setAgentDataInfo((current) => current ? {
+        ...current,
+        currentDirectory,
+        configuredBy: currentDirectory === current.defaultDirectory ? "default" : "settings",
+      } : current);
+      setAgentDataDirectoryDraft(currentDirectory);
+      setMigrateAgentData(false);
       setAgentDataStatus("restarting");
     } catch {
       setAgentDataStatus("error");

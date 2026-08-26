@@ -781,11 +781,17 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                 );
               };
 
-              const rendered: ReactNode[] = [];
+              // Build cheap factories for the full history, then materialize
+              // React elements only for the visible tail. The previous code
+              // created every MessageView before slicing to the last page,
+              // which made switching to a long session scale with its entire
+              // history despite the lazy-history UI.
+              const rendered: Array<() => ReactNode> = [];
               for (let idx = 0; idx < messages.length;) {
                 const msg = messages[idx];
                 if (!isGroupAnchor(msg)) {
-                  rendered.push(renderMessage(idx));
+                  const messageIndex = idx;
+                  rendered.push(() => renderMessage(messageIndex));
                   idx += 1;
                   continue;
                 }
@@ -798,7 +804,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
                 if (finalAssistantIdx === -1) {
                   for (let renderIdx = userIdx; renderIdx < endIdx; renderIdx++) {
-                    rendered.push(renderMessage(renderIdx));
+                    rendered.push(() => renderMessage(renderIdx));
                   }
                   idx = endIdx;
                   continue;
@@ -807,13 +813,13 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                 const isLiveTail = (sessionBusy || streamState.isStreaming) && endIdx === messages.length && userIdx === lastAnchorIdx;
                 if (isLiveTail) {
                   for (let renderIdx = userIdx; renderIdx < endIdx; renderIdx++) {
-                    rendered.push(renderMessage(renderIdx));
+                    rendered.push(() => renderMessage(renderIdx));
                   }
                   idx = endIdx;
                   continue;
                 }
 
-                rendered.push(renderMessage(userIdx));
+                rendered.push(() => renderMessage(userIdx));
 
                 const processIndices: number[] = [];
                 for (let processIdx = userIdx + 1; processIdx < finalAssistantIdx; processIdx++) {
@@ -839,43 +845,42 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
 
                   if (hasFileChanges) {
                     for (const processIdx of visibleProcessIndices) {
-                      rendered.push(renderMessage(processIdx, { keyPrefix: "change-process" }));
+                      rendered.push(() => renderMessage(processIdx, { keyPrefix: "change-process" }));
                     }
                     if (finalProcessMessage) {
-                      rendered.push(renderMessage(finalAssistantIdx, { attachRef: false, keyPrefix: "change-process-final", messageOverride: finalProcessMessage, showTimestamp: false }));
+                      rendered.push(() => renderMessage(finalAssistantIdx, { attachRef: false, keyPrefix: "change-process-final", messageOverride: finalProcessMessage, showTimestamp: false }));
                     }
                   } else {
                     const processRefIdx = visibleProcessIndices
                       .map((processIdx) => visibleRefIndexByMessage.get(processIdx))
                       .find((value): value is number => typeof value === "number")
                       ?? (finalAnswerMessage ? undefined : visibleRefIndexByMessage.get(finalAssistantIdx));
-                    const processGroup = (
-                      <ProcessDetailsGroup
-                        messageCount={processCount}
-                        t={t}
-                        toolCallCount={countToolCalls(messages, visibleProcessIndices) + countToolCallBlocks(finalSplit.processBlocks)}
-                      >
-                        {visibleProcessIndices.map((processIdx) => renderMessage(processIdx, { attachRef: false, keyPrefix: "process" }))}
-                        {finalProcessMessage && renderMessage(finalAssistantIdx, { attachRef: false, keyPrefix: "process-final", messageOverride: finalProcessMessage, showTimestamp: false })}
-                      </ProcessDetailsGroup>
-                    );
                     rendered.push(
-                      <div
-                        key={`process-group-${userIdx}-${finalAssistantIdx}`}
-                        ref={processRefIdx === undefined ? undefined : (el) => { messageRefs.current[processRefIdx] = el; }}
-                        className="chat-message-shell"
-                      >
-                        {processGroup}
-                      </div>,
+                      () => (
+                        <div
+                          key={`process-group-${userIdx}-${finalAssistantIdx}`}
+                          ref={processRefIdx === undefined ? undefined : (el) => { messageRefs.current[processRefIdx] = el; }}
+                          className="chat-message-shell"
+                        >
+                          <ProcessDetailsGroup
+                            messageCount={processCount}
+                            t={t}
+                            toolCallCount={countToolCalls(messages, visibleProcessIndices) + countToolCallBlocks(finalSplit.processBlocks)}
+                          >
+                            {visibleProcessIndices.map((processIdx) => renderMessage(processIdx, { attachRef: false, keyPrefix: "process" }))}
+                            {finalProcessMessage && renderMessage(finalAssistantIdx, { attachRef: false, keyPrefix: "process-final", messageOverride: finalProcessMessage, showTimestamp: false })}
+                          </ProcessDetailsGroup>
+                        </div>
+                      ),
                     );
                   }
                 }
 
                 if (finalAnswerMessage) {
-                  rendered.push(renderMessage(finalAssistantIdx, { messageOverride: finalAnswerMessage }));
+                  rendered.push(() => renderMessage(finalAssistantIdx, { messageOverride: finalAnswerMessage }));
                 }
                 for (let renderIdx = finalAssistantIdx + 1; renderIdx < endIdx; renderIdx++) {
-                  rendered.push(renderMessage(renderIdx));
+                  rendered.push(() => renderMessage(renderIdx));
                 }
                 idx = endIdx;
               }
@@ -887,7 +892,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
                        {t("chat.loadEarlier", { count: startIndex })}
                     </div>
                   )}
-                  {rendered.slice(startIndex)}
+                  {rendered.slice(startIndex).map((render) => render())}
                 </>
               );
             })()}

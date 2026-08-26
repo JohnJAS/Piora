@@ -105,12 +105,7 @@ export function TaskRow({
   const [deleting, setDeleting] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleOptimizationAbortRef = useRef<AbortController | null>(null);
-
-  useEffect(() => () => {
-    if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
-  }, []);
   const taskStatus = useTaskStatus({
     sessionId: session.id,
     isViewing: isSelected,
@@ -228,16 +223,13 @@ export function TaskRow({
       onClick={confirmDelete || renaming ? undefined : onClick}
       onMouseEnter={() => {
         setHovered(true);
-        if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
-        prefetchTimerRef.current = setTimeout(() => {
-          prefetchTimerRef.current = null;
-          prefetchSession(session);
-        }, 100);
+        if (!isSelected && !isRunning) prefetchSession(session);
+      }}
+      onPointerDown={() => {
+        if (!isSelected && !isRunning) prefetchSession(session);
       }}
       onMouseLeave={() => {
         setHovered(false);
-        if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
-        prefetchTimerRef.current = null;
       }}
       onContextMenu={(event) => {
         event.preventDefault();

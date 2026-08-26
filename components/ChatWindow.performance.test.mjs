@@ -12,5 +12,12 @@ test("memoizes historical chat metadata away from streaming token renders", () =
 
 test("long chat rows use browser rendering containment", () => {
   assert.match(source, /className="chat-message-shell"/);
-  assert.match(source, /rendered\.slice\(startIndex\)/);
+  assert.match(source, /const rendered: Array<\(\) => ReactNode> = \[\]/);
+  assert.match(source, /rendered\.slice\(startIndex\)\.map\(\(render\) => render\(\)\)/);
+  assert.doesNotMatch(source, /const rendered: ReactNode\[\]/);
+});
+
+test("materializes only the visible history tail", () => {
+  assert.match(source, /rendered\.push\(\(\) => renderMessage\(messageIndex\)\)/);
+  assert.match(source, /Build cheap factories for the full history/);
 });

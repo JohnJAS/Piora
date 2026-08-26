@@ -14,6 +14,7 @@ import { purgeExpiredTrash, trashSession } from "@/lib/session-trash";
 
 // BranchNavigator still traverses recursively, so keep the response tree shallow.
 const MAX_PROJECTED_TREE_DEPTH = 200;
+const MAX_CACHED_SESSION_RESPONSES = 8;
 
 /**
  * Project the session tree into the shallow navigation tree sent to the client.
@@ -112,6 +113,122 @@ function projectTreeForResponse<T extends { entry: { id: string }; children: T[]
   return projectedRoots;
 }
 
+async function buildSessionResponse(
+  id: string,
+  filePath: string,
+  modified: string,
+  deferThinking: boolean,
+  deferToolResultImages: boolean,
+) {
+  const sm = SessionManager.open(filePath);
+  const entries = sm.getEntries() as never;
+  const leafId = sm.getLeafId();
+  const tree = projectTreeForResponse(sm.getTree());
+  const context = buildSessionContext(entries, leafId, { deferThinking, deferToolResultImages });
+  const header = sm.getHeader();
+  const parentSessionId = header?.parentSession
+    ? await resolveSessionIdByPath(header.parentSession)
+    : undefined;
+  const info = header ? {
+    path: filePath,
+    id: header.id,
+    cwd: header.cwd ?? "",
+    name: sm.getSessionName(),
+    created: header.timestamp,
+    modified,
+    messageCount: context.messages.length,
+    firstMessage: context.messages.find((m) => m.role === "user")
+      ? (() => {
+          const msg = context.messages.find((m) => m.role === "user")!;
+          const c = (msg as { content: unknown }).content;
+          return typeof c === "string" ? c : (Array.isArray(c) ? (c.find((b: { type: string }) => b.type === "text") as { text: string } | undefined)?.text ?? "" : "");
+        })()
+      : "",
+    parentSessionId,
+  } : null;
+
+  return {
+    sessionId: id,
+    filePath,
+    info,
+    leafId,
+    tree,
+    context,
+  };
+}
+
+type SessionRoutePayload = Awaited<ReturnType<typeof buildSessionResponse>>;
+type SessionResponseCacheEntry = {
+  signature: string;
+  lastAccessedAt: number;
+  promise: Promise<SessionRoutePayload>;
+};
+
+declare global {
+  var __pioraSessionResponseCache: Map<string, SessionResponseCacheEntry> | undefined;
+}
+
+function sessionResponseCache(): Map<string, SessionResponseCacheEntry> {
+  if (!globalThis.__pioraSessionResponseCache) globalThis.__pioraSessionResponseCache = new Map();
+  return globalThis.__pioraSessionResponseCache;
+}
+
+async function loadCachedSessionResponse(
+  id: string,
+  filePath: string,
+  deferThinking: boolean,
+  deferToolResultImages: boolean,
+): Promise<SessionRoutePayload> {
+  const fileState = statSync(filePath);
+  const signature = `${fileState.size}:${fileState.mtimeMs}`;
+  // Only retain the lightweight chat-switch projection. Full-history callers
+  // may include large base64 media and should not occupy the in-process LRU.
+  if (!deferThinking || !deferToolResultImages) {
+    return buildSessionResponse(
+      id,
+      filePath,
+      fileState.mtime.toISOString(),
+      deferThinking,
+      deferToolResultImages,
+    );
+  }
+  const cacheKey = `${filePath}\0${deferThinking ? "thinking-deferred" : "thinking-full"}\0${deferToolResultImages ? "media-deferred" : "media-full"}`;
+  const cache = sessionResponseCache();
+  const existing = cache.get(cacheKey);
+  if (existing?.signature === signature) {
+    existing.lastAccessedAt = Date.now();
+    return existing.promise;
+  }
+
+  const entry: SessionResponseCacheEntry = {
+    signature,
+    lastAccessedAt: Date.now(),
+    promise: buildSessionResponse(
+      id,
+      filePath,
+      fileState.mtime.toISOString(),
+      deferThinking,
+      deferToolResultImages,
+    ),
+  };
+  cache.set(cacheKey, entry);
+  while (cache.size > MAX_CACHED_SESSION_RESPONSES) {
+    let oldest: [string, SessionResponseCacheEntry] | null = null;
+    for (const candidate of cache) {
+      if (!oldest || candidate[1].lastAccessedAt < oldest[1].lastAccessedAt) oldest = candidate;
+    }
+    if (!oldest) break;
+    cache.delete(oldest[0]);
+  }
+
+  try {
+    return await entry.promise;
+  } catch (error) {
+    if (cache.get(cacheKey) === entry) cache.delete(cacheKey);
+    throw error;
+  }
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -123,47 +240,15 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const sm = SessionManager.open(filePath);
-    const entries = sm.getEntries() as never;
-    const leafId = sm.getLeafId();
-    const tree = projectTreeForResponse(sm.getTree());
     const searchParams = new URL(req.url).searchParams;
     const deferThinking = searchParams.has("deferThinking");
     const deferToolResultImages = searchParams.has("deferMedia");
-    const context = buildSessionContext(entries, leafId, { deferThinking, deferToolResultImages });
-
-    const header = sm.getHeader();
-    let modified = header?.timestamp ?? new Date().toISOString();
-    try { modified = statSync(filePath).mtime.toISOString(); } catch { /* use header timestamp */ }
-    const parentSessionId = header?.parentSession
-      ? await resolveSessionIdByPath(header.parentSession)
-      : undefined;
-    const info = header ? {
-      path: filePath,
-      id: header.id,
-      cwd: header.cwd ?? "",
-      name: sm.getSessionName(),
-      created: header.timestamp,
-      modified,
-      messageCount: context.messages.length,
-      firstMessage: context.messages.find((m) => m.role === "user")
-        ? (() => {
-            const msg = context.messages.find((m) => m.role === "user")!;
-            const c = (msg as { content: unknown }).content;
-            return typeof c === "string" ? c : (Array.isArray(c) ? (c.find((b: { type: string }) => b.type === "text") as { text: string } | undefined)?.text ?? "" : "");
-          })()
-        : "",
-      parentSessionId,
-    } : null;
-
-    return NextResponse.json({
-      sessionId: id,
+    return NextResponse.json(await loadCachedSessionResponse(
+      id,
       filePath,
-      info,
-      leafId,
-      tree,
-      context,
-    });
+      deferThinking,
+      deferToolResultImages,
+    ));
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }

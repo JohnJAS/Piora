@@ -18,6 +18,7 @@ declare global {
         code?: "busy" | "environment-override" | "invalid-path" | "migration-required" | "same-path" | "overlapping-path" | "target-not-empty" | "migration-failed" | "persist-failed";
         error?: string;
         sourceDirectory?: string;
+        currentDirectory?: string;
       }>;
       platform?: string;
       openMenu?: (menu: "file" | "edit" | "view" | "help", x: number, y: number) => Promise<boolean>;
