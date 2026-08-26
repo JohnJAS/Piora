@@ -500,6 +500,45 @@ function currentAgentDataDirectoryInfo(): AgentDataDirectoryInfo {
   };
 }
 
+async function suspendAgentRuntimeForDataMigration(): Promise<void> {
+  await requestHarmonyEmergencyStop("agent_data_directory_migration");
+  const activeServer = server;
+  server = undefined;
+  serverUrl = undefined;
+  await activeServer?.stop();
+}
+
+async function restoreAgentRuntimeAfterDataMigrationFailure(
+  sourceDirectory: string,
+): Promise<void> {
+  if (!logger) return;
+  piAgentDirectoryPath = sourceDirectory;
+  const restoredRuntime = createStandaloneForProfile("normal");
+  server = restoredRuntime.instance;
+  try {
+    const restoredUrl = await restoredRuntime.instance.start();
+    serverUrl = restoredUrl;
+    activateStandaloneProfile("normal", restoredRuntime.dataDirectory, restoredUrl);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      await loadApplicationWindow(mainWindow, restoredUrl, logger);
+    }
+    logger.info("Restored the original Pi data directory after migration failure", {
+      sourceDirectory,
+    });
+  } catch (error) {
+    server = undefined;
+    serverUrl = undefined;
+    logger.error("Unable to restore the original Pi runtime after migration failure", error);
+    // The persisted setting still points at the source directory. A clean
+    // relaunch is the final recovery path if the in-process restart fails.
+    setTimeout(() => {
+      app.relaunch();
+      app.quit();
+    }, 250).unref();
+    throw error;
+  }
+}
+
 function registerAgentDataDirectoryHandlers(): void {
   ipcMain.removeHandler(AGENT_DATA_DIRECTORY_GET_CHANNEL);
   ipcMain.removeHandler(AGENT_DATA_DIRECTORY_PICKER_CHANNEL);
@@ -543,14 +582,18 @@ function registerAgentDataDirectoryHandlers(): void {
         return { ok: false, code: "invalid-path" };
       }
 
+      const sourceDirectory = piAgentDirectoryPath;
+      let runtimeSuspended = false;
       try {
         const targetDirectory = validateAgentDataDirectory(
           candidate.directory,
-          piAgentDirectoryPath,
+          sourceDirectory,
           app.getPath("home"),
         );
+        runtimeSuspended = true;
+        await suspendAgentRuntimeForDataMigration();
         await prepareAgentDataDirectoryChange({
-          currentDirectory: piAgentDirectoryPath,
+          currentDirectory: sourceDirectory,
           targetDirectory,
           migrate: candidate.migrate,
         });
@@ -559,20 +602,32 @@ function registerAgentDataDirectoryHandlers(): void {
           targetDirectory === defaultPiAgentDirectory() ? null : targetDirectory,
           logger,
         );
-        if (!persisted) return { ok: false, code: "persist-failed" };
+        if (!persisted) {
+          await restoreAgentRuntimeAfterDataMigrationFailure(sourceDirectory);
+          runtimeSuspended = false;
+          return { ok: false, code: "persist-failed" };
+        }
 
         logger.info("Pi data directory change is ready; restarting Piora", {
-          sourceDirectory: piAgentDirectoryPath,
+          sourceDirectory,
           targetDirectory,
           migrated: candidate.migrate,
         });
+        piAgentDirectoryPath = targetDirectory;
         setTimeout(() => {
           app.relaunch();
           app.quit();
         }, 250).unref();
-        return { ok: true, ...(candidate.migrate ? { sourceDirectory: piAgentDirectoryPath } : {}) };
+        return { ok: true, ...(candidate.migrate ? { sourceDirectory } : {}) };
       } catch (error) {
         logger.warn("Unable to change the Pi data directory", error);
+        if (runtimeSuspended) {
+          try {
+            await restoreAgentRuntimeAfterDataMigrationFailure(sourceDirectory);
+          } catch (restoreError) {
+            logger.error("Pi data migration rollback requires an application relaunch", restoreError);
+          }
+        }
         if (error instanceof AgentDataDirectoryError) {
           return { ok: false, code: error.code, error: error.message };
         }

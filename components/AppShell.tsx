@@ -24,6 +24,7 @@ import { SystemPromptEditor } from "./SystemPromptEditor";
 import { copyText } from "@/lib/clipboard";
 import { setDraft, type ChatDraft } from "@/lib/draft-store";
 import { getFileName } from "@/lib/file-paths";
+import { resolveWorkspaceFilePath } from "@/lib/file-links";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
 import { getInitialNavigation } from "@/lib/initial-navigation";
 import {
@@ -1068,8 +1069,15 @@ export function AppShell() {
   }, [activeCwd, isMobile]);
 
   const handleOpenLinkedFile = useCallback((filePath: string) => {
-    handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null });
-  }, [handleOpenFile, selectedSession?.id]);
+    const resolvedPath = resolveWorkspaceFilePath(
+      filePath,
+      selectedSession?.cwd ?? newSessionCwd ?? activeCwd ?? undefined,
+    );
+    if (!resolvedPath) return;
+    handleOpenFile(resolvedPath, getFileName(resolvedPath), {
+      sourceSessionId: selectedSession?.id ?? null,
+    });
+  }, [activeCwd, handleOpenFile, newSessionCwd, selectedSession?.cwd, selectedSession?.id]);
 
   const handleCloseFileTab = useCallback(async (tabId: string) => {
     const closingIndex = fileTabs.findIndex((tab) => tab.id === tabId);

@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import JSZip from "jszip";
 import {
   getRuntimeHomeDirectory,
+  getRuntimeAgentDataDirectory,
   type RuntimeHomeEnvironment,
 } from "./runtime-home";
 import { BUNDLED_COMPANION_PETS_PUBLIC_PATH } from "./companion-store";
@@ -1213,7 +1214,7 @@ export function getCodexBuiltinPetsAssetsDirectory(
 export function getPioraPetsDirectory(
   environment: CompanionPetEnvironment = process.env,
 ): string {
-  return path.join(getRuntimeHomeDirectory(environment), ".pi", "agent", "piora", "pets");
+  return path.join(getRuntimeAgentDataDirectory(environment), "piora", "pets");
 }
 
 export function getBundledPioraPetsDirectory(): string {

@@ -3,6 +3,7 @@ import path from "node:path";
 export interface RuntimeHomeEnvironment {
   readonly [key: string]: string | undefined;
   PIORA_HOME?: string;
+  PI_CODING_AGENT_DIR?: string;
   USERPROFILE?: string;
   HOME?: string;
 }
@@ -30,4 +31,18 @@ export function getRuntimeHomeDirectory(
   }
 
   return path.resolve(homeDirectory);
+}
+
+export function getRuntimeAgentDataDirectory(
+  environment: RuntimeHomeEnvironment = process.env,
+): string {
+  const configuredDirectory = environment.PI_CODING_AGENT_DIR?.trim();
+  if (!configuredDirectory) {
+    return path.join(getRuntimeHomeDirectory(environment), ".pi", "agent");
+  }
+  if (configuredDirectory === "~") return getRuntimeHomeDirectory(environment);
+  if (configuredDirectory.startsWith("~/") || configuredDirectory.startsWith("~\\")) {
+    return path.resolve(getRuntimeHomeDirectory(environment), configuredDirectory.slice(2));
+  }
+  return path.resolve(configuredDirectory);
 }

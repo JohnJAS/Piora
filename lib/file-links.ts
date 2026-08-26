@@ -52,6 +52,29 @@ function isPathInside(candidate: string, root: string): boolean {
   return filePath === rootPath || filePath.startsWith(`${rootPath}/`);
 }
 
+export function resolveWorkspaceFilePath(
+  filePath: string,
+  workspaceDirectory?: string,
+): string | null {
+  const trimmedPath = filePath.trim();
+  if (!trimmedPath) return null;
+  const usesWindowsPaths = /^[a-zA-Z]:[\\/]/.test(trimmedPath)
+    || trimmedPath.startsWith("\\\\")
+    || Boolean(workspaceDirectory && (/^[a-zA-Z]:[\\/]/.test(workspaceDirectory) || workspaceDirectory.startsWith("\\\\")));
+  const normalizedPath = usesWindowsPaths
+    ? trimmedPath.replace(/\\/g, "/")
+    : normalizeFilePathSlashes(trimmedPath);
+  const isAbsolute = /^[a-zA-Z]:\//.test(normalizedPath)
+    || normalizedPath.startsWith("/")
+    || normalizedPath.startsWith("//");
+  if (isAbsolute) return normalizeLocalPath(normalizedPath);
+  if (!workspaceDirectory) return normalizedPath;
+
+  const normalizedWorkspace = normalizeLocalPath(workspaceDirectory).replace(/\/+$/, "");
+  const resolvedPath = normalizeLocalPath(`${normalizedWorkspace}/${normalizedPath}`);
+  return isPathInside(resolvedPath, normalizedWorkspace) ? resolvedPath : null;
+}
+
 function looksLikeRelativeFileHref(href: string): boolean {
   if (href.startsWith("#") || href.startsWith("?")) return false;
   if (href.startsWith("./") || href.startsWith("../")) return true;

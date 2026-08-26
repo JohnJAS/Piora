@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync } from "fs";
-import { homedir } from "os";
 import { dirname, join } from "path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import lockfile from "proper-lockfile";
 import { writePrivateFileAtomicSync } from "./atomic-file.ts";
 
@@ -13,7 +13,9 @@ export interface SessionFlag {
 export type SessionFlags = Record<string, SessionFlag>;
 export type SessionFlagPatch = Pick<SessionFlag, "pinned" | "archived">;
 
-export const SESSION_FLAGS_PATH = join(homedir(), ".pi", "agent", "piora", "session-flags.json");
+export function getSessionFlagsPath(): string {
+  return join(getAgentDir(), "piora", "session-flags.json");
+}
 
 function cleanFlag(value: unknown): SessionFlag | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -40,7 +42,7 @@ export function parseSessionFlags(raw: string): SessionFlags {
   }
 }
 
-export function readSessionFlags(path = SESSION_FLAGS_PATH): SessionFlags {
+export function readSessionFlags(path = getSessionFlagsPath()): SessionFlags {
   try {
     return parseSessionFlags(readFileSync(path, "utf8"));
   } catch (error) {
@@ -68,14 +70,14 @@ export function applySessionFlagPatch(
 export async function updateSessionFlag(
   sessionId: string,
   patch: SessionFlagPatch,
-  path = SESSION_FLAGS_PATH,
+  path = getSessionFlagsPath(),
 ): Promise<SessionFlags> {
   const directory = dirname(path);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const release = await lockfile.lock(directory, {
     lockfilePath: `${path}.lock`,
     realpath: false,
-    retries: { retries: 50, factor: 1.15, minTimeout: 4, maxTimeout: 50 },
+    retries: { retries: 100, factor: 1.15, minTimeout: 4, maxTimeout: 100 },
   });
   try {
     const flags = applySessionFlagPatch(readSessionFlags(path), sessionId, patch);

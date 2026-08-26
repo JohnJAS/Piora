@@ -3,7 +3,7 @@ import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
 import { writePrivateFileAtomicSync } from "./atomic-file.ts";
-import { getRuntimeHomeDirectory, type RuntimeHomeEnvironment } from "./runtime-home.ts";
+import { getRuntimeAgentDataDirectory, type RuntimeHomeEnvironment } from "./runtime-home.ts";
 import type { AgentRuntimeProfile } from "./agent-runtime-profile.ts";
 
 const STORE_VERSION = 1;
@@ -43,9 +43,7 @@ export function getAgentProfileStorePath(
   environment: RuntimeHomeEnvironment = process.env,
 ): string {
   return join(
-    getRuntimeHomeDirectory(environment),
-    ".pi",
-    "agent",
+    getRuntimeAgentDataDirectory(environment),
     "piora",
     "agent-runtime-profiles.json",
   );

@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Logger } from "./logger.js";
 
@@ -75,13 +75,21 @@ function writeDesktopState(
 ): boolean {
   try {
     const state = { ...readDesktopState(userDataDirectory, logger), ...patch };
+    const targetPath = statePath(userDataDirectory);
+    const temporaryPath = `${targetPath}.${process.pid}.tmp`;
     writeFileSync(
-      statePath(userDataDirectory),
+      temporaryPath,
       `${JSON.stringify(state, null, 2)}\n`,
       "utf8",
     );
+    renameSync(temporaryPath, targetPath);
     return true;
   } catch (error) {
+    try {
+      unlinkSync(`${statePath(userDataDirectory)}.${process.pid}.tmp`);
+    } catch {
+      // The temporary file may not have been created.
+    }
     logger.warn("Unable to persist desktop state", error);
     return false;
   }

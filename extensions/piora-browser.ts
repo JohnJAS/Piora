@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
-import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { defineTool, getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { chromium, type BrowserContext, type Locator, type Page } from "playwright-core";
 
 type BrowserSession = {
@@ -52,13 +52,7 @@ function browserProfileDirectory(): string {
   // Keep user-owned runtime data opaque to Next's static file tracer. Calling
   // os.homedir() at module scope lets node-file-trace resolve and recursively
   // include a developer's live Chromium profile in standalone output.
-  const environment = Reflect.get(process, "env") as NodeJS.ProcessEnv;
-  const homeKey = process.platform === "win32" ? "USERPROFILE" : "HOME";
-  const homeDirectory = Reflect.get(environment, homeKey);
-  if (typeof homeDirectory !== "string" || !homeDirectory.trim()) {
-    throw new Error(`Piora cannot resolve the browser profile directory because ${homeKey} is unavailable.`);
-  }
-  return join(homeDirectory, ".pi", "agent", "piora", "browser-profile");
+  return join(getAgentDir(), "piora", "browser-profile");
 }
 
 function browserStorageStatePath(): string {
