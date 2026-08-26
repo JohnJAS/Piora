@@ -22,6 +22,8 @@ declare global {
       }>;
       platform?: string;
       openMenu?: (menu: "file" | "edit" | "view" | "help", x: number, y: number) => Promise<boolean>;
+      getUpdateState?: () => Promise<DesktopUpdateState | null>;
+      onUpdateState?: (listener: (state: DesktopUpdateState) => void) => () => void;
       revealPath?: (filePath: string) => Promise<boolean>;
       openPath?: (filePath: string) => Promise<boolean>;
       setCompanionWindowVisible?: (visible: boolean) => Promise<boolean>;
@@ -41,6 +43,14 @@ declare global {
       };
     };
   }
+}
+
+export interface DesktopUpdateState {
+  status: "unsupported" | "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "error";
+  currentVersion: string;
+  availableVersion?: string;
+  progressPercent?: number;
+  error?: string;
 }
 
 export interface DesktopBrowserState {

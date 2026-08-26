@@ -15,6 +15,14 @@ const runtime = Object.freeze({
   openMenu(menu: "file" | "edit" | "view" | "help", x: number, y: number): Promise<boolean> {
     return ipcRenderer.invoke("pi:open-application-menu", menu, x, y) as Promise<boolean>;
   },
+  getUpdateState() {
+    return ipcRenderer.invoke("pi:update-state-get");
+  },
+  onUpdateState(listener: (state: unknown) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, state: unknown) => listener(state);
+    ipcRenderer.on("pi:update-state", handler);
+    return () => ipcRenderer.removeListener("pi:update-state", handler);
+  },
   revealPath(filePath: string): Promise<boolean> {
     return ipcRenderer.invoke("pi:reveal-path", filePath) as Promise<boolean>;
   },

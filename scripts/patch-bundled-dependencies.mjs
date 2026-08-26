@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cp, lstat, mkdtemp, readFile, realpath, rename, rm } from "node:fs/promises";
+import { cp, lstat, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -139,10 +139,39 @@ export async function patchBundledUndici(root = projectRoot, sourceRoot = root) 
   });
 }
 
+export async function patchElectronBuilderWorkspaceCollector(root = projectRoot) {
+  const packageRoot = join(root, "node_modules", "app-builder-lib");
+  const packageManifest = await readPackage(packageRoot);
+  if (packageManifest.name !== "app-builder-lib" || packageManifest.version !== "26.15.3") {
+    throw new Error(
+      `Expected locked app-builder-lib 26.15.3, found ${packageManifest.name}@${packageManifest.version}`,
+    );
+  }
+
+  const collectorPath = join(packageRoot, "out", "util", "appFileCopier.js");
+  const source = await readFile(collectorPath, "utf8");
+  const packageManagerFirst = "const pmApproaches = [await packager.getPackageManager(), node_module_collector_1.PM.TRAVERSAL];";
+  const traversalFirst = "const pmApproaches = [node_module_collector_1.PM.TRAVERSAL, await packager.getPackageManager()];";
+  if (source.includes(traversalFirst)) {
+    return { patched: false, reason: "already-patched", version: packageManifest.version };
+  }
+  const occurrences = source.split(packageManagerFirst).length - 1;
+  if (occurrences !== 1) {
+    throw new Error(`Expected one electron-builder workspace collector hook, found ${occurrences}.`);
+  }
+  await writeFile(collectorPath, source.replace(packageManagerFirst, traversalFirst), "utf8");
+  const verified = await readFile(collectorPath, "utf8");
+  if (!verified.includes(traversalFirst) || verified.includes(packageManagerFirst)) {
+    throw new Error("electron-builder workspace collector patch verification failed.");
+  }
+  return { patched: true, version: packageManifest.version };
+}
+
 async function main() {
   const patches = await Promise.all([
     patchBundledBraceExpansion().then((result) => ({ package: "brace-expansion", ...result })),
     patchBundledUndici().then((result) => ({ package: "undici", ...result })),
+    patchElectronBuilderWorkspaceCollector().then((result) => ({ package: "app-builder-lib", ...result })),
   ]);
   console.log(JSON.stringify({ bundledDependencyPatches: patches }));
 }

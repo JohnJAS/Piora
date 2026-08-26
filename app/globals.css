@@ -3136,6 +3136,9 @@ select:focus-visible,
 }
 
 .desktop-titlebar-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   height: 28px;
   padding: 0 9px;
   border: 0;
@@ -3148,6 +3151,23 @@ select:focus-visible,
   transition: color 100ms ease, background 100ms ease;
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+.desktop-titlebar-menu[data-update-available="true"] {
+  color: var(--text);
+}
+
+.desktop-titlebar-update-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  line-height: 17px;
 }
 
 .desktop-titlebar-menu:hover,

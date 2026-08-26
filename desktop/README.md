@@ -46,14 +46,19 @@ Next/Pi dependencies are present, starts the service in isolation, and checks
 both desktop-token rejection and authenticated health/root responses.
 
 Electron Builder runs `scripts/electron-after-pack-licenses.cjs` after the final
-`resources/web` tree is copied and before the portable executable is assembled. It writes an
+`resources/web` tree is copied and before the Windows packages are assembled. It writes an
 exact package-copy manifest, CycloneDX SBOM, and content-addressed license texts under
 `resources/licenses/third-party/`. The package verifier recomputes and compares this bundle;
 do not hand-edit it or replace it with the broader source lockfile inventory.
 
-Stable tags publish Windows x64 ZIP/portable EXE artifacts and a Linux x64
-AppImage. The Linux package intentionally omits the Windows-only pinned local
-Whisper runtime, so local speech transcription reports unavailable there.
+Stable tags publish an assisted Windows x64 NSIS installer, update metadata,
+ZIP/portable EXE artifacts, and a Linux x64 AppImage. The installer allows a
+custom destination and is the recommended edition: installed builds check the
+latest stable GitHub Release after startup, expose progress and restart/install
+actions in Help, and never install an update while a task is running. Portable
+builds link to the installer instead of modifying themselves. The Linux package
+intentionally omits the Windows-only pinned local Whisper runtime, so local
+speech transcription reports unavailable there.
 
 ## Security boundary
 

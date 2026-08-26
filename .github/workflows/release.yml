@@ -101,8 +101,12 @@ jobs:
       - name: Verify bundled backgrounds
         run: npm run verify:backgrounds
 
-      - name: Build portable Windows application
+      - name: Build Windows desktop applications
         run: npm run dist:win
+
+      - name: Verify Windows update metadata
+        shell: pwsh
+        run: node scripts/verify-windows-update-artifacts.mjs desktop/release "$env:GITHUB_REF_NAME"
 
       - name: Verify packaged standalone service
         run: npm run verify:package
@@ -115,6 +119,22 @@ jobs:
         # the packaged Electron runtime directly here and keep the portable
         # wrapper's cached-launch gate for developer/release-machine validation.
         run: node scripts/smoke-test-portable.mjs desktop/release/win-unpacked/Piora.exe --expected-version "$env:GITHUB_REF_NAME" --packaged-runtime
+
+      - name: Install and smoke-test NSIS application
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $installer = (Resolve-Path -LiteralPath "desktop/release/Piora-$version-win-x64-setup.exe").Path
+          $installDirectory = Join-Path $env:RUNNER_TEMP "Piora-installed-$version"
+          $installation = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installDirectory") -Wait -PassThru
+          if ($installation.ExitCode -ne 0) {
+            throw "NSIS installation failed with exit code $($installation.ExitCode)"
+          }
+          $installedExecutable = Join-Path $installDirectory 'Piora.exe'
+          if (-not (Test-Path -LiteralPath $installedExecutable -PathType Leaf)) {
+            throw "Installed Piora executable is missing: $installedExecutable"
+          }
+          node scripts/smoke-test-portable.mjs $installedExecutable --expected-version "$env:GITHUB_REF_NAME" --packaged-runtime
 
       - name: Create and verify extract-and-run archive
         shell: pwsh
@@ -149,6 +169,9 @@ jobs:
           $releaseRoot = (Resolve-Path -LiteralPath desktop/release).Path
           $expectedNames = @(
             "Piora-$version-win-x64-portable.exe",
+            "Piora-$version-win-x64-setup.exe",
+            "Piora-$version-win-x64-setup.exe.blockmap",
+            "latest.yml",
             "Piora-$version-win-x64.zip"
           )
           $artifacts = @($expectedNames | ForEach-Object {
@@ -173,7 +196,10 @@ jobs:
           name: piora-windows-${{ github.ref_name }}
           path: |
             desktop/release/*-portable.exe
+            desktop/release/*-setup.exe
+            desktop/release/*-setup.exe.blockmap
             desktop/release/*-win-x64.zip
+            desktop/release/latest.yml
             desktop/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
@@ -271,7 +297,7 @@ jobs:
 
           $expected = @{}
           foreach ($line in Get-Content -LiteralPath $checksumPath) {
-            if ($line -notmatch '^([0-9a-fA-F]{64})  ([^\\/]+\.(?:exe|zip))$') {
+            if ($line -notmatch '^([0-9a-fA-F]{64})  ([^\\/]+\.(?:exe|zip|blockmap|yml))$') {
               throw "Malformed checksum line: $line"
             }
             $name = $Matches[2]
@@ -284,6 +310,9 @@ jobs:
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           $expectedNames = @(
             "Piora-$version-win-x64-portable.exe",
+            "Piora-$version-win-x64-setup.exe",
+            "Piora-$version-win-x64-setup.exe.blockmap",
+            "latest.yml",
             "Piora-$version-win-x64.zip"
           )
           $artifacts = @(Get-ChildItem -LiteralPath $root -File | Where-Object {
@@ -336,12 +365,15 @@ jobs:
           $root = (Resolve-Path -LiteralPath release-payload).Path
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           $assets = @(
+            (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-win-x64-setup.exe")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-win-x64-setup.exe.blockmap")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $root "latest.yml")).Path,
             (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-win-x64-portable.exe")).Path,
             (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-win-x64.zip")).Path,
             (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-linux-x64-portable.AppImage")).Path
           )
           $assets += (Resolve-Path -LiteralPath (Join-Path $root 'SHA256SUMS.txt')).Path
-          $releaseNotes = "Stable desktop release:`n- Windows x64 ZIP: extract, then run Piora.exe.`n- Windows x64 portable EXE: run the single executable directly.`n- Linux x64 AppImage: mark executable, then run it.`n`nPackages are not code-signed. Verify the selected package against SHA256SUMS.txt before running. Linux currently reports local speech transcription as unavailable because no reviewed bundled whisper.cpp Linux runtime is shipped; all other desktop capabilities are packaged normally.`n`nRelease validation includes source hygiene, license inventory, lint, type checking, unit tests, packaged-service isolation, Windows and Linux desktop-runtime startup, archive integrity, and SHA-256 verification."
+          $releaseNotes = "Stable desktop release:`n- Windows x64 installer (recommended): choose an installation directory and receive future updates from Piora's Help menu.`n- Windows x64 ZIP: extract, then run Piora.exe.`n- Windows x64 portable EXE: run the single executable directly; install the recommended edition to enable automatic updates.`n- Linux x64 AppImage: mark executable, then run it.`n`nPackages are not code-signed. Verify the selected package against SHA256SUMS.txt before running. Linux currently reports local speech transcription as unavailable because no reviewed bundled whisper.cpp Linux runtime is shipped; all other desktop capabilities are packaged normally.`n`nRelease validation includes source hygiene, license inventory, lint, type checking, unit tests, update-manifest integrity, installed Windows runtime startup, packaged-service isolation, Windows and Linux desktop-runtime startup, archive integrity, and SHA-256 verification."
           & gh release create $env:GITHUB_REF_NAME @assets `
             --repo $env:GITHUB_REPOSITORY `
             --title "Piora $env:GITHUB_REF_NAME" `

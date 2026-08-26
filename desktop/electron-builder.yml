@@ -89,6 +89,11 @@ extraResources:
 
 win:
   icon: icon.ico
+  # Stable releases are currently checksum-verified but not Authenticode
+  # signed. Keep updater signature verification disabled until CI is supplied
+  # with a Windows signing certificate, otherwise unsigned update installers
+  # are rejected before their manifest SHA-512 can be checked.
+  verifyUpdateCodeSignature: false
   # Piora renders its own localized interface. Keep only the Chromium locale
   # packs used by the shipped English and Simplified-Chinese defaults instead
   # of extracting every Electron locale on every portable launch.
@@ -96,6 +101,9 @@ win:
     - en-US
     - zh-CN
   target:
+    - target: nsis
+      arch:
+        - x64
     - target: portable
       arch:
         - x64
@@ -118,9 +126,27 @@ linux:
 electronDownload:
   isVerifyChecksum: false
 
-artifactName: ${productName}-${version}-${os}-${arch}-portable.${ext}
+publish:
+  provider: github
+  owner: kexijiang
+  repo: Piora
+  releaseType: release
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  allowElevation: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Piora
+  uninstallDisplayName: Piora
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+  artifactName: ${productName}-${version}-win-x64-setup.${ext}
 
 portable:
+  artifactName: ${productName}-${version}-win-x64-portable.${ext}
   splashImage: build/portable-splash.bmp
   # The build hook installs a fail-closed portable template that reuses
   # electron-builder's random, artifact-specific UNPACK_DIR_NAME as a cache.

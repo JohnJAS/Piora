@@ -35,7 +35,7 @@ module.exports = async function prepareDesktopBuild(context) {
     }, null, 2)}\n`, "utf8");
   }
 
-  if (targetPlatform !== "win32") return false;
+  if (targetPlatform !== "win32") return true;
   const customTemplatePath = join(projectRoot, "desktop", "build", "portable-cache.nsi");
   const builderPackagePath = require.resolve("app-builder-lib/package.json", { paths: [projectRoot] });
   const stockTemplatePath = join(dirname(builderPackagePath), "templates", "nsis", "portable.nsi");
@@ -60,9 +60,9 @@ module.exports = async function prepareDesktopBuild(context) {
   }
   if (currentHash !== customHash) await writeFile(stockTemplatePath, customTemplate);
 
-  // electron-builder discovers the npm workspace root and would otherwise
-  // copy Piora's complete web dependency tree into app.asar in addition to
-  // the already-traced standalone service in extraResources/web. Returning
-  // false declares that this desktop shell owns its dependencies externally.
-  return false;
+  // The desktop shell now has its own production dependency
+  // (`electron-updater`). Let electron-builder include that dependency graph
+  // in app.asar. The postinstall patch makes v26.15.3's workspace collector
+  // traverse this package first, so the root web dependency tree is not copied.
+  return true;
 };

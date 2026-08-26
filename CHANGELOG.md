@@ -4,6 +4,19 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.12] - 2026-08-26
+
+### Added
+
+- Added an assisted Windows installer with a selectable installation directory,
+  Desktop and Start Menu shortcuts, and persistent user data outside the
+  installation directory.
+- Added stable GitHub Release update checks for installed Windows builds. The
+  Help title-bar menu advertises an available version, shows download progress,
+  and offers an explicit safe restart and installation action.
+- Added release verification for `latest.yml`, installer SHA-512 metadata,
+  blockmaps, silent NSIS installation, and startup of the installed runtime.
+
 ## [0.4.11] - 2026-08-26
 
 ### Fixed

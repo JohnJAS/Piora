@@ -1,7 +1,7 @@
 {
   "name": "@piora/desktop",
   "productName": "Piora",
-  "version": "0.4.11",
+  "version": "0.4.12",
   "desktopName": "Piora",
   "private": true,
   "description": "Secure Electron desktop shell for Piora",
@@ -36,5 +36,8 @@
     "electron": "43.4.0",
     "electron-builder": "26.15.3",
     "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
   }
 }

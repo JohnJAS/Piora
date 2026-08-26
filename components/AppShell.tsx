@@ -42,6 +42,7 @@ import {
 } from "@/lib/panel-layout";
 import type { SessionInfo } from "@/lib/types";
 import type { CollaborationRoom } from "@/lib/room-types";
+import type { DesktopUpdateState } from "./sidebar/sidebar-types";
 import type { GitStatusResponse } from "@/lib/git-types";
 import { getTrackedGitLineStats } from "@/lib/git-line-stats";
 import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
@@ -152,6 +153,7 @@ export function AppShell() {
   const [desktopChrome, setDesktopChrome] = useState(false);
   const [globalShortcutEnabled, setGlobalShortcutEnabled] = useState(false);
   const [openDesktopMenuId, setOpenDesktopMenuId] = useState<DesktopMenuId | null>(null);
+  const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState | null>(null);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const rightPanelWidthRef = useRef(RIGHT_PANEL_FALLBACK_WIDTH);
   const getResponsiveRightPanelWidth = useCallback(
@@ -878,6 +880,22 @@ export function AppShell() {
     if (enabled) void window.piDesktop?.setGlobalShortcut?.(true);
   }, []);
 
+  useEffect(() => {
+    const bridge = window.piDesktop;
+    if (!bridge?.getUpdateState || !bridge.onUpdateState) return;
+    let active = true;
+    void bridge.getUpdateState().then((state) => {
+      if (active && state) setDesktopUpdateState(state);
+    });
+    const unsubscribe = bridge.onUpdateState((state) => {
+      if (active) setDesktopUpdateState(state);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
+
   const toggleGlobalShortcut = useCallback(async () => {
     const next = !globalShortcutEnabled;
     const accepted = await window.piDesktop?.setGlobalShortcut?.(next);
@@ -1321,18 +1339,21 @@ export function AppShell() {
 
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
   const windowTitle = activeCwdName ? `${activeCwdName} - Piora` : "Piora";
-  const desktopMenus: Array<{ id: DesktopMenuId; label: string }> = locale === "zh-CN"
+  const desktopUpdateAvailable = desktopUpdateState?.status === "available"
+    || desktopUpdateState?.status === "downloading"
+    || desktopUpdateState?.status === "downloaded";
+  const desktopMenus: Array<{ id: DesktopMenuId; label: string; updateAvailable?: boolean }> = locale === "zh-CN"
     ? [
         { id: "file", label: "文件" },
         { id: "edit", label: "编辑" },
         { id: "view", label: "视图" },
-        { id: "help", label: "帮助" },
+        { id: "help", label: "帮助", updateAvailable: desktopUpdateAvailable },
       ]
     : [
         { id: "file", label: "File" },
         { id: "edit", label: "Edit" },
         { id: "view", label: "View" },
-        { id: "help", label: "Help" },
+        { id: "help", label: "Help", updateAvailable: desktopUpdateAvailable },
       ];
 
   useEffect(() => {
@@ -1634,9 +1655,15 @@ export function AppShell() {
                 aria-haspopup="menu"
                 aria-expanded={openDesktopMenuId === menu.id}
                 data-active={openDesktopMenuId === menu.id ? "true" : "false"}
+                data-update-available={menu.updateAvailable ? "true" : undefined}
                 onClick={(event) => { void openDesktopMenu(menu.id, event.currentTarget); }}
               >
-                {menu.label}
+                <span>{menu.label}</span>
+                {menu.updateAvailable ? (
+                  <span className="desktop-titlebar-update-badge">
+                    {locale === "zh-CN" ? "有更新" : "Update"}
+                  </span>
+                ) : null}
               </button>
             ))}
           </nav>

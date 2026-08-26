@@ -1,6 +1,6 @@
 {
   "name": "piora",
-  "version": "0.4.11",
+  "version": "0.4.12",
   "private": true,
   "description": "Open-source Pi coding agent desktop application",
   "author": {
@@ -78,6 +78,7 @@
     "dist:linux": "npm run build:app && npm run dist:linux --workspace @piora/desktop",
     "verify:package": "node scripts/verify-packaged-web.mjs",
     "verify:portable": "node scripts/verify-portable-artifact.mjs",
+    "verify:updater": "node scripts/verify-windows-update-artifacts.mjs desktop/release",
     "verify:release": "node scripts/verify-release-metadata.mjs",
     "verify:hygiene": "node scripts/verify-release-hygiene.mjs",
     "smoke:portable": "node scripts/smoke-test-portable.mjs",
