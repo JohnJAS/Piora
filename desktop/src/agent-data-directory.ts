@@ -62,6 +62,38 @@ async function directoryIsEmpty(directory: string): Promise<boolean> {
   }
 }
 
+export async function preflightAgentDataDirectoryChange(options: {
+  targetDirectory: string;
+  migrate: boolean;
+}): Promise<void> {
+  const { targetDirectory, migrate } = options;
+  try {
+    await mkdir(dirname(targetDirectory), { recursive: true });
+    if (migrate && !await directoryIsEmpty(targetDirectory)) {
+      throw new AgentDataDirectoryError(
+        "target-not-empty",
+        "Choose an empty folder when migrating existing Pi data.",
+      );
+    }
+    // Check the selected directory when it exists, otherwise its parent. This
+    // keeps deterministic path/permission errors in Settings before the local
+    // runtime is stopped.
+    try {
+      await access(targetDirectory, fsConstants.R_OK | fsConstants.W_OK);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      await access(dirname(targetDirectory), fsConstants.R_OK | fsConstants.W_OK);
+    }
+  } catch (error) {
+    if (error instanceof AgentDataDirectoryError) throw error;
+    throw new AgentDataDirectoryError(
+      "migration-failed",
+      error instanceof Error ? error.message : String(error),
+      { cause: error },
+    );
+  }
+}
+
 type AgentDataManifestEntry =
   | { path: string; type: "directory" }
   | { path: string; type: "file"; size: number; sha256: string }
@@ -150,17 +182,14 @@ export async function prepareAgentDataDirectoryChange(options: {
 }): Promise<void> {
   const { currentDirectory, targetDirectory, migrate } = options;
   try {
+    // Re-run the preflight after the runtime is suspended so a destination
+    // changed by another process cannot be overwritten between validation and
+    // the atomic publish.
+    await preflightAgentDataDirectoryChange({ targetDirectory, migrate });
     if (!migrate) {
       await mkdir(targetDirectory, { recursive: true });
       await access(targetDirectory, fsConstants.R_OK | fsConstants.W_OK);
       return;
-    }
-
-    if (!await directoryIsEmpty(targetDirectory)) {
-      throw new AgentDataDirectoryError(
-        "target-not-empty",
-        "Choose an empty folder when migrating existing Pi data.",
-      );
     }
 
     const stagingDirectory = `${targetDirectory}.piora-migration-${randomBytes(6).toString("hex")}`;

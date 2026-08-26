@@ -33,12 +33,13 @@ import {
 } from "./desktop-state.js";
 import {
   AgentDataDirectoryError,
+  preflightAgentDataDirectoryChange,
   prepareAgentDataDirectoryChange,
   validateAgentDataDirectory,
 } from "./agent-data-directory.js";
 import { DesktopBrowserManager } from "./browser-manager.js";
 import { FileLogger, type Logger } from "./logger.js";
-import { ensurePortableDesktopShortcut } from "./portable-shortcut.js";
+import { ensurePortableDesktopShortcut, type PortableShortcutResult } from "./portable-shortcut.js";
 import { StandaloneServer, type ServerExit } from "./server-supervisor.js";
 import { fitBoundsToVisibleDisplays } from "./window-bounds.js";
 
@@ -164,7 +165,7 @@ function resolvePiAgentDirectory(log: Logger): string {
   return prepareWritableDirectory(configuredBySettings ?? defaultPiAgentDirectory());
 }
 
-function installPortableDesktopShortcut(log: Logger): void {
+function installPortableDesktopShortcut(log: Logger): PortableShortcutResult | undefined {
   try {
     const description = app.getLocale().toLowerCase().startsWith("zh")
       ? "启动已运行过的最新 Piora 版本"
@@ -189,9 +190,11 @@ function installPortableDesktopShortcut(log: Logger): void {
       },
     });
     if (result.status !== "skipped") log.info("Portable desktop shortcut is current", result);
+    return result;
   } catch (error) {
     // A locked-down or redirected Desktop must not prevent Piora from starting.
     log.warn("Unable to create or update the portable desktop shortcut", error);
+    return undefined;
   }
 }
 
@@ -521,7 +524,19 @@ async function restoreAgentRuntimeAfterDataMigrationFailure(
     serverUrl = restoredUrl;
     activateStandaloneProfile("normal", restoredRuntime.dataDirectory, restoredUrl);
     if (mainWindow && !mainWindow.isDestroyed()) {
-      await loadApplicationWindow(mainWindow, restoredUrl, logger);
+      let rendererOrigin: string | undefined;
+      try {
+        rendererOrigin = new URL(mainWindow.webContents.getURL()).origin;
+      } catch {
+        // A startup/data URL has no reusable application origin.
+      }
+      if (rendererOrigin !== restoredUrl.origin) {
+        await loadApplicationWindow(mainWindow, restoredUrl, logger);
+      } else {
+        logger.info("Kept the Settings renderer open after migration recovery", {
+          origin: restoredUrl.origin,
+        });
+      }
     }
     logger.info("Restored the original Pi data directory after migration failure", {
       sourceDirectory,
@@ -592,6 +607,10 @@ function registerAgentDataDirectoryHandlers(): void {
           sourceDirectory,
           app.getPath("home"),
         );
+        await preflightAgentDataDirectoryChange({
+          targetDirectory,
+          migrate: candidate.migrate,
+        });
         runtimeSuspended = true;
         await suspendAgentRuntimeForDataMigration();
         await prepareAgentDataDirectoryChange({
@@ -1551,9 +1570,22 @@ if (!hasSingleInstanceLock) {
   // A newly downloaded portable version may be opened while an older Piora is
   // still resident in the tray. It cannot take over that live single-instance
   // process, but it can still advance the Desktop shortcut for the next launch.
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     const secondaryLogger = new FileLogger(app.getPath("userData"));
-    installPortableDesktopShortcut(secondaryLogger);
+    const shortcutResult = installPortableDesktopShortcut(secondaryLogger);
+    if (shortcutResult?.status === "updated" || shortcutResult?.status === "created") {
+      const chinese = app.getLocale().toLowerCase().startsWith("zh");
+      await dialog.showMessageBox({
+        type: "info",
+        title: "Piora",
+        message: chinese ? "旧版 Piora 仍在后台运行" : "An older Piora is still running",
+        detail: chinese
+          ? `桌面快捷方式已更新到 Piora ${app.getVersion()}。请从系统托盘退出旧版本，然后重新打开桌面上的 Piora。`
+          : `The Desktop shortcut now points to Piora ${app.getVersion()}. Quit the older version from the system tray, then open Piora from the Desktop again.`,
+        buttons: [chinese ? "知道了" : "OK"],
+        defaultId: 0,
+      });
+    }
     app.quit();
   }).catch(() => app.exit(1));
 } else {
