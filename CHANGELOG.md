@@ -4,6 +4,20 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.11] - 2026-08-26
+
+### Fixed
+
+- Validated migration destinations and permissions before stopping the local
+  runtime, so deterministic failures remain visible in Settings instead of
+  reloading the conversation page.
+- Kept the existing Settings renderer alive when migration recovery restarts
+  the service on the same origin, preserving the actionable error message.
+- Warned when a newly downloaded portable release updates the Desktop shortcut
+  but an older Piora instance is still resident in the system tray.
+- Added persistence coverage proving a migrated Pi directory survives later
+  desktop window and server-port state updates.
+
 ## [0.4.10] - 2026-08-26
 
 ### Changed
