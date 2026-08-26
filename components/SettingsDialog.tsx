@@ -114,6 +114,7 @@ export function SettingsDialog({
   const [migrateAgentData, setMigrateAgentData] = useState(false);
   const [agentDataStatus, setAgentDataStatus] = useState<"idle" | "loading" | "applying" | "restarting" | "error">("idle");
   const [agentDataErrorCode, setAgentDataErrorCode] = useState<string | null>(null);
+  const [agentDataErrorDetail, setAgentDataErrorDetail] = useState<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   useFocusTrap(dialogRef, open, { onEscape: onClose });
 
@@ -255,6 +256,7 @@ export function SettingsDialog({
         setMigrateAgentData(false);
         setAgentDataStatus("idle");
         setAgentDataErrorCode(null);
+        setAgentDataErrorDetail(null);
       })
       .catch(() => {
         if (!cancelled) setAgentDataStatus("error");
@@ -267,6 +269,7 @@ export function SettingsDialog({
     if (selected) {
       setAgentDataDirectoryDraft(selected);
       setAgentDataErrorCode(null);
+      setAgentDataErrorDetail(null);
     }
   };
 
@@ -275,11 +278,13 @@ export function SettingsDialog({
     if (!bridge || !agentDataDirectoryDraft.trim()) return;
     setAgentDataStatus("applying");
     setAgentDataErrorCode(null);
+    setAgentDataErrorDetail(null);
     try {
       const result = await bridge({ directory: agentDataDirectoryDraft.trim(), migrate: true });
       if (!result.ok) {
         setAgentDataStatus("error");
         setAgentDataErrorCode(result.code ?? "migration-failed");
+        setAgentDataErrorDetail(result.error?.trim() || null);
         return;
       }
       const currentDirectory = result.currentDirectory ?? agentDataDirectoryDraft.trim();
@@ -291,9 +296,10 @@ export function SettingsDialog({
       setAgentDataDirectoryDraft(currentDirectory);
       setMigrateAgentData(false);
       setAgentDataStatus("restarting");
-    } catch {
+    } catch (error) {
       setAgentDataStatus("error");
       setAgentDataErrorCode("migration-failed");
+      setAgentDataErrorDetail(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -476,7 +482,11 @@ export function SettingsDialog({
                       <span className={styles.agentDataInputRow}>
                         <input
                           value={agentDataDirectoryDraft}
-                          onChange={(event) => { setAgentDataDirectoryDraft(event.target.value); setAgentDataErrorCode(null); }}
+                          onChange={(event) => {
+                            setAgentDataDirectoryDraft(event.target.value);
+                            setAgentDataErrorCode(null);
+                            setAgentDataErrorDetail(null);
+                          }}
                           disabled={!migrateAgentData || agentDataStatus === "loading" || agentDataStatus === "applying" || agentDataInfo?.environmentOverride}
                           spellCheck={false}
                           aria-label={t("settings.agentDataDirectoryTargetPath")}
@@ -501,6 +511,7 @@ export function SettingsDialog({
                             return next;
                           });
                           setAgentDataErrorCode(null);
+                          setAgentDataErrorDetail(null);
                         }}
                       ><span /></button>
                       <span><strong>{t("settings.agentDataMigrate")}</strong><small>{t("settings.agentDataMigrateDescription")}</small></span>
@@ -511,7 +522,10 @@ export function SettingsDialog({
                         {agentDataStatus === "applying" ? t("settings.agentDataDirectoryApplying") : agentDataStatus === "restarting" ? t("settings.agentDataDirectoryRestarting") : t("settings.agentDataDirectoryApply")}
                       </button>
                     </div>
-                    {agentDataErrorCode ? <div className={styles.agentDataError} role="alert">{t(`settings.agentDataDirectoryError.${agentDataErrorCode}`)}</div> : null}
+                    {agentDataErrorCode ? <div className={styles.agentDataError} role="alert">
+                      <span>{t(`settings.agentDataDirectoryError.${agentDataErrorCode}`)}</span>
+                      {agentDataErrorDetail ? <code>{agentDataErrorDetail}</code> : null}
+                    </div> : null}
                     {agentDataInfo?.environmentOverride ? <div className={styles.agentDataNotice}>{t("settings.agentDataDirectoryEnvironmentDescription")}</div> : null}
                     {agentDataInfo?.portableRuntimeDirectory ? <div className={styles.portableCacheNote}>
                       <AliIcon name="info" size={14} />
@@ -609,11 +623,35 @@ export function SettingsDialog({
                     ) : null}
                   </div>
 
-                  <div className={styles.conversationRowStacked}>
+                  <div className={styles.conversationRow}>
                     <div className={styles.conversationCopy}>
-                      <div className={styles.rowTitle}>{t("settings.sessionTitlePromptTitle")}</div>
-                      <div className={styles.rowDescription}>{t("settings.sessionTitlePromptDescription")}</div>
+                      <div className={styles.rowTitle}>{t("taskControls.notifications")}</div>
+                      <div className={styles.rowDescription}>
+                        {conversation.notificationCapability === "unsupported"
+                          ? t("taskControls.notificationsUnsupported")
+                          : t("taskControls.notificationsDescription")}
+                      </div>
                     </div>
+                    <button
+                      className={styles.switch}
+                      type="button"
+                      role="switch"
+                      aria-checked={conversation.notificationEnabled}
+                      disabled={conversation.notificationCapability === "unsupported"}
+                      onClick={() => void conversation.onNotificationToggle()}
+                    >
+                      <span />
+                    </button>
+                  </div>
+
+                </section>
+
+                <section className={styles.promptCard} aria-labelledby="session-title-prompt-heading">
+                  <header className={styles.promptCardHeader}>
+                    <h3 id="session-title-prompt-heading">{t("settings.sessionTitlePromptTitle")}</h3>
+                    <p>{t("settings.sessionTitlePromptDescription")}</p>
+                  </header>
+                  <div className={styles.promptCardBody}>
                     <label className={styles.modelSelectField}>
                       <span>{t("settings.sessionTitleModelTitle")}</span>
                       <select
@@ -641,16 +679,20 @@ export function SettingsDialog({
                             : t("settings.sessionTitleModelDescription")}
                       </small>
                     </label>
-                    <textarea
-                      className={styles.promptEditor}
-                      value={titlePromptDraft}
-                      maxLength={SESSION_TITLE_PROMPT_MAX_LENGTH}
-                      aria-label={t("settings.sessionTitlePromptTitle")}
-                      onChange={(event) => {
-                        setTitlePromptDraft(event.target.value);
-                        setTitlePromptStatus("idle");
-                      }}
-                    />
+                    <label className={styles.promptTextField}>
+                      <span>{t("settings.sessionTitleInstructionLabel")}</span>
+                      <small>{t("settings.sessionTitleInstructionDescription")}</small>
+                      <textarea
+                        className={styles.promptEditor}
+                        value={titlePromptDraft}
+                        maxLength={SESSION_TITLE_PROMPT_MAX_LENGTH}
+                        aria-label={t("settings.sessionTitleInstructionLabel")}
+                        onChange={(event) => {
+                          setTitlePromptDraft(event.target.value);
+                          setTitlePromptStatus("idle");
+                        }}
+                      />
+                    </label>
                     <div className={styles.promptEditorFooter}>
                       <span role="status">
                         {titlePromptStatus === "saved"
@@ -672,33 +714,14 @@ export function SettingsDialog({
                       </div>
                     </div>
                   </div>
+                </section>
 
-                  <div className={styles.conversationRow}>
-                    <div className={styles.conversationCopy}>
-                      <div className={styles.rowTitle}>{t("taskControls.notifications")}</div>
-                      <div className={styles.rowDescription}>
-                        {conversation.notificationCapability === "unsupported"
-                          ? t("taskControls.notificationsUnsupported")
-                          : t("taskControls.notificationsDescription")}
-                      </div>
-                    </div>
-                    <button
-                      className={styles.switch}
-                      type="button"
-                      role="switch"
-                      aria-checked={conversation.notificationEnabled}
-                      disabled={conversation.notificationCapability === "unsupported"}
-                      onClick={() => void conversation.onNotificationToggle()}
-                    >
-                      <span />
-                    </button>
-                  </div>
-
-                  <div className={styles.conversationRowStacked}>
-                    <div className={styles.conversationCopy}>
-                      <div className={styles.rowTitle}>{t("settings.promptOptimizerTitle")}</div>
-                      <div className={styles.rowDescription}>{t("settings.promptOptimizerDescription")}</div>
-                    </div>
+                <section className={styles.promptCard} aria-labelledby="prompt-optimizer-heading">
+                  <header className={styles.promptCardHeader}>
+                    <h3 id="prompt-optimizer-heading">{t("settings.promptOptimizerTitle")}</h3>
+                    <p>{t("settings.promptOptimizerDescription")}</p>
+                  </header>
+                  <div className={styles.promptCardBody}>
                     <label className={styles.optimizerModelField}>
                       <span>{t("settings.promptOptimizerModel")}</span>
                       <select value={optimizerModelValue} onChange={(event) => saveOptimizerModel(event.target.value)}>
@@ -710,16 +733,20 @@ export function SettingsDialog({
                       </select>
                       <small>{t("settings.promptOptimizerModelDescription")}</small>
                     </label>
-                    <textarea
-                      className={styles.promptEditor}
-                      value={optimizerPromptDraft}
-                      maxLength={PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH}
-                      aria-label={t("settings.promptOptimizerTitle")}
-                      onChange={(event) => {
-                        setOptimizerPromptDraft(event.target.value);
-                        setOptimizerPromptStatus("idle");
-                      }}
-                    />
+                    <label className={styles.promptTextField}>
+                      <span>{t("settings.promptOptimizerInstructionLabel")}</span>
+                      <small>{t("settings.promptOptimizerInstructionDescription")}</small>
+                      <textarea
+                        className={styles.promptEditor}
+                        value={optimizerPromptDraft}
+                        maxLength={PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH}
+                        aria-label={t("settings.promptOptimizerInstructionLabel")}
+                        onChange={(event) => {
+                          setOptimizerPromptDraft(event.target.value);
+                          setOptimizerPromptStatus("idle");
+                        }}
+                      />
+                    </label>
                     <div className={styles.promptEditorFooter}>
                       <span role="status">
                         {optimizerPromptStatus === "saved"
@@ -743,12 +770,17 @@ export function SettingsDialog({
                   </div>
                 </section>
 
-                <section className={styles.promptCard}>
-                  <div className={styles.sectionEyebrow}>{t("system.prompt")}</div>
-                  <SystemPromptEditor
-                    effectivePrompt={conversation.systemPrompt}
-                    onSaved={conversation.onSystemPromptSaved}
-                  />
+                <section className={styles.promptCard} aria-labelledby="system-prompt-heading">
+                  <header className={styles.promptCardHeader}>
+                    <h3 id="system-prompt-heading">{t("system.prompt")}</h3>
+                    <p>{t("system.description")}</p>
+                  </header>
+                  <div className={styles.promptCardBody}>
+                    <SystemPromptEditor
+                      effectivePrompt={conversation.systemPrompt}
+                      onSaved={conversation.onSystemPromptSaved}
+                    />
+                  </div>
                 </section>
               </>
               ) : sectionContent ? (

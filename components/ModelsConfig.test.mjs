@@ -65,3 +65,15 @@ test("adding a model selects its draft without nesting state updates", () => {
   assert.ok(addModelBlock);
   assert.equal((addModelBlock.match(/setConfig\(/g) ?? []).length, 1);
 });
+
+test("visual routing remains user-selectable and capability driven", () => {
+  const routeSource = readFileSync(new URL("../app/api/vision-agent/route.ts", import.meta.url), "utf8");
+  const extensionSource = readFileSync(new URL("../extensions/piora-vision-agent.ts", import.meta.url), "utf8");
+  assert.match(source, /type: "vision-agent"/);
+  assert.match(source, /fetch\("\/api\/vision-agent"/);
+  assert.match(source, /models\.visualAgentRoutingHint/);
+  assert.match(source, /model\.provider.*model\.modelId/s);
+  assert.match(routeSource, /listVisionAgentModels/);
+  assert.match(extensionSource, /modelSupportsImages\(ctx\.model\)/);
+  assert.doesNotMatch(extensionSource, /setModel\(/);
+});

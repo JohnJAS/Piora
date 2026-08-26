@@ -37,6 +37,14 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
     required: true,
   },
   {
+    id: "piora:vision-agent",
+    fileName: "piora-vision-agent.ts",
+    name: "Piora Visual Agent",
+    description: "Lets text-only primary models inspect images through a user-selected multimodal model.",
+    profiles: ["normal"],
+    required: true,
+  },
+  {
     id: "piora:goal",
     fileName: "piora-goal.ts",
     name: "Piora Target Mode",

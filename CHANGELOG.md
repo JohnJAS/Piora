@@ -4,6 +4,31 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.14] - 2026-08-26
+
+### Added
+
+- Added a configurable visual-agent sidecar: text-only primary models can now
+  use a selected, authenticated image-capable model to understand attached
+  images without changing the conversation's primary model.
+- Added dynamic model-capability routing in Settings → Models → Visual Agent.
+  Models that declare image input receive original images directly; only
+  text-only models invoke the configured visual sidecar.
+
+### Fixed
+
+- Preserved image safety and privacy across current and historical context:
+  original images remain local in the session, while text-only models receive
+  bounded, cached visual observations or an explicit no-guess fallback.
+- Improved data-directory migration diagnostics and Windows drive-root
+  handling, so preflight failures remain actionable and existing target drives
+  do not fail directory creation.
+
+### Changed
+
+- Refined settings cards for system prompts, title generation, and prompt
+  optimization to make model and instruction fields easier to understand.
+
 ## [0.4.13] - 2026-08-26
 
 ### Fixed

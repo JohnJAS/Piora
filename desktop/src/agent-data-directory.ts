@@ -62,13 +62,26 @@ async function directoryIsEmpty(directory: string): Promise<boolean> {
   }
 }
 
+async function ensureDirectory(directory: string): Promise<void> {
+  try {
+    await access(directory, fsConstants.R_OK | fsConstants.W_OK);
+    return;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  await mkdir(directory, { recursive: true });
+}
+
 export async function preflightAgentDataDirectoryChange(options: {
   targetDirectory: string;
   migrate: boolean;
 }): Promise<void> {
   const { targetDirectory, migrate } = options;
   try {
-    await mkdir(dirname(targetDirectory), { recursive: true });
+    // On Windows, mkdir({ recursive: true }) can return EPERM for an existing
+    // drive root (for example, mkdir("G:\\")). Check an existing parent
+    // first and create it only when it is genuinely missing.
+    await ensureDirectory(dirname(targetDirectory));
     if (migrate && !await directoryIsEmpty(targetDirectory)) {
       throw new AgentDataDirectoryError(
         "target-not-empty",
@@ -194,7 +207,7 @@ export async function prepareAgentDataDirectoryChange(options: {
 
     const stagingDirectory = `${targetDirectory}.piora-migration-${randomBytes(6).toString("hex")}`;
     try {
-      await mkdir(dirname(targetDirectory), { recursive: true });
+      await ensureDirectory(dirname(targetDirectory));
       const sourceManifestBeforeCopy = await createAgentDataDirectoryManifest(currentDirectory);
       await cp(currentDirectory, stagingDirectory, {
         recursive: true,

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useI18n } from "@/hooks/useI18n";
+import styles from "./SystemPromptEditor.module.css";
 
 const MAX_SYSTEM_PROMPT_LENGTH = 100_000;
 
@@ -79,12 +80,22 @@ export function SystemPromptEditor({ effectivePrompt, compact = false, onSaved }
   }, [onSaved, t]);
 
   const dirty = draft !== (savedPrompt ?? "");
+  const characterCount = Array.from(draft).length;
 
   return (
-    <div style={{ display: "grid", gap: compact ? 8 : 12 }}>
-      <label style={{ display: "grid", gap: 6 }}>
-        <span style={{ color: "var(--text)", fontSize: "var(--text-xs)", fontWeight: 650 }}>{t("system.customLabel")}</span>
+    <div className={`${styles.editor}${compact ? ` ${styles.compact}` : ""}`}>
+      <div className={styles.scopeRow}>
+        <span className={styles.stateBadge} data-custom={savedPrompt !== null}>
+          {t(savedPrompt === null ? "system.defaultBadge" : "system.customBadge")}
+        </span>
+        <span>{t("system.scopeGlobal")}</span>
+      </div>
+
+      <label className={styles.field}>
+        <span className={styles.fieldLabel}>{t("system.customLabel")}</span>
+        <span className={styles.fieldDescription}>{t("system.customDescription")}</span>
         <textarea
+          className={styles.textarea}
           value={draft}
           rows={compact ? 9 : 14}
           maxLength={maxLength}
@@ -96,38 +107,34 @@ export function SystemPromptEditor({ effectivePrompt, compact = false, onSaved }
             setStatus(null);
             setError(null);
           }}
-          style={{
-            width: "100%",
-            minHeight: compact ? 174 : 240,
-            resize: "vertical",
-            boxSizing: "border-box",
-            border: "1px solid var(--border)",
-            borderRadius: 8,
-            background: "var(--bg)",
-            color: "var(--text)",
-            padding: "10px 11px",
-            font: "400 var(--text-xs)/1.55 var(--font-mono)",
-            outline: "none",
-          }}
         />
       </label>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-        <span role={error ? "alert" : "status"} style={{ color: error ? "#dc2626" : "var(--text-dim)", fontSize: "var(--text-xs)" }}>
-          {error ?? status ?? t(savedPrompt === null ? "system.defaultHint" : "system.customHint")}
-        </span>
-        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-          <button type="button" disabled={loading || saving || savedPrompt === null} onClick={() => void persist(null)}>
+
+      <div className={styles.footer}>
+        <div className={styles.feedback}>
+          <span role={error ? "alert" : "status"} data-error={Boolean(error)}>
+            {error ?? status ?? t(savedPrompt === null ? "system.defaultHint" : "system.customHint")}
+          </span>
+          <span className={styles.count}>{characterCount.toLocaleString()} / {maxLength.toLocaleString()}</span>
+        </div>
+        <div className={styles.actions}>
+          <button className={styles.secondaryButton} type="button" disabled={loading || saving || savedPrompt === null} onClick={() => void persist(null)}>
             {t("system.restoreDefault")}
           </button>
-          <button type="button" disabled={loading || saving || !dirty} onClick={() => void persist(draft)}>
+          <button className={styles.primaryButton} type="button" disabled={loading || saving || !dirty} onClick={() => void persist(draft)}>
             {saving ? t("system.saving") : t("system.save")}
           </button>
         </div>
       </div>
       {!compact && (
-        <details>
-          <summary style={{ cursor: "pointer", color: "var(--text-muted)", fontSize: "var(--text-xs)" }}>{t("system.effectiveLabel")}</summary>
-          <pre style={{ marginTop: 8, maxHeight: 280, overflow: "auto", whiteSpace: "pre-wrap" }}>
+        <details className={styles.effectivePrompt}>
+          <summary>
+            <span>
+              <strong>{t("system.effectiveLabel")}</strong>
+              <small>{t("system.effectiveDescription")}</small>
+            </span>
+          </summary>
+          <pre>
             {effectivePrompt === null ? t("system.load") : effectivePrompt || t("system.empty")}
           </pre>
         </details>
