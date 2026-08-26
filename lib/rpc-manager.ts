@@ -2117,7 +2117,13 @@ export async function startRpcSession(
       ...(initial.scopedModels.length > 0 ? { scopedModels: initial.scopedModels } : {}),
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
-    if (inner.model) await inner.setModel(applyConfiguredImageInput(inner.model));
+    if (inner.model) {
+      const configuredModel = applyConfiguredImageInput(inner.model);
+      // Do not re-select an unchanged restored model: packaged smoke tests use
+      // an intentionally credential-less placeholder model, and a redundant
+      // setModel would turn that harmless placeholder into an API-key lookup.
+      if (configuredModel !== inner.model) await inner.setModel(configuredModel);
+    }
 
     restoreGoalRunFromEntries(inner.sessionId, inner.sessionManager.getBranch());
     restorePlanArtifactFromEntries(inner.sessionId, inner.sessionManager.getBranch());

@@ -4,6 +4,14 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.17] - 2026-08-26
+
+### Fixed
+
+- Avoided reselecting an unchanged credential-less placeholder model while
+  restoring a session, allowing packaged Windows and Linux smoke verification
+  to complete without an invalid API-key lookup.
+
 ## [0.4.16] - 2026-08-26
 
 ### Fixed
