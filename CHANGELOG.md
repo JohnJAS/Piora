@@ -4,6 +4,14 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.13] - 2026-08-26
+
+### Fixed
+
+- Normalized packaged ASAR entry paths before checking the Windows updater
+  runtime, so the release source gate verifies the same archive correctly on
+  both Windows and Linux runners.
+
 ## [0.4.12] - 2026-08-26
 
 ### Added

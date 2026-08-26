@@ -32,6 +32,10 @@ function requireObject(value, label) {
   return value;
 }
 
+export function normalizeAsarEntry(entry) {
+  return entry.replaceAll("\\", "/");
+}
+
 export async function verifyWindowsUpdateArtifacts(releaseRoot, requestedVersion) {
   const root = resolve(releaseRoot);
   const version = normalizeVersion(requestedVersion);
@@ -78,12 +82,12 @@ export async function verifyWindowsUpdateArtifacts(releaseRoot, requestedVersion
   if (runtimeConfig.provider !== "github" || runtimeConfig.owner !== "kexijiang" || runtimeConfig.repo !== "Piora") {
     throw new Error("The packaged updater is not configured for kexijiang/Piora GitHub Releases.");
   }
-  const applicationEntries = listPackage(applicationAsarPath);
+  const applicationEntries = new Set(listPackage(applicationAsarPath).map(normalizeAsarEntry));
   for (const requiredEntry of [
-    "\\node_modules\\electron-updater\\out\\main.js",
-    "\\node_modules\\builder-util-runtime\\out\\index.js",
+    "/node_modules/electron-updater/out/main.js",
+    "/node_modules/builder-util-runtime/out/index.js",
   ]) {
-    if (!applicationEntries.includes(requiredEntry)) {
+    if (!applicationEntries.has(requiredEntry)) {
       throw new Error(`The packaged desktop runtime is missing ${requiredEntry}.`);
     }
   }
