@@ -110,6 +110,7 @@ const ArchivedChatsSettings = dynamic(() => import("./ArchivedChatsSettings").th
 const AutomationPanel = dynamic(() => import("./AutomationPanel").then((module) => module.AutomationPanel), { ssr: false });
 const SessionHistoryDialog = dynamic(() => import("./SessionHistoryDialog").then((module) => module.SessionHistoryDialog), { ssr: false });
 const CommandPalette = dynamic(() => import("./CommandPalette").then((module) => module.CommandPalette), { ssr: false });
+const DesktopUpdateDialog = dynamic(() => import("./DesktopUpdateDialog").then((module) => module.DesktopUpdateDialog), { ssr: false });
 
 export function AppShell() {
   const searchParams = useSearchParams();
@@ -181,6 +182,7 @@ export function AppShell() {
   const [globalShortcutEnabled, setGlobalShortcutEnabled] = useState(false);
   const [openDesktopMenuId, setOpenDesktopMenuId] = useState<DesktopMenuId | null>(null);
   const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState | null>(null);
+  const [desktopUpdateDialogOpen, setDesktopUpdateDialogOpen] = useState(false);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const rightPanelWidthRef = useRef(RIGHT_PANEL_FALLBACK_WIDTH);
   const getResponsiveRightPanelWidth = useCallback(
@@ -855,6 +857,24 @@ export function AppShell() {
     replaceUrlWithoutNextNavigation("/");
   }, []);
 
+  const handleOpenDesktopUpdate = useCallback(() => {
+    setDesktopUpdateDialogOpen(true);
+    if (desktopUpdateState?.status !== "available") return;
+    void window.piDesktop?.downloadUpdate?.().then((state) => {
+      if (state) setDesktopUpdateState(state);
+    });
+  }, [desktopUpdateState?.status]);
+
+  const handleRetryDesktopUpdate = useCallback(() => {
+    void window.piDesktop?.checkForUpdates?.().then((state) => {
+      if (state) setDesktopUpdateState(state);
+    });
+  }, []);
+
+  const handleInstallDesktopUpdate = useCallback(() => {
+    void window.piDesktop?.installUpdate?.();
+  }, []);
+
   // Native Electron menus stay deliberately thin: the renderer owns all
   // application state and receives only a small action name from preload.
   useEffect(() => {
@@ -917,12 +937,15 @@ export function AppShell() {
         case "companion-settings":
           openSettings("companion");
           break;
+        case "open-update":
+          handleOpenDesktopUpdate();
+          break;
         default:
           break;
       }
     });
     return unsubscribe;
-  }, [activeCwd, handleNewSession, handleOpenProjectPicker, handleSidebarToggle, openSettings, setCompanionOpen, toggleCompanion]);
+  }, [activeCwd, handleNewSession, handleOpenDesktopUpdate, handleOpenProjectPicker, handleSidebarToggle, openSettings, setCompanionOpen, toggleCompanion]);
 
   // Electron's titleBarOverlay does not make the browser-only
   // `(display-mode: window-controls-overlay)` media query true. Use the
@@ -1413,18 +1436,18 @@ export function AppShell() {
   const desktopUpdateAvailable = desktopUpdateState?.status === "available"
     || desktopUpdateState?.status === "downloading"
     || desktopUpdateState?.status === "downloaded";
-  const desktopMenus: Array<{ id: DesktopMenuId; label: string; updateAvailable?: boolean }> = locale === "zh-CN"
+  const desktopMenus: Array<{ id: DesktopMenuId; label: string }> = locale === "zh-CN"
     ? [
         { id: "file", label: "文件" },
         { id: "edit", label: "编辑" },
         { id: "view", label: "视图" },
-        { id: "help", label: "帮助", updateAvailable: desktopUpdateAvailable },
+        { id: "help", label: "帮助" },
       ]
     : [
         { id: "file", label: "File" },
         { id: "edit", label: "Edit" },
         { id: "view", label: "View" },
-        { id: "help", label: "Help", updateAvailable: desktopUpdateAvailable },
+        { id: "help", label: "Help" },
       ];
 
   useEffect(() => {
@@ -1739,19 +1762,26 @@ export function AppShell() {
                 aria-haspopup="menu"
                 aria-expanded={openDesktopMenuId === menu.id}
                 data-active={openDesktopMenuId === menu.id ? "true" : "false"}
-                data-update-available={menu.updateAvailable ? "true" : undefined}
                 onClick={(event) => { void openDesktopMenu(menu.id, event.currentTarget); }}
               >
                 <span>{menu.label}</span>
-                {menu.updateAvailable ? (
-                  <span className="desktop-titlebar-update-badge">
-                    {locale === "zh-CN" ? "有更新" : "Update"}
-                  </span>
-                ) : null}
               </button>
             ))}
           </nav>
           <div className="desktop-titlebar-drag" />
+          {desktopUpdateAvailable ? (
+            <button
+              type="button"
+              className="desktop-titlebar-update-button"
+              data-status={desktopUpdateState?.status}
+              onClick={handleOpenDesktopUpdate}
+              aria-label={locale === "zh-CN" ? "下载 Piora 更新" : "Download Piora update"}
+              title={locale === "zh-CN" ? "Piora 有可用更新" : "A Piora update is available"}
+            >
+              <AliIcon name="download" size={15} />
+              <span className="desktop-titlebar-update-dot" aria-hidden="true" />
+            </button>
+          ) : null}
         </header>
       ) : null}
       {/* Mobile overlay backdrop */}
@@ -2498,6 +2528,17 @@ export function AppShell() {
         sessionName={selectedSession.name}
         appearance={isDarkTheme(theme) ? "dark" : "light"}
         onClose={() => setHistoryDialogOpen(false)}
+      />
+    ) : null}
+    {desktopUpdateState ? (
+      <DesktopUpdateDialog
+        locale={locale}
+        open={desktopUpdateDialogOpen}
+        state={desktopUpdateState}
+        onClose={() => setDesktopUpdateDialogOpen(false)}
+        onDownload={handleOpenDesktopUpdate}
+        onInstall={handleInstallDesktopUpdate}
+        onRetry={handleRetryDesktopUpdate}
       />
     ) : null}
     <ConfirmationHost />

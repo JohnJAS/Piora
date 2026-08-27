@@ -21,6 +21,15 @@ const runtime = Object.freeze({
   getUpdateState() {
     return ipcRenderer.invoke("pi:update-state-get");
   },
+  checkForUpdates() {
+    return ipcRenderer.invoke("pi:update-check");
+  },
+  downloadUpdate() {
+    return ipcRenderer.invoke("pi:update-download");
+  },
+  installUpdate() {
+    return ipcRenderer.invoke("pi:update-install");
+  },
   onUpdateState(listener: (state: unknown) => void) {
     const handler = (_event: Electron.IpcRendererEvent, state: unknown) => listener(state);
     ipcRenderer.on("pi:update-state", handler);

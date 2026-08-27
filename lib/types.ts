@@ -121,6 +121,16 @@ export type ExtensionUiRequest =
   | {
       type: "extension_ui_request";
       id: string;
+      method: "request_user_input";
+      title: string;
+      description?: string;
+      questions: import("./user-input").UserInputQuestion[];
+      timeout?: number;
+      expiresAt?: number;
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
       method: "select";
       title: string;
       options: string[];
@@ -199,6 +209,7 @@ export type ExtensionUiRequest =
 export type ExtensionUiResponse =
   | { type: "extension_ui_response"; id: string; value: string }
   | { type: "extension_ui_response"; id: string; confirmed: boolean }
+  | { type: "extension_ui_response"; id: string; answers: import("./user-input").UserInputAnswers }
   | { type: "extension_ui_response"; id: string; cancelled: true };
 
 export interface ExtensionStatusItem {

@@ -48,6 +48,9 @@ export function NewSessionProjectPicker({
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [models, setModels] = useState<ModelChoice[]>([]);
   const [selectedModelKey, setSelectedModelKey] = useState("");
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelSelectionRequired, setModelSelectionRequired] = useState(false);
   const [query, setQuery] = useState("");
   const [draft, setLandingDraft] = useState("");
   const [pastedMaterials, setPastedMaterials] = useState<ChatDraftFile[]>([]);
@@ -76,19 +79,18 @@ export function NewSessionProjectPicker({
       .then(async (response) => {
         const data = await response.json() as {
           modelList?: ModelChoice[];
-          defaultModel?: SelectedModel | null;
+          error?: string;
+          modelError?: string | null;
         };
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         if (cancelled) return;
-        const nextModels = data.modelList ?? [];
-        setModels(nextModels);
-        const preferred = data.defaultModel
-          ? nextModels.find((model) => model.id === data.defaultModel?.modelId && model.provider === data.defaultModel?.provider)
-          : undefined;
-        const initial = preferred ?? nextModels[0];
-        if (initial) setSelectedModelKey(`${initial.provider}/${initial.id}`);
+        setModels(data.modelList ?? []);
+        setModelsError(data.modelError ?? null);
       })
-      .catch(() => {});
+      .catch((error) => {
+        if (!cancelled) setModelsError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => { if (!cancelled) setModelsLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -150,14 +152,25 @@ export function NewSessionProjectPicker({
     return model ? { provider: model.provider, modelId: model.id } : undefined;
   }, [models, selectedModelKey]);
 
+  const requireSelectedModel = (): SelectedModel | undefined => {
+    if (selectedModel) return selectedModel;
+    setModelSelectionRequired(true);
+    setMenuOpen(false);
+    return undefined;
+  };
+
   const chooseProject = (choice: ProjectChoice) => {
+    const model = requireSelectedModel();
+    if (!model) return;
     if (draft.trim() || pastedMaterials.length > 0) setDraft(`new:${choice.cwd}`, getLandingDraft());
-    onSelect(choice.cwd, choice.root, selectedModel);
+    onSelect(choice.cwd, choice.root, model);
   };
 
   const startProjectlessChat = () => {
+    const model = requireSelectedModel();
+    if (!model) return;
     setMenuOpen(false);
-    onStartChat(getLandingDraft(), selectedModel);
+    onStartChat(getLandingDraft(), model);
   };
 
   const browseForProject = () => {
@@ -182,6 +195,10 @@ export function NewSessionProjectPicker({
   return (
     <main className={styles.root} aria-label="新对话">
       <section className={styles.hero}>
+        <header className={styles.intro}>
+          <h1>开始新的聊天</h1>
+          <p>先选择一个模型。普通问答不需要项目；需要读取或修改代码时，再关联项目文件夹。</p>
+        </header>
         <div className={styles.workspaceDock}>
           <div className={styles.contextRail}>
             <div ref={projectSelectorRef} className={styles.projectAnchor}>
@@ -215,8 +232,19 @@ export function NewSessionProjectPicker({
             </div>
             <label className={styles.modelChip}>
               <AliIcon name="robot" size={14} />
-              <select value={selectedModelKey} onChange={(event) => setSelectedModelKey(event.target.value)} aria-label="选择模型">
-                {models.length === 0 ? <option value="">自动选择模型</option> : null}
+              <select
+                value={selectedModelKey}
+                onChange={(event) => {
+                  setSelectedModelKey(event.target.value);
+                  setModelSelectionRequired(false);
+                }}
+                aria-label="选择模型"
+                aria-invalid={modelSelectionRequired}
+                disabled={modelsLoading || models.length === 0}
+              >
+                <option value="" disabled>
+                  {modelsLoading ? "正在加载模型…" : modelsError ? "模型加载失败" : models.length === 0 ? "暂无可用模型" : "选择模型"}
+                </option>
                 {models.map((model) => (
                   <option key={`${model.provider}/${model.id}`} value={`${model.provider}/${model.id}`}>
                     {model.name || model.id} · {model.provider}
@@ -277,8 +305,14 @@ export function NewSessionProjectPicker({
               <button className={styles.iconButton} type="button" disabled title="选择项目后可添加附件" aria-label="添加附件">
                 <AliIcon name="plus" size={16} />
               </button>
-              <span className={styles.selectionHint}>无需项目也可以直接聊天</span>
-              <button className={styles.sendButton} type="button" onClick={startProjectlessChat} title="开始聊天" aria-label="开始聊天">
+              <span className={`${styles.selectionHint}${modelSelectionRequired ? ` ${styles.selectionError}` : ""}`} role={modelSelectionRequired ? "alert" : undefined}>
+                {modelsError
+                  ? "模型加载失败，请前往设置检查模型配置"
+                  : modelSelectionRequired || (!modelsLoading && !selectedModel)
+                    ? "请先选择模型"
+                    : "无需项目也可以直接聊天"}
+              </span>
+              <button className={styles.sendButton} type="button" onClick={startProjectlessChat} disabled={!selectedModel} title={selectedModel ? "开始聊天" : "请先选择模型"} aria-label="开始聊天">
                 <AliIcon name="arrowup" size={16} />
               </button>
             </div>

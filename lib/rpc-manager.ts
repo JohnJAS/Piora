@@ -89,6 +89,7 @@ import { CUSTOM_UI_KEYBINDINGS, PLAIN_TEXT_THEME } from "./rpc-ui-adapter";
 import { readSystemPromptConfig } from "./system-prompt-config";
 import { buildPromptWithMaterials, resolvePromptMaterialReferences, restorePromptMaterialDisplayPreview } from "./prompt-materials";
 import type { PromptMaterialReference } from "./prompt-material-format";
+import type { UserInputResult } from "./user-input";
 
 // ============================================================================
 // Types
@@ -1584,6 +1585,19 @@ export class AgentSessionWrapper {
 
   private createExtensionUiContext(): ExtensionUiContextLike {
     return {
+      requestUserInput: (title, description, questions, opts) => this.requestExtensionUi(
+        {
+          method: "request_user_input",
+          title,
+          ...(description ? { description } : {}),
+          questions,
+          ...(opts?.timeout ? { timeout: opts.timeout } : {}),
+        },
+        { cancelled: true } as UserInputResult,
+        (response) => "answers" in response ? { answers: response.answers } : { cancelled: true },
+        opts?.timeout,
+        opts?.signal,
+      ),
       select: (title, options, opts) => this.requestExtensionUi(
         { method: "select", title, options, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
         undefined,

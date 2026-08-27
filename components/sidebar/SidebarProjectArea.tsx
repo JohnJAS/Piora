@@ -152,7 +152,7 @@ export function SidebarProjectArea(props: Props) {
       <div ref={projectScrollRef} className="sidebar-project-scroll" style={{ flex: "1 1 auto", overflowY: "auto", padding: "4px 0 8px", minHeight: 80 }}>
         {!loading && !error && (
           <div
-            className={`${styles.sectionLabel} ${styles.projectsHeader}`}
+            className={`sidebar-projects-header ${styles.sectionLabel} ${styles.projectsHeader}`}
             onMouseEnter={() => setProjectsHovered(true)}
             onMouseLeave={() => setProjectsHovered(false)}
           >

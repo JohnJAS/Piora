@@ -23,6 +23,9 @@ declare global {
       platform?: string;
       openMenu?: (menu: "file" | "edit" | "view" | "help", x: number, y: number) => Promise<boolean>;
       getUpdateState?: () => Promise<DesktopUpdateState | null>;
+      checkForUpdates?: () => Promise<DesktopUpdateState | null>;
+      downloadUpdate?: () => Promise<DesktopUpdateState | null>;
+      installUpdate?: () => Promise<boolean>;
       onUpdateState?: (listener: (state: DesktopUpdateState) => void) => () => void;
       revealPath?: (filePath: string) => Promise<boolean>;
       openPath?: (filePath: string) => Promise<boolean>;
@@ -49,7 +52,11 @@ export interface DesktopUpdateState {
   status: "unsupported" | "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "error";
   currentVersion: string;
   availableVersion?: string;
+  releaseNotes?: string;
   progressPercent?: number;
+  bytesPerSecond?: number;
+  transferredBytes?: number;
+  totalBytes?: number;
   error?: string;
 }
 

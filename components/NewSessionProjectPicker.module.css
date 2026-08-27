@@ -14,6 +14,27 @@
   flex-direction: column;
 }
 
+.intro {
+  margin: 0 8px clamp(24px, 4vh, 38px);
+  text-align: center;
+}
+
+.intro h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: clamp(24px, 3.4vw, 34px);
+  font-weight: 620;
+  letter-spacing: -.025em;
+}
+
+.intro p {
+  max-width: 590px;
+  margin: 11px auto 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.65;
+}
+
 .workspaceDock {
   position: relative;
   padding-top: 38px;
@@ -168,6 +189,15 @@
   cursor: pointer;
 }
 
+.modelChip select:disabled {
+  cursor: wait;
+  opacity: .72;
+}
+
+.modelChip select[aria-invalid="true"] {
+  color: #dc2626;
+}
+
 .modelChip:hover,
 .modelChip:focus-within {
   background: var(--bg-hover);
@@ -197,6 +227,8 @@
   font-size: var(--text-xs);
 }
 
+.selectionError { color: #dc2626; }
+
 .sendButton {
   width: 34px;
   height: 34px;
@@ -208,6 +240,12 @@
 
 .sendButton:hover,
 .sendButton:focus-visible { outline: 0; background: var(--text); }
+
+.sendButton:disabled {
+  background: var(--bg-hover);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
 
 .projectPopover {
   position: absolute;

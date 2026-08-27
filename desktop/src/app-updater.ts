@@ -15,7 +15,11 @@ export interface DesktopUpdateState {
   status: DesktopUpdateStatus;
   currentVersion: string;
   availableVersion?: string;
+  releaseNotes?: string;
   progressPercent?: number;
+  bytesPerSecond?: number;
+  transferredBytes?: number;
+  totalBytes?: number;
   error?: string;
 }
 
@@ -30,6 +34,34 @@ function normalizedVersion(value: unknown): string | undefined {
 function normalizedError(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+const MAX_RELEASE_NOTES_LENGTH = 24_000;
+
+function normalizedReleaseNotes(value: unknown): string | undefined {
+  const notes = typeof value === "string"
+    ? value
+    : Array.isArray(value)
+      ? value
+          .map((entry) => {
+            if (!entry || typeof entry !== "object") return "";
+            const record = entry as { version?: unknown; note?: unknown };
+            const note = typeof record.note === "string" ? record.note.trim() : "";
+            if (!note) return "";
+            const version = normalizedVersion(record.version);
+            return version ? `### v${version}\n\n${note}` : note;
+          })
+          .filter(Boolean)
+          .join("\n\n")
+      : "";
+  const trimmed = notes.trim();
+  return trimmed ? trimmed.slice(0, MAX_RELEASE_NOTES_LENGTH) : undefined;
+}
+
+function normalizedProgressValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : undefined;
 }
 
 export class DesktopUpdateController {
@@ -63,22 +95,32 @@ export class DesktopUpdateController {
     });
     updater.on("update-available", (info) => {
       const availableVersion = normalizedVersion(info.version);
+      const releaseNotes = normalizedReleaseNotes(info.releaseNotes);
       this.publish({
         status: "available",
         ...(availableVersion ? { availableVersion } : {}),
+        ...(releaseNotes ? { releaseNotes } : {}),
       });
     });
     updater.on("download-progress", (progress) => {
+      const bytesPerSecond = normalizedProgressValue(progress.bytesPerSecond);
+      const transferredBytes = normalizedProgressValue(progress.transferred);
+      const totalBytes = normalizedProgressValue(progress.total);
       this.publish({
         status: "downloading",
         progressPercent: Math.max(0, Math.min(100, Math.round(progress.percent))),
+        ...(bytesPerSecond === undefined ? {} : { bytesPerSecond }),
+        ...(transferredBytes === undefined ? {} : { transferredBytes }),
+        ...(totalBytes === undefined ? {} : { totalBytes }),
       });
     });
     updater.on("update-downloaded", (info) => {
       const availableVersion = normalizedVersion(info.version);
+      const releaseNotes = normalizedReleaseNotes(info.releaseNotes);
       this.publish({
         status: "downloaded",
         ...(availableVersion ? { availableVersion } : {}),
+        ...(releaseNotes ? { releaseNotes } : {}),
         progressPercent: 100,
       });
     });
@@ -150,11 +192,17 @@ export class DesktopUpdateController {
       || next.status === "downloaded";
     const availableVersion = next.availableVersion
       ?? (keepsAvailableVersion ? this.state.availableVersion : undefined);
+    const releaseNotes = next.releaseNotes
+      ?? (keepsAvailableVersion ? this.state.releaseNotes : undefined);
     this.state = {
       status: next.status,
       currentVersion: this.state.currentVersion,
       ...(availableVersion ? { availableVersion } : {}),
+      ...(releaseNotes ? { releaseNotes } : {}),
       ...(next.progressPercent === undefined ? {} : { progressPercent: next.progressPercent }),
+      ...(next.bytesPerSecond === undefined ? {} : { bytesPerSecond: next.bytesPerSecond }),
+      ...(next.transferredBytes === undefined ? {} : { transferredBytes: next.transferredBytes }),
+      ...(next.totalBytes === undefined ? {} : { totalBytes: next.totalBytes }),
       ...(next.error ? { error: next.error } : {}),
     };
     const snapshot = this.getState();

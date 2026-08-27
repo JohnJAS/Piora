@@ -7,6 +7,7 @@ const shell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8")
 const navigation = await readFile(new URL("./sidebar/SidebarNavigation.tsx", import.meta.url), "utf8");
 const taskRow = await readFile(new URL("./sidebar/TaskRow.tsx", import.meta.url), "utf8");
 const backgrounds = await readFile(new URL("../app/theme-backgrounds.css", import.meta.url), "utf8");
+const sidebarCss = await readFile(new URL("./SessionSidebar.module.css", import.meta.url), "utf8");
 
 test("new chat can start without a project while keeping project selection optional", () => {
   assert.match(shell, /const effectiveNewSessionCwd = newSessionCwd;/);
@@ -17,7 +18,15 @@ test("new chat can start without a project while keeping project selection optio
   assert.match(picker, /<span>选择项目（可选）<\/span>/);
   assert.match(picker, /fetch\("\/api\/models"/);
   assert.match(picker, /aria-label="选择模型"/);
-  assert.match(picker, /onStartChat\(getLandingDraft\(\), selectedModel\)/);
+  assert.match(picker, /开始新的聊天/);
+  assert.match(picker, /普通问答不需要项目/);
+  assert.match(picker, /value=\{selectedModelKey\}/);
+  assert.match(picker, /<option value="" disabled>/);
+  assert.match(picker, /请先选择模型/);
+  assert.match(picker, /disabled=\{!selectedModel\}/);
+  assert.match(picker, /onStartChat\(getLandingDraft\(\), model\)/);
+  assert.doesNotMatch(picker, /自动选择模型/);
+  assert.doesNotMatch(picker, /setSelectedModelKey\(`\$\{initial\.provider\}/);
   assert.match(picker, /不使用项目，直接聊天/);
   assert.match(shell, /fetch\("\/api\/chat-workspace"/);
   assert.match(shell, /newSessionInitialModel=\{newSessionInitialModel\}/);
@@ -63,6 +72,8 @@ test("conversation chrome and rooms share the configured background", () => {
   assert.match(backgrounds, /data-app-background-active="true"\] \.app-topbar \{\s*background: transparent/s);
   assert.match(backgrounds, /\.room-workspace-header/);
   assert.match(backgrounds, /\.room-workspace-details/);
+  assert.match(backgrounds, /data-app-background-active="true"\] \.sidebar-projects-header \{[\s\S]*?background: transparent/s);
+  assert.match(sidebarCss, /\.chatSection \{[\s\S]*?background: transparent/);
 });
 
 test("pinned sessions use a passive badge and the dead brand search action is gone", () => {

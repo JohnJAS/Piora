@@ -283,9 +283,12 @@
 }
 
 .chatSection {
+  /* Keep the section transparent so the sidebar's shared panel/background
+     treatment (including the user-selected background image) shows through,
+     matching the project area above instead of painting an opaque panel. */
   flex: 0 0 auto;
   border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  background: var(--bg-panel);
+  background: transparent;
 }
 
 .chatSectionHeader {

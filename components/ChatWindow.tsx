@@ -26,6 +26,7 @@ import {
 import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
 import { getProjectLabel } from "@/lib/session-project-groups";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
+import { UserInputCard } from "./UserInputCard";
 
 interface Props {
   session: SessionInfo | null;
@@ -658,7 +659,11 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
         </div>
       )}
 
-      {extensionDialog && <ExtensionDialog request={extensionDialog} onRespond={respondToExtensionUi} />}
+      {extensionDialog?.method === "request_user_input" ? (
+        <UserInputCard key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
+      ) : extensionDialog ? (
+        <ExtensionDialog request={extensionDialog} onRespond={respondToExtensionUi} />
+      ) : null}
 
       {extensionCustomUi && (
         <ExtensionCustomPanel

@@ -54,6 +54,8 @@ const requiredPaths = [
   "extensions/piora-file-changes.ts",
   "extensions/piora-harmony.ts",
   "extensions/piora-vision-agent.ts",
+  "extensions/piora-automations.ts",
+  "extensions/piora-user-input.ts",
   "extensions/piora-goal.ts",
   "extensions/piora-plan.ts",
   "extensions/piora-room.ts",

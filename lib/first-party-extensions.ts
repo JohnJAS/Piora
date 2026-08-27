@@ -53,6 +53,14 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
     required: true,
   },
   {
+    id: "piora:user-input",
+    fileName: "piora-user-input.ts",
+    name: "Piora User Input",
+    description: "Native question cards for structured choices and text responses.",
+    profiles: ["normal"],
+    required: true,
+  },
+  {
     id: "piora:goal",
     fileName: "piora-goal.ts",
     name: "Piora Target Mode",

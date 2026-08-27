@@ -50,6 +50,11 @@ function positionNodes(nodes: NavigatorNode[], height: number): { nodes: Navigat
 
 export function RoomMessageNavigator({ messages, scrollContainer, messageRefs }: Props) {
   const { t } = useI18n();
+  // Timeline tracks user prompts only; agent replies and system entries stay out of the log.
+  const userMessages = useMemo(
+    () => messages.filter((message) => message.author.kind === "user"),
+    [messages],
+  );
   const [visible, setVisible] = useState(false);
   const [nodes, setNodes] = useState<NavigatorNode[]>([]);
   const [height, setHeight] = useState(600);
@@ -98,7 +103,7 @@ export function RoomMessageNavigator({ messages, scrollContainer, messageRefs }:
     const minimapEl = containerRef.current;
     if (!scrollEl) return;
     const containerRect = scrollEl.getBoundingClientRect();
-    const nextNodes = messages.map((message, index): NavigatorNode => {
+    const nextNodes = userMessages.map((message, index): NavigatorNode => {
       const element = messageRefs.current.get(message.id);
       const elementRect = element?.getBoundingClientRect();
       return {
@@ -113,7 +118,7 @@ export function RoomMessageNavigator({ messages, scrollContainer, messageRefs }:
     setNodes(nextNodes);
     setVisible(nextNodes.length > 1 && scrollEl.scrollHeight - scrollEl.clientHeight > 20);
     syncActive(scrollEl, nextNodes);
-  }, [messageRefs, messages, scrollContainer, syncActive]);
+  }, [messageRefs, scrollContainer, syncActive, userMessages]);
 
   useEffect(() => {
     const scrollEl = scrollContainer.current;
@@ -135,7 +140,7 @@ export function RoomMessageNavigator({ messages, scrollContainer, messageRefs }:
       window.clearTimeout(timer);
       observer.disconnect();
     };
-  }, [measure, messages.length, scrollContainer]);
+  }, [measure, userMessages.length, scrollContainer]);
 
   const scrollToNode = useCallback((node: NavigatorNode) => {
     const scrollEl = scrollContainer.current;

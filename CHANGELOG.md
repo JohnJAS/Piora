@@ -4,6 +4,34 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.20] - 2026-08-27
+
+### Added
+
+- Added a first-party structured user-input tool that lets models request
+  single-choice, multiple-choice, and free-form answers in a native in-chat
+  card, with submitted answers persisted in conversation history.
+- Added an in-app desktop update dialog that shows the version's release notes,
+  download percentage, transferred and total size, and current download speed.
+
+### Changed
+
+- Replaced the title-bar update text badge with a compact Codex-style download
+  icon and changed the completed-update action to “Install and restart”.
+- New-chat landing pages now explain projectless conversations more clearly and
+  require an explicit model selection instead of silently using an automatic
+  model choice.
+- Room timeline navigation now indexes user prompts only, keeping agent and
+  system messages out of the compact jump list.
+- Kept project and projectless-chat sections transparent over custom sidebar
+  backgrounds for a consistent appearance.
+
+### Fixed
+
+- GitHub releases now publish the matching CHANGELOG section as their release
+  notes, allowing installed clients to show exactly what changed before an
+  update is installed.
+
 ## [0.4.19] - 2026-08-27
 
 ### Added

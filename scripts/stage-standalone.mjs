@@ -47,6 +47,8 @@ const assets = [
     ["Piora file-change extension", "extensions/piora-file-changes.ts"],
     ["Piora Harmony device extension", "extensions/piora-harmony.ts"],
     ["Piora visual-agent extension", "extensions/piora-vision-agent.ts"],
+    ["Piora scheduled-task extension", "extensions/piora-automations.ts"],
+    ["Piora user-input extension", "extensions/piora-user-input.ts"],
     ["Piora target-mode extension", "extensions/piora-goal.ts"],
     ["Piora plan-mode extension", "extensions/piora-plan.ts"],
     ["Piora collaboration-room extension", "extensions/piora-room.ts"],

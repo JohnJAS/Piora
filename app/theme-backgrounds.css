@@ -86,6 +86,13 @@ html[data-app-background-active="true"] .sidebar-container {
   backdrop-filter: blur(5px);
 }
 
+html[data-app-background-active="true"] .sidebar-projects-header {
+  /* The sticky projects heading must not paint its own near-opaque panel:
+     match the rooms heading so the artwork color shows through. The kept
+     blur keeps the label legible while sessions scroll beneath it. */
+  background: transparent !important;
+}
+
 html[data-app-background-active="true"] .session-sidebar-content {
   /* The outer sidebar already owns the user-controlled wash. Keeping the
      inner shell transparent avoids multiplying two translucent layers into

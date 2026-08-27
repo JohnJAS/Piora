@@ -6,12 +6,12 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url);
 const { getRoomMessagePreview } = await jiti.import("../lib/room-message-navigation.ts");
 
-test("room message navigation includes every author type and exposes clickable jump targets", async () => {
+test("room message navigation lists only user prompts and exposes clickable jump targets", async () => {
   const source = await readFile(new URL("./RoomMessageNavigator.tsx", import.meta.url), "utf8");
   const base = { id: "m1", createdAt: 1, content: "  完成\n验证  " };
   assert.equal(getRoomMessagePreview({ ...base, author: { kind: "user", id: "u", name: "你" } }), "你：完成 验证");
-  assert.equal(getRoomMessagePreview({ ...base, author: { kind: "system", id: "piora" } }), "系统：完成 验证");
-  assert.match(source, /messages\.map\(\(message, index\)/);
+  assert.match(source, /author\.kind === "user"/);
+  assert.match(source, /userMessages\.map\(\(message, index\)/);
   assert.match(source, /群聊记录/);
   assert.match(source, /piora:chat-timeline-pinned:v1/);
   assert.match(source, /aria-pressed=\{previewPinned\}/);

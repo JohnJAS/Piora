@@ -5,6 +5,7 @@ import type {
   SlashCommandInfo,
   Theme,
 } from "@earendil-works/pi-coding-agent";
+import type { UserInputQuestion, UserInputResult } from "./user-input";
 
 export interface ContextUsage {
   percent: number | null;
@@ -89,6 +90,7 @@ type WidgetOptionsLike = {
 };
 
 export interface ExtensionUiContextLike {
+  requestUserInput(title: string, description: string | undefined, questions: UserInputQuestion[], opts?: DialogOptionsLike): Promise<UserInputResult>;
   select(title: string, options: string[], opts?: DialogOptionsLike): Promise<string | undefined>;
   confirm(title: string, message: string, opts?: DialogOptionsLike): Promise<boolean>;
   input(title: string, placeholder?: string, opts?: DialogOptionsLike): Promise<string | undefined>;

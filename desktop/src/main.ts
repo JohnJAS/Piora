@@ -66,6 +66,9 @@ const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
 const HARMONY_RUNTIME_PICKER_CHANNEL = "pi:harmony-runtime-picker";
 const DESKTOP_UPDATE_STATE_GET_CHANNEL = "pi:update-state-get";
 const DESKTOP_UPDATE_STATE_CHANNEL = "pi:update-state";
+const DESKTOP_UPDATE_CHECK_CHANNEL = "pi:update-check";
+const DESKTOP_UPDATE_DOWNLOAD_CHANNEL = "pi:update-download";
+const DESKTOP_UPDATE_INSTALL_CHANNEL = "pi:update-install";
 const DESKTOP_TITLE_BAR_HEIGHT = 36;
 const COMPANION_COMPACT_WIDTH = 156;
 const COMPANION_COMPACT_HEIGHT = 184;
@@ -309,11 +312,11 @@ function notifyUpdateAvailable(state: DesktopUpdateState): void {
   const notification = new Notification({
     title: chinese ? `Piora${version} 可以更新` : `Piora${version} is available`,
     body: chinese
-      ? "帮助菜单已显示“有更新”，点击即可下载。"
-      : "The Help menu now shows Update available. Click it to download.",
+      ? "点击应用顶部的下载图标，查看本次更新内容和下载进度。"
+      : "Use the download icon in the title bar to review changes and download progress.",
     silent: false,
   });
-  notification.on("click", () => focusMainWindow());
+  notification.on("click", () => focusMainWindow("open-update"));
   notification.show();
 }
 
@@ -335,10 +338,30 @@ function registerDesktopUpdateStateHandler(): void {
     if (!isTrustedMainWindowSender(event)) return null;
     return { ...desktopUpdateState };
   });
+
+  ipcMain.removeHandler(DESKTOP_UPDATE_CHECK_CHANNEL);
+  ipcMain.handle(DESKTOP_UPDATE_CHECK_CHANNEL, async (event): Promise<DesktopUpdateState | null> => {
+    if (!isTrustedMainWindowSender(event) || !desktopUpdateController) return null;
+    await desktopUpdateController.checkForUpdates();
+    return { ...desktopUpdateController.getState() };
+  });
+
+  ipcMain.removeHandler(DESKTOP_UPDATE_DOWNLOAD_CHANNEL);
+  ipcMain.handle(DESKTOP_UPDATE_DOWNLOAD_CHANNEL, async (event): Promise<DesktopUpdateState | null> => {
+    if (!isTrustedMainWindowSender(event) || !desktopUpdateController) return null;
+    await desktopUpdateController.downloadUpdate();
+    return { ...desktopUpdateController.getState() };
+  });
+
+  ipcMain.removeHandler(DESKTOP_UPDATE_INSTALL_CHANNEL);
+  ipcMain.handle(DESKTOP_UPDATE_INSTALL_CHANNEL, async (event): Promise<boolean> => {
+    if (!isTrustedMainWindowSender(event)) return false;
+    return installDownloadedDesktopUpdate(false);
+  });
 }
 
-async function installDownloadedDesktopUpdate(): Promise<void> {
-  if (!desktopUpdateController || desktopUpdateState.status !== "downloaded") return;
+async function installDownloadedDesktopUpdate(confirmInstallation = true): Promise<boolean> {
+  if (!desktopUpdateController || desktopUpdateState.status !== "downloaded") return false;
   const chinese = app.getLocale().toLowerCase().startsWith("zh");
   if (runningTaskCount > 0) {
     await showDesktopMessage({
@@ -346,28 +369,30 @@ async function installDownloadedDesktopUpdate(): Promise<void> {
       title: chinese ? "暂时不能安装更新" : "Update cannot be installed yet",
       message: chinese ? "仍有任务正在运行" : "A task is still running",
       detail: chinese
-        ? "请等待当前任务完成，再从帮助菜单选择“重启并安装”。"
-        : "Wait for the current task to finish, then choose Restart and install from the Help menu.",
+        ? "请等待当前任务完成，再选择“安装并重启”。"
+        : "Wait for the current task to finish, then choose Install and restart.",
       buttons: [chinese ? "知道了" : "OK"],
       defaultId: 0,
     });
-    return;
+    return false;
   }
 
-  const result = await showDesktopMessage({
-    type: "question",
-    title: chinese ? "安装 Piora 更新" : "Install Piora update",
-    message: chinese
-      ? `重启并安装 Piora${updateVersionLabel(desktopUpdateState)}？`
-      : `Restart and install Piora${updateVersionLabel(desktopUpdateState)}?`,
-    detail: chinese
-      ? "Piora 会安全停止本地服务，安装完成后自动重新打开。会话和设置数据不会被删除。"
-      : "Piora will safely stop its local service and reopen after installation. Chats and settings will not be deleted.",
-    buttons: [chinese ? "重启并安装" : "Restart and install", chinese ? "稍后" : "Later"],
-    defaultId: 0,
-    cancelId: 1,
-  });
-  if (result.response !== 0) return;
+  if (confirmInstallation) {
+    const result = await showDesktopMessage({
+      type: "question",
+      title: chinese ? "安装 Piora 更新" : "Install Piora update",
+      message: chinese
+        ? `安装并重启 Piora${updateVersionLabel(desktopUpdateState)}？`
+        : `Install Piora${updateVersionLabel(desktopUpdateState)} and restart?`,
+      detail: chinese
+        ? "Piora 会安全停止本地服务，安装完成后自动重新打开。会话和设置数据不会被删除。"
+        : "Piora will safely stop its local service and reopen after installation. Chats and settings will not be deleted.",
+      buttons: [chinese ? "安装并重启" : "Install and restart", chinese ? "稍后" : "Later"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (result.response !== 0) return false;
+  }
 
   quitRequested = true;
   try {
@@ -377,6 +402,7 @@ async function installDownloadedDesktopUpdate(): Promise<void> {
     if (!desktopUpdateController.quitAndInstall()) {
       throw new Error("The downloaded desktop update is no longer available.");
     }
+    return true;
   } catch (error) {
     logger?.error("Unable to launch the downloaded desktop update", error);
     shutdownComplete = true;
@@ -386,6 +412,7 @@ async function installDownloadedDesktopUpdate(): Promise<void> {
     );
     app.relaunch();
     app.quit();
+    return false;
   }
 }
 
@@ -396,13 +423,9 @@ async function handleDesktopUpdateMenuAction(): Promise<void> {
     await shell.openExternal("https://github.com/kexijiang/Piora/releases/latest");
     return;
   }
-  if (desktopUpdateState.status === "checking" || desktopUpdateState.status === "downloading") return;
-  if (desktopUpdateState.status === "available") {
-    await controller.downloadUpdate();
-    return;
-  }
-  if (desktopUpdateState.status === "downloaded") {
-    await installDownloadedDesktopUpdate();
+  if (desktopUpdateState.status === "checking") return;
+  if (isUpdateAttentionState()) {
+    focusMainWindow("open-update");
     return;
   }
 
@@ -418,20 +441,7 @@ async function handleDesktopUpdateMenuAction(): Promise<void> {
       defaultId: 0,
     });
   } else if (checked.status === "available") {
-    const result = await showDesktopMessage({
-      type: "info",
-      title: chinese ? "发现新版本" : "Update available",
-      message: chinese
-        ? `Piora${updateVersionLabel(checked)} 可以更新`
-        : `Piora${updateVersionLabel(checked)} is available`,
-      detail: chinese
-        ? "也可以稍后点击帮助菜单中的“有更新”进行下载。"
-        : "You can also download it later from Update available in the Help menu.",
-      buttons: [chinese ? "立即下载" : "Download now", chinese ? "稍后" : "Later"],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (result.response === 0) await controller.downloadUpdate();
+    focusMainWindow("open-update");
   } else if (checked.status === "error") {
     await showDesktopMessage({
       type: "error",
@@ -475,7 +485,7 @@ function installApplicationMenu(): void {
     actualSize: "实际大小", zoomIn: "放大", zoomOut: "缩小", fullscreen: "切换全屏",
     documentation: "文档", about: "关于 Piora", aboutDetail: "基于 Pi Agent 与 pi-web 的开源桌面应用。",
     checkUpdates: "检查更新…", checkingUpdates: "正在检查更新…", updateAvailable: "有更新",
-    downloadingUpdate: "正在下载更新", restartToInstall: "重启并安装", retryUpdate: "检查更新失败，点击重试",
+    downloadingUpdate: "正在下载更新", restartToInstall: "安装并重启", retryUpdate: "检查更新失败，点击重试",
     installAutoUpdateEdition: "获取支持自动更新的安装版…",
   } : {
     file: "File", edit: "Edit", view: "View", help: "Help",
@@ -485,7 +495,7 @@ function installApplicationMenu(): void {
     actualSize: "Actual size", zoomIn: "Zoom in", zoomOut: "Zoom out", fullscreen: "Toggle full screen",
     documentation: "Documentation", about: "About Piora", aboutDetail: "An open-source desktop application built with Pi Agent and pi-web.",
     checkUpdates: "Check for updates…", checkingUpdates: "Checking for updates…", updateAvailable: "Update available",
-    downloadingUpdate: "Downloading update", restartToInstall: "Restart and install", retryUpdate: "Update check failed — retry",
+    downloadingUpdate: "Downloading update", restartToInstall: "Install and restart", retryUpdate: "Update check failed — retry",
     installAutoUpdateEdition: "Get the auto-updating installer…",
   };
   const editRoles: MenuItemConstructorOptions[] = [

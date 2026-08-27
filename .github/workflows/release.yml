@@ -32,6 +32,17 @@ jobs:
           git fetch --no-tags --force origin +refs/heads/main:refs/remotes/origin/main
           node scripts/verify-release-metadata.mjs "$GITHUB_REF_NAME" --require-origin-main
 
+      - name: Prepare version release notes
+        run: node scripts/create-release-notes.mjs "$GITHUB_REF_NAME" release-notes.md
+
+      - name: Upload version release notes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: piora-release-notes-${{ github.ref_name }}
+          path: release-notes.md
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Install dependencies
         run: npm ci
 
@@ -373,12 +384,13 @@ jobs:
             (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-linux-x64-portable.AppImage")).Path
           )
           $assets += (Resolve-Path -LiteralPath (Join-Path $root 'SHA256SUMS.txt')).Path
-          $releaseNotes = "Stable desktop release:`n- Windows x64 installer (recommended): choose an installation directory and receive future updates from Piora's Help menu.`n- Windows x64 ZIP: extract, then run Piora.exe.`n- Windows x64 portable EXE: run the single executable directly; install the recommended edition to enable automatic updates.`n- Linux x64 AppImage: mark executable, then run it.`n`nPackages are not code-signed. Verify the selected package against SHA256SUMS.txt before running. Linux currently reports local speech transcription as unavailable because no reviewed bundled whisper.cpp Linux runtime is shipped; all other desktop capabilities are packaged normally.`n`nRelease validation includes source hygiene, license inventory, lint, type checking, unit tests, update-manifest integrity, installed Windows runtime startup, packaged-service isolation, Windows and Linux desktop-runtime startup, archive integrity, and SHA-256 verification."
+          # Stable desktop release notes were generated from the tagged CHANGELOG
+          # in source-gate and arrive here through the artifact-only boundary.
+          $releaseNotesPath = (Resolve-Path -LiteralPath (Join-Path $root 'release-notes.md')).Path
           & gh release create $env:GITHUB_REF_NAME @assets `
             --repo $env:GITHUB_REPOSITORY `
             --title "Piora $env:GITHUB_REF_NAME" `
-            --notes $releaseNotes `
-            --generate-notes `
+            --notes-file $releaseNotesPath `
             --verify-tag `
             --latest
           if ($LASTEXITCODE -ne 0) {
