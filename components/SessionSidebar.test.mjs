@@ -8,6 +8,7 @@ const globalStyles = await readFile(new URL("../app/globals.css", import.meta.ur
 const sidebarStyles = await readFile(new URL("./SessionSidebar.module.css", import.meta.url), "utf8");
 const splitSources = await Promise.all([
   "ProjectList.tsx", "SidebarNavigation.tsx", "SidebarProjectArea.tsx", "SidebarFileArea.tsx",
+  "SidebarChatArea.tsx",
   "useSessionCatalog.ts", "sidebar-utils.ts", "sidebar-types.ts", "useProjectPicker.ts", "WorktreeSection.tsx",
 ].map((file) => readFile(new URL(`./sidebar/${file}`, import.meta.url), "utf8")));
 const source = [mainSource, taskRowSource, ...splitSources].join("\n");
@@ -53,7 +54,7 @@ test("switches sessions immediately while another session is running", () => {
     source.indexOf("const handleNewSessionInProject"),
   );
   assert.doesNotMatch(switchSource, /window\.confirm/);
-  assert.match(switchSource, /setSelectedCwd\(s\.cwd\)/);
+  assert.match(switchSource, /setSelectedCwd\(s\.projectless \? null : s\.cwd \|\| null\)/);
   assert.match(switchSource, /onSelectSession\(s\)/);
 });
 
@@ -119,6 +120,15 @@ test("matches the Codex project rail with real pin, metadata, edit, and new-chat
   assert.match(source, /onNewSession/);
   assert.match(source, /styles\.pinnedUnpin/);
   assert.match(source, /togglePinnedProject\(group\.projectRoot\)/);
+});
+
+test("keeps projectless conversations in a fixed chat section", () => {
+  assert.match(source, /activeSessions\.filter\(\(session\) => session\.projectless\)/);
+  assert.match(source, /activeSessions\.filter\(\(session\) => !session\.projectless\)/);
+  assert.match(source, /<SidebarChatArea/);
+  assert.match(source, /sidebar\.chats/);
+  assert.match(source, /name="compose"/);
+  assert.match(sidebarStyles, /\.chatSection\s*\{[^}]*flex:\s*0 0 auto/s);
 });
 
 test("project session overflow is accessible and attention-aware", () => {

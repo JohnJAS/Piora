@@ -30,6 +30,7 @@ import type {
   ThinkingContent,
 } from "@/lib/types";
 import { AliIcon, type AliIconName } from "./AliIcon";
+import { MessageImage, MessageImageViewer } from "./MessageImage";
 
 const DiffView = dynamic(
   () => import("./DiffView").then((module) => module.DiffView),
@@ -166,12 +167,28 @@ function haveSameRelevantToolResults(
   return true;
 }
 
+export function getAutomationToolCardDetails(
+  block: Pick<ToolCallContent, "toolName" | "input">,
+  result: ToolResultMessage | undefined,
+): { id: string; name?: string; rrule?: string } | null {
+  if (block.toolName !== "piora_automation" || (block.input as { action?: unknown })?.action !== "create" || result?.isError) {
+    return null;
+  }
+  const automation = (result?.details as { automation?: { id?: unknown; name?: unknown; rrule?: unknown } } | undefined)?.automation;
+  if (typeof automation?.id !== "string") return null;
+  return {
+    id: automation.id,
+    ...(typeof automation.name === "string" ? { name: automation.name } : {}),
+    ...(typeof automation.rrule === "string" ? { rrule: automation.rrule } : {}),
+  };
+}
+
 export const MessageView = memo(function MessageView({ message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, showTimestamp, prevTimestamp, responseStartedAt, sessionId, onOpenAutomation }: Props) {
   if (message.role === "user") {
     return <UserMessageView message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} sessionId={sessionId} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} responseStartedAt={responseStartedAt} sessionId={sessionId} entryId={entryId} />;
+    return <AssistantMessageView message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} responseStartedAt={responseStartedAt} sessionId={sessionId} entryId={entryId} onOpenAutomation={onOpenAutomation} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -237,6 +254,7 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
   const [loadedContent, setLoadedContent] = useState<string | null>(null);
   const [contentLoading, setContentLoading] = useState(false);
   const [contentLoadError, setContentLoadError] = useState<string | null>(null);
+  const [openImageIndex, setOpenImageIndex] = useState<number | null>(null);
 
   const initialContent =
     typeof message.content === "string"
@@ -347,17 +365,16 @@ function UserMessageView({ message, cwd, onOpenFile, entryId, onFork, forking, o
                   : flat.data
                     ? `data:${flat.mimeType};base64,${flat.data}`
                     : "";
-                return (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={i}
-                    src={src}
-                    alt=""
-                    style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "1px solid var(--border)" }}
-                  />
-                );
+                return src ? <MessageImage key={i} src={src} index={i} onOpen={() => setOpenImageIndex(i)} /> : null;
               })}
             </div>
+          )}
+          {openImageIndex !== null && imageBlocks[openImageIndex] && (
+            <MessageImageViewer
+              src={imageSource(imageBlocks[openImageIndex])}
+              index={openImageIndex}
+              onClose={() => setOpenImageIndex(null)}
+            />
           )}
           {content && (
             <>
@@ -509,6 +526,7 @@ function AssistantMessageView({
   responseStartedAt,
   sessionId,
   entryId,
+  onOpenAutomation,
 }: {
   message: AssistantMessage;
   isStreaming?: boolean;
@@ -521,6 +539,7 @@ function AssistantMessageView({
   responseStartedAt?: number;
   sessionId?: string;
   entryId?: string;
+  onOpenAutomation?: (automationId: string) => void;
 }) {
   const { t } = useI18n();
   const time = showTimestamp ? formatTime(message.timestamp) : null;
@@ -692,7 +711,7 @@ function AssistantMessageView({
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {blockItems.map(({ block, originalIndex }) => (
-          <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} />
+          <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} onOpenAutomation={onOpenAutomation} />
         ))}
       </div>
 
@@ -766,7 +785,7 @@ function AssistantMessageView({
   );
 }
 
-function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, sessionId, entryId, blockIndex }: { block: AssistantContentBlock; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string) => void; sessionId?: string; entryId?: string; blockIndex: number }) {
+function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, sessionId, entryId, blockIndex, onOpenAutomation }: { block: AssistantContentBlock; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string) => void; sessionId?: string; entryId?: string; blockIndex: number; onOpenAutomation?: (automationId: string) => void }) {
   if (block.type === "text") {
     return <TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} />;
   }
@@ -778,7 +797,7 @@ function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCal
     const tc = block as ToolCallContent;
     const result = toolResults?.get(tc.toolCallId);
     const duration = toolCallDurations?.get(tc.toolCallId);
-    return <ToolCallBlock block={tc} result={result} duration={duration} onOpenFile={onOpenFile} />;
+    return <ToolCallBlock block={tc} result={result} duration={duration} onOpenFile={onOpenFile} onOpenAutomation={onOpenAutomation} />;
   }
   return null;
 }
@@ -878,7 +897,7 @@ function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
 }
 
 
-function ToolCallBlock({ block, result, duration, onOpenFile }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; onOpenFile?: (filePath: string) => void }) {
+function ToolCallBlock({ block, result, duration, onOpenFile, onOpenAutomation }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; onOpenFile?: (filePath: string) => void; onOpenAutomation?: (automationId: string) => void }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
@@ -886,6 +905,18 @@ function ToolCallBlock({ block, result, duration, onOpenFile }: { block: ToolCal
   const fileChange = getFileChangeInfo(block, result);
   const resultDiff = result && !result.isError ? getResultDiff(result) : null;
   const summary = summarizeToolCall(block.toolName, block.input, result, t);
+  const automationDetails = getAutomationToolCardDetails(block, result);
+
+  if (automationDetails) {
+    return (
+      <AutomationCard
+        automationId={automationDetails.id}
+        fallbackName={automationDetails.name}
+        fallbackRrule={automationDetails.rrule}
+        onOpen={onOpenAutomation}
+      />
+    );
+  }
 
   // Result display
   const resultText = result && Array.isArray(result.content)
@@ -1251,6 +1282,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
   const [contentExpanded, setContentExpanded] = useState(!isHiddenDisplay);
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [openImageIndex, setOpenImageIndex] = useState<number | null>(null);
   const text = getMessageText(message.content);
   const images = getMessageImages(message.content);
   const hasDetails = message.details !== undefined;
@@ -1302,15 +1334,7 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
                 {images.map((img, i) => {
                   const src = imageSource(img);
                   if (!src) return null;
-                  return (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      key={i}
-                      src={src}
-                      alt=""
-                      style={{ maxWidth: 240, maxHeight: 240, borderRadius: 6, objectFit: "contain", display: "block", border: "1px solid var(--border)" }}
-                    />
-                  );
+                  return <MessageImage key={i} src={src} index={i} onOpen={() => setOpenImageIndex(i)} />;
                 })}
               </div>
             )}
@@ -1333,6 +1357,13 @@ function CustomMessageView({ message, cwd, onOpenFile }: { message: CustomMessag
           >
              {text ? previewText(text) : t("i18n.showExtensionMessage")}
           </button>
+        )}
+        {openImageIndex !== null && images[openImageIndex] && (
+          <MessageImageViewer
+            src={imageSource(images[openImageIndex])}
+            index={openImageIndex}
+            onClose={() => setOpenImageIndex(null)}
+          />
         )}
 
         <div

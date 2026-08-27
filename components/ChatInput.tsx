@@ -7,15 +7,18 @@ import type { AttachedFile, BuiltinSlashCommandResult, CompactResultInfo, Queued
 import { clearDraft, getDraft, setDraft, type ChatDraftFile, type ChatDraftImage } from "@/lib/draft-store";
 import {
   MAX_ATTACHED_IMAGE_BYTES,
+  MAX_ATTACHED_IMAGE_TOTAL_BYTES,
   MAX_ATTACHED_IMAGES,
+  getBase64DecodedByteLength,
   isBase64ImageWithinLimits,
 } from "@/lib/image-attachments";
 import {
   LARGE_PASTE_CHARACTER_THRESHOLD,
+  MAX_ATTACHED_FILE_BYTES,
+  MAX_PROMPT_MATERIAL_BYTES,
   shouldMaterializeDirectPrompt,
 } from "@/lib/prompt-input-policy";
 const MAX_ATTACHED_FILES = 8;
-const MAX_ATTACHED_TEXT_FILE_BYTES = 64 * 1024;
 const COMPOSER_MAX_HEIGHT = 360;
 
 function resizeComposerTextarea(textarea: HTMLTextAreaElement): void {
@@ -127,7 +130,7 @@ export interface ChatInputHandle {
   prependText: (text: string) => void;
   addImages: (files: File[]) => void;
   addFiles: (files: File[]) => void;
-  restoreFailedPrompt: (text: string, files?: AttachedFile[]) => void;
+  restoreFailedPrompt: (text: string, files?: AttachedFile[], images?: AttachedImage[]) => void;
   /** Send a separate local UI shortcut without replacing the user's draft. */
   sendText: (text: string) => boolean;
 }
@@ -382,6 +385,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>(() => (
     draftKey ? draftFilesToAttachedFiles(getDraft(draftKey)?.files) : []
   ));
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [isProcessingImages, setIsProcessingImages] = useState(false);
   const trimmedValue = value.trimStart();
   const bashMode = attachedImages.length === 0 && attachedFiles.length === 0 && trimmedValue.startsWith("!");
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
@@ -424,6 +429,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const valueRef = useRef(value);
   const attachedImagesRef = useRef(attachedImages);
   const pendingImageCountRef = useRef(0);
+  const pendingImageBytesRef = useRef(0);
   valueRef.current = value;
   attachedImagesRef.current = attachedImages;
   const attachedFilesRef = useRef(attachedFiles);
@@ -453,15 +459,30 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const processImageFiles = useCallback(async (files: File[]) => {
     if (isStreaming) return;
+    setAttachmentError(null);
     const remaining = Math.max(
       0,
       MAX_ATTACHED_IMAGES - attachedImagesRef.current.length - pendingImageCountRef.current,
     );
-    const imageFiles = files
-      .filter((f) => f.type.startsWith("image/") && f.size <= MAX_ATTACHED_IMAGE_BYTES)
-      .slice(0, remaining);
+    let remainingBytes = MAX_ATTACHED_IMAGE_TOTAL_BYTES
+      - attachedImagesRef.current.reduce((total, image) => total + (getBase64DecodedByteLength(image.data) ?? 0), 0)
+      - pendingImageBytesRef.current;
+    let rejected = false;
+    const imageFiles: File[] = [];
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) continue;
+      if (imageFiles.length >= remaining || file.size > MAX_ATTACHED_IMAGE_BYTES || file.size > remainingBytes) {
+        rejected = true;
+        continue;
+      }
+      imageFiles.push(file);
+      remainingBytes -= file.size;
+    }
+    if (rejected) setAttachmentError(t("chat.imageTooLarge", { size: "100 MB" }));
     if (!imageFiles.length) return;
     pendingImageCountRef.current += imageFiles.length;
+    pendingImageBytesRef.current += imageFiles.reduce((total, file) => total + file.size, 0);
+    setIsProcessingImages(true);
     try {
       const newImages = await Promise.all(
         imageFiles.map(
@@ -486,8 +507,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       });
     } finally {
       pendingImageCountRef.current -= imageFiles.length;
+      pendingImageBytesRef.current -= imageFiles.reduce((total, file) => total + file.size, 0);
+      if (pendingImageCountRef.current <= 0) setIsProcessingImages(false);
     }
-  }, [isStreaming]);
+  }, [isStreaming, t]);
 
   const removeImage = useCallback((index: number) => {
     setAttachedImages((prev) => {
@@ -500,18 +523,30 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const processFileSelection = useCallback(async (files: File[]) => {
     if (isStreaming) return;
-    const imageFiles = files.filter(
-      (file) => file.type.startsWith("image/") && file.size <= MAX_ATTACHED_IMAGE_BYTES,
-    );
+    setAttachmentError(null);
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
     if (imageFiles.length) processImageFiles(imageFiles);
 
-    const textFiles = files.filter((file) => !file.type.startsWith("image/"));
+    const nonImageFiles = files.filter((file) => !file.type.startsWith("image/"));
+    let remainingBytes = MAX_PROMPT_MATERIAL_BYTES - attachedFilesRef.current
+      .filter((file) => file.text != null)
+      .reduce((total, file) => total + file.size, 0);
+    let rejected = false;
+    const textFiles: File[] = [];
+    for (const file of nonImageFiles) {
+      if (file.size > MAX_ATTACHED_FILE_BYTES || file.size > remainingBytes) {
+        rejected = true;
+        continue;
+      }
+      textFiles.push(file);
+      remainingBytes -= file.size;
+    }
+    if (rejected) {
+      setAttachmentError(t("chat.attachmentTooLarge", { size: "100 MB" }));
+    }
     if (!textFiles.length) return;
     const prepared = await Promise.all(
       textFiles.map(async (file): Promise<AttachedFile> => {
-        if (file.size > MAX_ATTACHED_TEXT_FILE_BYTES) {
-          return { name: file.name, size: file.size, text: null };
-        }
         try {
           const text = await file.text();
           if (text.includes("\u0000")) {
@@ -524,7 +559,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       }),
     );
     setAttachedFiles((prev) => [...prev, ...prepared].slice(0, MAX_ATTACHED_FILES));
-  }, [isStreaming, processImageFiles]);
+  }, [isStreaming, processImageFiles, t]);
 
   useImperativeHandle(ref, () => ({
     focus() {
@@ -592,9 +627,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     addFiles(files: File[]) {
       void processFileSelection(files);
     },
-    restoreFailedPrompt(text: string, files?: AttachedFile[]) {
+    restoreFailedPrompt(text: string, files?: AttachedFile[], images?: AttachedImage[]) {
       setValue((current) => current.trim() ? [text, current].filter((item) => item.trim()).join("\n\n") : text);
       if (files?.length) setAttachedFiles((current) => [...files, ...current].slice(0, MAX_ATTACHED_FILES));
+      if (images?.length) {
+        setAttachedImages((current) => [
+          ...images.map((image) => ({
+            ...image,
+            previewUrl: `data:${image.mimeType};base64,${image.data}`,
+          })),
+          ...current,
+        ].slice(0, MAX_ATTACHED_IMAGES));
+      }
       requestAnimationFrame(() => {
         const textarea = textareaRef.current;
         if (!textarea) return;
@@ -640,6 +684,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (draftKeyRef.current && draftKeyRef.current !== draftKey) clearDraft(draftKeyRef.current);
     clearImages();
     setAttachedFiles([]);
+    setAttachmentError(null);
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
@@ -710,7 +755,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const handleSend = useCallback(async () => {
     const msg = value.trim();
     if (!msg && !attachedImages.length && !attachedFiles.length) return;
-    if (isStreaming) return;
+    if (isStreaming || isProcessingImages) return;
     if (!attachedImages.length && !attachedFiles.length && msg.startsWith("/") && onBuiltinCommand) {
       const result = await onBuiltinCommand(msg);
       if (result.handled) {
@@ -745,7 +790,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     );
     setPromptMode("normal");
     clearInput();
-  }, [value, attachedImages, attachedFiles, isStreaming, onBuiltinCommand, onSend, clearInput, promptMode, contextUsage, t]);
+  }, [value, attachedImages, attachedFiles, isStreaming, isProcessingImages, onBuiltinCommand, onSend, clearInput, promptMode, contextUsage, t]);
 
   const handleOptimizePrompt = useCallback(async () => {
     const source = value.trim();
@@ -818,7 +863,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = hasInputText && attachedImages.length === 0 && attachedFiles.length === 0;
   const primaryStreamingMode = streamingSendPreference.enabled ? streamingSendPreference.behavior : "steer";
-  const canSend = hasInputText || attachedImages.length > 0 || attachedFiles.length > 0;
+  const canSend = !isProcessingImages && (hasInputText || attachedImages.length > 0 || attachedFiles.length > 0);
   const canOptimizePrompt = hasInputText
     && !isStreaming
     && Boolean(model)
@@ -1606,6 +1651,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           </div>
         )}
         {/* Image previews */}
+        {attachmentError && (
+          <div role="alert" style={{ marginBottom: 6, color: "#ef4444", fontSize: "var(--text-xs)" }}>
+            {attachmentError}
+          </div>
+        )}
         {attachedImages.length > 0 && (
           <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
             {attachedImages.map((img, i) => (
@@ -2521,8 +2571,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 type="button"
                 onClick={handleSend}
                 disabled={!canSend}
-                title={t("chat.send")}
-                aria-label={t("chat.send")}
+                title={t(isProcessingImages ? "chat.processingImages" : "chat.send")}
+                aria-label={t(isProcessingImages ? "chat.processingImages" : "chat.send")}
                 style={{
                   width: 32, height: 32, padding: 0, flexShrink: 0,
                   display: "flex", alignItems: "center", justifyContent: "center",

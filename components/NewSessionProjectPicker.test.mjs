@@ -8,13 +8,19 @@ const navigation = await readFile(new URL("./sidebar/SidebarNavigation.tsx", imp
 const taskRow = await readFile(new URL("./sidebar/TaskRow.tsx", import.meta.url), "utf8");
 const backgrounds = await readFile(new URL("../app/theme-backgrounds.css", import.meta.url), "utf8");
 
-test("new chat requires an explicit project choice instead of inheriting the active cwd", () => {
+test("new chat can start without a project while keeping project selection optional", () => {
   assert.match(shell, /const effectiveNewSessionCwd = newSessionCwd;/);
   assert.doesNotMatch(shell, /newSessionCwd \?\? \(selectedSession === null/);
   assert.match(shell, /<NewSessionProjectPicker/);
   assert.match(navigation, /onRequestNewSession\(\)/);
   assert.doesNotMatch(picker, /开始使用 Piora|配置模型|进入“模型”添加并启用模型/);
-  assert.match(picker, /<span>选择项目<\/span>/);
+  assert.match(picker, /<span>选择项目（可选）<\/span>/);
+  assert.match(picker, /fetch\("\/api\/models"/);
+  assert.match(picker, /aria-label="选择模型"/);
+  assert.match(picker, /onStartChat\(getLandingDraft\(\), selectedModel\)/);
+  assert.match(picker, /不使用项目，直接聊天/);
+  assert.match(shell, /fetch\("\/api\/chat-workspace"/);
+  assert.match(shell, /newSessionInitialModel=\{newSessionInitialModel\}/);
   assert.doesNotMatch(picker, /你想在|中构建什么|本地/);
   assert.match(picker, /fetch\("\/api\/sessions"/);
   assert.match(picker, /className=\{styles\.composer\}/);

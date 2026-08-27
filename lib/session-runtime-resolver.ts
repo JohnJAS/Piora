@@ -4,6 +4,8 @@ import { getRpcSession, startRpcSession, type AgentSessionWrapper, type RpcSessi
 import { listRooms } from "./room-store";
 import { readSessionHeader, resolveSessionPath } from "./session-reader";
 import type { TeamAgentProfile } from "./team-types";
+import { isProjectlessChatCwd } from "./projectless-chat-path";
+import { getProjectlessChatWorkspace } from "./projectless-chat-server";
 
 export type SessionRuntimeResolverErrorCode =
   | "SESSION_NOT_FOUND"
@@ -107,10 +109,13 @@ export async function resolveOrStartRpcSession(
   }
 
   try {
+    const runtimeCwd = isProjectlessChatCwd(header.cwd)
+      ? getProjectlessChatWorkspace()
+      : header.cwd;
     const startOptions = managedMember
       ? managedTeamStartOptions(managedMember.profile, options.startOptions)
       : options.startOptions;
-    const started = await startRpcSession(sessionId, sessionFile, header.cwd, {
+    const started = await startRpcSession(sessionId, sessionFile, runtimeCwd, {
       ...startOptions,
       runtimeProfile,
     });
@@ -134,7 +139,7 @@ export async function resolveOrStartRpcSession(
     if (managedMember?.profile.toolPolicy.mode === "allowlist") {
       await started.session.send({ type: "set_team_tools", toolNames: managedMember.profile.toolPolicy.toolNames });
     }
-    return { ...started, sessionFile, cwd: header.cwd };
+    return { ...started, sessionFile, cwd: runtimeCwd };
   } catch (error) {
     if (error instanceof SessionRuntimeResolverError) throw error;
     throw new SessionRuntimeResolverError(

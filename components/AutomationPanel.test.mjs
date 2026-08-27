@@ -17,11 +17,15 @@ test("scheduled tasks expose creation, editing, run history, and destructive con
   assert.match(panel, /toggleStatus/);
   assert.match(panel, /fallbackName/);
   assert.match(panel, /automations\.deleted/);
+  assert.match(panel, /automations\.newShort/);
+  assert.match(panel, /aria-label=\{t\("automations\.new"\)\}/);
 });
 
 test("automation cards open the dedicated right panel and settings category", () => {
   assert.match(messageView, /piora-automation/);
   assert.match(messageView, /AutomationCard/);
+  assert.match(messageView, /getAutomationToolCardDetails/);
+  assert.match(messageView, /automationDetails/);
   assert.match(rightPanel, /AutomationPanel/);
   assert.match(rightPanel, /workspace-automation/);
   assert.match(settings, /key: "automations"/);

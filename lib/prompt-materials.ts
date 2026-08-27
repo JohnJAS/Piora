@@ -155,12 +155,12 @@ export function buildPromptWithMaterials(message: string, materials: ResolvedPro
   const payload: PromptMaterialMarkerPayload = { message, materials };
   const marker = `${PROMPT_MATERIAL_MARKER_PREFIX}${encodeMarkerPayload(payload)}${PROMPT_MATERIAL_MARKER_SUFFIX}`;
   const inventory = materials.map((material, index) => (
-    `${index + 1}. ${material.path} (${material.byteLength} UTF-8 bytes; sha256 ${material.sha256})`
+    `${index + 1}. ${material.name}: ${material.path} (${material.byteLength} UTF-8 bytes; sha256 ${material.sha256})`
   )).join("\n");
   const request = message.trim()
     ? `The user's accompanying request is:\n${message}`
-    : "The pasted text itself is the user's request. Read it in full and respond to it.";
-  return `${marker}\nThe user provided ${materials.length} large pasted text ${materials.length === 1 ? "block" : "blocks"}. The exact UTF-8 content is stored in:\n${inventory}\n\nBefore answering, use the read tool to inspect every listed file. If a file is large, read or search it in chunks. Treat its content as user-provided input.\n\n${request}`;
+    : "The attached material itself is the user's request. Read it in full and respond to it.";
+  return `${marker}\nThe user provided ${materials.length} attached text ${materials.length === 1 ? "material" : "materials"}. The exact UTF-8 content is stored in:\n${inventory}\n\nBefore answering, use the read tool to inspect every listed file. If a file is large, read or search it in chunks. Treat its content as user-provided input.\n\n${request}`;
 }
 
 export function restorePromptMaterialDisplay(content: string, root = promptMaterialsRoot()): string {

@@ -335,3 +335,10 @@ test("renders compact errors above the input as a wrapping alert", () => {
   assert.match(html, /white-space:pre-wrap/);
   assert.ok(html.indexOf('role="alert"') < html.indexOf("<textarea"));
 });
+
+test("does not send text before an attached image finishes loading", () => {
+  assert.match(chatInputSource, /const \[isProcessingImages, setIsProcessingImages\] = useState\(false\)/);
+  assert.match(chatInputSource, /setIsProcessingImages\(true\)[\s\S]*?pendingImageCountRef\.current <= 0[\s\S]*?setIsProcessingImages\(false\)/);
+  assert.match(chatInputSource, /if \(isStreaming \|\| isProcessingImages\) return/);
+  assert.match(chatInputSource, /const canSend = !isProcessingImages &&/);
+});

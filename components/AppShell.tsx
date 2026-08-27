@@ -46,6 +46,7 @@ import type { DesktopUpdateState } from "./sidebar/sidebar-types";
 import type { GitStatusResponse } from "@/lib/git-types";
 import { getTrackedGitLineStats } from "@/lib/git-line-stats";
 import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
+import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 
 function replaceUrlWithoutNextNavigation(url: string): void {
   // Next patches history.replaceState and treats an ordinary call as an App
@@ -151,6 +152,7 @@ export function AppShell() {
   const [selectedRoom, setSelectedRoom] = useState<CollaborationRoom | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
+  const [newSessionInitialModel, setNewSessionInitialModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [initialCwdStatus, setInitialCwdStatus] = useState<"idle" | "validating" | "ready" | "error">(
     () => initialNavigation.requestedCwd ? "validating" : "idle",
   );
@@ -623,6 +625,7 @@ export function AppShell() {
         // the just-created empty chat during that initial synchronization.
         suppressCwdBumpRef.current = true;
         setNewSessionCwd(data.cwd);
+        setNewSessionInitialModel(null);
         setInitialCwdStatus("ready");
       })
       .catch((error: unknown) => {
@@ -693,6 +696,7 @@ export function AppShell() {
     if (!cwdBelongsToCurrentSelection) {
       setSelectedSession(null);
       setSelectedRoom(null);
+      setNewSessionInitialModel(null);
       setNewSessionCwd((prev) => {
         if (prev && prev !== cwd) return null;
         return prev;
@@ -749,6 +753,7 @@ export function AppShell() {
     setSettingsDialogOpen(false);
     setSelectedRoom(null);
     setNewSessionCwd(null);
+    setNewSessionInitialModel(null);
     setSelectedSession(session);
     setSessionKey((k) => k + 1);
     setSystemPrompt(null);
@@ -773,7 +778,7 @@ export function AppShell() {
     }
   }, [isMobile]);
 
-  const handleNewSession = useCallback((_sessionId: string, cwd: string) => {
+  const handleNewSession = useCallback((_sessionId: string, cwd: string, initialModel?: { provider: string; modelId: string }) => {
     const pendingLandingDraft = pendingLandingDraftRef.current;
     if (pendingLandingDraft) {
       setDraft(`new:${cwd}`, pendingLandingDraft);
@@ -783,6 +788,7 @@ export function AppShell() {
     setSelectedRoom(null);
     setSelectedSession(null);
     setNewSessionCwd(cwd);
+    setNewSessionInitialModel(initialModel ?? null);
     setSessionKey((k) => k + 1);
     setSystemPrompt(null);
     setActiveTopPanel(null);
@@ -791,29 +797,47 @@ export function AppShell() {
   }, [isMobile]);
 
   const handleRequestNewSession = useCallback(() => {
-    setSettingsDialogOpen(false);
-    setSelectedRoom(null);
-    setSelectedSession(null);
-    setNewSessionCwd(null);
-    setSessionKey((key) => key + 1);
-    setSystemPrompt(null);
-    setActiveTopPanel(null);
-    setInitialSessionRestored(true);
-    if (isMobile) setSidebarOpen(false);
-    replaceUrlWithoutNextNavigation("/");
-  }, [isMobile]);
+    void fetch("/api/chat-workspace", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json() as { cwd?: string; error?: string };
+        if (!response.ok || !data.cwd) throw new Error(data.error || `HTTP ${response.status}`);
+        handleNewSession(`chat-${Date.now()}`, data.cwd);
+        setInitialSessionRestored(true);
+      })
+      .catch((error) => {
+        setInitialCwdError(error instanceof Error ? error.message : String(error));
+        setInitialCwdStatus("error");
+      });
+  }, [handleNewSession]);
 
-  const handleNewSessionProjectSelected = useCallback((cwd: string, projectRoot: string) => {
+  const handleNewSessionProjectSelected = useCallback((cwd: string, projectRoot: string, model?: { provider: string; modelId: string }) => {
     activeProjectRootRef.current = projectRoot;
     setActiveProjectRoot(projectRoot);
     setActiveCwd(cwd);
-    handleNewSession(`project-picker-${Date.now()}`, cwd);
+    handleNewSession(`project-picker-${Date.now()}`, cwd, model);
+  }, [handleNewSession]);
+
+  const handleProjectlessLandingStart = useCallback((draft: ChatDraft, model?: { provider: string; modelId: string }) => {
+    pendingLandingDraftRef.current = draft;
+    void fetch("/api/chat-workspace", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json() as { cwd?: string; error?: string };
+        if (!response.ok || !data.cwd) throw new Error(data.error || `HTTP ${response.status}`);
+        handleNewSession(`landing-chat-${Date.now()}`, data.cwd, model);
+        setInitialSessionRestored(true);
+      })
+      .catch((error) => {
+        pendingLandingDraftRef.current = null;
+        setInitialCwdError(error instanceof Error ? error.message : String(error));
+        setInitialCwdStatus("error");
+      });
   }, [handleNewSession]);
 
   const handleSelectRoom = useCallback((room: CollaborationRoom, isRestore = false) => {
     setSettingsDialogOpen(false);
     setSelectedSession(null);
     setNewSessionCwd(null);
+    setNewSessionInitialModel(null);
     setSelectedRoom(room);
     setSessionKey((key) => key + 1);
     setSystemPrompt(null);
@@ -994,6 +1018,7 @@ export function AppShell() {
   // Called by ChatWindow when a new session gets its real id from pi
   const handleSessionCreated = useCallback((session: SessionInfo) => {
     setNewSessionCwd(null);
+    setNewSessionInitialModel(null);
     setSelectedSession(session);
     setRefreshKey((k) => k + 1);
     hydrateSelectedSession(session.id);
@@ -1050,6 +1075,7 @@ export function AppShell() {
     setRefreshKey((k) => k + 1);
     setSessionKey((k) => k + 1);
     setNewSessionCwd(null);
+    setNewSessionInitialModel(null);
     setSelectedSession((prev) => ({
       ...(prev ?? { path: "", cwd: "", created: "", modified: "", messageCount: 0, firstMessage: "" }),
       id: newSessionId,
@@ -1068,6 +1094,7 @@ export function AppShell() {
       const cwd = selectedSession.cwd;
       setSelectedSession(null);
       setNewSessionCwd(cwd ?? null);
+      setNewSessionInitialModel(null);
       setSessionKey((k) => k + 1);
       setSystemPrompt(null);
       setActiveTopPanel(null);
@@ -1226,10 +1253,23 @@ export function AppShell() {
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   const showRoom = selectedRoom !== null;
   const showConversation = showChat || showRoom;
+  const isProjectlessConversation = selectedSession?.projectless === true || isProjectlessChatCwd(effectiveNewSessionCwd);
+  const isProjectlessSurface = isProjectlessConversation || (
+    !selectedRoom
+    && !selectedSession
+    && effectiveNewSessionCwd === null
+    && initialNavigation.requestedCwd === null
+  );
   const projectCwd = selectedRoom?.projectRoot ?? selectedSession?.cwd ?? effectiveNewSessionCwd;
-  const currentProjectCwd = selectedRoom?.projectRoot ?? selectedSession?.cwd ?? effectiveNewSessionCwd ?? activeCwd;
-  const currentProjectPath = selectedRoom?.projectRoot ?? selectedSession?.projectRoot ?? activeProjectRootRef.current ?? currentProjectCwd;
-  const currentProjectName = currentProjectPath ? getFileName(currentProjectPath) || currentProjectPath : null;
+  const currentProjectCwd = isProjectlessSurface
+    ? null
+    : selectedRoom?.projectRoot ?? selectedSession?.cwd ?? effectiveNewSessionCwd ?? activeCwd;
+  const currentProjectPath = isProjectlessSurface
+    ? null
+    : selectedRoom?.projectRoot ?? selectedSession?.projectRoot ?? activeProjectRootRef.current ?? currentProjectCwd;
+  const currentProjectName = isProjectlessSurface
+    ? translate("sidebar.chats")
+    : currentProjectPath ? getFileName(currentProjectPath) || currentProjectPath : null;
   const [topbarGitStatus, setTopbarGitStatus] = useState<GitStatusResponse | null>(null);
   useEffect(() => {
     if (!currentProjectCwd || selectedRoom) {
@@ -1445,7 +1485,7 @@ export function AppShell() {
       onInitialRoomRestoreDone={handleInitialRestoreDone}
       refreshKey={refreshKey}
       onSessionDeleted={handleSessionDeleted}
-      selectedCwd={selectedRoom?.projectRoot ?? selectedSession?.cwd ?? newSessionCwd ?? null}
+      selectedCwd={isProjectlessConversation ? null : selectedRoom?.projectRoot ?? selectedSession?.cwd ?? newSessionCwd ?? null}
       activeProjectRoot={currentProjectPath}
       onCwdChange={handleCwdChange}
       onFocusFileSearch={() => {
@@ -1786,7 +1826,7 @@ export function AppShell() {
               data-active={activeTopPanel === "project" ? "true" : "false"}
             >
               <span className="app-topbar-title-icon" aria-hidden="true">
-                <AliIcon name="folder-open" size={16} />
+                <AliIcon name={isProjectlessSurface ? "message" : "folder-open"} size={16} />
               </span>
               <span className="app-topbar-title-text">
                 {currentProjectName ?? translate("projectMenu.noProject")}
@@ -1909,7 +1949,7 @@ export function AppShell() {
                 >
                   <div className="soft-top-panel-header">
                     <span className="soft-top-panel-icon" aria-hidden="true">
-                      <AliIcon name="folder-open" size={15} />
+                      <AliIcon name={isProjectlessSurface ? "message" : "folder-open"} size={15} />
                     </span>
                     <span className="soft-top-panel-heading">
                       <span className="soft-top-panel-title">
@@ -1936,7 +1976,7 @@ export function AppShell() {
                       }}
                     >
                       <span aria-hidden="true" style={{ paddingTop: 2, color: "var(--text-muted)" }}>
-                        <AliIcon name="plus" size={14} />
+                        <AliIcon name="compose" size={14} />
                       </span>
                       <span style={{ minWidth: 0 }}>
                         <span className="soft-menu-item-title">{translate("projectMenu.newSession")}</span>
@@ -2308,6 +2348,7 @@ export function AppShell() {
                 key={sessionKey}
                 session={selectedSession}
                 newSessionCwd={effectiveNewSessionCwd}
+                newSessionInitialModel={newSessionInitialModel}
                 onAgentEnd={handleAgentEnd}
                 onSessionCreated={handleSessionCreated}
                 onSessionForked={handleSessionForked}
@@ -2352,6 +2393,7 @@ export function AppShell() {
                 activeCwd={activeCwd}
                 activeProjectRoot={activeProjectRoot}
                 onSelect={handleNewSessionProjectSelected}
+                onStartChat={handleProjectlessLandingStart}
                 onBrowse={(draft) => {
                   pendingLandingDraftRef.current = draft;
                   sessionSidebarRef.current?.openProjectPicker();

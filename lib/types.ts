@@ -306,6 +306,8 @@ export interface SessionInfo {
   projectRoot?: string;
   /** Branch name when cwd is a linked git worktree (not the main checkout) */
   worktreeBranch?: string;
+  /** Piora-managed conversation with no user project attached. */
+  projectless?: boolean;
   /** Latest persisted target-mode state, used as a cold sidebar fallback. */
   goal?: import("./goal-run-registry").GoalRunState;
 }

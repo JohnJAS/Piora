@@ -13,6 +13,8 @@ import { sessionPathKey } from "./session-path";
 import { resolveProject, type ProjectInfo } from "./worktree";
 import { GOAL_RUN_ENTRY_TYPE, parseGoalRunState, type GoalRunState } from "./goal-run-registry";
 import { getPromptMaterialDisplayMetadata, restorePromptMaterialDisplayPreview } from "./prompt-materials";
+import { isProjectlessChatCwd } from "./projectless-chat-path";
+import { getProjectlessChatWorkspace } from "./projectless-chat-server";
 
 export { getAgentDir };
 
@@ -23,7 +25,7 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
 
   // Resolve each unique cwd to its project root (main repo shared by all
   // worktrees). resolveProject caches per-cwd, so this is cheap after warmup.
-  const uniqueCwds = [...new Set(piSessions.map((s) => s.cwd).filter(Boolean))];
+  const uniqueCwds = [...new Set(piSessions.map((s) => s.cwd).filter((cwd) => cwd && !isProjectlessChatCwd(cwd)))];
   const projectByCwd = new Map<string, ProjectInfo>();
   await Promise.all(uniqueCwds.map(async (cwd) => {
     projectByCwd.set(cwd, await resolveProject(cwd));
@@ -31,19 +33,22 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
 
   return piSessions.map((s) => {
     cacheSessionPath(s.id, s.path);
-    const project = s.cwd ? projectByCwd.get(s.cwd) : undefined;
+    const projectless = isProjectlessChatCwd(s.cwd);
+    const cwd = projectless ? getProjectlessChatWorkspace() : s.cwd;
+    const project = !projectless && s.cwd ? projectByCwd.get(s.cwd) : undefined;
     const goal = readPersistedGoalFromTail(s.path, s.id);
     return {
       path: s.path,
       id: s.id,
-      cwd: s.cwd,
+      cwd,
       name: s.name,
       created: s.created instanceof Date ? s.created.toISOString() : String(s.created),
       modified: s.modified instanceof Date ? s.modified.toISOString() : String(s.modified),
       messageCount: s.messageCount,
       firstMessage: s.firstMessage ? restorePromptMaterialDisplayPreview(s.firstMessage) : "",
       parentSessionId: s.parentSessionPath ? pathToId.get(sessionPathKey(s.parentSessionPath)) : undefined,
-      projectRoot: project?.projectRoot ?? s.cwd,
+      ...(!projectless ? { projectRoot: project?.projectRoot ?? s.cwd } : {}),
+      ...(projectless ? { projectless: true } : {}),
       ...(project?.isWorktree && project.branch ? { worktreeBranch: project.branch } : {}),
       ...(goal ? { goal } : {}),
     };

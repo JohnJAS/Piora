@@ -25,10 +25,12 @@ import {
 } from "@/lib/chat-lazy-load";
 import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
 import { getProjectLabel } from "@/lib/session-project-groups";
+import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 
 interface Props {
   session: SessionInfo | null;
   newSessionCwd: string | null;
+  newSessionInitialModel?: { provider: string; modelId: string } | null;
   onAgentEnd?: (sessionId: string) => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
@@ -222,7 +224,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation }: Props) {
+export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
 
@@ -249,7 +251,7 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
     handleBuiltinSlashCommand,
     handleThinkingLevelChange, loadSlashCommands,
   } = useAgentSession({
-    session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
+    session, newSessionCwd, newSessionInitialModel, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   });
   const sessionBusy = agentRunning || bashRunning;
@@ -541,7 +543,10 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
   }, [isEmptyNew, loading, scrollContainerRef, session?.id]);
 
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
-  const newSessionProjectLabel = messageCwd ? getProjectLabel(messageCwd) : "当前项目";
+  const isProjectlessChat = session?.projectless === true || isProjectlessChatCwd(messageCwd);
+  const newSessionProjectLabel = isProjectlessChat
+    ? t("sidebar.chats")
+    : messageCwd ? getProjectLabel(messageCwd) : t("projectMenu.noProject");
 
   const availableThinkingLevels = displayModelValue
     ? (modelThinkingLevels[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
@@ -671,8 +676,10 @@ export function ChatWindow({ session, newSessionCwd, onAgentEnd, onSessionCreate
             </div>
             <h1 className="new-session-chat-heading">开始一个新会话</h1>
             <p className="new-session-chat-guide">
-              模型可在左上角“设置 → 模型”中配置；项目可通过顶部项目菜单切换。当前项目：
-              <span title={messageCwd}>{newSessionProjectLabel}</span>
+              {isProjectlessChat
+                ? t("chat.projectlessGuide")
+                : t("chat.projectGuide")}
+              <span title={isProjectlessChat ? undefined : messageCwd}>{newSessionProjectLabel}</span>
             </p>
             <NoticeShelf notices={notices} align="right" />
             {chatInputElement}

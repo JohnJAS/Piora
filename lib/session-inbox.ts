@@ -1,8 +1,12 @@
 import type { SessionCommandRecord } from "./session-message-types";
 
 export const SESSION_INBOX_LIMIT = 100;
-export const SESSION_COMMAND_MAX_BYTES = 256 * 1024;
-export const SESSION_INBOX_MAX_BYTES = 8 * 1024 * 1024;
+export const SESSION_MESSAGE_TEXT_MAX_BYTES = 256 * 1024;
+// A 100 MiB image expands to roughly 133.4 MiB in base64. Keep command and
+// queue accounting above that encoded size while retaining the smaller text
+// limit enforced by the router.
+export const SESSION_COMMAND_MAX_BYTES = 136 * 1024 * 1024;
+export const SESSION_INBOX_MAX_BYTES = 160 * 1024 * 1024;
 
 export interface SessionInboxState {
   sessionId: string;

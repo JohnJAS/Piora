@@ -18,6 +18,7 @@ import { estimateSessionContextUsage } from "@/lib/context-usage";
 import type { GoalRunState } from "@/lib/goal-run-registry";
 import type { PlanArtifactState, PlanDraftInput } from "@/lib/plan-artifact-registry";
 import { isPromptMaterialRuntimeMessage, type PromptMaterialReference } from "@/lib/prompt-material-format";
+import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 
 export interface SessionData {
   sessionId: string;
@@ -149,6 +150,7 @@ export type BuiltinSlashCommandResult =
 export interface UseAgentSessionOptions {
   session: SessionInfo | null;
   newSessionCwd: string | null;
+  newSessionInitialModel?: { provider: string; modelId: string } | null;
   onAgentEnd?: (sessionId: string) => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
@@ -310,7 +312,7 @@ export interface ChatInputHandle {
   insertIfEmpty: (content: string) => void;
   prependText: (text: string) => void;
   addImages: (files: File[]) => void;
-  restoreFailedPrompt: (text: string, files?: AttachedFile[]) => void;
+  restoreFailedPrompt: (text: string, files?: AttachedFile[], images?: AttachedImage[]) => void;
 }
 
 export interface AttachedImage {
@@ -319,9 +321,8 @@ export interface AttachedImage {
   previewUrl: string;
 }
 
-/** A non-image file attached from the composer. `text` is the readable
- * contents when the file is small enough to embed; binary or oversized files
- * only contribute their name. */
+/** A non-image file attached from the composer. `text` is uploaded as a
+ * prompt material; binary files only contribute their name. */
 export interface AttachedFile {
   name: string;
   size: number;
@@ -379,7 +380,7 @@ type SlashCommandsResponse = {
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
-    session, newSessionCwd, onAgentEnd, onSessionCreated, onSessionForked,
+    session, newSessionCwd, newSessionInitialModel, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   } = opts;
 
@@ -401,7 +402,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [modelScopeWarnings, setModelScopeWarnings] = useState<string[]>([]);
   const [modelThinkingLevels, setModelThinkingLevels] = useState<Record<string, string[]>>({});
   const [modelThinkingLevelMaps, setModelThinkingLevelMaps] = useState<Record<string, Record<string, string | null>>>({});
-  const [newSessionModel, setNewSessionModel] = useState<SelectedModel | null>(null);
+  const [newSessionModel, setNewSessionModel] = useState<SelectedModel | null>(() => newSessionInitialModel ?? null);
   const [newSessionDefaultModel, setNewSessionDefaultModel] = useState<SelectedModel | null>(null);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>("auto");
   const [retryInfo, setRetryInfo] = useState<{ attempt: number; maxAttempts: number; errorMessage?: string } | null>(null);
@@ -444,7 +445,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const ensuringNewSessionRef = useRef<Promise<string | null> | null>(null);
   const newSessionPromotedRef = useRef(false);
-  const newSessionModelOverrideRef = useRef<SelectedModel | null>(null);
+  const newSessionModelOverrideRef = useRef<SelectedModel | null>(newSessionInitialModel ?? null);
   const thinkingLevelOverrideRef = useRef<Exclude<ThinkingLevelOption, "auto"> | null>(null);
   const promptRunIdRef = useRef(0);
   const optimisticUserMessageKeyRef = useRef<string | null>(null);
@@ -616,6 +617,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       modified: new Date().toISOString(),
       messageCount,
       firstMessage,
+      ...(isProjectlessChatCwd(newSessionCwd) ? { projectless: true } : {}),
     });
   }, [isNew, newSessionCwd, onSessionCreated]);
 
@@ -1222,15 +1224,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
     const promptRunId = promptRunIdRef.current + 1;
 
-    const pasteFiles = (files ?? []).filter((file) => file.kind === "paste" && file.text != null);
-    const inlineFiles = (files ?? []).filter((file) => file.kind !== "paste");
-    const fileTexts = inlineFiles.map((file) =>
-      file.text != null
-        ? `附件: ${file.name}\n\`\`\`\n${file.text}\n\`\`\``
-        : `附件: ${file.name}（二进制或超大文件，仅提供文件名）`,
-    ).join("\n\n");
+    const materialFiles = (files ?? []).filter((file) => file.text != null);
+    const pasteFiles = materialFiles.filter((file) => file.kind === "paste");
+    const attachedTextFiles = materialFiles.filter((file) => file.kind !== "paste");
+    const nameOnlyFiles = (files ?? []).filter((file) => file.text == null);
+    const fileTexts = nameOnlyFiles.map((file) => `附件: ${file.name}（二进制文件，仅提供文件名）`).join("\n\n");
     const effectiveMessage = fileTexts ? `${fileTexts}\n\n${message}` : message;
-    const displayMessage = [effectiveMessage.trim(), ...pasteFiles.map((file) => file.text!.trim())]
+    const displayMessage = [
+      effectiveMessage.trim(),
+      ...attachedTextFiles.map((file) => `附件: ${file.name}（${file.size} 字节）`),
+      ...pasteFiles.map((file) => file.text!.trim()),
+    ]
       .filter(Boolean)
       .join("\n\n");
 
@@ -1258,7 +1262,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     let promptRequestStarted = false;
 
     try {
-      const promptMaterials = pasteFiles.length ? await uploadPromptMaterialFiles(pasteFiles) : [];
+      const promptMaterials = materialFiles.length ? await uploadPromptMaterialFiles(materialFiles) : [];
       if (isNew && newSessionCwd) {
         const selectedModel = newSessionModel;
         const existingSid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
@@ -1333,7 +1337,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         type: "error",
         message: sendError,
       });
-      opts.chatInputRef?.current?.restoreFailedPrompt(message, files);
+      opts.chatInputRef?.current?.restoreFailedPrompt(message, files, images);
       optimisticUserMessageKeyRef.current = null;
       setAgentRunning(false);
       setAgentPhase(null);

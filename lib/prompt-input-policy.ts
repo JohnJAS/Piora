@@ -1,6 +1,7 @@
 export const LARGE_PASTE_CHARACTER_THRESHOLD = 10_000;
 export const MAX_PROMPT_MATERIAL_COUNT = 8;
-export const MAX_PROMPT_MATERIAL_BYTES = 10 * 1024 * 1024;
+export const MAX_ATTACHED_FILE_BYTES = 100 * 1024 * 1024;
+export const MAX_PROMPT_MATERIAL_BYTES = 100 * 1024 * 1024;
 export const DIRECT_PROMPT_TRANSPORT_BYTES = 240 * 1024;
 
 export interface PromptContextBudget {

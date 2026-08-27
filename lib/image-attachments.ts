@@ -1,4 +1,5 @@
-export const MAX_ATTACHED_IMAGE_BYTES = 10 * 1024 * 1024;
+export const MAX_ATTACHED_IMAGE_BYTES = 100 * 1024 * 1024;
+export const MAX_ATTACHED_IMAGE_TOTAL_BYTES = 100 * 1024 * 1024;
 export const MAX_ATTACHED_IMAGES = 10;
 
 export interface Base64ImageAttachment {
@@ -37,6 +38,13 @@ export function isBase64ImageWithinLimits(value: unknown): value is Base64ImageA
   return bytes !== null && bytes <= MAX_ATTACHED_IMAGE_BYTES;
 }
 
+export function validateAttachedImageTotalBytes(byteLengths: readonly number[]): string | null {
+  const totalBytes = byteLengths.reduce((total, bytes) => total + bytes, 0);
+  return totalBytes > MAX_ATTACHED_IMAGE_TOTAL_BYTES
+    ? `Images in one message must total ${MAX_ATTACHED_IMAGE_TOTAL_BYTES / (1024 * 1024)}MB or less`
+    : null;
+}
+
 /** Return an API-safe error for prompt, steering, and follow-up image arrays. */
 export function validateAgentImages(value: unknown): string | null {
   if (value === undefined) return null;
@@ -44,6 +52,7 @@ export function validateAgentImages(value: unknown): string | null {
   if (value.length > MAX_ATTACHED_IMAGES) {
     return `A message can include at most ${MAX_ATTACHED_IMAGES} images`;
   }
+  const byteLengths: number[] = [];
   for (const image of value) {
     if (!image || typeof image !== "object" || (image as { type?: unknown }).type !== "image") {
       return "Each attachment must be an image";
@@ -51,6 +60,7 @@ export function validateAgentImages(value: unknown): string | null {
     if (!isBase64ImageWithinLimits(image)) {
       return `Each image must be valid base64 image data of ${MAX_ATTACHED_IMAGE_BYTES / (1024 * 1024)}MB or smaller`;
     }
+    byteLengths.push(getBase64DecodedByteLength((image as Base64ImageAttachment).data) ?? 0);
   }
-  return null;
+  return validateAttachedImageTotalBytes(byteLengths);
 }

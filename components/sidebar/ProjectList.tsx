@@ -120,7 +120,7 @@ export function ProjectSessionGroup({
         <div className={styles.projectActions} data-project-drag-ignore>
           <button
             type="button"
-            className={styles.rowAction}
+            className={`${styles.rowAction} ${styles.projectMenuAction}`}
             onClick={(event) => {
               event.stopPropagation();
               const rect = event.currentTarget.getBoundingClientRect();
@@ -139,7 +139,7 @@ export function ProjectSessionGroup({
             title={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
             aria-label={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
           >
-            <AliIcon name="edit" size={13} />
+            <AliIcon name="compose" size={14} />
           </button>
         </div>
       </div>
@@ -330,7 +330,7 @@ function ProjectContextMenu({
         </button>
       )}
       <button type="button" className={styles.menuItem} role="menuitem" onClick={() => { onNewSession(); onClose(); }}>
-        <AliIcon name="edit" size={14} />
+        <AliIcon name="compose" size={14} />
         <span>{t("sidebar.newChat")}</span>
       </button>
       <button

@@ -211,7 +211,18 @@ export function AutomationPanel({ automationId, sessionId, sessionName, cwd, emb
       </div>
       <div className={styles.headerActions}>
         {showingEditor && embedded ? <button type="button" onClick={() => { setCreating(false); setSelectedId(null); setDetail(null); }}><AliIcon name="arrowleft" size={14} />{t("automations.all")}</button> : null}
-        {!showingEditor ? <button type="button" className={styles.primary} onClick={startCreate}><AliIcon name="plus" size={14} />{t("automations.new")}</button> : null}
+        {!showingEditor ? (
+          <button
+            type="button"
+            className={`${styles.primary} ${styles.createButton}`}
+            onClick={startCreate}
+            aria-label={t("automations.new")}
+            title={t("automations.new")}
+          >
+            <AliIcon name="plus" size={14} />
+            <span>{t("automations.newShort")}</span>
+          </button>
+        ) : null}
         {showingEditor && !creating ? <div className={styles.moreWrap}>
           <button type="button" aria-label={t("automations.more")} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}><AliIcon name="ellipsis" size={16} /></button>
           {menuOpen ? <div className={styles.moreMenu} role="menu">

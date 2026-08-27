@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { validateAgentImages } from "./image-attachments";
 import { getSessionCommandEventHub, SessionCommandEventHub } from "./session-command-events";
-import { getSessionInboxRegistry, SESSION_COMMAND_MAX_BYTES, sessionCommandBytes, type SessionInboxState } from "./session-inbox";
+import { getSessionInboxRegistry, SESSION_MESSAGE_TEXT_MAX_BYTES, sessionCommandBytes, type SessionInboxState } from "./session-inbox";
 import { getRpcSession, type AgentSessionWrapper } from "./rpc-manager";
 import { resolveSessionPath } from "./session-reader";
 import { resolveOrStartRpcSession, SessionRuntimeResolverError } from "./session-runtime-resolver";
@@ -82,8 +82,8 @@ function errorCode(error: unknown): SessionMessageRouterErrorCode {
 function validateInput(input: SessionMessageInput, maxMessageBytes: number): void {
   if (!input.targetSessionId || typeof input.targetSessionId !== "string") throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "targetSessionId is required.");
   if (!input.idempotencyKey || typeof input.idempotencyKey !== "string" || input.idempotencyKey.length > 512) throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "A bounded idempotency key is required.");
-  if (typeof input.content !== "string" || (!input.content.trim() && !input.materials?.length)) {
-    throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "Message content cannot be empty without prompt materials.");
+  if (typeof input.content !== "string" || (!input.content.trim() && !input.materials?.length && !input.images?.length)) {
+    throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "Message content cannot be empty without prompt materials or images.");
   }
   if (Buffer.byteLength(input.content, "utf8") > maxMessageBytes) {
     throw new SessionMessageRouterError(
@@ -127,7 +127,7 @@ export class SessionMessageRouter {
     this.store = options.store ?? new SessionControlStore();
     this.events = options.events ?? getSessionCommandEventHub();
     this.resolver = options.resolver ?? resolveOrStartRpcSession;
-    this.maxMessageBytes = Math.max(1_024, Math.min(SESSION_COMMAND_MAX_BYTES, options.maxMessageBytes ?? SESSION_COMMAND_MAX_BYTES));
+    this.maxMessageBytes = Math.max(1_024, Math.min(SESSION_MESSAGE_TEXT_MAX_BYTES, options.maxMessageBytes ?? SESSION_MESSAGE_TEXT_MAX_BYTES));
     this.maxConcurrency = Math.max(1, Math.min(32, options.maxConcurrency ?? 4));
   }
 

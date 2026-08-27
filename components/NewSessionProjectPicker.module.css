@@ -132,6 +132,7 @@
 
 .iconButton,
 .projectChip,
+.modelChip,
 .sendButton {
   display: inline-flex;
   min-height: 32px;
@@ -147,6 +148,31 @@
 .iconButton:disabled { opacity: .42; }
 
 .projectAnchor { position: relative; }
+
+.modelChip {
+  min-width: 0;
+  max-width: min(300px, 42vw);
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.modelChip select {
+  min-width: 0;
+  max-width: 250px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.modelChip:hover,
+.modelChip:focus-within {
+  background: var(--bg-hover);
+  color: var(--text);
+}
 
 .projectChip {
   max-width: min(230px, 32vw);
@@ -323,4 +349,5 @@
 }
 
 .projectChip,
+.modelChip,
 .list > button { background: transparent; box-shadow: none; }

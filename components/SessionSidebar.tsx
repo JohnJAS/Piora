@@ -14,6 +14,7 @@ import { WorktreeSection } from "./sidebar/WorktreeSection";
 import { useWorktreeState } from "./sidebar/useWorktreeState";
 import { SidebarNavigation } from "./sidebar/SidebarNavigation";
 import { SidebarProjectArea } from "./sidebar/SidebarProjectArea";
+import { SidebarChatArea } from "./sidebar/SidebarChatArea";
 import { SidebarFooter } from "./sidebar/SidebarFooter";
 import { useSessionCatalog } from "./sidebar/useSessionCatalog";
 import { useProjectPicker } from "./sidebar/useProjectPicker";
@@ -21,6 +22,7 @@ import { applyProjectOrder, getRecentProjects, moveProjectRoot } from "./sidebar
 import { useSidebarState } from "./sidebar/useSidebarState";
 import { SidebarShell } from "./sidebar/SidebarShell";
 import { RoomSidebarSection } from "./RoomSidebarSection";
+import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 
 export type { SessionSidebarHandle } from "./sidebar/sidebar-types";
 
@@ -94,7 +96,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
 
   /** Resolve the project root for a cwd from the freshest data available */
   const projectRootFor = useCallback((cwd: string | null): string | null => {
-    if (!cwd) return null;
+    if (!cwd || isProjectlessChatCwd(cwd)) return null;
     if (worktreeState && worktreeState.forCwd === cwd) return worktreeState.projectRoot;
     // Any path in the loaded worktree list belongs to that project — covers
     // worktrees without sessions, so switching to them keeps the row mounted.
@@ -135,7 +137,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         restoredRef.current = true;
         const target = allSessions.find((s) => s.id === initialSessionId);
         if (target) {
-          setSelectedCwd(target.cwd);
+          setSelectedCwd(target.projectless ? null : target.cwd);
           onSelectSession(target, true);
           return;
         }
@@ -143,7 +145,8 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         onInitialRestoreDone?.();
       }
       const projects = getRecentProjects(allSessions.filter((session) => (
-        !sessionFlags[session.id]?.archived
+        !session.projectless
+        && !sessionFlags[session.id]?.archived
         && !hiddenProjectRoots.has(session.projectRoot ?? session.cwd)
       )));
       for (const projectRoot of rememberedProjectRoots) {
@@ -161,7 +164,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   const handleSelectSessionFromList = useCallback((s: SessionInfo) => {
     // Agent sessions are process-owned and keep running independently of the
     // visible chat. Switching is therefore safe and must remain immediate.
-    if (s.cwd) setSelectedCwd(s.cwd);
+    setSelectedCwd(s.projectless ? null : s.cwd || null);
     onSelectSession(s);
   }, [onSelectSession]);
 
@@ -250,9 +253,17 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     () => allSessions.filter((session) => !sessionFlags[session.id]?.archived),
     [allSessions, sessionFlags],
   );
+  const projectlessSessions = useMemo(
+    () => activeSessions.filter((session) => session.projectless),
+    [activeSessions],
+  );
+  const projectSessions = useMemo(
+    () => activeSessions.filter((session) => !session.projectless),
+    [activeSessions],
+  );
   const visibleSessions = useMemo(
-    () => activeSessions.filter((session) => !hiddenProjectRoots.has(session.projectRoot ?? session.cwd)),
-    [activeSessions, hiddenProjectRoots],
+    () => projectSessions.filter((session) => !hiddenProjectRoots.has(session.projectRoot ?? session.cwd)),
+    [hiddenProjectRoots, projectSessions],
   );
   const visibleRememberedProjects = useMemo(
     () => [...rememberedProjectRoots]
@@ -441,6 +452,19 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         duplicateSession={duplicateSession} pinnedProjectRoots={pinnedProjectRoots} projectAliases={projectAliases}
         togglePinnedProject={togglePinnedProject} renameProject={renameProject} removeProject={removeProject}
         onReorderProjects={reorderProjects}
+      />
+      <SidebarChatArea
+        sessions={projectlessSessions}
+        selectedSessionId={selectedSessionId}
+        runningSessionIds={runningSessionIds}
+        unreadSessionIds={unreadSessionIds}
+        sessionFlags={sessionFlags}
+        onNewChat={() => onRequestNewSession?.()}
+        onSelectSession={handleSelectSessionFromList}
+        onRenamed={() => void loadSessions()}
+        onSessionDeleted={handleSessionDeletedWithUndo}
+        onFlagChange={patchSessionFlag}
+        onDuplicate={duplicateSession}
       />
       <SidebarFooter
         deletedToast={deletedSessionToast}

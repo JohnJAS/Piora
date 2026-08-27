@@ -14,6 +14,17 @@ interface ProjectChoice {
   sessionCount: number;
 }
 
+interface ModelChoice {
+  id: string;
+  name: string;
+  provider: string;
+}
+
+interface SelectedModel {
+  modelId: string;
+  provider: string;
+}
+
 const MAX_LANDING_PASTES = 8;
 
 function resizeLandingComposer(textarea: HTMLTextAreaElement): void {
@@ -25,14 +36,18 @@ export function NewSessionProjectPicker({
   activeCwd,
   activeProjectRoot,
   onSelect,
+  onStartChat,
   onBrowse,
 }: {
   activeCwd?: string | null;
   activeProjectRoot?: string | null;
-  onSelect: (cwd: string, projectRoot: string) => void;
+  onSelect: (cwd: string, projectRoot: string, model?: SelectedModel) => void;
+  onStartChat: (draft: ChatDraft, model?: SelectedModel) => void;
   onBrowse: (draft: ChatDraft) => void;
 }) {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [models, setModels] = useState<ModelChoice[]>([]);
+  const [selectedModelKey, setSelectedModelKey] = useState("");
   const [query, setQuery] = useState("");
   const [draft, setLandingDraft] = useState("");
   const [pastedMaterials, setPastedMaterials] = useState<ChatDraftFile[]>([]);
@@ -52,6 +67,28 @@ export function NewSessionProjectPicker({
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/models", { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json() as {
+          modelList?: ModelChoice[];
+          defaultModel?: SelectedModel | null;
+        };
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (cancelled) return;
+        const nextModels = data.modelList ?? [];
+        setModels(nextModels);
+        const preferred = data.defaultModel
+          ? nextModels.find((model) => model.id === data.defaultModel?.modelId && model.provider === data.defaultModel?.provider)
+          : undefined;
+        const initial = preferred ?? nextModels[0];
+        if (initial) setSelectedModelKey(`${initial.provider}/${initial.id}`);
+      })
+      .catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -108,13 +145,19 @@ export function NewSessionProjectPicker({
 
   const getLandingDraft = (): ChatDraft => ({ value: draft, images: [], files: pastedMaterials });
 
+  const selectedModel = useMemo(() => {
+    const model = models.find((entry) => `${entry.provider}/${entry.id}` === selectedModelKey);
+    return model ? { provider: model.provider, modelId: model.id } : undefined;
+  }, [models, selectedModelKey]);
+
   const chooseProject = (choice: ProjectChoice) => {
     if (draft.trim() || pastedMaterials.length > 0) setDraft(`new:${choice.cwd}`, getLandingDraft());
-    onSelect(choice.cwd, choice.root);
+    onSelect(choice.cwd, choice.root, selectedModel);
   };
 
-  const openProjectChoice = () => {
-    setMenuOpen(true);
+  const startProjectlessChat = () => {
+    setMenuOpen(false);
+    onStartChat(getLandingDraft(), selectedModel);
   };
 
   const browseForProject = () => {
@@ -160,15 +203,27 @@ export function NewSessionProjectPicker({
                     {loading ? <p>正在加载项目…</p> : null}
                   </div>
                   <div className={styles.footer}>
+                    <button type="button" onClick={startProjectlessChat}><AliIcon name="message" size={14} />不使用项目，直接聊天</button>
                     <button type="button" onClick={browseForProject}><AliIcon name="folder-open" size={14} />选择其他文件夹</button>
                   </div>
                 </div>
               ) : null}
               <button className={styles.projectChip} type="button" onClick={() => setMenuOpen((open) => !open)} aria-haspopup="listbox" aria-expanded={menuOpen}>
                 <AliIcon name="folder" size={14} />
-                <span>选择项目</span>
+                <span>选择项目（可选）</span>
               </button>
             </div>
+            <label className={styles.modelChip}>
+              <AliIcon name="robot" size={14} />
+              <select value={selectedModelKey} onChange={(event) => setSelectedModelKey(event.target.value)} aria-label="选择模型">
+                {models.length === 0 ? <option value="">自动选择模型</option> : null}
+                {models.map((model) => (
+                  <option key={`${model.provider}/${model.id}`} value={`${model.provider}/${model.id}`}>
+                    {model.name || model.id} · {model.provider}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
           <div className={styles.composer}>
             {pastedMaterials.length > 0 ? (
@@ -212,7 +267,7 @@ export function NewSessionProjectPicker({
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
-                  openProjectChoice();
+                  startProjectlessChat();
                 }
               }}
               placeholder="描述你想构建或修复的内容…"
@@ -222,8 +277,8 @@ export function NewSessionProjectPicker({
               <button className={styles.iconButton} type="button" disabled title="选择项目后可添加附件" aria-label="添加附件">
                 <AliIcon name="plus" size={16} />
               </button>
-              <span className={styles.selectionHint}>先选择项目再开始</span>
-              <button className={styles.sendButton} type="button" onClick={openProjectChoice} title="请先选择项目" aria-label="发送">
+              <span className={styles.selectionHint}>无需项目也可以直接聊天</span>
+              <button className={styles.sendButton} type="button" onClick={startProjectlessChat} title="开始聊天" aria-label="开始聊天">
                 <AliIcon name="arrowup" size={16} />
               </button>
             </div>

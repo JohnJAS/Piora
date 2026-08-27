@@ -14,7 +14,7 @@ test("does not render suggestion prompts above the new-session composer", () => 
   assert.doesNotMatch(chat, /<StarterCards/);
   assert.doesNotMatch(chat, /NEXT_PUBLIC_(?:APP|PI)_VERSION/);
   assert.match(chat, /开始一个新会话/);
-  assert.match(chat, /设置 → 模型/);
-  assert.match(chat, /顶部项目菜单/);
+  assert.match(chat, /t\("chat\.projectlessGuide"\)/);
+  assert.match(chat, /t\("chat\.projectGuide"\)/);
   assert.doesNotMatch(chat, /你想在|中构建什么/);
 });

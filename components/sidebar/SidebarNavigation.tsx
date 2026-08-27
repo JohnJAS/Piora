@@ -60,7 +60,7 @@ export function SidebarNavigation(props: Props) {
             else void handleDefaultCwd();
           }}
         >
-          <AliIcon name="edit" size={15} />
+          <AliIcon name="compose" size={16} />
           <span>{t("sidebar.newChat")}</span>
         </button>
         <button type="button" className={styles.navButton} onClick={onFocusFileSearch}>

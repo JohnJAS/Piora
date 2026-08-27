@@ -266,15 +266,44 @@
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.projectMenuAction {
   opacity: 0;
   pointer-events: none;
 }
 
-.projectRow:hover .projectActions,
-.projectRow:focus-within .projectActions,
-.projectRowSelected .projectActions {
+.projectRow:hover .projectMenuAction,
+.projectRow:focus-within .projectMenuAction,
+.projectRowSelected .projectMenuAction {
   opacity: 1;
   pointer-events: auto;
+}
+
+.chatSection {
+  flex: 0 0 auto;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: var(--bg-panel);
+}
+
+.chatSectionHeader {
+  justify-content: space-between;
+  padding-right: 10px;
+}
+
+.chatSessionList {
+  max-height: min(240px, 34vh);
+  overflow-y: auto;
+  padding: 0 7px 7px;
+}
+
+.chatEmpty {
+  margin: 0;
+  padding: 5px 8px 8px;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
 }
 
 .rowAction {

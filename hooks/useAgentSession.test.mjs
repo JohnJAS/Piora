@@ -32,8 +32,8 @@ test("keeps the first prompt as the new-session title and restores failed materi
     source.indexOf("  const executeBash = useCallback"),
   );
   assert.ok(sendSource.indexOf("promoteNewSession(0, displayMessage.slice(0, 2_000))") < sendSource.indexOf("await ensureEventsConnected(sid)"));
-  assert.match(sendSource, /uploadPromptMaterialFiles\(pasteFiles\)/);
-  assert.match(sendSource, /restoreFailedPrompt\(message, files\)/);
+  assert.match(sendSource, /uploadPromptMaterialFiles\(materialFiles\)/);
+  assert.match(sendSource, /restoreFailedPrompt\(message, files, images\)/);
 });
 
 test("refreshes context usage during streaming and after assistant messages", () => {

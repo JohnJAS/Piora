@@ -4,6 +4,33 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.19] - 2026-08-27
+
+### Added
+
+- Added projectless chats backed by a managed Piora workspace, with a dedicated
+  fixed Chat section in the sidebar and model selection before starting a
+  conversation without choosing a project.
+- Added a full-screen image viewer for images in current and historical chat
+  messages, including keyboard and accessible close controls.
+
+### Changed
+
+- Raised individual and per-message image limits to 100 MB and raised attached
+  text-material limits to 100 MB with matching client and server validation.
+- Refined Codex-style new-chat controls across the primary navigation, project
+  rows, and scheduled-task editor.
+- Made Piora's native scheduled-task runtime explicit to models and preferred
+  for reminders, monitors, follow-ups, and recurring work while retaining
+  operating-system schedulers for explicitly system-level requests.
+
+### Fixed
+
+- Kept text-plus-image and image-only user messages visible when delivery
+  fails, including their image previews and retryable failure state.
+- Restored scheduled-task cards from canonical tool results so native tasks
+  consistently appear in conversation history without duplicate messages.
+
 ## [0.4.18] - 2026-08-27
 
 ### Added

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -8,10 +9,11 @@ const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
 });
-const { MessageView, getUserMessagePreview } = await jiti.import("./MessageView.tsx");
+const { MessageView, getAutomationToolCardDetails, getUserMessagePreview } = await jiti.import("./MessageView.tsx");
 // Import through the same tsconfig alias used by the component so Jiti reuses
 // the exact context module instead of creating a second provider instance.
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
+const messageImageSource = readFileSync(new URL("./MessageImage.tsx", import.meta.url), "utf8");
 
 function renderMessage(message, props = {}) {
   return renderToStaticMarkup(
@@ -41,6 +43,23 @@ test("collapses long user queries to an eight-line preview", () => {
 test("renders short user queries without an expand control", () => {
   const html = renderMessage({ role: "user", content: "one\ntwo\nthree", timestamp: Date.now() });
   assert.doesNotMatch(html, /message-user-expand/);
+});
+
+test("renders user images as keyboard-accessible zoom controls", () => {
+  const html = renderMessage({
+    role: "user",
+    content: [
+      { type: "text", text: "inspect this" },
+      { type: "image", data: "aGVsbG8=", mimeType: "image/png" },
+    ],
+    timestamp: Date.now(),
+  });
+
+  assert.match(html, /class="message-image-thumbnail"/);
+  assert.match(html, /aria-label="打开第 1 张图片"/);
+  assert.match(messageImageSource, /dialog\.showModal\(\)/);
+  assert.match(messageImageSource, /createPortal\(viewer, document\.body\)/);
+  assert.match(messageImageSource, /event\.key !== "Escape"/);
 });
 
 test("renders deferred prompt material as a collapsed preview with its full line count", () => {
@@ -133,4 +152,29 @@ test("renders file edits as a collapsed change card with line stats", () => {
   assert.match(html, /\+2/);
   assert.match(html, /−1/);
   assert.doesNotMatch(html, /export const ready/);
+});
+
+test("derives a persistent scheduled-task card from a successful create tool result", () => {
+  const details = getAutomationToolCardDetails({
+    toolName: "piora_automation",
+    input: { action: "create" },
+  }, {
+    role: "toolResult",
+    toolCallId: "automation-create-1",
+    content: [{ type: "text", text: "created" }],
+    details: {
+      automation: {
+        id: "automation-1",
+        name: "Monitor release",
+        rrule: "RRULE:FREQ=MINUTELY;INTERVAL=5",
+      },
+    },
+  });
+
+  assert.deepEqual(details, {
+    id: "automation-1",
+    name: "Monitor release",
+    rrule: "RRULE:FREQ=MINUTELY;INTERVAL=5",
+  });
+  assert.equal(getAutomationToolCardDetails({ toolName: "piora_automation", input: { action: "list" } }, undefined), null);
 });

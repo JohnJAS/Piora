@@ -9,6 +9,7 @@ import {
   isSessionVisibleInAgentRuntimeProfile,
   readAgentProfileStore,
 } from "@/lib/agent-profile-store";
+import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 
 // pi only writes a session file once an assistant message exists, so a
 // brand-new session is missing from the disk scan until its first turn
@@ -23,7 +24,8 @@ async function withUnpersistedSessions(sessions: SessionInfo[]): Promise<Session
   const extras = await Promise.all(
     unpersisted
       .map(async (info): Promise<SessionInfo> => {
-        const project = await resolveProject(info.cwd);
+        const projectless = isProjectlessChatCwd(info.cwd);
+        const project = projectless ? null : await resolveProject(info.cwd);
         return {
           path: info.path,
           id: info.id,
@@ -36,8 +38,9 @@ async function withUnpersistedSessions(sessions: SessionInfo[]): Promise<Session
           parentSessionId: info.parentSessionPath
             ? pathToId.get(sessionPathKey(info.parentSessionPath))
             : undefined,
-          projectRoot: project.projectRoot ?? info.cwd,
-          ...(project.isWorktree && project.branch ? { worktreeBranch: project.branch } : {}),
+          ...(!projectless ? { projectRoot: project?.projectRoot ?? info.cwd } : {}),
+          ...(projectless ? { projectless: true } : {}),
+          ...(project?.isWorktree && project.branch ? { worktreeBranch: project.branch } : {}),
         };
       }),
   );
