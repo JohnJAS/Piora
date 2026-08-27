@@ -70,6 +70,18 @@ const assets = [
     required: true,
     rejectSymlinks: true,
   },
+  ...[
+    // The scheduled-task extension is staged as source and loaded dynamically,
+    // so Next's standalone tracer cannot discover this dependency chain.
+    ["scheduled-task recurrence runtime", "rrule"],
+    ["scheduled-task recurrence runtime helpers", "tslib"],
+  ].map(([name, packageName]) => ({
+    name,
+    source: join(projectRoot, "node_modules", packageName),
+    destination: join(standaloneDirectory, "node_modules", packageName),
+    required: true,
+    rejectSymlinks: true,
+  })),
 ];
 
 async function getPathType(path) {

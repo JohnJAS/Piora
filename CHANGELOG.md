@@ -4,6 +4,14 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.21] - 2026-08-27
+
+### Fixed
+
+- Explicitly included the scheduled-task recurrence runtime and its helpers in
+  packaged standalone builds so the first-party automation extension loads on
+  both Windows and Linux.
+
 ## [0.4.20] - 2026-08-27
 
 ### Added

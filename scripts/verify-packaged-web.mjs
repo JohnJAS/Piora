@@ -71,6 +71,8 @@ const requiredPaths = [
   "node_modules/@earendil-works/pi-coding-agent/package.json",
   "node_modules/@earendil-works/pi-tui/package.json",
   "node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/dark.json",
+  "node_modules/rrule/package.json",
+  "node_modules/tslib/package.json",
 ];
 
 async function assertFile(path) {
