@@ -440,6 +440,7 @@ export class TeamCoordinatorService {
           targetSessionId: sessionId,
           content: prompt,
           source: "room",
+          roomContext: { roomId, messageId: context.dispatchId },
           idempotencyKey: record.idempotencyKey,
           teamExecution: context,
           expiresAt: this.now() + TEAM_DEFAULTS.dispatchQueueTimeoutMs,

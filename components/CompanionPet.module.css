@@ -37,9 +37,27 @@
   overflow: hidden;
   display: grid;
   place-items: center;
+  padding: 0;
+  border: 0;
+  appearance: none;
+  cursor: pointer;
   border-radius: 12px;
   background: color-mix(in srgb, var(--accent) 7%, var(--bg));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 60%, transparent);
+  transition: background 140ms ease;
+}
+
+.petViewport:hover {
+  background: color-mix(in srgb, var(--accent) 13%, var(--bg));
+}
+
+.petViewport:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .petViewport { transition: none; }
 }
 
 .sprite {

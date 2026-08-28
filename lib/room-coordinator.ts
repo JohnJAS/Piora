@@ -28,6 +28,7 @@ async function dispatchTask(roomId: string, task: RoomTask, member: RoomMember):
     const receipt = await router.dispatchSessionMessage({
       targetSessionId: member.sessionId,
       source: "room",
+      roomContext: { roomId, messageId: claimed.id },
       delivery: "next_turn",
       idempotencyKey: `${roomId}:${claimed.id}:${member.sessionId}:${claimed.attempt}`,
       content: [

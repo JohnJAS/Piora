@@ -1397,8 +1397,63 @@ select:focus-visible,
   border-top: 1px solid var(--border-soft);
 }
 
-.model-settings-row.is-danger {
-  color: #ef4444;
+.model-settings-compaction {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 9px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.model-settings-compaction-spinner {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border: 1.5px solid color-mix(in srgb, var(--text-dim) 34%, transparent);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: model-settings-compaction-spin 760ms linear infinite;
+}
+
+.model-settings-compaction-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-settings-compaction-stop {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.model-settings-compaction-stop:hover,
+.model-settings-compaction-stop:focus-visible {
+  outline: none;
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+@keyframes model-settings-compaction-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .model-settings-compaction-spinner {
+    animation-duration: 1.8s;
+  }
 }
 
 .model-settings-submenu {

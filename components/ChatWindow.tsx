@@ -575,7 +575,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
       modelError={modelError}
       modelScopeWarnings={modelScopeWarnings}
       onModelChange={handleModelChange}
-      onCompact={session || isNew ? handleCompact : undefined}
+      onCompact={session ? handleCompact : undefined}
       onAbortCompaction={handleAbortCompaction}
       isCompacting={isCompacting}
       compactError={compactError}

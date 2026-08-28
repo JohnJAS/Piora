@@ -4,6 +4,56 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.22] - 2026-08-28
+
+### Added
+
+- Companion pets gained a Codex-style interaction layer: random idle tricks
+  while nothing is running, click-to-poke reactions with localized speech
+  bubbles, milestone lines for task starts/completions/failures, and a
+  lightweight care loop (feed, water, pet) whose needs decay in real time and
+  nag gently from the desktop pet window. Preferences migrate to schema v2
+  keeping existing todos and phrases, and the sidebar dock pet supports poking
+  too. A new "Idle tricks and chatter" setting toggles the ambient behavior.
+- Added a complete product website with capability guides, quick-start recipes,
+  machine-readable discovery files, responsive download cards, and official
+  GitHub release fallbacks.
+- The visual-agent settings now include a real image connectivity test against
+  the selected model and current workspace configuration.
+- Pending native user-input cards can raise privacy-safe desktop notifications,
+  and select questions now accept a bounded custom “Other” answer.
+
+### Changed
+
+- Simplified custom-channel settings by keeping the common provider and image
+  fields visible while moving compatibility, reasoning, token-window, and cost
+  controls into an optional advanced section.
+- New conversations remain unselectable until an explicit model is chosen, and
+  compaction progress now uses a quiet status row with a dedicated stop action.
+
+### Fixed
+
+- Visual sidecar requests now reuse the active session model registry and its
+  exact workspace, authentication, custom-provider proxy, headers, and extension
+  overlays. Project-scoped or proxied vision models previously appeared valid
+  in the main session but could be bypassed or unavailable to the sidecar.
+- The image-input toggle in Settings > Models can now force a catalog model
+  that declares image support to be treated as text-only. Unchecking a model
+  whose endpoint cannot actually accept images previously snapped back to the
+  catalog default, which permanently locked the visual agent out of handling
+  its images; the visual-agent settings panel now explains this override.
+- Custom OpenAI-completions models expose compat overrides (reasoning_effort,
+  store, max-tokens field) in the model editor, document how the declared
+  context window drives both the per-request reply cap and the auto-compaction
+  threshold, and failed auto-compaction errors now include recovery guidance.
+  Strict local endpoints that rejected summarization requests previously left
+  every auto-compaction attempt silently unsuccessful, so replies kept getting
+  truncated by the shrinking per-request output cap.
+- Room-shared replies are now authorized against the exact active Room dispatch,
+  preventing a direct Session prompt from writing into shared Room history.
+- Session creation now reports stable client/retry errors, cleans up failed
+  post-start runtimes, and retries only explicitly transient startup failures.
+
 ## [0.4.21] - 2026-08-27
 
 ### Fixed

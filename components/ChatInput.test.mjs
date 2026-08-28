@@ -339,6 +339,21 @@ test("renders compact errors above the input as a wrapping alert", () => {
 test("does not send text before an attached image finishes loading", () => {
   assert.match(chatInputSource, /const \[isProcessingImages, setIsProcessingImages\] = useState\(false\)/);
   assert.match(chatInputSource, /setIsProcessingImages\(true\)[\s\S]*?pendingImageCountRef\.current <= 0[\s\S]*?setIsProcessingImages\(false\)/);
-  assert.match(chatInputSource, /if \(isStreaming \|\| isProcessingImages\) return/);
-  assert.match(chatInputSource, /const canSend = !isProcessingImages &&/);
+  assert.match(chatInputSource, /if \(isStreaming \|\| isProcessingImages \|\| isAutoModelSelection\) return/);
+  assert.match(chatInputSource, /const canSend = !isProcessingImages/);
+});
+
+test("new conversations require an explicit model before sending", () => {
+  assert.match(chatInputSource, /if \(isStreaming \|\| isProcessingImages \|\| isAutoModelSelection\) return/);
+  assert.match(chatInputSource, /const canSend = !isProcessingImages[\s\S]*?&& !isAutoModelSelection/);
+  assert.match(chatInputSource, /const displayModelName = model && !isAutoModelSelection/);
+  assert.match(chatInputSource, /const canOptimizePrompt = hasInputText[\s\S]*?&& !isAutoModelSelection/);
+  assert.match(chatInputSource, /onThinkingLevelChange && !isAutoModelSelection/);
+});
+
+test("compaction uses a quiet progress row and closes the model menu when started", () => {
+  assert.match(chatInputSource, /className="model-settings-compaction" role="status" aria-live="polite"/);
+  assert.match(chatInputSource, /className="model-settings-compaction-spinner"/);
+  assert.match(chatInputSource, /setModelDropdownOpen\(false\);[\s\S]*?onCompact\(\)/);
+  assert.doesNotMatch(chatInputSource, /model-settings-row\$\{isCompacting \? " is-danger"/);
 });

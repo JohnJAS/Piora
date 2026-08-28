@@ -17,6 +17,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { useCompletionNotification } from "@/hooks/useCompletionNotification";
+import { useRunningTaskSnapshots } from "@/hooks/useTaskStatus";
 import { useCompanionPets } from "@/hooks/useCompanionPets";
 import { useCompanionPreferences } from "@/hooks/useCompanionPreferences";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
@@ -123,7 +124,9 @@ export function AppShell() {
     onNotificationToggle,
     notifyCompletion,
     notifyAutomation,
+    notifyUserInput,
   } = useCompletionNotification();
+  const runningTaskSnapshots = useRunningTaskSnapshots();
   useEffect(() => {
     if (!notificationEnabled) return;
     let stopped = false;
@@ -148,6 +151,27 @@ export function AppShell() {
   }, [notificationEnabled, notifyAutomation]);
   const isMobile = useIsMobile();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
+
+  // A pending extension dialog (question card, select, confirm, editor) stalls
+  // its session until the user answers. When a session newly enters that
+  // state, raise a system notification so the user notices even while another
+  // tab, window, or session has focus. Sessions the user is actively looking
+  // at stay silent because the dialog is already on screen.
+  const pendingInputSessionsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const pendingIds = new Set(
+      runningTaskSnapshots.filter((snapshot) => snapshot.pendingApproval).map((snapshot) => snapshot.id),
+    );
+    const previous = pendingInputSessionsRef.current;
+    const appInForeground = document.visibilityState === "visible" && document.hasFocus();
+    for (const snapshot of runningTaskSnapshots) {
+      if (!snapshot.pendingApproval || previous.has(snapshot.id)) continue;
+      if (snapshot.id === selectedSession?.id && appInForeground) continue;
+      void notifyUserInput(snapshot.title ?? undefined);
+    }
+    pendingInputSessionsRef.current = pendingIds;
+  }, [runningTaskSnapshots, selectedSession?.id, notifyUserInput]);
+
   const pendingLandingDraftRef = useRef<ChatDraft | null>(null);
   const automaticTitleRequestsRef = useRef<Set<string>>(new Set());
   const [selectedRoom, setSelectedRoom] = useState<CollaborationRoom | null>(null);
@@ -1432,7 +1456,11 @@ export function AppShell() {
   }, [currentProjectCwd]);
 
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
-  const windowTitle = activeCwdName ? `${activeCwdName} - Piora` : "Piora";
+  const baseWindowTitle = activeCwdName ? `${activeCwdName} - Piora` : "Piora";
+  const hasPendingInput = runningTaskSnapshots.some((snapshot) => snapshot.pendingApproval);
+  const windowTitle = hasPendingInput
+    ? `${baseWindowTitle}${translate("app.titlePendingInput")}`
+    : baseWindowTitle;
   const desktopUpdateAvailable = desktopUpdateState?.status === "available"
     || desktopUpdateState?.status === "downloading"
     || desktopUpdateState?.status === "downloaded";
@@ -1634,6 +1662,10 @@ export function AppShell() {
             alwaysOnTop={companionAlwaysOnTop}
             onAlwaysOnTopChange={(alwaysOnTop) => {
               setCompanionPreferences((current) => ({ ...current, alwaysOnTop }));
+            }}
+            idleTricks={companionPreferences.idleTricks !== false}
+            onIdleTricksChange={(idleTricks) => {
+              setCompanionPreferences((current) => ({ ...current, idleTricks }));
             }}
             desktopMode={desktopChrome}
             selectedPetId={companionPreferences.selectedPetId}

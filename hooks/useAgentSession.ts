@@ -11,7 +11,7 @@ import type {
   SessionTreeNode,
 } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
-import { AgentCommandError, sendAgentCommand } from "@/lib/agent-client";
+import { AgentCommandError, createAgentSessionRequest, sendAgentCommand } from "@/lib/agent-client";
 import { BUILTIN_AGENT_TOOLS } from "@/lib/tool-presets";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { estimateSessionContextUsage } from "@/lib/context-usage";
@@ -632,25 +632,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const selectedModel = newSessionModelOverrideRef.current;
       const selectedThinkingLevel = thinkingLevelOverrideRef.current;
       if (selectedModel) setPendingModel(selectedModel);
-      const res = await fetch("/api/agent/new", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cwd: newSessionCwd,
-          type: "ensure_session",
-          toolNames: [...BUILTIN_AGENT_TOOLS],
-          ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
-          ...(selectedThinkingLevel
-            ? { thinkingLevel: selectedThinkingLevel }
-            : {}),
-        }),
+      const result = await createAgentSessionRequest({
+        cwd: newSessionCwd,
+        type: "ensure_session",
+        toolNames: [...BUILTIN_AGENT_TOOLS],
+        ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
+        ...(selectedThinkingLevel
+          ? { thinkingLevel: selectedThinkingLevel }
+          : {}),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const result = await res.json() as {
-        sessionId: string;
-        model?: SelectedModel | null;
-        thinkingLevel?: ThinkingLevelOption;
-      };
       const realId = result.sessionId;
       sessionIdRef.current = realId;
       if (result.model && newSessionModelOverrideRef.current === selectedModel) {

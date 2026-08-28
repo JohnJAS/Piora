@@ -59,6 +59,8 @@ interface Props {
   onCompanionOpenChange: (open: boolean) => void;
   alwaysOnTop: boolean;
   onAlwaysOnTopChange: (alwaysOnTop: boolean) => void;
+  idleTricks: boolean;
+  onIdleTricksChange: (idleTricks: boolean) => void;
   desktopMode: boolean;
   selectedPetId: string;
   onSelectPet: (petId: string) => void;
@@ -80,6 +82,8 @@ export function CompanionSettingsDialog({
   onCompanionOpenChange,
   alwaysOnTop,
   onAlwaysOnTopChange,
+  idleTricks,
+  onIdleTricksChange,
   desktopMode,
   selectedPetId,
   onSelectPet,
@@ -182,6 +186,26 @@ export function CompanionSettingsDialog({
               aria-label={t("companion.alwaysOnTop")}
               disabled={!desktopMode}
               onClick={() => onAlwaysOnTopChange(!alwaysOnTop)}
+            >
+              <span className={styles.switchThumb} />
+            </button>
+          </div>
+
+          <div className={styles.displayCard}>
+            <span className={styles.displayIcon} aria-hidden="true">
+              <AliIcon name="activity" size={18} />
+            </span>
+            <div className={styles.copy}>
+              <div className={styles.label}>{t("companion.idleTricks")}</div>
+              <div className={styles.description}>{t("companion.idleTricksDescription")}</div>
+            </div>
+            <button
+              className={styles.switch}
+              type="button"
+              role="switch"
+              aria-checked={idleTricks}
+              aria-label={t("companion.idleTricks")}
+              onClick={() => onIdleTricksChange(!idleTricks)}
             >
               <span className={styles.switchThumb} />
             </button>

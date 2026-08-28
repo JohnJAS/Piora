@@ -128,6 +128,12 @@ interface VisionAgentResponse {
   error?: string;
 }
 
+type VisionAgentTestState =
+  | { phase: "idle" }
+  | { phase: "testing" }
+  | { phase: "success"; latencyMs: number; observation: string }
+  | { phase: "error"; message: string };
+
 type ModelTestState =
   | { phase: "idle" }
   | { phase: "testing" }
@@ -287,7 +293,7 @@ function visualModelValue(model: Pick<VisionAgentModelOption, "provider" | "mode
   return JSON.stringify([model.provider, model.modelId]);
 }
 
-function VisionAgentDetail() {
+function VisionAgentDetail({ cwd }: { cwd?: string }) {
   const { t } = useI18n();
   const [config, setConfig] = useState<VisionAgentConfigState>({ enabled: false, provider: null, modelId: null });
   const [models, setModels] = useState<VisionAgentModelOption[]>([]);
@@ -295,10 +301,12 @@ function VisionAgentDetail() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testState, setTestState] = useState<VisionAgentTestState>({ phase: "idle" });
 
   useEffect(() => {
     let active = true;
-    fetch("/api/vision-agent")
+    const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
+    fetch(`/api/vision-agent${query}`)
       .then(async (response) => {
         const body = await response.json() as VisionAgentResponse;
         if (!active) return;
@@ -309,7 +317,7 @@ function VisionAgentDetail() {
       .catch((loadError) => { if (active) setError(String(loadError)); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, []);
+  }, [cwd]);
 
   const selectedValue = config.provider && config.modelId
     ? visualModelValue({ provider: config.provider, modelId: config.modelId })
@@ -327,7 +335,7 @@ function VisionAgentDetail() {
       const response = await fetch("/api/vision-agent", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify({ ...config, ...(cwd ? { cwd } : {}) }),
       });
       const body = await response.json() as { config?: VisionAgentConfigState; error?: string };
       if (!response.ok || body.error || !body.config) throw new Error(body.error ?? `HTTP ${response.status}`);
@@ -338,6 +346,24 @@ function VisionAgentDetail() {
       setError(saveError instanceof Error ? saveError.message : String(saveError));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const test = async () => {
+    if (!config.provider || !config.modelId) return;
+    setTestState({ phase: "testing" });
+    setError(null);
+    try {
+      const response = await fetch("/api/vision-agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...config, ...(cwd ? { cwd } : {}) }),
+      });
+      const body = await response.json() as { ok?: boolean; latencyMs?: number; observation?: string; error?: string };
+      if (!response.ok || !body.ok) throw new Error(body.error ?? `HTTP ${response.status}`);
+      setTestState({ phase: "success", latencyMs: body.latencyMs ?? 0, observation: body.observation ?? "" });
+    } catch (testError) {
+      setTestState({ phase: "error", message: testError instanceof Error ? testError.message : String(testError) });
     }
   };
 
@@ -408,14 +434,26 @@ function VisionAgentDetail() {
       </div>
 
       {error && <div role="alert" style={{ color: "#dc2626", fontSize: "var(--text-sm)" }}>{error}</div>}
-      <button
-        type="button"
-        onClick={() => void save()}
-        disabled={saving || saved || (config.enabled && (!selectedValue || !selectedIsAvailable))}
-        style={{ alignSelf: "flex-start", minWidth: 112, padding: "7px 14px", border: "none", borderRadius: 7, background: saved ? "#16a34a" : "var(--accent)", color: "#fff", fontSize: "var(--text-sm)", fontWeight: 600, cursor: saving || saved || (config.enabled && (!selectedValue || !selectedIsAvailable)) ? "not-allowed" : "pointer", opacity: saving || (config.enabled && (!selectedValue || !selectedIsAvailable)) ? 0.55 : 1 }}
-      >
-        {saved ? t("i18n.saved") : saving ? t("i18n.saving") : t("models.visualAgentSave")}
-      </button>
+      {testState.phase === "success" && <div role="status" style={{ color: "#15803d", fontSize: "var(--text-xs)", lineHeight: 1.5 }}>{t("models.visualAgentTestSuccess", { latency: testState.latencyMs })} · {testState.observation}</div>}
+      {testState.phase === "error" && <div role="alert" style={{ color: "#dc2626", fontSize: "var(--text-xs)" }}>{testState.message}</div>}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={saving || saved || (config.enabled && (!selectedValue || !selectedIsAvailable))}
+          style={{ minWidth: 112, padding: "7px 14px", border: "none", borderRadius: 7, background: saved ? "#16a34a" : "var(--accent)", color: "#fff", fontSize: "var(--text-sm)", fontWeight: 600, cursor: saving || saved || (config.enabled && (!selectedValue || !selectedIsAvailable)) ? "not-allowed" : "pointer", opacity: saving || (config.enabled && (!selectedValue || !selectedIsAvailable)) ? 0.55 : 1 }}
+        >
+          {saved ? t("i18n.saved") : saving ? t("i18n.saving") : t("models.visualAgentSave")}
+        </button>
+        <button
+          type="button"
+          onClick={() => void test()}
+          disabled={!selectedValue || !selectedIsAvailable || testState.phase === "testing"}
+          style={{ padding: "7px 14px", border: "1px solid var(--border)", borderRadius: 7, background: "var(--bg-panel)", color: "var(--text-muted)", fontSize: "var(--text-sm)", cursor: !selectedValue || !selectedIsAvailable || testState.phase === "testing" ? "not-allowed" : "pointer", opacity: !selectedValue || !selectedIsAvailable ? 0.55 : 1 }}
+        >
+          {testState.phase === "testing" ? t("models.visualAgentTesting") : t("models.visualAgentTest")}
+        </button>
+      </div>
     </div>
   );
 }
@@ -553,6 +591,13 @@ function ProviderDetail({ name, provider, onChange, onRename, onDelete, onAddMod
       <Field label="API">
         <Select value={provider.api ?? "openai-completions"} onChange={(v) => set("api", v)} options={API_OPTIONS} required />
       </Field>
+
+      <details style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+        <summary style={{ cursor: "pointer", color: "var(--text-muted)", fontSize: "var(--text-sm)", fontWeight: 600 }}>{t("models.advancedSettings")}</summary>
+        <div style={{ paddingTop: 12 }}>
+          <CompatOverridesEditor compat={provider.compat} onChange={(c) => set("compat", c)} />
+        </div>
+      </details>
 
       <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
         {discoveryState.phase !== "success" && (
@@ -819,6 +864,62 @@ function setDeepseekCompat(model: ModelEntry, enabled: boolean): ModelEntry {
   delete rest.thinkingFormat;
   delete rest.requiresReasoningContentOnAssistantMessages;
   return { ...model, compat: Object.keys(rest).length ? rest : undefined };
+}
+
+// Strict OpenAI-compatible servers (vLLM, llama.cpp, one-api gateways) often
+// reject fields the auto-detected compat sends, and the compaction summarizer
+// talks to the same endpoint — a rejected summary request means auto-compaction
+// never persists. These overrides let users strip the problematic fields.
+const COMPAT_TOGGLE_KEYS = ["supportsReasoningEffort", "supportsStore"] as const;
+const MAX_TOKENS_FIELD_VALUES = ["max_tokens", "max_completion_tokens"] as const;
+
+function CompatOverridesEditor({ compat, inherited, onChange }: {
+  compat?: Record<string, unknown>;
+  /** Channel-level values the model falls back to when it sets no override. */
+  inherited?: Record<string, unknown>;
+  onChange: (compat: Record<string, unknown> | undefined) => void;
+}) {
+  const { t } = useI18n();
+  const effective = (key: string) => compat?.[key] ?? inherited?.[key];
+  // Setting a value equal to what the channel already provides clears the
+  // per-model override, so later channel-level edits keep applying to it.
+  const setOverride = (key: string, value: unknown) => {
+    const next = { ...compat };
+    if (value === undefined || (inherited && inherited[key] === value)) {
+      delete next[key];
+    } else {
+      next[key] = value;
+    }
+    onChange(Object.keys(next).length ? next : undefined);
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+        {COMPAT_TOGGLE_KEYS.map((key) => {
+          const checked = effective(key) !== false;
+          return (
+            <Check
+              key={key}
+              label={key === "supportsReasoningEffort" ? t("models.compatReasoningEffort") : t("models.compatStoreField")}
+              checked={checked}
+              onChange={(v) => setOverride(key, v === checked ? undefined : v)}
+            />
+          );
+        })}
+        <Field label={t("models.compatMaxTokensField")}>
+          <Select
+            value={typeof effective("maxTokensField") === "string" ? String(effective("maxTokensField")) : ""}
+            onChange={(v) => setOverride("maxTokensField", v || undefined)}
+            options={[...MAX_TOKENS_FIELD_VALUES]}
+          />
+        </Field>
+      </div>
+      <p style={{ margin: "6px 0 0", color: "var(--text-dim)", fontSize: "var(--text-xs)", lineHeight: 1.5 }}>
+        {inherited ? t("models.compatModelHint") : t("models.compatProviderHint")}
+      </p>
+    </div>
+  );
 }
 
 function fillEmptyModelFields(
@@ -1138,20 +1239,24 @@ function ModelDetail({
         </div>
       </div>
 
-      <Field label="API override">
-        <Select value={model.api ?? ""} onChange={(v) => set("api", v || undefined)} options={API_OPTIONS} />
-      </Field>
-
       <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-        <Check label="Reasoning / thinking" checked={model.reasoning ?? false} onChange={(v) => set("reasoning", v || undefined)} />
         <Check label="Image input" checked={model.input?.includes("image") ?? false}
           onChange={(v) => set("input", v ? ["text", "image"] : undefined)} />
       </div>
       <p style={{ margin: "-8px 0 0", color: "var(--text-dim)", fontSize: "var(--text-xs)", lineHeight: 1.5 }}>
-        勾选“图片输入”后，图片会直接发送给该模型；不勾选时，只有启用了视觉代理且选好了视觉模型，图片才会由视觉模型转成文字说明后再发送。
+        勾选“图片输入”后，图片会直接发送给该模型；不勾选时，只有启用了视觉代理且选好了视觉模型，图片才会由视觉模型转成文字说明后再发送。此声明仅针对本文件中的自定义模型；云端目录模型若声称支持图片但实际拒收，可在模型列表的“支持图片输入”开关里强制关闭，视觉代理会随之接管该模型的图片。
       </p>
 
-      {model.reasoning && (
+      <details style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+        <summary style={{ cursor: "pointer", color: "var(--text-muted)", fontSize: "var(--text-sm)", fontWeight: 600 }}>{t("models.advancedSettings")}</summary>
+        <div style={{ paddingTop: 14, display: "flex", flexDirection: "column", gap: 16 }}>
+          <Field label="API override">
+            <Select value={model.api ?? ""} onChange={(v) => set("api", v || undefined)} options={API_OPTIONS} />
+          </Field>
+
+          <Check label="Reasoning / thinking" checked={model.reasoning ?? false} onChange={(v) => set("reasoning", v || undefined)} />
+
+          {model.reasoning && (
         <>
           <Check
             label="DeepSeek thinking compat"
@@ -1176,7 +1281,7 @@ function ModelDetail({
             />
           </div>
         </>
-      )}
+          )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <Field label="Context window (tokens)">
@@ -1188,6 +1293,22 @@ function ModelDetail({
             onChange={(v) => set("maxTokens", v ? parseInt(v) : undefined)} placeholder="16384" />
         </Field>
       </div>
+      <p style={{ margin: "-8px 0 0", color: "var(--text-dim)", fontSize: "var(--text-xs)", lineHeight: 1.5 }}>
+        自定义模型不填时默认上下文 128000、最大输出 16384。每轮回复的实际上限 = min(最大输出，上下文 − 当前上下文估算 − 4096)，因此声明值必须与真实服务一致：上下文声明得比实际大，回复会被服务的真实上限截断；声明得太小，则会频繁触发自动压缩。自动压缩也按声明的上下文计算触发时机。
+      </p>
+
+          {(model.api ?? provider.api ?? "openai-completions") === "openai-completions" && (
+            <div>
+              <SectionTitle>{t("models.compatSection")}</SectionTitle>
+              <div style={{ marginTop: 8 }}>
+                <CompatOverridesEditor
+                  compat={model.compat}
+                  inherited={provider.compat}
+                  onChange={(compat) => set("compat", compat)}
+                />
+              </div>
+            </div>
+          )}
 
       <div>
         <SectionTitle>Cost (per million tokens)</SectionTitle>
@@ -1199,6 +1320,8 @@ function ModelDetail({
           ))}
         </div>
       </div>
+        </div>
+      </details>
     </div>
   );
 }
@@ -2364,7 +2487,7 @@ export function ModelsConfig({
                         {testSummary}
                       </span>
                     )}
-                    <label title="Declare whether this model accepts image input. This controls direct image sending and visual-agent selection." style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 5, color: "var(--text-muted)", fontSize: "var(--text-xs)", cursor: "pointer" }}>
+                    <label title="Declare whether this model accepts image input. Unchecking a catalog model that claims image support forces it to be treated as text-only, so the visual agent handles its images." style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 5, color: "var(--text-muted)", fontSize: "var(--text-xs)", cursor: "pointer" }}>
                       <input
                         type="checkbox"
                         checked={modelImageInput[testKey] ?? false}
@@ -2477,7 +2600,7 @@ export function ModelsConfig({
   // Resolve current detail
   const detailContent = (() => {
     if (!selection) return null;
-    if (selection.type === "vision-agent") return <VisionAgentDetail />;
+    if (selection.type === "vision-agent") return <VisionAgentDetail cwd={cwd} />;
     if (selection.type === "oauth") {
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;

@@ -254,6 +254,22 @@ function getAutomationNotificationCopy(taskTitle: string | undefined, status: "s
   return { title: taskTitle ? `${taskTitle} - Piora` : "Piora", body };
 }
 
+function getUserInputNotificationCopy(taskTitle: string | undefined): { title: string; body: string } {
+  const isChinese = app.getLocale().toLowerCase().startsWith("zh");
+  return {
+    title: taskTitle ? `${taskTitle} - Piora` : "Piora",
+    body: isChinese
+      ? "模型提出了问题，正在等待你的回复。"
+      : "The model asked a question and is waiting for your reply.",
+  };
+}
+
+type CompletionNotificationRequest = {
+  taskTitle?: unknown;
+  status?: unknown;
+  kind?: unknown;
+};
+
 function registerCompletionNotificationHandler(): void {
   ipcMain.removeHandler(COMPLETION_NOTIFICATION_CHANNEL);
   ipcMain.handle(
@@ -265,10 +281,15 @@ function registerCompletionNotificationHandler(): void {
       }
       if (!Notification.isSupported()) return false;
 
-      const automationRequest = requested && typeof requested === "object" ? requested as { taskTitle?: unknown; status?: unknown } : null;
-      const status = automationRequest && (automationRequest.status === "succeeded" || automationRequest.status === "failed" || automationRequest.status === "interrupted") ? automationRequest.status : null;
-      const title = sanitizeNotificationTaskTitle(automationRequest ? automationRequest.taskTitle : requested);
-      const copy = status ? getAutomationNotificationCopy(title, status) : getCompletionNotificationCopy(title);
+      const payload = typeof requested === "string"
+        ? { taskTitle: requested as unknown }
+        : requested && typeof requested === "object" ? requested as CompletionNotificationRequest : null;
+      const status = payload && (payload.status === "succeeded" || payload.status === "failed" || payload.status === "interrupted") ? payload.status : null;
+      const kind = payload && payload.kind === "user-input" ? "user-input" : status ? "automation" : "completion";
+      const title = sanitizeNotificationTaskTitle(payload?.taskTitle);
+      const copy = kind === "user-input"
+        ? getUserInputNotificationCopy(title)
+        : status ? getAutomationNotificationCopy(title, status) : getCompletionNotificationCopy(title);
       const notification = new Notification({ ...copy, silent: false });
       notification.on("click", () => {
         if (!mainWindow || mainWindow.isDestroyed()) return;

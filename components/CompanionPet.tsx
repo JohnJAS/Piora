@@ -14,6 +14,12 @@ import {
   type CompanionActivity,
   type CompanionActivityEvent,
 } from "@/lib/companion";
+import {
+  isCompanionInteractionKind,
+  pickCompanionIdleTrickStateId,
+  pickCompanionInteractionStateId,
+  pickCompanionSpeechLine,
+} from "@/lib/companion-behavior";
 import { MAX_COMPANION_PHRASES, MAX_COMPANION_TODOS, createCompanionId, type CompanionPreferences } from "@/lib/companion-store";
 import { STATUS_PRESENTATION, type TaskStatusPresentationKey } from "@/lib/task-status";
 import styles from "./CompanionPet.module.css";
@@ -92,14 +98,23 @@ export function BuiltinPet({ status }: { status: CompanionActivity["status"] }) 
   );
 }
 
+const MIN_TRICK_DELAY_MS = 18_000;
+const MAX_TRICK_EXTRA_DELAY_MS = 24_000;
+
 export function SpritePet({
   pet,
   status,
   event,
+  overlayEvent,
+  idleTricks = false,
 }: {
   pet: CompanionPetMetadata;
   status: CompanionActivity["status"];
   event?: CompanionActivityEvent;
+  /** One-shot user-driven reaction (poke/feed/water/pet); wins over runtime events. */
+  overlayEvent?: CompanionActivityEvent;
+  /** Play a random trick every now and then while the pet is idle. */
+  idleTricks?: boolean;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const renderablePet = pet as unknown as RenderablePet;
@@ -138,7 +153,48 @@ export function SpritePet({
   }, [baseAnimation, eventKey, idleAnimation, reducedMotion, selectedTransientAnimation]);
   const [completedEventKey, setCompletedEventKey] = useState<string | null>(null);
   const pendingTransientAnimation = eventKey !== completedEventKey ? transientAnimation : null;
-  const requestedAnimation = pendingTransientAnimation ?? baseAnimation;
+
+  const overlayKey = overlayEvent?.key;
+  const overlayKind = isCompanionInteractionKind(overlayEvent?.kind) ? overlayEvent?.kind : null;
+  const stateIds = useMemo(() => renderablePet.states.map((state) => state.id), [renderablePet.states]);
+  const lastReactionStateIdRef = useRef<string | null>(null);
+  const lastTrickStateIdRef = useRef<string | null>(null);
+  const trickSequenceRef = useRef(0);
+  const selectedOverlayAnimationState = useMemo(() => {
+    if (!overlayKind) return null;
+    const picked = pickCompanionInteractionStateId(stateIds, overlayKind, lastReactionStateIdRef.current);
+    lastReactionStateIdRef.current = picked;
+    return picked;
+    // Re-runs once per interaction key; the picked state must follow the key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlayKey, overlayKind, stateIds]);
+  const overlayAnimation = useMemo(() => {
+    if (reducedMotion || !overlayKey || !selectedOverlayAnimationState || !baseAnimation) return null;
+    const state = renderablePet.states.find((entry) => entry.id === selectedOverlayAnimationState);
+    if (!state) return null;
+    return {
+      ...prepareCompanionTransientAnimation(state, idleAnimation, baseAnimation.id),
+      id: `${state.id}::${overlayKey}`,
+    };
+  }, [baseAnimation, idleAnimation, overlayKey, reducedMotion, renderablePet.states, selectedOverlayAnimationState]);
+  const [completedOverlayKey, setCompletedOverlayKey] = useState<string | null>(null);
+  const pendingOverlayAnimation = overlayKey && overlayKey !== completedOverlayKey ? overlayAnimation : null;
+
+  // Idle tricks keep the pet lively while nothing is happening. They lose to
+  // runtime events and user interactions and are dropped when those arrive.
+  const [trick, setTrick] = useState<{ key: string; stateId: string } | null>(null);
+  const [completedTrickKey, setCompletedTrickKey] = useState<string | null>(null);
+  const pendingTrickAnimation = useMemo(() => {
+    if (reducedMotion || !trick || trick.key === completedTrickKey || !baseAnimation) return null;
+    const state = renderablePet.states.find((entry) => entry.id === trick.stateId);
+    if (!state) return null;
+    return {
+      ...prepareCompanionTransientAnimation(state, idleAnimation, baseAnimation.id),
+      id: `${state.id}::${trick.key}`,
+    };
+  }, [baseAnimation, completedTrickKey, idleAnimation, reducedMotion, renderablePet.states, trick]);
+
+  const requestedAnimation = pendingOverlayAnimation ?? pendingTransientAnimation ?? pendingTrickAnimation ?? baseAnimation;
   const [animation, setAnimation] = useState<RenderableAnimationState | null>(requestedAnimation);
   const [frameOffset, setFrameOffset] = useState(0);
   const [failed, setFailed] = useState(false);
@@ -167,8 +223,20 @@ export function SpritePet({
         setFrameOffset(next);
         return;
       }
+      if (pendingOverlayAnimation && animation.id === pendingOverlayAnimation.id && overlayKey) {
+        setCompletedOverlayKey(overlayKey);
+        setAnimation(baseAnimation);
+        setFrameOffset(0);
+        return;
+      }
       if (pendingTransientAnimation && animation.id === pendingTransientAnimation.id && eventKey) {
         setCompletedEventKey(eventKey);
+        setAnimation(baseAnimation);
+        setFrameOffset(0);
+        return;
+      }
+      if (pendingTrickAnimation && animation.id === pendingTrickAnimation.id && trick) {
+        setCompletedTrickKey(trick.key);
         setAnimation(baseAnimation);
         setFrameOffset(0);
         return;
@@ -180,7 +248,32 @@ export function SpritePet({
       }
     }, Math.max(60, durations?.[frameOffset] ?? 150));
     return () => window.clearTimeout(timeout);
-  }, [animation, baseAnimation, eventKey, frameIndices.length, frameOffset, pendingTransientAnimation, reducedMotion, renderablePet.states]);
+  }, [animation, baseAnimation, eventKey, frameIndices.length, frameOffset, overlayKey, pendingOverlayAnimation, pendingTransientAnimation, pendingTrickAnimation, reducedMotion, renderablePet.states, trick]);
+
+  const idleTrickCapable = useMemo(
+    () => pickCompanionIdleTrickStateId(stateIds) !== null,
+    [stateIds],
+  );
+
+  // A higher-priority one-shot (runtime event or user interaction) cancels any
+  // trick that is mid-flight so the pet never resumes a stale joke.
+  useEffect(() => {
+    if (pendingOverlayAnimation || pendingTransientAnimation) setTrick(null);
+  }, [pendingOverlayAnimation, pendingTransientAnimation]);
+
+  useEffect(() => {
+    if (!idleTricks || reducedMotion || status !== "idle" || !idleTrickCapable) return;
+    if (pendingOverlayAnimation || pendingTransientAnimation || pendingTrickAnimation) return;
+    const delay = MIN_TRICK_DELAY_MS + Math.random() * MAX_TRICK_EXTRA_DELAY_MS;
+    const timer = window.setTimeout(() => {
+      const stateId = pickCompanionIdleTrickStateId(stateIds, lastTrickStateIdRef.current);
+      if (!stateId) return;
+      lastTrickStateIdRef.current = stateId;
+      trickSequenceRef.current += 1;
+      setTrick({ key: `trick:${trickSequenceRef.current}`, stateId });
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [idleTrickCapable, idleTricks, pendingOverlayAnimation, pendingTransientAnimation, pendingTrickAnimation, reducedMotion, stateIds, status]);
 
   if (!pet.atlasUrl || !animation || frameIndices.length === 0 || failed) return <BuiltinPet status={status} />;
   const absoluteFrame = frameIndices[reducedMotion ? 0 : Math.min(frameOffset, frameIndices.length - 1)];
@@ -220,7 +313,7 @@ export function CompanionPet({
   setPreferences,
   activePet,
 }: Props) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [tab, setTab] = useState<CompanionTab>("todos");
   const [todoText, setTodoText] = useState("");
   const [phraseLabel, setPhraseLabel] = useState("");
@@ -229,10 +322,26 @@ export function CompanionPet({
   const [sendNotice, setSendNotice] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
   const sendNoticeTimerRef = useRef<number | null>(null);
+  const [pokeEvent, setPokeEvent] = useState<CompanionActivityEvent | null>(null);
+  const [petSpeech, setPetSpeech] = useState("");
+  const petSpeechTimerRef = useRef<number | null>(null);
+  const pokeSequenceRef = useRef(0);
+  const lastPetSpeechRef = useRef<string | null>(null);
 
   useEffect(() => () => {
     if (sendNoticeTimerRef.current !== null) window.clearTimeout(sendNoticeTimerRef.current);
+    if (petSpeechTimerRef.current !== null) window.clearTimeout(petSpeechTimerRef.current);
   }, []);
+
+  const pokePet = () => {
+    pokeSequenceRef.current += 1;
+    setPokeEvent({ kind: "poke", key: `poke:${pokeSequenceRef.current}`, occurredAt: Date.now() });
+    const line = pickCompanionSpeechLine("poke", locale, lastPetSpeechRef.current);
+    lastPetSpeechRef.current = line;
+    setPetSpeech(line);
+    if (petSpeechTimerRef.current !== null) window.clearTimeout(petSpeechTimerRef.current);
+    petSpeechTimerRef.current = window.setTimeout(() => setPetSpeech(""), 4_000);
+  };
 
   const remainingTodos = preferences.todos.filter((todo) => !todo.completed).length;
   const statusLabel = t(`companion.activity.${activity.status}`);
@@ -284,17 +393,30 @@ export function CompanionPet({
   return (
     <aside className={styles.dock} aria-label={t("companion.title")} data-testid="companion-dock">
       <div className={styles.header}>
-        <div className={styles.petViewport}>
+        <button
+          className={styles.petViewport}
+          type="button"
+          data-testid="companion-dock-pet"
+          onClick={pokePet}
+          title={t("companion.pokeHint")}
+          aria-label={t("companion.pokeHint")}
+        >
           {activePet
-            ? <SpritePet pet={activePet} status={activity.status} event={activity.event} />
+            ? <SpritePet
+                pet={activePet}
+                status={activity.status}
+                event={activity.event}
+                overlayEvent={pokeEvent ?? undefined}
+                idleTricks={preferences.idleTricks !== false}
+              />
             : <BuiltinPet status={activity.status} />}
-        </div>
+        </button>
         <div className={styles.activityCopy} aria-live="polite">
           <div className={styles.activityRow}>
             <span className={styles.activityDot} style={{ "--activity-color": COMPANION_ACTIVITY_COLORS[activity.status] } as CSSProperties} />
             <span>{statusLabel}</span>
           </div>
-          <div className={styles.activityCause}>{activity.cause}</div>
+          <div className={styles.activityCause}>{petSpeech || activity.cause}</div>
         </div>
         <div className={styles.headerActions}>
           <button className={styles.iconButton} type="button" onClick={() => setHelpOpen((open) => !open)} title={t("companion.howToUse")} aria-label={t("companion.howToUse")} aria-expanded={helpOpen}>

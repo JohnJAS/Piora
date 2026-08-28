@@ -71,6 +71,10 @@ test("visual routing remains user-selectable and capability driven", () => {
   const extensionSource = readFileSync(new URL("../extensions/piora-vision-agent.ts", import.meta.url), "utf8");
   assert.match(source, /type: "vision-agent"/);
   assert.match(source, /fetch\("\/api\/vision-agent"/);
+  assert.match(source, /method:\s*"POST"/);
+  assert.match(source, /models\.visualAgentTest/);
+  assert.match(source, /VisionAgentDetail cwd=\{cwd\}/);
+  assert.match(source, /models\.advancedSettings/);
   assert.match(source, /models\.visualAgentRoutingHint/);
   assert.match(source, /model\.provider.*model\.modelId/s);
   assert.match(routeSource, /listVisionAgentModels/);

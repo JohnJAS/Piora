@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai";
-import { createAgentSessionServices, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionServices, getAgentDir, ModelRegistry } from "@earendil-works/pi-coding-agent";
 
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import { isBase64ImageWithinLimits } from "./image-attachments";
@@ -47,9 +47,10 @@ export const DEFAULT_VISION_AGENT_CONFIG: VisionAgentConfig = {
   modelId: null,
 };
 
-/** Use Pi's normal service construction so registered channel providers are visible. */
-async function createVisionModelServices() {
-  return createAgentSessionServices({ cwd: process.cwd(), agentDir: getAgentDir() });
+/** Use Pi's normal cwd-bound service construction for settings/API calls. */
+async function createVisionModelRegistry(cwd: string): Promise<ModelRegistry> {
+  const services = await createAgentSessionServices({ cwd, agentDir: getAgentDir() });
+  return new ModelRegistry(services.modelRuntime);
 }
 
 function optionalIdentifier(value: unknown): string | null {
@@ -112,13 +113,13 @@ export function writeVisionAgentConfig(config: VisionAgentConfig, baseDir?: stri
   return normalized;
 }
 
-export async function listVisionAgentModels(): Promise<{ models: VisionAgentModelOption[]; error?: string }> {
-  const { modelRuntime: runtime } = await createVisionModelServices();
-  const models = runtime.getModels()
-    .filter((model) => modelSupportsImages(model) && runtime.hasConfiguredAuth(model.provider))
+export async function listVisionAgentModels(cwd = process.cwd()): Promise<{ models: VisionAgentModelOption[]; error?: string }> {
+  const registry = await createVisionModelRegistry(cwd);
+  const models = registry.getAll()
+    .filter((model) => modelSupportsImages(model) && registry.hasConfiguredAuth(model))
     .map((model) => ({ provider: model.provider, modelId: model.id, name: model.name }))
     .sort((left, right) => `${left.provider}/${left.name}`.localeCompare(`${right.provider}/${right.name}`));
-  return { models, ...(runtime.getError() ? { error: runtime.getError() } : {}) };
+  return { models, ...(registry.getError() ? { error: registry.getError() } : {}) };
 }
 
 function assistantText(message: AssistantMessage): string {
@@ -134,6 +135,10 @@ export async function analyzeImagesWithVisionModel(options: {
   images: readonly ImageContent[];
   question: string;
   signal?: AbortSignal;
+  /** Reuse the active session registry so project providers and proxy overlays are preserved. */
+  modelRegistry?: ModelRegistry;
+  /** Used only when no active session registry is available (for example, settings API tests). */
+  cwd?: string;
 }): Promise<string> {
   const { config, images, signal } = options;
   if (!config.enabled || !config.provider || !config.modelId) {
@@ -143,13 +148,13 @@ export async function analyzeImagesWithVisionModel(options: {
     throw new Error("Visual input is invalid or exceeds the attachment limit");
   }
 
-  const { modelRuntime: runtime } = await createVisionModelServices();
-  const loadError = runtime.getError();
+  const registry = options.modelRegistry ?? await createVisionModelRegistry(options.cwd ?? process.cwd());
+  const loadError = registry.getError();
   if (loadError) throw new Error(loadError);
-  const model = runtime.getModel(config.provider, config.modelId);
+  const model = registry.find(config.provider, config.modelId);
   if (!model) throw new Error(`Visual model not found: ${config.provider}/${config.modelId}`);
   if (!modelSupportsImages(model)) throw new Error("Configured visual model does not accept images");
-  if (!runtime.hasConfiguredAuth(model.provider)) throw new Error("Visual model authentication is not configured");
+  if (!registry.hasConfiguredAuth(model)) throw new Error("Visual model authentication is not configured");
 
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -176,7 +181,7 @@ export async function analyzeImagesWithVisionModel(options: {
       content.push({ type: "text", text: `IMAGE ${index + 1}` }, image);
     });
 
-    const message = await runtime.completeSimple(model, {
+    const message = await registry.complete(model, {
       systemPrompt: [
         "You are a visual perception sidecar for a separate text-only reasoning model.",
         "Describe only visible evidence that helps answer the user's task.",
@@ -310,9 +315,24 @@ function observationContext(text: string, provider: string, modelId: string): st
   ].join("\n");
 }
 
+const FAILED_OBSERVATION_REASON_LIMIT = 200;
+
+/** Collapse a vision-call error into a short single-line reason for the status bar. */
+export function describeVisionFailure(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const reason = raw.replace(/\s+/g, " ").trim();
+  if (!reason) return "unknown error";
+  return reason.length > FAILED_OBSERVATION_REASON_LIMIT
+    ? `${reason.slice(0, FAILED_OBSERVATION_REASON_LIMIT)}…`
+    : reason;
+}
+
+// Failure reasons intentionally stay out of this placeholder: the text becomes
+// part of the persisted conversation, and provider errors can contain private
+// details. The reason is surfaced through the extension status bar instead.
 const FAILED_OBSERVATION = [
   "<visual_observation_unavailable>",
-  "The image could not be analyzed by the configured visual model. The original image was withheld from this text-only model. Do not guess its contents; explain that visual analysis is temporarily unavailable if the answer depends on it.",
+  "The configured visual model could not analyze this image, so the original image was withheld from this text-only model. Do not guess its contents and do not claim that you lack image support — briefly tell the user that automatic visual analysis failed just now and that the failure reason is shown in the visual agent status.",
   "</visual_observation_unavailable>",
 ].join("\n");
 
@@ -327,8 +347,11 @@ export async function transformContextForTextOnlyModel(options: {
   config: VisionAgentConfig;
   cache?: ReadonlyMap<string, VisionObservationCacheEntry>;
   signal?: AbortSignal;
+  modelRegistry?: ModelRegistry;
+  cwd?: string;
   observe?: (images: readonly ImageContent[], question: string, signal?: AbortSignal) => Promise<string>;
   onCacheEntry?: (entry: VisionObservationCacheEntry) => void;
+  onObservationFailure?: (reason: string) => void;
 }): Promise<AgentMessage[]> {
   const { config, signal } = options;
   if (!config.enabled || !config.provider || !config.modelId) return [...options.messages];
@@ -353,6 +376,8 @@ export async function transformContextForTextOnlyModel(options: {
     images,
     question,
     signal: currentSignal,
+    modelRegistry: options.modelRegistry,
+    cwd: options.cwd,
   }));
 
   let analyzedGroups = 0;
@@ -393,6 +418,7 @@ export async function transformContextForTextOnlyModel(options: {
       result[group.index] = replaceImages(group.message, observationContext(entry.text, entry.provider, entry.modelId));
     } catch (error) {
       if (signal?.aborted) throw error;
+      options.onObservationFailure?.(describeVisionFailure(error));
       result[group.index] = replaceImages(group.message, FAILED_OBSERVATION);
     }
   }

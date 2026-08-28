@@ -95,6 +95,18 @@ function validateInput(input: SessionMessageInput, maxMessageBytes: number): voi
   if (input.teamExecution && input.source !== "room" && input.source !== "system") {
     throw new SessionMessageRouterError("TEAM_INVALID_CONTEXT", "Only the Team runtime may dispatch a Team execution context.");
   }
+  if (
+    (input.source === "room" && !input.roomContext)
+    || (input.roomContext && (
+      input.source !== "room"
+      || !input.roomContext.roomId?.trim()
+      || !input.roomContext.messageId?.trim()
+      || input.roomContext.roomId.length > 512
+      || input.roomContext.messageId.length > 512
+    ))
+  ) {
+    throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "Room context is valid only for bounded Room messages.");
+  }
   const imageError = validateAgentImages(input.images);
   if (imageError) throw new SessionMessageRouterError("SESSION_MESSAGE_TOO_LARGE", imageError);
   if (input.materials !== undefined && (
@@ -207,6 +219,7 @@ export class SessionMessageRouter {
       content: input.content,
       delivery: input.delivery ?? "next_turn",
       source: input.source,
+      ...(input.roomContext ? { roomContext: input.roomContext } : {}),
       acceptedAt: now,
       queuedAt: now,
       ...(input.expiresAt !== undefined ? { expiresAt: input.expiresAt } : {}),
@@ -414,6 +427,8 @@ export class SessionMessageRouter {
           const teamExecution = command.teamExecution ? resolveTeamExecutionContext(command.teamExecution) : undefined;
           const started = await session.startTrackedPrompt({
             commandId: command.commandId,
+            source: command.source,
+            roomContext: command.roomContext,
             message: command.content,
             images: command.images,
             materials: command.materials,

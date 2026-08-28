@@ -17,9 +17,22 @@ test("structured input card supports choices, text, cancellation, and keyboard s
   assert.match(card, /question\.multiline/);
   assert.match(card, /aria-checked=\{checked\}/);
   assert.match(card, /event\.ctrlKey \|\| event\.metaKey/);
-  assert.match(card, /onRespond\(request, \{ answers \}\)/);
+  assert.match(card, /onRespond\(request, \{ answers: mergedAnswers \}\)/);
   assert.match(card, /cancelled: true/);
   assert.match(chat, /extensionDialog\?\.method === "request_user_input"/);
+});
+
+test("select questions offer a custom Other answer merged into the submitted payload", () => {
+  assert.match(card, /userInput\.otherPlaceholder/);
+  assert.match(card, /const customActive = customValue\.trim\(\)\.length > 0;/);
+  assert.match(card, /setCustom\(question\.id, event\.target\.value, question\.kind === "single_select"\)/);
+  assert.match(card, /if \(custom\) values\.push\(custom\);/);
+  // A single-select custom answer replaces the chosen label; the merged
+  // payload never carries both at once.
+  assert.match(card, /const mergedAnswers = useMemo<UserInputAnswers>/);
+  assert.match(card, /replaces any chosen option label/);
+  assert.match(styles, /\.customField/);
+  assert.match(card, /USER_INPUT_MAX_TEXT_LENGTH/);
 });
 
 test("card uses the shared Codex surface tokens and the RPC bridge returns answers", () => {

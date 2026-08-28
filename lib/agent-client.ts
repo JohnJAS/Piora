@@ -18,6 +18,54 @@ export class AgentCommandError extends Error {
   }
 }
 
+export interface CreateAgentSessionRequest {
+  cwd: string;
+  type: "ensure_session";
+  toolNames: string[];
+  provider?: string;
+  modelId?: string;
+  thinkingLevel?: string;
+}
+
+export interface CreateAgentSessionResponse {
+  sessionId: string;
+  model?: { provider: string; modelId: string } | null;
+  thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+}
+
+const SESSION_CREATION_RETRY_DELAY_MS = 180;
+
+/**
+ * Creates the lazy runtime for a new conversation. The server marks only
+ * transient filesystem/lock failures as retryable; if one happens after the
+ * wrapper starts, the creation boundary destroys that wrapper before replying.
+ */
+export async function createAgentSessionRequest(
+  request: CreateAgentSessionRequest,
+): Promise<CreateAgentSessionResponse> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const res = await fetch("/api/agent/new", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+    const body = (await res.json().catch(() => ({}))) as CreateAgentSessionResponse & {
+      error?: string;
+      code?: string;
+    };
+    if (res.ok && !body.error) return body;
+
+    const error = new AgentCommandError(
+      body.error ?? `HTTP ${res.status}`,
+      res.status,
+      body.code,
+    );
+    if (error.code !== "SESSION_CREATION_RETRYABLE" || attempt > 0) throw error;
+    await new Promise((resolve) => setTimeout(resolve, SESSION_CREATION_RETRY_DELAY_MS));
+  }
+  throw new AgentCommandError("Session creation failed", 500, "SESSION_CREATION_FAILED");
+}
+
 export async function sendAgentCommand<T = unknown>(
   sessionId: string,
   command: Record<string, unknown>,

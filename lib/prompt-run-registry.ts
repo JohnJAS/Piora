@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
+import type { SessionMessageSourceKind, SessionRoomContext } from "./session-message-types";
 
 export type PromptRunFinishReason = "idle" | "error" | "abort" | "destroy" | "fork";
 
 export interface PromptRunIdentity {
   sessionId: string;
   runId: string;
+  source?: SessionMessageSourceKind;
+  roomContext?: SessionRoomContext;
 }
 
 export interface PromptToolIdentity extends PromptRunIdentity {
@@ -26,7 +29,10 @@ function getRuns(): Map<string, PromptRunRecord> {
   return globalThis.__pioraPromptRuns ??= new Map();
 }
 
-export function beginPromptRun(sessionId: string): PromptRunIdentity {
+export function beginPromptRun(
+  sessionId: string,
+  context: { source?: SessionMessageSourceKind; roomContext?: SessionRoomContext } = {},
+): PromptRunIdentity {
   if (!sessionId) throw new Error("Cannot begin a prompt run without a session id.");
   const runs = getRuns();
   if (runs.has(sessionId)) {
@@ -35,16 +41,28 @@ export function beginPromptRun(sessionId: string): PromptRunIdentity {
   const record: PromptRunRecord = {
     sessionId,
     runId: randomUUID(),
+    ...(context.source ? { source: context.source } : {}),
+    ...(context.roomContext ? { roomContext: context.roomContext } : {}),
     startedAt: Date.now(),
     cleanups: new Set(),
   };
   runs.set(sessionId, record);
-  return { sessionId, runId: record.runId };
+  return {
+    sessionId,
+    runId: record.runId,
+    ...(record.source ? { source: record.source } : {}),
+    ...(record.roomContext ? { roomContext: record.roomContext } : {}),
+  };
 }
 
 export function getActivePromptRun(sessionId: string): PromptRunIdentity | undefined {
   const record = getRuns().get(sessionId);
-  return record ? { sessionId: record.sessionId, runId: record.runId } : undefined;
+  return record ? {
+    sessionId: record.sessionId,
+    runId: record.runId,
+    ...(record.source ? { source: record.source } : {}),
+    ...(record.roomContext ? { roomContext: record.roomContext } : {}),
+  } : undefined;
 }
 
 export function requirePromptToolIdentity(sessionId: string, toolCallId: string): PromptToolIdentity {

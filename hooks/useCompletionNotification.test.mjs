@@ -43,6 +43,14 @@ test("desktop and browser notifications use application-owned completion copy", 
   assert.match(hookSource, /tag: "piora-task-complete"/);
 });
 
+test("pending model questions raise an application-owned input notification", () => {
+  assert.match(preloadSource, /notifyUserInput\(taskTitle\?: string\)/);
+  assert.match(preloadSource, /kind: "user-input"/);
+  assert.match(hookSource, /The model asked a question and is waiting for your reply\./);
+  assert.match(mainSource, /The model asked a question and is waiting for your reply\./);
+  assert.match(hookSource, /tag: "piora-user-input"/);
+});
+
 test("a user-stopped run does not emit a successful completion notification", () => {
   assert.match(agentSessionSource, /suppressCompletionNotificationRef\.current = true/);
   assert.match(agentSessionSource, /const shouldNotify = !suppressCompletionNotificationRef\.current/);

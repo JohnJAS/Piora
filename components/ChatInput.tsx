@@ -567,7 +567,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     },
     sendText(text: string) {
       const message = text.trim();
-      if (!message || isStreaming) return false;
+      if (!message || isStreaming || isAutoModelSelection) return false;
       onSend(message);
       return true;
     },
@@ -755,7 +755,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const handleSend = useCallback(async () => {
     const msg = value.trim();
     if (!msg && !attachedImages.length && !attachedFiles.length) return;
-    if (isStreaming || isProcessingImages) return;
+    if (isStreaming || isProcessingImages || isAutoModelSelection) return;
     if (!attachedImages.length && !attachedFiles.length && msg.startsWith("/") && onBuiltinCommand) {
       const result = await onBuiltinCommand(msg);
       if (result.handled) {
@@ -790,13 +790,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     );
     setPromptMode("normal");
     clearInput();
-  }, [value, attachedImages, attachedFiles, isStreaming, isProcessingImages, onBuiltinCommand, onSend, clearInput, promptMode, contextUsage, t]);
+  }, [value, attachedImages, attachedFiles, isStreaming, isProcessingImages, isAutoModelSelection, onBuiltinCommand, onSend, clearInput, promptMode, contextUsage, t]);
 
   const handleOptimizePrompt = useCallback(async () => {
     const source = value.trim();
     const configuredModel = readPromptOptimizerModel(window.localStorage);
     const optimizerModel = configuredModel ?? (model ? { provider: model.provider, modelId: model.modelId } : null);
-    if (!source || !optimizerModel || isStreaming || source.startsWith("/") || source.startsWith("!")) return;
+    if (!source || !optimizerModel || isAutoModelSelection || isStreaming || source.startsWith("/") || source.startsWith("!")) return;
 
     promptOptimizerAbortRef.current?.abort();
     const controller = new AbortController();
@@ -833,7 +833,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     } finally {
       if (promptOptimizerAbortRef.current === controller) promptOptimizerAbortRef.current = null;
     }
-  }, [cwd, isStreaming, model, t, value]);
+  }, [cwd, isAutoModelSelection, isStreaming, model, t, value]);
 
   const slashQuery = value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
@@ -863,9 +863,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = hasInputText && attachedImages.length === 0 && attachedFiles.length === 0;
   const primaryStreamingMode = streamingSendPreference.enabled ? streamingSendPreference.behavior : "steer";
-  const canSend = !isProcessingImages && (hasInputText || attachedImages.length > 0 || attachedFiles.length > 0);
+  const canSend = !isProcessingImages
+    && !isAutoModelSelection
+    && (hasInputText || attachedImages.length > 0 || attachedFiles.length > 0);
   const canOptimizePrompt = hasInputText
     && !isStreaming
+    && !isAutoModelSelection
     && Boolean(model)
     && !trimmedValue.startsWith("/")
     && !trimmedValue.startsWith("!")
@@ -1490,7 +1493,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     else modelsByProvider.push({ provider: opt.provider, options: [opt] });
   }
 
-  const displayModelName = model
+  const displayModelName = model && !isAutoModelSelection
     ? (modelOptions.find((o) => o.modelId === model.modelId && o.provider === model.provider)?.name ?? model.modelId)
     : null;
   const currentName = displayModelName;
@@ -1648,6 +1651,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             }}
           >
             {compactError}
+            <span style={{ display: "block", marginTop: 4, fontFamily: "inherit", fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+              {t("chat.compactErrorHint")}
+            </span>
           </div>
         )}
         {/* Image previews */}
@@ -2274,11 +2280,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   aria-expanded={modelDropdownOpen}
                   title={modelOptions.length > 0 ? t("chat.selectModel") : t("chat.noModels")}
                 >
-                  <ModelProviderIcon provider={model?.provider} modelId={model?.modelId} modelName={currentName} size={14} />
+                  <ModelProviderIcon provider={isAutoModelSelection ? undefined : model?.provider} modelId={isAutoModelSelection ? undefined : model?.modelId} modelName={currentName} size={14} />
                   <span className="model-settings-trigger-label">
                     {currentName ?? (modelOptions.length > 0 ? t("chat.selectModel") : t("chat.noModels"))}
                   </span>
-                  {onThinkingLevelChange ? <span className="model-settings-trigger-reasoning">{thinkingLevelLabel}</span> : null}
+                  {onThinkingLevelChange && !isAutoModelSelection ? <span className="model-settings-trigger-reasoning">{thinkingLevelLabel}</span> : null}
                   <AliIcon name="arrowdown" size={10} />
                 </button>
                 {modelDropdownOpen && modelDropdownRect && (() => {
@@ -2329,7 +2335,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           <div key={group.provider}>
                             {modelsByProvider.length > 1 ? <div className="model-settings-provider">{group.provider}</div> : null}
                             {group.options.map((option) => {
-                              const isActive = option.modelId === model?.modelId && option.provider === model?.provider;
+                              const isActive = !isAutoModelSelection && option.modelId === model?.modelId && option.provider === model?.provider;
                               return (
                                 <button
                                   key={`${option.provider}:${option.modelId}`}
@@ -2415,7 +2421,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             <span className="model-settings-row-value">{currentName ?? t("chat.selectModel")}</span>
                             <AliIcon name="arrowright" size={11} />
                           </button>
-                          {onThinkingLevelChange ? (
+                          {onThinkingLevelChange && !isAutoModelSelection ? (
                             <button
                               type="button"
                               className={`model-settings-row${modelMenuSection === "reasoning" ? " is-active" : ""}`}
@@ -2430,15 +2436,35 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           ) : null}
                           {!isStreaming && onCompact ? (
                             <div className="model-settings-footer">
-                              <button
-                                type="button"
-                                className={`model-settings-row${isCompacting ? " is-danger" : ""}`}
-                                onClick={isCompacting ? onAbortCompaction : onCompact}
-                                title={isCompacting ? t("chat.stopCompaction") : t("chat.compactContext")}
-                              >
-                                <span>{isCompacting ? t("chat.compacting") : t("chat.compactContext")}</span>
-                                <AliIcon name={isCompacting ? "stop" : "shrink"} size={12} />
-                              </button>
+                              {isCompacting ? (
+                                <div className="model-settings-compaction" role="status" aria-live="polite">
+                                  <span className="model-settings-compaction-spinner" aria-hidden="true" />
+                                  <span className="model-settings-compaction-label">{t("chat.compacting")}</span>
+                                  <button
+                                    type="button"
+                                    className="model-settings-compaction-stop"
+                                    onClick={onAbortCompaction}
+                                    title={t("chat.stopCompaction")}
+                                    aria-label={t("chat.stopCompaction")}
+                                  >
+                                    <AliIcon name="stop" size={10} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="model-settings-row"
+                                  onClick={() => {
+                                    setModelDropdownOpen(false);
+                                    setModelMenuSection(null);
+                                    onCompact();
+                                  }}
+                                  title={t("chat.compactContext")}
+                                >
+                                  <span>{t("chat.compactContext")}</span>
+                                  <AliIcon name="shrink" size={12} />
+                                </button>
+                              )}
                             </div>
                           ) : null}
                           {!isMobile && modelMenuSection ? (
@@ -2571,8 +2597,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 type="button"
                 onClick={handleSend}
                 disabled={!canSend}
-                title={t(isProcessingImages ? "chat.processingImages" : "chat.send")}
-                aria-label={t(isProcessingImages ? "chat.processingImages" : "chat.send")}
+                title={t(isProcessingImages ? "chat.processingImages" : isAutoModelSelection ? "chat.selectModel" : "chat.send")}
+                aria-label={t(isProcessingImages ? "chat.processingImages" : isAutoModelSelection ? "chat.selectModel" : "chat.send")}
                 style={{
                   width: 32, height: 32, padding: 0, flexShrink: 0,
                   display: "flex", alignItems: "center", justifyContent: "center",

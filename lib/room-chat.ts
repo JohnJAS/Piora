@@ -166,6 +166,7 @@ export async function dispatchRoomChat(
       content: groupChatPrompt(room, member, input),
       delivery: behavior,
       source: "room",
+      roomContext: { roomId, messageId: input.messageId },
       idempotencyKey: `${roomId}:${input.messageId}:${sessionId}:${input.attempt ?? 1}`,
     })));
     settled.forEach((outcome, batchIndex) => {

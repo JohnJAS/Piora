@@ -1,6 +1,13 @@
 export type CompanionActivityStatus = "idle" | "running" | "waiting" | "review" | "failed";
 
-export type CompanionActivityEventKind = "started" | "completed" | "failed";
+/**
+ * "started"/"completed"/"failed" come from the Pi runtime. The remaining kinds
+ * are user-driven pet interactions plus the renderer-local idle trick, and they
+ * only ever select a one-shot reaction animation.
+ */
+export type CompanionActivityEventKind =
+  | "started" | "completed" | "failed"
+  | "poke" | "feed" | "water" | "pet" | "trick";
 
 export interface CompanionActivityEvent {
   kind: CompanionActivityEventKind;
@@ -37,6 +44,11 @@ const TRANSIENT_SPRITE_STATE_FALLBACKS: Record<CompanionActivityEventKind, reado
   started: ["waving", "wave", "jumping", "bounce", "running", "idle"],
   completed: ["jumping", "bounce", "waving", "wave", "idle"],
   failed: ["failed", "sad", "idle"],
+  poke: ["jumping", "bounce", "look-directions-a", "waving", "idle"],
+  feed: ["waving", "jumping", "bounce", "idle"],
+  water: ["waving", "bounce", "jumping", "idle"],
+  pet: ["waving", "look-directions-b", "bounce", "idle"],
+  trick: ["waving", "jumping", "look-directions-a", "look-directions-b", "idle"],
 };
 
 export interface CompanionAnimationTimeline {

@@ -107,6 +107,19 @@
 .optionCopy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
 .optionCopy strong { font-size: var(--text-sm); font-weight: 580; }
 .optionCopy small { color: var(--text-muted); font-size: var(--text-xs); line-height: 1.45; }
+.customBody { display: flex; min-width: 0; align-items: center; }
+.customField {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+.customField::placeholder { color: var(--text-dim); }
+label.option { cursor: text; }
 
 .textField {
   width: 100%;

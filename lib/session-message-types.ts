@@ -3,6 +3,11 @@ import type { PromptMaterialReference } from "./prompt-material-format";
 
 export type SessionMessageSourceKind = "ui" | "room" | "remote" | "extension" | "system";
 export type SessionDeliveryMode = "next_turn" | "steer";
+
+export interface SessionRoomContext {
+  roomId: string;
+  messageId: string;
+}
 export type SessionCommandStatus =
   | "accepted"
   | "queued"
@@ -25,6 +30,7 @@ export interface SessionMessageInput {
   content: string;
   delivery?: SessionDeliveryMode;
   source: SessionMessageSourceKind;
+  roomContext?: SessionRoomContext;
   idempotencyKey: string;
   images?: SessionMessageImage[];
   materials?: PromptMaterialReference[];
@@ -42,6 +48,7 @@ export interface SessionCommandRecord {
   content: string;
   delivery: SessionDeliveryMode;
   source: SessionMessageSourceKind;
+  roomContext?: SessionRoomContext;
   acceptedAt: number;
   queuedAt?: number;
   expiresAt?: number;

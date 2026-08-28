@@ -40,6 +40,7 @@ import {
 } from "./prompt-run-registry";
 import { bindTeamPromptContext, validateTeamExecutionContext } from "./team-prompt-context";
 import type { TeamExecutionContext } from "./team-types";
+import type { SessionMessageSourceKind, SessionRoomContext } from "./session-message-types";
 import { captureTeamRuntimeToolResult } from "./team-runtime-evidence";
 import { getRoom } from "./room-store";
 import { TeamError } from "./team-errors";
@@ -262,6 +263,8 @@ export class AgentSessionWrapper {
   /** Start one ordinary prompt with a stable command correlation id. */
   async startTrackedPrompt(input: {
     commandId: string;
+    source: SessionMessageSourceKind;
+    roomContext?: SessionRoomContext;
     message: string;
     images?: Array<{ type: "image"; data: string; mimeType: string }>;
     materials?: PromptMaterialReference[];
@@ -749,8 +752,13 @@ export class AgentSessionWrapper {
         this.lastPromptFailed = false;
         this.lastPromptErrorSummary = undefined;
         const ownsPromptRun = !streamingBehavior || !this.activePromptRun;
+        const promptSource = command.source as SessionMessageSourceKind | undefined;
+        const roomContext = command.roomContext as SessionRoomContext | undefined;
         const promptRun = ownsPromptRun
-          ? beginPromptRun(this.inner.sessionId)
+          ? beginPromptRun(this.inner.sessionId, {
+              ...(promptSource ? { source: promptSource } : {}),
+              ...(roomContext ? { roomContext } : {}),
+            })
           : this.activePromptRun!;
         if (ownsPromptRun) {
           this.activePromptRun = promptRun;

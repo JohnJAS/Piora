@@ -8,6 +8,7 @@ const MAX_TASK_TITLE_LENGTH = 80;
 type DesktopNotificationBridge = {
   notifyCompletion?: (taskTitle?: string) => Promise<boolean>;
   notifyAutomation?: (taskTitle: string, status: "succeeded" | "failed" | "interrupted") => Promise<boolean>;
+  notifyUserInput?: (taskTitle?: string) => Promise<boolean>;
 };
 
 export type CompletionNotificationCapability = "desktop" | "browser" | "unsupported";
@@ -38,6 +39,20 @@ function getBrowserNotificationCopy(taskTitle: string | undefined): {
     body: isChinese
       ? "任务已完成，可以回到 Piora 查看结果。"
       : "Task completed. Open Piora to review the result.",
+  };
+}
+
+function getUserInputNotificationCopy(taskTitle: string | undefined): {
+  title: string;
+  body: string;
+} {
+  const isChinese = typeof navigator !== "undefined"
+    && navigator.language.toLowerCase().startsWith("zh");
+  return {
+    title: taskTitle ? `${taskTitle} - Piora` : "Piora",
+    body: isChinese
+      ? "模型提出了问题，正在等待你的回复。"
+      : "The model asked a question and is waiting for your reply.",
   };
 }
 
@@ -137,6 +152,35 @@ export function useCompletionNotification() {
     }
   }, [commitEnabled]);
 
+  const notifyUserInput = useCallback(async (taskTitle?: string): Promise<boolean> => {
+    if (!enabledRef.current) return false;
+    const safeTaskTitle = sanitizeCompletionTaskTitle(taskTitle);
+
+    const desktopBridge = getDesktopNotificationBridge();
+    if (desktopBridge?.notifyUserInput) {
+      try {
+        return await desktopBridge.notifyUserInput(safeTaskTitle);
+      } catch {
+        return false;
+      }
+    }
+
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") {
+      return false;
+    }
+
+    try {
+      const copy = getUserInputNotificationCopy(safeTaskTitle);
+      new Notification(copy.title, {
+        body: copy.body,
+        tag: "piora-user-input",
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const notifyAutomation = useCallback(async (taskTitle: string, status: "succeeded" | "failed" | "interrupted"): Promise<boolean> => {
     if (!enabledRef.current) return false;
     const safeTaskTitle = sanitizeCompletionTaskTitle(taskTitle) ?? "Piora";
@@ -163,5 +207,6 @@ export function useCompletionNotification() {
     onNotificationToggle: toggleNotification,
     notifyCompletion,
     notifyAutomation,
+    notifyUserInput,
   };
 }

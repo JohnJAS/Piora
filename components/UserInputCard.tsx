@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useI18n } from "@/hooks/useI18n";
@@ -24,10 +24,25 @@ export function UserInputCard({
   const [answers, setAnswers] = useState<UserInputAnswers>(() => (
     Object.fromEntries(request.questions.map((question) => [question.id, []]))
   ));
+  const [customText, setCustomText] = useState<Record<string, string>>({});
   const [attempted, setAttempted] = useState(false);
 
+  // The "Other" free-text answer for select questions is kept outside the
+  // selection state and merged in only when it is non-empty, so a custom
+  // answer can never be mistaken for one of the predefined option labels.
+  const mergedAnswers = useMemo<UserInputAnswers>(() => {
+    const merged: UserInputAnswers = {};
+    for (const question of request.questions) {
+      const values = [...(answers[question.id] ?? [])];
+      const custom = (customText[question.id] ?? "").trim();
+      if (custom) values.push(custom);
+      merged[question.id] = values;
+    }
+    return merged;
+  }, [answers, customText, request.questions]);
+
   const complete = request.questions.every((question) => (
-    !question.required || (answers[question.id]?.some((value) => value.trim().length > 0) ?? false)
+    !question.required || (mergedAnswers[question.id]?.some((value) => value.trim().length > 0) ?? false)
   ));
 
   const cancel = () => onRespond(request, { cancelled: true });
@@ -35,6 +50,7 @@ export function UserInputCard({
 
   const setSingle = (id: string, value: string) => {
     setAnswers((current) => ({ ...current, [id]: [value] }));
+    setCustomText((current) => ({ ...current, [id]: "" }));
   };
   const toggleMultiple = (id: string, value: string) => {
     setAnswers((current) => {
@@ -48,10 +64,19 @@ export function UserInputCard({
   const setText = (id: string, value: string) => {
     setAnswers((current) => ({ ...current, [id]: value ? [value] : [] }));
   };
+  const setCustom = (id: string, value: string, exclusive: boolean) => {
+    setCustomText((current) => ({ ...current, [id]: value }));
+    if (exclusive && value.trim()) {
+      // A single-select custom answer replaces any chosen option label.
+      setAnswers((current) => (
+        (current[id]?.length ?? 0) > 0 ? { ...current, [id]: [] } : current
+      ));
+    }
+  };
   const submit = () => {
     setAttempted(true);
     if (!complete) return;
-    onRespond(request, { answers });
+    onRespond(request, { answers: mergedAnswers });
   };
 
   return createPortal(
@@ -84,8 +109,10 @@ export function UserInputCard({
 
         <div className={styles.body}>
           {request.questions.map((question, questionIndex) => {
-            const selected = answers[question.id] ?? [];
+            const selected = mergedAnswers[question.id] ?? [];
             const missing = attempted && question.required && !selected.some((value) => value.trim());
+            const customValue = customText[question.id] ?? "";
+            const customActive = customValue.trim().length > 0;
             return (
               <section className={styles.question} key={question.id} data-invalid={missing || undefined}>
                 <div className={styles.questionMeta}>
@@ -143,6 +170,23 @@ export function UserInputCard({
                         </button>
                       );
                     })}
+                    <label className={styles.option} data-selected={customActive || undefined}>
+                      <span className={styles.control} aria-hidden="true">
+                        {customActive ? <AliIcon name="check" size={12} /> : null}
+                      </span>
+                      <span className={styles.customBody}>
+                        <input
+                          type="text"
+                          className={styles.customField}
+                          value={customValue}
+                          maxLength={USER_INPUT_MAX_TEXT_LENGTH}
+                          placeholder={t("userInput.otherPlaceholder")}
+                          aria-label={t("userInput.other")}
+                          aria-invalid={missing}
+                          onChange={(event) => setCustom(question.id, event.target.value, question.kind === "single_select")}
+                        />
+                      </span>
+                    </label>
                   </div>
                 )}
                 {missing ? <p className={styles.validation} role="alert">{t("userInput.missing")}</p> : null}

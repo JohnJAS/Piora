@@ -48,20 +48,27 @@ export async function createSession(input: CreateSessionInput): Promise<CreatedS
     ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
     runtimeProfile,
   });
-  if (input.name?.trim()) await session.send({ type: "set_session_name", name: input.name.trim().slice(0, 200) });
+  try {
+    if (input.name?.trim()) await session.send({ type: "set_session_name", name: input.name.trim().slice(0, 200) });
 
-  allowFileRoot(cwd);
-  invalidateSessionListCache();
-  const state = await session.send({ type: "get_state" }) as {
-    model?: { id: string; provider: string };
-    thinkingLevel?: string;
-  };
-  return {
-    session,
-    sessionId: realSessionId,
-    cwd,
-    runtimeProfile,
-    model: state.model ? { provider: state.model.provider, modelId: state.model.id } : null,
-    thinkingLevel: state.thinkingLevel ?? "off",
-  };
+    allowFileRoot(cwd);
+    invalidateSessionListCache();
+    const state = await session.send({ type: "get_state" }) as {
+      model?: { id: string; provider: string };
+      thinkingLevel?: string;
+    };
+    return {
+      session,
+      sessionId: realSessionId,
+      cwd,
+      runtimeProfile,
+      model: state.model ? { provider: state.model.provider, modelId: state.model.id } : null,
+      thinkingLevel: state.thinkingLevel ?? "off",
+    };
+  } catch (error) {
+    // A failed post-start state read must not leave a live orphan behind. This
+    // also makes the route's one retry safe for transient filesystem failures.
+    session.destroy();
+    throw error;
+  }
 }

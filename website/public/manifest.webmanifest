@@ -1,0 +1,12 @@
+{
+  "name": "Piora — AI Desktop Workspace",
+  "short_name": "Piora",
+  "description": "面向 Pi 的开源、本地优先 AI 桌面工作台。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07090d",
+  "theme_color": "#07090d",
+  "icons": [
+    { "src": "/piora-icon.png", "sizes": "1024x1024", "type": "image/png" }
+  ]
+}

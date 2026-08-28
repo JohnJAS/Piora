@@ -97,8 +97,9 @@ export function normalizeUserInputAnswers(
     if (question.kind === "text") {
       if (values.length > 1 || (values[0]?.length ?? 0) > USER_INPUT_MAX_TEXT_LENGTH) throw new Error(`Text response for ${question.id} is invalid.`);
     } else {
-      const allowed = new Set(question.options?.map((option) => option.label));
-      if (values.some((value) => !allowed.has(value))) throw new Error(`Selection for ${question.id} is invalid.`);
+      // Option buttons submit predefined labels; any other value is the card's
+      // "Other" free-text answer, so only the length bound applies here.
+      if (values.some((value) => value.length > USER_INPUT_MAX_TEXT_LENGTH)) throw new Error(`Selection for ${question.id} is invalid.`);
       if (question.kind === "single_select" && values.length > 1) throw new Error(`${question.id} accepts only one selection.`);
       if (new Set(values).size !== values.length) throw new Error(`Selection for ${question.id} contains duplicates.`);
     }
