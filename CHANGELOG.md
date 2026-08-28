@@ -4,6 +4,14 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.23] - 2026-08-28
+
+### Fixed
+
+- Kept the standalone website TypeScript project outside the desktop app's
+  root typecheck so clean release runners no longer require website-only build
+  dependencies while packaging Piora.
+
 ## [0.4.22] - 2026-08-28
 
 ### Added
