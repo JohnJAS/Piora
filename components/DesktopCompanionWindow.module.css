@@ -154,9 +154,7 @@
   background: transparent;
   cursor: grab;
   touch-action: none;
-  filter: drop-shadow(0 7px 7px rgba(15, 23, 42, 0.24));
-  transform: translateY(0);
-  transition: transform 150ms ease, filter 150ms ease;
+  transform: none;
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
@@ -172,8 +170,10 @@
 }
 
 .pet:hover {
-  filter: drop-shadow(0 9px 9px rgba(15, 23, 42, 0.28));
-  transform: translateY(-2px);
+  background: transparent;
+  box-shadow: none;
+  filter: none;
+  transform: none;
 }
 
 .bubbleToggle {
@@ -212,7 +212,5 @@
 
 @media (prefers-reduced-motion: reduce) {
   .activityBubble { transition: none; }
-  .pet { transition: none; }
-  .pet:hover { transform: none; }
   .bubbleToggle { transition: none; }
 }

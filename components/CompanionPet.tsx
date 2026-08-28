@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { CompanionPet as CompanionPetMetadata } from "@/lib/companion-pets";
 import {
@@ -18,14 +18,12 @@ import {
   isCompanionInteractionKind,
   pickCompanionIdleTrickStateId,
   pickCompanionInteractionStateId,
-  pickCompanionSpeechLine,
 } from "@/lib/companion-behavior";
-import { MAX_COMPANION_PHRASES, MAX_COMPANION_TODOS, createCompanionId, type CompanionPreferences } from "@/lib/companion-store";
+import type { CompanionPreferences } from "@/lib/companion-store";
 import { STATUS_PRESENTATION, type TaskStatusPresentationKey } from "@/lib/task-status";
 import styles from "./CompanionPet.module.css";
 import { AliIcon } from "./AliIcon";
-
-type CompanionTab = "todos" | "phrases";
+import { CompanionDataManager } from "./CompanionDataManager";
 
 type RenderableAnimationState = {
   id: string;
@@ -51,6 +49,7 @@ interface Props {
   preferences: CompanionPreferences;
   setPreferences: Dispatch<SetStateAction<CompanionPreferences>>;
   activePet: CompanionPetMetadata | null;
+  onRequestSpeech?: () => Promise<string>;
 }
 
 const COMPANION_STATUS_KEYS: Record<CompanionActivity["status"], TaskStatusPresentationKey> = {
@@ -330,81 +329,39 @@ export function CompanionPet({
   preferences,
   setPreferences,
   activePet,
+  onRequestSpeech,
 }: Props) {
-  const { t, locale } = useI18n();
-  const [tab, setTab] = useState<CompanionTab>("todos");
-  const [todoText, setTodoText] = useState("");
-  const [phraseLabel, setPhraseLabel] = useState("");
-  const [phraseText, setPhraseText] = useState("");
-  const [editingPhraseId, setEditingPhraseId] = useState<string | null>(null);
-  const [sendNotice, setSendNotice] = useState("");
+  const { t } = useI18n();
   const [helpOpen, setHelpOpen] = useState(false);
-  const sendNoticeTimerRef = useRef<number | null>(null);
   const [pokeEvent, setPokeEvent] = useState<CompanionActivityEvent | null>(null);
   const [petSpeech, setPetSpeech] = useState("");
   const petSpeechTimerRef = useRef<number | null>(null);
   const pokeSequenceRef = useRef(0);
-  const lastPetSpeechRef = useRef<string | null>(null);
+  const speechRequestRef = useRef(0);
 
   useEffect(() => () => {
-    if (sendNoticeTimerRef.current !== null) window.clearTimeout(sendNoticeTimerRef.current);
     if (petSpeechTimerRef.current !== null) window.clearTimeout(petSpeechTimerRef.current);
   }, []);
 
-  const pokePet = () => {
+  const pokePet = async () => {
     pokeSequenceRef.current += 1;
     setPokeEvent({ kind: "poke", key: `poke:${pokeSequenceRef.current}`, occurredAt: Date.now() });
-    const line = pickCompanionSpeechLine("poke", locale, lastPetSpeechRef.current);
-    lastPetSpeechRef.current = line;
-    setPetSpeech(line);
+    speechRequestRef.current += 1;
+    const requestId = speechRequestRef.current;
+    setPetSpeech(onRequestSpeech ? t("companion.speech.generating") : t("companion.speech.modelRequired"));
+    if (!onRequestSpeech) return;
+    try {
+      const line = await onRequestSpeech();
+      if (requestId !== speechRequestRef.current) return;
+      setPetSpeech(line || t("companion.speech.empty"));
+    } catch {
+      if (requestId !== speechRequestRef.current) return;
+      setPetSpeech(t("companion.speech.failed"));
+    }
     if (petSpeechTimerRef.current !== null) window.clearTimeout(petSpeechTimerRef.current);
-    petSpeechTimerRef.current = window.setTimeout(() => setPetSpeech(""), 4_000);
+    petSpeechTimerRef.current = window.setTimeout(() => setPetSpeech(""), 7_000);
   };
-
-  const remainingTodos = preferences.todos.filter((todo) => !todo.completed).length;
   const statusLabel = t(`companion.activity.${activity.status}`);
-
-  const addTodo = (event: FormEvent) => {
-    event.preventDefault();
-    const text = todoText.trim().slice(0, 240);
-    if (!text || preferences.todos.length >= MAX_COMPANION_TODOS) return;
-    setPreferences((current) => ({
-      ...current,
-      todos: [...current.todos, { id: createCompanionId("todo"), text, completed: false, createdAt: Date.now() }],
-    }));
-    setTodoText("");
-  };
-
-  const savePhrase = (event: FormEvent) => {
-    event.preventDefault();
-    const label = phraseLabel.trim().slice(0, 40);
-    const text = phraseText.trim().slice(0, 2_000);
-    if (!label || !text) return;
-    setPreferences((current) => {
-      if (editingPhraseId) {
-        return { ...current, phrases: current.phrases.map((phrase) => phrase.id === editingPhraseId ? { ...phrase, label, text } : phrase) };
-      }
-      if (current.phrases.length >= MAX_COMPANION_PHRASES) return current;
-      return { ...current, phrases: [...current.phrases, { id: createCompanionId("phrase"), label, text }] };
-    });
-    setPhraseLabel("");
-    setPhraseText("");
-    setEditingPhraseId(null);
-  };
-
-  const sendPhrase = (text: string) => {
-    const sent = canSendPhrase && onSendPhrase(text);
-    setSendNotice(sent ? t("companion.sent") : t("companion.sendUnavailable"));
-    if (sendNoticeTimerRef.current !== null) window.clearTimeout(sendNoticeTimerRef.current);
-    sendNoticeTimerRef.current = window.setTimeout(() => setSendNotice(""), 1800);
-  };
-
-  const moveTabFocus = (current: CompanionTab, direction: -1 | 1) => {
-    const tabs: CompanionTab[] = ["todos", "phrases"];
-    const next = tabs[(tabs.indexOf(current) + direction + tabs.length) % tabs.length];
-    setTab(next);
-    requestAnimationFrame(() => document.getElementById(`companion-tab-${next}`)?.focus());
-  };
 
   if (!open) return null;
 
@@ -415,7 +372,7 @@ export function CompanionPet({
           className={styles.petViewport}
           type="button"
           data-testid="companion-dock-pet"
-          onClick={pokePet}
+          onClick={() => { void pokePet(); }}
           title={t("companion.pokeHint")}
           aria-label={t("companion.pokeHint")}
         >
@@ -457,72 +414,15 @@ export function CompanionPet({
         </div>
       )}
 
-      <div className={styles.tabs} role="tablist" aria-label={t("companion.sections")}>
-        {(["todos", "phrases"] as const).map((item) => (
-          <button
-            key={item}
-            id={`companion-tab-${item}`}
-            className={styles.tab}
-            type="button"
-            role="tab"
-            aria-selected={tab === item}
-            aria-controls={`companion-panel-${item}`}
-            tabIndex={tab === item ? 0 : -1}
-            onClick={() => setTab(item)}
-            onKeyDown={(event) => {
-              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-              event.preventDefault();
-              moveTabFocus(item, event.key === "ArrowLeft" ? -1 : 1);
-            }}
-          >
-            {t(`companion.tab.${item}`)}{item === "todos" && remainingTodos > 0 ? ` · ${remainingTodos}` : ""}
-          </button>
-        ))}
+      <div className={styles.workspace}>
+        <CompanionDataManager
+          compact
+          preferences={preferences}
+          setPreferences={setPreferences}
+          canSendPhrase={canSendPhrase}
+          onSendPhrase={onSendPhrase}
+        />
       </div>
-
-      {tab === "todos" ? (
-        <section id="companion-panel-todos" className={styles.panel} role="tabpanel" aria-labelledby="companion-tab-todos">
-          <form className={styles.formRow} onSubmit={addTodo}>
-            <input className={styles.input} value={todoText} maxLength={240} onChange={(event) => setTodoText(event.target.value)} placeholder={t("companion.todoPlaceholder")} aria-label={t("companion.todoPlaceholder")} />
-            <button className={styles.primaryButton} type="submit" disabled={!todoText.trim() || preferences.todos.length >= MAX_COMPANION_TODOS}>{t("companion.add")}</button>
-          </form>
-          {preferences.todos.length === 0 ? <div className={styles.empty}>{t("companion.noTodos")}</div> : (
-            <ul className={styles.list}>
-              {preferences.todos.map((todo) => (
-                <li className={styles.todoItem} key={todo.id}>
-                  <input type="checkbox" checked={todo.completed} onChange={(event) => setPreferences((current) => ({ ...current, todos: current.todos.map((item) => item.id === todo.id ? { ...item, completed: event.target.checked } : item) }))} aria-label={t("companion.toggleTodo", { todo: todo.text })} />
-                  <span className={`${styles.todoText}${todo.completed ? ` ${styles.todoDone}` : ""}`}>{todo.text}</span>
-                  <button className={styles.dangerButton} type="button" onClick={() => setPreferences((current) => ({ ...current, todos: current.todos.filter((item) => item.id !== todo.id) }))} aria-label={t("companion.removeTodo", { todo: todo.text })}><AliIcon name="close" size={12} /></button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      ) : null}
-
-      {tab === "phrases" ? (
-        <section id="companion-panel-phrases" className={styles.panel} role="tabpanel" aria-labelledby="companion-tab-phrases">
-          <div className={styles.summary}><span>{canSendPhrase ? t("companion.oneClickReady") : t("companion.oneClickBusy")}</span><span aria-live="polite">{sendNotice}</span></div>
-          <form className={styles.stackForm} onSubmit={savePhrase}>
-            <input className={styles.input} value={phraseLabel} maxLength={40} onChange={(event) => setPhraseLabel(event.target.value)} placeholder={t("companion.phraseLabelPlaceholder")} aria-label={t("companion.phraseLabelPlaceholder")} />
-            <div className={styles.formRow}>
-              <input className={styles.input} value={phraseText} maxLength={2_000} onChange={(event) => setPhraseText(event.target.value)} placeholder={t("companion.phraseTextPlaceholder")} aria-label={t("companion.phraseTextPlaceholder")} />
-              <button className={styles.primaryButton} type="submit" disabled={!phraseLabel.trim() || !phraseText.trim()}>{editingPhraseId ? t("companion.save") : t("companion.add")}</button>
-            </div>
-          </form>
-          {preferences.phrases.length === 0 ? <div className={styles.empty}>{t("companion.noPhrases")}</div> : (
-            <ul className={styles.list}>
-              {preferences.phrases.map((phrase) => (
-                <li className={styles.phraseItem} key={phrase.id}>
-                  <button className={styles.phraseButton} type="button" disabled={!canSendPhrase} title={phrase.text} onClick={() => sendPhrase(phrase.text)}>{phrase.label}</button>
-                  <button className={styles.secondaryButton} type="button" onClick={() => { setEditingPhraseId(phrase.id); setPhraseLabel(phrase.label); setPhraseText(phrase.text); }}>{t("companion.edit")}</button>
-                  <button className={styles.dangerButton} type="button" onClick={() => setPreferences((current) => ({ ...current, phrases: current.phrases.filter((item) => item.id !== phrase.id) }))} aria-label={t("companion.removePhrase", { phrase: phrase.label })}><AliIcon name="close" size={12} /></button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      ) : null}
 
     </aside>
   );

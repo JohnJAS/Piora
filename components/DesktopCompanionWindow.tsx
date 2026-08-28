@@ -26,10 +26,16 @@ import type { CompanionActivity, CompanionActivityEvent } from "@/lib/companion"
 import {
   deriveCompanionTaskPresentation,
   getCompanionWanderDelay,
-  pickCompanionSpeechLine,
   type CompanionInteractionKind,
-  type CompanionSpeechCategory,
 } from "@/lib/companion-behavior";
+import {
+  buildCompanionInteractionContext,
+  createCompanionWorkRhythm,
+  getTaskProgress,
+  requestCompanionSpeech,
+  type CompanionSessionContext,
+  type CompanionWorkRhythm,
+} from "@/lib/companion-interaction";
 import type { TaskRuntimeSnapshot } from "@/lib/task-status";
 import { BuiltinPet, COMPANION_ACTIVITY_COLORS, SpritePet } from "./CompanionPet";
 import styles from "./DesktopCompanionWindow.module.css";
@@ -59,6 +65,8 @@ export function DesktopCompanionWindow() {
   const runningTasks = useRunningTaskSnapshots();
   const [activity, setActivity] = useState<CompanionActivity>(DEFAULT_ACTIVITY);
   const [runtimeEvent, setRuntimeEvent] = useState<CompanionActivity["event"]>();
+  const [sessionContext, setSessionContext] = useState<CompanionSessionContext | null>(null);
+  const [workRhythm, setWorkRhythm] = useState<CompanionWorkRhythm>(() => createCompanionWorkRhythm());
   const [bubblesCollapsed, setBubblesCollapsed] = useState(false);
   const previousBubbleCountRef = useRef(0);
   const previousTasksRef = useRef(new Map<string, TaskRuntimeSnapshot>());
@@ -74,7 +82,7 @@ export function DesktopCompanionWindow() {
   const [speech, setSpeech] = useState<{ key: number; text: string } | null>(null);
   const speechSequenceRef = useRef(0);
   const speechTimerRef = useRef<number | null>(null);
-  const lastSpeechTextRef = useRef<string | null>(null);
+  const speechRequestRef = useRef(0);
   const [motionDirection, setMotionDirection] = useState<"left" | "right" | null>(null);
   const pointerDragRef = useRef<{
     pointerId: number;
@@ -99,13 +107,31 @@ export function DesktopCompanionWindow() {
     speechTimerRef.current = window.setTimeout(() => setSpeech(null), SPEECH_VISIBLE_MS);
   }, [speech]);
 
-  const react = useCallback((kind: CompanionInteractionKind, lineCategory: CompanionSpeechCategory) => {
+  const react = useCallback(async (kind: CompanionInteractionKind) => {
     overlaySequenceRef.current += 1;
     setOverlayEvent({ kind, key: `${kind}:${overlaySequenceRef.current}`, occurredAt: Date.now() });
-    const line = pickCompanionSpeechLine(lineCategory, locale, lastSpeechTextRef.current);
-    lastSpeechTextRef.current = line;
-    say(line);
-  }, [locale, say]);
+    speechRequestRef.current += 1;
+    const requestId = speechRequestRef.current;
+    const model = preferences.interactionModel;
+    if (!model) {
+      say(t("companion.speech.modelRequired"));
+      return;
+    }
+    say(t("companion.speech.generating"));
+    try {
+      const context = buildCompanionInteractionContext({
+        rhythm: workRhythm,
+        session: sessionContext,
+        runningTasks,
+        personalTasks: preferences.todos,
+        includeWorkContext: preferences.shareWorkContext,
+      });
+      const line = await requestCompanionSpeech({ model, cwd: sessionContext?.cwd, locale, context });
+      if (requestId === speechRequestRef.current) say(line || t("companion.speech.empty"));
+    } catch {
+      if (requestId === speechRequestRef.current) say(t("companion.speech.failed"));
+    }
+  }, [locale, preferences.interactionModel, preferences.shareWorkContext, preferences.todos, runningTasks, say, sessionContext, t, workRhythm]);
 
   useEffect(() => {
     document.documentElement.classList.add("desktop-pet-document");
@@ -124,12 +150,12 @@ export function DesktopCompanionWindow() {
     const channel = new BroadcastChannel("pi-companion-runtime-v1");
     channel.onmessage = (event: MessageEvent<unknown>) => {
       if (!event.data || typeof event.data !== "object") return;
-      const message = event.data as { type?: unknown; activity?: unknown };
-      if (message.type !== "activity" || !message.activity || typeof message.activity !== "object") return;
+      const message = event.data as { type?: unknown; activity?: unknown; session?: unknown; rhythm?: unknown };
+      if ((message.type !== "activity" && message.type !== "context") || !message.activity || typeof message.activity !== "object") return;
       const candidate = message.activity as CompanionActivity;
-      if (["idle", "running", "waiting", "review", "failed"].includes(candidate.status)) {
-        setActivity(candidate);
-      }
+      if (["idle", "running", "waiting", "review", "failed"].includes(candidate.status)) setActivity(candidate);
+      if (message.type === "context" && message.session && typeof message.session === "object") setSessionContext(message.session as CompanionSessionContext);
+      if (message.type === "context" && message.rhythm && typeof message.rhythm === "object") setWorkRhythm(message.rhythm as CompanionWorkRhythm);
     };
     channel.postMessage({ type: "ready" });
     return () => channel.close();
@@ -138,12 +164,15 @@ export function DesktopCompanionWindow() {
   const taskBubbles = useMemo(() => runningTasks.map((snapshot) => {
     const presentation = deriveCompanionTaskPresentation(snapshot);
     const status = presentation.status;
+    const progress = getTaskProgress(snapshot);
     return {
       id: snapshot.id,
       status,
       title: snapshot.title || snapshot.id.slice(0, 8),
       startedAt: snapshot.startedAt ?? 0,
-      activityLabel: t(AGENT_ACTIVITY_LABELS[presentation.activityKind]),
+      activityLabel: progress.label
+        ? `${t(AGENT_ACTIVITY_LABELS[presentation.activityKind])} · ${progress.label}`
+        : t(AGENT_ACTIVITY_LABELS[presentation.activityKind]),
       cause: snapshot.activity?.message
         || snapshot.errorSummary
         || t(`companion.activity.${status}Cause`),
@@ -176,18 +205,8 @@ export function DesktopCompanionWindow() {
     });
   }, [runningTasks]);
 
-  // Task milestones get a spoken line once per runtime event.
   const runtimeEventKey = runtimeEvent?.key;
   const runtimeEventKind = runtimeEvent?.kind;
-  useEffect(() => {
-    if (!runtimeEventKey || !runtimeEventKind) return;
-    if (runtimeEventKind !== "started" && runtimeEventKind !== "completed" && runtimeEventKind !== "failed") return;
-    const line = pickCompanionSpeechLine(runtimeEventKind, locale, lastSpeechTextRef.current);
-    lastSpeechTextRef.current = line;
-    say(line);
-    // Only the event identity may retrigger the line, not a locale switch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runtimeEventKey]);
 
   const displayActivity = useMemo<CompanionActivity>(() => {
     const event = (activity.event?.occurredAt ?? 0) >= (runtimeEvent?.occurredAt ?? 0)
@@ -210,8 +229,20 @@ export function DesktopCompanionWindow() {
   const cause = displayActivity.cause || t(`companion.activity.${displayActivity.status}Cause`);
   const statusCause = t(`companion.activity.${displayActivity.status}Cause`);
   const petLabel = activePet?.displayName ?? t("companion.builtinPet");
+  const personalTaskBubbles = useMemo(() => preferences.todos
+    .filter((task) => !task.completed)
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, 4)
+    .map((task) => ({
+      id: `personal:${task.id}`,
+      status: "idle" as const,
+      title: task.text,
+      activityLabel: t("companion.personalTaskProgress", { progress: task.progress }),
+      cause: task.project || t("companion.personalTaskCause"),
+    })), [preferences.todos, t]);
   const bubbleItems = useMemo(() => {
     if (taskBubbles.length > 0) return taskBubbles;
+    if (personalTaskBubbles.length > 0) return personalTaskBubbles;
     if (displayActivity.status === "idle") return [];
     return [{
       id: "companion-status",
@@ -220,33 +251,11 @@ export function DesktopCompanionWindow() {
       activityLabel: statusLabel,
       cause: statusCause,
     }];
-  }, [displayActivity.status, statusCause, statusLabel, taskBubbles]);
-  const runningTaskCount = taskBubbles.length || (displayActivity.status === "idle" ? 0 : 1);
+  }, [displayActivity.status, personalTaskBubbles, statusCause, statusLabel, taskBubbles]);
+  const runningTaskCount = bubbleItems.length;
   const bubblesExpanded = (bubbleItems.length > 0 || Boolean(speech)) && !bubblesCollapsed;
 
-  // Ambient chatter reflects agent attention states, then falls back to
-  // occasional idle small talk. Speaking reschedules the next line.
   const idleTricksEnabled = preferences.idleTricks !== false;
-  useEffect(() => {
-    if (!idleTricksEnabled) return;
-    const status = displayActivity.status;
-    let category: CompanionSpeechCategory | null = null;
-    let delay = 60_000;
-    if (status === "waiting" || status === "review") {
-      category = status;
-      delay = 90_000;
-    } else if (status === "idle" && taskBubbles.length === 0) {
-      category = "idle";
-      delay = 55_000 + Math.random() * 30_000;
-    }
-    if (!category) return;
-    const timer = window.setTimeout(() => {
-      const line = pickCompanionSpeechLine(category as CompanionSpeechCategory, locale, lastSpeechTextRef.current);
-      lastSpeechTextRef.current = line;
-      say(line);
-    }, delay);
-    return () => window.clearTimeout(timer);
-  }, [displayActivity.status, idleTricksEnabled, locale, say, speech?.key, taskBubbles.length]);
 
   useEffect(() => {
     if (bubbleItems.length === 0 || previousBubbleCountRef.current === 0) {
@@ -300,7 +309,7 @@ export function DesktopCompanionWindow() {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     void window.piDesktop?.moveCompanionWindow?.({ kind: "drag-end" });
-    if (!cancelled && !drag.moved) react("poke", "poke");
+    if (!cancelled && !drag.moved) void react("poke");
   }, [react]);
 
   const handlePetPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -360,7 +369,7 @@ export function DesktopCompanionWindow() {
               className={styles.activityBubble}
               data-testid="companion-activity-bubble"
               data-visible="true"
-              data-kind={item.id === "companion-status" ? "status" : "task"}
+              data-kind={item.id === "companion-status" ? "status" : item.id.startsWith("personal:") ? "personal" : "task"}
               data-status={item.status}
               role="status"
             >

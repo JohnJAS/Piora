@@ -38,6 +38,8 @@ export interface TaskRuntimeSnapshot {
   startedAt?: number;
   title?: string;
   activity?: TaskRuntimeActivity;
+  /** Current model context usage for this task; totals only, never message content. */
+  contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null };
   goal?: GoalRunState;
   taskRun?: TaskRunState;
 }

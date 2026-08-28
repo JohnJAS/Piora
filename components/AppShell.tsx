@@ -20,6 +20,7 @@ import { useCompletionNotification } from "@/hooks/useCompletionNotification";
 import { useRunningTaskSnapshots } from "@/hooks/useTaskStatus";
 import { useCompanionPets } from "@/hooks/useCompanionPets";
 import { useCompanionPreferences } from "@/hooks/useCompanionPreferences";
+import { useCompanionWorkRhythm } from "@/hooks/useCompanionWorkRhythm";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { SystemPromptEditor } from "./SystemPromptEditor";
 import { copyText } from "@/lib/clipboard";
@@ -65,6 +66,7 @@ function replaceUrlWithoutNextNavigation(url: string): void {
 import type { ChatInputHandle } from "./ChatInput";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { canSendCompanionPhrase, type CompanionActivity } from "@/lib/companion";
+import { buildCompanionInteractionContext, requestCompanionSpeech } from "@/lib/companion-interaction";
 import { AliIcon } from "./AliIcon";
 import { ConfirmationHost, requestConfirmation } from "./ConfirmDialog";
 import { useCommands } from "@/hooks/useCommands";
@@ -127,6 +129,7 @@ export function AppShell() {
     notifyUserInput,
   } = useCompletionNotification();
   const runningTaskSnapshots = useRunningTaskSnapshots();
+  const companionWorkRhythm = useCompanionWorkRhythm(runningTaskSnapshots);
   useEffect(() => {
     if (!notificationEnabled) return;
     let stopped = false;
@@ -1019,7 +1022,19 @@ export function AppShell() {
   useEffect(() => {
     if (!desktopChrome || typeof BroadcastChannel === "undefined") return;
     const channel = new BroadcastChannel("pi-companion-runtime-v1");
-    const publishActivity = () => channel.postMessage({ type: "activity", activity: companionActivity });
+    const publishActivity = () => channel.postMessage({
+      type: "context",
+      activity: companionActivity,
+      rhythm: companionWorkRhythm,
+      session: {
+        cwd: selectedSession?.cwd ?? activeCwd ?? undefined,
+        sessionId: selectedSession?.id,
+        sessionTitle: selectedSession?.name || selectedSession?.firstMessage,
+        status: companionActivity.status,
+        stats: sessionStats,
+        contextUsage,
+      },
+    });
     channel.onmessage = (event: MessageEvent<unknown>) => {
       if (event.data && typeof event.data === "object" && (event.data as { type?: unknown }).type === "ready") {
         publishActivity();
@@ -1027,7 +1042,7 @@ export function AppShell() {
     };
     publishActivity();
     return () => channel.close();
-  }, [companionActivity, desktopChrome]);
+  }, [activeCwd, companionActivity, companionWorkRhythm, contextUsage, desktopChrome, selectedSession, sessionStats]);
 
   const openDesktopMenu = useCallback(async (menu: DesktopMenuId, anchor: HTMLElement) => {
     const bridge = window.piDesktop?.openMenu;
@@ -1317,6 +1332,30 @@ export function AppShell() {
   const currentProjectName = isProjectlessSurface
     ? translate("sidebar.chats")
     : currentProjectPath ? getFileName(currentProjectPath) || currentProjectPath : null;
+  const requestCompanionInteraction = useCallback(async () => {
+    const model = companionPreferences.interactionModel;
+    if (!model) throw new Error("companion_model_required");
+    const context = buildCompanionInteractionContext({
+      rhythm: companionWorkRhythm,
+      session: {
+        cwd: projectCwd ?? activeCwd ?? undefined,
+        sessionId: selectedSession?.id,
+        sessionTitle: selectedSession?.name || selectedSession?.firstMessage,
+        status: companionActivity.status,
+        stats: sessionStats,
+        contextUsage,
+      },
+      runningTasks: runningTaskSnapshots,
+      personalTasks: companionPreferences.todos,
+      includeWorkContext: companionPreferences.shareWorkContext,
+    });
+    return requestCompanionSpeech({
+      model,
+      cwd: projectCwd ?? activeCwd ?? undefined,
+      locale,
+      context,
+    });
+  }, [activeCwd, companionActivity.status, companionPreferences.interactionModel, companionPreferences.shareWorkContext, companionPreferences.todos, companionWorkRhythm, contextUsage, locale, projectCwd, runningTaskSnapshots, selectedSession, sessionStats]);
   const [topbarGitStatus, setTopbarGitStatus] = useState<GitStatusResponse | null>(null);
   useEffect(() => {
     if (!currentProjectCwd || selectedRoom) {
@@ -1668,6 +1707,11 @@ export function AppShell() {
               setCompanionPreferences((current) => ({ ...current, idleTricks }));
             }}
             desktopMode={desktopChrome}
+            preferences={companionPreferences}
+            setPreferences={setCompanionPreferences}
+            cwd={projectCwd ?? activeCwd ?? undefined}
+            canSendPhrase={canSendCompanionPhrase(companionActivity.status, showChat)}
+            onSendPhrase={handleSendCompanionPhrase}
             selectedPetId={companionPreferences.selectedPetId}
             onSelectPet={handleSelectCompanionPet}
             catalog={companionPets.catalog}
@@ -2475,6 +2519,7 @@ export function AppShell() {
               preferences={companionPreferences}
               setPreferences={setCompanionPreferences}
               activePet={activeCompanionPet}
+              onRequestSpeech={companionPreferences.interactionModel ? requestCompanionInteraction : undefined}
             />
           </div>
         </div>

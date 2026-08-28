@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useI18n } from "@/hooks/useI18n";
@@ -10,8 +10,11 @@ import {
 } from "@/hooks/useCompanionPets";
 import type { CompanionPet, CompanionPetSourceKind, CompanionPetsResponse } from "@/lib/companion-pets";
 import { getCompanionAtlasFramePosition } from "@/lib/companion";
+import type { CompanionPreferences } from "@/lib/companion-store";
+import type { ModelsData } from "@/lib/models-cache";
 import { AliIcon } from "./AliIcon";
 import { BuiltinPet } from "./CompanionPet";
+import { CompanionDataManager } from "./CompanionDataManager";
 import styles from "./CompanionSettingsDialog.module.css";
 
 const SOURCE_MESSAGE_KEYS: Record<CompanionPetSourceKind, string> = {
@@ -62,6 +65,11 @@ interface Props {
   idleTricks: boolean;
   onIdleTricksChange: (idleTricks: boolean) => void;
   desktopMode: boolean;
+  preferences: CompanionPreferences;
+  setPreferences: Dispatch<SetStateAction<CompanionPreferences>>;
+  cwd?: string;
+  canSendPhrase?: boolean;
+  onSendPhrase?: (text: string) => boolean;
   selectedPetId: string;
   onSelectPet: (petId: string) => void;
   catalog: CompanionPetsResponse | null;
@@ -85,6 +93,11 @@ export function CompanionSettingsDialog({
   idleTricks,
   onIdleTricksChange,
   desktopMode,
+  preferences,
+  setPreferences,
+  cwd,
+  canSendPhrase,
+  onSendPhrase,
   selectedPetId,
   onSelectPet,
   catalog,
@@ -100,11 +113,32 @@ export function CompanionSettingsDialog({
   const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
   const archiveInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [modelsData, setModelsData] = useState<ModelsData | null>(null);
+  const [modelsLoading, setModelsLoading] = useState(false);
   useFocusTrap(dialogRef, open && !embedded, { onEscape: onClose });
 
   useEffect(() => {
     setPortalTarget(document.body);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    setModelsLoading(true);
+    const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
+    void fetch(`/api/models${query}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => response.ok ? response.json() as Promise<ModelsData> : null)
+      .then((data) => { if (data) setModelsData(data); })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        const message = error instanceof Error ? error.message : String(error);
+        setModelsData((current) => current ?? {
+          models: {}, modelList: [], defaultModel: null, thinkingLevels: {}, thinkingLevelMaps: {}, thinkingLevelPins: {}, modelError: message,
+        });
+      })
+      .finally(() => { if (!controller.signal.aborted) setModelsLoading(false); });
+    return () => controller.abort();
+  }, [cwd, open]);
 
   if (!open || (!embedded && !portalTarget)) return null;
 
@@ -221,6 +255,60 @@ export function CompanionSettingsDialog({
               {desktopMode ? t("companion.desktopModeReady") : t("companion.desktopModeUnavailable")}
             </span>
           </div>
+
+          <section className={styles.section} aria-labelledby="companion-model-title">
+            <div className={styles.sectionHeader}>
+              <div>
+                <div className={styles.sectionTitle} id="companion-model-title">{t("companion.model.title")}</div>
+                <div className={styles.sectionDescription}>{t("companion.model.description")}</div>
+              </div>
+            </div>
+            <div className={styles.modelCard}>
+              <span className={styles.modelIcon} aria-hidden="true"><AliIcon name="sparkles" size={17} /></span>
+              <div className={styles.modelControls}>
+                <select
+                  value={preferences.interactionModel ? JSON.stringify(preferences.interactionModel) : ""}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setPreferences((current) => ({ ...current, interactionModel: value ? JSON.parse(value) as { provider: string; modelId: string } : null }));
+                  }}
+                  aria-label={t("companion.model.select")}
+                >
+                  <option value="">{modelsLoading ? t("companion.model.loading") : t("companion.model.select")}</option>
+                  {preferences.interactionModel && !modelsData?.modelList.some((model) => model.provider === preferences.interactionModel?.provider && model.id === preferences.interactionModel?.modelId) ? (
+                    <option value={JSON.stringify(preferences.interactionModel)}>{preferences.interactionModel.provider} · {preferences.interactionModel.modelId} ({t("companion.model.unavailable")})</option>
+                  ) : null}
+                  {modelsData?.modelList.map((model) => (
+                    <option key={`${model.provider}:${model.id}`} value={JSON.stringify({ provider: model.provider, modelId: model.id })}>
+                      {model.provider} · {model.name || model.id}
+                    </option>
+                  ))}
+                </select>
+                {modelsData?.modelError ? <div className={styles.modelError}>{modelsData.modelError}</div> : null}
+                <div className={styles.privacyNote}>{t("companion.model.privacy")}</div>
+              </div>
+            </div>
+            <div className={styles.displayCard} style={{ marginTop: 8 }}>
+              <span className={styles.displayIcon} aria-hidden="true"><AliIcon name="activity" size={18} /></span>
+              <div className={styles.copy}>
+                <div className={styles.label}>{t("companion.model.shareContext")}</div>
+                <div className={styles.description}>{t("companion.model.shareContextDescription")}</div>
+              </div>
+              <button className={styles.switch} type="button" role="switch" aria-checked={preferences.shareWorkContext} aria-label={t("companion.model.shareContext")} onClick={() => setPreferences((current) => ({ ...current, shareWorkContext: !current.shareWorkContext }))}>
+                <span className={styles.switchThumb} />
+              </button>
+            </div>
+          </section>
+
+          <section className={styles.section} aria-labelledby="companion-workspace-title">
+            <div className={styles.sectionHeader}>
+              <div>
+                <div className={styles.sectionTitle} id="companion-workspace-title">{t("companion.workspaceTitle")}</div>
+                <div className={styles.sectionDescription}>{t("companion.workspaceDescription")}</div>
+              </div>
+            </div>
+            <CompanionDataManager preferences={preferences} setPreferences={setPreferences} canSendPhrase={canSendPhrase} onSendPhrase={onSendPhrase} />
+          </section>
 
           <details className={styles.helpCard}>
             <summary>{t("companion.howToUse")}</summary>

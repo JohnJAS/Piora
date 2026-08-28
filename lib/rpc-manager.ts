@@ -315,6 +315,7 @@ export class AgentSessionWrapper {
     if (runtime === "idle") this.runStartedAt = null;
     else this.runStartedAt ??= Date.now();
     const pendingApproval = this.pendingUiResponses.size > 0 || this.activeCustomUis.size > 0;
+    const contextUsage = this.inner.getContextUsage();
     const title = compactTaskActivityText(
       this.inner.sessionManager.getSessionName() || this.fallbackTaskTitle || "",
       80,
@@ -342,6 +343,7 @@ export class AgentSessionWrapper {
       ...(this.runStartedAt !== null ? { startedAt: this.runStartedAt } : {}),
       ...(title ? { title } : {}),
       ...(this.taskActivity ? { activity: this.taskActivity } : {}),
+      ...(contextUsage ? { contextUsage } : {}),
       ...(this.goalState ? { goal: this.goalState } : {}),
       ...(taskRun ? { taskRun } : {}),
     };

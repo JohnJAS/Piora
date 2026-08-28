@@ -42,22 +42,19 @@
   appearance: none;
   cursor: pointer;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--accent) 7%, var(--bg));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 60%, transparent);
-  transition: background 140ms ease;
+  background: transparent;
+  box-shadow: none;
 }
 
-.petViewport:hover {
-  background: color-mix(in srgb, var(--accent) 13%, var(--bg));
+.petViewport:hover,
+.petViewport:active {
+  background: transparent;
+  box-shadow: none;
 }
 
 .petViewport:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .petViewport { transition: none; }
 }
 
 .sprite {
@@ -76,7 +73,14 @@
 }
 
 .builtinPet svg {
-  filter: drop-shadow(0 5px 8px color-mix(in srgb, var(--accent) 22%, transparent));
+  filter: none;
+}
+
+.workspace {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+  scrollbar-width: thin;
 }
 
 .builtinPetMotion {

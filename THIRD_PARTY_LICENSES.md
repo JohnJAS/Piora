@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `45b8bbbdcdaa9e8c8802f84097aa903f0f44c959f2e7026f473f4e3dd83713aa`
+Lockfile SHA-256: `f3de81d148bb7d06430d6c6aaae6143a29c5922f983c2c6ebc46016b0d461d4c`
 
-Unique locked packages: **1090**. Runtime packages: **585**. Build/development-only packages: **505**.
+Unique locked packages: **1083**. Runtime packages: **576**. Build/development-only packages: **507**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -24,41 +24,41 @@ Every locked package declares a license.
 | `@aws-crypto/util` | `5.2.0` | Apache-2.0 | No |
 | `@aws-sdk/client-bedrock-runtime` | `3.1048.0` | Apache-2.0 | No |
 | `@aws-sdk/core` | `3.974.11` | Apache-2.0 | No |
-| `@aws-sdk/core` | `3.977.7` | Apache-2.0 | No |
+| `@aws-sdk/core` | `3.977.9` | Apache-2.0 | No |
 | `@aws-sdk/credential-provider-env` | `3.972.37` | Apache-2.0 | No |
-| `@aws-sdk/credential-provider-env` | `3.972.68` | Apache-2.0 | No |
+| `@aws-sdk/credential-provider-env` | `3.972.70` | Apache-2.0 | No |
 | `@aws-sdk/credential-provider-http` | `3.972.39` | Apache-2.0 | No |
-| `@aws-sdk/credential-provider-http` | `3.972.70` | Apache-2.0 | No |
+| `@aws-sdk/credential-provider-http` | `3.972.72` | Apache-2.0 | No |
 | `@aws-sdk/credential-provider-ini` | `3.972.41` | Apache-2.0 | No |
-| `@aws-sdk/credential-provider-ini` | `3.973.13` | Apache-2.0 | No |
+| `@aws-sdk/credential-provider-ini` | `3.973.15` | Apache-2.0 | No |
 | `@aws-sdk/credential-provider-login` | `3.972.41` | Apache-2.0 | No |
-| `@aws-sdk/credential-provider-login` | `3.972.75` | Apache-2.0 | No |
+| `@aws-sdk/credential-provider-login` | `3.972.77` | Apache-2.0 | No |
 | `@aws-sdk/credential-provider-node` | `3.972.42` | Apache-2.0 | No |
-| `@aws-sdk/credential-provider-node` | `3.972.79` | Apache-2.0 | No |
+| `@aws-sdk/credential-provider-node` | `3.972.81` | Apache-2.0 | No |
 | `@aws-sdk/credential-provider-process` | `3.972.37` | Apache-2.0 | No |
-| `@aws-sdk/credential-provider-process` | `3.972.68` | Apache-2.0 | No |
+| `@aws-sdk/credential-provider-process` | `3.972.70` | Apache-2.0 | No |
 | `@aws-sdk/credential-provider-sso` | `3.972.41` | Apache-2.0 | No |
-| `@aws-sdk/credential-provider-sso` | `3.973.12` | Apache-2.0 | No |
+| `@aws-sdk/credential-provider-sso` | `3.973.14` | Apache-2.0 | No |
 | `@aws-sdk/credential-provider-web-identity` | `3.972.41` | Apache-2.0 | No |
-| `@aws-sdk/credential-provider-web-identity` | `3.972.74` | Apache-2.0 | No |
+| `@aws-sdk/credential-provider-web-identity` | `3.972.76` | Apache-2.0 | No |
 | `@aws-sdk/eventstream-handler-node` | `3.972.16` | Apache-2.0 | No |
-| `@aws-sdk/eventstream-handler-node` | `3.972.32` | Apache-2.0 | No |
+| `@aws-sdk/eventstream-handler-node` | `3.972.34` | Apache-2.0 | No |
 | `@aws-sdk/middleware-eventstream` | `3.972.12` | Apache-2.0 | No |
-| `@aws-sdk/middleware-eventstream` | `3.972.27` | Apache-2.0 | No |
+| `@aws-sdk/middleware-eventstream` | `3.972.29` | Apache-2.0 | No |
 | `@aws-sdk/middleware-websocket` | `3.972.19` | Apache-2.0 | No |
-| `@aws-sdk/middleware-websocket` | `3.972.50` | Apache-2.0 | No |
-| `@aws-sdk/nested-clients` | `3.997.42` | Apache-2.0 | No |
+| `@aws-sdk/middleware-websocket` | `3.972.52` | Apache-2.0 | No |
+| `@aws-sdk/nested-clients` | `3.997.44` | Apache-2.0 | No |
 | `@aws-sdk/nested-clients` | `3.997.9` | Apache-2.0 | No |
 | `@aws-sdk/signature-v4-multi-region` | `3.996.27` | Apache-2.0 | No |
-| `@aws-sdk/signature-v4-multi-region` | `3.996.44` | Apache-2.0 | No |
+| `@aws-sdk/signature-v4-multi-region` | `3.996.46` | Apache-2.0 | No |
 | `@aws-sdk/token-providers` | `3.1048.0` | Apache-2.0 | No |
-| `@aws-sdk/token-providers` | `3.1108.0` | Apache-2.0 | No |
+| `@aws-sdk/token-providers` | `3.1116.0` | Apache-2.0 | No |
 | `@aws-sdk/types` | `3.973.8` | Apache-2.0 | No |
-| `@aws-sdk/types` | `3.974.3` | Apache-2.0 | No |
+| `@aws-sdk/types` | `3.974.5` | Apache-2.0 | No |
+| `@aws-sdk/util-locate-window` | `3.965.10` | Apache-2.0 | No |
 | `@aws-sdk/util-locate-window` | `3.965.5` | Apache-2.0 | No |
-| `@aws-sdk/util-locate-window` | `3.965.9` | Apache-2.0 | No |
 | `@aws-sdk/xml-builder` | `3.972.24` | Apache-2.0 | No |
-| `@aws-sdk/xml-builder` | `3.972.38` | Apache-2.0 | No |
+| `@aws-sdk/xml-builder` | `3.972.40` | Apache-2.0 | No |
 | `@aws/lambda-invoke-store` | `0.2.4` | Apache-2.0 | No |
 | `@aws/lambda-invoke-store` | `0.3.0` | Apache-2.0 | No |
 | `@babel/code-frame` | `7.29.7` | MIT | No |
@@ -74,13 +74,13 @@ Every locked package declares a license.
 | `@babel/types` | `7.29.8` | MIT | No |
 | `@braintree/sanitize-url` | `7.1.2` | MIT | No |
 | `@chevrotain/types` | `11.1.2` | Apache-2.0 | No |
-| `@earendil-works/pi-agent-core` | `0.84.1` | MIT | No |
-| `@earendil-works/pi-ai` | `0.84.1` | MIT | No |
-| `@earendil-works/pi-client` | `0.84.1` | MIT | No |
-| `@earendil-works/pi-coding-agent` | `0.84.1` | MIT | No |
-| `@earendil-works/pi-protocol` | `0.84.1` | MIT | No |
-| `@earendil-works/pi-telemetry` | `0.84.1` | MIT | No |
-| `@earendil-works/pi-tui` | `0.84.1` | MIT | No |
+| `@earendil-works/pi-agent-core` | `0.84.3` | MIT | No |
+| `@earendil-works/pi-ai` | `0.84.3` | MIT | No |
+| `@earendil-works/pi-client` | `0.84.3` | MIT | No |
+| `@earendil-works/pi-coding-agent` | `0.84.3` | MIT | No |
+| `@earendil-works/pi-protocol` | `0.84.3` | MIT | No |
+| `@earendil-works/pi-telemetry` | `0.84.3` | MIT | No |
+| `@earendil-works/pi-tui` | `0.84.3` | MIT | No |
 | `@emnapi/runtime` | `1.11.3` | MIT | Yes |
 | `@emotion/babel-plugin` | `11.13.5` | MIT | No |
 | `@emotion/cache` | `11.14.0` | MIT | No |
@@ -143,7 +143,6 @@ Every locked package declares a license.
 | `@mariozechner/clipboard-win32-arm64-msvc` | `0.3.9` | MIT | Yes |
 | `@mariozechner/clipboard-win32-x64-msvc` | `0.3.9` | MIT | Yes |
 | `@mermaid-js/parser` | `1.2.0` | MIT | No |
-| `@mistralai/mistralai` | `2.2.6` | Apache-2.0 | No |
 | `@next/env` | `16.3.1` | MIT | No |
 | `@next/swc-darwin-arm64` | `16.3.1` | MIT | Yes |
 | `@next/swc-darwin-x64` | `16.3.1` | MIT | Yes |
@@ -154,9 +153,6 @@ Every locked package declares a license.
 | `@next/swc-win32-arm64-msvc` | `16.3.1` | MIT | Yes |
 | `@next/swc-win32-x64-msvc` | `16.3.1` | MIT | Yes |
 | `@nodable/entities` | `2.1.0` | MIT | No |
-| `@opentelemetry/api` | `1.9.0` | Apache-2.0 | No |
-| `@opentelemetry/semantic-conventions` | `1.41.1` | Apache-2.0 | No |
-| `@opentelemetry/semantic-conventions` | `1.43.0` | Apache-2.0 | No |
 | `@protobufjs/aspromise` | `1.1.2` | BSD-3-Clause | No |
 | `@protobufjs/base64` | `1.1.2` | BSD-3-Clause | No |
 | `@protobufjs/codegen` | `2.0.5` | BSD-3-Clause | No |
@@ -170,18 +166,18 @@ Every locked package declares a license.
 | `@rc-component/util` | `1.10.1` | MIT | No |
 | `@silvia-odwyer/photon-node` | `0.3.4` | Apache-2.0 | No |
 | `@smithy/core` | `3.24.3` | Apache-2.0 | No |
-| `@smithy/core` | `3.32.0` | Apache-2.0 | No |
+| `@smithy/core` | `3.33.3` | Apache-2.0 | No |
 | `@smithy/credential-provider-imds` | `4.3.3` | Apache-2.0 | No |
-| `@smithy/credential-provider-imds` | `4.5.0` | Apache-2.0 | No |
+| `@smithy/credential-provider-imds` | `4.5.2` | Apache-2.0 | No |
 | `@smithy/fetch-http-handler` | `5.4.3` | Apache-2.0 | No |
-| `@smithy/fetch-http-handler` | `5.7.0` | Apache-2.0 | No |
+| `@smithy/fetch-http-handler` | `5.7.2` | Apache-2.0 | No |
 | `@smithy/is-array-buffer` | `2.2.0` | Apache-2.0 | No |
-| `@smithy/node-http-handler` | `4.10.0` | Apache-2.0 | No |
+| `@smithy/node-http-handler` | `4.11.3` | Apache-2.0 | No |
 | `@smithy/node-http-handler` | `4.7.3` | Apache-2.0 | No |
 | `@smithy/signature-v4` | `5.4.3` | Apache-2.0 | No |
-| `@smithy/signature-v4` | `5.7.0` | Apache-2.0 | No |
+| `@smithy/signature-v4` | `5.7.3` | Apache-2.0 | No |
 | `@smithy/types` | `4.14.2` | Apache-2.0 | No |
-| `@smithy/types` | `4.17.0` | Apache-2.0 | No |
+| `@smithy/types` | `4.17.2` | Apache-2.0 | No |
 | `@smithy/util-buffer-from` | `2.2.0` | Apache-2.0 | No |
 | `@smithy/util-utf8` | `2.3.0` | Apache-2.0 | No |
 | `@swc/helpers` | `0.5.23` | Apache-2.0 | No |
@@ -345,7 +341,6 @@ Every locked package declares a license.
 | `gaxios` | `7.3.1` | Apache-2.0 | No |
 | `gcp-metadata` | `8.1.2` | Apache-2.0 | No |
 | `get-east-asian-width` | `1.6.0` | MIT | No |
-| `glob` | `13.0.6` | BlueOak-1.0.0 | No |
 | `google-auth-library` | `10.6.2` | Apache-2.0 | No |
 | `google-auth-library` | `10.9.1` | Apache-2.0 | No |
 | `google-logging-utils` | `1.1.3` | Apache-2.0 | No |
@@ -470,14 +465,13 @@ Every locked package declares a license.
 | `micromark-util-symbol` | `2.0.1` | MIT | No |
 | `micromark-util-types` | `2.0.2` | MIT | No |
 | `minimatch` | `10.2.5` | BlueOak-1.0.0 | No |
-| `minipass` | `7.1.3` | BlueOak-1.0.0 | No |
 | `mlly` | `1.8.2` | MIT | No |
 | `ms` | `2.1.3` | MIT | No |
 | `nanoid` | `3.3.18` | MIT | No |
 | `next` | `16.3.1` | MIT | No |
 | `node-domexception` | `1.0.0` | MIT | No |
 | `node-fetch` | `3.3.2` | MIT | No |
-| `openai` | `6.26.0` | Apache-2.0 | No |
+| `openai` | `6.40.0` | Apache-2.0 | No |
 | `opencc-js` | `1.4.1` | MIT AND Apache-2.0 | No |
 | `option` | `0.2.4` | BSD-2-Clause | No |
 | `p-retry` | `4.6.2` | MIT | No |
@@ -493,7 +487,6 @@ Every locked package declares a license.
 | `path-is-absolute` | `1.0.1` | MIT | No |
 | `path-key` | `3.1.1` | MIT | No |
 | `path-parse` | `1.0.7` | MIT | No |
-| `path-scurry` | `2.0.2` | BlueOak-1.0.0 | No |
 | `path-type` | `4.0.0` | MIT | No |
 | `pathe` | `2.0.3` | MIT | No |
 | `picocolors` | `1.1.1` | ISC | No |
@@ -508,6 +501,7 @@ Every locked package declares a license.
 | `proper-lockfile` | `4.1.2` | MIT | No |
 | `property-information` | `7.1.0` | MIT | No |
 | `protobufjs` | `7.6.5` | BSD-3-Clause | No |
+| `protobufjs` | `7.6.6` | BSD-3-Clause | No |
 | `react` | `19.2.8` | MIT | No |
 | `react-dom` | `19.2.8` | MIT | No |
 | `react-is` | `16.13.1` | MIT | No |
@@ -595,9 +589,6 @@ Every locked package declares a license.
 | `xmlbuilder` | `10.1.1` | MIT | No |
 | `yaml` | `1.10.3` | ISC | No |
 | `yaml` | `2.9.0` | ISC | No |
-| `zod` | `3.25.76` | MIT | No |
-| `zod` | `4.3.6` | MIT | No |
-| `zod-to-json-schema` | `3.25.2` | ISC | No |
 | `zwitch` | `2.0.4` | MIT | No |
 
 ## Build and development dependency closure
@@ -969,6 +960,7 @@ Every locked package declares a license.
 | `minimatch` | `5.1.9` | ISC | No |
 | `minimatch` | `9.0.9` | ISC | No |
 | `minimist` | `1.2.8` | MIT | No |
+| `minipass` | `7.1.3` | BlueOak-1.0.0 | No |
 | `minizlib` | `3.1.0` | MIT | No |
 | `napi-postinstall` | `0.3.4` | MIT | No |
 | `natural-compare` | `1.4.0` | MIT | No |
@@ -1108,4 +1100,5 @@ Every locked package declares a license.
 | `yargs` | `17.7.3` | MIT | No |
 | `yargs-parser` | `21.1.1` | ISC | No |
 | `yocto-queue` | `0.1.0` | MIT | No |
+| `zod` | `4.3.6` | MIT | No |
 | `zod-validation-error` | `4.0.2` | MIT | No |

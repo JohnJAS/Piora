@@ -125,6 +125,54 @@
   color: var(--accent);
 }
 
+.modelCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg-panel));
+}
+
+.modelIcon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--accent);
+}
+
+.modelControls {
+  min-width: 0;
+  flex: 1;
+}
+
+.modelControls select {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-xs);
+}
+
+.privacyNote,
+.modelError {
+  margin-top: 6px;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.modelError { color: #dc2626; }
+
 .helpCard {
   margin-top: 8px;
   padding: 10px 12px;

@@ -1,25 +1,53 @@
 export const COMPANION_STORAGE_KEY = "pi-companion-preferences-v1";
-export const COMPANION_SCHEMA_VERSION = 3;
+export const COMPANION_SCHEMA_VERSION = 4;
 export const DEFAULT_COMPANION_PET_ID = "pekka-pal.codex-pet";
 export const BUNDLED_COMPANION_PETS_PUBLIC_PATH = "/companion-pets/bundled";
 export const MAX_COMPANION_TODOS = 100;
 export const MAX_COMPANION_PHRASES = 24;
+export const MAX_COMPANION_LIBRARY_ITEMS = 80;
+export const MAX_COMPANION_IMAGE_BYTES = 1_250_000;
 
 const MAX_TODO_LENGTH = 240;
+const MAX_TODO_NOTES_LENGTH = 2_000;
 const MAX_PHRASE_LABEL_LENGTH = 40;
 const MAX_PHRASE_TEXT_LENGTH = 2_000;
+const MAX_LIBRARY_TITLE_LENGTH = 120;
+const MAX_LIBRARY_CONTENT_LENGTH = 40_000;
 
 export interface CompanionTodo {
   id: string;
   text: string;
   completed: boolean;
+  progress: number;
+  notes?: string;
+  project?: string;
+  dueAt?: number;
   createdAt: number;
+  updatedAt: number;
 }
 
 export interface CompanionQuickPhrase {
   id: string;
   label: string;
   text: string;
+}
+
+export type CompanionLibraryKind = "note" | "code" | "command" | "image";
+
+export interface CompanionLibraryItem {
+  id: string;
+  kind: CompanionLibraryKind;
+  title: string;
+  content: string;
+  language?: string;
+  pinned: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface CompanionInteractionModel {
+  provider: string;
+  modelId: string;
 }
 
 export interface CompanionPreferences {
@@ -29,7 +57,10 @@ export interface CompanionPreferences {
   selectedPetId: string;
   todos: CompanionTodo[];
   phrases: CompanionQuickPhrase[];
+  library: CompanionLibraryItem[];
   idleTricks: boolean;
+  interactionModel: CompanionInteractionModel | null;
+  shareWorkContext: boolean;
 }
 
 export interface CompanionPhraseSeed {
@@ -46,7 +77,26 @@ function safeId(value: unknown, fallback: string): string {
   return /^[a-zA-Z0-9._:-]+$/.test(id) ? id : fallback;
 }
 
-export function createCompanionId(prefix: "todo" | "phrase"): string {
+function safeTimestamp(value: unknown, fallback = 0): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function safeProgress(value: unknown, completed: boolean): number {
+  if (completed) return 100;
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(99, Math.round(value)))
+    : 0;
+}
+
+function normalizeInteractionModel(value: unknown): CompanionInteractionModel | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const provider = cleanText(record.provider, 120);
+  const modelId = cleanText(record.modelId, 240);
+  return provider && modelId ? { provider, modelId } : null;
+}
+
+export function createCompanionId(prefix: "todo" | "phrase" | "library"): string {
   const uuid = globalThis.crypto?.randomUUID?.();
   return `${prefix}:${uuid ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`}`;
 }
@@ -63,13 +113,16 @@ export function createDefaultCompanionPreferences(seeds: CompanionPhraseSeed[] =
       const text = cleanText(seed.text, MAX_PHRASE_TEXT_LENGTH);
       return label && text ? [{ id: `phrase:default-${index + 1}`, label, text }] : [];
     }),
+    library: [],
     idleTricks: true,
+    interactionModel: null,
+    shareWorkContext: true,
   };
 }
 
-// v1/v2 data migrates forward so existing todos/phrases survive while the
-// removed care-loop timestamps are discarded. Anything newer is rejected.
-const SUPPORTED_SCHEMA_VERSIONS = new Set([1, 2, COMPANION_SCHEMA_VERSION]);
+// Older data migrates forward so existing todos and phrases survive. Unknown
+// newer schemas are rejected to avoid silently discarding future fields.
+const SUPPORTED_SCHEMA_VERSIONS = new Set([1, 2, 3, COMPANION_SCHEMA_VERSION]);
 
 export function normalizeCompanionPreferences(
   value: unknown,
@@ -84,13 +137,21 @@ export function normalizeCompanionPreferences(
     const todo = candidate as Record<string, unknown>;
     const text = cleanText(todo.text, MAX_TODO_LENGTH);
     if (!text) return [];
+    const completed = todo.completed === true;
+    const createdAt = safeTimestamp(todo.createdAt);
+    const notes = cleanText(todo.notes, MAX_TODO_NOTES_LENGTH);
+    const project = cleanText(todo.project, 160);
+    const dueAt = safeTimestamp(todo.dueAt, -1);
     return [{
       id: safeId(todo.id, `todo:restored-${index + 1}`),
       text,
-      completed: todo.completed === true,
-      createdAt: typeof todo.createdAt === "number" && Number.isFinite(todo.createdAt)
-        ? todo.createdAt
-        : 0,
+      completed,
+      progress: safeProgress(todo.progress, completed),
+      ...(notes ? { notes } : {}),
+      ...(project ? { project } : {}),
+      ...(dueAt >= 0 ? { dueAt } : {}),
+      createdAt,
+      updatedAt: safeTimestamp(todo.updatedAt, createdAt),
     }];
   });
 
@@ -104,6 +165,31 @@ export function normalizeCompanionPreferences(
     return [{ id: safeId(phrase.id, `phrase:restored-${index + 1}`), label, text }];
   });
 
+  const rawLibrary = Array.isArray(record.library) ? record.library : [];
+  const library = rawLibrary.slice(0, MAX_COMPANION_LIBRARY_ITEMS).flatMap((candidate, index) => {
+    if (!candidate || typeof candidate !== "object") return [];
+    const item = candidate as Record<string, unknown>;
+    const kind = ["note", "code", "command", "image"].includes(String(item.kind))
+      ? item.kind as CompanionLibraryKind
+      : "note";
+    const title = cleanText(item.title, MAX_LIBRARY_TITLE_LENGTH);
+    const content = cleanText(item.content, kind === "image" ? MAX_COMPANION_IMAGE_BYTES * 2 : MAX_LIBRARY_CONTENT_LENGTH);
+    const validImage = kind !== "image" || /^data:image\/(?:png|jpeg|webp|gif);base64,/i.test(content);
+    if (!title || !content || !validImage) return [];
+    const createdAt = safeTimestamp(item.createdAt);
+    const language = cleanText(item.language, 40);
+    return [{
+      id: safeId(item.id, `library:restored-${index + 1}`),
+      kind,
+      title,
+      content,
+      ...(language ? { language } : {}),
+      pinned: item.pinned === true,
+      createdAt,
+      updatedAt: safeTimestamp(item.updatedAt, createdAt),
+    }];
+  });
+
   return {
     version: COMPANION_SCHEMA_VERSION,
     open: record.open === true,
@@ -111,7 +197,10 @@ export function normalizeCompanionPreferences(
     selectedPetId: safeId(record.selectedPetId, "builtin"),
     todos,
     phrases,
+    library,
     idleTricks: record.idleTricks !== false,
+    interactionModel: normalizeInteractionModel(record.interactionModel),
+    shareWorkContext: record.shareWorkContext !== false,
   };
 }
 
