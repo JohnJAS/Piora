@@ -2456,6 +2456,7 @@ export function AppShell() {
                 activeProjectRoot={activeProjectRoot}
                 onSelect={handleNewSessionProjectSelected}
                 onStartChat={handleProjectlessLandingStart}
+                onOpenModelSettings={() => openSettings("models")}
                 onBrowse={(draft) => {
                   pendingLandingDraftRef.current = draft;
                   sessionSidebarRef.current?.openProjectPicker();

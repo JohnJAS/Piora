@@ -38,18 +38,21 @@ export function NewSessionProjectPicker({
   onSelect,
   onStartChat,
   onBrowse,
+  onOpenModelSettings,
 }: {
   activeCwd?: string | null;
   activeProjectRoot?: string | null;
   onSelect: (cwd: string, projectRoot: string, model?: SelectedModel) => void;
   onStartChat: (draft: ChatDraft, model?: SelectedModel) => void;
   onBrowse: (draft: ChatDraft) => void;
+  onOpenModelSettings: () => void;
 }) {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [models, setModels] = useState<ModelChoice[]>([]);
   const [selectedModelKey, setSelectedModelKey] = useState("");
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [modelsReloadKey, setModelsReloadKey] = useState(0);
   const [modelSelectionRequired, setModelSelectionRequired] = useState(false);
   const [query, setQuery] = useState("");
   const [draft, setLandingDraft] = useState("");
@@ -75,24 +78,38 @@ export function NewSessionProjectPicker({
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/models", { cache: "no-store" })
+    setModelsLoading(true);
+    setModelsError(null);
+    const query = modelsReloadKey > 0 ? "?refresh=1" : "";
+    void fetch(`/api/models${query}`, { cache: "no-store" })
       .then(async (response) => {
         const data = await response.json() as {
           modelList?: ModelChoice[];
+          defaultModel?: SelectedModel | null;
           error?: string;
           modelError?: string | null;
         };
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         if (cancelled) return;
-        setModels(data.modelList ?? []);
+        const nextModels = data.modelList ?? [];
+        setModels(nextModels);
         setModelsError(data.modelError ?? null);
+        setSelectedModelKey((current) => {
+          if (nextModels.some((entry) => `${entry.provider}/${entry.id}` === current)) return current;
+          const preferred = data.defaultModel
+            ? `${data.defaultModel.provider}/${data.defaultModel.modelId}`
+            : "";
+          if (preferred && nextModels.some((entry) => `${entry.provider}/${entry.id}` === preferred)) return preferred;
+          const first = nextModels[0];
+          return first ? `${first.provider}/${first.id}` : "";
+        });
       })
       .catch((error) => {
         if (!cancelled) setModelsError(error instanceof Error ? error.message : String(error));
       })
       .finally(() => { if (!cancelled) setModelsLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [modelsReloadKey]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -196,9 +213,15 @@ export function NewSessionProjectPicker({
     <main className={styles.root} aria-label="新对话">
       <section className={styles.hero}>
         <header className={styles.intro}>
+          <span className={styles.welcomeBadge}>PIORA 快速开始</span>
           <h1>开始新的聊天</h1>
-          <p>先选择一个模型。普通问答不需要项目；需要读取或修改代码时，再关联项目文件夹。</p>
+          <p>直接输入就会进入普通聊天；只有需要 Piora 读取、修改或运行项目时，才选择项目文件夹。</p>
         </header>
+        <ol className={styles.guide} aria-label="Piora 使用步骤">
+          <li><span>1</span><div><strong>描述目标</strong><small>问问题、写内容或说明要完成的任务</small></div></li>
+          <li><span>2</span><div><strong>按需选择项目</strong><small>不选进入聊天，选择后进入对应项目</small></div></li>
+          <li><span>3</span><div><strong>发送并跟进</strong><small>Piora 会展示思考、工具执行和最终结果</small></div></li>
+        </ol>
         <div className={styles.workspaceDock}>
           <div className={styles.contextRail}>
             <div ref={projectSelectorRef} className={styles.projectAnchor}>
@@ -243,7 +266,7 @@ export function NewSessionProjectPicker({
                 disabled={modelsLoading || models.length === 0}
               >
                 <option value="" disabled>
-                  {modelsLoading ? "正在加载模型…" : modelsError ? "模型加载失败" : models.length === 0 ? "暂无可用模型" : "选择模型"}
+                  {modelsLoading ? "正在加载模型…" : modelsError && models.length === 0 ? "模型加载失败" : models.length === 0 ? "暂无可用模型" : "选择模型"}
                 </option>
                 {models.map((model) => (
                   <option key={`${model.provider}/${model.id}`} value={`${model.provider}/${model.id}`}>
@@ -306,17 +329,27 @@ export function NewSessionProjectPicker({
                 <AliIcon name="plus" size={16} />
               </button>
               <span className={`${styles.selectionHint}${modelSelectionRequired ? ` ${styles.selectionError}` : ""}`} role={modelSelectionRequired ? "alert" : undefined}>
-                {modelsError
-                  ? "模型加载失败，请前往设置检查模型配置"
+                {modelsError && models.length === 0
+                  ? "模型不可用，请重试或检查设置"
+                  : modelsError
+                    ? "已加载可用模型；部分配置有警告"
                   : modelSelectionRequired || (!modelsLoading && !selectedModel)
                     ? "请先选择模型"
-                    : "无需项目也可以直接聊天"}
+                    : "未选择项目时默认进入聊天"}
               </span>
               <button className={styles.sendButton} type="button" onClick={startProjectlessChat} disabled={!selectedModel} title={selectedModel ? "开始聊天" : "请先选择模型"} aria-label="开始聊天">
                 <AliIcon name="arrowup" size={16} />
               </button>
             </div>
           </div>
+          {modelsError ? (
+            <div className={styles.modelRecovery} role={models.length === 0 ? "alert" : "status"}>
+              <AliIcon name="warning" size={14} />
+              <span>{models.length === 0 ? "没有加载到可用模型。" : "部分模型配置未能加载，当前可用模型仍可正常使用。"}</span>
+              <button type="button" onClick={() => setModelsReloadKey((key) => key + 1)} disabled={modelsLoading}>重新加载</button>
+              <button type="button" onClick={onOpenModelSettings}>检查模型设置</button>
+            </div>
+          ) : null}
         </div>
       </section>
     </main>

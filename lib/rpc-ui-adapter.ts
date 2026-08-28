@@ -12,7 +12,14 @@ import {
 class PlainTextTheme extends Theme {
   constructor() {
     super(
-      { thinkingXhigh: "" } as ConstructorParameters<typeof Theme>[0],
+      {
+        // Pi's Theme constructor derives optional colors from these base
+        // entries before our plain-text overrides run. Keep both fallbacks
+        // populated so SDK upgrades cannot feed `undefined` into its ANSI
+        // color parser during server startup.
+        text: "",
+        thinkingXhigh: "",
+      } as ConstructorParameters<typeof Theme>[0],
       {
         selectedBg: "",
         userMessageBg: "",

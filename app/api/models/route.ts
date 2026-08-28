@@ -1,6 +1,6 @@
 import type { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import { loadModelsWithCache, withModelRuntimeError, type ModelsData } from "@/lib/models-cache";
+import { invalidateModelsCache, loadModelsWithCache, withModelRuntimeError, type ModelsData } from "@/lib/models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "@/lib/model-scope";
 import { prioritizeProvider, resolveDefaultModelPreference } from "@/lib/model-policy";
 import {
@@ -81,9 +81,10 @@ const EMPTY_MODELS: ModelsData = {
 };
 
 export async function GET(req: Request) {
+  const requestUrl = new URL(req.url);
   let cwd: string;
   try {
-    cwd = await resolveModelRequestCwd(new URL(req.url).searchParams.get("cwd"));
+    cwd = await resolveModelRequestCwd(requestUrl.searchParams.get("cwd"));
   } catch (error) {
     if (error instanceof ModelRequestCwdError) {
       return Response.json({ error: error.message }, { status: error.status });
@@ -92,8 +93,12 @@ export async function GET(req: Request) {
   }
 
   try {
+    if (requestUrl.searchParams.get("refresh") === "1") invalidateModelsCache();
     return Response.json(await loadModelsWithCache(cwd, () => loadModels(cwd)));
-  } catch {
-    return Response.json(EMPTY_MODELS);
+  } catch (error) {
+    const message = error instanceof Error && error.message.trim()
+      ? error.message.trim().slice(0, 500)
+      : "Unable to load the model catalog";
+    return Response.json({ ...EMPTY_MODELS, modelError: message });
   }
 }

@@ -14,7 +14,7 @@ export function extractVersionNotes(changelog, requestedTag) {
   const nextHeadingIndex = remainder.search(/^## \[/m);
   const notes = (nextHeadingIndex >= 0 ? remainder.slice(0, nextHeadingIndex) : remainder).trim();
   if (!notes) throw new Error(`CHANGELOG.md does not contain release notes for ${version}`);
-  return `${notes}\n\n### Downloads\n\n- Windows x64 installer (recommended): choose an installation directory and receive future in-app updates.\n- Windows x64 ZIP: extract, then run Piora.exe.\n- Windows x64 portable EXE: run the single executable directly; install the recommended edition to enable automatic updates.\n- Linux x64 AppImage: mark executable, then run it.\n\nPackages are not code-signed. Verify the selected package against SHA256SUMS.txt before running.\n`;
+  return `${notes}\n\n### 下载说明\n\n- Windows x64 安装版（推荐）：可选择安装位置，并支持后续应用内更新。\n- Windows x64 ZIP：解压后运行 Piora.exe。\n- Windows x64 便携版 EXE：可直接运行单个可执行文件；建议安装推荐版本以获得自动更新。\n- Linux x64 AppImage：添加可执行权限后运行。\n\n安装包尚未进行代码签名；运行前请使用 SHA256SUMS.txt 校验所下载的文件。\n`;
 }
 
 async function main() {

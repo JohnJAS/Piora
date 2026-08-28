@@ -3,14 +3,22 @@ updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: daily
       time: "09:00"
       timezone: Asia/Shanghai
     open-pull-requests-limit: 10
     versioning-strategy: increase-if-necessary
     groups:
+      pi-runtime:
+        patterns:
+          - "@earendil-works/pi-*"
+        update-types:
+          - major
+          - minor
+          - patch
       npm-minor-and-patch:
+        exclude-patterns:
+          - "@earendil-works/pi-*"
         update-types:
           - minor
           - patch
