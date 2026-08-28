@@ -1,7 +1,5 @@
-import { normalizeCompanionCareTimestamps, type CompanionCareTimestamps } from "./companion-behavior";
-
 export const COMPANION_STORAGE_KEY = "pi-companion-preferences-v1";
-export const COMPANION_SCHEMA_VERSION = 2;
+export const COMPANION_SCHEMA_VERSION = 3;
 export const DEFAULT_COMPANION_PET_ID = "pekka-pal.codex-pet";
 export const BUNDLED_COMPANION_PETS_PUBLIC_PATH = "/companion-pets/bundled";
 export const MAX_COMPANION_TODOS = 100;
@@ -31,8 +29,6 @@ export interface CompanionPreferences {
   selectedPetId: string;
   todos: CompanionTodo[];
   phrases: CompanionQuickPhrase[];
-  /** v2: real-time decay timestamps for the care loop and the idle-trick toggle. */
-  care: CompanionCareTimestamps;
   idleTricks: boolean;
 }
 
@@ -56,7 +52,6 @@ export function createCompanionId(prefix: "todo" | "phrase"): string {
 }
 
 export function createDefaultCompanionPreferences(seeds: CompanionPhraseSeed[] = []): CompanionPreferences {
-  const now = Date.now();
   return {
     version: COMPANION_SCHEMA_VERSION,
     open: false,
@@ -68,14 +63,13 @@ export function createDefaultCompanionPreferences(seeds: CompanionPhraseSeed[] =
       const text = cleanText(seed.text, MAX_PHRASE_TEXT_LENGTH);
       return label && text ? [{ id: `phrase:default-${index + 1}`, label, text }] : [];
     }),
-    care: { fedAt: now, wateredAt: now, pettedAt: now },
     idleTricks: true,
   };
 }
 
-// v1 preferences predate the care loop; they migrate forward so existing
-// todos/phrases survive the upgrade. Anything newer is rejected.
-const SUPPORTED_SCHEMA_VERSIONS = new Set([1, COMPANION_SCHEMA_VERSION]);
+// v1/v2 data migrates forward so existing todos/phrases survive while the
+// removed care-loop timestamps are discarded. Anything newer is rejected.
+const SUPPORTED_SCHEMA_VERSIONS = new Set([1, 2, COMPANION_SCHEMA_VERSION]);
 
 export function normalizeCompanionPreferences(
   value: unknown,
@@ -84,8 +78,6 @@ export function normalizeCompanionPreferences(
   if (!value || typeof value !== "object") return fallback;
   const record = value as Record<string, unknown>;
   if (!SUPPORTED_SCHEMA_VERSIONS.has(record.version as number)) return fallback;
-  const migratedAt = Date.now();
-
   const rawTodos = Array.isArray(record.todos) ? record.todos : [];
   const todos = rawTodos.slice(0, MAX_COMPANION_TODOS).flatMap((candidate, index) => {
     if (!candidate || typeof candidate !== "object") return [];
@@ -119,7 +111,6 @@ export function normalizeCompanionPreferences(
     selectedPetId: safeId(record.selectedPetId, "builtin"),
     todos,
     phrases,
-    care: normalizeCompanionCareTimestamps(record.care, migratedAt),
     idleTricks: record.idleTricks !== false,
   };
 }

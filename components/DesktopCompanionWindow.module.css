@@ -23,7 +23,7 @@
 
 .activityBubbles {
   position: absolute;
-  bottom: 178px;
+  bottom: 160px;
   left: 4px;
   right: 4px;
   max-height: 170px;
@@ -103,6 +103,24 @@
   color: var(--text-muted);
 }
 
+.activityHeading {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.activityHeading strong {
+  min-width: 0;
+  flex: 1;
+}
+
+.activityHeading small {
+  flex: 0 0 auto;
+  color: var(--pet-status, var(--text-dim));
+  font-size: var(--text-xs);
+  font-weight: 650;
+}
+
 .bubbleIndicator {
   width: 9px;
   height: 9px;
@@ -113,22 +131,38 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--pet-status) 14%, transparent);
 }
 
-.pet {
-  position: relative;
+.petStage {
+  position: absolute;
+  left: 50%;
+  bottom: 7px;
   width: 132px;
   aspect-ratio: 192 / 208;
+  transform: translateX(-50%);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.pet {
+  position: relative;
+  width: 100%;
+  height: 100%;
   display: grid;
   place-items: center;
   padding: 0;
   border: 0;
   appearance: none;
   background: transparent;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
   filter: drop-shadow(0 7px 7px rgba(15, 23, 42, 0.24));
   transform: translateY(0);
   transition: transform 150ms ease, filter 150ms ease;
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+.pet:active {
+  cursor: grabbing;
 }
 
 .pet:focus-visible {
@@ -137,67 +171,20 @@
   border-radius: 16px;
 }
 
-.careBar {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-  padding: 4px;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-panel) 91%, transparent);
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.12);
-  backdrop-filter: blur(12px) saturate(1.08);
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
-
-.careButton {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 50%;
-  font-size: var(--text-sm);
-  line-height: 1;
-  cursor: pointer;
-  background: transparent;
-  transition: background 140ms ease, transform 140ms ease, border-color 140ms ease;
-}
-
-.careButton:hover {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  transform: translateY(-1px);
-}
-
-.careButton:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.careButton[data-need="true"] {
-  border-color: color-mix(in srgb, #d64545 55%, transparent);
-  animation: companion-care-need 2.4s ease-in-out infinite;
-}
-
-@keyframes companion-care-need {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, #d64545 30%, transparent); }
-  50% { box-shadow: 0 0 0 5px color-mix(in srgb, #d64545 0%, transparent); }
-}
-
-.window:hover .pet {
+.pet:hover {
   filter: drop-shadow(0 9px 9px rgba(15, 23, 42, 0.28));
   transform: translateY(-2px);
 }
 
 .bubbleToggle {
+  position: absolute;
+  right: 14px;
+  bottom: 151px;
   width: 26px;
   height: 26px;
   flex: 0 0 26px;
   display: grid;
   place-items: center;
-  margin-top: 2px;
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: 50%;
@@ -226,7 +213,6 @@
 @media (prefers-reduced-motion: reduce) {
   .activityBubble { transition: none; }
   .pet { transition: none; }
-  .window:hover .pet { transform: none; }
+  .pet:hover { transform: none; }
   .bubbleToggle { transition: none; }
-  .careButton { animation: none; transition: none; }
 }

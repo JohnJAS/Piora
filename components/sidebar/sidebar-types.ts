@@ -32,6 +32,18 @@ declare global {
       setCompanionWindowVisible?: (visible: boolean) => Promise<boolean>;
       setCompanionWindowAlwaysOnTop?: (alwaysOnTop: boolean) => Promise<boolean>;
       setCompanionWindowExpanded?: (expanded: boolean) => Promise<boolean>;
+      moveCompanionWindow?: (input: {
+        kind: "walk" | "stop" | "drag-start" | "drag-move" | "drag-end";
+        direction?: "left" | "right";
+        distance?: number;
+        durationMs?: number;
+        screenX?: number;
+        screenY?: number;
+      }) => Promise<{ ok: boolean; direction?: "left" | "right"; durationMs?: number }>;
+      onCompanionMotion?: (listener: (state: {
+        moving: boolean;
+        direction: "left" | "right" | null;
+      }) => void) => () => void;
       companionAction?: (action: "focus-main" | "open-settings" | "hide") => Promise<boolean>;
       setGlobalShortcut?: (enabled: boolean) => Promise<boolean>;
       selectHarmonyRuntimePath?: (kind: "sdk" | "hdc") => Promise<string | null>;

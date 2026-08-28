@@ -65,6 +65,31 @@ const runtime = Object.freeze({
   setCompanionWindowExpanded(expanded: boolean): Promise<boolean> {
     return ipcRenderer.invoke("pi:companion-window-expanded", expanded) as Promise<boolean>;
   },
+  moveCompanionWindow(input: {
+    kind: "walk" | "stop" | "drag-start" | "drag-move" | "drag-end";
+    direction?: "left" | "right";
+    distance?: number;
+    durationMs?: number;
+    screenX?: number;
+    screenY?: number;
+  }): Promise<{ ok: boolean; direction?: "left" | "right"; durationMs?: number }> {
+    return ipcRenderer.invoke("pi:companion-window-motion", input) as Promise<{
+      ok: boolean;
+      direction?: "left" | "right";
+      durationMs?: number;
+    }>;
+  },
+  onCompanionMotion(listener: (state: { moving: boolean; direction: "left" | "right" | null }) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, state: unknown) => {
+      if (!state || typeof state !== "object") return;
+      const candidate = state as { moving?: unknown; direction?: unknown };
+      if (typeof candidate.moving !== "boolean") return;
+      if (candidate.direction !== null && candidate.direction !== "left" && candidate.direction !== "right") return;
+      listener({ moving: candidate.moving, direction: candidate.direction });
+    };
+    ipcRenderer.on("pi:companion-motion-state", handler);
+    return () => ipcRenderer.removeListener("pi:companion-motion-state", handler);
+  },
   companionAction(action: "focus-main" | "open-settings" | "hide"): Promise<boolean> {
     return ipcRenderer.invoke("pi:companion-window-action", action) as Promise<boolean>;
   },

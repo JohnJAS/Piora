@@ -12,6 +12,10 @@ try {
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // The app has a dedicated transparent desktop-pet renderer. Next's floating
+  // development badge otherwise appears as an unexplained black disc inside
+  // that frameless window; compiler and runtime errors remain enabled.
+  devIndicators: false,
   // Electron keeps one persistent renderer partition across upgrades. Attach
   // the release identity to every client asset request so an older HTTP cache
   // entry can never be combined with the current Next.js runtime graph.

@@ -4,6 +4,30 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.24] - 2026-08-28
+
+### Changed
+
+- Rebuilt desktop-pet movement around the native Electron window: pets now
+  wander within the active monitor, can be dragged directly without losing
+  click-to-poke reactions, face their travel direction, and respond to task
+  starts, completions, failures, approvals, thinking, tools, commands, retries,
+  and compaction through a shared Agent-state presentation layer.
+- Anchored the sprite in a dedicated transparent stage so task bubbles and
+  controls no longer shift or obscure the pet image.
+
+### Removed
+
+- Removed the companion care loop entirely, including feeding, water, affection
+  levels, real-time decay, nagging speech, controls, translations, and persisted
+  timestamps. Existing v1/v2 preferences migrate without losing todos, quick
+  phrases, the selected pet, or idle behavior settings.
+
+### Fixed
+
+- Prevented the Next.js development indicator and first-paint wallpaper from
+  appearing as unexplained background artifacts in the frameless pet window.
+
 ## [0.4.23] - 2026-08-28
 
 ### Fixed

@@ -9,18 +9,24 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { useCompanionPets } from "@/hooks/useCompanionPets";
 import { useCompanionPreferences } from "@/hooks/useCompanionPreferences";
 import { useI18n } from "@/hooks/useI18n";
 import { useRunningTaskSnapshots } from "@/hooks/useTaskStatus";
 import type { CompanionActivity, CompanionActivityEvent } from "@/lib/companion";
 import {
-  applyCompanionCareAction,
-  getCompanionCareLevels,
-  listCompanionCareNeeds,
+  deriveCompanionTaskPresentation,
+  getCompanionWanderDelay,
   pickCompanionSpeechLine,
-  COMPANION_CARE_NEED_THRESHOLD,
   type CompanionInteractionKind,
   type CompanionSpeechCategory,
 } from "@/lib/companion-behavior";
@@ -30,18 +36,25 @@ import styles from "./DesktopCompanionWindow.module.css";
 
 const DEFAULT_ACTIVITY: CompanionActivity = { status: "idle", cause: "" };
 const SPEECH_VISIBLE_MS = 6_000;
-const CARE_TICK_MS = 30_000;
+const PET_DRAG_THRESHOLD_PX = 5;
 
-function snapshotActivityStatus(snapshot: TaskRuntimeSnapshot): CompanionActivity["status"] {
-  if (snapshot.lastPromptFailed) return "failed";
-  if (snapshot.pendingApproval) return "review";
-  if (snapshot.activity?.kind === "thinking") return "waiting";
-  return snapshot.runtime === "idle" ? "idle" : "running";
-}
+const AGENT_ACTIVITY_LABELS = {
+  idle: "companion.agent.idle",
+  failed: "companion.agent.failed",
+  review: "companion.agent.review",
+  prompt: "companion.agent.prompt",
+  thinking: "companion.agent.thinking",
+  assistant: "companion.agent.responding",
+  tool: "companion.agent.tool",
+  command: "companion.agent.command",
+  compacting: "companion.agent.compacting",
+  approval: "companion.agent.review",
+  retry: "companion.agent.retry",
+} as const;
 
 export function DesktopCompanionWindow() {
   const { t, locale } = useI18n();
-  const { preferences, setPreferences } = useCompanionPreferences();
+  const { preferences } = useCompanionPreferences();
   const pets = useCompanionPets(true);
   const runningTasks = useRunningTaskSnapshots();
   const [activity, setActivity] = useState<CompanionActivity>(DEFAULT_ACTIVITY);
@@ -62,7 +75,13 @@ export function DesktopCompanionWindow() {
   const speechSequenceRef = useRef(0);
   const speechTimerRef = useRef<number | null>(null);
   const lastSpeechTextRef = useRef<string | null>(null);
-  const [careNow, setCareNow] = useState(() => Date.now());
+  const [motionDirection, setMotionDirection] = useState<"left" | "right" | null>(null);
+  const pointerDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
 
   useEffect(() => () => {
     if (speechTimerRef.current !== null) window.clearTimeout(speechTimerRef.current);
@@ -88,28 +107,6 @@ export function DesktopCompanionWindow() {
     say(line);
   }, [locale, say]);
 
-  // --- Care loop: needs decay over real time and are restored by the buttons. ---
-  useEffect(() => {
-    const timer = window.setInterval(() => setCareNow(Date.now()), CARE_TICK_MS);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const careLevels = useMemo(
-    () => getCompanionCareLevels(preferences.care, careNow),
-    [careNow, preferences.care],
-  );
-  const careNeeds = useMemo(() => listCompanionCareNeeds(careLevels), [careLevels]);
-  const careNeedsKey = careNeeds.join(",");
-
-  const handleCare = useCallback((kind: Exclude<CompanionInteractionKind, "poke">) => {
-    setPreferences((current) => ({
-      ...current,
-      care: applyCompanionCareAction(current.care, kind, Date.now()),
-    }));
-    setCareNow(Date.now());
-    react(kind, kind);
-  }, [react, setPreferences]);
-
   useEffect(() => {
     document.documentElement.classList.add("desktop-pet-document");
     document.body.classList.add("desktop-pet-document");
@@ -118,6 +115,10 @@ export function DesktopCompanionWindow() {
       document.body.classList.remove("desktop-pet-document");
     };
   }, []);
+
+  useEffect(() => window.piDesktop?.onCompanionMotion?.((state) => {
+    setMotionDirection(state.moving ? state.direction : null);
+  }), []);
 
   useEffect(() => {
     const channel = new BroadcastChannel("pi-companion-runtime-v1");
@@ -135,12 +136,14 @@ export function DesktopCompanionWindow() {
   }, []);
 
   const taskBubbles = useMemo(() => runningTasks.map((snapshot) => {
-    const status = snapshotActivityStatus(snapshot);
+    const presentation = deriveCompanionTaskPresentation(snapshot);
+    const status = presentation.status;
     return {
       id: snapshot.id,
       status,
       title: snapshot.title || snapshot.id.slice(0, 8),
       startedAt: snapshot.startedAt ?? 0,
+      activityLabel: t(AGENT_ACTIVITY_LABELS[presentation.activityKind]),
       cause: snapshot.activity?.message
         || snapshot.errorSummary
         || t(`companion.activity.${status}Cause`),
@@ -214,30 +217,22 @@ export function DesktopCompanionWindow() {
       id: "companion-status",
       status: displayActivity.status,
       title: statusLabel,
+      activityLabel: statusLabel,
       cause: statusCause,
     }];
   }, [displayActivity.status, statusCause, statusLabel, taskBubbles]);
   const runningTaskCount = taskBubbles.length || (displayActivity.status === "idle" ? 0 : 1);
   const bubblesExpanded = (bubbleItems.length > 0 || Boolean(speech)) && !bubblesCollapsed;
 
-  // Ambient chatter: care needs first, then waiting/review reminders, then
-  // idle small talk. Speaking reschedules the next line. Needs are read
-  // through a ref so the 30s level refresh cannot reset the pending timer.
+  // Ambient chatter reflects agent attention states, then falls back to
+  // occasional idle small talk. Speaking reschedules the next line.
   const idleTricksEnabled = preferences.idleTricks !== false;
-  const careNeedsRef = useRef(careNeeds);
-  useEffect(() => {
-    careNeedsRef.current = careNeeds;
-  }, [careNeeds]);
   useEffect(() => {
     if (!idleTricksEnabled) return;
     const status = displayActivity.status;
     let category: CompanionSpeechCategory | null = null;
     let delay = 60_000;
-    const need = careNeedsRef.current[0];
-    if (need) {
-      category = need === "hunger" ? "hungry" : need === "thirst" ? "thirsty" : "lonely";
-      delay = 45_000;
-    } else if (status === "waiting" || status === "review") {
+    if (status === "waiting" || status === "review") {
       category = status;
       delay = 90_000;
     } else if (status === "idle" && taskBubbles.length === 0) {
@@ -251,7 +246,7 @@ export function DesktopCompanionWindow() {
       say(line);
     }, delay);
     return () => window.clearTimeout(timer);
-  }, [careNeedsKey, displayActivity.status, idleTricksEnabled, locale, say, speech?.key, taskBubbles.length]);
+  }, [displayActivity.status, idleTricksEnabled, locale, say, speech?.key, taskBubbles.length]);
 
   useEffect(() => {
     if (bubbleItems.length === 0 || previousBubbleCountRef.current === 0) {
@@ -263,6 +258,79 @@ export function DesktopCompanionWindow() {
   useEffect(() => {
     void window.piDesktop?.setCompanionWindowExpanded?.(bubblesExpanded);
   }, [bubblesExpanded]);
+
+  useEffect(() => {
+    const bridge = window.piDesktop?.moveCompanionWindow;
+    if (!bridge || !idleTricksEnabled || displayActivity.status !== "idle" || speech || motionDirection) return;
+    const timer = window.setTimeout(() => {
+      void bridge({
+        kind: "walk",
+        distance: 90 + Math.round(Math.random() * 150),
+        durationMs: 1_900 + Math.round(Math.random() * 1_500),
+      });
+    }, getCompanionWanderDelay());
+    return () => window.clearTimeout(timer);
+  }, [displayActivity.status, idleTricksEnabled, motionDirection, speech]);
+
+  useEffect(() => {
+    const bridge = window.piDesktop?.moveCompanionWindow;
+    if (!bridge || !runtimeEventKey) return;
+    if (runtimeEventKind === "started" || runtimeEventKind === "completed") {
+      void bridge({
+        kind: "walk",
+        distance: runtimeEventKind === "started" ? 72 : 110,
+        durationMs: runtimeEventKind === "started" ? 1_250 : 1_650,
+      });
+    } else if (runtimeEventKind === "failed") {
+      void bridge({ kind: "stop" });
+    }
+  }, [runtimeEventKey, runtimeEventKind]);
+
+  useEffect(() => {
+    if (displayActivity.status === "review" || displayActivity.status === "failed") {
+      void window.piDesktop?.moveCompanionWindow?.({ kind: "stop" });
+    }
+  }, [displayActivity.status]);
+
+  const endPointerDrag = useCallback((event: ReactPointerEvent<HTMLButtonElement>, cancelled: boolean) => {
+    const drag = pointerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    pointerDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    void window.piDesktop?.moveCompanionWindow?.({ kind: "drag-end" });
+    if (!cancelled && !drag.moved) react("poke", "poke");
+  }, [react]);
+
+  const handlePetPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.button !== 0) return;
+    pointerDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.screenX,
+      startY: event.screenY,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    void window.piDesktop?.moveCompanionWindow?.({
+      kind: "drag-start",
+      screenX: event.screenX,
+      screenY: event.screenY,
+    });
+  }, []);
+
+  const handlePetPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
+    const drag = pointerDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const distance = Math.hypot(event.screenX - drag.startX, event.screenY - drag.startY);
+    if (!drag.moved && distance < PET_DRAG_THRESHOLD_PX) return;
+    drag.moved = true;
+    void window.piDesktop?.moveCompanionWindow?.({
+      kind: "drag-move",
+      screenX: event.screenX,
+      screenY: event.screenY,
+    });
+  }, []);
 
   return (
     <main className={styles.window} aria-label={t("companion.desktopMode")} data-testid="desktop-companion-window">
@@ -297,7 +365,10 @@ export function DesktopCompanionWindow() {
               role="status"
             >
               <span className={styles.activityCopy}>
-                <strong>{item.title}</strong>
+                <span className={styles.activityHeading}>
+                  <strong>{item.title}</strong>
+                  <small>{item.activityLabel}</small>
+                </span>
                 <span>{item.cause}</span>
               </span>
               <span
@@ -308,46 +379,30 @@ export function DesktopCompanionWindow() {
             </div>
           ))}
         </div>
-        <button
-          className={styles.pet}
-          type="button"
-          data-testid="companion-pet-viewport"
-          aria-label={`${petLabel} · ${t("companion.pokeHint")}`}
-          title={t("companion.pokeHint")}
-          onClick={() => react("poke", "poke")}
-        >
-          {activePet
-            ? <SpritePet
-                pet={activePet}
-                status={displayActivity.status}
-                event={displayActivity.event}
-                overlayEvent={overlayEvent ?? undefined}
-                idleTricks={idleTricksEnabled}
-              />
-            : <BuiltinPet status={displayActivity.status} />}
-        </button>
-        {bubblesExpanded ? (
-          <div className={styles.careBar} role="group" aria-label={t("companion.care.title")} data-testid="companion-care-bar">
-            {([["feed", "🍖", "hunger"], ["water", "💧", "thirst"], ["pet", "🤚", "affection"]] as const).map(([kind, glyph, needKey]) => {
-              const level = careLevels[needKey];
-              const label = t(`companion.care.${kind}`);
-              const hint = t(`companion.care.${needKey}Hint`, { level });
-              return (
-                <button
-                  key={kind}
-                  type="button"
-                  className={styles.careButton}
-                  data-need={level <= COMPANION_CARE_NEED_THRESHOLD ? "true" : undefined}
-                  title={`${label} · ${hint}`}
-                  aria-label={`${label} · ${hint}`}
-                  onClick={() => handleCare(kind)}
-                >
-                  <span aria-hidden="true">{glyph}</span>
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
+        <div className={styles.petStage} data-moving={motionDirection ?? undefined}>
+          <button
+            className={styles.pet}
+            type="button"
+            data-testid="companion-pet-viewport"
+            aria-label={`${petLabel} · ${t("companion.pokeHint")}`}
+            title={t("companion.desktopInteractionHint")}
+            onPointerDown={handlePetPointerDown}
+            onPointerMove={handlePetPointerMove}
+            onPointerUp={(event) => endPointerDrag(event, false)}
+            onPointerCancel={(event) => endPointerDrag(event, true)}
+          >
+            {activePet
+              ? <SpritePet
+                  pet={activePet}
+                  status={displayActivity.status}
+                  event={displayActivity.event}
+                  overlayEvent={overlayEvent ?? undefined}
+                  idleTricks={idleTricksEnabled}
+                  motionDirection={motionDirection}
+                />
+              : <BuiltinPet status={motionDirection ? "running" : displayActivity.status} />}
+          </button>
+        </div>
         {bubbleItems.length > 0 ? (
           <button
             className={styles.bubbleToggle}

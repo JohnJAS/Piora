@@ -9,6 +9,7 @@ import "./globals.css";
 import "./theme-backgrounds.css";
 
 const themeInitializationScript = `(function(){try{var a=["light","dark","starlight","ivory","doodle","fortune","midnight","forest","dream"],k=["dark","midnight","forest","dream"],f=function(x){return a.indexOf(x)>-1},t=null,v=localStorage.getItem("pi-theme:v1");if(v){try{var p=JSON.parse(v);if(p&&f(p.theme))t=p.theme}catch(_){}}if(!t){var l=localStorage.getItem("pi-theme");if(f(l))t=l}if(!t)t="light";var r=document.documentElement,d=k.indexOf(t)>-1;r.setAttribute("data-theme",t);r.classList.toggle("dark",d);r.style.colorScheme=d?"dark":"light"}catch(_){}})();`;
+const surfaceInitializationScript = `(function(){try{if(location.pathname==="/desktop-pet")document.documentElement.classList.add("desktop-pet-document")}catch(_){}})();`;
 
 export const metadata: Metadata = {
   title: "Piora",
@@ -65,6 +66,11 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: FONT_PREFERENCE_INITIALIZATION_SCRIPT,
+          }}
+        />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: surfaceInitializationScript,
           }}
         />
         <script

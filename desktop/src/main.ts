@@ -21,6 +21,12 @@ import {
 } from "electron";
 import { autoUpdater } from "electron-updater";
 import {
+  companionMotionX,
+  dragCompanionBounds,
+  planCompanionWalk,
+  type CompanionMotionDirection,
+} from "./companion-motion.js";
+import {
   readCompanionWindowPosition,
   readMainWindowState,
   readPiAgentDirectory,
@@ -62,6 +68,8 @@ const COMPANION_VISIBILITY_CHANNEL = "pi:companion-window-visible";
 const COMPANION_ALWAYS_ON_TOP_CHANNEL = "pi:companion-window-always-on-top";
 const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
 const COMPANION_LAYOUT_CHANNEL = "pi:companion-window-expanded";
+const COMPANION_MOTION_CHANNEL = "pi:companion-window-motion";
+const COMPANION_MOTION_STATE_CHANNEL = "pi:companion-motion-state";
 const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
 const HARMONY_RUNTIME_PICKER_CHANNEL = "pi:harmony-runtime-picker";
 const DESKTOP_UPDATE_STATE_GET_CHANNEL = "pi:update-state-get";
@@ -107,6 +115,12 @@ let shutdownPromise: Promise<void> | undefined;
 let shutdownComplete = false;
 let applicationMenu: Menu | null = null;
 let companionMoveTimer: NodeJS.Timeout | undefined;
+let companionMotionTimer: NodeJS.Timeout | undefined;
+let companionMotionRevision = 0;
+let companionDragState: {
+  pointerStart: { x: number; y: number };
+  startingBounds: Electron.Rectangle;
+} | undefined;
 let companionShouldBeVisible = false;
 let companionAlwaysOnTop = true;
 let mainWindowStateTimer: NodeJS.Timeout | undefined;
@@ -1065,6 +1079,91 @@ function configureSession(runtimeSession: Session, origin: string, token: string
   );
 }
 
+function emitCompanionMotionState(direction: CompanionMotionDirection | null): void {
+  if (!companionWindow || companionWindow.isDestroyed()) return;
+  companionWindow.webContents.send(COMPANION_MOTION_STATE_CHANNEL, {
+    moving: direction !== null,
+    direction,
+  });
+}
+
+function stopCompanionWindowMotion(): boolean {
+  companionMotionRevision += 1;
+  if (companionMotionTimer) clearInterval(companionMotionTimer);
+  companionMotionTimer = undefined;
+  emitCompanionMotionState(null);
+  return true;
+}
+
+function startCompanionWindowWalk(input: {
+  distance: number;
+  durationMs: number;
+  direction?: CompanionMotionDirection;
+}): { ok: boolean; direction?: CompanionMotionDirection; durationMs?: number } {
+  if (!companionWindow || companionWindow.isDestroyed()) return { ok: false };
+  const bounds = companionWindow.getBounds();
+  const display = screen.getDisplayNearestPoint({
+    x: bounds.x + Math.round(bounds.width / 2),
+    y: bounds.y + Math.round(bounds.height / 2),
+  });
+  const plan = planCompanionWalk(
+    bounds,
+    display.workArea,
+    input.distance,
+    input.durationMs,
+    input.direction,
+  );
+  if (!plan) return { ok: false };
+
+  stopCompanionWindowMotion();
+  const revision = ++companionMotionRevision;
+  const startedAt = Date.now();
+  emitCompanionMotionState(plan.direction);
+  companionMotionTimer = setInterval(() => {
+    if (revision !== companionMotionRevision || !companionWindow || companionWindow.isDestroyed()) {
+      if (companionMotionTimer) clearInterval(companionMotionTimer);
+      companionMotionTimer = undefined;
+      return;
+    }
+    const elapsed = Date.now() - startedAt;
+    companionWindow.setPosition(companionMotionX(plan, elapsed), bounds.y, false);
+    if (elapsed < plan.durationMs) return;
+    companionWindow.setPosition(plan.targetX, bounds.y, false);
+    stopCompanionWindowMotion();
+  }, 16);
+  companionMotionTimer.unref?.();
+  return { ok: true, direction: plan.direction, durationMs: plan.durationMs };
+}
+
+function startCompanionWindowDrag(screenX: number, screenY: number): boolean {
+  if (!companionWindow || companionWindow.isDestroyed()) return false;
+  stopCompanionWindowMotion();
+  companionDragState = {
+    pointerStart: { x: screenX, y: screenY },
+    startingBounds: companionWindow.getBounds(),
+  };
+  return true;
+}
+
+function updateCompanionWindowDrag(screenX: number, screenY: number): boolean {
+  if (!companionDragState || !companionWindow || companionWindow.isDestroyed()) return false;
+  const display = screen.getDisplayNearestPoint({ x: screenX, y: screenY });
+  const target = dragCompanionBounds(
+    companionDragState.startingBounds,
+    companionDragState.pointerStart,
+    { x: screenX, y: screenY },
+    display.workArea,
+  );
+  companionWindow.setPosition(target.x, target.y, false);
+  return true;
+}
+
+function finishCompanionWindowDrag(): boolean {
+  const hadDrag = Boolean(companionDragState);
+  companionDragState = undefined;
+  return hadDrag;
+}
+
 function getCompanionWindowPosition(): { x: number; y: number } {
   const saved = logger ? readCompanionWindowPosition(app.getPath("userData"), logger) : undefined;
   const display = saved
@@ -1192,6 +1291,8 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
   window.webContents.on("render-process-gone", (_event, details) => {
     log.error("Companion renderer exited", details);
     if (companionWindow === window) {
+      stopCompanionWindowMotion();
+      companionDragState = undefined;
       companionWindow = null;
       window.destroy();
     }
@@ -1213,7 +1314,11 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
   window.on("closed", () => {
     if (companionMoveTimer) clearTimeout(companionMoveTimer);
     companionMoveTimer = undefined;
-    if (companionWindow === window) companionWindow = null;
+    if (companionWindow === window) {
+      stopCompanionWindowMotion();
+      companionDragState = undefined;
+      companionWindow = null;
+    }
   });
   void window.loadURL(new URL("/desktop-pet", url).toString());
   return window;
@@ -1233,6 +1338,8 @@ function showCompanionWindow(): boolean {
 function closeCompanionWindow(): void {
   companionShouldBeVisible = false;
   if (!companionWindow || companionWindow.isDestroyed()) return;
+  stopCompanionWindowMotion();
+  companionDragState = undefined;
   if (logger) {
     writeCompanionWindowPosition(
       app.getPath("userData"),
@@ -1472,6 +1579,7 @@ function registerCompanionWindowHandlers(): void {
   ipcMain.removeHandler(COMPANION_VISIBILITY_CHANNEL);
   ipcMain.removeHandler(COMPANION_ALWAYS_ON_TOP_CHANNEL);
   ipcMain.removeHandler(COMPANION_LAYOUT_CHANNEL);
+  ipcMain.removeHandler(COMPANION_MOTION_CHANNEL);
   ipcMain.handle(COMPANION_VISIBILITY_CHANNEL, (event, visible: unknown): boolean => {
     if (!isTrustedCompletionNotificationSender(event) || typeof visible !== "boolean") return false;
     if (visible) return showCompanionWindow();
@@ -1487,6 +1595,36 @@ function registerCompanionWindowHandlers(): void {
   ipcMain.handle(COMPANION_LAYOUT_CHANNEL, (event, expanded: unknown): boolean => {
     if (!isTrustedCompanionWindowSender(event) || typeof expanded !== "boolean") return false;
     return setCompanionWindowExpanded(expanded);
+  });
+
+  ipcMain.handle(COMPANION_MOTION_CHANNEL, (event, input: unknown) => {
+    if (!isTrustedCompanionWindowSender(event) || !input || typeof input !== "object") {
+      return { ok: false };
+    }
+    const request = input as Record<string, unknown>;
+    if (request.kind === "stop") return { ok: stopCompanionWindowMotion() };
+    if (request.kind === "drag-end") return { ok: finishCompanionWindowDrag() };
+    if (request.kind === "drag-start" || request.kind === "drag-move") {
+      if (!Number.isFinite(request.screenX) || !Number.isFinite(request.screenY)) return { ok: false };
+      const screenX = Math.round(Number(request.screenX));
+      const screenY = Math.round(Number(request.screenY));
+      return {
+        ok: request.kind === "drag-start"
+          ? startCompanionWindowDrag(screenX, screenY)
+          : updateCompanionWindowDrag(screenX, screenY),
+      };
+    }
+    if (request.kind !== "walk") return { ok: false };
+    const direction = request.direction === "left" || request.direction === "right"
+      ? request.direction
+      : undefined;
+    const distance = Number.isFinite(request.distance) ? Number(request.distance) : 120;
+    const durationMs = Number.isFinite(request.durationMs) ? Number(request.durationMs) : 2_400;
+    return startCompanionWindowWalk({
+      distance,
+      durationMs,
+      ...(direction ? { direction } : {}),
+    });
   });
 
   ipcMain.removeHandler(COMPANION_ACTION_CHANNEL);

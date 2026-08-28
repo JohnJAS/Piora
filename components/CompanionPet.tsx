@@ -107,14 +107,17 @@ export function SpritePet({
   event,
   overlayEvent,
   idleTricks = false,
+  motionDirection = null,
 }: {
   pet: CompanionPetMetadata;
   status: CompanionActivity["status"];
   event?: CompanionActivityEvent;
-  /** One-shot user-driven reaction (poke/feed/water/pet); wins over runtime events. */
+  /** One-shot user-driven poke reaction; wins over runtime events. */
   overlayEvent?: CompanionActivityEvent;
   /** Play a random trick every now and then while the pet is idle. */
   idleTricks?: boolean;
+  /** Physical desktop-window movement takes priority over in-place activity. */
+  motionDirection?: "left" | "right" | null;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const renderablePet = pet as unknown as RenderablePet;
@@ -125,8 +128,19 @@ export function SpritePet({
     rows: pet.rows,
   };
   const selectedBaseAnimation = useMemo(
-    () => selectCompanionSpriteState(renderablePet.states, status),
-    [renderablePet.states, status],
+    () => {
+      if (motionDirection) {
+        const directionalIds = motionDirection === "right"
+          ? ["move_right", "running-right"]
+          : ["move_left", "running-left"];
+        const directional = directionalIds
+          .map((id) => renderablePet.states.find((state) => state.id === id))
+          .find(Boolean);
+        if (directional) return directional;
+      }
+      return selectCompanionSpriteState(renderablePet.states, status);
+    },
+    [motionDirection, renderablePet.states, status],
   );
   const idleAnimation = useMemo(
     () => renderablePet.states.find((state) => state.id === "idle") ?? null,
@@ -134,9 +148,13 @@ export function SpritePet({
   );
   const baseAnimation = useMemo(
     () => selectedBaseAnimation
-      ? prepareCompanionPersistentAnimation(selectedBaseAnimation, idleAnimation, status)
+      ? prepareCompanionPersistentAnimation(
+          selectedBaseAnimation,
+          idleAnimation,
+          motionDirection ? "running" : status,
+        )
       : null,
-    [idleAnimation, selectedBaseAnimation, status],
+    [idleAnimation, motionDirection, selectedBaseAnimation, status],
   );
   const eventKey = event?.key;
   const eventKind = event?.kind;
