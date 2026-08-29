@@ -132,7 +132,8 @@ test("keeps projectless conversations in a fixed chat section", () => {
 });
 
 test("project session overflow is accessible and attention-aware", () => {
-  assert.match(source, /getVisibleSessionRoots\(group\.tree, sessionsExpanded, attentionSessionIds\)/);
+  assert.match(source, /getVisibleSessionRoots\(orderedRoots, sessionsExpanded, attentionSessionIds\)/);
+  assert.match(source, /applySessionOrder\(\s*group\.tree/);
   assert.match(source, /new Set<string>\(\[\.\.\.runningSessionIds, \.\.\.unreadSessionIds\]\)/);
   assert.match(source, /const projectOpen = !isCollapsed/);
   assert.match(source, /name=\{projectOpen \? "folder-open" : "folder"\}/);
