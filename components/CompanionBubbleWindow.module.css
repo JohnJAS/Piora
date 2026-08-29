@@ -1,0 +1,40 @@
+.surface {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 8px 10px 16px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.visible { opacity: 1; transform: translateY(0); }
+
+.bubble {
+  position: relative;
+  max-width: 270px;
+  padding: 11px 14px;
+  color: #27231f;
+  font: 500 13px/1.55 system-ui, "Microsoft YaHei", sans-serif;
+  text-wrap: balance;
+  background: rgba(255, 252, 246, .96);
+  border: 1px solid rgba(91, 75, 58, .16);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(45, 38, 30, .18);
+}
+
+.bubble::after {
+  content: "";
+  position: absolute;
+  left: calc(50% - 7px);
+  bottom: -7px;
+  width: 13px;
+  height: 13px;
+  background: rgba(255, 252, 246, .96);
+  border-right: 1px solid rgba(91, 75, 58, .16);
+  border-bottom: 1px solid rgba(91, 75, 58, .16);
+  transform: rotate(45deg);
+}

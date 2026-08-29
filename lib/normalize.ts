@@ -27,7 +27,9 @@ function normalizeToolCallBlock(block: unknown): ToolCallContent | null {
 const THINKING_BLOCK_TYPES = new Set([
   "analysis",
   "reasoning",
+  "reasoning_summary",
   "reasoning_text",
+  "summary_text",
   "thought",
   "thought_summary",
   "thinking",
@@ -60,8 +62,13 @@ function collectText(value: unknown, depth = 0): string[] {
 
 function normalizeThinkingBlock(block: unknown): ThinkingContent | null {
   if (!isObject(block)) return null;
-  const isThinkingType = typeof block.type === "string" && THINKING_BLOCK_TYPES.has(block.type.toLocaleLowerCase());
-  if (!isThinkingType && block.thought !== true) return null;
+  const normalizedType = typeof block.type === "string"
+    ? block.type.toLocaleLowerCase().replace(/[.-]/g, "_")
+    : "";
+  const channel = typeof block.channel === "string" ? block.channel.toLocaleLowerCase() : "";
+  const isThinkingType = THINKING_BLOCK_TYPES.has(normalizedType);
+  const isThinkingChannel = channel === "analysis" || channel === "reasoning" || channel === "thinking";
+  if (!isThinkingType && !isThinkingChannel && block.thought !== true) return null;
   const thinking = collectText(block).join("\n");
   if (!thinking && block.type !== "thinking") return null;
   return {
@@ -88,12 +95,23 @@ function splitTaggedThinking(text: string): AssistantContentBlock[] | null {
 }
 
 function topLevelThinking(message: Record<string, unknown>): string {
-  for (const key of ["reasoning_content", "reasoning_text", "reasoning", "thinking"]) {
+  for (const key of [
+    "reasoning_content",
+    "reasoningContent",
+    "reasoning_text",
+    "reasoningText",
+    "reasoning",
+    "analysis",
+    "thinking_content",
+    "thinking",
+    "thoughts",
+  ]) {
     const text = collectText(message[key]).join("\n");
     if (text) return text;
   }
   const details = collectText(message.reasoning_details).join("\n");
-  return details;
+  if (details) return details;
+  return collectText(message.reasoningDetails).join("\n");
 }
 
 function normalizeAssistantContent(message: Record<string, unknown>): AssistantContentBlock[] {

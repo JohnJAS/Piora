@@ -48,8 +48,10 @@
 
 .petViewport:hover,
 .petViewport:active {
-  background: transparent;
-  box-shadow: none;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 .petViewport:focus-visible {

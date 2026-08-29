@@ -254,6 +254,7 @@ export function CompanionSettingsDialog({
             <span className={styles.modeBadge}>
               {desktopMode ? t("companion.desktopModeReady") : t("companion.desktopModeUnavailable")}
             </span>
+            {desktopMode ? <button className={styles.primaryButton} type="button" onClick={() => void window.piDesktop?.companionAction?.("open-panel")}>打开随身舱</button> : null}
           </div>
 
           <section className={styles.section} aria-labelledby="companion-model-title">
@@ -263,7 +264,15 @@ export function CompanionSettingsDialog({
                 <div className={styles.sectionDescription}>{t("companion.model.description")}</div>
               </div>
             </div>
-            <div className={styles.modelCard}>
+            {desktopMode ? <div className={styles.importCard}>
+              <span className={styles.importIcon} aria-hidden="true"><AliIcon name="sparkles" size={17} /></span>
+              <div className={styles.copy}>
+                <div className={styles.label}>互动模型与隐私策略由随身舱统一管理</div>
+                <div className={styles.description}>在那里还可以设置性格、自主程度、安静时段和移动权限。</div>
+              </div>
+              <button className={styles.primaryButton} type="button" onClick={() => void window.piDesktop?.companionAction?.("open-panel")}>配置心智</button>
+            </div> : null}
+            <div className={styles.modelCard} style={desktopMode ? { display: "none" } : undefined}>
               <span className={styles.modelIcon} aria-hidden="true"><AliIcon name="sparkles" size={17} /></span>
               <div className={styles.modelControls}>
                 <select
@@ -288,7 +297,7 @@ export function CompanionSettingsDialog({
                 <div className={styles.privacyNote}>{t("companion.model.privacy")}</div>
               </div>
             </div>
-            <div className={styles.displayCard} style={{ marginTop: 8 }}>
+            <div className={styles.displayCard} style={desktopMode ? { display: "none" } : { marginTop: 8 }}>
               <span className={styles.displayIcon} aria-hidden="true"><AliIcon name="activity" size={18} /></span>
               <div className={styles.copy}>
                 <div className={styles.label}>{t("companion.model.shareContext")}</div>
@@ -307,7 +316,16 @@ export function CompanionSettingsDialog({
                 <div className={styles.sectionDescription}>{t("companion.workspaceDescription")}</div>
               </div>
             </div>
-            <CompanionDataManager preferences={preferences} setPreferences={setPreferences} canSendPhrase={canSendPhrase} onSendPhrase={onSendPhrase} />
+            {desktopMode ? (
+              <div className={styles.importCard}>
+                <span className={styles.importIcon} aria-hidden="true"><AliIcon name="layout" size={17} /></span>
+                <div className={styles.copy}>
+                  <div className={styles.label}>任务、资料与记忆已移到随身舱</div>
+                  <div className={styles.description}>独立窗口不会扩大桌宠命中区域，也可以一直放在工作区旁边。</div>
+                </div>
+                <button className={styles.primaryButton} type="button" onClick={() => void window.piDesktop?.companionAction?.("open-panel")}>打开随身舱</button>
+              </div>
+            ) : <CompanionDataManager preferences={preferences} setPreferences={setPreferences} canSendPhrase={canSendPhrase} onSendPhrase={onSendPhrase} />}
           </section>
 
           <details className={styles.helpCard}>

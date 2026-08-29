@@ -25,14 +25,11 @@ import { useRunningTaskSnapshots } from "@/hooks/useTaskStatus";
 import type { CompanionActivity, CompanionActivityEvent } from "@/lib/companion";
 import {
   deriveCompanionTaskPresentation,
-  getCompanionWanderDelay,
-  type CompanionInteractionKind,
 } from "@/lib/companion-behavior";
 import {
   buildCompanionInteractionContext,
   createCompanionWorkRhythm,
   getTaskProgress,
-  requestCompanionSpeech,
   type CompanionSessionContext,
   type CompanionWorkRhythm,
 } from "@/lib/companion-interaction";
@@ -41,7 +38,6 @@ import { BuiltinPet, COMPANION_ACTIVITY_COLORS, SpritePet } from "./CompanionPet
 import styles from "./DesktopCompanionWindow.module.css";
 
 const DEFAULT_ACTIVITY: CompanionActivity = { status: "idle", cause: "" };
-const SPEECH_VISIBLE_MS = 6_000;
 const PET_DRAG_THRESHOLD_PX = 5;
 
 const AGENT_ACTIVITY_LABELS = {
@@ -60,7 +56,7 @@ const AGENT_ACTIVITY_LABELS = {
 
 export function DesktopCompanionWindow() {
   const { t, locale } = useI18n();
-  const { preferences } = useCompanionPreferences();
+  const { preferences, hydrated: preferencesHydrated } = useCompanionPreferences();
   const pets = useCompanionPets(true);
   const runningTasks = useRunningTaskSnapshots();
   const [activity, setActivity] = useState<CompanionActivity>(DEFAULT_ACTIVITY);
@@ -76,14 +72,15 @@ export function DesktopCompanionWindow() {
     [pets.catalog?.installed, preferences.selectedPetId],
   );
 
-  // --- Pet interaction state: one-shot reactions and speech bubbles. ---
+  // --- Pet interaction state: one-shot model-driven reactions. ---
   const [overlayEvent, setOverlayEvent] = useState<CompanionActivityEvent | null>(null);
   const overlaySequenceRef = useRef(0);
-  const [speech, setSpeech] = useState<{ key: number; text: string } | null>(null);
-  const speechSequenceRef = useRef(0);
-  const speechTimerRef = useRef<number | null>(null);
   const speechRequestRef = useRef(0);
+  const clickTimerRef = useRef<number | null>(null);
+  const startupDecisionRef = useRef(false);
   const [motionDirection, setMotionDirection] = useState<"left" | "right" | null>(null);
+  const [nextWakeAt, setNextWakeAt] = useState<number | null>(null);
+  const [runtimeReady, setRuntimeReady] = useState(false);
   const pointerDragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -92,32 +89,14 @@ export function DesktopCompanionWindow() {
   } | null>(null);
 
   useEffect(() => () => {
-    if (speechTimerRef.current !== null) window.clearTimeout(speechTimerRef.current);
+    if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
   }, []);
 
-  const say = useCallback((text: string) => {
-    if (!text) return;
-    speechSequenceRef.current += 1;
-    setSpeech({ key: speechSequenceRef.current, text });
-  }, []);
-
-  useEffect(() => {
-    if (!speech) return;
-    if (speechTimerRef.current !== null) window.clearTimeout(speechTimerRef.current);
-    speechTimerRef.current = window.setTimeout(() => setSpeech(null), SPEECH_VISIBLE_MS);
-  }, [speech]);
-
-  const react = useCallback(async (kind: CompanionInteractionKind) => {
+  const react = useCallback(async (kind: string) => {
     overlaySequenceRef.current += 1;
-    setOverlayEvent({ kind, key: `${kind}:${overlaySequenceRef.current}`, occurredAt: Date.now() });
+    setOverlayEvent({ kind: "poke", key: `${kind}:${overlaySequenceRef.current}`, occurredAt: Date.now() });
     speechRequestRef.current += 1;
     const requestId = speechRequestRef.current;
-    const model = preferences.interactionModel;
-    if (!model) {
-      say(t("companion.speech.modelRequired"));
-      return;
-    }
-    say(t("companion.speech.generating"));
     try {
       const context = buildCompanionInteractionContext({
         rhythm: workRhythm,
@@ -126,12 +105,72 @@ export function DesktopCompanionWindow() {
         personalTasks: preferences.todos,
         includeWorkContext: preferences.shareWorkContext,
       });
-      const line = await requestCompanionSpeech({ model, cwd: sessionContext?.cwd, locale, context });
-      if (requestId === speechRequestRef.current) say(line || t("companion.speech.empty"));
+      const response = await fetch("/api/companion/decide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: kind === "double-click" ? "pet.double-click" : kind === "poke" ? "pet.click" : kind, cwd: sessionContext?.cwd, locale, context }),
+      });
+      const payload = await response.json().catch(() => null) as { decision?: { speech?: string; actions?: Array<{ kind?: string; direction?: "left" | "right"; distance?: number }> }; error?: string } | null;
+      if (!response.ok || !payload?.decision) throw new Error(payload?.error || `HTTP ${response.status}`);
+      if (requestId !== speechRequestRef.current) return;
+      for (const action of payload.decision.actions ?? []) {
+        if (action.kind === "walk") void window.piDesktop?.moveCompanionWindow?.({ kind: "walk", direction: action.direction, distance: action.distance, durationMs: 1_600 });
+        if (action.kind === "open-panel") void window.piDesktop?.companionAction?.("open-panel");
+      }
     } catch {
-      if (requestId === speechRequestRef.current) say(t("companion.speech.failed"));
+      // The pet keeps its current animation when the model is unavailable; the
+      // independent bubble surface must never be replaced by stale canned text.
     }
-  }, [locale, preferences.interactionModel, preferences.shareWorkContext, preferences.todos, runningTasks, say, sessionContext, t, workRhythm]);
+  }, [locale, preferences.shareWorkContext, preferences.todos, runningTasks, sessionContext, workRhythm]);
+
+  useEffect(() => {
+    let source: EventSource | null = null;
+    const applyState = (runtime: { mind?: { nextWakeAt?: number | null } } | null) => {
+      setNextWakeAt(typeof runtime?.mind?.nextWakeAt === "number" ? runtime.mind.nextWakeAt : null);
+    };
+    void fetch("/api/companion/state", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then(applyState).catch(() => undefined);
+    source = new EventSource("/api/companion/events");
+    source.addEventListener("companion", (event) => {
+      try { applyState((JSON.parse((event as MessageEvent<string>).data) as { state?: { mind?: { nextWakeAt?: number | null } } }).state ?? null); }
+      catch { /* ignore malformed event */ }
+    });
+    return () => source?.close();
+  }, []);
+
+  useEffect(() => {
+    if (!runtimeReady || !nextWakeAt) return;
+    const delay = Math.max(1_000, Math.min(2_147_000_000, nextWakeAt - Date.now()));
+    const timer = window.setTimeout(() => void react("scheduler.wake"), delay);
+    return () => window.clearTimeout(timer);
+  }, [nextWakeAt, react, runtimeReady]);
+
+  useEffect(() => {
+    if (!runtimeReady || startupDecisionRef.current) return;
+    startupDecisionRef.current = true;
+    void react("scheduler.startup");
+  }, [react, runtimeReady]);
+
+  useEffect(() => {
+    if (!preferencesHydrated) return;
+    const controller = new AbortController();
+    void fetch("/api/companion/state", { cache: "no-store", signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((runtime: { migratedFromLocalStorage?: boolean } | null) => {
+        if (!runtime) return;
+        if (runtime.migratedFromLocalStorage) {
+          setRuntimeReady(true);
+          return;
+        }
+        return fetch("/api/companion/state", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ legacyPreferences: preferences }),
+          signal: controller.signal,
+        }).then((response) => { if (response.ok) setRuntimeReady(true); });
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [preferences, preferencesHydrated]);
 
   useEffect(() => {
     document.documentElement.classList.add("desktop-pet-document");
@@ -139,6 +178,24 @@ export function DesktopCompanionWindow() {
     return () => {
       document.documentElement.classList.remove("desktop-pet-document");
       document.body.classList.remove("desktop-pet-document");
+    };
+  }, []);
+
+  useEffect(() => {
+    let interactive = false;
+    const update = (event: MouseEvent) => {
+      const next = Boolean((event.target as Element | null)?.closest?.("[data-testid='companion-pet-viewport'], [data-testid='companion-bubble-toggle']"));
+      if (next === interactive) return;
+      interactive = next;
+      void window.piDesktop?.setCompanionHitTest?.(next);
+    };
+    const leave = () => { interactive = false; void window.piDesktop?.setCompanionHitTest?.(false); };
+    window.addEventListener("mousemove", update, { passive: true });
+    window.addEventListener("mouseleave", leave);
+    return () => {
+      window.removeEventListener("mousemove", update);
+      window.removeEventListener("mouseleave", leave);
+      void window.piDesktop?.setCompanionHitTest?.(false);
     };
   }, []);
 
@@ -203,7 +260,8 @@ export function DesktopCompanionWindow() {
       occurredAt,
       key: `${subject.id}:${runtimeEventSequenceRef.current}:${kind}:${occurredAt}`,
     });
-  }, [runningTasks]);
+    if (runtimeReady) void react(`task.${kind}`);
+  }, [react, runningTasks, runtimeReady]);
 
   const runtimeEventKey = runtimeEvent?.key;
   const runtimeEventKind = runtimeEvent?.kind;
@@ -253,7 +311,7 @@ export function DesktopCompanionWindow() {
     }];
   }, [displayActivity.status, personalTaskBubbles, statusCause, statusLabel, taskBubbles]);
   const runningTaskCount = bubbleItems.length;
-  const bubblesExpanded = (bubbleItems.length > 0 || Boolean(speech)) && !bubblesCollapsed;
+  const bubblesExpanded = bubbleItems.length > 0 && !bubblesCollapsed;
 
   const idleTricksEnabled = preferences.idleTricks !== false;
 
@@ -267,19 +325,6 @@ export function DesktopCompanionWindow() {
   useEffect(() => {
     void window.piDesktop?.setCompanionWindowExpanded?.(bubblesExpanded);
   }, [bubblesExpanded]);
-
-  useEffect(() => {
-    const bridge = window.piDesktop?.moveCompanionWindow;
-    if (!bridge || !idleTricksEnabled || displayActivity.status !== "idle" || speech || motionDirection) return;
-    const timer = window.setTimeout(() => {
-      void bridge({
-        kind: "walk",
-        distance: 90 + Math.round(Math.random() * 150),
-        durationMs: 1_900 + Math.round(Math.random() * 1_500),
-      });
-    }, getCompanionWanderDelay());
-    return () => window.clearTimeout(timer);
-  }, [displayActivity.status, idleTricksEnabled, motionDirection, speech]);
 
   useEffect(() => {
     const bridge = window.piDesktop?.moveCompanionWindow;
@@ -309,7 +354,13 @@ export function DesktopCompanionWindow() {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     void window.piDesktop?.moveCompanionWindow?.({ kind: "drag-end" });
-    if (!cancelled && !drag.moved) void react("poke");
+    if (!cancelled && !drag.moved) {
+      if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = window.setTimeout(() => {
+        clickTimerRef.current = null;
+        void react("poke");
+      }, 220);
+    }
   }, [react]);
 
   const handlePetPointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -348,21 +399,6 @@ export function DesktopCompanionWindow() {
         title={`${petLabel} · ${statusLabel} · ${cause} · ${t("companion.desktopInteractionHint")}`}
       >
         <div className={styles.activityBubbles} aria-live="polite" data-has-active-tasks={taskBubbles.length > 0}>
-          {bubblesExpanded && speech ? (
-            <div
-              key={`speech:${speech.key}`}
-              className={styles.activityBubble}
-              data-testid="companion-speech-bubble"
-              data-visible="true"
-              data-kind="speech"
-              role="status"
-            >
-              <span className={styles.activityCopy}>
-                <strong>{petLabel}</strong>
-                <span>{speech.text}</span>
-              </span>
-            </div>
-          ) : null}
           {bubblesExpanded && bubbleItems.map((item) => (
             <div
               key={item.id}
@@ -399,6 +435,12 @@ export function DesktopCompanionWindow() {
             onPointerMove={handlePetPointerMove}
             onPointerUp={(event) => endPointerDrag(event, false)}
             onPointerCancel={(event) => endPointerDrag(event, true)}
+            onDoubleClick={() => {
+              if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
+              clickTimerRef.current = null;
+              void window.piDesktop?.companionAction?.("open-panel");
+              void react("double-click");
+            }}
           >
             {activePet
               ? <SpritePet

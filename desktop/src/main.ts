@@ -70,6 +70,7 @@ const COMPANION_ACTION_CHANNEL = "pi:companion-window-action";
 const COMPANION_LAYOUT_CHANNEL = "pi:companion-window-expanded";
 const COMPANION_MOTION_CHANNEL = "pi:companion-window-motion";
 const COMPANION_MOTION_STATE_CHANNEL = "pi:companion-motion-state";
+const COMPANION_HIT_TEST_CHANNEL = "pi:companion-hit-test";
 const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
 const HARMONY_RUNTIME_PICKER_CHANNEL = "pi:harmony-runtime-picker";
 const DESKTOP_UPDATE_STATE_GET_CHANNEL = "pi:update-state-get";
@@ -80,8 +81,10 @@ const DESKTOP_UPDATE_INSTALL_CHANNEL = "pi:update-install";
 const DESKTOP_TITLE_BAR_HEIGHT = 36;
 const COMPANION_COMPACT_WIDTH = 156;
 const COMPANION_COMPACT_HEIGHT = 184;
-const COMPANION_EXPANDED_WIDTH = 236;
-const COMPANION_EXPANDED_HEIGHT = 360;
+const COMPANION_BUBBLE_WIDTH = 300;
+const COMPANION_BUBBLE_HEIGHT = 128;
+const COMPANION_PANEL_WIDTH = 430;
+const COMPANION_PANEL_HEIGHT = 680;
 const MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80;
 const MAX_RENDERER_CONSOLE_MESSAGE_LENGTH = 8_192;
 const PORTABLE_SMOKE_TEST = process.env.PIORA_SMOKE_TEST === "1"
@@ -108,6 +111,8 @@ if (PORTABLE_SMOKE_TEST && requestedSmokeUserData) {
 
 let mainWindow: BrowserWindow | null = null;
 let companionWindow: BrowserWindow | null = null;
+let companionBubbleWindow: BrowserWindow | null = null;
+let companionPanelWindow: BrowserWindow | null = null;
 let logger: FileLogger | undefined;
 let server: StandaloneServer | undefined;
 let serverUrl: URL | undefined;
@@ -117,6 +122,7 @@ let applicationMenu: Menu | null = null;
 let companionMoveTimer: NodeJS.Timeout | undefined;
 let companionMotionTimer: NodeJS.Timeout | undefined;
 let companionMotionRevision = 0;
+let companionLastAutonomousMotionAt = 0;
 let companionDragState: {
   pointerStart: { x: number; y: number };
   startingBounds: Electron.Rectangle;
@@ -695,6 +701,18 @@ function isTrustedCompanionWindowSender(event: IpcMainInvokeEvent): boolean {
   );
 }
 
+function isTrustedCompanionSurfaceSender(event: IpcMainInvokeEvent): boolean {
+  return isTrustedCompanionWindowSender(event) || Boolean(
+    serverUrl
+    && event.senderFrame
+    && event.senderFrame === event.sender.mainFrame
+    && isAllowedAppUrl(event.senderFrame.url, serverUrl.origin)
+    && [companionBubbleWindow, companionPanelWindow].some((window) => (
+      window && !window.isDestroyed() && event.sender === window.webContents
+    )),
+  );
+}
+
 function resolveExistingRendererPath(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim() || !isAbsolute(value)) return null;
   const target = resolve(value);
@@ -1087,6 +1105,19 @@ function emitCompanionMotionState(direction: CompanionMotionDirection | null): v
   });
 }
 
+function positionCompanionBubble(): void {
+  if (!companionWindow || companionWindow.isDestroyed() || !companionBubbleWindow || companionBubbleWindow.isDestroyed()) return;
+  const pet = companionWindow.getBounds();
+  const display = screen.getDisplayNearestPoint({ x: pet.x + Math.round(pet.width / 2), y: pet.y });
+  const area = display.workArea;
+  const x = Math.min(
+    Math.max(Math.round(pet.x + pet.width / 2 - COMPANION_BUBBLE_WIDTH / 2), area.x),
+    area.x + Math.max(0, area.width - COMPANION_BUBBLE_WIDTH),
+  );
+  const y = Math.max(area.y, pet.y - COMPANION_BUBBLE_HEIGHT + 16);
+  companionBubbleWindow.setBounds({ x, y, width: COMPANION_BUBBLE_WIDTH, height: COMPANION_BUBBLE_HEIGHT });
+}
+
 function stopCompanionWindowMotion(): boolean {
   companionMotionRevision += 1;
   if (companionMotionTimer) clearInterval(companionMotionTimer);
@@ -1127,8 +1158,10 @@ function startCompanionWindowWalk(input: {
     }
     const elapsed = Date.now() - startedAt;
     companionWindow.setPosition(companionMotionX(plan, elapsed), bounds.y, false);
+    positionCompanionBubble();
     if (elapsed < plan.durationMs) return;
     companionWindow.setPosition(plan.targetX, bounds.y, false);
+    positionCompanionBubble();
     stopCompanionWindowMotion();
   }, 16);
   companionMotionTimer.unref?.();
@@ -1155,6 +1188,7 @@ function updateCompanionWindowDrag(screenX: number, screenY: number): boolean {
     display.workArea,
   );
   companionWindow.setPosition(target.x, target.y, false);
+  positionCompanionBubble();
   return true;
 }
 
@@ -1170,43 +1204,23 @@ function getCompanionWindowPosition(): { x: number; y: number } {
     ? screen.getDisplayNearestPoint(saved)
     : screen.getPrimaryDisplay();
   const area = display.workArea;
-  const defaultX = area.x + area.width - COMPANION_EXPANDED_WIDTH - 24;
-  const defaultY = area.y + area.height - COMPANION_EXPANDED_HEIGHT - 24;
+  const defaultX = area.x + area.width - COMPANION_COMPACT_WIDTH - 24;
+  const defaultY = area.y + area.height - COMPANION_COMPACT_HEIGHT - 24;
   return {
-    x: Math.min(Math.max(saved?.x ?? defaultX, area.x), area.x + Math.max(0, area.width - COMPANION_EXPANDED_WIDTH)),
-    y: Math.min(Math.max(saved?.y ?? defaultY, area.y), area.y + Math.max(0, area.height - COMPANION_EXPANDED_HEIGHT)),
+    x: Math.min(Math.max(saved?.x ?? defaultX, area.x), area.x + Math.max(0, area.width - COMPANION_COMPACT_WIDTH)),
+    y: Math.min(Math.max(saved?.y ?? defaultY, area.y), area.y + Math.max(0, area.height - COMPANION_COMPACT_HEIGHT)),
   };
 }
 
 function getNormalizedCompanionPosition(bounds: Electron.Rectangle): { x: number; y: number } {
-  return {
-    x: Math.round(bounds.x + (bounds.width - COMPANION_EXPANDED_WIDTH) / 2),
-    y: Math.round(bounds.y + bounds.height - COMPANION_EXPANDED_HEIGHT),
-  };
+  return { x: Math.round(bounds.x), y: Math.round(bounds.y) };
 }
 
 function setCompanionWindowExpanded(expanded: boolean): boolean {
-  if (!companionWindow || companionWindow.isDestroyed()) return false;
-  const width = expanded ? COMPANION_EXPANDED_WIDTH : COMPANION_COMPACT_WIDTH;
-  const height = expanded ? COMPANION_EXPANDED_HEIGHT : COMPANION_COMPACT_HEIGHT;
-  const current = companionWindow.getBounds();
-  if (current.width === width && current.height === height) return true;
-
-  const display = screen.getDisplayNearestPoint({
-    x: current.x + Math.round(current.width / 2),
-    y: current.y + current.height,
-  });
-  const area = display.workArea;
-  const target = {
-    x: Math.round(current.x + (current.width - width) / 2),
-    y: current.y + current.height - height,
-    width,
-    height,
-  };
-  target.x = Math.min(Math.max(target.x, area.x), area.x + Math.max(0, area.width - width));
-  target.y = Math.min(Math.max(target.y, area.y), area.y + Math.max(0, area.height - height));
-  companionWindow.setBounds(target);
-  return true;
+  // Kept for compatibility with older renderers. Speech and task UI now live
+  // in independent windows, so the pet hit box never changes size.
+  void expanded;
+  return Boolean(companionWindow && !companionWindow.isDestroyed());
 }
 
 function applyCompanionWindowAlwaysOnTop(window: BrowserWindow, alwaysOnTop: boolean): void {
@@ -1219,6 +1233,7 @@ function setCompanionWindowAlwaysOnTop(alwaysOnTop: boolean): boolean {
   if (companionWindow && !companionWindow.isDestroyed()) {
     applyCompanionWindowAlwaysOnTop(companionWindow, alwaysOnTop);
   }
+  if (companionBubbleWindow && !companionBubbleWindow.isDestroyed()) applyCompanionWindowAlwaysOnTop(companionBubbleWindow, alwaysOnTop);
   return true;
 }
 
@@ -1226,12 +1241,12 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
   const position = getCompanionWindowPosition();
   const window = new BrowserWindow({
     ...position,
-    width: COMPANION_EXPANDED_WIDTH,
-    height: COMPANION_EXPANDED_HEIGHT,
+    width: COMPANION_COMPACT_WIDTH,
+    height: COMPANION_COMPACT_HEIGHT,
     minWidth: COMPANION_COMPACT_WIDTH,
     minHeight: COMPANION_COMPACT_HEIGHT,
-    maxWidth: COMPANION_EXPANDED_WIDTH,
-    maxHeight: COMPANION_EXPANDED_HEIGHT,
+    maxWidth: COMPANION_COMPACT_WIDTH,
+    maxHeight: COMPANION_COMPACT_HEIGHT,
     show: false,
     frame: false,
     transparent: true,
@@ -1274,6 +1289,7 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
     if (window.isDestroyed()) return;
     Menu.buildFromTemplate([
       { label: "打开 Piora", click: () => { focusMainWindow(); } },
+      { label: "打开随身舱", click: () => { showCompanionPanel(); } },
       { label: "桌宠设置", click: () => { focusMainWindow("companion-settings"); } },
       { type: "separator" },
       {
@@ -1298,9 +1314,13 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
     }
   });
   window.once("ready-to-show", () => {
-    if (companionWindow === window && companionShouldBeVisible) window.showInactive();
+    if (companionWindow === window && companionShouldBeVisible) {
+      window.setIgnoreMouseEvents(true, { forward: true });
+      window.showInactive();
+    }
   });
   window.on("move", () => {
+    positionCompanionBubble();
     if (companionMoveTimer) clearTimeout(companionMoveTimer);
     companionMoveTimer = setTimeout(() => {
       if (!companionWindow || companionWindow.isDestroyed() || !logger) return;
@@ -1324,14 +1344,88 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
   return window;
 }
 
+function createCompanionBubbleWindow(url: URL, log: Logger): BrowserWindow {
+  const window = new BrowserWindow({
+    width: COMPANION_BUBBLE_WIDTH,
+    height: COMPANION_BUBBLE_HEIGHT,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    focusable: false,
+    alwaysOnTop: companionAlwaysOnTop,
+    backgroundColor: "#00000000",
+    webPreferences: {
+      preload: join(__dirname, "preload.js"), partition: DESKTOP_PARTITION, sandbox: true,
+      contextIsolation: true, nodeIntegration: false, nodeIntegrationInWorker: false, webviewTag: false,
+      webSecurity: true, allowRunningInsecureContent: false, navigateOnDragDrop: false, safeDialogs: true,
+      devTools: !app.isPackaged,
+    },
+  });
+  installRendererDiagnostics(window, "Companion", log);
+  applyCompanionWindowAlwaysOnTop(window, companionAlwaysOnTop);
+  window.setIgnoreMouseEvents(true, { forward: true });
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event, requestedUrl) => { if (!isAllowedAppUrl(requestedUrl, url.origin)) event.preventDefault(); });
+  window.on("closed", () => { if (companionBubbleWindow === window) companionBubbleWindow = null; });
+  void window.loadURL(new URL("/desktop-companion-bubble", url).toString());
+  return window;
+}
+
+function createCompanionPanelWindow(url: URL, log: Logger): BrowserWindow {
+  const display = screen.getPrimaryDisplay().workArea;
+  const window = new BrowserWindow({
+    width: COMPANION_PANEL_WIDTH,
+    height: Math.min(COMPANION_PANEL_HEIGHT, display.height - 40),
+    minWidth: 390,
+    minHeight: 520,
+    show: false,
+    title: "Piora 随身舱",
+    backgroundColor: "#f8f3ed",
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: join(__dirname, "preload.js"), partition: DESKTOP_PARTITION, sandbox: true,
+      contextIsolation: true, nodeIntegration: false, nodeIntegrationInWorker: false, webviewTag: false,
+      webSecurity: true, allowRunningInsecureContent: false, navigateOnDragDrop: false, safeDialogs: true,
+      devTools: !app.isPackaged,
+    },
+  });
+  installRendererDiagnostics(window, "Companion", log);
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event, requestedUrl) => { if (!isAllowedAppUrl(requestedUrl, url.origin)) event.preventDefault(); });
+  window.once("ready-to-show", () => window.show());
+  window.on("closed", () => { if (companionPanelWindow === window) companionPanelWindow = null; });
+  void window.loadURL(new URL("/desktop-companion-panel", url).toString());
+  return window;
+}
+
+function showCompanionPanel(): boolean {
+  if (!serverUrl || !logger) return false;
+  if (!companionPanelWindow || companionPanelWindow.isDestroyed()) {
+    companionPanelWindow = createCompanionPanelWindow(serverUrl, logger);
+    return true;
+  }
+  if (companionPanelWindow.isMinimized()) companionPanelWindow.restore();
+  companionPanelWindow.show();
+  companionPanelWindow.focus();
+  return true;
+}
+
 function showCompanionWindow(): boolean {
   if (!serverUrl || !logger) return false;
   companionShouldBeVisible = true;
   if (!companionWindow || companionWindow.isDestroyed()) {
     companionWindow = createCompanionWindow(serverUrl, logger);
-    return true;
+  }
+  if (!companionBubbleWindow || companionBubbleWindow.isDestroyed()) {
+    companionBubbleWindow = createCompanionBubbleWindow(serverUrl, logger);
   }
   companionWindow.showInactive();
+  companionBubbleWindow.showInactive();
+  positionCompanionBubble();
+  updateTrayMenu();
   return true;
 }
 
@@ -1349,6 +1443,9 @@ function closeCompanionWindow(): void {
   }
   companionWindow.destroy();
   companionWindow = null;
+  if (companionBubbleWindow && !companionBubbleWindow.isDestroyed()) companionBubbleWindow.destroy();
+  companionBubbleWindow = null;
+  updateTrayMenu();
 }
 
 function focusMainWindow(action?: string): boolean {
@@ -1437,6 +1534,11 @@ function updateTrayMenu(): void {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: isChinese ? "显示 Piora" : "Show Piora", click: () => focusMainWindow() },
     { label: isChinese ? "新任务" : "New task", click: () => focusMainWindow("new-session") },
+    { label: isChinese ? "打开随身舱" : "Open companion panel", click: () => showCompanionPanel() },
+    {
+      label: companionShouldBeVisible ? (isChinese ? "隐藏桌宠" : "Hide companion") : (isChinese ? "显示桌宠" : "Show companion"),
+      click: () => mainWindow?.webContents.send("pi:menu-action", "toggle-companion"),
+    },
     { label: isChinese ? `运行中任务：${runningTaskCount}` : `Running tasks: ${runningTaskCount}`, enabled: false },
     { type: "separator" },
     {
@@ -1580,6 +1682,7 @@ function registerCompanionWindowHandlers(): void {
   ipcMain.removeHandler(COMPANION_ALWAYS_ON_TOP_CHANNEL);
   ipcMain.removeHandler(COMPANION_LAYOUT_CHANNEL);
   ipcMain.removeHandler(COMPANION_MOTION_CHANNEL);
+  ipcMain.removeHandler(COMPANION_HIT_TEST_CHANNEL);
   ipcMain.handle(COMPANION_VISIBILITY_CHANNEL, (event, visible: unknown): boolean => {
     if (!isTrustedCompletionNotificationSender(event) || typeof visible !== "boolean") return false;
     if (visible) return showCompanionWindow();
@@ -1615,6 +1718,8 @@ function registerCompanionWindowHandlers(): void {
       };
     }
     if (request.kind !== "walk") return { ok: false };
+    if (Date.now() - companionLastAutonomousMotionAt < 1_500) return { ok: false };
+    companionLastAutonomousMotionAt = Date.now();
     const direction = request.direction === "left" || request.direction === "right"
       ? request.direction
       : undefined;
@@ -1627,11 +1732,18 @@ function registerCompanionWindowHandlers(): void {
     });
   });
 
+  ipcMain.handle(COMPANION_HIT_TEST_CHANNEL, (event, interactive: unknown): boolean => {
+    if (!isTrustedCompanionWindowSender(event) || typeof interactive !== "boolean" || !companionWindow || companionWindow.isDestroyed()) return false;
+    companionWindow.setIgnoreMouseEvents(!interactive, { forward: true });
+    return true;
+  });
+
   ipcMain.removeHandler(COMPANION_ACTION_CHANNEL);
   ipcMain.handle(COMPANION_ACTION_CHANNEL, (event, action: unknown): boolean => {
-    if (!isTrustedCompletionNotificationSender(event) || typeof action !== "string") return false;
+    if (!isTrustedCompletionNotificationSender(event) && !isTrustedCompanionSurfaceSender(event) || typeof action !== "string") return false;
     if (action === "focus-main") return focusMainWindow();
     if (action === "open-settings") return focusMainWindow("companion-settings");
+    if (action === "open-panel") return showCompanionPanel();
     if (action === "hide") {
       companionWindow?.hide();
       setTimeout(closeCompanionWindow, 0);

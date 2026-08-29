@@ -44,7 +44,8 @@ declare global {
         moving: boolean;
         direction: "left" | "right" | null;
       }) => void) => () => void;
-      companionAction?: (action: "focus-main" | "open-settings" | "hide") => Promise<boolean>;
+      setCompanionHitTest?: (interactive: boolean) => Promise<boolean>;
+      companionAction?: (action: "focus-main" | "open-settings" | "open-panel" | "hide") => Promise<boolean>;
       setGlobalShortcut?: (enabled: boolean) => Promise<boolean>;
       selectHarmonyRuntimePath?: (kind: "sdk" | "hdc") => Promise<string | null>;
       onMenuAction?: (listener: (action: string) => void) => () => void;

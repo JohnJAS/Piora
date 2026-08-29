@@ -52,5 +52,5 @@ export function useCompanionPreferences() {
     setPreferences((current) => ({ ...current, open }));
   }, []);
 
-  return { preferences, setPreferences, setOpen };
+  return { preferences, setPreferences, setOpen, hydrated };
 }

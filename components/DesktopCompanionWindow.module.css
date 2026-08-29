@@ -27,7 +27,7 @@
   left: 4px;
   right: 4px;
   max-height: 170px;
-  display: grid;
+  display: none;
   gap: 6px;
   align-content: end;
   overflow-y: auto;
@@ -169,11 +169,17 @@
   border-radius: 16px;
 }
 
-.pet:hover {
-  background: transparent;
-  box-shadow: none;
+.pet:hover,
+.pet:active {
+  /* The global button baseline adds a hover/active background-image and press
+     scale with greater specificity than a module class. The desktop pet must
+     remain pixel-transparent so Electron's transparent window never reveals a
+     rectangular hit target behind the sprite. */
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
   filter: none;
-  transform: none;
+  transform: none !important;
 }
 
 .bubbleToggle {
@@ -183,7 +189,7 @@
   width: 26px;
   height: 26px;
   flex: 0 0 26px;
-  display: grid;
+  display: none;
   place-items: center;
   padding: 0;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
