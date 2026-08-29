@@ -5,6 +5,7 @@ import test from "node:test";
 const source = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 const inputSource = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
 const globalCss = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+const resizerSource = await readFile(new URL("../hooks/useResizablePanel.ts", import.meta.url), "utf8");
 
 test("memoizes historical chat metadata away from streaming token renders", () => {
   assert.match(source, /const chatRenderMetadata = useMemo/);
@@ -27,9 +28,16 @@ test("materializes only the visible history tail", () => {
 test("uses a responsive, user-resizable conversation column", () => {
   assert.match(source, /followDefaultWidth:\s*true/);
   assert.match(source, /className="chat-column"/);
-  assert.match(source, /className=\{`chat-column-resize-handle/);
+  assert.match(source, /chat-column-resize-handle is-left/);
+  assert.match(source, /chat-column-resize-handle is-right/);
+  assert.match(source, /data-resize-growth-direction="left"/);
+  assert.match(source, /data-resize-growth-direction="right"/);
   assert.doesNotMatch(source, /maxWidth:\s*820/);
   assert.match(inputSource, /className="composer-column"/);
   assert.doesNotMatch(inputSource, /maxWidth:\s*820/);
   assert.match(globalCss, /--chat-column-width, clamp\(820px, 72vw, 1180px\)/);
+  assert.match(globalCss, /\.chat-column-resize-handle\.is-left/);
+  assert.match(globalCss, /\.chat-column-resize-handle\.is-right/);
+  assert.match(resizerSource, /drag\.growthDirection === "right"/);
+  assert.match(resizerSource, /readGrowthDirection\(event\.currentTarget, growthDirection\)/);
 });

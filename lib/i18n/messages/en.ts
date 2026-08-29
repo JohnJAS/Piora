@@ -706,6 +706,8 @@ export const enLocale: LocalePlugin = {
     "layout.resizeSidebar": "Resize sidebar",
     "layout.resizeFilePanel": "Resize file panel",
     "layout.resizeChatColumn": "Resize conversation width",
+    "layout.resizeChatColumnLeft": "Resize conversation from the left",
+    "layout.resizeChatColumnRight": "Resize conversation from the right",
     "layout.resizeHint": "Drag to resize. Double-click or press Enter to reset.",
     "sidebar.new": "New",
     "sidebar.newSessionTitle": "New session in {path}",

@@ -12,6 +12,7 @@ import {
 import { clampPanelWidth } from "@/lib/panel-layout";
 
 interface DragState {
+  growthDirection: "left" | "right";
   pointerId: number;
   startX: number;
   startWidth: number;
@@ -59,6 +60,14 @@ function writeStoredWidth(storageKey: string, width: number): void {
   } catch {
     // Resizing remains available when storage is unavailable.
   }
+}
+
+function readGrowthDirection(
+  target: HTMLDivElement,
+  fallback: "left" | "right",
+): "left" | "right" {
+  const direction = target.dataset.resizeGrowthDirection;
+  return direction === "left" || direction === "right" ? direction : fallback;
 }
 
 function clearStoredWidth(storageKey: string): void {
@@ -164,6 +173,7 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     target.focus({ preventScroll: true });
     target.setPointerCapture(event.pointerId);
     dragRef.current = {
+      growthDirection: readGrowthDirection(target, growthDirection),
       pointerId: event.pointerId,
       startX: event.clientX,
       startWidth: liveWidth,
@@ -174,7 +184,7 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
     setIsResizing(true);
-  }, [clampWidth, finishResize, getCurrentWidth, widthRef]);
+  }, [clampWidth, finishResize, getCurrentWidth, growthDirection, widthRef]);
 
   const onPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
@@ -185,12 +195,12 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     }
     event.preventDefault();
 
-    const direction = growthDirection === "right" ? 1 : -1;
+    const direction = drag.growthDirection === "right" ? 1 : -1;
     const nextWidth = clampWidth(drag.startWidth + ((event.clientX - drag.startX) * direction * dragScale));
     applyLiveWidth(nextWidth);
     event.currentTarget.setAttribute("aria-valuenow", String(nextWidth));
     event.currentTarget.setAttribute("aria-valuetext", `${nextWidth} px`);
-  }, [applyLiveWidth, clampWidth, dragScale, finishResize, growthDirection]);
+  }, [applyLiveWidth, clampWidth, dragScale, finishResize]);
 
   const onPointerUp = useCallback((event: PointerEvent<HTMLDivElement>) => {
     finishResize(event.pointerId);
@@ -225,8 +235,9 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
 
   const onKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 32 : 12;
-    const growKey = growthDirection === "right" ? "ArrowRight" : "ArrowLeft";
-    const shrinkKey = growthDirection === "right" ? "ArrowLeft" : "ArrowRight";
+    const separatorGrowthDirection = readGrowthDirection(event.currentTarget, growthDirection);
+    const growKey = separatorGrowthDirection === "right" ? "ArrowRight" : "ArrowLeft";
+    const shrinkKey = separatorGrowthDirection === "right" ? "ArrowLeft" : "ArrowRight";
     const currentWidth = clampWidth(getCurrentWidth?.() ?? widthRef.current);
 
     if (event.key === growKey) {
@@ -338,6 +349,7 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
       "aria-valuemin": minWidth,
       "aria-valuenow": width,
       "aria-valuetext": `${width} px`,
+      "data-resize-growth-direction": growthDirection,
       onDoubleClick: resetWidth,
       onKeyDown,
       onLostPointerCapture,

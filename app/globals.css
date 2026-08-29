@@ -661,11 +661,18 @@ select:focus-visible,
   z-index: 45;
   top: 0;
   bottom: 0;
-  right: calc(46px + max(0px, (100% - 68px - var(--chat-column-width, clamp(820px, 72vw, 1180px))) / 2));
   width: 12px;
   cursor: col-resize;
   touch-action: none;
   outline: none;
+}
+
+.chat-column-resize-handle.is-left {
+  left: calc(10px + max(0px, (100% - 68px - var(--chat-column-width, clamp(820px, 72vw, 1180px))) / 2));
+}
+
+.chat-column-resize-handle.is-right {
+  right: calc(46px + max(0px, (100% - 68px - var(--chat-column-width, clamp(820px, 72vw, 1180px))) / 2));
 }
 
 .chat-column-resize-handle::after {

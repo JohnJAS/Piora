@@ -710,11 +710,22 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
       )}
 
       {!isMobile ? (
-        <div
-          {...chatColumnResizer.separatorProps}
-          className={`chat-column-resize-handle${chatColumnResizer.isResizing ? " is-resizing" : ""}`}
-          title={`${t("layout.resizeChatColumn")}: ${t("layout.resizeHint")}`}
-        />
+        <>
+          <div
+            {...chatColumnResizer.separatorProps}
+            aria-label={t("layout.resizeChatColumnLeft")}
+            className={`chat-column-resize-handle is-left${chatColumnResizer.isResizing ? " is-resizing" : ""}`}
+            data-resize-growth-direction="left"
+            title={`${t("layout.resizeChatColumnLeft")}: ${t("layout.resizeHint")}`}
+          />
+          <div
+            {...chatColumnResizer.separatorProps}
+            aria-label={t("layout.resizeChatColumnRight")}
+            className={`chat-column-resize-handle is-right${chatColumnResizer.isResizing ? " is-resizing" : ""}`}
+            data-resize-growth-direction="right"
+            title={`${t("layout.resizeChatColumnRight")}: ${t("layout.resizeHint")}`}
+          />
+        </>
       ) : null}
 
       {isEmptyNew ? (
