@@ -7,6 +7,7 @@ import { getAgentRuntimeProfile, type AgentRuntimeProfile } from "./agent-runtim
 import { allowFileRoot } from "./file-access";
 import { startRpcSession, type AgentSessionWrapper } from "./rpc-manager";
 import { invalidateSessionListCache } from "./session-reader";
+import type { SessionCapabilitiesState, SessionCapabilitySelection } from "./session-capabilities";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -21,6 +22,7 @@ export interface CreateSessionInput {
   initialModel?: { provider: string; modelId: string };
   thinkingLevel?: ThinkingLevel;
   toolNames?: string[];
+  capabilitySelection?: SessionCapabilitySelection;
   name?: string;
   runtimeProfile?: AgentRuntimeProfile;
 }
@@ -32,6 +34,7 @@ export interface CreatedSession {
   runtimeProfile: AgentRuntimeProfile;
   model: { provider: string; modelId: string } | null;
   thinkingLevel: string;
+  capabilities: SessionCapabilitiesState;
 }
 
 /** Shared creation boundary for the Piora UI and versioned remote API. */
@@ -44,6 +47,7 @@ export async function createSession(input: CreateSessionInput): Promise<CreatedS
   const runtimeProfile = input.runtimeProfile ?? getAgentRuntimeProfile();
   const { session, realSessionId } = await startRpcSession(`__new__${randomUUID()}`, "", cwd, {
     ...(input.toolNames ? { toolNames: input.toolNames } : {}),
+    ...(input.capabilitySelection ? { capabilitySelection: input.capabilitySelection } : {}),
     ...(input.initialModel ? { initialModel: input.initialModel } : {}),
     ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
     runtimeProfile,
@@ -56,6 +60,7 @@ export async function createSession(input: CreateSessionInput): Promise<CreatedS
     const state = await session.send({ type: "get_state" }) as {
       model?: { id: string; provider: string };
       thinkingLevel?: string;
+      capabilities: SessionCapabilitiesState;
     };
     return {
       session,
@@ -64,6 +69,7 @@ export async function createSession(input: CreateSessionInput): Promise<CreatedS
       runtimeProfile,
       model: state.model ? { provider: state.model.provider, modelId: state.model.id } : null,
       thinkingLevel: state.thinkingLevel ?? "off",
+      capabilities: state.capabilities,
     };
   } catch (error) {
     // A failed post-start state read must not leave a live orphan behind. This

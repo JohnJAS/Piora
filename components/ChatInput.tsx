@@ -49,6 +49,8 @@ import { ModelProviderIcon } from "./ModelProviderIcon";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { ExtensionStatusItem } from "@/lib/types";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
+import { SessionToolsControl } from "./SessionToolsControl";
+import { createDefaultSessionCapabilitiesState, type SessionCapabilitiesState, type SessionCapabilitySelection } from "@/lib/session-capabilities";
 import {
   buildSlashCommandRegistry,
   filterSlashCommandRegistry,
@@ -114,6 +116,10 @@ interface Props {
   contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
   sessionStats?: SessionStatsInfo | null;
   extensionStatuses?: ExtensionStatusItem[];
+  capabilities?: SessionCapabilitiesState;
+  capabilitiesSaving?: boolean;
+  onCapabilityChange?: (selection: SessionCapabilitySelection) => void | Promise<void>;
+  onOpenCapabilitySettings?: () => void;
 }
 
 export interface PromptRunOptions {
@@ -360,6 +366,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   contextUsage,
   sessionStats,
   extensionStatuses = [],
+  capabilities = createDefaultSessionCapabilitiesState(),
+  capabilitiesSaving = false,
+  onCapabilityChange = () => {},
+  onOpenCapabilitySettings,
 }: Props, ref) {
   const { t, locale } = useI18n();
   const isMobile = useIsMobile();
@@ -2136,6 +2146,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <AliIcon name="plus" size={15} />
               </button>
             </div>
+            <SessionToolsControl
+              capabilities={capabilities}
+              busy={isStreaming}
+              saving={capabilitiesSaving}
+              onChange={onCapabilityChange}
+              onOpenGlobalSettings={onOpenCapabilitySettings}
+            />
             {promptMode !== "normal" && (
               <button
                 type="button"

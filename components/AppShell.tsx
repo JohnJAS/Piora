@@ -49,6 +49,7 @@ import type { GitStatusResponse } from "@/lib/git-types";
 import { getTrackedGitLineStats } from "@/lib/git-line-stats";
 import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
+import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
 
 function replaceUrlWithoutNextNavigation(url: string): void {
   // Next patches history.replaceState and treats an ordinary call as an App
@@ -402,6 +403,7 @@ export function AppShell() {
   });
   const [topPanelPos, setTopPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
   const [taskControls, setTaskControls] = useState<TaskControls | null>(null);
+  const [sessionCapabilities, setSessionCapabilities] = useState<SessionCapabilitiesState | null>(null);
 
   const toggleTopPanel = useCallback((panel: TopPanel) => {
     if (isMobile) setSidebarOpen(false);
@@ -414,6 +416,7 @@ export function AppShell() {
     setSettingsKey(key);
     setSettingsDialogOpen(true);
   }, [isMobile]);
+  const openCapabilitySettings = useCallback(() => openSettings("extensions"), [openSettings]);
 
   const openSessionStatsPanel = useCallback(() => {
     if (isMobile) setSidebarOpen(false);
@@ -2472,6 +2475,8 @@ export function AppShell() {
                 onExportTask={handleTaskExport}
                 onSlashCommandsChange={setPiSlashCommands}
                 onOpenAutomation={openAutomation}
+                onCapabilitiesChange={setSessionCapabilities}
+                onOpenCapabilitySettings={openCapabilitySettings}
               />
             ) : initialCwdStatus === "validating" ? (
               <div
@@ -2586,6 +2591,7 @@ export function AppShell() {
           sessionName={selectedSession?.name}
           onSelectAutomation={openAutomation}
           onAutomationChanged={() => setSessionKey((key) => key + 1)}
+          capabilities={sessionCapabilities}
         />
       </div>
     {/* File panel toggle — always visible at top-right */}

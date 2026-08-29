@@ -91,6 +91,19 @@ import { readSystemPromptConfig } from "./system-prompt-config";
 import { buildPromptWithMaterials, resolvePromptMaterialReferences, restorePromptMaterialDisplayPreview } from "./prompt-materials";
 import type { PromptMaterialReference } from "./prompt-material-format";
 import type { UserInputResult } from "./user-input";
+import {
+  appendSessionCapabilityPolicy,
+  buildSessionCapabilitiesState,
+  buildSessionCapabilityCatalog,
+  copySessionCapabilityPolicy,
+  createSessionCapabilityPolicy,
+  resolveSessionCapabilityToolNames,
+  restoreSessionCapabilityPolicy,
+  selectionFromToolNames,
+  type SessionCapabilitiesState,
+  type SessionCapabilityPolicy,
+  type SessionCapabilitySelection,
+} from "./session-capabilities";
 
 // ============================================================================
 // Types
@@ -143,37 +156,13 @@ type ExtensionBindingOptions = {
 
 export interface RpcSessionStartOptions {
   toolNames?: string[];
+  capabilitySelection?: SessionCapabilitySelection;
   initialModel?: { provider: string; modelId: string };
   thinkingLevel?: ThinkingLevel;
   runtimeProfile?: AgentRuntimeProfile;
 }
 
-const CODING_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"];
-
-function withExtensionTools(session: AgentSessionLike, toolNames: string[]): string[] {
-  if (toolNames.length === 0) return [];
-
-  const codingToolNames = new Set(CODING_TOOL_NAMES);
-  const extensionToolNames = session
-    .getAllTools()
-    .map((t) => t.name)
-    .filter((name) => !codingToolNames.has(name));
-
-  return [...new Set([...toolNames, ...extensionToolNames])];
-}
-
 const DEVICE_CONTROL_DENIED_RPC_COMMANDS = new Set(["bash", "abort_bash"]);
-
-function activeToolsForProfile(
-  session: AgentSessionLike,
-  runtimeProfile: AgentRuntimeProfile,
-  requestedToolNames: readonly string[],
-): string[] {
-  if (runtimeProfile === "device-control") {
-    return requestedToolNames.length === 0 ? [] : [...DEVICE_CONTROL_AGENT_TOOLS];
-  }
-  return withExtensionTools(session, [...requestedToolNames]);
-}
 
 // ============================================================================
 // AgentSessionWrapper
@@ -215,14 +204,27 @@ export class AgentSessionWrapper {
   private goalState: GoalRunState | undefined;
   private planState: PlanArtifactState | undefined;
   private promptMode: PromptMode = "normal";
+  private capabilityPolicy: SessionCapabilityPolicy;
+  private capabilityCatalog: ReturnType<typeof buildSessionCapabilityCatalog>;
+  private toolNameCeiling: Set<string> | undefined;
   private _alive = true;
 
   constructor(
     public readonly inner: AgentSessionLike,
     public readonly runtimeProfile: AgentRuntimeProfile = "normal",
+    capabilityOptions: {
+      policy?: SessionCapabilityPolicy;
+      toolNameCeiling?: readonly string[];
+    } = {},
   ) {
     this.goalState = getGoalRun(inner.sessionId);
     this.planState = getPlanArtifact(inner.sessionId);
+    this.capabilityCatalog = buildSessionCapabilityCatalog(inner.getAllTools(), runtimeProfile);
+    this.capabilityPolicy = capabilityOptions.policy
+      ?? restoreSessionCapabilityPolicy(inner.sessionManager.getEntries(), this.capabilityCatalog);
+    this.toolNameCeiling = capabilityOptions.toolNameCeiling
+      ? new Set(capabilityOptions.toolNameCeiling)
+      : undefined;
   }
 
   get sessionId(): string {
@@ -243,6 +245,60 @@ export class AgentSessionWrapper {
 
   isRunning(): boolean {
     return this._alive && this.getRuntime() !== "idle";
+  }
+
+  private refreshCapabilityCatalog(): void {
+    this.capabilityCatalog = buildSessionCapabilityCatalog(this.inner.getAllTools(), this.runtimeProfile);
+  }
+
+  private applySessionCapabilities(): void {
+    this.refreshCapabilityCatalog();
+    const allToolNames = this.inner.getAllTools().map((tool) => tool.name);
+    const activeToolNames = resolveSessionCapabilityToolNames(
+      this.capabilityCatalog,
+      this.capabilityPolicy,
+      allToolNames,
+      this.toolNameCeiling,
+    );
+    this.setForceEmptySystemPrompt(activeToolNames.length === 0);
+    this.inner.setActiveToolsByName(activeToolNames);
+    this.applyForcedEmptySystemPrompt();
+  }
+
+  getSessionCapabilities(): SessionCapabilitiesState {
+    this.refreshCapabilityCatalog();
+    return buildSessionCapabilitiesState(
+      this.capabilityCatalog,
+      this.capabilityPolicy,
+      this.inner.getActiveToolNames(),
+    );
+  }
+
+  initializeSessionCapabilities(): void {
+    this.applySessionCapabilities();
+  }
+
+  private updateSessionCapabilities(selection: SessionCapabilitySelection): SessionCapabilitiesState {
+    this.assertSessionIdle("change session tools");
+    if (
+      selection.expectedRevision !== undefined
+      && selection.expectedRevision !== this.capabilityPolicy.revision
+    ) {
+      throw new Error("Session tools changed in another view. Refresh and try again.");
+    }
+    this.capabilityPolicy = createSessionCapabilityPolicy(
+      selection,
+      this.capabilityCatalog,
+      this.runtimeProfile,
+      this.capabilityPolicy.revision,
+      this.capabilityPolicy,
+    );
+    appendSessionCapabilityPolicy(this.inner.sessionManager, this.capabilityPolicy);
+    this.applySessionCapabilities();
+    const capabilities = this.getSessionCapabilities();
+    this.emit({ type: "capabilities_changed", capabilities });
+    invalidateSessionListCache();
+    return capabilities;
   }
 
   async requestSystemPromptReload(): Promise<"reloaded" | "deferred" | "skipped"> {
@@ -811,7 +867,24 @@ export class AgentSessionWrapper {
         notifyRunningChange();
         Promise.resolve().then(async () => {
           let planModeLease: PlanModeLease | undefined;
+          let promptModeToolsApplied = false;
           try {
+            if (goalMode || planMode) {
+              const available = new Set(this.inner.getAllTools().map((tool) => tool.name));
+              const promptModeTools = [
+                ...(goalMode ? ["piora_goal"] : []),
+                ...(planMode ? ["piora_plan"] : []),
+                ...(planExecution ? ["piora_plan_execution"] : []),
+              ].filter((name) => available.has(name));
+              if (promptModeTools.length > 0) {
+                this.setForceEmptySystemPrompt(false);
+                this.inner.setActiveToolsByName([
+                  ...new Set([...this.inner.getActiveToolNames(), ...promptModeTools]),
+                ]);
+                this.applyForcedEmptySystemPrompt();
+                promptModeToolsApplied = true;
+              }
+            }
             if (planMode) planModeLease = enterPlanMode(this.inner);
             await this.inner.prompt(runtimePromptMessage, {
               ...(promptImages?.length ? { images: promptImages } : {}),
@@ -869,9 +942,9 @@ export class AgentSessionWrapper {
             }
           } finally {
             if (goalMode || planMode) finishActivePromptMode(promptRun);
-            if (planModeLease && this._alive) {
-              planModeLease.restore();
-              this.applyForcedEmptySystemPrompt();
+            if (this._alive) {
+              planModeLease?.restore();
+              if (promptModeToolsApplied) this.applySessionCapabilities();
             }
           }
         })
@@ -1049,6 +1122,7 @@ export class AgentSessionWrapper {
           thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
           extensionStatuses: this.getExtensionStatuses(),
           extensionWidgets: this.getExtensionWidgets(),
+          capabilities: this.getSessionCapabilities(),
         };
       }
 
@@ -1095,6 +1169,8 @@ export class AgentSessionWrapper {
         }
 
         const newSessionId = SessionManager.open(newSessionFile, sessionDir).getSessionId();
+        const forkedManager = SessionManager.open(newSessionFile, sessionDir);
+        appendSessionCapabilityPolicy(forkedManager, copySessionCapabilityPolicy(this.capabilityPolicy));
         try {
           await bindSessionAgentRuntimeProfile(newSessionId, this.runtimeProfile);
         } catch (profileError) {
@@ -1200,6 +1276,10 @@ export class AgentSessionWrapper {
         }));
       }
 
+      case "get_capabilities": {
+        return this.getSessionCapabilities();
+      }
+
       case "get_commands": {
         const commands: SlashCommandInfo[] = [];
         for (const registered of this.inner.extensionRunner.getRegisteredCommands()) {
@@ -1230,15 +1310,29 @@ export class AgentSessionWrapper {
       }
 
       case "set_tools": {
-        this.assertSessionIdle("change tools");
         const requested = Array.isArray(command.toolNames)
           ? command.toolNames.filter((name): name is string => typeof name === "string")
           : [];
-        const toolNames = resolveAgentToolsForRuntimeProfile(this.runtimeProfile, requested) ?? [];
-        this.setForceEmptySystemPrompt(toolNames.length === 0);
-        this.inner.setActiveToolsByName(activeToolsForProfile(this.inner, this.runtimeProfile, toolNames));
-        this.applyForcedEmptySystemPrompt();
-        return null;
+        return this.updateSessionCapabilities(selectionFromToolNames(requested, this.capabilityCatalog));
+      }
+
+      case "set_capabilities": {
+        const preset = command.preset;
+        if (preset !== "chat" && preset !== "coding" && preset !== "research" && preset !== "device" && preset !== "custom") {
+          throw new Error("Invalid session tool preset.");
+        }
+        const enabledCapabilityIds = Array.isArray(command.enabledCapabilityIds)
+          ? command.enabledCapabilityIds.filter((id): id is string => typeof id === "string")
+          : undefined;
+        const expectedRevision = command.expectedRevision;
+        if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision) || Number(expectedRevision) < 0)) {
+          throw new Error("Invalid session tool revision.");
+        }
+        return this.updateSessionCapabilities({
+          preset,
+          ...(enabledCapabilityIds ? { enabledCapabilityIds } : {}),
+          ...(expectedRevision !== undefined ? { expectedRevision: Number(expectedRevision) } : {}),
+        });
       }
 
       case "set_team_tools": {
@@ -1250,8 +1344,15 @@ export class AgentSessionWrapper {
           : [];
         const exact = [...new Set([...requested, "piora_room"])];
         if (exact.some((name) => !available.has(name))) throw new Error("Team tool allowlist contains an unavailable tool.");
-        this.setForceEmptySystemPrompt(false);
-        this.inner.setActiveToolsByName(exact);
+        this.toolNameCeiling = new Set(exact);
+        this.capabilityPolicy = createSessionCapabilityPolicy(
+          selectionFromToolNames(exact, this.capabilityCatalog),
+          this.capabilityCatalog,
+          this.runtimeProfile,
+          this.capabilityPolicy.revision,
+          this.capabilityPolicy,
+        );
+        this.applySessionCapabilities();
         return null;
       }
 
@@ -1264,7 +1365,7 @@ export class AgentSessionWrapper {
         if (typeof this.inner.bindExtensions !== "function") {
           this.inner.extensionRunner.setUIContext?.(this.createExtensionUiContext(), "rpc");
         }
-        this.applyForcedEmptySystemPrompt();
+        this.applySessionCapabilities();
         invalidateModelsCache();
         return { success: true };
       }
@@ -2011,7 +2112,7 @@ export async function startRpcSession(
   cwd: string,
   options: RpcSessionStartOptions = {},
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
-  const { initialModel, thinkingLevel } = options;
+  const { initialModel, thinkingLevel, capabilitySelection } = options;
   const processRuntimeProfile = getAgentRuntimeProfile();
   const runtimeProfile = options.runtimeProfile ?? processRuntimeProfile;
   assertCurrentAgentRuntimeProfile(runtimeProfile);
@@ -2056,15 +2157,11 @@ export async function startRpcSession(
       // entering the AgentSession registry. This is stronger than merely
       // marking them inactive after extensions have loaded.
       toolsOption = toolNames ?? [...DEVICE_CONTROL_AGENT_TOOLS];
-    } else if (toolNames !== undefined) {
-      // toolNames === [] -> "all off" (an empty allow-list disables every tool).
-      // Otherwise DO NOT pass a builtin-only allow-list: passing CODING_TOOL_NAMES
-      // set allowedToolNames to coding builtins only, which filtered every
-      // extension/package-provided tool (e.g. subagents, web access) out of the
-      // tool registry — so they were unavailable in Pi Web sessions even though the
-      // `pi` CLI keeps them. Leaving the allow-list unset lets the SDK register all
-      // tools (and activate extension tools); we narrow the ACTIVE set below.
-      toolsOption = toolNames.length === 0 ? [] : undefined;
+    } else {
+      // Normal sessions always register every globally available tool. Session
+      // capabilities narrow only the active set so a disabled tool can be
+      // re-enabled later without rebuilding the AgentSession.
+      toolsOption = undefined;
     }
 
     // Build services first so extension-registered providers are available
@@ -2158,12 +2255,15 @@ export async function startRpcSession(
     restoreGoalRunFromEntries(inner.sessionId, inner.sessionManager.getBranch());
     restorePlanArtifactFromEntries(inner.sessionId, inner.sessionManager.getBranch());
 
-    // If specific tool names were requested (non-empty), set the active tools to the
-    // requested builtin coding tools PLUS all extension/package tools, so installed
-    // extensions stay usable in Pi Web just like in the `pi` CLI.
-    if (toolNames && toolNames.length > 0) {
-      inner.setActiveToolsByName(activeToolsForProfile(inner, runtimeProfile, toolNames));
-    }
+    const capabilityCatalog = buildSessionCapabilityCatalog(inner.getAllTools(), runtimeProfile);
+    const restoredPolicy = sessionFile
+      ? restoreSessionCapabilityPolicy(inner.sessionManager.getEntries(), capabilityCatalog)
+      : createSessionCapabilityPolicy(
+          capabilitySelection ?? (toolNames !== undefined ? selectionFromToolNames(toolNames, capabilityCatalog) : undefined),
+          capabilityCatalog,
+          runtimeProfile,
+        );
+    if (!sessionFile) appendSessionCapabilityPolicy(inner.sessionManager, restoredPolicy);
 
     const realSessionId = inner.sessionId as string;
     const realSessionFile = inner.sessionFile as string | undefined;
@@ -2174,13 +2274,11 @@ export async function startRpcSession(
       throw error;
     }
 
-    const wrapper = new AgentSessionWrapper(inner, runtimeProfile);
-    // When all tools are disabled, clear the system prompt entirely.
-    // pi's buildSystemPrompt always produces a non-empty prompt even with no tools;
-    // keep this forced after extension resource discovery and reloads as well.
-    if (toolNames?.length === 0) {
-      wrapper.setForceEmptySystemPrompt(true);
-    }
+    const wrapper = new AgentSessionWrapper(inner, runtimeProfile, {
+      policy: restoredPolicy,
+      ...(toolNames !== undefined ? { toolNameCeiling: toolNames } : {}),
+    });
+    wrapper.initializeSessionCapabilities();
     wrapper.start();
 
     if (realSessionFile) cacheSessionPath(realSessionId, realSessionFile);
@@ -2192,7 +2290,7 @@ export async function startRpcSession(
       getServicesCache().delete(sessionServicesKey);
     });
     registry.set(realSessionId, wrapper);
-    wrapper.beginExtensionBinding({ forceEmptySystemPrompt: toolNames?.length === 0 });
+    wrapper.beginExtensionBinding({ forceEmptySystemPrompt: inner.getActiveToolNames().length === 0 });
 
     return { session: wrapper, realSessionId };
   })().finally(() => {

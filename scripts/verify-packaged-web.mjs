@@ -715,21 +715,31 @@ async function main() {
       "harmony_read_logs",
       "harmony_release_control",
     ];
-    const coreExtensionTools = [
+    const ordinaryCoreExtensionTools = [
       "browser",
       ...harmonyTools,
-      "piora_goal",
-      "piora_plan",
-      "piora_plan_execution",
       "piora_room",
     ].map((name) => {
       const tool = tools.find((entry) => entry.name === name);
       return { name, loaded: Boolean(tool), active: tool?.active === true };
     });
-    const unavailableCoreTools = coreExtensionTools.filter((tool) => !tool.loaded || !tool.active);
+    const unavailableCoreTools = ordinaryCoreExtensionTools.filter((tool) => !tool.loaded || !tool.active);
     if (unavailableCoreTools.length > 0) {
       throw new Error(`Packaged first-party tools are unavailable: ${JSON.stringify(unavailableCoreTools)}`);
     }
+    const promptModeTools = [
+      "piora_goal",
+      "piora_plan",
+      "piora_plan_execution",
+    ].map((name) => {
+      const tool = tools.find((entry) => entry.name === name);
+      return { name, loaded: Boolean(tool), active: tool?.active === true };
+    });
+    const invalidPromptModeTools = promptModeTools.filter((tool) => !tool.loaded || tool.active);
+    if (invalidPromptModeTools.length > 0) {
+      throw new Error(`Packaged prompt-mode tools have an invalid idle state: ${JSON.stringify(invalidPromptModeTools)}`);
+    }
+    const coreExtensionTools = [...ordinaryCoreExtensionTools, ...promptModeTools];
 
     const pioraOwnedSubagentEntries = [...commands, ...tools].filter((entry) => (
       typeof entry.name === "string" && /^(?:pi[-_]?gui)[-_]?sub[-_]?agents?$/i.test(entry.name)

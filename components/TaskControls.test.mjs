@@ -91,9 +91,10 @@ test("keeps the conversation branch navigator out of the main top bar", () => {
   assert.doesNotMatch(appShell, /"branches"\s*\|/);
 });
 
-test("always enables Pi's coding tools without exposing permission tiers", () => {
-  assert.match(agentSession, /BUILTIN_AGENT_TOOLS/);
-  assert.match(agentSession, /type: "set_tools"/);
+test("exposes per-session capabilities without permission tiers", () => {
+  assert.match(agentSession, /handleCapabilitySelection/);
+  assert.match(agentSession, /type: "set_capabilities"/);
+  assert.match(chatInput, /SessionToolsControl/);
   assert.doesNotMatch(agentSession, /toolPreset|permissionTier|PRESET_NONE/);
   assert.doesNotMatch(chatWindow, /onToolPresetChange|permissionPreset/);
 });

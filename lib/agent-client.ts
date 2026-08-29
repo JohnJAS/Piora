@@ -21,7 +21,10 @@ export class AgentCommandError extends Error {
 export interface CreateAgentSessionRequest {
   cwd: string;
   type: "ensure_session";
-  toolNames: string[];
+  capabilitySelection?: {
+    preset: "chat" | "coding" | "research" | "device" | "custom";
+    enabledCapabilityIds?: string[];
+  };
   provider?: string;
   modelId?: string;
   thinkingLevel?: string;
@@ -31,6 +34,7 @@ export interface CreateAgentSessionResponse {
   sessionId: string;
   model?: { provider: string; modelId: string } | null;
   thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  capabilities?: import("./session-capabilities").SessionCapabilitiesState;
 }
 
 const SESSION_CREATION_RETRY_DELAY_MS = 180;

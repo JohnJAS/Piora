@@ -28,6 +28,7 @@ import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
 import { getProjectLabel } from "@/lib/session-project-groups";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 import { UserInputCard } from "./UserInputCard";
+import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
 
 interface Props {
   session: SessionInfo | null;
@@ -51,6 +52,8 @@ interface Props {
   onExportTask?: () => void;
   onSlashCommandsChange?: (commands: SlashCommandInfo[]) => void;
   onOpenAutomation?: (automationId: string) => void;
+  onCapabilitiesChange?: (capabilities: SessionCapabilitiesState | null) => void;
+  onOpenCapabilitySettings?: () => void;
 }
 
 export interface TaskControls {
@@ -229,7 +232,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation }: Props) {
+export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenCapabilitySettings }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
@@ -275,7 +278,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, sessionStats,
-    slashCommands, slashCommandsLoading, queuedMessages,
+    slashCommands, slashCommandsLoading, queuedMessages, capabilities, capabilitiesSaving,
     notices, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection,
     agentPhase,
@@ -286,7 +289,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
-    handleThinkingLevelChange, loadSlashCommands,
+    handleThinkingLevelChange, handleCapabilitySelection, loadSlashCommands,
   } = useAgentSession({
     session, newSessionCwd, newSessionInitialModel, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
@@ -343,6 +346,8 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
   }, [bashRunning, handleAbort, handleSend, latestBash, onTaskControlsChange, pendingBash?.command, sessionBusy]);
 
   useEffect(() => () => onTaskControlsChange?.(null), [onTaskControlsChange]);
+  useEffect(() => { onCapabilitiesChange?.(capabilities); }, [capabilities, onCapabilitiesChange]);
+  useEffect(() => () => onCapabilitiesChange?.(null), [onCapabilitiesChange]);
   const latestErrorNotice = useMemo(() => {
     for (let index = notices.length - 1; index >= 0; index -= 1) {
       if (notices[index]?.type === "error") return notices[index]?.message ?? null;
@@ -633,6 +638,10 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
       contextUsage={contextUsage}
       sessionStats={sessionStats}
       extensionStatuses={visibleExtensionStatuses}
+      capabilities={capabilities}
+      capabilitiesSaving={capabilitiesSaving}
+      onCapabilityChange={handleCapabilitySelection}
+      onOpenCapabilitySettings={onOpenCapabilitySettings}
     />
   );
 

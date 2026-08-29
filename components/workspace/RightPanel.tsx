@@ -15,6 +15,7 @@ import type { TaskControls } from "../ChatWindow";
 import { AliIcon, type AliIconName } from "../AliIcon";
 import styles from "./WorkspacePanel.module.css";
 import { AutomationPanel } from "../AutomationPanel";
+import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
 
 export type RightPanelTab = "home" | "automation" | "review" | "files" | "commands" | "browser" | "harmony";
 export interface RightPanelHandle { focusActiveTab: () => void; focusFileSearch: () => void; }
@@ -49,6 +50,7 @@ interface Props {
   sessionName?: string;
   onSelectAutomation?: (id: string) => void;
   onAutomationChanged?: () => void;
+  capabilities: SessionCapabilitiesState | null;
 }
 
 const TOOLS: Array<{ id: Exclude<RightPanelTab, "home">; icon: AliIconName; shortcut?: string }> = [
@@ -76,6 +78,29 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
   const [openTools, setOpenTools] = useState<ToolTab[]>(() => activeTab === "home" ? [] : [activeTab]);
   const [draggedTool, setDraggedTool] = useState<ToolTab | null>(null);
   const [dropTargetTool, setDropTargetTool] = useState<ToolTab | null>(null);
+  const capabilityAccess = (kind: "browser" | "device") => {
+    if (!props.capabilities) return null;
+    const items = props.capabilities.items.filter((item) => item.kind === kind && item.available);
+    const enabledCount = items.filter((item) => item.enabled).length;
+    const status = items.length === 0
+      ? "unavailable"
+      : enabledCount === 0
+        ? "off"
+        : enabledCount === items.length
+          ? "on"
+          : "partial";
+    const labelKey = status === "on"
+      ? "sessionTools.panelAccessOn"
+      : status === "partial"
+        ? "sessionTools.panelAccessPartial"
+        : status === "unavailable"
+          ? "sessionTools.panelUnavailable"
+          : "sessionTools.panelAccessOff";
+    return <div className={styles.capabilityAccess} data-enabled={status === "on" ? "true" : status}>
+      <AliIcon name={status === "on" ? "check-circle" : "alert"} size={13} />
+      <span>{t(labelKey)}</span>
+    </div>;
+  };
   useImperativeHandle(ref, () => ({
     focusActiveTab: () => (activeTab === "home" ? firstLauncherRef.current : activeTabRef.current)?.focus({ preventScroll: true }),
     focusFileSearch: () => explorerRef.current?.focusSearch(),
@@ -262,10 +287,10 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
       {activeTab === "commands" ? <RenderErrorBoundary resetKey={`commands:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><CommandPanel controls={props.taskControls} /></RenderErrorBoundary> : null}
     </section>
     <section id="workspace-browser" role="tabpanel" aria-labelledby="workspace-browser-tab" hidden={activeTab !== "browser"} className={styles.panel}>
-      {activeTab === "browser" ? <RenderErrorBoundary resetKey={`browser:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><BrowserPanel active={active && activeTab === "browser"} /></RenderErrorBoundary> : null}
+      {activeTab === "browser" ? <div className={styles.capabilityPanel}>{capabilityAccess("browser")}<div className={styles.capabilityPanelBody}><RenderErrorBoundary resetKey={`browser:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><BrowserPanel active={active && activeTab === "browser"} /></RenderErrorBoundary></div></div> : null}
     </section>
     <section id="workspace-harmony" role="tabpanel" aria-labelledby="workspace-harmony-tab" hidden={activeTab !== "harmony"} className={styles.panel}>
-      {activeTab === "harmony" ? <RenderErrorBoundary resetKey={`harmony:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><SafeHarmonyPanel active={active && activeTab === "harmony"} /></RenderErrorBoundary> : null}
+      {activeTab === "harmony" ? <div className={styles.capabilityPanel}>{capabilityAccess("device")}<div className={styles.capabilityPanelBody}><RenderErrorBoundary resetKey={`harmony:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><SafeHarmonyPanel active={active && activeTab === "harmony"} /></RenderErrorBoundary></div></div> : null}
     </section>
     <section id="workspace-automation" role="tabpanel" aria-labelledby="workspace-automation-tab" hidden={activeTab !== "automation"} className={styles.panel}>
       {activeTab === "automation" ? <RenderErrorBoundary resetKey={`automation:${props.selectedAutomationId ?? "list"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><AutomationPanel automationId={props.selectedAutomationId} sessionId={props.sessionId} sessionName={props.sessionName} cwd={cwd} onSelectAutomation={props.onSelectAutomation} onAutomationChanged={props.onAutomationChanged} /></RenderErrorBoundary> : null}

@@ -12,13 +12,18 @@ import type {
 } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { AgentCommandError, createAgentSessionRequest, sendAgentCommand } from "@/lib/agent-client";
-import { BUILTIN_AGENT_TOOLS } from "@/lib/tool-presets";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { estimateSessionContextUsage } from "@/lib/context-usage";
 import type { GoalRunState } from "@/lib/goal-run-registry";
 import type { PlanArtifactState, PlanDraftInput } from "@/lib/plan-artifact-registry";
 import { isPromptMaterialRuntimeMessage, type PromptMaterialReference } from "@/lib/prompt-material-format";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
+import {
+  applySessionCapabilitySelectionToState,
+  createDefaultSessionCapabilitiesState,
+  type SessionCapabilitiesState,
+  type SessionCapabilitySelection,
+} from "@/lib/session-capabilities";
 
 export interface SessionData {
   sessionId: string;
@@ -86,6 +91,7 @@ type AgentStateResponse = {
   queuedMessages?: { steering?: string[]; followUp?: string[] } | null;
   goal?: GoalRunState | null;
   plan?: PlanArtifactState | null;
+  capabilities?: SessionCapabilitiesState;
 };
 
 export interface QueuedMessages {
@@ -426,6 +432,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessages>({ steering: [], followUp: [] });
   const [goal, setGoal] = useState<GoalRunState | null>(null);
   const [planArtifact, setPlanArtifact] = useState<PlanArtifactState | null>(null);
+  const [capabilities, setCapabilities] = useState<SessionCapabilitiesState>(() => createDefaultSessionCapabilitiesState());
+  const [capabilitiesSaving, setCapabilitiesSaving] = useState(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
@@ -451,6 +459,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const optimisticUserMessageKeyRef = useRef<string | null>(null);
   const suppressCompletionNotificationRef = useRef(false);
   const lastContextUsageRefreshAtRef = useRef(0);
+  const capabilitySelectionDirtyRef = useRef(false);
+  const capabilitiesRef = useRef(capabilities);
+  capabilitiesRef.current = capabilities;
 
   const currentModel = currentModelOverride ?? data?.context.model ?? pendingModel ?? null;
   const displayModel = isNew ? (newSessionModel ?? newSessionDefaultModel) : currentModel;
@@ -565,6 +576,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (liveState.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(liveState.queuedMessages));
           if (liveState.goal !== undefined) setGoal(liveState.goal ?? null);
           if (liveState.plan !== undefined) setPlanArtifact(liveState.plan ?? null);
+          if (liveState.capabilities !== undefined) setCapabilities(liveState.capabilities);
         } else if (!agentState.running) {
           setQueuedMessages({ steering: [], followUp: [] });
         }
@@ -593,14 +605,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setEntryIds(d.context.entryIds ?? []);
     } catch (e) {
       console.error("Failed to load context:", e);
-    }
-  }, []);
-
-  const enableAllTools = useCallback(async (sid: string) => {
-    try {
-      await sendAgentCommand(sid, { type: "set_tools", toolNames: [...BUILTIN_AGENT_TOOLS] });
-    } catch (e) {
-      console.error("Failed to enable Pi tools:", e);
     }
   }, []);
 
@@ -635,7 +639,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const result = await createAgentSessionRequest({
         cwd: newSessionCwd,
         type: "ensure_session",
-        toolNames: [...BUILTIN_AGENT_TOOLS],
+        ...(capabilitySelectionDirtyRef.current ? {
+          capabilitySelection: {
+            preset: capabilitiesRef.current.policy.preset,
+            enabledCapabilityIds: capabilitiesRef.current.policy.enabledCapabilityIds,
+          },
+        } : {}),
         ...(selectedModel ? { provider: selectedModel.provider, modelId: selectedModel.modelId } : {}),
         ...(selectedThinkingLevel
           ? { thinkingLevel: selectedThinkingLevel }
@@ -643,6 +652,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       });
       const realId = result.sessionId;
       sessionIdRef.current = realId;
+      if (result.capabilities) setCapabilities(result.capabilities);
       if (result.model && newSessionModelOverrideRef.current === selectedModel) {
         setPendingModel(result.model);
         if (!selectedModel) setNewSessionDefaultModel(result.model);
@@ -788,6 +798,35 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       },
     });
   }, []);
+
+  const handleCapabilitySelection = useCallback(async (selection: SessionCapabilitySelection): Promise<void> => {
+    if (agentRunningRef.current || bashRunningRef.current) return;
+    const sid = sessionIdRef.current;
+    if (isNew && !sid) {
+      capabilitySelectionDirtyRef.current = true;
+      setCapabilities((current) => applySessionCapabilitySelectionToState(current, selection));
+      return;
+    }
+    if (!sid) return;
+    setCapabilitiesSaving(true);
+    try {
+      const current = capabilitiesRef.current;
+      const next = await sendAgentCommand<SessionCapabilitiesState>(sid, {
+        type: "set_capabilities",
+        preset: selection.preset,
+        ...(selection.enabledCapabilityIds ? { enabledCapabilityIds: selection.enabledCapabilityIds } : {}),
+        expectedRevision: current.policy.revision,
+      });
+      setCapabilities(next);
+    } catch (capabilityError) {
+      addNotice({
+        type: "error",
+        message: capabilityError instanceof Error ? capabilityError.message : String(capabilityError),
+      });
+    } finally {
+      setCapabilitiesSaving(false);
+    }
+  }, [addNotice, isNew]);
 
   const handleExtensionUiRequest = useCallback((request: ExtensionUiRequest) => {
     switch (request.method) {
@@ -953,6 +992,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setQueuedMessages(normalizeQueuedMessages(state?.queuedMessages));
       if (state?.goal !== undefined) setGoal(state.goal ?? null);
       if (state?.plan !== undefined) setPlanArtifact(state.plan ?? null);
+      if (state?.capabilities !== undefined) setCapabilities(state.capabilities);
       const busy = data.running && state
         && (state.isStreaming || state.isPromptRunning || state.isCompacting);
       // Context usage is useful while the run is still active (especially
@@ -965,6 +1005,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (state.extensionWidgets !== undefined) setExtensionWidgets(state.extensionWidgets ?? []);
         if (state.goal !== undefined) setGoal(state.goal ?? null);
         if (state.plan !== undefined) setPlanArtifact(state.plan ?? null);
+        if (state.capabilities !== undefined) setCapabilities(state.capabilities);
       }
       await finishPromptWithoutStream(sid, runId);
     } catch {
@@ -1159,6 +1200,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "plan_cancelled":
       case "plan_execution_start":
         setPlanArtifact((event.plan as PlanArtifactState | undefined) ?? null);
+        break;
+      case "capabilities_changed":
+        if (event.capabilities) setCapabilities(event.capabilities as SessionCapabilitiesState);
         break;
       case "auto_retry_start":
         setRetryInfo({ attempt: event.attempt as number, maxAttempts: event.maxAttempts as number, errorMessage: event.errorMessage as string | undefined });
@@ -1622,12 +1666,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         case "reload": {
           if (!sid) return complete({ handled: true, error: "No active session to reload" });
           await sendAgentCommand(sid, { type: "reload" });
-          await Promise.all([
+          const [, , , refreshedCapabilities] = await Promise.all([
             loadSession(sid, false, true),
-            enableAllTools(sid),
             loadSlashCommands(),
             loadModels(),
+            sendAgentCommand<SessionCapabilitiesState>(sid, { type: "get_capabilities" }),
           ]);
+          setCapabilities(refreshedCapabilities);
           return complete({ handled: true, message: "Reloaded session resources" });
         }
 
@@ -1666,7 +1711,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       if (commandName === "compact") setIsCompacting(false);
     }
-  }, [addNotice, enableAllTools, ensureNewSession, isCompacting, loadModels, loadSession, loadSlashCommands, promoteNewSession, onSessionStatsPanelOpen]);
+  }, [addNotice, ensureNewSession, isCompacting, loadModels, loadSession, loadSlashCommands, promoteNewSession, onSessionStatsPanelOpen]);
 
   // Queued (undelivered) messages live in the queue panel only; the chat gets
   // the real user message when pi delivers it (user message_end event). An
@@ -1893,6 +1938,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (agentState.state.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(agentState.state.queuedMessages));
           if (agentState.state.goal !== undefined) setGoal(agentState.state.goal ?? null);
           if (agentState.state.plan !== undefined) setPlanArtifact(agentState.state.plan ?? null);
+          if (agentState.state.capabilities !== undefined) setCapabilities(agentState.state.capabilities);
         }
       });
     }
@@ -2004,7 +2050,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     agentRunning, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
     retryInfo, contextUsage: effectiveContextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, sessionStats,
-    slashCommands, slashCommandsLoading, queuedMessages, goal, planArtifact,
+    slashCommands, slashCommandsLoading, queuedMessages, goal, planArtifact, capabilities, capabilitiesSaving,
     notices: noticeState.visible, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection: isNew && newSessionModel === null,
     agentPhase,
@@ -2018,7 +2064,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
-    handleThinkingLevelChange, enableAllTools, loadSlashCommands, setActiveLeafId, setData, setMessages,
+    handleThinkingLevelChange, handleCapabilitySelection, loadSlashCommands, setActiveLeafId, setData, setMessages,
     dispatch, setAgentRunning, setForkingEntryId,
     bashRunning, pendingBash,
     // Subscriptions

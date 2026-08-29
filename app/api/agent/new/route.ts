@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAgentRuntimeProfile } from "@/lib/agent-runtime-profile";
 import { createSession, parseSessionThinkingLevel } from "@/lib/session-creation";
+import type { SessionCapabilityPreset, SessionCapabilitySelection } from "@/lib/session-capabilities";
 
 type CreationErrorDetails = { status: number; code: string; message: string };
 
@@ -21,6 +22,12 @@ function creationErrorDetails(error: unknown): CreationErrorDetails {
   }
   if (message.startsWith("Invalid thinking level:")) {
     return { status: 400, code: "INVALID_THINKING_LEVEL", message };
+  }
+  if (message.startsWith("Invalid session tool")) {
+    return { status: 400, code: "INVALID_SESSION_TOOLS", message };
+  }
+  if (message.startsWith("Invalid enabled session tools")) {
+    return { status: 400, code: "INVALID_SESSION_TOOLS", message };
   }
   if (message.startsWith("Model is not available in the enabled scope:")) {
     return { status: 409, code: "MODEL_NOT_AVAILABLE", message };
@@ -48,7 +55,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
-    const { provider, modelId, toolNames, thinkingLevel, runtimeProfile: requestedRuntimeProfile, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; runtimeProfile?: unknown; [key: string]: unknown };
+    const { provider, modelId, toolNames, capabilitySelection: rawCapabilitySelection, thinkingLevel, runtimeProfile: requestedRuntimeProfile, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; capabilitySelection?: unknown; thinkingLevel?: unknown; runtimeProfile?: unknown; [key: string]: unknown };
     if (requestedRuntimeProfile !== undefined) {
       return NextResponse.json({ error: "runtimeProfile is selected only at process startup" }, { status: 400 });
     }
@@ -56,9 +63,28 @@ export async function POST(req: Request) {
       throw new Error("provider and modelId must be provided together");
     }
     const explicitThinkingLevel = parseSessionThinkingLevel(thinkingLevel);
+    let capabilitySelection: SessionCapabilitySelection | undefined;
+    if (rawCapabilitySelection !== undefined) {
+      if (!rawCapabilitySelection || typeof rawCapabilitySelection !== "object") throw new Error("Invalid session tool selection.");
+      const source = rawCapabilitySelection as { preset?: unknown; enabledCapabilityIds?: unknown };
+      const validPresets: SessionCapabilityPreset[] = ["chat", "coding", "research", "device", "custom"];
+      if (typeof source.preset !== "string" || !validPresets.includes(source.preset as SessionCapabilityPreset)) {
+        throw new Error("Invalid session tool preset.");
+      }
+      if (source.enabledCapabilityIds !== undefined && !Array.isArray(source.enabledCapabilityIds)) {
+        throw new Error("Invalid enabled session tools.");
+      }
+      capabilitySelection = {
+        preset: source.preset as SessionCapabilityPreset,
+        ...(Array.isArray(source.enabledCapabilityIds)
+          ? { enabledCapabilityIds: source.enabledCapabilityIds.filter((id): id is string => typeof id === "string") }
+          : {}),
+      };
+    }
     const created = await createSession({
       cwd,
       ...(toolNames ? { toolNames } : {}),
+      ...(capabilitySelection ? { capabilitySelection } : {}),
       ...(provider && modelId ? { initialModel: { provider, modelId } } : {}),
       ...(explicitThinkingLevel ? { thinkingLevel: explicitThinkingLevel } : {}),
       runtimeProfile,
@@ -72,6 +98,7 @@ export async function POST(req: Request) {
         data: null,
         model: created.model,
         thinkingLevel: created.thinkingLevel,
+        capabilities: created.capabilities,
         runtimeProfile,
       });
     }

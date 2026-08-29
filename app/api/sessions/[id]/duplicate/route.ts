@@ -11,6 +11,11 @@ import {
   quarantineUnboundSessionFile,
   resolveSessionAgentRuntimeProfile,
 } from "@/lib/agent-profile-store";
+import {
+  appendSessionCapabilityPolicy,
+  copySessionCapabilityPolicy,
+  readLatestSessionCapabilityPolicy,
+} from "@/lib/session-capabilities";
 
 export async function POST(
   _request: Request,
@@ -29,6 +34,10 @@ export async function POST(
     if (!duplicatedPath) return NextResponse.json({ error: "Failed to duplicate session" }, { status: 500 });
     const duplicate = SessionManager.open(duplicatedPath);
     const newSessionId = duplicate.getSessionId();
+    const sourceCapabilityPolicy = readLatestSessionCapabilityPolicy(source.getEntries());
+    if (sourceCapabilityPolicy) {
+      appendSessionCapabilityPolicy(duplicate, copySessionCapabilityPolicy(sourceCapabilityPolicy));
+    }
     try {
       await bindSessionAgentRuntimeProfile(newSessionId, runtimeProfile);
     } catch (profileError) {
