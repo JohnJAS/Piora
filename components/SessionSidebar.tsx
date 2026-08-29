@@ -18,7 +18,7 @@ import { SidebarChatArea } from "./sidebar/SidebarChatArea";
 import { SidebarFooter } from "./sidebar/SidebarFooter";
 import { useSessionCatalog } from "./sidebar/useSessionCatalog";
 import { useProjectPicker } from "./sidebar/useProjectPicker";
-import { applyProjectOrder, getRecentProjects, moveProjectRoot } from "./sidebar/sidebar-utils";
+import { applyProjectOrder, applySessionOrder, getRecentProjects, moveProjectRoot, moveSessionId } from "./sidebar/sidebar-utils";
 import { useSidebarState } from "./sidebar/useSidebarState";
 import { SidebarShell } from "./sidebar/SidebarShell";
 import { RoomSidebarSection } from "./RoomSidebarSection";
@@ -52,6 +52,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     hiddenProjectRoots, setHiddenProjectRoots,
     projectAliases, setProjectAliases,
     projectOrder, setProjectOrder,
+    sessionOrder, setSessionOrder,
   } = useSidebarState();
   const handlePickedProject = useCallback((cwd: string) => {
     onNewSession?.(createTemporarySessionId(), cwd);
@@ -261,6 +262,14 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     () => activeSessions.filter((session) => !session.projectless),
     [activeSessions],
   );
+  const reorderSessions = useCallback((sourceId: string, targetId: string, position: "before" | "after") => {
+    setSessionOrder((previous) => moveSessionId(
+      applySessionOrder(activeSessions, previous, (session) => session.id).map((session) => session.id),
+      sourceId,
+      targetId,
+      position,
+    ));
+  }, [activeSessions, setSessionOrder]);
   const visibleSessions = useMemo(
     () => projectSessions.filter((session) => !hiddenProjectRoots.has(session.projectRoot ?? session.cwd)),
     [hiddenProjectRoots, projectSessions],
@@ -360,6 +369,15 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     });
   }, [projectGroups, loading, error, setCollapsedProjectKeys, setExpandedProjectSessionKeys, setProjectOrder]);
 
+  useEffect(() => {
+    if (loading || error) return;
+    const validIds = new Set(activeSessions.map((session) => session.id));
+    setSessionOrder((previous) => {
+      const next = previous.filter((id) => validIds.has(id));
+      return next.length === previous.length ? previous : next;
+    });
+  }, [activeSessions, error, loading, setSessionOrder]);
+
   const showWorktreeSwitcher = Boolean(
     worktreeState?.isGit
     && worktreeState.isTopLevel
@@ -452,6 +470,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         duplicateSession={duplicateSession} pinnedProjectRoots={pinnedProjectRoots} projectAliases={projectAliases}
         togglePinnedProject={togglePinnedProject} renameProject={renameProject} removeProject={removeProject}
         onReorderProjects={reorderProjects}
+        sessionOrder={sessionOrder} onReorderSessions={reorderSessions}
       />
       <SidebarChatArea
         sessions={projectlessSessions}
@@ -465,6 +484,8 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         onSessionDeleted={handleSessionDeletedWithUndo}
         onFlagChange={patchSessionFlag}
         onDuplicate={duplicateSession}
+        sessionOrder={sessionOrder}
+        onReorderSessions={reorderSessions}
       />
       <SidebarFooter
         deletedToast={deletedSessionToast}

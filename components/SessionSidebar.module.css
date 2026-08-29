@@ -334,6 +334,38 @@
   padding: 1px 0 2px 23px;
 }
 
+.sessionDragItem {
+  position: relative;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.sessionDragging {
+  z-index: 2;
+  opacity: 0.55;
+  transform: scale(0.985);
+}
+
+.sessionDropBefore::before,
+.sessionDropAfter::after {
+  position: absolute;
+  z-index: 4;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  content: "";
+  pointer-events: none;
+}
+
+.sessionDropBefore::before {
+  top: 0;
+}
+
+.sessionDropAfter::after {
+  bottom: 0;
+}
+
 .projectMenu {
   position: fixed;
   z-index: 1200;
@@ -416,6 +448,10 @@ button.menuItem:focus-visible {
   .projectRow,
   .projectActions,
   .projectGroup {
+    transition: none;
+  }
+
+  .sessionDragItem {
     transition: none;
   }
 }

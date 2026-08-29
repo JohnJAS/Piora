@@ -21,6 +21,8 @@ interface Props {
   onSessionDeleted: (session: SessionInfo) => void;
   onFlagChange: (session: SessionInfo, patch: { pinned?: boolean; archived?: boolean }) => void;
   onDuplicate: (session: SessionInfo) => void;
+  sessionOrder: readonly string[];
+  onReorderSessions: (sourceId: string, targetId: string, position: "before" | "after") => void;
 }
 
 export function SidebarChatArea({
@@ -35,6 +37,8 @@ export function SidebarChatArea({
   onSessionDeleted,
   onFlagChange,
   onDuplicate,
+  sessionOrder,
+  onReorderSessions,
 }: Props) {
   const { t } = useI18n();
   const tree = useMemo(() => buildSessionTree(sessions), [sessions]);
@@ -53,7 +57,7 @@ export function SidebarChatArea({
           <AliIcon name="compose" size={14} />
         </button>
       </div>
-      <div className={styles.chatSessionList}>
+      <div className={styles.chatSessionList} data-session-drag-scroll>
         {tree.length > 0 ? (
           <TaskList
             nodes={tree}
@@ -66,6 +70,9 @@ export function SidebarChatArea({
             onSessionDeleted={onSessionDeleted}
             onFlagChange={onFlagChange}
             onDuplicate={onDuplicate}
+            scope="projectless"
+            sessionOrder={sessionOrder}
+            onReorderSessions={onReorderSessions}
           />
         ) : (
           <p className={styles.chatEmpty}>{t("sidebar.noProjectlessChats")}</p>

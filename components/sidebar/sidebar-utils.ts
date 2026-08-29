@@ -8,6 +8,7 @@ export const PROJECT_ALIASES_STORAGE_KEY = "piora:sidebar-project-aliases:v1";
 export const REMEMBERED_PROJECTS_STORAGE_KEY = "piora:sidebar-remembered-projects:v1";
 export const HIDDEN_PROJECTS_STORAGE_KEY = "piora:sidebar-hidden-projects:v1";
 export const PROJECT_ORDER_STORAGE_KEY = "piora:sidebar-project-order:v1";
+export const SESSION_ORDER_STORAGE_KEY = "piora:sidebar-session-order:v1";
 export const RUNNING_SESSIONS_POLL_MS = 2500;
 
 export function loadUnreadSessionIds(): Set<string> {
@@ -80,6 +81,32 @@ export function moveProjectRoot(
   const targetIndex = next.indexOf(targetRoot);
   next.splice(targetIndex + (position === "after" ? 1 : 0), 0, sourceRoot);
   return next;
+}
+
+/** Apply explicit order while optionally preserving the pinned/unpinned boundary. */
+export function applySessionOrder<T>(
+  items: readonly T[],
+  order: readonly string[],
+  getId: (item: T) => string,
+  isPinned?: (item: T) => boolean,
+): T[] {
+  if (!isPinned) return applyProjectOrder(items, order, getId);
+  const pinned: T[] = [];
+  const regular: T[] = [];
+  for (const item of items) (isPinned(item) ? pinned : regular).push(item);
+  return [
+    ...applyProjectOrder(pinned, order, getId),
+    ...applyProjectOrder(regular, order, getId),
+  ];
+}
+
+export function moveSessionId(
+  ids: readonly string[],
+  sourceId: string,
+  targetId: string,
+  position: "before" | "after",
+): string[] {
+  return moveProjectRoot(ids, sourceId, targetId, position);
 }
 
 export function loadProjectAliases(): Record<string, string> {

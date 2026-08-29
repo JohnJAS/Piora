@@ -26,6 +26,8 @@ interface Props {
   duplicateSession: (session: SessionInfo) => Promise<void>; pinnedProjectRoots: Set<string>; projectAliases: Record<string, string>;
   togglePinnedProject: (root: string) => void; renameProject: (root: string, alias: string) => void; removeProject: (root: string) => void;
   onReorderProjects: (sourceRoot: string, targetRoot: string, position: "before" | "after") => void;
+  sessionOrder: readonly string[];
+  onReorderSessions: (sourceId: string, targetId: string, position: "before" | "after") => void;
 }
 
 const PROJECT_DRAG_HOLD_MS = 250;
@@ -39,7 +41,7 @@ interface ProjectDragState {
 
 export function SidebarProjectArea(props: Props) {
   const { t } = useI18n();
-  const { loading, error, projectsHovered, setProjectsHovered, handleDefaultCwd, handleCustomPathClick, projectGroups, selectedProject, collapsedProjectKeys, expandedProjectSessionKeys, setCollapsedProjectKeys, setExpandedProjectSessionKeys, selectedSessionId, runningSessionIds, unreadSessionIds, attentionSessionIds, setSelectedCwd, homeDir, handleSelectSessionFromList, handleNewSessionInProject, loadSessions, handleSessionDeletedWithUndo, sessionFlags, patchSessionFlag, duplicateSession, pinnedProjectRoots, projectAliases, togglePinnedProject, renameProject, removeProject, onReorderProjects } = props;
+  const { loading, error, projectsHovered, setProjectsHovered, handleDefaultCwd, handleCustomPathClick, projectGroups, selectedProject, collapsedProjectKeys, expandedProjectSessionKeys, setCollapsedProjectKeys, setExpandedProjectSessionKeys, selectedSessionId, runningSessionIds, unreadSessionIds, attentionSessionIds, setSelectedCwd, homeDir, handleSelectSessionFromList, handleNewSessionInProject, loadSessions, handleSessionDeletedWithUndo, sessionFlags, patchSessionFlag, duplicateSession, pinnedProjectRoots, projectAliases, togglePinnedProject, renameProject, removeProject, onReorderProjects, sessionOrder, onReorderSessions } = props;
   const projectScrollRef = useRef<HTMLDivElement>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const candidateRef = useRef<{ pointerId: number; root: string; x: number; y: number } | null>(null);
@@ -149,7 +151,7 @@ export function SidebarProjectArea(props: Props) {
 
   return <>
       {/* Codex-style project folders with their conversations nested below. */}
-      <div ref={projectScrollRef} className="sidebar-project-scroll" style={{ flex: "1 1 auto", overflowY: "auto", padding: "4px 0 8px", minHeight: 80 }}>
+      <div ref={projectScrollRef} data-session-drag-scroll className="sidebar-project-scroll" style={{ flex: "1 1 auto", overflowY: "auto", padding: "4px 0 8px", minHeight: 80 }}>
         {!loading && !error && (
           <div
             className={`sidebar-projects-header ${styles.sectionLabel} ${styles.projectsHeader}`}
@@ -241,6 +243,8 @@ export function SidebarProjectArea(props: Props) {
             dropPosition={dragState?.targetRoot === group.projectRoot ? dragState.position : null}
             onProjectPointerDown={(event) => beginProjectDrag(group.projectRoot, event)}
             onProjectClickCapture={(event) => suppressProjectClick(group.projectRoot, event)}
+            sessionOrder={sessionOrder}
+            onReorderSessions={onReorderSessions}
           />
         ))}
       </div>

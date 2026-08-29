@@ -7,6 +7,7 @@ import {
   HIDDEN_PROJECTS_STORAGE_KEY,
   PINNED_PROJECTS_STORAGE_KEY,
   PROJECT_ORDER_STORAGE_KEY,
+  SESSION_ORDER_STORAGE_KEY,
   REMEMBERED_PROJECTS_STORAGE_KEY,
   loadProjectAliases,
   loadStoredStringList,
@@ -32,12 +33,14 @@ export function useSidebarState() {
   const [projectRegistryHydrated, setProjectRegistryHydrated] = useState(false);
   const [projectAliases, setProjectAliases] = useState<Record<string, string>>(() => loadProjectAliases());
   const [projectOrder, setProjectOrder] = useState<string[]>(() => loadStoredStringList(PROJECT_ORDER_STORAGE_KEY));
+  const [sessionOrder, setSessionOrder] = useState<string[]>(() => loadStoredStringList(SESSION_ORDER_STORAGE_KEY));
 
   useEffect(() => saveStoredStringSet(COLLAPSED_PROJECTS_STORAGE_KEY, collapsedProjectKeys), [collapsedProjectKeys]);
   useEffect(() => saveStoredStringSet(EXPANDED_PROJECT_SESSIONS_STORAGE_KEY, expandedProjectSessionKeys), [expandedProjectSessionKeys]);
   useEffect(() => saveStoredStringSet(PINNED_PROJECTS_STORAGE_KEY, pinnedProjectRoots), [pinnedProjectRoots]);
   useEffect(() => saveProjectAliases(projectAliases), [projectAliases]);
   useEffect(() => saveStoredStringList(PROJECT_ORDER_STORAGE_KEY, projectOrder), [projectOrder]);
+  useEffect(() => saveStoredStringList(SESSION_ORDER_STORAGE_KEY, sessionOrder), [sessionOrder]);
 
   useEffect(() => {
     setRememberedProjectRoots(loadStoredStringSet(REMEMBERED_PROJECTS_STORAGE_KEY));
@@ -61,5 +64,6 @@ export function useSidebarState() {
     hiddenProjectRoots, setHiddenProjectRoots,
     projectAliases, setProjectAliases,
     projectOrder, setProjectOrder,
+    sessionOrder, setSessionOrder,
   };
 }

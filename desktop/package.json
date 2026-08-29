@@ -1,7 +1,7 @@
 {
   "name": "@piora/desktop",
   "productName": "Piora",
-  "version": "0.4.26",
+  "version": "0.4.27",
   "desktopName": "Piora",
   "private": true,
   "description": "Secure Electron desktop shell for Piora",

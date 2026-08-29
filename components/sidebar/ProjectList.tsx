@@ -8,6 +8,7 @@ import type { SessionFlags } from "@/lib/session-flags";
 import type { SessionInfo } from "@/lib/types";
 import { AliIcon } from "../AliIcon";
 import styles from "../SessionSidebar.module.css";
+import { applySessionOrder } from "./sidebar-utils";
 import { RunningSessionIndicator, UnreadSessionIndicator } from "./TaskRow";
 import { TaskList } from "./TaskList";
 
@@ -44,6 +45,8 @@ export function ProjectSessionGroup({
   dropPosition,
   onProjectPointerDown,
   onProjectClickCapture,
+  sessionOrder,
+  onReorderSessions,
 }: {
   group: SessionProjectGroupData;
   homeDir: string;
@@ -73,14 +76,22 @@ export function ProjectSessionGroup({
   dropPosition: "before" | "after" | null;
   onProjectPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onProjectClickCapture: (event: ReactMouseEvent<HTMLElement>) => void;
+  sessionOrder: readonly string[];
+  onReorderSessions: (sourceId: string, targetId: string, position: "before" | "after") => void;
 }) {
   const { t } = useI18n();
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   // Collapsing is purely presentational. Background agents keep running and
   // report their state on the project row without forcing the folder open.
   const projectOpen = !isCollapsed;
-  const visibleRoots = getVisibleSessionRoots(group.tree, sessionsExpanded, attentionSessionIds);
-  const hiddenRootCount = group.tree.length - visibleRoots.length;
+  const orderedRoots = applySessionOrder(
+    group.tree,
+    sessionOrder,
+    (node) => node.session.id,
+    (node) => Boolean(sessionFlags[node.session.id]?.pinned),
+  );
+  const visibleRoots = getVisibleSessionRoots(orderedRoots, sessionsExpanded, attentionSessionIds);
+  const hiddenRootCount = orderedRoots.length - visibleRoots.length;
   const runningCount = group.sessions.filter((session) => runningSessionIds.has(session.id)).length;
   const unreadCount = group.sessions.filter((session) => unreadSessionIds.has(session.id)).length;
 
@@ -162,6 +173,9 @@ export function ProjectSessionGroup({
             onSessionDeleted={onSessionDeleted}
             onFlagChange={onFlagChange}
             onDuplicate={onDuplicateSession}
+            scope={`project:${group.projectRoot}`}
+            sessionOrder={sessionOrder}
+            onReorderSessions={onReorderSessions}
           />
           {(hiddenRootCount > 0 || sessionsExpanded) && group.tree.length > 3 && (
             <button
