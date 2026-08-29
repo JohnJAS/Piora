@@ -13,6 +13,7 @@ import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type BuiltinSlashCommandResult, type NoticeItem, type SlashCommandInfo } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { useResizablePanel } from "@/hooks/useResizablePanel";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { deriveCompanionActivityStatus, type CompanionActivity } from "@/lib/companion";
 import { AliIcon } from "./AliIcon";
@@ -77,6 +78,9 @@ function phaseLabel(phase: AgentPhase, t: (key: string, params?: Record<string, 
 const CHAT_MINIMAP_WIDTH = 36;
 const CHAT_COLUMN_PADDING = 16;
 const CHAT_INPUT_RIGHT_PADDING = CHAT_COLUMN_PADDING + CHAT_MINIMAP_WIDTH;
+const CHAT_COLUMN_DEFAULT_WIDTH = 820;
+const CHAT_COLUMN_MIN_WIDTH = 560;
+const CHAT_COLUMN_MAX_WIDTH = 1400;
 const SCROLL_TO_BOTTOM_THRESHOLD = 96;
 
 /**
@@ -228,6 +232,38 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
 export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
+  const chatSurfaceRef = useRef<HTMLDivElement>(null);
+  const chatColumnWidthRef = useRef(CHAT_COLUMN_DEFAULT_WIDTH);
+  const getChatColumnMaxWidth = useCallback(() => {
+    const surfaceWidth = chatSurfaceRef.current?.clientWidth
+      ?? (typeof window === "undefined" ? CHAT_COLUMN_MAX_WIDTH : window.innerWidth);
+    return Math.max(CHAT_COLUMN_MIN_WIDTH, surfaceWidth - CHAT_COLUMN_PADDING - CHAT_INPUT_RIGHT_PADDING);
+  }, []);
+  const getResponsiveChatColumnWidth = useCallback(() => {
+    const viewportWidth = typeof window === "undefined" ? CHAT_COLUMN_MAX_WIDTH : window.innerWidth;
+    const fluidWidth = Math.min(1180, Math.max(CHAT_COLUMN_DEFAULT_WIDTH, viewportWidth * 0.72));
+    return Math.min(getChatColumnMaxWidth(), fluidWidth);
+  }, [getChatColumnMaxWidth]);
+  const getRenderedChatColumnWidth = useCallback(() => (
+    chatSurfaceRef.current?.querySelector<HTMLElement>(".chat-column")?.getBoundingClientRect().width
+      ?? getResponsiveChatColumnWidth()
+  ), [getResponsiveChatColumnWidth]);
+  const chatColumnResizer = useResizablePanel({
+    ariaLabel: t("layout.resizeChatColumn"),
+    cssVariable: "--chat-column-width",
+    defaultWidth: CHAT_COLUMN_DEFAULT_WIDTH,
+    getCurrentWidth: getRenderedChatColumnWidth,
+    getDefaultWidth: getResponsiveChatColumnWidth,
+    getMaxWidth: getChatColumnMaxWidth,
+    growthDirection: "right",
+    dragScale: 2,
+    followDefaultWidth: true,
+    maxWidth: CHAT_COLUMN_MAX_WIDTH,
+    minWidth: CHAT_COLUMN_MIN_WIDTH,
+    panelRef: chatSurfaceRef,
+    storageKey: "pi-chat-column-width",
+    widthRef: chatColumnWidthRef,
+  });
 
   // 稳定化 onEditContent 引用，配合 React.memo 防止历史消息重渲染
   const handleEditContent = useCallback((content: string) => {
@@ -621,6 +657,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
 
   return (
     <div
+      ref={chatSurfaceRef}
       className="relative flex h-full flex-col overflow-hidden"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
@@ -672,6 +709,14 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
         />
       )}
 
+      {!isMobile ? (
+        <div
+          {...chatColumnResizer.separatorProps}
+          className={`chat-column-resize-handle${chatColumnResizer.isResizing ? " is-resizing" : ""}`}
+          title={`${t("layout.resizeChatColumn")}: ${t("layout.resizeHint")}`}
+        />
+      ) : null}
+
       {isEmptyNew ? (
         <div className="new-session-chat">
           <div className="new-session-chat-inner">
@@ -704,13 +749,13 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
             pointerEvents: "none",
           }}
         >
-          <div style={{ maxWidth: 820, margin: "0 auto" }}>
+          <div className="chat-column">
             <NoticeShelf notices={notices} floating align="right" />
           </div>
         </div>
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pt-4 [scrollbar-width:none]">
           <div style={{ padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
-            <div style={{ maxWidth: 820, margin: "0 auto" }}>
+            <div className="chat-column">
               <ExtensionWidgets widgets={aboveEditorWidgets} />
 
             {(() => {
@@ -1000,7 +1045,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
             paddingRight: isMobile ? CHAT_COLUMN_PADDING : CHAT_INPUT_RIGHT_PADDING,
           }}
         >
-          <div style={{ maxWidth: 820, margin: "0 auto" }}>
+          <div className="chat-column">
             <ExtensionWidgets widgets={belowEditorWidgets} />
           </div>
         </div>

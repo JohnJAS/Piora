@@ -1578,7 +1578,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
           e.target.value = "";
         }}
       />
-      <div className="composer-column" style={{ maxWidth: 820, margin: "0 auto" }}>
+      <div className="composer-column">
         <ModelErrorBanner error={modelError} title={t("chat.modelError")} />
         <ModelScopeWarningBanner
           warnings={modelScopeWarnings}

@@ -25,10 +25,14 @@ interface UseResizablePanelOptions {
   cssVariable: `--${string}`;
   defaultWidth: number;
   getDefaultWidth?: () => number;
+  getCurrentWidth?: () => number;
   getMaxWidth: () => number;
   growthDirection: "left" | "right";
+  dragScale?: number;
+  followDefaultWidth?: boolean;
   maxWidth: number;
   minWidth: number;
+  panelRef?: MutableRefObject<HTMLDivElement | null>;
   storageKey: string;
   widthRef: MutableRefObject<number>;
 }
@@ -57,20 +61,33 @@ function writeStoredWidth(storageKey: string, width: number): void {
   }
 }
 
+function clearStoredWidth(storageKey: string): void {
+  try {
+    window.localStorage.removeItem(storageKey);
+  } catch {
+    // Resetting still works for this window when storage is unavailable.
+  }
+}
+
 export function useResizablePanel(options: UseResizablePanelOptions) {
   const {
     ariaLabel,
     cssVariable,
     defaultWidth,
     getDefaultWidth,
+    getCurrentWidth,
     getMaxWidth,
     growthDirection,
+    dragScale = 1,
+    followDefaultWidth = false,
     maxWidth,
     minWidth,
+    panelRef: providedPanelRef,
     storageKey,
     widthRef,
   } = options;
-  const panelRef = useRef<HTMLDivElement>(null);
+  const internalPanelRef = useRef<HTMLDivElement>(null);
+  const panelRef = providedPanelRef ?? internalPanelRef;
   const dragRef = useRef<DragState | null>(null);
   const restoredRef = useRef(false);
   const [width, setWidth] = useState(defaultWidth);
@@ -90,7 +107,15 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
   const applyLiveWidth = useCallback((nextWidth: number) => {
     widthRef.current = nextWidth;
     panelRef.current?.style.setProperty(cssVariable, `${nextWidth}px`);
-  }, [cssVariable, widthRef]);
+  }, [cssVariable, panelRef, widthRef]);
+
+  const applyResponsiveDefault = useCallback(() => {
+    panelRef.current?.style.removeProperty(cssVariable);
+    const nextWidth = clampWidth(getCurrentWidth?.() ?? getDefaultWidth?.() ?? defaultWidth);
+    widthRef.current = nextWidth;
+    setWidth(nextWidth);
+    return nextWidth;
+  }, [clampWidth, cssVariable, defaultWidth, getCurrentWidth, getDefaultWidth, panelRef, widthRef]);
 
   const commitWidth = useCallback((candidate: number, commitOptions: CommitOptions = {}) => {
     const { forcePersist = false, persist = true } = commitOptions;
@@ -133,12 +158,15 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     if (activeDrag) finishResize(activeDrag.pointerId);
 
     const target = event.currentTarget;
+    const liveWidth = clampWidth(getCurrentWidth?.() ?? widthRef.current);
+    widthRef.current = liveWidth;
+    setWidth(liveWidth);
     target.focus({ preventScroll: true });
     target.setPointerCapture(event.pointerId);
     dragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
-      startWidth: widthRef.current,
+      startWidth: liveWidth,
       target,
       previousCursor: document.body.style.cursor,
       previousUserSelect: document.body.style.userSelect,
@@ -146,7 +174,7 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
     setIsResizing(true);
-  }, [finishResize, widthRef]);
+  }, [clampWidth, finishResize, getCurrentWidth, widthRef]);
 
   const onPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
@@ -158,11 +186,11 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     event.preventDefault();
 
     const direction = growthDirection === "right" ? 1 : -1;
-    const nextWidth = clampWidth(drag.startWidth + ((event.clientX - drag.startX) * direction));
+    const nextWidth = clampWidth(drag.startWidth + ((event.clientX - drag.startX) * direction * dragScale));
     applyLiveWidth(nextWidth);
     event.currentTarget.setAttribute("aria-valuenow", String(nextWidth));
     event.currentTarget.setAttribute("aria-valuetext", `${nextWidth} px`);
-  }, [applyLiveWidth, clampWidth, finishResize, growthDirection]);
+  }, [applyLiveWidth, clampWidth, dragScale, finishResize, growthDirection]);
 
   const onPointerUp = useCallback((event: PointerEvent<HTMLDivElement>) => {
     finishResize(event.pointerId);
@@ -178,24 +206,35 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
 
   const resetWidth = useCallback(() => {
     const nextDefault = getDefaultWidth?.() ?? defaultWidth;
+    if (followDefaultWidth) {
+      clearStoredWidth(storageKey);
+      applyResponsiveDefault();
+      return;
+    }
     commitWidth(nextDefault, { forcePersist: true });
-  }, [commitWidth, defaultWidth, getDefaultWidth]);
+  }, [applyResponsiveDefault, commitWidth, defaultWidth, followDefaultWidth, getDefaultWidth, storageKey]);
 
   const reclampWidth = useCallback(() => {
-    commitWidth(widthRef.current);
-  }, [commitWidth, widthRef]);
+    const hasManualWidth = dragRef.current !== null || readStoredWidth(storageKey) !== null;
+    if (followDefaultWidth && !hasManualWidth) {
+      applyResponsiveDefault();
+      return;
+    }
+    commitWidth(widthRef.current, { persist: true });
+  }, [applyResponsiveDefault, commitWidth, followDefaultWidth, storageKey, widthRef]);
 
   const onKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 32 : 12;
     const growKey = growthDirection === "right" ? "ArrowRight" : "ArrowLeft";
     const shrinkKey = growthDirection === "right" ? "ArrowLeft" : "ArrowRight";
+    const currentWidth = clampWidth(getCurrentWidth?.() ?? widthRef.current);
 
     if (event.key === growKey) {
       event.preventDefault();
-      commitWidth(widthRef.current + step, { forcePersist: true });
+      commitWidth(currentWidth + step, { forcePersist: true });
     } else if (event.key === shrinkKey) {
       event.preventDefault();
-      commitWidth(widthRef.current - step, { forcePersist: true });
+      commitWidth(currentWidth - step, { forcePersist: true });
     } else if (event.key === "Home") {
       event.preventDefault();
       commitWidth(minWidth, { forcePersist: true });
@@ -206,7 +245,7 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
       event.preventDefault();
       resetWidth();
     }
-  }, [commitWidth, effectiveMaxWidth, growthDirection, minWidth, resetWidth, widthRef]);
+  }, [clampWidth, commitWidth, effectiveMaxWidth, getCurrentWidth, growthDirection, minWidth, resetWidth, widthRef]);
 
   useEffect(() => {
     setHasMounted(true);
@@ -217,23 +256,49 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     restoredRef.current = true;
 
     const storedWidth = readStoredWidth(storageKey);
+    if (storedWidth === null && followDefaultWidth) {
+      applyResponsiveDefault();
+      return;
+    }
     const candidate = storedWidth ?? getDefaultWidth?.() ?? defaultWidth;
     const restoredWidth = commitWidth(candidate, { persist: false });
     if (storedWidth !== null && storedWidth !== restoredWidth) {
       writeStoredWidth(storageKey, restoredWidth);
     }
-  }, [commitWidth, defaultWidth, getDefaultWidth, storageKey]);
+  }, [applyResponsiveDefault, commitWidth, defaultWidth, followDefaultWidth, getDefaultWidth, storageKey]);
 
   useEffect(() => {
     if (!restoredRef.current) return;
-    commitWidth(widthRef.current);
+    reclampWidth();
 
+    let frame = 0;
+    let settleTimer: ReturnType<typeof setTimeout> | null = null;
     const onResize = () => {
-      commitWidth(widthRef.current);
+      if (frame !== 0) cancelAnimationFrame(frame);
+      if (settleTimer) clearTimeout(settleTimer);
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        reclampWidth();
+      });
+      // Flex panels have short width transitions; sync the keyboard/ARIA value
+      // once more after those transitions finish.
+      settleTimer = setTimeout(reclampWidth, 260);
     };
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [commitWidth, widthRef]);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (frame !== 0) cancelAnimationFrame(frame);
+      if (settleTimer) clearTimeout(settleTimer);
+    };
+  }, [reclampWidth]);
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!followDefaultWidth || !panel || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => reclampWidth());
+    observer.observe(panel);
+    return () => observer.disconnect();
+  }, [followDefaultWidth, panelRef, reclampWidth]);
 
   useEffect(() => {
     if (!isResizing) return;

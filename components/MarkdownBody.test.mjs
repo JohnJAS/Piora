@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -10,6 +11,7 @@ const jiti = createJiti(import.meta.url, {
 });
 const { MarkdownBody } = await jiti.import("./MarkdownBody.tsx");
 const { normalizeDisplayMath } = await jiti.import("../lib/markdown.ts");
+const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 function renderMarkdown(markdown) {
   return renderToStaticMarkup(
@@ -35,6 +37,15 @@ test("keeps local file markdown links in the app", () => {
 
   assert.match(html, /<a href="components\/MarkdownBody\.tsx">file<\/a>/);
   assert.doesNotMatch(html, /target=|rel=|\snode=/);
+});
+
+test("keeps wide tables on one line inside a horizontal scroller", () => {
+  const html = renderMarkdown("| 第一列 | 第二列 |\n| --- | --- |\n| 很长的内容 | 同样很长的内容 |");
+
+  assert.match(html, /class="markdown-table-wrap"/);
+  assert.match(globalCss, /\.markdown-table-wrap\s*\{[^}]*overflow-x:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s);
+  assert.match(globalCss, /\.markdown-body table\s*\{[^}]*width:\s*max-content;[^}]*min-width:\s*100%;/s);
+  assert.match(globalCss, /\.markdown-body th, \.markdown-body td\s*\{[^}]*white-space:\s*nowrap;/s);
 });
 
 test("renders LaTeX parenthesis delimiters as inline math", () => {

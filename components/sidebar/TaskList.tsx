@@ -31,7 +31,7 @@ interface SessionDragState {
   position: "before" | "after";
 }
 
-export function TaskList({ nodes, scope, onReorderSessions, ...props }: CommonProps & {
+export function TaskList({ nodes, scope, onReorderSessions, onSelectSession, ...props }: CommonProps & {
   nodes: SessionTreeNode[];
   scope: string;
   onReorderSessions: (sourceId: string, targetId: string, position: "before" | "after") => void;
@@ -44,7 +44,7 @@ export function TaskList({ nodes, scope, onReorderSessions, ...props }: CommonPr
     (node) => Boolean(props.flags[node.session.id]?.pinned),
   );
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const candidateRef = useRef<{ pointerId: number; sessionId: string; scope: string; x: number; y: number; scroll: HTMLElement | null; element: HTMLElement } | null>(null);
+  const candidateRef = useRef<{ pointerId: number; session: SessionInfo; scope: string; x: number; y: number; scroll: HTMLElement | null; element: HTMLElement } | null>(null);
   const dragRef = useRef<SessionDragState | null>(null);
   const suppressClickRef = useRef<{ sessionId: string; until: number } | null>(null);
   const previousBodyStyleRef = useRef<{ cursor: string; userSelect: string } | null>(null);
@@ -123,13 +123,19 @@ export function TaskList({ nodes, scope, onReorderSessions, ...props }: CommonPr
       if (activeDrag.targetId) {
         onReorderSessions(activeDrag.sourceId, activeDrag.targetId, activeDrag.position);
       }
+    } else if (event.type === "pointerup") {
+      // Pointer capture keeps long-press dragging reliable, but it retargets the
+      // browser's synthesized click to this outer wrapper. Select explicitly on
+      // a short release, then consume only that one retargeted click below.
+      suppressClickRef.current = { sessionId: candidate.session.id, until: Date.now() + 500 };
+      onSelectSession(candidate.session);
     }
     stopDragging();
-  }, [onReorderSessions, stopDragging]);
+  }, [onReorderSessions, onSelectSession, stopDragging]);
 
   useEffect(() => stopDragging, [stopDragging]);
 
-  const beginSessionDrag = useCallback((sessionId: string, sourceScope: string, event: ReactPointerEvent<HTMLDivElement>) => {
+  const beginSessionDrag = useCallback((session: SessionInfo, sourceScope: string, event: ReactPointerEvent<HTMLDivElement>) => {
     if (!event.isPrimary || event.button !== 0) return;
     if ((event.target as Element).closest("button, input, textarea, select, a, [role='menu'], [data-session-drag-ignore]")) return;
     event.stopPropagation();
@@ -137,7 +143,7 @@ export function TaskList({ nodes, scope, onReorderSessions, ...props }: CommonPr
     event.currentTarget.setPointerCapture(event.pointerId);
     candidateRef.current = {
       pointerId: event.pointerId,
-      sessionId,
+      session,
       scope: sourceScope,
       x: event.clientX,
       y: event.clientY,
@@ -146,8 +152,8 @@ export function TaskList({ nodes, scope, onReorderSessions, ...props }: CommonPr
     };
     holdTimerRef.current = setTimeout(() => {
       const candidate = candidateRef.current;
-      if (!candidate || candidate.pointerId !== event.pointerId || candidate.sessionId !== sessionId) return;
-      const next: SessionDragState = { sourceId: sessionId, sourceScope, targetId: null, position: "after" };
+      if (!candidate || candidate.pointerId !== event.pointerId || candidate.session.id !== session.id) return;
+      const next: SessionDragState = { sourceId: session.id, sourceScope, targetId: null, position: "after" };
       dragRef.current = next;
       setDragState(next);
       previousBodyStyleRef.current = { cursor: document.body.style.cursor, userSelect: document.body.style.userSelect };
@@ -178,6 +184,7 @@ export function TaskList({ nodes, scope, onReorderSessions, ...props }: CommonPr
           onPointerMove={handlePointerMove}
           onPointerEnd={finishPointer}
           onClickCapture={suppressSessionClick}
+          onSelectSession={onSelectSession}
           {...props}
         />
       ))}
@@ -190,7 +197,7 @@ export function SessionTreeItem({ node, depth, scope, dragState, onPointerDown, 
   depth: number;
   scope: string;
   dragState: SessionDragState | null;
-  onPointerDown: (sessionId: string, scope: string, event: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerDown: (session: SessionInfo, scope: string, event: ReactPointerEvent<HTMLDivElement>) => void;
   onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onPointerEnd: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onClickCapture: (sessionId: string, event: ReactMouseEvent<HTMLElement>) => void;
@@ -210,7 +217,7 @@ export function SessionTreeItem({ node, depth, scope, dragState, onPointerDown, 
       className={`${styles.sessionDragItem}${dragState?.sourceId === node.session.id ? ` ${styles.sessionDragging}` : ""}${dragState?.targetId === node.session.id && dragState.position === "before" ? ` ${styles.sessionDropBefore}` : ""}${dragState?.targetId === node.session.id && dragState.position === "after" ? ` ${styles.sessionDropAfter}` : ""}`}
       data-session-drag-id={node.session.id}
       data-session-drag-scope={scope}
-      onPointerDown={(event) => onPointerDown(node.session.id, scope, event)}
+      onPointerDown={(event) => onPointerDown(node.session, scope, event)}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}

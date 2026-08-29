@@ -53,6 +53,14 @@ test("long-presses every session row with the left pointer and persists the orde
   assert.match(styles, /\.sessionDropAfter::after/);
 });
 
+test("keeps a short left press as ordinary session selection", () => {
+  assert.match(list, /else if \(event\.type === "pointerup"\)/);
+  assert.match(list, /onSelectSession\(candidate\.session\)/);
+  assert.match(list, /suppressClickRef\.current = \{ sessionId: candidate\.session\.id/);
+  assert.match(list, /event\.type === "pointerup"[\s\S]*?onSelectSession[\s\S]*?stopDragging\(\)/);
+  assert.doesNotMatch(list, /event\.type === "pointercancel"[\s\S]*?onSelectSession/);
+});
+
 test("keeps branch and project ownership intact by accepting drops only among siblings", () => {
   assert.match(list, /scope=\{`\$\{scope\}:children:\$\{node\.session\.id\}:/);
   assert.match(list, /pinned \? "pinned" : "regular"/);
