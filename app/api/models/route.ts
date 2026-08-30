@@ -4,12 +4,33 @@ import { invalidateModelsCache, loadModelsWithCache, withModelRuntimeError, type
 import { resolveVisibleModels, selectInitialModelScope } from "@/lib/model-scope";
 import { prioritizeProvider, resolveDefaultModelPreference } from "@/lib/model-policy";
 import {
+  createCoreModelServices,
   createTrustedModelServices,
   ModelRequestCwdError,
   resolveModelRequestCwd,
 } from "@/lib/model-runtime-context";
 
 export const dynamic = "force-dynamic";
+
+const TRUSTED_MODEL_SERVICES_TIMEOUT_MS = 8_000;
+
+function createResponsiveModelServices(cwd: string): ReturnType<typeof createTrustedModelServices> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("Extension model discovery timed out"));
+    }, TRUSTED_MODEL_SERVICES_TIMEOUT_MS);
+    void createTrustedModelServices(cwd).then(
+      (services) => {
+        clearTimeout(timer);
+        resolve(services);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
 
 async function loadModels(cwd: string): Promise<ModelsData> {
   const nameMap = new Map<string, string>();
@@ -18,8 +39,18 @@ async function loadModels(cwd: string): Promise<ModelsData> {
   const thinkingLevels: Record<string, string[]> = {};
   const thinkingLevelMaps: Record<string, Record<string, string | null>> = {};
 
-  const services = await createTrustedModelServices(cwd);
-  const modelError = services.modelRuntime.getError();
+  let services: Awaited<ReturnType<typeof createTrustedModelServices>> | Awaited<ReturnType<typeof createCoreModelServices>>;
+  let extensionLoadError: string | undefined;
+  try {
+    services = await createResponsiveModelServices(cwd);
+  } catch (error) {
+    extensionLoadError = error instanceof Error && error.message.trim()
+      ? `Extension providers unavailable: ${error.message.trim().slice(0, 300)}`
+      : "Extension providers unavailable";
+    services = await createCoreModelServices(cwd);
+  }
+  const runtimeError = services.modelRuntime.getError();
+  const modelError = [extensionLoadError, runtimeError].filter(Boolean).join("; ") || undefined;
   const settings: SettingsManager = services.settingsManager;
   // `enabledModels` supports globs and fuzzy patterns, so resolve it the same
   // way the CLI does instead of comparing pattern strings literally (#307).

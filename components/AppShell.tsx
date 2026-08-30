@@ -16,7 +16,11 @@ import { isDarkTheme, useTheme, type Theme, type ThemePreset } from "@/hooks/use
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
-import { useCompletionNotification } from "@/hooks/useCompletionNotification";
+import {
+  NOTIFICATION_SESSION_EVENT,
+  sanitizeNotificationSessionId,
+  useCompletionNotification,
+} from "@/hooks/useCompletionNotification";
 import { useRunningTaskSnapshots } from "@/hooks/useTaskStatus";
 import { useCompanionPets } from "@/hooks/useCompanionPets";
 import { useCompanionPreferences } from "@/hooks/useCompanionPreferences";
@@ -104,12 +108,16 @@ const ModelsConfig = dynamic(() => import("./ModelsConfig").then((module) => mod
 const SkillsConfig = dynamic(() => import("./SkillsConfig").then((module) => module.SkillsConfig), { ssr: false });
 const PluginsConfig = dynamic(() => import("./PluginsConfig").then((module) => module.PluginsConfig), { ssr: false });
 const ExtensionsConfig = dynamic(() => import("./ExtensionsConfig").then((module) => module.ExtensionsConfig), { ssr: false });
+const CapabilityBundlesConfig = dynamic(() => import("./CapabilityBundlesConfig").then((module) => module.CapabilityBundlesConfig), { ssr: false });
 const BackgroundSettings = dynamic(() => import("./BackgroundSettings").then((module) => module.BackgroundSettings), { ssr: false });
 const AppearanceLooks = dynamic(() => import("./AppearanceLooks").then((module) => module.AppearanceLooks), { ssr: false });
 const AppearanceResetButton = dynamic(() => import("./AppearanceResetButton").then((module) => module.AppearanceResetButton), { ssr: false });
 const FontSettings = dynamic(() => import("./FontSettings").then((module) => module.FontSettings), { ssr: false });
 const CompanionSettingsDialog = dynamic(() => import("./CompanionSettingsDialog").then((module) => module.CompanionSettingsDialog), { ssr: false });
 const RemoteControlSettings = dynamic(() => import("./RemoteControlSettings").then((module) => module.RemoteControlSettings), { ssr: false });
+const HarmonyStorageSettings = dynamic(() => import("./HarmonyStorageSettings").then((module) => module.HarmonyStorageSettings), { ssr: false });
+const SpeechSettings = dynamic(() => import("./SpeechSettings").then((module) => module.SpeechSettings), { ssr: false });
+const UsageStatsPanel = dynamic(() => import("./UsageStatsPanel").then((module) => module.UsageStatsPanel), { ssr: false });
 const ArchivedChatsSettings = dynamic(() => import("./ArchivedChatsSettings").then((module) => module.ArchivedChatsSettings), { ssr: false });
 const AutomationPanel = dynamic(() => import("./AutomationPanel").then((module) => module.AutomationPanel), { ssr: false });
 const SessionHistoryDialog = dynamic(() => import("./SessionHistoryDialog").then((module) => module.SessionHistoryDialog), { ssr: false });
@@ -138,11 +146,11 @@ export function AppShell() {
       try {
         const response = await fetch("/api/automations/notifications", { cache: "no-store" });
         if (!response.ok || stopped) return;
-        const payload = await response.json() as { notifications?: Array<{ id: string; title: string; status: "succeeded" | "failed" | "interrupted" }> };
+        const payload = await response.json() as { notifications?: Array<{ id: string; title: string; status: "succeeded" | "failed" | "interrupted"; sessionId?: string }> };
         const notifications = Array.isArray(payload.notifications) ? payload.notifications : [];
         const delivered: string[] = [];
         for (const notification of notifications) {
-          if (await notifyAutomation(notification.title, notification.status)) delivered.push(notification.id);
+          if (await notifyAutomation(notification.title, notification.status, notification.sessionId)) delivered.push(notification.id);
         }
         if (delivered.length > 0 && !stopped) {
           await fetch("/api/automations/notifications", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: delivered }) });
@@ -171,12 +179,13 @@ export function AppShell() {
     for (const snapshot of runningTaskSnapshots) {
       if (!snapshot.pendingApproval || previous.has(snapshot.id)) continue;
       if (snapshot.id === selectedSession?.id && appInForeground) continue;
-      void notifyUserInput(snapshot.title ?? undefined);
+      void notifyUserInput(snapshot.title ?? undefined, snapshot.id);
     }
     pendingInputSessionsRef.current = pendingIds;
   }, [runningTaskSnapshots, selectedSession?.id, notifyUserInput]);
 
   const pendingLandingDraftRef = useRef<ChatDraft | null>(null);
+  const pendingLandingModelRef = useRef<{ provider: string; modelId: string } | null>(null);
   const automaticTitleRequestsRef = useRef<Set<string>>(new Set());
   const [selectedRoom, setSelectedRoom] = useState<CollaborationRoom | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
@@ -810,17 +819,49 @@ export function AppShell() {
     }
   }, [isMobile]);
 
+  const openNotificationSession = useCallback(async (rawSessionId: unknown) => {
+    const sessionId = sanitizeNotificationSessionId(rawSessionId);
+    if (!sessionId) return;
+    try {
+      const response = await fetch("/api/sessions", { cache: "no-store" });
+      const payload = await response.json().catch(() => ({})) as { sessions?: SessionInfo[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      const session = payload.sessions?.find((candidate) => candidate.id === sessionId);
+      if (!session) throw new Error(`Session ${sessionId} is no longer available.`);
+      handleSelectSession(session);
+      setRefreshKey((key) => key + 1);
+    } catch (error) {
+      console.warn("Unable to open the notification Session:", error);
+    }
+  }, [handleSelectSession]);
+
+  useEffect(() => {
+    const unsubscribeDesktop = window.piDesktop?.onNotificationSession?.((sessionId) => {
+      void openNotificationSession(sessionId);
+    });
+    const handleBrowserNotification = (event: Event) => {
+      void openNotificationSession((event as CustomEvent<unknown>).detail);
+    };
+    window.addEventListener(NOTIFICATION_SESSION_EVENT, handleBrowserNotification);
+    return () => {
+      unsubscribeDesktop?.();
+      window.removeEventListener(NOTIFICATION_SESSION_EVENT, handleBrowserNotification);
+    };
+  }, [openNotificationSession]);
+
   const handleNewSession = useCallback((_sessionId: string, cwd: string, initialModel?: { provider: string; modelId: string }) => {
     const pendingLandingDraft = pendingLandingDraftRef.current;
+    const pendingLandingModel = pendingLandingModelRef.current;
     if (pendingLandingDraft) {
       setDraft(`new:${cwd}`, pendingLandingDraft);
       pendingLandingDraftRef.current = null;
     }
+    pendingLandingModelRef.current = null;
     setSettingsDialogOpen(false);
     setSelectedRoom(null);
     setSelectedSession(null);
     setNewSessionCwd(cwd);
-    setNewSessionInitialModel(initialModel ?? null);
+    setNewSessionInitialModel(initialModel ?? pendingLandingModel ?? null);
     setSessionKey((k) => k + 1);
     setSystemPrompt(null);
     setActiveTopPanel(null);
@@ -847,22 +888,6 @@ export function AppShell() {
     setActiveProjectRoot(projectRoot);
     setActiveCwd(cwd);
     handleNewSession(`project-picker-${Date.now()}`, cwd, model);
-  }, [handleNewSession]);
-
-  const handleProjectlessLandingStart = useCallback((draft: ChatDraft, model?: { provider: string; modelId: string }) => {
-    pendingLandingDraftRef.current = draft;
-    void fetch("/api/chat-workspace", { cache: "no-store" })
-      .then(async (response) => {
-        const data = await response.json() as { cwd?: string; error?: string };
-        if (!response.ok || !data.cwd) throw new Error(data.error || `HTTP ${response.status}`);
-        handleNewSession(`landing-chat-${Date.now()}`, data.cwd, model);
-        setInitialSessionRestored(true);
-      })
-      .catch((error) => {
-        pendingLandingDraftRef.current = null;
-        setInitialCwdError(error instanceof Error ? error.message : String(error));
-        setInitialCwdStatus("error");
-      });
   }, [handleNewSession]);
 
   const handleSelectRoom = useCallback((room: CollaborationRoom, isRestore = false) => {
@@ -1118,14 +1143,22 @@ export function AppShell() {
   }, []);
 
   const handleAgentEnd = useCallback((sessionId: string) => {
-    setRefreshKey((k) => k + 1);
     setExplorerRefreshKey((k) => k + 1);
+    void fetch("/api/companion/task-records/capture", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    }).then((response) => {
+      if (!response.ok) console.warn(`Companion task capture failed: HTTP ${response.status}`);
+    }).catch((error) => {
+      console.warn("Companion task capture failed:", error);
+    });
     if (selectedSession?.id === sessionId && !selectedSession.name?.trim()) {
       void optimizeUnnamedSessionTitle(sessionId);
     }
     const taskTitle = selectedSession?.name
       || (activeCwd ? getFileName(activeCwd) || activeCwd : undefined);
-    void notifyCompletion(taskTitle);
+    void notifyCompletion(taskTitle, sessionId);
   }, [activeCwd, notifyCompletion, optimizeUnnamedSessionTitle, selectedSession?.id, selectedSession?.name]);
 
   const handleTaskControlsChange = useCallback((controls: TaskControls | null) => {
@@ -1598,16 +1631,19 @@ export function AppShell() {
       onActiveKeyChange={setSettingsKey}
       modelCwd={projectCwd ?? activeCwd ?? undefined}
       sections={{
+        capabilityBundles: projectCwd ? (
+          <CapabilityBundlesConfig
+            cwd={projectCwd}
+            sessionId={selectedSession?.id ?? null}
+            onReloaded={() => setSessionKey((key) => key + 1)}
+          />
+        ) : undefined,
         automations: (
           <AutomationPanel
             embedded
             sessionId={selectedSession?.id ?? null}
             sessionName={selectedSession?.name}
             cwd={projectCwd ?? activeCwd}
-            onSelectAutomation={(id) => {
-              setSettingsDialogOpen(false);
-              openAutomation(id);
-            }}
             onAutomationChanged={() => setSessionKey((key) => key + 1)}
           />
         ),
@@ -1687,6 +1723,15 @@ export function AppShell() {
         ),
         remote: (
           <RemoteControlSettings sessionId={selectedSession?.id ?? null} />
+        ),
+        harmony: (
+          <HarmonyStorageSettings />
+        ),
+        speech: (
+          <SpeechSettings />
+        ),
+        usage: (
+          <UsageStatsPanel />
         ),
         archived: (
           <ArchivedChatsSettings
@@ -1831,7 +1876,7 @@ export function AppShell() {
       <a className="skip-to-content" href="#piora-main-content">{translate("a11y.skipToContent")}</a>
       {desktopChrome ? (
         <header className="desktop-titlebar" aria-label={windowTitle}>
-          <div className="desktop-titlebar-mark" aria-hidden="true"><AliIcon name="layout" size={14} /></div>
+          <div className="desktop-titlebar-mark" aria-hidden="true" />
           <nav className="desktop-titlebar-menus" aria-label={locale === "zh-CN" ? "应用菜单" : "Application menu"}>
             {desktopMenus.map((menu) => (
               <button
@@ -1846,21 +1891,21 @@ export function AppShell() {
                 <span>{menu.label}</span>
               </button>
             ))}
+            {desktopUpdateAvailable ? (
+              <button
+                type="button"
+                className="desktop-titlebar-update-button"
+                data-status={desktopUpdateState?.status}
+                onClick={handleOpenDesktopUpdate}
+                aria-label={locale === "zh-CN" ? "下载 Piora 更新" : "Download Piora update"}
+                title={locale === "zh-CN" ? "Piora 有可用更新" : "A Piora update is available"}
+              >
+                <AliIcon name="download" size={15} />
+                <span className="desktop-titlebar-update-dot" aria-hidden="true" />
+              </button>
+            ) : null}
           </nav>
           <div className="desktop-titlebar-drag" />
-          {desktopUpdateAvailable ? (
-            <button
-              type="button"
-              className="desktop-titlebar-update-button"
-              data-status={desktopUpdateState?.status}
-              onClick={handleOpenDesktopUpdate}
-              aria-label={locale === "zh-CN" ? "下载 Piora 更新" : "Download Piora update"}
-              title={locale === "zh-CN" ? "Piora 有可用更新" : "A Piora update is available"}
-            >
-              <AliIcon name="download" size={15} />
-              <span className="desktop-titlebar-update-dot" aria-hidden="true" />
-            </button>
-          ) : null}
         </header>
       ) : null}
       {/* Mobile overlay backdrop */}
@@ -2504,10 +2549,9 @@ export function AppShell() {
                 activeCwd={activeCwd}
                 activeProjectRoot={activeProjectRoot}
                 onSelect={handleNewSessionProjectSelected}
-                onStartChat={handleProjectlessLandingStart}
-                onOpenModelSettings={() => openSettings("models")}
-                onBrowse={(draft) => {
+                onBrowse={(draft, model) => {
                   pendingLandingDraftRef.current = draft;
+                  pendingLandingModelRef.current = model;
                   sessionSidebarRef.current?.openProjectPicker();
                 }}
               />

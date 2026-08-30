@@ -1,10 +1,14 @@
 import { stat } from "fs/promises";
-import { resolve } from "path";
+import { join, resolve } from "path";
 import {
   createAgentSessionServices,
   getAgentDir,
+  ModelRuntime,
+  SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
+import { getProjectlessChatWorkspace } from "@/lib/projectless-chat-server";
+import { sessionPathKey } from "@/lib/session-path";
 
 export class ModelRequestCwdError extends Error {
   constructor(
@@ -25,7 +29,12 @@ export class ModelRequestCwdError extends Error {
  * a bare ModelRuntime.
  */
 export async function resolveModelRequestCwd(requestedCwd?: string | null): Promise<string> {
-  const cwd = resolve(requestedCwd || process.cwd());
+  // A request without an explicit project comes from the new-chat landing
+  // surface. process.cwd() points at the installed app in packaged builds and
+  // is intentionally outside the user's allowed roots, so use Piora's managed
+  // projectless workspace instead.
+  const projectlessWorkspace = getProjectlessChatWorkspace();
+  const cwd = resolve(requestedCwd || projectlessWorkspace);
 
   let cwdStat;
   try {
@@ -36,6 +45,11 @@ export async function resolveModelRequestCwd(requestedCwd?: string | null): Prom
   if (!cwdStat.isDirectory()) {
     throw new ModelRequestCwdError(`Not a directory: ${cwd}`, 400, "invalid_cwd");
   }
+
+  // This directory is created and owned by Piora itself. Authorize it without
+  // deriving roots from every persisted Session: that scan is exactly what
+  // made the EXE landing page's first model request appear to fail or hang.
+  if (sessionPathKey(cwd) === sessionPathKey(projectlessWorkspace)) return cwd;
 
   const allowedRoots = await getAllowedFileRoots();
   if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
@@ -51,4 +65,21 @@ export function createTrustedModelServices(cwd: string) {
     cwd,
     agentDir,
   });
+}
+
+/**
+ * Build only the model/settings layer. This intentionally skips extensions so
+ * one broken package cannot hide every otherwise usable configured model from
+ * the landing page.
+ */
+export async function createCoreModelServices(cwd: string) {
+  const agentDir = getAgentDir();
+  const modelRuntime = await ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: join(agentDir, "models.json"),
+  });
+  return {
+    modelRuntime,
+    settingsManager: SettingsManager.create(cwd, agentDir),
+  };
 }

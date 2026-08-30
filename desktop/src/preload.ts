@@ -6,17 +6,22 @@ const runtime = Object.freeze({
     chrome: process.versions.chrome,
     electron: process.versions.electron,
   }),
-  notifyCompletion(taskTitle?: string): Promise<boolean> {
-    return ipcRenderer.invoke(
-      "pi:completion-notification",
-      typeof taskTitle === "string" ? taskTitle : undefined,
-    ) as Promise<boolean>;
+  notifyCompletion(taskTitle?: string, sessionId?: string): Promise<boolean> {
+    return ipcRenderer.invoke("pi:completion-notification", { taskTitle, sessionId }) as Promise<boolean>;
   },
-  notifyAutomation(taskTitle: string, status: "succeeded" | "failed" | "interrupted"): Promise<boolean> {
-    return ipcRenderer.invoke("pi:completion-notification", { taskTitle, status }) as Promise<boolean>;
+  notifyAutomation(taskTitle: string, status: "succeeded" | "failed" | "interrupted", sessionId?: string): Promise<boolean> {
+    return ipcRenderer.invoke("pi:completion-notification", { taskTitle, status, sessionId }) as Promise<boolean>;
   },
-  notifyUserInput(taskTitle?: string): Promise<boolean> {
-    return ipcRenderer.invoke("pi:completion-notification", { taskTitle, kind: "user-input" }) as Promise<boolean>;
+  notifyUserInput(taskTitle?: string, sessionId?: string): Promise<boolean> {
+    return ipcRenderer.invoke("pi:completion-notification", { taskTitle, kind: "user-input", sessionId }) as Promise<boolean>;
+  },
+  onNotificationSession(listener: (sessionId: string) => void) {
+    const handler = (_event: Electron.IpcRendererEvent, sessionId: unknown) => {
+      if (typeof sessionId !== "string" || !sessionId || sessionId.length > 512 || /[\u0000-\u001f\u007f-\u009f]/.test(sessionId)) return;
+      listener(sessionId);
+    };
+    ipcRenderer.on("pi:notification-session", handler);
+    return () => ipcRenderer.removeListener("pi:notification-session", handler);
   },
   openMenu(menu: "file" | "edit" | "view" | "help", x: number, y: number): Promise<boolean> {
     return ipcRenderer.invoke("pi:open-application-menu", menu, x, y) as Promise<boolean>;
@@ -46,6 +51,9 @@ const runtime = Object.freeze({
   },
   selectDirectory(): Promise<string | null> {
     return ipcRenderer.invoke("pi:directory-picker") as Promise<string | null>;
+  },
+  selectSpeechPackDirectory(defaultPath?: string): Promise<string | null> {
+    return ipcRenderer.invoke("pi:speech-pack-directory-picker", defaultPath) as Promise<string | null>;
   },
   getAgentDataDirectory() {
     return ipcRenderer.invoke("pi:agent-data-directory-get");

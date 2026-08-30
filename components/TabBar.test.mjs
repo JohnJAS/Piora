@@ -20,6 +20,7 @@ test("file tabs stay in one horizontal scrollable row", () => {
   assert.match(styles, /flex-flow:\s*row nowrap/);
   assert.match(styles, /overflow-x:\s*auto/);
   assert.match(styles, /\.tab\s*\{[\s\S]*?flex:\s*0 0 auto/);
+  assert.doesNotMatch(styles, /\[data-drop-target=/, "dragging a file tab should not render a blue insertion line");
 });
 
 test("file tab menu exposes bulk close and reopen without bypassing dirty confirmation", () => {

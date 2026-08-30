@@ -1,7 +1,6 @@
 import {
   SessionManager,
   buildContextEntries as piBuildContextEntries,
-  buildSessionContext as piBuildSessionContext,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { closeSync, openSync, readSync, statSync } from "node:fs";
@@ -241,6 +240,38 @@ export function getSessionEntries(filePath: string): SessionEntry[] {
   return entries as unknown as SessionEntry[];
 }
 
+function resolveActiveSessionSettings(
+  entries: SessionEntry[],
+  leafId: string | null | undefined,
+  byId: Map<string, SessionEntry>,
+): Pick<SessionContext, "thinkingLevel" | "model"> {
+  if (leafId === null) return { thinkingLevel: "off", model: null };
+
+  let current = leafId ? byId.get(leafId) : undefined;
+  current ??= entries.at(-1);
+
+  let thinkingLevel: string | undefined;
+  let model: SessionContext["model"] | undefined;
+  while (current && (thinkingLevel === undefined || model === undefined)) {
+    if (thinkingLevel === undefined && current.type === "thinking_level_change") {
+      thinkingLevel = current.thinkingLevel;
+    }
+    if (model === undefined) {
+      if (current.type === "model_change") {
+        model = { provider: current.provider, modelId: current.modelId };
+      } else if (current.type === "message" && current.message.role === "assistant") {
+        model = { provider: current.message.provider, modelId: current.message.model };
+      }
+    }
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+
+  return {
+    thinkingLevel: thinkingLevel ?? "off",
+    model: model ?? null,
+  };
+}
+
 export function buildSessionContext(
   entries: SessionEntry[],
   leafId?: string | null,
@@ -250,7 +281,11 @@ export function buildSessionContext(
   for (const e of entries) byId.set(e.id, e);
 
   const piEntries = entries as unknown as PiSessionEntry[];
-  const piCtx = piBuildSessionContext(piEntries, leafId, byId as unknown as Map<string, PiSessionEntry>);
+  // The SDK context helper traverses the active path once for settings and a
+  // second time for compaction-aware entries. We already need those entries to
+  // keep UI entry IDs aligned, so resolve the two scalar settings directly and
+  // avoid constructing the SDK message context only to discard its messages.
+  const settings = resolveActiveSessionSettings(entries, leafId, byId);
 
   const contextEntries = piBuildContextEntries(
     piEntries,
@@ -274,8 +309,8 @@ export function buildSessionContext(
   return {
     messages,
     entryIds,
-    thinkingLevel: piCtx.thinkingLevel,
-    model: piCtx.model,
+    thinkingLevel: settings.thinkingLevel,
+    model: settings.model,
   };
 }
 

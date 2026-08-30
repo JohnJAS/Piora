@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  containsAudibleSpeech,
   encodePcm16Wav,
   MAX_VOICE_RECORDING_MS,
   mergeAudioChunks,
@@ -88,6 +89,12 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
 
     const samples = mergeAudioChunks(capture.chunks);
     if (samples.length === 0) {
+      setCurrentPhase("idle");
+      if (mountedRef.current) setError("no-speech");
+      return;
+    }
+
+    if (!containsAudibleSpeech(samples, capture.sampleRate)) {
       setCurrentPhase("idle");
       if (mountedRef.current) setError("no-speech");
       return;
@@ -192,16 +199,27 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
 
   const clearError = useCallback(() => setError(null), []);
 
+  const refreshAvailability = useCallback(async (signal?: AbortSignal) => {
+    const response = await fetch("/api/speech/transcribe", { cache: "no-store", signal });
+    if (!response.ok) return;
+    const payload = await response.json() as { available?: unknown };
+    const nextAvailable = payload.available === true;
+    setAvailable(nextAvailable);
+    if (!nextAvailable && phaseRef.current !== "idle") cancel();
+  }, [cancel]);
+
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/speech/transcribe", { signal: controller.signal })
-      .then(async (response) => response.ok ? response.json() as Promise<{ available?: unknown }> : null)
-      .then((payload) => {
-        if (payload) setAvailable(payload.available === true);
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, []);
+    const refresh = () => { void refreshAvailability(controller.signal).catch(() => {}); };
+    refresh();
+    window.addEventListener("piora:speech-settings-changed", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      controller.abort();
+      window.removeEventListener("piora:speech-settings-changed", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [refreshAvailability]);
 
   useEffect(() => {
     mountedRef.current = true;

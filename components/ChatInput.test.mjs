@@ -149,12 +149,10 @@ test("inserts dictated text at the caret with locale-aware spacing", () => {
   });
 });
 
-test("keeps voice dictation user-controlled and progressive", () => {
+test("keeps voice dictation user-controlled and local-only", () => {
   assert.match(chatInputSource, /useLocalDictation/);
   assert.match(chatInputSource, /voiceTranscribing/);
-  assert.match(chatInputSource, /webkitSpeechRecognition/);
-  assert.match(chatInputSource, /recognition\.continuous = true/);
-  assert.match(chatInputSource, /recognition\.interimResults = true/);
+  assert.doesNotMatch(chatInputSource, /webkitSpeechRecognition|SpeechRecognitionConstructor/);
   assert.match(chatInputSource, /aria-pressed=\{voiceListening\}/);
   assert.match(chatInputSource, /stopVoiceInput\(true\);[\s\S]*?setValue\(""\)/);
 });

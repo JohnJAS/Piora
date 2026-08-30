@@ -19,11 +19,36 @@ test("closes the session event stream only after prompt settlement or a pre-prom
   );
 
   assert.match(finishSource, /closeEvents\(\)/);
+  assert.match(finishSource, /promptSettlementByRunRef\.current\.get\(runId\)/);
+  assert.match(finishSource, /loadSession\(sid, false, true\)/);
   assert.doesNotMatch(agentEndSource, /closeEvents\(\)/);
+  assert.doesNotMatch(agentEndSource, /loadSession\(/);
+  assert.doesNotMatch(agentEndSource, /fetch\(/);
   assert.match(agentEndSource, /Keep the stream open until prompt_done/);
   assert.match(sendSource, /e instanceof AgentCommandError && e\.status >= 400 && e\.status < 500/);
   assert.match(sendSource, /if \(promptRequestStarted && sentSessionId && !definitivelyRejected\) \{[\s\S]*?waitForPromptSettlement/);
   assert.match(sendSource, /if \(promptRequestStarted && sentSessionId && !definitivelyRejected\) \{[\s\S]*?return;[\s\S]*?\}[\s\S]*?closeEvents\(\)/);
+});
+
+test("cancels stale session loads when switching tasks", () => {
+  const loadSource = source.slice(
+    source.indexOf("  const loadSession = useCallback"),
+    source.indexOf("  const loadContext = useCallback"),
+  );
+
+  assert.match(loadSource, /sessionLoadAbortRef\.current\?\.abort\(\)/);
+  assert.match(loadSource, /signal: controller\.signal/);
+  assert.match(loadSource, /if \(controller\.signal\.aborted\) return null/);
+});
+
+test("settles the local stream as soon as the server accepts an abort", () => {
+  const abortSource = source.slice(
+    source.indexOf("  const handleAbort = useCallback"),
+    source.indexOf("  const handleGoalPause = useCallback"),
+  );
+
+  assert.match(abortSource, /const runId = promptRunIdRef\.current/);
+  assert.match(abortSource, /await sendAgentCommand\(sid, \{ type: "abort" \}\);[\s\S]*?await finishPromptWithoutStream\(sid, runId\)/);
 });
 
 test("keeps the first prompt as the new-session title and restores failed material drafts", () => {

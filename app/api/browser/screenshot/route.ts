@@ -9,7 +9,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
   try {
-    const screenshot = await getBrowserViewScreenshot();
+    const sessionId = new URL(request.url).searchParams.get("sessionId")?.trim() || undefined;
+    const screenshot = await getBrowserViewScreenshot(sessionId);
     return new NextResponse(new Blob([new Uint8Array(screenshot)], { type: "image/png" }), {
       headers: {
         "Content-Type": "image/png",

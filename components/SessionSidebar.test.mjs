@@ -4,6 +4,7 @@ import test from "node:test";
 
 const mainSource = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
 const taskRowSource = await readFile(new URL("./sidebar/TaskRow.tsx", import.meta.url), "utf8");
+const taskStatusSource = await readFile(new URL("../hooks/useTaskStatus.ts", import.meta.url), "utf8");
 const globalStyles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const sidebarStyles = await readFile(new URL("./SessionSidebar.module.css", import.meta.url), "utf8");
 const splitSources = await Promise.all([
@@ -12,7 +13,7 @@ const splitSources = await Promise.all([
   "useSessionCatalog.ts", "sidebar-utils.ts", "sidebar-types.ts", "useProjectPicker.ts", "WorktreeSection.tsx",
 ].map((file) => readFile(new URL(`./sidebar/${file}`, import.meta.url), "utf8")));
 const source = [mainSource, taskRowSource, ...splitSources].join("\n");
-const sessionItemSource = taskRowSource.slice(taskRowSource.indexOf("export function TaskRow("));
+const sessionItemSource = taskRowSource.slice(taskRowSource.indexOf("export const TaskRow = memo(function TaskRow("));
 const sidebarSource = source;
 
 test("empty sessions use a friendly localized title instead of an internal placeholder", () => {
@@ -35,11 +36,13 @@ test("does not register row-level session deletion shortcuts", () => {
   assert.doesNotMatch(sessionItemSource, /tabIndex=\{0\}/);
 });
 
-test("polls running sessions only while the tab is visible", () => {
-  assert.doesNotMatch(source, /new EventSource\("\/api\/agent\/running\/events"\)/);
-  assert.match(source, /fetch\("\/api\/agent\/running"/);
-  assert.match(source, /document\.visibilityState !== "visible"/);
-  assert.match(source, /document\.addEventListener\("visibilitychange", (?:onVisibilityChange|visibility)\)/);
+test("streams running sessions and polls only as an SSE fallback", () => {
+  assert.doesNotMatch(source, /fetch\("\/api\/agent\/running"/);
+  assert.match(taskStatusSource, /new EventSource\("\/api\/agent\/running\/events"\)/);
+  assert.match(taskStatusSource, /eventSource\.onerror = scheduleFallbackPoll/);
+  assert.match(taskStatusSource, /eventSource\.onopen = stopFallbackPoll/);
+  assert.match(taskStatusSource, /document\.visibilityState !== "visible"/);
+  assert.match(taskStatusSource, /document\.addEventListener\("visibilitychange", handleVisibilityChange\)/);
 });
 
 test("settles the project loading state when a background refresh supersedes the initial request", () => {
@@ -63,7 +66,7 @@ test("hover actions overlay a fixed-height session row without reflow", () => {
   assert.match(sessionItemSource, /position:\s*"absolute"/);
   assert.match(sessionItemSource, /opacity:\s*hovered \? 1 : 0/);
   assert.doesNotMatch(sessionItemSource, /data-pinned-actions/);
-  assert.match(source, /className="sidebar-project-scroll"/);
+  assert.match(source, /className=\{`sidebar-project-scroll \$\{styles\.projectScroll\}`\}/);
 });
 
 test("selected sessions use a neutral Codex-style background without an accent rail", () => {
@@ -122,13 +125,16 @@ test("matches the Codex project rail with real pin, metadata, edit, and new-chat
   assert.match(source, /togglePinnedProject\(group\.projectRoot\)/);
 });
 
-test("keeps projectless conversations in a fixed chat section", () => {
+test("keeps projectless conversations in a project-aligned chat section", () => {
   assert.match(source, /activeSessions\.filter\(\(session\) => session\.projectless\)/);
   assert.match(source, /activeSessions\.filter\(\(session\) => !session\.projectless\)/);
   assert.match(source, /<SidebarChatArea/);
   assert.match(source, /sidebar\.chats/);
-  assert.match(source, /name="compose"/);
+  assert.match(source, /styles\.sectionLabelActions/);
+  assert.match(source, /name="plus"/);
   assert.match(sidebarStyles, /\.chatSection\s*\{[^}]*flex:\s*0 0 auto/s);
+  assert.doesNotMatch(sidebarStyles, /\.chatSection\s*\{[^}]*border-top:/s);
+  assert.match(sidebarStyles, /\.chatSessionList\s*\{[^}]*padding:\s*4px 1px 8px/s);
 });
 
 test("project session overflow is accessible and attention-aware", () => {
@@ -179,6 +185,24 @@ test("keeps project navigation visible with one settings entry and no duplicate 
   assert.match(source, /onOpenSettings/);
   assert.doesNotMatch(source, /onOpenSkills|onOpenPlugins/);
   assert.doesNotMatch(source, /styles\.accountButton|styles\.footer|accountLabel/);
+});
+
+test("keeps the projects bar outside the clipped session scroller", () => {
+  const headerIndex = source.indexOf("styles.projectsHeader");
+  const scrollerIndex = source.indexOf("styles.projectScroll");
+  assert.ok(headerIndex >= 0 && scrollerIndex > headerIndex);
+  assert.match(sidebarStyles, /\.projectArea\s*\{[^}]*display:\s*flex[^}]*overflow:\s*hidden/s);
+  assert.match(sidebarStyles, /\.projectScroll\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto[^}]*overscroll-behavior:\s*contain/s);
+  const headerStyles = sidebarStyles.slice(
+    sidebarStyles.indexOf(".projectsHeader"),
+    sidebarStyles.indexOf(".projectScroll"),
+  );
+  assert.doesNotMatch(headerStyles, /position:\s*sticky|backdrop-filter/);
+});
+
+test("lets the chat section follow project content instead of pinning it to the bottom", () => {
+  assert.match(sidebarStyles, /\.projectArea\s*\{[^}]*flex:\s*0 1 auto/s);
+  assert.match(sidebarStyles, /\.projectScroll\s*\{[^}]*flex:\s*0 1 auto/s);
 });
 
 test("uses a settings gear instead of the notification bell", () => {

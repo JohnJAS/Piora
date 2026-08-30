@@ -48,6 +48,15 @@ html[data-app-background-active="true"] body > .app-shell {
   z-index: 1;
 }
 
+/* Standalone desktop surfaces share the main window's appearance storage,
+ * but they are not wrapped by AppShell. Keep the companion panel above the
+ * wallpaper pseudo-layers as well, otherwise the saved wallpaper paints over
+ * its rendered controls and leaves an apparently empty window. */
+html[data-app-background-active="true"] body > .companion-panel-root {
+  position: relative;
+  z-index: 1;
+}
+
 /* AppShell currently returns a scoped style followed by its full-height root. */
 html[data-app-background-active="true"] body > style + div {
   background: transparent !important;
@@ -60,6 +69,15 @@ html[data-app-background-active="true"] .workspace-main {
 }
 
 html[data-app-background-active="true"] .app-topbar {
+  background: transparent !important;
+  backdrop-filter: none;
+}
+
+/* The Electron title strip is renderer-owned and the native window-controls
+ * overlay is transparent. Let it share the same wallpaper and readability
+ * wash as the rest of the application instead of painting an isolated panel
+ * across the top of the window. */
+html[data-app-background-active="true"] .desktop-titlebar {
   background: transparent !important;
   backdrop-filter: none;
 }

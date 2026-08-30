@@ -205,12 +205,24 @@ export function SessionTreeItem({ node, depth, scope, dragState, onPointerDown, 
   const [collapsed, setCollapsed] = useState(false);
   const hasChildren = node.children.length > 0;
   const flag = props.flags[node.session.id] ?? {};
+  const { onSelectSession: selectSession, onFlagChange: changeFlag, onDuplicate: duplicateSession } = props;
   const orderedChildren = applySessionOrder(
     node.children,
     props.sessionOrder,
     (child) => child.session.id,
     (child) => Boolean(props.flags[child.session.id]?.pinned),
   );
+  const handleSelectSession = useCallback(() => selectSession(node.session), [node.session, selectSession]);
+  const handleToggleCollapse = useCallback(() => setCollapsed((value) => !value), []);
+  const handleTogglePinned = useCallback(
+    () => changeFlag?.(node.session, { pinned: !flag.pinned }),
+    [changeFlag, flag.pinned, node.session],
+  );
+  const handleToggleArchived = useCallback(
+    () => changeFlag?.(node.session, { archived: true }),
+    [changeFlag, node.session],
+  );
+  const handleDuplicate = useCallback(() => duplicateSession?.(node.session), [duplicateSession, node.session]);
 
   return (
     <div
@@ -230,18 +242,18 @@ export function SessionTreeItem({ node, depth, scope, dragState, onPointerDown, 
           isSelected={node.session.id === props.selectedSessionId}
           isRunning={props.runningSessionIds.has(node.session.id)}
           isUnread={props.unreadSessionIds.has(node.session.id)}
-          onClick={() => props.onSelectSession(node.session)}
+          onClick={handleSelectSession}
           onRenamed={props.onRenamed}
           onDeleted={props.onSessionDeleted}
           depth={depth}
           hasChildren={hasChildren}
           collapsed={collapsed}
-          onToggleCollapse={() => setCollapsed((value) => !value)}
+          onToggleCollapse={handleToggleCollapse}
           pinned={Boolean(flag.pinned)}
           archived={false}
-          onTogglePinned={() => props.onFlagChange?.(node.session, { pinned: !flag.pinned })}
-          onToggleArchived={() => props.onFlagChange?.(node.session, { archived: true })}
-          onDuplicate={() => props.onDuplicate?.(node.session)}
+          onTogglePinned={handleTogglePinned}
+          onToggleArchived={handleToggleArchived}
+          onDuplicate={handleDuplicate}
         />
       </div>
       {hasChildren && !collapsed && orderedChildren.map((child) => (

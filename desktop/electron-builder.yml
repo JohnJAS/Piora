@@ -52,13 +52,6 @@ extraResources:
     to: web/node_modules/@earendil-works/pi-coding-agent/dist
     filter:
       - "**/*"
-  # whisper.cpp and the multilingual Base Q5 model are prepared and checksum-
-  # verified by the beforeBuild hook. They ship inside the EXE, so runtime
-  # transcription never downloads an engine or model.
-  - from: build/whisper
-    to: whisper
-    filter:
-      - "**/*"
   - from: ../LICENSE
     to: licenses/LICENSE
   - from: ../NOTICE
@@ -76,19 +69,18 @@ extraResources:
     filter:
       - "LICENSE"
       - "SOURCE.md"
-  - from: ../third_party/whisper-cpp
-    to: licenses/whisper-cpp
-    filter:
-      - "LICENSE"
-      - "SOURCE.md"
-  - from: ../third_party/openai-whisper
-    to: licenses/openai-whisper
-    filter:
-      - "LICENSE"
-      - "SOURCE.md"
 
 win:
   icon: icon.ico
+  extraResources:
+    - from: ../third_party/harmony-tools/windows-x64
+      to: harmony-tools
+      filter:
+        - "hdc.exe"
+        - "libusb_shared.dll"
+        - "OHScrcpyServer.hap"
+        - "LICENSE*"
+        - "SOURCE.md"
   # Stable releases are currently checksum-verified but not Authenticode
   # signed. Keep updater signature verification disabled until CI is supplied
   # with a Windows signing certificate, otherwise unsigned update installers
@@ -137,7 +129,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   perMachine: false
   allowElevation: true
-  createDesktopShortcut: always
+  createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Piora
   uninstallDisplayName: Piora

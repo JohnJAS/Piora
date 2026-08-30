@@ -18,6 +18,10 @@ const agentSessionSource = readFileSync(
   new URL("./useAgentSession.ts", import.meta.url),
   "utf8",
 );
+const appShellSource = readFileSync(
+  new URL("../components/AppShell.tsx", import.meta.url),
+  "utf8",
+);
 
 test("completion notifications are opt-in and do not inherit the sound preference", () => {
   assert.match(hookSource, /useState\(false\)/);
@@ -26,14 +30,27 @@ test("completion notifications are opt-in and do not inherit the sound preferenc
   assert.match(hookSource, /Notification\.requestPermission\(\)/);
 });
 
-test("desktop notification IPC accepts only a sanitized task title", () => {
-  assert.match(preloadSource, /notifyCompletion\(taskTitle\?: string\)/);
+test("desktop notification IPC accepts a sanitized title and bounded Session id", () => {
+  assert.match(preloadSource, /notifyCompletion\(taskTitle\?: string, sessionId\?: string\)/);
   assert.match(preloadSource, /pi:completion-notification/);
+  assert.match(preloadSource, /pi:notification-session/);
   assert.match(mainSource, /isTrustedCompletionNotificationSender/);
   assert.match(mainSource, /event\.senderFrame !== event\.sender\.mainFrame/);
   assert.match(mainSource, /sanitizeNotificationTaskTitle/);
+  assert.match(mainSource, /sanitizeNotificationSessionId/);
   assert.match(mainSource, /MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80/);
+  assert.match(mainSource, /MAX_NOTIFICATION_SESSION_ID_LENGTH = 512/);
   assert.doesNotMatch(preloadSource, /messageContent|fileContent|notificationBody/);
+});
+
+test("clicking a notification opens its Session in the Piora instance that emitted it", () => {
+  assert.match(mainSource, /notification\.on\("click", \(\) => \{[\s\S]*?focusMainWindow\(\)[\s\S]*?webContents\.send\(NOTIFICATION_SESSION_CHANNEL, sessionId\)/);
+  assert.match(preloadSource, /onNotificationSession\(listener: \(sessionId: string\) => void\)/);
+  assert.match(appShellSource, /onNotificationSession\?\.\(\(sessionId\) =>/);
+  assert.match(appShellSource, /fetch\("\/api\/sessions", \{ cache: "no-store" \}\)/);
+  assert.match(appShellSource, /handleSelectSession\(session\)/);
+  assert.match(appShellSource, /notifyCompletion\(taskTitle, sessionId\)/);
+  assert.match(appShellSource, /notifyUserInput\(snapshot\.title \?\? undefined, snapshot\.id\)/);
 });
 
 test("desktop and browser notifications use application-owned completion copy", () => {
@@ -41,10 +58,12 @@ test("desktop and browser notifications use application-owned completion copy", 
   assert.match(hookSource, /Task completed\. Open Piora to review the result\./);
   assert.match(mainSource, /new Notification\(\{ \.\.\.copy, silent: false \}\)/);
   assert.match(hookSource, /tag: "piora-task-complete"/);
+  assert.match(hookSource, /notification\.onclick/);
+  assert.match(hookSource, /NOTIFICATION_SESSION_EVENT/);
 });
 
 test("pending model questions raise an application-owned input notification", () => {
-  assert.match(preloadSource, /notifyUserInput\(taskTitle\?: string\)/);
+  assert.match(preloadSource, /notifyUserInput\(taskTitle\?: string, sessionId\?: string\)/);
   assert.match(preloadSource, /kind: "user-input"/);
   assert.match(hookSource, /The model asked a question and is waiting for your reply\./);
   assert.match(mainSource, /The model asked a question and is waiting for your reply\./);

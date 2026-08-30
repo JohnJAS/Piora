@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { chromium, type BrowserContext, type Locator, type Page } from "playwright-core";
+import { desktopBrowserRpcAvailable, requestDesktopBrowser } from "../lib/desktop-browser-rpc.ts";
 
 type BrowserSession = {
   context: BrowserContext;
@@ -275,6 +276,9 @@ const browserTool = defineTool({
   async execute(_toolCallId, params, signal, _onUpdate, ctx) {
     if (signal?.aborted) throw new Error("Browser action aborted");
     const sessionId = ctx.sessionManager.getSessionId();
+    if (desktopBrowserRpcAvailable()) {
+      return await requestDesktopBrowser(sessionId, { ...params }, signal);
+    }
     if (params.action === "close") {
       const existing = runtime.sessions.get(sessionId);
       runtime.sessions.delete(sessionId);
@@ -407,7 +411,12 @@ async function readPageCursor(page: Page): Promise<string> {
   return SAFE_BROWSER_CURSORS.has(cursor) ? cursor : "default";
 }
 
-async function getVisibleSession(): Promise<{ id: string; session: BrowserSession }> {
+async function getVisibleSession(preferredSessionId?: string): Promise<{ id: string; session: BrowserSession }> {
+  if (preferredSessionId) {
+    const preferred = runtime.sessions.get(preferredSessionId);
+    if (preferred && !preferred.page.isClosed()) return { id: preferredSessionId, session: preferred };
+    return { id: preferredSessionId, session: await getSession(preferredSessionId) };
+  }
   const activeId = runtime.activeSessionId;
   if (activeId) {
     const active = runtime.sessions.get(activeId);
@@ -417,8 +426,8 @@ async function getVisibleSession(): Promise<{ id: string; session: BrowserSessio
   return { id: UI_SESSION_ID, session };
 }
 
-export async function getBrowserViewState(): Promise<BrowserViewState> {
-  const { session } = await getVisibleSession();
+export async function getBrowserViewState(sessionId?: string): Promise<BrowserViewState> {
+  const { session } = await getVisibleSession(sessionId);
   const pages = session.context.pages().filter((page) => !page.isClosed());
   const activePage = session.page.isClosed() ? (pages[0] ?? await session.context.newPage()) : session.page;
   session.page = activePage;
@@ -439,8 +448,8 @@ export async function getBrowserViewState(): Promise<BrowserViewState> {
   };
 }
 
-export async function getBrowserViewScreenshot(): Promise<Buffer> {
-  const { session } = await getVisibleSession();
+export async function getBrowserViewScreenshot(sessionId?: string): Promise<Buffer> {
+  const { session } = await getVisibleSession(sessionId);
   return session.page.screenshot({ type: "png", animations: "disabled" });
 }
 
@@ -456,10 +465,11 @@ type BrowserViewAction = {
   button?: "left" | "middle" | "right";
   width?: number;
   height?: number;
+  sessionId?: string;
 };
 
 export async function performBrowserViewAction(input: BrowserViewAction): Promise<BrowserViewState> {
-  const visible = await getVisibleSession();
+  const visible = await getVisibleSession(input.sessionId);
   const { id, session } = visible;
   let page = session.page;
   switch (input.action) {
@@ -551,7 +561,7 @@ export async function performBrowserViewAction(input: BrowserViewAction): Promis
     await page.waitForTimeout(80);
     await persistBrowserState(session.context);
   }
-  return getBrowserViewState();
+  return getBrowserViewState(id);
 }
 
 export default function pioraBrowser(api: ExtensionAPI) {

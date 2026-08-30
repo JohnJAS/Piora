@@ -145,47 +145,6 @@ export interface ChatInputHandle {
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
 const MODEL_FILTER_THRESHOLD = 8;
 
-interface BrowserSpeechRecognitionResult {
-  readonly isFinal: boolean;
-  readonly length: number;
-  readonly [index: number]: { readonly transcript: string };
-}
-
-interface BrowserSpeechRecognitionEvent extends Event {
-  readonly results: {
-    readonly length: number;
-    readonly [index: number]: BrowserSpeechRecognitionResult;
-  };
-}
-
-interface BrowserSpeechRecognitionErrorEvent extends Event {
-  readonly error: string;
-}
-
-interface BrowserSpeechRecognition extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onstart: (() => void) | null;
-  onresult: ((event: BrowserSpeechRecognitionEvent) => void) | null;
-  onerror: ((event: BrowserSpeechRecognitionErrorEvent) => void) | null;
-  onend: (() => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
-}
-
-type BrowserSpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
-
-function getSpeechRecognitionConstructor(): BrowserSpeechRecognitionConstructor | null {
-  if (typeof window === "undefined") return null;
-  const speechWindow = window as typeof window & {
-    SpeechRecognition?: BrowserSpeechRecognitionConstructor;
-    webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
-  };
-  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
-}
-
 export function joinSpeechText(before: string, transcript: string, after: string, language: string): {
   value: string;
   selection: number;
@@ -412,10 +371,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [fileIndex, setFileIndex] = useState<{ cwd: string; entries: FileIndexEntry[]; truncated: boolean } | null>(null);
   const [fileIndexLoading, setFileIndexLoading] = useState(false);
   const [atServerResult, setAtServerResult] = useState<{ cwd: string; query: string; matches: FileIndexEntry[] } | null>(null);
-  const [nativeVoiceInputSupported, setNativeVoiceInputSupported] = useState(false);
-  const [isVoiceListening, setIsVoiceListening] = useState(false);
-  const [voiceInputError, setVoiceInputError] = useState<"permission" | "microphone" | "generic" | null>(null);
-
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
@@ -453,23 +408,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const stopVoiceInput = useCallback((abort = false) => {
     if (abort) localVoiceCancelRef.current();
     else void localVoiceStopRef.current();
-    const recognition = speechRecognitionRef.current;
-    setIsVoiceListening(false);
     if (abort) speechInsertionRef.current = null;
-    if (!recognition) return;
-    if (abort) {
-      speechRecognitionRef.current = null;
-      recognition.onstart = null;
-      recognition.onresult = null;
-      recognition.onerror = null;
-      recognition.onend = null;
-    }
-    try {
-      if (abort) recognition.abort();
-      else recognition.stop();
-    } catch {
-      // The browser may already have ended the recognition session.
-    }
   }, []);
 
   const processImageFiles = useCallback(async (files: File[]) => {
@@ -756,7 +695,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     // Composer modes are intentionally one-shot. Remove the legacy sticky
     // target-mode preference so an old browser setting cannot affect a later prompt.
     window.localStorage.removeItem("piora-goal-mode-enabled");
-    setNativeVoiceInputSupported(getSpeechRecognitionConstructor() !== null);
   }, []);
 
   useEffect(() => {
@@ -913,8 +851,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const insertion = speechInsertionRef.current;
     if (!insertion) return;
     const next = joinSpeechText(insertion.before, transcript, insertion.after, insertion.language);
+    speechInsertionRef.current = null;
     setValue(next.value);
-    setVoiceInputError(null);
     updateAtQuery(next.value, next.selection);
     requestAnimationFrame(() => {
       const element = textareaRef.current;
@@ -935,7 +873,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       after: currentValue.slice(selectionEnd),
       language: locale === "zh-CN" ? "zh-CN" : "en-US",
     };
-    setVoiceInputError(null);
     setHistoryMenuOpen(false);
     setSlashMenuOpen(false);
     setAtMenuOpen(false);
@@ -956,77 +893,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const localVoiceRecording = localVoiceEnabled
     && (localDictation.phase === "starting" || localDictation.phase === "recording");
   const voiceTranscribing = localVoiceEnabled && localDictation.phase === "transcribing";
-  const voiceInputSupported = localVoiceEnabled || nativeVoiceInputSupported;
-  const voiceListening = localVoiceEnabled ? localVoiceRecording : isVoiceListening;
-  const effectiveVoiceError = localVoiceEnabled ? localDictation.error : voiceInputError;
-
-  const toggleNativeVoiceInput = useCallback(() => {
-    if (speechRecognitionRef.current) {
-      stopVoiceInput();
-      return;
-    }
-
-    const SpeechRecognitionConstructor = getSpeechRecognitionConstructor();
-    if (!SpeechRecognitionConstructor) {
-      setNativeVoiceInputSupported(false);
-      return;
-    }
-
-    const language = locale === "zh-CN" ? "zh-CN" : "en-US";
-    const recognition = new SpeechRecognitionConstructor();
-
-    prepareVoiceInsertion();
-    speechRecognitionRef.current = recognition;
-    setIsVoiceListening(true);
-
-    recognition.lang = language;
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.onstart = () => setIsVoiceListening(true);
-    recognition.onresult = (event) => {
-      let transcript = "";
-      for (let index = 0; index < event.results.length; index += 1) {
-        transcript += event.results[index]?.[0]?.transcript ?? "";
-      }
-      applyVoiceTranscript(transcript);
-    };
-    recognition.onerror = (event) => {
-      if (event.error === "aborted") return;
-      setIsVoiceListening(false);
-      if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        setVoiceInputError("permission");
-      } else if (event.error === "audio-capture") {
-        setVoiceInputError("microphone");
-      } else {
-        setVoiceInputError("generic");
-      }
-    };
-    recognition.onend = () => {
-      if (speechRecognitionRef.current === recognition) {
-        speechRecognitionRef.current = null;
-        speechInsertionRef.current = null;
-        setIsVoiceListening(false);
-      }
-    };
-
-    try {
-      recognition.start();
-    } catch {
-      speechRecognitionRef.current = null;
-      speechInsertionRef.current = null;
-      setIsVoiceListening(false);
-      setVoiceInputError("generic");
-    }
-  }, [applyVoiceTranscript, locale, prepareVoiceInsertion, stopVoiceInput]);
+  const voiceInputSupported = localVoiceEnabled;
+  const voiceListening = localVoiceRecording;
+  const effectiveVoiceError = localDictation.error;
 
   const toggleVoiceInput = useCallback(() => {
-    if (!localVoiceEnabled) {
-      toggleNativeVoiceInput();
-      return;
-    }
+    if (!localVoiceEnabled) return;
     if (localDictation.phase === "idle") prepareVoiceInsertion();
     void localDictation.toggle();
-  }, [localDictation, localVoiceEnabled, prepareVoiceInsertion, toggleNativeVoiceInput]);
+  }, [localDictation, localVoiceEnabled, prepareVoiceInsertion]);
 
   const atQueryText = atQuery?.query ?? null;
   const atLocalMatches: FileIndexEntry[] = React.useMemo(() => (
@@ -1372,7 +1247,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         return;
       }
 
-      if (e.key === "Escape" && !isComposing && (speechRecognitionRef.current || localVoiceRecording)) {
+      if (e.key === "Escape" && !isComposing && localVoiceRecording) {
         e.preventDefault();
         stopVoiceInput();
         return;
@@ -1578,6 +1453,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         flexShrink: 0,
         background: "transparent",
         padding: "0 16px 8px",
+        paddingLeft: isMobile ? 16 : 36, // reserve a safe gutter between selectable text and the left resize handle
         paddingRight: isMobile ? 16 : 52, // desktop: 16px base + 36px for ChatMinimap alignment
       }}
     >
@@ -2028,8 +1904,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             ref={textareaRef}
             value={value}
             onChange={(e) => {
-              if (speechRecognitionRef.current || localVoiceRecording || voiceTranscribing) stopVoiceInput(true);
-              if (voiceInputError) setVoiceInputError(null);
+              if (localVoiceRecording || voiceTranscribing) stopVoiceInput(true);
               if (localDictation.error) localDictation.clearError();
               if (promptOptimization && e.target.value.trim() !== promptOptimization.source) {
                 promptOptimizerAbortRef.current?.abort();

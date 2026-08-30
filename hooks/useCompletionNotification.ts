@@ -4,11 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 const STORAGE_KEY = "pi-completion-notifications-enabled";
 const MAX_TASK_TITLE_LENGTH = 80;
+const MAX_SESSION_ID_LENGTH = 512;
+
+export const NOTIFICATION_SESSION_EVENT = "piora:notification-session";
 
 type DesktopNotificationBridge = {
-  notifyCompletion?: (taskTitle?: string) => Promise<boolean>;
-  notifyAutomation?: (taskTitle: string, status: "succeeded" | "failed" | "interrupted") => Promise<boolean>;
-  notifyUserInput?: (taskTitle?: string) => Promise<boolean>;
+  notifyCompletion?: (taskTitle?: string, sessionId?: string) => Promise<boolean>;
+  notifyAutomation?: (taskTitle: string, status: "succeeded" | "failed" | "interrupted", sessionId?: string) => Promise<boolean>;
+  notifyUserInput?: (taskTitle?: string, sessionId?: string) => Promise<boolean>;
 };
 
 export type CompletionNotificationCapability = "desktop" | "browser" | "unsupported";
@@ -26,6 +29,25 @@ export function sanitizeCompletionTaskTitle(value: unknown): string | undefined 
     .trim();
   if (!normalized) return undefined;
   return Array.from(normalized).slice(0, MAX_TASK_TITLE_LENGTH).join("");
+}
+
+export function sanitizeNotificationSessionId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  if (!normalized || normalized.length > MAX_SESSION_ID_LENGTH || /[\u0000-\u001f\u007f-\u009f]/.test(normalized)) {
+    return undefined;
+  }
+  return normalized;
+}
+
+function attachBrowserNotificationNavigation(notification: Notification, sessionId: string | undefined): void {
+  notification.onclick = () => {
+    window.focus();
+    notification.close();
+    if (sessionId) {
+      window.dispatchEvent(new CustomEvent(NOTIFICATION_SESSION_EVENT, { detail: sessionId }));
+    }
+  };
 }
 
 function getBrowserNotificationCopy(taskTitle: string | undefined): {
@@ -122,14 +144,15 @@ export function useCompletionNotification() {
     [setNotificationEnabled],
   );
 
-  const notifyCompletion = useCallback(async (taskTitle?: string): Promise<boolean> => {
+  const notifyCompletion = useCallback(async (taskTitle?: string, sessionId?: string): Promise<boolean> => {
     if (!enabledRef.current) return false;
     const safeTaskTitle = sanitizeCompletionTaskTitle(taskTitle);
+    const safeSessionId = sanitizeNotificationSessionId(sessionId);
 
     const desktopBridge = getDesktopNotificationBridge();
     if (desktopBridge?.notifyCompletion) {
       try {
-        return await desktopBridge.notifyCompletion(safeTaskTitle);
+        return await desktopBridge.notifyCompletion(safeTaskTitle, safeSessionId);
       } catch {
         return false;
       }
@@ -142,24 +165,26 @@ export function useCompletionNotification() {
 
     try {
       const copy = getBrowserNotificationCopy(safeTaskTitle);
-      new Notification(copy.title, {
+      const notification = new Notification(copy.title, {
         body: copy.body,
         tag: "piora-task-complete",
       });
+      attachBrowserNotificationNavigation(notification, safeSessionId);
       return true;
     } catch {
       return false;
     }
   }, [commitEnabled]);
 
-  const notifyUserInput = useCallback(async (taskTitle?: string): Promise<boolean> => {
+  const notifyUserInput = useCallback(async (taskTitle?: string, sessionId?: string): Promise<boolean> => {
     if (!enabledRef.current) return false;
     const safeTaskTitle = sanitizeCompletionTaskTitle(taskTitle);
+    const safeSessionId = sanitizeNotificationSessionId(sessionId);
 
     const desktopBridge = getDesktopNotificationBridge();
     if (desktopBridge?.notifyUserInput) {
       try {
-        return await desktopBridge.notifyUserInput(safeTaskTitle);
+        return await desktopBridge.notifyUserInput(safeTaskTitle, safeSessionId);
       } catch {
         return false;
       }
@@ -171,22 +196,24 @@ export function useCompletionNotification() {
 
     try {
       const copy = getUserInputNotificationCopy(safeTaskTitle);
-      new Notification(copy.title, {
+      const notification = new Notification(copy.title, {
         body: copy.body,
         tag: "piora-user-input",
       });
+      attachBrowserNotificationNavigation(notification, safeSessionId);
       return true;
     } catch {
       return false;
     }
   }, []);
 
-  const notifyAutomation = useCallback(async (taskTitle: string, status: "succeeded" | "failed" | "interrupted"): Promise<boolean> => {
+  const notifyAutomation = useCallback(async (taskTitle: string, status: "succeeded" | "failed" | "interrupted", sessionId?: string): Promise<boolean> => {
     if (!enabledRef.current) return false;
     const safeTaskTitle = sanitizeCompletionTaskTitle(taskTitle) ?? "Piora";
+    const safeSessionId = sanitizeNotificationSessionId(sessionId);
     const desktopBridge = getDesktopNotificationBridge();
     if (desktopBridge?.notifyAutomation) {
-      try { return await desktopBridge.notifyAutomation(safeTaskTitle, status); } catch { return false; }
+      try { return await desktopBridge.notifyAutomation(safeTaskTitle, status, safeSessionId); } catch { return false; }
     }
     if (typeof Notification === "undefined" || Notification.permission !== "granted") {
       commitEnabled(false);
@@ -196,7 +223,11 @@ export function useCompletionNotification() {
     const body = chinese
       ? status === "succeeded" ? "定时任务已完成，可以回到 Piora 查看结果。" : status === "interrupted" ? "定时任务因 Piora 重启而中断。" : "定时任务执行失败，请回到 Piora 查看详情。"
       : status === "succeeded" ? "Scheduled task completed. Open Piora to review the result." : status === "interrupted" ? "Scheduled task was interrupted when Piora restarted." : "Scheduled task failed. Open Piora to review the details.";
-    try { new Notification(`${safeTaskTitle} - Piora`, { body, tag: `piora-automation-${status}` }); return true; } catch { return false; }
+    try {
+      const notification = new Notification(`${safeTaskTitle} - Piora`, { body, tag: `piora-automation-${status}` });
+      attachBrowserNotificationNavigation(notification, safeSessionId);
+      return true;
+    } catch { return false; }
   }, [commitEnabled]);
 
   return {

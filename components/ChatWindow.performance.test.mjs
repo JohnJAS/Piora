@@ -25,8 +25,10 @@ test("materializes only the visible history tail", () => {
   assert.match(source, /Build cheap factories for the full history/);
 });
 
-test("uses a responsive, user-resizable conversation column", () => {
+test("keeps both resize handles while moving the left handle away from selectable text", () => {
   assert.match(source, /followDefaultWidth:\s*true/);
+  assert.match(source, /const CHAT_COLUMN_LEFT_PADDING = 36/);
+  assert.match(source, /surfaceWidth - CHAT_COLUMN_LEFT_PADDING - CHAT_INPUT_RIGHT_PADDING/);
   assert.match(source, /className="chat-column"/);
   assert.match(source, /chat-column-resize-handle is-left/);
   assert.match(source, /chat-column-resize-handle is-right/);
@@ -36,8 +38,16 @@ test("uses a responsive, user-resizable conversation column", () => {
   assert.match(inputSource, /className="composer-column"/);
   assert.doesNotMatch(inputSource, /maxWidth:\s*820/);
   assert.match(globalCss, /--chat-column-width, clamp\(820px, 72vw, 1180px\)/);
-  assert.match(globalCss, /\.chat-column-resize-handle\.is-left/);
+  assert.match(globalCss, /\.chat-column-resize-handle\.is-left\s*\{[\s\S]*?left:\s*max\(2px,/);
+  assert.match(inputSource, /paddingLeft:\s*isMobile \? 16 : 36/);
   assert.match(globalCss, /\.chat-column-resize-handle\.is-right/);
   assert.match(resizerSource, /drag\.growthDirection === "right"/);
   assert.match(resizerSource, /readGrowthDirection\(event\.currentTarget, growthDirection\)/);
+});
+
+test("shows a draggable vertical scrollbar for the conversation history", () => {
+  assert.match(source, /className="chat-scroll-container flex-1 overflow-y-auto pt-4"/);
+  assert.doesNotMatch(source, /\[scrollbar-width:none\]/);
+  assert.match(globalCss, /\.chat-scroll-container\s*\{[\s\S]*?scrollbar-gutter:\s*stable/);
+  assert.match(globalCss, /\.chat-scroll-container::\-webkit-scrollbar\s*\{[\s\S]*?width:\s*6px/);
 });

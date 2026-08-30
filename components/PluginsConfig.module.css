@@ -5,6 +5,16 @@
   gap: 18px;
 }
 
+.packageIcon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 8%, var(--bg));
+}
+
 .summaryCard {
   display: grid;
   grid-template-columns: minmax(96px, 130px) minmax(0, 1fr);

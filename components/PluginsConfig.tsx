@@ -867,15 +867,9 @@ export function PluginsConfig({
                             if (!isSelected) e.currentTarget.style.background = "none";
                           }}
                         >
-                          <span
-                            style={{
-                              flexShrink: 0,
-                              width: 7,
-                              height: 7,
-                              borderRadius: "50%",
-                              background: statusColor(pkg.status),
-                            }}
-                          />
+                          <span className={styles.packageIcon} style={{ color: statusColor(pkg.status) }} aria-hidden="true">
+                            <AliIcon name="package" size={16} />
+                          </span>
                           <div style={{ minWidth: 0, flex: 1 }}>
                             <div
                               style={{

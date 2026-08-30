@@ -185,6 +185,7 @@ export class AgentSessionWrapper {
   private lastPromptErrorSummary: string | undefined;
   private runStartedAt: number | null = null;
   private taskActivity: TaskRuntimeActivity | null = null;
+  private cachedSessionTitle: string | null = null;
   private fallbackTaskTitle: string | null = null;
   private lastStreamActivityAt = 0;
   private extensionsBound = false;
@@ -217,6 +218,7 @@ export class AgentSessionWrapper {
       toolNameCeiling?: readonly string[];
     } = {},
   ) {
+    this.cachedSessionTitle = inner.sessionManager.getSessionName()?.trim() || null;
     this.goalState = getGoalRun(inner.sessionId);
     this.planState = getPlanArtifact(inner.sessionId);
     this.capabilityCatalog = buildSessionCapabilityCatalog(inner.getAllTools(), runtimeProfile);
@@ -373,7 +375,7 @@ export class AgentSessionWrapper {
     const pendingApproval = this.pendingUiResponses.size > 0 || this.activeCustomUis.size > 0;
     const contextUsage = this.inner.getContextUsage();
     const title = compactTaskActivityText(
-      this.inner.sessionManager.getSessionName() || this.fallbackTaskTitle || "",
+      this.cachedSessionTitle || this.fallbackTaskTitle || "",
       80,
     );
     this.planState = getPlanArtifact(this.sessionId) ?? this.planState;
@@ -403,6 +405,12 @@ export class AgentSessionWrapper {
       ...(this.goalState ? { goal: this.goalState } : {}),
       ...(taskRun ? { taskRun } : {}),
     };
+  }
+
+  setSessionName(name: string): void {
+    this.inner.setSessionName(name);
+    this.cachedSessionTitle = name.trim() || null;
+    notifyRunningChange();
   }
 
   private setTaskActivity(kind: TaskRuntimeActivityKind, message: unknown, streaming = false): void {
@@ -519,9 +527,10 @@ export class AgentSessionWrapper {
           });
         }
       }
-      // Streaming / compaction / tool events flow through here; re-broadcast
-      // the running-status snapshot so the sidebar can update live.
-      notifyRunningChange();
+      // Lifecycle state is immediate; high-frequency text/tool activity is
+      // coalesced so a token stream cannot rebuild every live-session snapshot.
+      if (isImmediateRunningSnapshotEvent(event)) notifyRunningChange();
+      else scheduleRunningChange();
     });
     this.resetIdleTimer();
     notifyRunningChange();
@@ -725,7 +734,7 @@ export class AgentSessionWrapper {
   }
 
   private assertSessionIdle(action: string): void {
-    if (this.promptRunning || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning) {
+    if (this.stopping || this.promptRunning || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning) {
       throw new Error(`Cannot ${action} while the session is busy`);
     }
   }
@@ -999,31 +1008,45 @@ export class AgentSessionWrapper {
       }
 
       case "abort": {
+        if (this.stopping) return { accepted: true };
         const promptRun = this.activePromptRun;
         this.stopping = true;
         notifyRunningChange();
-        try {
-          await this.withFinalRunningNotification(() => this.inner.abort());
-        } finally {
-          this.pauseActiveGoal("Target mode was paused because the user stopped the active run.");
-          const interruptedPlan = promptRun
-            ? settlePlanExecutionFromGoal(
-                this.inner.sessionId,
-                promptRun.runId,
-                "paused",
-                "Plan execution was interrupted because the user stopped the active run.",
-              )
-            : undefined;
-          if (interruptedPlan && interruptedPlan.revision !== this.planState?.revision) {
-            this.persistPlanState(interruptedPlan);
-            this.emit({ type: "plan_progress", plan: interruptedPlan, taskRun: projectPlanArtifactTaskRun(interruptedPlan) });
+
+        // AgentSession.abort() signals its AbortController synchronously, then
+        // waits for the model transport and all event listeners to become idle.
+        // Do not hold the stop request open for that potentially slow cleanup:
+        // the UI can settle immediately while the wrapper remains `stopping`
+        // until the real runtime has finished unwinding.
+        const abortTask = this.inner.abort();
+        this.pauseActiveGoal("Target mode was paused because the user stopped the active run.");
+        const interruptedPlan = promptRun
+          ? settlePlanExecutionFromGoal(
+              this.inner.sessionId,
+              promptRun.runId,
+              "paused",
+              "Plan execution was interrupted because the user stopped the active run.",
+            )
+          : undefined;
+        if (interruptedPlan && interruptedPlan.revision !== this.planState?.revision) {
+          this.persistPlanState(interruptedPlan);
+          this.emit({ type: "plan_progress", plan: interruptedPlan, taskRun: projectPlanArtifactTaskRun(interruptedPlan) });
+        }
+        const cleanupTask = finishPromptRun(promptRun, "abort");
+        if (this.activePromptRun?.runId === promptRun?.runId) this.activePromptRun = undefined;
+
+        void Promise.allSettled([abortTask, cleanupTask]).then((results) => {
+          for (const result of results) {
+            if (result.status === "rejected") {
+              console.error("[pi-web] active run abort cleanup failed:", result.reason instanceof Error ? result.reason.message : result.reason);
+            }
           }
-          await finishPromptRun(promptRun, "abort");
-          if (this.activePromptRun?.runId === promptRun?.runId) this.activePromptRun = undefined;
+        }).finally(() => {
+          if (!this._alive) return;
           this.stopping = false;
           notifyRunningChange();
-        }
-        return null;
+        });
+        return { accepted: true };
       }
 
       case "goal_pause": {
@@ -1227,7 +1250,7 @@ export class AgentSessionWrapper {
       case "set_session_name": {
         const name = (command.name as string | undefined)?.trim();
         if (!name) throw new Error("Session name cannot be empty");
-        this.inner.setSessionName(name);
+        this.setSessionName(name);
         invalidateSessionListCache();
         return null;
       }
@@ -1235,7 +1258,7 @@ export class AgentSessionWrapper {
       case "get_session_stats": {
         return {
           ...this.inner.getSessionStats(),
-          sessionName: this.inner.sessionManager.getSessionName(),
+          sessionName: this.cachedSessionTitle ?? undefined,
         };
       }
 
@@ -1859,6 +1882,7 @@ declare global {
   var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
   var __piStartingSessionCwds: Map<string, number> | undefined;
   var __piRunningListeners: Set<(sessions: TaskRuntimeSnapshot[]) => void> | undefined;
+  var __piRunningNotifyTimer: ReturnType<typeof setTimeout> | undefined;
   var __piServicesCache: Map<string, AgentSessionServices> | undefined;
 }
 
@@ -2084,12 +2108,35 @@ export function subscribeRunningSessions(listener: (sessions: TaskRuntimeSnapsho
 }
 
 let lastRunningSnapshot = "";
+const RUNNING_SNAPSHOT_THROTTLE_MS = 250;
+
+function isImmediateRunningSnapshotEvent(event: AgentEvent): boolean {
+  return event.type === "agent_start"
+    || event.type === "agent_end"
+    || event.type === "compaction_start"
+    || event.type === "compaction_end"
+    || event.type === "auto_compaction_start"
+    || event.type === "auto_compaction_end"
+    || event.type === "extension_ui_request";
+}
+
+function scheduleRunningChange(): void {
+  if (globalThis.__piRunningNotifyTimer) return;
+  globalThis.__piRunningNotifyTimer = setTimeout(() => {
+    globalThis.__piRunningNotifyTimer = undefined;
+    notifyRunningChange();
+  }, RUNNING_SNAPSHOT_THROTTLE_MS);
+}
 
 /**
  * Recompute the running-session-id set and, if it changed since the last
  * notification, broadcast it to subscribers. Cheap to call often.
  */
 export function notifyRunningChange(): void {
+  if (globalThis.__piRunningNotifyTimer) {
+    clearTimeout(globalThis.__piRunningNotifyTimer);
+    globalThis.__piRunningNotifyTimer = undefined;
+  }
   const sessions = getRunningRpcSessionStatuses();
   const snapshot = JSON.stringify(sessions);
   if (snapshot === lastRunningSnapshot) return;

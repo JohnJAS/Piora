@@ -5,6 +5,7 @@ declare global {
   interface Window {
     piDesktop?: {
       selectDirectory: () => Promise<string | null>;
+      selectSpeechPackDirectory?: (defaultPath?: string) => Promise<string | null>;
       getAgentDataDirectory?: () => Promise<{
         currentDirectory: string;
         defaultDirectory: string;
@@ -21,6 +22,10 @@ declare global {
         currentDirectory?: string;
       }>;
       platform?: string;
+      notifyCompletion?: (taskTitle?: string, sessionId?: string) => Promise<boolean>;
+      notifyAutomation?: (taskTitle: string, status: "succeeded" | "failed" | "interrupted", sessionId?: string) => Promise<boolean>;
+      notifyUserInput?: (taskTitle?: string, sessionId?: string) => Promise<boolean>;
+      onNotificationSession?: (listener: (sessionId: string) => void) => () => void;
       openMenu?: (menu: "file" | "edit" | "view" | "help", x: number, y: number) => Promise<boolean>;
       getUpdateState?: () => Promise<DesktopUpdateState | null>;
       checkForUpdates?: () => Promise<DesktopUpdateState | null>;
@@ -74,6 +79,7 @@ export interface DesktopUpdateState {
 }
 
 export interface DesktopBrowserState {
+  sessionId: string;
   activeTabId: string;
   canGoBack: boolean;
   canGoForward: boolean;
@@ -84,7 +90,8 @@ export interface DesktopBrowserState {
 }
 
 export interface DesktopBrowserAction {
-  action: "back" | "close_tab" | "forward" | "navigate" | "new_tab" | "reload" | "switch_tab";
+  action: "back" | "close_tab" | "forward" | "navigate" | "new_tab" | "reload" | "set_session" | "switch_tab";
+  sessionId?: string;
   tabId?: string;
   url?: string;
 }

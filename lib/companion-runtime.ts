@@ -11,9 +11,10 @@ import {
 } from "./companion-store";
 import { getRuntimeAgentDataDirectory } from "./runtime-home";
 
-export const COMPANION_RUNTIME_VERSION = 1;
+export const COMPANION_RUNTIME_VERSION = 3;
 const MAX_MEMORIES = 200;
 const MAX_DECISIONS = 80;
+const MAX_TASK_RECORDS = 200;
 
 export type CompanionMood = "calm" | "focused" | "cheerful" | "concerned" | "sleepy";
 export type CompanionAutonomyLevel = "quiet" | "balanced" | "active";
@@ -44,6 +45,40 @@ export interface CompanionDecision {
   createdAt: number;
 }
 
+export type CompanionTaskRecordReviewStatus = "pending" | "confirmed" | "dismissed";
+
+export interface CompanionTaskRecord {
+  id: string;
+  sessionId: string;
+  sourceEntryId: string;
+  title: string;
+  outcome: string;
+  project?: string;
+  sessionTitle?: string;
+  reviewStatus: CompanionTaskRecordReviewStatus;
+  completedAt: number;
+  capturedAt: number;
+  updatedAt: number;
+}
+
+export type CompanionFocusTimerPhase = "focus" | "short-break" | "long-break";
+export type CompanionFocusTimerStatus = "idle" | "running" | "paused";
+
+export interface CompanionFocusTimer {
+  phase: CompanionFocusTimerPhase;
+  status: CompanionFocusTimerStatus;
+  durations: Record<CompanionFocusTimerPhase, number>;
+  longBreakEvery: number;
+  autoStartNextPhase: boolean;
+  petReminderEnabled: boolean;
+  durationSeconds: number;
+  remainingSeconds: number;
+  startedAt: number | null;
+  endsAt: number | null;
+  linkedTodoId: string | null;
+  completedFocusSessions: number;
+}
+
 export interface CompanionRuntimeSettings {
   interactionModel: CompanionInteractionModel | null;
   shareWorkContext: boolean;
@@ -53,6 +88,7 @@ export interface CompanionRuntimeSettings {
   quietHours: { enabled: boolean; start: string; end: string };
   allowMovement: boolean;
   allowProactiveSpeech: boolean;
+  autoCaptureSessions: boolean;
 }
 
 export interface CompanionRuntimeState {
@@ -61,6 +97,8 @@ export interface CompanionRuntimeState {
   migratedFromLocalStorage: boolean;
   settings: CompanionRuntimeSettings;
   todos: CompanionTodo[];
+  taskRecords: CompanionTaskRecord[];
+  focusTimer: CompanionFocusTimer;
   library: CompanionLibraryItem[];
   memories: CompanionMemory[];
   mind: {
@@ -100,6 +138,29 @@ function defaultSettings(preferences = createDefaultCompanionPreferences()): Com
     quietHours: { enabled: false, start: "22:30", end: "08:00" },
     allowMovement: true,
     allowProactiveSpeech: true,
+    autoCaptureSessions: true,
+  };
+}
+
+function defaultFocusTimer(): CompanionFocusTimer {
+  const durations = {
+    focus: 25 * 60,
+    "short-break": 5 * 60,
+    "long-break": 15 * 60,
+  };
+  return {
+    phase: "focus",
+    status: "idle",
+    durations,
+    longBreakEvery: 4,
+    autoStartNextPhase: false,
+    petReminderEnabled: true,
+    durationSeconds: durations.focus,
+    remainingSeconds: durations.focus,
+    startedAt: null,
+    endsAt: null,
+    linkedTodoId: null,
+    completedFocusSessions: 0,
   };
 }
 
@@ -110,9 +171,98 @@ export function createDefaultCompanionRuntimeState(now = Date.now()): CompanionR
     migratedFromLocalStorage: false,
     settings: defaultSettings(),
     todos: [],
+    taskRecords: [],
+    focusTimer: defaultFocusTimer(),
     library: [],
     memories: [],
     mind: { mood: "calm", lastDecision: null, decisionHistory: [], nextWakeAt: null },
+  };
+}
+
+function normalizeTaskRecord(value: unknown): CompanionTaskRecord | null {
+  if (!value || typeof value !== "object") return null;
+  const source = value as Record<string, unknown>;
+  const sessionId = cleanText(source.sessionId, 120);
+  const sourceEntryId = cleanText(source.sourceEntryId, 120);
+  const title = cleanText(source.title, 160);
+  const outcome = cleanText(source.outcome, 1_600);
+  if (!sessionId || !sourceEntryId || !title || !outcome) return null;
+  const reviewStatuses: CompanionTaskRecordReviewStatus[] = ["pending", "confirmed", "dismissed"];
+  const capturedAt = typeof source.capturedAt === "number" && Number.isFinite(source.capturedAt)
+    ? Math.max(0, source.capturedAt)
+    : Date.now();
+  return {
+    id: safeId(source.id, "task-record"),
+    sessionId: safeId(sessionId, "session"),
+    sourceEntryId: safeId(sourceEntryId, "entry"),
+    title,
+    outcome,
+    ...(cleanText(source.project, 160) ? { project: cleanText(source.project, 160) } : {}),
+    ...(cleanText(source.sessionTitle, 160) ? { sessionTitle: cleanText(source.sessionTitle, 160) } : {}),
+    reviewStatus: reviewStatuses.includes(source.reviewStatus as CompanionTaskRecordReviewStatus)
+      ? source.reviewStatus as CompanionTaskRecordReviewStatus
+      : "pending",
+    completedAt: typeof source.completedAt === "number" && Number.isFinite(source.completedAt)
+      ? Math.max(0, source.completedAt)
+      : capturedAt,
+    capturedAt,
+    updatedAt: typeof source.updatedAt === "number" && Number.isFinite(source.updatedAt)
+      ? Math.max(0, source.updatedAt)
+      : capturedAt,
+  };
+}
+
+function normalizeFocusTimer(value: unknown): CompanionFocusTimer {
+  const fallback = defaultFocusTimer();
+  if (!value || typeof value !== "object") return fallback;
+  const source = value as Record<string, unknown>;
+  const phases: CompanionFocusTimerPhase[] = ["focus", "short-break", "long-break"];
+  const statuses: CompanionFocusTimerStatus[] = ["idle", "running", "paused"];
+  const phase = phases.includes(source.phase as CompanionFocusTimerPhase)
+    ? source.phase as CompanionFocusTimerPhase
+    : fallback.phase;
+  const status = statuses.includes(source.status as CompanionFocusTimerStatus)
+    ? source.status as CompanionFocusTimerStatus
+    : fallback.status;
+  const sourceDurations = source.durations && typeof source.durations === "object"
+    ? source.durations as Record<string, unknown>
+    : {};
+  const durations = Object.fromEntries(phases.map((candidate) => {
+    const configured = sourceDurations[candidate];
+    return [candidate, typeof configured === "number" && Number.isFinite(configured)
+      ? Math.max(60, Math.min(4 * 60 * 60, Math.round(configured)))
+      : fallback.durations[candidate]];
+  })) as Record<CompanionFocusTimerPhase, number>;
+  const durationSeconds = typeof source.durationSeconds === "number" && Number.isFinite(source.durationSeconds)
+    ? Math.max(60, Math.min(4 * 60 * 60, Math.round(source.durationSeconds)))
+    : durations[phase];
+  const remainingSeconds = typeof source.remainingSeconds === "number" && Number.isFinite(source.remainingSeconds)
+    ? Math.max(0, Math.min(durationSeconds, Math.round(source.remainingSeconds)))
+    : durationSeconds;
+  const startedAt = typeof source.startedAt === "number" && Number.isFinite(source.startedAt)
+    ? Math.max(0, source.startedAt)
+    : null;
+  const endsAt = typeof source.endsAt === "number" && Number.isFinite(source.endsAt)
+    ? Math.max(0, source.endsAt)
+    : null;
+  const linkedTodoId = cleanText(source.linkedTodoId, 120);
+  return {
+    phase,
+    status: status === "running" && endsAt === null ? "paused" : status,
+    durations,
+    longBreakEvery: typeof source.longBreakEvery === "number" && Number.isFinite(source.longBreakEvery)
+      ? Math.max(1, Math.min(12, Math.round(source.longBreakEvery)))
+      : fallback.longBreakEvery,
+    autoStartNextPhase: source.autoStartNextPhase === true,
+    petReminderEnabled: source.petReminderEnabled !== false,
+    durationSeconds,
+    remainingSeconds,
+    startedAt,
+    endsAt,
+    linkedTodoId: linkedTodoId ? safeId(linkedTodoId, "todo") : null,
+    completedFocusSessions: typeof source.completedFocusSessions === "number" && Number.isFinite(source.completedFocusSessions)
+      ? Math.max(0, Math.min(100_000, Math.round(source.completedFocusSessions)))
+      : 0,
   };
 }
 
@@ -160,7 +310,7 @@ export function normalizeCompanionRuntimeState(value: unknown): CompanionRuntime
   const fallback = createDefaultCompanionRuntimeState();
   if (!value || typeof value !== "object") return fallback;
   const source = value as Record<string, unknown>;
-  if (source.version !== COMPANION_RUNTIME_VERSION) return fallback;
+  if (![1, 2, COMPANION_RUNTIME_VERSION].includes(source.version as number)) return fallback;
   const legacy = normalizeCompanionPreferences({
     ...createDefaultCompanionPreferences(),
     version: 4,
@@ -219,8 +369,13 @@ export function normalizeCompanionRuntimeState(value: unknown): CompanionRuntime
       },
       allowMovement: settings.allowMovement !== false,
       allowProactiveSpeech: settings.allowProactiveSpeech !== false,
+      autoCaptureSessions: settings.autoCaptureSessions !== false,
     },
     todos: legacy.todos,
+    taskRecords: Array.isArray(source.taskRecords)
+      ? source.taskRecords.map(normalizeTaskRecord).filter((item): item is CompanionTaskRecord => Boolean(item)).slice(0, MAX_TASK_RECORDS)
+      : [],
+    focusTimer: normalizeFocusTimer(source.focusTimer),
     library: legacy.library,
     memories,
     mind: {

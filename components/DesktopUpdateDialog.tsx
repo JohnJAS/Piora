@@ -45,6 +45,7 @@ export function DesktopUpdateDialog({
   if (!open) return null;
 
   const chinese = locale === "zh-CN";
+  const upToDate = state.status === "up-to-date";
   const version = state.availableVersion ? `v${state.availableVersion}` : "";
   const progress = Math.max(0, Math.min(100, state.progressPercent ?? 0));
   const transferred = formatBytes(state.transferredBytes, locale);
@@ -66,18 +67,24 @@ export function DesktopUpdateDialog({
     }}>
       <div
         ref={dialogRef}
-        className={styles.dialog}
+        className={`${styles.dialog}${upToDate ? ` ${styles.compactDialog}` : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="desktop-update-title"
         aria-describedby="desktop-update-summary"
       >
         <header className={styles.header}>
-          <div className={styles.updateMark} aria-hidden="true"><AliIcon name="download" size={18} /></div>
+          <div className={`${styles.updateMark}${upToDate ? ` ${styles.successMark}` : ""}`} aria-hidden="true">
+            <AliIcon name={upToDate ? "check-circle" : "download"} size={18} />
+          </div>
           <div className={styles.heading}>
-            <h2 id="desktop-update-title">{chinese ? "Piora 更新" : "Piora update"}</h2>
+            <h2 id="desktop-update-title">{upToDate
+              ? (chinese ? "已是最新版本" : "You’re up to date")
+              : (chinese ? "Piora 更新" : "Piora update")}</h2>
             <p id="desktop-update-summary">
-              {version
+              {upToDate
+                ? `Piora v${state.currentVersion}`
+                : version
                 ? (chinese ? `${version} 已准备好` : `${version} is ready`)
                 : (chinese ? "有可用的新版本" : "A new version is available")}
             </p>
@@ -88,15 +95,28 @@ export function DesktopUpdateDialog({
         </header>
 
         <div className={styles.body}>
-          <section className={styles.notes} aria-labelledby="desktop-update-notes-title">
-            <div className={styles.sectionHeader}>
-              <h3 id="desktop-update-notes-title">{chinese ? "本次更新" : "What’s new"}</h3>
-              <span>{state.currentVersion}{version ? ` → ${version}` : ""}</span>
-            </div>
-            <div className={styles.notesScroll}>
-              <MarkdownBody className={styles.releaseMarkdown}>{releaseNotes}</MarkdownBody>
-            </div>
-          </section>
+          {upToDate ? (
+            <section className={styles.currentVersionCard} aria-label={chinese ? "当前版本状态" : "Current version status"}>
+              <div>
+                <span className={styles.currentVersionLabel}>{chinese ? "当前版本" : "Current version"}</span>
+                <strong>Piora v{state.currentVersion}</strong>
+              </div>
+              <span className={styles.latestBadge}>
+                <span aria-hidden="true" />
+                {chinese ? "最新" : "Latest"}
+              </span>
+            </section>
+          ) : (
+            <section className={styles.notes} aria-labelledby="desktop-update-notes-title">
+              <div className={styles.sectionHeader}>
+                <h3 id="desktop-update-notes-title">{chinese ? "本次更新" : "What’s new"}</h3>
+                <span>{state.currentVersion}{version ? ` → ${version}` : ""}</span>
+              </div>
+              <div className={styles.notesScroll}>
+                <MarkdownBody className={styles.releaseMarkdown}>{releaseNotes}</MarkdownBody>
+              </div>
+            </section>
+          )}
 
           {state.status === "downloading" || state.status === "downloaded" ? (
             <section className={styles.progressSection} aria-live="polite">
@@ -134,8 +154,8 @@ export function DesktopUpdateDialog({
             <AliIcon name="external-link" size={13} />
           </a>
           <div className={styles.actions}>
-            <button type="button" className={styles.secondaryButton} onClick={onClose}>
-              {chinese ? "稍后" : "Later"}
+            <button type="button" className={upToDate ? styles.primaryButton : styles.secondaryButton} onClick={onClose}>
+              {upToDate ? (chinese ? "完成" : "Done") : (chinese ? "稍后" : "Later")}
             </button>
             {state.status === "downloaded" ? (
               <button type="button" className={styles.primaryButton} onClick={onInstall}>

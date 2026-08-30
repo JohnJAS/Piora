@@ -1,8 +1,5 @@
 "use client";
 
-/* Device frames are live, no-store screenshots; Next Image caching is intentionally not applicable. */
-/* eslint-disable @next/next/no-img-element */
-
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useHarmonyLiveFrame } from "@/hooks/useHarmonyLiveFrame";
@@ -30,7 +27,9 @@ type HarmonyState = {
   snapshots: Array<{ serial: string; generation: number; revision: number; capturedAt: string; hasTree: boolean; hasScreenshot: boolean }>;
 };
 type ManualLease = { token: string; serial: string; expiresAt: string };
-type RuntimeCandidate = { hdcPath: string; sdkPath: string; source: "selection" | "environment" | "config" | "deveco" | "path" };
+type RecordingState = { serial: string; recordingId: string; startedAt: string; ownerId: string };
+type MediaArtifact = { kind: "screenshot" | "recording"; path: string; filename: string; size: number };
+type RuntimeCandidate = { hdcPath: string; sdkPath: string; source: "selection" | "environment" | "config" | "deveco" | "path" | "bundled" };
 type VisionModel = { provider: string; modelId: string; name: string };
 function recordOf(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -117,7 +116,7 @@ function normalizeRuntimeCandidates(value: unknown): RuntimeCandidate[] {
     const hdcPath = optionalString(source?.hdcPath);
     const sdkPath = optionalString(source?.sdkPath);
     if (!source || !hdcPath || !sdkPath) return [];
-    const validSources: RuntimeCandidate["source"][] = ["selection", "environment", "config", "deveco", "path"];
+    const validSources: RuntimeCandidate["source"][] = ["selection", "environment", "config", "deveco", "path", "bundled"];
     const candidateSource = validSources.includes(source.source as RuntimeCandidate["source"])
       ? source.source as RuntimeCandidate["source"]
       : "path";
@@ -176,9 +175,11 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
   const [error, setError] = useState<string | null>(null);
   const [frameInteractionError, setFrameInteractionError] = useState<string | null>(null);
   const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(null);
+  const [recording, setRecording] = useState<RecordingState | null>(null);
+  const [mediaNotice, setMediaNotice] = useState<string | null>(null);
   const ownerIdRef = useRef("");
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
-  const frameRef = useRef<HTMLImageElement>(null);
+  const frameRef = useRef<HTMLCanvasElement>(null);
   const leaseRef = useRef<ManualLease | null>(null);
 
   useEffect(() => {
@@ -220,12 +221,17 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
     refresh: requestFrame,
   } = useHarmonyLiveFrame({
     active: active && desktopAvailable && viewMode === "screen",
-    enabled: canScreenshot,
-    paused: busy,
+    enabled: Boolean(selectedOnline),
     serial: selectedSerial,
     generation: selectedGeneration,
+    canvasRef: frameRef,
     fallbackError: copy("投屏暂不可用，请检查设备授权与 HDC。", "Live view unavailable. Check device authorization and HDC."),
   });
+
+  useEffect(() => {
+    setFrameSize(liveFrame ? { width: liveFrame.width, height: liveFrame.height } : null);
+    if (liveFrame) setFrameInteractionError(null);
+  }, [liveFrame]);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     if (!desktopAvailable) return;
@@ -320,6 +326,20 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
   }, [active, desktopAvailable, loadConfig, refresh, selectedSerial]);
 
   useEffect(() => {
+    if (!active || !desktopAvailable || !selectedSerial) {
+      setRecording(null);
+      return;
+    }
+    let disposed = false;
+    const loadMedia = () => jsonRequest<{ recording: RecordingState | null }>(`/api/harmony/media?serial=${encodeURIComponent(selectedSerial)}`)
+      .then((payload) => { if (!disposed) setRecording(payload.recording); })
+      .catch(() => undefined);
+    void loadMedia();
+    const timer = window.setInterval(() => { void loadMedia(); }, 3_000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [active, desktopAvailable, selectedSerial]);
+
+  useEffect(() => {
     if (!lease) return;
     const timer = window.setInterval(() => {
       void jsonRequest<{ lease: ManualLease }>("/api/harmony/manual", {
@@ -408,11 +428,22 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
   );
 
   const release = () => lease && void run(
-    () => jsonRequest("/api/harmony/manual", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "release", leaseToken: lease.token }),
-    }),
+    async () => {
+      if (recording?.ownerId === ownerIdRef.current && recording.serial === lease.serial) {
+        const payload = await jsonRequest<{ artifact: MediaArtifact }>("/api/harmony/media", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "stop_recording", serial: lease.serial, leaseToken: lease.token, ownerId: ownerIdRef.current }),
+        });
+        setRecording(null);
+        setMediaNotice(copy(`录屏已保存到 ${payload.artifact.path}`, `Recording saved to ${payload.artifact.path}`));
+      }
+      return await jsonRequest("/api/harmony/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "release", leaseToken: lease.token }),
+      });
+    },
     () => setLease(null),
   );
 
@@ -423,6 +454,30 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ serial: selectedSerial, leaseToken: lease.token, ...input }),
     }), requestFrame);
+  };
+
+  const mediaAction = (mediaActionName: "capture_screenshot" | "start_recording" | "stop_recording") => {
+    if (!selectedSerial || !lease) return;
+    void run(async () => await jsonRequest<{ artifact?: MediaArtifact; recording?: RecordingState }>("/api/harmony/media", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: mediaActionName,
+        serial: selectedSerial,
+        leaseToken: lease.token,
+        ownerId: ownerIdRef.current,
+      }),
+    }), (payload) => {
+      if (payload.recording) {
+        setRecording(payload.recording);
+        setMediaNotice(copy("录屏已开始；结束控制时会自动停止并保存。", "Recording started; releasing control will stop and save it."));
+      } else if (payload.artifact) {
+        if (payload.artifact.kind === "recording") setRecording(null);
+        setMediaNotice(payload.artifact.kind === "screenshot"
+          ? copy(`截图已保存到 ${payload.artifact.path}`, `Screenshot saved to ${payload.artifact.path}`)
+          : copy(`录屏已保存到 ${payload.artifact.path}`, `Recording saved to ${payload.artifact.path}`));
+      }
+    });
   };
 
   const saveSettings = () => void run(async () => {
@@ -445,13 +500,13 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
     return payloadValue;
   }, () => setSettingsOpen(false));
 
-  const imagePoint = (event: React.PointerEvent<HTMLImageElement>) => {
-    const image = frameRef.current;
-    if (!image?.naturalWidth || !image.naturalHeight) return null;
-    const bounds = image.getBoundingClientRect();
-    const x = Math.round(((event.clientX - bounds.left) / bounds.width) * image.naturalWidth);
-    const y = Math.round(((event.clientY - bounds.top) / bounds.height) * image.naturalHeight);
-    if (x < 0 || y < 0 || x >= image.naturalWidth || y >= image.naturalHeight) return null;
+  const imagePoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = frameRef.current;
+    if (!canvas || !frameSize) return null;
+    const bounds = canvas.getBoundingClientRect();
+    const x = Math.round(((event.clientX - bounds.left) / bounds.width) * frameSize.width);
+    const y = Math.round(((event.clientY - bounds.top) / bounds.height) * frameSize.height);
+    if (x < 0 || y < 0 || x >= frameSize.width || y >= frameSize.height) return null;
     return { x, y };
   };
 
@@ -467,7 +522,6 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
   const snapshot = managerState?.snapshots.find((item) => item.serial === selectedSerial);
   const holder = managerState?.leases.find((item) => item.serial === selectedSerial);
   const frameMatchesDevice = Boolean(liveFrame && selected && liveFrame.serial === selected.serial && liveFrame.generation === selected.generation);
-  const frameUrl = active && canScreenshot && frameMatchesDevice ? liveFrame?.url ?? "" : "";
   const frameError = frameInteractionError ?? frameLoadError;
   const ownsRecoverableLease = Boolean(holder?.owner.kind === "manual" && holder.owner.id === ownerIdRef.current);
   const canPointControl = Boolean(!busy && lease?.serial === selectedSerial && frameStatus === "live" && frameMatchesDevice && selected?.capabilities.tap);
@@ -551,6 +605,8 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
         setSelectedSerial(nextSerial);
         setTree(null);
         setFrameSize(null);
+        setRecording(null);
+        setMediaNotice(null);
       }}>
         {!devices.length ? <option value="">{copy("没有设备", "No device")}</option> : null}
         {devices.map((device) => <option key={device.serial} value={device.serial}>{formatHarmonyDeviceLabel(device)}</option>)}
@@ -575,23 +631,14 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
 
     {viewMode === "screen" ? <><div className={styles.deviceArea}>
       <div className={styles.frame} data-enabled={canPointControl ? "true" : "false"}>
-        {canScreenshot ? <div className={styles.frameStatus} data-status={frameStatus} aria-live="polite">
-          <span />{frameStatus === "error" ? copy("投屏重连中", "Reconnecting") : frameStatus === "loading" ? copy("投屏更新中", "Updating") : copy("实时投屏", "Live view")}
+        {selectedOnline ? <div className={styles.frameStatus} data-status={frameStatus} aria-live="polite">
+          <span />{frameStatus === "error" ? copy("视频流重连中", "Reconnecting stream") : frameStatus === "loading" ? copy("视频流连接中", "Connecting stream") : copy("实时视频流", "Live video")}
           {frameSize ? ` · ${frameSize.width}×${frameSize.height}` : ""}
         </div> : null}
-        {frameUrl ? <img
+        {selectedOnline ? <canvas
           ref={frameRef}
-          src={frameUrl}
-          alt={copy("手机实时截图", "Live device screenshot")}
-          draggable={false}
-          onLoad={() => {
-            const image = frameRef.current;
-            setFrameSize(image ? { width: image.naturalWidth, height: image.naturalHeight } : null);
-            setFrameInteractionError(null);
-          }}
-          onError={() => {
-            setFrameInteractionError(copy("投屏图片无法解码，正在重试。", "The live-view image could not be decoded; retrying."));
-          }}
+          role="img"
+          aria-label={copy("手机实时视频流", "Live device video stream")}
           onPointerDown={(event) => {
             if (!canPointControl) return;
             pointerStartRef.current = imagePoint(event);
@@ -613,8 +660,8 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
           }}
         /> : <div className={styles.frameEmpty}>
           <AliIcon name="mobile" size={28} />
-          <strong>{selectedOnline && !selected?.capabilities.screenshot ? copy("无法显示屏幕", "Screen unavailable") : copy("连接一台设备", "Connect a device")}</strong>
-          <span>{selectedOnline && !selected?.capabilities.screenshot ? copy("当前设备不支持截图", "Screen capture is not supported") : copy("画面会显示在这里", "Its screen will appear here")}</span>
+          <strong>{copy("连接一台设备", "Connect a device")}</strong>
+          <span>{copy("实时视频会显示在这里", "The live video stream will appear here")}</span>
           {!runtimeReady ? <button type="button" onClick={() => setSettingsOpen(true)}>{copy("打开设置", "Open settings")}</button> : null}
         </div>}
       </div>
@@ -632,6 +679,15 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
       </form>
     </div>
 
+    <div className={styles.mediaRow} aria-label={copy("截图与录屏", "Capture and recording")}>
+      <button type="button" disabled={!lease || !canScreenshot || busy} onClick={() => mediaAction("capture_screenshot")}><AliIcon name="save" size={13} />{copy("保存截图", "Save screenshot")}</button>
+      {recording
+        ? <button type="button" disabled={!lease || busy || recording.ownerId !== ownerIdRef.current} onClick={() => mediaAction("stop_recording")}><AliIcon name="stop" size={13} />{copy("停止并保存录屏", "Stop and save recording")}</button>
+        : <button type="button" disabled={!lease || !selectedOnline || busy} onClick={() => mediaAction("start_recording")}><AliIcon name="play" size={13} />{copy("开始录屏", "Start recording")}</button>}
+      {recording ? <span className={styles.recordingState}><i />{recording.ownerId === ownerIdRef.current ? copy("正在录屏", "Recording") : copy("AI 正在录屏", "Agent recording")}</span> : null}
+    </div>
+    {mediaNotice ? <div className={styles.mediaNotice} role="status">{mediaNotice}</div> : null}
+
     <details className={styles.moreActions}>
       <summary>{copy("更多操作", "More actions")}</summary>
       <div className={styles.moreBody}>
@@ -642,7 +698,7 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
           <button type="submit" disabled={!lease || !bundleName || busy || !selected?.capabilities.launchApp}>{copy("打开", "Open")}</button>
         </form>
         <div className={styles.inspectRow}>
-          <button type="button" disabled={!canScreenshot || busy} onClick={requestFrame}><AliIcon name="reload" size={13} />{copy("刷新画面", "Refresh screen")}</button>
+          <button type="button" disabled={!selectedOnline || busy} onClick={requestFrame}><AliIcon name="reload" size={13} />{copy("重连视频流", "Reconnect video")}</button>
           <button type="button" disabled={!selectedOnline || busy || !selected?.capabilities.uiTree} onClick={() => void run(
             () => jsonRequest<{ snapshot: unknown }>(`/api/harmony/tree?serial=${encodeURIComponent(selectedSerial)}`),
             (payload) => setTree(payload.snapshot),

@@ -57,10 +57,12 @@ import {
 const DESKTOP_PARTITION = "persist:piora";
 const DESKTOP_TOKEN_HEADER = "X-Pi-Desktop-Token";
 const COMPLETION_NOTIFICATION_CHANNEL = "pi:completion-notification";
+const NOTIFICATION_SESSION_CHANNEL = "pi:notification-session";
 const APPLICATION_MENU_CHANNEL = "pi:open-application-menu";
 const REVEAL_PATH_CHANNEL = "pi:reveal-path";
 const OPEN_PATH_CHANNEL = "pi:open-path";
 const DIRECTORY_PICKER_CHANNEL = "pi:directory-picker";
+const SPEECH_PACK_DIRECTORY_PICKER_CHANNEL = "pi:speech-pack-directory-picker";
 const AGENT_DATA_DIRECTORY_GET_CHANNEL = "pi:agent-data-directory-get";
 const AGENT_DATA_DIRECTORY_PICKER_CHANNEL = "pi:agent-data-directory-picker";
 const AGENT_DATA_DIRECTORY_APPLY_CHANNEL = "pi:agent-data-directory-apply";
@@ -86,6 +88,7 @@ const COMPANION_BUBBLE_HEIGHT = 128;
 const COMPANION_PANEL_WIDTH = 430;
 const COMPANION_PANEL_HEIGHT = 680;
 const MAX_NOTIFICATION_TASK_TITLE_LENGTH = 80;
+const MAX_NOTIFICATION_SESSION_ID_LENGTH = 512;
 const MAX_RENDERER_CONSOLE_MESSAGE_LENGTH = 8_192;
 const PORTABLE_SMOKE_TEST = process.env.PIORA_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
@@ -139,6 +142,7 @@ let serverEntryPath: string | undefined;
 let serverHostEntryPath: string | undefined;
 let piAgentDirectoryPath: string | undefined;
 let desktopBrowserManager: DesktopBrowserManager | undefined;
+const desktopBrowserRequestControllers = new Map<string, AbortController>();
 let desktopUpdateController: DesktopUpdateController | undefined;
 let desktopUpdateState: DesktopUpdateState = {
   status: "unsupported",
@@ -149,6 +153,44 @@ let automaticUpdateCheckTimer: NodeJS.Timeout | undefined;
 function attachDesktopBrowserManager(window: BrowserWindow, log: Logger): void {
   desktopBrowserManager?.destroy();
   desktopBrowserManager = new DesktopBrowserManager(window, log, isTrustedMainWindowSender);
+}
+
+async function handleStandaloneMessage(message: unknown): Promise<unknown> {
+  if (!message || typeof message !== "object") return undefined;
+  const candidate = message as {
+    type?: unknown;
+    requestId?: unknown;
+    sessionId?: unknown;
+    params?: unknown;
+  };
+  if (candidate.type === "pi-desktop:browser-cancel" && typeof candidate.requestId === "string") {
+    desktopBrowserRequestControllers.get(candidate.requestId)?.abort("browser_request_cancelled");
+    return undefined;
+  }
+  if (candidate.type !== "pi-desktop:browser-request" || typeof candidate.requestId !== "string") return undefined;
+  const requestId = candidate.requestId.slice(0, 160);
+  const controller = new AbortController();
+  desktopBrowserRequestControllers.set(requestId, controller);
+  try {
+    if (!desktopBrowserManager) throw new Error("The visible desktop browser is not ready.");
+    if (typeof candidate.sessionId !== "string" || candidate.sessionId.length > 512) throw new Error("Invalid browser Session id.");
+    if (!candidate.params || typeof candidate.params !== "object" || Array.isArray(candidate.params)) throw new Error("Invalid browser action payload.");
+    const result = await desktopBrowserManager.performAgentAction(
+      candidate.sessionId,
+      candidate.params as Record<string, unknown>,
+      controller.signal,
+    );
+    return { type: "pi-desktop:browser-response", requestId, ok: true, result };
+  } catch (error) {
+    return {
+      type: "pi-desktop:browser-response",
+      requestId,
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    desktopBrowserRequestControllers.delete(requestId);
+  }
 }
 
 function installRendererDiagnostics(window: BrowserWindow, surface: "Main" | "Companion", log: Logger): void {
@@ -204,8 +246,8 @@ function resolvePiAgentDirectory(log: Logger): string {
 function installPortableDesktopShortcut(log: Logger): PortableShortcutResult | undefined {
   try {
     const description = app.getLocale().toLowerCase().startsWith("zh")
-      ? "启动已运行过的最新 Piora 版本"
-      : "Launch the latest Piora version that has been run";
+      ? "启动 Piora"
+      : "Launch Piora";
     const result = ensurePortableDesktopShortcut({
       platform: process.platform,
       isPackaged: app.isPackaged,
@@ -219,17 +261,17 @@ function installPortableDesktopShortcut(log: Logger): PortableShortcutResult | u
       iconPath: join(process.resourcesPath, process.platform === "win32" ? "tray-icon.ico" : "tray-icon.png"),
       description,
       shell: {
-        readShortcutLink: (path) => shell.readShortcutLink(path),
         writeShortcutLink: (path, operation, details) => (
           shell.writeShortcutLink(path, operation, details)
         ),
       },
     });
-    if (result.status !== "skipped") log.info("Portable desktop shortcut is current", result);
+    if (result.status === "created") log.info("Portable desktop shortcut created", result);
+    if (result.status === "kept-existing") log.info("Portable desktop shortcut already exists", result);
     return result;
   } catch (error) {
     // A locked-down or redirected Desktop must not prevent Piora from starting.
-    log.warn("Unable to create or update the portable desktop shortcut", error);
+    log.warn("Unable to create the portable desktop shortcut", error);
     return undefined;
   }
 }
@@ -244,6 +286,19 @@ function sanitizeNotificationTaskTitle(value: unknown): string | undefined {
     .trim();
   if (!normalized) return undefined;
   return Array.from(normalized).slice(0, MAX_NOTIFICATION_TASK_TITLE_LENGTH).join("");
+}
+
+function sanitizeNotificationSessionId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  if (
+    !normalized
+    || normalized.length > MAX_NOTIFICATION_SESSION_ID_LENGTH
+    || /[\u0000-\u001f\u007f-\u009f]/.test(normalized)
+  ) {
+    return undefined;
+  }
+  return normalized;
 }
 
 function isTrustedCompletionNotificationSender(event: IpcMainInvokeEvent): boolean {
@@ -286,6 +341,7 @@ function getUserInputNotificationCopy(taskTitle: string | undefined): { title: s
 
 type CompletionNotificationRequest = {
   taskTitle?: unknown;
+  sessionId?: unknown;
   status?: unknown;
   kind?: unknown;
 };
@@ -307,15 +363,14 @@ function registerCompletionNotificationHandler(): void {
       const status = payload && (payload.status === "succeeded" || payload.status === "failed" || payload.status === "interrupted") ? payload.status : null;
       const kind = payload && payload.kind === "user-input" ? "user-input" : status ? "automation" : "completion";
       const title = sanitizeNotificationTaskTitle(payload?.taskTitle);
+      const sessionId = sanitizeNotificationSessionId(payload?.sessionId);
       const copy = kind === "user-input"
         ? getUserInputNotificationCopy(title)
         : status ? getAutomationNotificationCopy(title, status) : getCompletionNotificationCopy(title);
       const notification = new Notification({ ...copy, silent: false });
       notification.on("click", () => {
-        if (!mainWindow || mainWindow.isDestroyed()) return;
-        if (mainWindow.isMinimized()) mainWindow.restore();
-        mainWindow.show();
-        mainWindow.focus();
+        if (!focusMainWindow() || !sessionId || !mainWindow || mainWindow.isDestroyed()) return;
+        mainWindow.webContents.send(NOTIFICATION_SESSION_CHANNEL, sessionId);
       });
       notification.show();
       return true;
@@ -473,14 +528,7 @@ async function handleDesktopUpdateMenuAction(): Promise<void> {
   await controller.checkForUpdates();
   const checked = controller.getState();
   if (checked.status === "up-to-date") {
-    await showDesktopMessage({
-      type: "info",
-      title: chinese ? "检查更新" : "Check for updates",
-      message: chinese ? "当前已经是最新版本" : "Piora is up to date",
-      detail: `Piora ${checked.currentVersion}`,
-      buttons: [chinese ? "知道了" : "OK"],
-      defaultId: 0,
-    });
+    focusMainWindow("open-update");
   } else if (checked.status === "available") {
     focusMainWindow("open-update");
   } else if (checked.status === "error") {
@@ -760,6 +808,7 @@ function registerFileShellHandlers(): void {
 
 function registerDirectoryPickerHandler(): void {
   ipcMain.removeHandler(DIRECTORY_PICKER_CHANNEL);
+  ipcMain.removeHandler(SPEECH_PACK_DIRECTORY_PICKER_CHANNEL);
   ipcMain.handle(DIRECTORY_PICKER_CHANNEL, async (event): Promise<string | null> => {
     if (!isTrustedMainWindowSender(event)) {
       logger?.warn("Blocked directory picker request from an untrusted renderer");
@@ -773,6 +822,25 @@ function registerDirectoryPickerHandler(): void {
     });
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
+  ipcMain.handle(
+    SPEECH_PACK_DIRECTORY_PICKER_CHANNEL,
+    async (event, requestedDefaultPath: unknown): Promise<string | null> => {
+      if (!isTrustedMainWindowSender(event)) {
+        logger?.warn("Blocked speech pack directory picker request from an untrusted renderer");
+        return null;
+      }
+      const ownerWindow = mainWindow;
+      if (!ownerWindow || ownerWindow.isDestroyed()) return null;
+      const result = await dialog.showOpenDialog(ownerWindow, {
+        title: app.getLocale().toLowerCase().startsWith("zh") ? "选择语音包文件夹" : "Select speech pack folder",
+        properties: ["openDirectory", "createDirectory"],
+        ...(typeof requestedDefaultPath === "string" && requestedDefaultPath.trim()
+          ? { defaultPath: resolve(requestedDefaultPath) }
+          : {}),
+      });
+      return result.canceled ? null : result.filePaths[0] ?? null;
+    },
+  );
 }
 
 type AgentDataDirectoryInfo = {
@@ -1616,13 +1684,15 @@ function createStandaloneForProfile(profile: RuntimeProfile): {
     ...(app.isPackaged ? { nodePath: join(packagedRuntimeArchive, "node_modules") } : {}),
     homeDirectory: app.getPath("home"),
     agentDirectory: piAgentDirectoryPath,
-    whisperDirectory: app.isPackaged
-      ? join(process.resourcesPath, "whisper")
-      : join(process.cwd(), "desktop", "build", "whisper"),
+    speechPacksDirectory: join(app.getPath("userData"), "speech-packs"),
+    harmonyToolsDirectory: app.isPackaged
+      ? join(process.resourcesPath, "harmony-tools")
+      : join(app.getAppPath(), "..", "third_party", "harmony-tools", process.platform === "win32" ? "windows-x64" : process.platform),
     token: applicationToken,
     logger,
     runtimeProfile: profile,
     desktopDataDirectory: dataDirectory,
+    onMessage: handleStandaloneMessage,
     ...(preferredPort === undefined ? {} : { preferredPort }),
     onUnexpectedExit: handleUnexpectedServerExit,
   });
@@ -1868,6 +1938,43 @@ function loadApplicationWindow(window: BrowserWindow, url: URL, log: Logger): Pr
   return window.loadURL(url.toString()).then(() => undefined);
 }
 
+function warmInitialModelCatalog(url: URL, token: string, log: Logger): void {
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+
+  void fetch(new URL("/api/models", url), {
+    headers: { [DESKTOP_TOKEN_HEADER]: token },
+    signal: controller.signal,
+  }).then(async (response) => {
+    const payload = await response.json().catch(() => ({})) as {
+      modelList?: unknown[];
+      modelError?: unknown;
+      error?: unknown;
+    };
+    const modelCount = Array.isArray(payload.modelList) ? payload.modelList.length : 0;
+    if (!response.ok || modelCount === 0) {
+      log.warn("Initial model catalog warmup did not produce models", {
+        status: response.status,
+        modelCount,
+        ...(typeof payload.error === "string" ? { error: payload.error.slice(0, 300) } : {}),
+        ...(typeof payload.modelError === "string" ? { modelError: payload.modelError.slice(0, 300) } : {}),
+      });
+      return;
+    }
+    log.info("Initial model catalog is ready", {
+      modelCount,
+      elapsedMs: Date.now() - startedAt,
+    });
+  }).catch((error) => {
+    if (controller.signal.aborted) {
+      log.warn("Initial model catalog warmup timed out", { elapsedMs: Date.now() - startedAt });
+      return;
+    }
+    log.warn("Initial model catalog warmup failed", error);
+  }).finally(() => clearTimeout(timeout));
+}
+
 function createMainWindow(
   url: URL,
   log: Logger,
@@ -2064,6 +2171,7 @@ async function startApplication(): Promise<void> {
   serverUrl = await server.start();
   activateStandaloneProfile("normal", initialRuntime.dataDirectory, serverUrl);
   logger.info("Bundled service is ready", { elapsedMs: Date.now() - startupStartedAt });
+  warmInitialModelCatalog(serverUrl, token, logger);
 
   registerCompletionNotificationHandler();
   registerCompanionWindowHandlers();
@@ -2138,19 +2246,19 @@ const hasSingleInstanceLock = PORTABLE_SMOKE_TEST || app.requestSingleInstanceLo
 if (!hasSingleInstanceLock) {
   // A newly downloaded portable version may be opened while an older Piora is
   // still resident in the tray. It cannot take over that live single-instance
-  // process, but it can still advance the Desktop shortcut for the next launch.
+  // process, but it can still create the Desktop shortcut when one is missing.
   void app.whenReady().then(async () => {
     const secondaryLogger = new FileLogger(app.getPath("userData"));
     const shortcutResult = installPortableDesktopShortcut(secondaryLogger);
-    if (shortcutResult?.status === "updated" || shortcutResult?.status === "created") {
+    if (shortcutResult?.status === "created") {
       const chinese = app.getLocale().toLowerCase().startsWith("zh");
       await dialog.showMessageBox({
         type: "info",
         title: "Piora",
         message: chinese ? "旧版 Piora 仍在后台运行" : "An older Piora is still running",
         detail: chinese
-          ? `桌面快捷方式已更新到 Piora ${app.getVersion()}。请从系统托盘退出旧版本，然后重新打开桌面上的 Piora。`
-          : `The Desktop shortcut now points to Piora ${app.getVersion()}. Quit the older version from the system tray, then open Piora from the Desktop again.`,
+          ? `已为 Piora ${app.getVersion()} 创建桌面快捷方式。请从系统托盘退出旧版本，然后重新打开桌面上的 Piora。`
+          : `A Desktop shortcut was created for Piora ${app.getVersion()}. Quit the older version from the system tray, then open Piora from the Desktop again.`,
         buttons: [chinese ? "知道了" : "OK"],
         defaultId: 0,
       });

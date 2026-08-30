@@ -132,6 +132,10 @@ export interface HarmonyManagerState {
 
 export interface HarmonyConfig {
   hdcPath?: string;
+  storage?: {
+    screenshotDirectory?: string;
+    recordingDirectory?: string;
+  };
   vision?: {
     enabled: boolean;
     provider: string;
@@ -141,10 +145,33 @@ export interface HarmonyConfig {
   };
 }
 
+export interface HarmonyMediaArtifact {
+  kind: "screenshot" | "recording";
+  serial: string;
+  path: string;
+  filename: string;
+  createdAt: string;
+  size: number;
+  mimeType: "image/png" | "video/mp4";
+}
+
+export interface HarmonyRecordingState {
+  serial: string;
+  recordingId: string;
+  remoteName: string;
+  startedAt: string;
+  ownerId: string;
+}
+
 export interface HarmonyRuntimeCandidate {
   hdcPath: string;
   sdkPath: string;
-  source: "selection" | "environment" | "config" | "deveco" | "path";
+  source: "selection" | "environment" | "config" | "deveco" | "path" | "bundled";
+}
+
+export interface HarmonyVideoConnection {
+  stream: ReadableStream<Uint8Array>;
+  close(): Promise<void>;
 }
 
 export interface HarmonyDiagnostics {
@@ -271,6 +298,9 @@ export interface HarmonyAutomationBackend {
     serial: string,
     options: { includeTree: boolean; includeScreenshot: boolean; signal?: AbortSignal },
   ): Promise<BackendSnapshot>;
+  startRecording?(serial: string, remoteName: string, signal?: AbortSignal): Promise<void>;
+  stopRecording?(serial: string, remoteName: string, destinationPath: string, signal?: AbortSignal): Promise<number>;
+  openVideoStream?(serial: string, signal?: AbortSignal): Promise<HarmonyVideoConnection>;
   tap(serial: string, x: number, y: number, signal?: AbortSignal): Promise<void>;
   doubleTap?(serial: string, x: number, y: number, signal?: AbortSignal): Promise<void>;
   longPress?(serial: string, x: number, y: number, signal?: AbortSignal): Promise<void>;

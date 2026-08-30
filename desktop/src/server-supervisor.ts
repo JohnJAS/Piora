@@ -24,13 +24,15 @@ export interface StandaloneServerOptions {
   nodePath?: string;
   homeDirectory: string;
   agentDirectory: string;
-  whisperDirectory?: string;
+  speechPacksDirectory?: string;
+  harmonyToolsDirectory?: string;
   token: string;
   logger: Logger;
   preferredPort?: number;
   startupTimeoutMs?: number;
   runtimeProfile?: RuntimeProfile;
   desktopDataDirectory?: string;
+  onMessage?: (message: unknown) => unknown | Promise<unknown>;
   onUnexpectedExit?: (exit: ServerExit) => void;
 }
 
@@ -305,8 +307,11 @@ export class StandaloneServer {
             ? { PIORA_DESKTOP_DATA_DIR: this.options.desktopDataDirectory }
             : {}),
           PI_CODING_AGENT_DIR: this.options.agentDirectory,
-          ...(this.options.whisperDirectory
-            ? { PIORA_WHISPER_DIR: this.options.whisperDirectory }
+          ...(this.options.speechPacksDirectory
+            ? { PIORA_SPEECH_PACKS_DIR: this.options.speechPacksDirectory }
+            : {}),
+          ...(this.options.harmonyToolsDirectory
+            ? { PIORA_HARMONY_TOOLS_DIR: this.options.harmonyToolsDirectory }
             : {}),
           // Desktop requests use the per-launch token below. Do not inherit an
           // unrelated shell-wide Basic Auth password that the renderer and
@@ -327,6 +332,21 @@ export class StandaloneServer {
       onRuntimeReady();
     });
     attachLineLogger(child.stderr, this.options.logger, "warn");
+    child.on("message", (message: unknown) => {
+      if (!this.options.onMessage) return;
+      void Promise.resolve(this.options.onMessage(message)).then((response) => {
+        if (
+          response === undefined
+          || response === null
+          || !["string", "number", "boolean", "bigint", "object"].includes(typeof response)
+          || !child.connected
+          || !isRunning(child)
+        ) return;
+        child.send(response as string | number | boolean | bigint | object);
+      }).catch((error) => {
+        this.options.logger.warn("Unable to handle a web server IPC message", error);
+      });
+    });
     this.options.logger.info("Starting web server", {
       entry: this.options.serverEntry,
       pid: child.pid,

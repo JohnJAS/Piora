@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `706933728f0c250ce96912ebae8418d4d9b97cc51826b1cca78c0c6808a717f8`
+Lockfile SHA-256: `7d38ef553d0a4b6daafbe0f6738ded45d13c1dfb7fc3f3ff0fcb56e97203c3d0`
 
-Unique locked packages: **1083**. Runtime packages: **576**. Build/development-only packages: **507**.
+Unique locked packages: **1083**. Runtime packages: **582**. Build/development-only packages: **501**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -126,6 +126,7 @@ Every locked package declares a license.
 | `@img/sharp-win32-arm64` | `0.35.3` | Apache-2.0 AND LGPL-3.0-or-later | Yes |
 | `@img/sharp-win32-ia32` | `0.35.3` | Apache-2.0 AND LGPL-3.0-or-later | Yes |
 | `@img/sharp-win32-x64` | `0.35.3` | Apache-2.0 AND LGPL-3.0-or-later | Yes |
+| `@isaacs/fs-minipass` | `4.0.1` | ISC | No |
 | `@jridgewell/gen-mapping` | `0.3.13` | MIT | No |
 | `@jridgewell/resolve-uri` | `3.1.2` | MIT | No |
 | `@jridgewell/sourcemap-codec` | `1.5.5` | MIT | No |
@@ -255,6 +256,7 @@ Every locked package declares a license.
 | `character-entities-html4` | `2.1.0` | MIT | No |
 | `character-entities-legacy` | `3.0.0` | MIT | No |
 | `character-reference-invalid` | `2.0.1` | MIT | No |
+| `chownr` | `3.0.0` | BlueOak-1.0.0 | No |
 | `client-only` | `0.0.1` | MIT | No |
 | `clsx` | `2.1.1` | MIT | No |
 | `comma-separated-tokens` | `2.0.3` | MIT | No |
@@ -465,6 +467,8 @@ Every locked package declares a license.
 | `micromark-util-symbol` | `2.0.1` | MIT | No |
 | `micromark-util-types` | `2.0.2` | MIT | No |
 | `minimatch` | `10.2.5` | BlueOak-1.0.0 | No |
+| `minipass` | `7.1.3` | BlueOak-1.0.0 | No |
+| `minizlib` | `3.1.0` | MIT | No |
 | `mlly` | `1.8.2` | MIT | No |
 | `ms` | `2.1.3` | MIT | No |
 | `nanoid` | `3.3.18` | MIT | No |
@@ -552,6 +556,7 @@ Every locked package declares a license.
 | `stylis` | `4.2.0` | MIT | No |
 | `stylis` | `4.4.0` | MIT | No |
 | `supports-preserve-symlinks-flag` | `1.0.0` | MIT | No |
+| `tar` | `7.5.22` | BlueOak-1.0.0 | No |
 | `tiny-typed-emitter` | `2.1.0` | MIT | No |
 | `tinyexec` | `1.1.2` | MIT | No |
 | `trim-lines` | `3.0.1` | MIT | No |
@@ -587,6 +592,7 @@ Every locked package declares a license.
 | `ws` | `8.21.3` | MIT | No |
 | `xml-naming` | `0.1.0` | MIT | No |
 | `xmlbuilder` | `10.1.1` | MIT | No |
+| `yallist` | `5.0.0` | BlueOak-1.0.0 | No |
 | `yaml` | `1.10.3` | ISC | No |
 | `yaml` | `2.9.0` | ISC | No |
 | `zwitch` | `2.0.4` | MIT | No |
@@ -629,7 +635,6 @@ Every locked package declares a license.
 | `@humanfs/node` | `0.16.7` | Apache-2.0 | No |
 | `@humanwhocodes/module-importer` | `1.0.1` | Apache-2.0 | No |
 | `@humanwhocodes/retry` | `0.4.3` | Apache-2.0 | No |
-| `@isaacs/fs-minipass` | `4.0.1` | ISC | No |
 | `@jridgewell/remapping` | `2.3.5` | MIT | No |
 | `@malept/cross-spawn-promise` | `2.0.0` | Apache-2.0 | No |
 | `@malept/flatpak-bundler` | `0.4.0` | MIT | No |
@@ -752,7 +757,6 @@ Every locked package declares a license.
 | `call-bind-apply-helpers` | `1.0.2` | MIT | No |
 | `call-bound` | `1.0.4` | MIT | No |
 | `chalk` | `4.1.2` | MIT | No |
-| `chownr` | `3.0.0` | BlueOak-1.0.0 | No |
 | `chromium-pickle-js` | `0.2.0` | MIT | No |
 | `ci-info` | `4.3.1` | MIT | No |
 | `ci-info` | `4.4.0` | MIT | No |
@@ -960,8 +964,6 @@ Every locked package declares a license.
 | `minimatch` | `5.1.9` | ISC | No |
 | `minimatch` | `9.0.9` | ISC | No |
 | `minimist` | `1.2.8` | MIT | No |
-| `minipass` | `7.1.3` | BlueOak-1.0.0 | No |
-| `minizlib` | `3.1.0` | MIT | No |
 | `napi-postinstall` | `0.3.4` | MIT | No |
 | `natural-compare` | `1.4.0` | MIT | No |
 | `node-abi` | `4.33.0` | MIT | No |
@@ -1053,7 +1055,6 @@ Every locked package declares a license.
 | `supports-color` | `7.2.0` | MIT | No |
 | `tailwindcss` | `4.3.3` | MIT | No |
 | `tapable` | `2.3.3` | MIT | No |
-| `tar` | `7.5.22` | BlueOak-1.0.0 | No |
 | `temp-file` | `3.4.0` | MIT | No |
 | `tiny-async-pool` | `1.3.0` | MIT | No |
 | `tinyglobby` | `0.2.15` | MIT | No |
@@ -1096,7 +1097,6 @@ Every locked package declares a license.
 | `y18n` | `5.0.8` | ISC | No |
 | `yallist` | `3.1.1` | ISC | No |
 | `yallist` | `4.0.0` | ISC | No |
-| `yallist` | `5.0.0` | BlueOak-1.0.0 | No |
 | `yargs` | `17.7.3` | MIT | No |
 | `yargs-parser` | `21.1.1` | ISC | No |
 | `yocto-queue` | `0.1.0` | MIT | No |
