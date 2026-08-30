@@ -9,6 +9,7 @@ import { MessageView } from "./MessageView";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
+import { ChatScrollRail } from "./ChatScrollRail";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type BuiltinSlashCommandResult, type NoticeItem, type SlashCommandInfo } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
@@ -720,22 +721,13 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
       )}
 
       {!isMobile ? (
-        <>
-          <div
-            {...chatColumnResizer.separatorProps}
-            aria-label={t("layout.resizeChatColumnLeft")}
-            className={`chat-column-resize-handle is-left${chatColumnResizer.isResizing ? " is-resizing" : ""}`}
-            data-resize-growth-direction="left"
-            title={`${t("layout.resizeChatColumnLeft")}: ${t("layout.resizeHint")}`}
-          />
-          <div
-            {...chatColumnResizer.separatorProps}
-            aria-label={t("layout.resizeChatColumnRight")}
-            className={`chat-column-resize-handle is-right${chatColumnResizer.isResizing ? " is-resizing" : ""}`}
-            data-resize-growth-direction="right"
-            title={`${t("layout.resizeChatColumnRight")}: ${t("layout.resizeHint")}`}
-          />
-        </>
+        <div
+          {...chatColumnResizer.separatorProps}
+          aria-label={t("layout.resizeChatColumnLeft")}
+          className={`chat-column-resize-handle is-left${chatColumnResizer.isResizing ? " is-resizing" : ""}`}
+          data-resize-growth-direction="left"
+          title={`${t("layout.resizeChatColumnLeft")}: ${t("layout.resizeHint")}`}
+        />
       ) : null}
 
       {isEmptyNew ? (
@@ -774,7 +766,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
             <NoticeShelf notices={notices} floating align="right" />
           </div>
         </div>
-        <div ref={scrollContainerRef} className="chat-scroll-container flex-1 overflow-y-auto pt-4">
+        <div id="chat-scroll-container" ref={scrollContainerRef} className="chat-scroll-container flex-1 overflow-y-auto pt-4">
           <div style={{ padding: `0 ${CHAT_COLUMN_PADDING}px 0 ${CHAT_COLUMN_LEFT_PADDING}px` }}>
             <div className="chat-column">
               <ExtensionWidgets widgets={aboveEditorWidgets} />
@@ -1028,6 +1020,12 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
             </div>
           </div>
         </div>
+        {isMobile ? null : (
+          <ChatScrollRail
+            ariaLabel={t("chat.scrollRail")}
+            scrollContainer={scrollContainerRef}
+          />
+        )}
         {isMobile ? null : (
           <RenderErrorBoundary
             resetKey={`minimap:${messages.length}:${messages.length > 0 ? messageFingerprint(messages[messages.length - 1], entryIds[entryIds.length - 1]) : "empty"}`}
