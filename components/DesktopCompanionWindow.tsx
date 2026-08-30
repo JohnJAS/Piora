@@ -33,6 +33,8 @@ import {
   type CompanionSessionContext,
   type CompanionWorkRhythm,
 } from "@/lib/companion-interaction";
+import type { CompanionAutonomyLevel, CompanionRuntimeState } from "@/lib/companion-runtime";
+import { planCompanionWander } from "@/lib/companion-wander";
 import type { TaskRuntimeSnapshot } from "@/lib/task-status";
 import { BuiltinPet, COMPANION_ACTIVITY_COLORS, SpritePet } from "./CompanionPet";
 import styles from "./DesktopCompanionWindow.module.css";
@@ -80,7 +82,16 @@ export function DesktopCompanionWindow() {
   const startupDecisionRef = useRef(false);
   const [motionDirection, setMotionDirection] = useState<"left" | "right" | null>(null);
   const [nextWakeAt, setNextWakeAt] = useState<number | null>(null);
+  const [focusTimerEndsAt, setFocusTimerEndsAt] = useState<number | null>(null);
   const [runtimeReady, setRuntimeReady] = useState(false);
+  const [movementSettings, setMovementSettings] = useState<{
+    allowMovement: boolean;
+    autonomyPaused: boolean;
+    autonomyLevel: CompanionAutonomyLevel;
+  }>({ allowMovement: true, autonomyPaused: false, autonomyLevel: "balanced" });
+  const movementAllowedRef = useRef(true);
+  const lastTimerCompletionRequestRef = useRef<number | null>(null);
+  const lastDecisionIdRef = useRef<string | null>(null);
   const pointerDragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -114,28 +125,92 @@ export function DesktopCompanionWindow() {
       if (!response.ok || !payload?.decision) throw new Error(payload?.error || `HTTP ${response.status}`);
       if (requestId !== speechRequestRef.current) return;
       for (const action of payload.decision.actions ?? []) {
-        if (action.kind === "walk") void window.piDesktop?.moveCompanionWindow?.({ kind: "walk", direction: action.direction, distance: action.distance, durationMs: 1_600 });
+        if (action.kind === "walk" && movementAllowedRef.current) {
+          const wander = planCompanionWander({
+            autonomyLevel: movementSettings.autonomyLevel,
+            hasRunningTasks: runningTasks.length > 0,
+          });
+          void window.piDesktop?.moveCompanionWindow?.({
+            kind: "walk",
+            direction: action.direction ?? wander.direction,
+            distance: action.distance ?? wander.distance,
+            durationMs: wander.durationMs,
+          });
+        }
         if (action.kind === "open-panel") void window.piDesktop?.companionAction?.("open-panel");
       }
     } catch {
       // The pet keeps its current animation when the model is unavailable; the
       // independent bubble surface must never be replaced by stale canned text.
     }
-  }, [locale, preferences.shareWorkContext, preferences.todos, runningTasks, sessionContext, workRhythm]);
+  }, [locale, movementSettings.autonomyLevel, preferences.shareWorkContext, preferences.todos, runningTasks, sessionContext, workRhythm]);
 
   useEffect(() => {
     let source: EventSource | null = null;
-    const applyState = (runtime: { mind?: { nextWakeAt?: number | null } } | null) => {
+    const applyState = (runtime: CompanionRuntimeState | null) => {
       setNextWakeAt(typeof runtime?.mind?.nextWakeAt === "number" ? runtime.mind.nextWakeAt : null);
+      if (runtime?.settings) {
+        const nextMovementSettings = {
+          allowMovement: runtime.settings.allowMovement,
+          autonomyPaused: runtime.settings.autonomyPaused,
+          autonomyLevel: runtime.settings.autonomyLevel,
+        };
+        movementAllowedRef.current = nextMovementSettings.allowMovement;
+        setMovementSettings((current) => (
+          current.allowMovement === nextMovementSettings.allowMovement
+          && current.autonomyPaused === nextMovementSettings.autonomyPaused
+          && current.autonomyLevel === nextMovementSettings.autonomyLevel
+            ? current
+            : nextMovementSettings
+        ));
+      }
+      const timer = runtime?.focusTimer;
+      setFocusTimerEndsAt(timer?.status === "running" && typeof timer.endsAt === "number" ? timer.endsAt : null);
+      const decision = runtime?.mind?.lastDecision;
+      if (!decision || decision.id === lastDecisionIdRef.current) return;
+      lastDecisionIdRef.current = decision.id;
+      if (!decision.event.startsWith("timer.") || Date.now() - decision.createdAt > 30_000) return;
+      overlaySequenceRef.current += 1;
+      setOverlayEvent({ kind: "poke", key: `timer:${overlaySequenceRef.current}`, occurredAt: decision.createdAt });
     };
-    void fetch("/api/companion/state", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then(applyState).catch(() => undefined);
+    void fetch("/api/companion/state", { cache: "no-store" }).then((response) => response.ok ? response.json() as Promise<CompanionRuntimeState> : null).then(applyState).catch(() => undefined);
     source = new EventSource("/api/companion/events");
     source.addEventListener("companion", (event) => {
-      try { applyState((JSON.parse((event as MessageEvent<string>).data) as { state?: { mind?: { nextWakeAt?: number | null } } }).state ?? null); }
+      try { applyState((JSON.parse((event as MessageEvent<string>).data) as { state?: CompanionRuntimeState }).state ?? null); }
       catch { /* ignore malformed event */ }
     });
     return () => source?.close();
   }, []);
+
+  useEffect(() => {
+    if (!runtimeReady || focusTimerEndsAt === null) return;
+    let timeoutId: number | null = null;
+    let cancelled = false;
+    const requestCompletion = async () => {
+      if (cancelled || lastTimerCompletionRequestRef.current === focusTimerEndsAt) return;
+      lastTimerCompletionRequestRef.current = focusTimerEndsAt;
+      try {
+        const response = await fetch("/api/companion/focus-timer/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      } catch {
+        if (cancelled) return;
+        lastTimerCompletionRequestRef.current = null;
+        timeoutId = window.setTimeout(() => void requestCompletion(), 2_000);
+      }
+    };
+    timeoutId = window.setTimeout(
+      () => void requestCompletion(),
+      Math.max(0, Math.min(2_147_000_000, focusTimerEndsAt - Date.now())),
+    );
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [focusTimerEndsAt, runtimeReady]);
 
   useEffect(() => {
     if (!runtimeReady || !nextWakeAt) return;
@@ -329,16 +404,73 @@ export function DesktopCompanionWindow() {
   useEffect(() => {
     const bridge = window.piDesktop?.moveCompanionWindow;
     if (!bridge || !runtimeEventKey) return;
+    if (!movementSettings.allowMovement) {
+      void bridge({ kind: "stop" });
+      return;
+    }
     if (runtimeEventKind === "started" || runtimeEventKind === "completed") {
+      const wander = planCompanionWander({
+        autonomyLevel: movementSettings.autonomyLevel,
+        hasRunningTasks: runtimeEventKind === "started",
+      });
       void bridge({
         kind: "walk",
-        distance: runtimeEventKind === "started" ? 72 : 110,
-        durationMs: runtimeEventKind === "started" ? 1_250 : 1_650,
+        direction: wander.direction,
+        distance: runtimeEventKind === "started" ? Math.min(90, wander.distance) : Math.max(80, wander.distance),
+        durationMs: wander.durationMs,
       });
     } else if (runtimeEventKind === "failed") {
       void bridge({ kind: "stop" });
     }
-  }, [runtimeEventKey, runtimeEventKind]);
+  }, [movementSettings.allowMovement, movementSettings.autonomyLevel, runtimeEventKey, runtimeEventKind]);
+
+  useEffect(() => {
+    const bridge = window.piDesktop?.moveCompanionWindow;
+    if (!bridge) return;
+    const movementBlocked = !runtimeReady
+      || !movementSettings.allowMovement
+      || movementSettings.autonomyPaused
+      || displayActivity.status === "review"
+      || displayActivity.status === "failed"
+      || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (movementBlocked) {
+      void bridge({ kind: "stop" });
+      return;
+    }
+
+    let cancelled = false;
+    let timer: number | null = null;
+    const schedule = () => {
+      const wander = planCompanionWander({
+        autonomyLevel: movementSettings.autonomyLevel,
+        hasRunningTasks: runningTasks.length > 0,
+      });
+      timer = window.setTimeout(() => {
+        if (cancelled) return;
+        if (wander.shouldMove && pointerDragRef.current === null) {
+          void bridge({
+            kind: "walk",
+            direction: wander.direction,
+            distance: wander.distance,
+            durationMs: wander.durationMs,
+          });
+        }
+        schedule();
+      }, wander.delayMs);
+    };
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [
+    displayActivity.status,
+    movementSettings.allowMovement,
+    movementSettings.autonomyLevel,
+    movementSettings.autonomyPaused,
+    runningTasks.length,
+    runtimeReady,
+  ]);
 
   useEffect(() => {
     if (displayActivity.status === "review" || displayActivity.status === "failed") {

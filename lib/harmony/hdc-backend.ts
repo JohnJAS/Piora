@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createConnection, createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -17,6 +19,7 @@ import type {
   HarmonyLogLevel,
   HarmonyProcess,
   HarmonyScreenshot,
+  HarmonyVideoConnection,
 } from "./types";
 
 const MAX_LAYOUT_BYTES = 16 * 1024 * 1024;
@@ -26,6 +29,12 @@ const SERIAL_PATTERN = /^[A-Za-z0-9._:\[\]-]{1,256}$/;
 const APP_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_.]{0,255}$/;
 const MAX_LOG_QUERY_LENGTH = 256;
 const MAX_LOG_LINES = 2_000;
+const MIRROR_BUNDLE = "com.ohos.scrcpy.server";
+const MIRROR_ABILITY = "ScrcpyService";
+const MIRROR_DEVICE_PORT = 53_535;
+const MIRROR_MAX_SHORT_EDGE = 1_080;
+const MIRROR_BITRATE = 6_000_000;
+const MIRROR_FRAME_RATE = 30;
 
 const NO_UITEST_CAPABILITIES: HarmonyCapabilities = {
   uiTree: false,
@@ -175,6 +184,81 @@ function parsePng(data: Buffer): HarmonyScreenshot {
   };
 }
 
+function encodeMirrorPacket(type: number, payload: Buffer): Buffer {
+  const packet = Buffer.allocUnsafe(8 + payload.length);
+  packet.writeUInt32BE(type, 0);
+  packet.writeUInt32BE(payload.length, 4);
+  payload.copy(packet, 8);
+  return packet;
+}
+
+function encodeMirrorHeartbeat(): Buffer {
+  const payload = Buffer.allocUnsafe(8);
+  payload.writeBigUInt64BE(BigInt(Date.now()), 0);
+  return encodeMirrorPacket(0x01, payload);
+}
+
+function encodeMirrorVideoParameters(): Buffer {
+  const payload = Buffer.allocUnsafe(13);
+  payload[0] = 0x42;
+  payload.writeInt32BE(MIRROR_MAX_SHORT_EDGE, 1);
+  payload.writeInt32BE(MIRROR_BITRATE, 5);
+  payload.writeInt32BE(MIRROR_FRAME_RATE, 9);
+  return encodeMirrorPacket(0x10, payload);
+}
+
+export function parseHarmonyForwardedPort(output: string): number | undefined {
+  const match = output.match(/tcp:(\d+)\s+tcp:\d+/i) ?? output.match(/localhost:(\d+)/i);
+  const port = match ? Number(match[1]) : Number.NaN;
+  return Number.isSafeInteger(port) && port > 0 && port <= 65_535 ? port : undefined;
+}
+
+async function reserveLoopbackPort(): Promise<number> {
+  return await new Promise<number>((resolvePort, rejectPort) => {
+    const server = createServer();
+    server.unref();
+    server.once("error", rejectPort);
+    server.listen({ host: "127.0.0.1", port: 0, exclusive: true }, () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close();
+        rejectPort(new Error("Unable to allocate a local Harmony video port"));
+        return;
+      }
+      const port = address.port;
+      server.close((error) => error ? rejectPort(error) : resolvePort(port));
+    });
+  });
+}
+
+async function connectLoopback(port: number, signal?: AbortSignal): Promise<Socket> {
+  return await new Promise<Socket>((resolveSocket, rejectSocket) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    socket.setNoDelay(true);
+    const timeout = setTimeout(() => fail(new Error("Harmony video service connection timed out")), 5_000);
+    const cleanup = () => {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", abort);
+      socket.removeListener("connect", connected);
+      socket.removeListener("error", fail);
+    };
+    const connected = () => {
+      cleanup();
+      resolveSocket(socket);
+    };
+    const fail = (error: Error) => {
+      cleanup();
+      socket.destroy();
+      rejectSocket(error);
+    };
+    const abort = () => fail(new Error("Harmony video connection was cancelled"));
+    socket.once("connect", connected);
+    socket.once("error", fail);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) abort();
+  });
+}
+
 export class HdcBackend implements HarmonyAutomationBackend {
   readonly kind = "hdc-uitest";
   readonly hdcPath: string;
@@ -182,6 +266,8 @@ export class HdcBackend implements HarmonyAutomationBackend {
   private readonly commandTimeoutMs: number;
   private readonly capabilitiesBySerial = new Map<string, HarmonyCapabilities>();
   private readonly deviceInfoBySerial = new Map<string, Omit<BackendDevice, "state">>();
+  private readonly liveScreenshotPaths = new Map<string, { directory: string; localPath: string; remotePath: string }>();
+  private readonly preparedMirrorServers = new Set<string>();
 
   constructor(options: HdcBackendOptions = {}) {
     const config = readHarmonyConfig();
@@ -381,9 +467,245 @@ export class HdcBackend implements HarmonyAutomationBackend {
   }
 
   private async captureScreen(serial: string, signal?: AbortSignal): Promise<HarmonyScreenshot> {
-    const remotePath = `/data/local/tmp/piora-screen-${randomUUID()}.png`;
-    await this.shell(serial, ["uitest", "screenCap", "-p", remotePath], "screen_capture", signal);
-    return parsePng(await this.pullGeneratedFile(serial, remotePath, "screenshot", MAX_SCREENSHOT_BYTES, signal));
+    let paths = this.liveScreenshotPaths.get(serial);
+    if (!paths) {
+      const directory = await mkdtemp(join(tmpdir(), "piora-harmony-live-"));
+      paths = {
+        directory,
+        localPath: join(directory, "screen.png"),
+        remotePath: `/data/local/tmp/piora-screen-${randomUUID()}.png`,
+      };
+      this.liveScreenshotPaths.set(serial, paths);
+    }
+    await rm(paths.localPath, { force: true }).catch(() => undefined);
+    await this.shell(serial, ["uitest", "screenCap", "-p", paths.remotePath], "screen_capture", signal);
+    await this.run(["-t", serial, "file", "recv", paths.remotePath, paths.localPath], "screenshot_pull", signal, 20_000);
+    const info = await stat(paths.localPath);
+    if (info.size <= 0 || info.size > MAX_SCREENSHOT_BYTES) {
+      throw new HarmonyError("INVALID_RESPONSE", "Harmony screenshot file has an invalid size", {
+        details: { size: info.size, maxBytes: MAX_SCREENSHOT_BYTES },
+      });
+    }
+    return parsePng(await readFile(paths.localPath));
+  }
+
+  async startRecording(serial: string, remoteName: string, signal?: AbortSignal): Promise<void> {
+    validateSerial(serial);
+    if (!/^piora-recording-[0-9A-Za-z-]{8,96}\.mp4$/.test(remoteName)) {
+      throw new HarmonyError("INVALID_ARGUMENT", "Invalid Harmony recording name");
+    }
+    await this.shell(serial, [
+      "aa", "start",
+      "-b", "com.huawei.hmos.screenrecorder",
+      "-a", "com.huawei.hmos.screenrecorder.ServiceExtAbility",
+      "--ps", "CustomizedFileName", remoteName,
+    ], "start_recording", signal, 20_000);
+  }
+
+  async stopRecording(serial: string, remoteName: string, destinationPath: string, signal?: AbortSignal): Promise<number> {
+    validateSerial(serial);
+    if (!/^piora-recording-[0-9A-Za-z-]{8,96}\.mp4$/.test(remoteName)) {
+      throw new HarmonyError("INVALID_ARGUMENT", "Invalid Harmony recording name");
+    }
+    await this.shell(serial, [
+      "aa", "start",
+      "-b", "com.huawei.hmos.screenrecorder",
+      "-a", "com.huawei.hmos.screenrecorder.ServiceExtAbility",
+    ], "stop_recording", signal, 20_000);
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 700));
+
+    const query = cleanOutput((await this.shell(serial, ["mediatool", "query", remoteName, "-u"], "query_recording", signal, 20_000)).stdout) ?? "";
+    const mediaUri = query.match(/file:\/\/media\/[A-Za-z0-9._/%-]+/u)?.[0];
+    let remotePath = query.match(/\/[A-Za-z0-9._/-]+\.mp4/u)?.[0];
+    if (mediaUri) {
+      const received = cleanOutput((await this.shell(
+        serial,
+        ["mediatool", "recv", mediaUri, "/data/local/tmp"],
+        "prepare_recording_download",
+        signal,
+        20_000,
+      )).stdout) ?? "";
+      remotePath = received.match(/\/data\/local\/tmp\/[A-Za-z0-9._/-]+\.mp4/u)?.[0] ?? remotePath;
+    }
+    if (!remotePath || !/^\/[A-Za-z0-9._/-]+\.mp4$/.test(remotePath)) {
+      throw new HarmonyError("INVALID_RESPONSE", "Harmony did not return a downloadable recording path", {
+        details: { remoteName },
+      });
+    }
+    await this.run(["-t", serial, "file", "recv", remotePath, destinationPath], "recording_pull", signal, 120_000);
+    const info = await stat(destinationPath);
+    if (remotePath.startsWith("/data/local/tmp/")) {
+      await this.shell(serial, ["rm", remotePath], "recording_cleanup").catch(() => undefined);
+    }
+    return info.size;
+  }
+
+  private bundledMirrorServerPath(): string {
+    const toolsDirectory = process.env.PIORA_HARMONY_TOOLS_DIR?.trim();
+    const serverPath = toolsDirectory ? join(toolsDirectory, "OHScrcpyServer.hap") : "";
+    if (!serverPath || !existsSync(serverPath)) {
+      throw new HarmonyError("CAPABILITY_UNAVAILABLE", "The bundled Harmony video service is missing from this Piora installation");
+    }
+    return serverPath;
+  }
+
+  private async ensureMirrorServer(serial: string, signal?: AbortSignal): Promise<void> {
+    if (!this.preparedMirrorServers.has(serial)) {
+      let installed = false;
+      try {
+        const result = await this.shell(serial, ["bm", "dump", "-n", MIRROR_BUNDLE], "mirror_server_check", signal, 8_000);
+        const output = Buffer.concat([result.stdout, result.stderr]).toString("utf8").replace(/\0/g, "");
+        installed = output.includes(MIRROR_BUNDLE) && !/(?:not\s+exist|not\s+found|failed)/i.test(output);
+      } catch (error) {
+        if (isHarmonyError(error) && error.code === "COMMAND_ABORTED") throw error;
+      }
+      if (!installed) {
+        const result = await this.run(
+          ["-t", serial, "install", "-r", this.bundledMirrorServerPath()],
+          "mirror_server_install",
+          signal,
+          90_000,
+        );
+        const output = Buffer.concat([result.stdout, result.stderr]).toString("utf8").replace(/\0/g, "");
+        if (/(?:install\s+fail|failure\[|permission denied)/i.test(output)) {
+          throw new HarmonyError("CAPABILITY_UNAVAILABLE", "The device rejected the bundled Harmony video service", {
+            details: { reason: "signature-or-screen-capture-permission" },
+          });
+        }
+      }
+      this.preparedMirrorServers.add(serial);
+    }
+    await this.shell(
+      serial,
+      ["aa", "start", "-b", MIRROR_BUNDLE, "-a", MIRROR_ABILITY],
+      "mirror_server_start",
+      signal,
+      20_000,
+    );
+  }
+
+  private async createMirrorForward(serial: string, signal?: AbortSignal): Promise<number> {
+    try {
+      const result = await this.run(
+        ["-t", serial, "fport", "tcp:0", `tcp:${MIRROR_DEVICE_PORT}`],
+        "mirror_forward",
+        signal,
+        8_000,
+      );
+      const port = parseHarmonyForwardedPort(Buffer.concat([result.stdout, result.stderr]).toString("utf8"));
+      if (port) return port;
+    } catch (error) {
+      if (isHarmonyError(error) && error.code === "COMMAND_ABORTED") throw error;
+    }
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const port = await reserveLoopbackPort();
+      try {
+        await this.run(
+          ["-t", serial, "fport", `tcp:${port}`, `tcp:${MIRROR_DEVICE_PORT}`],
+          "mirror_forward",
+          signal,
+          8_000,
+        );
+        return port;
+      } catch (error) {
+        if (isHarmonyError(error) && error.code === "COMMAND_ABORTED") throw error;
+      }
+    }
+    throw new HarmonyError("COMMAND_FAILED", "Unable to establish the Harmony video port forwarding", { retryable: true });
+  }
+
+  async openVideoStream(serial: string, signal?: AbortSignal): Promise<HarmonyVideoConnection> {
+    validateSerial(serial);
+    await this.ensureMirrorServer(serial, signal);
+    const localPort = await this.createMirrorForward(serial, signal);
+    let socket: Socket | undefined;
+    try {
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        try {
+          socket = await connectLoopback(localPort, signal);
+          break;
+        } catch (error) {
+          lastError = error;
+          if (signal?.aborted) throw error;
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 150));
+        }
+      }
+      if (!socket) throw lastError ?? new Error("Harmony video service is unavailable");
+    } catch (error) {
+      await this.run(
+        ["-t", serial, "fport", "rm", `tcp:${localPort}`, `tcp:${MIRROR_DEVICE_PORT}`],
+        "mirror_forward_cleanup",
+      ).catch(() => undefined);
+      throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Unable to connect to the Harmony video service", {
+        cause: error,
+        retryable: true,
+      });
+    }
+
+    const videoSocket = socket;
+    videoSocket.write(encodeMirrorVideoParameters());
+    const heartbeat = setInterval(() => {
+      if (!videoSocket.destroyed) videoSocket.write(encodeMirrorHeartbeat());
+    }, 2_000);
+    heartbeat.unref?.();
+
+    let closed = false;
+    let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const close = async (): Promise<void> => {
+      if (closed) return;
+      closed = true;
+      clearInterval(heartbeat);
+      signal?.removeEventListener("abort", abort);
+      videoSocket.removeAllListeners();
+      videoSocket.destroy();
+      await this.run(
+        ["-t", serial, "fport", "rm", `tcp:${localPort}`, `tcp:${MIRROR_DEVICE_PORT}`],
+        "mirror_forward_cleanup",
+      ).catch(() => undefined);
+    };
+    const abort = () => {
+      try { controller?.close(); } catch { /* The response stream may already be closed. */ }
+      void close();
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(streamController) {
+        controller = streamController;
+        videoSocket.on("data", (chunk: Buffer) => {
+          if (closed) return;
+          streamController.enqueue(Uint8Array.from(chunk));
+          if ((streamController.desiredSize ?? 1) <= 0) videoSocket.pause();
+        });
+        videoSocket.once("end", () => {
+          if (!closed) streamController.close();
+          void close();
+        });
+        videoSocket.once("error", (error) => {
+          if (!closed) streamController.error(error);
+          void close();
+        });
+      },
+      pull() {
+        if (!closed) videoSocket.resume();
+      },
+      async cancel() {
+        await close();
+      },
+    });
+    return { stream, close };
+  }
+
+  async dispose(): Promise<void> {
+    const entries = [...this.liveScreenshotPaths.entries()];
+    this.liveScreenshotPaths.clear();
+    this.preparedMirrorServers.clear();
+    await Promise.all(entries.flatMap(([serial, paths]) => [
+      this.shell(serial, ["rm", paths.remotePath], "screenshot_cleanup").catch(() => undefined),
+      rm(paths.directory, { recursive: true, force: true }).catch(() => undefined),
+    ]));
   }
 
   async snapshot(

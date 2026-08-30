@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRunningTaskRuntimeState } from "@/hooks/useTaskStatus";
 import type { SessionInfo } from "@/lib/types";
-import { RUNNING_SESSIONS_POLL_MS, loadUnreadSessionIds, saveUnreadSessionIds } from "./sidebar-utils";
+import { loadUnreadSessionIds, saveUnreadSessionIds } from "./sidebar-utils";
 
 export interface SessionCompletionAnnouncement {
   count: number;
@@ -13,12 +14,18 @@ export function useSessionCatalog({ selectedSessionId, refreshKey }: { selectedS
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
+  const [fallbackRunningSessionIds, setFallbackRunningSessionIds] = useState<Set<string>>(() => new Set());
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
   const [completionAnnouncement, setCompletionAnnouncement] = useState<SessionCompletionAnnouncement | null>(null);
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
-  const runningPollAuthoritativeRef = useRef(false);
   const loadSessionsRequestIdRef = useRef(0);
+  const runtimeState = useRunningTaskRuntimeState();
+  const runningSessionIds = useMemo(() => {
+    if (!runtimeState.ready) return fallbackRunningSessionIds;
+    return new Set(runtimeState.snapshots
+      .filter((snapshot) => snapshot.runtime !== "idle")
+      .map((snapshot) => snapshot.id));
+  }, [fallbackRunningSessionIds, runtimeState]);
 
   const loadSessions = useCallback(async (showLoading = false) => {
     const requestId = ++loadSessionsRequestIdRef.current;
@@ -29,7 +36,7 @@ export function useSessionCatalog({ selectedSessionId, refreshKey }: { selectedS
       const data = await response.json() as { sessions: SessionInfo[]; runningSessionIds?: string[] };
       if (loadSessionsRequestIdRef.current !== requestId) return;
       setAllSessions(data.sessions);
-      if (!runningPollAuthoritativeRef.current) setRunningSessionIds(new Set(data.runningSessionIds ?? []));
+      setFallbackRunningSessionIds(new Set(data.runningSessionIds ?? []));
       const existingIds = new Set(data.sessions.map((session) => session.id));
       setUnreadSessionIds((previous) => {
         if (previous.size === 0) return previous;
@@ -58,38 +65,6 @@ export function useSessionCatalog({ selectedSessionId, refreshKey }: { selectedS
   useEffect(() => { saveUnreadSessionIds(unreadSessionIds); }, [unreadSessionIds]);
 
   useEffect(() => {
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let controller: AbortController | null = null;
-    const clearTimer = () => { if (timer) clearTimeout(timer); timer = null; };
-    const schedule = () => {
-      clearTimer();
-      if (!stopped && document.visibilityState === "visible") timer = setTimeout(() => void poll(), RUNNING_SESSIONS_POLL_MS);
-    };
-    const poll = async () => {
-      if (stopped || document.visibilityState !== "visible") return;
-      const current = new AbortController();
-      controller?.abort(); controller = current;
-      try {
-        const response = await fetch("/api/agent/running", { cache: "no-store", signal: current.signal });
-        if (!response.ok) return;
-        const data = await response.json() as { runningSessionIds?: string[] };
-        if (stopped || controller !== current) return;
-        runningPollAuthoritativeRef.current = true;
-        setRunningSessionIds(new Set(data.runningSessionIds ?? []));
-      } catch { /* Preserve the last snapshot until the next visible poll. */ }
-      finally { if (controller === current) controller = null; schedule(); }
-    };
-    const visibility = () => {
-      if (document.visibilityState === "visible") void poll();
-      else { clearTimer(); controller?.abort(); controller = null; }
-    };
-    void poll();
-    document.addEventListener("visibilitychange", visibility);
-    return () => { stopped = true; clearTimer(); controller?.abort(); document.removeEventListener("visibilitychange", visibility); };
-  }, []);
-
-  useEffect(() => {
     const previous = previousRunningSessionIdsRef.current;
     const completed = [...previous].filter((id) => !runningSessionIds.has(id));
     const unreadCompleted = completed.filter((id) => id !== selectedSessionId);
@@ -110,9 +85,15 @@ export function useSessionCatalog({ selectedSessionId, refreshKey }: { selectedS
         return next;
       });
     }
-    if (completed.length > 0) void loadSessions(false);
+    if (completed.length > 0) {
+      const completedIds = new Set(completed);
+      const modified = new Date().toISOString();
+      setAllSessions((current) => current.map((session) => (
+        completedIds.has(session.id) ? { ...session, modified } : session
+      )));
+    }
     previousRunningSessionIdsRef.current = runningSessionIds;
-  }, [allSessions, loadSessions, runningSessionIds, selectedSessionId]);
+  }, [allSessions, runningSessionIds, selectedSessionId]);
 
   useEffect(() => {
     if (!selectedSessionId) return;

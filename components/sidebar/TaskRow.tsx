@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useTaskStatus } from "@/hooks/useTaskStatus";
 import {
@@ -11,7 +11,7 @@ import {
 import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
 import type { SessionInfo } from "@/lib/types";
 import { AliIcon } from "../AliIcon";
-import { prefetchSession } from "@/lib/session-prefetch";
+import { cancelSessionPrefetch, prefetchSession } from "@/lib/session-prefetch";
 import { TaskContextMenu } from "./TaskContextMenu";
 import styles from "./TaskRow.module.css";
 
@@ -60,7 +60,7 @@ export function UnreadSessionIndicator() {
   return <TaskStatusIndicator status={{ lifecycle: "active", runtime: "idle", attention: "unread" }} />;
 }
 
-export function TaskRow({
+export const TaskRow = memo(function TaskRow({
   session,
   isSelected,
   isRunning,
@@ -106,6 +106,7 @@ export function TaskRow({
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const titleOptimizationAbortRef = useRef<AbortController | null>(null);
+  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const taskStatus = useTaskStatus({
     sessionId: session.id,
     isViewing: isSelected,
@@ -115,7 +116,11 @@ export function TaskRow({
   const taskStatusPresentationKey = getTaskStatusPresentationKey(taskStatus);
   const title = session.name || session.firstMessage.slice(0, 50) || t("sidebar.newConversation");
 
-  useEffect(() => () => titleOptimizationAbortRef.current?.abort(), []);
+  useEffect(() => () => {
+    titleOptimizationAbortRef.current?.abort();
+    if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
+    cancelSessionPrefetch(session.id);
+  }, [session.id]);
 
   const startRename = useCallback((event: React.MouseEvent) => {
     event.stopPropagation();
@@ -223,13 +228,28 @@ export function TaskRow({
       onClick={confirmDelete || renaming ? undefined : onClick}
       onMouseEnter={() => {
         setHovered(true);
-        if (!isSelected && !isRunning) prefetchSession(session);
+        if (!isSelected && !isRunning) {
+          if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
+          prefetchTimerRef.current = setTimeout(() => {
+            prefetchTimerRef.current = null;
+            prefetchSession(session);
+          }, 200);
+        }
       }}
       onPointerDown={() => {
-        if (!isSelected && !isRunning) prefetchSession(session);
+        if (prefetchTimerRef.current) {
+          clearTimeout(prefetchTimerRef.current);
+          prefetchTimerRef.current = null;
+        }
+        if (!isSelected && !isRunning) prefetchSession(session, { keepOnMouseLeave: true });
       }}
       onMouseLeave={() => {
         setHovered(false);
+        if (prefetchTimerRef.current) {
+          clearTimeout(prefetchTimerRef.current);
+          prefetchTimerRef.current = null;
+        }
+        cancelSessionPrefetch(session.id);
       }}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -415,7 +435,7 @@ export function TaskRow({
       )}
     </div>
   );
-}
+});
 
 function RowActionButton({
   label,

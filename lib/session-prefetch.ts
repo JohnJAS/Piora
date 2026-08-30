@@ -1,68 +1,128 @@
 import type { SessionInfo } from "./types";
 
 const PREFETCH_TTL_MS = 30_000;
-const MAX_PREFETCHED_SESSIONS = 6;
+const MAX_PREFETCH_CACHE_BYTES = 16 * 1024 * 1024;
 
 interface PrefetchEntry {
+  sessionId: string;
   modified: string;
   createdAt: number;
   lastAccessedAt: number;
+  byteLength: number;
+  settled: boolean;
+  cancelOnLeave: boolean;
+  controller: AbortController;
   promise: Promise<unknown | null>;
 }
 
 const prefetchedSessions = new Map<string, PrefetchEntry>();
+let activePrefetch: PrefetchEntry | null = null;
+let cachedPrefetchBytes = 0;
+
+function removePrefetch(entry: PrefetchEntry, abort = false): void {
+  if (prefetchedSessions.get(entry.sessionId) !== entry) return;
+  prefetchedSessions.delete(entry.sessionId);
+  cachedPrefetchBytes = Math.max(0, cachedPrefetchBytes - entry.byteLength);
+  if (abort && !entry.settled) entry.controller.abort();
+  if (activePrefetch === entry) activePrefetch = null;
+}
 
 function prunePrefetchedSessions(now = Date.now()): void {
-  for (const [sessionId, entry] of prefetchedSessions) {
-    if (now - entry.createdAt >= PREFETCH_TTL_MS) prefetchedSessions.delete(sessionId);
+  for (const entry of prefetchedSessions.values()) {
+    if (now - entry.createdAt >= PREFETCH_TTL_MS) removePrefetch(entry, true);
   }
-  while (prefetchedSessions.size >= MAX_PREFETCHED_SESSIONS) {
-    let oldest: [string, PrefetchEntry] | null = null;
+  while (cachedPrefetchBytes > MAX_PREFETCH_CACHE_BYTES) {
+    let oldest: PrefetchEntry | null = null;
     for (const candidate of prefetchedSessions) {
-      if (!oldest || candidate[1].lastAccessedAt < oldest[1].lastAccessedAt) oldest = candidate;
+      const entry = candidate[1];
+      if (!entry.settled || entry.byteLength === 0) continue;
+      if (!oldest || entry.lastAccessedAt < oldest.lastAccessedAt) oldest = entry;
     }
     if (!oldest) break;
-    prefetchedSessions.delete(oldest[0]);
+    removePrefetch(oldest);
   }
 }
 
-function createPrefetch(session: Pick<SessionInfo, "id" | "modified">): PrefetchEntry {
+function createPrefetch(
+  session: Pick<SessionInfo, "id" | "modified">,
+  cancelOnLeave: boolean,
+): PrefetchEntry {
+  if (activePrefetch && activePrefetch.sessionId !== session.id) {
+    removePrefetch(activePrefetch, true);
+  }
   const createdAt = Date.now();
+  const controller = new AbortController();
   const entry: PrefetchEntry = {
+    sessionId: session.id,
     modified: session.modified,
     createdAt,
     lastAccessedAt: createdAt,
-    promise: fetch(`/api/sessions/${encodeURIComponent(session.id)}?deferThinking=1&deferMedia=1`)
+    byteLength: 0,
+    settled: false,
+    cancelOnLeave,
+    controller,
+    promise: Promise.resolve(null),
+  };
+  entry.promise = fetch(`/api/sessions/${encodeURIComponent(session.id)}?deferThinking=1&deferMedia=1`, {
+    signal: controller.signal,
+  })
       .then(async (response) => {
         if (!response.ok) return null;
-        const data = await response.json() as { info?: { modified?: unknown } };
+        const raw = await response.text();
+        if (controller.signal.aborted) return null;
+        entry.byteLength = new Blob([raw]).size;
+        cachedPrefetchBytes += entry.byteLength;
+        const data = JSON.parse(raw) as { info?: { modified?: unknown } };
         // Preserve the exact version returned by the server. If a task appended
         // after the sidebar snapshot, the fresher payload is safe to display but
         // will no longer match that stale sidebar version on a later switch.
         if (typeof data.info?.modified === "string") entry.modified = data.info.modified;
         return data;
       })
-      .catch(() => null),
-  };
+      .catch(() => null)
+      .finally(() => {
+        entry.settled = true;
+        if (activePrefetch === entry) activePrefetch = null;
+        prunePrefetchedSessions();
+      });
   prunePrefetchedSessions(createdAt);
   prefetchedSessions.set(session.id, entry);
+  activePrefetch = entry;
   void entry.promise.then((data) => {
-    if (!data && prefetchedSessions.get(session.id) === entry) prefetchedSessions.delete(session.id);
+    if (!data) removePrefetch(entry);
   });
   window.setTimeout(() => {
-    if (prefetchedSessions.get(session.id) === entry) prefetchedSessions.delete(session.id);
+    removePrefetch(entry, true);
   }, PREFETCH_TTL_MS);
   return entry;
 }
 
-export function prefetchSession(session: Pick<SessionInfo, "id" | "modified">): void {
+export function prefetchSession(
+  session: Pick<SessionInfo, "id" | "modified">,
+  options: { keepOnMouseLeave?: boolean } = {},
+): void {
   prunePrefetchedSessions();
+  if (
+    activePrefetch
+    && activePrefetch.sessionId !== session.id
+    && !activePrefetch.cancelOnLeave
+    && !options.keepOnMouseLeave
+  ) {
+    return;
+  }
   const existing = prefetchedSessions.get(session.id);
   if (existing && existing.modified === session.modified && Date.now() - existing.createdAt < PREFETCH_TTL_MS) {
     existing.lastAccessedAt = Date.now();
+    if (options.keepOnMouseLeave) existing.cancelOnLeave = false;
     return;
   }
-  void createPrefetch(session).promise;
+  if (existing) removePrefetch(existing, true);
+  void createPrefetch(session, !options.keepOnMouseLeave).promise;
+}
+
+export function cancelSessionPrefetch(sessionId: string): void {
+  const entry = prefetchedSessions.get(sessionId);
+  if (entry?.cancelOnLeave) removePrefetch(entry, true);
 }
 
 export function takePrefetchedSession(
@@ -71,12 +131,15 @@ export function takePrefetchedSession(
   prunePrefetchedSessions();
   const entry = prefetchedSessions.get(session.id);
   if (!entry || entry.modified !== session.modified || Date.now() - entry.createdAt >= PREFETCH_TTL_MS) {
-    return createPrefetch(session).promise;
+    if (entry) removePrefetch(entry, true);
+    return createPrefetch(session, false).promise;
   }
   entry.lastAccessedAt = Date.now();
+  entry.cancelOnLeave = false;
   return entry.promise;
 }
 
 export function invalidatePrefetchedSession(sessionId: string): void {
-  prefetchedSessions.delete(sessionId);
+  const entry = prefetchedSessions.get(sessionId);
+  if (entry) removePrefetch(entry, true);
 }

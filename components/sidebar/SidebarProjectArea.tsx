@@ -149,38 +149,44 @@ export function SidebarProjectArea(props: Props) {
     event.stopPropagation();
   }, []);
 
-  return <>
-      {/* Codex-style project folders with their conversations nested below. */}
-      <div ref={projectScrollRef} data-session-drag-scroll className="sidebar-project-scroll" style={{ flex: "1 1 auto", overflowY: "auto", padding: "4px 0 8px", minHeight: 80 }}>
-        {!loading && !error && (
-          <div
-            className={`sidebar-projects-header ${styles.sectionLabel} ${styles.projectsHeader}`}
-            onMouseEnter={() => setProjectsHovered(true)}
-            onMouseLeave={() => setProjectsHovered(false)}
-          >
-            <span>{t("sidebar.projects")}</span>
-            <div className={styles.sectionLabelActions} style={{ opacity: projectsHovered ? 1 : 0 }}>
-              <button
-                type="button"
-                className={styles.rowAction}
-                onClick={() => void handleDefaultCwd()}
-                title={t("sidebar.useDefaultDirectory")}
-                aria-label={t("sidebar.useDefaultDirectory")}
-              >
-                <AliIcon name="home" size={12} />
-              </button>
-              <button
-                type="button"
-                className={styles.rowAction}
-                onClick={handleCustomPathClick}
-                title={t("sidebar.newProject")}
-                aria-label={t("sidebar.newProject")}
-              >
-                <AliIcon name="plus" size={12} />
-              </button>
-            </div>
+  return (
+    <section className={styles.projectArea}>
+      {/* Keep the Projects bar outside the session scroller so rows cannot cover it. */}
+      {!loading && !error && (
+        <div
+          className={`sidebar-projects-header ${styles.sectionLabel} ${styles.projectsHeader}`}
+          onMouseEnter={() => setProjectsHovered(true)}
+          onMouseLeave={() => setProjectsHovered(false)}
+        >
+          <span>{t("sidebar.projects")}</span>
+          <div className={styles.sectionLabelActions} style={{ opacity: projectsHovered ? 1 : 0 }}>
+            <button
+              type="button"
+              className={styles.rowAction}
+              onClick={() => void handleDefaultCwd()}
+              title={t("sidebar.useDefaultDirectory")}
+              aria-label={t("sidebar.useDefaultDirectory")}
+            >
+              <AliIcon name="home" size={12} />
+            </button>
+            <button
+              type="button"
+              className={styles.rowAction}
+              onClick={handleCustomPathClick}
+              title={t("sidebar.newProject")}
+              aria-label={t("sidebar.newProject")}
+            >
+              <AliIcon name="plus" size={12} />
+            </button>
           </div>
-        )}
+        </div>
+      )}
+      {/* Codex-style project folders with their conversations nested below. */}
+      <div
+        ref={projectScrollRef}
+        data-session-drag-scroll
+        className={`sidebar-project-scroll ${styles.projectScroll}`}
+      >
         {loading && (
           <div style={{ padding: "16px 14px", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>
             {t("sidebar.loading")}
@@ -248,6 +254,6 @@ export function SidebarProjectArea(props: Props) {
           />
         ))}
       </div>
-
-  </>;
+    </section>
+  );
 }

@@ -8,7 +8,7 @@ import type { HarmonyConfig, HarmonyRuntimeCandidate } from "./types";
 
 export interface HarmonyRuntimeResolution {
   hdcPath: string;
-  source: "explicit" | "environment" | "config" | "deveco" | "path";
+  source: "explicit" | "environment" | "config" | "deveco" | "path" | "bundled";
 }
 
 export interface ResolveHdcOptions {
@@ -117,6 +117,14 @@ function inferSdkPath(hdcPath: string, platform: NodeJS.Platform): string {
     : toolchains;
 }
 
+function bundledHdcCandidate(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string | undefined {
+  const directory = env.PIORA_HARMONY_TOOLS_DIR?.trim();
+  if (!directory) return undefined;
+  const paths = pathApi(platform);
+  const executable = platform === "win32" ? "hdc.exe" : "hdc";
+  return paths.join(paths.resolve(directory), executable);
+}
+
 export function discoverHdcCandidates(options: DiscoverHdcOptions = {}): HarmonyRuntimeCandidate[] {
   const env = options.env ?? process.env;
   const platform = options.platform ?? process.platform;
@@ -136,6 +144,7 @@ export function discoverHdcCandidates(options: DiscoverHdcOptions = {}): Harmony
   for (const directory of (env.PATH ?? "").split(paths.delimiter)) {
     if (directory.trim()) candidates.push({ path: paths.join(directory.replace(/^"|"$/g, ""), executable), source: "path" });
   }
+  candidates.push({ path: bundledHdcCandidate(env, platform), source: "bundled" });
 
   const seen = new Set<string>();
   const result: HarmonyRuntimeCandidate[] = [];
@@ -191,7 +200,10 @@ export function resolveHdcPath(options: ResolveHdcOptions = {}): HarmonyRuntimeR
     if (fromPath) return { hdcPath: fromPath, source: "path" };
   }
 
-  throw new HarmonyError("HDC_NOT_FOUND", "HDC was not found. Select hdc.exe from a HarmonyOS SDK installation.", {
+  const bundled = check(bundledHdcCandidate(env, platform));
+  if (bundled) return { hdcPath: bundled, source: "bundled" };
+
+  throw new HarmonyError("HDC_NOT_FOUND", "HDC was not found in the system or the Piora application bundle.", {
     retryable: true,
   });
 }
@@ -214,9 +226,24 @@ export function readHarmonyConfig(path = defaultHarmonyConfigPath()): HarmonyCon
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const record = parsed as { hdcPath?: unknown; vision?: unknown };
+    const record = parsed as { hdcPath?: unknown; storage?: unknown; vision?: unknown };
     const config: HarmonyConfig = {};
     if (typeof record.hdcPath === "string" && record.hdcPath.trim()) config.hdcPath = normalizeCandidate(record.hdcPath);
+    if (record.storage && typeof record.storage === "object" && !Array.isArray(record.storage)) {
+      const storage = record.storage as Record<string, unknown>;
+      const screenshotDirectory = typeof storage.screenshotDirectory === "string" && storage.screenshotDirectory.trim()
+        ? normalizeCandidate(storage.screenshotDirectory)
+        : undefined;
+      const recordingDirectory = typeof storage.recordingDirectory === "string" && storage.recordingDirectory.trim()
+        ? normalizeCandidate(storage.recordingDirectory)
+        : undefined;
+      if (screenshotDirectory || recordingDirectory) {
+        config.storage = {
+          ...(screenshotDirectory ? { screenshotDirectory } : {}),
+          ...(recordingDirectory ? { recordingDirectory } : {}),
+        };
+      }
+    }
     if (record.vision && typeof record.vision === "object" && !Array.isArray(record.vision)) {
       const vision = record.vision as Record<string, unknown>;
       if (typeof vision.enabled === "boolean" && typeof vision.provider === "string" && typeof vision.modelId === "string") {
@@ -251,6 +278,23 @@ export function writeHarmonyConfig(config: HarmonyConfig, path = defaultHarmonyC
     const absolute = normalizeCandidate(requested, inferredPlatform(requested));
     if (!absolute) throw new HarmonyError("INVALID_ARGUMENT", "HDC path must be absolute");
     normalized.hdcPath = absolute;
+  }
+  if (config.storage) {
+    const normalizeStoragePath = (value: string | undefined, label: string): string | undefined => {
+      if (!value?.trim()) return undefined;
+      const requested = value.trim();
+      const paths = pathApi(inferredPlatform(requested));
+      if (!paths.isAbsolute(requested)) throw new HarmonyError("INVALID_ARGUMENT", `${label} must be an absolute path`);
+      return paths.resolve(requested);
+    };
+    const screenshotDirectory = normalizeStoragePath(config.storage.screenshotDirectory, "Screenshot directory");
+    const recordingDirectory = normalizeStoragePath(config.storage.recordingDirectory, "Recording directory");
+    if (screenshotDirectory || recordingDirectory) {
+      normalized.storage = {
+        ...(screenshotDirectory ? { screenshotDirectory } : {}),
+        ...(recordingDirectory ? { recordingDirectory } : {}),
+      };
+    }
   }
   if (config.vision) {
     const provider = config.vision.provider.trim();

@@ -134,8 +134,8 @@
 
 .deviceArea { min-height: 0; display: flex; flex: 1 1 auto; justify-content: center; }
 .frame { position: relative; width: 100%; height: 100%; min-height: 160px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 1px solid color-mix(in srgb, var(--border) 76%, transparent); border-radius: 12px; background: #090a0d; color: #8b8f97; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 2%); touch-action: none; user-select: none; }
-.frame img { width: auto; height: auto; max-width: 100%; max-height: 100%; display: block; object-fit: contain; flex: 0 1 auto; cursor: crosshair; }
-.frame[data-enabled="false"] img { cursor: default; }
+.frame canvas { width: auto; height: auto; max-width: 100%; max-height: 100%; display: block; object-fit: contain; flex: 0 1 auto; cursor: crosshair; }
+.frame[data-enabled="false"] canvas { cursor: default; }
 .frameStatus { position: absolute; z-index: 1; top: 9px; left: 9px; display: flex; align-items: center; gap: 6px; padding: 4px 7px; border: 1px solid rgb(255 255 255 / 10%); border-radius: 999px; background: rgb(8 9 11 / 74%); color: #e8eaed; font-size: var(--text-xs); pointer-events: none; backdrop-filter: blur(8px); }
 .frameStatus span { width: 6px; height: 6px; border-radius: 50%; background: #3fb950; }
 .frameStatus[data-status="loading"] span { background: #d29922; }
@@ -146,6 +146,12 @@
 .frameEmpty button { margin-top: 3px; border-color: rgb(255 255 255 / 12%); background: rgb(255 255 255 / 5%); color: #c4c7ce; }
 
 .quickControls { min-height: 70px; display: grid; flex: 0 0 auto; grid-template-columns: 1fr; gap: 6px; }
+.mediaRow { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; }
+.mediaRow button { min-height: 29px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid color-mix(in srgb, var(--border) 76%, transparent); border-radius: 7px; background: var(--bg); color: var(--text-muted); padding: 4px 9px; font-size: var(--text-xs); }
+.mediaRow button:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.recordingState { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: var(--status-failed); font-size: var(--text-xs); white-space: nowrap; }
+.recordingState i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent); }
+.mediaNotice { flex: 0 0 auto; padding: 6px 8px; border-radius: 7px; background: color-mix(in srgb, var(--accent) 7%, transparent); color: var(--text-muted); font-size: var(--text-xs); line-height: 1.45; overflow-wrap: anywhere; }
 .keyRow { gap: 3px; }
 .keyRow button { min-height: 31px; display: inline-flex; flex: 1; align-items: center; justify-content: center; gap: 5px; padding: 4px 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--text-muted); font-size: var(--text-xs); }
 .keyRow button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--border) 70%, transparent); background: var(--bg-hover); color: var(--text); }

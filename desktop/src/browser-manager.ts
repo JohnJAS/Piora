@@ -26,8 +26,12 @@ export const BROWSER_IMPORT_CHROME_BOOKMARKS_CHANNEL = "pi:browser-import-chrome
 
 const BROWSER_PARTITION = "persist:piora-browser";
 const MAX_TABS = 20;
+const MANUAL_BROWSER_SESSION_ID = "__piora_browser_manual__";
+const MAX_SNAPSHOT_CHARS = 24_000;
+const MAX_INTERACTIVE_ELEMENTS = 160;
 
 export interface DesktopBrowserState {
+  sessionId: string;
   activeTabId: string;
   canGoBack: boolean;
   canGoForward: boolean;
@@ -65,7 +69,8 @@ export interface ChromeBookmarkImportResult {
 }
 
 export interface DesktopBrowserAction {
-  action: "back" | "close_tab" | "forward" | "navigate" | "new_tab" | "reload" | "switch_tab";
+  action: "back" | "close_tab" | "forward" | "navigate" | "new_tab" | "reload" | "set_session" | "switch_tab";
+  sessionId?: string;
   tabId?: string;
   url?: string;
 }
@@ -80,9 +85,31 @@ export interface DesktopBrowserDownload {
 type BrowserTab = {
   id: string;
   loading: boolean;
+  sessionId: string;
   title: string;
   view: WebContentsView;
 };
+
+export interface DesktopAgentBrowserResult {
+  content: Array<
+    | { type: "text"; text: string }
+    | { type: "image"; data: string; mimeType: "image/png" }
+  >;
+  details: Record<string, unknown>;
+}
+
+function agentTextResult(text: string, details: Record<string, unknown> = {}): DesktopAgentBrowserResult {
+  return { content: [{ type: "text", text }], details };
+}
+
+function requireAgentUrl(rawUrl: unknown): string {
+  if (typeof rawUrl !== "string") throw new Error("A URL is required.");
+  const url = new URL(rawUrl);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("The built-in browser accepts only http:// and https:// URLs.");
+  }
+  return url.href;
+}
 
 type ChromeBookmarkNode = {
   children?: ChromeBookmarkNode[];
@@ -114,6 +141,12 @@ function normalizeAddress(value: string): string {
     return `https://${input}`;
   }
   return `https://www.google.com/search?q=${encodeURIComponent(input)}`;
+}
+
+function normalizeBrowserSessionId(value: unknown): string {
+  if (typeof value !== "string") return MANUAL_BROWSER_SESSION_ID;
+  const sessionId = value.trim();
+  return sessionId && sessionId.length <= 512 ? sessionId : MANUAL_BROWSER_SESSION_ID;
 }
 
 function validBounds(value: unknown, window: BrowserWindow): Rectangle | null {
@@ -196,7 +229,8 @@ function readChromeBookmarks(): ChromeBookmarkImportResult {
 
 export class DesktopBrowserManager {
   private readonly tabs: BrowserTab[] = [];
-  private activeTabId = "";
+  private readonly activeTabIds = new Map<string, string>();
+  private displayedSessionId = MANUAL_BROWSER_SESSION_ID;
   private bounds: Rectangle | null = null;
   private requestedVisible = false;
   private nextTabId = 1;
@@ -226,7 +260,7 @@ export class DesktopBrowserManager {
   ) {
     this.browserSession = session.fromPartition(BROWSER_PARTITION, { cache: true });
     this.configureSession();
-    this.createTab("about:blank", false);
+    this.createTab("about:blank", false, MANUAL_BROWSER_SESSION_ID);
     this.registerIpc();
     this.window.on("hide", () => this.updateVisibility(false));
     this.window.on("show", () => this.updateVisibility());
@@ -297,8 +331,12 @@ export class DesktopBrowserManager {
     ipcMain.removeHandler(BROWSER_IMPORT_CHROME_BOOKMARKS_CHANNEL);
   }
 
-  private createTab(rawUrl: string, activate = true): BrowserTab {
-    if (this.tabs.length >= MAX_TABS) return this.activeTab() ?? this.tabs[0]!;
+  private createTab(rawUrl: string, activate = true, sessionId = this.displayedSessionId): BrowserTab {
+    if (this.tabs.length >= MAX_TABS) {
+      const existing = this.activeTab(sessionId);
+      if (existing) return existing;
+      throw new Error(`The browser tab limit of ${MAX_TABS} has been reached.`);
+    }
     const id = `tab-${this.nextTabId++}`;
     const view = new WebContentsView({
       webPreferences: {
@@ -317,10 +355,10 @@ export class DesktopBrowserManager {
     view.setBackgroundColor("#ffffff");
     view.setVisible(false);
     this.window.contentView.addChildView(view);
-    const tab: BrowserTab = { id, loading: false, title: "", view };
+    const tab: BrowserTab = { id, loading: false, sessionId, title: "", view };
     this.tabs.push(tab);
     this.installTabEvents(tab);
-    if (activate || !this.activeTabId) this.activeTabId = id;
+    if (activate || !this.activeTabIds.has(sessionId)) this.activeTabIds.set(sessionId, id);
     const targetUrl = normalizeAddress(rawUrl);
     if (targetUrl !== "about:blank") {
       void view.webContents.loadURL(targetUrl).catch((error) => {
@@ -335,7 +373,7 @@ export class DesktopBrowserManager {
   private installTabEvents(tab: BrowserTab): void {
     const contents = tab.view.webContents;
     contents.setWindowOpenHandler(({ url }) => {
-      if (isBrowserUrl(url)) this.createTab(url);
+      if (isBrowserUrl(url)) this.createTab(url, true, tab.sessionId);
       else void shell.openExternal(url).catch((error) => this.log.warn("Unable to open browser protocol", error));
       return { action: "deny" };
     });
@@ -372,7 +410,7 @@ export class DesktopBrowserManager {
     contents.on("context-menu", (_event, params) => {
       const template: Electron.MenuItemConstructorOptions[] = [];
       if (params.linkURL && isBrowserUrl(params.linkURL)) {
-        template.push({ label: "在新标签页中打开链接", click: () => this.createTab(params.linkURL) });
+        template.push({ label: "在新标签页中打开链接", click: () => this.createTab(params.linkURL, true, tab.sessionId) });
         template.push({ type: "separator" });
       }
       if (params.selectionText) template.push({ role: "copy", label: "复制" });
@@ -393,19 +431,26 @@ export class DesktopBrowserManager {
     });
   }
 
-  private activeTab(): BrowserTab | undefined {
-    return this.tabs.find((tab) => tab.id === this.activeTabId);
+  private activeTab(sessionId = this.displayedSessionId): BrowserTab | undefined {
+    const activeTabId = this.activeTabIds.get(sessionId);
+    return this.tabs.find((tab) => tab.sessionId === sessionId && tab.id === activeTabId)
+      ?? this.tabs.find((tab) => tab.sessionId === sessionId);
   }
 
-  private getState(): DesktopBrowserState {
-    const active = this.activeTab() ?? this.tabs[0]!;
+  private ensureSession(sessionId: string): BrowserTab {
+    return this.activeTab(sessionId) ?? this.createTab("about:blank", false, sessionId);
+  }
+
+  private getState(sessionId = this.displayedSessionId): DesktopBrowserState {
+    const active = this.ensureSession(sessionId);
     const url = browserUrl(active.view.webContents.getURL());
     return {
+      sessionId,
       activeTabId: active.id,
       canGoBack: active.view.webContents.navigationHistory.canGoBack(),
       canGoForward: active.view.webContents.navigationHistory.canGoForward(),
       loading: active.loading,
-      tabs: this.tabs.map((tab) => ({
+      tabs: this.tabs.filter((tab) => tab.sessionId === sessionId).map((tab) => ({
         id: tab.id,
         title: tab.title,
         url: browserUrl(tab.view.webContents.getURL()),
@@ -426,7 +471,7 @@ export class DesktopBrowserManager {
   }
 
   private updateVisibility(force?: boolean): void {
-    const active = this.activeTab();
+    const active = this.activeTab(this.displayedSessionId);
     const shouldShow = force ?? Boolean(
       this.requestedVisible
       && this.bounds
@@ -435,16 +480,202 @@ export class DesktopBrowserManager {
       && this.window.isVisible(),
     );
     for (const tab of this.tabs) {
-      const visible = shouldShow && tab === active;
+      const visible = shouldShow && tab === active && tab.sessionId === this.displayedSessionId;
       if (visible && this.bounds) tab.view.setBounds(this.bounds);
       tab.view.setVisible(visible);
+    }
+  }
+
+  private async pageSummary(contents: WebContents): Promise<string> {
+    const title = await contents.getTitle();
+    return `${title || "Untitled"}\n${browserUrl(contents.getURL())}`;
+  }
+
+  private async snapshotPage(contents: WebContents): Promise<string> {
+    const payload = await contents.executeJavaScriptInIsolatedWorld(999, [{ code: `(() => {
+      const compact = (value, limit = 180) => String(value ?? "").replace(/\\s+/g, " ").trim().slice(0, limit);
+      const bodyText = compact(document.body?.innerText ?? "", 18000);
+      const selectors = "a,button,input,textarea,select,summary,[role],[contenteditable='true']";
+      const elements = Array.from(document.querySelectorAll(selectors)).slice(0, ${MAX_INTERACTIVE_ELEMENTS});
+      const interactive = [];
+      for (const element of elements) {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        if (rect.width <= 0 || rect.height <= 0 || style.visibility === "hidden" || style.display === "none") continue;
+        const ref = "e" + (interactive.length + 1);
+        element.setAttribute("data-piora-ref", ref);
+        const input = element;
+        const label = compact(element.getAttribute("aria-label") || element.getAttribute("title") || input.placeholder || element.innerText || input.value || "");
+        interactive.push("[" + ref + "] " + (element.getAttribute("role") || element.tagName.toLowerCase()) + (label ? " — " + label : ""));
+      }
+      return { bodyText, interactive };
+    })()` }]);
+    const value = payload && typeof payload === "object"
+      ? payload as { bodyText?: unknown; interactive?: unknown }
+      : {};
+    const bodyText = typeof value.bodyText === "string" ? value.bodyText : "";
+    const interactive = Array.isArray(value.interactive) ? value.interactive.filter((item): item is string => typeof item === "string") : [];
+    const output = `${await this.pageSummary(contents)}\n\nPage text:\n${bodyText}\n\nInteractive elements:\n${interactive.join("\n")}`;
+    return output.length > MAX_SNAPSHOT_CHARS ? `${output.slice(0, MAX_SNAPSHOT_CHARS)}\n… snapshot truncated` : output;
+  }
+
+  private async targetBounds(contents: WebContents, params: Record<string, unknown>): Promise<{ x: number; y: number }> {
+    const ref = typeof params.ref === "string" ? params.ref.replace(/[^A-Za-z0-9_-]/g, "") : "";
+    const selector = typeof params.selector === "string" ? params.selector.slice(0, 2_000) : "";
+    if (!ref && !selector) throw new Error("This browser action requires selector or ref.");
+    const target = await contents.executeJavaScriptInIsolatedWorld(999, [{ code: `(() => {
+      const element = ${JSON.stringify(ref)}
+        ? document.querySelector('[data-piora-ref="' + ${JSON.stringify(ref)} + '"]')
+        : document.querySelector(${JSON.stringify(selector)});
+      if (!element) return null;
+      element.scrollIntoView({ block: "center", inline: "center" });
+      const rect = element.getBoundingClientRect();
+      return { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) };
+    })()` }]);
+    if (!target || typeof target !== "object") throw new Error("The browser target was not found.");
+    const point = target as { x?: unknown; y?: unknown };
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error("The browser target is not visible.");
+    return { x: Number(point.x), y: Number(point.y) };
+  }
+
+  private async typeIntoTarget(contents: WebContents, params: Record<string, unknown>): Promise<void> {
+    if (typeof params.text !== "string") throw new Error("type requires text");
+    const ref = typeof params.ref === "string" ? params.ref.replace(/[^A-Za-z0-9_-]/g, "") : "";
+    const selector = typeof params.selector === "string" ? params.selector.slice(0, 2_000) : "";
+    if (!ref && !selector) throw new Error("This browser action requires selector or ref.");
+    const accepted = await contents.executeJavaScriptInIsolatedWorld(999, [{ code: `(() => {
+      const element = ${JSON.stringify(ref)}
+        ? document.querySelector('[data-piora-ref="' + ${JSON.stringify(ref)} + '"]')
+        : document.querySelector(${JSON.stringify(selector)});
+      if (!element) return false;
+      element.focus();
+      const text = ${JSON.stringify(params.text)};
+      if (element.isContentEditable) element.textContent = text;
+      else {
+        const prototype = Object.getPrototypeOf(element);
+        const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+        if (setter) setter.call(element, text); else element.value = text;
+      }
+      element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()` }]);
+    if (accepted !== true) throw new Error("The browser target was not found.");
+    if (params.submit === true) {
+      contents.sendInputEvent({ type: "keyDown", keyCode: "Enter" });
+      contents.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
+    }
+  }
+
+  async performAgentAction(
+    rawSessionId: unknown,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<DesktopAgentBrowserResult> {
+    const sessionId = normalizeBrowserSessionId(rawSessionId);
+    if (sessionId === MANUAL_BROWSER_SESSION_ID) throw new Error("A valid Session id is required for Agent browser actions.");
+    if (signal?.aborted) throw new Error("Browser action aborted");
+    const action = typeof params.action === "string" ? params.action : "";
+    if (!action) throw new Error("A browser action is required.");
+
+    let tab = this.ensureSession(sessionId);
+    let contents = tab.view.webContents;
+    const stopOnAbort = () => contents.stop();
+    signal?.addEventListener("abort", stopOnAbort, { once: true });
+    try {
+      if (action === "close") {
+        this.closeTab(tab.id, sessionId);
+        return agentTextResult("Built-in browser tab closed. The dedicated profile and sign-in state were preserved.", { action });
+      }
+      if (action === "open") {
+        await contents.loadURL(requireAgentUrl(params.url));
+      } else if (action === "snapshot") {
+        return agentTextResult(await this.snapshotPage(contents), { action, url: browserUrl(contents.getURL()) });
+      } else if (action === "click") {
+        const point = await this.targetBounds(contents, params);
+        contents.sendInputEvent({ type: "mouseDown", x: point.x, y: point.y, button: "left", clickCount: 1 });
+        contents.sendInputEvent({ type: "mouseUp", x: point.x, y: point.y, button: "left", clickCount: 1 });
+      } else if (action === "type") {
+        await this.typeIntoTarget(contents, params);
+      } else if (action === "press") {
+        const rawKey = typeof params.key === "string" ? params.key.slice(0, 64) : "Enter";
+        const parts = rawKey.split("+");
+        const keyCode = parts.pop() || "Enter";
+        const modifiers = parts.map((part) => part.toLocaleLowerCase()).filter((part): part is "alt" | "control" | "meta" | "shift" => (
+          part === "alt" || part === "control" || part === "meta" || part === "shift"
+        ));
+        contents.sendInputEvent({ type: "keyDown", keyCode, modifiers });
+        contents.sendInputEvent({ type: "keyUp", keyCode, modifiers });
+      } else if (action === "scroll") {
+        const deltaY = Number.isFinite(params.deltaY) ? Number(params.deltaY) : 720;
+        await contents.executeJavaScriptInIsolatedWorld(999, [{ code: `window.scrollBy(0, ${Math.round(deltaY)}); true` }]);
+      } else if (action === "screenshot") {
+        const image = await contents.capturePage();
+        return {
+          content: [
+            { type: "text", text: await this.pageSummary(contents) },
+            { type: "image", data: image.toPNG().toString("base64"), mimeType: "image/png" },
+          ],
+          details: { action, url: browserUrl(contents.getURL()), fullPage: false },
+        };
+      } else if (action === "evaluate") {
+        if (typeof params.text !== "string" || !params.text) throw new Error("evaluate requires a JavaScript expression in text");
+        const value = await contents.executeJavaScriptInIsolatedWorld(999, [{ code: `(() => (0, eval)(${JSON.stringify(params.text)}))()` }]);
+        return agentTextResult(JSON.stringify(value, null, 2) ?? "undefined", { action, url: browserUrl(contents.getURL()) });
+      } else if (action === "back") {
+        if (contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
+      } else if (action === "forward") {
+        if (contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward();
+      } else if (action === "reload") {
+        contents.reload();
+      } else if (action === "tabs") {
+        const tabs = this.tabs.filter((candidate) => candidate.sessionId === sessionId);
+        return agentTextResult(tabs.map((candidate, index) => (
+          `${index}: ${candidate.title || "New tab"} — ${browserUrl(candidate.view.webContents.getURL())}${candidate === tab ? " (active)" : ""}`
+        )).join("\n") || "No tabs", { action, count: tabs.length });
+      } else if (action === "new_tab") {
+        tab = this.createTab("about:blank", true, sessionId);
+        contents = tab.view.webContents;
+        if (typeof params.url === "string" && params.url) await contents.loadURL(requireAgentUrl(params.url));
+      } else if (action === "switch_tab") {
+        const tabs = this.tabs.filter((candidate) => candidate.sessionId === sessionId);
+        const index = Math.floor(Number(params.tabIndex));
+        if (!Number.isSafeInteger(index) || index < 0 || index >= tabs.length) throw new Error(`tabIndex must be between 0 and ${Math.max(0, tabs.length - 1)}`);
+        tab = tabs[index]!;
+        contents = tab.view.webContents;
+        this.activeTabIds.set(sessionId, tab.id);
+      } else if (action === "close_tab") {
+        const tabs = this.tabs.filter((candidate) => candidate.sessionId === sessionId);
+        const index = params.tabIndex === undefined ? tabs.indexOf(tab) : Math.floor(Number(params.tabIndex));
+        if (!Number.isSafeInteger(index) || index < 0 || index >= tabs.length) throw new Error(`tabIndex must be between 0 and ${Math.max(0, tabs.length - 1)}`);
+        this.closeTab(tabs[index]!.id, sessionId);
+        tab = this.ensureSession(sessionId);
+        contents = tab.view.webContents;
+      } else {
+        throw new Error(`Unsupported browser action: ${action}`);
+      }
+      if (signal?.aborted) throw new Error("Browser action aborted");
+      if (sessionId === this.displayedSessionId) {
+        this.updateVisibility();
+        this.sendState();
+      }
+      return agentTextResult(await this.pageSummary(contents), { action, url: browserUrl(contents.getURL()) });
+    } finally {
+      signal?.removeEventListener("abort", stopOnAbort);
     }
   }
 
   private async performAction(value: unknown): Promise<void> {
     if (!value || typeof value !== "object") return;
     const input = value as DesktopBrowserAction;
-    const active = this.activeTab();
+    if (input.action === "set_session") {
+      this.displayedSessionId = normalizeBrowserSessionId(input.sessionId);
+      this.ensureSession(this.displayedSessionId);
+      this.updateVisibility();
+      this.sendState();
+      return;
+    }
+    const active = this.activeTab(this.displayedSessionId);
     if (!active) return;
     if (input.action === "navigate" && typeof input.url === "string") {
       await active.view.webContents.loadURL(normalizeAddress(input.url));
@@ -455,21 +686,22 @@ export class DesktopBrowserManager {
     } else if (input.action === "reload") {
       active.view.webContents.reload();
     } else if (input.action === "new_tab") {
-      this.createTab(typeof input.url === "string" ? input.url : "about:blank");
-    } else if (input.action === "switch_tab" && typeof input.tabId === "string" && this.tabs.some((tab) => tab.id === input.tabId)) {
-      this.activeTabId = input.tabId;
+      this.createTab(typeof input.url === "string" ? input.url : "about:blank", true, this.displayedSessionId);
+    } else if (input.action === "switch_tab" && typeof input.tabId === "string" && this.tabs.some((tab) => tab.id === input.tabId && tab.sessionId === this.displayedSessionId)) {
+      this.activeTabIds.set(this.displayedSessionId, input.tabId);
       this.updateVisibility();
       this.sendState();
     } else if (input.action === "close_tab" && typeof input.tabId === "string") {
-      this.closeTab(input.tabId);
+      this.closeTab(input.tabId, this.displayedSessionId);
     }
   }
 
-  private closeTab(tabId: string): void {
-    const index = this.tabs.findIndex((tab) => tab.id === tabId);
+  private closeTab(tabId: string, sessionId: string): void {
+    const sessionTabs = this.tabs.filter((tab) => tab.sessionId === sessionId);
+    const index = this.tabs.findIndex((tab) => tab.id === tabId && tab.sessionId === sessionId);
     if (index < 0) return;
-    if (this.tabs.length === 1) {
-      const tab = this.tabs[0]!;
+    if (sessionTabs.length === 1) {
+      const tab = sessionTabs[0]!;
       tab.title = "";
       tab.view.webContents.navigationHistory.clear();
       void tab.view.webContents.loadURL("about:blank");
@@ -479,8 +711,9 @@ export class DesktopBrowserManager {
     if (!tab) return;
     this.window.contentView.removeChildView(tab.view);
     if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
-    if (this.activeTabId === tabId) {
-      this.activeTabId = this.tabs[Math.min(index, this.tabs.length - 1)]!.id;
+    if (this.activeTabIds.get(sessionId) === tabId) {
+      const remaining = this.tabs.filter((candidate) => candidate.sessionId === sessionId);
+      this.activeTabIds.set(sessionId, remaining[Math.min(sessionTabs.indexOf(tab), remaining.length - 1)]!.id);
     }
     this.updateVisibility();
     this.sendState();

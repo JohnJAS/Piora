@@ -111,12 +111,26 @@ function activeLease(identity: PromptToolIdentity, serial: string): HarmonyLease
 function registerLeaseCleanup(identity: PromptToolIdentity): void {
   if (leaseState.cleanupRuns.has(identity.runId)) return;
   leaseState.cleanupRuns.add(identity.runId);
-  registerPromptRunCleanup(identity, () => {
-    getHarmonyDeviceManager().releaseOwner(identity.runId);
-    for (const key of leaseState.leases.keys()) {
-      if (key.startsWith(`${identity.runId}\u0000`)) leaseState.leases.delete(key);
+  registerPromptRunCleanup(identity, async () => {
+    const manager = getHarmonyDeviceManager();
+    const prefix = `${identity.runId}\u0000`;
+    let firstFailure: unknown;
+    for (const [key, token] of leaseState.leases) {
+      if (!key.startsWith(prefix)) continue;
+      const serial = key.slice(prefix.length);
+      const recording = manager.getRecordingState(serial);
+      if (recording?.ownerId === identity.runId) {
+        try {
+          await manager.stopRecording({ serial, leaseToken: token, ownerId: identity.runId });
+        } catch (error) {
+          firstFailure ??= error;
+        }
+      }
+      leaseState.leases.delete(key);
     }
+    manager.releaseOwner(identity.runId);
     leaseState.cleanupRuns.delete(identity.runId);
+    if (firstFailure) throw firstFailure;
   });
 }
 
@@ -445,6 +459,9 @@ const harmonyDeviceTool = defineTool({
       Type.Literal("acquire_control"),
       Type.Literal("release_control"),
       Type.Literal("snapshot"),
+      Type.Literal("capture_screenshot"),
+      Type.Literal("start_recording"),
+      Type.Literal("stop_recording"),
       Type.Literal("tap_ref"),
       Type.Literal("tap_point"),
       Type.Literal("double_tap"),
@@ -607,12 +624,18 @@ const harmonyDeviceTool = defineTool({
       if (params.action === "release_control") {
         const key = leaseKey(identity.runId, serial);
         const token = leaseState.leases.get(key);
+        let recordingArtifact;
+        const recording = manager.getRecordingState(serial);
+        if (token && recording?.ownerId === identity.runId) {
+          recordingArtifact = await manager.stopRecording({ serial, leaseToken: token, ownerId: identity.runId, signal });
+        }
         const released = token ? manager.releaseLease(token) : false;
         leaseState.leases.delete(key);
         return textResult(released ? `AI control released for ${serial}.` : `No active AI control lease existed for ${serial}.`, identity, {
           action: params.action,
           serial,
           released,
+          ...(recordingArtifact ? { recordingArtifact } : {}),
         });
       }
 
@@ -627,6 +650,41 @@ const harmonyDeviceTool = defineTool({
             signal,
           });
           return await snapshotResult(snapshot, identity, params.action, signal);
+        }
+        case "capture_screenshot": {
+          const artifact = await manager.captureScreenshotArtifact({ serial, leaseToken: lease.token, signal });
+          return textResult(`Screenshot saved to ${artifact.path}.`, identity, {
+            action: params.action,
+            serial,
+            artifact,
+          });
+        }
+        case "start_recording": {
+          const recording = await manager.startRecording({
+            serial,
+            leaseToken: lease.token,
+            ownerId: identity.runId,
+            signal,
+          });
+          return textResult(`Screen recording started on ${serial}. Stop it with harmony_stop_recording.`, identity, {
+            action: params.action,
+            serial,
+            recordingId: recording.recordingId,
+            startedAt: recording.startedAt,
+          });
+        }
+        case "stop_recording": {
+          const artifact = await manager.stopRecording({
+            serial,
+            leaseToken: lease.token,
+            ownerId: identity.runId,
+            signal,
+          });
+          return textResult(`Screen recording saved to ${artifact.path}.`, identity, {
+            action: params.action,
+            serial,
+            artifact,
+          });
         }
         case "tap_ref": {
           const before = manager.getLatestSnapshot(serial);
@@ -925,6 +983,36 @@ const harmonyObserveScreenTool = defineTool({
   },
 });
 
+const harmonyTakeScreenshotTool = defineTool({
+  name: "harmony_take_screenshot",
+  label: "Save Phone Screenshot",
+  description: "Capture the current Harmony phone screen and save a PNG in the configured screenshot directory.",
+  parameters: Type.Object({ serial: optionalSerial() }),
+  async execute(toolCallId, params, signal, _onUpdate, ctx) {
+    return await harmonyDeviceTool.execute(toolCallId, { action: "capture_screenshot", ...params }, signal, undefined, ctx);
+  },
+});
+
+const harmonyStartRecordingTool = defineTool({
+  name: "harmony_start_recording",
+  label: "Start Phone Recording",
+  description: "Start recording the Harmony phone screen. Always stop it with harmony_stop_recording; unfinished recordings are stopped when the prompt ends.",
+  parameters: Type.Object({ serial: optionalSerial() }),
+  async execute(toolCallId, params, signal, _onUpdate, ctx) {
+    return await harmonyDeviceTool.execute(toolCallId, { action: "start_recording", ...params }, signal, undefined, ctx);
+  },
+});
+
+const harmonyStopRecordingTool = defineTool({
+  name: "harmony_stop_recording",
+  label: "Stop Phone Recording",
+  description: "Stop the active Harmony phone screen recording and save its MP4 in the configured recording directory.",
+  parameters: Type.Object({ serial: optionalSerial() }),
+  async execute(toolCallId, params, signal, _onUpdate, ctx) {
+    return await harmonyDeviceTool.execute(toolCallId, { action: "stop_recording", ...params }, signal, undefined, ctx);
+  },
+});
+
 const harmonyTapTool = defineTool({
   name: "harmony_tap",
   label: "Tap Phone",
@@ -1136,6 +1224,9 @@ const harmonyAgentTools = [
   harmonyListDevicesTool,
   harmonyAcquireControlTool,
   harmonyObserveScreenTool,
+  harmonyTakeScreenshotTool,
+  harmonyStartRecordingTool,
+  harmonyStopRecordingTool,
   harmonyTapTool,
   harmonyDoubleTapTool,
   harmonyLongPressTool,
@@ -1162,7 +1253,7 @@ export default function pioraHarmony(api: ExtensionAPI) {
   api.on?.("before_agent_start", (event) => {
     if (!event.systemPromptOptions.selectedTools?.some((name) => name.startsWith("harmony_"))) return;
     const capability = `<piora_runtime_capability name="harmony_phone_operator" availability="active">
-Dedicated Harmony phone tools are available in this session. For any HarmonyOS/OpenHarmony/phone task, call \`harmony_list_devices\` first. Use the Phone Operator loop: acquire control, observe the screen, perform exactly one explicit action, inspect its automatic verification and fresh UI refs, then continue or recover. Available actions include \`harmony_tap\`, \`harmony_double_tap\`, \`harmony_long_press\`, \`harmony_swipe\`, \`harmony_fling\`, \`harmony_drag\`, \`harmony_input_text\`, \`harmony_back\`, \`harmony_home\`, \`harmony_recent_apps\`, \`harmony_enter\`, and \`harmony_launch_app\`. For crashes, freezes, startup errors, or performance problems use \`harmony_list_processes\` and \`harmony_read_logs\`. Prefer semantic refs for a single tap and direction for swipes or flings. Release control when done. Never claim device access or logs are unavailable before checking these tools.
+Dedicated Harmony phone tools are available in this session. For any HarmonyOS/OpenHarmony/phone task, call \`harmony_list_devices\` first. Use the Phone Operator loop: acquire control, observe the screen, perform exactly one explicit action, inspect its automatic verification and fresh UI refs, then continue or recover. Available actions include \`harmony_tap\`, \`harmony_double_tap\`, \`harmony_long_press\`, \`harmony_swipe\`, \`harmony_fling\`, \`harmony_drag\`, \`harmony_input_text\`, \`harmony_back\`, \`harmony_home\`, \`harmony_recent_apps\`, \`harmony_enter\`, and \`harmony_launch_app\`. Use \`harmony_take_screenshot\`, \`harmony_start_recording\`, and \`harmony_stop_recording\` for persisted visual evidence. For crashes, freezes, startup errors, or performance problems use \`harmony_list_processes\` and \`harmony_read_logs\`. Prefer semantic refs for a single tap and direction for swipes or flings. Release control when done. Never claim device access or logs are unavailable before checking these tools.
 </piora_runtime_capability>`;
     if (event.systemPrompt.includes('<piora_runtime_capability name="harmony_phone_operator"')) return;
     return {

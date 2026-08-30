@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { statSync } from "fs";
+import { createHash } from "node:crypto";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
   resolveSessionPath,
@@ -14,7 +15,7 @@ import { purgeExpiredTrash, trashSession } from "@/lib/session-trash";
 
 // BranchNavigator still traverses recursively, so keep the response tree shallow.
 const MAX_PROJECTED_TREE_DEPTH = 200;
-const MAX_CACHED_SESSION_RESPONSES = 8;
+const MAX_SESSION_RESPONSE_CACHE_BYTES = 48 * 1024 * 1024;
 
 /**
  * Project the session tree into the shallow navigation tree sent to the client.
@@ -119,11 +120,12 @@ async function buildSessionResponse(
   modified: string,
   deferThinking: boolean,
   deferToolResultImages: boolean,
+  includeTree: boolean,
 ) {
   const sm = SessionManager.open(filePath);
   const entries = sm.getEntries() as never;
   const leafId = sm.getLeafId();
-  const tree = projectTreeForResponse(sm.getTree());
+  const tree = includeTree ? projectTreeForResponse(sm.getTree()) : [];
   const context = buildSessionContext(entries, leafId, { deferThinking, deferToolResultImages });
   const header = sm.getHeader();
   const parentSessionId = header?.parentSession
@@ -158,10 +160,16 @@ async function buildSessionResponse(
 }
 
 type SessionRoutePayload = Awaited<ReturnType<typeof buildSessionResponse>>;
+type SerializedSessionResponse = {
+  body: string;
+  etag: string;
+  byteLength: number;
+};
 type SessionResponseCacheEntry = {
   signature: string;
   lastAccessedAt: number;
-  promise: Promise<SessionRoutePayload>;
+  byteLength: number;
+  promise: Promise<SerializedSessionResponse>;
 };
 
 declare global {
@@ -173,26 +181,70 @@ function sessionResponseCache(): Map<string, SessionResponseCacheEntry> {
   return globalThis.__pioraSessionResponseCache;
 }
 
+function sessionResponseEtag(id: string, signature: string, projection: string): string {
+  const digest = createHash("sha256")
+    .update(`${id}\0${signature}\0${projection}`)
+    .digest("base64url");
+  return `"${digest}"`;
+}
+
+function matchesEtag(header: string | null, etag: string): boolean {
+  if (!header) return false;
+  const normalizedEtag = etag.replace(/^W\//, "");
+  return header.split(",").some((candidate) => {
+    const normalizedCandidate = candidate.trim();
+    return normalizedCandidate === "*" || normalizedCandidate.replace(/^W\//, "") === normalizedEtag;
+  });
+}
+
+function serializeSessionResponse(payload: SessionRoutePayload, etag: string): SerializedSessionResponse {
+  const body = JSON.stringify(payload);
+  return { body, etag, byteLength: Buffer.byteLength(body, "utf8") };
+}
+
+function pruneSessionResponseCache(cache: Map<string, SessionResponseCacheEntry>): void {
+  let cachedBytes = 0;
+  for (const entry of cache.values()) cachedBytes += entry.byteLength;
+
+  while (cachedBytes > MAX_SESSION_RESPONSE_CACHE_BYTES) {
+    let oldest: [string, SessionResponseCacheEntry] | null = null;
+    for (const candidate of cache) {
+      if (!oldest || candidate[1].lastAccessedAt < oldest[1].lastAccessedAt) oldest = candidate;
+    }
+    if (!oldest) break;
+    cache.delete(oldest[0]);
+    cachedBytes -= oldest[1].byteLength;
+  }
+}
+
 async function loadCachedSessionResponse(
   id: string,
   filePath: string,
   deferThinking: boolean,
   deferToolResultImages: boolean,
-): Promise<SessionRoutePayload> {
+  includeTree: boolean,
+  ifNoneMatch: string | null,
+): Promise<SerializedSessionResponse | { body: null; etag: string }> {
   const fileState = statSync(filePath);
   const signature = `${fileState.size}:${fileState.mtimeMs}`;
+  const projection = `${deferThinking ? "thinking-deferred" : "thinking-full"}\0${deferToolResultImages ? "media-deferred" : "media-full"}\0${includeTree ? "tree" : "no-tree"}`;
+  const etag = sessionResponseEtag(id, signature, projection);
+  if (matchesEtag(ifNoneMatch, etag)) return { body: null, etag };
+
   // Only retain the lightweight chat-switch projection. Full-history callers
   // may include large base64 media and should not occupy the in-process LRU.
   if (!deferThinking || !deferToolResultImages) {
-    return buildSessionResponse(
+    const payload = await buildSessionResponse(
       id,
       filePath,
       fileState.mtime.toISOString(),
       deferThinking,
       deferToolResultImages,
+      includeTree,
     );
+    return serializeSessionResponse(payload, etag);
   }
-  const cacheKey = `${filePath}\0${deferThinking ? "thinking-deferred" : "thinking-full"}\0${deferToolResultImages ? "media-deferred" : "media-full"}`;
+  const cacheKey = `${filePath}\0${projection}`;
   const cache = sessionResponseCache();
   const existing = cache.get(cacheKey);
   if (existing?.signature === signature) {
@@ -200,26 +252,29 @@ async function loadCachedSessionResponse(
     return existing.promise;
   }
 
+  const promise = buildSessionResponse(
+    id,
+    filePath,
+    fileState.mtime.toISOString(),
+    deferThinking,
+    deferToolResultImages,
+    includeTree,
+  ).then((payload) => {
+    const serialized = serializeSessionResponse(payload, etag);
+    const current = cache.get(cacheKey);
+    if (current?.promise === promise) {
+      current.byteLength = serialized.byteLength;
+      pruneSessionResponseCache(cache);
+    }
+    return serialized;
+  });
   const entry: SessionResponseCacheEntry = {
     signature,
     lastAccessedAt: Date.now(),
-    promise: buildSessionResponse(
-      id,
-      filePath,
-      fileState.mtime.toISOString(),
-      deferThinking,
-      deferToolResultImages,
-    ),
+    byteLength: 0,
+    promise,
   };
   cache.set(cacheKey, entry);
-  while (cache.size > MAX_CACHED_SESSION_RESPONSES) {
-    let oldest: [string, SessionResponseCacheEntry] | null = null;
-    for (const candidate of cache) {
-      if (!oldest || candidate[1].lastAccessedAt < oldest[1].lastAccessedAt) oldest = candidate;
-    }
-    if (!oldest) break;
-    cache.delete(oldest[0]);
-  }
 
   try {
     return await entry.promise;
@@ -243,12 +298,22 @@ export async function GET(
     const searchParams = new URL(req.url).searchParams;
     const deferThinking = searchParams.has("deferThinking");
     const deferToolResultImages = searchParams.has("deferMedia");
-    return NextResponse.json(await loadCachedSessionResponse(
+    const includeTree = searchParams.has("includeTree");
+    const response = await loadCachedSessionResponse(
       id,
       filePath,
       deferThinking,
       deferToolResultImages,
-    ));
+      includeTree,
+      req.headers.get("if-none-match"),
+    );
+    const headers = {
+      "cache-control": "private, no-cache",
+      "content-type": "application/json; charset=utf-8",
+      etag: response.etag,
+    };
+    if (response.body === null) return new Response(null, { status: 304, headers });
+    return new Response(response.body, { status: 200, headers });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
@@ -269,8 +334,10 @@ export async function PATCH(
     if (!filePath) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
-    const sm = SessionManager.open(filePath);
-    sm.appendSessionInfo(name.trim());
+    const trimmedName = name.trim();
+    const liveSession = getRpcSession(id);
+    if (liveSession?.isAlive()) liveSession.setSessionName(trimmedName);
+    else SessionManager.open(filePath).appendSessionInfo(trimmedName);
     invalidateSessionListCache();
     return NextResponse.json({ ok: true });
   } catch (error) {

@@ -54,6 +54,7 @@ export interface AutomationNotification {
   id: string;
   automationId: string;
   runId: string;
+  sessionId?: string;
   title: string;
   status: "succeeded" | "failed" | "interrupted";
   createdAt: number;

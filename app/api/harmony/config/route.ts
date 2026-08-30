@@ -1,5 +1,6 @@
 import { InvalidJsonBodyError, JsonBodyTooLargeError, parseJsonWithinLimit } from "@/lib/bounded-json";
 import { discoverHdcCandidates, getHarmonyDeviceManager } from "@/lib/harmony";
+import { resolveHarmonyStorage } from "@/lib/harmony/artifacts";
 import { HarmonyError } from "@/lib/harmony/errors";
 import { hasJsonContentType } from "@/lib/request-security";
 import { harmonyErrorResponse, noStoreJson, requireHarmonyAccess } from "../_shared";
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
   try {
     const manager = getHarmonyDeviceManager();
     const [config, diagnostics] = await Promise.all([manager.getConfig(), manager.getDiagnostics()]);
-    return noStoreJson({ config, diagnostics, candidates: discoverHdcCandidates({ config }) });
+    return noStoreJson({ config, storage: resolveHarmonyStorage(config), diagnostics, candidates: discoverHdcCandidates({ config }) });
   } catch (error) {
     return harmonyErrorResponse(error);
   }
@@ -39,12 +40,24 @@ export async function PUT(request: Request) {
         throw new HarmonyError("INVALID_ARGUMENT", "shareScreenshotWithActionModel must be boolean");
       }
     }
+    if (body.storage !== undefined && body.storage !== null) {
+      if (!body.storage || typeof body.storage !== "object" || Array.isArray(body.storage)) {
+        throw new HarmonyError("INVALID_ARGUMENT", "storage must be an object or null");
+      }
+      const storage = body.storage as Record<string, unknown>;
+      for (const key of ["screenshotDirectory", "recordingDirectory"] as const) {
+        if (storage[key] !== undefined && typeof storage[key] !== "string") {
+          throw new HarmonyError("INVALID_ARGUMENT", `${key} must be an absolute path`);
+        }
+      }
+    }
     const manager = getHarmonyDeviceManager();
     const config = await manager.updateConfig({
       ...(body.hdcPath !== undefined ? { hdcPath: body.hdcPath as string | null } : {}),
+      ...(body.storage !== undefined ? { storage: body.storage as import("@/lib/harmony").HarmonyConfig["storage"] | null } : {}),
       ...(body.vision !== undefined ? { vision: body.vision as import("@/lib/harmony").HarmonyConfig["vision"] | null } : {}),
     }, request.signal);
-    return noStoreJson({ config, diagnostics: await manager.getDiagnostics(), candidates: discoverHdcCandidates({ config }) });
+    return noStoreJson({ config, storage: resolveHarmonyStorage(config), diagnostics: await manager.getDiagnostics(), candidates: discoverHdcCandidates({ config }) });
   } catch (error) {
     if (error instanceof JsonBodyTooLargeError) return noStoreJson({ error: "Request body is too large" }, { status: 413 });
     if (error instanceof InvalidJsonBodyError) return noStoreJson({ error: "Invalid JSON body" }, { status: 400 });

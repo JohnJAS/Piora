@@ -130,7 +130,7 @@ function bookmarkBarNodes(profiles: ImportedChromeBookmarkProfile[]): ImportedCh
   return profiles.flatMap((profile) => profile.children);
 }
 
-export function BrowserPanel({ active }: { active: boolean }) {
+export function BrowserPanel({ active, sessionId }: { active: boolean; sessionId: string | null }) {
   const { t } = useI18n();
   const [desktopBridge, setDesktopBridge] = useState<DesktopBrowserBridge | null | undefined>(undefined);
 
@@ -141,11 +141,11 @@ export function BrowserPanel({ active }: { active: boolean }) {
   if (desktopBridge === undefined) {
     return <div className={styles.browserLoading}>{t("browser.starting")}</div>;
   }
-  if (desktopBridge) return <DesktopBrowserPanel active={active} bridge={desktopBridge} />;
-  return <ScreenshotBrowserPanel active={active} />;
+  if (desktopBridge) return <DesktopBrowserPanel active={active} bridge={desktopBridge} sessionId={sessionId} />;
+  return <ScreenshotBrowserPanel active={active} sessionId={sessionId} />;
 }
 
-function DesktopBrowserPanel({ active, bridge }: { active: boolean; bridge: DesktopBrowserBridge }) {
+function DesktopBrowserPanel({ active, bridge, sessionId }: { active: boolean; bridge: DesktopBrowserBridge; sessionId: string | null }) {
   const { t } = useI18n();
   const [state, setState] = useState<DesktopBrowserState | null>(null);
   const [address, setAddress] = useState("");
@@ -166,6 +166,16 @@ function DesktopBrowserPanel({ active, bridge }: { active: boolean; bridge: Desk
     }
     setError(null);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void bridge.action({ action: "set_session", ...(sessionId ? { sessionId } : {}) }).then((next) => {
+      if (!cancelled) applyState(next);
+    }).catch((sessionError) => {
+      if (!cancelled) setError(sessionError instanceof Error ? sessionError.message : t("browser.unavailable"));
+    });
+    return () => { cancelled = true; };
+  }, [applyState, bridge, sessionId, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -382,7 +392,7 @@ function BookmarkTree({ nodes, onNavigate }: { nodes: ImportedChromeBookmarkNode
   </ul>;
 }
 
-function ScreenshotBrowserPanel({ active }: { active: boolean }) {
+function ScreenshotBrowserPanel({ active, sessionId }: { active: boolean; sessionId: string | null }) {
   const { t } = useI18n();
   const [state, setState] = useState<BrowserState | null>(null);
   const [address, setAddress] = useState("");
@@ -406,7 +416,8 @@ function ScreenshotBrowserPanel({ active }: { active: boolean }) {
 
   const refresh = useCallback(async () => {
     try {
-      const response = await fetch("/api/browser", { cache: "no-store" });
+      const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
+      const response = await fetch(`/api/browser${query}`, { cache: "no-store" });
       const payload = await response.json() as BrowserState & { error?: string };
       if (!response.ok) throw new Error(payload.error || t("browser.unavailable"));
       setState((previous) => {
@@ -420,7 +431,7 @@ function ScreenshotBrowserPanel({ active }: { active: boolean }) {
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : t("browser.unavailable"));
     }
-  }, [t]);
+  }, [sessionId, t]);
 
   useEffect(() => {
     if (!active) return;
@@ -436,7 +447,7 @@ function ScreenshotBrowserPanel({ active }: { active: boolean }) {
         const response = await fetch("/api/browser", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(input),
+          body: JSON.stringify({ ...input, ...(sessionId ? { sessionId } : {}) }),
         });
         const payload = await response.json() as BrowserState & { error?: string };
         if (!response.ok) throw new Error(payload.error || t("browser.actionFailed"));
@@ -456,7 +467,7 @@ function ScreenshotBrowserPanel({ active }: { active: boolean }) {
     });
     actionQueueRef.current = queued;
     return queued;
-  }, [applyState, t]);
+  }, [applyState, sessionId, t]);
 
   useEffect(() => {
     if (!active || !viewportRef.current) return;
@@ -581,7 +592,7 @@ function ScreenshotBrowserPanel({ active }: { active: boolean }) {
       onContextMenu={(event) => event.preventDefault()}
       onWheel={(event) => { event.preventDefault(); void act({ action: "scroll", deltaY: event.deltaY }, { transient: true, focusKeyboard: false, refreshScreenshot: true }); }}
     >
-      {state ? <img src={`/api/browser/screenshot?v=${screenshotKey}`} alt={t("browser.pagePreview")} draggable={false} /> : <div className={styles.browserLoading}>{t("browser.starting")}</div>}
+      {state ? <img src={`/api/browser/screenshot?v=${screenshotKey}${sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : ""}`} alt={t("browser.pagePreview")} draggable={false} /> : <div className={styles.browserLoading}>{t("browser.starting")}</div>}
       {state?.url === "about:blank" ? <div className={styles.browserStart}>
         <AliIcon name="earth" size={28} />
         <strong>{t("browser.startTitle")}</strong>

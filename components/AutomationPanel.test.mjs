@@ -30,3 +30,13 @@ test("automation cards open the dedicated right panel and settings category", ()
   assert.match(rightPanel, /workspace-automation/);
   assert.match(settings, /key: "automations"/);
 });
+
+test("settings keeps scheduled-task management embedded for editing and deletion", () => {
+  const appShell = fs.readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8");
+  const settingsAutomation = appShell.match(/automations:\s*\([\s\S]*?<AutomationPanel[\s\S]*?<\/AutomationPanel>|automations:\s*\([\s\S]*?<AutomationPanel[\s\S]*?\/>/)?.[0] ?? "";
+  assert.match(settingsAutomation, /<AutomationPanel/);
+  assert.doesNotMatch(settingsAutomation, /setSettingsDialogOpen\(false\)/);
+  assert.doesNotMatch(settingsAutomation, /openAutomation/);
+  assert.match(panel, /method:\s*"PATCH"/);
+  assert.match(panel, /method:\s*"DELETE"/);
+});

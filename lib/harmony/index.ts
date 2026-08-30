@@ -8,6 +8,7 @@ export * from "./hdc-backend";
 export * from "./device-label";
 export * from "./vision";
 export * from "./screenshot-stability";
+export * from "./artifacts";
 export { HarmonyDeviceManager, type HarmonyDeviceManagerOptions } from "./device-manager";
 
 declare global {

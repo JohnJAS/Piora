@@ -69,7 +69,7 @@ function titleModelValue(model: SessionTitleModelPreference): string {
   return JSON.stringify(model);
 }
 
-export type SettingsKey = "general" | "conversation" | "automations" | "models" | "extensions" | "skills" | "plugins" | "appearance" | "language" | "companion" | "remote" | "archived";
+export type SettingsKey = "general" | "conversation" | "speech" | "automations" | "models" | "capabilityBundles" | "extensions" | "skills" | "plugins" | "harmony" | "appearance" | "language" | "companion" | "remote" | "usage" | "archived";
 
 interface SettingsEntry {
   key: SettingsKey;
@@ -132,6 +132,12 @@ export function SettingsDialog({
       icon: <AliIcon name="message" size={16} />,
     },
     {
+      key: "speech",
+      labelKey: "speech.title",
+      descriptionKey: "speech.description",
+      icon: <AliIcon name="microphone" size={16} />,
+    },
+    {
       key: "automations",
       labelKey: "automations.title",
       descriptionKey: "automations.description",
@@ -162,6 +168,12 @@ export function SettingsDialog({
       icon: <AliIcon name="robot" size={16} />,
     },
     {
+      key: "capabilityBundles",
+      labelKey: "capabilityBundles.title",
+      descriptionKey: "capabilityBundles.description",
+      icon: <AliIcon name="export" size={16} />,
+    },
+    {
       key: "extensions",
       labelKey: "settings.extensions",
       descriptionKey: "settings.manageExtensionsDescription",
@@ -177,13 +189,25 @@ export function SettingsDialog({
       key: "plugins",
       labelKey: "common.plugins",
       descriptionKey: "settings.pluginsDescription",
-      icon: <AliIcon name="appstore-add" size={16} />,
+      icon: <AliIcon name="package" size={16} />,
     },
     {
       key: "remote",
       labelKey: "remote.title",
       descriptionKey: "remote.description",
       icon: <AliIcon name="external-link" size={16} />,
+    },
+    {
+      key: "harmony",
+      labelKey: "harmonyStorage.title",
+      descriptionKey: "harmonyStorage.description",
+      icon: <AliIcon name="mobile" size={16} />,
+    },
+    {
+      key: "usage",
+      labelKey: "usage.title",
+      descriptionKey: "usage.description",
+      icon: <AliIcon name="chart-no-axes-column" size={16} />,
     },
     {
       key: "archived",
@@ -194,9 +218,9 @@ export function SettingsDialog({
   ], []);
 
   const entryGroups = useMemo(() => [
-    { labelKey: "settings.group.personal", keys: ["general", "conversation", "automations", "models", "appearance", "language", "companion"] as SettingsKey[] },
-    { labelKey: "settings.group.capabilities", keys: ["extensions", "skills", "plugins", "remote"] as SettingsKey[] },
-    { labelKey: "settings.group.history", keys: ["archived"] as SettingsKey[] },
+    { labelKey: "settings.group.personal", keys: ["general", "conversation", "speech", "automations", "models", "appearance", "language", "companion"] as SettingsKey[] },
+    { labelKey: "settings.group.capabilities", keys: ["capabilityBundles", "extensions", "skills", "plugins", "harmony", "remote"] as SettingsKey[] },
+    { labelKey: "settings.group.history", keys: ["usage", "archived"] as SettingsKey[] },
   ], []);
 
   const availableEntries = useMemo(() => detailEntries.filter((entry) => (

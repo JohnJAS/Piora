@@ -18,6 +18,7 @@ import type { GoalRunState } from "@/lib/goal-run-registry";
 import type { PlanArtifactState, PlanDraftInput } from "@/lib/plan-artifact-registry";
 import { isPromptMaterialRuntimeMessage, type PromptMaterialReference } from "@/lib/prompt-material-format";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
+import { fetchModelCatalog, type ModelCatalogEntry } from "@/lib/model-catalog-client";
 import {
   applySessionCapabilitySelectionToState,
   createDefaultSessionCapabilitiesState,
@@ -368,17 +369,7 @@ async function uploadPromptMaterialFiles(files: AttachedFile[]): Promise<PromptM
 }
 
 type SelectedModel = { provider: string; modelId: string };
-type ModelEntry = { id: string; name: string; provider: string; contextWindow?: number };
-type ModelsResponse = {
-  models: Record<string, string>;
-  modelList?: ModelEntry[];
-  defaultModel?: SelectedModel | null;
-  thinkingLevels?: Record<string, string[]>;
-  thinkingLevelMaps?: Record<string, Record<string, string | null>>;
-  thinkingLevelPins?: Record<string, string>;
-  modelError?: string;
-  modelScopeWarnings?: string[];
-};
+type ModelEntry = ModelCatalogEntry;
 
 type SlashCommandsResponse = {
   commands?: SlashCommandInfo[];
@@ -456,6 +447,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const newSessionModelOverrideRef = useRef<SelectedModel | null>(newSessionInitialModel ?? null);
   const thinkingLevelOverrideRef = useRef<Exclude<ThinkingLevelOption, "auto"> | null>(null);
   const promptRunIdRef = useRef(0);
+  const promptSettlementByRunRef = useRef(new Map<number, Promise<void>>());
+  const promptSettlementPollByRunRef = useRef(new Map<number, Promise<void>>());
+  const sessionLoadAbortRef = useRef<AbortController | null>(null);
   const optimisticUserMessageKeyRef = useRef<string | null>(null);
   const suppressCompletionNotificationRef = useRef(false);
   const lastContextUsageRefreshAtRef = useRef(0);
@@ -526,13 +520,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     includeState = false,
     prefetchedData: Promise<unknown | null> | null = null,
   ) => {
+    sessionLoadAbortRef.current?.abort();
+    const controller = new AbortController();
+    sessionLoadAbortRef.current = controller;
     let messagesLoaded = false;
     try {
       if (showLoading) setLoading(true);
       let d = await prefetchedData as SessionData | null;
+      if (controller.signal.aborted) return null;
       if (!d) {
         const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1" });
-        const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}?${params}`);
+        const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}?${params}`, {
+          signal: controller.signal,
+        });
         if (res.status === 404) {
           if (showLoading) {
             setData(null);
@@ -557,11 +557,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
 
       messagesLoaded = true;
-      if (showLoading) setLoading(false);
+      if (showLoading && sessionLoadAbortRef.current === controller) setLoading(false);
       if (!includeState) return null;
 
       try {
-        const stateRes = await fetch(`/api/sessions/${encodeURIComponent(sid)}/state`);
+        const stateRes = await fetch(`/api/sessions/${encodeURIComponent(sid)}/state`, {
+          signal: controller.signal,
+        });
         if (!stateRes.ok) throw new Error(`HTTP ${stateRes.status}`);
         const agentState = await stateRes.json() as { running: boolean; state?: AgentStateResponse };
         if (sessionIdRef.current !== sid) return null;
@@ -582,14 +584,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         return agentState;
       } catch (e) {
+        if (controller.signal.aborted) return null;
         console.error("Failed to load agent state:", e);
         return null;
       }
     } catch (e) {
+      if (controller.signal.aborted) return null;
       setError(String(e));
       return null;
     } finally {
-      if (showLoading && !messagesLoaded) setLoading(false);
+      if (sessionLoadAbortRef.current === controller) {
+        sessionLoadAbortRef.current = null;
+        if (showLoading && !messagesLoaded) setLoading(false);
+      }
     }
   }, []);
 
@@ -880,50 +887,66 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [addNotice, opts.chatInputRef]);
 
-  const finishPromptWithoutStream = useCallback(async (sid: string | null = sessionIdRef.current, runId?: number) => {
-    // Bail out before loadSession too: a stale finish for a previous run
-    // must not overwrite the messages of the run currently streaming.
-    if (runId !== undefined && promptRunIdRef.current !== runId) return;
-    try {
-      if (sid) await loadSession(sid);
-    } finally {
-      if (runId !== undefined && promptRunIdRef.current !== runId) return;
-      const wasRunning = agentRunningRef.current;
-      agentRunningRef.current = false;
-      closeEvents();
-      optimisticUserMessageKeyRef.current = null;
-      if (!wasRunning) return;
-      setAgentRunning(false);
-      setAgentPhase(null);
-      setRetryInfo(null);
-      dispatch({ type: "end" });
-      const shouldNotify = !suppressCompletionNotificationRef.current;
-      suppressCompletionNotificationRef.current = false;
-      if (shouldNotify && sid) onAgentEnd?.(sid);
-    }
+  const finishPromptWithoutStream = useCallback((sid: string | null = sessionIdRef.current, runId = promptRunIdRef.current) => {
+    const existing = promptSettlementByRunRef.current.get(runId);
+    if (existing) return existing;
+    const settlement = (async () => {
+      // Bail out before loadSession too: a stale finish for a previous run
+      // must not overwrite the messages of the run currently streaming.
+      if (promptRunIdRef.current !== runId) return;
+      try {
+        if (sid) await loadSession(sid, false, true);
+      } finally {
+        if (promptRunIdRef.current !== runId) return;
+        const wasRunning = agentRunningRef.current;
+        agentRunningRef.current = false;
+        closeEvents();
+        optimisticUserMessageKeyRef.current = null;
+        if (!wasRunning) return;
+        setAgentRunning(false);
+        setAgentPhase(null);
+        setRetryInfo(null);
+        dispatch({ type: "end" });
+        const shouldNotify = !suppressCompletionNotificationRef.current;
+        suppressCompletionNotificationRef.current = false;
+        if (shouldNotify && sid) onAgentEnd?.(sid);
+      }
+    })();
+    promptSettlementByRunRef.current.set(runId, settlement);
+    return settlement;
   }, [closeEvents, loadSession, onAgentEnd]);
 
-  const waitForPromptSettlement = useCallback(async (sid: string, runId?: number) => {
-    await delay(PROMPT_SETTLE_INITIAL_DELAY_MS);
-    const startedAt = Date.now();
+  const waitForPromptSettlement = useCallback((sid: string, runId = promptRunIdRef.current) => {
+    const existing = promptSettlementPollByRunRef.current.get(runId);
+    if (existing) return existing;
+    const polling = (async () => {
+      await delay(PROMPT_SETTLE_INITIAL_DELAY_MS);
+      const startedAt = Date.now();
 
-    while (agentRunningRef.current && Date.now() - startedAt < PROMPT_SETTLE_MAX_MS) {
-      if (runId !== undefined && promptRunIdRef.current !== runId) return;
-      try {
-        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
-        if (res.ok) {
-          const data = await res.json() as { running?: boolean; state?: AgentStateResponse };
-          const state = data.state;
-          if (!data.running || !state || (!state.isStreaming && !state.isPromptRunning)) {
-            await finishPromptWithoutStream(sid, runId);
-            return;
+      while (agentRunningRef.current && Date.now() - startedAt < PROMPT_SETTLE_MAX_MS) {
+        if (promptRunIdRef.current !== runId) return;
+        try {
+          const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+          if (res.ok) {
+            const data = await res.json() as { running?: boolean; state?: AgentStateResponse };
+            const state = data.state;
+            if (!data.running || !state || (!state.isStreaming && !state.isPromptRunning)) {
+              await finishPromptWithoutStream(sid, runId);
+              return;
+            }
           }
+        } catch {
+          // SSE remains the primary completion path.
         }
-      } catch {
-        // SSE remains the primary completion path.
+        await delay(PROMPT_SETTLE_POLL_MS);
       }
-      await delay(PROMPT_SETTLE_POLL_MS);
-    }
+    })().finally(() => {
+      if (promptSettlementPollByRunRef.current.get(runId) === polling) {
+        promptSettlementPollByRunRef.current.delete(runId);
+      }
+    });
+    promptSettlementPollByRunRef.current.set(runId, polling);
+    return polling;
   }, [finishPromptWithoutStream]);
 
   const waitForBashSettlement = useCallback(async (sid: string) => {
@@ -1058,23 +1081,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setRetryInfo(null);
         setExtensionDialog(null);
         dispatch({ type: "end" });
-        if (sessionIdRef.current) {
-          loadSession(sessionIdRef.current);
-          fetch(`/api/agent/${encodeURIComponent(sessionIdRef.current)}`)
-            .then((r) => r.json())
-            .then((d: { state?: AgentStateResponse }) => {
-              if (d.state?.contextUsage !== undefined) setContextUsage(d.state.contextUsage ?? null);
-              if (d.state?.systemPrompt !== undefined) setSystemPrompt(d.state.systemPrompt ?? null);
-              if (d.state?.extensionStatuses !== undefined) setExtensionStatuses(d.state.extensionStatuses ?? []);
-              if (d.state?.extensionWidgets !== undefined) setExtensionWidgets(d.state.extensionWidgets ?? []);
-              if (d.state?.goal !== undefined) setGoal(d.state.goal ?? null);
-              if (d.state?.plan !== undefined) setPlanArtifact(d.state.plan ?? null);
-              // Aborted turns can leave messages queued in pi (delivered with the
-              // next turn); dead wrapper (no state) means the queue is gone.
-              setQueuedMessages(normalizeQueuedMessages(d.state?.queuedMessages));
-            })
-            .catch(() => {});
-        }
         break;
       case "prompt_done":
         if (!agentRunningRef.current && !bashRunningRef.current) break;
@@ -1259,6 +1265,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
 
     const promptRunId = promptRunIdRef.current + 1;
+    promptSettlementByRunRef.current.clear();
+    promptSettlementPollByRunRef.current.clear();
 
     const materialFiles = (files ?? []).filter((file) => file.text != null);
     const pasteFiles = materialFiles.filter((file) => file.kind === "paste");
@@ -1414,6 +1422,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (!sid) return;
+    const runId = promptRunIdRef.current;
     suppressCompletionNotificationRef.current = true;
     if (bashRunningRef.current) {
       try {
@@ -1425,10 +1434,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     try {
       await sendAgentCommand(sid, { type: "abort" });
+      // The server acknowledges as soon as the SDK cancellation signal has
+      // been delivered. End the local stream now instead of waiting for slow
+      // model-transport or extension cleanup to emit prompt_done.
+      await finishPromptWithoutStream(sid, runId);
     } catch (e) {
       console.error("Failed to abort:", e);
     }
-  }, []);
+  }, [finishPromptWithoutStream]);
 
   const handleGoalPause = useCallback(async () => {
     const sid = sessionIdRef.current;
@@ -1603,10 +1616,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const loadModels = useCallback(async (signal?: AbortSignal) => {
     const modelCwd = newSessionCwd ?? session?.cwd ?? "";
-    const modelsUrl = modelCwd ? `/api/models?cwd=${encodeURIComponent(modelCwd)}` : "/api/models";
-    const res = await fetch(modelsUrl, signal ? { signal } : undefined);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const d = await res.json() as ModelsResponse;
+    const d = await fetchModelCatalog({
+      ...(modelCwd ? { cwd: modelCwd } : {}),
+      ...(signal ? { signal } : {}),
+    });
     setModelNames(d.models);
     setModelError(d.modelError ?? null);
     setModelScopeWarnings(d.modelScopeWarnings ?? []);
@@ -1944,6 +1957,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     return () => {
       bashRecoveryIdRef.current += 1;
+      sessionLoadAbortRef.current?.abort();
+      sessionLoadAbortRef.current = null;
+      if (session) invalidatePrefetchedSession(session.id);
       closeEvents();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

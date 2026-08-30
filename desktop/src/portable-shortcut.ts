@@ -4,7 +4,6 @@ import { basename, dirname, join, resolve } from "node:path";
 const PORTABLE_FILE_PATTERN = /^Piora-(\d+)\.(\d+)\.(\d+)-win-x64-portable\.exe$/i;
 const PACKAGED_FILE_PATTERN = /^Piora\.exe$/i;
 const SHORTCUT_APP_ID = "io.github.kexijiang.piora";
-const SHORTCUT_VERSION_PATTERN = /^Piora (\d+\.\d+\.\d+) — /;
 
 export interface PortableShortcutDetails {
   target: string;
@@ -17,7 +16,6 @@ export interface PortableShortcutDetails {
 }
 
 export interface PortableShortcutShell {
-  readShortcutLink(path: string): PortableShortcutDetails;
   writeShortcutLink(
     path: string,
     operation: "create" | "replace",
@@ -39,8 +37,8 @@ export interface PortableShortcutOptions {
 }
 
 export type PortableShortcutResult =
-  | { status: "created" | "updated"; shortcutPath: string; target: string }
-  | { status: "kept-newer"; shortcutPath: string; target: string }
+  | { status: "created"; shortcutPath: string; target: string }
+  | { status: "kept-existing"; shortcutPath: string }
   | { status: "skipped"; reason: string };
 
 function regularFileExists(path: string): boolean {
@@ -85,6 +83,9 @@ export function ensurePortableDesktopShortcut(
   if (!options.isPackaged) return { status: "skipped", reason: "development-runtime" };
   if (options.isSmokeTest) return { status: "skipped", reason: "smoke-test" };
 
+  const shortcutPath = join(resolve(options.desktopDirectory), "Piora.lnk");
+  if (existsSync(shortcutPath)) return { status: "kept-existing", shortcutPath };
+
   const requestedPath = options.portableExecutablePath?.trim();
   const appVersion = parseDesktopVersion(options.appVersion);
   if (!appVersion) return { status: "skipped", reason: "invalid-app-version" };
@@ -102,34 +103,10 @@ export function ensurePortableDesktopShortcut(
     return { status: "skipped", reason: "invalid-packaged-executable" };
   }
 
-  const shortcutPath = join(resolve(options.desktopDirectory), "Piora.lnk");
-  const shortcutExists = existsSync(shortcutPath);
-  if (shortcutExists) {
-    try {
-      const existing = options.shell.readShortcutLink(shortcutPath);
-      const existingTarget = resolve(existing.target);
-      const describedVersion = existing.description
-        ? parseDesktopVersion(SHORTCUT_VERSION_PATTERN.exec(existing.description)?.[1] ?? "")
-        : undefined;
-      const existingVersion = existing.appUserModelId === SHORTCUT_APP_ID
-        ? portableVersionFromPath(existingTarget) ?? describedVersion
-        : undefined;
-      if (
-        existingVersion
-        && regularFileExists(existingTarget)
-        && comparePortableVersions(existingVersion, appVersion) >= 0
-      ) {
-        return { status: "kept-newer", shortcutPath, target: existingTarget };
-      }
-    } catch {
-      // Replace an unreadable app-owned shortcut with a verified current target.
-    }
-  }
-
   const iconAvailable = regularFileExists(options.iconPath);
   const written = options.shell.writeShortcutLink(
     shortcutPath,
-    shortcutExists ? "replace" : "create",
+    "create",
     {
       target,
       cwd: dirname(target),
@@ -138,6 +115,6 @@ export function ensurePortableDesktopShortcut(
       ...(iconAvailable ? { icon: options.iconPath, iconIndex: 0 } : {}),
     },
   );
-  if (!written) throw new Error("Windows rejected the Piora desktop shortcut update.");
-  return { status: shortcutExists ? "updated" : "created", shortcutPath, target };
+  if (!written) throw new Error("Windows rejected the Piora desktop shortcut creation.");
+  return { status: "created", shortcutPath, target };
 }

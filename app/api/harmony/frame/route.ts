@@ -8,10 +8,8 @@ export async function GET(request: Request) {
   if (denied) return denied;
   try {
     const serial = requiredQuery(request, "serial");
-    const snapshot = await getHarmonyDeviceManager().snapshot({
+    const snapshot = await getHarmonyDeviceManager().captureLiveFrame({
       serial,
-      includeTree: false,
-      includeScreenshot: true,
       signal: request.signal,
     });
     if (!snapshot.screenshot) throw new Error("Device screenshot is unavailable");

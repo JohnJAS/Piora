@@ -3,8 +3,8 @@
 .header h1 { margin: 0; font-size: var(--text-xl); }
 .header p { margin: 2px 0 0; color: var(--text-muted); }
 .mood { padding: 5px 10px; border-radius: 999px; color: #704823; background: #f5dfc5; }
-.tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding: 0 12px 10px; border-bottom: 1px solid var(--border); }
-.tabs button { padding: 8px 3px; border: 0; border-radius: 10px; color: var(--text-muted); background: transparent; }
+.tabs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; padding: 0 12px 10px; border-bottom: 1px solid var(--border); }
+.tabs button { padding: 8px 3px; border: 0; border-radius: 10px; color: var(--text-muted); background: transparent; font-size: var(--text-sm); white-space: nowrap; }
 .tabs button[data-active="true"] { color: var(--text); background: var(--bg-selected); font-weight: 700; }
 .content { flex: 1; min-height: 0; overflow: auto; padding: 14px; }
 .hero, .card, .row, .libraryItem, .stack { border: 1px solid var(--border); border-radius: 14px; background: var(--bg-panel); box-shadow: 0 8px 24px rgba(35,25,15,.04); }
@@ -43,6 +43,27 @@
 .libraryItem pre { max-height: 150px; overflow: auto; padding: 10px; white-space: pre-wrap; background: var(--bg); border-radius: 8px; }
 .libraryImage { display: block; width: 100%; height: 220px; margin: 10px auto; border-radius: 10px; background-position: center; background-repeat: no-repeat; background-size: contain; }
 .itemActions { display: flex !important; justify-content: flex-end; gap: 6px; }
+.recordSection { display: grid; gap: 9px; margin: 14px 0; }
+.recordSection h2 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: var(--text-base); }
+.recordSection h2 span { display: inline-grid; min-width: 22px; height: 22px; place-items: center; padding: 0 6px; border-radius: 999px; color: #704823; background: #f5dfc5; font-size: var(--text-xs); }
+.record { display: grid; gap: 7px; padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-panel); }
+.record p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--text-muted); -webkit-box-orient: vertical; -webkit-line-clamp: 4; }
+.recordHeading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.recordHeading span { padding: 3px 7px; border-radius: 999px; color: #78502c; background: color-mix(in srgb, #f5dfc5 78%, var(--bg-panel)); font-size: var(--text-xs); }
+.timerCard { display: grid; justify-items: center; gap: 12px; padding: 18px; border: 1px solid var(--border); border-radius: 18px; background: radial-gradient(circle at top, color-mix(in srgb, #f3c28e 28%, var(--bg-panel)), var(--bg-panel) 60%); box-shadow: 0 12px 32px rgba(35,25,15,.06); }
+.phaseTabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; width: 100%; }
+.phaseTabs button[data-active="true"] { color: white; background: #bd7240; border-color: #bd7240; }
+.timerLabel { color: var(--text-muted); }
+.timerValue { font-family: var(--font-mono); font-size: clamp(44px, 12vw, 72px); line-height: 1; letter-spacing: -.05em; font-variant-numeric: tabular-nums; }
+.timerTask { display: grid; gap: 6px; width: 100%; color: var(--text-muted); }
+.timerActions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+.timerSettings { display: grid; gap: 10px; width: 100%; padding-top: 12px; border-top: 1px solid var(--border); }
+.timerSettingsGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.timerSettingsGrid > label { display: grid; gap: 5px; color: var(--text-muted); font-size: var(--text-sm); }
+.numberInput { display: flex; align-items: center; gap: 6px; }
+.numberInput input { width: 100%; }
+.numberInput small { flex: none; white-space: nowrap; }
+.primary { color: white !important; background: #bd7240 !important; border-color: #bd7240 !important; font-weight: 700; }
 .imageUpload { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 12px; }
 .imageUpload input { max-width: 210px; padding: 4px; }
 .settings { display: grid; gap: 13px; }

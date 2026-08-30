@@ -10,6 +10,7 @@ const [shell, sidebar, catalog, review, changeList, rightPanel] = await Promise.
   readFile(new URL("./workspace/ChangeList.tsx", import.meta.url), "utf8"),
   readFile(new URL("./workspace/RightPanel.tsx", import.meta.url), "utf8"),
 ]);
+const taskStatusStore = await readFile(new URL("../hooks/useTaskStatus.ts", import.meta.url), "utf8");
 
 test("Review supports complete list navigation and keyboard commit", () => {
   assert.match(changeList, /getReviewNavigationIndex/);
@@ -42,4 +43,19 @@ test("completed background tasks are announced without stealing focus", () => {
   assert.match(sidebar, /role="status" aria-live="polite" aria-atomic="true"/);
   assert.match(sidebar, /sidebar\.taskCompleted/);
   assert.match(sidebar, /sidebar\.tasksCompleted/);
+});
+
+test("sidebar task state uses the shared SSE store without a second fixed poll or completion rescan", () => {
+  assert.match(catalog, /useRunningTaskRuntimeState\(\)/);
+  assert.doesNotMatch(catalog, /fetch\("\/api\/agent\/running"/);
+  assert.doesNotMatch(catalog, /completed\.length > 0\) void loadSessions/);
+  assert.match(catalog, /completedIds\.has\(session\.id\) \? \{ \.\.\.session, modified \} : session/);
+  assert.match(taskStatusStore, /sessionListeners/);
+  assert.match(taskStatusStore, /eventSource\.onopen = stopFallbackPoll/);
+  assert.match(taskStatusStore, /subscribeSession\(sessionId, listener\)/);
+  const completionHandler = shell.slice(
+    shell.indexOf("const handleAgentEnd"),
+    shell.indexOf("const handleTaskControlsChange"),
+  );
+  assert.doesNotMatch(completionHandler, /setRefreshKey/);
 });

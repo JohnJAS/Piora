@@ -3,6 +3,7 @@ export type HarmonyErrorCode =
   | "HDC_INVALID"
   | "DEVICE_NOT_FOUND"
   | "DEVICE_OFFLINE"
+  | "DEVICE_BUSY"
   | "LEASE_REQUIRED"
   | "LEASE_CONFLICT"
   | "LEASE_EXPIRED"

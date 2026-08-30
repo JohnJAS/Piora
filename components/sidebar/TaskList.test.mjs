@@ -35,6 +35,13 @@ test("shows a passive pinned badge while keeping row actions hover-only", () => 
   assert.doesNotMatch(rowSource, /handleTogglePinned/);
 });
 
+test("memoizes task rows with stable tree-item callbacks", () => {
+  assert.match(rowSource, /export const TaskRow = memo\(function TaskRow/);
+  assert.match(listSource, /const handleSelectSession = useCallback/);
+  assert.match(listSource, /onClick=\{handleSelectSession\}/);
+  assert.match(listSource, /onTogglePinned=\{handleTogglePinned\}/);
+});
+
 test("keeps AI title optimization inside the Codex-style rename editor", () => {
   assert.match(rowSource, /readSessionTitlePrompt/);
   assert.match(rowSource, /apply: false/);
@@ -66,12 +73,17 @@ test("removes the low-value task search field and its filtering path", () => {
   assert.doesNotMatch(rowSource, /searchQuery|<mark/);
 });
 
-test("prefetches sessions immediately and retains a bounded versioned switch cache", () => {
+test("delays hover prefetch, cancels it on leave, and retains a byte-bounded versioned switch cache", () => {
   assert.match(rowSource, /onMouseEnter=\{\(\) => \{[\s\S]*prefetchSession\(session\)/);
-  assert.match(rowSource, /onPointerDown=\{\(\) => \{[\s\S]*prefetchSession\(session\)/);
-  assert.doesNotMatch(rowSource, /prefetchTimerRef/);
+  assert.match(rowSource, /prefetchTimerRef/);
+  assert.match(rowSource, /setTimeout\(\(\) => \{[\s\S]*prefetchSession\(session\)[\s\S]*\}, 200\)/);
+  assert.match(rowSource, /onPointerDown=\{\(\) => \{[\s\S]*keepOnMouseLeave: true/);
+  assert.match(rowSource, /onMouseLeave=\{\(\) => \{[\s\S]*cancelSessionPrefetch\(session\.id\)/);
   assert.match(sessionPrefetchSource, /PREFETCH_TTL_MS = 30_000/);
-  assert.match(sessionPrefetchSource, /MAX_PREFETCHED_SESSIONS = 6/);
+  assert.match(sessionPrefetchSource, /MAX_PREFETCH_CACHE_BYTES = 16 \* 1024 \* 1024/);
+  assert.match(sessionPrefetchSource, /activePrefetch/);
+  assert.match(sessionPrefetchSource, /!activePrefetch\.cancelOnLeave/);
+  assert.match(sessionPrefetchSource, /controller\.abort\(\)/);
   assert.match(sessionPrefetchSource, /existing\.modified === session\.modified/);
   assert.match(sessionPrefetchSource, /entry\.modified = data\.info\.modified/);
   const takeFunction = sessionPrefetchSource.slice(sessionPrefetchSource.indexOf("export function takePrefetchedSession"));

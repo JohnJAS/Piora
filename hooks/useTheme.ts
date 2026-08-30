@@ -16,8 +16,12 @@ export type Theme =
   | "ivory"
   | "doodle"
   | "fortune"
+  | "nordic"
+  | "sakura"
   | "midnight"
   | "forest"
+  | "cyber"
+  | "ember"
   | "dream";
 
 export interface ThemePreset {
@@ -37,8 +41,12 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
   { id: "ivory", isDark: false, preview: { background: "#f8f5e9", accent: "#78834f" } },
   { id: "doodle", isDark: false, preview: { background: "#fff9e9", accent: "#0e9f8f" } },
   { id: "fortune", isDark: false, preview: { background: "#fff5dc", accent: "#b92c25" } },
+  { id: "nordic", isDark: false, preview: { background: "#f5f9fc", accent: "#146c82" } },
+  { id: "sakura", isDark: false, preview: { background: "#fff7fa", accent: "#a63d68" } },
   { id: "midnight", isDark: true, preview: { background: "#0b1020", accent: "#8b9dff" } },
   { id: "forest", isDark: true, preview: { background: "#101914", accent: "#6fcf97" } },
+  { id: "cyber", isDark: true, preview: { background: "#07191c", accent: "#4fd1c5" } },
+  { id: "ember", isDark: true, preview: { background: "#1b1110", accent: "#ff9a62" } },
   { id: "dream", isDark: true, packId: "codex-dream-skin", preview: { background: "#111318", accent: "#8da397" } },
 ] as const;
 

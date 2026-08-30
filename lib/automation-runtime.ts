@@ -116,6 +116,7 @@ export class AutomationRuntime {
   private async execute(automation: AutomationDefinition, run: AutomationRun): Promise<void> {
     const startedAt = this.now();
     await this.store.updateRun(run.id, { status: "running", startedAt });
+    let notificationSessionId = automation.target.type === "session" ? automation.target.sessionId : undefined;
     try {
       let sessionId: string;
       if (automation.target.type === "session") {
@@ -131,6 +132,7 @@ export class AutomationRuntime {
         });
         sessionId = created.sessionId;
       }
+      notificationSessionId = sessionId;
       const receipt = await getSessionMessageRouter().dispatchSessionMessage({
         targetSessionId: sessionId,
         content: automation.prompt,
@@ -149,6 +151,7 @@ export class AutomationRuntime {
           id: `notice_${randomUUID()}`,
           automationId: automation.id,
           runId: run.id,
+          sessionId,
           title: automation.name,
           status: status === "succeeded" ? "succeeded" : status === "interrupted" ? "interrupted" : "failed",
           createdAt: this.now(),
@@ -161,6 +164,7 @@ export class AutomationRuntime {
           id: `notice_${randomUUID()}`,
           automationId: automation.id,
           runId: run.id,
+          ...(notificationSessionId ? { sessionId: notificationSessionId } : {}),
           title: automation.name,
           status: "failed",
           createdAt: this.now(),

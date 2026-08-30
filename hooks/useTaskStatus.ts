@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import {
   deriveTaskStatus,
   type RunningSessionsPayload,
@@ -18,27 +18,37 @@ interface UseTaskStatusOptions {
 }
 
 const runtimeBySession = new Map<string, TaskRuntimeSnapshot>();
-const listeners = new Set<() => void>();
-let version = 0;
+const snapshotSignatures = new Map<string, string>();
+const sessionListeners = new Map<string, Set<() => void>>();
+const storeListeners = new Set<() => void>();
+let runtimeStoreState: { ready: boolean; snapshots: TaskRuntimeSnapshot[] } = { ready: false, snapshots: [] };
 let eventSource: EventSource | null = null;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let visibilityBound = false;
 
-function emitChange(): void {
-  version += 1;
-  for (const listener of listeners) listener();
+function listenerCount(): number {
+  let count = storeListeners.size;
+  for (const listeners of sessionListeners.values()) count += listeners.size;
+  return count;
+}
+
+function emitChange(changedSessionIds: Set<string>): void {
+  for (const sessionId of changedSessionIds) {
+    for (const listener of sessionListeners.get(sessionId) ?? []) listener();
+  }
+  for (const listener of storeListeners) listener();
 }
 
 function applyPayload(payload: Partial<RunningSessionsPayload>): void {
-  const next = new Map<string, TaskRuntimeSnapshot>();
+  const incoming = new Map<string, TaskRuntimeSnapshot>();
   if (Array.isArray(payload.runningSessions)) {
     for (const session of payload.runningSessions) {
       if (!session || typeof session.id !== "string") continue;
-      next.set(session.id, session);
+      incoming.set(session.id, session);
     }
   } else {
     for (const id of payload.runningSessionIds ?? []) {
-      next.set(id, {
+      incoming.set(id, {
         id,
         runtime: "running",
         pendingApproval: false,
@@ -47,12 +57,33 @@ function applyPayload(payload: Partial<RunningSessionsPayload>): void {
     }
   }
 
-  const previous = JSON.stringify([...runtimeBySession.values()].sort((a, b) => a.id.localeCompare(b.id)));
-  const incoming = JSON.stringify([...next.values()].sort((a, b) => a.id.localeCompare(b.id)));
-  if (previous === incoming) return;
+  const changedSessionIds = new Set<string>();
+  const next = new Map<string, TaskRuntimeSnapshot>();
+  const nextSignatures = new Map<string, string>();
+  for (const [id, snapshot] of incoming) {
+    const signature = JSON.stringify(snapshot);
+    nextSignatures.set(id, signature);
+    if (snapshotSignatures.get(id) === signature) {
+      next.set(id, runtimeBySession.get(id) ?? snapshot);
+    } else {
+      next.set(id, snapshot);
+      changedSessionIds.add(id);
+    }
+  }
+  for (const id of runtimeBySession.keys()) {
+    if (!next.has(id)) changedSessionIds.add(id);
+  }
+  if (runtimeStoreState.ready && changedSessionIds.size === 0) return;
+
   runtimeBySession.clear();
   for (const [id, session] of next) runtimeBySession.set(id, session);
-  emitChange();
+  snapshotSignatures.clear();
+  for (const [id, signature] of nextSignatures) snapshotSignatures.set(id, signature);
+  runtimeStoreState = {
+    ready: true,
+    snapshots: [...runtimeBySession.values()].sort((left, right) => (left.startedAt ?? 0) - (right.startedAt ?? 0)),
+  };
+  emitChange(changedSessionIds);
 }
 
 async function pollSnapshot(): Promise<void> {
@@ -66,17 +97,25 @@ async function pollSnapshot(): Promise<void> {
 }
 
 function scheduleFallbackPoll(): void {
-  if (pollTimer !== null || listeners.size === 0) return;
+  if (pollTimer !== null || listenerCount() === 0) return;
   pollTimer = setTimeout(() => {
     pollTimer = null;
-    void pollSnapshot().finally(scheduleFallbackPoll);
+    void pollSnapshot().finally(() => {
+      if (eventSource?.readyState !== EventSource.OPEN) scheduleFallbackPoll();
+    });
   }, 2_500);
 }
 
+function stopFallbackPoll(): void {
+  if (pollTimer !== null) clearTimeout(pollTimer);
+  pollTimer = null;
+}
+
 function connect(): void {
-  if (typeof window === "undefined" || eventSource || listeners.size === 0) return;
+  if (typeof window === "undefined" || eventSource || listenerCount() === 0) return;
   void pollSnapshot();
   eventSource = new EventSource("/api/agent/running/events");
+  eventSource.onopen = stopFallbackPoll;
   eventSource.onmessage = (message) => {
     try {
       const payload = JSON.parse(message.data) as { type?: string } & RunningSessionsPayload;
@@ -94,11 +133,10 @@ function connect(): void {
 }
 
 function disconnect(): void {
-  if (listeners.size > 0) return;
+  if (listenerCount() > 0) return;
   eventSource?.close();
   eventSource = null;
-  if (pollTimer !== null) clearTimeout(pollTimer);
-  pollTimer = null;
+  stopFallbackPoll();
   if (visibilityBound) {
     document.removeEventListener("visibilitychange", handleVisibilityChange);
     visibilityBound = false;
@@ -109,28 +147,37 @@ function handleVisibilityChange(): void {
   if (document.visibilityState === "visible") void pollSnapshot();
 }
 
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
+function subscribeStore(listener: () => void): () => void {
+  storeListeners.add(listener);
   connect();
   return () => {
-    listeners.delete(listener);
+    storeListeners.delete(listener);
     disconnect();
   };
 }
 
-function getVersion(): number {
-  return version;
+function subscribeSession(sessionId: string, listener: () => void): () => void {
+  const listeners = sessionListeners.get(sessionId) ?? new Set<() => void>();
+  listeners.add(listener);
+  sessionListeners.set(sessionId, listeners);
+  connect();
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) sessionListeners.delete(sessionId);
+    disconnect();
+  };
 }
 
-function getRunningSnapshots(): TaskRuntimeSnapshot[] {
-  return [...runtimeBySession.values()]
-    .filter((snapshot) => snapshot.runtime !== "idle" || snapshot.pendingApproval || snapshot.lastPromptFailed || snapshot.goal)
-    .sort((left, right) => (left.startedAt ?? 0) - (right.startedAt ?? 0));
+function getRuntimeStoreState(): typeof runtimeStoreState {
+  return runtimeStoreState;
 }
 
 export function useRunningTaskSnapshots(): TaskRuntimeSnapshot[] {
-  useSyncExternalStore(subscribe, getVersion, getVersion);
-  return getRunningSnapshots();
+  return useSyncExternalStore(subscribeStore, getRuntimeStoreState, getRuntimeStoreState).snapshots;
+}
+
+export function useRunningTaskRuntimeState(): typeof runtimeStoreState {
+  return useSyncExternalStore(subscribeStore, getRuntimeStoreState, getRuntimeStoreState);
 }
 
 export function useTaskStatus({
@@ -140,8 +187,12 @@ export function useTaskStatus({
   hasUnreadResult = false,
   fallbackRuntime = "idle",
 }: UseTaskStatusOptions): TaskStatus {
-  useSyncExternalStore(subscribe, getVersion, getVersion);
-  const snapshot = runtimeBySession.get(sessionId);
+  const subscribe = useCallback(
+    (listener: () => void) => subscribeSession(sessionId, listener),
+    [sessionId],
+  );
+  const getSnapshot = useCallback(() => runtimeBySession.get(sessionId) ?? null, [sessionId]);
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, () => null);
   const runtime = snapshot?.runtime ?? fallbackRuntime;
   const runningIds = runtime === "running" || runtime === "stopping" ? new Set([sessionId]) : new Set<string>();
   const compactingIds = runtime === "compacting" ? new Set([sessionId]) : new Set<string>();

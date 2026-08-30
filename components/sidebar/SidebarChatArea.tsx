@@ -45,17 +45,19 @@ export function SidebarChatArea({
 
   return (
     <section className={styles.chatSection} aria-label={t("sidebar.chats")}>
-      <div className={`${styles.sectionLabel} ${styles.chatSectionHeader}`}>
+      <div className={`${styles.sectionLabel} ${styles.projectsHeader}`}>
         <span>{t("sidebar.chats")}</span>
-        <button
-          type="button"
-          className={styles.rowAction}
-          onClick={onNewChat}
-          title={t("sidebar.newProjectlessChat")}
-          aria-label={t("sidebar.newProjectlessChat")}
-        >
-          <AliIcon name="compose" size={14} />
-        </button>
+        <div className={styles.sectionLabelActions}>
+          <button
+            type="button"
+            className={styles.rowAction}
+            onClick={onNewChat}
+            title={t("sidebar.newProjectlessChat")}
+            aria-label={t("sidebar.newProjectlessChat")}
+          >
+            <AliIcon name="plus" size={12} />
+          </button>
+        </div>
       </div>
       <div className={styles.chatSessionList} data-session-drag-scroll>
         {tree.length > 0 ? (

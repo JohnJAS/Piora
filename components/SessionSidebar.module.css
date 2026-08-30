@@ -170,12 +170,25 @@
   pointer-events: auto;
 }
 
+.projectArea {
+  display: flex;
+  min-height: 80px;
+  flex: 0 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .projectsHeader {
-  position: sticky;
-  z-index: 3;
-  top: -4px;
-  background: color-mix(in srgb, var(--bg-panel) 96%, transparent);
-  backdrop-filter: blur(12px);
+  flex: 0 0 auto;
+}
+
+.projectScroll {
+  min-height: 0;
+  flex: 0 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 0 8px;
 }
 
 .projectGroup {
@@ -283,28 +296,25 @@
 }
 
 .chatSection {
-  /* Keep the section transparent so the sidebar's shared panel/background
-     treatment (including the user-selected background image) shows through,
-     matching the project area above instead of painting an opaque panel. */
+  display: flex;
+  min-height: 0;
   flex: 0 0 auto;
-  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  flex-direction: column;
+  overflow: hidden;
   background: transparent;
 }
 
-.chatSectionHeader {
-  justify-content: space-between;
-  padding-right: 10px;
-}
-
 .chatSessionList {
+  min-height: 0;
   max-height: min(240px, 34vh);
   overflow-y: auto;
-  padding: 0 7px 7px;
+  overscroll-behavior: contain;
+  padding: 4px 1px 8px;
 }
 
 .chatEmpty {
   margin: 0;
-  padding: 5px 8px 8px;
+  padding: 8px 14px;
   color: var(--text-dim);
   font-size: var(--text-xs);
 }

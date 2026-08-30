@@ -12,6 +12,22 @@ export function mergeAudioChunks(chunks: readonly Float32Array[]): Float32Array 
   return merged;
 }
 
+export function containsAudibleSpeech(samples: Float32Array, sampleRate: number): boolean {
+  const frameSize = Math.max(1, Math.round(sampleRate * 0.02));
+  let voicedFrames = 0;
+  for (let offset = 0; offset < samples.length; offset += frameSize) {
+    const end = Math.min(samples.length, offset + frameSize);
+    let energy = 0;
+    for (let index = offset; index < end; index += 1) energy += samples[index] * samples[index];
+    const rms = Math.sqrt(energy / Math.max(1, end - offset));
+    if (rms >= 0.004) {
+      voicedFrames += 1;
+      if (voicedFrames >= 3) return true;
+    }
+  }
+  return false;
+}
+
 export function resampleAudio(input: Float32Array, inputRate: number, outputRate = VOICE_SAMPLE_RATE): Float32Array {
   if (!Number.isFinite(inputRate) || inputRate <= 0 || outputRate <= 0) {
     throw new Error("Invalid audio sample rate");

@@ -80,6 +80,7 @@ function phaseLabel(phase: AgentPhase, t: (key: string, params?: Record<string, 
 
 const CHAT_MINIMAP_WIDTH = 36;
 const CHAT_COLUMN_PADDING = 16;
+const CHAT_COLUMN_LEFT_PADDING = 36;
 const CHAT_INPUT_RIGHT_PADDING = CHAT_COLUMN_PADDING + CHAT_MINIMAP_WIDTH;
 const CHAT_COLUMN_DEFAULT_WIDTH = 820;
 const CHAT_COLUMN_MIN_WIDTH = 560;
@@ -240,7 +241,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
   const getChatColumnMaxWidth = useCallback(() => {
     const surfaceWidth = chatSurfaceRef.current?.clientWidth
       ?? (typeof window === "undefined" ? CHAT_COLUMN_MAX_WIDTH : window.innerWidth);
-    return Math.max(CHAT_COLUMN_MIN_WIDTH, surfaceWidth - CHAT_COLUMN_PADDING - CHAT_INPUT_RIGHT_PADDING);
+    return Math.max(CHAT_COLUMN_MIN_WIDTH, surfaceWidth - CHAT_COLUMN_LEFT_PADDING - CHAT_INPUT_RIGHT_PADDING);
   }, []);
   const getResponsiveChatColumnWidth = useCallback(() => {
     const viewportWidth = typeof window === "undefined" ? CHAT_COLUMN_MAX_WIDTH : window.innerWidth;
@@ -765,7 +766,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
             left: 0,
             right: isMobile ? 0 : CHAT_MINIMAP_WIDTH,
             zIndex: 40,
-            padding: `0 ${CHAT_COLUMN_PADDING}px`,
+            padding: `0 ${CHAT_COLUMN_PADDING}px 0 ${CHAT_COLUMN_LEFT_PADDING}px`,
             pointerEvents: "none",
           }}
         >
@@ -773,8 +774,8 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
             <NoticeShelf notices={notices} floating align="right" />
           </div>
         </div>
-        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pt-4 [scrollbar-width:none]">
-          <div style={{ padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
+        <div ref={scrollContainerRef} className="chat-scroll-container flex-1 overflow-y-auto pt-4">
+          <div style={{ padding: `0 ${CHAT_COLUMN_PADDING}px 0 ${CHAT_COLUMN_LEFT_PADDING}px` }}>
             <div className="chat-column">
               <ExtensionWidgets widgets={aboveEditorWidgets} />
 
@@ -1061,7 +1062,7 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
       <div className="relative">
         <div
           style={{
-            padding: `0 ${CHAT_COLUMN_PADDING}px`,
+            padding: `0 ${CHAT_COLUMN_PADDING}px 0 ${CHAT_COLUMN_LEFT_PADDING}px`,
             paddingRight: isMobile ? CHAT_COLUMN_PADDING : CHAT_INPUT_RIGHT_PADDING,
           }}
         >

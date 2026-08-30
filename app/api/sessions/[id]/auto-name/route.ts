@@ -117,7 +117,7 @@ export async function POST(
       if (latestName) {
         return NextResponse.json({ title: latestName, applied: false, skipped: true, usage: result.usage ?? null });
       }
-      session.inner.setSessionName(result.title);
+      session.setSessionName(result.title);
       invalidateSessionListCache();
     }
     return NextResponse.json({ title: result.title, applied: apply, skipped: false, usage: result.usage ?? null });
