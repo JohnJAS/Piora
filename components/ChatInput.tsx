@@ -18,6 +18,7 @@ import {
   MAX_PROMPT_MATERIAL_BYTES,
   shouldMaterializeDirectPrompt,
 } from "@/lib/prompt-input-policy";
+import { ModelChangeCoordinator } from "@/lib/model-change-coordinator";
 const MAX_ATTACHED_FILES = 8;
 const COMPOSER_MAX_HEIGHT = 360;
 
@@ -92,7 +93,7 @@ interface Props {
   modelError?: string | null;
   /** Diagnostics from resolving `enabledModels`, e.g. a pattern that matched nothing. */
   modelScopeWarnings?: string[];
-  onModelChange?: (provider: string, modelId: string) => void;
+  onModelChange?: (provider: string, modelId: string) => Promise<boolean>;
   onCompact?: () => void;
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
@@ -422,6 +423,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const attachmentMenuRef = useRef<HTMLDivElement>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
   const promptOptimizerAbortRef = useRef<AbortController | null>(null);
+  const modelChangeCoordinatorRef = useRef<ModelChangeCoordinator | null>(null);
+  if (!modelChangeCoordinatorRef.current) {
+    modelChangeCoordinatorRef.current = new ModelChangeCoordinator();
+  }
   const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const speechInsertionRef = useRef<{ before: string; after: string; language: string } | null>(null);
   const localVoiceStopRef = useRef<() => Promise<void>>(async () => {});
@@ -766,6 +771,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const msg = value.trim();
     if (!msg && !attachedImages.length && !attachedFiles.length) return;
     if (isStreaming || isProcessingImages || isAutoModelSelection) return;
+    if (!await modelChangeCoordinatorRef.current!.waitForIdle()) return;
     if (!attachedImages.length && !attachedFiles.length && msg.startsWith("/") && onBuiltinCommand) {
       const result = await onBuiltinCommand(msg);
       if (result.handled) {
@@ -2362,7 +2368,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                                     setModelDropdownOpen(false);
                                     setModelMenuSection(null);
                                     setModelFilter("");
-                                    if (!isActive || isAutoModelSelection) onModelChange(option.provider, option.modelId);
+                                    if (!isActive || isAutoModelSelection) {
+                                      modelChangeCoordinatorRef.current!.track(onModelChange(option.provider, option.modelId));
+                                    }
                                   }}
                                   role="menuitemradio"
                                   aria-checked={isActive}

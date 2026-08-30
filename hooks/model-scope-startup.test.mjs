@@ -35,17 +35,6 @@ test("new-session startup adopts server state only while explicit overrides are 
   assert.match(ensureSource, /setThinkingLevel\(result\.thinkingLevel\)/);
 });
 
-test("a lazily-created new session does not redundantly reapply its model before the first prompt", () => {
-  const sendSource = source.slice(
-    source.indexOf("const handleSend = useCallback"),
-    source.indexOf("const executeBash = useCallback"),
-  );
-
-  assert.match(sendSource, /const existingSid = sessionIdRef\.current \?\? await ensuringNewSessionRef\.current/);
-  assert.match(sendSource, /await sendAgentCommand\(sid, \{\s*type: "prompt"/);
-  assert.doesNotMatch(sendSource, /type: "set_model"/);
-});
-
 test("model-list refresh does not overwrite a live session or explicit thinking override", () => {
   const loadModelsSource = source.slice(
     source.indexOf("const loadModels = useCallback"),

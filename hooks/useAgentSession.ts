@@ -24,6 +24,7 @@ import {
   type SessionCapabilitiesState,
   type SessionCapabilitySelection,
 } from "@/lib/session-capabilities";
+import { runModelChange } from "@/lib/model-change-coordinator";
 
 export interface SessionData {
   sessionId: string;
@@ -1551,30 +1552,44 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [loadContext]);
 
-  const handleModelChange = useCallback(async (provider: string, modelId: string) => {
+  const handleModelChange = useCallback(async (provider: string, modelId: string): Promise<boolean> => {
     if (isNew) {
       const selectedModel = { provider, modelId };
+      const previousOverride = newSessionModelOverrideRef.current;
+      const previousDisplayModel = previousOverride ?? newSessionDefaultModel;
       newSessionModelOverrideRef.current = selectedModel;
       setNewSessionModel(selectedModel);
       setPendingModel(selectedModel);
       const sid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
-      if (!sid) return;
-      try {
-        await sendAgentCommand(sid, { type: "set_model", provider, modelId });
-      } catch (e) {
-        console.error("Failed to set model:", e);
-      }
-      return;
+      if (!sid) return true;
+      return runModelChange(
+        async () => {
+          await sendAgentCommand(sid, { type: "set_model", provider, modelId });
+        },
+        (e) => {
+          console.error("Failed to set model:", e);
+          if (newSessionModelOverrideRef.current === selectedModel) {
+            newSessionModelOverrideRef.current = previousOverride;
+            setNewSessionModel(previousOverride);
+            setPendingModel(previousDisplayModel);
+            addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+          }
+        },
+      );
     }
     const sid = sessionIdRef.current;
-    if (!sid) return;
-    try {
-      await sendAgentCommand(sid, { type: "set_model", provider, modelId });
-      setCurrentModelOverride({ provider, modelId });
-    } catch (e) {
-      console.error("Failed to set model:", e);
-    }
-  }, [isNew, setNewSessionModel]);
+    if (!sid) return false;
+    return runModelChange(
+      async () => {
+        await sendAgentCommand(sid, { type: "set_model", provider, modelId });
+        setCurrentModelOverride({ provider, modelId });
+      },
+      (e) => {
+        console.error("Failed to set model:", e);
+        addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      },
+    );
+  }, [addNotice, isNew, newSessionDefaultModel, setNewSessionModel]);
 
   const handleCompact = useCallback(async () => {
     const sid = sessionIdRef.current;
