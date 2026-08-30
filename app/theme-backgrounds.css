@@ -78,11 +78,46 @@ html[data-app-background-active="true"] .room-workspace-composer {
   background: transparent;
 }
 
-/* Settings is rendered in a body-level portal. Reuse the same wallpaper layer
-   as the workspace so appearance changes are visible without closing the
-   settings screen. */
-html[data-app-background-active="true"] .settings-backdrop,
-html[data-app-background-active="true"] .settings-dialog,
+/* Settings is rendered in a body-level portal above the app shell. Paint an
+   independent copy of the wallpaper inside that portal so the settings canvas
+   updates live without revealing the chat UI underneath it. */
+html[data-app-background-active="true"] .settings-backdrop {
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--bg) !important;
+}
+
+html[data-app-background-active="true"] .settings-backdrop::before,
+html[data-app-background-active="true"] .settings-backdrop::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+}
+
+html[data-app-background-active="true"] .settings-backdrop::before {
+  inset: -32px;
+  background-color: var(--bg);
+  background-image: var(--app-background-image, none), var(--app-background-fallback, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: blur(var(--app-background-blur, 0));
+  transform: scale(1.035);
+  transform-origin: center;
+}
+
+html[data-app-background-active="true"] .settings-backdrop::after {
+  background: color-mix(in srgb, var(--bg) var(--app-background-overlay, 58%), transparent);
+}
+
+html[data-app-background-active="true"] .settings-dialog {
+  position: relative;
+  z-index: 1;
+  background: transparent !important;
+}
+
 html[data-app-background-active="true"] .settings-content,
 html[data-app-background-active="true"] .settings-content-toolbar,
 html[data-app-background-active="true"] .settings-embedded-section {
@@ -152,6 +187,11 @@ html[data-app-background-active="true"] #file-panel .file-editor-gutter {
 
 @supports not (background: color-mix(in srgb, black 50%, transparent)) {
   html[data-app-background-active="true"] body::after {
+    background: var(--bg);
+    opacity: 0.58;
+  }
+
+  html[data-app-background-active="true"] .settings-backdrop::after {
     background: var(--bg);
     opacity: 0.58;
   }
