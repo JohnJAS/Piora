@@ -1300,19 +1300,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     try {
       const promptMaterials = materialFiles.length ? await uploadPromptMaterialFiles(materialFiles) : [];
       if (isNew && newSessionCwd) {
-        const selectedModel = newSessionModel;
         const existingSid = sessionIdRef.current ?? await ensuringNewSessionRef.current;
         const sid = existingSid ?? await ensureNewSession();
 
         if (sid) {
           sentSessionId = sid;
           promoteNewSession(0, displayMessage.slice(0, 2_000));
-          if (selectedModel) {
-            setPendingModel(selectedModel);
-            if (existingSid) {
-              await sendAgentCommand(sid, { type: "set_model", provider: selectedModel.provider, modelId: selectedModel.modelId });
-            }
-          }
           await ensureEventsConnected(sid);
           promptRequestStarted = true;
           await sendAgentCommand(sid, {
@@ -1379,7 +1372,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentPhase(null);
       dispatch({ type: "end" });
     }
-  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, closeEvents, opts.chatInputRef]);
+  }, [isNew, newSessionCwd, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, closeEvents, opts.chatInputRef]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (agentRunningRef.current || bashRunningRef.current) return;
