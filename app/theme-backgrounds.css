@@ -96,6 +96,61 @@ html[data-app-background-active="true"] .room-workspace-composer {
   background: transparent;
 }
 
+/* Settings is rendered in a body-level portal above the app shell. Paint an
+   independent copy of the wallpaper inside that portal so the settings canvas
+   updates live without revealing the chat UI underneath it. */
+html[data-app-background-active="true"] .settings-backdrop {
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--bg) !important;
+}
+
+html[data-app-background-active="true"] .settings-backdrop::before,
+html[data-app-background-active="true"] .settings-backdrop::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+}
+
+html[data-app-background-active="true"] .settings-backdrop::before {
+  inset: -32px;
+  background-color: var(--bg);
+  background-image: var(--app-background-image, none), var(--app-background-fallback, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  filter: blur(var(--app-background-blur, 0));
+  transform: scale(1.035);
+  transform-origin: center;
+}
+
+html[data-app-background-active="true"] .settings-backdrop::after {
+  background: color-mix(in srgb, var(--bg) var(--app-background-overlay, 58%), transparent);
+}
+
+html[data-app-background-active="true"] .settings-dialog {
+  position: relative;
+  z-index: 1;
+  background: transparent !important;
+}
+
+html[data-app-background-active="true"] .settings-content,
+html[data-app-background-active="true"] .settings-content-toolbar,
+html[data-app-background-active="true"] .settings-embedded-section {
+  background: transparent !important;
+}
+
+html[data-app-background-active="true"] .settings-embedded-section {
+  box-shadow: none !important;
+}
+
+html[data-app-background-active="true"] .settings-navigation {
+  background: color-mix(in srgb, var(--bg-panel) var(--app-background-sidebar-overlay, 36%), transparent) !important;
+  backdrop-filter: blur(5px);
+}
+
 html[data-app-background-active="true"] .sidebar-container {
   /* The project area shows the same artwork but keeps its own readable wash so
      small session/project text stays legible; strength is user-controlled
@@ -154,12 +209,18 @@ html[data-app-background-active="true"] #file-panel .file-editor-gutter {
     opacity: 0.58;
   }
 
+  html[data-app-background-active="true"] .settings-backdrop::after {
+    background: var(--bg);
+    opacity: 0.58;
+  }
+
   html[data-app-background-active="true"] .app-topbar {
     background: var(--bg) !important;
   }
 
   html[data-app-background-active="true"] .sidebar-container,
-  html[data-app-background-active="true"] .session-sidebar-content {
+  html[data-app-background-active="true"] .session-sidebar-content,
+  html[data-app-background-active="true"] .settings-navigation {
     background: var(--bg-panel) !important;
   }
 
@@ -171,6 +232,7 @@ html[data-app-background-active="true"] #file-panel .file-editor-gutter {
 @media (prefers-reduced-motion: reduce) {
   html[data-app-background-active="true"] .app-topbar,
   html[data-app-background-active="true"] .sidebar-container,
+  html[data-app-background-active="true"] .settings-navigation,
   html[data-app-background-active="true"] #file-panel {
     backdrop-filter: none;
   }

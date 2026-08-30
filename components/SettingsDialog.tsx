@@ -423,14 +423,14 @@ export function SettingsDialog({
 
   return createPortal(
     <div
-      className={`${styles.backdrop}${desktop.available ? ` ${styles.desktopBackdrop}` : ""}`}
+      className={`${styles.backdrop} settings-backdrop${desktop.available ? ` ${styles.desktopBackdrop}` : ""}`}
       role="dialog"
       aria-modal="true"
       aria-label={t("sidebar.settings")}
     >
-      <div ref={dialogRef} className={styles.dialog}>
+      <div ref={dialogRef} className={`${styles.dialog} settings-dialog`}>
         <div className={styles.workspace}>
-          <nav className={styles.navigation} aria-label={t("settings.navigation")}>
+          <nav className={`${styles.navigation} settings-navigation`} aria-label={t("settings.navigation")}>
             <button
               className={styles.backButton}
               type="button"
@@ -467,10 +467,10 @@ export function SettingsDialog({
             {filteredEntries.length === 0 ? <div className={styles.navEmpty} role="status">{t("settings.searchEmpty")}</div> : null}
           </nav>
 
-          <main className={styles.content}>
-            <div className={styles.contentToolbar} aria-hidden="true" />
+          <main className={`${styles.content} settings-content`}>
+            <div className={`${styles.contentToolbar} settings-content-toolbar`} aria-hidden="true" />
             <div className={`${styles.contentBody}${sectionContent ? ` ${styles.contentBodyEmbedded}` : ""}`}>
-            <div className={sectionContent ? styles.embeddedSection : styles.contentCanvas}>
+            <div className={sectionContent ? `${styles.embeddedSection} settings-embedded-section` : styles.contentCanvas}>
             {searching ? (
               <>
                 <div className={styles.contentHeading}>
