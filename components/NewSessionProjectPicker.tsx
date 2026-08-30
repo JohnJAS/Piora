@@ -383,7 +383,10 @@ export function NewSessionProjectPicker({
           isAutoModelSelection={modelSelectionBlocked}
           modelList={models}
           modelError={models.length > 0 ? modelsError : null}
-          onModelChange={(provider, modelId) => setSelectedModelKey(`${provider}/${modelId}`)}
+          onModelChange={async (provider, modelId) => {
+            setSelectedModelKey(`${provider}/${modelId}`);
+            return true;
+          }}
           draftKey={draftKey}
           cwd={selectedProject?.cwd ?? null}
           placeholder={selectedProject ? t("newSession.placeholder") : t("newSession.placeholderWithoutProject")}

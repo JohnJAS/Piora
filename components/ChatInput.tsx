@@ -392,7 +392,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   if (!modelChangeCoordinatorRef.current) {
     modelChangeCoordinatorRef.current = new ModelChangeCoordinator();
   }
-  const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const speechInsertionRef = useRef<{ before: string; after: string; language: string } | null>(null);
   const localVoiceStopRef = useRef<() => Promise<void>>(async () => {});
   const localVoiceCancelRef = useRef<() => void>(() => {});
