@@ -1,13 +1,40 @@
 "use client";
 
-import { useMemo, type MouseEvent } from "react";
+import { lazy, Suspense, useMemo, type MouseEvent } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { resolveLocalFileHref } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
-import { markdownRehypePlugins, markdownRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
-import { MermaidBlock, CodeBlock } from "./MermaidBlock";
+import { markdownRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
+import { useMarkdownRehypePlugins } from "@/hooks/useMarkdownRehypePlugins";
 
-interface MarkdownBodyProps {
+export { preloadMarkdownMathRenderer, preloadMarkdownRawHtmlParser } from "@/hooks/useMarkdownRehypePlugins";
+
+let markdownCodeToolsPromise: ReturnType<typeof importMarkdownCodeTools> | null = null;
+
+function importMarkdownCodeTools() {
+  return import("./MermaidBlock");
+}
+
+function loadMarkdownCodeTools() {
+  markdownCodeToolsPromise ??= importMarkdownCodeTools();
+  return markdownCodeToolsPromise;
+}
+
+const LazyMermaidBlock = lazy(() => loadMarkdownCodeTools().then((module) => ({ default: module.MermaidBlock })));
+const LazyCodeBlock = lazy(() => loadMarkdownCodeTools().then((module) => ({ default: module.CodeBlock })));
+
+function CodeBlockFallback({ code, lang }: { code: string; lang: string }) {
+  return (
+    <div className="markdown-code-block">
+      <div className="markdown-code-header">
+        <span className="markdown-code-lang">{lang || "text"}</span>
+      </div>
+      <pre><code>{code}</code></pre>
+    </div>
+  );
+}
+
+export interface MarkdownBodyProps {
   children: string;
   className?: string;
   isStreaming?: boolean;
@@ -17,6 +44,7 @@ interface MarkdownBodyProps {
 
 export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile }: MarkdownBodyProps) {
   const normalizedMarkdown = useMemo(() => normalizeDisplayMath(children), [children]);
+  const rehypePlugins = useMarkdownRehypePlugins(normalizedMarkdown);
   // Stable renderer identities keep stateful blocks mounted across message hover updates.
   const components = useMemo<Components>(() => ({
     code({ className, children, ...props }) {
@@ -25,9 +53,19 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
       const isBlock = className?.includes("language-") || raw.includes("\n");
       if (isBlock) {
         if (lang === "mermaid") {
-          return <MermaidBlock code={raw.replace(/\n$/, "")} isStreaming={isStreaming} />;
+          const code = raw.replace(/\n$/, "");
+          return (
+            <Suspense fallback={<CodeBlockFallback code={code} lang={lang} />}>
+              <LazyMermaidBlock code={code} isStreaming={isStreaming} />
+            </Suspense>
+          );
         }
-        return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} />;
+        const code = raw.replace(/\n$/, "");
+        return (
+          <Suspense fallback={<CodeBlockFallback code={code} lang={lang} />}>
+            <LazyCodeBlock code={code} lang={lang} />
+          </Suspense>
+        );
       }
       return (
         <code
@@ -92,7 +130,7 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
     <div className={["markdown-body", className].filter(Boolean).join(" ")}>
       <ReactMarkdown
         remarkPlugins={markdownRemarkPlugins}
-        rehypePlugins={markdownRehypePlugins}
+        rehypePlugins={rehypePlugins}
         components={components}
       >
         {normalizedMarkdown}

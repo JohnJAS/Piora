@@ -1,13 +1,14 @@
 "use client";
 
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { vs, vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
+import vs from "react-syntax-highlighter/dist/esm/styles/prism/vs";
+import vscDarkPlus from "react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus";
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme } from "@/hooks/useTheme";
 import { parseUnifiedDiff, type DiffFile, type DiffLine, type Hunk } from "@/lib/diff-parse";
 import { DIFF_PROGRESSIVE_THRESHOLD, DIFF_RENDER_BATCH, getDiffRenderWindow, getNextDiffRenderCount } from "@/lib/diff-progressive";
 import { AliIcon } from "./AliIcon";
+import { LazySyntaxHighlighter as SyntaxHighlighter } from "./LazySyntaxHighlighter";
 import styles from "./DiffView.module.css";
 
 export interface DiffViewProps {

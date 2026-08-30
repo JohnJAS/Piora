@@ -1,0 +1,6 @@
+{
+  "id": "rabbit",
+  "displayName": "Rabbit",
+  "description": "A tiny white pixel rabbit with tall pink ears.",
+  "spritesheetPath": "spritesheet.webp"
+}

@@ -2,6 +2,17 @@ export const COMPANION_STORAGE_KEY = "pi-companion-preferences-v1";
 export const COMPANION_SCHEMA_VERSION = 4;
 export const DEFAULT_COMPANION_PET_ID = "pekka-pal.codex-pet";
 export const BUNDLED_COMPANION_PETS_PUBLIC_PATH = "/companion-pets/bundled";
+export const BUNDLED_COMPANION_PET_IDS = Object.freeze([
+  "azure",
+  "corgi-scout",
+  "fox",
+  "patchi",
+  DEFAULT_COMPANION_PET_ID,
+  "penguin",
+  "professor-hoot",
+  "rabbit",
+  "shadow-kit",
+] as const);
 export const MAX_COMPANION_TODOS = 100;
 export const MAX_COMPANION_PHRASES = 24;
 export const MAX_COMPANION_LIBRARY_ITEMS = 80;

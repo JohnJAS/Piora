@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { RoomMessage } from "@/lib/room-types";
 import { previewUserContent, shouldCollapseUserContent } from "@/lib/collapsible-content";
-import { MarkdownBody } from "./MarkdownBody";
+import { LazyMarkdownBody as MarkdownBody } from "./LazyMarkdownBody";
 import styles from "./RoomWorkspace.module.css";
 
 export function CollapsibleUserContent({ message, cwd, sessionId }: { message: RoomMessage; cwd?: string; sessionId: string }) {

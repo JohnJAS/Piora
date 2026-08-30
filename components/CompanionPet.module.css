@@ -78,6 +78,13 @@
   filter: none;
 }
 
+.builtinPetArt {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: url("/companion-pets/piora-bot.webp") center / contain no-repeat;
+}
+
 .workspace {
   min-height: 0;
   overflow-y: auto;
@@ -86,6 +93,8 @@
 }
 
 .builtinPetMotion {
+  width: 100%;
+  height: 100%;
   display: grid;
   place-items: center;
   transform-origin: 50% 82%;

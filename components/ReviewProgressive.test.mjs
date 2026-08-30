@@ -28,29 +28,32 @@ test("keyboard selection focuses an item after its page renders", () => {
   assert.match(source, /selectAndFocus\(orderedItems\[nextIndex\]\)/);
 });
 
-test("the continuous review stream scrolls independently from commit controls", () => {
-  assert.match(styles, /\.reviewRoot \{[^}]*grid-template-rows: auto auto minmax\(0, 1fr\) auto;[^}]*overflow: hidden;/);
-  assert.match(styles, /\.reviewStream \{[^}]*min-height: 0;[^}]*overflow: auto;/);
+test("the review workbench keeps navigation, one focused diff, and commit controls independent", () => {
+  assert.match(styles, /\.reviewRoot \{[\s\S]*?grid-template-rows: auto minmax\(0, 1fr\) auto;/);
+  assert.match(styles, /\.reviewWorkbench \{[^}]*grid-template-columns: minmax\(214px, 29%\) minmax\(0, 1fr\);[^}]*overflow: hidden;/);
+  assert.match(styles, /\.reviewNavigator \{[^}]*overflow: hidden;/);
+  assert.match(styles, /\.reviewDiffViewport \{[^}]*overflow: auto;/);
   assert.match(styles, /\.reviewFooter \{[^}]*border-top:/);
   assert.match(styles, /\.commitPanel \{[^}]*display: grid;/);
 });
 
-test("review files start collapsed and expand independently", () => {
-  assert.match(reviewPanel, /const \[expandedKeys, setExpandedKeys\] = useState<Set<string>>\(\(\) => new Set\(\)\)/);
-  assert.match(reviewPanel, /const collapsed = !expandedKeys\.has\(item\.key\)/);
-  assert.match(reviewPanel, /setExpandedKeys\(\(current\) => toggleSet\(current, item\.key\)\)/);
-  assert.match(reviewPanel, /setExpandedKeys\(\(current\) => new Set\(current\)\.add\(nextItem\.key\)\)/);
-  assert.match(reviewPanel, /filteredItems\.filter\(\(item\) => expandedKeys\.has\(item\.key\)/);
-  assert.doesNotMatch(reviewPanel, /collapsedKeys/);
+test("review loads and renders only the selected file diff", () => {
+  assert.match(reviewPanel, /const selectedDiff = selectedItem \? diffs\[selectedItem\.key\] : undefined/);
+  assert.match(reviewPanel, /<main className=\{styles\.reviewDetail\}/);
+  assert.match(reviewPanel, /<DiffView patch=\{selectedDiff\.patch\}/);
+  assert.match(reviewPanel, /selectRelativeFile\(-1\)/);
+  assert.match(reviewPanel, /selectRelativeFile\(1\)/);
+  assert.doesNotMatch(reviewPanel, /expandedKeys|collapsedKeys/);
 });
 
-test("review renders every filtered file directly without a duplicate overview", () => {
-  assert.match(reviewPanel, /filteredItems\.map\(\(item\) =>/);
-  assert.doesNotMatch(reviewPanel, /reviewOverview|FileIndexRow|visibleCount|loadMoreFiles/);
+test("review uses one virtualized file navigator without a duplicate overview", () => {
+  assert.match(reviewPanel, /<aside className=\{styles\.reviewNavigator\}/);
+  assert.match(reviewPanel, /<ChangeList/);
+  assert.doesNotMatch(reviewPanel, /reviewOverview|FileIndexRow|visibleCount|loadMoreFiles|filteredItems\.map/);
 });
 
 test("long review diffs use a visible Codex-style scrollbar", () => {
-  assert.match(styles, /\.reviewStream::\-webkit-scrollbar \{ width: 10px; height: 10px;/);
+  assert.match(styles, /\.reviewDiffViewport::-webkit-scrollbar \{ width: 10px; height: 10px;/);
   assert.match(styles, /scrollbar-color:/);
   assert.match(styles, /background-clip: padding-box/);
 });

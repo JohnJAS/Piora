@@ -1,9 +1,9 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { getLocalePlugin, getSupportedLocales, resolveBrowserLocale } from "@/lib/i18n/registry";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { translateMessage } from "@/lib/i18n/format";
 import type { Locale, LocalePlugin, TranslationParams } from "@/lib/i18n/types";
+import { zhCNLocale } from "@/lib/i18n/messages/zh-CN";
 
 const LOCALE_STORAGE_KEY = "pi-locale";
 const defaultLocale: Locale = "zh-CN";
@@ -12,16 +12,34 @@ interface I18nContextValue {
   locale: Locale;
   setLocale: (locale: Locale) => void;
   t: (key: string, params?: TranslationParams) => string;
-  supportedLocales: LocalePlugin[];
+  supportedLocales: Array<Pick<LocalePlugin, "id" | "label">>;
 }
 
 const I18nContext = createContext<I18nContextValue | null>(null);
+const supportedLocales: I18nContextValue["supportedLocales"] = [
+  { id: "en", label: "English" },
+  { id: "zh-CN", label: "简体中文" },
+];
+let englishLocalePromise: Promise<LocalePlugin> | null = null;
 
-function getMessages(): Record<string, Record<string, string>> {
-  return Object.fromEntries(getSupportedLocales().flatMap((id) => {
-    const plugin = getLocalePlugin(id);
-    return plugin ? [[id, plugin.messages]] : [];
-  }));
+function loadEnglishLocale(): Promise<LocalePlugin> {
+  if (!englishLocalePromise) {
+    const pending = import("@/lib/i18n/messages/en").then((module) => module.enLocale);
+    englishLocalePromise = pending;
+    void pending.catch(() => {
+      if (englishLocalePromise === pending) englishLocalePromise = null;
+    });
+  }
+  return englishLocalePromise;
+}
+
+function resolveBrowserLocale(languages: readonly string[]): Locale {
+  for (const language of languages) {
+    const normalized = language.toLowerCase();
+    if (normalized === "en" || normalized.startsWith("en-")) return "en";
+    if (normalized === "zh" || normalized.startsWith("zh-")) return "zh-CN";
+  }
+  return "en";
 }
 
 function readInitialLocale(): Locale {
@@ -42,32 +60,65 @@ function readInitialLocale(): Locale {
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(defaultLocale);
   const [hydrated, setHydrated] = useState(false);
-  const supportedLocales = useMemo(
-    () => getSupportedLocales().map((id) => getLocalePlugin(id)).filter((plugin): plugin is LocalePlugin => Boolean(plugin)),
-    [],
-  );
-  const messages = useMemo(() => getMessages(), []);
+  const [messages, setMessages] = useState<Record<string, Record<string, string>>>(() => ({
+    "zh-CN": zhCNLocale.messages,
+  }));
+  const localeRequestRef = useRef(0);
 
   useEffect(() => {
     const next = readInitialLocale();
-    setLocaleState(next);
-    document.documentElement.lang = next;
-    setHydrated(true);
+    const requestId = ++localeRequestRef.current;
+    let cancelled = false;
+    const hydrateLocale = async () => {
+      try {
+        if (next === "en") {
+          const plugin = await loadEnglishLocale();
+          if (cancelled || localeRequestRef.current !== requestId) return;
+          setMessages((current) => current.en ? current : { ...current, en: plugin.messages });
+        }
+      } catch {
+        if (!cancelled && localeRequestRef.current === requestId) {
+          document.documentElement.lang = defaultLocale;
+          setHydrated(true);
+        }
+        return;
+      }
+      if (cancelled || localeRequestRef.current !== requestId) return;
+      setLocaleState(next);
+      document.documentElement.lang = next;
+      setHydrated(true);
+    };
+    void hydrateLocale();
+    return () => { cancelled = true; };
   }, []);
 
   const setLocale = useCallback((next: Locale) => {
-    if (!getLocalePlugin(next)) return;
-    setLocaleState(next);
-    document.documentElement.lang = next;
-    try {
-      window.localStorage.setItem(LOCALE_STORAGE_KEY, next);
-    } catch {
-      // 存储失败不影响当前页面内的语言切换。
-    }
+    if (next !== "en" && next !== "zh-CN") return;
+    const requestId = ++localeRequestRef.current;
+    const applyLocale = async () => {
+      try {
+        if (next === "en") {
+          const plugin = await loadEnglishLocale();
+          if (localeRequestRef.current !== requestId) return;
+          setMessages((current) => current.en ? current : { ...current, en: plugin.messages });
+        }
+      } catch {
+        return;
+      }
+      if (localeRequestRef.current !== requestId) return;
+      setLocaleState(next);
+      document.documentElement.lang = next;
+      try {
+        window.localStorage.setItem(LOCALE_STORAGE_KEY, next);
+      } catch {
+        // 存储失败不影响当前页面内的语言切换。
+      }
+    };
+    void applyLocale();
   }, []);
 
   const t = useCallback((key: string, params?: TranslationParams) => translateMessage(locale, key, messages, params), [locale, messages]);
-  const value = useMemo(() => ({ locale: hydrated ? locale : defaultLocale, setLocale, t, supportedLocales }), [hydrated, locale, setLocale, t, supportedLocales]);
+  const value = useMemo(() => ({ locale: hydrated ? locale : defaultLocale, setLocale, t, supportedLocales }), [hydrated, locale, setLocale, t]);
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }

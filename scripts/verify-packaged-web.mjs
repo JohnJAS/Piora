@@ -31,8 +31,19 @@ const backgroundAssetRoot = "themes/dream-backgrounds";
 const backgroundManifestName = "manifest.json";
 const expectedBackgroundCount = 20;
 const safeBackgroundAsset = /^\/themes\/dream-backgrounds\/[A-Za-z0-9][A-Za-z0-9._-]*\.webp$/;
-const bundledPetRelativeRoot = "companion-pets/bundled/pekka-pal.codex-pet";
-const bundledPetId = "pekka-pal.codex-pet";
+const bundledPetRelativeRoot = "companion-pets/bundled";
+const generatedBuiltinPetAsset = "companion-pets/piora-bot.webp";
+const expectedBundledPetIds = Object.freeze([
+  "azure",
+  "corgi-scout",
+  "fox",
+  "patchi",
+  "pekka-pal.codex-pet",
+  "penguin",
+  "professor-hoot",
+  "rabbit",
+  "shadow-kit",
+]);
 const packagedRuntimeArchive = join(packagedWebRoot, "runtime.asar");
 let activeServerStderr = "";
 
@@ -184,36 +195,85 @@ export async function verifyPackagedCompanionAssets(
   const sourcePublicRoot = resolve(sourcePublicRootInput);
   const sourcePetRoot = join(sourcePublicRoot, bundledPetRelativeRoot);
   const packagedPetRoot = join(webRoot, "public", bundledPetRelativeRoot);
+  const sourceBuiltinArt = join(sourcePublicRoot, generatedBuiltinPetAsset);
+  const packagedBuiltinArt = join(webRoot, "public", generatedBuiltinPetAsset);
 
-  for (const fileName of ["pet.json", "spritesheet.webp"]) {
-    const sourcePath = join(sourcePetRoot, fileName);
-    const packagedPath = join(packagedPetRoot, fileName);
-    await assertRegularFile(sourcePath, `Source bundled pet ${fileName}`);
-    await assertRegularFile(packagedPath, `Packaged bundled pet ${fileName}`);
-    const [sourceBytes, packagedBytes] = await Promise.all([
-      readFile(sourcePath),
-      readFile(packagedPath),
-    ]);
-    if (!sourceBytes.equals(packagedBytes)) {
-      throw new Error(`Packaged bundled pet asset differs from source: ${fileName}`);
-    }
+  await assertRegularFile(sourceBuiltinArt, "Source built-in companion artwork");
+  await assertRegularFile(packagedBuiltinArt, "Packaged built-in companion artwork");
+  const [sourceBuiltinBytes, packagedBuiltinBytes] = await Promise.all([
+    readFile(sourceBuiltinArt),
+    readFile(packagedBuiltinArt),
+  ]);
+  if (!sourceBuiltinBytes.equals(packagedBuiltinBytes)) {
+    throw new Error("Packaged built-in companion artwork differs from source");
   }
 
-  const manifest = JSON.parse(await readFile(join(sourcePetRoot, "pet.json"), "utf8"));
-  if (
-    manifest?.id !== bundledPetId
-    || manifest?.spritesheetPath !== "spritesheet.webp"
-    || manifest?.frame?.width !== 192
-    || manifest?.frame?.height !== 208
-    || manifest?.frame?.columns !== 8
-    || manifest?.frame?.rows !== 11
-  ) {
-    throw new Error("Bundled companion manifest does not match the reviewed default pet geometry");
+  const [sourceEntries, packagedEntries] = await Promise.all([
+    readdir(sourcePetRoot, { withFileTypes: true }),
+    readdir(packagedPetRoot, { withFileTypes: true }),
+  ]);
+  for (const entry of [...sourceEntries, ...packagedEntries]) {
+    if (entry.isSymbolicLink()) {
+      throw new Error(`Bundled companion directory must not contain symlinks: ${entry.name}`);
+    }
+  }
+  const sourcePetIds = sourceEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+  const packagedPetIds = packagedEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
+  const expectedIds = [...expectedBundledPetIds].sort();
+  if (JSON.stringify(sourcePetIds) !== JSON.stringify(expectedIds)) {
+    throw new Error(`Source bundled companion set must contain exactly ${expectedIds.length} reviewed pets`);
+  }
+  if (JSON.stringify(packagedPetIds) !== JSON.stringify(expectedIds)) {
+    throw new Error("Packaged bundled companion set differs from the reviewed source set");
+  }
+
+  let spritesheetBytes = 0;
+  for (const petId of expectedIds) {
+    const sourceManifestPath = join(sourcePetRoot, petId, "pet.json");
+    const packagedManifestPath = join(packagedPetRoot, petId, "pet.json");
+    await assertRegularFile(sourceManifestPath, `Source bundled pet manifest (${petId})`);
+    await assertRegularFile(packagedManifestPath, `Packaged bundled pet manifest (${petId})`);
+    const [sourceManifestBytes, packagedManifestBytes] = await Promise.all([
+      readFile(sourceManifestPath),
+      readFile(packagedManifestPath),
+    ]);
+    if (!sourceManifestBytes.equals(packagedManifestBytes)) {
+      throw new Error(`Packaged bundled pet manifest differs from source: ${petId}`);
+    }
+
+    let manifest;
+    try {
+      manifest = JSON.parse(sourceManifestBytes.toString("utf8"));
+    } catch (error) {
+      throw new Error(`Source bundled pet manifest is not valid JSON: ${petId}`, { cause: error });
+    }
+    if (
+      manifest?.id !== petId
+      || typeof manifest?.spritesheetPath !== "string"
+      || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:png|webp)$/i.test(manifest.spritesheetPath)
+    ) {
+      throw new Error(`Bundled companion manifest is not safe or does not match its folder: ${petId}`);
+    }
+
+    const sourceSpritesheetPath = join(sourcePetRoot, petId, manifest.spritesheetPath);
+    const packagedSpritesheetPath = join(packagedPetRoot, petId, manifest.spritesheetPath);
+    await assertRegularFile(sourceSpritesheetPath, `Source bundled pet spritesheet (${petId})`);
+    await assertRegularFile(packagedSpritesheetPath, `Packaged bundled pet spritesheet (${petId})`);
+    const [sourceSpritesheetBytes, packagedSpritesheetBytes] = await Promise.all([
+      readFile(sourceSpritesheetPath),
+      readFile(packagedSpritesheetPath),
+    ]);
+    if (!sourceSpritesheetBytes.equals(packagedSpritesheetBytes)) {
+      throw new Error(`Packaged bundled pet asset differs from source: ${petId}`);
+    }
+    spritesheetBytes += packagedSpritesheetBytes.length;
   }
 
   return {
-    id: bundledPetId,
-    spritesheetBytes: (await stat(join(packagedPetRoot, "spritesheet.webp"))).size,
+    ids: expectedIds,
+    petCount: expectedIds.length + 1,
+    spritesheetBytes,
+    builtInArtBytes: packagedBuiltinBytes.length,
   };
 }
 

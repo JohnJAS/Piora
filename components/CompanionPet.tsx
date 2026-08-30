@@ -83,15 +83,7 @@ export function BuiltinPet({ status }: { status: CompanionActivity["status"] }) 
   return (
     <div className={styles.builtinPet} data-status={status} aria-hidden="true">
       <div className={styles.builtinPetMotion}>
-        <svg width="65" height="70" viewBox="0 0 72 76" fill="none">
-          <path d="M19 24 13 10l15 8M53 24l6-14-15 8" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-          <rect x="9" y="18" width="54" height="47" rx="23" fill="color-mix(in srgb, currentColor 13%, var(--bg))" stroke="currentColor" strokeWidth="3" />
-          <circle cx="27" cy="39" r="3.5" fill="currentColor" />
-          <circle cx="45" cy="39" r="3.5" fill="currentColor" />
-          <path d={status === "failed" ? "m30 53 6-4 6 4" : status === "idle" ? "M30 50c3.5 4 8.5 4 12 0" : "M29 49c4 5 10 5 14 0"} stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-          <path d="M36 18V9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-          <circle cx="36" cy="6" r="3" fill="currentColor" />
-        </svg>
+        <span className={styles.builtinPetArt} />
       </div>
     </div>
   );

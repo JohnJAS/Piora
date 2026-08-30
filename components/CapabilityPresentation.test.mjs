@@ -25,6 +25,6 @@ test("plugin package resources use cards instead of a modal backdrop", () => {
 
 test("pet rows render real sprite previews", () => {
   assert.match(companions, /function PetPreview/);
-  assert.match(companions, /backgroundPosition/);
+  assert.match(companions, /<SpritePet pet=\{pet\} status="idle"/);
   assert.equal((companions.match(/<PetPreview pet=\{pet\}/g) ?? []).length, 2);
 });

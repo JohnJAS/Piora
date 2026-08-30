@@ -2,7 +2,7 @@
 
 import { memo, useState, useRef, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
-import { MarkdownBody } from "./MarkdownBody";
+import { LazyMarkdownBody as MarkdownBody } from "./LazyMarkdownBody";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { parseCompactionSummary } from "@/lib/compaction-summary";

@@ -6,13 +6,11 @@ import { useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { SessionSidebar, type SessionSidebarHandle } from "./SessionSidebar";
 import { ChatWindow, type TaskControls } from "./ChatWindow";
-import { RoomWorkspace } from "./RoomWorkspace";
 import { NewSessionProjectPicker } from "./NewSessionProjectPicker";
 import type { NewSessionInitialPrompt, NewSessionLaunch } from "./new-session-types";
 import type { Tab } from "./TabBar";
-import { RightPanel, type RightPanelHandle, type RightPanelTab } from "./workspace/RightPanel";
+import type { RightPanelHandle, RightPanelTab } from "./workspace/RightPanel";
 import type { SettingsKey } from "./SettingsDialog";
-import { CompanionPet } from "./CompanionPet";
 import { isDarkTheme, useTheme, type Theme, type ThemePreset } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -27,7 +25,6 @@ import { useCompanionPets } from "@/hooks/useCompanionPets";
 import { useCompanionPreferences } from "@/hooks/useCompanionPreferences";
 import { useCompanionWorkRhythm } from "@/hooks/useCompanionWorkRhythm";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { SystemPromptEditor } from "./SystemPromptEditor";
 import { copyText } from "@/lib/clipboard";
 import { getFileName } from "@/lib/file-paths";
 import { resolveWorkspaceFilePath } from "@/lib/file-links";
@@ -104,6 +101,10 @@ const SYSTEM_PROMPT_MENU_WIDTH = 480;
 // Keeping them out of the startup chunk avoids parsing their large management
 // surfaces while the desktop splash is still visible.
 const SettingsDialog = dynamic(() => import("./SettingsDialog").then((module) => module.SettingsDialog), { ssr: false });
+const RoomWorkspace = dynamic(() => import("./RoomWorkspace").then((module) => module.RoomWorkspace), { ssr: false });
+const RightPanel = dynamic(() => import("./workspace/RightPanel").then((module) => module.RightPanel), { ssr: false });
+const SystemPromptEditor = dynamic(() => import("./SystemPromptEditor").then((module) => module.SystemPromptEditor), { ssr: false });
+const CompanionPet = dynamic(() => import("./CompanionPet").then((module) => module.CompanionPet), { ssr: false });
 const ModelsConfig = dynamic(() => import("./ModelsConfig").then((module) => module.ModelsConfig), { ssr: false });
 const SkillsConfig = dynamic(() => import("./SkillsConfig").then((module) => module.SkillsConfig), { ssr: false });
 const PluginsConfig = dynamic(() => import("./PluginsConfig").then((module) => module.PluginsConfig), { ssr: false });
@@ -2571,8 +2572,8 @@ export function AppShell() {
             </div>
             {settingsPage}
             </div>
-            <CompanionPet
-              open={companionOpen && !desktopChrome && !settingsDialogOpen}
+            {companionOpen && !desktopChrome && !settingsDialogOpen ? <CompanionPet
+              open
               onOpenChange={setCompanionOpen}
               activity={companionActivity}
               canSendPhrase={canSendCompanionPhrase(companionActivity.status, showChat)}
@@ -2581,7 +2582,7 @@ export function AppShell() {
               setPreferences={setCompanionPreferences}
               activePet={activeCompanionPet}
               onRequestSpeech={companionPreferences.interactionModel ? requestCompanionInteraction : undefined}
-            />
+            /> : null}
           </div>
         </div>
       </div>
@@ -2616,7 +2617,7 @@ export function AppShell() {
           background: "var(--bg)",
         } as React.CSSProperties}
       >
-        <RightPanel
+        {rightPanelOpen ? <RightPanel
           ref={rightPanelRef}
           activeTab={rightPanelTab}
           onActiveTabChange={setRightPanelTab}
@@ -2648,7 +2649,7 @@ export function AppShell() {
           onSelectAutomation={openAutomation}
           onAutomationChanged={() => setSessionKey((key) => key + 1)}
           capabilities={sessionCapabilities}
-        />
+        /> : null}
       </div>
     {/* File panel toggle — always visible at top-right */}
     </div>

@@ -9,11 +9,10 @@ import {
   type CompanionPetSource,
 } from "@/hooks/useCompanionPets";
 import type { CompanionPet, CompanionPetSourceKind, CompanionPetsResponse } from "@/lib/companion-pets";
-import { getCompanionAtlasFramePosition } from "@/lib/companion";
-import type { CompanionPreferences } from "@/lib/companion-store";
+import { BUNDLED_COMPANION_PET_IDS, type CompanionPreferences } from "@/lib/companion-store";
 import type { ModelsData } from "@/lib/models-cache";
 import { AliIcon } from "./AliIcon";
-import { BuiltinPet } from "./CompanionPet";
+import { BuiltinPet, SpritePet } from "./CompanionPet";
 import { CompanionDataManager } from "./CompanionDataManager";
 import styles from "./CompanionSettingsDialog.module.css";
 
@@ -24,6 +23,7 @@ const SOURCE_MESSAGE_KEYS: Record<CompanionPetSourceKind, string> = {
   "piora-bundled": "companion.source.pioraBundled",
   "piora-installed": "companion.source.pioraInstalled",
 };
+const BUNDLED_PET_IDS = new Set<string>(BUNDLED_COMPANION_PET_IDS);
 
 function resolvePetSourceKind(pet: CompanionPetSource): CompanionPetSourceKind {
   if (pet.sourceKind === "piora-bundled") return pet.sourceKind;
@@ -32,26 +32,18 @@ function resolvePetSourceKind(pet: CompanionPetSource): CompanionPetSourceKind {
   return pet.source === "codex" ? "codex-custom" : "piora-installed";
 }
 
-function PetPreview({ pet }: { pet?: CompanionPet }) {
-  if (!pet?.atlasUrl) {
-    return <span className={styles.petPreview} aria-hidden="true"><BuiltinPet status="idle" /></span>;
-  }
-  const idle = pet.states.find((state) => state.id === "idle");
-  const frameIndex = idle?.frameIndices[0] ?? 0;
-  const position = getCompanionAtlasFramePosition(pet.columns, pet.rows, frameIndex);
-  return (
-    <span className={styles.petPreview} aria-hidden="true">
-      <span className={styles.previewFallback}><AliIcon name="robot" size={18} /></span>
-      <span
-        className={styles.previewSprite}
-        style={{
-          backgroundImage: `url(${JSON.stringify(pet.atlasUrl).slice(1, -1)})`,
-          backgroundSize: `${pet.columns * 100}% ${pet.rows * 100}%`,
-          backgroundPosition: `${position.xPercent}% ${position.yPercent}%`,
-        }}
-      />
-    </span>
-  );
+function PetPreview({ pet, large = false }: { pet?: CompanionPet; large?: boolean }) {
+  return <span className={`${styles.petPreview}${large ? ` ${styles.petPreviewLarge}` : ""}`} aria-hidden="true">
+    <span className={styles.petPreviewMotion}>{pet ? <SpritePet pet={pet} status="idle" /> : <BuiltinPet status="idle" />}</span>
+  </span>;
+}
+
+function PetChoice({ pet, selected, name, meta, onSelect }: { pet?: CompanionPet; selected: boolean; name: string; meta: string; onSelect: () => void }) {
+  return <button className={styles.petChoice} type="button" aria-pressed={selected} onClick={onSelect}>
+    <PetPreview pet={pet} />
+    <span className={styles.petChoiceCopy}><b>{name}</b><small>{meta}</small></span>
+    <span className={styles.petChoiceCheck} aria-hidden="true"><AliIcon name={selected ? "check" : "arrowright"} size={12} /></span>
+  </button>;
 }
 
 interface Props {
@@ -115,6 +107,7 @@ export function CompanionSettingsDialog({
   const dialogRef = useRef<HTMLDivElement>(null);
   const [modelsData, setModelsData] = useState<ModelsData | null>(null);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [archiveDragActive, setArchiveDragActive] = useState(false);
   useFocusTrap(dialogRef, open && !embedded, { onEscape: onClose });
 
   useEffect(() => {
@@ -140,7 +133,21 @@ export function CompanionSettingsDialog({
     return () => controller.abort();
   }, [cwd, open]);
 
+  const importArchive = (file: File) => {
+    setArchiveDragActive(false);
+    void onImportArchive(file).then((imported) => {
+      if (imported) onSelectPet(imported.id);
+    });
+  };
+
   if (!open || (!embedded && !portalTarget)) return null;
+
+  const installedPets = catalog?.installed ?? [];
+  const bundledPets = installedPets.filter((pet) => pet.sourceKind === "piora-bundled" || BUNDLED_PET_IDS.has(pet.id));
+  const personalPets = installedPets.filter((pet) => pet.sourceKind !== "piora-bundled" && !BUNDLED_PET_IDS.has(pet.id));
+  const selectedPet = installedPets.find((pet) => pet.id === selectedPetId);
+  const selectedName = selectedPet?.displayName ?? t("companion.builtinPet");
+  const selectedDescription = selectedPet?.description ?? t("companion.builtinPetDescription");
 
   const content = (
     <div
@@ -168,9 +175,7 @@ export function CompanionSettingsDialog({
             const file = event.target.files?.[0];
             event.target.value = "";
             if (!file) return;
-            void onImportArchive(file).then((imported) => {
-              if (imported) onSelectPet(imported.id);
-            });
+            importArchive(file);
           }}
         />
         <header className={styles.header}>
@@ -338,137 +343,77 @@ export function CompanionSettingsDialog({
             </ol>
           </details>
 
-          <section className={styles.section} aria-labelledby="companion-import-zip-title">
-            <div className={styles.importCard} style={{ marginBottom: 9 }}>
-              <span className={styles.importIcon} aria-hidden="true"><AliIcon name="link" size={17} /></span>
-              <div className={styles.copy}>
-                <div className={styles.label}>{t("companion.openSourceCatalog")}</div>
-                <div className={styles.description}>{t("companion.openSourceCatalogDescription")}</div>
-                <div className={styles.archiveHint}>{t("companion.openSourceCatalogLicense")}</div>
-              </div>
-              <a
-                className={styles.primaryButton}
-                data-open-pet-runtime
-                href="https://github.com/alterhq/openpets"
-                target="_blank"
-                rel="noreferrer noopener"
-              >
-                {t("companion.browseCatalog")}
-              </a>
-            </div>
-            <div className={styles.importCard}>
-              <span className={styles.importIcon} aria-hidden="true"><AliIcon name="import" size={17} /></span>
-              <div className={styles.copy}>
-                <div className={styles.label} id="companion-import-zip-title">{t("companion.importZip")}</div>
-                <div className={styles.description}>{t("companion.importZipDescription")}</div>
-                <div className={styles.archiveHint}>{t("companion.importZipHint")}</div>
-              </div>
-              <button
-                className={styles.primaryButton}
-                type="button"
-                disabled={importingArchive || importingPetKey !== null}
-                onClick={() => archiveInputRef.current?.click()}
-              >
-                {importingArchive ? t("companion.importing") : t("companion.chooseZip")}
-              </button>
-            </div>
-          </section>
-
-          <section className={styles.section} aria-labelledby="companion-installed-pets-title">
+          <section className={`${styles.section} ${styles.petStudio}`} aria-labelledby="companion-installed-pets-title">
             <div className={styles.sectionHeader}>
               <div>
                 <div className={styles.sectionTitle} id="companion-installed-pets-title">{t("companion.petAppearance")}</div>
                 <div className={styles.sectionDescription}>{t("companion.petAppearanceDescription")}</div>
               </div>
+              <span className={styles.bundledCount}>{t("companion.bundledCount", { count: bundledPets.length + 1 })}</span>
             </div>
-            <ul className={styles.petList}>
-              <li className={styles.petRow}>
-                <PetPreview />
-                <div className={styles.copy}>
-                  <div className={styles.petName}>{t("companion.builtinPet")}</div>
-                  <div className={styles.petMeta}>{t("companion.builtinPetDescription")}</div>
-                </div>
-                <button
-                  className={`${styles.selectButton}${selectedPetId === "builtin" ? ` ${styles.selected}` : ""}`}
-                  type="button"
-                  disabled={selectedPetId === "builtin"}
-                  onClick={() => onSelectPet("builtin")}
-                >
-                  {selectedPetId === "builtin" ? t("companion.selected") : t("companion.select")}
-                </button>
-              </li>
-              {catalog?.installed.map((pet) => {
-                const sourcedPet = pet as CompanionPetSource;
-                const sourceLabel = t(SOURCE_MESSAGE_KEYS[resolvePetSourceKind(sourcedPet)]);
-                const selected = selectedPetId === pet.id;
-                return (
-                  <li className={styles.petRow} key={`installed:${getCompanionPetSourceKey(sourcedPet)}`}>
-                    <PetPreview pet={pet} />
-                    <div className={styles.copy}>
-                      <div className={styles.petName}>{pet.displayName}</div>
-                      <div className={styles.petMeta}>
-                        {sourceLabel} · {t("companion.codexCompatibleVersion", { version: pet.spriteVersionNumber })}{pet.author ? ` · ${pet.author}` : ""}
-                      </div>
-                    </div>
-                    <button
-                      className={`${styles.selectButton}${selected ? ` ${styles.selected}` : ""}`}
-                      type="button"
-                      disabled={selected}
-                      onClick={() => onSelectPet(pet.id)}
-                    >
-                      {selected ? t("companion.selected") : t("companion.select")}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className={styles.petStage}>
+              <PetPreview pet={selectedPet} large />
+              <div className={styles.petStageCopy}>
+                <span><i />{t("companion.livePreview")}</span>
+                <b>{selectedName}</b>
+                <p>{selectedDescription}</p>
+              </div>
+            </div>
+            <div className={styles.petChoiceGrid} role="group" aria-label={t("companion.builtinCollection")}>
+              <PetChoice selected={selectedPetId === "builtin"} name={t("companion.builtinPet")} meta={t("companion.builtinPetDescription")} onSelect={() => onSelectPet("builtin")} />
+              {bundledPets.map((pet) => <PetChoice key={`bundled:${pet.id}`} pet={pet} selected={selectedPetId === pet.id} name={pet.displayName} meta={pet.description ?? t("companion.source.pioraBundled")} onSelect={() => onSelectPet(pet.id)} />)}
+            </div>
+            {personalPets.length ? <>
+              <div className={styles.collectionLabel}>{t("companion.myPets")}</div>
+              <div className={styles.petChoiceGrid} role="group" aria-label={t("companion.myPets")}>
+                {personalPets.map((pet) => <PetChoice key={`installed:${pet.id}`} pet={pet} selected={selectedPetId === pet.id} name={pet.displayName} meta={t(SOURCE_MESSAGE_KEYS[resolvePetSourceKind(pet as CompanionPetSource)])} onSelect={() => onSelectPet(pet.id)} />)}
+              </div>
+            </> : null}
           </section>
 
-          <section className={styles.section} aria-labelledby="companion-local-pets-title">
+          <section className={styles.section} aria-labelledby="companion-import-zip-title">
             <div className={styles.sectionHeader}>
               <div>
-                <div className={styles.sectionTitle} id="companion-local-pets-title">{t("companion.discoveredCodexPets")}</div>
-                <div className={styles.sectionDescription}>{t("companion.localOnly")}</div>
+                <div className={styles.sectionTitle} id="companion-import-zip-title">{t("companion.importZip")}</div>
+                <div className={styles.sectionDescription}>{t("companion.importZipDescription")}</div>
               </div>
-              <button className={styles.secondaryButton} type="button" onClick={onRefresh} disabled={loading}>
-                {t("companion.refresh")}
-              </button>
+            </div>
+            <div
+              className={styles.petDropZone}
+              data-active={archiveDragActive || undefined}
+              data-busy={importingArchive || undefined}
+              onDragEnter={(event) => { event.preventDefault(); setArchiveDragActive(true); }}
+              onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setArchiveDragActive(true); }}
+              onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setArchiveDragActive(false); }}
+              onDrop={(event) => {
+                event.preventDefault();
+                const file = event.dataTransfer.files[0];
+                if (file) importArchive(file);
+                else setArchiveDragActive(false);
+              }}
+            >
+              <span className={styles.dropZoneIcon} aria-hidden="true"><AliIcon name={archiveDragActive ? "download" : "import"} size={20} /></span>
+              <div><b>{archiveDragActive ? t("companion.dropZipActive") : t("companion.dropZip")}</b><span>{t("companion.importZipHint")}</span></div>
+              <button className={styles.primaryButton} type="button" disabled={importingArchive || importingPetKey !== null} onClick={() => archiveInputRef.current?.click()}>{importingArchive ? t("companion.importing") : t("companion.chooseZip")}</button>
+              <a data-open-pet-runtime href="https://github.com/alvinunreal/openpets" target="_blank" rel="noreferrer noopener">{t("companion.browseCatalog")}<AliIcon name="external-link" size={11} /></a>
             </div>
 
-            {loading && !catalog ? <div className={styles.notice}>{t("companion.loadingPets")}</div> : null}
-            {!loading && catalog && catalog.sources.length === 0 ? (
-              <div className={styles.empty}>{catalog.codexSourceAvailable ? t("companion.noCodexPets") : t("companion.codexNotFound")}</div>
-            ) : null}
-            <ul className={styles.petList}>
-              {catalog?.sources.map((pet) => {
-                const sourcedPet = pet as CompanionPetSource;
-                const sourceKey = getCompanionPetSourceKey(sourcedPet);
-                const sourceLabel = t(SOURCE_MESSAGE_KEYS[resolvePetSourceKind(sourcedPet)]);
-                return (
-                  <li className={styles.petRow} key={`source:${sourceKey}`}>
+            {catalog?.sources.length ? <details className={styles.localPetSources}>
+              <summary><span>{t("companion.discoveredCodexPets")}</span><small>{catalog.sources.length}</small><AliIcon name="arrowdown" size={11} /></summary>
+              <div className={styles.localPetToolbar}><span>{t("companion.localOnly")}</span><button type="button" onClick={onRefresh} disabled={loading}>{t("companion.refresh")}</button></div>
+              <ul className={styles.petList}>
+                {catalog.sources.map((pet) => {
+                  const sourcedPet = pet as CompanionPetSource;
+                  const sourceKey = getCompanionPetSourceKey(sourcedPet);
+                  return <li className={styles.petRow} key={`source:${sourceKey}`}>
                     <PetPreview pet={pet} />
-                    <div className={styles.copy}>
-                      <div className={styles.petName}>{pet.displayName}</div>
-                      <div className={styles.petMeta}>
-                        {sourceLabel} · {t("companion.codexCompatibleVersion", { version: pet.spriteVersionNumber })}{pet.description ? ` · ${pet.description}` : ""}
-                      </div>
-                    </div>
-                    <button
-                      className={styles.primaryButton}
-                      type="button"
-                      disabled={importingPetKey !== null}
-                      onClick={() => {
-                        void onImportPet(sourcedPet).then((imported) => {
-                          if (imported) onSelectPet(imported.id);
-                        });
-                      }}
-                    >
-                      {importingPetKey === sourceKey ? t("companion.importing") : t("companion.import")}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+                    <div className={styles.copy}><div className={styles.petName}>{pet.displayName}</div><div className={styles.petMeta}>{t(SOURCE_MESSAGE_KEYS[resolvePetSourceKind(sourcedPet)])} · {t("companion.codexCompatibleVersion", { version: pet.spriteVersionNumber })}</div></div>
+                    <button className={styles.primaryButton} type="button" disabled={importingPetKey !== null} onClick={() => { void onImportPet(sourcedPet).then((imported) => { if (imported) onSelectPet(imported.id); }); }}>{importingPetKey === sourceKey ? t("companion.importing") : t("companion.import")}</button>
+                  </li>;
+                })}
+              </ul>
+            </details> : null}
+            {loading && !catalog ? <div className={styles.notice}>{t("companion.loadingPets")}</div> : null}
             {error ? <div className={styles.error} role="alert">{error}</div> : null}
             {catalog?.diagnostics.map((diagnostic, index) => (
               <div className={styles.diagnostic} key={`${diagnostic.scope}:${diagnostic.id ?? "general"}:${index}`}>{diagnostic.message}</div>

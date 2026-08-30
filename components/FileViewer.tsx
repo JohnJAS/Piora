@@ -11,13 +11,10 @@ import {
   type MouseEvent,
   type UIEvent as ReactUIEvent,
 } from "react";
-import {
-  Prism as SyntaxHighlighter,
-  createElement as renderSyntaxNode,
-  type SyntaxHighlighterProps,
-} from "react-syntax-highlighter";
-import { vs } from "react-syntax-highlighter/dist/cjs/styles/prism";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism";
+import type { SyntaxHighlighterProps } from "react-syntax-highlighter";
+import renderSyntaxNode from "react-syntax-highlighter/dist/esm/create-element";
+import vs from "react-syntax-highlighter/dist/esm/styles/prism/vs";
+import vscDarkPlus from "react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus";
 import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
 import {
@@ -27,13 +24,15 @@ import {
 } from "@/lib/file-types";
 import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
 import { resolveLocalFileHref } from "@/lib/file-links";
-import { markdownPreviewRehypePlugins, markdownPreviewRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
+import { markdownPreviewRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
+import { useMarkdownRehypePlugins } from "@/hooks/useMarkdownRehypePlugins";
 import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import type { GitFileDiffResponse } from "@/lib/git-types";
 import { useI18n } from "@/hooks/useI18n";
 import editorStyles from "./FileEditor.module.css";
 import { AliIcon } from "./AliIcon";
 import { DiffView } from "./DiffView";
+import { LazySyntaxHighlighter as SyntaxHighlighter } from "./LazySyntaxHighlighter";
 
 interface Props {
   filePath: string;
@@ -1163,6 +1162,7 @@ function TextFileViewer({
     () => (data?.language === "markdown" ? normalizeDisplayMath(draftContent) : ""),
     [data?.language, draftContent],
   );
+  const markdownPreviewRehypePluginsWithMath = useMarkdownRehypePlugins(markdownPreview, true);
 
   useEffect(() => {
     const updateSelectedLineRange = () => {
@@ -1522,7 +1522,7 @@ function TextFileViewer({
           >
             <ReactMarkdown
               remarkPlugins={markdownPreviewRemarkPlugins}
-              rehypePlugins={markdownPreviewRehypePlugins}
+              rehypePlugins={markdownPreviewRehypePluginsWithMath}
               components={{
                 code({ className, children, ...props }) {
                   const lang = className?.replace("language-", "").toLowerCase() ?? "";

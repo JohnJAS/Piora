@@ -5,12 +5,12 @@ import { useI18n } from "@/hooks/useI18n";
 import type { GitFileDiffResponse, GitStatusResponse } from "@/lib/git-types";
 import { parseUnifiedDiff, type Hunk } from "@/lib/diff-parse";
 import { buildPatchForHunk } from "@/lib/hunk-patch";
-import { getReviewNavigationIndex, isCommitKeyboardShortcut } from "@/lib/review-keyboard";
+import { isCommitKeyboardShortcut } from "@/lib/review-keyboard";
 import { DiffView } from "../DiffView";
 import { AliIcon } from "../AliIcon";
 import { requestConfirmation } from "../ConfirmDialog";
 import { getFileIcon } from "../FileIcons";
-import type { ChangeGroup, ChangeListItem } from "./ChangeList";
+import { ChangeList, type ChangeGroup, type ChangeListItem } from "./ChangeList";
 import styles from "./WorkspacePanel.module.css";
 
 interface Props {
@@ -44,7 +44,6 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
   const [diffs, setDiffs] = useState<Record<string, GitFileDiffResponse>>({});
   const [loadingDiffs, setLoadingDiffs] = useState<Set<string>>(() => new Set());
   const [loadingContextKeys, setLoadingContextKeys] = useState<Set<string>>(() => new Set());
-  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
   const [reviewedKeys, setReviewedKeys] = useState<Set<string>>(() => new Set());
   const [reviewedStorageRoot, setReviewedStorageRoot] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -62,7 +61,6 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
   const [amend, setAmend] = useState(false);
   const [includeUnstaged, setIncludeUnstaged] = useState(true);
   const commitMessageRef = useRef<HTMLTextAreaElement>(null);
-  const fileRefs = useRef(new Map<string, HTMLElement>());
   const diffsRef = useRef(diffs);
   const loadingDiffsRef = useRef(loadingDiffs);
   const diffGenerationRef = useRef(0);
@@ -75,6 +73,15 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     return items.filter((item) => (scope === "all" || item.group === scope)
       && (!needle || item.file.filePath.toLocaleLowerCase().includes(needle)));
   }, [items, query, scope]);
+  const selectedItem = useMemo(
+    () => filteredItems.find((item) => item.key === activeKey) ?? filteredItems[0] ?? null,
+    [activeKey, filteredItems],
+  );
+  const selectedIndex = selectedItem ? filteredItems.findIndex((item) => item.key === selectedItem.key) : -1;
+  const reviewedCount = useMemo(
+    () => items.reduce((count, item) => count + Number(reviewedKeys.has(item.key)), 0),
+    [items, reviewedKeys],
+  );
   const stagedItems = useMemo(() => items.filter((item) => item.group === "staged"), [items]);
   const worktreeItems = useMemo(() => items.filter((item) => item.group !== "staged"), [items]);
 
@@ -98,10 +105,6 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     };
   }, [cwd]);
 
-  useEffect(() => {
-    setExpandedKeys(new Set());
-  }, [cwd]);
-
   const loadStatus = useCallback(async () => {
     if (!cwd) { setStatus(EMPTY_STATUS); return; }
     setLoading(true); setError(null);
@@ -111,8 +114,6 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       diffGenerationRef.current += 1;
       setStatus(data);
-      const availableKeys = new Set(createItems(data).map((item) => item.key));
-      setExpandedKeys((current) => new Set([...current].filter((key) => availableKeys.has(key))));
       setDiffs({});
       setLoadingDiffs(new Set());
       setLoadingContextKeys(new Set());
@@ -155,9 +156,11 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
 
   useEffect(() => {
     if (!cwd) return;
-    const missing = filteredItems.filter((item) => expandedKeys.has(item.key)
-      && !diffsRef.current[item.key]
-      && !loadingDiffsRef.current.has(item.key));
+    const missing = selectedItem
+      && !diffsRef.current[selectedItem.key]
+      && !loadingDiffsRef.current.has(selectedItem.key)
+      ? [selectedItem]
+      : [];
     if (missing.length === 0) return;
     const generation = diffGenerationRef.current;
     setLoadingDiffs((current) => new Set([...current, ...missing.map((item) => item.key)]));
@@ -173,7 +176,7 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
         setLoadingDiffs((current) => { const next = new Set(current); next.delete(item.key); return next; });
       }
     }));
-  }, [cwd, expandedKeys, filteredItems]);
+  }, [cwd, selectedItem]);
 
   const expandContext = useCallback(async (item: ChangeListItem) => {
     if (!cwd || loadingContextKeys.has(item.key)) return;
@@ -193,28 +196,6 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
       setLoadingContextKeys((current) => { const next = new Set(current); next.delete(item.key); return next; });
     }
   }, [cwd, loadingContextKeys]);
-
-  useEffect(() => {
-    const onShortcut = (event: KeyboardEvent) => {
-      if (!event.altKey || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
-      const index = Math.max(0, filteredItems.findIndex((item) => item.key === activeKey));
-      const nextIndex = getReviewNavigationIndex(index, event.key, filteredItems.length);
-      if (nextIndex === null) return;
-      event.preventDefault();
-      const nextItem = filteredItems[nextIndex];
-      setActiveKey(nextItem.key);
-      setExpandedKeys((current) => new Set(current).add(nextItem.key));
-      requestAnimationFrame(() => fileRefs.current.get(nextItem.key)?.scrollIntoView({ block: "start", behavior: "smooth" }));
-    };
-    window.addEventListener("keydown", onShortcut);
-    return () => window.removeEventListener("keydown", onShortcut);
-  }, [activeKey, filteredItems]);
-
-  useEffect(() => {
-    setActiveKey(null);
-  }, [query, scope]);
 
   const mutate = useCallback(async (action: "stage" | "unstage" | "revert", targetItems: ChangeListItem[], options?: { hunk?: Hunk }) => {
     if (!cwd || targetItems.length === 0 || busy) return;
@@ -355,7 +336,7 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
   if (!cwd) return <ReviewEmpty message={t("review.selectProject")} />;
   if (loading && status.files.length === 0) return <ReviewEmpty message={t("review.loading")} loading />;
   if (!status.isGitRepository) return <ReviewEmpty message={error || t("review.notGit")} />;
-  if (items.length === 0) return <div className={styles.reviewRoot}><ReviewTopBar status={status} mode={mode} setMode={setMode} busy={busy} onRefresh={loadStatus} branches={branchState.branches} currentBranch={branchState.currentBranch} switchingBranch={switchingBranch} onSwitchBranch={switchBranch} commitControl={commitControl} t={t} /><ReviewEmpty message={error || toast || t("review.clean")} /></div>;
+  if (items.length === 0) return <div className={styles.reviewRoot}><ReviewTopBar status={status} mode={mode} setMode={setMode} busy={busy} onRefresh={loadStatus} branches={branchState.branches} currentBranch={branchState.currentBranch} switchingBranch={switchingBranch} onSwitchBranch={switchBranch} commitControl={commitControl} reviewedCount={0} totalCount={0} t={t} /><ReviewEmpty message={error || toast || t("review.clean")} /></div>;
 
   const scopeCounts: Record<ReviewScope, number> = {
     all: items.length,
@@ -363,52 +344,76 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     unstaged: items.filter((item) => item.group === "unstaged").length,
     untracked: items.filter((item) => item.group === "untracked").length,
   };
+  const selectedDiff = selectedItem ? diffs[selectedItem.key] : undefined;
+  const selectRelativeFile = (offset: number) => {
+    const nextItem = filteredItems[selectedIndex + offset];
+    if (nextItem) setActiveKey(nextItem.key);
+  };
 
   return <div className={styles.reviewRoot} aria-busy={busy}>
     <div className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">
       {activeKey ? t("review.selectedChange", { path: items.find((item) => item.key === activeKey)?.file.filePath ?? "" }) : t("review.noSelectedChange")}
     </div>
     <ReviewTopBar status={status} mode={mode} setMode={setMode} busy={busy} onRefresh={loadStatus} branches={branchState.branches} currentBranch={branchState.currentBranch} switchingBranch={switchingBranch} onSwitchBranch={switchBranch} t={t}
-      commitControl={commitControl} onCollapseAll={() => setExpandedKeys(filteredItems.every((item) => expandedKeys.has(item.key)) ? new Set() : new Set(filteredItems.map((item) => item.key)))} />
+      commitControl={commitControl} reviewedCount={reviewedCount} totalCount={items.length} />
 
-    <div className={styles.reviewFilters}>
-      <label className={styles.reviewSearch}>
-        <AliIcon name="search" size={13} />
-        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("review.searchPlaceholder")} aria-label={t("review.searchPlaceholder")} />
-        {query ? <button type="button" onClick={() => setQuery("")} aria-label={t("review.clearSearch")}><AliIcon name="close" size={12} /></button> : null}
-      </label>
-      <div className={styles.scopeTabs} role="group" aria-label={t("review.filterLabel")}>
-        {(["all", "unstaged", "staged", "untracked"] as const).map((value) => <button key={value} type="button" aria-pressed={scope === value} onClick={() => setScope(value)}>{t(`review.filter.${value}`)}<span>{scopeCounts[value]}</span></button>)}
-      </div>
+    <div className={styles.reviewWorkbench}>
+      <aside className={styles.reviewNavigator} aria-label={t("review.changesTree")}>
+        <div className={styles.reviewNavigatorSummary}>
+          <div>
+            <strong>{t("review.filesChanged", { count: items.length })}</strong>
+            <span className={styles.lineStats}><span className={styles.additions}>+{status.additions}</span><span className={styles.deletions}>−{status.deletions}</span></span>
+          </div>
+          <div className={styles.reviewProgressRow}>
+            <span>{t("review.progress", { reviewed: reviewedCount, total: items.length })}</span>
+            <span>{Math.round((reviewedCount / Math.max(1, items.length)) * 100)}%</span>
+          </div>
+          <div className={styles.reviewProgressTrack} aria-hidden="true"><span style={{ width: `${(reviewedCount / Math.max(1, items.length)) * 100}%` }} /></div>
+        </div>
+        <div className={styles.reviewFilters}>
+          <label className={styles.reviewSearch}>
+            <AliIcon name="search" size={13} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("review.searchPlaceholder")} aria-label={t("review.searchPlaceholder")} />
+            {query ? <button type="button" onClick={() => setQuery("")} aria-label={t("review.clearSearch")}><AliIcon name="close" size={12} /></button> : null}
+          </label>
+          <div className={styles.scopeTabs} role="group" aria-label={t("review.filterLabel")}>
+            {(["all", "unstaged", "staged", "untracked"] as const).map((value) => <button key={value} type="button" aria-pressed={scope === value} onClick={() => setScope(value)}>{t(`review.filter.${value}`)}<span>{scopeCounts[value]}</span></button>)}
+          </div>
+        </div>
+        {filteredItems.length ? <ChangeList
+          items={filteredItems}
+          selectedKey={selectedItem?.key ?? null}
+          checkedKeys={reviewedKeys}
+          onSelect={(item) => setActiveKey(item.key)}
+          onToggle={(item) => toggleReviewed(item.key)}
+        /> : <div className={styles.reviewNoResults}>{t("review.noMatches")}</div>}
+      </aside>
+
+      <main className={styles.reviewDetail} role="region" aria-label={t("review.diffRegion")}>
+        {selectedItem ? <>
+          <FileReviewHeader
+            item={selectedItem}
+            reviewed={reviewedKeys.has(selectedItem.key)}
+            busy={busy}
+            onReview={() => toggleReviewed(selectedItem.key)}
+            onOpen={() => onOpenFile(selectedItem.file.filePath)}
+            onStage={() => void mutate(selectedItem.group === "staged" ? "unstage" : "stage", [selectedItem])}
+            onRevert={() => void mutate("revert", [selectedItem])}
+            t={t}
+          />
+          <div className={styles.reviewDiffViewport}>
+            {selectedDiff?.supported && selectedDiff.patch ? <DiffView patch={selectedDiff.patch} filePath={selectedItem.file.filePath} mode={mode} showFileHeader={false} totalLines={selectedDiff.totalLines} contextLoading={loadingContextKeys.has(selectedItem.key)} onExpandContext={() => void expandContext(selectedItem)} onOpenFile={(path) => onOpenFile(path)} hunkActions={(hunk) => <span className={styles.hunkActions} onClick={(event) => event.stopPropagation()}><button type="button" disabled={busy} onClick={() => void mutate(selectedItem.group === "staged" ? "unstage" : "stage", [selectedItem], { hunk })}>{selectedItem.group === "staged" ? t("review.unstageHunk") : t("review.stageHunk")}</button>{selectedItem.group !== "staged" ? <button type="button" className={styles.danger} disabled={busy} onClick={() => void mutate("revert", [selectedItem], { hunk })}>{t("review.revertHunk")}</button> : null}</span>} />
+              : loadingDiffs.has(selectedItem.key) ? <ReviewFileLoading t={t} /> : <ReviewEmpty message={t("review.diffUnavailable")} compact />}
+          </div>
+          <div className={styles.reviewFileFooter}>
+            <button type="button" disabled={selectedIndex <= 0} onClick={() => selectRelativeFile(-1)}><AliIcon name="arrowup" size={12} />{t("review.previousFile")}</button>
+            <span>{t("review.filePosition", { current: selectedIndex + 1, total: filteredItems.length })}</span>
+            <button type="button" className={reviewedKeys.has(selectedItem.key) ? styles.reviewedAction : undefined} aria-pressed={reviewedKeys.has(selectedItem.key)} onClick={() => toggleReviewed(selectedItem.key)}><AliIcon name="check" size={12} />{reviewedKeys.has(selectedItem.key) ? t("review.markUnreviewed") : t("review.markReviewed")}</button>
+            <button type="button" disabled={selectedIndex >= filteredItems.length - 1} onClick={() => selectRelativeFile(1)}>{t("review.nextFile")}<AliIcon name="arrowdown" size={12} /></button>
+          </div>
+        </> : <ReviewEmpty message={t("review.noMatches")} />}
+      </main>
     </div>
-
-    <main className={styles.reviewStream} role="region" aria-label={t("review.diffRegion")}>
-      <div className={styles.reviewFiles}>
-        {filteredItems.length === 0 ? <div className={styles.reviewNoResults}>{t("review.noMatches")}</div> : null}
-        {filteredItems.map((item) => {
-          const itemDiff = diffs[item.key];
-          const collapsed = !expandedKeys.has(item.key);
-          return <section key={item.key} ref={(node) => { if (node) fileRefs.current.set(item.key, node); else fileRefs.current.delete(item.key); }} className={`${styles.reviewFile} ${reviewedKeys.has(item.key) ? styles.reviewedFile : ""}`} data-review-key={item.key}>
-            <FileReviewHeader
-              item={item}
-              collapsed={collapsed}
-              reviewed={reviewedKeys.has(item.key)}
-              busy={busy}
-              onToggle={() => setExpandedKeys((current) => toggleSet(current, item.key))}
-              onReview={() => toggleReviewed(item.key)}
-              onOpen={() => onOpenFile(item.file.filePath)}
-              onStage={() => void mutate(item.group === "staged" ? "unstage" : "stage", [item])}
-              onRevert={() => void mutate("revert", [item])}
-              t={t}
-            />
-            {!collapsed ? <div className={styles.reviewFileBody}>
-              {itemDiff?.supported && itemDiff.patch ? <DiffView patch={itemDiff.patch} filePath={item.file.filePath} mode={mode} showFileHeader={false} totalLines={itemDiff.totalLines} contextLoading={loadingContextKeys.has(item.key)} onExpandContext={() => void expandContext(item)} onOpenFile={(path) => onOpenFile(path)} hunkActions={(hunk) => <span className={styles.hunkActions} onClick={(event) => event.stopPropagation()}><button type="button" disabled={busy} onClick={() => void mutate(item.group === "staged" ? "unstage" : "stage", [item], { hunk })}>{item.group === "staged" ? t("review.unstageHunk") : t("review.stageHunk")}</button>{item.group !== "staged" ? <button type="button" className={styles.danger} disabled={busy} onClick={() => void mutate("revert", [item], { hunk })}>{t("review.revertHunk")}</button> : null}</span>} />
-                : loadingDiffs.has(item.key) ? <ReviewFileLoading t={t} /> : <ReviewEmpty message={t("review.diffUnavailable")} compact />}
-            </div> : null}
-          </section>;
-        })}
-      </div>
-    </main>
 
     <footer className={styles.reviewFooter}>
       <div className={styles.reviewFooterBar}>
@@ -424,18 +429,19 @@ export function ReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
   </div>;
 }
 
-function ReviewTopBar({ status, mode, setMode, busy, onRefresh, onCollapseAll, branches, currentBranch, switchingBranch, onSwitchBranch, commitControl, t }: {
+function ReviewTopBar({ status, mode, setMode, busy, onRefresh, branches, currentBranch, switchingBranch, onSwitchBranch, commitControl, reviewedCount, totalCount, t }: {
   status: GitStatusResponse;
   mode: DiffMode;
   setMode: (mode: DiffMode) => void;
   busy: boolean;
   onRefresh: () => void | Promise<void>;
-  onCollapseAll?: () => void;
   branches: string[];
   currentBranch: string | null;
   switchingBranch: string | null;
   onSwitchBranch: (branch: string) => void | Promise<void>;
   commitControl?: ReactNode;
+  reviewedCount: number;
+  totalCount: number;
   t: ReturnType<typeof useI18n>["t"];
 }) {
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
@@ -472,8 +478,11 @@ function ReviewTopBar({ status, mode, setMode, busy, onRefresh, onCollapseAll, b
       </div> : null}
     </div>
     <div className={styles.reviewToolbarActions}>
-      <button type="button" className={styles.iconAction} aria-pressed={mode === "split"} onClick={() => setMode(mode === "unified" ? "split" : "unified")} title={mode === "unified" ? t("review.splitView") : t("review.unifiedView")} aria-label={mode === "unified" ? t("review.splitView") : t("review.unifiedView")}><AliIcon name="layout" size={14} /></button>
-      {onCollapseAll ? <button type="button" className={styles.iconAction} onClick={onCollapseAll} title={t("review.collapseAll")} aria-label={t("review.collapseAll")}><AliIcon name="collapse" size={14} /></button> : null}
+      {totalCount > 0 ? <span className={styles.reviewToolbarProgress}>{t("review.progress", { reviewed: reviewedCount, total: totalCount })}</span> : null}
+      <div className={styles.reviewViewToggle} role="group" aria-label={t("review.viewMode")}>
+        <button type="button" aria-pressed={mode === "unified"} onClick={() => setMode("unified")}>{t("review.view.unified")}</button>
+        <button type="button" aria-pressed={mode === "split"} onClick={() => setMode("split")}>{t("review.view.split")}</button>
+      </div>
       <button type="button" className={styles.iconAction} onClick={() => void onRefresh()} disabled={busy} title={t("review.refresh")} aria-label={t("review.refresh")}><AliIcon name="reload" size={14} /></button>
       {commitControl}
     </div>
@@ -562,13 +571,13 @@ function CommitControl({
   </div>;
 }
 
-function FileReviewHeader({ item, collapsed, reviewed, busy, onToggle, onReview, onOpen, onStage, onRevert, t }: { item: ChangeListItem; collapsed: boolean; reviewed: boolean; busy: boolean; onToggle: () => void; onReview: () => void; onOpen: () => void; onStage: () => void; onRevert: () => void; t: ReturnType<typeof useI18n>["t"] }) {
+function FileReviewHeader({ item, reviewed, busy, onReview, onOpen, onStage, onRevert, t }: { item: ChangeListItem; reviewed: boolean; busy: boolean; onReview: () => void; onOpen: () => void; onStage: () => void; onRevert: () => void; t: ReturnType<typeof useI18n>["t"] }) {
   const { name, parent } = splitPath(item.file.filePath);
   return <header className={styles.reviewFileHeader}>
     <span className={styles.reviewFileIcon}>{getFileIcon(name, 14)}</span>
-    <button type="button" className={styles.reviewFilePath} onClick={onToggle} title={item.file.filePath} aria-expanded={!collapsed} aria-label={collapsed ? t("review.expandFile") : t("review.collapseFile")}>{parent ? <small>{parent}/</small> : null}<b>{name}</b></button>
+    <div className={styles.reviewFileIdentity} title={item.file.filePath}><b>{name}</b>{parent ? <small>{parent}/</small> : null}</div>
+    <span className={styles.fileGroupBadge} data-group={item.group}>{t(`review.group.${item.group}`)}</span>
     <span className={styles.lineStats}><span className={styles.additions}>+{item.file.additions ?? 0}</span><span className={styles.deletions}>-{item.file.deletions ?? 0}</span></span>
-    <span className={styles.fileStatusMarker} data-group={item.group} role="img" aria-label={t(`review.group.${item.group}`)} title={t(`review.group.${item.group}`)} />
     <div className={styles.fileActions}>
       <button type="button" className={`${styles.reviewCheck} ${reviewed ? styles.reviewCheckDone : ""}`} onClick={onReview} title={reviewed ? t("review.markUnreviewed") : t("review.markReviewed")} aria-label={reviewed ? t("review.markUnreviewed") : t("review.markReviewed")} aria-pressed={reviewed}><AliIcon name="check" size={11} /></button>
       <button type="button" disabled={busy} onClick={onStage} title={item.group === "staged" ? t("review.unstage") : t("review.stage")} aria-label={item.group === "staged" ? t("review.unstage") : t("review.stage")}><AliIcon name={item.group === "staged" ? "minus" : "plus"} size={13} /></button>

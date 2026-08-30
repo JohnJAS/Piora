@@ -108,7 +108,8 @@ export function CompanionPanel() {
   const [modelDraft, setModelDraft] = useState("");
   const [modelSaveStatus, setModelSaveStatus] = useState<"idle" | "dirty" | "saving" | "saved">("idle");
   const [question, setQuestion] = useState("");
-  const [draft, setDraft] = useState("");
+  const [taskDraft, setTaskDraft] = useState("");
+  const [memoryDraft, setMemoryDraft] = useState("");
   const [libraryTitle, setLibraryTitle] = useState("");
   const [libraryContent, setLibraryContent] = useState("");
   const [libraryKind, setLibraryKind] = useState<CompanionLibraryKind>("note");
@@ -198,6 +199,14 @@ export function CompanionPanel() {
     setModelSaveStatus(saved ? "saved" : "dirty");
   }, [modelDraft, mutate]);
 
+  const updatePersonalityDraft = useCallback((personality: string) => {
+    setState((current) => {
+      const next = { ...current, settings: { ...current.settings, personality } };
+      stateRef.current = next;
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     if (state.focusTimer.status !== "running") return;
     const updateClock = () => setClock(Date.now());
@@ -238,7 +247,7 @@ export function CompanionPanel() {
   }, [applyState, clock, notifyCompletion, state.focusTimer, state.todos]);
 
   const ask = async () => {
-    if (!question.trim()) return;
+    if (busy || !question.trim()) return;
     setBusy(true);
     setError("");
     try {
@@ -254,6 +263,43 @@ export function CompanionPanel() {
     finally { setBusy(false); }
   };
 
+  const addTask = async () => {
+    const text = taskDraft.trim();
+    if (busy || !text) return;
+    const now = Date.now();
+    const saved = await mutate((current) => ({
+      ...current,
+      todos: [{ id: createCompanionId("todo"), text, completed: false, progress: 0, createdAt: now, updatedAt: now }, ...current.todos],
+    }));
+    if (saved) setTaskDraft("");
+  };
+
+  const addLibraryItem = async () => {
+    const title = libraryTitle.trim();
+    const content = libraryContent.trim();
+    if (busy || !title || !content) return;
+    const now = Date.now();
+    const saved = await mutate((current) => ({
+      ...current,
+      library: [{ id: createCompanionId("library"), kind: libraryKind, title, content, pinned: false, createdAt: now, updatedAt: now }, ...current.library],
+    }));
+    if (saved) {
+      setLibraryTitle("");
+      setLibraryContent("");
+    }
+  };
+
+  const addMemory = async () => {
+    const text = memoryDraft.trim();
+    if (busy || !text) return;
+    const now = Date.now();
+    const saved = await mutate((current) => ({
+      ...current,
+      memories: [{ id: `memory:${crypto.randomUUID()}`, text, source: "user", createdAt: now, updatedAt: now }, ...current.memories],
+    }));
+    if (saved) setMemoryDraft("");
+  };
+
   const activeTasks = useMemo(() => state.todos.filter((item) => !item.completed), [state.todos]);
   const pendingRecords = useMemo(() => state.taskRecords.filter((item) => item.reviewStatus === "pending"), [state.taskRecords]);
   const confirmedRecords = useMemo(() => state.taskRecords.filter((item) => item.reviewStatus === "confirmed"), [state.taskRecords]);
@@ -261,13 +307,13 @@ export function CompanionPanel() {
   const tabs: Array<[Tab, string]> = [["now", "现在"], ["tasks", "任务"], ["focus", "番茄钟"], ["library", "资料"], ["memory", "记忆"], ["mind", "心智"]];
 
   return (
-    <main className={`${styles.panel} companion-panel-root`}>
+    <main className={`${styles.panel} companion-panel-root`} aria-busy={busy}>
       <header className={styles.header}>
         <div><h1>Piora 随身舱</h1><p>你的桌面伙伴、任务管家与临时资料架</p></div>
         <span className={styles.mood}>{state.mind.mood}</span>
       </header>
       <nav className={styles.tabs} aria-label="随身舱功能">
-        {tabs.map(([id, label]) => <button key={id} data-active={tab === id} onClick={() => setTab(id)}>{label}</button>)}
+        {tabs.map(([id, label]) => <button type="button" key={id} data-active={tab === id} onClick={() => setTab(id)}>{label}</button>)}
       </nav>
       {error ? <div className={styles.error}>{error}</div> : null}
 
@@ -287,7 +333,7 @@ export function CompanionPanel() {
             <b>我看见的事实</b>
             <ul>{state.mind.lastDecision?.observedFacts.length ? state.mind.lastDecision.observedFacts.map((fact) => <li key={fact}>{fact}</li>) : <li>尚无可用的工作上下文</li>}</ul>
           </article>
-          <div className={styles.composer}><input value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void ask(); }} placeholder="问问你的桌宠……" /><button disabled={busy || !question.trim()} onClick={() => void ask()}>发送</button></div>
+          <div className={styles.composer}><input value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void ask(); }} placeholder="问问你的桌宠……" /><button type="button" disabled={busy || !question.trim()} onClick={() => void ask()}>{question.trim() ? "发送" : "请输入问题"}</button></div>
         </> : null}
 
         {tab === "tasks" ? <>
@@ -312,7 +358,7 @@ export function CompanionPanel() {
               </div>
             </article>)}</div>
           </section> : null}
-          <div className={styles.composer}><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="添加一个待办任务" /><button disabled={busy || !draft.trim()} onClick={() => { const now = Date.now(); const text = draft.trim(); setDraft(""); void mutate((current) => ({ ...current, todos: [{ id: createCompanionId("todo"), text, completed: false, progress: 0, createdAt: now, updatedAt: now }, ...current.todos] })); }}>添加</button></div>
+          <div className={styles.composer}><input value={taskDraft} onChange={(event) => setTaskDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void addTask(); }} placeholder="添加一个待办任务" /><button type="button" disabled={busy || !taskDraft.trim()} onClick={() => void addTask()}>{taskDraft.trim() ? "添加" : "请输入任务"}</button></div>
           <div className={styles.list}>{state.todos.map((item) => <article className={styles.row} key={item.id}>
             <button className={styles.check} data-done={item.completed} onClick={() => void mutate((current) => ({ ...current, todos: current.todos.map((todo) => todo.id === item.id ? { ...todo, completed: !todo.completed, progress: !todo.completed ? 100 : 0, updatedAt: Date.now() } : todo) }))}>{item.completed ? "✓" : ""}</button>
             <div><b>{item.text}</b><label>进度 {item.progress}%<input type="range" min="0" max="100" value={item.progress} onChange={(event) => { const progress = Number(event.target.value); void mutate((current) => ({ ...current, todos: current.todos.map((todo) => todo.id === item.id ? { ...todo, progress, completed: progress === 100, updatedAt: Date.now() } : todo) })); }} /></label></div>
@@ -361,14 +407,14 @@ export function CompanionPanel() {
         </> : null}
 
         {tab === "library" ? <>
-          <div className={styles.stack}><div className={styles.inline}><select value={libraryKind} onChange={(event) => setLibraryKind(event.target.value as CompanionLibraryKind)}><option value="note">笔记</option><option value="code">代码</option><option value="command">命令</option></select><input value={libraryTitle} onChange={(event) => setLibraryTitle(event.target.value)} placeholder="标题" /></div><textarea value={libraryContent} onChange={(event) => setLibraryContent(event.target.value)} placeholder="保存一段文字、代码或命令" /><button disabled={busy || !libraryTitle.trim() || !libraryContent.trim()} onClick={() => { const now = Date.now(); const title = libraryTitle.trim(); const content = libraryContent.trim(); setLibraryTitle(""); setLibraryContent(""); void mutate((current) => ({ ...current, library: [{ id: createCompanionId("library"), kind: libraryKind, title, content, pinned: false, createdAt: now, updatedAt: now }, ...current.library] })); }}>保存到资料架</button></div>
+          <div className={styles.stack}><div className={styles.inline}><select value={libraryKind} onChange={(event) => setLibraryKind(event.target.value as CompanionLibraryKind)}><option value="note">笔记</option><option value="code">代码</option><option value="command">命令</option></select><input value={libraryTitle} onChange={(event) => setLibraryTitle(event.target.value)} placeholder="标题" /></div><textarea value={libraryContent} onChange={(event) => setLibraryContent(event.target.value)} placeholder="保存一段文字、代码或命令" /><button type="button" disabled={busy || !libraryTitle.trim() || !libraryContent.trim()} onClick={() => void addLibraryItem()}>{!libraryTitle.trim() ? "请填写标题" : !libraryContent.trim() ? "请填写内容" : "保存到资料架"}</button></div>
           <label className={styles.imageUpload}>保存一张图片<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (!file) return; if (file.size > 1_250_000) { setError("图片不能超过 1.25 MB"); return; } const reader = new FileReader(); reader.onload = () => { if (typeof reader.result !== "string") return; const now = Date.now(); void mutate((current) => ({ ...current, library: [{ id: createCompanionId("library"), kind: "image", title: file.name.slice(0, 120), content: reader.result as string, pinned: false, createdAt: now, updatedAt: now }, ...current.library] })); }; reader.readAsDataURL(file); }} /></label>
           <div className={styles.list}>{state.library.map((item) => <article className={styles.libraryItem} key={item.id}><div><span>{item.kind}</span><b>{item.title}</b></div>{item.kind === "image" ? <span className={styles.libraryImage} role="img" aria-label={item.title} style={{ backgroundImage: `url(${JSON.stringify(item.content)})` }} /> : <pre>{item.content}</pre>}<div className={styles.itemActions}>{item.kind !== "image" ? <button onClick={() => void navigator.clipboard.writeText(item.content)}>复制</button> : null}<button className={styles.danger} onClick={() => void mutate((current) => ({ ...current, library: current.library.filter((entry) => entry.id !== item.id) }))}>删除</button></div></article>)}</div>
         </> : null}
 
         {tab === "memory" ? <>
           <p className={styles.hint}>记忆只保存你明确留下的偏好或事实，可随时删除。</p>
-          <div className={styles.composer}><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="例如：提醒我每 90 分钟休息" /><button disabled={busy || !draft.trim()} onClick={() => { const now = Date.now(); const text = draft.trim(); setDraft(""); void mutate((current) => ({ ...current, memories: [{ id: `memory:${crypto.randomUUID()}`, text, source: "user", createdAt: now, updatedAt: now }, ...current.memories] })); }}>记住</button></div>
+          <div className={styles.composer}><input value={memoryDraft} onChange={(event) => setMemoryDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void addMemory(); }} placeholder="例如：提醒我每 90 分钟休息" /><button type="button" disabled={busy || !memoryDraft.trim()} onClick={() => void addMemory()}>{memoryDraft.trim() ? "记住" : "请输入内容"}</button></div>
           <div className={styles.list}>{state.memories.map((item) => <article className={styles.row} key={item.id}><div><b>{item.text}</b><small>{formatTime(item.updatedAt)}</small></div><button className={styles.danger} onClick={() => void mutate((current) => ({ ...current, memories: current.memories.filter((memory) => memory.id !== item.id) }))}>忘记</button></article>)}</div>
         </> : null}
 
@@ -405,11 +451,11 @@ export function CompanionPanel() {
             </div>
             {modelsError ? <small className={styles.modelError} role="alert">模型列表加载失败：{modelsError}</small> : null}
             <small className={styles.saveStatus} role="status" aria-live="polite">
-              {modelSaveStatus === "saved" ? "模型已保存。" : modelSaveStatus === "dirty" ? "选择已更改，点击保存后生效。" : ""}
+              {modelSaveStatus === "saved" ? "模型已保存。" : modelSaveStatus === "dirty" ? "选择已更改，点击保存后生效。" : "选择不同的模型后，保存按钮会自动启用。"}
             </small>
           </label>
           <label>自主程度<select value={state.settings.autonomyLevel} onChange={(event) => void mutate((current) => ({ ...current, settings: { ...current.settings, autonomyLevel: event.target.value as "quiet" | "balanced" | "active" } }))}><option value="quiet">安静</option><option value="balanced">平衡</option><option value="active">活跃</option></select></label>
-          <label>性格<textarea value={state.settings.personality} onChange={(event) => setState((current) => ({ ...current, settings: { ...current.settings, personality: event.target.value } }))} onBlur={() => void mutate((current) => current)} /></label>
+          <label>性格<textarea value={state.settings.personality} onChange={(event) => updatePersonalityDraft(event.target.value)} onBlur={() => void mutate((current) => current)} /></label>
           <label className={styles.toggle}><input type="checkbox" checked={!state.settings.autonomyPaused} onChange={() => void mutate((current) => ({ ...current, settings: { ...current.settings, autonomyPaused: !current.settings.autonomyPaused } }))} />允许自主观察</label>
           <label className={styles.toggle}><input type="checkbox" checked={state.settings.shareWorkContext} onChange={() => void mutate((current) => ({ ...current, settings: { ...current.settings, shareWorkContext: !current.settings.shareWorkContext } }))} />向互动模型发送汇总后的工作上下文</label>
           <label className={styles.toggle}><input type="checkbox" checked={state.settings.allowProactiveSpeech} onChange={() => void mutate((current) => ({ ...current, settings: { ...current.settings, allowProactiveSpeech: !current.settings.allowProactiveSpeech } }))} />允许任务变化或定时观察时主动说话</label>

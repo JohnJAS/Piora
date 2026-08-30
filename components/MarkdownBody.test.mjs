@@ -9,7 +9,11 @@ const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
 });
-const { MarkdownBody } = await jiti.import("./MarkdownBody.tsx");
+const {
+  MarkdownBody,
+  preloadMarkdownMathRenderer,
+  preloadMarkdownRawHtmlParser,
+} = await jiti.import("./MarkdownBody.tsx");
 const { normalizeDisplayMath } = await jiti.import("../lib/markdown.ts");
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
@@ -48,14 +52,24 @@ test("keeps wide tables on one line inside a horizontal scroller", () => {
   assert.match(globalCss, /\.markdown-body th, \.markdown-body td\s*\{[^}]*white-space:\s*nowrap;/s);
 });
 
-test("renders LaTeX parenthesis delimiters as inline math", () => {
+test("renders safe raw HTML and sanitizes unsafe elements after the parser loads", async () => {
+  await preloadMarkdownRawHtmlParser();
+  const html = renderMarkdown("<strong>safe</strong><script>alert('unsafe')</script>");
+
+  assert.match(html, /<strong>safe<\/strong>/);
+  assert.doesNotMatch(html, /<script|alert\(/);
+});
+
+test("renders LaTeX parenthesis delimiters as inline math", async () => {
+  await preloadMarkdownMathRenderer();
   const html = renderMarkdown(String.raw`射线为 \(r_c = K^{-1}p\)。`);
 
   assert.match(html, /class="katex"/);
   assert.match(html, /r_c/);
 });
 
-test("renders paired LaTeX bracket delimiters as display math", () => {
+test("renders paired LaTeX bracket delimiters as display math", async () => {
+  await preloadMarkdownMathRenderer();
   const html = renderMarkdown(String.raw`\[
 P(\lambda)=o_b+\lambda r_b
 \]`);

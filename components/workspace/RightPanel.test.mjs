@@ -84,7 +84,7 @@ test("review groups changes, supports keyboard navigation, diff rendering, and s
   assert.match(review, /review\.commitAndPush/);
   assert.match(review, /context=all/);
   assert.doesNotMatch(review, /className=\{styles\.fileCollapse\}/);
-  assert.match(review, /className=\{styles\.fileStatusMarker\}/);
+  assert.match(review, /className=\{styles\.fileGroupBadge\}/);
   assert.match(review, /name="external-link"/);
   assert.match(review, /requestConfirmation/);
   assert.doesNotMatch(review, /window\.confirm/);

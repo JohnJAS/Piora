@@ -19,14 +19,14 @@ export interface ChangeListItem {
 interface Props {
   items: ChangeListItem[];
   selectedKey: string | null;
-  checkedPaths: Set<string>;
+  checkedKeys: Set<string>;
   onSelect: (item: ChangeListItem) => void;
-  onToggle: (filePath: string) => void;
+  onToggle: (item: ChangeListItem) => void;
 }
 
 const GROUPS: ChangeGroup[] = ["staged", "unstaged", "untracked"];
 
-export function ChangeList({ items, selectedKey, checkedPaths, onSelect, onToggle }: Props) {
+export function ChangeList({ items, selectedKey, checkedKeys, onSelect, onToggle }: Props) {
   const { t } = useI18n();
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const pendingFocusKey = useRef<string | null>(null);
@@ -111,7 +111,7 @@ export function ChangeList({ items, selectedKey, checkedPaths, onSelect, onToggl
                 selectAndFocus(orderedItems[nextIndex]);
               } else if (event.key === " " || event.key === "Spacebar") {
                 event.preventDefault();
-                onToggle(path);
+                onToggle(item);
               } else if (event.key === "Enter") {
                 event.preventDefault();
                 selectAndFocus(item);
@@ -122,10 +122,10 @@ export function ChangeList({ items, selectedKey, checkedPaths, onSelect, onToggl
             <input
               className={styles.changeCheckbox}
               type="checkbox"
-              checked={checkedPaths.has(path)}
+              checked={checkedKeys.has(item.key)}
               aria-label={t("review.selectFile", { name })}
               onClick={(event) => event.stopPropagation()}
-              onChange={() => onToggle(path)}
+              onChange={() => onToggle(item)}
             />
             <span className={styles.changeName} title={path}>{parentLabel ? <small>{parentLabel}/</small> : null}<b>{name}</b></span>
             <span className={styles.lineStats}>
