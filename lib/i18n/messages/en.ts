@@ -1215,6 +1215,7 @@ export const enLocale: LocalePlugin = {
     "chat.loadingLongMessage": "Loading full content…",
     "chat.longMessageUnavailable": "The complete pasted content is temporarily unavailable",
     "chat.scrollToBottom": "Scroll to latest message",
+    "chat.scrollRail": "Scroll conversation",
     "chat.timeline": "Conversation outline",
     "chat.timelineCount": "{count} prompts",
     "chat.timelineJump": "Jump to prompt {index}: {text}",

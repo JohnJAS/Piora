@@ -1215,6 +1215,7 @@ export const zhCNLocale: LocalePlugin = {
     "chat.loadingLongMessage": "正在载入完整内容…",
     "chat.longMessageUnavailable": "完整的粘贴内容暂时无法读取",
     "chat.scrollToBottom": "滚动到最新消息",
+    "chat.scrollRail": "上下滚动对话",
     "chat.timeline": "会话记录",
     "chat.timelineCount": "{count} 条用户消息",
     "chat.timelineJump": "跳转到第 {index} 条用户消息：{text}",
