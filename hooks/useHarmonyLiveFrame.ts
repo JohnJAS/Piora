@@ -29,6 +29,8 @@ const VIDEO_FRAME = 0x03;
 const H264 = 0;
 const RAW_RGBA = 1;
 const JPEG = 2;
+const STABLE_STREAM_FRAMES = 30;
+const STABLE_STREAM_MS = 5_000;
 
 type StreamConfig = {
   codec: number;
@@ -37,6 +39,14 @@ type StreamConfig = {
   fps: number;
   sps: Uint8Array;
   pps: Uint8Array;
+};
+
+type StreamAttempt = {
+  reader?: ReadableStreamDefaultReader<Uint8Array>;
+  failure?: Error;
+  startedAt: number;
+  decodedFrames: number;
+  jpegChain: Promise<void>;
 };
 
 async function responseError(response: Response): Promise<string> {
@@ -103,6 +113,7 @@ function parseConfig(payload: Uint8Array): StreamConfig {
 }
 
 function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
   return new Promise((resolveDelay) => {
     const timer = window.setTimeout(done, milliseconds);
     const abort = () => done();
@@ -113,6 +124,10 @@ function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
     }
     signal.addEventListener("abort", abort, { once: true });
   });
+}
+
+function reconnectDelay(failures: number): number {
+  return Math.min(8_000, 250 * (2 ** Math.min(Math.max(0, failures - 1), 5)));
 }
 
 export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
@@ -139,29 +154,35 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     let firstKeyframe = false;
     let failures = 0;
     let hasFrame = false;
-    let jpegChain = Promise.resolve();
+    let activeAttempt: StreamAttempt | undefined;
     setFrame(null);
     setStatus("loading");
     setError(null);
     const initialCanvas = options.canvasRef.current;
     initialCanvas?.getContext("2d")?.clearRect(0, 0, initialCanvas.width, initialCanvas.height);
 
-    const publishFrame = (width: number, height: number) => {
+    const publishFrame = (width: number, height: number, attempt: StreamAttempt) => {
       if (disposed) return;
       revision += 1;
+      attempt.decodedFrames += 1;
+      if (attempt.decodedFrames >= STABLE_STREAM_FRAMES || performance.now() - attempt.startedAt >= STABLE_STREAM_MS) {
+        failures = 0;
+      }
+      const nextFrame = { serial: options.serial, generation: options.generation!, revision, width, height };
       if (!hasFrame) {
         hasFrame = true;
-        setFrame({ serial: options.serial, generation: options.generation!, revision, width, height });
+        setFrame(nextFrame);
+      } else {
+        setFrame((current) => current && current.width === width && current.height === height ? current : nextFrame);
       }
       setStatus("live");
       setError(null);
-      failures = 0;
     };
 
-    const drawVideoFrame = (videoFrame: VideoFrame) => {
+    const drawVideoFrame = (videoFrame: VideoFrame, attempt: StreamAttempt) => {
       try {
         const canvas = options.canvasRef.current;
-        if (!canvas || disposed) return;
+        if (!canvas || disposed || activeAttempt !== attempt) return;
         const width = videoFrame.displayWidth || videoFrame.codedWidth;
         const height = videoFrame.displayHeight || videoFrame.codedHeight;
         if (canvas.width !== width || canvas.height !== height) {
@@ -169,13 +190,13 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           canvas.height = height;
         }
         canvas.getContext("2d", { alpha: false })?.drawImage(videoFrame, 0, 0, width, height);
-        publishFrame(width, height);
+        publishFrame(width, height, attempt);
       } finally {
         videoFrame.close();
       }
     };
 
-    const configureDecoder = async (next: StreamConfig) => {
+    const configureDecoder = async (next: StreamConfig, attempt: StreamAttempt) => {
       decoder?.close();
       decoder = undefined;
       firstKeyframe = false;
@@ -189,36 +210,37 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         hardwareAcceleration: "prefer-hardware",
       };
       const support = await VideoDecoder.isConfigSupported(decoderConfig);
+      if (disposed || activeAttempt !== attempt) return;
       if (!support.supported) throw new Error(`H.264 decoder ${decoderConfig.codec} is unavailable`);
       decoder = new VideoDecoder({
-        output: drawVideoFrame,
+        output: (videoFrame) => drawVideoFrame(videoFrame, attempt),
         error: (decodeError) => {
-          if (!disposed) {
-            setStatus("error");
-            setError(decodeError.message || options.fallbackError);
-          }
+          if (disposed || activeAttempt !== attempt) return;
+          const failure = new Error(decodeError.message || options.fallbackError);
+          attempt.failure = failure;
+          void attempt.reader?.cancel(failure).catch(() => undefined);
         },
       });
       decoder.configure(support.config ?? decoderConfig);
     };
 
-    const drawJpeg = async (bytes: Uint8Array, next: StreamConfig) => {
+    const drawJpeg = async (bytes: Uint8Array, next: StreamConfig, attempt: StreamAttempt) => {
       const bitmap = await createImageBitmap(new Blob([bytes.slice().buffer as ArrayBuffer], { type: "image/jpeg" }));
       try {
         const canvas = options.canvasRef.current;
-        if (!canvas || disposed) return;
+        if (!canvas || disposed || activeAttempt !== attempt) return;
         if (canvas.width !== next.width || canvas.height !== next.height) {
           canvas.width = next.width;
           canvas.height = next.height;
         }
         canvas.getContext("2d", { alpha: false })?.drawImage(bitmap, 0, 0, next.width, next.height);
-        publishFrame(next.width, next.height);
+        publishFrame(next.width, next.height, attempt);
       } finally {
         bitmap.close();
       }
     };
 
-    const drawRgba = (bytes: Uint8Array, next: StreamConfig) => {
+    const drawRgba = (bytes: Uint8Array, next: StreamConfig, attempt: StreamAttempt) => {
       if (bytes.length < 8) throw new Error("Harmony RGBA frame is truncated");
       const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
       const width = view.getUint32(0, false);
@@ -227,18 +249,20 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         throw new Error("Harmony RGBA frame dimensions are invalid");
       }
       const canvas = options.canvasRef.current;
-      if (!canvas || disposed) return;
-      canvas.width = width;
-      canvas.height = height;
+      if (!canvas || disposed || activeAttempt !== attempt) return;
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
       const pixels = new Uint8ClampedArray(bytes.slice(8).buffer as ArrayBuffer);
       canvas.getContext("2d", { alpha: false })?.putImageData(new ImageData(pixels, width, height), 0, 0);
-      publishFrame(width, height);
+      publishFrame(width, height, attempt);
     };
 
-    const processPacket = async (type: number, payload: Uint8Array) => {
+    const processPacket = async (type: number, payload: Uint8Array, attempt: StreamAttempt) => {
       if (type === VIDEO_CONFIG) {
         config = parseConfig(payload);
-        await configureDecoder(config);
+        await configureDecoder(config, attempt);
         return;
       }
       if (type !== VIDEO_FRAME || !config || payload.length < 9) return;
@@ -249,52 +273,70 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       if (config.codec === H264) {
         if (!decoder || decoder.state !== "configured") return;
         if (!firstKeyframe && !keyframe) return;
-        if (decoder.decodeQueueSize > 8 && !keyframe) return;
+        if (decoder.decodeQueueSize > 8 && !keyframe) {
+          // Dropping one dependent H.264 delta frame corrupts the reference chain.
+          // Drop the rest of the GOP and recover cleanly from the next keyframe.
+          firstKeyframe = false;
+          return;
+        }
         const chunkData = keyframe ? keyframeData(config, data) : startCodedUnit(data);
         decoder.decode(new EncodedVideoChunk({ type: keyframe ? "key" : "delta", timestamp, data: chunkData }));
         if (keyframe) firstKeyframe = true;
       } else if (config.codec === JPEG) {
-        jpegChain = jpegChain.then(() => drawJpeg(data, config!));
-        await jpegChain;
+        attempt.jpegChain = attempt.jpegChain.then(() => drawJpeg(data, config!, attempt));
+        await attempt.jpegChain;
       } else if (config.codec === RAW_RGBA) {
-        drawRgba(data, config);
+        drawRgba(data, config, attempt);
       } else {
         throw new Error(`Unsupported Harmony video codec ${config.codec}`);
       }
     };
 
-    const consume = async (body: ReadableStream<Uint8Array>) => {
+    const consume = async (body: ReadableStream<Uint8Array>, attempt: StreamAttempt) => {
       const reader = body.getReader();
+      attempt.reader = reader;
       let pending = new Uint8Array();
-      while (!lifecycle.signal.aborted) {
-        const { done, value } = await reader.read();
-        if (done) throw new Error("Harmony video connection closed");
-        if (!value?.length) continue;
-        if (pending.length + value.length > MAX_PACKET_BYTES + PACKET_HEADER_BYTES) {
-          throw new Error("Harmony video stream exceeded its buffer limit");
+      try {
+        while (!lifecycle.signal.aborted) {
+          const { done, value } = await reader.read();
+          if (done) throw attempt.failure ?? new Error("Harmony video connection closed");
+          if (!value?.length) continue;
+          if (pending.length + value.length > MAX_PACKET_BYTES + PACKET_HEADER_BYTES) {
+            throw new Error("Harmony video stream exceeded its buffer limit");
+          }
+          const combined = new Uint8Array(pending.length + value.length);
+          combined.set(pending);
+          combined.set(value, pending.length);
+          pending = combined;
+          let offset = 0;
+          while (pending.length - offset >= PACKET_HEADER_BYTES) {
+            const view = new DataView(pending.buffer, pending.byteOffset + offset, pending.length - offset);
+            const type = view.getUint32(0, false);
+            const length = view.getUint32(4, false);
+            if (length > MAX_PACKET_BYTES) throw new Error("Harmony video packet is too large");
+            if (pending.length - offset < PACKET_HEADER_BYTES + length) break;
+            const payload = pending.slice(offset + PACKET_HEADER_BYTES, offset + PACKET_HEADER_BYTES + length);
+            offset += PACKET_HEADER_BYTES + length;
+            await processPacket(type, payload, attempt);
+          }
+          pending = offset === 0 ? pending : pending.slice(offset);
         }
-        const combined = new Uint8Array(pending.length + value.length);
-        combined.set(pending);
-        combined.set(value, pending.length);
-        pending = combined;
-        let offset = 0;
-        while (pending.length - offset >= PACKET_HEADER_BYTES) {
-          const view = new DataView(pending.buffer, pending.byteOffset + offset, pending.length - offset);
-          const type = view.getUint32(0, false);
-          const length = view.getUint32(4, false);
-          if (length > MAX_PACKET_BYTES) throw new Error("Harmony video packet is too large");
-          if (pending.length - offset < PACKET_HEADER_BYTES + length) break;
-          const payload = pending.slice(offset + PACKET_HEADER_BYTES, offset + PACKET_HEADER_BYTES + length);
-          offset += PACKET_HEADER_BYTES + length;
-          await processPacket(type, payload);
-        }
-        pending = offset === 0 ? pending : pending.slice(offset);
+      } finally {
+        await reader.cancel().catch(() => undefined);
+        if (attempt.reader === reader) attempt.reader = undefined;
+        reader.releaseLock();
       }
     };
 
     const connect = async () => {
       while (!lifecycle.signal.aborted) {
-        setStatus(hasFrame ? "live" : "loading");
+        const attempt: StreamAttempt = {
+          startedAt: performance.now(),
+          decodedFrames: 0,
+          jpegChain: Promise.resolve(),
+        };
+        activeAttempt = attempt;
+        if (!hasFrame) setStatus("loading");
         try {
           const response = await fetch(`/api/harmony/video?serial=${encodeURIComponent(options.serial)}`, {
             cache: "no-store",
@@ -303,17 +345,25 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           });
           if (!response.ok) throw new Error(await responseError(response));
           if (!response.body) throw new Error("Harmony video response has no stream body");
-          await consume(response.body);
+          await consume(response.body, attempt);
         } catch (streamError) {
           if (lifecycle.signal.aborted || disposed) return;
           failures += 1;
-          setStatus("error");
-          setError(streamError instanceof Error ? streamError.message : options.fallbackError);
+          if (!hasFrame || failures > 1) {
+            setStatus("error");
+            setError(streamError instanceof Error ? streamError.message : options.fallbackError);
+          } else {
+            setStatus("live");
+            setError(null);
+          }
           decoder?.close();
           decoder = undefined;
           config = undefined;
           firstKeyframe = false;
-          await delay(Math.min(8_000, 750 * (2 ** Math.min(failures, 3))), lifecycle.signal);
+          await attempt.jpegChain.catch(() => undefined);
+          await delay(reconnectDelay(failures), lifecycle.signal);
+        } finally {
+          if (activeAttempt === attempt) activeAttempt = undefined;
         }
       }
     };
@@ -323,7 +373,8 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       disposed = true;
       lifecycle.abort();
       decoder?.close();
-      void jpegChain.catch(() => undefined);
+      void activeAttempt?.reader?.cancel().catch(() => undefined);
+      void activeAttempt?.jpegChain.catch(() => undefined);
     };
   }, [options.active, options.canvasRef, options.enabled, options.fallbackError, options.generation, options.paused, options.serial, refreshKey]);
 

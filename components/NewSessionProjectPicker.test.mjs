@@ -3,72 +3,70 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const picker = await readFile(new URL("./NewSessionProjectPicker.tsx", import.meta.url), "utf8");
+const launcher = await readFile(new URL("./NewSessionLauncher.tsx", import.meta.url), "utf8");
+const chatInput = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+const chatWindow = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 const shell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 const navigation = await readFile(new URL("./sidebar/SidebarNavigation.tsx", import.meta.url), "utf8");
 const taskRow = await readFile(new URL("./sidebar/TaskRow.tsx", import.meta.url), "utf8");
 const backgrounds = await readFile(new URL("../app/theme-backgrounds.css", import.meta.url), "utf8");
 const sidebarCss = await readFile(new URL("./SessionSidebar.module.css", import.meta.url), "utf8");
 
-test("new chat guides model, project, then conversation in that order", () => {
+test("new tasks start from one production composer with progressive context controls", () => {
   assert.match(shell, /const effectiveNewSessionCwd = newSessionCwd;/);
-  assert.doesNotMatch(shell, /newSessionCwd \?\? \(selectedSession === null/);
   assert.match(shell, /<NewSessionProjectPicker/);
   assert.match(navigation, /onRequestNewSession\(\)/);
-  const modelStep = picker.indexOf("<strong>配置模型</strong>");
-  const projectStep = picker.indexOf("<strong>创建或选择项目</strong>");
-  const chatStep = picker.indexOf("<strong>开始聊天</strong>");
-  assert.ok(modelStep >= 0 && modelStep < projectStep && projectStep < chatStep);
+
+  assert.match(picker, /<NewSessionLauncher/);
+  assert.match(picker, /<ChatInput/);
+  assert.match(picker, /variant="launcher"/);
+  assert.match(picker, /contextControl=\{projectControl\}/);
+  assert.doesNotMatch(picker, /<textarea|<select|stepNumber|会话准备|准备好模型和项目/);
+  assert.match(launcher, /t\("newSession\.title"\)/);
+  assert.match(launcher, /<StarterCards/);
+
   assert.match(picker, /fetchModelCatalog\(\{/);
-  assert.match(picker, /forceRefresh: modelsReloadKey > 0/);
-  assert.match(picker, /signal: controller\.signal/);
-  assert.match(picker, /controller\.abort\(\)/);
-  assert.match(picker, /aria-label="选择模型"/);
-  assert.match(picker, /准备好模型和项目，再开始聊天/);
-  assert.match(picker, /aria-label="会话准备"/);
-  assert.match(picker, /value=\{selectedModelKey\}/);
-  assert.match(picker, /<option value="" disabled>/);
-  assert.match(picker, /请先选择模型/);
-  assert.match(picker, /const \[selectedProject, setSelectedProject\]/);
-  assert.match(picker, /disabled=\{!canStartChat\}/);
-  assert.match(picker, /onSelect\(selectedProject\.cwd, selectedProject\.root, model\)/);
+  assert.match(picker, /cwd: requestCwd/);
   assert.match(picker, /const preferred = data\.defaultModel/);
   assert.match(picker, /const first = nextModels\[0\]/);
-  assert.match(picker, /if \(nextModels\.length > 0\) setModelSelectionRequired\(false\)/);
-  assert.match(picker, /重新加载/);
-  assert.doesNotMatch(picker, /检查模型设置|onOpenModelSettings|不使用项目，直接聊天|onStartChat/);
-  assert.match(picker, /className=\{styles\.modelNotice\}/);
-  assert.match(picker, /className=\{styles\.reloadButton\}/);
-  assert.match(picker, /role=\{modelSelectionRequired \|\| projectSelectionRequired \? "alert" : undefined\}/);
-  assert.match(shell, /newSessionInitialModel=\{newSessionInitialModel\}/);
-  assert.match(picker, /fetch\("\/api\/sessions"/);
-  assert.match(picker, /className=\{styles\.composer\}/);
-  assert.match(picker, /className=\{styles\.projectPopover\}/);
-  assert.match(picker, /setDraft\(`new:\$\{selectedProject\.cwd\}`/);
-  assert.match(picker, /LARGE_PASTE_CHARACTER_THRESHOLD/);
-  assert.match(picker, /setPastedMaterials/);
-  assert.match(picker, /展开编辑/);
-  assert.match(picker, /files: pastedMaterials/);
-  assert.match(shell, /pendingLandingDraftRef/);
-  assert.match(shell, /pendingLandingModelRef/);
-  assert.match(shell, /setDraft\(`new:\$\{cwd\}`/);
-  assert.match(picker, /const \[menuOpen, setMenuOpen\] = useState\(false\)/);
-  assert.doesNotMatch(picker, /onFocus=\{\(\) => \{ if \(!menuOpen\) setMenuOpen\(true\); \}\}/);
-  assert.match(picker, /创建或打开其他项目/);
-  assert.doesNotMatch(picker, /brandChip/);
+  assert.match(picker, /buildSessionProjectGroups/);
+  assert.match(picker, /sessions\.filter\(\(session\) => !session\.projectless\)/);
+  assert.match(picker, /new-task:\$\{createLaunchId\(\)\}/);
 });
 
-test("desktop project browsing delegates to the operating system directory picker", async () => {
-  const [projectPickerHook, preload, desktopMain] = await Promise.all([
-    readFile(new URL("./sidebar/useProjectPicker.ts", import.meta.url), "utf8"),
+test("one Enter can choose a project and continue through the real first-send path", () => {
+  assert.match(chatInput, /const accepted = onSend\(/);
+  assert.match(chatInput, /if \(accepted === false\) return;[\s\S]*?clearInput\(\)/);
+  assert.match(chatInput, /submit\(\) \{[\s\S]*?submitRef\.current\(\)/);
+  assert.match(picker, /if \(!selectedProject\) \{[\s\S]*?setSubmitAfterProjectSelection\(true\)[\s\S]*?return false/);
+  assert.match(picker, /effectiveChatInputRef\.current\?\.submit\(\)/);
+  assert.doesNotMatch(picker, /requestAnimationFrame\(\(\) => effectiveChatInputRef\.current\?\.submit/);
+  assert.match(picker, /onLaunch\(\{[\s\S]*?prompt: \{[\s\S]*?message,[\s\S]*?images,[\s\S]*?files,[\s\S]*?options/);
+
+  assert.match(shell, /newSessionInitialPrompt/);
+  assert.match(shell, /claimNewSessionInitialPrompt/);
+  assert.match(shell, /lastClaimedInitialPromptRef/);
+  assert.match(shell, /initialPrompt=\{newSessionInitialPrompt\}/);
+  assert.match(chatWindow, /claimInitialPrompt\(initialPrompt\.id\)/);
+  assert.match(chatWindow, /void handleSend\([\s\S]*?initialPrompt\.message,[\s\S]*?initialPrompt\.images,[\s\S]*?initialPrompt\.files/);
+  assert.doesNotMatch(shell, /pendingLandingDraftRef|pendingLandingModelRef/);
+  assert.match(picker, /const modelsUnavailable = !modelsLoading && models\.length === 0/);
+  assert.match(picker, /projectError \|\| modelsUnavailable/);
+  assert.match(picker, /modelError=\{models\.length > 0 \? modelsError : null\}/);
+  assert.match(picker, /className=\{styles\.projectBackdrop\}/);
+});
+
+test("project browsing is selection-only and cancel cannot leak an old landing draft", async () => {
+  const [preload, desktopMain] = await Promise.all([
     readFile(new URL("../desktop/src/preload.ts", import.meta.url), "utf8"),
     readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8"),
   ]);
-  assert.match(projectPickerHook, /window\.piDesktop\?\.selectDirectory/);
-  assert.match(projectPickerHook, /rememberProject\(cwd\); setSelectedCwd\(cwd\); onProjectSelected\?\.\(cwd\)/);
-  assert.match(shell, /onBrowse=\{\(draft, model\) => \{[\s\S]*?pendingLandingDraftRef\.current = draft;[\s\S]*?pendingLandingModelRef\.current = model;[\s\S]*?openProjectPicker\(\)/);
-  const sidebar = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
-  assert.match(sidebar, /onProjectSelected:\s*handlePickedProject/);
-  assert.match(sidebar, /handlePickedProject[\s\S]*?onNewSession\?\.\(createTemporarySessionId\(\), cwd\)/);
+  assert.match(picker, /window\.piDesktop\?\.selectDirectory/);
+  assert.match(picker, /const selected = await selectDirectory\(\)/);
+  assert.match(picker, /else setSubmitAfterProjectSelection\(false\)/);
+  assert.match(picker, /<DirectoryPicker/);
+  assert.match(picker, /fetch\("\/api\/cwd\/validate"/);
+  assert.doesNotMatch(picker, /onNewSession|pendingLanding|openProjectPicker/);
   assert.match(preload, /selectDirectory\(\)[\s\S]*pi:directory-picker/);
   assert.match(desktopMain, /DIRECTORY_PICKER_CHANNEL[\s\S]*showOpenDialog[\s\S]*openDirectory/);
 });

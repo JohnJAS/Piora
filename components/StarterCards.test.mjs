@@ -4,17 +4,21 @@ import test from "node:test";
 
 const cards = await readFile(new URL("./StarterCards.tsx", import.meta.url), "utf8");
 const chat = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
+const launcher = await readFile(new URL("./NewSessionLauncher.tsx", import.meta.url), "utf8");
+const projectInfoRoute = await readFile(new URL("../app/api/project-info/route.ts", import.meta.url), "utf8");
 
-test("keeps starter suggestions available as an isolated component", () => {
-  assert.match(cards, /\/api\/project-info\?cwd=\$\{encoded\}&starters=1/);
+test("loads lightweight project signals for starter suggestions", () => {
+  assert.match(cards, /\/api\/project-info\?cwd=\$\{encoded\}&starters=fast/);
   assert.match(cards, /\/api\/git\/status\?cwd=\$\{encoded\}/);
+  assert.match(projectInfoRoute, /includeOutdatedDependencies: request\.nextUrl\.searchParams\.get\("starters"\) !== "fast"/);
+  assert.match(cards, /signalSnapshot\.cwd === normalizedCwd/);
+  assert.match(cards, /cwd: requestCwd/);
 });
 
-test("does not render suggestion prompts above the new-session composer", () => {
-  assert.doesNotMatch(chat, /<StarterCards/);
+test("shares the same launch surface and suggestions before and after project selection", () => {
+  assert.match(chat, /<NewSessionLauncher/);
+  assert.match(launcher, /<StarterCards/);
   assert.doesNotMatch(chat, /NEXT_PUBLIC_(?:APP|PI)_VERSION/);
-  assert.match(chat, /开始一个新会话/);
-  assert.match(chat, /t\("chat\.projectlessGuide"\)/);
-  assert.match(chat, /t\("chat\.projectGuide"\)/);
-  assert.doesNotMatch(chat, /你想在|中构建什么/);
+  assert.doesNotMatch(chat, /开始一个新会话|new-session-chat-mark/);
+  assert.match(launcher, /t\("newSession\.title"\)/);
 });

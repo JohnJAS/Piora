@@ -15,6 +15,7 @@ const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, filterModelOptions
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 const chatInputSource = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+const agentSessionSource = readFileSync(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8");
 
 test("uses an ordinary cursor for the session information hover", () => {
   assert.match(globalCss, /\.session-stats-trigger\s*\{[^}]*cursor:\s*default/s);
@@ -341,12 +342,20 @@ test("does not send text before an attached image finishes loading", () => {
   assert.match(chatInputSource, /const canSend = !isProcessingImages/);
 });
 
-test("new conversations require an explicit model before sending", () => {
+test("new conversations wait only until a default or explicit model resolves", () => {
   assert.match(chatInputSource, /if \(isStreaming \|\| isProcessingImages \|\| isAutoModelSelection\) return/);
   assert.match(chatInputSource, /const canSend = !isProcessingImages[\s\S]*?&& !isAutoModelSelection/);
   assert.match(chatInputSource, /const displayModelName = model && !isAutoModelSelection/);
   assert.match(chatInputSource, /const canOptimizePrompt = hasInputText[\s\S]*?&& !isAutoModelSelection/);
   assert.match(chatInputSource, /onThinkingLevelChange && !isAutoModelSelection/);
+  assert.match(agentSessionSource, /isAutoModelSelection: isNew && displayModel === null/);
+  assert.doesNotMatch(agentSessionSource, /isAutoModelSelection: isNew && newSessionModel === null/);
+});
+
+test("a context gate can reject submission without clearing the real composer", () => {
+  assert.match(chatInputSource, /const accepted = onSend\(/);
+  assert.match(chatInputSource, /if \(accepted === false\) return;[\s\S]*?clearInput\(\)/);
+  assert.match(chatInputSource, /submit\(\) \{[\s\S]*?submitRef\.current\(\)/);
 });
 
 test("compaction uses a quiet progress row and closes the model menu when started", () => {

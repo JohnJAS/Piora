@@ -425,7 +425,9 @@ export function migrateCompanionPreferences(preferences: CompanionPreferences): 
     migratedFromLocalStorage: true,
     settings: {
       ...current.settings,
-      interactionModel: normalized.interactionModel,
+      // Keep a newer runtime selection if the one-time legacy migration races
+      // with a model save from the companion panel.
+      interactionModel: current.settings.interactionModel ?? normalized.interactionModel,
       shareWorkContext: normalized.shareWorkContext,
     },
     todos: current.todos.length ? current.todos : normalized.todos,

@@ -8,6 +8,7 @@ import { SessionSidebar, type SessionSidebarHandle } from "./SessionSidebar";
 import { ChatWindow, type TaskControls } from "./ChatWindow";
 import { RoomWorkspace } from "./RoomWorkspace";
 import { NewSessionProjectPicker } from "./NewSessionProjectPicker";
+import type { NewSessionInitialPrompt, NewSessionLaunch } from "./new-session-types";
 import type { Tab } from "./TabBar";
 import { RightPanel, type RightPanelHandle, type RightPanelTab } from "./workspace/RightPanel";
 import type { SettingsKey } from "./SettingsDialog";
@@ -28,7 +29,6 @@ import { useCompanionWorkRhythm } from "@/hooks/useCompanionWorkRhythm";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { SystemPromptEditor } from "./SystemPromptEditor";
 import { copyText } from "@/lib/clipboard";
-import { setDraft, type ChatDraft } from "@/lib/draft-store";
 import { getFileName } from "@/lib/file-paths";
 import { resolveWorkspaceFilePath } from "@/lib/file-links";
 import { buildAtMentionText, buildFileAtMentionsText, buildFileLineMentionText } from "@/lib/file-fuzzy";
@@ -184,13 +184,13 @@ export function AppShell() {
     pendingInputSessionsRef.current = pendingIds;
   }, [runningTaskSnapshots, selectedSession?.id, notifyUserInput]);
 
-  const pendingLandingDraftRef = useRef<ChatDraft | null>(null);
-  const pendingLandingModelRef = useRef<{ provider: string; modelId: string } | null>(null);
+  const lastClaimedInitialPromptRef = useRef<string | null>(null);
   const automaticTitleRequestsRef = useRef<Set<string>>(new Set());
   const [selectedRoom, setSelectedRoom] = useState<CollaborationRoom | null>(null);
   // When user clicks +, we only store the cwd — no fake session id
   const [newSessionCwd, setNewSessionCwd] = useState<string | null>(null);
   const [newSessionInitialModel, setNewSessionInitialModel] = useState<{ provider: string; modelId: string } | null>(null);
+  const [newSessionInitialPrompt, setNewSessionInitialPrompt] = useState<NewSessionInitialPrompt | null>(null);
   const [initialCwdStatus, setInitialCwdStatus] = useState<"idle" | "validating" | "ready" | "error">(
     () => initialNavigation.requestedCwd ? "validating" : "idle",
   );
@@ -667,6 +667,7 @@ export function AppShell() {
         suppressCwdBumpRef.current = true;
         setNewSessionCwd(data.cwd);
         setNewSessionInitialModel(null);
+        setNewSessionInitialPrompt(null);
         setInitialCwdStatus("ready");
       })
       .catch((error: unknown) => {
@@ -738,6 +739,7 @@ export function AppShell() {
       setSelectedSession(null);
       setSelectedRoom(null);
       setNewSessionInitialModel(null);
+      setNewSessionInitialPrompt(null);
       setNewSessionCwd((prev) => {
         if (prev && prev !== cwd) return null;
         return prev;
@@ -795,6 +797,7 @@ export function AppShell() {
     setSelectedRoom(null);
     setNewSessionCwd(null);
     setNewSessionInitialModel(null);
+    setNewSessionInitialPrompt(null);
     setSelectedSession(session);
     setSessionKey((k) => k + 1);
     setSystemPrompt(null);
@@ -849,19 +852,18 @@ export function AppShell() {
     };
   }, [openNotificationSession]);
 
-  const handleNewSession = useCallback((_sessionId: string, cwd: string, initialModel?: { provider: string; modelId: string }) => {
-    const pendingLandingDraft = pendingLandingDraftRef.current;
-    const pendingLandingModel = pendingLandingModelRef.current;
-    if (pendingLandingDraft) {
-      setDraft(`new:${cwd}`, pendingLandingDraft);
-      pendingLandingDraftRef.current = null;
-    }
-    pendingLandingModelRef.current = null;
+  const handleNewSession = useCallback((
+    _sessionId: string,
+    cwd: string,
+    initialModel?: { provider: string; modelId: string },
+    initialPrompt?: NewSessionInitialPrompt | null,
+  ) => {
     setSettingsDialogOpen(false);
     setSelectedRoom(null);
     setSelectedSession(null);
     setNewSessionCwd(cwd);
-    setNewSessionInitialModel(initialModel ?? pendingLandingModel ?? null);
+    setNewSessionInitialModel(initialModel ?? null);
+    setNewSessionInitialPrompt(initialPrompt ?? null);
     setSessionKey((k) => k + 1);
     setSystemPrompt(null);
     setActiveTopPanel(null);
@@ -883,18 +885,27 @@ export function AppShell() {
       });
   }, [handleNewSession]);
 
-  const handleNewSessionProjectSelected = useCallback((cwd: string, projectRoot: string, model?: { provider: string; modelId: string }) => {
-    activeProjectRootRef.current = projectRoot;
-    setActiveProjectRoot(projectRoot);
-    setActiveCwd(cwd);
-    handleNewSession(`project-picker-${Date.now()}`, cwd, model);
-  }, [handleNewSession]);
+  const handleNewSessionLaunch = useCallback((request: NewSessionLaunch) => {
+    if (activeCwd !== request.cwd) suppressCwdBumpRef.current = true;
+    activeProjectRootRef.current = request.projectRoot;
+    setActiveProjectRoot(request.projectRoot);
+    setActiveCwd(request.cwd);
+    handleNewSession(`project-picker-${Date.now()}`, request.cwd, request.model, request.prompt);
+  }, [activeCwd, handleNewSession]);
+
+  const claimNewSessionInitialPrompt = useCallback((promptId: string): boolean => {
+    if (lastClaimedInitialPromptRef.current === promptId) return false;
+    lastClaimedInitialPromptRef.current = promptId;
+    setNewSessionInitialPrompt((current) => current?.id === promptId ? null : current);
+    return true;
+  }, []);
 
   const handleSelectRoom = useCallback((room: CollaborationRoom, isRestore = false) => {
     setSettingsDialogOpen(false);
     setSelectedSession(null);
     setNewSessionCwd(null);
     setNewSessionInitialModel(null);
+    setNewSessionInitialPrompt(null);
     setSelectedRoom(room);
     setSessionKey((key) => key + 1);
     setSystemPrompt(null);
@@ -1109,6 +1120,7 @@ export function AppShell() {
   const handleSessionCreated = useCallback((session: SessionInfo) => {
     setNewSessionCwd(null);
     setNewSessionInitialModel(null);
+    setNewSessionInitialPrompt(null);
     setSelectedSession(session);
     setRefreshKey((k) => k + 1);
     hydrateSelectedSession(session.id);
@@ -1174,6 +1186,7 @@ export function AppShell() {
     setSessionKey((k) => k + 1);
     setNewSessionCwd(null);
     setNewSessionInitialModel(null);
+    setNewSessionInitialPrompt(null);
     setSelectedSession((prev) => ({
       ...(prev ?? { path: "", cwd: "", created: "", modified: "", messageCount: 0, firstMessage: "" }),
       id: newSessionId,
@@ -1193,6 +1206,7 @@ export function AppShell() {
       setSelectedSession(null);
       setNewSessionCwd(cwd ?? null);
       setNewSessionInitialModel(null);
+      setNewSessionInitialPrompt(null);
       setSessionKey((k) => k + 1);
       setSystemPrompt(null);
       setActiveTopPanel(null);
@@ -2503,6 +2517,8 @@ export function AppShell() {
                 session={selectedSession}
                 newSessionCwd={effectiveNewSessionCwd}
                 newSessionInitialModel={newSessionInitialModel}
+                initialPrompt={newSessionInitialPrompt}
+                claimInitialPrompt={claimNewSessionInitialPrompt}
                 onAgentEnd={handleAgentEnd}
                 onSessionCreated={handleSessionCreated}
                 onSessionForked={handleSessionForked}
@@ -2548,12 +2564,8 @@ export function AppShell() {
               <NewSessionProjectPicker
                 activeCwd={activeCwd}
                 activeProjectRoot={activeProjectRoot}
-                onSelect={handleNewSessionProjectSelected}
-                onBrowse={(draft, model) => {
-                  pendingLandingDraftRef.current = draft;
-                  pendingLandingModelRef.current = model;
-                  sessionSidebarRef.current?.openProjectPicker();
-                }}
+                chatInputRef={chatInputRef}
+                onLaunch={handleNewSessionLaunch}
               />
             ) : null}
             </div>

@@ -80,7 +80,7 @@ interface PromptOptimizationState {
 }
 
 interface Props {
-  onSend: (message: string, images?: AttachedImage[], files?: AttachedFile[], options?: PromptRunOptions) => void;
+  onSend: (message: string, images?: AttachedImage[], files?: AttachedFile[], options?: PromptRunOptions) => false | void | Promise<void>;
   onAbort: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => void;
   onFollowUp?: (message: string, images?: AttachedImage[]) => void;
@@ -121,6 +121,11 @@ interface Props {
   capabilitiesSaving?: boolean;
   onCapabilityChange?: (selection: SessionCapabilitySelection) => void | Promise<void>;
   onOpenCapabilitySettings?: () => void;
+  /** Reuses the production composer in a spacious new-task launch surface. */
+  variant?: "conversation" | "launcher";
+  placeholder?: string;
+  /** Optional workspace/project control rendered beside the attachment button. */
+  contextControl?: React.ReactNode;
 }
 
 export interface PromptRunOptions {
@@ -132,6 +137,7 @@ type PromptMode = "normal" | "goal" | "plan";
 
 export interface ChatInputHandle {
   focus: () => void;
+  submit: () => void;
   insertText: (text: string) => void;
   insertIfEmpty: (text: string) => void;
   prependText: (text: string) => void;
@@ -330,6 +336,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   capabilitiesSaving = false,
   onCapabilityChange = () => {},
   onOpenCapabilitySettings,
+  variant = "conversation",
+  placeholder,
+  contextControl,
 }: Props, ref) {
   const { t, locale } = useI18n();
   const isMobile = useIsMobile();
@@ -372,6 +381,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [fileIndexLoading, setFileIndexLoading] = useState(false);
   const [atServerResult, setAtServerResult] = useState<{ cwd: string; query: string; matches: FileIndexEntry[] } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const submitRef = useRef<() => void>(() => {});
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const streamingActionMenuRef = useRef<HTMLDivElement>(null);
@@ -518,6 +528,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   useImperativeHandle(ref, () => ({
     focus() {
       textareaRef.current?.focus({ preventScroll: true });
+    },
+    submit() {
+      submitRef.current();
     },
     sendText(text: string) {
       const message = text.trim();
@@ -733,7 +746,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       ];
       messageToSend = "";
     }
-    onSend(
+    const accepted = onSend(
       messageToSend,
       attachedImages.length ? attachedImages : undefined,
       filesToSend.length ? filesToSend : undefined,
@@ -742,9 +755,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         planMode: promptMode === "plan" && !msg.startsWith("/") && !msg.startsWith("!"),
       },
     );
+    if (accepted === false) return;
     setPromptMode("normal");
     clearInput();
   }, [value, attachedImages, attachedFiles, isStreaming, isProcessingImages, isAutoModelSelection, onBuiltinCommand, onSend, clearInput, promptMode, contextUsage, t]);
+
+  useEffect(() => {
+    submitRef.current = () => { void handleSend(); };
+  }, [handleSend]);
 
   const handleOptimizePrompt = useCallback(async () => {
     const source = value.trim();
@@ -1449,12 +1467,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   return (
     <div
+      data-composer-variant={variant}
       style={{
         flexShrink: 0,
         background: "transparent",
-        padding: "0 16px 8px",
-        paddingLeft: isMobile ? 16 : 36, // reserve a safe gutter between selectable text and the left resize handle
-        paddingRight: isMobile ? 16 : 52, // desktop: 16px base + 36px for ChatMinimap alignment
+        padding: variant === "launcher" ? 0 : "0 16px 8px",
+        paddingLeft: variant === "launcher" ? 0 : isMobile ? 16 : 36, // reserve a safe gutter between selectable text and the left resize handle
+        paddingRight: variant === "launcher" ? 0 : isMobile ? 16 : 52, // desktop: 16px base + 36px for ChatMinimap alignment
       }}
     >
       {/* Hidden file input */}
@@ -1932,10 +1951,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             onInput={handleInput}
             onPaste={handlePaste}
             placeholder={
-              isStreaming && (onSteer || onFollowUp)
+              placeholder ?? (isStreaming && (onSteer || onFollowUp)
                 ? t("chat.steerPlaceholder")
                 : isStreaming ? t("chat.agentPlaceholder")
-                : t("chat.messagePlaceholder")
+                : t("chat.messagePlaceholder"))
             }
             rows={1}
             style={{
@@ -2027,13 +2046,16 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <AliIcon name="plus" size={15} />
               </button>
             </div>
-            <SessionToolsControl
-              capabilities={capabilities}
-              busy={isStreaming}
-              saving={capabilitiesSaving}
-              onChange={onCapabilityChange}
-              onOpenGlobalSettings={onOpenCapabilitySettings}
-            />
+            {contextControl}
+            {variant === "conversation" ? (
+              <SessionToolsControl
+                capabilities={capabilities}
+                busy={isStreaming}
+                saving={capabilitiesSaving}
+                onChange={onCapabilityChange}
+                onOpenGlobalSettings={onOpenCapabilitySettings}
+              />
+            ) : null}
             {promptMode !== "normal" && (
               <button
                 type="button"
@@ -2094,8 +2116,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               {!isMobile && <span>{promptOptimization?.loading ? t("chat.optimizingPrompt") : t("chat.optimizePrompt")}</span>}
             </button>
             <div style={{ flex: 1 }} />
-            <ExtensionStatusBar statuses={extensionStatuses} />
-            <div className="session-stats-control">
+            {variant === "conversation" ? <ExtensionStatusBar statuses={extensionStatuses} /> : null}
+            {variant === "conversation" ? <div className="session-stats-control">
               <div className="session-stats-trigger" tabIndex={0} aria-label={t("session.title")}>
                 <AliIcon name="chart-no-axes-column" size={18} />
               </div>
@@ -2123,8 +2145,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <div className="session-stats-tooltip-cost"><span>{t("session.cost")}</span><strong>${sessionStats.cost.toFixed(4)}</strong></div>
                 ) : null}
               </div>
-            </div>
-            <div className="context-usage-control">
+            </div> : null}
+            {variant === "conversation" ? <div className="context-usage-control">
               <div
                 className="context-usage-ring"
                 tabIndex={0}
@@ -2154,7 +2176,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 </div>
                 <div className="context-usage-tooltip-value">{contextTokenLabel}</div>
               </div>
-            </div>
+            </div> : null}
             {/* Codex-style model settings: one compact summary chip with focused submenus. */}
             {(modelOptions.length > 0 || currentName || modelError) && onModelChange && (
               <div ref={dropdownRef} className="model-settings-control">

@@ -13,7 +13,11 @@ import {
 } from "@/lib/companion-focus-timer";
 import type { ModelsData } from "@/lib/models-cache";
 import type { CompanionFocusTimerPhase, CompanionRuntimeState } from "@/lib/companion-runtime";
-import { createCompanionId, type CompanionLibraryKind } from "@/lib/companion-store";
+import {
+  createCompanionId,
+  type CompanionInteractionModel,
+  type CompanionLibraryKind,
+} from "@/lib/companion-store";
 import styles from "./CompanionPanel.module.css";
 
 type Tab = "now" | "tasks" | "focus" | "library" | "memory" | "mind";
@@ -82,12 +86,27 @@ const FOCUS_PHASE_LABELS: Record<CompanionFocusTimerPhase, string> = {
   "long-break": "长休息",
 };
 
+function modelValue(model: CompanionInteractionModel | null): string {
+  return model ? JSON.stringify(model) : "";
+}
+
+function parseModelValue(value: string): CompanionInteractionModel | null {
+  if (!value) return null;
+  const parsed = JSON.parse(value) as Partial<CompanionInteractionModel>;
+  return typeof parsed.provider === "string" && typeof parsed.modelId === "string"
+    ? { provider: parsed.provider, modelId: parsed.modelId }
+    : null;
+}
+
 export function CompanionPanel() {
   const [tab, setTab] = useState<Tab>("now");
   const [state, setState] = useState<CompanionRuntimeState>(emptyRuntimeState);
   const [models, setModels] = useState<ModelsData | null>(null);
+  const [modelsError, setModelsError] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [modelDraft, setModelDraft] = useState("");
+  const [modelSaveStatus, setModelSaveStatus] = useState<"idle" | "dirty" | "saving" | "saved">("idle");
   const [question, setQuestion] = useState("");
   const [draft, setDraft] = useState("");
   const [libraryTitle, setLibraryTitle] = useState("");
@@ -95,35 +114,89 @@ export function CompanionPanel() {
   const [libraryKind, setLibraryKind] = useState<CompanionLibraryKind>("note");
   const [clock, setClock] = useState(() => Date.now());
   const completedTimerEndRef = useRef<number | null>(null);
+  const stateRef = useRef(state);
   const runningTasks = useRunningTaskSnapshots();
   const { notifyCompletion } = useCompletionNotification();
+
+  const applyState = useCallback((next: CompanionRuntimeState) => {
+    if (next.updatedAt < stateRef.current.updatedAt) return;
+    stateRef.current = next;
+    setState(next);
+  }, []);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const refresh = useCallback(async () => {
     const response = await fetch("/api/companion/state", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    setState(await response.json() as CompanionRuntimeState);
-  }, []);
+    applyState(await response.json() as CompanionRuntimeState);
+  }, [applyState]);
 
   useEffect(() => {
+    const controller = new AbortController();
     void refresh().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
-    void fetch("/api/models", { cache: "no-store" }).then((response) => response.ok ? response.json() as Promise<ModelsData> : null).then(setModels);
+    void fetch("/api/models", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json() as Promise<ModelsData>;
+      })
+      .then((data) => {
+        setModels(data);
+        setModelsError(data.modelError ?? "");
+      })
+      .catch((cause: unknown) => {
+        if (!controller.signal.aborted) setModelsError(cause instanceof Error ? cause.message : String(cause));
+      });
     const source = new EventSource("/api/companion/events");
     source.addEventListener("companion", (event) => {
       try {
         const payload = JSON.parse((event as MessageEvent<string>).data) as { state?: CompanionRuntimeState };
-        if (payload.state) setState(payload.state);
+        if (payload.state) applyState(payload.state);
       } catch { /* ignore malformed event */ }
     });
-    return () => source.close();
-  }, [refresh]);
+    return () => {
+      controller.abort();
+      source.close();
+    };
+  }, [applyState, refresh]);
 
   const mutate = useCallback(async (update: (current: CompanionRuntimeState) => CompanionRuntimeState) => {
     setBusy(true);
     setError("");
-    try { setState(await saveState(update(state))); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { setBusy(false); }
-  }, [state]);
+    try {
+      applyState(await saveState(update(stateRef.current)));
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }, [applyState]);
+
+  const savedModelValue = modelValue(state.settings.interactionModel);
+  useEffect(() => {
+    if (modelSaveStatus === "dirty" || modelSaveStatus === "saving") return;
+    setModelDraft(savedModelValue);
+  }, [modelSaveStatus, savedModelValue]);
+
+  const saveModel = useCallback(async () => {
+    let interactionModel: CompanionInteractionModel | null;
+    try {
+      interactionModel = parseModelValue(modelDraft);
+    } catch {
+      setError("互动模型配置无效，请重新选择。");
+      return;
+    }
+    setModelSaveStatus("saving");
+    const saved = await mutate((current) => ({
+      ...current,
+      settings: { ...current.settings, interactionModel },
+    }));
+    setModelSaveStatus(saved ? "saved" : "dirty");
+  }, [modelDraft, mutate]);
 
   useEffect(() => {
     if (state.focusTimer.status !== "running") return;
@@ -153,7 +226,7 @@ export function CompanionPanel() {
           error?: string;
         } | null;
         if (!response.ok) throw new Error(payload?.error || `HTTP ${response.status}`);
-        if (payload?.state) setState(payload.state);
+        if (payload?.state) applyState(payload.state);
         if (payload?.completed) {
           void notifyCompletion(linkedTask || (completedPhase === "focus" ? "番茄钟专注完成" : "休息结束"));
         }
@@ -162,7 +235,7 @@ export function CompanionPanel() {
         setError(cause instanceof Error ? cause.message : String(cause));
       }
     })();
-  }, [clock, notifyCompletion, state.focusTimer, state.todos]);
+  }, [applyState, clock, notifyCompletion, state.focusTimer, state.todos]);
 
   const ask = async () => {
     if (!question.trim()) return;
@@ -300,7 +373,41 @@ export function CompanionPanel() {
         </> : null}
 
         {tab === "mind" ? <div className={styles.settings}>
-          <label>互动模型<select value={state.settings.interactionModel ? JSON.stringify(state.settings.interactionModel) : ""} onChange={(event) => { const value = event.target.value; void mutate((current) => ({ ...current, settings: { ...current.settings, interactionModel: value ? JSON.parse(value) as { provider: string; modelId: string } : null } })); }}><option value="">请选择模型</option>{models?.modelList.map((model) => <option key={`${model.provider}:${model.id}`} value={JSON.stringify({ provider: model.provider, modelId: model.id })}>{model.provider} · {model.name || model.id}</option>)}</select></label>
+          <label>
+            互动模型
+            <div className={styles.modelSaveRow}>
+              <select
+                value={modelDraft}
+                disabled={busy}
+                onChange={(event) => {
+                  setModelDraft(event.target.value);
+                  setModelSaveStatus(event.target.value === savedModelValue ? "idle" : "dirty");
+                }}
+              >
+                <option value="">请选择模型</option>
+                {(() => {
+                  let selected: CompanionInteractionModel | null = null;
+                  try { selected = parseModelValue(modelDraft); } catch { /* invalid drafts are reported when saved */ }
+                  return selected && !models?.modelList.some((model) => model.provider === selected?.provider && model.id === selected?.modelId)
+                    ? <option value={modelDraft}>{selected.provider} · {selected.modelId}（当前范围不可用）</option>
+                    : null;
+                })()}
+                {models?.modelList.map((model) => <option key={`${model.provider}:${model.id}`} value={JSON.stringify({ provider: model.provider, modelId: model.id })}>{model.provider} · {model.name || model.id}</option>)}
+              </select>
+              <button
+                type="button"
+                className={styles.primary}
+                disabled={busy || modelSaveStatus !== "dirty" || modelDraft === savedModelValue}
+                onClick={() => void saveModel()}
+              >
+                {modelSaveStatus === "saving" ? "保存中…" : "保存模型"}
+              </button>
+            </div>
+            {modelsError ? <small className={styles.modelError} role="alert">模型列表加载失败：{modelsError}</small> : null}
+            <small className={styles.saveStatus} role="status" aria-live="polite">
+              {modelSaveStatus === "saved" ? "模型已保存。" : modelSaveStatus === "dirty" ? "选择已更改，点击保存后生效。" : ""}
+            </small>
+          </label>
           <label>自主程度<select value={state.settings.autonomyLevel} onChange={(event) => void mutate((current) => ({ ...current, settings: { ...current.settings, autonomyLevel: event.target.value as "quiet" | "balanced" | "active" } }))}><option value="quiet">安静</option><option value="balanced">平衡</option><option value="active">活跃</option></select></label>
           <label>性格<textarea value={state.settings.personality} onChange={(event) => setState((current) => ({ ...current, settings: { ...current.settings, personality: event.target.value } }))} onBlur={() => void mutate((current) => current)} /></label>
           <label className={styles.toggle}><input type="checkbox" checked={!state.settings.autonomyPaused} onChange={() => void mutate((current) => ({ ...current, settings: { ...current.settings, autonomyPaused: !current.settings.autonomyPaused } }))} />允许自主观察</label>

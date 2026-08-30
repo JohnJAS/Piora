@@ -235,6 +235,7 @@ async function connectLoopback(port: number, signal?: AbortSignal): Promise<Sock
   return await new Promise<Socket>((resolveSocket, rejectSocket) => {
     const socket = createConnection({ host: "127.0.0.1", port });
     socket.setNoDelay(true);
+    socket.setKeepAlive(true, 5_000);
     const timeout = setTimeout(() => fail(new Error("Harmony video service connection timed out")), 5_000);
     const cleanup = () => {
       clearTimeout(timeout);
@@ -647,7 +648,7 @@ export class HdcBackend implements HarmonyAutomationBackend {
     const videoSocket = socket;
     videoSocket.write(encodeMirrorVideoParameters());
     const heartbeat = setInterval(() => {
-      if (!videoSocket.destroyed) videoSocket.write(encodeMirrorHeartbeat());
+      if (!videoSocket.destroyed && videoSocket.writable) videoSocket.write(encodeMirrorHeartbeat());
     }, 2_000);
     heartbeat.unref?.();
 
@@ -685,6 +686,10 @@ export class HdcBackend implements HarmonyAutomationBackend {
         });
         videoSocket.once("error", (error) => {
           if (!closed) streamController.error(error);
+          void close();
+        });
+        videoSocket.once("close", () => {
+          if (!closed) streamController.close();
           void close();
         });
       },

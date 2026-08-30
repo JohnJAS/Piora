@@ -2076,7 +2076,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     isCompacting, compactError, compactResult, currentModel, displayModel, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages, goal, planArtifact, capabilities, capabilitiesSaving,
     notices: noticeState.visible, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
-    isAutoModelSelection: isNew && newSessionModel === null,
+    isAutoModelSelection: isNew && displayModel === null,
     agentPhase,
     isNew,
     // Refs

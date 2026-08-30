@@ -31,5 +31,10 @@ export async function GET(request: NextRequest) {
 
   const info = await getProjectInfo(cwd);
   if (!request.nextUrl.searchParams.has("starters")) return NextResponse.json(info);
-  return NextResponse.json({ ...info, starterSignals: await getProjectStarterSignals(cwd) });
+  return NextResponse.json({
+    ...info,
+    starterSignals: await getProjectStarterSignals(cwd, {
+      includeOutdatedDependencies: request.nextUrl.searchParams.get("starters") !== "fast",
+    }),
+  });
 }

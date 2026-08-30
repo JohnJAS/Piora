@@ -43,6 +43,7 @@ const DEFAULT_LEASE_TTL_MS = 5 * 60_000;
 const MIN_LEASE_TTL_MS = 5_000;
 const MAX_LEASE_TTL_MS = 30 * 60_000;
 const DEVICE_REFRESH_TTL_MS = 10_000;
+const DEVICE_MISSING_GRACE_REFRESHES = 2;
 
 export interface AcquireLeaseOptions {
   serial: string;
@@ -127,6 +128,7 @@ export class HarmonyDeviceManager {
   private readonly devices = new Map<string, HarmonyDevice>();
   private readonly generations = new Map<string, number>();
   private readonly presentLastRefresh = new Set<string>();
+  private readonly missingRefreshCounts = new Map<string, number>();
   private readonly leasesBySerial = new Map<string, HarmonyLease>();
   private readonly leasesByToken = new Map<string, HarmonyLease>();
   private readonly snapshots = new Map<string, StoredSnapshot>();
@@ -297,6 +299,7 @@ export class HarmonyDeviceManager {
       validateSerial(device.serial);
       if (presentNow.has(device.serial)) continue;
       presentNow.add(device.serial);
+      this.missingRefreshCounts.delete(device.serial);
       const previous = this.devices.get(device.serial);
       const wasPresent = this.presentLastRefresh.has(device.serial);
       let generation = this.generations.get(device.serial) ?? 0;
@@ -314,14 +317,22 @@ export class HarmonyDeviceManager {
     }
     for (const serial of [...this.presentLastRefresh]) {
       if (!presentNow.has(serial)) {
+        const missingRefreshes = (this.missingRefreshCounts.get(serial) ?? 0) + 1;
+        if (missingRefreshes <= DEVICE_MISSING_GRACE_REFRESHES) {
+          this.missingRefreshCounts.set(serial, missingRefreshes);
+          const previous = this.devices.get(serial);
+          if (previous) normalized.push(previous);
+          continue;
+        }
+        this.missingRefreshCounts.delete(serial);
+        this.presentLastRefresh.delete(serial);
+        this.devices.delete(serial);
         this.snapshots.delete(serial);
         const lease = this.leasesBySerial.get(serial);
         if (lease) this.removeLease(lease, "device_disconnected");
       }
     }
-    this.presentLastRefresh.clear();
     for (const serial of presentNow) this.presentLastRefresh.add(serial);
-    for (const [serial] of this.devices) if (!presentNow.has(serial)) this.devices.delete(serial);
     return normalized;
   }
 

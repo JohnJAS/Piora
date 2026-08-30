@@ -56,7 +56,10 @@ export interface ProjectStarterSignals {
   hasOutdatedDependencies: boolean;
 }
 
-export async function getProjectStarterSignals(cwd: string): Promise<ProjectStarterSignals> {
+export async function getProjectStarterSignals(
+  cwd: string,
+  options: { includeOutdatedDependencies?: boolean } = {},
+): Promise<ProjectStarterSignals> {
   let hasReadme = false;
   let hasTests = false;
   let visited = 0;
@@ -78,7 +81,7 @@ export async function getProjectStarterSignals(cwd: string): Promise<ProjectStar
   }
   const hasPackageJson = fs.existsSync(path.join(cwd, "package.json"));
   let hasOutdatedDependencies = false;
-  if (hasPackageJson) {
+  if (hasPackageJson && options.includeOutdatedDependencies !== false) {
     try {
       const { stdout } = await execFileAsync(process.platform === "win32" ? "npm.cmd" : "npm", ["outdated", "--json", "--depth=0"], {
         cwd, timeout: 5_000, maxBuffer: GIT_MAX_BUFFER, windowsHide: true,

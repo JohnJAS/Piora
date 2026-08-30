@@ -20,7 +20,8 @@ async function assertAllowedCwd(cwd: string): Promise<void> {
 }
 
 function errorResponse(error: unknown) {
-  const status = error instanceof CapabilityBundleError ? error.status : 500;
+  const aborted = error instanceof Error && error.name === "AbortError";
+  const status = aborted ? 499 : error instanceof CapabilityBundleError ? error.status : 500;
   const message = error instanceof Error ? error.message : String(error);
   return NextResponse.json({ error: message }, { status });
 }
@@ -29,13 +30,17 @@ export async function GET(request: Request) {
   const cwd = new URL(request.url).searchParams.get("cwd")?.trim();
   if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
   try {
+    request.signal.throwIfAborted();
     await assertAllowedCwd(cwd);
-    const { bytes, manifest } = await exportCapabilityBundle(cwd);
+    const { bytes, manifest } = await exportCapabilityBundle(cwd, { signal: request.signal });
     const date = manifest.createdAt.slice(0, 10);
     const fileName = `piora-capabilities-${date}.piora-bundle`;
-    return new Response(new Uint8Array(bytes), {
+    // Buffer is an ArrayBuffer-backed Uint8Array at runtime; narrow the overly broad ArrayBufferLike typing without copying it.
+    const body = bytes as unknown as Uint8Array<ArrayBuffer>;
+    return new Response(body, {
       headers: {
         "Cache-Control": "no-store",
+        "Content-Length": String(bytes.byteLength),
         "Content-Type": "application/vnd.piora.capability-bundle+zip",
         "Content-Disposition": `attachment; filename="${fileName}"`,
         "X-Content-Type-Options": "nosniff",

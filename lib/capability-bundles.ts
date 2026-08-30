@@ -1,11 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import {
+  access,
+  lstat,
+  readFile,
+  readdir,
+  stat,
+} from "node:fs/promises";
+import {
   existsSync,
-  lstatSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
   renameSync,
   rmSync,
   statSync,
@@ -18,6 +23,7 @@ import { promisify } from "node:util";
 import {
   DefaultPackageManager,
   getAgentDir,
+  loadSkills,
   SettingsManager,
   type PackageSource,
 } from "@earendil-works/pi-coding-agent";
@@ -28,9 +34,7 @@ import {
   resolveExtensionLoadPlan,
   setExtensionEnabled,
 } from "@/lib/extension-config";
-import { invalidateServicesCache } from "@/lib/rpc-manager";
-import { runNpx } from "@/lib/npx";
-import { loadSkillsWithInstallInfo } from "@/lib/skills-service";
+import { annotateSkillsWithInstallInfo } from "@/lib/skill-lock";
 
 const BUNDLE_FORMAT = "piora-capability-bundle";
 const BUNDLE_VERSION = 1;
@@ -130,6 +134,30 @@ interface ExportedPluginRoot {
   installedPath?: string;
 }
 
+export interface ExportCapabilityBundleOptions {
+  signal?: AbortSignal;
+}
+
+function exportAbortError(signal?: AbortSignal): Error {
+  if (signal?.reason instanceof Error) return signal.reason;
+  const error = new Error("Capability bundle export was canceled");
+  error.name = "AbortError";
+  return error;
+}
+
+function throwIfExportAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw exportAbortError(signal);
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -198,8 +226,15 @@ function isSensitiveOrGeneratedEntry(name: string, directory: boolean): boolean 
   return ["id_rsa", "id_ed25519", "id_ecdsa", "id_dsa"].includes(lower);
 }
 
-function addFileToArchive(zip: JSZip, sourcePath: string, archivePath: string, budget: ExportBudget): void {
-  const stats = statSync(sourcePath);
+async function addFileToArchive(
+  zip: JSZip,
+  sourcePath: string,
+  archivePath: string,
+  budget: ExportBudget,
+  signal?: AbortSignal,
+): Promise<void> {
+  throwIfExportAborted(signal);
+  const stats = await stat(sourcePath);
   if (stats.size > MAX_SINGLE_FILE_BYTES) {
     throw new CapabilityBundleError(`File is too large to export: ${sourcePath}`, 413);
   }
@@ -208,20 +243,24 @@ function addFileToArchive(zip: JSZip, sourcePath: string, archivePath: string, b
   if (budget.files > MAX_ARCHIVE_ENTRIES - MAX_PLUGINS - 2 || budget.bytes > MAX_UNCOMPRESSED_BYTES) {
     throw new CapabilityBundleError("Capability bundle is too large to export", 413);
   }
-  zip.file(archivePath.replaceAll("\\", "/"), readFileSync(sourcePath), {
+  const contents = await readFile(sourcePath, { signal });
+  throwIfExportAborted(signal);
+  zip.file(archivePath.replaceAll("\\", "/"), contents, {
     binary: true,
     unixPermissions: 0o600,
   });
 }
 
-function addPathToArchive(
+async function addPathToArchive(
   zip: JSZip,
   sourcePath: string,
   archivePath: string,
   budget: ExportBudget,
   warnings: string[],
-): void {
-  const stats = lstatSync(sourcePath);
+  signal?: AbortSignal,
+): Promise<void> {
+  throwIfExportAborted(signal);
+  const stats = await lstat(sourcePath);
   if (stats.isSymbolicLink()) {
     warnings.push(`Skipped symbolic link: ${archivePath}`);
     return;
@@ -231,22 +270,24 @@ function addPathToArchive(
       warnings.push(`Skipped sensitive file: ${archivePath}`);
       return;
     }
-    addFileToArchive(zip, sourcePath, archivePath, budget);
+    await addFileToArchive(zip, sourcePath, archivePath, budget, signal);
     return;
   }
   if (!stats.isDirectory()) return;
-  const entries = readdirSync(sourcePath, { withFileTypes: true });
+  const entries = await readdir(sourcePath, { withFileTypes: true });
   for (const entry of entries) {
+    throwIfExportAborted(signal);
     if (isSensitiveOrGeneratedEntry(entry.name, entry.isDirectory())) {
       warnings.push(`Skipped sensitive or generated path: ${archivePath}/${entry.name}`);
       continue;
     }
-    addPathToArchive(
+    await addPathToArchive(
       zip,
       join(sourcePath, entry.name),
       `${archivePath}/${entry.name}`,
       budget,
       warnings,
+      signal,
     );
   }
 }
@@ -267,12 +308,17 @@ function containsEmbeddedCredentials(source: string): boolean {
   }
 }
 
-function pinInstalledNpmSource(source: string, installedPath?: string): string {
+async function pinInstalledNpmSource(
+  source: string,
+  installedPath?: string,
+  signal?: AbortSignal,
+): Promise<string> {
   if (!source.startsWith("npm:") || !installedPath) return source;
   let version: unknown;
   try {
-    version = (JSON.parse(readFileSync(join(installedPath, "package.json"), "utf8")) as { version?: unknown }).version;
+    version = (JSON.parse(await readFile(join(installedPath, "package.json"), { encoding: "utf8", signal })) as { version?: unknown }).version;
   } catch {
+    throwIfExportAborted(signal);
     return source;
   }
   if (typeof version !== "string" || !version) return source;
@@ -292,21 +338,23 @@ function resolveConfiguredLocalSource(source: string, scope: BundleScope, cwd: s
   return resolve(scope === "project" ? join(cwd, ".pi") : agentDir, source);
 }
 
-function addPortableConfiguredPlugin(
+async function addPortableConfiguredPlugin(
   zip: JSZip,
   plugin: BundlePlugin,
   installedPath: string,
   budget: ExportBudget,
   warnings: string[],
-): void {
+  signal?: AbortSignal,
+): Promise<void> {
+  throwIfExportAborted(signal);
   const portablePath = plugin.portablePath!;
-  const stats = statSync(installedPath);
+  const stats = await stat(installedPath);
   if (stats.isDirectory()) {
-    addPathToArchive(zip, installedPath, portablePath, budget, warnings);
+    await addPathToArchive(zip, installedPath, portablePath, budget, warnings, signal);
     return;
   }
   const fileName = portablePluginFileName(installedPath);
-  addFileToArchive(zip, installedPath, `${portablePath}/extensions/${fileName}`, budget);
+  await addFileToArchive(zip, installedPath, `${portablePath}/extensions/${fileName}`, budget, signal);
   zip.file(`${portablePath}/package.json`, JSON.stringify({
     name: `piora-portable-${plugin.id}`,
     private: true,
@@ -320,14 +368,15 @@ function portablePluginFileName(installedPath: string): string {
   return safeSegment(installedPath.split(/[\\/]/).at(-1) ?? "extension.ts", "extension.ts");
 }
 
-function customExtensionRoot(filePath: string): string {
+async function customExtensionRoot(filePath: string, signal?: AbortSignal): Promise<string> {
+  throwIfExportAborted(signal);
   const fileName = filePath.split(/[\\/]/).at(-1)?.toLowerCase();
   const parent = dirname(filePath);
-  if (fileName === "index.ts" || fileName === "index.js" || existsSync(join(parent, "package.json"))) return parent;
+  if (fileName === "index.ts" || fileName === "index.js" || await pathExists(join(parent, "package.json"))) return parent;
   return filePath;
 }
 
-function addCustomResource(
+async function addCustomResource(
   zip: JSZip,
   packageArchivePath: string,
   kind: "extensions" | "skills",
@@ -336,24 +385,73 @@ function addCustomResource(
   budget: ExportBudget,
   warnings: string[],
   copiedRoots: Map<string, string>,
-): string {
+  signal?: AbortSignal,
+): Promise<string> {
+  throwIfExportAborted(signal);
   const rootKey = normalizedPath(rootPath);
   let destination = copiedRoots.get(rootKey);
   if (!destination) {
     const baseName = safeSegment(rootPath.split(/[\\/]/).at(-1) ?? kind.slice(0, -1), kind.slice(0, -1));
     destination = `${kind}/${baseName}-${pathHash(rootPath)}`;
     copiedRoots.set(rootKey, destination);
-    if (statSync(rootPath).isDirectory()) {
-      addPathToArchive(zip, rootPath, `${packageArchivePath}/${destination}`, budget, warnings);
+    const rootStats = await stat(rootPath);
+    if (rootStats.isDirectory()) {
+      await addPathToArchive(zip, rootPath, `${packageArchivePath}/${destination}`, budget, warnings, signal);
     } else {
       const extension = extname(rootPath);
       destination = `${kind}/${safeSegment(baseName.replace(new RegExp(`${extension.replace(".", "\\.")}$`), ""), kind.slice(0, -1))}-${pathHash(rootPath)}${extension}`;
       copiedRoots.set(rootKey, destination);
-      addFileToArchive(zip, rootPath, `${packageArchivePath}/${destination}`, budget);
+      await addFileToArchive(zip, rootPath, `${packageArchivePath}/${destination}`, budget, signal);
     }
   }
-  if (statSync(rootPath).isFile()) return destination;
+  if ((await stat(rootPath)).isFile()) return destination;
   return `${destination}/${relative(rootPath, filePath).replaceAll("\\", "/")}`;
+}
+
+async function generateCapabilityBundleBytes(zip: JSZip, signal?: AbortSignal): Promise<Buffer> {
+  throwIfExportAborted(signal);
+  const stream = zip.generateInternalStream({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+    compressionOptions: { level: 6 },
+    platform: process.platform === "win32" ? "DOS" : "UNIX",
+  });
+  return new Promise<Buffer>((resolvePromise, reject) => {
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", abort);
+      if (error) reject(error);
+      else resolvePromise(Buffer.concat(chunks, totalBytes));
+    };
+    const abort = () => {
+      stream.pause();
+      finish(exportAbortError(signal));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    stream
+      .on("data", (chunk) => {
+        if (settled) return;
+        if (signal?.aborted) {
+          abort();
+          return;
+        }
+        const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        totalBytes += bytes.byteLength;
+        if (totalBytes > CAPABILITY_BUNDLE_MAX_ARCHIVE_BYTES) {
+          stream.pause();
+          finish(new CapabilityBundleError("Capability bundle is too large to download", 413));
+          return;
+        }
+        chunks.push(bytes);
+      })
+      .on("error", (error) => finish(error))
+      .on("end", () => finish());
+    stream.resume();
+  });
 }
 
 function extensionStateKey(scope: BundleScope, source: string): string {
@@ -365,7 +463,12 @@ function readBundleName(cwd: string): string {
   return `${safeLabel(folder, "Piora")} capabilities`;
 }
 
-export async function exportCapabilityBundle(cwd: string): Promise<{ bytes: Buffer; manifest: CapabilityBundleManifest }> {
+export async function exportCapabilityBundle(
+  cwd: string,
+  options: ExportCapabilityBundleOptions = {},
+): Promise<{ bytes: Buffer; manifest: CapabilityBundleManifest }> {
+  const { signal } = options;
+  throwIfExportAborted(signal);
   const agentDir = getAgentDir();
   const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: true });
   const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
@@ -378,8 +481,9 @@ export async function exportCapabilityBundle(cwd: string): Promise<{ bytes: Buff
   const configured = packageManager.listConfiguredPackages();
   const configuredPaths = new Map(configured.map((item) => [extensionStateKey(bundleScope(item.scope), item.source), item.installedPath]));
 
-  const appendPackages = (entries: PackageSource[], scope: BundleScope) => {
-    entries.forEach((entry, index) => {
+  const appendPackages = async (entries: PackageSource[], scope: BundleScope) => {
+    for (const [index, entry] of entries.entries()) {
+      throwIfExportAborted(signal);
       const source = packageSource(entry);
       const id = portablePluginId(scope, source, plugins.length + index);
       const filters = packageFilters(entry);
@@ -388,31 +492,45 @@ export async function exportCapabilityBundle(cwd: string): Promise<{ bytes: Buff
       if (isRemotePackageSource(source)) {
         if (containsEmbeddedCredentials(source)) {
           warnings.push(`Skipped remote plugin with embedded credentials: ${label}`);
-          return;
+          continue;
         }
-        plugins.push({ id, scope, label, source: pinInstalledNpmSource(source, installedPath), ...(filters ? { filters } : {}) });
+        plugins.push({
+          id,
+          scope,
+          label,
+          source: await pinInstalledNpmSource(source, installedPath, signal),
+          ...(filters ? { filters } : {}),
+        });
       } else {
         const localPath = installedPath ?? resolveConfiguredLocalSource(source, scope, cwd, agentDir);
-        if (!existsSync(localPath)) {
+        if (!await pathExists(localPath)) {
           warnings.push(`Skipped missing local plugin: ${label}`);
-          return;
+          continue;
         }
         const portablePath = `payload/plugins/${id}`;
         const plugin: BundlePlugin = { id, scope, label, portablePath, ...(filters ? { filters } : {}) };
-        addPortableConfiguredPlugin(zip, plugin, localPath, budget, warnings);
+        await addPortableConfiguredPlugin(zip, plugin, localPath, budget, warnings, signal);
         plugins.push(plugin);
       }
       pluginIdsBySource.set(extensionStateKey(scope, source), id);
       pluginRoots.push({ id, scope, source, installedPath });
-    });
+    }
   };
 
-  appendPackages(settingsManager.getGlobalSettings().packages ?? [], "global");
-  appendPackages(settingsManager.getProjectSettings().packages ?? [], "project");
+  await appendPackages(settingsManager.getGlobalSettings().packages ?? [], "global");
+  await appendPackages(settingsManager.getProjectSettings().packages ?? [], "project");
 
+  throwIfExportAborted(signal);
   const resolvedResources = await packageManager.resolve(async () => "skip");
-  const loadedSkills = await loadSkillsWithInstallInfo(cwd);
-  const skills: BundleSkill[] = loadedSkills.skills
+  throwIfExportAborted(signal);
+  const loadedSkills = annotateSkillsWithInstallInfo(loadSkills({
+    cwd,
+    agentDir,
+    skillPaths: resolvedResources.skills.filter((resource) => resource.enabled).map((resource) => resource.path),
+    includeDefaults: false,
+  }).skills, { cwd, agentDir });
+  throwIfExportAborted(signal);
+  const skills: BundleSkill[] = loadedSkills
     .filter((skill) => Boolean(skill.install))
     .map((skill) => ({
       package: skill.install!.package,
@@ -420,9 +538,9 @@ export async function exportCapabilityBundle(cwd: string): Promise<{ bytes: Buff
       disableModelInvocation: skill.disableModelInvocation,
     }));
   const installedSkillPaths = new Set(
-    loadedSkills.skills.filter((skill) => skill.install).map((skill) => normalizedPath(skill.filePath)),
+    loadedSkills.filter((skill) => skill.install).map((skill) => normalizedPath(skill.filePath)),
   );
-  const skillByPath = new Map(loadedSkills.skills.map((skill) => [normalizedPath(skill.filePath), skill]));
+  const skillByPath = new Map(loadedSkills.map((skill) => [normalizedPath(skill.filePath), skill]));
   const extensionStates: BundleExtensionState[] = [];
   const skillStates: BundleSkillState[] = [];
   const extensionPlan = await resolveExtensionLoadPlan({
@@ -431,7 +549,9 @@ export async function exportCapabilityBundle(cwd: string): Promise<{ bytes: Buff
     settingsManager,
     profile: "normal",
   });
+  throwIfExportAborted(signal);
   for (const candidate of extensionPlan.candidates) {
+    throwIfExportAborted(signal);
     if (candidate.builtIn) {
       extensionStates.push({ target: "builtin", id: candidate.id, enabled: candidate.enabled });
       continue;
@@ -441,7 +561,7 @@ export async function exportCapabilityBundle(cwd: string): Promise<{ bytes: Buff
     const pluginId = pluginIdsBySource.get(extensionStateKey(scope, candidate.metadata.source));
     if (!pluginId || !candidate.metadata.baseDir) continue;
     const pluginRoot = pluginRoots.find((item) => item.id === pluginId);
-    const relativePath = pluginRoot?.installedPath && statSync(pluginRoot.installedPath).isFile()
+    const relativePath = pluginRoot?.installedPath && (await stat(pluginRoot.installedPath)).isFile()
       ? `extensions/${portablePluginFileName(pluginRoot.installedPath)}`
       : relative(candidate.metadata.baseDir, candidate.path).replaceAll("\\", "/");
     if (!relativePath.startsWith("../") && relativePath !== "..") {
@@ -449,7 +569,8 @@ export async function exportCapabilityBundle(cwd: string): Promise<{ bytes: Buff
     }
   }
 
-  for (const skill of loadedSkills.skills) {
+  for (const skill of loadedSkills) {
+    throwIfExportAborted(signal);
     if (skill.install) continue;
     const pluginRoot = pluginRoots.find((item) => item.installedPath && isWithinOrSame(skill.filePath, item.installedPath));
     if (!pluginRoot?.installedPath) continue;
@@ -461,6 +582,7 @@ export async function exportCapabilityBundle(cwd: string): Promise<{ bytes: Buff
   }
 
   for (const scope of ["global", "project"] as const) {
+    throwIfExportAborted(signal);
     const packageId = `custom-${scope}`;
     const portablePath = `payload/${packageId}`;
     const copiedRoots = new Map<string, string>();
@@ -468,23 +590,26 @@ export async function exportCapabilityBundle(cwd: string): Promise<{ bytes: Buff
     const skillEntries: string[] = [];
 
     for (const candidate of extensionPlan.candidates) {
+      throwIfExportAborted(signal);
       if (candidate.builtIn || candidate.metadata.origin !== "top-level" || bundleScope(candidate.metadata.scope) !== scope) continue;
-      const rootPath = customExtensionRoot(candidate.path);
-      if (!existsSync(rootPath)) continue;
-      const entry = addCustomResource(zip, portablePath, "extensions", candidate.path, rootPath, budget, warnings, copiedRoots);
+      const rootPath = await customExtensionRoot(candidate.path, signal);
+      if (!await pathExists(rootPath)) continue;
+      const entry = await addCustomResource(zip, portablePath, "extensions", candidate.path, rootPath, budget, warnings, copiedRoots, signal);
       extensionEntries.push(`./${entry}`);
       extensionStates.push({ target: "plugin", pluginId: packageId, relativePath: entry, enabled: candidate.enabled });
     }
 
     for (const resource of resolvedResources.skills) {
+      throwIfExportAborted(signal);
+      if (!resource.enabled) continue;
       if (resource.metadata.origin !== "top-level" || bundleScope(resource.metadata.scope) !== scope) continue;
       if (installedSkillPaths.has(normalizedPath(resource.path))) continue;
       const skill = skillByPath.get(normalizedPath(resource.path));
-      if (!skill || !existsSync(skill.filePath)) continue;
+      if (!skill || !await pathExists(skill.filePath)) continue;
       const rootPath = skill.filePath.split(/[\\/]/).at(-1)?.toLowerCase() === "skill.md"
         ? dirname(skill.filePath)
         : skill.filePath;
-      const entry = addCustomResource(zip, portablePath, "skills", skill.filePath, rootPath, budget, warnings, copiedRoots);
+      const entry = await addCustomResource(zip, portablePath, "skills", skill.filePath, rootPath, budget, warnings, copiedRoots, signal);
       skillEntries.push(`./${entry}`);
     }
 
@@ -522,15 +647,7 @@ export async function exportCapabilityBundle(cwd: string): Promise<{ bytes: Buff
     warnings: [...new Set(warnings)],
   };
   zip.file("manifest.json", `${JSON.stringify(manifest, null, 2)}\n`);
-  const bytes = await zip.generateAsync({
-    type: "nodebuffer",
-    compression: "DEFLATE",
-    compressionOptions: { level: 6 },
-    platform: process.platform === "win32" ? "DOS" : "UNIX",
-  });
-  if (bytes.byteLength > CAPABILITY_BUNDLE_MAX_ARCHIVE_BYTES) {
-    throw new CapabilityBundleError("Capability bundle is too large to download", 413);
-  }
+  const bytes = await generateCapabilityBundleBytes(zip, signal);
   return { bytes, manifest };
 }
 
@@ -916,11 +1033,14 @@ export async function importCapabilityBundle(archiveBytes: Buffer, cwd: string):
   }
   await settingsManager.flush();
 
+  const runNpxForImport = manifest.skills.length > 0
+    ? (await import("@/lib/npx")).runNpx
+    : undefined;
   for (const skill of manifest.skills) {
     try {
       const args = ["skills", "add", skill.package, "-y", "--agent", "pi"];
       if (skill.scope === "global") args.push("-g");
-      await runNpx(args, {
+      await runNpxForImport!(args, {
         timeout: 60_000,
         cwd: skill.scope === "project" ? cwd : undefined,
         env: { ...process.env, FORCE_COLOR: "0" },
@@ -986,6 +1106,7 @@ export async function importCapabilityBundle(archiveBytes: Buffer, cwd: string):
     if (setSkillInvocationState(target, state.disableModelInvocation)) skillStatesApplied += 1;
   }
 
+  const { loadSkillsWithInstallInfo } = await import("@/lib/skills-service");
   const refreshedSkills = await loadSkillsWithInstallInfo(cwd);
   for (const skillState of manifest.skills) {
     const skill = refreshedSkills.skills.find((item) => (
@@ -994,6 +1115,7 @@ export async function importCapabilityBundle(archiveBytes: Buffer, cwd: string):
     if (skill && setSkillInvocationState(skill.filePath, skillState.disableModelInvocation)) skillStatesApplied += 1;
   }
 
+  const { invalidateServicesCache } = await import("@/lib/rpc-manager");
   invalidateServicesCache();
   return {
     success: true,

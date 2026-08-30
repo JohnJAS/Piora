@@ -10,26 +10,44 @@ import styles from "./StarterCards.module.css";
 
 export function StarterCards({ cwd, onSelect }: { cwd?: string | null; onSelect: (prompt: string) => void }) {
   const { t } = useI18n();
-  const [signals, setSignals] = useState<StarterSignals>(() => emptySignals(Boolean(cwd)));
+  const normalizedCwd = cwd ?? null;
+  const [signalSnapshot, setSignalSnapshot] = useState<{ cwd: string | null; signals: StarterSignals }>(() => ({
+    cwd: normalizedCwd,
+    signals: emptySignals(Boolean(cwd)),
+  }));
 
   useEffect(() => {
-    if (!cwd) { setSignals(emptySignals(false)); return; }
+    if (!cwd) {
+      setSignalSnapshot({ cwd: null, signals: emptySignals(false) });
+      return;
+    }
     const controller = new AbortController();
+    const requestCwd = cwd;
     const encoded = encodeURIComponent(cwd);
     Promise.all([
-      fetch(`/api/project-info?cwd=${encoded}&starters=1`, { signal: controller.signal }).then((response) => response.ok ? response.json() : {}),
+      fetch(`/api/project-info?cwd=${encoded}&starters=fast`, { signal: controller.signal }).then((response) => response.ok ? response.json() : {}),
       fetch(`/api/git/status?cwd=${encoded}`, { signal: controller.signal }).then((response) => response.ok ? response.json() : {}),
     ]).then(([project, git]: [{ starterSignals?: ProjectStarterSignals }, Partial<GitStatusResponse>]) => {
       const starterSignals = project.starterSignals ?? emptySignals(true);
-      setSignals({
-        ...starterSignals,
-        hasProject: true,
-        hasUncommittedChanges: Array.isArray(git.files) && git.files.length > 0,
+      setSignalSnapshot({
+        cwd: requestCwd,
+        signals: {
+          ...starterSignals,
+          hasProject: true,
+          hasUncommittedChanges: Array.isArray(git.files) && git.files.length > 0,
+        },
       });
-    }).catch(() => { if (!controller.signal.aborted) setSignals(emptySignals(true)); });
+    }).catch(() => {
+      if (!controller.signal.aborted) {
+        setSignalSnapshot({ cwd: requestCwd, signals: emptySignals(true) });
+      }
+    });
     return () => controller.abort();
   }, [cwd]);
 
+  const signals = signalSnapshot.cwd === normalizedCwd
+    ? signalSnapshot.signals
+    : emptySignals(Boolean(cwd));
   const starters: Starter[] = buildStarters(signals, t);
   return (
     <div className={styles.root} aria-label={t("starters.label")}>

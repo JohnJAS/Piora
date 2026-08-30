@@ -26,5 +26,5 @@ export function buildStarters(signals: StarterSignals, t: Translate): Starter[] 
   if (signals.hasReadme) starters.push({ id: "architecture", prompt: t("starters.explainArchitecture"), icon: "project" });
   if (signals.hasPackageJson && signals.hasOutdatedDependencies) starters.push({ id: "dependencies", prompt: t("starters.upgradeDependencies"), icon: "sync" });
   starters.push({ id: "bug", prompt: t("starters.findBug"), icon: "bug" });
-  return starters.slice(0, 5);
+  return starters.slice(0, 4);
 }

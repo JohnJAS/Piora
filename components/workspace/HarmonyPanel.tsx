@@ -453,7 +453,7 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ serial: selectedSerial, leaseToken: lease.token, ...input }),
-    }), requestFrame);
+    }));
   };
 
   const mediaAction = (mediaActionName: "capture_screenshot" | "start_recording" | "stop_recording") => {

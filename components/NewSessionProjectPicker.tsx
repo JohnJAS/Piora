@@ -1,66 +1,83 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { setDraft, type ChatDraft, type ChatDraftFile } from "@/lib/draft-store";
-import { LARGE_PASTE_CHARACTER_THRESHOLD } from "@/lib/prompt-input-policy";
-import { getProjectLabel } from "@/lib/session-project-groups";
-import { fetchModelCatalog } from "@/lib/model-catalog-client";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+import { useI18n } from "@/hooks/useI18n";
+import type { AttachedFile } from "@/hooks/useAgentSession";
+import { fetchModelCatalog, type ModelCatalogEntry } from "@/lib/model-catalog-client";
+import { buildSessionProjectGroups, getProjectLabel } from "@/lib/session-project-groups";
 import type { SessionInfo } from "@/lib/types";
 import { AliIcon } from "./AliIcon";
+import {
+  ChatInput,
+  type AttachedImage,
+  type ChatInputHandle,
+  type PromptRunOptions,
+} from "./ChatInput";
+import { DirectoryPicker } from "./DirectoryPicker";
+import { NewSessionLauncher } from "./NewSessionLauncher";
+import type { NewSessionLaunch } from "./new-session-types";
 import styles from "./NewSessionProjectPicker.module.css";
 
 interface ProjectChoice {
   root: string;
   cwd: string;
   sessionCount: number;
+  latestModified: string | null;
 }
 
-interface ModelChoice {
-  id: string;
-  name: string;
-  provider: string;
-}
-
-interface SelectedModel {
-  modelId: string;
-  provider: string;
-}
-
-const MAX_LANDING_PASTES = 8;
-
-function resizeLandingComposer(textarea: HTMLTextAreaElement): void {
-  textarea.style.height = "auto";
-  textarea.style.height = `${Math.min(textarea.scrollHeight, 360)}px`;
+function createLaunchId(): string {
+  return typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function NewSessionProjectPicker({
   activeCwd,
   activeProjectRoot,
-  onSelect,
-  onBrowse,
+  chatInputRef,
+  onLaunch,
 }: {
   activeCwd?: string | null;
   activeProjectRoot?: string | null;
-  onSelect: (cwd: string, projectRoot: string, model?: SelectedModel) => void;
-  onBrowse: (draft: ChatDraft, model: SelectedModel) => void;
+  chatInputRef?: RefObject<ChatInputHandle | null>;
+  onLaunch: (request: NewSessionLaunch) => void;
 }) {
+  const { t } = useI18n();
+  const localChatInputRef = useRef<ChatInputHandle>(null);
+  const effectiveChatInputRef = chatInputRef ?? localChatInputRef;
+  const draftKey = useRef(`new-task:${createLaunchId()}`).current;
+  const pendingSubmissionClaimedRef = useRef(false);
+  const projectControlRef = useRef<HTMLDivElement>(null);
+  const projectSearchRef = useRef<HTMLInputElement>(null);
+
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  const [models, setModels] = useState<ModelChoice[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [models, setModels] = useState<ModelCatalogEntry[]>([]);
   const [selectedModelKey, setSelectedModelKey] = useState("");
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [modelsReloadKey, setModelsReloadKey] = useState(0);
-  const [modelSelectionRequired, setModelSelectionRequired] = useState(false);
-  const [selectedProject, setSelectedProject] = useState<ProjectChoice | null>(null);
-  const [projectSelectionRequired, setProjectSelectionRequired] = useState(false);
-  const [query, setQuery] = useState("");
-  const [draft, setLandingDraft] = useState("");
-  const [pastedMaterials, setPastedMaterials] = useState<ChatDraftFile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const searchRef = useRef<HTMLInputElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const projectSelectorRef = useRef<HTMLDivElement>(null);
+  const [loadedModelCwd, setLoadedModelCwd] = useState<string | null | undefined>(undefined);
+  const [selectedProject, setSelectedProject] = useState<ProjectChoice | null>(() => activeCwd ? {
+    root: activeProjectRoot ?? activeCwd,
+    cwd: activeCwd,
+    sessionCount: 0,
+    latestModified: null,
+  } : null);
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [projectRequired, setProjectRequired] = useState(false);
+  const [projectQuery, setProjectQuery] = useState("");
+  const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
+  const [projectValidating, setProjectValidating] = useState(false);
+  const [projectError, setProjectError] = useState<string | null>(null);
+  const [submitAfterProjectSelection, setSubmitAfterProjectSelection] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,335 +87,333 @@ export function NewSessionProjectPicker({
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         if (!cancelled) setSessions(data.sessions ?? []);
       })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .catch(() => { /* An empty recent-project list is still usable. */ })
+      .finally(() => { if (!cancelled) setSessionsLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
+    if (!activeCwd) return;
+    const root = activeProjectRoot ?? activeCwd;
+    setSelectedProject((current) => current?.cwd === activeCwd && current.root === root ? current : {
+      root,
+      cwd: activeCwd,
+      sessionCount: current?.root === root ? current.sessionCount : 0,
+      latestModified: current?.root === root ? current.latestModified : null,
+    });
+  }, [activeCwd, activeProjectRoot]);
+
+  useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
+    const requestCwd = selectedProject?.cwd;
     setModelsLoading(true);
     setModelsError(null);
+    setLoadedModelCwd(undefined);
     void fetchModelCatalog({
+      cwd: requestCwd,
       forceRefresh: modelsReloadKey > 0,
       signal: controller.signal,
     })
       .then((data) => {
         if (cancelled) return;
-        const nextModels: ModelChoice[] = data.modelList ?? [];
+        const nextModels = data.modelList ?? [];
         setModels(nextModels);
         setModelsError(data.modelError ?? null);
-        if (nextModels.length > 0) setModelSelectionRequired(false);
         setSelectedModelKey((current) => {
-          if (nextModels.some((entry) => `${entry.provider}/${entry.id}` === current)) return current;
+          if (nextModels.some((model) => `${model.provider}/${model.id}` === current)) return current;
           const preferred = data.defaultModel
             ? `${data.defaultModel.provider}/${data.defaultModel.modelId}`
             : "";
-          if (preferred && nextModels.some((entry) => `${entry.provider}/${entry.id}` === preferred)) return preferred;
+          if (preferred && nextModels.some((model) => `${model.provider}/${model.id}` === preferred)) return preferred;
           const first = nextModels[0];
           return first ? `${first.provider}/${first.id}` : "";
         });
+        setLoadedModelCwd(requestCwd ?? null);
       })
       .catch((error) => {
-        if (controller.signal.aborted) return;
-        if (!cancelled) setModelsError(error instanceof Error ? error.message : String(error));
+        if (controller.signal.aborted || cancelled) return;
+        setModels([]);
+        setSelectedModelKey("");
+        setModelsError(error instanceof Error ? error.message : String(error));
+        setLoadedModelCwd(requestCwd ?? null);
       })
       .finally(() => { if (!cancelled) setModelsLoading(false); });
     return () => { cancelled = true; controller.abort(); };
-  }, [modelsReloadKey]);
+  }, [modelsReloadKey, selectedProject?.cwd]);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    const frame = window.requestAnimationFrame(() => searchRef.current?.focus());
-    return () => window.cancelAnimationFrame(frame);
-  }, [menuOpen]);
+  const projects = useMemo<ProjectChoice[]>(() => {
+    const groups = buildSessionProjectGroups(
+      sessions.filter((session) => !session.projectless),
+      activeCwd ? { cwd: activeCwd, projectRoot: activeProjectRoot } : null,
+    );
+    return groups.map((group) => ({
+      root: group.projectRoot,
+      cwd: group.preferredCwd,
+      sessionCount: group.sessions.length,
+      latestModified: group.latestModified,
+    }));
+  }, [activeCwd, activeProjectRoot, sessions]);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!projectSelectorRef.current?.contains(event.target as Node)) setMenuOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", closeOnOutsidePointer);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("pointerdown", closeOnOutsidePointer);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [menuOpen]);
-
-  const projects = useMemo(() => {
-    const choices = new Map<string, ProjectChoice>();
-    for (const session of sessions) {
-      const root = session.projectRoot ?? session.cwd;
-      const existing = choices.get(root);
-      choices.set(root, {
-        root,
-        cwd: existing?.cwd ?? session.cwd,
-        sessionCount: (existing?.sessionCount ?? 0) + 1,
-      });
-    }
-    if (activeCwd) {
-      const root = activeProjectRoot ?? activeCwd;
-      if (!choices.has(root)) choices.set(root, { root, cwd: activeCwd, sessionCount: 0 });
-    }
-    const needle = query.trim().toLocaleLowerCase();
-    return [...choices.values()]
-      .filter((choice) => (
-        !needle || getProjectLabel(choice.root).toLocaleLowerCase().includes(needle) || choice.root.toLocaleLowerCase().includes(needle)
-      ))
+  const filteredProjects = useMemo(() => {
+    const needle = projectQuery.trim().toLocaleLowerCase();
+    return projects
+      .filter((project) => !needle
+        || getProjectLabel(project.root).toLocaleLowerCase().includes(needle)
+        || project.root.toLocaleLowerCase().includes(needle))
       .sort((left, right) => {
-        const leftActive = left.root === activeProjectRoot ? 1 : 0;
-        const rightActive = right.root === activeProjectRoot ? 1 : 0;
-        return rightActive - leftActive
-          || right.sessionCount - left.sessionCount
-          || getProjectLabel(left.root).localeCompare(getProjectLabel(right.root));
+        const leftSelected = left.root === selectedProject?.root ? 1 : 0;
+        const rightSelected = right.root === selectedProject?.root ? 1 : 0;
+        return rightSelected - leftSelected
+          || (right.latestModified ?? "").localeCompare(left.latestModified ?? "");
       });
-  }, [activeCwd, activeProjectRoot, query, sessions]);
-
-  const getLandingDraft = (): ChatDraft => ({ value: draft, images: [], files: pastedMaterials });
+  }, [projectQuery, projects, selectedProject?.root]);
 
   const selectedModel = useMemo(() => {
-    const model = models.find((entry) => `${entry.provider}/${entry.id}` === selectedModelKey);
-    return model ? { provider: model.provider, modelId: model.id } : undefined;
+    const match = models.find((model) => `${model.provider}/${model.id}` === selectedModelKey);
+    return match ? { provider: match.provider, modelId: match.id } : null;
   }, [models, selectedModelKey]);
 
-  const requireSelectedModel = (): SelectedModel | undefined => {
-    if (selectedModel) return selectedModel;
-    setModelSelectionRequired(true);
-    setMenuOpen(false);
-    return undefined;
-  };
+  const selectedProjectModelReady = Boolean(
+    selectedProject
+    && selectedModel
+    && !modelsLoading
+    && loadedModelCwd === selectedProject.cwd,
+  );
 
-  const chooseProject = (choice: ProjectChoice) => {
-    setSelectedProject(choice);
-    setProjectSelectionRequired(false);
-    setMenuOpen(false);
-  };
+  const cancelPendingProjectSubmission = useCallback(() => {
+    pendingSubmissionClaimedRef.current = false;
+    setProjectMenuOpen(false);
+    setProjectRequired(false);
+    setSubmitAfterProjectSelection(false);
+  }, []);
 
-  const startSelectedProjectChat = () => {
-    const model = requireSelectedModel();
-    if (!model) return;
-    if (!selectedProject) {
-      setProjectSelectionRequired(true);
+  useEffect(() => {
+    if (!projectMenuOpen) return;
+    const frame = window.requestAnimationFrame(() => projectSearchRef.current?.focus());
+    const closeOnPointer = (event: PointerEvent) => {
+      if (!projectControlRef.current?.contains(event.target as Node)) cancelPendingProjectSubmission();
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") cancelPendingProjectSubmission();
+    };
+    document.addEventListener("pointerdown", closeOnPointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("pointerdown", closeOnPointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [cancelPendingProjectSubmission, projectMenuOpen]);
+
+  const chooseProject = useCallback((project: ProjectChoice) => {
+    setSelectedProject(project);
+    setProjectRequired(false);
+    setProjectError(null);
+    setProjectMenuOpen(false);
+    setProjectQuery("");
+    window.requestAnimationFrame(() => effectiveChatInputRef.current?.focus());
+  }, [effectiveChatInputRef]);
+
+  const validateAndChooseProject = useCallback(async (candidate: string) => {
+    if (projectValidating) return;
+    setProjectValidating(true);
+    setProjectError(null);
+    try {
+      const response = await fetch("/api/cwd/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd: candidate }),
+      });
+      const data = await response.json().catch(() => ({})) as { cwd?: string; error?: string };
+      if (!response.ok || !data.cwd) throw new Error(data.error ?? `HTTP ${response.status}`);
+      chooseProject({ root: data.cwd, cwd: data.cwd, sessionCount: 0, latestModified: null });
+      setDirectoryPickerOpen(false);
+    } catch (error) {
+      setProjectError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setProjectValidating(false);
+    }
+  }, [chooseProject, projectValidating]);
+
+  const browseForProject = useCallback(async () => {
+    setProjectMenuOpen(false);
+    setProjectError(null);
+    const selectDirectory = window.piDesktop?.selectDirectory;
+    if (!selectDirectory) {
+      setDirectoryPickerOpen(true);
       return;
     }
-    if (draft.trim() || pastedMaterials.length > 0) {
-      setDraft(`new:${selectedProject.cwd}`, getLandingDraft());
+    try {
+      const selected = await selectDirectory();
+      if (selected) await validateAndChooseProject(selected);
+      else setSubmitAfterProjectSelection(false);
+    } catch (error) {
+      setSubmitAfterProjectSelection(false);
+      setProjectError(error instanceof Error ? error.message : String(error));
     }
-    setMenuOpen(false);
-    onSelect(selectedProject.cwd, selectedProject.root, model);
-  };
+  }, [validateAndChooseProject]);
 
-  const browseForProject = () => {
-    const model = requireSelectedModel();
-    if (!model) return;
-    setMenuOpen(false);
-    onBrowse(getLandingDraft(), model);
-  };
-
-  const canStartChat = Boolean(selectedModel && selectedProject);
-
-  const restorePastedMaterial = (index: number) => {
-    const material = pastedMaterials[index];
-    if (!material?.text) return;
-    setPastedMaterials((current) => current.filter((_, currentIndex) => currentIndex !== index));
-    setLandingDraft((current) => current ? `${current}\n\n${material.text}` : material.text!);
-    window.requestAnimationFrame(() => {
-      const textarea = textareaRef.current;
-      if (!textarea) return;
-      textarea.focus();
-      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-      resizeLandingComposer(textarea);
+  const handleLandingSend = useCallback((
+    message: string,
+    images?: AttachedImage[],
+    files?: AttachedFile[],
+    options?: PromptRunOptions,
+  ): false | void => {
+    if (!selectedProject) {
+      pendingSubmissionClaimedRef.current = false;
+      setProjectRequired(true);
+      setSubmitAfterProjectSelection(true);
+      setProjectMenuOpen(true);
+      return false;
+    }
+    if (!selectedModel || !selectedProjectModelReady) return false;
+    onLaunch({
+      cwd: selectedProject.cwd,
+      projectRoot: selectedProject.root,
+      model: selectedModel,
+      prompt: {
+        id: createLaunchId(),
+        message,
+        images,
+        files,
+        options,
+      },
     });
-  };
+  }, [onLaunch, selectedModel, selectedProject, selectedProjectModelReady]);
 
-  return (
-    <main className={styles.root} aria-label="新对话">
-      <section className={styles.hero}>
-        <header className={styles.intro}>
-          <span className={styles.welcomeBadge}>新会话</span>
-          <h1>准备好模型和项目，再开始聊天</h1>
-          <p>按顺序完成两项设置，Piora 才会进入与你当前工作匹配的会话。</p>
-        </header>
-        <section className={styles.setup} aria-label="会话准备">
-          <div className={styles.setupRow} data-complete={Boolean(selectedModel)}>
-            <span className={styles.stepNumber}>{selectedModel ? <AliIcon name="check" size={13} /> : "1"}</span>
-            <div className={styles.stepCopy}>
-              <strong>配置模型</strong>
-              <small>{modelsLoading ? "正在读取你的可用模型" : models.length > 0 ? `已加载 ${models.length} 个可用模型` : "需要先加载一个可用模型"}</small>
-            </div>
-            <label className={styles.modelSelect}>
-              <AliIcon name="robot" size={15} />
-              <select
-                value={selectedModelKey}
-                onChange={(event) => {
-                  setSelectedModelKey(event.target.value);
-                  setModelSelectionRequired(false);
-                }}
-                aria-label="选择模型"
-                aria-invalid={modelSelectionRequired}
-                disabled={modelsLoading || models.length === 0}
-              >
-                <option value="" disabled>
-                  {modelsLoading ? "正在加载模型…" : modelsError && models.length === 0 ? "模型加载失败" : models.length === 0 ? "暂无可用模型" : "选择模型"}
-                </option>
-                {models.map((model) => (
-                  <option key={`${model.provider}/${model.id}`} value={`${model.provider}/${model.id}`}>
-                    {model.name || model.id} · {model.provider}
-                  </option>
-                ))}
-              </select>
+  useEffect(() => {
+    if (!submitAfterProjectSelection || !selectedProjectModelReady) return;
+    if (pendingSubmissionClaimedRef.current) return;
+    pendingSubmissionClaimedRef.current = true;
+    setSubmitAfterProjectSelection(false);
+    effectiveChatInputRef.current?.submit();
+  }, [effectiveChatInputRef, selectedProjectModelReady, submitAfterProjectSelection]);
+
+  const modelsUnavailable = !modelsLoading && models.length === 0;
+  const modelSelectionBlocked = modelsLoading
+    || !selectedModel
+    || (selectedProject ? loadedModelCwd !== selectedProject.cwd : loadedModelCwd !== null);
+
+  const projectControl = (
+    <div ref={projectControlRef} className={styles.projectControl}>
+      <button
+        type="button"
+        className={styles.projectTrigger}
+        data-required={projectRequired || undefined}
+        onClick={() => {
+          pendingSubmissionClaimedRef.current = false;
+          setProjectRequired(false);
+          setSubmitAfterProjectSelection(false);
+          setProjectMenuOpen((open) => !open);
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={projectMenuOpen}
+        title={selectedProject?.root ?? t("newSession.chooseProject")}
+      >
+        <AliIcon name="folder" size={14} />
+        <span>{selectedProject ? getProjectLabel(selectedProject.root) : t("newSession.chooseProject")}</span>
+        <AliIcon name="arrowdown" size={10} />
+      </button>
+      {projectMenuOpen ? (
+        <>
+          <button
+            type="button"
+            className={styles.projectBackdrop}
+            aria-label={t("chat.close")}
+            tabIndex={-1}
+            onClick={cancelPendingProjectSubmission}
+          />
+          <div className={styles.projectPopover}>
+            <label className={styles.projectSearch}>
+              <AliIcon name="search" size={14} />
+              <input
+                ref={projectSearchRef}
+                value={projectQuery}
+                onChange={(event) => setProjectQuery(event.target.value)}
+                placeholder={t("newSession.searchProjects")}
+                aria-label={t("newSession.searchProjects")}
+              />
             </label>
-            {(modelsError || (!modelsLoading && models.length === 0)) ? (
-              <button
-                type="button"
-                className={styles.reloadButton}
-                onClick={() => setModelsReloadKey((key) => key + 1)}
-                disabled={modelsLoading}
-                title="重新加载可用模型"
-              >
-                <AliIcon name="reload" size={13} />
-                重新加载
-              </button>
-            ) : null}
-          </div>
-          {modelsError ? (
-            <div className={styles.modelNotice} role={models.length === 0 ? "alert" : "status"}>
-              <AliIcon name="warning" size={13} />
-              <span>{models.length === 0 ? "暂时没有加载到可用模型，请重新加载。" : "可用模型已加载，但部分扩展模型暂时不可用。"}</span>
+            <div className={styles.projectList} role="listbox" aria-label={t("newSession.chooseProject")}>
+              {filteredProjects.map((project) => (
+                <button
+                  key={project.root}
+                  type="button"
+                  role="option"
+                  aria-selected={project.root === selectedProject?.root}
+                  onClick={() => chooseProject(project)}
+                  title={project.root}
+                >
+                  <AliIcon name="folder" size={15} />
+                  <span>
+                    <strong>{getProjectLabel(project.root)}</strong>
+                    <small>{project.root}</small>
+                  </span>
+                  {project.sessionCount > 0 ? <em>{project.sessionCount}</em> : null}
+                </button>
+              ))}
+              {sessionsLoading ? <p>{t("newSession.loadingProjects")}</p> : null}
+              {!sessionsLoading && filteredProjects.length === 0 ? <p>{t("newSession.noProjects")}</p> : null}
             </div>
-          ) : null}
-          <div className={styles.setupDivider} />
-          <div className={styles.setupRow} data-complete={Boolean(selectedProject)}>
-            <span className={styles.stepNumber}>{selectedProject ? <AliIcon name="check" size={13} /> : "2"}</span>
-            <div className={styles.stepCopy}>
-              <strong>创建或选择项目</strong>
-              <small>{selectedProject ? selectedProject.root : "指定 Piora 可以读取和修改的工作目录"}</small>
-            </div>
-            <div ref={projectSelectorRef} className={styles.projectAnchor}>
-              {menuOpen ? (
-                <div className={styles.projectPopover}>
-                  <label className={styles.search}>
-                    <AliIcon name="search" size={14} />
-                    <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目" aria-label="搜索项目" />
-                  </label>
-                  <div className={styles.list} role="listbox" aria-label="选择项目">
-                    {projects.map((choice) => (
-                      <button key={choice.root} type="button" role="option" aria-selected={choice.root === selectedProject?.root} onClick={() => chooseProject(choice)} title={choice.root}>
-                        <AliIcon name="folder" size={15} />
-                        <span><strong>{getProjectLabel(choice.root)}</strong><small>{choice.root}</small></span>
-                        <small>{choice.sessionCount > 0 ? `${choice.sessionCount} 个对话` : ""}</small>
-                      </button>
-                    ))}
-                    {!loading && projects.length === 0 ? <p>没有匹配的项目</p> : null}
-                    {loading ? <p>正在加载项目…</p> : null}
-                  </div>
-                  <div className={styles.footer}>
-                    <button type="button" onClick={browseForProject}><AliIcon name="folder-open" size={14} />创建或打开其他项目</button>
-                  </div>
-                </div>
-              ) : null}
-              <button
-                className={`${styles.projectButton}${projectSelectionRequired ? ` ${styles.selectionError}` : ""}`}
-                type="button"
-                onClick={() => {
-                  if (!requireSelectedModel()) return;
-                  setMenuOpen((open) => !open);
-                  setProjectSelectionRequired(false);
-                }}
-                aria-haspopup="listbox"
-                aria-expanded={menuOpen}
-              >
-                <AliIcon name="folder" size={14} />
-                <span>{selectedProject ? getProjectLabel(selectedProject.root) : "选择项目"}</span>
-                <AliIcon name="arrowdown" size={10} />
-              </button>
-            </div>
-            <button className={styles.browseButton} type="button" onClick={browseForProject} disabled={!selectedModel}>
+            <button type="button" className={styles.browseProject} onClick={() => void browseForProject()}>
               <AliIcon name="folder-open" size={14} />
-              创建项目
+              {t("newSession.browseProject")}
             </button>
           </div>
-        </section>
+        </>
+      ) : null}
+    </div>
+  );
 
-        <section className={styles.chatStep} data-ready={canStartChat} aria-label="开始聊天">
-          <header className={styles.chatStepHeader}>
-            <span className={styles.stepNumber}>3</span>
-            <div className={styles.stepCopy}>
-              <strong>开始聊天</strong>
-              <small>{canStartChat ? "描述你想构建、修复或了解的内容" : "完成上面的模型和项目设置后即可输入"}</small>
-            </div>
-          </header>
-          <div className={styles.composer}>
-            {pastedMaterials.length > 0 ? (
-              <div className={styles.materials} aria-label="粘贴的长内容">
-                {pastedMaterials.map((material, index) => (
-                  <div className={styles.material} key={`${material.name}:${index}`}>
-                    <AliIcon name="file" size={13} />
-                    <span>{material.name}</span>
-                    <button type="button" onClick={() => restorePastedMaterial(index)}>展开编辑</button>
-                    <button
-                      type="button"
-                      className={styles.removeMaterial}
-                      onClick={() => setPastedMaterials((current) => current.filter((_, currentIndex) => currentIndex !== index))}
-                      aria-label={`移除 ${material.name}`}
-                    >
-                      <AliIcon name="close" size={9} />
-                    </button>
-                  </div>
-                ))}
-              </div>
+  return (
+    <>
+      <NewSessionLauncher
+        cwd={selectedProject?.cwd}
+        projectLabel={selectedProject ? getProjectLabel(selectedProject.root) : null}
+        onStarterSelect={(prompt) => effectiveChatInputRef.current?.insertIfEmpty(prompt)}
+      >
+        <ChatInput
+          ref={effectiveChatInputRef}
+          variant="launcher"
+          onSend={handleLandingSend}
+          onAbort={() => {}}
+          isStreaming={false}
+          model={selectedModel}
+          isAutoModelSelection={modelSelectionBlocked}
+          modelList={models}
+          modelError={models.length > 0 ? modelsError : null}
+          onModelChange={(provider, modelId) => setSelectedModelKey(`${provider}/${modelId}`)}
+          draftKey={draftKey}
+          cwd={selectedProject?.cwd ?? null}
+          placeholder={selectedProject ? t("newSession.placeholder") : t("newSession.placeholderWithoutProject")}
+          contextControl={projectControl}
+        />
+        {(projectError || modelsUnavailable) ? (
+          <div className={styles.statusRow} role="alert">
+            <span>{projectError ?? modelsError ?? t("newSession.modelsUnavailable")}</span>
+            {!projectError && modelsUnavailable ? (
+              <button type="button" disabled={modelsLoading} onClick={() => setModelsReloadKey((key) => key + 1)}>
+                <AliIcon name="reload" size={12} />
+                {t("newSession.retryModels")}
+              </button>
             ) : null}
-            <textarea
-              ref={textareaRef}
-              value={draft}
-              onChange={(event) => {
-                setLandingDraft(event.target.value);
-                resizeLandingComposer(event.currentTarget);
-              }}
-              onPaste={(event) => {
-                const text = event.clipboardData.getData("text/plain");
-                if (text.length <= LARGE_PASTE_CHARACTER_THRESHOLD || pastedMaterials.length >= MAX_LANDING_PASTES) return;
-                event.preventDefault();
-                const index = pastedMaterials.length + 1;
-                setPastedMaterials((current) => [...current, {
-                  name: `粘贴内容 ${index}.txt`,
-                  size: new TextEncoder().encode(text).byteLength,
-                  text,
-                  kind: "paste",
-                }]);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  startSelectedProjectChat();
-                }
-              }}
-              placeholder={canStartChat ? "描述你想构建或修复的内容…" : "请先配置模型并选择项目"}
-              aria-label="新对话内容"
-              disabled={!canStartChat}
-            />
-            <div className={styles.composerBar}>
-              <button className={styles.iconButton} type="button" disabled title="选择项目后可添加附件" aria-label="添加附件">
-                <AliIcon name="plus" size={16} />
-              </button>
-              <span
-                className={`${styles.selectionHint}${modelSelectionRequired || projectSelectionRequired ? ` ${styles.selectionError}` : ""}`}
-                role={modelSelectionRequired || projectSelectionRequired ? "alert" : undefined}
-              >
-                {!selectedModel ? "请先选择模型" : !selectedProject ? "请先创建或选择项目" : `${getProjectLabel(selectedProject.root)} · ${models.find((entry) => `${entry.provider}/${entry.id}` === selectedModelKey)?.name ?? selectedModel.modelId}`}
-              </span>
-              <button className={styles.sendButton} type="button" onClick={startSelectedProjectChat} disabled={!canStartChat} title={canStartChat ? "开始聊天" : "请先配置模型并选择项目"} aria-label="开始聊天">
-                <AliIcon name="arrowup" size={16} />
-              </button>
-            </div>
           </div>
-        </section>
-      </section>
-    </main>
+        ) : null}
+      </NewSessionLauncher>
+      {directoryPickerOpen ? (
+        <DirectoryPicker
+          busy={projectValidating}
+          error={projectError}
+          onCancel={() => {
+            pendingSubmissionClaimedRef.current = false;
+            setDirectoryPickerOpen(false);
+            setProjectError(null);
+            setSubmitAfterProjectSelection(false);
+          }}
+          onSelect={(path) => void validateAndChooseProject(path)}
+        />
+      ) : null}
+    </>
   );
 }

@@ -8,6 +8,8 @@ import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantB
 import { MessageView } from "./MessageView";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
+import { NewSessionContextChip, NewSessionLauncher } from "./NewSessionLauncher";
+import type { NewSessionInitialPrompt } from "./new-session-types";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ChatScrollRail } from "./ChatScrollRail";
 import { useI18n } from "@/hooks/useI18n";
@@ -35,6 +37,8 @@ interface Props {
   session: SessionInfo | null;
   newSessionCwd: string | null;
   newSessionInitialModel?: { provider: string; modelId: string } | null;
+  initialPrompt?: NewSessionInitialPrompt | null;
+  claimInitialPrompt?: (promptId: string) => boolean;
   onAgentEnd?: (sessionId: string) => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
@@ -234,7 +238,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenCapabilitySettings }: Props) {
+export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenCapabilitySettings }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
@@ -297,6 +301,20 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   });
   const sessionBusy = agentRunning || bashRunning;
+  const locallyClaimedInitialPromptRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isNew || !initialPrompt || sessionBusy || isAutoModelSelection) return;
+    if (locallyClaimedInitialPromptRef.current === initialPrompt.id) return;
+    if (claimInitialPrompt && !claimInitialPrompt(initialPrompt.id)) return;
+    locallyClaimedInitialPromptRef.current = initialPrompt.id;
+    void handleSend(
+      initialPrompt.message,
+      initialPrompt.images,
+      initialPrompt.files,
+      initialPrompt.options,
+    );
+  }, [claimInitialPrompt, handleSend, initialPrompt, isAutoModelSelection, isNew, sessionBusy]);
 
   // Builtin slash-command results echo into the conversation area instead of
   // only appearing as transient notices, so the user can see what a command
@@ -605,6 +623,14 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
+      variant={isEmptyNew ? "launcher" : "conversation"}
+      placeholder={isEmptyNew ? t("newSession.placeholder") : undefined}
+      contextControl={isEmptyNew ? (
+        <NewSessionContextChip
+          label={newSessionProjectLabel}
+          title={isProjectlessChat ? undefined : messageCwd}
+        />
+      ) : undefined}
       onSend={handleSend}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}
@@ -731,23 +757,17 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, onA
       ) : null}
 
       {isEmptyNew ? (
-        <div className="new-session-chat">
-          <div className="new-session-chat-inner">
-            <div className="new-session-chat-mark" aria-hidden="true">
-              <AliIcon name="cloud" size={50} />
-              <span>&gt;_</span>
-            </div>
-            <h1 className="new-session-chat-heading">开始一个新会话</h1>
-            <p className="new-session-chat-guide">
-              {isProjectlessChat
-                ? t("chat.projectlessGuide")
-                : t("chat.projectGuide")}
-              <span title={isProjectlessChat ? undefined : messageCwd}>{newSessionProjectLabel}</span>
-            </p>
+        <NewSessionLauncher
+          cwd={messageCwd}
+          projectLabel={newSessionProjectLabel}
+          projectPath={isProjectlessChat ? null : messageCwd}
+          onStarterSelect={handleEditContent}
+        >
+          <div>
             <NoticeShelf notices={notices} align="right" />
             {chatInputElement}
           </div>
-        </div>
+        </NewSessionLauncher>
       ) : (
       <>
       <div className="relative flex flex-1 overflow-hidden">

@@ -1,7 +1,7 @@
 "use client";
 
 import JSZip from "jszip";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/hooks/useI18n";
 import { sendAgentCommand } from "@/lib/agent-client";
@@ -61,19 +61,35 @@ export function CapabilityBundlesConfig({
 }) {
   const { t } = useI18n();
   const inputRef = useRef<HTMLInputElement>(null);
+  const exportAbortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
   const [preview, setPreview] = useState<BundlePreview | null>(null);
   const [errorKey, setErrorKey] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [result, setResult] = useState<CapabilityBundleImportResult | null>(null);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      exportAbortRef.current?.abort();
+      exportAbortRef.current = null;
+    };
+  }, []);
+
   const exportBundle = async () => {
+    const controller = new AbortController();
+    exportAbortRef.current?.abort();
+    exportAbortRef.current = controller;
     setBusy("export");
     setErrorKey(null);
     setErrorDetail(null);
     setResult(null);
     try {
-      const response = await fetch(`/api/capability-bundles?cwd=${encodeURIComponent(cwd)}`);
+      const response = await fetch(`/api/capability-bundles?cwd=${encodeURIComponent(cwd)}`, {
+        signal: controller.signal,
+      });
       if (!response.ok) {
         const body = await response.json() as { error?: string };
         throw new Error(body.error ?? `HTTP ${response.status}`);
@@ -86,10 +102,12 @@ export function CapabilityBundlesConfig({
       anchor.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 0);
     } catch (error) {
+      if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) return;
       setErrorKey("export");
       setErrorDetail(error instanceof Error ? error.message : String(error));
     } finally {
-      setBusy(null);
+      if (exportAbortRef.current === controller) exportAbortRef.current = null;
+      if (mountedRef.current) setBusy(null);
     }
   };
 
@@ -156,10 +174,17 @@ export function CapabilityBundlesConfig({
           <div className={styles.cardIcon}><AliIcon name="download" size={18} /></div>
           <h3 id="capability-bundle-export-title">{t("capabilityBundles.exportTitle")}</h3>
           <p>{t("capabilityBundles.exportDescription")}</p>
-          <button type="button" className={styles.primaryButton} disabled={busy !== null} onClick={() => void exportBundle()}>
-            <AliIcon name="download" size={14} />
-            {busy === "export" ? t("capabilityBundles.exporting") : t("capabilityBundles.export")}
-          </button>
+          {busy === "export" ? (
+            <button type="button" className={styles.secondaryButton} onClick={() => exportAbortRef.current?.abort()}>
+              <AliIcon name="close" size={14} />
+              {t("i18n.cancel")}
+            </button>
+          ) : (
+            <button type="button" className={styles.primaryButton} disabled={busy !== null} onClick={() => void exportBundle()}>
+              <AliIcon name="download" size={14} />
+              {t("capabilityBundles.export")}
+            </button>
+          )}
         </section>
 
         <section className={styles.card} aria-labelledby="capability-bundle-import-title">

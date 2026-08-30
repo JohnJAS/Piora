@@ -3,6 +3,7 @@ import type { SpeechHardwareProfile } from "./speech-types";
 
 export const SPEECH_PACK_VERSION = "1.13.6-sensevoice-2024-07-17";
 export const SPEECH_PACK_APPROXIMATE_DOWNLOAD_BYTES = 270 * 1024 * 1024;
+const SPEECH_PACK_RELEASE_BASE_URL = `https://github.com/kexijiang/Piora/releases/download/speech-pack-${SPEECH_PACK_VERSION}`;
 
 export interface SpeechDownloadSource {
   name: string;
@@ -77,7 +78,7 @@ const RUNTIME_SOURCES: Record<string, SpeechRuntimeSource> = {
 
 export const SENSEVOICE_MODEL_SOURCE: SpeechDownloadSource & { bytes: number } = {
   name: "model.int8.onnx",
-  url: "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx?download=true",
+  url: `${SPEECH_PACK_RELEASE_BASE_URL}/model.int8.onnx`,
   algorithm: "sha256",
   digest: "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51",
   encoding: "hex",
@@ -86,7 +87,7 @@ export const SENSEVOICE_MODEL_SOURCE: SpeechDownloadSource & { bytes: number } =
 
 export const SENSEVOICE_TOKENS_SOURCE: SpeechDownloadSource & { bytes: number } = {
   name: "tokens.txt",
-  url: "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt?download=true",
+  url: `${SPEECH_PACK_RELEASE_BASE_URL}/tokens.txt`,
   algorithm: "sha256",
   digest: "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
   encoding: "hex",
