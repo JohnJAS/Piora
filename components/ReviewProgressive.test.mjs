@@ -40,7 +40,7 @@ test("the review workbench keeps navigation, one focused diff, and commit contro
 test("review loads and renders only the selected file diff", () => {
   assert.match(reviewPanel, /const selectedDiff = selectedItem \? diffs\[selectedItem\.key\] : undefined/);
   assert.match(reviewPanel, /<main className=\{styles\.reviewDetail\}/);
-  assert.match(reviewPanel, /<DiffView patch=\{selectedDiff\.patch\}/);
+  assert.match(reviewPanel, /<DiffView className=\{styles\.reviewDiff\} patch=\{selectedDiff\.patch\}/);
   assert.match(reviewPanel, /selectRelativeFile\(-1\)/);
   assert.match(reviewPanel, /selectRelativeFile\(1\)/);
   assert.doesNotMatch(reviewPanel, /expandedKeys|collapsedKeys/);

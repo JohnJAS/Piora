@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAgentRuntimeProfile } from "@/lib/agent-runtime-profile";
 import { createSession, parseSessionThinkingLevel } from "@/lib/session-creation";
 import type { SessionCapabilityPreset, SessionCapabilitySelection } from "@/lib/session-capabilities";
+import type { SystemPromptSelection } from "@/lib/system-prompt-types";
 
 type CreationErrorDetails = { status: number; code: string; message: string };
 
@@ -29,6 +30,9 @@ function creationErrorDetails(error: unknown): CreationErrorDetails {
   if (message.startsWith("Invalid enabled session tools")) {
     return { status: 400, code: "INVALID_SESSION_TOOLS", message };
   }
+  if (message.startsWith("Invalid system prompt") || message.startsWith("System prompt template")) {
+    return { status: 400, code: "INVALID_SYSTEM_PROMPT", message };
+  }
   if (message.startsWith("Model is not available in the enabled scope:")) {
     return { status: 409, code: "MODEL_NOT_AVAILABLE", message };
   }
@@ -55,7 +59,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
-    const { provider, modelId, toolNames, capabilitySelection: rawCapabilitySelection, thinkingLevel, runtimeProfile: requestedRuntimeProfile, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; capabilitySelection?: unknown; thinkingLevel?: unknown; runtimeProfile?: unknown; [key: string]: unknown };
+    const { provider, modelId, toolNames, capabilitySelection: rawCapabilitySelection, systemPromptSelection: rawSystemPromptSelection, thinkingLevel, runtimeProfile: requestedRuntimeProfile, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; capabilitySelection?: unknown; systemPromptSelection?: unknown; thinkingLevel?: unknown; runtimeProfile?: unknown; [key: string]: unknown };
     if (requestedRuntimeProfile !== undefined) {
       return NextResponse.json({ error: "runtimeProfile is selected only at process startup" }, { status: 400 });
     }
@@ -81,10 +85,25 @@ export async function POST(req: Request) {
           : {}),
       };
     }
+    let systemPromptSelection: SystemPromptSelection | undefined;
+    if (rawSystemPromptSelection !== undefined) {
+      if (!rawSystemPromptSelection || typeof rawSystemPromptSelection !== "object") {
+        throw new Error("Invalid system prompt selection.");
+      }
+      const selection = rawSystemPromptSelection as { mode?: unknown; templateId?: unknown };
+      if (selection.mode === "default") {
+        systemPromptSelection = { mode: "default" };
+      } else if (selection.mode === "template" && typeof selection.templateId === "string") {
+        systemPromptSelection = { mode: "template", templateId: selection.templateId };
+      } else {
+        throw new Error("Invalid system prompt selection.");
+      }
+    }
     const created = await createSession({
       cwd,
       ...(toolNames ? { toolNames } : {}),
       ...(capabilitySelection ? { capabilitySelection } : {}),
+      ...(systemPromptSelection ? { systemPromptSelection } : {}),
       ...(provider && modelId ? { initialModel: { provider, modelId } } : {}),
       ...(explicitThinkingLevel ? { thinkingLevel: explicitThinkingLevel } : {}),
       runtimeProfile,

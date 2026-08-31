@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { cp, lstat, mkdir, readdir, rm, stat } from "node:fs/promises";
+import { cp, lstat, mkdir, readFile, readdir, rm, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { patchBundledBraceExpansion, patchBundledUndici } from "./patch-bundled-dependencies.mjs";
@@ -49,8 +49,8 @@ const assets = [
     ["Piora visual-agent extension", "extensions/piora-vision-agent.ts"],
     ["Piora scheduled-task extension", "extensions/piora-automations.ts"],
     ["Piora user-input extension", "extensions/piora-user-input.ts"],
-    ["Piora target-mode extension", "extensions/piora-goal.ts"],
-    ["Piora plan-mode extension", "extensions/piora-plan.ts"],
+    ["Optional Piora Goals extension", "extensions/piora-goal.ts"],
+    ["Optional Piora Plans extension", "extensions/piora-plan.ts"],
     ["Piora collaboration-room extension", "extensions/piora-room.ts"],
     // First-party extensions execute from source at runtime and resolve their
     // relative imports through this tree. Stage the complete Piora library so
@@ -70,6 +70,34 @@ const assets = [
     required: true,
     rejectSymlinks: true,
   },
+  ...[
+    {
+      name: "top-level Pi AI runtime",
+      pathSegments: ["@earendil-works", "pi-ai"],
+    },
+    {
+      // pi-coding-agent ships with its own shrinkwrapped dependency tree. Its
+      // imports therefore resolve this nested copy instead of the top-level
+      // package, even when both package versions currently match.
+      name: "Pi coding-agent nested AI runtime",
+      pathSegments: [
+        "@earendil-works",
+        "pi-coding-agent",
+        "node_modules",
+        "@earendil-works",
+        "pi-ai",
+      ],
+    },
+  ].map(({ name, pathSegments }) => ({
+    // pi-ai intentionally hides OAuth and provider implementations behind
+    // variable dynamic imports. Next's static output tracing cannot discover
+    // those files, so stage both complete package copies as runtime units.
+    name,
+    source: join(projectRoot, "node_modules", ...pathSegments),
+    destination: join(standaloneDirectory, "node_modules", ...pathSegments),
+    required: true,
+    rejectSymlinks: true,
+  })),
   ...[
     // The scheduled-task extension is staged as source and loaded dynamically,
     // so Next's standalone tracer cannot discover this dependency chain.
@@ -106,6 +134,105 @@ function assertInside(parent, child) {
   ) {
     throw new Error(`Refusing to stage outside ${parent}: ${child}`);
   }
+}
+
+function packageNameSegments(packageName) {
+  return packageName.startsWith("@") ? packageName.split("/") : [packageName];
+}
+
+async function resolveInstalledPackageRoot(packageName, fromDirectory, root) {
+  let current = resolve(fromDirectory);
+  const resolvedRoot = resolve(root);
+  while (true) {
+    const candidate = join(current, "node_modules", ...packageNameSegments(packageName));
+    if ((await getPathType(join(candidate, "package.json"))) === "file") return candidate;
+    if (current === resolvedRoot) return undefined;
+    const parent = dirname(current);
+    if (parent === current) return undefined;
+    const parentRelativePath = relative(resolvedRoot, parent);
+    if (
+      parentRelativePath === ".."
+      || parentRelativePath.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
+      || isAbsolute(parentRelativePath)
+    ) {
+      return undefined;
+    }
+    current = parent;
+  }
+}
+
+/**
+ * Collect complete installed package directories for one runtime dependency
+ * and its transitive production dependency graph. This is intentionally used
+ * only for dependencies reached from pi-ai's opaque provider implementations;
+ * ordinary statically imported packages remain owned by Next's trace.
+ */
+export async function collectRuntimeDependencyAssets(
+  packageRoots,
+  sourceProjectRoot = projectRoot,
+  destinationRoot = standaloneDirectory,
+) {
+  const resolvedProjectRoot = resolve(sourceProjectRoot);
+  const pending = packageRoots.map((path) => resolve(path));
+  const visited = new Set();
+  const collected = [];
+
+  while (pending.length > 0) {
+    const packageRoot = pending.shift();
+    if (visited.has(packageRoot)) continue;
+    const packageRelativePath = relative(resolvedProjectRoot, packageRoot);
+    if (
+      !packageRelativePath
+      || packageRelativePath === ".."
+      || packageRelativePath.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`)
+      || isAbsolute(packageRelativePath)
+    ) {
+      throw new Error(`Runtime dependency is outside the project: ${packageRoot}`);
+    }
+    const manifestPath = join(packageRoot, "package.json");
+    if ((await getPathType(manifestPath)) !== "file") {
+      throw new Error(`Runtime dependency package manifest is missing: ${manifestPath}`);
+    }
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    if (typeof manifest.name !== "string" || !manifest.name) {
+      throw new Error(`Runtime dependency package name is missing: ${manifestPath}`);
+    }
+    visited.add(packageRoot);
+    collected.push({
+      name: `Pi AI provider dependency ${manifest.name}`,
+      source: packageRoot,
+      destination: join(destinationRoot, packageRelativePath),
+      required: true,
+      rejectSymlinks: true,
+    });
+
+    const requiredPeers = Object.fromEntries(
+      Object.entries(manifest.peerDependencies ?? {}).filter(([name]) => (
+        manifest.peerDependenciesMeta?.[name]?.optional !== true
+      )),
+    );
+    const dependencies = {
+      ...manifest.dependencies,
+      ...manifest.optionalDependencies,
+      ...requiredPeers,
+    };
+    for (const dependencyName of Object.keys(dependencies).sort()) {
+      const dependencyRoot = await resolveInstalledPackageRoot(
+        dependencyName,
+        packageRoot,
+        resolvedProjectRoot,
+      );
+      if (!dependencyRoot) {
+        if (manifest.optionalDependencies?.[dependencyName] !== undefined) continue;
+        throw new Error(
+          `Runtime dependency ${manifest.name} cannot resolve required package ${dependencyName}`,
+        );
+      }
+      pending.push(dependencyRoot);
+    }
+  }
+
+  return collected.sort((left, right) => left.destination.localeCompare(right.destination));
 }
 
 export async function findSymbolicLinks(root) {
@@ -207,8 +334,29 @@ async function main() {
     await rm(tracedDevelopmentOutput, { recursive: true, force: true });
   }
 
+  // Stage the nested provider runtime's complete production dependency
+  // closure. Opaque OAuth/API implementations can add direct or transitive
+  // dependencies without becoming visible to Next's static output trace.
+  const piAiProviderRuntimeRoot = join(
+    projectRoot,
+    "node_modules",
+    "@earendil-works",
+    "pi-coding-agent",
+    "node_modules",
+    "@earendil-works",
+    "pi-ai",
+  );
+  const dependencyAssets = await collectRuntimeDependencyAssets([piAiProviderRuntimeRoot]);
+  const runtimeAssetsByDestination = new Map(
+    assets.map((asset) => [resolve(asset.destination), asset]),
+  );
+  for (const asset of dependencyAssets) {
+    runtimeAssetsByDestination.set(resolve(asset.destination), asset);
+  }
+  const runtimeAssets = [...runtimeAssetsByDestination.values()];
+
   const stagedAssets = [];
-  for (const asset of assets) {
+  for (const asset of runtimeAssets) {
     assertInside(standaloneDirectory, asset.destination);
     const sourceType = await getPathType(asset.source);
     if (sourceType === "missing" && !asset.required) {

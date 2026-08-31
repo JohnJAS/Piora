@@ -1,10 +1,10 @@
 # Pi GUI original background slots
 
 This directory is the stable, local-only asset root for the optional Pi GUI
-background layer. `manifest.json` declares 20 final WebP assets without
+background layer. `manifest.json` declares 30 final WebP assets without
 coupling artwork to application code or saved user preferences.
 
-Current status: all 20 original backgrounds are present, reviewed and marked
+Current status: all 30 original backgrounds are present, reviewed and marked
 as available. CSS fallbacks remain in the manifest only as a resilient loading
 fallback if an installation is damaged or incomplete.
 
@@ -22,7 +22,7 @@ The runtime never accepts remote preset URLs, scripts, HTML, or CDP injection.
 
 ## Artwork provenance and license
 
-All 20 backgrounds were independently generated for this repository with
+All 30 backgrounds were independently generated for this repository with
 OpenAI's image-generation model from original text prompts. No reference
 images or third-party source assets were supplied. The prompts required no
 text, logos, watermarks, recognizable people, brands, characters or existing

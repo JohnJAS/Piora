@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useApplicationShortcuts } from "@/hooks/useApplicationShortcuts";
 import { SessionSidebar, type SessionSidebarHandle } from "./SessionSidebar";
 import { ChatWindow, type TaskControls } from "./ChatWindow";
 import { NewSessionProjectPicker } from "./NewSessionProjectPicker";
@@ -72,6 +73,13 @@ import { buildCompanionInteractionContext, requestCompanionSpeech } from "@/lib/
 import { AliIcon } from "./AliIcon";
 import { ConfirmationHost, requestConfirmation } from "./ConfirmDialog";
 import { useCommands } from "@/hooks/useCommands";
+import {
+  APPLICATION_SHORTCUTS,
+  formatShortcutBinding,
+  isMacPlatform,
+  shortcutMatchesEvent,
+  shouldPreserveApplicationShortcut,
+} from "@/lib/keyboard-shortcuts";
 import { filterGuiCommands, type Command, type CommandContext, type PiSlashCommand } from "@/lib/commands";
 import { SETTINGS_REOPEN_STORAGE_KEY } from "@/lib/settings-portability";
 import {
@@ -124,12 +132,14 @@ const AutomationPanel = dynamic(() => import("./AutomationPanel").then((module) 
 const SessionHistoryDialog = dynamic(() => import("./SessionHistoryDialog").then((module) => module.SessionHistoryDialog), { ssr: false });
 const CommandPalette = dynamic(() => import("./CommandPalette").then((module) => module.CommandPalette), { ssr: false });
 const DesktopUpdateDialog = dynamic(() => import("./DesktopUpdateDialog").then((module) => module.DesktopUpdateDialog), { ssr: false });
+const ShortcutSettings = dynamic(() => import("./ShortcutSettings").then((module) => module.ShortcutSettings), { ssr: false });
 
 export function AppShell() {
   const searchParams = useSearchParams();
   const [initialNavigation] = useState(() => getInitialNavigation(searchParams ?? new URLSearchParams()));
   const { theme, themes, setTheme } = useTheme();
   const { locale, setLocale, t: translate, supportedLocales } = useI18n();
+  const { bindings: shortcutBindings } = useApplicationShortcuts();
   const {
     notificationEnabled,
     notificationCapability,
@@ -164,6 +174,9 @@ export function AppShell() {
   }, [notificationEnabled, notifyAutomation]);
   const isMobile = useIsMobile();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
+  const selectedSessionIdRef = useRef<string | null>(null);
+  selectedSessionIdRef.current = selectedSession?.id ?? null;
+  const [focusedEntryId, setFocusedEntryId] = useState<string | null>(() => initialNavigation.entryId);
 
   // A pending extension dialog (question card, select, confirm, editor) stalls
   // its session until the user answers. When a session newly enters that
@@ -796,10 +809,15 @@ export function AppShell() {
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
     setSettingsDialogOpen(false);
     setSelectedRoom(null);
+    if (!isRestore && selectedSessionIdRef.current === session.id) {
+      setActiveTopPanel(null);
+      return;
+    }
     setNewSessionCwd(null);
     setNewSessionInitialModel(null);
     setNewSessionInitialPrompt(null);
     setSelectedSession(session);
+    if (!isRestore) setFocusedEntryId(null);
     setSessionKey((k) => k + 1);
     setSystemPrompt(null);
     setInitialSessionRestored(true);
@@ -822,6 +840,12 @@ export function AppShell() {
       });
     }
   }, [isMobile]);
+
+  const handleSelectSearchResult = useCallback((session: SessionInfo, entryId: string) => {
+    handleSelectSession(session);
+    setFocusedEntryId(entryId);
+    replaceUrlWithoutNextNavigation(`?session=${encodeURIComponent(session.id)}&entry=${encodeURIComponent(entryId)}`);
+  }, [handleSelectSession]);
 
   const openNotificationSession = useCallback(async (rawSessionId: unknown) => {
     const sessionId = sanitizeNotificationSessionId(rawSessionId);
@@ -972,10 +996,8 @@ export function AppShell() {
           setRightPanelTab("browser");
           setRightPanelOpen(true);
           break;
-        case "find":
-          setRightPanelTab("files");
-          setRightPanelOpen(true);
-          requestAnimationFrame(() => rightPanelRef.current?.focusFileSearch());
+        case "search-chats":
+          sessionSidebarRef.current?.openConversationSearch();
           break;
         case "settings":
           openSettings();
@@ -1096,11 +1118,8 @@ export function AppShell() {
     }
   }, []);
 
-  // Global keyboard shortcuts (handles Esc, Ctrl+Alt+N etc.)
-  useGlobalKeyboardShortcuts({
-    onNewSession: (cwd: string) => handleNewSession(`kb-${Date.now()}`, cwd),
-    activeCwd,
-  });
+  // Esc remains a non-configurable safety shortcut for stopping an active run.
+  useGlobalKeyboardShortcuts();
 
   // Client-built transient SessionInfo (new session / fork) lacks the
   // server-computed projectRoot, which the same-project check in
@@ -1457,17 +1476,6 @@ export function AppShell() {
   }, [currentProjectCwd, explorerRefreshKey]);
 
   useEffect(() => {
-    const openPalette = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLocaleLowerCase() === "k") {
-        event.preventDefault();
-        setCommandPaletteOpen(true);
-      }
-    };
-    window.addEventListener("keydown", openPalette);
-    return () => window.removeEventListener("keydown", openPalette);
-  }, []);
-
-  useEffect(() => {
     const cycleWorkspaceFocus = (event: KeyboardEvent) => {
       if (event.key !== "F6" || event.ctrlKey || event.metaKey || event.altKey || settingsDialogOpen) return;
       if (document.querySelector('[aria-modal="true"]')) return;
@@ -1497,6 +1505,7 @@ export function AppShell() {
     "navigate.newSession": handleNewSessionInCurrentProject,
     "navigate.chooseProject": handleOpenProjectPicker,
     "navigate.searchFiles": () => { setRightPanelTab("files"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusFileSearch()); },
+    "navigate.searchChats": () => sessionSidebarRef.current?.openConversationSearch(),
     "navigate.focusComposer": () => chatInputRef.current?.focus(),
     "navigate.history": handleViewFullHistory,
     "session.rename": (argument) => argument?.trim() ? void handleTaskRename(argument.trim()) : chatInputRef.current?.insertText("/name "),
@@ -1523,7 +1532,32 @@ export function AppShell() {
     "git.refresh": handleExplorerRefresh,
   }), [currentProjectCwd, handleExplorerRefresh, handleNewSessionInCurrentProject, handleOpenProjectPicker, handleTaskExport, handleTaskRename, handleViewFullHistory, openSettings]);
   const commandContext = useMemo<CommandContext>(() => ({ hasProject: Boolean(currentProjectCwd), hasSession: Boolean(selectedSession), isRunning: Boolean(taskControls?.disabled), isGitRepository: currentIsGitRepository, actions: commandActions }), [commandActions, currentIsGitRepository, currentProjectCwd, selectedSession, taskControls?.disabled]);
-  const { commands: guiCommands, run: runGuiCommand } = useCommands(commandContext, translate);
+  const shortcutLabels = useMemo(() => Object.fromEntries(APPLICATION_SHORTCUTS.map((item) => [
+    item.id,
+    formatShortcutBinding(shortcutBindings[item.id], isMacPlatform(typeof window === "undefined" ? undefined : window.piDesktop?.platform)),
+  ])), [shortcutBindings]);
+  const { commands: guiCommands, run: runGuiCommand } = useCommands(commandContext, translate, shortcutLabels);
+
+  useEffect(() => {
+    const handleApplicationShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || shouldPreserveApplicationShortcut(event.target)) return;
+      const shortcut = APPLICATION_SHORTCUTS.find((item) => shortcutMatchesEvent(
+        event,
+        shortcutBindings[item.id],
+        isMacPlatform(window.piDesktop?.platform),
+      ));
+      if (!shortcut) return;
+      event.preventDefault();
+      if (shortcut.id === "palette.open") setCommandPaletteOpen(true);
+      else void commandActions[shortcut.id]?.();
+    };
+    window.addEventListener("keydown", handleApplicationShortcut);
+    return () => window.removeEventListener("keydown", handleApplicationShortcut);
+  }, [commandActions, shortcutBindings]);
+
+  useEffect(() => {
+    void window.piDesktop?.setKeyboardShortcuts?.(shortcutBindings);
+  }, [shortcutBindings]);
   const piPaletteCommands = useMemo<Command[]>(() => piSlashCommands.map((item) => ({
     id: `pi:${item.source}:${item.name}`,
     group: "session",
@@ -1579,43 +1613,13 @@ export function AppShell() {
     return () => observer.disconnect();
   }, [windowTitle]);
 
-  useEffect(() => {
-    const handleQuickOpen = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.altKey || event.shiftKey) return;
-      if ((!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== "p") return;
-      event.preventDefault();
-      setRightPanelTab("files");
-      setRightPanelOpen(true);
-      requestAnimationFrame(() => rightPanelRef.current?.focusFileSearch());
-    };
-    window.addEventListener("keydown", handleQuickOpen);
-    return () => window.removeEventListener("keydown", handleQuickOpen);
-  }, []);
-
-  useEffect(() => {
-    const handleWorkspaceShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.altKey || (!event.ctrlKey && !event.metaKey)) return;
-      const key = event.key.toLowerCase();
-      if (key === "g" && event.shiftKey) {
-        event.preventDefault();
-        setRightPanelTab("review");
-        setRightPanelOpen(true);
-      } else if (key === "t" && !event.shiftKey) {
-        event.preventDefault();
-        setRightPanelTab("browser");
-        setRightPanelOpen(true);
-      }
-    };
-    window.addEventListener("keydown", handleWorkspaceShortcut);
-    return () => window.removeEventListener("keydown", handleWorkspaceShortcut);
-  }, []);
-
   const sidebarContent = (
     <SessionSidebar
       ref={sessionSidebarRef}
       selectedSessionId={selectedSession?.id ?? null}
       selectedRoomId={selectedRoom?.id ?? null}
       onSelectSession={handleSelectSession}
+      onSelectSearchResult={handleSelectSearchResult}
       onSelectRoom={handleSelectRoom}
       onNewSession={handleNewSession}
       onRequestNewSession={handleRequestNewSession}
@@ -1662,6 +1666,7 @@ export function AppShell() {
             onAutomationChanged={() => setSessionKey((key) => key + 1)}
           />
         ),
+        shortcuts: <ShortcutSettings />,
         extensions: projectCwd ? (
           <ExtensionsConfig
             cwd={projectCwd}
@@ -2516,6 +2521,7 @@ export function AppShell() {
               <ChatWindow
                 key={sessionKey}
                 session={selectedSession}
+                focusEntryId={focusedEntryId}
                 newSessionCwd={effectiveNewSessionCwd}
                 newSessionInitialModel={newSessionInitialModel}
                 initialPrompt={newSessionInitialPrompt}

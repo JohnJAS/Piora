@@ -39,7 +39,7 @@ import {
   fetchCompanionRuntimeState,
   publishCompanionRuntimeState,
 } from "@/lib/companion-runtime-client";
-import type { CompanionAutonomyLevel, CompanionRuntimeState } from "@/lib/companion-runtime";
+import type { CompanionAutonomyLevel, CompanionFocusTimer, CompanionRuntimeState } from "@/lib/companion-runtime";
 import { planCompanionWander } from "@/lib/companion-wander";
 import type { TaskRuntimeSnapshot } from "@/lib/task-status";
 import { BuiltinPet, COMPANION_ACTIVITY_COLORS, SpritePet } from "./CompanionPet";
@@ -89,6 +89,7 @@ export function DesktopCompanionWindow() {
   const [motionDirection, setMotionDirection] = useState<"left" | "right" | null>(null);
   const [nextWakeAt, setNextWakeAt] = useState<number | null>(null);
   const [focusTimerEndsAt, setFocusTimerEndsAt] = useState<number | null>(null);
+  const [focusTimer, setFocusTimer] = useState<CompanionFocusTimer | null>(null);
   const [runtimeReady, setRuntimeReady] = useState(false);
   const [movementSettings, setMovementSettings] = useState<{
     allowMovement: boolean;
@@ -174,6 +175,7 @@ export function DesktopCompanionWindow() {
         ));
       }
       const timer = runtime?.focusTimer;
+      setFocusTimer(timer ?? null);
       setFocusTimerEndsAt(timer?.status === "running" && typeof timer.endsAt === "number" ? timer.endsAt : null);
       const decision = runtime?.mind?.lastDecision;
       if (!decision || decision.id === lastDecisionIdRef.current) return;
@@ -363,6 +365,13 @@ export function DesktopCompanionWindow() {
     const event = (activity.event?.occurredAt ?? 0) >= (runtimeEvent?.occurredAt ?? 0)
       ? activity.event
       : runtimeEvent;
+    if (taskBubbles.length === 0 && (focusTimer?.status === "running" || focusTimer?.status === "paused")) {
+      return {
+        status: focusTimer.status === "running" ? "running" : "waiting",
+        cause: t(`companion.focusTimer.${focusTimer.phase}`),
+        ...(event ? { event } : {}),
+      };
+    }
     if (taskBubbles.length === 0) return { ...activity, ...(event ? { event } : {}) };
 
     const active = taskBubbles.find((item) => item.status === "review")
@@ -375,10 +384,9 @@ export function DesktopCompanionWindow() {
       ...(active ? { sessionId: active.id } : {}),
       ...(event ? { event } : {}),
     };
-  }, [activity, runtimeEvent, taskBubbles, t]);
+  }, [activity, focusTimer?.phase, focusTimer?.status, runtimeEvent, taskBubbles, t]);
   const statusLabel = t(`companion.activity.${displayActivity.status}`);
   const cause = displayActivity.cause || t(`companion.activity.${displayActivity.status}Cause`);
-  const statusCause = t(`companion.activity.${displayActivity.status}Cause`);
   const petLabel = activePet?.displayName ?? t("companion.builtinPet");
   const personalTaskBubbles = useMemo(() => preferences.todos
     .filter((task) => !task.completed)
@@ -393,6 +401,13 @@ export function DesktopCompanionWindow() {
     })), [preferences.todos, t]);
   const bubbleItems = useMemo(() => {
     if (taskBubbles.length > 0) return taskBubbles;
+    if (focusTimer?.status === "running" || focusTimer?.status === "paused") return [{
+      id: "focus-timer",
+      status: displayActivity.status,
+      title: t(`companion.focusTimer.${focusTimer.phase}`),
+      activityLabel: statusLabel,
+      cause,
+    }];
     if (personalTaskBubbles.length > 0) return personalTaskBubbles;
     if (displayActivity.status === "idle") return [];
     return [{
@@ -400,9 +415,9 @@ export function DesktopCompanionWindow() {
       status: displayActivity.status,
       title: statusLabel,
       activityLabel: statusLabel,
-      cause: statusCause,
+      cause,
     }];
-  }, [displayActivity.status, personalTaskBubbles, statusCause, statusLabel, taskBubbles]);
+  }, [cause, displayActivity.status, focusTimer?.phase, focusTimer?.status, personalTaskBubbles, statusLabel, taskBubbles, t]);
   const runningTaskCount = bubbleItems.length;
   const bubblesExpanded = bubbleItems.length > 0 && !bubblesCollapsed;
 

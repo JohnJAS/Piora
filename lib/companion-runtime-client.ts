@@ -20,9 +20,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function companionRuntimeStateFromBroadcast(value: unknown): CompanionRuntimeState | null {
   if (!isRecord(value) || value.type !== "runtime-state" || !isRecord(value.state)) return null;
   const state = value.state;
-  return state.version === 3 && typeof state.updatedAt === "number"
-    ? state as unknown as CompanionRuntimeState
-    : null;
+  if (
+    state.version !== 3
+    || typeof state.updatedAt !== "number"
+    || !Number.isFinite(state.updatedAt)
+    || typeof state.migratedFromLocalStorage !== "boolean"
+    || !isRecord(state.settings)
+    || !isRecord(state.settings.quietHours)
+    || !Array.isArray(state.todos)
+    || !Array.isArray(state.taskRecords)
+    || !isRecord(state.focusTimer)
+    || !isRecord(state.focusTimer.durations)
+    || !Array.isArray(state.library)
+    || !Array.isArray(state.memories)
+    || !isRecord(state.mind)
+    || !Array.isArray(state.mind.decisionHistory)
+    || (state.mind.lastDecision !== null && !isRecord(state.mind.lastDecision))
+  ) {
+    return null;
+  }
+  return state as unknown as CompanionRuntimeState;
 }
 
 export function createCompanionRuntimeChannel(

@@ -372,6 +372,7 @@ async function main() {
   let child;
   let mainClient;
   let companionClient;
+  let bubbleClient;
   let panelClient;
 
   try {
@@ -397,6 +398,7 @@ async function main() {
       && /^http:\/\/127\.0\.0\.1:\d+\/?(?:[?#].*)?$/.test(target.url)
     );
     const companionTargetPredicate = (target) => target.type === "page" && target.url.includes("/desktop-pet");
+    const bubbleTargetPredicate = (target) => target.type === "page" && target.url.includes("/desktop-companion-bubble");
     const panelTargetPredicate = (target) => target.type === "page" && target.url.includes("/desktop-companion-panel");
     const mainTarget = await waitForTarget(port, mainTargetPredicate, "packaged Piora main renderer");
     mainClient = await CdpClient.connect(mainTarget.webSocketDebuggerUrl);
@@ -420,6 +422,11 @@ async function main() {
     mainClient = await CdpClient.connect(reloadedMainTarget.webSocketDebuggerUrl);
     const companionTarget = await waitForTarget(port, companionTargetPredicate, "standalone companion renderer");
     companionClient = await CdpClient.connect(companionTarget.webSocketDebuggerUrl);
+    const bubbleTarget = await waitForTarget(port, bubbleTargetPredicate, "standalone companion timer bubble renderer");
+    bubbleClient = await CdpClient.connect(bubbleTarget.webSocketDebuggerUrl);
+    await companionClient.send("Emulation.setEmulatedMedia", {
+      features: [{ name: "prefers-reduced-motion", value: "no-preference" }],
+    });
 
     let ready;
     try {
@@ -476,13 +483,29 @@ async function main() {
     }
 
     await publishActivity(companionClient, "running", "packaged-ui-animation");
+    await waitForEvaluation(
+      companionClient,
+      `document.querySelector('[data-testid="companion-activity-bubble"]')?.getAttribute('data-status') === 'running'`,
+      "running companion activity before animation sampling",
+    );
     await delay(80);
-    const animationPositions = [];
-    for (let index = 0; index < 5; index += 1) {
-      animationPositions.push((await inspectCompanion(companionClient)).spriteBackgroundPosition);
+    const animationPositions = new Set();
+    const animationDeadline = Date.now() + 3_000;
+    while (Date.now() < animationDeadline && animationPositions.size < 2) {
+      // The main renderer may publish a newer context snapshot while the
+      // packaged app settles. Keep the synthetic activity current, and count
+      // frames only while the companion still reports the running state.
+      await publishActivity(companionClient, "running", "packaged-ui-animation");
       await delay(150);
+      const observed = await inspectCompanion(companionClient);
+      if (observed.bubbleStatus === "running" && observed.spriteBackgroundPosition) {
+        animationPositions.add(observed.spriteBackgroundPosition);
+      }
     }
-    assert.ok(new Set(animationPositions).size > 1, "Running pet animation did not advance frames");
+    assert.ok(
+      animationPositions.size > 1,
+      `Running pet animation did not advance frames: ${JSON.stringify([...animationPositions])}`,
+    );
 
     await publishActivity(companionClient, "review", "请确认打包后的桌宠气泡");
     await delay(250);
@@ -512,11 +535,21 @@ async function main() {
     await clickButtonByText(panelClient, "开始");
     const runningTimer = await waitForPanelRuntime(panelClient, "state => state.focusTimer.status === 'running'", "focus timer to start");
     assert.ok(runningTimer.focusTimer.endsAt > Date.now());
+    await waitForEvaluation(
+      bubbleClient,
+      `document.querySelector('[data-testid="companion-focus-timer-bubble"]')?.getAttribute('data-status') === 'running'`,
+      "focus timer on the pet bubble",
+    );
     await delay(1_250);
     const tickingValue = await evaluate(panelClient, `document.querySelector('strong[class*="timerValue"]')?.textContent?.trim()`);
     assert.notEqual(tickingValue, "25:00", "Focus timer display did not tick after starting");
     await clickButtonByText(panelClient, "暂停");
     const pausedTimer = await waitForPanelRuntime(panelClient, "state => state.focusTimer.status === 'paused'", "focus timer to pause");
+    await waitForEvaluation(
+      bubbleClient,
+      `document.querySelector('[data-testid="companion-focus-timer-bubble"]')?.getAttribute('data-status') === 'paused'`,
+      "paused focus timer on the pet bubble",
+    );
     await delay(1_100);
     assert.equal((await readPanelRuntime(panelClient)).focusTimer.remainingSeconds, pausedTimer.focusTimer.remainingSeconds);
     await clickButtonByText(panelClient, "继续");
@@ -682,6 +715,7 @@ async function main() {
       hideAndWakePassed: true,
       panelMutationsPassed: true,
       focusTimerTicked: true,
+      focusTimerLinkedToPet: true,
       modelSavePassed: true,
       screenshot: screenshotPath,
       screenshotAlpha: { min: alpha.min, max: alpha.max },
@@ -689,6 +723,7 @@ async function main() {
     }));
   } finally {
     panelClient?.close();
+    bubbleClient?.close();
     companionClient?.close();
     mainClient?.close();
     await stopChild(child);

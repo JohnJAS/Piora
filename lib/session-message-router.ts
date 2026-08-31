@@ -226,9 +226,6 @@ export class SessionMessageRouter {
       status: "accepted",
       ...(input.images?.length ? { images: input.images } : {}),
       ...(input.materials?.length ? { materials: input.materials } : {}),
-      ...(input.goalMode ? { goalMode: true } : {}),
-      ...(input.planMode ? { planMode: true } : {}),
-      ...(input.planExecution ? { planExecution: input.planExecution } : {}),
       ...(input.teamExecution ? { teamExecution: persistTeamExecutionContext(input.teamExecution) } : {}),
     };
   }
@@ -432,9 +429,6 @@ export class SessionMessageRouter {
             message: command.content,
             images: command.images,
             materials: command.materials,
-            goalMode: command.goalMode,
-            planMode: command.planMode,
-            planExecution: command.planExecution,
             teamExecution,
           });
           command.runId = started.runId;

@@ -9,7 +9,7 @@ const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
 });
-const { ChatInput, ModelErrorBanner, ModelScopeWarningBanner, filterModelOptions, getContextRemainingPercent, joinSpeechText } = await jiti.import("./ChatInput.tsx");
+const { ChatInput, ModelErrorBanner, filterModelOptions, getContextRemainingPercent, joinSpeechText } = await jiti.import("./ChatInput.tsx");
 // Import through the same tsconfig alias used by the component so Jiti reuses
 // the exact context module instead of creating a second provider instance.
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
@@ -38,16 +38,22 @@ test("does not render an empty model error", () => {
   assert.equal(renderToStaticMarkup(React.createElement(ModelErrorBanner, { error: null })), "");
 });
 
-test("renders enabledModels scope warnings", () => {
+test("does not render enabledModels scope warnings in the main chat composer", () => {
   const html = renderToStaticMarkup(
-    React.createElement(ModelScopeWarningBanner, {
-      warnings: ['No models match pattern "ghost-gateway/*"'],
-    }),
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(ChatInput, {
+        onSend() {},
+        onAbort() {},
+        isStreaming: false,
+        modelScopeWarnings: ['No models match pattern "ghost-gateway/*"'],
+      }),
+    ),
   );
 
-  assert.match(html, /模型范围警告/);
-  assert.match(html, /ghost-gateway/);
-  assert.equal(renderToStaticMarkup(React.createElement(ModelScopeWarningBanner, { warnings: [] })), "");
+  assert.doesNotMatch(html, /模型范围警告/);
+  assert.doesNotMatch(html, /ghost-gateway/);
 });
 
 test("keeps the model selector visible when a model error leaves no options", () => {

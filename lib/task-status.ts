@@ -1,4 +1,3 @@
-import type { GoalRunState } from "./goal-run-registry";
 import type { TaskRunState } from "./task-run";
 
 export type Lifecycle = "draft" | "active" | "archived";
@@ -11,7 +10,6 @@ export interface TaskStatus {
   attention: Attention;
   /** Server-owned start time for the current run. Survives task switches. */
   startedAt?: number;
-  goal?: GoalRunState;
   taskRun?: TaskRunState;
 }
 
@@ -40,7 +38,6 @@ export interface TaskRuntimeSnapshot {
   activity?: TaskRuntimeActivity;
   /** Current model context usage for this task; totals only, never message content. */
   contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null };
-  goal?: GoalRunState;
   taskRun?: TaskRunState;
 }
 

@@ -20,7 +20,7 @@ test("new tasks start from one production composer with progressive context cont
   assert.match(picker, /<NewSessionLauncher/);
   assert.match(picker, /<ChatInput/);
   assert.match(picker, /variant="launcher"/);
-  assert.match(picker, /contextControl=\{projectControl\}/);
+  assert.match(picker, /contextControl=\{\([\s\S]*?\{projectControl\}[\s\S]*?<SystemPromptSelector/);
   assert.doesNotMatch(picker, /<textarea|<select|stepNumber|会话准备|准备好模型和项目/);
   assert.match(launcher, /t\("newSession\.title"\)/);
   assert.match(launcher, /<StarterCards/);
@@ -41,7 +41,9 @@ test("one Enter can choose a project and continue through the real first-send pa
   assert.match(picker, /if \(!selectedProject\) \{[\s\S]*?setSubmitAfterProjectSelection\(true\)[\s\S]*?return false/);
   assert.match(picker, /effectiveChatInputRef\.current\?\.submit\(\)/);
   assert.doesNotMatch(picker, /requestAnimationFrame\(\(\) => effectiveChatInputRef\.current\?\.submit/);
-  assert.match(picker, /onLaunch\(\{[\s\S]*?prompt: \{[\s\S]*?message,[\s\S]*?images,[\s\S]*?files,[\s\S]*?options/);
+  assert.match(picker, /onLaunch\(\{[\s\S]*?prompt: \{[\s\S]*?message,[\s\S]*?images,[\s\S]*?files/);
+  assert.match(picker, /systemPromptSelection/);
+  assert.doesNotMatch(picker, /prompt: \{[\s\S]*?options/);
 
   assert.match(shell, /newSessionInitialPrompt/);
   assert.match(shell, /claimNewSessionInitialPrompt/);

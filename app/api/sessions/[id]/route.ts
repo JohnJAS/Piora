@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { statSync } from "fs";
 import { createHash } from "node:crypto";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { readLatestSessionSystemPromptBinding } from "@/lib/session-system-prompt";
 import {
   resolveSessionPath,
   resolveSessionIdByPath,
@@ -156,6 +157,7 @@ async function buildSessionResponse(
     leafId,
     tree,
     context,
+    systemPromptBinding: readLatestSessionSystemPromptBinding(sm.getEntries()),
   };
 }
 

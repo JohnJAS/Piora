@@ -9,6 +9,8 @@ export interface FirstPartyExtensionDescriptor {
   profiles: readonly ("normal" | "device-control")[];
   /** Core capabilities stay enabled in settings; runtime loading remains best-effort. */
   required?: boolean;
+  /** Optional first-party extensions may stay unloaded until the user enables them. */
+  defaultEnabled?: boolean;
 }
 
 export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = [
@@ -63,16 +65,18 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
   {
     id: "piora:goal",
     fileName: "piora-goal.ts",
-    name: "Piora Target Mode",
-    description: "Persistent target lifecycle, progress, evidence, and continuation tools.",
-    profiles: ["normal", "device-control"],
+    name: "Piora Goals",
+    description: "Optional goal tracking tools and /goal commands for long-running work.",
+    profiles: ["normal"],
+    defaultEnabled: false,
   },
   {
     id: "piora:plan",
     fileName: "piora-plan.ts",
-    name: "Piora Plan Mode",
-    description: "One-shot read-only planning instructions and runtime status.",
-    profiles: ["normal", "device-control"],
+    name: "Piora Plans",
+    description: "Optional structured planning and plan-execution tools with /plan commands.",
+    profiles: ["normal"],
+    defaultEnabled: false,
   },
   {
     id: "piora:room",

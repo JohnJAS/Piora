@@ -12,7 +12,6 @@ import {
   applyExtensionLoadPlan,
   resolveExtensionLoadPlan,
 } from "./extension-config";
-import { getFirstPartyExtensionByPath } from "./first-party-extensions";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
 import { ensureWindowsBashShellPath } from "./windows-bash";
 import { persistLazySessionManager } from "./session-persistence";
@@ -21,7 +20,7 @@ import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-ty
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS } from "./custom-ui-terminal";
 import type { Runtime, TaskRuntimeActivity, TaskRuntimeActivityKind, TaskRuntimeSnapshot } from "./task-status";
-import { projectPlanArtifactTaskRun, projectTaskRun } from "./task-run";
+import { projectTaskRun } from "./task-run";
 import {
   assertCurrentAgentRuntimeProfile,
   getAgentRuntimeProfile,
@@ -45,39 +44,6 @@ import { captureTeamRuntimeToolResult } from "./team-runtime-evidence";
 import { getRoom } from "./room-store";
 import { TeamError } from "./team-errors";
 import {
-  GOAL_RUN_ENTRY_TYPE,
-  beginGoalRun,
-  forgetGoalRun,
-  getGoalRun,
-  cancelGoalRun,
-  pauseGoalRun,
-  restoreGoalRunFromEntries,
-  type GoalRunState,
-} from "./goal-run-registry";
-import {
-  PLAN_ARTIFACT_ENTRY_TYPE,
-  approvePlanArtifact,
-  beginPlanExecution,
-  cancelPlanArtifact,
-  capturePlanRuntimeToolResult,
-  forgetPlanArtifact,
-  getPlanArtifact,
-  restorePlanArtifactFromEntries,
-  resumePlanExecution,
-  settlePlanExecutionFromGoal,
-  updatePlanArtifact,
-  type PlanArtifactState,
-  type PlanDraftInput,
-} from "./plan-artifact-registry";
-import {
-  beginActivePromptMode,
-  enterPlanMode,
-  finishActivePromptMode,
-  runGoalModeContinuations,
-  type PlanModeLease,
-  type PromptMode,
-} from "./prompt-mode-runtime";
-import {
   DEVICE_CONTROL_AGENT_TOOLS,
   resolveAgentToolsForRuntimeProfile,
 } from "./tool-presets";
@@ -88,6 +54,14 @@ import {
 } from "./rpc-task-activity";
 import { CUSTOM_UI_KEYBINDINGS, PLAIN_TEXT_THEME } from "./rpc-ui-adapter";
 import { readSystemPromptConfig } from "./system-prompt-config";
+import {
+  appendSessionSystemPromptBinding,
+  copySessionSystemPromptBinding,
+  createSessionSystemPromptBinding,
+  readLatestSessionSystemPromptBinding,
+  resolveSessionSystemPrompt,
+} from "./session-system-prompt";
+import type { SessionSystemPromptBinding, SystemPromptSelection } from "./system-prompt-types";
 import { buildPromptWithMaterials, resolvePromptMaterialReferences, restorePromptMaterialDisplayPreview } from "./prompt-materials";
 import type { PromptMaterialReference } from "./prompt-material-format";
 import type { UserInputResult } from "./user-input";
@@ -159,6 +133,7 @@ export interface RpcSessionStartOptions {
   capabilitySelection?: SessionCapabilitySelection;
   initialModel?: { provider: string; modelId: string };
   thinkingLevel?: ThinkingLevel;
+  systemPromptSelection?: SystemPromptSelection;
   runtimeProfile?: AgentRuntimeProfile;
 }
 
@@ -202,9 +177,6 @@ export class AgentSessionWrapper {
   private activePromptRun: PromptRunIdentity | undefined;
   private activeCommandId: string | undefined;
   private runtimeToolCalls = new Map<string, { toolName: string; args: unknown }>();
-  private goalState: GoalRunState | undefined;
-  private planState: PlanArtifactState | undefined;
-  private promptMode: PromptMode = "normal";
   private capabilityPolicy: SessionCapabilityPolicy;
   private capabilityCatalog: ReturnType<typeof buildSessionCapabilityCatalog>;
   private toolNameCeiling: Set<string> | undefined;
@@ -219,8 +191,6 @@ export class AgentSessionWrapper {
     } = {},
   ) {
     this.cachedSessionTitle = inner.sessionManager.getSessionName()?.trim() || null;
-    this.goalState = getGoalRun(inner.sessionId);
-    this.planState = getPlanArtifact(inner.sessionId);
     this.capabilityCatalog = buildSessionCapabilityCatalog(inner.getAllTools(), runtimeProfile);
     this.capabilityPolicy = capabilityOptions.policy
       ?? restoreSessionCapabilityPolicy(inner.sessionManager.getEntries(), this.capabilityCatalog);
@@ -314,6 +284,21 @@ export class AgentSessionWrapper {
     return "reloaded";
   }
 
+  getSystemPromptBinding(): SessionSystemPromptBinding | null {
+    return readLatestSessionSystemPromptBinding(this.inner.sessionManager.getEntries());
+  }
+
+  async setSystemPromptBinding(selection: SystemPromptSelection): Promise<SessionSystemPromptBinding> {
+    this.assertSessionIdle("change the system prompt");
+    if (this.runtimeProfile !== "normal") throw new Error("System prompt templates are available only for normal sessions.");
+    const previous = this.getSystemPromptBinding();
+    const binding = createSessionSystemPromptBinding(selection, readSystemPromptConfig(), previous);
+    appendSessionSystemPromptBinding(this.inner.sessionManager, binding);
+    invalidateSessionListCache();
+    await this.requestSystemPromptReload();
+    return binding;
+  }
+
   getActivePromptRunId(): string | undefined {
     return this.activePromptRun?.runId;
   }
@@ -326,9 +311,6 @@ export class AgentSessionWrapper {
     message: string;
     images?: Array<{ type: "image"; data: string; mimeType: string }>;
     materials?: PromptMaterialReference[];
-    goalMode?: boolean;
-    planMode?: boolean;
-    planExecution?: { planId: string; expectedRevision: number };
     teamExecution?: TeamExecutionContext;
   }): Promise<{ accepted: true; sessionId: string; commandId: string; runId: string }> {
     if (input.teamExecution) this.validateTeamRuntimePolicy(input.teamExecution);
@@ -378,7 +360,6 @@ export class AgentSessionWrapper {
       this.cachedSessionTitle || this.fallbackTaskTitle || "",
       80,
     );
-    this.planState = getPlanArtifact(this.sessionId) ?? this.planState;
     const activeTaskRun = projectTaskRun({
       sessionId: this.sessionId,
       runtime,
@@ -388,10 +369,7 @@ export class AgentSessionWrapper {
       ...(this.runStartedAt !== null ? { startedAt: this.runStartedAt } : {}),
       ...(title ? { title } : {}),
       ...(this.taskActivity ? { activity: this.taskActivity } : {}),
-      ...(this.goalState ? { goal: this.goalState } : {}),
     });
-    const planTaskRun = this.planState ? projectPlanArtifactTaskRun(this.planState) : undefined;
-    const taskRun = this.planState?.execution ? planTaskRun : activeTaskRun ?? planTaskRun;
     return {
       id: this.sessionId,
       runtime,
@@ -402,8 +380,7 @@ export class AgentSessionWrapper {
       ...(title ? { title } : {}),
       ...(this.taskActivity ? { activity: this.taskActivity } : {}),
       ...(contextUsage ? { contextUsage } : {}),
-      ...(this.goalState ? { goal: this.goalState } : {}),
-      ...(taskRun ? { taskRun } : {}),
+      ...(activeTaskRun ? { taskRun: activeTaskRun } : {}),
     };
   }
 
@@ -466,7 +443,6 @@ export class AgentSessionWrapper {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
       this.resetIdleTimer();
       this.updateActivityFromEvent(event);
-      let runtimePlanProgress: PlanArtifactState | undefined;
       if (event.type === "tool_execution_start") {
         const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : "";
         const toolName = typeof event.toolName === "string" ? event.toolName : "";
@@ -480,18 +456,6 @@ export class AgentSessionWrapper {
         if (toolCallId) this.runtimeToolCalls.delete(toolCallId);
         const toolName = started?.toolName ?? (typeof event.toolName === "string" ? event.toolName : "");
         if (this.activePromptRun && toolCallId && toolName) {
-          const capturedPlan = capturePlanRuntimeToolResult(
-            this.activePromptRun,
-            toolCallId,
-            toolName,
-            started?.args ?? event.args,
-            event.isError === true,
-            event.result,
-          );
-          if (capturedPlan && capturedPlan.revision !== this.planState?.revision) {
-            this.persistPlanState(capturedPlan);
-            runtimePlanProgress = capturedPlan;
-          }
           void captureTeamRuntimeToolResult(
             this.activePromptRun,
             toolCallId,
@@ -509,24 +473,6 @@ export class AgentSessionWrapper {
         invalidateSessionListCache();
       }
       this.emit(event);
-      if (runtimePlanProgress) {
-        this.emit({
-          type: "plan_progress",
-          plan: runtimePlanProgress,
-          taskRun: projectPlanArtifactTaskRun(runtimePlanProgress),
-        });
-      }
-      if (event.type === "tool_execution_end") {
-        const latestPlan = getPlanArtifact(this.inner.sessionId);
-        if (latestPlan && latestPlan.revision !== this.planState?.revision) {
-          this.planState = latestPlan;
-          this.emit({
-            type: "plan_progress",
-            plan: latestPlan,
-            taskRun: projectPlanArtifactTaskRun(latestPlan),
-          });
-        }
-      }
       // Lifecycle state is immediate; high-frequency text/tool activity is
       // coalesced so a token stream cannot rebuild every live-session snapshot.
       if (isImmediateRunningSnapshotEvent(event)) notifyRunningChange();
@@ -702,37 +648,6 @@ export class AgentSessionWrapper {
     invalidateSessionListCache();
   }
 
-  private persistGoalState(state: GoalRunState | undefined = this.goalState): void {
-    if (!state) return;
-    this.goalState = state;
-    this.inner.sessionManager.appendCustomEntry(GOAL_RUN_ENTRY_TYPE, state);
-    invalidateSessionListCache();
-    notifyRunningChange();
-  }
-
-  private persistPlanState(state: PlanArtifactState | undefined = this.planState): void {
-    if (!state) return;
-    this.planState = state;
-    this.inner.sessionManager.appendCustomEntry(PLAN_ARTIFACT_ENTRY_TYPE, state);
-    invalidateSessionListCache();
-    notifyRunningChange();
-  }
-
-  private pauseActiveGoal(reason: string): void {
-    const current = getGoalRun(this.inner.sessionId);
-    if (current?.status !== "active") return;
-    this.persistGoalState(pauseGoalRun(this.inner.sessionId, reason));
-  }
-
-  private requirePromptModeExtension(mode: "goal" | "plan"): void {
-    const loaded = this.inner.resourceLoader.getExtensions().extensions.some((extension) =>
-      getFirstPartyExtensionByPath(extension.resolvedPath)?.id === `piora:${mode}`
-    );
-    if (!loaded) {
-      throw new Error(`${mode === "goal" ? "Target" : "Plan"} mode is disabled. Enable the Piora ${mode === "goal" ? "Target" : "Plan"} Mode extension in Settings > Extensions.`);
-    }
-  }
-
   private assertSessionIdle(action: string): void {
     if (this.stopping || this.promptRunning || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning) {
       throw new Error(`Cannot ${action} while the session is busy`);
@@ -776,35 +691,9 @@ export class AgentSessionWrapper {
           this.assertSessionIdle("send a prompt");
           if (this.promptAdmissionBusy) throw new Error("Cannot send a prompt while the session is starting another prompt");
         }
-        const goalMode = command.goalMode === true && !streamingBehavior;
-        const planMode = command.planMode === true && !streamingBehavior;
-        const planExecution = command.planExecution as { planId?: unknown; expectedRevision?: unknown } | undefined;
         const teamExecution = command.teamExecution as TeamExecutionContext | undefined;
-        if (goalMode && planMode) {
-          throw new Error("Target mode and plan mode cannot be enabled for the same prompt.");
-        }
         if (teamExecution && streamingBehavior) throw new Error("Team execution context cannot be attached to a follow-up prompt.");
         if (teamExecution) this.validateTeamRuntimePolicy(teamExecution);
-        if (planExecution && !goalMode) {
-          throw new Error("An approved plan must execute through Target Mode.");
-        }
-        if (goalMode) this.requirePromptModeExtension("goal");
-        if (planMode) this.requirePromptModeExtension("plan");
-        if (planExecution) {
-          this.requirePromptModeExtension("plan");
-          const currentPlan = getPlanArtifact(this.inner.sessionId);
-          if (!currentPlan || currentPlan.plan.id !== planExecution.planId) {
-            throw new Error("The approved plan no longer matches this execution request.");
-          }
-          if (currentPlan.revision !== planExecution.expectedRevision) {
-            throw new Error(`The plan changed from revision ${String(planExecution.expectedRevision)} to ${currentPlan.revision}. Reload it before executing.`);
-          }
-          if (currentPlan.status !== "approved") throw new Error("Only an approved plan can be executed.");
-          if (currentPlan.execution && !["blocked", "failed", "interrupted", "cancelled", "waiting_user"].includes(currentPlan.execution.status)) {
-            throw new Error(`Plan execution is already ${currentPlan.execution.status}.`);
-          }
-          this.planState = currentPlan;
-        }
         const commandId = typeof command.commandId === "string" && command.commandId.trim()
           ? command.commandId.trim()
           : `cmd_${randomUUID()}`;
@@ -842,124 +731,15 @@ export class AgentSessionWrapper {
           if (!ownsPromptRun) throw new Error("Team execution requires a new PromptRun.");
           bindTeamPromptContext(promptRun, teamExecution);
         }
-        if (goalMode || planMode) beginActivePromptMode(promptRun, goalMode ? "goal" : "plan");
-        if (planExecution) {
-          this.persistPlanState(beginPlanExecution(
-            promptRun,
-            planExecution.planId as string,
-            planExecution.expectedRevision as number,
-          ));
-          this.emit({
-            type: "plan_execution_start",
-            plan: this.planState,
-            taskRun: projectPlanArtifactTaskRun(this.planState!),
-          });
-        } else if (
-          goalMode
-          && this.planState?.execution
-          && ["blocked", "failed", "interrupted", "waiting_user"].includes(this.planState.execution.status)
-        ) {
-          this.persistPlanState(resumePlanExecution(promptRun));
-          this.emit({
-            type: "plan_execution_start",
-            plan: this.planState,
-            taskRun: projectPlanArtifactTaskRun(this.planState!),
-          });
-        }
-        if (goalMode) {
-          this.goalState = beginGoalRun(promptRun, originalPromptMessage);
-          this.persistGoalState();
-          this.emit({ type: "goal_start", goal: this.goalState });
-        }
-        this.promptMode = goalMode ? "goal" : planMode ? "plan" : "normal";
         this.promptRunning = true;
         notifyRunningChange();
-        Promise.resolve().then(async () => {
-          let planModeLease: PlanModeLease | undefined;
-          let promptModeToolsApplied = false;
-          try {
-            if (goalMode || planMode) {
-              const available = new Set(this.inner.getAllTools().map((tool) => tool.name));
-              const promptModeTools = [
-                ...(goalMode ? ["piora_goal"] : []),
-                ...(planMode ? ["piora_plan"] : []),
-                ...(planExecution ? ["piora_plan_execution"] : []),
-              ].filter((name) => available.has(name));
-              if (promptModeTools.length > 0) {
-                this.setForceEmptySystemPrompt(false);
-                this.inner.setActiveToolsByName([
-                  ...new Set([...this.inner.getActiveToolNames(), ...promptModeTools]),
-                ]);
-                this.applyForcedEmptySystemPrompt();
-                promptModeToolsApplied = true;
-              }
-            }
-            if (planMode) planModeLease = enterPlanMode(this.inner);
-            await this.inner.prompt(runtimePromptMessage, {
-              ...(promptImages?.length ? { images: promptImages } : {}),
-              ...(streamingBehavior ? { streamingBehavior } : {}),
-              source: "rpc",
-            });
-            if (planMode) {
-              const submittedPlan = getPlanArtifact(this.inner.sessionId);
-              if (submittedPlan?.runId === promptRun.runId) {
-                this.planState = submittedPlan;
-                this.emit({
-                  type: "plan_ready",
-                  plan: this.planState,
-                  taskRun: projectPlanArtifactTaskRun(this.planState),
-                });
-                notifyRunningChange();
-              } else {
-                this.emit({
-                  type: "plan_missing",
-                  message: "Plan mode finished without submitting a structured plan artifact.",
-                });
-              }
-            }
-            if (goalMode) {
-              this.goalState = await runGoalModeContinuations({
-                session: this.inner,
-                promptRun,
-                onStateChange: (state) => {
-                  this.goalState = state;
-                  this.persistGoalState();
-                  if (state.status === "active") this.emit({ type: "goal_progress", goal: state });
-                },
-              });
-              if (this.goalState) {
-                this.persistGoalState();
-              }
-              if (this.goalState) {
-                const revisionBeforeSettlement = this.planState?.revision;
-                const settledPlan = settlePlanExecutionFromGoal(
-                  this.inner.sessionId,
-                  promptRun.runId,
-                  this.goalState.status,
-                  this.goalState.reason ?? this.goalState.summary,
-                );
-                if (settledPlan && settledPlan.revision !== revisionBeforeSettlement) {
-                  this.persistPlanState(settledPlan);
-                  this.emit({
-                    type: "plan_progress",
-                    plan: settledPlan,
-                    taskRun: projectPlanArtifactTaskRun(settledPlan),
-                  });
-                }
-              }
-              this.emit({ type: "goal_done", goal: this.goalState });
-            }
-          } finally {
-            if (goalMode || planMode) finishActivePromptMode(promptRun);
-            if (this._alive) {
-              planModeLease?.restore();
-              if (promptModeToolsApplied) this.applySessionCapabilities();
-            }
-          }
-        })
+        Promise.resolve().then(() => this.inner.prompt(runtimePromptMessage, {
+          ...(promptImages?.length ? { images: promptImages } : {}),
+          ...(streamingBehavior ? { streamingBehavior } : {}),
+          source: "rpc",
+        }))
           .then(async () => {
           this.promptRunning = false;
-          this.promptMode = "normal";
           if (ownsPromptRun) {
             await finishPromptRun(promptRun, "idle");
             if (this.activePromptRun?.runId === promptRun.runId) this.activePromptRun = undefined;
@@ -972,18 +752,6 @@ export class AgentSessionWrapper {
           notifyRunningChange();
         }).catch(async (error) => {
           this.promptRunning = false;
-          this.promptMode = "normal";
-          this.pauseActiveGoal(`Target mode paused after a model or runtime error: ${error instanceof Error ? error.message : String(error)}`);
-          const interruptedPlan = settlePlanExecutionFromGoal(
-            this.inner.sessionId,
-            promptRun.runId,
-            "paused",
-            `Plan execution paused after a model or runtime error: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          if (interruptedPlan && interruptedPlan.revision !== this.planState?.revision) {
-            this.persistPlanState(interruptedPlan);
-            this.emit({ type: "plan_progress", plan: interruptedPlan, taskRun: projectPlanArtifactTaskRun(interruptedPlan) });
-          }
           if (ownsPromptRun) {
             await finishPromptRun(promptRun, "error");
             if (this.activePromptRun?.runId === promptRun.runId) this.activePromptRun = undefined;
@@ -1019,19 +787,6 @@ export class AgentSessionWrapper {
         // the UI can settle immediately while the wrapper remains `stopping`
         // until the real runtime has finished unwinding.
         const abortTask = this.inner.abort();
-        this.pauseActiveGoal("Target mode was paused because the user stopped the active run.");
-        const interruptedPlan = promptRun
-          ? settlePlanExecutionFromGoal(
-              this.inner.sessionId,
-              promptRun.runId,
-              "paused",
-              "Plan execution was interrupted because the user stopped the active run.",
-            )
-          : undefined;
-        if (interruptedPlan && interruptedPlan.revision !== this.planState?.revision) {
-          this.persistPlanState(interruptedPlan);
-          this.emit({ type: "plan_progress", plan: interruptedPlan, taskRun: projectPlanArtifactTaskRun(interruptedPlan) });
-        }
         const cleanupTask = finishPromptRun(promptRun, "abort");
         if (this.activePromptRun?.runId === promptRun?.runId) this.activePromptRun = undefined;
 
@@ -1049,68 +804,7 @@ export class AgentSessionWrapper {
         return { accepted: true };
       }
 
-      case "goal_pause": {
-        this.persistGoalState(pauseGoalRun(this.inner.sessionId));
-        this.emit({ type: "goal_progress", goal: this.goalState });
-        notifyRunningChange();
-        return this.goalState;
-      }
-
-      case "goal_cancel": {
-        this.persistGoalState(cancelGoalRun(this.inner.sessionId));
-        this.emit({ type: "goal_done", goal: this.goalState });
-        notifyRunningChange();
-        return this.goalState;
-      }
-
-      case "get_goal": {
-        this.goalState = getGoalRun(this.inner.sessionId) ?? this.goalState;
-        return this.goalState ?? null;
-      }
-
-      case "get_plan": {
-        this.planState = getPlanArtifact(this.inner.sessionId) ?? this.planState;
-        return this.planState ?? null;
-      }
-
-      case "plan_update": {
-        this.assertSessionIdle("update a plan");
-        const expectedRevision = command.expectedRevision as number;
-        this.persistPlanState(updatePlanArtifact(
-          this.inner.sessionId,
-          expectedRevision,
-          command.plan as PlanDraftInput,
-        ));
-        const taskRun = projectPlanArtifactTaskRun(this.planState!);
-        this.emit({ type: "plan_progress", plan: this.planState, taskRun });
-        return { plan: this.planState, taskRun };
-      }
-
-      case "plan_approve": {
-        this.assertSessionIdle("approve a plan");
-        this.persistPlanState(approvePlanArtifact(
-          this.inner.sessionId,
-          command.expectedRevision as number,
-        ));
-        const taskRun = projectPlanArtifactTaskRun(this.planState!);
-        this.emit({ type: "plan_approved", plan: this.planState, taskRun });
-        return { plan: this.planState, taskRun };
-      }
-
-      case "plan_cancel": {
-        this.assertSessionIdle("cancel a plan");
-        this.persistPlanState(cancelPlanArtifact(
-          this.inner.sessionId,
-          command.expectedRevision as number,
-        ));
-        const taskRun = projectPlanArtifactTaskRun(this.planState!);
-        this.emit({ type: "plan_cancelled", plan: this.planState, taskRun });
-        return { plan: this.planState, taskRun };
-      }
-
       case "get_state": {
-        this.goalState = getGoalRun(this.inner.sessionId) ?? this.goalState;
-        this.planState = getPlanArtifact(this.inner.sessionId) ?? this.planState;
         const model = this.inner.model;
         const contextUsage = this.inner.getContextUsage();
         return {
@@ -1119,12 +813,8 @@ export class AgentSessionWrapper {
           sessionFile: this.inner.sessionFile ?? "",
           isStreaming: this.inner.isStreaming,
           isPromptRunning: this.promptRunning,
-          promptMode: this.promptMode,
           isBashRunning: this.inner.isBashRunning,
           isCompacting: this.inner.isCompacting,
-          goal: this.goalState,
-          plan: this.planState,
-          planTaskRun: this.planState ? projectPlanArtifactTaskRun(this.planState) : undefined,
           runtime: this.getRuntime(),
           pendingApproval: this.pendingUiResponses.size > 0 || this.activeCustomUis.size > 0,
           lastPromptFailed: this.lastPromptFailed,
@@ -1142,6 +832,7 @@ export class AgentSessionWrapper {
             ? { percent: contextUsage.percent, contextWindow: contextUsage.contextWindow, tokens: contextUsage.tokens }
             : null,
           systemPrompt: this.inner.agent.state?.systemPrompt ?? "",
+          systemPromptBinding: this.getSystemPromptBinding(),
           thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
           extensionStatuses: this.getExtensionStatuses(),
           extensionWidgets: this.getExtensionWidgets(),
@@ -1194,6 +885,12 @@ export class AgentSessionWrapper {
         const newSessionId = SessionManager.open(newSessionFile, sessionDir).getSessionId();
         const forkedManager = SessionManager.open(newSessionFile, sessionDir);
         appendSessionCapabilityPolicy(forkedManager, copySessionCapabilityPolicy(this.capabilityPolicy));
+        const sourceSystemPromptBinding = this.getSystemPromptBinding()
+          ?? createSessionSystemPromptBinding({ mode: "default" });
+        appendSessionSystemPromptBinding(
+          forkedManager,
+          copySessionSystemPromptBinding(sourceSystemPromptBinding),
+        );
         try {
           await bindSessionAgentRuntimeProfile(newSessionId, this.runtimeProfile);
         } catch (profileError) {
@@ -1211,14 +908,6 @@ export class AgentSessionWrapper {
       case "navigate_tree": {
         this.assertSessionIdle("navigate");
         const result = await this.inner.navigateTree(command.targetId as string, {});
-        this.goalState = restoreGoalRunFromEntries(this.inner.sessionId, this.inner.sessionManager.getBranch());
-        this.planState = restorePlanArtifactFromEntries(this.inner.sessionId, this.inner.sessionManager.getBranch());
-        this.emit({ type: "goal_progress", goal: this.goalState });
-        this.emit({
-          type: "plan_progress",
-          plan: this.planState,
-          taskRun: this.planState ? projectPlanArtifactTaskRun(this.planState) : undefined,
-        });
         notifyRunningChange();
         return { cancelled: result.cancelled };
       }
@@ -1477,19 +1166,6 @@ export class AgentSessionWrapper {
     this.activePromptRun = undefined;
     this.activeCommandId = undefined;
     this.promptAdmissionBusy = false;
-    if (promptRun) finishActivePromptMode(promptRun);
-    this.pauseActiveGoal("Target mode was paused because the session runtime stopped.");
-    const interruptedPlan = promptRun
-      ? settlePlanExecutionFromGoal(
-          this.inner.sessionId,
-          promptRun.runId,
-          "paused",
-          "Plan execution was interrupted because the session runtime stopped.",
-        )
-      : undefined;
-    if (interruptedPlan && interruptedPlan.revision !== this.planState?.revision) {
-      this.persistPlanState(interruptedPlan);
-    }
     void finishPromptRun(promptRun, "destroy");
     this.unsubscribe?.();
     for (const pending of this.pendingUiResponses.values()) pending.cancel();
@@ -1497,8 +1173,6 @@ export class AgentSessionWrapper {
     this.pendingUiResponses.clear();
     this.pendingUiRequests.clear();
     this.runtimeToolCalls.clear();
-    forgetGoalRun(this.inner.sessionId);
-    forgetPlanArtifact(this.inner.sessionId);
     for (const callback of this.onDestroyCallbacks) {
       try { callback(); } catch (error) {
         console.error("[pi-web] session destroy callback failed:", error instanceof Error ? error.message : error);
@@ -2008,7 +1682,7 @@ export function getRunningRpcSessionStatuses(): TaskRuntimeSnapshot[] {
     const hasOpenTaskRun = snapshot.taskRun
       && snapshot.taskRun.phase !== "completed"
       && snapshot.taskRun.phase !== "cancelled";
-    if (snapshot.runtime !== "idle" || snapshot.pendingApproval || snapshot.lastPromptFailed || snapshot.goal || hasOpenTaskRun) {
+    if (snapshot.runtime !== "idle" || snapshot.pendingApproval || snapshot.lastPromptFailed || hasOpenTaskRun) {
       statuses.push(snapshot);
     }
   }
@@ -2159,7 +1833,7 @@ export async function startRpcSession(
   cwd: string,
   options: RpcSessionStartOptions = {},
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
-  const { initialModel, thinkingLevel, capabilitySelection } = options;
+  const { initialModel, thinkingLevel, capabilitySelection, systemPromptSelection } = options;
   const processRuntimeProfile = getAgentRuntimeProfile();
   const runtimeProfile = options.runtimeProfile ?? processRuntimeProfile;
   assertCurrentAgentRuntimeProfile(runtimeProfile);
@@ -2195,6 +1869,18 @@ export async function startRpcSession(
     const sessionManager = sessionFile
       ? SessionManager.open(sessionFile, undefined)
       : SessionManager.create(cwd, undefined);
+
+    if (
+      runtimeProfile === "normal"
+      && !readLatestSessionSystemPromptBinding(sessionManager.getEntries())
+    ) {
+      appendSessionSystemPromptBinding(
+        sessionManager,
+        createSessionSystemPromptBinding(!sessionFile && systemPromptSelection
+          ? systemPromptSelection
+          : { mode: "default" }),
+      );
+    }
 
     // Determine which tools to pass based on requested toolNames.
     // Since v0.68.0, session creation expects string[] tool names instead of Tool[] instances.
@@ -2246,7 +1932,11 @@ export async function startRpcSession(
                 additionalExtensionPaths: extensionPlan.enabledPaths,
                 noExtensions: true,
                 extensionsOverride: (result) => applyExtensionLoadPlan(result, extensionPlan),
-                systemPromptOverride: (base) => readSystemPromptConfig().prompt ?? base,
+                systemPromptOverride: (base) => resolveSessionSystemPrompt(
+                  sessionManager.getEntries(),
+                  base,
+                  readSystemPromptConfig(),
+                ),
               },
             }),
       });
@@ -2298,9 +1988,6 @@ export async function startRpcSession(
       // setModel would turn that harmless placeholder into an API-key lookup.
       if (configuredModel !== inner.model) await inner.setModel(configuredModel);
     }
-
-    restoreGoalRunFromEntries(inner.sessionId, inner.sessionManager.getBranch());
-    restorePlanArtifactFromEntries(inner.sessionId, inner.sessionManager.getBranch());
 
     const capabilityCatalog = buildSessionCapabilityCatalog(inner.getAllTools(), runtimeProfile);
     const restoredPolicy = sessionFile

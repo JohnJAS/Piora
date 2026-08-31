@@ -9,6 +9,30 @@ export const COMPANION_FOCUS_DURATIONS: Record<CompanionFocusTimerPhase, number>
   "long-break": 15 * 60,
 };
 
+export interface CompanionFocusPetPresentation {
+  phase: CompanionFocusTimerPhase;
+  status: "running" | "paused";
+  remainingSeconds: number;
+}
+
+export function getCompanionFocusPetPresentation(
+  timer: CompanionFocusTimer,
+  now = Date.now(),
+): CompanionFocusPetPresentation | null {
+  if (timer.status !== "running" && timer.status !== "paused") return null;
+  return {
+    phase: timer.phase,
+    status: timer.status,
+    remainingSeconds: getCompanionFocusRemainingSeconds(timer, now),
+  };
+}
+
+export function formatCompanionFocusCountdown(seconds: number): string {
+  const safe = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(safe / 60);
+  return `${String(minutes).padStart(2, "0")}:${String(safe % 60).padStart(2, "0")}`;
+}
+
 export function getCompanionFocusRemainingSeconds(
   timer: CompanionFocusTimer,
   now = Date.now(),

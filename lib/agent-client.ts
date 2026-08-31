@@ -28,6 +28,7 @@ export interface CreateAgentSessionRequest {
   provider?: string;
   modelId?: string;
   thinkingLevel?: string;
+  systemPromptSelection?: import("./system-prompt-types").SystemPromptSelection;
 }
 
 export interface CreateAgentSessionResponse {

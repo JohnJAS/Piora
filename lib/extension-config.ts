@@ -19,6 +19,17 @@ import {
 
 const EXTENSION_SETTINGS_VERSION = 1;
 
+function defaultDisabledExtensionIds(): string[] {
+  return FIRST_PARTY_EXTENSIONS
+    .filter((descriptor) => descriptor.defaultEnabled === false)
+    .map((descriptor) => descriptor.id)
+    .sort();
+}
+
+function defaultExtensionPreferences(): ExtensionPreferences {
+  return { version: EXTENSION_SETTINGS_VERSION, disabled: defaultDisabledExtensionIds() };
+}
+
 export interface ExtensionPreferences {
   version: typeof EXTENSION_SETTINGS_VERSION;
   disabled: string[];
@@ -52,17 +63,17 @@ export function extensionPreferencesPath(agentDir = getAgentDir()): string {
 
 export function readExtensionPreferences(path = extensionPreferencesPath()): ExtensionPreferences {
   try {
-    if (!existsSync(path)) return { version: EXTENSION_SETTINGS_VERSION, disabled: [] };
+    if (!existsSync(path)) return defaultExtensionPreferences();
     const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<ExtensionPreferences>;
     if (parsed.version !== EXTENSION_SETTINGS_VERSION || !Array.isArray(parsed.disabled)) {
-      return { version: EXTENSION_SETTINGS_VERSION, disabled: [] };
+      return defaultExtensionPreferences();
     }
     return {
       version: EXTENSION_SETTINGS_VERSION,
       disabled: [...new Set(parsed.disabled.filter((id): id is string => typeof id === "string" && id.length > 0))].sort(),
     };
   } catch {
-    return { version: EXTENSION_SETTINGS_VERSION, disabled: [] };
+    return defaultExtensionPreferences();
   }
 }
 

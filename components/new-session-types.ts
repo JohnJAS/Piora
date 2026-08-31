@@ -1,12 +1,13 @@
 import type { AttachedFile } from "@/hooks/useAgentSession";
-import type { AttachedImage, PromptRunOptions } from "./ChatInput";
+import type { AttachedImage } from "./ChatInput";
+import type { SystemPromptSelection } from "@/lib/system-prompt-types";
 
 export interface NewSessionInitialPrompt {
   id: string;
   message: string;
   images?: AttachedImage[];
   files?: AttachedFile[];
-  options?: PromptRunOptions;
+  systemPromptSelection?: SystemPromptSelection;
 }
 
 export interface NewSessionLaunch {

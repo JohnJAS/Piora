@@ -117,9 +117,10 @@ export function CompanionPanel() {
   const { notifyCompletion } = useCompletionNotification();
 
   const applyState = useCallback((next: CompanionRuntimeState) => {
-    if (next.updatedAt < stateRef.current.updatedAt) return;
+    if (next.updatedAt < stateRef.current.updatedAt) return false;
     stateRef.current = next;
     setState(next);
+    return true;
   }, []);
 
   useEffect(() => {
@@ -128,8 +129,7 @@ export function CompanionPanel() {
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const next = await fetchCompanionRuntimeState({ signal });
-    applyState(next);
-    publishCompanionRuntimeState(runtimeChannelRef.current, next);
+    if (applyState(next)) publishCompanionRuntimeState(runtimeChannelRef.current, next);
   }, [applyState]);
 
   useEffect(() => {
@@ -177,8 +177,7 @@ export function CompanionPanel() {
     setError("");
     try {
       const next = await saveCompanionRuntimeState(update(stateRef.current));
-      applyState(next);
-      publishCompanionRuntimeState(runtimeChannelRef.current, next);
+      if (applyState(next)) publishCompanionRuntimeState(runtimeChannelRef.current, next);
       return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));

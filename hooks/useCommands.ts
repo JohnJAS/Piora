@@ -11,12 +11,13 @@ function loadRecent(): string[] {
   catch { return []; }
 }
 
-export function useCommands(context: CommandContext, translate: (key: string) => string) {
+export function useCommands(context: CommandContext, translate: (key: string) => string, shortcutLabels: Partial<Record<string, string>> = {}) {
   const [recent, setRecent] = useState<string[]>(loadRecent);
   const commands = useMemo(() => {
     const recentOrder = new Map(recent.map((id, index) => [id, index]));
-    return [...GUI_COMMANDS].sort((a, b) => (recentOrder.get(a.id) ?? 999) - (recentOrder.get(b.id) ?? 999));
-  }, [recent]);
+    return GUI_COMMANDS.map((item) => ({ ...item, shortcut: shortcutLabels[item.id] ?? item.shortcut }))
+      .sort((a, b) => (recentOrder.get(a.id) ?? 999) - (recentOrder.get(b.id) ?? 999));
+  }, [recent, shortcutLabels]);
   const search = useCallback((query: string) => filterGuiCommands(commands, query, (item) => translate(item.title)), [commands, translate]);
   const run = useCallback(async (item: Command, argument?: string) => {
     const enabled = item.enabled(context);

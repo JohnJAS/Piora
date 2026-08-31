@@ -35,9 +35,6 @@ export interface SessionMessageInput {
   images?: SessionMessageImage[];
   materials?: PromptMaterialReference[];
   expiresAt?: number;
-  goalMode?: boolean;
-  planMode?: boolean;
-  planExecution?: { planId: string; expectedRevision: number };
   teamExecution?: TeamExecutionContext;
 }
 
@@ -59,9 +56,6 @@ export interface SessionCommandRecord {
   errorMessage?: string;
   images?: SessionMessageImage[];
   materials?: PromptMaterialReference[];
-  goalMode?: boolean;
-  planMode?: boolean;
-  planExecution?: { planId: string; expectedRevision: number };
   teamExecution?: PersistedTeamExecutionRef;
 }
 

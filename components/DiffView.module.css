@@ -1,5 +1,8 @@
 .root {
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
+  box-sizing: border-box;
   overflow: auto;
   background: var(--bg);
   color: var(--text);
@@ -55,9 +58,9 @@
 .added .marker { color: var(--status-ready); }
 .removed .marker { color: var(--status-failed); }
 .meta { color: var(--text-dim); font-style: italic; }
-.splitGrid { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr); }
-.splitCell { display: grid; grid-template-columns: 46px 20px minmax(0, 1fr); min-height: 23px; line-height: 23px; border-right: 1px solid color-mix(in srgb, var(--border) 72%, transparent); content-visibility: auto; contain-intrinsic-block-size: 23px; }
-.splitCode { padding: 0 9px 0 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.splitGrid { width: max-content; min-width: 100%; display: grid; grid-template-columns: minmax(360px, max-content) minmax(360px, max-content); }
+.splitCell { display: grid; grid-template-columns: 46px 20px minmax(max-content, 1fr); min-height: 23px; line-height: 23px; border-right: 1px solid color-mix(in srgb, var(--border) 72%, transparent); content-visibility: auto; contain-intrinsic-block-size: 23px; }
+.splitCode { padding: 0 9px 0 6px; white-space: pre; }
 .empty { background: color-mix(in srgb, var(--surface-muted) 48%, transparent); }
 .notice { padding: 20px; color: var(--text-dim); font-family: var(--font-ui, system-ui, sans-serif); text-align: center; }
 .limit { position: sticky; left: 0; padding: 10px; text-align: center; background: color-mix(in srgb, var(--surface-raised) 90%, transparent); border-top: 1px solid var(--border); }

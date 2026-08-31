@@ -1091,7 +1091,7 @@ function FileChangeBlock({
       {expanded ? (
         <div className="file-change-details">
           {change.patch ? (
-            <DiffView patch={change.patch} filePath={change.path} mode="unified" showFileHeader={false} />
+            <DiffView className="file-change-diff" patch={change.patch} filePath={change.path} mode="unified" showFileHeader={false} />
           ) : change.status === "failed" ? (
             <PairedResult text={resultText} isEmpty={!resultText.trim()} isError />
           ) : (

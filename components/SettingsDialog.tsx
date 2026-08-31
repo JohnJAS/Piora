@@ -69,7 +69,7 @@ function titleModelValue(model: SessionTitleModelPreference): string {
   return JSON.stringify(model);
 }
 
-export type SettingsKey = "general" | "conversation" | "speech" | "automations" | "models" | "capabilityBundles" | "extensions" | "skills" | "plugins" | "harmony" | "appearance" | "language" | "companion" | "remote" | "usage" | "archived";
+export type SettingsKey = "general" | "conversation" | "shortcuts" | "speech" | "automations" | "models" | "capabilityBundles" | "extensions" | "skills" | "plugins" | "harmony" | "appearance" | "language" | "companion" | "remote" | "usage" | "archived";
 
 interface SettingsEntry {
   key: SettingsKey;
@@ -130,6 +130,12 @@ export function SettingsDialog({
       labelKey: "settings.conversation",
       descriptionKey: "settings.conversationDescription",
       icon: <AliIcon name="message" size={16} />,
+    },
+    {
+      key: "shortcuts",
+      labelKey: "settings.shortcuts",
+      descriptionKey: "settings.shortcutsDescription",
+      icon: <AliIcon name="setting" size={16} />,
     },
     {
       key: "speech",
@@ -218,7 +224,7 @@ export function SettingsDialog({
   ], []);
 
   const entryGroups = useMemo(() => [
-    { labelKey: "settings.group.personal", keys: ["general", "conversation", "speech", "automations", "models", "appearance", "language", "companion"] as SettingsKey[] },
+    { labelKey: "settings.group.personal", keys: ["general", "conversation", "shortcuts", "speech", "automations", "models", "appearance", "language", "companion"] as SettingsKey[] },
     { labelKey: "settings.group.capabilities", keys: ["capabilityBundles", "extensions", "skills", "plugins", "harmony", "remote"] as SettingsKey[] },
     { labelKey: "settings.group.history", keys: ["usage", "archived"] as SettingsKey[] },
   ], []);

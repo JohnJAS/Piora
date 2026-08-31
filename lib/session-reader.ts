@@ -3,14 +3,13 @@ import {
   buildContextEntries as piBuildContextEntries,
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
-import { closeSync, openSync, readSync, statSync } from "node:fs";
+import { closeSync, openSync, readSync } from "node:fs";
 import { normalize as normalizePath } from "node:path";
 import type { AgentMessage, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
 import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
 import { normalizeToolCalls } from "./normalize";
 import { sessionPathKey } from "./session-path";
 import { resolveProject, type ProjectInfo } from "./worktree";
-import { GOAL_RUN_ENTRY_TYPE, parseGoalRunState, type GoalRunState } from "./goal-run-registry";
 import { getPromptMaterialDisplayMetadata, restorePromptMaterialDisplayPreview } from "./prompt-materials";
 import { isProjectlessChatCwd } from "./projectless-chat-path";
 import { getProjectlessChatWorkspace } from "./projectless-chat-server";
@@ -35,7 +34,6 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
     const projectless = isProjectlessChatCwd(s.cwd);
     const cwd = projectless ? getProjectlessChatWorkspace() : s.cwd;
     const project = !projectless && s.cwd ? projectByCwd.get(s.cwd) : undefined;
-    const goal = readPersistedGoalFromTail(s.path, s.id);
     return {
       path: s.path,
       id: s.id,
@@ -49,40 +47,8 @@ async function loadAllSessions(): Promise<SessionInfo[]> {
       ...(!projectless ? { projectRoot: project?.projectRoot ?? s.cwd } : {}),
       ...(projectless ? { projectless: true } : {}),
       ...(project?.isWorktree && project.branch ? { worktreeBranch: project.branch } : {}),
-      ...(goal ? { goal } : {}),
     };
   });
-}
-
-const GOAL_TAIL_SCAN_BYTES = 256 * 1024;
-
-export function readPersistedGoalFromTail(filePath: string, sessionId: string): GoalRunState | undefined {
-  let fd: number | undefined;
-  try {
-    const size = statSync(filePath).size;
-    const length = Math.min(size, GOAL_TAIL_SCAN_BYTES);
-    if (length <= 0) return undefined;
-    fd = openSync(filePath, "r");
-    const buffer = Buffer.allocUnsafe(length);
-    const bytesRead = readSync(fd, buffer, 0, length, size - length);
-    const lines = buffer.subarray(0, bytesRead).toString("utf8").split(/\r?\n/);
-    for (let index = lines.length - 1; index >= 0; index -= 1) {
-      const line = lines[index]?.trim();
-      if (!line || !line.includes(GOAL_RUN_ENTRY_TYPE)) continue;
-      try {
-        const entry = JSON.parse(line) as { type?: unknown; customType?: unknown; data?: unknown };
-        if (entry.type !== "custom" || entry.customType !== GOAL_RUN_ENTRY_TYPE) continue;
-        return parseGoalRunState(entry.data, sessionId);
-      } catch {
-        // A partial first line is expected when scanning only the file tail.
-      }
-    }
-    return undefined;
-  } catch {
-    return undefined;
-  } finally {
-    if (fd !== undefined) closeSync(fd);
-  }
 }
 
 export async function listAllSessions(): Promise<SessionInfo[]> {

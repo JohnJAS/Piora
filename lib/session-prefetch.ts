@@ -13,6 +13,7 @@ interface PrefetchEntry {
   cancelOnLeave: boolean;
   controller: AbortController;
   promise: Promise<unknown | null>;
+  data?: unknown | null;
 }
 
 const prefetchedSessions = new Map<string, PrefetchEntry>();
@@ -73,6 +74,7 @@ function createPrefetch(
         entry.byteLength = new Blob([raw]).size;
         cachedPrefetchBytes += entry.byteLength;
         const data = JSON.parse(raw) as { info?: { modified?: unknown } };
+        entry.data = data;
         // Preserve the exact version returned by the server. If a task appended
         // after the sidebar snapshot, the fresher payload is safe to display but
         // will no longer match that stale sidebar version on a later switch.
@@ -137,6 +139,30 @@ export function takePrefetchedSession(
   entry.lastAccessedAt = Date.now();
   entry.cancelOnLeave = false;
   return entry.promise;
+}
+
+/**
+ * Returns a completed, version-matched switch snapshot without scheduling any
+ * asynchronous work. This lets the newly mounted chat render its first frame
+ * from the pointer/hover prefetch instead of flashing a full loading screen.
+ */
+export function peekPrefetchedSession(
+  session: Pick<SessionInfo, "id" | "modified">,
+): unknown | null {
+  prunePrefetchedSessions();
+  const entry = prefetchedSessions.get(session.id);
+  if (
+    !entry
+    || !entry.settled
+    || !entry.data
+    || entry.modified !== session.modified
+    || Date.now() - entry.createdAt >= PREFETCH_TTL_MS
+  ) {
+    return null;
+  }
+  entry.lastAccessedAt = Date.now();
+  entry.cancelOnLeave = false;
+  return entry.data;
 }
 
 export function invalidatePrefetchedSession(sessionId: string): void {

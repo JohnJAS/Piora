@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
-import { invalidatePrefetchedSession, takePrefetchedSession } from "@/lib/session-prefetch";
+import { invalidatePrefetchedSession, peekPrefetchedSession, takePrefetchedSession } from "@/lib/session-prefetch";
 import type {
   AgentMessage,
   ExtensionStatusItem,
@@ -14,8 +14,6 @@ import { normalizeToolCalls } from "@/lib/normalize";
 import { AgentCommandError, createAgentSessionRequest, sendAgentCommand } from "@/lib/agent-client";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { estimateSessionContextUsage } from "@/lib/context-usage";
-import type { GoalRunState } from "@/lib/goal-run-registry";
-import type { PlanArtifactState, PlanDraftInput } from "@/lib/plan-artifact-registry";
 import { isPromptMaterialRuntimeMessage, type PromptMaterialReference } from "@/lib/prompt-material-format";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 import { fetchModelCatalog, type ModelCatalogEntry } from "@/lib/model-catalog-client";
@@ -26,12 +24,18 @@ import {
   type SessionCapabilitySelection,
 } from "@/lib/session-capabilities";
 import { runModelChange } from "@/lib/model-change-coordinator";
+import type {
+  SessionSystemPromptBinding,
+  SystemPromptSelection,
+} from "@/lib/system-prompt-types";
 
 export interface SessionData {
   sessionId: string;
   filePath: string;
+  info?: SessionInfo | null;
   tree: SessionTreeNode[];
   leafId: string | null;
+  systemPromptBinding?: SessionSystemPromptBinding | null;
   context: {
     messages: AgentMessage[];
     entryIds: string[];
@@ -82,17 +86,15 @@ interface LastAssistantTextResponse {
 type AgentStateResponse = {
   contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
   systemPrompt?: string;
+  systemPromptBinding?: SessionSystemPromptBinding | null;
   thinkingLevel?: string;
   isStreaming?: boolean;
   isPromptRunning?: boolean;
-  promptMode?: "normal" | "goal" | "plan";
   isBashRunning?: boolean;
   isCompacting?: boolean;
   extensionStatuses?: ExtensionStatusItem[];
   extensionWidgets?: ExtensionWidgetItem[];
   queuedMessages?: { steering?: string[]; followUp?: string[] } | null;
-  goal?: GoalRunState | null;
-  plan?: PlanArtifactState | null;
   capabilities?: SessionCapabilitiesState;
 };
 
@@ -159,6 +161,7 @@ export interface UseAgentSessionOptions {
   session: SessionInfo | null;
   newSessionCwd: string | null;
   newSessionInitialModel?: { provider: string; modelId: string } | null;
+  newSessionInitialSystemPromptSelection?: SystemPromptSelection | null;
   onAgentEnd?: (sessionId: string) => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
@@ -167,6 +170,11 @@ export interface UseAgentSessionOptions {
   onBranchDataChange?: (tree: SessionTreeNode[], activeLeafId: string | null, onLeafChange: (leafId: string | null) => void) => void;
   onSystemPromptChange?: (prompt: string | null) => void;
   onSessionStatsPanelOpen?: () => void;
+}
+
+function selectionFromSystemPromptBinding(binding: SessionSystemPromptBinding | null): SystemPromptSelection {
+  if (!binding || binding.source === "default" || !binding.templateId) return { mode: "default" };
+  return { mode: "template", templateId: binding.templateId };
 }
 
 export type ThinkingLevelOption = "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -378,18 +386,25 @@ type SlashCommandsResponse = {
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
-    session, newSessionCwd, newSessionInitialModel, onAgentEnd, onSessionCreated, onSessionForked,
+    session, newSessionCwd, newSessionInitialModel, newSessionInitialSystemPromptSelection, onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   } = opts;
 
   const isNew = session === null && newSessionCwd !== null;
 
-  const [data, setData] = useState<SessionData | null>(null);
-  const [loading, setLoading] = useState(!isNew);
+  // Task rows prefetch on hover/pointer-down. Seed the remounted chat from a
+  // completed snapshot so a normal switch never paints the full loading shell
+  // before showing content that is already available in memory.
+  const [initialSessionData] = useState<SessionData | null>(() => (
+    session ? peekPrefetchedSession(session) as SessionData | null : null
+  ));
+
+  const [data, setData] = useState<SessionData | null>(initialSessionData);
+  const [loading, setLoading] = useState(!isNew && initialSessionData === null);
   const [error, setError] = useState<string | null>(null);
-  const [activeLeafId, setActiveLeafId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<AgentMessage[]>([]);
-  const [entryIds, setEntryIds] = useState<string[]>([]);
+  const [activeLeafId, setActiveLeafId] = useState<string | null>(initialSessionData?.leafId ?? null);
+  const [messages, setMessages] = useState<AgentMessage[]>(initialSessionData?.context.messages ?? []);
+  const [entryIds, setEntryIds] = useState<string[]>(initialSessionData?.context.entryIds ?? []);
   const [streamState, dispatch] = useReducer(streamReducer, { isStreaming: false, streamingMessage: null });
   const [agentRunning, setAgentRunning] = useState(false);
   const [bashRunning, setBashRunning] = useState(false);
@@ -397,7 +412,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
   const [modelList, setModelList] = useState<ModelEntry[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
-  const [modelScopeWarnings, setModelScopeWarnings] = useState<string[]>([]);
   const [modelThinkingLevels, setModelThinkingLevels] = useState<Record<string, string[]>>({});
   const [modelThinkingLevelMaps, setModelThinkingLevelMaps] = useState<Record<string, Record<string, string | null>>>({});
   const [newSessionModel, setNewSessionModel] = useState<SelectedModel | null>(() => newSessionInitialModel ?? null);
@@ -406,6 +420,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [retryInfo, setRetryInfo] = useState<{ attempt: number; maxAttempts: number; errorMessage?: string } | null>(null);
   const [contextUsage, setContextUsage] = useState<{ percent: number | null; contextWindow: number; tokens: number | null } | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
+  const [systemPromptBinding, setSystemPromptBinding] = useState<SessionSystemPromptBinding | null>(initialSessionData?.systemPromptBinding ?? null);
+  const [systemPromptSelection, setSystemPromptSelection] = useState<SystemPromptSelection>(() => (
+    newSessionInitialSystemPromptSelection ?? selectionFromSystemPromptBinding(initialSessionData?.systemPromptBinding ?? null)
+  ));
+  const [systemPromptSaving, setSystemPromptSaving] = useState(false);
   const [forkingEntryId, setForkingEntryId] = useState<string | null>(null);
   const [currentModelOverride, setCurrentModelOverride] = useState<{ provider: string; modelId: string } | null>(null);
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
@@ -422,8 +441,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [extensionStatuses, setExtensionStatuses] = useState<ExtensionStatusItem[]>([]);
   const [extensionWidgets, setExtensionWidgets] = useState<ExtensionWidgetItem[]>([]);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessages>({ steering: [], followUp: [] });
-  const [goal, setGoal] = useState<GoalRunState | null>(null);
-  const [planArtifact, setPlanArtifact] = useState<PlanArtifactState | null>(null);
   const [capabilities, setCapabilities] = useState<SessionCapabilitiesState>(() => createDefaultSessionCapabilitiesState());
   const [capabilitiesSaving, setCapabilitiesSaving] = useState(false);
 
@@ -446,6 +463,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const ensuringNewSessionRef = useRef<Promise<string | null> | null>(null);
   const newSessionPromotedRef = useRef(false);
   const newSessionModelOverrideRef = useRef<SelectedModel | null>(newSessionInitialModel ?? null);
+  const systemPromptSelectionRef = useRef<SystemPromptSelection>(
+    newSessionInitialSystemPromptSelection ?? selectionFromSystemPromptBinding(initialSessionData?.systemPromptBinding ?? null),
+  );
+  const systemPromptSavingRef = useRef(false);
   const thinkingLevelOverrideRef = useRef<Exclude<ThinkingLevelOption, "auto"> | null>(null);
   const promptRunIdRef = useRef(0);
   const promptSettlementByRunRef = useRef(new Map<number, Promise<void>>());
@@ -551,6 +572,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setActiveLeafId(d.leafId);
       setMessages(d.context.messages);
       setEntryIds(d.context.entryIds ?? []);
+      setSystemPromptBinding(d.systemPromptBinding ?? null);
+      const restoredSystemPromptSelection = selectionFromSystemPromptBinding(d.systemPromptBinding ?? null);
+      systemPromptSelectionRef.current = restoredSystemPromptSelection;
+      setSystemPromptSelection(restoredSystemPromptSelection);
       setCurrentModelOverride(null);
       setError(null);
       if (d.context.thinkingLevel && d.context.thinkingLevel !== "off") {
@@ -573,12 +598,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (liveState) {
           if (liveState.contextUsage !== undefined) setContextUsage(liveState.contextUsage ?? null);
           if (liveState.systemPrompt !== undefined) setSystemPrompt(liveState.systemPrompt ?? null);
+          if (liveState.systemPromptBinding !== undefined) {
+            setSystemPromptBinding(liveState.systemPromptBinding ?? null);
+            const restoredSelection = selectionFromSystemPromptBinding(liveState.systemPromptBinding ?? null);
+            systemPromptSelectionRef.current = restoredSelection;
+            setSystemPromptSelection(restoredSelection);
+          }
           if (liveState.thinkingLevel !== undefined) setThinkingLevel((liveState.thinkingLevel as ThinkingLevelOption) ?? "auto");
           if (liveState.extensionStatuses !== undefined) setExtensionStatuses(liveState.extensionStatuses ?? []);
           if (liveState.extensionWidgets !== undefined) setExtensionWidgets(liveState.extensionWidgets ?? []);
           if (liveState.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(liveState.queuedMessages));
-          if (liveState.goal !== undefined) setGoal(liveState.goal ?? null);
-          if (liveState.plan !== undefined) setPlanArtifact(liveState.plan ?? null);
           if (liveState.capabilities !== undefined) setCapabilities(liveState.capabilities);
         } else if (!agentState.running) {
           setQueuedMessages({ steering: [], followUp: [] });
@@ -657,6 +686,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         ...(selectedThinkingLevel
           ? { thinkingLevel: selectedThinkingLevel }
           : {}),
+        systemPromptSelection: systemPromptSelectionRef.current,
       });
       const realId = result.sessionId;
       sessionIdRef.current = realId;
@@ -806,6 +836,48 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       },
     });
   }, []);
+
+  const handleSystemPromptSelection = useCallback(async (selection: SystemPromptSelection): Promise<void> => {
+    if (agentRunningRef.current || bashRunningRef.current || systemPromptSavingRef.current) return;
+    const previousSelection = systemPromptSelectionRef.current;
+    systemPromptSelectionRef.current = selection;
+    setSystemPromptSelection(selection);
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+
+    systemPromptSavingRef.current = true;
+    setSystemPromptSaving(true);
+    try {
+      const response = await fetch(`/api/sessions/${encodeURIComponent(sid)}/system-prompt`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selection }),
+      });
+      const data = await response.json().catch(() => ({})) as {
+        binding?: SessionSystemPromptBinding;
+        selection?: SystemPromptSelection;
+        systemPrompt?: string | null;
+        error?: string;
+      };
+      if (!response.ok || data.error || !data.binding || !data.selection) {
+        throw new Error(data.error ?? `HTTP ${response.status}`);
+      }
+      systemPromptSelectionRef.current = data.selection;
+      setSystemPromptSelection(data.selection);
+      setSystemPromptBinding(data.binding);
+      if (data.systemPrompt !== undefined) setSystemPrompt(data.systemPrompt);
+    } catch (selectionError) {
+      systemPromptSelectionRef.current = previousSelection;
+      setSystemPromptSelection(previousSelection);
+      addNotice({
+        type: "error",
+        message: selectionError instanceof Error ? selectionError.message : String(selectionError),
+      });
+    } finally {
+      systemPromptSavingRef.current = false;
+      setSystemPromptSaving(false);
+    }
+  }, [addNotice]);
 
   const handleCapabilitySelection = useCallback(async (selection: SessionCapabilitySelection): Promise<void> => {
     if (agentRunningRef.current || bashRunningRef.current) return;
@@ -1014,8 +1086,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // (wrapper destroyed) means nothing is compacting.
       setIsCompacting(state?.isCompacting ?? false);
       setQueuedMessages(normalizeQueuedMessages(state?.queuedMessages));
-      if (state?.goal !== undefined) setGoal(state.goal ?? null);
-      if (state?.plan !== undefined) setPlanArtifact(state.plan ?? null);
       if (state?.capabilities !== undefined) setCapabilities(state.capabilities);
       const busy = data.running && state
         && (state.isStreaming || state.isPromptRunning || state.isCompacting);
@@ -1025,10 +1095,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (busy || !agentRunningRef.current) return;
       if (state) {
         if (state.systemPrompt !== undefined) setSystemPrompt(state.systemPrompt ?? null);
+        if (state.systemPromptBinding !== undefined) {
+          setSystemPromptBinding(state.systemPromptBinding ?? null);
+          const restoredSelection = selectionFromSystemPromptBinding(state.systemPromptBinding ?? null);
+          systemPromptSelectionRef.current = restoredSelection;
+          setSystemPromptSelection(restoredSelection);
+        }
         if (state.extensionStatuses !== undefined) setExtensionStatuses(state.extensionStatuses ?? []);
         if (state.extensionWidgets !== undefined) setExtensionWidgets(state.extensionWidgets ?? []);
-        if (state.goal !== undefined) setGoal(state.goal ?? null);
-        if (state.plan !== undefined) setPlanArtifact(state.plan ?? null);
         if (state.capabilities !== undefined) setCapabilities(state.capabilities);
       }
       await finishPromptWithoutStream(sid, runId);
@@ -1196,20 +1270,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           followUp: [...((event.followUp as string[] | undefined) ?? [])],
         });
         break;
-      case "goal_start":
-      case "goal_progress":
-      case "goal_done":
-        setGoal((event.goal as GoalRunState | undefined) ?? null);
-        break;
-      case "plan_ready":
-      case "plan_progress":
-      case "plan_approved":
-      case "plan_cancelled":
-      case "plan_execution_start":
-        setPlanArtifact((event.plan as PlanArtifactState | undefined) ?? null);
-        break;
       case "capabilities_changed":
         if (event.capabilities) setCapabilities(event.capabilities as SessionCapabilitiesState);
+        break;
+      case "system_prompt_reloaded":
+        if (typeof event.systemPrompt === "string") setSystemPrompt(event.systemPrompt);
         break;
       case "auto_retry_start":
         setRetryInfo({ attempt: event.attempt as number, maxAttempts: event.maxAttempts as number, errorMessage: event.errorMessage as string | undefined });
@@ -1245,11 +1310,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     message: string,
     images?: AttachedImage[],
     files?: AttachedFile[],
-    options?: {
-      goalMode?: boolean;
-      planMode?: boolean;
-      planExecution?: { planId: string; expectedRevision: number };
-    },
   ) => {
     const trimmedMessage = message.trim();
     if (!trimmedMessage && !images?.length && !files?.length) return;
@@ -1321,9 +1381,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             type: "prompt",
             message: effectiveMessage,
             ...(promptMaterials.length ? { materials: promptMaterials } : {}),
-            ...(options?.goalMode ? { goalMode: true } : {}),
-            ...(options?.planMode ? { planMode: true } : {}),
-            ...(options?.planExecution ? { planExecution: options.planExecution } : {}),
             ...(piImages?.length ? { images: piImages } : {}),
           });
         }
@@ -1335,9 +1392,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           type: "prompt",
           message: effectiveMessage,
           ...(promptMaterials.length ? { materials: promptMaterials } : {}),
-          ...(options?.goalMode ? { goalMode: true } : {}),
-          ...(options?.planMode ? { planMode: true } : {}),
-          ...(options?.planExecution ? { planExecution: options.planExecution } : {}),
           ...(piImages?.length ? { images: piImages } : {}),
         });
       }
@@ -1436,93 +1490,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       console.error("Failed to abort:", e);
     }
   }, [finishPromptWithoutStream]);
-
-  const handleGoalPause = useCallback(async () => {
-    const sid = sessionIdRef.current;
-    if (!sid) return;
-    try {
-      if (agentRunningRef.current) {
-        await handleAbort();
-        setGoal(await sendAgentCommand<GoalRunState>(sid, { type: "get_goal" }));
-      } else {
-        setGoal(await sendAgentCommand<GoalRunState>(sid, { type: "goal_pause" }));
-      }
-    } catch (e) {
-      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
-    }
-  }, [addNotice, handleAbort]);
-
-  const handleGoalCancel = useCallback(async () => {
-    const sid = sessionIdRef.current;
-    if (!sid) return;
-    try {
-      if (agentRunningRef.current) await handleAbort();
-      setGoal(await sendAgentCommand<GoalRunState>(sid, { type: "goal_cancel" }));
-    } catch (e) {
-      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
-    }
-  }, [addNotice, handleAbort]);
-
-  const handlePlanUpdate = useCallback(async (plan: PlanDraftInput): Promise<boolean> => {
-    const sid = sessionIdRef.current;
-    if (!sid || !planArtifact) return false;
-    try {
-      const result = await sendAgentCommand<{ plan: PlanArtifactState }>(sid, {
-        type: "plan_update",
-        expectedRevision: planArtifact.revision,
-        plan,
-      });
-      setPlanArtifact(result.plan);
-      return true;
-    } catch (e) {
-      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
-      return false;
-    }
-  }, [addNotice, planArtifact]);
-
-  const handlePlanApprove = useCallback(async (): Promise<void> => {
-    const sid = sessionIdRef.current;
-    if (!sid || !planArtifact) return;
-    try {
-      const result = await sendAgentCommand<{ plan: PlanArtifactState }>(sid, {
-        type: "plan_approve",
-        expectedRevision: planArtifact.revision,
-      });
-      setPlanArtifact(result.plan);
-    } catch (e) {
-      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
-    }
-  }, [addNotice, planArtifact]);
-
-  const handlePlanCancel = useCallback(async (): Promise<void> => {
-    const sid = sessionIdRef.current;
-    if (!sid || !planArtifact) return;
-    try {
-      const result = await sendAgentCommand<{ plan: PlanArtifactState }>(sid, {
-        type: "plan_cancel",
-        expectedRevision: planArtifact.revision,
-      });
-      setPlanArtifact(result.plan);
-    } catch (e) {
-      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
-    }
-  }, [addNotice, planArtifact]);
-
-  const handlePlanExecute = useCallback(async (): Promise<void> => {
-    if (!planArtifact || planArtifact.status !== "approved") return;
-    await handleSend(
-      `Execute the approved structured plan: ${planArtifact.plan.objective}`,
-      undefined,
-      undefined,
-      {
-        goalMode: true,
-        planExecution: {
-          planId: planArtifact.plan.id,
-          expectedRevision: planArtifact.revision,
-        },
-      },
-    );
-  }, [handleSend, planArtifact]);
 
   const handleFork = useCallback(async (entryId: string) => {
     if (bashRunningRef.current) return;
@@ -1630,7 +1597,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     });
     setModelNames(d.models);
     setModelError(d.modelError ?? null);
-    setModelScopeWarnings(d.modelScopeWarnings ?? []);
     setModelThinkingLevels(d.thinkingLevels ?? {});
     setModelThinkingLevelMaps(d.thinkingLevelMaps ?? {});
     const nextModelList = d.modelList ?? [];
@@ -1927,10 +1893,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // Load session on mount
   useEffect(() => {
     if (session) {
-      setGoal(null);
-      setPlanArtifact(null);
       sessionIdRef.current = session.id;
-      loadSession(session.id, true, true, takePrefetchedSession(session)).then((agentState) => {
+      loadSession(session.id, initialSessionData === null, true, takePrefetchedSession(session)).then((agentState) => {
         if (agentState?.running) {
           invalidatePrefetchedSession(session.id);
           if (agentState.state?.isStreaming || agentState.state?.isPromptRunning) {
@@ -1953,12 +1917,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (agentState.state.isCompacting !== undefined) setIsCompacting(agentState.state.isCompacting);
           if (agentState.state.contextUsage !== undefined) setContextUsage(agentState.state.contextUsage ?? null);
           if (agentState.state.systemPrompt !== undefined) setSystemPrompt(agentState.state.systemPrompt ?? null);
+          if (agentState.state.systemPromptBinding !== undefined) {
+            setSystemPromptBinding(agentState.state.systemPromptBinding ?? null);
+            const restoredSelection = selectionFromSystemPromptBinding(agentState.state.systemPromptBinding ?? null);
+            systemPromptSelectionRef.current = restoredSelection;
+            setSystemPromptSelection(restoredSelection);
+          }
           if (agentState.state.thinkingLevel !== undefined) setThinkingLevel((agentState.state.thinkingLevel as ThinkingLevelOption) ?? "auto");
           if (agentState.state.extensionStatuses !== undefined) setExtensionStatuses(agentState.state.extensionStatuses ?? []);
           if (agentState.state.extensionWidgets !== undefined) setExtensionWidgets(agentState.state.extensionWidgets ?? []);
           if (agentState.state.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(agentState.state.queuedMessages));
-          if (agentState.state.goal !== undefined) setGoal(agentState.state.goal ?? null);
-          if (agentState.state.plan !== undefined) setPlanArtifact(agentState.state.plan ?? null);
           if (agentState.state.capabilities !== undefined) setCapabilities(agentState.state.capabilities);
         }
       });
@@ -2071,10 +2039,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   return {
     // State
     data, loading, error, activeLeafId, messages, entryIds, streamState,
-    agentRunning, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
-    retryInfo, contextUsage: effectiveContextUsage, systemPrompt, forkingEntryId,
+    agentRunning, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
+    retryInfo, contextUsage: effectiveContextUsage, systemPrompt, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, sessionStats,
-    slashCommands, slashCommandsLoading, queuedMessages, goal, planArtifact, capabilities, capabilitiesSaving,
+    slashCommands, slashCommandsLoading, queuedMessages, capabilities, capabilitiesSaving,
     notices: noticeState.visible, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection: isNew && displayModel === null,
     agentPhase,
@@ -2083,12 +2051,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef,
     lastUserMsgRef, pendingScrollToUserRef, initialScrollDoneRef,
     // Actions
-    handleSend, handleAbort, handleGoalPause, handleGoalCancel, handlePlanUpdate, handlePlanApprove, handlePlanCancel, handlePlanExecute, handleFork, handleNavigate, handleModelChange,
+    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange,
     handleScrollToBottom,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
-    handleThinkingLevelChange, handleCapabilitySelection, loadSlashCommands, setActiveLeafId, setData, setMessages,
+    handleThinkingLevelChange, handleCapabilitySelection, handleSystemPromptSelection, loadSlashCommands, setActiveLeafId, setData, setMessages,
     dispatch, setAgentRunning, setForkingEntryId,
     bashRunning, pendingBash,
     // Subscriptions

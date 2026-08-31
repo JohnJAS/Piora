@@ -8,6 +8,7 @@ import { allowFileRoot } from "./file-access";
 import { startRpcSession, type AgentSessionWrapper } from "./rpc-manager";
 import { invalidateSessionListCache } from "./session-reader";
 import type { SessionCapabilitiesState, SessionCapabilitySelection } from "./session-capabilities";
+import type { SystemPromptSelection } from "./system-prompt-types";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -23,6 +24,7 @@ export interface CreateSessionInput {
   thinkingLevel?: ThinkingLevel;
   toolNames?: string[];
   capabilitySelection?: SessionCapabilitySelection;
+  systemPromptSelection?: SystemPromptSelection;
   name?: string;
   runtimeProfile?: AgentRuntimeProfile;
 }
@@ -48,6 +50,7 @@ export async function createSession(input: CreateSessionInput): Promise<CreatedS
   const { session, realSessionId } = await startRpcSession(`__new__${randomUUID()}`, "", cwd, {
     ...(input.toolNames ? { toolNames: input.toolNames } : {}),
     ...(input.capabilitySelection ? { capabilitySelection: input.capabilitySelection } : {}),
+    ...(input.systemPromptSelection ? { systemPromptSelection: input.systemPromptSelection } : {}),
     ...(input.initialModel ? { initialModel: input.initialModel } : {}),
     ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
     runtimeProfile,

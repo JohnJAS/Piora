@@ -20,30 +20,17 @@ export function registerAbortHandler(handler: (() => void) | null): void {
 // Hook: global keyboard shortcuts
 // ---------------------------------------------------------------------------
 
-interface UseGlobalKeyboardShortcutsOptions {
-  /** Called when Ctrl+Alt+N is pressed. Receives current cwd. */
-  onNewSession?: (cwd: string) => void;
-  /** The currently selected project directory (sidebar cwd). */
-  activeCwd?: string | null;
-}
-
 /**
- * Register global keyboard shortcuts for the application.
+ * Register the non-configurable emergency shortcut for the application.
  *
  * Shortcuts handled here:
  *   Esc          – stop the running agent (via module-level abort handler)
- *   Ctrl+Alt+N   – create a new session in the active project directory
- *
  * Note: Esc inside <textarea> or <input> is deliberately NOT handled here.
  * ChatInput manages its own Esc logic (closing slash / @ file menus, stopping
  * the agent when no menu is open) because it needs intimate knowledge of menu
  * state that is local to that component.
  */
-export function useGlobalKeyboardShortcuts(
-  options: UseGlobalKeyboardShortcutsOptions,
-): void {
-  const { onNewSession, activeCwd } = options;
-
+export function useGlobalKeyboardShortcuts(): void {
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
       // ---- Esc: stop agent ----
@@ -59,15 +46,9 @@ export function useGlobalKeyboardShortcuts(
         return;
       }
 
-      // ---- Ctrl+Alt+N: new session ----
-      if (e.key === "n" && e.ctrlKey && e.altKey) {
-        if (!activeCwd || !onNewSession) return;
-        e.preventDefault();
-        onNewSession(activeCwd);
-      }
     };
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [activeCwd, onNewSession]);
+  }, []);
 }

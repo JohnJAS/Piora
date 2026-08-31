@@ -23,6 +23,7 @@ import { useSidebarState } from "./sidebar/useSidebarState";
 import { SidebarShell } from "./sidebar/SidebarShell";
 import { RoomSidebarSection } from "./RoomSidebarSection";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
+import { ConversationSearchDialog } from "./ConversationSearchDialog";
 
 export type { SessionSidebarHandle } from "./sidebar/sidebar-types";
 
@@ -34,7 +35,7 @@ function createTemporarySessionId(): string {
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }
 
-export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, selectedRoomId, onSelectSession, onSelectRoom, onNewSession, onRequestNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onFocusFileSearch, onOpenSettings, activeProjectRoot }, ref) {
+export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, selectedRoomId, onSelectSession, onSelectSearchResult, onSelectRoom, onNewSession, onRequestNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onFocusFileSearch, onOpenSettings, activeProjectRoot }, ref) {
   const { t } = useI18n();
   const [sessionFlags, setSessionFlags] = useState<SessionFlags>({});
   const primaryActionRef = useRef<HTMLButtonElement>(null);
@@ -43,6 +44,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   const [projectsHovered, setProjectsHovered] = useState(false);
   const [deletedSessionToast, setDeletedSessionToast] = useState<{ session: SessionInfo; key: number } | null>(null);
   const [archivedSessionToast, setArchivedSessionToast] = useState<SessionInfo | null>(null);
+  const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const deletedSessionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
     collapsedProjectKeys, setCollapsedProjectKeys,
@@ -159,6 +161,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
 
   useImperativeHandle(ref, () => ({
     openProjectPicker: handleCustomPathClick,
+    openConversationSearch() { setConversationSearchOpen(true); },
     focusPrimaryNavigation() { primaryActionRef.current?.focus({ preventScroll: true }); },
     focusFileSearch() { onFocusFileSearch?.(); },
   }), [handleCustomPathClick, onFocusFileSearch]);
@@ -385,6 +388,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     && selectedProject === worktreeState.projectRoot
   );
   return (
+    <>
     <SidebarShell>
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {completionAnnouncement
@@ -405,6 +409,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         />
       )}
       <SidebarNavigation
+        onOpenConversationSearch={() => setConversationSearchOpen(true)}
         onFocusFileSearch={onFocusFileSearch}
         primaryActionRef={primaryActionRef}
         onOpenSettings={onOpenSettings}
@@ -494,5 +499,16 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         onUndoArchive={undoArchive}
       />
     </SidebarShell>
+    {conversationSearchOpen ? (
+      <ConversationSearchDialog
+        sessions={allSessions}
+        onClose={() => setConversationSearchOpen(false)}
+        onSelect={(session, entryId) => {
+          if (onSelectSearchResult) onSelectSearchResult(session, entryId);
+          else onSelectSession(session);
+        }}
+      />
+    ) : null}
+    </>
   );
 });

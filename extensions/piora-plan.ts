@@ -5,26 +5,34 @@ import {
   PLAN_ARTIFACT_ENTRY_TYPE,
   addPlanExecutionArtifact,
   addPlanExecutionEvidence,
+  approvePlanArtifact,
   beginPlanVerification,
+  beginPlanExecution,
   blockPlanStep,
+  cancelPlanArtifact,
   capturePlanGitSnapshot,
+  capturePlanRuntimeToolResult,
   completePlanExecution,
   completePlanStep,
   getPlanArtifact,
+  interruptPlanExecution,
   restorePlanArtifactFromEntries,
   recordPlanChangeSummary,
+  resumePlanExecution,
   skipPlanStep,
   startPlanStep,
   submitPlanArtifact,
   type PlanArtifactState,
 } from "../lib/plan-artifact-registry.ts";
 import { getGitStatus } from "../lib/git-changes.ts";
+import { getActivePromptRun, requirePromptToolIdentity } from "../lib/prompt-run-registry.ts";
 
-import {
-  getActivePromptMode,
-  PLAN_MODE_SYSTEM_INSTRUCTION,
-} from "../lib/prompt-mode-runtime.ts";
-import { requirePromptToolIdentity } from "../lib/prompt-run-registry.ts";
+const requestedExecutions = new Set<string>();
+const runtimeToolArguments = new Map<string, unknown>();
+
+function runtimeToolKey(sessionId: string, toolCallId: string): string {
+  return `${sessionId}:${toolCallId}`;
+}
 
 function persistPlan(api: ExtensionAPI, state: PlanArtifactState): PlanArtifactState {
   api.appendEntry(PLAN_ARTIFACT_ENTRY_TYPE, state);
@@ -82,7 +90,7 @@ function createPlanExecutionTool(api: ExtensionAPI) {
   return defineTool({
     name: "piora_plan_execution",
     label: "Piora Plan Execution",
-    description: "Track the current approved plan while Target Mode executes it. Start and complete dependency-ordered steps, then enter verification and complete the execution lifecycle.",
+    description: "Track an approved plan execution created by the optional Piora Plans extension. Start and complete dependency-ordered steps, then verify the result.",
     promptSnippet: "Track execution progress against the approved structured plan",
     promptGuidelines: [
       "Before working on a step, call start_step. After concrete work and checks for that step, call complete_step with a concise result.",
@@ -90,9 +98,9 @@ function createPlanExecutionTool(api: ExtensionAPI) {
       "Evidence added through this tool is model-reported. Successful test, typecheck, lint, or git diff --check commands are captured separately by the runtime and cannot be forged through tool parameters.",
       "Record material files, patches, commits, and reports as artifacts linked to the relevant step.",
       "Respect dependsOn. Skip a step only when it is genuinely unnecessary and state why.",
-      "If a step cannot proceed, call block_step and then put the target goal into blocked or waiting_user as appropriate.",
+      "If a step cannot proceed, call block_step and explain the exact unblock condition to the user.",
       "After every step is completed or skipped, call begin_verification, run at least one applicable verification command, map verification evidence to every success criterion, and record_change_summary before complete_execution.",
-      "After complete_execution, record Goal evidence and complete the active target goal.",
+      "This tool tracks only the extension-owned plan; it does not activate any application-level work mode.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -126,10 +134,6 @@ function createPlanExecutionTool(api: ExtensionAPI) {
     }),
     async execute(toolCallId, params, _signal, _onUpdate, ctx) {
       const sessionId = ctx.sessionManager.getSessionId();
-      const activeMode = getActivePromptMode(sessionId);
-      if (activeMode?.mode !== "goal") {
-        throw new Error("piora_plan_execution is available only while Target Mode executes an approved plan.");
-      }
       const identity = requirePromptToolIdentity(sessionId, toolCallId);
       const stepId = params.stepId?.trim() ?? "";
       const message = params.message?.trim() ?? "";
@@ -183,7 +187,7 @@ function createPlanExecutionTool(api: ExtensionAPI) {
           break;
       }
       if (!state?.execution || state.execution.runId !== identity.runId) {
-        throw new Error("No approved plan execution is attached to this target-mode run.");
+        throw new Error("No approved plan execution is attached to the current extension turn.");
       }
       if (params.action !== "status") persistPlan(api, state);
       updatePlanUi(ctx, state);
@@ -224,13 +228,14 @@ function createPlanTool(api: ExtensionAPI) {
   return defineTool({
     name: "piora_plan",
     label: "Piora Structured Plan",
-    description: "Submit the structured artifact for the current one-shot Piora plan-mode prompt. This writes session metadata only and never executes the plan or mutates the workspace.",
-    promptSnippet: "Store a structured plan for explicit user review and approval",
+    description: "Save a structured plan as optional extension metadata for later review. Saving a plan does not approve or execute it.",
+    promptSnippet: "Optionally store a structured plan for explicit user review",
     promptGuidelines: [
-      "Use this tool exactly once near the end of a plan-mode response, after inspecting the relevant context.",
+      "Use this tool when the user explicitly asks to create and save a structured plan.",
       "Make the objective decision-complete, list assumptions explicitly, and provide objectively verifiable success criteria.",
       "Use stable short ids for steps and reference only those ids in dependsOn.",
       "Submitting a plan does not approve or execute it.",
+      "The tool does not make the workspace read-only; obey the user's requested scope for the current prompt.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -246,14 +251,7 @@ function createPlanTool(api: ExtensionAPI) {
     }),
     async execute(toolCallId, params, _signal, _onUpdate, ctx) {
       const sessionId = ctx.sessionManager.getSessionId();
-      const activeMode = getActivePromptMode(sessionId);
-      if (activeMode?.mode !== "plan") {
-        throw new Error("piora_plan can only submit an artifact during an active Piora plan-mode prompt.");
-      }
       const identity = requirePromptToolIdentity(sessionId, toolCallId);
-      if (identity.runId !== activeMode.runId) {
-        throw new Error("The plan tool call is not attached to the active plan-mode prompt.");
-      }
       const state = persistPlan(api, submitPlanArtifact(identity, {
         objective: params.objective,
         assumptions: params.assumptions,
@@ -294,10 +292,15 @@ export default function pioraPlan(api: ExtensionAPI) {
 
   api.on("before_agent_start", (_event, ctx) => {
     const sessionId = ctx.sessionManager.getSessionId();
-    const active = getActivePromptMode(sessionId);
-    if (active?.mode === "goal") {
-      const state = getPlanArtifact(sessionId);
-      if (!state?.execution || state.execution.runId !== active.runId) return;
+    const promptRun = getActivePromptRun(sessionId);
+    let state = getPlanArtifact(sessionId);
+    if (promptRun && requestedExecutions.delete(sessionId) && state) {
+      state = state.execution && ["blocked", "failed", "interrupted", "waiting_user"].includes(state.execution.status)
+        ? persistPlan(api, resumePlanExecution(promptRun))
+        : persistPlan(api, beginPlanExecution(promptRun, state.plan.id, state.revision));
+    }
+    if (promptRun && state?.execution?.runId === promptRun.runId
+      && ["running", "verifying"].includes(state.execution.status)) {
       updatePlanUi(ctx, state);
       const steps = state.plan.steps.map((step) => (
         `- [${step.status}] ${step.id}: ${step.title}${step.dependsOn.length ? ` (depends on ${step.dependsOn.join(", ")})` : ""}${step.description ? `\n  ${step.description}` : ""}`
@@ -306,29 +309,82 @@ export default function pioraPlan(api: ExtensionAPI) {
         message: {
           customType: "piora-plan-execution-context",
           display: false,
-          content: `[PIORA APPROVED PLAN EXECUTION]\nObjective: ${state.plan.objective}\n\nSuccess criteria (zero-based indices):\n${state.plan.successCriteria.map((item, index) => `- ${index}: ${item}`).join("\n")}\n\nAssumptions:\n${state.plan.assumptions.map((item) => `- ${item}`).join("\n") || "- None"}\n\nSteps:\n${steps}\n\nRecorded evidence:\n${state.execution.evidence.map((item) => `- [${item.source}] ${item.kind}${item.stepId ? ` for ${item.stepId}` : ""}: ${item.summary}`).join("\n") || "- None"}\n\nRecorded artifacts:\n${state.execution.artifacts.map((item) => `- [${item.source}] ${item.kind}${item.stepId ? ` for ${item.stepId}` : ""}: ${item.name}`).join("\n") || "- None"}\n\nExecute this approved plan in dependency order. Track every transition with piora_plan_execution. A step needs evidence before completion. Model-reported evidence cannot substitute for a successful runtime-captured test, typecheck, lint, or git diff --check. Do not declare the target goal complete until the plan execution has entered verification, runtime verification has succeeded, verification evidence covers every success criterion, a change summary is recorded, and complete_execution has succeeded.`,
+          content: `[PIORA PLANS EXTENSION EXECUTION]\nObjective: ${state.plan.objective}\n\nSuccess criteria (zero-based indices):\n${state.plan.successCriteria.map((item, index) => `- ${index}: ${item}`).join("\n")}\n\nAssumptions:\n${state.plan.assumptions.map((item) => `- ${item}`).join("\n") || "- None"}\n\nSteps:\n${steps}\n\nRecorded evidence:\n${state.execution.evidence.map((item) => `- [${item.source}] ${item.kind}${item.stepId ? ` for ${item.stepId}` : ""}: ${item.summary}`).join("\n") || "- None"}\n\nRecorded artifacts:\n${state.execution.artifacts.map((item) => `- [${item.source}] ${item.kind}${item.stepId ? ` for ${item.stepId}` : ""}: ${item.name}`).join("\n") || "- None"}\n\nExecute this approved extension-owned plan in dependency order. Track transitions with piora_plan_execution. A step needs evidence before completion. Model-reported evidence cannot substitute for successful runtime-captured verification. Complete the execution only after verification evidence covers every success criterion and a change summary is recorded.`,
         },
       };
     }
-    if (active?.mode !== "plan") return;
-    ctx.ui.setStatus("piora-plan", "Plan mode · read only");
-    return {
-      message: {
-        customType: "piora-plan-context",
-        display: false,
-        content: `[PIORA PLAN MODE ACTIVE]\n\n${PLAN_MODE_SYSTEM_INSTRUCTION}`,
-      },
-    };
+  });
+
+  api.on("tool_execution_start", (event, ctx) => {
+    runtimeToolArguments.set(runtimeToolKey(ctx.sessionManager.getSessionId(), event.toolCallId), event.args);
+  });
+
+  api.on("tool_execution_end", (event, ctx) => {
+    const sessionId = ctx.sessionManager.getSessionId();
+    const key = runtimeToolKey(sessionId, event.toolCallId);
+    const args = runtimeToolArguments.get(key);
+    runtimeToolArguments.delete(key);
+    const promptRun = getActivePromptRun(sessionId);
+    if (!promptRun) return;
+    const previous = getPlanArtifact(sessionId);
+    const state = capturePlanRuntimeToolResult(
+      promptRun,
+      event.toolCallId,
+      event.toolName,
+      args,
+      event.isError,
+      event.result,
+    );
+    if (state && state.revision !== previous?.revision) {
+      persistPlan(api, state);
+      updatePlanUi(ctx, state);
+    }
+  });
+
+  api.on("session_shutdown", (_event, ctx) => {
+    const prefix = `${ctx.sessionManager.getSessionId()}:`;
+    for (const key of runtimeToolArguments.keys()) {
+      if (key.startsWith(prefix)) runtimeToolArguments.delete(key);
+    }
+    requestedExecutions.delete(ctx.sessionManager.getSessionId());
   });
 
   api.on("agent_settled", (_event, ctx) => {
-    updatePlanUi(ctx, getPlanArtifact(ctx.sessionManager.getSessionId()));
+    const sessionId = ctx.sessionManager.getSessionId();
+    const promptRun = getActivePromptRun(sessionId);
+    let state = getPlanArtifact(sessionId);
+    if (promptRun && state?.execution?.runId === promptRun.runId
+      && ["running", "verifying"].includes(state.execution.status)) {
+      state = interruptPlanExecution(sessionId, promptRun.runId);
+      if (state) persistPlan(api, state);
+    }
+    updatePlanUi(ctx, state);
   });
 
   api.registerCommand("plan", {
-    description: "Show the latest structured plan for this session",
-    handler: async (_args, ctx) => {
-      const state = getPlanArtifact(ctx.sessionManager.getSessionId());
+    description: "Control the optional structured plan: /plan [status|approve|cancel|execute]",
+    handler: async (args, ctx) => {
+      const sessionId = ctx.sessionManager.getSessionId();
+      const action = args.trim().toLowerCase() || "status";
+      let state = getPlanArtifact(sessionId);
+      if (action === "approve") {
+        if (!state) throw new Error("No structured plan exists for this session.");
+        state = persistPlan(api, approvePlanArtifact(sessionId, state.revision));
+      } else if (action === "cancel") {
+        if (!state) throw new Error("No structured plan exists for this session.");
+        state = persistPlan(api, cancelPlanArtifact(sessionId, state.revision));
+      } else if (action === "execute") {
+        if (!state || (state.status !== "approved" && !state.execution)) {
+          throw new Error("Approve the saved plan before executing it.");
+        }
+        requestedExecutions.add(sessionId);
+        api.sendUserMessage(`Execute the approved saved plan: ${state.plan.objective}`);
+        ctx.ui.notify("Plan execution queued by the Piora Plans extension.", "info");
+        return;
+      } else if (action !== "status") {
+        ctx.ui.notify("Usage: /plan [status|approve|cancel|execute]", "error");
+        return;
+      }
       updatePlanUi(ctx, state);
       ctx.ui.notify(planSummary(state), state?.status === "cancelled" ? "warning" : "info");
     },

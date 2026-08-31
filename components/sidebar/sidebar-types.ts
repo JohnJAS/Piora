@@ -52,6 +52,7 @@ declare global {
       setCompanionHitTest?: (interactive: boolean) => Promise<boolean>;
       companionAction?: (action: "focus-main" | "open-settings" | "open-panel" | "hide") => Promise<boolean>;
       setGlobalShortcut?: (enabled: boolean) => Promise<boolean>;
+      setKeyboardShortcuts?: (bindings: Record<string, string | null>) => Promise<boolean>;
       selectHarmonyRuntimePath?: (kind: "sdk" | "hdc") => Promise<string | null>;
       onMenuAction?: (listener: (action: string) => void) => () => void;
       browser?: {
@@ -134,6 +135,7 @@ export interface SessionSidebarProps {
   selectedSessionId: string | null;
   selectedRoomId?: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
+  onSelectSearchResult?: (session: SessionInfo, entryId: string) => void;
   onSelectRoom?: (room: CollaborationRoom, isRestore?: boolean) => void;
   initialRoomId?: string | null;
   onInitialRoomRestoreDone?: () => void;
@@ -153,6 +155,7 @@ export interface SessionSidebarProps {
 
 export interface SessionSidebarHandle {
   openProjectPicker: () => void;
+  openConversationSearch: () => void;
   focusPrimaryNavigation: () => void;
   focusFileSearch: () => void;
 }

@@ -218,7 +218,7 @@ CI 没有实体手机，因此不能替代这组硬件验收。
 - 若后续引入 Hypium Node backend，从 P0 起必须运行在受监督 worker；P3 只负责长稳、Windows Job Object 和恢复加固。
 - 若产品要把“阻止同用户其他进程调用 HDC”作为安全承诺，必须另加 OS 级进程/凭据/设备访问隔离；当前实现不作此承诺。
 
-## 14. 0.2.1 增量：运行时发现、双模型感知和目标模式
+## 14. 0.2.1 增量：运行时发现与双模型感知
 
 ### 14.1 HDC/SDK 发现
 
@@ -228,6 +228,6 @@ CI 没有实体手机，因此不能替代这组硬件验收。
 
 设备快照仍由 `HarmonyDeviceManager` 一次生成。启用视觉路由时，截图作为独立、无历史的图片请求发送给用户选择的 image-capable 模型，返回受提示约束的观察文本；操作模型继续使用 revision-scoped UI refs、UI 树和观察文本。默认不把原图加入操作模型 tool result，避免同一屏幕被发送给两个提供商。视觉失败会作为结构化 warning 返回，UI 树路径仍可继续。
 
-### 14.3 目标模式
+### 14.3 可选工作流扩展边界
 
-`goalMode` 由 composer 随初始 prompt 发送。服务端以真实 `sessionId/runId` 建立内存状态机，并在每个 Agent turn 完成后检查状态；只要状态仍为 active，就由同一 `AgentSessionWrapper` 发起下一 turn，同时保持 `promptRunning` 和同一 prompt run identity。`piora_goal` 只允许当前 run 更新 progress、complete 或 blocked。abort、provider error、wrapper destroy 和最终 idle 都沿用 prompt-run cleanup。64 次自动续接是失控保护，触达后状态为 blocked，不得伪报 complete。
+设备控制运行时不再集成目标模式，也不接受 `goalMode` 请求字段。`piora-goal` 和 `piora-plan` 仅属于 normal profile 下默认关闭的可选扩展；启用后通过普通扩展工具工作，不改变 Harmony 的设备租约、审批队列或 `AgentSessionWrapper` 生命周期。设备控制任务需要持续执行时，应由调用方显式发送后续消息或使用独立的调度能力，核心运行时不会自动续接模型回合。

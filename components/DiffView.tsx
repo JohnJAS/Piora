@@ -13,6 +13,7 @@ import styles from "./DiffView.module.css";
 
 export interface DiffViewProps {
   patch: string;
+  className?: string;
   filePath?: string;
   language?: string;
   mode?: "unified" | "split";
@@ -30,6 +31,7 @@ const HIGHLIGHT_LIMIT = 600;
 
 export function DiffView({
   patch,
+  className,
   filePath,
   language,
   mode = "unified",
@@ -80,7 +82,7 @@ export function DiffView({
   if (parsed.files.length === 0) return <div className={styles.notice}>{t("diff.empty")}</div>;
 
   return (
-    <div className={styles.root} data-context-lines={contextLines}>
+    <div className={`${styles.root}${className ? ` ${className}` : ""}`} data-context-lines={contextLines}>
       {parsed.files.map((file, fileIndex) => {
         if (remaining <= 0) return null;
         const displayPath = filePath ?? bestPath(file);

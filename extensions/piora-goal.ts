@@ -4,6 +4,7 @@ import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-
 import {
   GOAL_RUN_ENTRY_TYPE,
   addGoalEvidence,
+  beginGoalRun,
   blockGoal,
   cancelGoalRun,
   completeGoal,
@@ -15,7 +16,7 @@ import {
   waitGoalForUser,
   type GoalRunState,
 } from "../lib/goal-run-registry.ts";
-import { requirePromptToolIdentity } from "../lib/prompt-run-registry.ts";
+import { getActivePromptRun, requirePromptToolIdentity } from "../lib/prompt-run-registry.ts";
 
 function persistGoal(api: ExtensionAPI, state: GoalRunState): GoalRunState {
   api.appendEntry(GOAL_RUN_ENTRY_TYPE, state);
@@ -23,7 +24,7 @@ function persistGoal(api: ExtensionAPI, state: GoalRunState): GoalRunState {
 }
 
 function goalSummary(state: GoalRunState | undefined): string {
-  if (!state) return "No target-mode goal exists for this session.";
+  if (!state) return "No goal exists for this session.";
   const lines = [
     `Goal: ${state.objective}`,
     `Status: ${state.status}`,
@@ -57,7 +58,7 @@ function updateGoalUi(ctx: ExtensionContext, state: GoalRunState | undefined): v
     return;
   }
   const lines = [
-    `[Target mode: ${state.status}]`,
+    `[Goal: ${state.status}]`,
     state.objective,
     `Iteration ${state.iteration} · ${state.checkpoints.length} checkpoints · ${state.evidence.length} evidence`,
   ];
@@ -69,20 +70,21 @@ function updateGoalUi(ctx: ExtensionContext, state: GoalRunState | undefined): v
 function createGoalTool(api: ExtensionAPI) {
   return defineTool({
   name: "piora_goal",
-  label: "Piora Target Mode",
-  description: "Read, checkpoint, verify, or explicitly finish a persistent Piora target-mode goal. The goal survives session reloads and continues until completed, blocked, cancelled, or paused by the user.",
-  promptSnippet: "Manage the lifecycle of an active Piora target-mode goal",
+  label: "Piora Goals",
+  description: "Create, inspect, checkpoint, verify, or finish an optional persistent goal. The tool is available only when the Piora Goals extension is enabled.",
+  promptSnippet: "Optionally create and manage persistent goals",
   promptGuidelines: [
-    "When Piora says target mode remains active, continue working instead of ending the response.",
+    "Call start only when the user explicitly asks to track work as a persistent goal or invokes the goal workflow.",
     "Use progress after material milestones and evidence after concrete verification such as tests, inspected output, or an artifact.",
     "Use complete only after every success criterion is satisfied and concrete evidence has been recorded.",
     "Use waiting_user when a concrete user choice, clarification, or approval is required, and state the exact question.",
     "Use blocked only when unavailable authority or an external state change prevents progress; explain the exact unblock condition.",
-    "Never mark a goal complete merely because a model turn, time budget, or iteration limit is ending.",
+    "A goal may remain active across ordinary prompts; this extension does not force automatic model continuations.",
   ],
   executionMode: "sequential",
   parameters: Type.Object({
     action: Type.Union([
+      Type.Literal("start"),
       Type.Literal("status"),
       Type.Literal("progress"),
       Type.Literal("evidence"),
@@ -91,6 +93,9 @@ function createGoalTool(api: ExtensionAPI) {
       Type.Literal("blocked"),
     ]),
     message: Type.Optional(Type.String({ maxLength: 4_000 })),
+    objective: Type.Optional(Type.String({ maxLength: 8_000 })),
+    successCriteria: Type.Optional(Type.Array(Type.String({ maxLength: 2_000 }), { maxItems: 32 })),
+    constraints: Type.Optional(Type.Array(Type.String({ maxLength: 2_000 }), { maxItems: 32 })),
     evidenceKind: Type.Optional(Type.Union([
       Type.Literal("verification"),
       Type.Literal("artifact"),
@@ -102,6 +107,12 @@ function createGoalTool(api: ExtensionAPI) {
     const message = typeof params.message === "string" ? params.message.trim() : "";
     let state: GoalRunState | undefined;
     switch (params.action) {
+      case "start":
+        state = persistGoal(api, beginGoalRun(identity, params.objective?.trim() || message, {
+          successCriteria: params.successCriteria,
+          constraints: params.constraints,
+        }));
+        break;
       case "status":
         state = getGoalRun(identity.sessionId);
         break;
@@ -124,7 +135,10 @@ function createGoalTool(api: ExtensionAPI) {
         state = persistGoal(api, waitGoalForUser(identity, message));
         break;
     }
-    if (!state || state.runId !== identity.runId) throw new Error("No active Piora target-mode run is attached to this tool call.");
+    if (!state) throw new Error("No Piora goal exists for this session.");
+    if (params.action !== "status" && state.runId !== identity.runId) {
+      throw new Error("The goal is not attached to the current prompt. Send another message to resume it.");
+    }
     updateGoalUi(ctx, state);
     return {
       content: [{ type: "text" as const, text: goalSummary(state) }],
@@ -158,8 +172,15 @@ export default function pioraGoal(api: ExtensionAPI) {
     updateGoalUi(ctx, state);
   });
 
-  api.on("before_agent_start", (_event, ctx) => {
-    const state = getGoalRun(ctx.sessionManager.getSessionId());
+  api.on("before_agent_start", (event, ctx) => {
+    const sessionId = ctx.sessionManager.getSessionId();
+    let state = getGoalRun(sessionId);
+    const promptRun = getActivePromptRun(sessionId);
+    const isWorkflowCommand = /^[!/]/.test(event.prompt.trimStart());
+    if (state && promptRun && !isWorkflowCommand
+      && ["active", "paused", "waiting_user", "blocked"].includes(state.status)) {
+      state = persistGoal(api, beginGoalRun(promptRun, event.prompt));
+    }
     if (!state || state.status !== "active") return;
     updateGoalUi(ctx, state);
     const recent = state.checkpoints.slice(-5).map((checkpoint) => `- ${checkpoint.message}`).join("\n") || "- No checkpoints yet";
@@ -168,13 +189,17 @@ export default function pioraGoal(api: ExtensionAPI) {
       message: {
         customType: "piora-goal-context",
         display: false,
-        content: `[PIORA TARGET MODE ACTIVE]\nObjective: ${state.objective}\n\nSuccess criteria:\n${state.successCriteria.map((item) => `- ${item}`).join("\n")}\n\nRecent checkpoints:\n${recent}\n\nRecorded evidence:\n${evidence}\n\nContinue until the objective is verified. This is a persistent execution run, not a single-response hint. Before ending every target-mode turn, you MUST call piora_goal with progress, evidence, complete, waiting_user, or blocked. Do not leave the goal active merely because the response can end.`,
+        content: `[PIORA GOALS EXTENSION]\nObjective: ${state.objective}\n\nSuccess criteria:\n${state.successCriteria.map((item) => `- ${item}`).join("\n")}\n\nRecent checkpoints:\n${recent}\n\nRecorded evidence:\n${evidence}\n\nContinue the saved goal when it is relevant to the user's current message. Use piora_goal to record meaningful progress, evidence, completion, a user decision, or a genuine blocker. This is optional extension context and does not force automatic continuation.`,
       },
     };
   });
 
+  api.on("agent_settled", (_event, ctx) => {
+    updateGoalUi(ctx, getGoalRun(ctx.sessionManager.getSessionId()));
+  });
+
   api.registerCommand("goal", {
-    description: "Show or control the current target-mode goal: /goal [status|pause|resume|cancel]",
+    description: "Show or control the optional saved goal: /goal [status|pause|resume|cancel]",
     handler: async (args, ctx) => {
       const sessionId = ctx.sessionManager.getSessionId();
       const [action = "status", ...rest] = args.trim().split(/\s+/);

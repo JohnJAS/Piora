@@ -212,7 +212,6 @@ export function useTaskStatus({
   const statusWithStartedAt = {
     ...status,
     ...(snapshot?.startedAt !== undefined ? { startedAt: snapshot.startedAt } : {}),
-    ...(snapshot?.goal ? { goal: snapshot.goal } : {}),
   };
   return runtime === "stopping" ? { ...statusWithStartedAt, runtime: "stopping" } : statusWithStartedAt;
 }

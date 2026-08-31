@@ -1,6 +1,6 @@
 {
   "name": "piora",
-  "version": "0.4.33",
+  "version": "0.4.34",
   "private": true,
   "description": "Open-source Pi coding agent desktop application",
   "author": {
@@ -61,6 +61,7 @@
   "scripts": {
     "brand:icons": "node scripts/build-brand-icon.mjs",
     "dev": "next dev -H 127.0.0.1 -p 30141",
+    "dev:desktop": "node scripts/dev-desktop.mjs",
     "dev:lan": "next dev -H 0.0.0.0 -p 30141",
     "build": "next build --webpack",
     "build:web": "next build --webpack && node scripts/stage-standalone.mjs",

@@ -9,6 +9,7 @@ import { MessageView } from "./MessageView";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { NewSessionContextChip, NewSessionLauncher } from "./NewSessionLauncher";
+import { SystemPromptSelector } from "./SystemPromptSelector";
 import type { NewSessionInitialPrompt } from "./new-session-types";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ChatScrollRail } from "./ChatScrollRail";
@@ -35,6 +36,7 @@ import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
 
 interface Props {
   session: SessionInfo | null;
+  focusEntryId?: string | null;
   newSessionCwd: string | null;
   newSessionInitialModel?: { provider: string; modelId: string } | null;
   initialPrompt?: NewSessionInitialPrompt | null;
@@ -238,7 +240,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenCapabilitySettings }: Props) {
+export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenCapabilitySettings }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
@@ -281,8 +283,8 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, ini
 
   const {
     loading, error, messages, entryIds, streamState,
-    agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelScopeWarnings, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
-    retryInfo, contextUsage, forkingEntryId,
+    agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
+    retryInfo, contextUsage, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages, capabilities, capabilitiesSaving,
     notices, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
@@ -295,9 +297,11 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, ini
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
-    handleThinkingLevelChange, handleCapabilitySelection, loadSlashCommands,
+    handleThinkingLevelChange, handleCapabilitySelection, handleSystemPromptSelection, loadSlashCommands,
   } = useAgentSession({
-    session, newSessionCwd, newSessionInitialModel, onAgentEnd, onSessionCreated, onSessionForked,
+    session, newSessionCwd, newSessionInitialModel,
+    newSessionInitialSystemPromptSelection: initialPrompt?.systemPromptSelection ?? null,
+    onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   });
   const sessionBusy = agentRunning || bashRunning;
@@ -312,7 +316,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, ini
       initialPrompt.message,
       initialPrompt.images,
       initialPrompt.files,
-      initialPrompt.options,
     );
   }, [claimInitialPrompt, handleSend, initialPrompt, isAutoModelSelection, isNew, sessionBusy]);
 
@@ -448,6 +451,8 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, ini
   // Only render the last N messages initially. When the user scrolls to the
   // top, load another page while keeping the scroll position stable.
   const [visibleCount, setVisibleCount] = useState(VISIBLE_PAGE_SIZE);
+  const [highlightedEntryId, setHighlightedEntryId] = useState<string | null>(null);
+  const handledFocusEntryRef = useRef<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const prevScrollDistanceRef = useRef<number | null>(null);
@@ -481,6 +486,35 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, ini
     container.scrollTop = restoreScrollTop(container.scrollHeight, prevScrollDistanceRef.current);
     prevScrollDistanceRef.current = null;
   }, [visibleCount, scrollContainerRef]);
+
+  useEffect(() => {
+    if (!focusEntryId || loading || !entryIds.includes(focusEntryId)) return;
+    const focusKey = `${session?.id ?? "new"}:${focusEntryId}`;
+    if (handledFocusEntryRef.current === focusKey) return;
+    handledFocusEntryRef.current = focusKey;
+    setVisibleCount((current) => Math.max(current, messages.length * 2));
+    setHighlightedEntryId(focusEntryId);
+  }, [entryIds, focusEntryId, loading, messages.length, session?.id]);
+
+  useEffect(() => {
+    if (!highlightedEntryId) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        const target = [...container.querySelectorAll<HTMLElement>("[data-chat-entry-id]")]
+          .find((element) => element.dataset.chatEntryId === highlightedEntryId);
+        target?.scrollIntoView({ block: "center", behavior: "smooth" });
+      });
+    });
+    const timer = window.setTimeout(() => setHighlightedEntryId((current) => current === highlightedEntryId ? null : current), 4_000);
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+      window.clearTimeout(timer);
+    };
+  }, [highlightedEntryId, scrollContainerRef, visibleCount]);
   // Push session stats up to AppShell for the top bar.
   // Compare scalar fields to avoid loops from new object identity each render.
   const statsKey = sessionStats
@@ -618,19 +652,29 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, ini
     ? (modelThinkingLevelMaps[`${displayModelValue.provider}:${displayModelValue.modelId}`] ?? null)
     : null;
 
-  const visibleExtensionStatuses = extensionStatuses.filter((status) => status.key !== "piora-goal");
+  const visibleExtensionStatuses = extensionStatuses;
 
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
       variant={isEmptyNew ? "launcher" : "conversation"}
       placeholder={isEmptyNew ? t("newSession.placeholder") : undefined}
-      contextControl={isEmptyNew ? (
-        <NewSessionContextChip
-          label={newSessionProjectLabel}
-          title={isProjectlessChat ? undefined : messageCwd}
-        />
-      ) : undefined}
+      contextControl={(
+        <>
+          {isEmptyNew ? (
+            <NewSessionContextChip
+              label={newSessionProjectLabel}
+              title={isProjectlessChat ? undefined : messageCwd}
+            />
+          ) : null}
+          <SystemPromptSelector
+            selection={systemPromptSelection}
+            binding={systemPromptBinding}
+            disabled={sessionBusy || systemPromptSaving}
+            onChange={handleSystemPromptSelection}
+          />
+        </>
+      )}
       onSend={handleSend}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}
@@ -642,7 +686,6 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, ini
       modelNames={modelNames}
       modelList={modelList}
       modelError={modelError}
-      modelScopeWarnings={modelScopeWarnings}
       onModelChange={handleModelChange}
       onCompact={session ? handleCompact : undefined}
       onAbortCompaction={handleAbortCompaction}
@@ -673,13 +716,16 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, ini
     />
   );
 
-  const aboveEditorWidgets = extensionWidgets.filter((widget) => widget.key !== "piora-goal" && widget.placement !== "belowEditor");
-  const belowEditorWidgets = extensionWidgets.filter((widget) => widget.key !== "piora-goal" && widget.placement === "belowEditor");
+  const aboveEditorWidgets = extensionWidgets.filter((widget) => widget.placement !== "belowEditor");
+  const belowEditorWidgets = extensionWidgets.filter((widget) => widget.placement === "belowEditor");
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center text-text-muted">
-         {t("chat.loadingSession")}
+      <div className="relative flex h-full flex-col overflow-hidden" aria-busy="true">
+        <div className="session-loading-indicator flex flex-1 items-center justify-center text-text-muted" role="status">
+          {t("chat.loadingSession")}
+        </div>
+        <div className="session-loading-composer" aria-hidden="true" />
       </div>
     );
   }
@@ -867,7 +913,12 @@ export function ChatWindow({ session, newSessionCwd, newSessionInitialModel, ini
                 );
                 if (!isVisible || options.attachRef === false || currentRefIdx === undefined) return boundedView;
                 return (
-                  <div key={`${keyPrefix}-${idx}`} ref={attachVisibleRef(idx, currentRefIdx)} className="chat-message-shell">
+                  <div
+                    key={`${keyPrefix}-${idx}`}
+                    ref={attachVisibleRef(idx, currentRefIdx)}
+                    className={`chat-message-shell${highlightedEntryId === entryIds[idx] ? " is-search-target" : ""}`}
+                    data-chat-entry-id={entryIds[idx]}
+                  >
                     {boundedView}
                   </div>
                 );

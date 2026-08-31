@@ -39,6 +39,11 @@ export interface GoalRunState extends PromptRunIdentity {
   reason?: string;
 }
 
+export interface GoalStartOptions {
+  successCriteria?: string[];
+  constraints?: string[];
+}
+
 type GoalEntryLike = {
   type?: unknown;
   customType?: unknown;
@@ -90,7 +95,11 @@ export function parseGoalRunState(value: unknown, sessionId: string): GoalRunSta
   return isGoalRunState(value, sessionId) ? copy(value) : undefined;
 }
 
-export function beginGoalRun(identity: PromptRunIdentity, objective: string): GoalRunState {
+export function beginGoalRun(
+  identity: PromptRunIdentity,
+  objective: string,
+  options: GoalStartOptions = {},
+): GoalRunState {
   const activePrompt = getActivePromptRun(identity.sessionId);
   if (!activePrompt || activePrompt.runId !== identity.runId) throw new Error("Target mode requires an active prompt run.");
 
@@ -114,13 +123,22 @@ export function beginGoalRun(identity: PromptRunIdentity, objective: string): Go
     return copy(existing);
   }
 
+  const cleanedObjective = cleanText(objective, 8_000);
+  if (!cleanedObjective) throw new Error("Starting a goal requires a non-empty objective.");
+
   const state: GoalRunState = {
     ...identity,
     schemaVersion: GOAL_RUN_SCHEMA_VERSION,
     goalId: randomUUID(),
-    objective: cleanText(objective, 8_000),
-    successCriteria: ["The requested outcome is fully satisfied and verified against current workspace evidence."],
-    constraints: [],
+    objective: cleanedObjective,
+    successCriteria: (options.successCriteria ?? [])
+      .map((item) => cleanText(item, 2_000))
+      .filter(Boolean)
+      .slice(0, 32),
+    constraints: (options.constraints ?? [])
+      .map((item) => cleanText(item, 2_000))
+      .filter(Boolean)
+      .slice(0, 32),
     status: "active",
     iteration: 0,
     startedAt: now,
@@ -128,6 +146,9 @@ export function beginGoalRun(identity: PromptRunIdentity, objective: string): Go
     checkpoints: [],
     evidence: [],
   };
+  if (state.successCriteria.length === 0) {
+    state.successCriteria = ["The requested outcome is fully satisfied and verified against current workspace evidence."];
+  }
   runs().set(identity.sessionId, state);
   return copy(state);
 }
@@ -139,7 +160,7 @@ export function getGoalRun(sessionId: string): GoalRunState | undefined {
 
 function requireGoal(identity: PromptToolIdentity | PromptRunIdentity): GoalRunState {
   const state = runs().get(identity.sessionId);
-  if (!state || state.runId !== identity.runId) throw new Error("No active Piora target-mode run is attached to this tool call.");
+  if (!state || state.runId !== identity.runId) throw new Error("No active Piora goal is attached to this tool call.");
   return state;
 }
 
@@ -214,7 +235,7 @@ export function waitGoalForUser(identity: PromptToolIdentity, reason: string): G
 
 export function pauseGoalRun(sessionId: string, reason = "Target mode was paused by the user."): GoalRunState {
   const state = runs().get(sessionId);
-  if (!state) throw new Error("No Piora target-mode goal exists for this session.");
+  if (!state) throw new Error("No Piora goal exists for this session.");
   if (state.status === "complete" || state.status === "cancelled") throw new Error(`Target mode is already ${state.status}.`);
   state.status = "paused";
   state.reason = cleanText(reason, 4_000);
@@ -224,19 +245,19 @@ export function pauseGoalRun(sessionId: string, reason = "Target mode was paused
 
 export function prepareGoalResume(sessionId: string): GoalRunState {
   const state = runs().get(sessionId);
-  if (!state) throw new Error("No Piora target-mode goal exists for this session.");
+  if (!state) throw new Error("No Piora goal exists for this session.");
   if (state.status !== "paused" && state.status !== "waiting_user" && state.status !== "blocked") {
     throw new Error(`Only a paused, waiting, or blocked goal can resume; target mode is ${state.status}.`);
   }
   state.status = "paused";
-  state.reason = "Resume requested. Send the next message with Target Mode enabled to continue this goal.";
+  state.reason = "Resume requested. Send the next message to continue this goal with the extension.";
   state.updatedAt = Date.now();
   return copy(state);
 }
 
 export function cancelGoalRun(sessionId: string, reason = "Target mode was cancelled by the user."): GoalRunState {
   const state = runs().get(sessionId);
-  if (!state) throw new Error("No Piora target-mode goal exists for this session.");
+  if (!state) throw new Error("No Piora goal exists for this session.");
   if (state.status === "complete") throw new Error("A completed goal cannot be cancelled.");
   state.status = "cancelled";
   state.reason = cleanText(reason, 4_000);
@@ -266,7 +287,7 @@ export function restoreGoalRunFromEntries(sessionId: string, entries: readonly G
   }
   if (restored.status === "active") {
     restored.status = "paused";
-    restored.reason = "Target mode was restored after its previous runtime ended. Send another target-mode message to continue.";
+    restored.reason = "The goal was restored after its previous runtime ended. Send another message to continue it.";
     restored.updatedAt = Date.now();
   }
   runs().set(sessionId, restored);

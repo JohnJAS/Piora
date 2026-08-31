@@ -1933,35 +1933,6 @@ select:focus-visible,
   white-space: nowrap;
 }
 
-.composer-add-divider {
-  height: 1px;
-  margin: 4px 8px;
-  background: var(--border-soft);
-}
-
-.composer-mode-chip {
-  display: inline-flex;
-  min-height: 28px;
-  align-items: center;
-  gap: 5px;
-  padding: 0 7px;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-soft));
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  color: color-mix(in srgb, var(--accent) 84%, var(--text));
-  font: inherit;
-  font-size: var(--text-xs);
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
-}
-
-.composer-mode-chip:hover,
-.composer-mode-chip:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg-hover));
-  outline: none;
-}
-
 .voice-input-button {
   position: relative;
   display: inline-flex;
@@ -2782,8 +2753,15 @@ select:focus-visible,
 }
 
 .file-change-details {
+  min-width: 0;
   border-top: 1px solid color-mix(in srgb, var(--status-completed) 18%, var(--border));
   background: var(--bg);
+}
+
+.file-change-diff {
+  max-height: min(520px, 55vh);
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .file-change-notice {
@@ -4556,9 +4534,22 @@ span.linenumber {
 .search-reveal-line {
   background: color-mix(in srgb, var(--accent) 14%, transparent) !important;
 }
+.chat-message-shell.is-search-target {
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 32%, transparent);
+  animation: chat-search-target-pulse 900ms ease-out 1;
+}
+
+@keyframes chat-search-target-pulse {
+  from { box-shadow: 0 0 0 7px color-mix(in srgb, var(--accent) 22%, transparent); }
+  to { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 32%, transparent); }
+}
+
 .chat-message-shell {
   content-visibility: auto;
   contain-intrinsic-block-size: auto 120px;
+  border-radius: 10px;
+  transition: background-color 180ms ease, box-shadow 180ms ease;
 }
 
 .message-row {
@@ -4703,4 +4694,25 @@ span.linenumber {
 .session-tools-footer button:disabled { cursor: default; opacity: .5; }
 @media (max-width: 520px) {
   .session-tools-popover { left: -40px; width: min(400px, calc(100vw - 20px)); }
+}
+@keyframes session-loading-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.session-loading-indicator {
+  opacity: 0;
+  animation: session-loading-reveal 140ms ease-out 180ms forwards;
+}
+
+.session-loading-composer {
+  min-height: 92px;
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-loading-indicator {
+    animation: none;
+    opacity: 1;
+  }
 }

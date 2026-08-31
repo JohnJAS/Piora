@@ -10,7 +10,8 @@
     "method": "OpenAI image generation from original text prompts; no reference images supplied",
     "records": [
       "batch-a-generation.md",
-      "batch-b-generation.md"
+      "batch-b-generation.md",
+      "batch-c-generation.md"
     ]
   },
   "assetRoot": "/themes/dream-backgrounds/",
@@ -180,6 +181,86 @@
       "artworkStatus": "available",
       "appearance": "light",
       "fallback": "radial-gradient(circle at 76% 20%, rgba(99, 102, 241, 0.24), transparent 26%), radial-gradient(circle at 20% 78%, rgba(217, 119, 6, 0.22), transparent 30%), linear-gradient(140deg, #fff8e7, #efe5ca 56%, #e8e1f2)"
+    },
+    {
+      "id": "surreal-stillness",
+      "nameKey": "background.preset.surrealStillness",
+      "asset": "/themes/dream-backgrounds/surreal-stillness.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "radial-gradient(circle at 88% 16%, rgba(248, 113, 113, 0.38), transparent 20%), radial-gradient(circle at 12% 78%, rgba(129, 140, 248, 0.24), transparent 32%), linear-gradient(145deg, #1e293b, #475569 54%, #312e81)"
+    },
+    {
+      "id": "riso-garden",
+      "nameKey": "background.preset.risoGarden",
+      "asset": "/themes/dream-backgrounds/riso-garden.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "radial-gradient(circle at 12% 20%, rgba(234, 88, 12, 0.32), transparent 25%), radial-gradient(circle at 86% 78%, rgba(30, 64, 175, 0.28), transparent 28%), linear-gradient(140deg, #fff7df, #f6e7c5)"
+    },
+    {
+      "id": "liquid-chrome",
+      "nameKey": "background.preset.liquidChrome",
+      "asset": "/themes/dream-backgrounds/liquid-chrome.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "radial-gradient(circle at 8% 20%, rgba(37, 99, 235, 0.42), transparent 26%), radial-gradient(circle at 92% 76%, rgba(124, 58, 237, 0.4), transparent 28%), linear-gradient(135deg, #020617, #09090b 58%, #0f172a)"
+    },
+    {
+      "id": "soft-clay",
+      "nameKey": "background.preset.softClay",
+      "asset": "/themes/dream-backgrounds/soft-clay.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "radial-gradient(circle at 10% 18%, rgba(251, 146, 60, 0.32), transparent 24%), radial-gradient(circle at 88% 80%, rgba(96, 165, 250, 0.28), transparent 26%), linear-gradient(140deg, #fff8e8, #f8ead6)"
+    },
+    {
+      "id": "quantum-circuit",
+      "nameKey": "background.preset.quantumCircuit",
+      "asset": "/themes/dream-backgrounds/quantum-circuit.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "radial-gradient(circle at 4% 50%, rgba(14, 165, 233, 0.46), transparent 24%), radial-gradient(circle at 96% 50%, rgba(37, 99, 235, 0.4), transparent 24%), linear-gradient(135deg, #020617, #030712 56%, #06152b)"
+    },
+    {
+      "id": "white-future",
+      "nameKey": "background.preset.whiteFuture",
+      "asset": "/themes/dream-backgrounds/white-future.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "radial-gradient(circle at 8% 72%, rgba(52, 211, 153, 0.2), transparent 26%), radial-gradient(circle at 92% 18%, rgba(125, 211, 252, 0.26), transparent 28%), linear-gradient(140deg, #ffffff, #f1f5f4 54%, #e6f4f1)"
+    },
+    {
+      "id": "jade-ascension",
+      "nameKey": "background.preset.jadeAscension",
+      "asset": "/themes/dream-backgrounds/jade-ascension.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "radial-gradient(circle at 8% 36%, rgba(16, 185, 129, 0.3), transparent 28%), radial-gradient(circle at 92% 64%, rgba(14, 165, 233, 0.24), transparent 30%), linear-gradient(145deg, #e8f7f4, #dbeafe 56%, #f8fafc)"
+    },
+    {
+      "id": "crimson-sword",
+      "nameKey": "background.preset.crimsonSword",
+      "asset": "/themes/dream-backgrounds/crimson-sword.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "radial-gradient(circle at 10% 14%, rgba(239, 68, 68, 0.5), transparent 24%), radial-gradient(circle at 92% 72%, rgba(185, 28, 28, 0.3), transparent 28%), linear-gradient(145deg, #12090b, #231014 54%, #0f0a0c)"
+    },
+    {
+      "id": "moonlit-beauty",
+      "nameKey": "background.preset.moonlitBeauty",
+      "asset": "/themes/dream-backgrounds/moonlit-beauty.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "radial-gradient(circle at 88% 20%, rgba(196, 181, 253, 0.4), transparent 24%), radial-gradient(circle at 16% 82%, rgba(96, 165, 250, 0.25), transparent 30%), linear-gradient(140deg, #172554, #312e81 52%, #1e3a8a)"
+    },
+    {
+      "id": "alpine-mirror",
+      "nameKey": "background.preset.alpineMirror",
+      "asset": "/themes/dream-backgrounds/alpine-mirror.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "radial-gradient(circle at 82% 18%, rgba(251, 146, 60, 0.26), transparent 27%), radial-gradient(circle at 14% 78%, rgba(14, 116, 144, 0.24), transparent 31%), linear-gradient(145deg, #e0f2fe, #dbeafe 48%, #fff7ed)"
     }
   ]
 }

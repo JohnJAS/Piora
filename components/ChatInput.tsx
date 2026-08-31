@@ -80,7 +80,7 @@ interface PromptOptimizationState {
 }
 
 interface Props {
-  onSend: (message: string, images?: AttachedImage[], files?: AttachedFile[], options?: PromptRunOptions) => false | void | Promise<void>;
+  onSend: (message: string, images?: AttachedImage[], files?: AttachedFile[]) => false | void | Promise<void>;
   onAbort: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => void;
   onFollowUp?: (message: string, images?: AttachedImage[]) => void;
@@ -91,8 +91,6 @@ interface Props {
   modelNames?: Record<string, string>;
   modelList?: { id: string; name: string; provider: string; contextWindow?: number }[];
   modelError?: string | null;
-  /** Diagnostics from resolving `enabledModels`, e.g. a pattern that matched nothing. */
-  modelScopeWarnings?: string[];
   onModelChange?: (provider: string, modelId: string) => Promise<boolean>;
   onCompact?: () => void;
   onAbortCompaction?: () => void;
@@ -127,13 +125,6 @@ interface Props {
   /** Optional workspace/project control rendered beside the attachment button. */
   contextControl?: React.ReactNode;
 }
-
-export interface PromptRunOptions {
-  goalMode?: boolean;
-  planMode?: boolean;
-}
-
-type PromptMode = "normal" | "goal" | "plan";
 
 export interface ChatInputHandle {
   focus: () => void;
@@ -303,24 +294,8 @@ export function ModelErrorBanner({ error, title = "模型错误" }: { error?: st
   return <ModelNoticeBanner tone="error" title={title} body={error} />;
 }
 
-/** Surfaces `enabledModels` patterns that matched nothing, so a typo is visible (#307). */
-export function ModelScopeWarningBanner({
-  warnings,
-  title = "模型范围警告",
-  pluralTitle = title,
-}: { warnings?: string[]; title?: string; pluralTitle?: string }) {
-  if (!warnings || warnings.length === 0) return null;
-  return (
-    <ModelNoticeBanner
-      tone="warning"
-      title={warnings.length > 1 ? pluralTitle : title}
-      body={warnings.join("\n")}
-    />
-  );
-}
-
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange,
+  onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, onModelChange,
   onCompact, onAbortCompaction, isCompacting, compactError, compactResult,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
@@ -353,11 +328,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [streamingActionMenuOpen, setStreamingActionMenuOpen] = useState(false);
   const [streamingActionIndex, setStreamingActionIndex] = useState(0);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
-  const [promptMode, setPromptMode] = useState<PromptMode>("normal");
-  // Goal/Plan prompt modes are intentionally retired from the composer. Keep
-  // the compatibility fields in the send contract for older sessions, but do
-  // not advertise or activate those modes in the UI.
-  const promptModeAvailability = { goalMode: false, planMode: false };
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
   ));
@@ -684,7 +654,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     promptOptimizerAbortRef.current?.abort();
     promptOptimizerAbortRef.current = null;
     setPromptOptimization(null);
-    setPromptMode("normal");
     setAttachmentMenuOpen(false);
     setValue(draft?.value ?? "");
     setAtQuery(null);
@@ -702,12 +671,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     ta.style.height = "auto";
     if (value) resizeComposerTextarea(ta);
   }, [value]);
-
-  useEffect(() => {
-    // Composer modes are intentionally one-shot. Remove the legacy sticky
-    // target-mode preference so an old browser setting cannot affect a later prompt.
-    window.localStorage.removeItem("piora-goal-mode-enabled");
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -749,15 +712,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       messageToSend,
       attachedImages.length ? attachedImages : undefined,
       filesToSend.length ? filesToSend : undefined,
-      {
-        goalMode: promptMode === "goal" && !msg.startsWith("/") && !msg.startsWith("!"),
-        planMode: promptMode === "plan" && !msg.startsWith("/") && !msg.startsWith("!"),
-      },
     );
     if (accepted === false) return;
-    setPromptMode("normal");
     clearInput();
-  }, [value, attachedImages, attachedFiles, isStreaming, isProcessingImages, isAutoModelSelection, onBuiltinCommand, onSend, clearInput, promptMode, contextUsage, t]);
+  }, [value, attachedImages, attachedFiles, isStreaming, isProcessingImages, isAutoModelSelection, onBuiltinCommand, onSend, clearInput, contextUsage, t]);
 
   useEffect(() => {
     submitRef.current = () => { void handleSend(); };
@@ -1490,11 +1448,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       />
       <div className="composer-column">
         <ModelErrorBanner error={modelError} title={t("chat.modelError")} />
-        <ModelScopeWarningBanner
-          warnings={modelScopeWarnings}
-          title={t("chat.modelScopeWarning")}
-          pluralTitle={t("chat.modelScopeWarnings")}
-        />
         {/* Queued steering / follow-up messages (delivered by pi on upcoming turns) */}
         {queuedMessageCount > 0 && (
           <div className="composer-queue-tray" role="status" aria-label={t("chat.queued", { count: queuedMessageCount })}>
@@ -1993,43 +1946,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                       <small>{t("chat.attachFilesDescription")}</small>
                     </span>
                   </button>
-                  {(promptModeAvailability.goalMode || promptModeAvailability.planMode) && <div className="composer-add-divider" />}
-                  {promptModeAvailability.goalMode && <button
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={promptMode === "goal"}
-                    className={`composer-add-option${promptMode === "goal" ? " is-selected" : ""}`}
-                    onClick={() => {
-                      setPromptMode((mode) => mode === "goal" ? "normal" : "goal");
-                      setAttachmentMenuOpen(false);
-                      textareaRef.current?.focus();
-                    }}
-                  >
-                    <span className="composer-add-option-icon"><AliIcon name="check-circle" size={15} /></span>
-                    <span className="composer-add-option-copy">
-                      <strong>{t("chat.goalMode")}</strong>
-                      <small>{t("chat.goalModeMenuDescription")}</small>
-                    </span>
-                    {promptMode === "goal" && <AliIcon name="check" size={13} />}
-                  </button>}
-                  {promptModeAvailability.planMode && <button
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={promptMode === "plan"}
-                    className={`composer-add-option${promptMode === "plan" ? " is-selected" : ""}`}
-                    onClick={() => {
-                      setPromptMode((mode) => mode === "plan" ? "normal" : "plan");
-                      setAttachmentMenuOpen(false);
-                      textareaRef.current?.focus();
-                    }}
-                  >
-                    <span className="composer-add-option-icon"><AliIcon name="solution" size={15} /></span>
-                    <span className="composer-add-option-copy">
-                      <strong>{t("chat.planMode")}</strong>
-                      <small>{t("chat.planModeMenuDescription")}</small>
-                    </span>
-                    {promptMode === "plan" && <AliIcon name="check" size={13} />}
-                  </button>}
                 </div>
               )}
               <button
@@ -2055,19 +1971,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 onOpenGlobalSettings={onOpenCapabilitySettings}
               />
             ) : null}
-            {promptMode !== "normal" && (
-              <button
-                type="button"
-                className={`composer-mode-chip is-${promptMode}`}
-                onClick={() => setPromptMode("normal")}
-                title={t("chat.clearMode")}
-                aria-label={t("chat.clearMode")}
-              >
-                <AliIcon name={promptMode === "goal" ? "check-circle" : "solution"} size={14} />
-                <span>{promptMode === "goal" ? t("chat.goalMode") : t("chat.planMode")}</span>
-                <AliIcon name="close" size={10} />
-              </button>
-            )}
             {voiceInputSupported && (
               <>
                 <button

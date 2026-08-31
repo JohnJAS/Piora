@@ -1,11 +1,10 @@
-import type { GoalRunState } from "./goal-run-registry";
 import type { PlanArtifactState } from "./plan-artifact-registry";
 import type { RoomArtifact, RoomTask } from "./room-types";
 
 export const TASK_RUN_SCHEMA_VERSION = 1;
 export const TASK_PLAN_SCHEMA_VERSION = 1;
 
-export type TaskRunSource = "session" | "goal" | "plan" | "room";
+export type TaskRunSource = "session" | "plan" | "room";
 
 export type TaskRunPhase =
   | "draft"
@@ -291,49 +290,11 @@ export interface TaskRunProjectionInput {
   startedAt?: number;
   title?: string;
   activity?: { message: string; updatedAt: number };
-  goal?: GoalRunState;
   now?: number;
-}
-
-function phaseFromGoal(goal: GoalRunState, input: TaskRunProjectionInput): TaskRunPhase {
-  switch (goal.status) {
-    case "complete": return "completed";
-    case "cancelled": return "cancelled";
-    case "blocked": return "blocked";
-    case "waiting_user": return "waiting_user";
-    case "paused": return "interrupted";
-    case "active":
-      if (input.pendingApproval) return "waiting_approval";
-      if (input.lastPromptFailed) return "failed";
-      return input.runtime === "idle" ? "interrupted" : "running";
-  }
 }
 
 export function projectTaskRun(input: TaskRunProjectionInput): TaskRunState | undefined {
   const now = input.now ?? Date.now();
-  if (input.goal) {
-    const phase = phaseFromGoal(input.goal, input);
-    const terminal = phase === "completed" || phase === "failed" || phase === "cancelled";
-    return {
-      schemaVersion: TASK_RUN_SCHEMA_VERSION,
-      taskId: input.goal.goalId,
-      source: "goal",
-      sessionId: input.sessionId,
-      operationId: input.goal.runId,
-      objective: input.goal.objective,
-      phase,
-      attempt: Math.max(1, input.goal.iteration + 1),
-      createdAt: input.goal.startedAt,
-      updatedAt: Math.max(input.goal.updatedAt, input.activity?.updatedAt ?? 0),
-      startedAt: input.goal.startedAt,
-      ...(terminal ? { finishedAt: input.goal.updatedAt } : {}),
-      ...(input.goal.progress ? { progress: input.goal.progress } : {}),
-      ...(input.goal.reason ? { reason: input.goal.reason } : {}),
-      evidence: input.goal.evidence.map((item) => ({ ...item })),
-      artifacts: [],
-    };
-  }
-
   const hasRuntimeState = input.runtime !== "idle" || input.pendingApproval || input.lastPromptFailed;
   if (!hasRuntimeState) return undefined;
   const phase: TaskRunPhase = input.pendingApproval

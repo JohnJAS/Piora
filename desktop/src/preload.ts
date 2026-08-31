@@ -141,6 +141,9 @@ const runtime = Object.freeze({
     ipcRenderer.on("pi:menu-action", handler);
     return () => ipcRenderer.removeListener("pi:menu-action", handler);
   },
+  setKeyboardShortcuts(bindings: Record<string, string | null>): Promise<boolean> {
+    return ipcRenderer.invoke("pi:set-keyboard-shortcuts", bindings) as Promise<boolean>;
+  },
 });
 
 // Keep the bridge intentionally small. Pi, filesystem, process execution, and

@@ -319,8 +319,6 @@ export interface SessionInfo {
   worktreeBranch?: string;
   /** Piora-managed conversation with no user project attached. */
   projectless?: boolean;
-  /** Latest persisted target-mode state, used as a cold sidebar fallback. */
-  goal?: import("./goal-run-registry").GoalRunState;
 }
 
 export interface SessionContext {

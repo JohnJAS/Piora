@@ -352,6 +352,10 @@ export function startSpeechPackInstall(): SpeechInstallState {
   return { ...global.state };
 }
 
+export function waitForSpeechPackInstall(): Promise<void> {
+  return installGlobal().running ?? Promise.resolve();
+}
+
 export async function updateSpeechSettings(input: {
   enabled?: boolean;
   packDirectory?: string | null;

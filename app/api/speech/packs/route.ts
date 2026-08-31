@@ -1,5 +1,10 @@
-import { NextResponse } from "next/server";
-import { getSpeechStatus, removeSpeechPack, startSpeechPackInstall } from "@/lib/speech-pack-manager";
+import { after, NextResponse } from "next/server";
+import {
+  getSpeechStatus,
+  removeSpeechPack,
+  startSpeechPackInstall,
+  waitForSpeechPackInstall,
+} from "@/lib/speech-pack-manager";
 import { resetLocalSpeechRuntime } from "@/lib/speech-runtime";
 import { isApiRequestAllowed } from "@/lib/request-security";
 
@@ -16,7 +21,9 @@ export async function POST(request: Request) {
   if (!status.hardware.supported) {
     return json({ error: `Local speech is not supported on ${status.hardware.platform}/${status.hardware.arch}` }, 409);
   }
-  return json({ install: startSpeechPackInstall() }, 202);
+  const install = startSpeechPackInstall();
+  after(() => waitForSpeechPackInstall());
+  return json({ install }, 202);
 }
 
 export async function DELETE(request: Request) {

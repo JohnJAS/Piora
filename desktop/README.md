@@ -5,6 +5,26 @@ continues to run as an independent Next.js standalone process on loopback.
 
 ## Development
 
+For the normal desktop feedback loop, run this once from the repository root:
+
+```powershell
+npm run dev:desktop
+```
+
+This command binds an authenticated Next.js development server to
+`127.0.0.1:30141`, watches `desktop/src`, and opens Electron after both the web
+server and desktop TypeScript compile are healthy. React and CSS use Next.js
+hot reload; a successful main-process or preload compile restarts Electron.
+Ctrl+C or quitting Electron terminates the complete development process tree.
+The command does not run `next build` or create standalone output.
+
+If port 30141 is already occupied, stop the existing process first; the command
+reports the conflict without attaching to an unauthenticated server.
+For an intentional parallel instance, choose another loopback port before
+starting, for example `$env:PIORA_DESKTOP_DEV_PORT = "30142"`.
+
+For a one-off Electron-only compile:
+
 Install this directory's pinned toolchain, then compile it:
 
 ```powershell
@@ -14,7 +34,8 @@ npm run typecheck
 npm run build
 ```
 
-The shell expects a Next standalone `server.js`. During local shell work, point
+The production shell expects a Next standalone `server.js`. During isolated
+standalone shell work, point
 at an existing standalone artifact explicitly:
 
 ```powershell

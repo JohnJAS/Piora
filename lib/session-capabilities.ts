@@ -66,12 +66,6 @@ interface CapabilityDefinition {
   matches: (toolName: string) => boolean;
 }
 
-export const PROMPT_MODE_RUNTIME_TOOLS = new Set([
-  "piora_goal",
-  "piora_plan",
-  "piora_plan_execution",
-]);
-
 const BUILTIN_TOOL_SET = new Set(BUILTIN_AGENT_TOOLS);
 const HARMONY_TOOL_SET = new Set(HARMONY_AGENT_TOOLS);
 
@@ -148,7 +142,6 @@ export function buildSessionCapabilityCatalog(
   profile: AgentRuntimeProfile,
 ): Array<Omit<SessionCapabilityItem, "enabled" | "activeToolNames">> {
   return tools
-    .filter((tool) => !PROMPT_MODE_RUNTIME_TOOLS.has(tool.name))
     .map((tool): Omit<SessionCapabilityItem, "enabled" | "activeToolNames"> => {
       const definition = CAPABILITY_DEFINITIONS.find((candidate) => candidate.matches(tool.name));
       const profileAllowed = definition?.profiles.includes(profile) ?? profile === "normal";
@@ -346,7 +339,7 @@ export function createDefaultSessionCapabilitiesState(
   profile: AgentRuntimeProfile = "normal",
 ): SessionCapabilitiesState {
   const toolNames = profile === "device-control"
-    ? [...HARMONY_AGENT_TOOLS, ...PROMPT_MODE_RUNTIME_TOOLS]
+    ? [...HARMONY_AGENT_TOOLS]
     : [
         ...BUILTIN_AGENT_TOOLS,
         "browser",
@@ -354,7 +347,6 @@ export function createDefaultSessionCapabilitiesState(
         "piora_request_user_input",
         "piora_automation",
         "piora_room",
-        ...PROMPT_MODE_RUNTIME_TOOLS,
       ];
   const tools = uniqueStrings(toolNames).map((name) => ({ name, description: "" }));
   const catalog = buildSessionCapabilityCatalog(tools, profile);

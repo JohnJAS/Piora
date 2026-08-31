@@ -38,7 +38,7 @@ Additional server-side subsystems share the same Next.js process but have separa
 - **Rooms** coordinate multiple agent sessions through `room-store`, `room-coordinator`, and room SSE routes.
 - **Harmony** controls OpenHarmony devices through an explicit runtime profile, approval queue, device manager, HDC backend, screenshots, UI trees, and vision helpers.
 - **Companion pets** keep imported sprite metadata in the companion store and serve runtime spritesheets through dedicated routes; desktop companion windows are separate renderer entry points.
-- **Prompt modes** are runtime concerns: target state is persisted through the goal extension/registry, while plan mode combines the `piora-plan` extension with a scoped read-only lease in `lib/prompt-mode-runtime.ts`. Session mutations are rejected while a prompt owns that lease.
+- **Optional workflow extensions** provide goal tracking and structured plans through ordinary extension tools and slash commands. They are disabled by default, have no special composer mode, and do not alter the core prompt protocol or session runtime.
 
 ---
 
@@ -65,13 +65,12 @@ app/api/
 
 lib/
   rpc-manager.ts             AgentSessionWrapper, lifecycle registry, and session startup
-  prompt-mode-runtime.ts     active mode registry, plan lease, and goal continuation runner
-  prompt-modes.ts            compatibility facade for goal/plan enabled settings
   extension-config.ts        extension inventory, stable ids, load plan, and preferences
   first-party-extensions.ts  bundled extension descriptors and profile membership
   prompt-run-registry.ts     active prompt identity and terminal cleanup
-  goal-run-registry.ts       persistent target-mode state machine
-  task-status.ts             normalized running/task/goal snapshots
+  goal-run-registry.ts       state helper owned by the optional Goals extension
+  plan-artifact-registry.ts  state helper owned by the optional Plans extension
+  task-status.ts             normalized running/task snapshots
   session-reader.ts          read-only session loading, context building, and caches
   session-{path,flags,trash}.ts session lookup, metadata flags, and recoverable deletion
   room-{store,coordinator,chat-routing,chat,types}.ts multi-agent room subsystem
@@ -120,13 +119,12 @@ hooks/
 - `globalThis` survives Next.js hot-reload; plain module-level Map does not
 - Idle timeout: 10 minutes. Concurrent `startRpcSession()` calls share a single start Promise (`globalThis.__piStartLocks`)
 
-### Prompt modes (`lib/prompt-mode-runtime.ts`)
-- `promptMode` is explicit wrapper runtime state (`normal | goal | plan`) and is returned by `get_state` while a prompt is active.
-- Goal and plan are first-party Pi extensions (`extensions/piora-goal.ts` and `extensions/piora-plan.ts`) and can be disabled in Settings > Extensions.
-- Plan mode is one-shot. `enterPlanMode()` applies the hard workspace read-only tool allow-list plus the metadata-only `piora_plan` submission tool, and returns an idempotent restoration lease; the plan extension supplies the hidden planning context through `before_agent_start`.
-- The wrapper is the concurrency boundary: ordinary prompts, forks, tree navigation, tool changes, and reloads reject while the session is busy. Destroy aborts an active prompt and never restores a lease into a dead wrapper.
-- Target mode state lives in `goal-run-registry.ts` and is persisted by `extensions/piora-goal.ts`. `runGoalModeContinuations()` owns the continuation loop; 64 is a documented runaway-loop fuse, not a task-length heuristic.
-- Structured plan state lives in `plan-artifact-registry.ts` and is persisted as `piora-plan-artifact` custom session entries. Draft edits use optimistic revision checks; approval projects the artifact into a `planned` TaskRun but never starts execution. The explicit Start execution action launches Target Mode with a plan execution identity; `piora_plan_execution` enforces dependency-ordered step transitions, requires step evidence before completion, records bounded artifacts, and requires verification coverage for every success criterion plus a change summary before final completion. Goal is the continuation engine, while the public TaskRun remains plan-owned and receives the execution evidence/artifact projection. Restored in-flight executions become `interrupted`, never falsely `running`. Plan Mode may write only session metadata and must remain read-only for workspace and external state.
+### Optional Goals and Plans extensions
+- `extensions/piora-goal.ts` and `extensions/piora-plan.ts` are ordinary configurable first-party extensions. Both are disabled by default and appear in Settings > Extensions.
+- Core prompt requests do not accept goal/plan flags, `AgentSessionWrapper` does not track workflow mode state, and the composer exposes no Goal or Plan mode controls.
+- Enabling an extension registers its tools and slash commands through Pi's normal extension loader. Its tools then participate in the ordinary per-session capability selection instead of being force-enabled by the wrapper.
+- The Goals extension persists `piora-goal-run` custom entries and exposes `piora_goal` plus `/goal`. It may carry saved context into a later user prompt, but it never starts automatic model continuations.
+- The Plans extension persists `piora-plan-artifact` custom entries and exposes `piora_plan`, `piora_plan_execution`, and `/plan`. Approval and execution are extension commands; no core read-only lease or prompt mode exists. Restored incomplete executions become `interrupted`, never falsely `running`.
 
 ### Extension inventory and toggles
 - `lib/extension-config.ts` resolves Pi's first-party, user, project, and package extension paths before session construction. Disabled extensions are removed from the load plan, so their modules are not executed.

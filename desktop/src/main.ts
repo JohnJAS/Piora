@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { accessSync, constants as fsConstants, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { createConnection } from "node:net";
 import {
   app,
   BrowserWindow,
@@ -53,6 +54,17 @@ import {
   DesktopUpdateController,
   type DesktopUpdateState,
 } from "./app-updater.js";
+import {
+  isDesktopApplicationTransportUrl,
+  resolveDesktopDevelopmentRuntime,
+} from "./development-runtime.js";
+import {
+  DEFAULT_DESKTOP_SHORTCUT_BINDINGS,
+  parseDesktopShortcutBindings,
+  toElectronAccelerator,
+  type DesktopShortcutBindings,
+  type DesktopShortcutId,
+} from "./keyboard-shortcuts.js";
 
 const DESKTOP_PARTITION = "persist:piora";
 const DESKTOP_TOKEN_HEADER = "X-Pi-Desktop-Token";
@@ -74,6 +86,7 @@ const COMPANION_MOTION_CHANNEL = "pi:companion-window-motion";
 const COMPANION_MOTION_STATE_CHANNEL = "pi:companion-motion-state";
 const COMPANION_HIT_TEST_CHANNEL = "pi:companion-hit-test";
 const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
+const KEYBOARD_SHORTCUTS_CHANNEL = "pi:set-keyboard-shortcuts";
 const HARMONY_RUNTIME_PICKER_CHANNEL = "pi:harmony-runtime-picker";
 const DESKTOP_UPDATE_STATE_GET_CHANNEL = "pi:update-state-get";
 const DESKTOP_UPDATE_STATE_CHANNEL = "pi:update-state";
@@ -94,12 +107,18 @@ const PORTABLE_SMOKE_TEST = process.env.PIORA_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
 const STARTUP_SHELL_BACKGROUND = "#080a0f";
 const PI_AGENT_DIRECTORY_ENV = "PI_CODING_AGENT_DIR";
+const desktopDevelopmentRuntime = resolveDesktopDevelopmentRuntime();
 
 const requestedSmokeUserData = process.env.PIORA_SMOKE_USER_DATA?.trim();
 const requestedCompanionUiTestUserData = process.env.PIORA_COMPANION_UI_TEST === "1"
   ? process.env.PIORA_COMPANION_UI_TEST_USER_DATA?.trim()
   : undefined;
-if (PORTABLE_SMOKE_TEST && requestedSmokeUserData) {
+if (desktopDevelopmentRuntime) {
+  const requestedDevUserData = process.env.PIORA_DESKTOP_DEV_USER_DATA?.trim();
+  app.setPath("userData", requestedDevUserData
+    ? resolve(requestedDevUserData)
+    : join(app.getPath("appData"), "Piora Dev"));
+} else if (PORTABLE_SMOKE_TEST && requestedSmokeUserData) {
   app.setPath("userData", resolve(requestedSmokeUserData));
 } else if (requestedCompanionUiTestUserData) {
   // Packaged companion E2E checks run beside an already-open user instance.
@@ -122,6 +141,7 @@ let serverUrl: URL | undefined;
 let shutdownPromise: Promise<void> | undefined;
 let shutdownComplete = false;
 let applicationMenu: Menu | null = null;
+let keyboardShortcutBindings: DesktopShortcutBindings = { ...DEFAULT_DESKTOP_SHORTCUT_BINDINGS };
 let companionMoveTimer: NodeJS.Timeout | undefined;
 let companionMotionTimer: NodeJS.Timeout | undefined;
 let companionMotionRevision = 0;
@@ -385,6 +405,30 @@ function sendMenuAction(action: string): void {
   mainWindow?.webContents.send("pi:menu-action", action);
 }
 
+function menuAccelerator(id: DesktopShortcutId): string | undefined {
+  return toElectronAccelerator(keyboardShortcutBindings[id]);
+}
+
+function menuAcceleratorOption(id: DesktopShortcutId): { accelerator: string } | Record<string, never> {
+  const accelerator = menuAccelerator(id);
+  return accelerator ? { accelerator } : {};
+}
+
+function registerKeyboardShortcutHandler(): void {
+  ipcMain.removeHandler(KEYBOARD_SHORTCUTS_CHANNEL);
+  ipcMain.handle(KEYBOARD_SHORTCUTS_CHANNEL, (event, requested: unknown): boolean => {
+    if (!isTrustedMainWindowSender(event)) return false;
+    const parsed = parseDesktopShortcutBindings(requested);
+    if (!parsed) {
+      logger?.warn("Rejected invalid keyboard shortcut settings from renderer");
+      return false;
+    }
+    keyboardShortcutBindings = parsed;
+    installApplicationMenu();
+    return true;
+  });
+}
+
 function isUpdateAttentionState(state: DesktopUpdateState = desktopUpdateState): boolean {
   return state.status === "available"
     || state.status === "downloading"
@@ -570,7 +614,7 @@ function installApplicationMenu(): void {
     file: "文件", edit: "编辑", view: "视图", help: "帮助",
     newSession: "新聊天", openFolder: "打开文件夹", close: "关闭", quit: "退出 Piora",
     undo: "撤销", redo: "重做", cut: "剪切", copy: "复制", paste: "粘贴", delete: "删除", selectAll: "全选", settings: "设置",
-    sidebar: "切换侧栏", files: "切换文件面板", commands: "打开命令面板", review: "打开审查面板", browser: "浏览器", companion: "显示/隐藏桌面宠物", find: "查找",
+    sidebar: "切换侧栏", files: "切换文件面板", commands: "打开命令面板", review: "打开审查面板", browser: "浏览器", companion: "显示/隐藏桌面宠物", find: "搜索聊天记录",
     actualSize: "实际大小", zoomIn: "放大", zoomOut: "缩小", fullscreen: "切换全屏",
     documentation: "文档", about: "关于 Piora", aboutDetail: "基于 Pi Agent 与 pi-web 的开源桌面应用。",
     checkUpdates: "检查更新…", checkingUpdates: "正在检查更新…", updateAvailable: "有更新",
@@ -580,7 +624,7 @@ function installApplicationMenu(): void {
     file: "File", edit: "Edit", view: "View", help: "Help",
     newSession: "New chat", openFolder: "Open folder", close: "Close", quit: "Quit Piora",
     undo: "Undo", redo: "Redo", cut: "Cut", copy: "Copy", paste: "Paste", delete: "Delete", selectAll: "Select all", settings: "Settings",
-    sidebar: "Toggle sidebar", files: "Toggle Files panel", commands: "Open Commands panel", review: "Open Review panel", browser: "Browser", companion: "Show/hide desktop pet", find: "Find",
+    sidebar: "Toggle sidebar", files: "Toggle Files panel", commands: "Open Commands panel", review: "Open Review panel", browser: "Browser", companion: "Show/hide desktop pet", find: "Search conversations",
     actualSize: "Actual size", zoomIn: "Zoom in", zoomOut: "Zoom out", fullscreen: "Toggle full screen",
     documentation: "Documentation", about: "About Piora", aboutDetail: "An open-source desktop application built with Pi Agent and pi-web.",
     checkUpdates: "Check for updates…", checkingUpdates: "Checking for updates…", updateAvailable: "Update available",
@@ -598,7 +642,7 @@ function installApplicationMenu(): void {
     { type: "separator" },
     { role: "selectAll", label: copy.selectAll },
     { type: "separator" },
-    { label: copy.settings, accelerator: "CmdOrCtrl+,", click: () => sendMenuAction("settings") },
+    { label: copy.settings, ...menuAcceleratorOption("settings.general"), click: () => sendMenuAction("settings") },
   ];
   const updateVersion = updateVersionLabel(desktopUpdateState);
   const updateItem: MenuItemConstructorOptions = (() => {
@@ -634,8 +678,8 @@ function installApplicationMenu(): void {
       id: "app-menu-file",
       label: copy.file,
       submenu: [
-        { label: copy.newSession, accelerator: "CmdOrCtrl+N", click: () => sendMenuAction("new-session") },
-        { label: copy.openFolder, accelerator: "CmdOrCtrl+O", click: () => sendMenuAction("choose-project") },
+        { label: copy.newSession, ...menuAcceleratorOption("navigate.newSession"), click: () => sendMenuAction("new-session") },
+        { label: copy.openFolder, ...menuAcceleratorOption("navigate.chooseProject"), click: () => sendMenuAction("choose-project") },
         { type: "separator" },
         { role: "close", label: copy.close, accelerator: "CmdOrCtrl+W" },
         { type: "separator" },
@@ -647,14 +691,14 @@ function installApplicationMenu(): void {
       id: "app-menu-view",
       label: copy.view,
       submenu: [
-        { label: copy.sidebar, accelerator: "CmdOrCtrl+B", click: () => sendMenuAction("toggle-sidebar") },
-        { label: copy.files, accelerator: "CmdOrCtrl+J", click: () => sendMenuAction("toggle-files") },
-        { label: copy.commands, accelerator: "CmdOrCtrl+`", click: () => sendMenuAction("open-commands") },
-        { label: copy.review, accelerator: "CmdOrCtrl+Alt+B", click: () => sendMenuAction("open-review") },
-        { label: copy.browser, click: () => sendMenuAction("open-browser") },
+        { label: copy.sidebar, ...menuAcceleratorOption("panel.toggleSidebar"), click: () => sendMenuAction("toggle-sidebar") },
+        { label: copy.files, ...menuAcceleratorOption("panel.files"), click: () => sendMenuAction("toggle-files") },
+        { label: copy.commands, ...menuAcceleratorOption("panel.commands"), click: () => sendMenuAction("open-commands") },
+        { label: copy.review, ...menuAcceleratorOption("panel.review"), click: () => sendMenuAction("open-review") },
+        { label: copy.browser, ...menuAcceleratorOption("panel.browser"), click: () => sendMenuAction("open-browser") },
         { label: copy.companion, click: () => sendMenuAction("toggle-companion") },
         { type: "separator" },
-        { label: copy.find, accelerator: "CmdOrCtrl+F", click: () => sendMenuAction("find") },
+        { label: copy.find, ...menuAcceleratorOption("navigate.searchChats"), click: () => sendMenuAction("search-chats") },
         { type: "separator" },
         { label: copy.zoomIn, role: "zoomIn" },
         { label: copy.zoomOut, role: "zoomOut" },
@@ -1106,6 +1150,7 @@ function openExternalUrl(rawUrl: string, log: Logger): void {
 }
 
 function configureSession(runtimeSession: Session, origin: string, token: string): void {
+  const applicationUrl = new URL(origin);
   const isAllowedOrigin = (rawOrigin: string | undefined): boolean => {
     if (!rawOrigin) return false;
     try {
@@ -1148,21 +1193,34 @@ function configureSession(runtimeSession: Session, origin: string, token: string
   // requests to this exact loopback origin; the server can enforce it through
   // PI_DESKTOP_TOKEN without exposing credentials to the page.
   runtimeSession.webRequest.onBeforeSendHeaders(
-    { urls: ["http://127.0.0.1/*"] },
+    { urls: ["http://127.0.0.1/*", "ws://127.0.0.1/*"] },
     (details, callback) => {
-      let isApplicationRequest = false;
-      try {
-        isApplicationRequest = new URL(details.url).origin === origin;
-      } catch {
-        // Leave malformed or non-application requests untouched.
-      }
-
-      if (isApplicationRequest) {
+      if (isDesktopApplicationTransportUrl(details.url, applicationUrl)) {
         details.requestHeaders[DESKTOP_TOKEN_HEADER] = token;
       }
       callback({ requestHeaders: details.requestHeaders });
     },
   );
+}
+
+async function waitForDesktopDevelopmentServer(url: URL): Promise<void> {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    const connected = await new Promise<boolean>((resolveConnection) => {
+      const socket = createConnection({ host: url.hostname, port: Number(url.port) });
+      const settle = (value: boolean) => {
+        socket.removeAllListeners();
+        socket.destroy();
+        resolveConnection(value);
+      };
+      socket.setTimeout(1_000, () => settle(false));
+      socket.once("connect", () => settle(true));
+      socket.once("error", () => settle(false));
+    });
+    if (connected) return;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 175));
+  }
+  throw new Error("Desktop development server was not reachable on loopback within 60 seconds");
 }
 
 function emitCompanionMotionState(direction: CompanionMotionDirection | null): void {
@@ -2141,7 +2199,7 @@ async function startApplication(): Promise<void> {
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron,
   });
-  installPortableDesktopShortcut(logger);
+  if (!desktopDevelopmentRuntime) installPortableDesktopShortcut(logger);
   await clearObsoleteDesktopWebCaches(logger);
 
   piAgentDirectoryPath = resolvePiAgentDirectory(logger);
@@ -2157,25 +2215,32 @@ async function startApplication(): Promise<void> {
     logger?.info("Startup shell is visible", { elapsedMs: readyAt - startupStartedAt });
   });
 
-  serverEntryPath = resolveStandaloneServerEntry();
-  serverHostEntryPath = join(__dirname, "server-host.js");
-  if (!existsSync(serverHostEntryPath)) {
-    throw new Error(`Desktop server host was not found: ${serverHostEntryPath}`);
-  }
-
-  const token = randomBytes(32).toString("base64url");
+  const token = desktopDevelopmentRuntime?.token ?? randomBytes(32).toString("base64url");
   applicationToken = token;
-  // Harmony tools run in the same desktop service as ordinary sessions.
-  const initialRuntime = createStandaloneForProfile("normal");
-  server = initialRuntime.instance;
-  serverUrl = await server.start();
-  activateStandaloneProfile("normal", initialRuntime.dataDirectory, serverUrl);
-  logger.info("Bundled service is ready", { elapsedMs: Date.now() - startupStartedAt });
+  if (desktopDevelopmentRuntime) {
+    serverUrl = desktopDevelopmentRuntime.url;
+    await waitForDesktopDevelopmentServer(serverUrl);
+    configureSession(electronSession.fromPartition(DESKTOP_PARTITION, { cache: true }), serverUrl.origin, token);
+    logger.info("Authenticated development service is ready", { elapsedMs: Date.now() - startupStartedAt });
+  } else {
+    serverEntryPath = resolveStandaloneServerEntry();
+    serverHostEntryPath = join(__dirname, "server-host.js");
+    if (!existsSync(serverHostEntryPath)) {
+      throw new Error(`Desktop server host was not found: ${serverHostEntryPath}`);
+    }
+    // Harmony tools run in the same desktop service as ordinary sessions.
+    const initialRuntime = createStandaloneForProfile("normal");
+    server = initialRuntime.instance;
+    serverUrl = await server.start();
+    activateStandaloneProfile("normal", initialRuntime.dataDirectory, serverUrl);
+    logger.info("Bundled service is ready", { elapsedMs: Date.now() - startupStartedAt });
+  }
   warmInitialModelCatalog(serverUrl, token, logger);
 
   registerCompletionNotificationHandler();
   registerCompanionWindowHandlers();
   registerGlobalShortcutHandler();
+  registerKeyboardShortcutHandler();
   registerHarmonyRuntimePickerHandler();
   attachDesktopBrowserManager(mainWindow, logger);
   registerDirectoryPickerHandler();

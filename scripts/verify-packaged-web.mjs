@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { extractAll, listPackage } from "@electron/asar";
 import { generateLicenseInventory } from "./generate-license-inventory.mjs";
 import { generatePackageLicenseBundle } from "./package-license-bundle.mjs";
@@ -29,7 +29,7 @@ const fixtureSkillName = "packaged-package-probe";
 const fixtureSourceRoot = join(projectRoot, "scripts", "fixtures", "packaged-pi-extension");
 const backgroundAssetRoot = "themes/dream-backgrounds";
 const backgroundManifestName = "manifest.json";
-const expectedBackgroundCount = 20;
+const expectedBackgroundCount = 30;
 const safeBackgroundAsset = /^\/themes\/dream-backgrounds\/[A-Za-z0-9][A-Za-z0-9._-]*\.webp$/;
 const bundledPetRelativeRoot = "companion-pets/bundled";
 const generatedBuiltinPetAsset = "companion-pets/piora-bot.webp";
@@ -59,6 +59,19 @@ export const forbiddenPackagedDependencies = Object.freeze([
   "@electron-internal/extract-zip",
 ]);
 
+export const packagedPiAiRuntimeCopies = Object.freeze([
+  {
+    id: "top-level",
+    label: "top-level Pi AI runtime",
+    relativePath: "node_modules/@earendil-works/pi-ai",
+  },
+  {
+    id: "coding-agent-nested",
+    label: "Pi coding-agent nested AI runtime",
+    relativePath: "node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai",
+  },
+]);
+
 const requiredPaths = [
   "server.js",
   "extensions/piora-browser.ts",
@@ -80,6 +93,7 @@ const requiredPaths = [
   "node_modules/@earendil-works/pi-agent-core/package.json",
   "node_modules/@earendil-works/pi-ai/package.json",
   "node_modules/@earendil-works/pi-coding-agent/package.json",
+  "node_modules/@earendil-works/pi-coding-agent/node_modules/@aws-sdk/client-bedrock-runtime/package.json",
   "node_modules/@earendil-works/pi-tui/package.json",
   "node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/dark.json",
   "node_modules/rrule/package.json",
@@ -96,6 +110,192 @@ async function assertRegularFile(path, description) {
   if (!entry || entry.isSymbolicLink() || !entry.isFile()) {
     throw new Error(`${description} must be a regular file: ${path}`);
   }
+}
+
+async function listRegularFiles(root, description, current = root) {
+  const rootEntry = await lstat(current).catch((error) => {
+    if (error?.code === "ENOENT") return undefined;
+    throw error;
+  });
+  if (!rootEntry) {
+    throw new Error(`${description} is missing: ${current}`);
+  }
+  if (rootEntry.isSymbolicLink()) {
+    throw new Error(`${description} must not contain symbolic links: ${current}`);
+  }
+  if (rootEntry.isFile()) return [relative(root, current)];
+  if (!rootEntry.isDirectory()) {
+    throw new Error(`${description} contains an unsupported filesystem entry: ${current}`);
+  }
+
+  const files = [];
+  const entries = await readdir(current, { withFileTypes: true });
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const entryPath = join(current, entry.name);
+    files.push(...await listRegularFiles(root, description, entryPath));
+  }
+  return files;
+}
+
+/**
+ * pi-ai deliberately hides provider and OAuth implementations behind
+ * bundler-opaque dynamic imports. Verify both installed package copies as
+ * complete, byte-identical runtime units instead of trusting Next's trace.
+ */
+export async function verifyPackagedPiAiRuntime(
+  webRootInput,
+  sourceProjectRootInput = projectRoot,
+) {
+  const webRoot = resolve(webRootInput);
+  const sourceProjectRoot = resolve(sourceProjectRootInput);
+  const copies = [];
+
+  for (const copy of packagedPiAiRuntimeCopies) {
+    const pathSegments = copy.relativePath.split("/");
+    const sourcePackageRoot = join(sourceProjectRoot, ...pathSegments);
+    const packagedPackageRoot = join(webRoot, ...pathSegments);
+    const [sourceFiles, packagedFiles] = await Promise.all([
+      listRegularFiles(sourcePackageRoot, `Source ${copy.label}`),
+      listRegularFiles(packagedPackageRoot, `Packaged ${copy.label}`),
+    ]);
+    const normalizedSourceFiles = sourceFiles.map((path) => path.replaceAll("\\", "/")).sort();
+    const normalizedPackagedFiles = packagedFiles.map((path) => path.replaceAll("\\", "/")).sort();
+    if (JSON.stringify(normalizedSourceFiles) !== JSON.stringify(normalizedPackagedFiles)) {
+      const sourceSet = new Set(normalizedSourceFiles);
+      const packagedSet = new Set(normalizedPackagedFiles);
+      const missing = normalizedSourceFiles.filter((path) => !packagedSet.has(path));
+      const unexpected = normalizedPackagedFiles.filter((path) => !sourceSet.has(path));
+      throw new Error(
+        `Packaged ${copy.label} file set differs from source ` +
+        `(missing: ${missing.join(", ") || "none"}; unexpected: ${unexpected.join(", ") || "none"})`,
+      );
+    }
+
+    for (const relativePath of normalizedSourceFiles) {
+      const relativeSegments = relativePath.split("/");
+      const [sourceBytes, packagedBytes] = await Promise.all([
+        readFile(join(sourcePackageRoot, ...relativeSegments)),
+        readFile(join(packagedPackageRoot, ...relativeSegments)),
+      ]);
+      if (!sourceBytes.equals(packagedBytes)) {
+        throw new Error(`Packaged ${copy.label} file differs from source: ${relativePath}`);
+      }
+    }
+    copies.push({ id: copy.id, fileCount: normalizedSourceFiles.length });
+  }
+
+  return {
+    copyCount: copies.length,
+    fileCount: copies.reduce((total, copy) => total + copy.fileCount, 0),
+    copies,
+  };
+}
+
+/**
+ * Import every provider/API/auth module without starting a login or making a
+ * network request. This catches missing transitive runtime dependencies, then
+ * explicitly resolves every OAuth loader used by subscription sign-ins.
+ */
+export async function verifyPackagedPiAiModuleSurface(webRootInput) {
+  const webRoot = resolve(webRootInput);
+  const copies = [];
+
+  // ModelRuntime is exported by pi-coding-agent, so Node resolves all built-in
+  // provider execution through its shrinkwrapped nested pi-ai copy. The
+  // top-level copy is still verified byte-for-byte above for direct SDK and
+  // extension imports, but importing its entire optional provider surface
+  // would incorrectly require dependencies that the app never resolves there.
+  const providerRuntimeCopies = packagedPiAiRuntimeCopies.filter((copy) => (
+    copy.id === "coding-agent-nested"
+  ));
+  for (const copy of providerRuntimeCopies) {
+    const packageRoot = join(webRoot, ...copy.relativePath.split("/"));
+    const moduleRoots = ["api", "auth", "providers"].map((directory) => (
+      join(packageRoot, "dist", directory)
+    ));
+    const modulePaths = [];
+    for (const moduleRoot of moduleRoots) {
+      const relativeFiles = await listRegularFiles(moduleRoot, `Packaged ${copy.label} modules`);
+      modulePaths.push(...relativeFiles
+        .filter((path) => path.endsWith(".js"))
+        .map((path) => join(moduleRoot, ...path.replaceAll("\\", "/").split("/"))));
+    }
+
+    for (const modulePath of modulePaths) {
+      try {
+        await import(pathToFileURL(modulePath).href);
+      } catch (cause) {
+        throw new Error(
+          `Packaged ${copy.label} module failed to load: ${relative(packageRoot, modulePath)}`,
+          { cause },
+        );
+      }
+    }
+
+    const providerCatalog = await import(pathToFileURL(join(
+      packageRoot,
+      "dist",
+      "providers",
+      "all.js",
+    )).href);
+    if (typeof providerCatalog.builtinProviders !== "function") {
+      throw new Error(`Packaged ${copy.label} does not export builtinProviders()`);
+    }
+    const providers = providerCatalog.builtinProviders();
+    const oauthProviderIds = providers
+      .filter((provider) => provider.auth?.oauth)
+      .map((provider) => provider.id)
+      .sort();
+    const subscriptionProviderIds = providers
+      .filter((provider) => provider.auth?.oauth?.isSubscription === true)
+      .map((provider) => provider.id)
+      .sort();
+    if (oauthProviderIds.length === 0 || subscriptionProviderIds.length === 0) {
+      throw new Error(`Packaged ${copy.label} did not expose OAuth subscription providers`);
+    }
+
+    const oauthLoaders = await import(pathToFileURL(join(
+      packageRoot,
+      "dist",
+      "auth",
+      "oauth",
+      "load.js",
+    )).href);
+    const loaderEntries = Object.entries(oauthLoaders)
+      .filter(([name, value]) => /^load.*OAuth$/u.test(name) && typeof value === "function")
+      .sort(([left], [right]) => left.localeCompare(right));
+    if (loaderEntries.length === 0) {
+      throw new Error(`Packaged ${copy.label} did not expose OAuth flow loaders`);
+    }
+    for (const [loaderName, load] of loaderEntries) {
+      let flow;
+      try {
+        flow = await load({
+          name: "Packaged Radius verification",
+          gateway: "https://example.invalid",
+        });
+      } catch (cause) {
+        throw new Error(`Packaged ${copy.label} OAuth loader failed: ${loaderName}`, { cause });
+      }
+      for (const method of ["login", "refresh", "toAuth"]) {
+        if (typeof flow?.[method] !== "function") {
+          throw new Error(
+            `Packaged ${copy.label} OAuth loader ${loaderName} is missing ${method}()`,
+          );
+        }
+      }
+    }
+
+    copies.push({
+      id: copy.id,
+      moduleCount: modulePaths.length,
+      oauthProviderIds,
+      subscriptionProviderIds,
+      oauthLoaders: loaderEntries.map(([name]) => name),
+    });
+  }
+
+  return { copyCount: copies.length, copies };
 }
 
 /**
@@ -529,6 +729,8 @@ async function main() {
   for (const requiredPath of requiredPaths) {
     await assertFile(join(runtimeWebRoot, requiredPath));
   }
+  const packagedPiAiRuntime = await verifyPackagedPiAiRuntime(runtimeWebRoot);
+  const packagedPiAiModules = await verifyPackagedPiAiModuleSurface(runtimeWebRoot);
   const patchedBundledDependencies = [
     { name: "brace-expansion", version: "5.0.9" },
     { name: "undici", version: "8.9.0" },
@@ -787,7 +989,7 @@ async function main() {
     if (unavailableCoreTools.length > 0) {
       throw new Error(`Packaged first-party tools are unavailable: ${JSON.stringify(unavailableCoreTools)}`);
     }
-    const promptModeTools = [
+    const optionalWorkflowTools = [
       "piora_goal",
       "piora_plan",
       "piora_plan_execution",
@@ -795,11 +997,11 @@ async function main() {
       const tool = tools.find((entry) => entry.name === name);
       return { name, loaded: Boolean(tool), active: tool?.active === true };
     });
-    const invalidPromptModeTools = promptModeTools.filter((tool) => !tool.loaded || tool.active);
-    if (invalidPromptModeTools.length > 0) {
-      throw new Error(`Packaged prompt-mode tools have an invalid idle state: ${JSON.stringify(invalidPromptModeTools)}`);
+    const unexpectedlyLoadedWorkflowTools = optionalWorkflowTools.filter((tool) => tool.loaded || tool.active);
+    if (unexpectedlyLoadedWorkflowTools.length > 0) {
+      throw new Error(`Optional workflow extensions should be disabled by default: ${JSON.stringify(unexpectedlyLoadedWorkflowTools)}`);
     }
-    const coreExtensionTools = [...ordinaryCoreExtensionTools, ...promptModeTools];
+    const coreExtensionTools = [...ordinaryCoreExtensionTools, ...optionalWorkflowTools];
 
     const pioraOwnedSubagentEntries = [...commands, ...tools].filter((entry) => (
       typeof entry.name === "string" && /^(?:pi[-_]?gui)[-_]?sub[-_]?agents?$/i.test(entry.name)
@@ -811,6 +1013,8 @@ async function main() {
     console.log(JSON.stringify({
       isolated: true,
       dependencyChecks: requiredPaths.length,
+      packagedPiAiRuntime,
+      packagedPiAiModules,
       patchedBundledDependencies: patchedBundledDependencies.map(({ name, version }) => `${name}@${version}`),
       forbiddenDependencyChecks: forbiddenPackagedDependencies.length,
       packagedBackgrounds: packagedBackgrounds.backgroundCount,

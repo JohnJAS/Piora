@@ -16,6 +16,12 @@ import {
   copySessionCapabilityPolicy,
   readLatestSessionCapabilityPolicy,
 } from "@/lib/session-capabilities";
+import {
+  appendSessionSystemPromptBinding,
+  copySessionSystemPromptBinding,
+  createSessionSystemPromptBinding,
+  readLatestSessionSystemPromptBinding,
+} from "@/lib/session-system-prompt";
 
 export async function POST(
   _request: Request,
@@ -38,6 +44,12 @@ export async function POST(
     if (sourceCapabilityPolicy) {
       appendSessionCapabilityPolicy(duplicate, copySessionCapabilityPolicy(sourceCapabilityPolicy));
     }
+    const sourceSystemPromptBinding = readLatestSessionSystemPromptBinding(source.getEntries())
+      ?? createSessionSystemPromptBinding({ mode: "default" });
+    appendSessionSystemPromptBinding(
+      duplicate,
+      copySessionSystemPromptBinding(sourceSystemPromptBinding),
+    );
     try {
       await bindSessionAgentRuntimeProfile(newSessionId, runtimeProfile);
     } catch (profileError) {

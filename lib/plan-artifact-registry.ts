@@ -515,6 +515,23 @@ export function resumePlanExecution(identity: PromptRunIdentity): PlanArtifactSt
   return copy(state);
 }
 
+export function interruptPlanExecution(
+  sessionId: string,
+  runId: string,
+  reason = "Plan execution paused when the extension turn ended.",
+): PlanArtifactState | undefined {
+  const state = artifacts().get(sessionId);
+  const execution = state?.execution;
+  if (!state || !execution || execution.runId !== runId) return state ? copy(state) : undefined;
+  if (execution.status !== "running" && execution.status !== "verifying") return copy(state);
+  const now = Date.now();
+  execution.status = "interrupted";
+  execution.reason = cleanText(reason, 4_000);
+  execution.finishedAt = now;
+  touchExecution(state, now);
+  return copy(state);
+}
+
 export function startPlanStep(identity: PromptToolIdentity, stepId: string): PlanArtifactState {
   const state = requireExecution(identity);
   if (state.execution!.status !== "running") throw new Error("Cannot start another step during verification.");

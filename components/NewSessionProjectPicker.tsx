@@ -13,17 +13,18 @@ import type { AttachedFile } from "@/hooks/useAgentSession";
 import { fetchModelCatalog, type ModelCatalogEntry } from "@/lib/model-catalog-client";
 import { buildSessionProjectGroups, getProjectLabel } from "@/lib/session-project-groups";
 import type { SessionInfo } from "@/lib/types";
+import type { SystemPromptSelection } from "@/lib/system-prompt-types";
 import { AliIcon } from "./AliIcon";
 import {
   ChatInput,
   type AttachedImage,
   type ChatInputHandle,
-  type PromptRunOptions,
 } from "./ChatInput";
 import { DirectoryPicker } from "./DirectoryPicker";
 import { NewSessionLauncher } from "./NewSessionLauncher";
 import type { NewSessionLaunch } from "./new-session-types";
 import styles from "./NewSessionProjectPicker.module.css";
+import { SystemPromptSelector } from "./SystemPromptSelector";
 
 interface ProjectChoice {
   root: string;
@@ -78,6 +79,7 @@ export function NewSessionProjectPicker({
   const [projectValidating, setProjectValidating] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
   const [submitAfterProjectSelection, setSubmitAfterProjectSelection] = useState(false);
+  const [systemPromptSelection, setSystemPromptSelection] = useState<SystemPromptSelection>({ mode: "default" });
 
   useEffect(() => {
     let cancelled = false;
@@ -258,7 +260,6 @@ export function NewSessionProjectPicker({
     message: string,
     images?: AttachedImage[],
     files?: AttachedFile[],
-    options?: PromptRunOptions,
   ): false | void => {
     if (!selectedProject) {
       pendingSubmissionClaimedRef.current = false;
@@ -277,10 +278,10 @@ export function NewSessionProjectPicker({
         message,
         images,
         files,
-        options,
+        systemPromptSelection,
       },
     });
-  }, [onLaunch, selectedModel, selectedProject, selectedProjectModelReady]);
+  }, [onLaunch, selectedModel, selectedProject, selectedProjectModelReady, systemPromptSelection]);
 
   useEffect(() => {
     if (!submitAfterProjectSelection || !selectedProjectModelReady) return;
@@ -390,7 +391,15 @@ export function NewSessionProjectPicker({
           draftKey={draftKey}
           cwd={selectedProject?.cwd ?? null}
           placeholder={selectedProject ? t("newSession.placeholder") : t("newSession.placeholderWithoutProject")}
-          contextControl={projectControl}
+          contextControl={(
+            <>
+              {projectControl}
+              <SystemPromptSelector
+                selection={systemPromptSelection}
+                onChange={setSystemPromptSelection}
+              />
+            </>
+          )}
         />
         {(projectError || modelsUnavailable) ? (
           <div className={styles.statusRow} role="alert">
