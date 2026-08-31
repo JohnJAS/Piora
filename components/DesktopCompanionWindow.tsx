@@ -33,6 +33,12 @@ import {
   type CompanionSessionContext,
   type CompanionWorkRhythm,
 } from "@/lib/companion-interaction";
+import {
+  COMPANION_RUNTIME_POLL_INTERVAL_MS,
+  createCompanionRuntimeChannel,
+  fetchCompanionRuntimeState,
+  publishCompanionRuntimeState,
+} from "@/lib/companion-runtime-client";
 import type { CompanionAutonomyLevel, CompanionRuntimeState } from "@/lib/companion-runtime";
 import { planCompanionWander } from "@/lib/companion-wander";
 import type { TaskRuntimeSnapshot } from "@/lib/task-status";
@@ -146,8 +152,11 @@ export function DesktopCompanionWindow() {
   }, [locale, movementSettings.autonomyLevel, preferences.shareWorkContext, preferences.todos, runningTasks, sessionContext, workRhythm]);
 
   useEffect(() => {
-    let source: EventSource | null = null;
+    const controller = new AbortController();
+    const channel = createCompanionRuntimeChannel();
+    let refreshPending = false;
     const applyState = (runtime: CompanionRuntimeState | null) => {
+      if (runtime) publishCompanionRuntimeState(channel, runtime);
       setNextWakeAt(typeof runtime?.mind?.nextWakeAt === "number" ? runtime.mind.nextWakeAt : null);
       if (runtime?.settings) {
         const nextMovementSettings = {
@@ -173,13 +182,22 @@ export function DesktopCompanionWindow() {
       overlaySequenceRef.current += 1;
       setOverlayEvent({ kind: "poke", key: `timer:${overlaySequenceRef.current}`, occurredAt: decision.createdAt });
     };
-    void fetch("/api/companion/state", { cache: "no-store" }).then((response) => response.ok ? response.json() as Promise<CompanionRuntimeState> : null).then(applyState).catch(() => undefined);
-    source = new EventSource("/api/companion/events");
-    source.addEventListener("companion", (event) => {
-      try { applyState((JSON.parse((event as MessageEvent<string>).data) as { state?: CompanionRuntimeState }).state ?? null); }
-      catch { /* ignore malformed event */ }
-    });
-    return () => source?.close();
+    const refreshIfVisible = async () => {
+      if (document.visibilityState === "hidden" || refreshPending) return;
+      refreshPending = true;
+      try { applyState(await fetchCompanionRuntimeState({ signal: controller.signal })); }
+      catch { /* transient polling failures are retried on the next interval */ }
+      finally { refreshPending = false; }
+    };
+    void refreshIfVisible();
+    const pollTimer = window.setInterval(() => void refreshIfVisible(), COMPANION_RUNTIME_POLL_INTERVAL_MS);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      controller.abort();
+      window.clearInterval(pollTimer);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+      channel?.close();
+    };
   }, []);
 
   useEffect(() => {

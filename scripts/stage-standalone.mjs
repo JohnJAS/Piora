@@ -187,6 +187,26 @@ async function main() {
     await rm(join(standaloneDirectory, "node_modules", optionalPackage), { recursive: true, force: true });
   }
 
+  // Next's file tracer can follow the packaged-app verification helpers back
+  // into desktop/release. Keeping that generated directory creates a recursive
+  // package-within-a-package (and made a local candidate exceed 4 GB). Release
+  // outputs are never runtime inputs, so remove only this exact traced subtree.
+  const tracedDesktopRelease = join(standaloneDirectory, "desktop", "release");
+  assertInside(standaloneDirectory, tracedDesktopRelease);
+  await rm(tracedDesktopRelease, { recursive: true, force: true });
+
+  const tracedGitDirectory = join(standaloneDirectory, ".git");
+  assertInside(standaloneDirectory, tracedGitDirectory);
+  await rm(tracedGitDirectory, { recursive: true, force: true });
+
+  const tracedNextDirectory = join(standaloneDirectory, ".next");
+  for (const entry of await readdir(tracedNextDirectory, { withFileTypes: true })) {
+    if (!entry.isDirectory() || (entry.name !== "dev" && !entry.name.startsWith("dev-stale-"))) continue;
+    const tracedDevelopmentOutput = join(tracedNextDirectory, entry.name);
+    assertInside(standaloneDirectory, tracedDevelopmentOutput);
+    await rm(tracedDevelopmentOutput, { recursive: true, force: true });
+  }
+
   const stagedAssets = [];
   for (const asset of assets) {
     assertInside(standaloneDirectory, asset.destination);

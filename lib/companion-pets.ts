@@ -21,6 +21,7 @@ import {
   type RuntimeHomeEnvironment,
 } from "./runtime-home";
 import { BUNDLED_COMPANION_PETS_PUBLIC_PATH } from "./companion-store";
+import { firstPartyRuntimeRoot } from "./first-party-extensions";
 
 export const PET_MANIFEST_MAX_BYTES = 64 * 1024;
 export const PET_INSTALLED_MANIFEST_MAX_BYTES = 256 * 1024;
@@ -949,6 +950,7 @@ function readBoundedRegularFile(
   fileName: string,
   maxBytes: number,
   label: string,
+  immutableBundledResource = false,
 ): Buffer {
   const candidate = path.join(root, fileName);
   let current = root;
@@ -985,6 +987,25 @@ function readBoundedRegularFile(
   }
   if (initialPathStats.size <= 0 || initialPathStats.size > maxBytes) {
     throw new CompanionPetError(`${label} exceeds its allowed size`, "PET_TOO_LARGE", 413);
+  }
+
+  // Electron's ASAR layer reports virtual entry metadata for lstat(), while
+  // fstat() observes the backing archive descriptor. Their inode/size values
+  // therefore cannot pass the identity checks below. Piora-bundled pets are
+  // immutable, checksum-verified release inputs, so read those entries only
+  // after the same containment, symlink, type, and size checks above. Imported
+  // or Codex-owned pets continue through the descriptor race defenses below.
+  if (immutableBundledResource) {
+    let bytes: Buffer;
+    try {
+      bytes = fs.readFileSync(candidate);
+    } catch {
+      throw new CompanionPetError(`${label} could not be read`, "PET_ACCESS_DENIED", 403);
+    }
+    if (bytes.byteLength !== initialPathStats.size || bytes.byteLength > maxBytes) {
+      throw new CompanionPetError(`${label} changed while being read`, "INVALID_PET_PACKAGE", 422);
+    }
+    return bytes;
   }
 
   const noFollow = typeof fs.constants.O_NOFOLLOW === "number" ? fs.constants.O_NOFOLLOW : 0;
@@ -1154,6 +1175,7 @@ function validatePetPackage(
       ? PET_INSTALLED_MANIFEST_MAX_BYTES
       : PET_MANIFEST_MAX_BYTES,
     manifestFileName,
+    sourceKind === "piora-bundled",
   );
   let parsed: unknown;
   try {
@@ -1171,6 +1193,7 @@ function validatePetPackage(
     sourceSpritesheet.relativePath,
     PET_SPRITESHEET_MAX_BYTES,
     "spritesheet",
+    sourceKind === "piora-bundled",
   );
   const inspection = inspectPetSpritesheetBytes(spritesheetBytes, sourceSpritesheet.installedName);
   assertAtlasGeometry(inspection, manifest);
@@ -1217,8 +1240,10 @@ export function getPioraPetsDirectory(
   return path.join(getRuntimeAgentDataDirectory(environment), "piora", "pets");
 }
 
-export function getBundledPioraPetsDirectory(): string {
-  return path.join(process.cwd(), "public", "companion-pets", "bundled");
+export function getBundledPioraPetsDirectory(
+  environment: CompanionPetEnvironment = process.env,
+): string {
+  return path.join(firstPartyRuntimeRoot(environment), "public", "companion-pets", "bundled");
 }
 
 function listPetPackages(
@@ -1363,7 +1388,7 @@ export function listCompanionPets(
   environment: CompanionPetEnvironment = process.env,
 ): CompanionPetsResponse {
   const bundledResult = listPetPackages(
-    getBundledPioraPetsDirectory(),
+    getBundledPioraPetsDirectory(environment),
     "piora-bundled",
     new Set(),
   );

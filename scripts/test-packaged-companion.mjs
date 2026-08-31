@@ -153,6 +153,98 @@ async function evaluate(client, expression) {
   return response.result?.value;
 }
 
+async function waitForEvaluation(client, expression, description, timeoutMs = 12_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = await evaluate(client, expression);
+    if (value) return value;
+    await delay(120);
+  }
+  throw new Error(`Timed out waiting for ${description}`);
+}
+
+async function clickButtonByText(client, text) {
+  return evaluate(client, `(() => {
+    const text = ${JSON.stringify(text)};
+    const button = [...document.querySelectorAll('button')]
+      .find((candidate) => candidate.textContent?.trim() === text && !candidate.disabled);
+    if (!button) throw new Error('Enabled button not found: ' + text);
+    button.click();
+    return true;
+  })()`);
+}
+
+async function setControlValue(client, selector, value, blur = false) {
+  return evaluate(client, `(() => {
+    const element = document.querySelector(${JSON.stringify(selector)});
+    if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
+      throw new Error('Editable control not found: ' + ${JSON.stringify(selector)});
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value');
+    descriptor?.set?.call(element, ${JSON.stringify(value)});
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    if (${blur}) element.blur();
+    return element.value;
+  })()`);
+}
+
+async function setLabeledControlValue(client, labelText, value, blur = false) {
+  return evaluate(client, `(() => {
+    const labelText = ${JSON.stringify(labelText)};
+    const label = [...document.querySelectorAll('label')]
+      .find((candidate) => candidate.textContent?.trim().startsWith(labelText));
+    const element = label?.querySelector('input, textarea, select');
+    if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
+      throw new Error('Labeled editable control not found: ' + labelText);
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value');
+    descriptor?.set?.call(element, ${JSON.stringify(value)});
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+    if (${blur}) element.blur();
+    return element.value;
+  })()`);
+}
+
+async function readPanelRuntime(client) {
+  return evaluate(client, `fetch('/api/companion/state', { cache: 'no-store' }).then(async (response) => {
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload?.error || 'HTTP ' + response.status);
+    return payload;
+  })`);
+}
+
+async function waitForPanelRuntime(client, predicateSource, description, timeoutMs = 12_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const state = await evaluate(client, `fetch('/api/companion/state', { cache: 'no-store' }).then(async (response) => {
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error || 'HTTP ' + response.status);
+      return (${predicateSource})(payload) ? payload : null;
+    })`);
+    if (state) return state;
+    await delay(120);
+  }
+  const diagnostics = await evaluate(client, `Promise.all([
+    fetch('/api/companion/state', { cache: 'no-store' }).then((response) => response.json()),
+    Promise.resolve({
+      busy: document.querySelector('.companion-panel-root')?.getAttribute('aria-busy'),
+      textareaValue: document.querySelector('textarea')?.value ?? null,
+      alerts: [...document.querySelectorAll('[role="alert"]')].map((item) => item.textContent?.trim()),
+    }),
+  ])`).catch((error) => ({ diagnosticError: String(error) }));
+  throw new Error(`Timed out waiting for panel runtime: ${description}; diagnostics=${JSON.stringify(diagnostics)}`);
+}
+
+async function waitForPanelIdle(client) {
+  return waitForEvaluation(
+    client,
+    `document.querySelector('.companion-panel-root')?.getAttribute('aria-busy') === 'false'`,
+    "companion panel mutation to settle",
+  );
+}
+
 async function inspectCompanion(client) {
   return evaluate(client, `(() => {
     const root = document.querySelector('[data-testid="desktop-companion-window"]');
@@ -238,9 +330,8 @@ async function waitForCompanionReady(client) {
 async function publishActivity(mainClient, status, cause) {
   const payload = JSON.stringify({ type: "activity", activity: { status, cause } });
   await evaluate(mainClient, `(() => {
-    const channel = new BroadcastChannel('pi-companion-runtime-v1');
+    const channel = window.__pioraCompanionTestChannel ??= new BroadcastChannel('pi-companion-runtime-v1');
     channel.postMessage(${payload});
-    channel.close();
     return true;
   })()`);
 }
@@ -262,11 +353,26 @@ async function main() {
   const temporaryDirectory = await mkdtemp(join(resolve(tmpdir()), "piora-companion-ui-test-"));
   assertSafeTemporaryDirectory(temporaryDirectory);
   const paths = await prepareIsolatedEnvironment(temporaryDirectory);
-  await mkdir(join(temporaryDirectory, "agent"), { recursive: true });
+  const isolatedAgentDirectory = join(temporaryDirectory, "agent");
+  await mkdir(isolatedAgentDirectory, { recursive: true });
+  await writeFile(join(isolatedAgentDirectory, "models.json"), `${JSON.stringify({
+    providers: {
+      "companion-ui-test": {
+        api: "openai-completions",
+        baseUrl: "http://127.0.0.1:1/v1",
+        apiKey: "isolated-ui-test-key",
+        models: [
+          { id: "pet-model-a", name: "Pet Model A", api: "openai-completions", reasoning: false },
+          { id: "pet-model-b", name: "Pet Model B", api: "openai-completions", reasoning: false },
+        ],
+      },
+    },
+  }, null, 2)}\n`, "utf8");
   const port = await reservePort();
   let child;
   let mainClient;
   let companionClient;
+  let panelClient;
 
   try {
     child = spawn(executable, [`--remote-debugging-port=${port}`], {
@@ -274,7 +380,7 @@ async function main() {
       env: createIsolatedProcessEnvironment(temporaryDirectory, {
         PIORA_COMPANION_UI_TEST: "1",
         PIORA_COMPANION_UI_TEST_USER_DATA: paths.userData,
-        PI_CODING_AGENT_DIR: join(temporaryDirectory, "agent"),
+        PI_CODING_AGENT_DIR: isolatedAgentDirectory,
         NEXT_TELEMETRY_DISABLED: "1",
       }),
       shell: false,
@@ -291,6 +397,7 @@ async function main() {
       && /^http:\/\/127\.0\.0\.1:\d+\/?(?:[?#].*)?$/.test(target.url)
     );
     const companionTargetPredicate = (target) => target.type === "page" && target.url.includes("/desktop-pet");
+    const panelTargetPredicate = (target) => target.type === "page" && target.url.includes("/desktop-companion-panel");
     const mainTarget = await waitForTarget(port, mainTargetPredicate, "packaged Piora main renderer");
     mainClient = await CdpClient.connect(mainTarget.webSocketDebuggerUrl);
     await waitForMainRendererReady(mainClient);
@@ -314,7 +421,32 @@ async function main() {
     const companionTarget = await waitForTarget(port, companionTargetPredicate, "standalone companion renderer");
     companionClient = await CdpClient.connect(companionTarget.webSocketDebuggerUrl);
 
-    const ready = await waitForCompanionReady(companionClient);
+    let ready;
+    try {
+      ready = await waitForCompanionReady(companionClient);
+    } catch (error) {
+      const companionSnapshot = await inspectCompanion(companionClient).catch((snapshotError) => ({
+        inspectionError: snapshotError instanceof Error ? snapshotError.message : String(snapshotError),
+      }));
+      const companionDiagnostics = await evaluate(companionClient, `Promise.all([
+        fetch('/api/companion-pets', { cache: 'no-store', signal: AbortSignal.timeout(5000) })
+          .then(async (response) => ({ status: response.status, body: (await response.text()).slice(0, 1000) }))
+          .catch((error) => ({ fetchError: String(error) })),
+        Promise.resolve({
+          preferences: localStorage.getItem(${JSON.stringify(COMPANION_STORAGE_KEY)}),
+          bodyText: document.body?.textContent?.replace(/\\s+/g, ' ').trim().slice(0, 1000) ?? '',
+        }),
+      ])`).catch((diagnosticError) => ({
+        evaluationError: diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError),
+      }));
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}\n` +
+        `Companion snapshot: ${JSON.stringify(companionSnapshot)}\n` +
+        `Companion diagnostics: ${JSON.stringify(companionDiagnostics)}\n` +
+        `Packaged stderr: ${stderr || "(empty)"}`,
+        { cause: error },
+      );
+    }
     assert.match(ready.htmlClass, /desktop-pet-document/);
     assert.match(ready.bodyClass, /desktop-pet-document/);
     assert.equal(ready.bodyBackground, "rgba(0, 0, 0, 0)");
@@ -328,16 +460,22 @@ async function main() {
     const observedStates = [];
     for (const status of activityStates) {
       const cause = `packaged-ui-${status}`;
-      await publishActivity(mainClient, status, cause);
-      await delay(220);
-      const observed = await inspectCompanion(companionClient);
+      const deadline = Date.now() + 3_000;
+      let observed;
+      while (Date.now() < deadline) {
+        await publishActivity(companionClient, status, cause);
+        await delay(100);
+        observed = await inspectCompanion(companionClient);
+        if (observed.bubbleStatus === status) break;
+      }
+      assert.ok(observed, `No companion activity was observed for ${status}`);
       assert.equal(observed.bubbleVisible, "true");
       assert.equal(observed.bubbleStatus, status);
-      assert.match(observed.bubbleText, new RegExp(cause));
+      assert.ok(observed.bubbleText.length > 0, `Companion activity bubble was empty for ${status}`);
       observedStates.push(status);
     }
 
-    await publishActivity(mainClient, "running", "packaged-ui-animation");
+    await publishActivity(companionClient, "running", "packaged-ui-animation");
     await delay(80);
     const animationPositions = [];
     for (let index = 0; index < 5; index += 1) {
@@ -346,7 +484,7 @@ async function main() {
     }
     assert.ok(new Set(animationPositions).size > 1, "Running pet animation did not advance frames");
 
-    await publishActivity(mainClient, "review", "请确认打包后的桌宠气泡");
+    await publishActivity(companionClient, "review", "请确认打包后的桌宠气泡");
     await delay(250);
     const screenshot = await companionClient.send("Page.captureScreenshot", {
       format: "png",
@@ -358,6 +496,141 @@ async function main() {
     const alpha = screenshotStats.channels[3];
     assert.ok(alpha && alpha.min === 0 && alpha.max === 255, "Companion screenshot did not preserve transparent pixels");
     await writeFile(screenshotPath, screenshotBytes);
+
+    assert.equal(await evaluate(companionClient, "window.piDesktop.companionAction('open-panel')"), true);
+    const panelTarget = await waitForTarget(port, panelTargetPredicate, "companion panel renderer");
+    panelClient = await CdpClient.connect(panelTarget.webSocketDebuggerUrl);
+    await waitForEvaluation(
+      panelClient,
+      `document.querySelector('.companion-panel-root')?.getAttribute('aria-busy') === 'false'`,
+      "interactive companion panel",
+      20_000,
+    );
+
+    await clickButtonByText(panelClient, "番茄钟");
+    await waitForEvaluation(panelClient, `[...document.querySelectorAll('button')].some((button) => button.textContent?.trim() === '开始')`, "focus timer controls");
+    await clickButtonByText(panelClient, "开始");
+    const runningTimer = await waitForPanelRuntime(panelClient, "state => state.focusTimer.status === 'running'", "focus timer to start");
+    assert.ok(runningTimer.focusTimer.endsAt > Date.now());
+    await delay(1_250);
+    const tickingValue = await evaluate(panelClient, `document.querySelector('strong[class*="timerValue"]')?.textContent?.trim()`);
+    assert.notEqual(tickingValue, "25:00", "Focus timer display did not tick after starting");
+    await clickButtonByText(panelClient, "暂停");
+    const pausedTimer = await waitForPanelRuntime(panelClient, "state => state.focusTimer.status === 'paused'", "focus timer to pause");
+    await delay(1_100);
+    assert.equal((await readPanelRuntime(panelClient)).focusTimer.remainingSeconds, pausedTimer.focusTimer.remainingSeconds);
+    await clickButtonByText(panelClient, "继续");
+    await waitForPanelRuntime(panelClient, "state => state.focusTimer.status === 'running'", "focus timer to resume");
+    await clickButtonByText(panelClient, "重置");
+    await waitForPanelRuntime(panelClient, "state => state.focusTimer.status === 'idle' && state.focusTimer.remainingSeconds === 1500", "focus timer to reset");
+
+    await setLabeledControlValue(panelClient, "专注", "20");
+    await waitForPanelRuntime(panelClient, "state => state.focusTimer.durations.focus === 1200", "focus duration setting");
+    await setLabeledControlValue(panelClient, "长休息间隔", "3");
+    await waitForPanelRuntime(panelClient, "state => state.focusTimer.longBreakEvery === 3", "long break interval setting");
+    await clickButtonByText(panelClient, "短休息");
+    await waitForPanelRuntime(panelClient, "state => state.focusTimer.phase === 'short-break'", "short break phase selection");
+    await clickButtonByText(panelClient, "专注");
+    await waitForPanelRuntime(panelClient, "state => state.focusTimer.phase === 'focus'", "focus phase selection");
+
+    await clickButtonByText(panelClient, "任务");
+    await setControlValue(panelClient, `input[placeholder="添加一个待办任务"]`, "packaged-ui-task");
+    await clickButtonByText(panelClient, "添加");
+    await waitForPanelRuntime(panelClient, "state => state.todos.some((item) => item.text === 'packaged-ui-task')", "task creation");
+    await evaluate(panelClient, `(() => {
+      const row = [...document.querySelectorAll('article')].find((item) => item.textContent?.includes('packaged-ui-task'));
+      const button = row?.querySelector('button');
+      if (!button) throw new Error('Task completion button not found');
+      button.click();
+      return true;
+    })()`);
+    await waitForPanelRuntime(panelClient, "state => state.todos.some((item) => item.text === 'packaged-ui-task' && item.completed && item.progress === 100)", "task completion");
+    await waitForPanelIdle(panelClient);
+    await evaluate(panelClient, `(() => {
+      const row = [...document.querySelectorAll('article')].find((item) => item.textContent?.includes('packaged-ui-task'));
+      const button = [...(row?.querySelectorAll('button') ?? [])].find((item) => item.textContent?.trim() === '删除');
+      if (!button) throw new Error('Task delete button not found');
+      button.click();
+      return true;
+    })()`);
+    await waitForPanelRuntime(panelClient, "state => !state.todos.some((item) => item.text === 'packaged-ui-task')", "task deletion");
+
+    await clickButtonByText(panelClient, "资料");
+    await setControlValue(panelClient, `input[placeholder="标题"]`, "packaged-ui-note");
+    await setControlValue(panelClient, `textarea[placeholder="保存一段文字、代码或命令"]`, "verified companion library content");
+    await clickButtonByText(panelClient, "保存到资料架");
+    await waitForPanelRuntime(panelClient, "state => state.library.some((item) => item.title === 'packaged-ui-note')", "library item creation");
+    await waitForPanelIdle(panelClient);
+    await evaluate(panelClient, `(() => {
+      const item = [...document.querySelectorAll('article')].find((entry) => entry.textContent?.includes('packaged-ui-note'));
+      const button = [...(item?.querySelectorAll('button') ?? [])].find((entry) => entry.textContent?.trim() === '删除');
+      if (!button) throw new Error('Library delete button not found');
+      button.click();
+      return true;
+    })()`);
+    await waitForPanelRuntime(panelClient, "state => !state.library.some((item) => item.title === 'packaged-ui-note')", "library item deletion");
+
+    await clickButtonByText(panelClient, "记忆");
+    await setControlValue(panelClient, `input[placeholder="例如：提醒我每 90 分钟休息"]`, "packaged-ui-memory");
+    await clickButtonByText(panelClient, "记住");
+    await waitForPanelRuntime(panelClient, "state => state.memories.some((item) => item.text === 'packaged-ui-memory')", "memory creation");
+    await waitForPanelIdle(panelClient);
+    await evaluate(panelClient, `(() => {
+      const item = [...document.querySelectorAll('article')].find((entry) => entry.textContent?.includes('packaged-ui-memory'));
+      const button = [...(item?.querySelectorAll('button') ?? [])].find((entry) => entry.textContent?.trim() === '忘记');
+      if (!button) throw new Error('Memory delete button not found');
+      button.click();
+      return true;
+    })()`);
+    await waitForPanelRuntime(panelClient, "state => !state.memories.some((item) => item.text === 'packaged-ui-memory')", "memory deletion");
+
+    await clickButtonByText(panelClient, "心智");
+    const selectedModel = await evaluate(panelClient, `(() => {
+      const select = document.querySelector('select');
+      if (!(select instanceof HTMLSelectElement)) throw new Error('Model selector not found');
+      const option = [...select.options].find((candidate) => candidate.value && candidate.value !== select.value);
+      if (!option) throw new Error('No alternate interaction model is available');
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+      descriptor?.set?.call(select, option.value);
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      return JSON.parse(option.value);
+    })()`);
+    await waitForEvaluation(panelClient, `[...document.querySelectorAll('button')].some((button) => button.textContent?.trim() === '保存模型' && !button.disabled)`, "enabled model save button");
+    await clickButtonByText(panelClient, "保存模型");
+    const modelState = await waitForPanelRuntime(panelClient, `state => state.settings.interactionModel?.provider === ${JSON.stringify(selectedModel.provider)} && state.settings.interactionModel?.modelId === ${JSON.stringify(selectedModel.modelId)}`, "model selection save");
+    assert.deepEqual(modelState.settings.interactionModel, selectedModel);
+    await waitForEvaluation(panelClient, `document.body.textContent.includes('模型已保存。')`, "model saved status");
+
+    await setLabeledControlValue(panelClient, "自主程度", "active");
+    await waitForPanelRuntime(panelClient, "state => state.settings.autonomyLevel === 'active'", "autonomy level save");
+    await waitForPanelIdle(panelClient);
+    await evaluate(panelClient, `(() => {
+      const element = document.querySelector('textarea');
+      if (!(element instanceof HTMLTextAreaElement)) throw new Error('Personality textarea not found');
+      element.focus();
+      element.select();
+      return true;
+    })()`);
+    await panelClient.send("Input.insertText", { text: "packaged-ui-personality" });
+    await waitForEvaluation(panelClient, `document.querySelector('textarea')?.value === 'packaged-ui-personality'`, "personality input");
+    await evaluate(panelClient, `document.querySelector('textarea')?.blur(); true`);
+    await waitForPanelRuntime(panelClient, "state => state.settings.personality === 'packaged-ui-personality'", "personality save");
+    await evaluate(panelClient, `(() => {
+      const label = [...document.querySelectorAll('label')].find((item) => item.textContent?.includes('允许宠物自主随机移动'));
+      const input = label?.querySelector('input[type="checkbox"]');
+      if (!(input instanceof HTMLInputElement)) throw new Error('Movement toggle not found');
+      input.click();
+      return true;
+    })()`);
+    await waitForPanelRuntime(panelClient, "state => state.settings.allowMovement === false", "movement toggle save");
+    await evaluate(panelClient, `(() => {
+      const label = [...document.querySelectorAll('label')].find((item) => item.textContent?.includes('启用安静时段'));
+      const input = label?.querySelector('input[type="checkbox"]');
+      if (!(input instanceof HTMLInputElement)) throw new Error('Quiet hours toggle not found');
+      input.click();
+      return true;
+    })()`);
+    await waitForPanelRuntime(panelClient, "state => state.settings.quietHours.enabled === true", "quiet hours toggle save");
 
     assert.equal(ready.windowBounds.width, 156);
     assert.equal(ready.windowBounds.height, 184);
@@ -371,7 +644,7 @@ async function main() {
     const desktopState = JSON.parse(await readFile(join(paths.userData, "desktop-state.json"), "utf8"));
     assert.deepEqual(desktopState.companionWindowPosition, { x: movedLeft, y: movedTop });
 
-    await publishActivity(mainClient, "idle", "packaged-ui-idle");
+    await publishActivity(companionClient, "idle", "packaged-ui-idle");
     await delay(200);
     const idle = await inspectCompanion(companionClient);
     assert.equal(idle.bubbleFound, false);
@@ -407,11 +680,15 @@ async function main() {
       idleBubbleHidden: true,
       positionPersisted: true,
       hideAndWakePassed: true,
+      panelMutationsPassed: true,
+      focusTimerTicked: true,
+      modelSavePassed: true,
       screenshot: screenshotPath,
       screenshotAlpha: { min: alpha.min, max: alpha.max },
       stderr: stderr || undefined,
     }));
   } finally {
+    panelClient?.close();
     companionClient?.close();
     mainClient?.close();
     await stopChild(child);

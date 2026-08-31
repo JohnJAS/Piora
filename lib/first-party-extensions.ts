@@ -93,7 +93,9 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
  * outer container. The desktop supervisor provides the authoritative root;
  * the candidates keep CLI and unpacked standalone launches working too.
  */
-export function firstPartyRuntimeRoot(environment: NodeJS.ProcessEnv = process.env): string {
+export function firstPartyRuntimeRoot(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): string {
   const configured = environment.PIORA_WEB_RUNTIME_ROOT?.trim();
   if (configured) return resolve(configured);
 

@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  createCompanionRuntimeChannel,
+  fetchCompanionRuntimeState,
+} from "@/lib/companion-runtime-client";
 import type { CompanionDecision } from "@/lib/companion-runtime";
 import styles from "./CompanionBubbleWindow.module.css";
 
@@ -9,16 +13,19 @@ export function CompanionBubbleWindow() {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    const source = new EventSource("/api/companion/events");
-    source.addEventListener("companion", (event) => {
-      try {
-        const payload = JSON.parse((event as MessageEvent<string>).data) as { state?: { mind?: { lastDecision?: CompanionDecision | null } } };
-        const next = payload.state?.mind?.lastDecision ?? null;
-        setDecision(next);
-        setVisible(Boolean(next?.speech && Date.now() - next.createdAt < 18_000));
-      } catch { /* ignore malformed event */ }
-    });
-    return () => source.close();
+    const controller = new AbortController();
+    const applyDecision = (next: CompanionDecision | null) => {
+      setDecision(next);
+      setVisible(Boolean(next?.speech && Date.now() - next.createdAt < 18_000));
+    };
+    const channel = createCompanionRuntimeChannel((state) => applyDecision(state.mind.lastDecision));
+    void fetchCompanionRuntimeState({ signal: controller.signal })
+      .then((state) => applyDecision(state.mind.lastDecision))
+      .catch(() => undefined);
+    return () => {
+      controller.abort();
+      channel?.close();
+    };
   }, []);
 
   useEffect(() => {

@@ -11,6 +11,13 @@ import {
   startCompanionFocusTimer,
   updateCompanionFocusDuration,
 } from "@/lib/companion-focus-timer";
+import {
+  COMPANION_RUNTIME_POLL_INTERVAL_MS,
+  createCompanionRuntimeChannel,
+  fetchCompanionRuntimeState,
+  publishCompanionRuntimeState,
+  saveCompanionRuntimeState,
+} from "@/lib/companion-runtime-client";
 import type { ModelsData } from "@/lib/models-cache";
 import type { CompanionFocusTimerPhase, CompanionRuntimeState } from "@/lib/companion-runtime";
 import {
@@ -60,17 +67,6 @@ function emptyRuntimeState(): CompanionRuntimeState {
   };
 }
 
-async function saveState(state: CompanionRuntimeState): Promise<CompanionRuntimeState> {
-  const response = await fetch("/api/companion/state", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ state }),
-  });
-  const payload = await response.json().catch(() => null) as CompanionRuntimeState | { error?: string } | null;
-  if (!response.ok || !payload || "error" in payload) throw new Error(payload && "error" in payload ? payload.error : `HTTP ${response.status}`);
-  return payload as CompanionRuntimeState;
-}
-
 function formatTime(value: number | null | undefined): string {
   return value ? new Date(value).toLocaleString("zh-CN", { hour12: false }) : "尚未安排";
 }
@@ -115,6 +111,7 @@ export function CompanionPanel() {
   const [libraryKind, setLibraryKind] = useState<CompanionLibraryKind>("note");
   const [clock, setClock] = useState(() => Date.now());
   const completedTimerEndRef = useRef<number | null>(null);
+  const runtimeChannelRef = useRef<BroadcastChannel | null>(null);
   const stateRef = useRef(state);
   const runningTasks = useRunningTaskSnapshots();
   const { notifyCompletion } = useCompletionNotification();
@@ -129,15 +126,29 @@ export function CompanionPanel() {
     stateRef.current = state;
   }, [state]);
 
-  const refresh = useCallback(async () => {
-    const response = await fetch("/api/companion/state", { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    applyState(await response.json() as CompanionRuntimeState);
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    const next = await fetchCompanionRuntimeState({ signal });
+    applyState(next);
+    publishCompanionRuntimeState(runtimeChannelRef.current, next);
   }, [applyState]);
 
   useEffect(() => {
     const controller = new AbortController();
-    void refresh().catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+    let refreshPending = false;
+    const refreshIfVisible = async () => {
+      if (document.visibilityState === "hidden" || refreshPending) return;
+      refreshPending = true;
+      try {
+        await refresh(controller.signal);
+      } catch (cause) {
+        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        refreshPending = false;
+      }
+    };
+    const channel = createCompanionRuntimeChannel(applyState);
+    runtimeChannelRef.current = channel;
+    void refreshIfVisible();
     void fetch("/api/models", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -150,16 +161,14 @@ export function CompanionPanel() {
       .catch((cause: unknown) => {
         if (!controller.signal.aborted) setModelsError(cause instanceof Error ? cause.message : String(cause));
       });
-    const source = new EventSource("/api/companion/events");
-    source.addEventListener("companion", (event) => {
-      try {
-        const payload = JSON.parse((event as MessageEvent<string>).data) as { state?: CompanionRuntimeState };
-        if (payload.state) applyState(payload.state);
-      } catch { /* ignore malformed event */ }
-    });
+    const pollTimer = window.setInterval(() => void refreshIfVisible(), COMPANION_RUNTIME_POLL_INTERVAL_MS);
+    document.addEventListener("visibilitychange", refreshIfVisible);
     return () => {
       controller.abort();
-      source.close();
+      window.clearInterval(pollTimer);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+      if (runtimeChannelRef.current === channel) runtimeChannelRef.current = null;
+      channel?.close();
     };
   }, [applyState, refresh]);
 
@@ -167,7 +176,9 @@ export function CompanionPanel() {
     setBusy(true);
     setError("");
     try {
-      applyState(await saveState(update(stateRef.current)));
+      const next = await saveCompanionRuntimeState(update(stateRef.current));
+      applyState(next);
+      publishCompanionRuntimeState(runtimeChannelRef.current, next);
       return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));

@@ -33,6 +33,10 @@ const nextConfig: NextConfig = {
     "/*": [
       "**/.pi/agent/piora/browser-profile/**",
       "**/piora/browser-profile/**",
+      "**/.git/**",
+      "**/.next/dev/**",
+      "**/.next/dev-stale-*/**",
+      "**/desktop/release/**",
     ],
   },
   serverExternalPackages: [
