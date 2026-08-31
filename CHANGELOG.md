@@ -4,6 +4,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.35] - 2026-09-01
+
+### 修复
+
+- 修复桌宠番茄钟气泡页面在正式打包预渲染时缺少语言上下文、导致 Linux 和 Windows 桌面包无法生成的问题。
+
 ## [0.4.34] - 2026-09-01
 
 ### 新增
