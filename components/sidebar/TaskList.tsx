@@ -7,17 +7,21 @@ import type { SessionTreeNode } from "@/lib/session-project-groups";
 import { applySessionOrder } from "./sidebar-utils";
 import styles from "../SessionSidebar.module.css";
 import { TaskRow } from "./TaskRow";
+import type { SessionMoveTarget } from "./TaskContextMenu";
 
 interface CommonProps {
   selectedSessionId: string | null;
   runningSessionIds: Set<string>;
   unreadSessionIds: Set<string>;
+  moveTargets: SessionMoveTarget[];
   flags: SessionFlags;
   onSelectSession: (session: SessionInfo) => void;
   onRenamed?: () => void;
   onSessionDeleted?: (session: SessionInfo) => void;
   onFlagChange?: (session: SessionInfo, patch: { pinned?: boolean; archived?: boolean }) => void;
   onDuplicate?: (session: SessionInfo) => void;
+  onMarkUnread: (session: SessionInfo) => void;
+  onMoveSession: (session: SessionInfo, target: SessionMoveTarget) => Promise<void>;
   sessionOrder: readonly string[];
 }
 
@@ -242,6 +246,7 @@ export function SessionTreeItem({ node, depth, scope, dragState, onPointerDown, 
           isSelected={node.session.id === props.selectedSessionId}
           isRunning={props.runningSessionIds.has(node.session.id)}
           isUnread={props.unreadSessionIds.has(node.session.id)}
+          moveTargets={props.moveTargets.filter((target) => target.projectRoot !== node.session.projectRoot)}
           onClick={handleSelectSession}
           onRenamed={props.onRenamed}
           onDeleted={props.onSessionDeleted}
@@ -254,6 +259,8 @@ export function SessionTreeItem({ node, depth, scope, dragState, onPointerDown, 
           onTogglePinned={handleTogglePinned}
           onToggleArchived={handleToggleArchived}
           onDuplicate={handleDuplicate}
+          onMarkUnread={() => props.onMarkUnread(node.session)}
+          onMoveSession={(target) => props.onMoveSession(node.session, target)}
         />
       </div>
       {hasChildren && !collapsed && orderedChildren.map((child) => (

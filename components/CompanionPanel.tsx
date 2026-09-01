@@ -21,10 +21,13 @@ import {
 import type { ModelsData } from "@/lib/models-cache";
 import type { CompanionFocusTimerPhase, CompanionRuntimeState } from "@/lib/companion-runtime";
 import {
+  MAX_COMPANION_LIBRARY_ITEMS,
   createCompanionId,
   type CompanionInteractionModel,
   type CompanionLibraryKind,
 } from "@/lib/companion-store";
+import { JsonWorkbench } from "./JsonWorkbench";
+import { CompanionStorageSettings } from "./CompanionStorageSettings";
 import styles from "./CompanionPanel.module.css";
 
 type Tab = "now" | "tasks" | "focus" | "library" | "memory" | "mind";
@@ -109,6 +112,7 @@ export function CompanionPanel() {
   const [libraryTitle, setLibraryTitle] = useState("");
   const [libraryContent, setLibraryContent] = useState("");
   const [libraryKind, setLibraryKind] = useState<CompanionLibraryKind>("note");
+  const [libraryView, setLibraryView] = useState<"library" | "json">("library");
   const [clock, setClock] = useState(() => Date.now());
   const completedTimerEndRef = useRef<number | null>(null);
   const runtimeChannelRef = useRef<BroadcastChannel | null>(null);
@@ -299,6 +303,18 @@ export function CompanionPanel() {
     }
   };
 
+  const saveJsonResult = async (result: { content: string; language: string; title: string }) => {
+    if (busy || stateRef.current.library.length >= MAX_COMPANION_LIBRARY_ITEMS) return false;
+    const now = Date.now();
+    return mutate((current) => ({
+      ...current,
+      library: [{
+        id: createCompanionId("library"), kind: "code", title: result.title,
+        content: result.content, language: result.language, pinned: false, createdAt: now, updatedAt: now,
+      }, ...current.library],
+    }));
+  };
+
   const addMemory = async () => {
     const text = memoryDraft.trim();
     if (busy || !text) return;
@@ -417,9 +433,15 @@ export function CompanionPanel() {
         </> : null}
 
         {tab === "library" ? <>
-          <div className={styles.stack}><div className={styles.inline}><select value={libraryKind} onChange={(event) => setLibraryKind(event.target.value as CompanionLibraryKind)}><option value="note">笔记</option><option value="code">代码</option><option value="command">命令</option></select><input value={libraryTitle} onChange={(event) => setLibraryTitle(event.target.value)} placeholder="标题" /></div><textarea value={libraryContent} onChange={(event) => setLibraryContent(event.target.value)} placeholder="保存一段文字、代码或命令" /><button type="button" disabled={busy || !libraryTitle.trim() || !libraryContent.trim()} onClick={() => void addLibraryItem()}>{!libraryTitle.trim() ? "请填写标题" : !libraryContent.trim() ? "请填写内容" : "保存到资料架"}</button></div>
-          <label className={styles.imageUpload}>保存一张图片<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (!file) return; if (file.size > 1_250_000) { setError("图片不能超过 1.25 MB"); return; } const reader = new FileReader(); reader.onload = () => { if (typeof reader.result !== "string") return; const now = Date.now(); void mutate((current) => ({ ...current, library: [{ id: createCompanionId("library"), kind: "image", title: file.name.slice(0, 120), content: reader.result as string, pinned: false, createdAt: now, updatedAt: now }, ...current.library] })); }; reader.readAsDataURL(file); }} /></label>
-          <div className={styles.list}>{state.library.map((item) => <article className={styles.libraryItem} key={item.id}><div><span>{item.kind}</span><b>{item.title}</b></div>{item.kind === "image" ? <span className={styles.libraryImage} role="img" aria-label={item.title} style={{ backgroundImage: `url(${JSON.stringify(item.content)})` }} /> : <pre>{item.content}</pre>}<div className={styles.itemActions}>{item.kind !== "image" ? <button onClick={() => void navigator.clipboard.writeText(item.content)}>复制</button> : null}<button className={styles.danger} onClick={() => void mutate((current) => ({ ...current, library: current.library.filter((entry) => entry.id !== item.id) }))}>删除</button></div></article>)}</div>
+          <div className={styles.libraryModes} role="tablist" aria-label="资料功能">
+            <button type="button" role="tab" aria-selected={libraryView === "library"} onClick={() => setLibraryView("library")}>资料架</button>
+            <button type="button" role="tab" aria-selected={libraryView === "json"} onClick={() => setLibraryView("json")}>JSON 转</button>
+          </div>
+          {libraryView === "json" ? <JsonWorkbench busy={busy} library={state.library} onSaveResult={saveJsonResult} /> : <>
+            <div className={styles.stack}><div className={styles.inline}><select value={libraryKind} onChange={(event) => setLibraryKind(event.target.value as CompanionLibraryKind)}><option value="note">笔记</option><option value="code">代码</option><option value="command">命令</option></select><input value={libraryTitle} onChange={(event) => setLibraryTitle(event.target.value)} placeholder="标题" /></div><textarea value={libraryContent} onChange={(event) => setLibraryContent(event.target.value)} placeholder="保存一段文字、代码或命令" /><button type="button" disabled={busy || !libraryTitle.trim() || !libraryContent.trim()} onClick={() => void addLibraryItem()}>{!libraryTitle.trim() ? "请填写标题" : !libraryContent.trim() ? "请填写内容" : "保存到资料架"}</button></div>
+            <label className={styles.imageUpload}>保存一张图片<input type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (!file) return; if (file.size > 1_250_000) { setError("图片不能超过 1.25 MB"); return; } const reader = new FileReader(); reader.onload = () => { if (typeof reader.result !== "string") return; const now = Date.now(); void mutate((current) => ({ ...current, library: [{ id: createCompanionId("library"), kind: "image", title: file.name.slice(0, 120), content: reader.result as string, pinned: false, createdAt: now, updatedAt: now }, ...current.library] })); }; reader.readAsDataURL(file); }} /></label>
+            <div className={styles.list}>{state.library.map((item) => <article className={styles.libraryItem} key={item.id}><div><span>{item.kind}</span><b>{item.title}</b></div>{item.kind === "image" ? <span className={styles.libraryImage} role="img" aria-label={item.title} style={{ backgroundImage: `url(${JSON.stringify(item.content)})` }} /> : <pre>{item.content}</pre>}<div className={styles.itemActions}>{item.kind !== "image" ? <button onClick={() => void navigator.clipboard.writeText(item.content)}>复制</button> : null}<button className={styles.danger} onClick={() => void mutate((current) => ({ ...current, library: current.library.filter((entry) => entry.id !== item.id) }))}>删除</button></div></article>)}</div>
+          </>}
         </> : null}
 
         {tab === "memory" ? <>
@@ -474,6 +496,7 @@ export function CompanionPanel() {
           <label className={styles.toggle}><input type="checkbox" checked={state.settings.quietHours.enabled} onChange={() => void mutate((current) => ({ ...current, settings: { ...current.settings, quietHours: { ...current.settings.quietHours, enabled: !current.settings.quietHours.enabled } } }))} />启用安静时段</label>
           {state.settings.quietHours.enabled ? <div className={styles.quietHours}><label>开始<input type="time" value={state.settings.quietHours.start} onChange={(event) => void mutate((current) => ({ ...current, settings: { ...current.settings, quietHours: { ...current.settings.quietHours, start: event.target.value } } }))} /></label><span>至</span><label>结束<input type="time" value={state.settings.quietHours.end} onChange={(event) => void mutate((current) => ({ ...current, settings: { ...current.settings, quietHours: { ...current.settings.quietHours, end: event.target.value } } }))} /></label></div> : null}
           <article className={styles.card}><b>隐私说明</b><p>只发送任务标题、进度、工作时长和 Token 等汇总字段；不会把代码正文、文件内容或密钥自动发给互动模型。</p></article>
+          <CompanionStorageSettings compact />
         </div> : null}
       </section>
     </main>

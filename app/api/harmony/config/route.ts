@@ -25,7 +25,7 @@ export async function PUT(request: Request) {
   if (!hasJsonContentType(request)) return noStoreJson({ error: "Content-Type must be application/json" }, { status: 415 });
   try {
     const body = await parseJsonWithinLimit(request, 8 * 1024) as Record<string, unknown>;
-    if (body.hdcPath !== null && typeof body.hdcPath !== "string") {
+    if (body.hdcPath !== undefined && body.hdcPath !== null && typeof body.hdcPath !== "string") {
       throw new HarmonyError("INVALID_ARGUMENT", "hdcPath must be an absolute path or null");
     }
     if (body.vision !== undefined && body.vision !== null) {

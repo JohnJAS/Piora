@@ -1,5 +1,6 @@
 .root {
   width: 100%;
+  min-width: 0;
   height: 100%;
   min-height: 0;
   overflow-y: auto;
@@ -10,6 +11,8 @@
 
 .launcher {
   width: min(760px, 100%);
+  max-width: 100%;
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -67,6 +70,7 @@
 }
 
 .composer {
+  width: 100%;
   min-width: 0;
 }
 

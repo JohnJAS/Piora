@@ -97,6 +97,8 @@ test("uses one composer chip for model and reasoning without a speed setting", (
 
   assert.match(html, /class="model-settings-trigger-label">GPT-5/);
   assert.match(html, /class="model-settings-trigger-reasoning">高/);
+  const modelTrigger = chatInputSource.slice(chatInputSource.indexOf('className={`model-settings-trigger'), chatInputSource.indexOf('{modelDropdownOpen && modelDropdownRect'));
+  assert.doesNotMatch(modelTrigger, /name="arrowdown"/);
   assert.match(chatInputSource, /createPortal\(/);
   assert.match(chatInputSource, /model-settings-row-value/);
   assert.match(chatInputSource, /desktopPanelLeft/);
@@ -109,6 +111,8 @@ test("uses one composer chip for model and reasoning without a speed setting", (
   assert.match(globalCss, /\.model-settings-row-value\s*\{[^}]*flex:\s*1 1 auto;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
   assert.doesNotMatch(globalCss, /\.model-settings-choice\s*>\s*span:not/);
   assert.doesNotMatch(chatInputSource, /chat\.speed|model-settings-speed/);
+  const modelRoot = chatInputSource.slice(chatInputSource.indexOf('className="model-settings-root"'), chatInputSource.indexOf('{!isStreaming && onCompact'));
+  assert.doesNotMatch(modelRoot, /name="arrowright"/);
 });
 
 test("filters model options by name and id", () => {

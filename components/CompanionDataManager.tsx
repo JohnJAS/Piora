@@ -13,6 +13,7 @@ import {
   type CompanionPreferences,
 } from "@/lib/companion-store";
 import { AliIcon } from "./AliIcon";
+import { JsonWorkbench } from "./JsonWorkbench";
 import styles from "./CompanionDataManager.module.css";
 
 type ManagerTab = "tasks" | "library" | "phrases";
@@ -43,6 +44,7 @@ export function CompanionDataManager({ preferences, setPreferences, canSendPhras
   const [libraryLanguage, setLibraryLanguage] = useState("");
   const [librarySearch, setLibrarySearch] = useState("");
   const [libraryError, setLibraryError] = useState("");
+  const [libraryView, setLibraryView] = useState<"library" | "json">("library");
   const imageInputRef = useRef<HTMLInputElement>(null);
 
   const incompleteTasks = preferences.todos.filter((task) => !task.completed).length;
@@ -143,6 +145,19 @@ export function CompanionDataManager({ preferences, setPreferences, canSendPhras
     window.setTimeout(() => setSendNotice(""), 1_800);
   };
 
+  const saveJsonResult = (result: { content: string; language: string; title: string }) => {
+    if (preferences.library.length >= MAX_COMPANION_LIBRARY_ITEMS) return false;
+    const now = Date.now();
+    setPreferences((current) => ({
+      ...current,
+      library: [...current.library, {
+        id: createCompanionId("library"), kind: "code", title: result.title,
+        content: result.content, language: result.language, pinned: false, createdAt: now, updatedAt: now,
+      }],
+    }));
+    return true;
+  };
+
   return (
     <section className={styles.manager} data-compact={compact ? "true" : "false"} aria-label={t("companion.workspaceTitle")}>
       <div className={styles.metrics}>
@@ -185,7 +200,14 @@ export function CompanionDataManager({ preferences, setPreferences, canSendPhras
 
       {tab === "library" ? (
         <div className={styles.panel} role="tabpanel">
-          <div className={styles.libraryToolbar}>
+          <div className={styles.libraryModes} role="tablist" aria-label={t("companion.json.libraryModes")}>
+            <button type="button" role="tab" aria-selected={libraryView === "library"} onClick={() => setLibraryView("library")}>{t("companion.json.libraryView")}</button>
+            <button type="button" role="tab" aria-selected={libraryView === "json"} onClick={() => setLibraryView("json")}>{t("companion.json.workbenchView")}</button>
+          </div>
+          {libraryView === "json" ? (
+            <JsonWorkbench compact={compact} library={preferences.library} onSaveResult={saveJsonResult} />
+          ) : <>
+            <div className={styles.libraryToolbar}>
             <input value={librarySearch} onChange={(event) => setLibrarySearch(event.target.value)} placeholder={t("companion.library.search")} aria-label={t("companion.library.search")} />
             <button type="button" onClick={() => imageInputRef.current?.click()}><AliIcon name="attachment" size={13} />{t("companion.library.addImage")}</button>
             <input ref={imageInputRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden onChange={(event) => loadImage(event.target.files?.[0])} />
@@ -220,6 +242,7 @@ export function CompanionDataManager({ preferences, setPreferences, canSendPhras
               ))}
             </ul>
           )}
+          </>}
         </div>
       ) : null}
 

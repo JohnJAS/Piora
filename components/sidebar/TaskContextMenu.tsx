@@ -1,17 +1,28 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
 import type { SessionInfo } from "@/lib/types";
 import { AliIcon } from "../AliIcon";
+
+export interface SessionMoveTarget {
+  cwd: string;
+  projectRoot: string;
+  label: string;
+}
 
 interface Props {
   anchor: { x: number; y: number };
   session: SessionInfo;
   pinned: boolean;
   archived: boolean;
+  unread: boolean;
+  running: boolean;
+  moveTargets: SessionMoveTarget[];
   onPin: () => void;
+  onMarkUnread: () => void;
+  onMove: (target: SessionMoveTarget) => Promise<void>;
   onRename: () => void;
   onArchive: () => void;
   onDuplicate: () => void;
@@ -22,6 +33,9 @@ interface Props {
 export function TaskContextMenu(props: Props) {
   const { t } = useI18n();
   const menuRef = useRef<HTMLDivElement>(null);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [movingTo, setMovingTo] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
 
   useEffect(() => {
     const close = (event: MouseEvent) => {
@@ -42,9 +56,20 @@ export function TaskContextMenu(props: Props) {
     props.onClose();
     void action();
   };
-  const menuWidth = 190;
+  const moveSession = async (target: SessionMoveTarget) => {
+    setMovingTo(target.projectRoot);
+    setMoveError(null);
+    try {
+      await props.onMove(target);
+      props.onClose();
+    } catch (error) {
+      setMoveError(error instanceof Error ? error.message : String(error));
+      setMovingTo(null);
+    }
+  };
+  const menuWidth = 230;
   const left = Math.min(props.anchor.x, window.innerWidth - menuWidth - 8);
-  const top = Math.min(props.anchor.y, window.innerHeight - 310);
+  const top = Math.min(props.anchor.y, window.innerHeight - (moveOpen ? 470 : 370));
 
   return createPortal(
     <div
@@ -58,6 +83,30 @@ export function TaskContextMenu(props: Props) {
       }}
     >
       <MenuItem icon="pushpin" label={props.pinned ? t("sidebar.unpinTask") : t("sidebar.pinTask")} onClick={() => run(props.onPin)} />
+      <MenuItem icon="message" label={t("sidebar.markUnread")} disabled={props.unread} onClick={() => run(props.onMarkUnread)} />
+      <MenuItem
+        icon="folder-open"
+        label={t("sidebar.moveTask")}
+        disabled={props.running || props.moveTargets.length === 0}
+        onClick={() => { setMoveOpen((open) => !open); setMoveError(null); }}
+      />
+      {moveOpen ? (
+        <div style={{ margin: "2px 3px 5px", padding: 4, borderRadius: 7, background: "var(--bg-hover)" }}>
+          <div style={{ padding: "3px 6px 5px", color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>
+            {t("sidebar.moveTaskTo")}
+          </div>
+          {props.moveTargets.map((target) => (
+            <MenuItem
+              key={target.projectRoot}
+              icon="folder"
+              label={target.label}
+              disabled={movingTo !== null}
+              onClick={() => { void moveSession(target); }}
+            />
+          ))}
+          {moveError ? <div role="alert" style={{ padding: "5px 6px 3px", color: "var(--status-failed)", fontSize: "var(--text-xs)", lineHeight: 1.35 }}>{moveError}</div> : null}
+        </div>
+      ) : null}
       <MenuItem icon="edit" label={t("sidebar.rename")} onClick={() => run(props.onRename)} />
       <MenuItem icon="folder" label={props.archived ? t("sidebar.unarchiveTask") : t("sidebar.archiveTask")} onClick={() => run(props.onArchive)} />
       <MenuItem icon="copy" label={t("sidebar.duplicateTask")} onClick={() => run(props.onDuplicate)} />
@@ -76,7 +125,7 @@ export function TaskContextMenu(props: Props) {
 }
 
 function MenuItem({ icon, label, onClick, danger, disabled }: {
-  icon: "pushpin" | "edit" | "folder" | "copy" | "folder-open" | "delete";
+  icon: "pushpin" | "edit" | "folder" | "copy" | "folder-open" | "delete" | "message";
   label: string;
   onClick: () => void;
   danger?: boolean;

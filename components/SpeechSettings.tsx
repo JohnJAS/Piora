@@ -11,7 +11,14 @@ const SPEECH_SETTINGS_CHANGED_EVENT = "piora:speech-settings-changed";
 interface ManualSpeechPackState {
   version: string;
   platformKey: string;
-  sources: Array<{ name: string; url: string; uploaded: boolean }>;
+  sources: Array<{
+    name: string;
+    url: string;
+    uploaded: boolean;
+    algorithm: "sha256" | "sha512";
+    digest: string;
+    expectedBytes: number | null;
+  }>;
   complete: boolean;
 }
 
@@ -266,6 +273,7 @@ export function SpeechSettings() {
             <a key={source.name} href={source.url} target="_blank" rel="noreferrer" download={source.name}>
               <span><AliIcon name="download" size={14} />{t("speech.manualDownloadFile", { index: index + 1 })}</span>
               <code>{source.name}</code>
+              <small>{source.expectedBytes ? `${formatBytes(source.expectedBytes)} · ` : ""}{source.algorithm.toUpperCase()} {source.digest.slice(0, 12)}…</small>
               {source.uploaded ? <strong><AliIcon name="check" size={13} />{t("speech.manualAdded")}</strong> : null}
             </a>
           ))}
@@ -299,6 +307,7 @@ export function SpeechSettings() {
           />
         </div>
         <p className={styles.networkNote}>{t("speech.manualIntegrity")}</p>
+        <p className={styles.networkNote}>{t("speech.manualChecksumHelp")}</p>
       </section>
 
       <section className={styles.card}>

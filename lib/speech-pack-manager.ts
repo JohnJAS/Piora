@@ -156,8 +156,11 @@ export async function getSpeechStatus(): Promise<SpeechStatus> {
 }
 
 function digestMatches(source: SpeechDownloadSource, digest: Buffer): boolean {
-  const actual = source.encoding === "hex" ? digest.toString("hex") : digest.toString("base64");
-  return actual === source.digest;
+  return encodeDigest(source, digest) === source.digest;
+}
+
+function encodeDigest(source: SpeechDownloadSource, digest: Buffer): string {
+  return source.encoding === "hex" ? digest.toString("hex") : digest.toString("base64");
 }
 
 function requiredSpeechSources(): SpeechDownloadSource[] {
@@ -185,7 +188,14 @@ async function verifySpeechSourceFile(source: SpeechDownloadSource, path: string
 export async function getManualSpeechPackState(): Promise<{
   version: string;
   platformKey: string;
-  sources: Array<{ name: string; url: string; uploaded: boolean }>;
+  sources: Array<{
+    name: string;
+    url: string;
+    uploaded: boolean;
+    algorithm: SpeechDownloadSource["algorithm"];
+    digest: string;
+    expectedBytes: number | null;
+  }>;
   complete: boolean;
 }> {
   const settings = await readSpeechSettings();
@@ -194,6 +204,9 @@ export async function getManualSpeechPackState(): Promise<{
     name: source.name,
     url: source.url,
     uploaded: await pathExists(join(directory, source.name)),
+    algorithm: source.algorithm,
+    digest: source.digest,
+    expectedBytes: "bytes" in source && typeof source.bytes === "number" ? source.bytes : null,
   })));
   return {
     version: SPEECH_PACK_VERSION,
@@ -245,9 +258,15 @@ export async function storeManualSpeechPackSource(
     await rm(temporary, { force: true }).catch(() => {});
     throw streamError;
   }
-  if (!digestMatches(source, hash.digest())) {
+  const digest = hash.digest();
+  if (!digestMatches(source, digest)) {
     await rm(temporary, { force: true });
-    throw new Error(`Checksum verification failed for ${source.name}`);
+    const expectedBytes = "bytes" in source && typeof source.bytes === "number"
+      ? `; expected ${source.bytes} bytes`
+      : "";
+    throw new Error(
+      `Checksum verification failed for ${source.name}: expected ${source.algorithm} ${source.digest}, received ${encodeDigest(source, digest)}; received ${receivedBytes} bytes${expectedBytes}`,
+    );
   }
   await rm(destination, { force: true });
   await rename(temporary, destination);

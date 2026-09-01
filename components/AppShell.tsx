@@ -357,13 +357,15 @@ export function AppShell() {
   const [moreThemesOpen, setMoreThemesOpen] = useState(false);
   const [companionActivity, setCompanionActivity] = useState<CompanionActivity>(() => ({
     status: "idle",
-    cause: translate("companion.activity.idleCause"),
+    cause: "",
   }));
   const topBarRef = useRef<HTMLDivElement>(null);
   const projectBtnRef = useRef<HTMLButtonElement>(null);
   const taskControlsBtnRef = useRef<HTMLButtonElement>(null);
   const topPanelFrameRef = useRef<HTMLDivElement>(null);
   const autoFocusedTopPanelRef = useRef<TopPanel | null>(null);
+  const projectHoverCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const projectPanelOpenedByHoverRef = useRef(false);
 
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
 
@@ -406,12 +408,6 @@ export function AppShell() {
     setContextUsage(usage);
   }, []);
 
-  useEffect(() => {
-    setCompanionActivity((current) => current.status === "idle"
-      ? { ...current, cause: translate("companion.activity.idleCause") }
-      : current);
-  }, [translate]);
-
   const handleSendCompanionPhrase = useCallback((text: string) => (
     chatInputRef.current?.sendText(text) ?? false
   ), []);
@@ -435,8 +431,32 @@ export function AppShell() {
 
   const toggleTopPanel = useCallback((panel: TopPanel) => {
     if (isMobile) setSidebarOpen(false);
+    projectPanelOpenedByHoverRef.current = false;
     setActiveTopPanel((cur) => cur === panel ? null : panel);
   }, [isMobile]);
+
+  const cancelProjectHoverClose = useCallback(() => {
+    if (projectHoverCloseTimerRef.current) clearTimeout(projectHoverCloseTimerRef.current);
+    projectHoverCloseTimerRef.current = null;
+  }, []);
+
+  const openProjectPanelOnHover = useCallback(() => {
+    if (isMobile) return;
+    cancelProjectHoverClose();
+    projectPanelOpenedByHoverRef.current = true;
+    setActiveTopPanel("project");
+  }, [cancelProjectHoverClose, isMobile]);
+
+  const closeProjectPanelAfterHover = useCallback(() => {
+    if (isMobile) return;
+    cancelProjectHoverClose();
+    projectHoverCloseTimerRef.current = setTimeout(() => {
+      projectHoverCloseTimerRef.current = null;
+      setActiveTopPanel((current) => current === "project" ? null : current);
+    }, 120);
+  }, [cancelProjectHoverClose, isMobile]);
+
+  useEffect(() => () => cancelProjectHoverClose(), [cancelProjectHoverClose]);
 
   const openSettings = useCallback((key: SettingsKey = "general") => {
     setActiveTopPanel(null);
@@ -532,6 +552,7 @@ export function AppShell() {
       && activeTopPanel !== "taskControls"
       && activeTopPanel !== "language"
     ) return;
+    if (activeTopPanel === "project" && projectPanelOpenedByHoverRef.current) return;
     if (!topPanelPos || autoFocusedTopPanelRef.current === activeTopPanel) return;
 
     const frame = window.requestAnimationFrame(() => {
@@ -2028,6 +2049,8 @@ export function AppShell() {
               className="app-topbar-title"
               type="button"
               onClick={() => toggleTopPanel("project")}
+              onMouseEnter={openProjectPanelOnHover}
+              onMouseLeave={closeProjectPanelAfterHover}
               title={currentProjectPath ?? translate("projectMenu.noProject")}
               aria-label={translate("projectMenu.title")}
               aria-haspopup="menu"
@@ -2041,7 +2064,6 @@ export function AppShell() {
               <span className="app-topbar-title-text">
                 {currentProjectName ?? translate("projectMenu.noProject")}
               </span>
-              <AliIcon name="arrowdown" size={12} style={{ color: "var(--text-dim)" }} />
             </button>
             {showConversation || settingsDialogOpen ? <span className="app-topbar-title-separator" aria-hidden="true">/</span> : null}
             {settingsDialogOpen ? (
@@ -2141,7 +2163,12 @@ export function AppShell() {
           )}
           {/* Top panel dropdown — shared, only one active at a time */}
           {activeTopPanel && topPanelPos && (
-            <div ref={topPanelFrameRef} className="app-top-panel-frame" style={{
+            <div
+              ref={topPanelFrameRef}
+              className="app-top-panel-frame"
+              onMouseEnter={activeTopPanel === "project" ? cancelProjectHoverClose : undefined}
+              onMouseLeave={activeTopPanel === "project" ? closeProjectPanelAfterHover : undefined}
+              style={{
               position: "absolute",
               top: topPanelPos.top,
               left: topPanelPos.left,

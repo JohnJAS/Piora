@@ -103,7 +103,7 @@ test("waits for the session scroll container before consuming the initial bottom
 
   assert.match(scrollEffectSource, /if \(loading \|\| messages\.length === 0\) return/);
   assert.match(scrollEffectSource, /startInitialBottomPin\(\)/);
-  assert.match(scrollEffectSource, /\[messages\.length, agentRunning, loading,/);
+  assert.match(scrollEffectSource, /\[messages\.length, agentRunning, liveOutputAutoScrollEnabled, loading,/);
 });
 
 test("pins a newly selected session to the bottom while async content settles", () => {
@@ -120,4 +120,44 @@ test("pins a newly selected session to the bottom while async content settles", 
   assert.match(pinSource, /container\.addEventListener\("load", schedulePin, true\)/);
   assert.match(pinSource, /pinToBottom\(\)[\s\S]*schedulePin\(\)/);
   assert.match(userIntentSource, /stopInitialBottomPin\(\)/);
+});
+
+test("keeps live session output pinned to the newest content", () => {
+  const livePinStart = source.lastIndexOf(
+    "useLayoutEffect(() => {",
+    source.indexOf("const pinLiveOutputToBottom"),
+  );
+  const livePinSource = source.slice(
+    livePinStart,
+    source.indexOf("// Loading may publish the message array"),
+  );
+
+  assert.match(livePinSource, /if \(!liveOutputAutoScrollEnabled \|\| !agentRunning \|\| loading\) return/);
+  assert.match(livePinSource, /scrollToBottom\("instant"\)/);
+  assert.match(livePinSource, /if \(!liveOutputFollowRef\.current\) return/);
+  assert.match(livePinSource, /new ResizeObserver\(schedulePin\)/);
+  assert.match(livePinSource, /container\.addEventListener\("load", schedulePin, true\)/);
+  assert.match(livePinSource, /pinLiveOutputToBottom\(\)[\s\S]*schedulePin\(\)/);
+  assert.match(source, /completionScrollAllowedRef\.current && liveOutputAutoScrollEnabled/);
+});
+
+test("manual scrolling pauses live follow until jump-to-latest resumes it", () => {
+  const scrollIntentSource = source.slice(
+    source.indexOf("const markUserScrollIntent"),
+    source.indexOf("// Load session on mount"),
+  );
+  const jumpSource = source.slice(
+    source.indexOf("const handleScrollToBottom"),
+    source.indexOf("const scrollUserMsgToTop"),
+  );
+
+  assert.match(scrollIntentSource, /event instanceof WheelEvent/);
+  assert.match(scrollIntentSource, /target\?\.closest\("\.chat-column-scroll-rail"\)/);
+  assert.match(scrollIntentSource, /liveOutputFollowRef\.current = false/);
+  assert.match(scrollIntentSource, /setLiveOutputFollowPaused\(true\)/);
+  assert.match(jumpSource, /liveOutputFollowRef\.current = true/);
+  assert.match(jumpSource, /setLiveOutputFollowPaused\(false\)/);
+  assert.match(source, /case "agent_start":[\s\S]*liveOutputFollowRef\.current = true;[\s\S]*setLiveOutputFollowPaused\(false\)/);
+  assert.match(source, /window\.addEventListener\("pointerdown", markUserScrollIntent, \{ capture: true, passive: true \}\)/);
+  assert.match(source, /window\.addEventListener\("wheel", markUserScrollIntent, \{ capture: true, passive: true \}\)/);
 });

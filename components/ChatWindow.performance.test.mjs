@@ -45,6 +45,8 @@ test("uses a responsive conversation column with resize and scroll rails", () =>
   assert.match(globalCss, /\.chat-column-scroll-rail/);
   assert.match(globalCss, /\.chat-column-scroll-thumb/);
   assert.match(globalCss, /\.chat-column-scroll-rail\s*\{[^}]*right:\s*calc\(38px \+ max\(0px, \(100% - 88px/s);
+  assert.match(globalCss, /\.chat-column-scroll-rail\s*\{[^}]*cursor:\s*default/s);
+  assert.match(globalCss, /\.chat-column-scroll-thumb\s*\{[^}]*width:\s*6px[^}]*opacity:\s*0\.78/s);
   assert.match(scrollRailSource, /role="scrollbar"/);
   assert.match(scrollRailSource, /onPointerMove/);
   assert.match(scrollRailSource, /onWheel/);
@@ -57,4 +59,10 @@ test("replaces the native conversation scrollbar with the draggable scroll rail"
   assert.match(source, /id="chat-scroll-container"[^>]*className="chat-scroll-container flex-1 overflow-y-auto pt-4"/);
   assert.match(globalCss, /\.chat-scroll-container\s*\{[\s\S]*?scrollbar-width:\s*none/);
   assert.match(globalCss, /\.chat-scroll-container::\-webkit-scrollbar\s*\{[\s\S]*?display:\s*none/);
+});
+
+test("manual scrolling keeps the jump-to-latest control visible and resumes live follow", () => {
+  assert.match(source, /const shouldShow = liveOutputFollowPaused \|\| shouldShowScrollToBottom/);
+  assert.match(source, /t\(liveOutputFollowPaused \? "chat\.resumeAutoScroll" : "chat\.scrollToBottom"\)/);
+  assert.match(source, /onClick=\{handleScrollToBottom\}/);
 });

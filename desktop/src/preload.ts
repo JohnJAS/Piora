@@ -108,6 +108,12 @@ const runtime = Object.freeze({
   companionAction(action: "focus-main" | "open-settings" | "open-panel" | "hide"): Promise<boolean> {
     return ipcRenderer.invoke("pi:companion-window-action", action) as Promise<boolean>;
   },
+  getAutoLaunchState() {
+    return ipcRenderer.invoke("pi:auto-launch-get");
+  },
+  setAutoLaunchEnabled(enabled: boolean) {
+    return ipcRenderer.invoke("pi:auto-launch-set", enabled);
+  },
   setGlobalShortcut(enabled: boolean): Promise<boolean> {
     return ipcRenderer.invoke("pi:set-global-shortcut", enabled) as Promise<boolean>;
   },

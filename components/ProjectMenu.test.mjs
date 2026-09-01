@@ -12,6 +12,10 @@ test("turns the top-bar folder into an accessible Codex-style project menu", () 
   assert.match(appShell, /currentProjectName \?\? translate\("projectMenu\.noProject"\)/);
   assert.match(appShell, /className=\{`app-topbar-title-path/);
   assert.match(appShell, /selectedSession\?\.name \?\? translate\("i18n\.newSession"\)/);
+  assert.match(appShell, /onMouseEnter=\{openProjectPanelOnHover\}/);
+  assert.match(appShell, /onMouseLeave=\{closeProjectPanelAfterHover\}/);
+  const projectTrigger = appShell.slice(appShell.indexOf('ref={projectBtnRef}'), appShell.indexOf('{showConversation || settingsDialogOpen'));
+  assert.doesNotMatch(projectTrigger, /name="arrowdown"/);
 });
 
 test("keeps project actions in the renderer without restoring an open-root shell bridge", () => {

@@ -24,12 +24,12 @@ if (
   manifest.provenance?.method
     !== "OpenAI image generation from original text prompts; no reference images supplied"
   || JSON.stringify(manifest.provenance?.records)
-    !== JSON.stringify(["batch-a-generation.md", "batch-b-generation.md", "batch-c-generation.md", "batch-d-generation.md"])
+    !== JSON.stringify(["batch-a-generation.md", "batch-b-generation.md", "batch-c-generation.md", "batch-d-generation.md", "batch-e-generation.md"])
 ) {
   failures.push("manifest provenance must reference the committed generation records");
 }
-if (!Array.isArray(manifest.presets) || manifest.presets.length !== 32) {
-  failures.push("manifest must contain exactly 32 presets");
+if (!Array.isArray(manifest.presets) || manifest.presets.length !== 37) {
+  failures.push("manifest must contain exactly 37 presets");
 }
 
 for (const preset of manifest.presets ?? []) {
@@ -93,7 +93,7 @@ if (JSON.stringify(directoryWebps) !== JSON.stringify(declaredWebps)) {
   failures.push("directory WebP files and manifest assets do not match exactly");
 }
 
-for (const recordFile of ["batch-a-generation.md", "batch-b-generation.md", "batch-c-generation.md", "batch-d-generation.md", "README.md"]) {
+for (const recordFile of ["batch-a-generation.md", "batch-b-generation.md", "batch-c-generation.md", "batch-d-generation.md", "batch-e-generation.md", "README.md"]) {
   if (!existsSync(resolve(assetDirectory, recordFile))) failures.push(`missing ${recordFile}`);
 }
 

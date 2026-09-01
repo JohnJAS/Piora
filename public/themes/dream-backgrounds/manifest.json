@@ -12,7 +12,8 @@
       "batch-a-generation.md",
       "batch-b-generation.md",
       "batch-c-generation.md",
-      "batch-d-generation.md"
+      "batch-d-generation.md",
+      "batch-e-generation.md"
     ]
   },
   "assetRoot": "/themes/dream-backgrounds/",
@@ -278,6 +279,46 @@
       "artworkStatus": "available",
       "appearance": "light",
       "fallback": "radial-gradient(circle at 16% 72%, rgba(125, 211, 252, 0.32), transparent 30%), radial-gradient(circle at 86% 18%, rgba(250, 204, 21, 0.18), transparent 24%), linear-gradient(140deg, #f8fdff, #dff3ff 54%, #eef8ff)"
+    },
+    {
+      "id": "anime-sky-campus",
+      "nameKey": "background.preset.animeSkyCampus",
+      "asset": "/themes/dream-backgrounds/anime-sky-campus.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "radial-gradient(circle at 12% 76%, rgba(59, 130, 246, 0.28), transparent 30%), radial-gradient(circle at 88% 20%, rgba(132, 204, 22, 0.18), transparent 25%), linear-gradient(145deg, #eefaff, #bfe8ff 54%, #f7fdff)"
+    },
+    {
+      "id": "anime-sakura-train",
+      "nameKey": "background.preset.animeSakuraTrain",
+      "asset": "/themes/dream-backgrounds/anime-sakura-train.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "radial-gradient(circle at 12% 18%, rgba(244, 114, 182, 0.28), transparent 30%), radial-gradient(circle at 86% 78%, rgba(251, 146, 60, 0.2), transparent 28%), linear-gradient(145deg, #fff4f2, #f8d9df 52%, #ddd6fe)"
+    },
+    {
+      "id": "anime-magic-library",
+      "nameKey": "background.preset.animeMagicLibrary",
+      "asset": "/themes/dream-backgrounds/anime-magic-library.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "radial-gradient(circle at 10% 70%, rgba(99, 102, 241, 0.42), transparent 27%), radial-gradient(circle at 90% 24%, rgba(168, 85, 247, 0.35), transparent 26%), linear-gradient(145deg, #090b20, #151640 54%, #0b1736)"
+    },
+    {
+      "id": "anime-neon-city",
+      "nameKey": "background.preset.animeNeonCity",
+      "asset": "/themes/dream-backgrounds/anime-neon-city.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "radial-gradient(circle at 8% 74%, rgba(34, 211, 238, 0.4), transparent 27%), radial-gradient(circle at 92% 22%, rgba(236, 72, 153, 0.38), transparent 28%), linear-gradient(145deg, #020617, #071b35 54%, #170b31)"
+    },
+    {
+      "id": "anime-star-hangar",
+      "nameKey": "background.preset.animeStarHangar",
+      "asset": "/themes/dream-backgrounds/anime-star-hangar.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "radial-gradient(circle at 82% 72%, rgba(56, 189, 248, 0.34), transparent 30%), radial-gradient(circle at 12% 26%, rgba(251, 146, 60, 0.24), transparent 26%), linear-gradient(145deg, #030712, #0b2235 54%, #07111f)"
     }
   ]
 }

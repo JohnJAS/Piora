@@ -252,7 +252,12 @@ export function useBackground() {
     });
   }, [snapshot.preference]);
 
-  const selectStoredCustom = useCallback(async () => {
+  const selectStoredCustom = useCallback(async (options: {
+    overlay?: number;
+    blur?: number;
+    sidebarOverlay?: number;
+    filePanelOverlay?: number;
+  } = {}) => {
     const revision = ++operationRevision;
     setState({ ...state, busy: true, error: null });
     try {
@@ -261,7 +266,14 @@ export function useBackground() {
       if (revision !== operationRevision) return;
       storedCustom = record;
       replaceCustomObjectUrl(record);
-      const preference = activateBackground(state.preference, "custom", null);
+      const basePreference = activateBackground(state.preference, "custom", null);
+      const preference = {
+        ...basePreference,
+        overlay: Math.min(90, Math.max(0, Math.round(options.overlay ?? basePreference.overlay))),
+        blur: Math.min(24, Math.max(0, Math.round(options.blur ?? basePreference.blur))),
+        sidebarOverlay: Math.min(90, Math.max(0, Math.round(options.sidebarOverlay ?? basePreference.sidebarOverlay))),
+        filePanelOverlay: Math.min(90, Math.max(0, Math.round(options.filePanelOverlay ?? basePreference.filePanelOverlay))),
+      };
       persistPreference(preference);
       setState({
         preference,
@@ -351,6 +363,7 @@ export function useBackground() {
 
   return {
     ...snapshot,
+    customPreviewUrl: customObjectUrl,
     presets: BACKGROUND_PRESETS,
     setNone,
     setBuiltin,

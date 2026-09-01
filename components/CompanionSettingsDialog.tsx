@@ -14,6 +14,7 @@ import type { ModelsData } from "@/lib/models-cache";
 import { AliIcon } from "./AliIcon";
 import { BuiltinPet, SpritePet } from "./CompanionPet";
 import { CompanionDataManager } from "./CompanionDataManager";
+import { CompanionStorageSettings } from "./CompanionStorageSettings";
 import styles from "./CompanionSettingsDialog.module.css";
 
 const SOURCE_MESSAGE_KEYS: Record<CompanionPetSourceKind, string> = {
@@ -332,6 +333,8 @@ export function CompanionSettingsDialog({
               </div>
             ) : <CompanionDataManager preferences={preferences} setPreferences={setPreferences} canSendPhrase={canSendPhrase} onSendPhrase={onSendPhrase} />}
           </section>
+
+          <CompanionStorageSettings />
 
           <details className={styles.helpCard}>
             <summary>{t("companion.howToUse")}</summary>

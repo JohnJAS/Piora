@@ -383,7 +383,9 @@ export function CompanionPet({
             <span className={styles.activityDot} style={{ "--activity-color": COMPANION_ACTIVITY_COLORS[activity.status] } as CSSProperties} />
             <span>{statusLabel}</span>
           </div>
-          <div className={styles.activityCause}>{petSpeech || activity.cause}</div>
+          {petSpeech || (activity.status !== "idle" && activity.cause)
+            ? <div className={styles.activityCause}>{petSpeech || activity.cause}</div>
+            : null}
         </div>
         <div className={styles.headerActions}>
           <button className={styles.iconButton} type="button" onClick={() => setHelpOpen((open) => !open)} title={t("companion.howToUse")} aria-label={t("companion.howToUse")} aria-expanded={helpOpen}>

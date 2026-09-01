@@ -20,6 +20,7 @@ export function HarmonyStorageSettings() {
   const [desktopAvailable, setDesktopAvailable] = useState<boolean | null>(null);
   const [paths, setPaths] = useState<StoragePaths>({ screenshotDirectory: "", recordingDirectory: "" });
   const [defaults, setDefaults] = useState<StoragePaths | null>(null);
+  const [editing, setEditing] = useState(false);
   const [status, setStatus] = useState<"loading" | "idle" | "saving" | "saved" | "error">("loading");
   const [error, setError] = useState("");
 
@@ -73,6 +74,7 @@ export function HarmonyStorageSettings() {
       setPaths(payload.storage);
       setError("");
       setStatus("saved");
+      setEditing(false);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
       setStatus("error");
@@ -89,10 +91,11 @@ export function HarmonyStorageSettings() {
         <input
           aria-label={label}
           value={paths[key]}
+          disabled={!editing}
           onChange={(event) => { setPaths((current) => ({ ...current, [key]: event.target.value })); setStatus("idle"); }}
           style={{ flex: 1, minWidth: 0 }}
         />
-        {window.piDesktop?.selectDirectory ? (
+        {editing && window.piDesktop?.selectDirectory ? (
           <button type="button" onClick={() => void choose(key)} title={t("harmonyStorage.choose")} aria-label={t("harmonyStorage.choose")}>
             <AliIcon name="folder-open" size={14} />
           </button>
@@ -114,16 +117,37 @@ export function HarmonyStorageSettings() {
       ) : null}
       {desktopAvailable !== false ? (
       <section className="settings-conversation-section" style={{ display: "grid", gap: 20, maxWidth: 760 }}>
+        <div style={{ minHeight: 58, display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", alignItems: "center", gap: 12, padding: "10px 12px", border: "1px solid color-mix(in srgb, var(--accent) 15%, var(--border))", borderRadius: "var(--radius-control)", background: "color-mix(in srgb, var(--accent) 5%, var(--bg))" }}>
+          <span style={{ display: "grid", gap: 2 }}>
+            <strong style={{ color: "var(--text)", fontSize: "var(--text-sm)" }}>{t("harmonyStorage.edit")}</strong>
+            <small style={{ color: "var(--text-dim)", lineHeight: 1.4 }}>{t("harmonyStorage.editDescription")}</small>
+          </span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={editing}
+            aria-label={t("harmonyStorage.edit")}
+            onClick={() => {
+              setEditing((current) => !current);
+              if (editing && defaults) setPaths(defaults);
+              setError("");
+              setStatus("idle");
+            }}
+            style={{ width: 40, height: 24, position: "relative", padding: 2, border: 0, borderRadius: 999, background: editing ? "var(--accent)" : "color-mix(in srgb, var(--text-dim) 22%, var(--bg))", cursor: "pointer" }}
+          >
+            <span style={{ width: 20, height: 20, display: "block", borderRadius: "50%", background: "var(--bg)", boxShadow: "0 1px 4px color-mix(in srgb, #000 20%, transparent)", transform: editing ? "translateX(16px)" : "none", transition: "transform 140ms ease" }} />
+          </button>
+        </div>
         {field("screenshotDirectory", t("harmonyStorage.screenshotDirectory"), t("harmonyStorage.screenshotDescription"))}
         {field("recordingDirectory", t("harmonyStorage.recordingDirectory"), t("harmonyStorage.recordingDescription"))}
         {defaults ? <p style={{ margin: 0, color: "var(--text-dim)", fontSize: "var(--text-xs)", lineHeight: 1.5 }}>{t("harmonyStorage.absolutePathHint")}</p> : null}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {editing ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button type="button" disabled={status === "saving" || !paths.screenshotDirectory.trim() || !paths.recordingDirectory.trim()} onClick={() => void save(false)}>
             {status === "saving" ? t("harmonyStorage.saving") : t("harmonyStorage.save")}
           </button>
           <button type="button" disabled={status === "saving"} onClick={() => void save(true)}>{t("harmonyStorage.restoreDefaults")}</button>
-          {status === "saved" ? <span role="status" style={{ color: "var(--status-success)", fontSize: "var(--text-xs)" }}>{t("harmonyStorage.saved")}</span> : null}
-        </div>
+        </div> : null}
+        {status === "saved" ? <span role="status" style={{ color: "var(--status-success)", fontSize: "var(--text-xs)" }}>{t("harmonyStorage.saved")}</span> : null}
         {status === "loading" ? <p>{t("harmonyStorage.loading")}</p> : null}
         {error ? <p role="alert" style={{ color: "var(--status-failed)", overflowWrap: "anywhere" }}>{error}</p> : null}
       </section>

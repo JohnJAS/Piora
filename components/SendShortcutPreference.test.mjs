@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [chatInput, settingsDialog, settingsCss, hook, streamingHook] = await Promise.all([
+const [chatInput, settingsDialog, settingsCss, hook, streamingHook, autoScrollHook] = await Promise.all([
   readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8"),
   readFile(new URL("./SettingsDialog.tsx", import.meta.url), "utf8"),
   readFile(new URL("./SettingsDialog.module.css", import.meta.url), "utf8"),
   readFile(new URL("../hooks/useSendShortcut.ts", import.meta.url), "utf8"),
   readFile(new URL("../hooks/useStreamingSendPreference.ts", import.meta.url), "utf8"),
+  readFile(new URL("../hooks/useLiveOutputAutoScrollPreference.ts", import.meta.url), "utf8"),
 ]);
 
 test("conversation settings expose one mutually exclusive send shortcut choice", () => {
@@ -48,4 +49,12 @@ test("disabled keeps the chooser while enabled sends with the selected default",
   assert.match(chatInput, /onClick=\{\(\) => sendQueued\(primaryStreamingMode\)\}/);
   assert.match(streamingHook, /useSyncExternalStore/);
   assert.match(streamingHook, /STREAMING_SEND_PREFERENCE_STORAGE_KEY/);
+});
+
+test("conversation settings expose a synchronized live-output auto-scroll switch", () => {
+  assert.match(settingsDialog, /aria-checked=\{liveOutputAutoScrollEnabled\}/);
+  assert.match(settingsDialog, /setLiveOutputAutoScrollEnabled\(!liveOutputAutoScrollEnabled\)/);
+  assert.match(autoScrollHook, /useSyncExternalStore/);
+  assert.match(autoScrollHook, /LIVE_OUTPUT_AUTO_SCROLL_STORAGE_KEY/);
+  assert.match(autoScrollHook, /window\.addEventListener\("storage"/);
 });

@@ -12,7 +12,7 @@ import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-tit
 import type { SessionInfo } from "@/lib/types";
 import { AliIcon } from "../AliIcon";
 import { cancelSessionPrefetch, prefetchSession } from "@/lib/session-prefetch";
-import { TaskContextMenu } from "./TaskContextMenu";
+import { TaskContextMenu, type SessionMoveTarget } from "./TaskContextMenu";
 import styles from "./TaskRow.module.css";
 
 export function TaskStatusIndicator({ status }: { status: TaskStatus }) {
@@ -77,6 +77,9 @@ export const TaskRow = memo(function TaskRow({
   onTogglePinned,
   onToggleArchived,
   onDuplicate,
+  moveTargets,
+  onMarkUnread,
+  onMoveSession,
 }: {
   session: SessionInfo;
   isSelected: boolean;
@@ -94,6 +97,9 @@ export const TaskRow = memo(function TaskRow({
   onTogglePinned?: () => void;
   onToggleArchived?: () => void;
   onDuplicate?: () => void;
+  moveTargets: SessionMoveTarget[];
+  onMarkUnread: () => void;
+  onMoveSession: (target: SessionMoveTarget) => Promise<void>;
 }) {
   const { t } = useI18n();
   const [hovered, setHovered] = useState(false);
@@ -420,7 +426,12 @@ export const TaskRow = memo(function TaskRow({
           session={session}
           pinned={pinned}
           archived={archived}
+          unread={Boolean(isUnread)}
+          running={Boolean(isRunning)}
+          moveTargets={moveTargets}
           onPin={() => onTogglePinned?.()}
+          onMarkUnread={onMarkUnread}
+          onMove={onMoveSession}
           onRename={() => {
             setRenameValue(title);
             setTitleOptimizationError(null);

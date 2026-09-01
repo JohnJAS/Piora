@@ -25,6 +25,9 @@
 .taskBody small { color: var(--text-dim); }
 .range { width: 100%; accent-color: var(--accent); }
 .iconButton { width: 28px; min-height: 28px !important; display: grid; place-items: center; padding: 0 !important; border-color: transparent !important; background: transparent !important; }
+.libraryModes { display: flex; gap: 4px; margin-bottom: 9px; padding: 3px; border-radius: 10px; background: var(--bg-hover); }
+.libraryModes button { flex: 1; border: 0; background: transparent; }
+.libraryModes button[aria-selected="true"] { background: var(--bg); color: var(--text); box-shadow: 0 1px 4px color-mix(in srgb, var(--text) 10%, transparent); font-weight: 650; }
 .libraryToolbar { margin-bottom: 7px; }
 .libraryToolbar button { display: inline-flex; align-items: center; gap: 5px; }
 .libraryForm { display: grid; grid-template-columns: 110px minmax(0, 1fr) 110px auto; }

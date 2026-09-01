@@ -22,10 +22,12 @@ test("pins active tasks and removes archived tasks from the project sidebar", ()
 });
 
 test("provides the complete task context menu", () => {
-  for (const key of ["pinTask", "rename", "archiveTask", "duplicateTask", "copySessionPath", "revealSession", "delete"]) {
+  for (const key of ["pinTask", "markUnread", "moveTask", "moveTaskTo", "rename", "archiveTask", "duplicateTask", "copySessionPath", "revealSession", "delete"]) {
     assert.match(menuSource, new RegExp(`sidebar\\.${key}`));
   }
   assert.match(rowSource, /onContextMenu=/);
+  assert.match(menuSource, /props\.moveTargets\.map/);
+  assert.match(menuSource, /disabled=\{props\.running \|\| props\.moveTargets\.length === 0\}/);
 });
 
 test("shows a passive pinned badge while keeping row actions hover-only", () => {

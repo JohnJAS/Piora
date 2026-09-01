@@ -55,6 +55,16 @@ declare global {
       }) => void) => () => void;
       setCompanionHitTest?: (interactive: boolean) => Promise<boolean>;
       companionAction?: (action: "focus-main" | "open-settings" | "open-panel" | "hide") => Promise<boolean>;
+      getAutoLaunchState?: () => Promise<{
+        supported: boolean;
+        enabled: boolean;
+        error?: "read-failed" | "update-failed" | "approval-required";
+      }>;
+      setAutoLaunchEnabled?: (enabled: boolean) => Promise<{
+        supported: boolean;
+        enabled: boolean;
+        error?: "read-failed" | "update-failed" | "approval-required";
+      }>;
       setGlobalShortcut?: (enabled: boolean) => Promise<boolean>;
       setKeyboardShortcuts?: (bindings: Record<string, string | null>) => Promise<boolean>;
       setNetworkProxy?: (settings: {

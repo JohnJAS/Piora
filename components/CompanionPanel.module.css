@@ -34,6 +34,9 @@
 .check { width: 26px; height: 26px; padding: 0 !important; border-radius: 50% !important; }
 .check[data-done="true"] { color: white; background: #4f986a; }
 .danger { color: #b94d4d !important; background: transparent !important; border: 0 !important; }
+.libraryModes { display: flex; gap: 4px; margin-bottom: 10px; padding: 3px; border-radius: 10px; background: var(--bg-hover); }
+.libraryModes button { flex: 1; min-height: 30px; border: 0; background: transparent; color: var(--text-muted); }
+.libraryModes button[aria-selected="true"] { background: var(--bg); color: var(--text); box-shadow: 0 1px 4px color-mix(in srgb, var(--text) 10%, transparent); font-weight: 700; }
 .stack { display: grid; gap: 8px; padding: 12px; margin-bottom: 12px; }
 .stack textarea { min-height: 92px; resize: vertical; }
 .inline { margin: 0; }

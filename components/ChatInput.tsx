@@ -2107,7 +2107,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     {currentName ?? (modelOptions.length > 0 ? t("chat.selectModel") : t("chat.noModels"))}
                   </span>
                   {onThinkingLevelChange && !isAutoModelSelection ? <span className="model-settings-trigger-reasoning">{thinkingLevelLabel}</span> : null}
-                  <AliIcon name="arrowdown" size={10} />
                 </button>
                 {modelDropdownOpen && modelDropdownRect && (() => {
                   const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
@@ -2243,7 +2242,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                           >
                             <span className="model-settings-row-label">{t("i18n.model")}</span>
                             <span className="model-settings-row-value">{currentName ?? t("chat.selectModel")}</span>
-                            <AliIcon name="arrowright" size={11} />
                           </button>
                           {onThinkingLevelChange && !isAutoModelSelection ? (
                             <button
@@ -2255,7 +2253,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                             >
                               <span className="model-settings-row-label">{t("chat.reasoningEffort")}</span>
                               <span className="model-settings-row-value">{thinkingLevelLabel}</span>
-                              <AliIcon name="arrowright" size={11} />
                             </button>
                           ) : null}
                           {!isStreaming && onCompact ? (

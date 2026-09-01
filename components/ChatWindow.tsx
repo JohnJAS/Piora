@@ -288,6 +288,7 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
     retryInfo, contextUsage, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages, capabilities, capabilitiesSaving,
+    liveOutputFollowPaused,
     notices, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection,
     agentPhase,
@@ -398,7 +399,7 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
         ? t("companion.activity.waitingCause")
         : companionActivityStatus === "running"
           ? (isCompacting ? t("companion.activity.compactingCause") : phaseLabel(agentPhase, t))
-          : t("companion.activity.idleCause");
+          : "";
 
   const companionSessionId = session?.id ?? sessionIdRef.current ?? undefined;
   const companionWasBusyRef = useRef(false);
@@ -444,8 +445,8 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
   }, [companionActivityCause, companionActivityEvent, companionActivityStatus, companionSessionId, onCompanionActivityChange]);
 
   useEffect(() => () => {
-    onCompanionActivityChange?.({ status: "idle", cause: t("companion.activity.idleCause") });
-  }, [onCompanionActivityChange, t]);
+    onCompanionActivityChange?.({ status: "idle", cause: "" });
+  }, [onCompanionActivityChange]);
 
   // Register the abort handler for the global Esc shortcut
   useEffect(() => {
@@ -615,7 +616,7 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
     const updateVisibility = () => {
       frame = 0;
       const transientTail = container.querySelector<HTMLElement>("[data-chat-tail-spacer]");
-      const shouldShow = shouldShowScrollToBottom({
+      const shouldShow = liveOutputFollowPaused || shouldShowScrollToBottom({
         scrollHeight: container.scrollHeight,
         scrollTop: container.scrollTop,
         clientHeight: container.clientHeight,
@@ -641,7 +642,7 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
       resizeObserver.disconnect();
       if (frame !== 0) cancelAnimationFrame(frame);
     };
-  }, [isEmptyNew, loading, scrollContainerRef, session?.id]);
+  }, [isEmptyNew, liveOutputFollowPaused, loading, scrollContainerRef, session?.id]);
 
   const messageCwd = session?.cwd ?? newSessionCwd ?? undefined;
   const isProjectlessChat = session?.projectless === true || isProjectlessChatCwd(messageCwd);
@@ -1124,8 +1125,8 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
               type="button"
               className="chat-scroll-to-bottom"
               onClick={handleScrollToBottom}
-              aria-label={t("chat.scrollToBottom")}
-              title={t("chat.scrollToBottom")}
+              aria-label={t(liveOutputFollowPaused ? "chat.resumeAutoScroll" : "chat.scrollToBottom")}
+              title={t(liveOutputFollowPaused ? "chat.resumeAutoScroll" : "chat.scrollToBottom")}
             >
               <AliIcon name="arrowdown" size={16} />
             </button>

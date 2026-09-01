@@ -8,6 +8,7 @@ import type { SessionInfo } from "@/lib/types";
 import { AliIcon } from "../AliIcon";
 import styles from "../SessionSidebar.module.css";
 import { ProjectSessionGroup } from "./ProjectList";
+import type { SessionMoveTarget } from "./TaskContextMenu";
 
 interface Props {
   loading: boolean; error: string | null; projectsHovered: boolean;
@@ -18,12 +19,15 @@ interface Props {
   setCollapsedProjectKeys: Dispatch<SetStateAction<Set<string>>>;
   setExpandedProjectSessionKeys: Dispatch<SetStateAction<Set<string>>>;
   selectedSessionId: string | null; runningSessionIds: Set<string>; unreadSessionIds: Set<string>; attentionSessionIds: Set<string>;
+  moveTargets: SessionMoveTarget[];
   setSelectedCwd: Dispatch<SetStateAction<string | null>>; homeDir: string;
   handleSelectSessionFromList: (session: SessionInfo) => void; handleNewSessionInProject: (cwd: string) => void;
   loadSessions: (showLoading?: boolean) => Promise<void>; handleSessionDeletedWithUndo: (session: SessionInfo) => void;
   sessionFlags: SessionFlags;
   patchSessionFlag: (session: SessionInfo, patch: { pinned?: boolean; archived?: boolean }) => Promise<void>;
   duplicateSession: (session: SessionInfo) => Promise<void>; pinnedProjectRoots: Set<string>; projectAliases: Record<string, string>;
+  markSessionUnread: (session: SessionInfo) => void;
+  moveSession: (session: SessionInfo, target: SessionMoveTarget) => Promise<void>;
   togglePinnedProject: (root: string) => void; renameProject: (root: string, alias: string) => void; removeProject: (root: string) => void;
   onReorderProjects: (sourceRoot: string, targetRoot: string, position: "before" | "after") => void;
   sessionOrder: readonly string[];
@@ -41,7 +45,7 @@ interface ProjectDragState {
 
 export function SidebarProjectArea(props: Props) {
   const { t } = useI18n();
-  const { loading, error, projectsHovered, setProjectsHovered, handleDefaultCwd, handleCustomPathClick, projectGroups, selectedProject, collapsedProjectKeys, expandedProjectSessionKeys, setCollapsedProjectKeys, setExpandedProjectSessionKeys, selectedSessionId, runningSessionIds, unreadSessionIds, attentionSessionIds, setSelectedCwd, homeDir, handleSelectSessionFromList, handleNewSessionInProject, loadSessions, handleSessionDeletedWithUndo, sessionFlags, patchSessionFlag, duplicateSession, pinnedProjectRoots, projectAliases, togglePinnedProject, renameProject, removeProject, onReorderProjects, sessionOrder, onReorderSessions } = props;
+  const { loading, error, projectsHovered, setProjectsHovered, handleDefaultCwd, handleCustomPathClick, projectGroups, selectedProject, collapsedProjectKeys, expandedProjectSessionKeys, setCollapsedProjectKeys, setExpandedProjectSessionKeys, selectedSessionId, runningSessionIds, unreadSessionIds, attentionSessionIds, moveTargets, setSelectedCwd, homeDir, handleSelectSessionFromList, handleNewSessionInProject, loadSessions, handleSessionDeletedWithUndo, sessionFlags, patchSessionFlag, duplicateSession, markSessionUnread, moveSession, pinnedProjectRoots, projectAliases, togglePinnedProject, renameProject, removeProject, onReorderProjects, sessionOrder, onReorderSessions } = props;
   const projectScrollRef = useRef<HTMLDivElement>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const candidateRef = useRef<{ pointerId: number; root: string; x: number; y: number } | null>(null);
@@ -159,13 +163,14 @@ export function SidebarProjectArea(props: Props) {
           onMouseLeave={() => setProjectsHovered(false)}
         >
           <span>{t("sidebar.projects")}</span>
-          <div className={styles.sectionLabelActions} style={{ opacity: projectsHovered ? 1 : 0 }}>
+          <div className={styles.sectionLabelActions} style={{ opacity: 1 }}>
             <button
               type="button"
               className={styles.rowAction}
               onClick={() => void handleDefaultCwd()}
               title={t("sidebar.useDefaultDirectory")}
               aria-label={t("sidebar.useDefaultDirectory")}
+              style={{ opacity: projectsHovered ? 1 : 0, pointerEvents: projectsHovered ? "auto" : "none" }}
             >
               <AliIcon name="home" size={12} />
             </button>
@@ -213,6 +218,7 @@ export function SidebarProjectArea(props: Props) {
             selectedSessionId={selectedSessionId}
             runningSessionIds={runningSessionIds}
             unreadSessionIds={unreadSessionIds}
+            moveTargets={moveTargets}
             attentionSessionIds={attentionSessionIds}
             onSelectProject={() => {
               setSelectedCwd(group.preferredCwd);
@@ -240,6 +246,8 @@ export function SidebarProjectArea(props: Props) {
             sessionFlags={sessionFlags}
             onFlagChange={patchSessionFlag}
             onDuplicateSession={duplicateSession}
+            onMarkUnread={markSessionUnread}
+            onMoveSession={moveSession}
             isPinned={pinnedProjectRoots.has(group.projectRoot)}
             displayLabel={projectAliases[group.projectRoot] ?? getProjectLabel(group.projectRoot)}
             onTogglePinned={() => togglePinnedProject(group.projectRoot)}

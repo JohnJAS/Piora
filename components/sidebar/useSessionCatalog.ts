@@ -103,5 +103,14 @@ export function useSessionCatalog({ selectedSessionId, refreshKey }: { selectedS
     });
   }, [selectedSessionId]);
 
-  return { allSessions, loading, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions };
+  const markSessionUnread = useCallback((sessionId: string) => {
+    setUnreadSessionIds((previous) => {
+      if (previous.has(sessionId)) return previous;
+      const next = new Set(previous);
+      next.add(sessionId);
+      return next;
+    });
+  }, []);
+
+  return { allSessions, loading, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions, markSessionUnread };
 }

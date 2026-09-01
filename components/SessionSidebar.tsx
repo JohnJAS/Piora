@@ -24,6 +24,7 @@ import { SidebarShell } from "./sidebar/SidebarShell";
 import { RoomSidebarSection } from "./RoomSidebarSection";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 import { ConversationSearchDialog } from "./ConversationSearchDialog";
+import type { SessionMoveTarget } from "./sidebar/TaskContextMenu";
 
 export type { SessionSidebarHandle } from "./sidebar/sidebar-types";
 
@@ -63,7 +64,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     customPathOpen, setCustomPathOpen, customPathError, setCustomPathError,
     customPathValidating, commitCustomPath, handleCustomPathClick, handleDefaultCwd,
   } = useProjectPicker({ setSelectedCwd, setRememberedProjectRoots, setHiddenProjectRoots, onProjectSelected: handlePickedProject });
-  const { allSessions, loading, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions } = useSessionCatalog({ selectedSessionId, refreshKey });
+  const { allSessions, loading, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions, markSessionUnread } = useSessionCatalog({ selectedSessionId, refreshKey });
   const {
     worktreeState, wtFilter, setWtFilter, wtDropdownOpen, setWtDropdownOpen,
     wtNewOpen, setWtNewOpen, wtNewBranch, setWtNewBranch, wtError, setWtError,
@@ -293,6 +294,31 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     ), projectOrder, (group) => group.projectRoot),
     [hiddenProjectRoots, projectOrder, selectedCwd, selectedProject, visibleRememberedProjects, visibleSessions],
   );
+  const sessionMoveTargets = useMemo<SessionMoveTarget[]>(() => projectGroups.map((group) => ({
+    cwd: group.preferredCwd,
+    projectRoot: group.projectRoot,
+    label: projectAliases[group.projectRoot] ?? getProjectLabel(group.projectRoot),
+  })), [projectAliases, projectGroups]);
+  const moveSession = useCallback(async (session: SessionInfo, target: SessionMoveTarget) => {
+    const response = await fetch(`/api/sessions/${encodeURIComponent(session.id)}/move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: target.cwd }),
+    });
+    const body = await response.json().catch(() => ({})) as { error?: string };
+    if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+    if (selectedSessionId === session.id) {
+      setSelectedCwd(target.cwd);
+      onSelectSession({
+        ...session,
+        cwd: target.cwd,
+        projectRoot: target.projectRoot,
+        projectless: undefined,
+        worktreeBranch: undefined,
+      });
+    }
+    await loadSessions();
+  }, [loadSessions, onSelectSession, selectedSessionId]);
   const pinnedProjectGroups = useMemo(
     () => projectGroups.filter((group) => pinnedProjectRoots.has(group.projectRoot)),
     [pinnedProjectRoots, projectGroups],
@@ -468,11 +494,11 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         collapsedProjectKeys={collapsedProjectKeys} expandedProjectSessionKeys={expandedProjectSessionKeys}
         setCollapsedProjectKeys={setCollapsedProjectKeys} setExpandedProjectSessionKeys={setExpandedProjectSessionKeys}
         selectedSessionId={selectedSessionId} runningSessionIds={runningSessionIds} unreadSessionIds={unreadSessionIds}
-        attentionSessionIds={attentionSessionIds} setSelectedCwd={setSelectedCwd} homeDir={homeDir}
+        attentionSessionIds={attentionSessionIds} moveTargets={sessionMoveTargets} setSelectedCwd={setSelectedCwd} homeDir={homeDir}
         handleSelectSessionFromList={handleSelectSessionFromList} handleNewSessionInProject={handleNewSessionInProject}
         loadSessions={loadSessions} handleSessionDeletedWithUndo={handleSessionDeletedWithUndo}
         sessionFlags={sessionFlags} patchSessionFlag={patchSessionFlag}
-        duplicateSession={duplicateSession} pinnedProjectRoots={pinnedProjectRoots} projectAliases={projectAliases}
+        duplicateSession={duplicateSession} markSessionUnread={(session) => markSessionUnread(session.id)} moveSession={moveSession} pinnedProjectRoots={pinnedProjectRoots} projectAliases={projectAliases}
         togglePinnedProject={togglePinnedProject} renameProject={renameProject} removeProject={removeProject}
         onReorderProjects={reorderProjects}
         sessionOrder={sessionOrder} onReorderSessions={reorderSessions}
@@ -482,6 +508,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         selectedSessionId={selectedSessionId}
         runningSessionIds={runningSessionIds}
         unreadSessionIds={unreadSessionIds}
+        moveTargets={sessionMoveTargets}
         sessionFlags={sessionFlags}
         onNewChat={() => onRequestNewSession?.()}
         onSelectSession={handleSelectSessionFromList}
@@ -489,6 +516,8 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         onSessionDeleted={handleSessionDeletedWithUndo}
         onFlagChange={patchSessionFlag}
         onDuplicate={duplicateSession}
+        onMarkUnread={(session) => markSessionUnread(session.id)}
+        onMoveSession={moveSession}
         sessionOrder={sessionOrder}
         onReorderSessions={reorderSessions}
       />

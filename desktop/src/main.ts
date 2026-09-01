@@ -67,6 +67,13 @@ import {
   type DesktopShortcutBindings,
   type DesktopShortcutId,
 } from "./keyboard-shortcuts.js";
+import {
+  readDesktopAutoLaunchState,
+  resolveDesktopLoginItemOptions,
+  updateDesktopAutoLaunchState,
+  type DesktopAutoLaunchState,
+  type DesktopLoginItemController,
+} from "./auto-launch.js";
 
 const DESKTOP_PARTITION = "persist:piora";
 const DESKTOP_TOKEN_HEADER = "X-Pi-Desktop-Token";
@@ -88,6 +95,8 @@ const COMPANION_MOTION_CHANNEL = "pi:companion-window-motion";
 const COMPANION_MOTION_STATE_CHANNEL = "pi:companion-motion-state";
 const COMPANION_HIT_TEST_CHANNEL = "pi:companion-hit-test";
 const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
+const AUTO_LAUNCH_GET_CHANNEL = "pi:auto-launch-get";
+const AUTO_LAUNCH_SET_CHANNEL = "pi:auto-launch-set";
 const KEYBOARD_SHORTCUTS_CHANNEL = "pi:set-keyboard-shortcuts";
 const NETWORK_PROXY_CHANNEL = "pi:set-network-proxy";
 const HARMONY_RUNTIME_PICKER_CHANNEL = "pi:harmony-runtime-picker";
@@ -146,6 +155,7 @@ let shutdownComplete = false;
 let applicationMenu: Menu | null = null;
 let keyboardShortcutBindings: DesktopShortcutBindings = { ...DEFAULT_DESKTOP_SHORTCUT_BINDINGS };
 let companionPanelShortcutAccelerator: string | undefined;
+let companionPanelKeepVisibleUntilClose = false;
 let companionMoveTimer: NodeJS.Timeout | undefined;
 let companionMotionTimer: NodeJS.Timeout | undefined;
 let companionMotionRevision = 0;
@@ -1568,6 +1578,7 @@ function createCompanionBubbleWindow(url: URL, log: Logger): BrowserWindow {
 }
 
 function createCompanionPanelWindow(url: URL, log: Logger): BrowserWindow {
+  companionPanelKeepVisibleUntilClose = false;
   const display = screen.getPrimaryDisplay().workArea;
   const window = new BrowserWindow({
     width: COMPANION_PANEL_WIDTH,
@@ -1593,9 +1604,20 @@ function createCompanionPanelWindow(url: URL, log: Logger): BrowserWindow {
     window.focus();
   });
   window.on("blur", () => {
-    if (!window.isDestroyed() && window.isVisible()) window.hide();
+    if (!companionPanelKeepVisibleUntilClose && !window.isDestroyed() && window.isVisible()) window.hide();
   });
-  window.on("closed", () => { if (companionPanelWindow === window) companionPanelWindow = null; });
+  window.on("maximize", () => { companionPanelKeepVisibleUntilClose = true; });
+  window.on("close", (event) => {
+    if (quitRequested || shutdownComplete) return;
+    event.preventDefault();
+    companionPanelKeepVisibleUntilClose = false;
+    if (window.isMaximized()) window.unmaximize();
+    window.hide();
+  });
+  window.on("closed", () => {
+    companionPanelKeepVisibleUntilClose = false;
+    if (companionPanelWindow === window) companionPanelWindow = null;
+  });
   void window.loadURL(new URL("/desktop-companion-panel", url).toString());
   return window;
 }
@@ -1614,6 +1636,8 @@ function showCompanionPanel(): boolean {
 
 function toggleCompanionPanel(): boolean {
   if (companionPanelWindow && !companionPanelWindow.isDestroyed() && companionPanelWindow.isVisible()) {
+    companionPanelKeepVisibleUntilClose = false;
+    if (companionPanelWindow.isMaximized()) companionPanelWindow.unmaximize();
     companionPanelWindow.hide();
     return true;
   }
@@ -1814,6 +1838,37 @@ function registerGlobalShortcutHandler(): void {
     if (!isTrustedMainWindowSender(event) || typeof enabled !== "boolean") return false;
     globalShortcut.unregister("CommandOrControl+Alt+P");
     return !enabled || globalShortcut.register("CommandOrControl+Alt+P", () => focusMainWindow("new-session"));
+  });
+}
+
+function registerAutoLaunchHandlers(): void {
+  const options = resolveDesktopLoginItemOptions({
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    isSmokeTest: PORTABLE_SMOKE_TEST,
+    executablePath: process.execPath,
+    ...(process.env.PORTABLE_EXECUTABLE_FILE
+      ? { portableExecutablePath: process.env.PORTABLE_EXECUTABLE_FILE }
+      : {}),
+  });
+  const controller: DesktopLoginItemController = {
+    getLoginItemSettings: (requestedOptions) => app.getLoginItemSettings(requestedOptions),
+    setLoginItemSettings: (settings) => app.setLoginItemSettings(settings),
+  };
+
+  ipcMain.removeHandler(AUTO_LAUNCH_GET_CHANNEL);
+  ipcMain.removeHandler(AUTO_LAUNCH_SET_CHANNEL);
+  ipcMain.handle(AUTO_LAUNCH_GET_CHANNEL, (event): DesktopAutoLaunchState => {
+    if (!isTrustedMainWindowSender(event)) return { supported: false, enabled: false };
+    return readDesktopAutoLaunchState(controller, process.platform, options);
+  });
+  ipcMain.handle(AUTO_LAUNCH_SET_CHANNEL, (event, enabled: unknown): DesktopAutoLaunchState => {
+    if (!isTrustedMainWindowSender(event) || typeof enabled !== "boolean") {
+      return { supported: false, enabled: false };
+    }
+    const state = updateDesktopAutoLaunchState(controller, process.platform, options, enabled);
+    if (state.error) logger?.warn("Unable to update auto-launch setting", { error: state.error });
+    return state;
   });
 }
 
@@ -2342,6 +2397,7 @@ async function startApplication(): Promise<void> {
 
   registerCompletionNotificationHandler();
   registerCompanionWindowHandlers();
+  registerAutoLaunchHandlers();
   registerGlobalShortcutHandler();
   registerKeyboardShortcutHandler();
   registerNetworkProxyHandler();

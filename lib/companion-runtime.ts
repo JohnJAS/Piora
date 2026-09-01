@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { writePrivateFileAtomicSync } from "./atomic-file";
 import {
   createDefaultCompanionPreferences,
@@ -9,7 +9,7 @@ import {
   type CompanionPreferences,
   type CompanionTodo,
 } from "./companion-store";
-import { getRuntimeAgentDataDirectory } from "./runtime-home";
+import { getCompanionRuntimePath } from "./companion-storage";
 
 export const COMPANION_RUNTIME_VERSION = 3;
 const MAX_MEMORIES = 200;
@@ -116,7 +116,7 @@ declare global {
 }
 
 function runtimePath(): string {
-  return join(getRuntimeAgentDataDirectory(), "piora", "companion-runtime.json");
+  return getCompanionRuntimePath();
 }
 
 function cleanText(value: unknown, max: number): string {

@@ -34,6 +34,22 @@ export const CUSTOM_BACKGROUND_MAX_BYTES = 12 * 1024 * 1024;
 export const CUSTOM_BACKGROUND_DATA_URL_FALLBACK_MAX_BYTES = 1536 * 1024;
 export const CUSTOM_BACKGROUND_MAX_PIXELS = 48_000_000;
 export const CUSTOM_BACKGROUND_MAX_DIMENSION = 12_000;
+export const CUSTOM_BACKGROUND_RENDER_MAX_PIXELS = 12_000_000;
+export const CUSTOM_BACKGROUND_RENDER_MAX_DIMENSION = 4_096;
+
+export function fitCustomBackgroundForRendering(width: number, height: number): { width: number; height: number } {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return { width: 0, height: 0 };
+  const scale = Math.min(
+    1,
+    CUSTOM_BACKGROUND_RENDER_MAX_DIMENSION / width,
+    CUSTOM_BACKGROUND_RENDER_MAX_DIMENSION / height,
+    Math.sqrt(CUSTOM_BACKGROUND_RENDER_MAX_PIXELS / (width * height)),
+  );
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
 
 export type SupportedBackgroundMime =
   | "image/avif"

@@ -11,6 +11,7 @@ import styles from "../SessionSidebar.module.css";
 import { applySessionOrder } from "./sidebar-utils";
 import { RunningSessionIndicator, UnreadSessionIndicator } from "./TaskRow";
 import { TaskList } from "./TaskList";
+import type { SessionMoveTarget } from "./TaskContextMenu";
 
 function displayCwd(cwd: string, homeDir?: string): string {
   return homeDir && cwd.startsWith(homeDir) ? "~" + cwd.slice(homeDir.length) : cwd;
@@ -25,6 +26,7 @@ export function ProjectSessionGroup({
   selectedSessionId,
   runningSessionIds,
   unreadSessionIds,
+  moveTargets,
   attentionSessionIds,
   onSelectProject,
   onToggleProject,
@@ -36,6 +38,8 @@ export function ProjectSessionGroup({
   sessionFlags,
   onFlagChange,
   onDuplicateSession,
+  onMarkUnread,
+  onMoveSession,
   isPinned,
   displayLabel,
   onTogglePinned,
@@ -56,6 +60,7 @@ export function ProjectSessionGroup({
   selectedSessionId: string | null;
   runningSessionIds: Set<string>;
   unreadSessionIds: Set<string>;
+  moveTargets: SessionMoveTarget[];
   attentionSessionIds: Set<string>;
   onSelectProject: () => void;
   onToggleProject: () => void;
@@ -67,6 +72,8 @@ export function ProjectSessionGroup({
   sessionFlags: SessionFlags;
   onFlagChange: (session: SessionInfo, patch: { pinned?: boolean; archived?: boolean }) => void;
   onDuplicateSession: (session: SessionInfo) => void;
+  onMarkUnread: (session: SessionInfo) => void;
+  onMoveSession: (session: SessionInfo, target: SessionMoveTarget) => Promise<void>;
   isPinned: boolean;
   displayLabel: string;
   onTogglePinned: () => void;
@@ -167,12 +174,15 @@ export function ProjectSessionGroup({
             selectedSessionId={selectedSessionId}
             runningSessionIds={runningSessionIds}
             unreadSessionIds={unreadSessionIds}
+            moveTargets={moveTargets}
             flags={sessionFlags}
             onSelectSession={onSelectSession}
             onRenamed={onRenamed}
             onSessionDeleted={onSessionDeleted}
             onFlagChange={onFlagChange}
             onDuplicate={onDuplicateSession}
+            onMarkUnread={onMarkUnread}
+            onMoveSession={onMoveSession}
             scope={`project:${group.projectRoot}`}
             sessionOrder={sessionOrder}
             onReorderSessions={onReorderSessions}

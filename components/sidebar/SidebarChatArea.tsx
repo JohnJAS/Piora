@@ -8,12 +8,14 @@ import type { SessionInfo } from "@/lib/types";
 import { AliIcon } from "../AliIcon";
 import styles from "../SessionSidebar.module.css";
 import { TaskList } from "./TaskList";
+import type { SessionMoveTarget } from "./TaskContextMenu";
 
 interface Props {
   sessions: SessionInfo[];
   selectedSessionId: string | null;
   runningSessionIds: Set<string>;
   unreadSessionIds: Set<string>;
+  moveTargets: SessionMoveTarget[];
   sessionFlags: SessionFlags;
   onNewChat: () => void;
   onSelectSession: (session: SessionInfo) => void;
@@ -21,6 +23,8 @@ interface Props {
   onSessionDeleted: (session: SessionInfo) => void;
   onFlagChange: (session: SessionInfo, patch: { pinned?: boolean; archived?: boolean }) => void;
   onDuplicate: (session: SessionInfo) => void;
+  onMarkUnread: (session: SessionInfo) => void;
+  onMoveSession: (session: SessionInfo, target: SessionMoveTarget) => Promise<void>;
   sessionOrder: readonly string[];
   onReorderSessions: (sourceId: string, targetId: string, position: "before" | "after") => void;
 }
@@ -30,6 +34,7 @@ export function SidebarChatArea({
   selectedSessionId,
   runningSessionIds,
   unreadSessionIds,
+  moveTargets,
   sessionFlags,
   onNewChat,
   onSelectSession,
@@ -37,6 +42,8 @@ export function SidebarChatArea({
   onSessionDeleted,
   onFlagChange,
   onDuplicate,
+  onMarkUnread,
+  onMoveSession,
   sessionOrder,
   onReorderSessions,
 }: Props) {
@@ -66,12 +73,15 @@ export function SidebarChatArea({
             selectedSessionId={selectedSessionId}
             runningSessionIds={runningSessionIds}
             unreadSessionIds={unreadSessionIds}
+            moveTargets={moveTargets}
             flags={sessionFlags}
             onSelectSession={onSelectSession}
             onRenamed={onRenamed}
             onSessionDeleted={onSessionDeleted}
             onFlagChange={onFlagChange}
             onDuplicate={onDuplicate}
+            onMarkUnread={onMarkUnread}
+            onMoveSession={onMoveSession}
             scope="projectless"
             sessionOrder={sessionOrder}
             onReorderSessions={onReorderSessions}

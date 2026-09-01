@@ -156,6 +156,7 @@ test("project creation lives in the projects header without a duplicate list", (
   assert.doesNotMatch(source, /sidebar\.openProject/);
   assert.doesNotMatch(source, /visibleProjects\.map/);
   assert.doesNotMatch(source, /filteredSessions/);
+  assert.match(source, /className=\{styles\.sectionLabelActions\} style=\{\{ opacity: 1 \}\}/);
 });
 
 test("exposes the existing validated project picker to shell-level project actions", () => {

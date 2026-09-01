@@ -24,6 +24,7 @@ import {
   type SessionCapabilitySelection,
 } from "@/lib/session-capabilities";
 import { runModelChange } from "@/lib/model-change-coordinator";
+import { useLiveOutputAutoScrollPreference } from "@/hooks/useLiveOutputAutoScrollPreference";
 import type {
   SessionSystemPromptBinding,
   SystemPromptSelection,
@@ -397,6 +398,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   } = opts;
 
   const isNew = session === null && newSessionCwd !== null;
+  const { enabled: liveOutputAutoScrollEnabled } = useLiveOutputAutoScrollPreference();
 
   // Task rows prefetch on hover/pointer-down. Seed the remounted chat from a
   // completed snapshot so a normal switch never paints the full loading shell
@@ -413,6 +415,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [entryIds, setEntryIds] = useState<string[]>(initialSessionData?.context.entryIds ?? []);
   const [streamState, dispatch] = useReducer(streamReducer, { isStreaming: false, streamingMessage: null });
   const [agentRunning, setAgentRunning] = useState(false);
+  const [liveOutputFollowPaused, setLiveOutputFollowPaused] = useState(false);
   const [bashRunning, setBashRunning] = useState(false);
   const [pendingBash, setPendingBash] = useState<{ command: string; excludeFromContext: boolean } | null>(null);
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
@@ -460,6 +463,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const lastUserMsgRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollToUserRef = useRef(false);
   const completionScrollAllowedRef = useRef(true);
+  const liveOutputFollowRef = useRef(true);
   const executeBashRef = useRef<(command: string, excludeFromContext: boolean) => Promise<void> | undefined>(undefined);
   const userScrollIntentUntilRef = useRef(0);
   const ignoreProgrammaticScrollUntilRef = useRef(0);
@@ -1148,6 +1152,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleAgentEvent = useCallback((event: AgentEvent) => {
     switch (event.type) {
       case "agent_start":
+        liveOutputFollowRef.current = true;
+        setLiveOutputFollowPaused(false);
         agentRunningRef.current = true;
         setAgentRunning(true);
         setAgentPhase({ kind: "waiting_model" });
@@ -1367,6 +1373,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     dispatch({ type: "start" });
     pendingScrollToUserRef.current = true;
     completionScrollAllowedRef.current = true;
+    liveOutputFollowRef.current = true;
+    setLiveOutputFollowPaused(false);
 
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
     let sentSessionId: string | null = null;
@@ -1867,6 +1875,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleScrollToBottom = useCallback(() => {
     stopInitialBottomPin();
     completionScrollAllowedRef.current = true;
+    liveOutputFollowRef.current = true;
+    setLiveOutputFollowPaused(false);
     scrollToBottom("smooth");
   }, [scrollToBottom, stopInitialBottomPin]);
 
@@ -1887,14 +1897,28 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     stopInitialBottomPin();
     userScrollIntentUntilRef.current = Date.now() + USER_SCROLL_INTENT_MS;
-  }, [stopInitialBottomPin]);
+    const target = event.target instanceof Element ? event.target : null;
+    const isConversationViewport = Boolean(target?.closest("#chat-scroll-container, .chat-column-scroll-rail"));
+    const isDirectScrollIntent = event instanceof KeyboardEvent
+      || (event instanceof WheelEvent && isConversationViewport)
+      || (event instanceof TouchEvent && isConversationViewport)
+      || (event instanceof PointerEvent && Boolean(target?.closest(".chat-column-scroll-rail")));
+    if (liveOutputAutoScrollEnabled && agentRunningRef.current && isDirectScrollIntent) {
+      liveOutputFollowRef.current = false;
+      setLiveOutputFollowPaused(true);
+    }
+  }, [liveOutputAutoScrollEnabled, stopInitialBottomPin]);
 
   const handleScrollPositionChange = useCallback(() => {
     if (!agentRunningRef.current) return;
     if (Date.now() < ignoreProgrammaticScrollUntilRef.current) return;
     if (Date.now() > userScrollIntentUntilRef.current) return;
     completionScrollAllowedRef.current = false;
-  }, []);
+    if (liveOutputAutoScrollEnabled) {
+      liveOutputFollowRef.current = false;
+      setLiveOutputFollowPaused(true);
+    }
+  }, [liveOutputAutoScrollEnabled]);
 
   // Load session on mount
   useEffect(() => {
@@ -1965,10 +1989,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   useEffect(() => {
     window.addEventListener("keydown", markUserScrollIntent);
-    window.addEventListener("pointerdown", markUserScrollIntent, { passive: true });
+    // Capture the custom rail before its drag handler stops propagation, and
+    // capture wheel input on the rail before it scrolls the chat viewport.
+    window.addEventListener("pointerdown", markUserScrollIntent, { capture: true, passive: true });
+    window.addEventListener("wheel", markUserScrollIntent, { capture: true, passive: true });
     return () => {
       window.removeEventListener("keydown", markUserScrollIntent);
-      window.removeEventListener("pointerdown", markUserScrollIntent);
+      window.removeEventListener("pointerdown", markUserScrollIntent, true);
+      window.removeEventListener("wheel", markUserScrollIntent, true);
     };
   }, [markUserScrollIntent]);
 
@@ -1988,6 +2016,38 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   useEffect(() => stopInitialBottomPin, [stopInitialBottomPin]);
 
   useLayoutEffect(() => {
+    if (!liveOutputAutoScrollEnabled || !agentRunning || loading) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    let frame = 0;
+    const pinLiveOutputToBottom = () => {
+      frame = 0;
+      if (!liveOutputFollowRef.current) return;
+      scrollToBottom("instant");
+    };
+    const schedulePin = () => {
+      if (frame !== 0) return;
+      frame = requestAnimationFrame(pinLiveOutputToBottom);
+    };
+    const resizeObserver = new ResizeObserver(schedulePin);
+    resizeObserver.observe(container);
+    const content = container.firstElementChild;
+    if (content) resizeObserver.observe(content);
+    // Images, diagrams, and extension UI can finish layout after their
+    // streaming event. Keep the newest output visible when that happens too.
+    container.addEventListener("load", schedulePin, true);
+    pinLiveOutputToBottom();
+    schedulePin();
+
+    return () => {
+      resizeObserver.disconnect();
+      container.removeEventListener("load", schedulePin, true);
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
+  }, [agentRunning, liveOutputAutoScrollEnabled, loading, scrollToBottom]);
+
+  useLayoutEffect(() => {
     // Loading may publish the message array before the loading shell is
     // replaced by the scroll container. Do not consume the one-shot initial
     // scroll until that container is mounted, otherwise switching sessions
@@ -2001,10 +2061,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } else if (!initialScrollDoneRef.current) {
       initialScrollDoneRef.current = true;
       startInitialBottomPin();
-    } else if (!agentRunningRef.current && completionScrollAllowedRef.current) {
+    } else if (!agentRunningRef.current && completionScrollAllowedRef.current && liveOutputAutoScrollEnabled) {
       scrollToBottom("smooth");
     }
-  }, [messages.length, agentRunning, loading, scrollToBottom, scrollUserMsgToTop, startInitialBottomPin]);
+  }, [messages.length, agentRunning, liveOutputAutoScrollEnabled, loading, scrollToBottom, scrollUserMsgToTop, startInitialBottomPin]);
 
   // Load model list
   useEffect(() => {
@@ -2049,6 +2109,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     retryInfo, contextUsage: effectiveContextUsage, systemPrompt, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages, capabilities, capabilitiesSaving,
+    liveOutputFollowPaused: liveOutputAutoScrollEnabled && agentRunning && liveOutputFollowPaused,
     notices: noticeState.visible, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection: isNew && displayModel === null,
     agentPhase,

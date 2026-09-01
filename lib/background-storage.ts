@@ -6,6 +6,7 @@ import {
   CUSTOM_BACKGROUND_MAX_PIXELS,
   SUPPORTED_BACKGROUND_MIME_TYPES,
   detectBackgroundImageMime,
+  fitCustomBackgroundForRendering,
   isSafeCustomBackgroundDataUrl,
   type SupportedBackgroundMime,
 } from "./backgrounds";
@@ -242,6 +243,47 @@ async function decodeImageDimensions(blob: Blob): Promise<{ width: number; heigh
   });
 }
 
+async function resizeForSafeRendering(
+  blob: Blob,
+  mime: SupportedBackgroundMime,
+  width: number,
+  height: number,
+): Promise<ValidatedBackgroundImage> {
+  const target = fitCustomBackgroundForRendering(width, height);
+  if (target.width === width && target.height === height) return { blob, mime, width, height };
+
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(blob, {
+      resizeWidth: target.width,
+      resizeHeight: target.height,
+      resizeQuality: "high",
+    });
+  } catch {
+    throw new BackgroundStorageError("corrupt-image", "The selected image cannot be prepared for safe rendering");
+  }
+
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = target.width;
+    canvas.height = target.height;
+    const context = canvas.getContext("2d");
+    if (!context) throw new BackgroundStorageError("storage-unavailable", "Image rendering is unavailable");
+    context.drawImage(bitmap, 0, 0, target.width, target.height);
+    const outputMime: SupportedBackgroundMime = mime === "image/jpeg" ? "image/jpeg" : "image/webp";
+    const resized = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (value) => value ? resolve(value) : reject(new BackgroundStorageError("storage-unavailable", "Unable to optimize the selected image")),
+        outputMime,
+        0.92,
+      );
+    });
+    return { blob: resized, mime: outputMime, width: target.width, height: target.height };
+  } finally {
+    bitmap.close();
+  }
+}
+
 export async function validateCustomBackgroundFile(file: File): Promise<ValidatedBackgroundImage> {
   if (file.size <= 0) throw new BackgroundStorageError("empty-file", "The selected image is empty");
   if (file.size > CUSTOM_BACKGROUND_MAX_BYTES) {
@@ -268,5 +310,5 @@ export async function validateCustomBackgroundFile(file: File): Promise<Validate
     throw new BackgroundStorageError("dimensions-too-large", "The selected image dimensions are too large");
   }
 
-  return { blob, mime, width, height };
+  return await resizeForSafeRendering(blob, mime, width, height);
 }

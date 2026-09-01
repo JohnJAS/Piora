@@ -20,6 +20,11 @@ export type Theme =
   | "sakura"
   | "kitty"
   | "cloud-bear"
+  | "anime-sky"
+  | "anime-sakura"
+  | "anime-magic"
+  | "anime-neon"
+  | "anime-star"
   | "midnight"
   | "forest"
   | "cyber"
@@ -47,6 +52,11 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
   { id: "sakura", isDark: false, preview: { background: "#fff7fa", accent: "#a63d68" } },
   { id: "kitty", isDark: false, preview: { background: "#fff5f8", accent: "#e65383" } },
   { id: "cloud-bear", isDark: false, preview: { background: "#f3faff", accent: "#3f8ee8" } },
+  { id: "anime-sky", isDark: false, preview: { background: "#f3faff", accent: "#17639a" } },
+  { id: "anime-sakura", isDark: false, preview: { background: "#fff6f3", accent: "#a83c5e" } },
+  { id: "anime-magic", isDark: true, preview: { background: "#0d1029", accent: "#a994ff" } },
+  { id: "anime-neon", isDark: true, preview: { background: "#061326", accent: "#45d9ff" } },
+  { id: "anime-star", isDark: true, preview: { background: "#07131e", accent: "#4cb7e8" } },
   { id: "midnight", isDark: true, preview: { background: "#0b1020", accent: "#8b9dff" } },
   { id: "forest", isDark: true, preview: { background: "#101914", accent: "#6fcf97" } },
   { id: "cyber", isDark: true, preview: { background: "#07191c", accent: "#4fd1c5" } },

@@ -13,6 +13,30 @@ import {
 import { AliIcon } from "./AliIcon";
 import styles from "./ShortcutSettings.module.css";
 
+const SHORTCUT_GROUPS = [
+  {
+    id: "navigation",
+    titleKey: "shortcuts.group.navigation",
+    descriptionKey: "shortcuts.group.navigationDescription",
+    icon: "search",
+    includes: (id: ApplicationShortcutId) => id.startsWith("navigate.") || id === "palette.open",
+  },
+  {
+    id: "workspace",
+    titleKey: "shortcuts.group.workspace",
+    descriptionKey: "shortcuts.group.workspaceDescription",
+    icon: "layout",
+    includes: (id: ApplicationShortcutId) => id.startsWith("panel."),
+  },
+  {
+    id: "system",
+    titleKey: "shortcuts.group.system",
+    descriptionKey: "shortcuts.group.systemDescription",
+    icon: "sparkles",
+    includes: (id: ApplicationShortcutId) => id === "companion.togglePanel" || id === "settings.general",
+  },
+] as const;
+
 export function ShortcutSettings() {
   const { t } = useI18n();
   const { bindings, overrides, setBinding, resetBinding, resetAll } = useApplicationShortcuts();
@@ -48,61 +72,91 @@ export function ShortcutSettings() {
   };
 
   const titleFor = (id: ApplicationShortcutId) => t(APPLICATION_SHORTCUTS.find((item) => item.id === id)?.titleKey ?? id);
+  const changedCount = Object.keys(overrides).length;
 
   return (
     <div className={styles.surface} data-testid="shortcut-settings">
       <header className={styles.heading}>
-        <div>
+        <div className={styles.headingCopy}>
+          <span className={styles.headingIcon}><AliIcon name="code" size={18} /></span>
+          <div>
           <h2>{t("settings.shortcuts")}</h2>
           <p>{t("settings.shortcutsDescription")}</p>
+          </div>
         </div>
-        <button type="button" className={styles.resetAll} onClick={() => { resetAll(); setError(null); setRecording(null); }}>
-          {t("shortcuts.resetAll")}
-        </button>
+        <div className={styles.headingActions}>
+          <span className={styles.changedBadge} data-active={changedCount > 0 || undefined}>{t("shortcuts.changedCount", { count: changedCount })}</span>
+          <button type="button" className={styles.resetAll} disabled={changedCount === 0} onClick={() => { resetAll(); setError(null); setRecording(null); }}>
+            <AliIcon name="reload" size={14} />{t("shortcuts.resetAll")}
+          </button>
+        </div>
       </header>
-      <div className={styles.list}>
-        {APPLICATION_SHORTCUTS.map((item) => {
-          const isRecording = recording === item.id;
+      <div className={styles.groups}>
+        {SHORTCUT_GROUPS.map((group) => {
+          const items = APPLICATION_SHORTCUTS.filter((item) => group.includes(item.id));
           return (
-            <div className={styles.row} key={item.id}>
-              <div className={styles.copy}>
-                <strong>{t(item.titleKey)}</strong>
-                <span>{t(item.descriptionKey)}</span>
+            <section className={styles.group} key={group.id} aria-labelledby={`shortcut-group-${group.id}`}>
+              <div className={styles.groupHeading}>
+                <span className={styles.groupIcon}><AliIcon name={group.icon} size={16} /></span>
+                <div>
+                  <h3 id={`shortcut-group-${group.id}`}>{t(group.titleKey)}</h3>
+                  <p>{t(group.descriptionKey)}</p>
+                </div>
+                <span className={styles.groupCount}>{items.length}</span>
               </div>
-              <button
-                type="button"
-                className={styles.recorder}
-                data-recording={isRecording}
-                data-app-shortcuts="preserve"
-                aria-label={t("shortcuts.recordLabel", { command: t(item.titleKey) })}
-                onClick={() => { setRecording(item.id); setError(null); }}
-                onBlur={() => setRecording((current) => current === item.id ? null : current)}
-                onKeyDown={(event) => isRecording && capture(item.id, event)}
-              >
-                <kbd>{isRecording ? t("shortcuts.recording") : formatShortcutBinding(bindings[item.id], mac) || t("shortcuts.unassigned")}</kbd>
-              </button>
-              <button
-                type="button"
-                className={styles.resetOne}
-                disabled={!Object.prototype.hasOwnProperty.call(overrides, item.id)}
-                aria-label={t("shortcuts.resetOneLabel", { command: t(item.titleKey) })}
-                title={t("shortcuts.resetOne")}
-                onClick={() => { resetBinding(item.id); setError(null); }}
-              >
-                <AliIcon name="reload" size={14} />
-              </button>
-            </div>
+              <div className={styles.list}>
+                {items.map((item) => {
+                  const isRecording = recording === item.id;
+                  const isChanged = Object.prototype.hasOwnProperty.call(overrides, item.id);
+                  const formatted = formatShortcutBinding(bindings[item.id], mac);
+                  const keys = formatted ? formatted.split("+") : [];
+                  return (
+                    <div className={styles.row} data-modified={isChanged || undefined} key={item.id}>
+                      <div className={styles.copy}>
+                        <strong>{t(item.titleKey)}{isChanged ? <span className={styles.modifiedDot} aria-label={t("shortcuts.modified")} /> : null}</strong>
+                        <span>{t(item.descriptionKey)}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className={styles.recorder}
+                        data-recording={isRecording}
+                        data-app-shortcuts="preserve"
+                        aria-label={t("shortcuts.recordLabel", { command: t(item.titleKey) })}
+                        onClick={() => { setRecording(item.id); setError(null); }}
+                        onBlur={() => setRecording((current) => current === item.id ? null : current)}
+                        onKeyDown={(event) => isRecording && capture(item.id, event)}
+                      >
+                        {isRecording ? <kbd className={styles.recordingKey}>{t("shortcuts.recording")}</kbd> : keys.length > 0 ? (
+                          <span className={styles.keycaps}>{keys.map((key) => <kbd key={key}>{key}</kbd>)}</span>
+                        ) : <span className={styles.unassigned}>{t("shortcuts.unassigned")}</span>}
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.resetOne}
+                        disabled={!isChanged}
+                        aria-label={t("shortcuts.resetOneLabel", { command: t(item.titleKey) })}
+                        title={t("shortcuts.resetOne")}
+                        onClick={() => { resetBinding(item.id); setError(null); }}
+                      >
+                        <AliIcon name="reload" size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
           );
         })}
       </div>
       <div className={`${styles.message} ${error ? styles.error : ""}`} role="status">
+        <AliIcon name={error ? "alert" : "info"} size={15} />
         {error?.type === "conflict"
           ? t("shortcuts.conflict", { shortcut: formatShortcutBinding(bindings[error.conflict], mac), command: titleFor(error.conflict) })
           : error?.type === "reserved"
             ? t("shortcuts.reserved", { shortcut: formatShortcutBinding(error.binding, mac) })
             : t("shortcuts.recordHint")}
       </div>
-      <p className={styles.note}>{t("shortcuts.nativeFindNote")}</p>
+      <p className={styles.note}><AliIcon name="info" size={14} />{t("shortcuts.nativeFindNote")}</p>
     </div>
   );
 }
