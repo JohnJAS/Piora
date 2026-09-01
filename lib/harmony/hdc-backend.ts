@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createConnection, createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { extname, isAbsolute, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { type CommandExecutor, runCommand } from "./command-runner";
@@ -79,7 +79,7 @@ function validateCoordinate(value: number, label: string): number {
 
 function parseDeviceLine(line: string): { serial: string; state: HarmonyDeviceConnectionState } | undefined {
   const trimmed = line.trim();
-  if (!trimmed || /^\[?empty\]?$/i.test(trimmed) || /no targets/i.test(trimmed)) return undefined;
+  if (!trimmed || /^\[?empty\]?(?:\s|$)/i.test(trimmed) || /no targets/i.test(trimmed)) return undefined;
   if (/^\[(?:fail|error|e\d+)/i.test(trimmed)) return undefined;
   const parts = trimmed.split(/\s+/);
   const serial = parts[0];
@@ -892,6 +892,40 @@ export class HdcBackend implements HarmonyAutomationBackend {
     const args = ["aa", "start", "-b", bundleName];
     if (abilityName) args.push("-a", abilityName);
     await this.shell(serial, args, "launch_app", signal);
+  }
+
+  async installPackage(serial: string, hapPathValue: string, replace = true, signal?: AbortSignal): Promise<void> {
+    if (!isAbsolute(hapPathValue) || extname(hapPathValue).toLowerCase() !== ".hap") {
+      throw new HarmonyError("INVALID_ARGUMENT", "A valid absolute HAP package path is required");
+    }
+    const hapPath = resolve(hapPathValue);
+    let details;
+    try { details = await stat(hapPath); } catch (error) {
+      throw new HarmonyError("INVALID_ARGUMENT", "The HAP package does not exist", { cause: error });
+    }
+    if (!details.isFile() || details.size <= 0 || details.size > 2 * 1024 * 1024 * 1024) {
+      throw new HarmonyError("INVALID_ARGUMENT", "The HAP package is invalid or exceeds the installation limit");
+    }
+    const result = await this.run(["-t", serial, "install", ...(replace ? ["-r"] : []), hapPath], "install_package", signal, 120_000);
+    const output = Buffer.concat([result.stdout, result.stderr]).toString("utf8");
+    if (/(?:install\s+fail|failure\[|permission denied)/i.test(output)) {
+      throw new HarmonyError("COMMAND_FAILED", "Harmony package installation failed", { retryable: true, details: { operation: "install_package" } });
+    }
+  }
+
+  async stopApp(serial: string, bundleName: string, signal?: AbortSignal): Promise<void> {
+    if (!APP_IDENTIFIER_PATTERN.test(bundleName)) throw new HarmonyError("INVALID_ARGUMENT", "Invalid Harmony bundle name");
+    await this.shell(serial, ["aa", "force-stop", bundleName], "stop_app", signal);
+  }
+
+  async clearAppData(serial: string, bundleName: string, signal?: AbortSignal): Promise<void> {
+    if (!APP_IDENTIFIER_PATTERN.test(bundleName)) throw new HarmonyError("INVALID_ARGUMENT", "Invalid Harmony bundle name");
+    await this.shell(serial, ["bm", "clean", "-d", "-n", bundleName], "clear_app_data", signal, 30_000);
+  }
+
+  async uninstallPackage(serial: string, bundleName: string, signal?: AbortSignal): Promise<void> {
+    if (!APP_IDENTIFIER_PATTERN.test(bundleName)) throw new HarmonyError("INVALID_ARGUMENT", "Invalid Harmony bundle name");
+    await this.run(["-t", serial, "uninstall", bundleName], "uninstall_package", signal, 120_000);
   }
 }
 

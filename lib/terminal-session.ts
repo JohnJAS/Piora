@@ -190,11 +190,26 @@ export class TerminalSession {
     };
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
+    const child = this.child;
+    const closed = child ? new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        child.removeListener("close", finish);
+        resolve();
+      };
+      const timer = setTimeout(finish, 5_000);
+      timer.unref?.();
+      child.once("close", finish);
+    }) : Promise.resolve();
     this.stop(false);
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = null;
     this.listeners.clear();
+    await closed;
   }
 
   private append(chunk: string): void {
@@ -246,7 +261,7 @@ export function getTerminalSession(cwd: string): TerminalSession {
   return created;
 }
 
-export function resetTerminalSessionsForTests(): void {
-  for (const session of terminalSessions().values()) session.dispose();
+export async function resetTerminalSessionsForTests(): Promise<void> {
+  await Promise.all([...terminalSessions().values()].map(async (session) => await session.dispose()));
   terminalSessions().clear();
 }

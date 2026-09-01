@@ -1,6 +1,6 @@
 # HarmonyOS NEXT 设备自动化
 
-Piora 0.2.2 在统一桌面版本中提供 HarmonyOS NEXT 设备控制能力。它让用户先在可见设备面板中连接和检查自己的测试手机，再把结构化、受限的 UI 操作交给 AI 执行。
+Piora 在统一桌面版本中提供 HarmonyOS NEXT 设备控制能力。它保留现有 HDC 投屏实现，同时用持久 Hypium/UiTest RPC 会话执行高频 UI 操作，让模型可以在一次工具调用中完成带等待和断言的完整测试流程。
 
 ## 支持范围
 
@@ -8,14 +8,15 @@ Piora 0.2.2 在统一桌面版本中提供 HarmonyOS NEXT 设备控制能力。�
 - 用户持有并主动授权的 HarmonyOS NEXT 真机。
 - USB/HDC 设备发现与连接诊断。
 - 右侧工作区约 1 FPS 的本地设备投屏，以及 UiTest 控件树。
-- 点击控件、坐标点击、滑动、文本输入、Back/Home/Recents/Enter。
-- 启动明确指定 bundle name 的应用。
+- 持久 Hypium 语义点击、双击、长按、输入、清空、滚动查找、滑动、Back/Home/Recents/Enter；驱动不可连接时自动退回安全的 HDC/UiTest 能力。
+- 使用 id、文本、类型、hint、无障碍描述、组件状态和索引组合定位控件，歧义目标不会盲点。
+- 启动、停止、安装、卸载测试应用以及清理测试应用数据。
 - 等待控件出现、消失或 enabled/checked/selected/visible 状态变化。
 - 固定等待，以及基于本地 PNG 像素采样的全屏/指定区域稳定等待。
-- 每台设备独占租约、动作串行化、过期快照拒绝和紧急停止。
-- AI 的 `harmony_device` 结构化工具。
+- 每台设备独占租约、同设备动作串行、多设备并行、过期快照拒绝和紧急停止。
+- AI 首选的 `harmony_run_scenario` 批量工具，以及向后兼容的单步工具。
 
-不支持绕过开发者模式、USB 授权、锁屏、密码、验证码、支付确认、生物认证或应用自身权限。Piora 不提供 raw HDC shell、安装/卸载、清数据或任意文件操作给 AI。
+不支持绕过开发者模式、USB 授权、锁屏、密码、验证码、支付确认、生物认证或应用自身权限。Piora 不向 AI 提供 raw HDC shell 或任意文件操作；安装、卸载和清数据只接受结构化场景中的明确 HAP 路径或 bundle name，应只用于测试设备和测试应用。
 
 ## 使用前准备
 
@@ -27,9 +28,9 @@ Piora 0.2.2 在统一桌面版本中提供 HarmonyOS NEXT 设备控制能力。�
 
 ## 在现有会话中使用
 
-打开右侧工作区的 **Harmony** 标签即可查看和手动控制设备；不需要切换运行模式、停止当前任务或重启服务。现有会话会直接加载 `harmony_device`，同时保留原有编码工具、项目扩展、skills 和 prompts。
+打开右侧工作区的 **Harmony** 标签即可查看和手动控制设备；不需要切换运行模式、停止当前任务或重启服务。现有会话会直接加载 `harmony_*` 设备工具，同时保留原有编码工具、项目扩展、skills 和 prompts。
 
-这意味着普通会话与手机控制不再构成进程或工具隔离。手机上显示的内容以及项目/第三方扩展都必须按不可信输入处理。AI 每次取得设备控制权仍会弹出本地确认，并继续受独占租约、串行动作、generation/ref 校验、敏感操作限制和紧急停止约束。
+这意味着普通会话与手机控制不构成进程或工具隔离。手机上显示的内容以及项目/第三方扩展都必须按不可信输入处理。控制权绑定当前 prompt run，模型拿不到租约令牌；运行结束、取消、超时或紧急停止都会回收控制。
 
 ## 配置 HDC
 
@@ -53,16 +54,14 @@ Harmony 面板会按以下顺序寻找运行时：
 
 右侧实时投屏仍是本地轮询，不会因为打开面板就发送给任何模型。只有 AI 调用带截图的 `snapshot` 时才会发生视觉请求。
 
-## 目标模式
+## 混合自动化驱动
 
-输入框工具栏的“目标模式”会把一次请求保持为同一个逻辑运行：
-
-- Agent 每个模型回合结束后，如果目标仍为 active，Piora 会自动发起下一回合。
-- Agent 必须使用 `piora_goal complete` 并提供已验证的结果，或使用 `piora_goal blocked` 说明确切阻塞条件。
-- 用户可随时点击停止；模型错误也会终止本次运行。
-- 为防止失控空转，单次目标运行最多自动续接 64 个回合；触达上限会以 blocked 结束，而不会伪装成完成。
-
-目标模式开关保存在本机浏览器存储中。它不绕过设备授权、敏感操作边界、模型权限或人工确认。
+- 设备发现、截图、UI 树、应用生命周期、文件传输、录屏和现有视频投屏继续由已经验证的 HDC backend 完成。
+- 第一次 UI 操作会按设备懒加载 `hypium-driver` 并建立 UiTest RPC；后续步骤复用同一个连接，避免每步启动命令和 agent。
+- Hypium 在连接前强制关闭第三方遥测；无法确认关闭时拒绝启动该驱动。
+- 连接建立前失败会进入短暂冷却，并退回原有 HDC 操作。已经发出的 RPC 如果失败不会再用 HDC 重放，避免一次点击或输入被执行两次。
+- 设备断开、取消、急停、配置切换或进程退出时会断开并清理持久会话。
+- `harmony_run_scenario` 最多接受 64 步、单个等待最长 60 秒、整个场景最长 5 分钟；失败后停止剩余写操作并返回失败步骤。
 
 ## 智能等待
 
@@ -72,7 +71,7 @@ Harmony 面板会按以下顺序寻找运行时：
 - `wait_until_stable` 在本地解码并采样连续 PNG 帧。默认画面变化像素不超过 0.5%，连续稳定 1 秒后继续；可指定屏幕区域，避开状态栏、时钟等无关变化。截图不会因为稳定检测自动发送给视觉模型，只有最终工具结果按现有视觉配置处理。
 - `wait_ms` 提供 100 ms 到 60 秒的可中止固定等待，只应在没有可观察完成条件时作为兜底。
 
-所有等待都会返回实际等待时长和轮询次数；超时会报告最后一次候选数量或画面变化比例。设备断开、用户停止或 prompt run 结束时，等待会随租约一起中止。
+所有场景步骤都会返回状态、耗时和实际执行策略；超时会报告结构化失败。设备断开、用户停止或 prompt run 结束时，等待会随租约一起中止。
 
 画面稳定只代表采样区域在阈值内不再变化，不代表业务一定成功。测试仍应在稳定后使用 UI 树、截图或业务结果进行断言。对于循环粒子、视频、光标闪烁等持续动画，应缩小检测区域或改等结构化状态。
 
@@ -96,25 +95,37 @@ Harmony 面板会按以下顺序寻找运行时：
 
 AI 的标准流程是：
 
-1. `list_devices` 查找设备。
-2. `acquire_control` 请求当前 run 的本地授权。
-3. `snapshot` 读取控件引用和必要截图。
-4. 使用 `tap_ref`、`swipe`、`input_text`、`press_key` 或 `launch_app`。
-5. 使用 `wait_for` 等待业务状态；纯视觉转场可使用 `wait_until_stable`，固定等待仅作兜底。
-6. 每次页面变化后重新 `snapshot`；旧 revision/ref 会被拒绝。
-7. 完成后 `release_control`。
+1. `harmony_list_devices` 查找设备。
+2. 已知测试路径时直接调用 `harmony_run_scenario`；它会自动取得本轮控制权，并在同一设备队列与持久 UiTest 会话中执行全部步骤。
+3. 选择器优先使用稳定 resource id，其次是无障碍 description/hint，再次是可见文本与类型组合；可能重复时增加状态或 index。
+4. 每个会改变页面的步骤使用 `waitFor`，关键业务结果增加 `assert`，长列表目标使用有次数上限的 `scroll_find`。
+5. 只有探索未知页面或失败恢复时才使用 `harmony_observe_screen` 和兼容的单步工具。观察默认只返回 UI 树；确实需要视觉判断或证据时再请求截图。
+6. 完成后可显式 `harmony_release_control`；prompt run 结束也会自动释放。
+
+场景示例（工具参数中的输入文本不会出现在结果中）：
+
+```json
+{
+  "steps": [
+    { "action": "launch_app", "bundleName": "com.example.demo", "waitFor": { "selector": { "id": "home" } } },
+    { "action": "tap", "selector": { "id": "settings" }, "waitFor": { "selector": { "text": "设置" } } },
+    { "action": "tap", "selector": { "id": "dark-mode", "checked": false } },
+    { "action": "assert", "condition": { "selector": { "id": "dark-mode", "checked": true } } }
+  ]
+}
+```
 
 控制授权绑定当前设备、连接 generation、Piora task 和 Agent run，run 结束或超时即撤销。模型拿不到可复制的租约令牌。
 
 ## 屏幕数据与模型提供商
 
-手动面板的最新截图只作本地内存缓存。AI 调用 `snapshot` 时，截图或控件文本会成为工具结果：
+手动面板的最新截图只作本地内存缓存。AI 调用观察或场景最终截图时，截图或控件文本会成为工具结果：
 
 - 内容可能发送给当前选择的模型提供商。
 - 工具结果可能写入 Pi session JSONL，并出现在会话导出中。
 - 请先关闭无关通知，并只共享任务所需的 `tree`、`screenshot` 或 `both`。
 
-Piora 不把输入正文、截图字节或完整控件树写入 Harmony 审计日志。第三方 Driver 遥测必须保持关闭。
+Piora 不把输入正文、截图字节或完整控件树写入 Harmony 审计日志。Hypium 遥测由运行时强制关闭；如果无法写入隐私配置，Piora 不会加载该驱动。
 
 ## 故障排查
 
@@ -123,9 +134,13 @@ Piora 不把输入正文、截图字节或完整控件树写入 Harmony 审计�
 | `HDC_NOT_FOUND` / `HDC_INVALID` | 选择正确的 `hdc.exe`，然后重新探测 |
 | `DEVICE_OFFLINE` | 解锁手机并确认 USB 调试授权 |
 | `LEASE_CONFLICT` | 在占用任务中释放控制，或由用户紧急停止 |
-| `LEASE_REQUIRED` / `LEASE_EXPIRED` | 重新执行 `acquire_control` 并在本地确认 |
+| `LEASE_REQUIRED` / `LEASE_EXPIRED` | 重新调用场景工具自动获取本轮租约，或使用兼容的 `harmony_acquire_control` |
 | `STALE_SNAPSHOT` | 重新获取快照，再重新定位控件 |
 | `CAPABILITY_UNAVAILABLE` | 当前 HDC/UiTest 版本不支持该动作，或页面禁止捕获；Piora 不会绕过系统限制 |
+| `AUTOMATION_DRIVER_UNAVAILABLE` | Hypium 无法连接；Piora 会对可安全降级的动作使用 HDC，并在冷却后重试持久驱动 |
+| `AUTOMATION_DRIVER_FAILED` | 已连接的 RPC 在动作期间失败；先观察实际页面，Piora 不会自动重放写操作 |
+| `UI_TARGET_NOT_FOUND` / `UI_TARGET_AMBIGUOUS` | 改用更稳定或更精确的语义选择器，必要时先观察 UI 树 |
+| `SCENARIO_FAILED` | 场景断言失败；检查返回的失败步骤和最终 UI 树 |
 | `COMMAND_TIMEOUT` | 先刷新投屏确认动作是否已经发生，禁止盲目重复 |
 | `COMMAND_FAILED` | 查看面板诊断、设备授权和 USB 连接后重试 |
 

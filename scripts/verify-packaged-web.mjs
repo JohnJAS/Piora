@@ -5,6 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { extractAll, listPackage } from "@electron/asar";
 import { generateLicenseInventory } from "./generate-license-inventory.mjs";
@@ -98,6 +99,9 @@ const requiredPaths = [
   "node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/dark.json",
   "node_modules/rrule/package.json",
   "node_modules/tslib/package.json",
+  "node_modules/hypium-driver/package.json",
+  "node_modules/hypium-driver/build/lib/resource/uitest_agent_v1.2.2.so",
+  "node_modules/xmldom/package.json",
 ];
 
 async function assertFile(path) {
@@ -729,6 +733,15 @@ async function main() {
   for (const requiredPath of requiredPaths) {
     await assertFile(join(runtimeWebRoot, requiredPath));
   }
+  const requirePackagedRuntime = createRequire(join(runtimeWebRoot, "package.json"));
+  const packagedHypium = requirePackagedRuntime("hypium-driver");
+  if (typeof packagedHypium?.UiDriver?.connect !== "function" || typeof packagedHypium?.BY?.text !== "function") {
+    throw new Error("Packaged Hypium runtime does not expose the required UiDriver/BY API");
+  }
+  const packagedXmlDom = JSON.parse(await readFile(join(runtimeWebRoot, "node_modules", "xmldom", "package.json"), "utf8"));
+  if (packagedXmlDom.name !== "@xmldom/xmldom" || packagedXmlDom.version !== "0.9.12") {
+    throw new Error("Packaged Hypium runtime does not use the reviewed xmldom 0.9.12 override");
+  }
   const packagedPiAiRuntime = await verifyPackagedPiAiRuntime(runtimeWebRoot);
   const packagedPiAiModules = await verifyPackagedPiAiModuleSurface(runtimeWebRoot);
   const patchedBundledDependencies = [
@@ -955,6 +968,7 @@ async function main() {
 
     const harmonyTools = [
       "harmony_list_devices",
+      "harmony_run_scenario",
       "harmony_acquire_control",
       "harmony_observe_screen",
       "harmony_tap",

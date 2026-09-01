@@ -182,6 +182,10 @@ export interface HarmonyDiagnostics {
   onlineDeviceCount: number;
   activeLeaseCount: number;
   queue: { pending: number; active: boolean; epoch: number };
+  automation?: {
+    provider: string;
+    sessions: Array<{ serial: string; state: "idle" | "connecting" | "ready" | "cooldown"; retryAt?: string }>;
+  };
 }
 
 export interface HarmonyOperationResult {
@@ -257,6 +261,112 @@ export interface HarmonyLaunchAppOptions {
   bundleName: string;
   abilityName?: string;
   signal?: AbortSignal;
+}
+
+export interface HarmonyInstallAppOptions {
+  serial: string;
+  leaseToken: string;
+  hapPath: string;
+  replace?: boolean;
+  signal?: AbortSignal;
+}
+
+export type HarmonySelectorMatch = "exact" | "contains" | "starts_with" | "ends_with";
+
+/** Stable, model-friendly description of a UI target. Pixel coordinates are deliberately excluded. */
+export interface HarmonyUiSelector {
+  id?: string;
+  text?: string;
+  type?: string;
+  hint?: string;
+  description?: string;
+  match?: HarmonySelectorMatch;
+  clickable?: boolean;
+  scrollable?: boolean;
+  enabled?: boolean;
+  focused?: boolean;
+  selected?: boolean;
+  checked?: boolean;
+  visible?: boolean;
+  inWindow?: string;
+  within?: HarmonyUiSelector;
+  before?: HarmonyUiSelector;
+  after?: HarmonyUiSelector;
+  /** Zero-based disambiguation for selectors that intentionally match more than one element. */
+  index?: number;
+}
+
+export interface HarmonyWaitCondition {
+  selector: HarmonyUiSelector;
+  exists?: boolean;
+  timeoutMs?: number;
+  intervalMs?: number;
+}
+
+export type HarmonyScenarioStep =
+  | { id?: string; action: "tap" | "double_tap" | "long_press"; selector: HarmonyUiSelector; waitFor?: HarmonyWaitCondition }
+  | { id?: string; action: "input_text"; selector: HarmonyUiSelector; text: string; append?: boolean; waitFor?: HarmonyWaitCondition }
+  | { id?: string; action: "clear_text"; selector: HarmonyUiSelector; waitFor?: HarmonyWaitCondition }
+  | { id?: string; action: "scroll_find"; selector: HarmonyUiSelector; container?: HarmonyUiSelector; direction?: "up" | "down"; maxSwipes?: number; tap?: boolean; waitFor?: HarmonyWaitCondition }
+  | { id?: string; action: "swipe" | "fling"; direction: "left" | "right" | "up" | "down"; durationMs?: number; waitFor?: HarmonyWaitCondition }
+  | { id?: string; action: "press_key"; key: "back" | "home" | "recents" | "enter"; waitFor?: HarmonyWaitCondition }
+  | { id?: string; action: "launch_app"; bundleName: string; abilityName?: string; waitFor?: HarmonyWaitCondition }
+  | { id?: string; action: "stop_app" | "clear_app_data" | "uninstall_app"; bundleName: string }
+  | { id?: string; action: "install_app"; hapPath: string; replace?: boolean }
+  | { id?: string; action: "wait_for" | "assert"; condition: HarmonyWaitCondition }
+  | { id?: string; action: "wait_idle"; idleMs?: number; timeoutMs?: number }
+  | { id?: string; action: "checkpoint"; name: string };
+
+export interface HarmonyScenarioPolicy {
+  defaultTimeoutMs?: number;
+  defaultIntervalMs?: number;
+  settleAfterAction?: boolean;
+  captureFinalScreenshot?: boolean;
+}
+
+export interface HarmonyScenarioOptions {
+  serial: string;
+  leaseToken: string;
+  steps: HarmonyScenarioStep[];
+  policy?: HarmonyScenarioPolicy;
+  signal?: AbortSignal;
+}
+
+export interface HarmonyScenarioStepResult {
+  index: number;
+  id?: string;
+  action: HarmonyScenarioStep["action"];
+  status: "passed" | "failed";
+  durationMs: number;
+  strategy?: string;
+  message?: string;
+}
+
+export interface HarmonyScenarioResult {
+  serial: string;
+  generation: number;
+  status: "passed" | "failed";
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+  completedSteps: number;
+  checkpoint?: { name: string; stepIndex: number };
+  steps: HarmonyScenarioStepResult[];
+  finalSnapshot?: HarmonySnapshot;
+}
+
+export interface HarmonySemanticActionRequest {
+  action: "tap" | "double_tap" | "long_press" | "input_text" | "clear_text" | "scroll_find";
+  selector: HarmonyUiSelector;
+  text?: string;
+  append?: boolean;
+  container?: HarmonyUiSelector;
+  tapAfterScroll?: boolean;
+  timeoutMs?: number;
+}
+
+export interface HarmonySemanticActionResult {
+  strategy: string;
 }
 
 export type HarmonyManagerEvent =
@@ -343,5 +453,17 @@ export interface HarmonyAutomationBackend {
     abilityName?: string,
     signal?: AbortSignal,
   ): Promise<void>;
+  installPackage?(serial: string, hapPath: string, replace?: boolean, signal?: AbortSignal): Promise<void>;
+  stopApp?(serial: string, bundleName: string, signal?: AbortSignal): Promise<void>;
+  clearAppData?(serial: string, bundleName: string, signal?: AbortSignal): Promise<void>;
+  uninstallPackage?(serial: string, bundleName: string, signal?: AbortSignal): Promise<void>;
+  waitForIdle?(serial: string, idleMs: number, timeoutMs: number, signal?: AbortSignal): Promise<void>;
+  semanticAction?(
+    serial: string,
+    request: HarmonySemanticActionRequest,
+    signal?: AbortSignal,
+  ): Promise<HarmonySemanticActionResult>;
+  resetAutomation?(serial?: string): Promise<void>;
+  automationDiagnostics?(): NonNullable<HarmonyDiagnostics["automation"]>;
   dispose?(): Promise<void> | void;
 }

@@ -1,6 +1,6 @@
 {
   "name": "piora",
-  "version": "0.4.40-beta.3",
+  "version": "0.4.40-beta.4",
   "private": true,
   "description": "Open-source Pi coding agent desktop application",
   "author": {
@@ -39,7 +39,8 @@
     "postcss": "$postcss",
     "nanoid": "3.3.18",
     "sharp@0.34.5": "0.35.3",
-    "undici": "$undici"
+    "undici": "$undici",
+    "xmldom": "npm:@xmldom/xmldom@0.9.12"
   },
   "workspaces": [
     "desktop"
@@ -103,6 +104,7 @@
     "@earendil-works/pi-tui": "0.84.3",
     "@lobehub/icons": "^5.16.0",
     "brace-expansion": "5.0.9",
+    "hypium-driver": "6.1.210",
     "json-bigint": "^1.0.0",
     "jszip": "^3.10.1",
     "katex": "^0.16.47",

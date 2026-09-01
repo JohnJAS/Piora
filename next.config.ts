@@ -47,6 +47,7 @@ const nextConfig: NextConfig = {
     "@earendil-works/pi-tui",
     "playwright-core",
     "proper-lockfile",
+    "hypium-driver",
   ],
   webpack(config, { isServer, dev }) {
     // Release builds are one-shot and never reuse this cache. Disabling the
@@ -67,6 +68,7 @@ const nextConfig: NextConfig = {
         "@earendil-works/pi-ai",
         "@earendil-works/pi-tui",
         "playwright-core",
+        "hypium-driver",
       );
     }
     return config;

@@ -10,6 +10,7 @@ import {
   type HarmonyLease,
   type HarmonyOperationResult,
   type HarmonyScreenshotRegion,
+  type HarmonyScenarioStep,
   type HarmonySnapshot,
   type HarmonyUiNode,
 } from "../lib/harmony/index.ts";
@@ -132,6 +133,41 @@ function registerLeaseCleanup(identity: PromptToolIdentity): void {
     leaseState.cleanupRuns.delete(identity.runId);
     if (firstFailure) throw firstFailure;
   });
+}
+
+async function ensureAgentLease(
+  identity: PromptToolIdentity,
+  serial: string,
+  signal?: AbortSignal,
+): Promise<HarmonyLease> {
+  const manager = getHarmonyDeviceManager();
+  const key = leaseKey(identity.runId, serial);
+  const existingToken = leaseState.leases.get(key);
+  if (existingToken) {
+    try {
+      return activeLease(identity, serial);
+    } catch {
+      leaseState.leases.delete(key);
+      manager.releaseLease(existingToken);
+    }
+  }
+  registerLeaseCleanup(identity);
+  const lease = await manager.acquireLease({
+    serial,
+    owner: { kind: "agent", id: identity.runId, sessionId: identity.sessionId },
+    ttlMs: AGENT_LEASE_TTL_MS,
+    signal,
+  });
+  leaseState.leases.set(key, lease.token);
+  try {
+    const stillActive = requirePromptToolIdentity(identity.sessionId, identity.toolCallId);
+    if (stillActive.runId !== identity.runId) throw new Error("The prompt run changed while device control was being acquired.");
+  } catch (error) {
+    leaseState.leases.delete(key);
+    manager.releaseLease(lease.token);
+    throw error;
+  }
+  return lease;
 }
 
 function nodeLine(node: HarmonyUiNode): string {
@@ -646,7 +682,7 @@ const harmonyDeviceTool = defineTool({
             serial,
             leaseToken: lease.token,
             includeTree: params.includeTree ?? true,
-            includeScreenshot: params.includeScreenshot ?? true,
+            includeScreenshot: params.includeScreenshot ?? false,
             signal,
           });
           return await snapshotResult(snapshot, identity, params.action, signal);
@@ -939,6 +975,112 @@ const gesture = () => ({
   durationMs: Type.Optional(Type.Number({ minimum: 50, maximum: 10_000 })),
 });
 
+const semanticLocatorFields = () => ({
+  id: Type.Optional(Type.String({ maxLength: 500, description: "Exact resource id; usually the most stable locator" })),
+  text: Type.Optional(Type.String({ maxLength: 500, description: "Visible component text" })),
+  type: Type.Optional(Type.String({ maxLength: 300, description: "Exact component type" })),
+  hint: Type.Optional(Type.String({ maxLength: 500, description: "Input hint or placeholder" })),
+  description: Type.Optional(Type.String({ maxLength: 500, description: "Accessibility description" })),
+  inWindow: Type.Optional(Type.String({ maxLength: 500, description: "Owning application window bundle" })),
+  match: Type.Optional(Type.Union([
+    Type.Literal("exact"), Type.Literal("contains"), Type.Literal("starts_with"), Type.Literal("ends_with"),
+  ], { description: "String matching mode; defaults to exact" })),
+  clickable: Type.Optional(Type.Boolean()),
+  enabled: Type.Optional(Type.Boolean()),
+  visible: Type.Optional(Type.Boolean()),
+  focused: Type.Optional(Type.Boolean()),
+  selected: Type.Optional(Type.Boolean()),
+  checked: Type.Optional(Type.Boolean()),
+  scrollable: Type.Optional(Type.Boolean()),
+});
+const semanticAnchorSchema = Type.Object(semanticLocatorFields(), {
+  description: "One-level semantic relationship anchor",
+});
+const semanticSelectorSchema = Type.Object({
+  ...semanticLocatorFields(),
+  within: Type.Optional(semanticAnchorSchema),
+  before: Type.Optional(semanticAnchorSchema),
+  after: Type.Optional(semanticAnchorSchema),
+  index: Type.Optional(Type.Integer({ minimum: 0, maximum: 999, description: "Zero-based disambiguation index" })),
+}, { description: "Stable semantic selector. Supply at least one locator field; prefer id, then accessibility description, then text." });
+
+const semanticWaitSchema = Type.Object({
+  selector: semanticSelectorSchema,
+  exists: Type.Optional(Type.Boolean({ description: "Defaults to true; false waits for disappearance" })),
+  timeoutMs: Type.Optional(Type.Number({ minimum: 100, maximum: MAX_WAIT_MS })),
+  intervalMs: Type.Optional(Type.Number({ minimum: 100, maximum: 5_000 })),
+});
+
+const scenarioStepId = () => ({
+  id: Type.Optional(Type.String({ maxLength: 120, description: "Short diagnostic step id" })),
+});
+const scenarioWaitFor = () => ({
+  waitFor: Type.Optional(semanticWaitSchema),
+});
+const scenarioStepSchema = Type.Union([
+  Type.Object({ ...scenarioStepId(), action: Type.Union([Type.Literal("tap"), Type.Literal("double_tap"), Type.Literal("long_press")]), selector: semanticSelectorSchema, ...scenarioWaitFor() }),
+  Type.Object({ ...scenarioStepId(), action: Type.Literal("input_text"), selector: semanticSelectorSchema, text: Type.String({ minLength: 1, maxLength: MAX_INPUT_TEXT, description: "Non-sensitive text only; never passwords, verification codes, or payment data" }), append: Type.Optional(Type.Boolean()), ...scenarioWaitFor() }),
+  Type.Object({ ...scenarioStepId(), action: Type.Literal("clear_text"), selector: semanticSelectorSchema, ...scenarioWaitFor() }),
+  Type.Object({ ...scenarioStepId(), action: Type.Literal("scroll_find"), selector: semanticSelectorSchema, container: Type.Optional(semanticSelectorSchema), direction: Type.Optional(Type.Union([Type.Literal("up"), Type.Literal("down")])), maxSwipes: Type.Optional(Type.Number({ minimum: 1, maximum: 30 })), tap: Type.Optional(Type.Boolean()), ...scenarioWaitFor() }),
+  Type.Object({ ...scenarioStepId(), action: Type.Union([Type.Literal("swipe"), Type.Literal("fling")]), direction: Type.Union([Type.Literal("left"), Type.Literal("right"), Type.Literal("up"), Type.Literal("down")]), durationMs: Type.Optional(Type.Number({ minimum: 50, maximum: 10_000 })), ...scenarioWaitFor() }),
+  Type.Object({ ...scenarioStepId(), action: Type.Literal("press_key"), key: Type.Union([Type.Literal("back"), Type.Literal("home"), Type.Literal("recents"), Type.Literal("enter")]), ...scenarioWaitFor() }),
+  Type.Object({ ...scenarioStepId(), action: Type.Literal("launch_app"), bundleName: Type.String({ maxLength: 300 }), abilityName: Type.Optional(Type.String({ maxLength: 300 })), ...scenarioWaitFor() }),
+  Type.Object({ ...scenarioStepId(), action: Type.Union([Type.Literal("stop_app"), Type.Literal("clear_app_data"), Type.Literal("uninstall_app")]), bundleName: Type.String({ maxLength: 300 }) }),
+  Type.Object({ ...scenarioStepId(), action: Type.Literal("install_app"), hapPath: Type.String({ maxLength: 4_096, description: "Absolute local HAP path" }), replace: Type.Optional(Type.Boolean()) }),
+  Type.Object({ ...scenarioStepId(), action: Type.Union([Type.Literal("wait_for"), Type.Literal("assert")]), condition: semanticWaitSchema }),
+  Type.Object({ ...scenarioStepId(), action: Type.Literal("wait_idle"), idleMs: Type.Optional(Type.Number({ minimum: 50, maximum: 10_000 })), timeoutMs: Type.Optional(Type.Number({ minimum: 50, maximum: MAX_WAIT_MS })) }),
+  Type.Object({ ...scenarioStepId(), action: Type.Literal("checkpoint"), name: Type.String({ minLength: 1, maxLength: 120 }) }),
+]);
+
+const harmonyRunScenarioTool = defineTool({
+  name: "harmony_run_scenario",
+  label: "Run Harmony Scenario",
+  description: "Preferred fast path for phone automation: execute a bounded sequence of semantic actions, condition-based waits, assertions, gestures, and app lifecycle operations in one device session. It acquires control automatically and returns one compact verified result.",
+  parameters: Type.Object({
+    serial: optionalSerial(),
+    steps: Type.Array(scenarioStepSchema, { minItems: 1, maxItems: 64 }),
+    defaultTimeoutMs: Type.Optional(Type.Number({ minimum: 100, maximum: MAX_WAIT_MS })),
+    defaultIntervalMs: Type.Optional(Type.Number({ minimum: 100, maximum: 5_000 })),
+    settleAfterAction: Type.Optional(Type.Boolean({ description: "Wait for UiTest idle after actions; defaults to true" })),
+    captureFinalScreenshot: Type.Optional(Type.Boolean({ description: "Include a final screenshot only when visual evidence is needed; defaults to false" })),
+  }),
+  async execute(toolCallId, params, signal, _onUpdate, ctx) {
+    if (signal?.aborted) throw new Error("Harmony scenario aborted.");
+    const identity = requirePromptToolIdentity(ctx.sessionManager.getSessionId(), toolCallId);
+    const manager = getHarmonyDeviceManager();
+    try {
+      const serial = await resolveSerial(params.serial, manager, signal);
+      const lease = await ensureAgentLease(identity, serial, signal);
+      const result = await manager.runScenario({
+        serial,
+        leaseToken: lease.token,
+        steps: params.steps as unknown as HarmonyScenarioStep[],
+        policy: {
+          ...(params.defaultTimeoutMs === undefined ? {} : { defaultTimeoutMs: params.defaultTimeoutMs }),
+          ...(params.defaultIntervalMs === undefined ? {} : { defaultIntervalMs: params.defaultIntervalMs }),
+          ...(params.settleAfterAction === undefined ? {} : { settleAfterAction: params.settleAfterAction }),
+          ...(params.captureFinalScreenshot === undefined ? {} : { captureFinalScreenshot: params.captureFinalScreenshot }),
+        },
+        signal,
+      });
+      const { finalSnapshot, ...scenario } = result;
+      const failedStep = result.steps.find((step) => step.status === "failed");
+      const summary = result.status === "passed"
+        ? `Harmony scenario passed on ${serial}: ${result.completedSteps}/${result.steps.length} steps in ${result.durationMs}ms.`
+        : `Harmony scenario failed on ${serial} at step ${failedStep?.index ?? result.completedSteps}: ${failedStep?.message ?? "device execution did not complete"}`;
+      if (finalSnapshot) {
+        const rendered = await snapshotResult(finalSnapshot, identity, "run_scenario", signal, { scenario });
+        rendered.content.unshift({ type: "text" as const, text: summary });
+        return rendered;
+      }
+      return textResult(summary, identity, { action: "run_scenario", serial, scenario });
+    } catch (error) {
+      if (isHarmonyError(error)) throw new Error(`[${error.code}] ${error.message}`);
+      throw error;
+    }
+  },
+});
+
 const harmonyListDevicesTool = defineTool({
   name: "harmony_list_devices",
   label: "List Harmony Devices",
@@ -975,7 +1117,7 @@ const harmonyObserveScreenTool = defineTool({
   description: "Read the current phone screen and semantic UI elements. Call after acquiring control and again whenever the screen may have changed.",
   parameters: Type.Object({
     serial: optionalSerial(),
-    includeScreenshot: Type.Optional(Type.Boolean({ description: "Include visual screen data; defaults to true" })),
+    includeScreenshot: Type.Optional(Type.Boolean({ description: "Include visual screen data; defaults to false because the UI tree is faster and smaller" })),
     includeTree: Type.Optional(Type.Boolean({ description: "Include tappable semantic UI refs; defaults to true" })),
   }),
   async execute(toolCallId, params, signal, _onUpdate, ctx) {
@@ -1222,6 +1364,7 @@ const harmonyGetRawLogsTool = defineTool({
 
 const harmonyAgentTools = [
   harmonyListDevicesTool,
+  harmonyRunScenarioTool,
   harmonyAcquireControlTool,
   harmonyObserveScreenTool,
   harmonyTakeScreenshotTool,
@@ -1253,7 +1396,7 @@ export default function pioraHarmony(api: ExtensionAPI) {
   api.on?.("before_agent_start", (event) => {
     if (!event.systemPromptOptions.selectedTools?.some((name) => name.startsWith("harmony_"))) return;
     const capability = `<piora_runtime_capability name="harmony_phone_operator" availability="active">
-Dedicated Harmony phone tools are available in this session. For any HarmonyOS/OpenHarmony/phone task, call \`harmony_list_devices\` first. Use the Phone Operator loop: acquire control, observe the screen, perform exactly one explicit action, inspect its automatic verification and fresh UI refs, then continue or recover. Available actions include \`harmony_tap\`, \`harmony_double_tap\`, \`harmony_long_press\`, \`harmony_swipe\`, \`harmony_fling\`, \`harmony_drag\`, \`harmony_input_text\`, \`harmony_back\`, \`harmony_home\`, \`harmony_recent_apps\`, \`harmony_enter\`, and \`harmony_launch_app\`. Use \`harmony_take_screenshot\`, \`harmony_start_recording\`, and \`harmony_stop_recording\` for persisted visual evidence. For crashes, freezes, startup errors, or performance problems use \`harmony_list_processes\` and \`harmony_read_logs\`. Prefer semantic refs for a single tap and direction for swipes or flings. Release control when done. Never claim device access or logs are unavailable before checking these tools.
+ Dedicated Harmony phone tools are available in this session. For any HarmonyOS/OpenHarmony/phone task, call \`harmony_list_devices\` first. Prefer \`harmony_run_scenario\` for multi-step work: use stable semantic selectors, condition-based waits, assertions, and one compact final observation. It acquires the prompt-scoped device lease automatically and keeps one persistent UiTest session for speed. Use the individual observe/tap/swipe/input/key tools for exploration or recovery when the next target is not yet knowable. Available actions also include application launch/install/stop/clear/uninstall inside an explicit scenario. Use screenshots and recordings only when visual evidence is useful; the semantic tree is the faster default. For crashes, freezes, startup errors, or performance problems use \`harmony_list_processes\` and \`harmony_read_logs\`. Release control when done. Never claim device access or logs are unavailable before checking these tools.
 </piora_runtime_capability>`;
     if (event.systemPrompt.includes('<piora_runtime_capability name="harmony_phone_operator"')) return;
     return {

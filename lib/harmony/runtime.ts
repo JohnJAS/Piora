@@ -19,6 +19,7 @@ export interface ResolveHdcOptions {
   platform?: NodeJS.Platform;
   exists?: (path: string) => boolean;
   listDirectory?: (path: string) => string[];
+  readTextFile?: (path: string) => string;
 }
 
 export interface DiscoverHdcOptions extends ResolveHdcOptions {
@@ -65,6 +66,7 @@ function devecoCandidates(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
   listDirectory: (path: string) => string[],
+  readTextFile: (path: string) => string,
 ): string[] {
   const paths = pathApi(platform);
   const executable = platform === "win32" ? "hdc.exe" : "hdc";
@@ -80,6 +82,17 @@ function devecoCandidates(
     paths.join(programFiles, "Huawei", "DevEco Studio", "sdk", "default", "toolchains", executable),
     paths.join(localAppData, "Programs", "Huawei", "DevEco Studio", "sdk", "default", "openharmony", "toolchains", executable),
   ];
+
+  const huaweiConfigRoot = paths.join(localAppData, "Huawei");
+  for (const directory of (() => { try { return listDirectory(huaweiConfigRoot); } catch { return []; } })()) {
+    if (!/^DevEcoStudio/i.test(directory)) continue;
+    try {
+      const installHome = readTextFile(paths.join(huaweiConfigRoot, directory, ".home")).trim();
+      if (!installHome) continue;
+      result.push(paths.join(installHome, "sdk", "default", "openharmony", "toolchains", executable));
+      result.push(paths.join(installHome, "sdk", "default", "toolchains", executable));
+    } catch { /* custom install metadata is optional */ }
+  }
 
   for (const sdkRoot of sdkRoots) {
     result.push(paths.join(sdkRoot, "default", "openharmony", "toolchains", executable));
@@ -131,6 +144,7 @@ export function discoverHdcCandidates(options: DiscoverHdcOptions = {}): Harmony
   const homeDir = options.homeDir ?? homedir();
   const exists = options.exists ?? isUsableFile;
   const listDirectory = options.listDirectory ?? ((path) => readdirSync(path));
+  const readTextFile = options.readTextFile ?? ((path: string) => readFileSync(path, "utf8"));
   const paths = pathApi(platform);
   const executable = platform === "win32" ? "hdc.exe" : "hdc";
   const candidates: Array<{ path: string | undefined; source: HarmonyRuntimeCandidate["source"] }> = [];
@@ -140,7 +154,7 @@ export function discoverHdcCandidates(options: DiscoverHdcOptions = {}): Harmony
   }
   for (const name of HDC_ENV_NAMES) candidates.push({ path: env[name], source: "environment" });
   candidates.push({ path: options.config?.hdcPath, source: "config" });
-  candidates.push(...devecoCandidates(homeDir, env, platform, listDirectory).map((path) => ({ path, source: "deveco" as const })));
+  candidates.push(...devecoCandidates(homeDir, env, platform, listDirectory, readTextFile).map((path) => ({ path, source: "deveco" as const })));
   for (const directory of (env.PATH ?? "").split(paths.delimiter)) {
     if (directory.trim()) candidates.push({ path: paths.join(directory.replace(/^"|"$/g, ""), executable), source: "path" });
   }
@@ -165,6 +179,7 @@ export function resolveHdcPath(options: ResolveHdcOptions = {}): HarmonyRuntimeR
   const homeDir = options.homeDir ?? homedir();
   const exists = options.exists ?? isUsableFile;
   const listDirectory = options.listDirectory ?? ((path) => readdirSync(path));
+  const readTextFile = options.readTextFile ?? ((path: string) => readFileSync(path, "utf8"));
   const paths = pathApi(platform);
   const executable = platform === "win32" ? "hdc.exe" : "hdc";
 
@@ -189,7 +204,7 @@ export function resolveHdcPath(options: ResolveHdcOptions = {}): HarmonyRuntimeR
   const configured = check(options.config?.hdcPath);
   if (configured) return { hdcPath: configured, source: "config" };
 
-  for (const candidate of devecoCandidates(homeDir, env, platform, listDirectory)) {
+  for (const candidate of devecoCandidates(homeDir, env, platform, listDirectory, readTextFile)) {
     const discovered = check(candidate);
     if (discovered) return { hdcPath: discovered, source: "deveco" };
   }

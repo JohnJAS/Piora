@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 
 import { asHarmonyError, HarmonyError } from "./errors";
-import { createHdcBackend } from "./hdc-backend";
+import { createHybridHarmonyBackend } from "./hybrid-backend";
+import { runHarmonyScenario } from "./scenario-executor";
 import {
   defaultHarmonyConfigPath,
   readHarmonyConfig,
@@ -20,6 +21,7 @@ import type {
   HarmonyLogOptions,
   HarmonyProcess,
   HarmonyLaunchAppOptions,
+  HarmonyInstallAppOptions,
   HarmonyLease,
   HarmonyLeaseOwner,
   HarmonyManagerEvent,
@@ -30,6 +32,8 @@ import type {
   HarmonySnapshot,
   HarmonySnapshotOptions,
   HarmonyRecordingState,
+  HarmonyScenarioOptions,
+  HarmonyScenarioResult,
   HarmonyVideoConnection,
   HarmonySwipeOptions,
   HarmonyTapOptions,
@@ -77,6 +81,12 @@ interface StoredReferenceSnapshot {
   nodeByRef: Map<string, HarmonyUiNode>;
 }
 
+interface OperationLane {
+  tail: Promise<void>;
+  pending: number;
+  active: boolean;
+}
+
 function normalizedLabel(value: string | undefined): string | undefined {
   const normalized = value?.replace(/\s+/g, " ").trim();
   return normalized || undefined;
@@ -111,6 +121,21 @@ function isSameUiTarget(target: HarmonyUiNode, candidate: Omit<HarmonyUiNode, "r
 
 function iso(timestamp: number): string {
   return new Date(timestamp).toISOString();
+}
+
+function awaitSharedOperation<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return promise;
+  if (signal.aborted) {
+    return Promise.reject(new HarmonyError("COMMAND_ABORTED", "Harmony device discovery was cancelled", { retryable: true }));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(new HarmonyError("COMMAND_ABORTED", "Harmony device discovery was cancelled", { retryable: true }));
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(
+      (value) => { signal.removeEventListener("abort", abort); resolve(value); },
+      (error) => { signal.removeEventListener("abort", abort); reject(error); },
+    );
+  });
 }
 
 function validateSerial(serial: string): void {
@@ -151,22 +176,24 @@ export class HarmonyDeviceManager {
   private readonly snapshotRevisions = new Map<string, number>();
   private readonly listeners = new Set<Listener>();
   private runtimeError?: HarmonyError;
-  private queueTail: Promise<void> = Promise.resolve();
+  private readonly operationLanes = new Map<string, OperationLane>();
   private pending = 0;
-  private active = false;
+  private activeCount = 0;
   private queueEpoch = 0;
   private operationId = 0;
   private readonly activeControllers = new Set<AbortController>();
   private readonly controllersByOwner = new Map<string, Set<AbortController>>();
   private disposed = false;
   private lastDeviceRefreshAt = Number.NEGATIVE_INFINITY;
+  private deviceRefreshPromise?: Promise<HarmonyDevice[]>;
+  private deviceRefreshController?: AbortController;
 
   constructor(options: HarmonyDeviceManagerOptions = {}) {
     this.configPath = options.configPath ?? defaultHarmonyConfigPath();
     this.config = readHarmonyConfig(this.configPath);
     this.now = options.now ?? Date.now;
     this.token = options.token ?? (() => randomBytes(24).toString("base64url"));
-    this.backendFactory = options.backendFactory ?? ((config) => createHdcBackend({ resolve: { config } }));
+    this.backendFactory = options.backendFactory ?? ((config) => createHybridHarmonyBackend({ resolve: { config } }));
     this.injectedBackend = Boolean(options.backend);
     this.backend = options.backend;
     if (!this.backend) this.tryCreateBackend();
@@ -248,26 +275,34 @@ export class HarmonyDeviceManager {
     task: (signal: AbortSignal, operationId: number) => Promise<T>,
     parentSignal?: AbortSignal,
     ownerId?: string,
+    serial?: string,
   ): Promise<T> {
     if (this.disposed) return Promise.reject(new HarmonyError("INTERNAL_ERROR", "Harmony device manager is disposed"));
     const epoch = this.queueEpoch;
     const operationId = ++this.operationId;
     const abort = this.withAbort(parentSignal, ownerId);
+    const laneKey = serial ? `device:${serial}` : "global";
+    const lane = this.operationLanes.get(laneKey) ?? { tail: Promise.resolve(), pending: 0, active: false };
+    this.operationLanes.set(laneKey, lane);
     this.pending += 1;
+    lane.pending += 1;
     let resolveResult!: (value: T | PromiseLike<T>) => void;
     let rejectResult!: (reason?: unknown) => void;
     const result = new Promise<T>((resolve, reject) => { resolveResult = resolve; rejectResult = reject; });
 
-    this.queueTail = this.queueTail
+    lane.tail = lane.tail
       .catch(() => undefined)
       .then(async () => {
         this.pending -= 1;
+        lane.pending -= 1;
         if (epoch !== this.queueEpoch || abort.controller.signal.aborted) {
           abort.cleanup();
+          if (lane.pending === 0 && !lane.active) this.operationLanes.delete(laneKey);
           rejectResult(new HarmonyError("COMMAND_ABORTED", "Device operation was cancelled by emergency stop", { retryable: true }));
           return;
         }
-        this.active = true;
+        lane.active = true;
+        this.activeCount += 1;
         try {
           const value = await task(abort.controller.signal, operationId);
           resolveResult(value);
@@ -275,7 +310,9 @@ export class HarmonyDeviceManager {
           rejectResult(asHarmonyError(error));
         } finally {
           abort.cleanup();
-          this.active = false;
+          lane.active = false;
+          this.activeCount -= 1;
+          if (lane.pending === 0 && !lane.active) this.operationLanes.delete(laneKey);
         }
       });
     return result;
@@ -368,17 +405,30 @@ export class HarmonyDeviceManager {
   }
 
   private async refreshDevices(signal?: AbortSignal): Promise<HarmonyDevice[]> {
+    if (this.deviceRefreshPromise) return await awaitSharedOperation(this.deviceRefreshPromise, signal);
     const backend = this.requireBackend();
-    try {
-      const devices = this.normalizeDevices(await backend.listDevices(signal));
-      this.lastDeviceRefreshAt = this.now();
-      this.runtimeError = undefined;
-      this.emit({ type: "devices", timestamp: iso(this.now()), devices });
-      return devices;
-    } catch (error) {
-      this.runtimeError = asHarmonyError(error);
-      throw this.runtimeError;
-    }
+    const controller = new AbortController();
+    this.deviceRefreshController = controller;
+    const refresh = (async () => {
+      try {
+        const devices = this.normalizeDevices(await backend.listDevices(controller.signal));
+        this.lastDeviceRefreshAt = this.now();
+        this.runtimeError = undefined;
+        this.emit({ type: "devices", timestamp: iso(this.now()), devices });
+        return devices;
+      } catch (error) {
+        this.runtimeError = asHarmonyError(error);
+        throw this.runtimeError;
+      }
+    })();
+    this.deviceRefreshPromise = refresh;
+    void refresh.finally(() => {
+      if (this.deviceRefreshPromise === refresh) {
+        this.deviceRefreshPromise = undefined;
+        this.deviceRefreshController = undefined;
+      }
+    }).catch(() => undefined);
+    return await awaitSharedOperation(refresh, signal);
   }
 
   async listDevices(signal?: AbortSignal): Promise<HarmonyDevice[]> {
@@ -392,7 +442,7 @@ export class HarmonyDeviceManager {
       const backend = this.requireBackend();
       if (!backend.listProcesses) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Harmony process discovery is unavailable");
       return await backend.listProcesses(serial, queuedSignal);
-    }, signal);
+    }, signal, undefined, serial);
   }
 
   async readLogs(options: HarmonyLogOptions): Promise<HarmonyLogEntry[]> {
@@ -408,7 +458,7 @@ export class HarmonyDeviceManager {
         ...(options.limit ? { limit: options.limit } : {}),
         signal: queuedSignal,
       });
-    }, options.signal);
+    }, options.signal, undefined, options.serial);
   }
 
   private async onlineDevice(serial: string, signal?: AbortSignal): Promise<HarmonyDevice> {
@@ -427,6 +477,7 @@ export class HarmonyDeviceManager {
     const ttl = this.duration(options.ttlMs);
     return await this.enqueue("acquire_lease", async (signal) => {
       await this.onlineDevice(options.serial, signal);
+      if (signal.aborted) throw new HarmonyError("COMMAND_ABORTED", "Device lease acquisition was cancelled", { retryable: true });
       this.sweepExpiredLeases();
       const existing = this.leasesBySerial.get(options.serial);
       if (existing) {
@@ -453,7 +504,7 @@ export class HarmonyDeviceManager {
       this.leasesByToken.set(lease.token, lease);
       this.emit({ type: "lease_acquired", timestamp: acquiredAt, lease });
       return lease;
-    }, options.signal, options.owner.id);
+    }, options.signal, options.owner.id, options.serial);
   }
 
   renewLease(token: string, ttlMs?: number): HarmonyLease {
@@ -485,17 +536,16 @@ export class HarmonyDeviceManager {
     return count;
   }
 
-  async snapshot(options: HarmonySnapshotOptions): Promise<HarmonySnapshot> {
-    validateSerial(options.serial);
-    const includeTree = options.includeTree ?? true;
-    const includeScreenshot = options.includeScreenshot ?? true;
-    if (includeTree) await this.interruptLiveFrame(options.serial, "semantic_snapshot");
-    return await this.enqueue("snapshot", async (signal) => {
-      if (options.leaseToken) this.requireLease(options.serial, options.leaseToken);
-      const device = await this.onlineDevice(options.serial, signal);
-      const raw = await this.requireBackend().snapshot(options.serial, { includeTree, includeScreenshot, signal });
-      const revision = (this.snapshotRevisions.get(options.serial) ?? 0) + 1;
-      this.snapshotRevisions.set(options.serial, revision);
+  private async captureSnapshotNow(
+    serial: string,
+    includeTree: boolean,
+    includeScreenshot: boolean,
+    signal?: AbortSignal,
+  ): Promise<HarmonySnapshot> {
+      const device = await this.onlineDevice(serial, signal);
+      const raw = await this.requireBackend().snapshot(serial, { includeTree, includeScreenshot, signal });
+      const revision = (this.snapshotRevisions.get(serial) ?? 0) + 1;
+      this.snapshotRevisions.set(serial, revision);
       const nodes: HarmonyUiNode[] | undefined = includeTree ? raw.nodes?.map((node, index, all) => ({
         ...node,
         ref: `g${device.generation}-r${revision}-n${index}`,
@@ -505,7 +555,7 @@ export class HarmonyDeviceManager {
         parentIndex: undefined,
       })) : undefined;
       const snapshot: StoredSnapshot = {
-        serial: options.serial,
+        serial,
         generation: device.generation,
         revision,
         capturedAt: iso(this.now()),
@@ -518,14 +568,59 @@ export class HarmonyDeviceManager {
       // A later tree capture becomes the public current snapshot; a bounded
       // semantic history keeps older refs recoverable through live revalidation.
       if (includeTree) {
-        this.snapshots.set(options.serial, snapshot);
-        this.retainSnapshotReferences(options.serial, snapshot);
+        this.snapshots.set(serial, snapshot);
+        this.retainSnapshotReferences(serial, snapshot);
       }
-      this.emit({ type: "snapshot", timestamp: snapshot.capturedAt, serial: options.serial, generation: device.generation, revision });
+      this.emit({ type: "snapshot", timestamp: snapshot.capturedAt, serial, generation: device.generation, revision });
       const { nodeByRef, ...publicSnapshot } = snapshot;
       void nodeByRef;
       return publicSnapshot;
-    }, options.signal);
+  }
+
+  async snapshot(options: HarmonySnapshotOptions): Promise<HarmonySnapshot> {
+    validateSerial(options.serial);
+    const includeTree = options.includeTree ?? true;
+    const includeScreenshot = options.includeScreenshot ?? true;
+    if (includeTree) await this.interruptLiveFrame(options.serial, "semantic_snapshot");
+    return await this.enqueue("snapshot", async (signal) => {
+      if (options.leaseToken) this.requireLease(options.serial, options.leaseToken);
+      return await this.captureSnapshotNow(options.serial, includeTree, includeScreenshot, signal);
+    }, options.signal, undefined, options.serial);
+  }
+
+  async runScenario(options: HarmonyScenarioOptions): Promise<HarmonyScenarioResult> {
+    validateSerial(options.serial);
+    const lease = this.requireLease(options.serial, options.leaseToken);
+    await this.interruptLiveFrame(options.serial, "run_scenario");
+    return await this.enqueue("run_scenario", async (signal, operationId) => {
+      this.requireLease(options.serial, options.leaseToken);
+      const device = await this.onlineDevice(options.serial, signal);
+      const result = await runHarmonyScenario({ ...options, signal }, {
+        serial: options.serial,
+        generation: device.generation,
+        backend: this.requireBackend(),
+        signal,
+        now: this.now,
+        capture: async (captureOptions, captureSignal) => await this.captureSnapshotNow(
+          options.serial,
+          captureOptions.includeTree,
+          captureOptions.includeScreenshot,
+          captureSignal ?? signal,
+        ),
+        invalidateSnapshot: () => this.snapshots.delete(options.serial),
+        beforeStep: () => {
+          this.requireLease(options.serial, options.leaseToken);
+        },
+      });
+      this.emit({
+        type: "operation",
+        timestamp: iso(this.now()),
+        serial: options.serial,
+        operation: "run_scenario",
+        operationId,
+      });
+      return result;
+    }, options.signal, lease.owner.id, options.serial);
   }
 
   private cancelLiveFrame(serial: string, reason: string): void {
@@ -634,7 +729,7 @@ export class HarmonyDeviceManager {
       this.recordings.set(options.serial, state);
       this.emit({ type: "operation", timestamp: iso(this.now()), serial: options.serial, operation: "start_recording", operationId });
       return { ...state };
-    }, options.signal, options.ownerId);
+    }, options.signal, options.ownerId, options.serial);
   }
 
   async stopRecording(options: {
@@ -659,7 +754,7 @@ export class HarmonyDeviceManager {
       this.recordings.delete(options.serial);
       this.emit({ type: "operation", timestamp: iso(this.now()), serial: options.serial, operation: "stop_recording", operationId });
       return artifact;
-    }, options.signal, options.ownerId);
+    }, options.signal, options.ownerId, options.serial);
   }
 
   getLatestSnapshot(serial: string): HarmonySnapshot | undefined {
@@ -703,7 +798,7 @@ export class HarmonyDeviceManager {
       await invoke(this.requireBackend(), queuedSignal);
       this.emit({ type: "operation", timestamp: iso(this.now()), serial, operation, operationId });
       return { serial, operationId, generation: device.generation, completedAt: iso(this.now()) };
-    }, signal, lease.owner.id);
+    }, signal, lease.owner.id, serial);
   }
 
   async tap(options: HarmonyTapOptions): Promise<HarmonyOperationResult> {
@@ -862,6 +957,14 @@ export class HarmonyDeviceManager {
       async (backend, signal) => await backend.launchApp(options.serial, options.bundleName, options.abilityName, signal));
   }
 
+  async installPackage(options: HarmonyInstallAppOptions): Promise<HarmonyOperationResult> {
+    return await this.action("install_package", options.serial, options.leaseToken, undefined, options.signal,
+      async (backend, signal) => {
+        if (!backend.installPackage) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Harmony package installation is unavailable");
+        await backend.installPackage(options.serial, options.hapPath, options.replace ?? true, signal);
+      });
+  }
+
   getConfig(): HarmonyConfig {
     return {
       ...this.config,
@@ -928,7 +1031,8 @@ export class HarmonyDeviceManager {
       deviceCount: this.devices.size,
       onlineDeviceCount: [...this.devices.values()].filter((device) => device.state === "online").length,
       activeLeaseCount: this.leasesByToken.size,
-      queue: { pending: this.pending, active: this.active, epoch: this.queueEpoch },
+      queue: { pending: this.pending, active: this.activeCount > 0, epoch: this.queueEpoch },
+      ...(this.backend?.automationDiagnostics ? { automation: this.backend.automationDiagnostics() } : {}),
     };
   }
 
@@ -960,9 +1064,11 @@ export class HarmonyDeviceManager {
     this.queueEpoch += 1;
     this.lastDeviceRefreshAt = Number.NEGATIVE_INFINITY;
     for (const controller of this.activeControllers) controller.abort(reason);
+    const deviceRefresh = this.deviceRefreshPromise;
+    this.deviceRefreshController?.abort(reason);
     const liveFrames = [...this.liveFramePromises.values()];
     for (const controller of this.liveFrameControllers.values()) controller.abort(reason);
-    await Promise.allSettled(liveFrames);
+    await Promise.allSettled([...liveFrames, ...(deviceRefresh ? [deviceRefresh] : [])]);
     this.liveFrameControllers.clear();
     this.liveFramePromises.clear();
     const backend = this.backend;
@@ -993,7 +1099,7 @@ export class HarmonyDeviceManager {
   async dispose(): Promise<void> {
     if (this.disposed) return;
     await this.emergencyStop("disposed");
-    await this.queueTail.catch(() => undefined);
+    await Promise.allSettled([...this.operationLanes.values()].map((lane) => lane.tail));
     this.disposed = true;
     await this.backend?.dispose?.();
     this.listeners.clear();

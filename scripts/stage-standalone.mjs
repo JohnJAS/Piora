@@ -162,10 +162,10 @@ async function resolveInstalledPackageRoot(packageName, fromDirectory, root) {
 }
 
 /**
- * Collect complete installed package directories for one runtime dependency
- * and its transitive production dependency graph. This is intentionally used
- * only for dependencies reached from pi-ai's opaque provider implementations;
- * ordinary statically imported packages remain owned by Next's trace.
+ * Collect complete installed package directories for runtime dependencies
+ * reached from dynamically loaded source and their transitive production
+ * dependency graph. Ordinary statically imported packages remain owned by
+ * Next's trace.
  */
 export async function collectRuntimeDependencyAssets(
   packageRoots,
@@ -199,7 +199,7 @@ export async function collectRuntimeDependencyAssets(
     }
     visited.add(packageRoot);
     collected.push({
-      name: `Pi AI provider dependency ${manifest.name}`,
+      name: `dynamic runtime dependency ${manifest.name}`,
       source: packageRoot,
       destination: join(destinationRoot, packageRelativePath),
       required: true,
@@ -334,9 +334,9 @@ async function main() {
     await rm(tracedDevelopmentOutput, { recursive: true, force: true });
   }
 
-  // Stage the nested provider runtime's complete production dependency
-  // closure. Opaque OAuth/API implementations can add direct or transitive
-  // dependencies without becoming visible to Next's static output trace.
+  // Stage complete production dependency closures for source-loaded runtimes.
+  // Opaque Pi providers and the lazy Hypium driver can add dependencies or
+  // native agents without becoming visible to Next's static output trace.
   const piAiProviderRuntimeRoot = join(
     projectRoot,
     "node_modules",
@@ -346,7 +346,11 @@ async function main() {
     "@earendil-works",
     "pi-ai",
   );
-  const dependencyAssets = await collectRuntimeDependencyAssets([piAiProviderRuntimeRoot]);
+  const hypiumRuntimeRoot = join(projectRoot, "node_modules", "hypium-driver");
+  const dependencyAssets = await collectRuntimeDependencyAssets([
+    piAiProviderRuntimeRoot,
+    hypiumRuntimeRoot,
+  ]);
   const runtimeAssetsByDestination = new Map(
     assets.map((asset) => [resolve(asset.destination), asset]),
   );
