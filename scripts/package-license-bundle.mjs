@@ -183,7 +183,10 @@ function packageNameFromInstallPath(installPath) {
 
 function runtimeIdentityFromLockEntry(installPath, metadata) {
   const normalizedPath = portablePath(installPath);
-  const lockedName = packageNameFromInstallPath(normalizedPath);
+  const installedName = packageNameFromInstallPath(normalizedPath);
+  const lockedName = typeof metadata.name === "string" && metadata.name.trim()
+    ? metadata.name.trim()
+    : installedName;
   if (!lockedName) return null;
   const replacement = REVIEWED_RUNTIME_REPLACEMENT_BY_PATH.get(normalizedPath);
   if (!replacement) return { name: lockedName, version: metadata.version };
@@ -359,7 +362,15 @@ async function readSourceDependencyContext(sourceRootInput) {
   const entries = Object.entries(lock.packages)
     .filter(([installPath, metadata]) => installPath.includes("node_modules/") && metadata?.version)
     .sort(([left], [right]) => compareText(left, right));
-  return { sourceRoot, sourceRootRealPath, lock, entries };
+  const packageRoots = [{ root: sourceRoot, realPath: sourceRootRealPath }];
+  const stagedStandaloneRoot = join(sourceRoot, ".next", "standalone");
+  if (await optionalDirectory(stagedStandaloneRoot)) {
+    packageRoots.push({
+      root: stagedStandaloneRoot,
+      realPath: await realpath(stagedStandaloneRoot),
+    });
+  }
+  return { sourceRoot, lock, entries, packageRoots };
 }
 
 function collectRuntimeSourceClosure(lock) {
@@ -408,66 +419,60 @@ function collectRuntimeSourceClosure(lock) {
 }
 
 async function sourceLicenseCatalog(context, targetKeys) {
-  const { sourceRoot, sourceRootRealPath, entries } = context;
+  const { entries, packageRoots } = context;
 
   const catalog = new Map();
   for (const [installPath, metadata] of entries) {
     const identity = runtimeIdentityFromLockEntry(installPath, metadata);
     if (!identity || !targetKeys.has(`${identity.name}@${identity.version}`)) continue;
-    const packageRoot = resolve(sourceRoot, installPath);
-    assertInside(sourceRoot, packageRoot, "Installed source package");
-    let packageEntry;
-    try {
-      packageEntry = await lstat(packageRoot);
-    } catch (error) {
-      if (error?.code === "ENOENT" && identity.reviewedReplacement) {
-        throw new Error(`Reviewed runtime replacement is missing after postinstall: ${installPath}`);
+    let foundCandidate = false;
+    for (const packageSource of packageRoots) {
+      const packageRoot = resolve(packageSource.root, installPath);
+      assertInside(packageSource.root, packageRoot, "Installed source package");
+      let packageEntry;
+      try {
+        packageEntry = await lstat(packageRoot);
+      } catch (error) {
+        if (error?.code === "ENOENT") continue;
+        throw error;
       }
-      if (error?.code === "ENOENT") continue;
-      throw error;
-    }
-    if (packageEntry.isSymbolicLink() || !packageEntry.isDirectory()) {
-      if (identity.reviewedReplacement) {
-        throw new Error(`Reviewed runtime replacement must be a regular directory: ${installPath}`);
+      if (packageEntry.isSymbolicLink() || !packageEntry.isDirectory()) continue;
+      await assertRealPathInside(packageSource.realPath, packageRoot, "Installed source package");
+      const manifestPath = join(packageRoot, "package.json");
+      let manifestBytes;
+      try {
+        manifestBytes = await readBounded(manifestPath, PACKAGE_MANIFEST_LIMIT, "Source package manifest");
+      } catch (error) {
+        if (error?.code === "ENOENT") continue;
+        throw error;
       }
-      continue;
-    }
-    await assertRealPathInside(sourceRootRealPath, packageRoot, "Installed source package");
-    const manifestPath = join(packageRoot, "package.json");
-    let manifestBytes;
-    try {
-      manifestBytes = await readBounded(manifestPath, PACKAGE_MANIFEST_LIMIT, "Source package manifest");
-    } catch (error) {
-      if (error?.code === "ENOENT" && identity.reviewedReplacement) {
-        throw new Error(`Reviewed runtime replacement has no package.json: ${installPath}`);
+      const manifest = JSON.parse(manifestBytes.toString("utf8"));
+      if (manifest.name !== identity.name || manifest.version !== identity.version) {
+        if (identity.reviewedReplacement) {
+          throw new Error(
+            `Reviewed runtime replacement at ${installPath} must contain ` +
+            `${identity.reviewedReplacement.installedName}@${identity.reviewedReplacement.installedVersion}, ` +
+            `found ${manifest.name}@${manifest.version}`,
+          );
+        }
+        continue;
       }
-      if (error?.code === "ENOENT") continue;
-      throw error;
+      const key = `${manifest.name}@${manifest.version}`;
+      const candidates = catalog.get(key) ?? [];
+      candidates.push({
+        packageJsonSha256: sha256(manifestBytes),
+        declaredLicense: normalizeLicense(manifest),
+        licenseFiles: await collectLicenseFiles(packageRoot),
+      });
+      catalog.set(key, candidates);
+      foundCandidate = true;
+      break;
     }
-    const manifest = JSON.parse(manifestBytes.toString("utf8"));
-    if (typeof manifest.name !== "string" || typeof manifest.version !== "string") continue;
-    if (
-      identity.reviewedReplacement
-      && (
-        manifest.name !== identity.reviewedReplacement.installedName
-        || manifest.version !== identity.reviewedReplacement.installedVersion
-      )
-    ) {
+    if (!foundCandidate && identity.reviewedReplacement) {
       throw new Error(
-        `Reviewed runtime replacement at ${installPath} must contain ` +
-        `${identity.reviewedReplacement.installedName}@${identity.reviewedReplacement.installedVersion}, ` +
-        `found ${manifest.name}@${manifest.version}`,
+        `Reviewed runtime replacement is missing or invalid after postinstall: ${installPath}`,
       );
     }
-    const key = `${manifest.name}@${manifest.version}`;
-    if (!targetKeys.has(key)) continue;
-    const candidates = catalog.get(key) ?? [];
-    candidates.push({
-      packageJsonSha256: sha256(manifestBytes),
-      declaredLicense: normalizeLicense(manifest),
-      licenseFiles: await collectLicenseFiles(packageRoot),
-    });
-    catalog.set(key, candidates);
   }
   return catalog;
 }

@@ -4,6 +4,13 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.40-beta.6] - 2026-09-02
+
+### 修复
+
+- 修复 Electron Builder 按第三方包 `files` 清单裁剪 Hypium 根清单后，Windows 内测包无法完成许可证与 SBOM 审计的问题。
+- 修复 npm alias 依赖按安装别名而非真实包名进入运行时许可证闭包的问题，确保 `xmldom` 安全替代项可被精确验证。
+
 ## [0.4.40-beta.5] - 2026-09-02
 
 ### 新增
