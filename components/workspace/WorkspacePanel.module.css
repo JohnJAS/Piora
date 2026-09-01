@@ -347,7 +347,8 @@
 .terminalIdentity > span:last-child { min-width: 0; display: grid; gap: 1px; }
 .terminalIdentity b { color: #edf2f7; font-size: var(--text-xs); font-weight: 650; }
 .terminalIdentity small { color: #7f8997; font-size: calc(var(--text-xs) * .9); }
-.terminalStatusDot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #58c985; box-shadow: 0 0 0 3px rgb(88 201 133 / 12%); }
+.terminalStatusDot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #667180; box-shadow: 0 0 0 3px rgb(102 113 128 / 12%); }
+.terminalStatusDot[data-connected="true"] { background: #58c985; box-shadow: 0 0 0 3px rgb(88 201 133 / 12%); }
 .terminalStatusDot[data-running="true"] { background: #e6b450; box-shadow: 0 0 0 3px rgb(230 180 80 / 13%); animation: terminalPulse 1.4s ease-in-out infinite; }
 .terminalHeaderActions { min-width: 0; display: flex; align-items: center; gap: 2px; }
 .terminalHeaderActions > button { width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 7px; background: transparent; color: #84909f; cursor: pointer; }
@@ -355,11 +356,12 @@
 .terminalHeaderActions > button:disabled { opacity: .3; cursor: default; }
 .terminalCwd { min-width: 0; max-width: 180px; display: inline-flex; align-items: center; gap: 5px; margin-right: 4px; overflow: hidden; color: #7f8997; font: var(--text-xs)/1.2 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .terminalViewport { min-height: 0; flex: 1; overflow: auto; padding: 12px; overscroll-behavior: contain; scrollbar-color: rgb(255 255 255 / 20%) transparent; }
+.terminalError { margin-bottom: 9px; padding: 8px 10px; border: 1px solid rgb(240 113 120 / 24%); border-radius: 8px; background: rgb(240 113 120 / 8%); color: #f5a0a5; font-size: var(--text-xs); }
 .terminalRunningBlock { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 3px 7px; margin-bottom: 9px; padding: 9px 10px; border: 1px solid rgb(230 180 80 / 20%); border-radius: 9px; background: rgb(230 180 80 / 6%); color: #aab4c0; font-size: var(--text-xs); }
 .terminalRunningBlock code { min-width: 0; overflow: hidden; color: #f1d18a; font-family: var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
 .terminalRunningBlock > span:last-child { grid-column: 2; color: #707b89; }
 .terminalSpinner { color: #e6b450; animation: reviewSpin 900ms linear infinite; }
-.terminalBlock { overflow: hidden; border: 1px solid rgb(255 255 255 / 8%); border-radius: 10px; background: rgb(255 255 255 / 2.5%); box-shadow: 0 9px 24px rgb(0 0 0 / 13%); }
+.terminalBlock { min-height: 100%; overflow: hidden; border: 1px solid rgb(255 255 255 / 8%); border-radius: 10px; background: rgb(255 255 255 / 2.5%); box-shadow: 0 9px 24px rgb(0 0 0 / 13%); }
 .terminalBlock::before { height: 2px; display: block; background: #58c985; content: ""; }
 .terminalBlock[data-status="failed"]::before { background: #f07178; }
 .terminalBlock[data-status="cancelled"]::before { background: #e6b450; }

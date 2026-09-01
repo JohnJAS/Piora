@@ -18,6 +18,8 @@ export type Theme =
   | "fortune"
   | "nordic"
   | "sakura"
+  | "kitty"
+  | "cloud-bear"
   | "midnight"
   | "forest"
   | "cyber"
@@ -43,6 +45,8 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
   { id: "fortune", isDark: false, preview: { background: "#fff5dc", accent: "#b92c25" } },
   { id: "nordic", isDark: false, preview: { background: "#f5f9fc", accent: "#146c82" } },
   { id: "sakura", isDark: false, preview: { background: "#fff7fa", accent: "#a63d68" } },
+  { id: "kitty", isDark: false, preview: { background: "#fff5f8", accent: "#e65383" } },
+  { id: "cloud-bear", isDark: false, preview: { background: "#f3faff", accent: "#3f8ee8" } },
   { id: "midnight", isDark: true, preview: { background: "#0b1020", accent: "#8b9dff" } },
   { id: "forest", isDark: true, preview: { background: "#101914", accent: "#6fcf97" } },
   { id: "cyber", isDark: true, preview: { background: "#07191c", accent: "#4fd1c5" } },

@@ -45,15 +45,17 @@ test("moves files and review into a Codex-style launcher and tool-tab workspace"
   assert.doesNotMatch(sidebar, /<FileExplorer|<SidebarFileArea/);
 });
 
-test("the command panel reuses Pi channels while file lookup stays in Files", () => {
+test("the command panel owns a persistent workspace shell while file lookup stays in Files", () => {
   const commandPanel = fs.readFileSync(new URL("./CommandPanel.tsx", import.meta.url), "utf8");
   assert.match(commandPanel, /piora-command-history-v1/);
   assert.match(commandPanel, /filterCommandHistory/);
   assert.match(commandPanel, /role="combobox"/);
   assert.match(commandPanel, /role="listbox"/);
-  assert.match(commandPanel, /excludeFromContext/);
-  assert.match(commandPanel, /controls\.runCommand/);
-  assert.match(commandPanel, /Interactive commands|commandPanel\.limit/);
+  assert.match(commandPanel, /\/api\/terminal\/events/);
+  assert.match(commandPanel, /\/api\/terminal/);
+  assert.match(commandPanel, /new EventSource/);
+  assert.match(commandPanel, /action:\s*"run"|postAction\("run"/);
+  assert.doesNotMatch(commandPanel, /controls\.runCommand|excludeFromContext/);
   assert.match(shell, /navigate\.searchFiles[\s\S]*?setRightPanelTab\("files"\)/);
   assert.match(shell, /focusFileSearch/);
 });
@@ -61,6 +63,10 @@ test("the command panel reuses Pi channels while file lookup stays in Files", ()
 test("the browser panel matches its Chromium viewport and forwards native pointer phases", () => {
   const browser = fs.readFileSync(new URL("./BrowserPanel.tsx", import.meta.url), "utf8");
   assert.match(browser, /new ResizeObserver/);
+  assert.match(browser, /pendingViewportRef/);
+  assert.match(browser, /await bridge\.setViewport/);
+  assert.match(browser, /transitionend/);
+  assert.match(browser, /\[maximized, syncViewport\]/);
   assert.match(browser, /action: "resize"/);
   assert.match(browser, /onPointerMove/);
   assert.match(browser, /action: "mouse_down"/);

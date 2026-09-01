@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { parseAnsiLine } from "@/lib/ansi";
 import { filterCommandHistory } from "@/lib/command-history";
-import type { TaskControls } from "../ChatWindow";
 import { AliIcon } from "../AliIcon";
 import styles from "./WorkspacePanel.module.css";
 
@@ -12,23 +11,28 @@ const HISTORY_KEY = "piora-command-history-v1";
 const HISTORY_LIMIT = 100;
 const QUICK_COMMANDS = ["git status --short", "git diff --stat", "npm test", "npm run lint"];
 
-interface Props {
-  controls: TaskControls | null;
-  cwd?: string | null;
-}
+type TerminalMessage =
+  | { type: "snapshot"; connected: boolean; output: string; shell: string }
+  | { type: "output"; output: string }
+  | { type: "clear" }
+  | { type: "status"; connected: boolean; shell: string };
 
-export function CommandPanel({ controls, cwd }: Props) {
+export function CommandPanel({ cwd }: { cwd?: string | null }) {
   const { t } = useI18n();
   const [command, setCommand] = useState("");
-  const [excludeFromContext, setExcludeFromContext] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [output, setOutput] = useState("");
   const [outputQuery, setOutputQuery] = useState("");
   const [wrapOutput, setWrapOutput] = useState(true);
   const [followOutput, setFollowOutput] = useState(true);
-  const [hiddenOutputSignature, setHiddenOutputSignature] = useState<string | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [shell, setShell] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const outputRef = useRef<HTMLDivElement>(null);
 
@@ -39,39 +43,84 @@ export function CommandPanel({ controls, cwd }: Props) {
     } catch { /* Ignore malformed local history. */ }
   }, []);
 
-  const outputSignature = controls?.latestBash
-    ? `${controls.latestBash.command}\u0000${controls.latestBash.output}\u0000${controls.latestBash.exitCode ?? ""}\u0000${controls.latestBash.cancelled ?? ""}`
-    : null;
-  const latestBash = outputSignature && outputSignature !== hiddenOutputSignature ? controls?.latestBash ?? null : null;
-  const outputLines = useMemo(() => (latestBash?.output ?? "").split(/\r?\n/), [latestBash?.output]);
+  useEffect(() => {
+    setOutput("");
+    setConnected(false);
+    setError(null);
+    if (!cwd) return;
+    setConnecting(true);
+    const events = new EventSource(`/api/terminal/events?cwd=${encodeURIComponent(cwd)}`);
+    events.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data) as TerminalMessage;
+        if (message.type === "snapshot") {
+          setOutput(message.output);
+          setConnected(message.connected);
+          setShell(message.shell);
+        } else if (message.type === "output") {
+          setOutput((current) => `${current}${message.output}`.slice(-500_000));
+        } else if (message.type === "clear") {
+          setOutput("");
+        } else if (message.type === "status") {
+          setConnected(message.connected);
+          setShell(message.shell);
+        }
+        setConnecting(false);
+        setError(null);
+      } catch { /* Wait for the next valid stream event. */ }
+    };
+    events.onerror = () => {
+      setConnecting(false);
+      setConnected(false);
+      setError(t("commandPanel.disconnected"));
+    };
+    return () => events.close();
+  }, [cwd, t]);
+
+  const postAction = useCallback(async (action: "run" | "clear" | "restart" | "stop", commandValue?: string) => {
+    if (!cwd) return;
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/terminal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, cwd, ...(commandValue ? { command: commandValue } : {}) }),
+      });
+      const payload = await response.json().catch(() => null) as { error?: string; connected?: boolean; shell?: string } | null;
+      if (!response.ok) throw new Error(payload?.error || `HTTP ${response.status}`);
+      if (typeof payload?.connected === "boolean") setConnected(payload.connected);
+      if (payload?.shell) setShell(payload.shell);
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("commandPanel.disconnected"));
+    } finally {
+      setSubmitting(false);
+    }
+  }, [cwd, t]);
+
+  const outputLines = useMemo(() => output.replace(/\r(?!\n)/g, "\n").split(/\r?\n/), [output]);
   const commandOptions = useMemo(() => [...history, ...QUICK_COMMANDS.filter((item) => !history.includes(item))], [history]);
-  const suggestions = useMemo(
-    () => suggestionsOpen ? filterCommandHistory(commandOptions, command) : [],
-    [command, commandOptions, suggestionsOpen],
-  );
+  const suggestions = useMemo(() => suggestionsOpen ? filterCommandHistory(commandOptions, command) : [], [command, commandOptions, suggestionsOpen]);
   const outputMatchCount = useMemo(() => {
     const needle = outputQuery.trim().toLocaleLowerCase();
-    if (!needle) return 0;
-    return outputLines.reduce((count, line) => count + countMatches(line.toLocaleLowerCase(), needle), 0);
+    return needle ? outputLines.reduce((count, line) => count + countMatches(line.toLocaleLowerCase(), needle), 0) : 0;
   }, [outputLines, outputQuery]);
 
   useEffect(() => {
     if (!followOutput || !outputRef.current) return;
     outputRef.current.scrollTop = outputRef.current.scrollHeight;
-  }, [controls?.bashRunning, controls?.latestBash?.output, followOutput]);
+  }, [output, followOutput]);
 
   const run = (commandOverride?: string) => {
     const value = (commandOverride ?? command).trim();
-    if (!value || !controls || controls.disabled) return;
+    if (!cwd || !value || submitting) return;
     const next = [value, ...history.filter((item) => item !== value)].slice(0, HISTORY_LIMIT);
     setHistory(next);
-    window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+    try { window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next)); } catch { /* Keep history in memory. */ }
     setHistoryIndex(-1);
     setSuggestionsOpen(false);
-    setHiddenOutputSignature(null);
-    setOutputQuery("");
     setCommand("");
-    void controls.runCommand(value, excludeFromContext);
+    void postAction("run", value).then(() => inputRef.current?.focus());
   };
 
   const chooseSuggestion = (suggestion: string) => {
@@ -80,53 +129,45 @@ export function CommandPanel({ controls, cwd }: Props) {
     inputRef.current?.focus();
   };
 
+  const status = connecting
+    ? t("commandPanel.connecting")
+    : connected
+      ? t("commandPanel.statusReady", { shell: shell || t("commandPanel.shell") })
+      : t("commandPanel.disconnected");
+
   return <div className={styles.commandRoot}>
     <header className={styles.terminalHeader}>
       <div className={styles.terminalIdentity}>
-        <span className={styles.terminalStatusDot} data-running={controls?.bashRunning || undefined} />
-        <span><b>{t("commandPanel.title")}</b><small>{controls?.bashRunning ? t("commandPanel.statusRunning") : t("commandPanel.statusReady")}</small></span>
+        <span className={styles.terminalStatusDot} data-connected={connected || undefined} data-running={connecting || undefined} />
+        <span><b>{t("commandPanel.title")}</b><small>{status}</small></span>
       </div>
       <div className={styles.terminalHeaderActions}>
         {cwd ? <span className={styles.terminalCwd} title={cwd}><AliIcon name="folder" size={12} />{compactCwd(cwd)}</span> : null}
         <button type="button" aria-pressed={wrapOutput} onClick={() => setWrapOutput((value) => !value)} title={wrapOutput ? t("commandPanel.unwrap") : t("commandPanel.wrap")} aria-label={wrapOutput ? t("commandPanel.unwrap") : t("commandPanel.wrap")}><AliIcon name="code" size={13} /></button>
         <button type="button" aria-pressed={followOutput} onClick={() => setFollowOutput((value) => !value)} title={followOutput ? t("commandPanel.pauseFollow") : t("commandPanel.follow")} aria-label={followOutput ? t("commandPanel.pauseFollow") : t("commandPanel.follow")}><AliIcon name="arrowdown" size={13} /></button>
-        <button type="button" disabled={!latestBash} onClick={() => { if (outputSignature) setHiddenOutputSignature(outputSignature); setOutputQuery(""); }} title={t("commandPanel.clearOutput")} aria-label={t("commandPanel.clearOutput")}><AliIcon name="clear" size={13} /></button>
+        {connected ? <button type="button" disabled={submitting} onClick={() => void postAction("stop")} title={t("commandPanel.stop")} aria-label={t("commandPanel.stop")}><AliIcon name="stop" size={13} /></button> : null}
+        <button type="button" disabled={!cwd || submitting} onClick={() => void postAction("restart")} title={t("commandPanel.restart")} aria-label={t("commandPanel.restart")}><AliIcon name="reload" size={13} /></button>
+        <button type="button" disabled={!cwd || !output} onClick={() => { setOutput(""); setOutputQuery(""); void postAction("clear"); }} title={t("commandPanel.clearOutput")} aria-label={t("commandPanel.clearOutput")}><AliIcon name="clear" size={13} /></button>
       </div>
     </header>
 
     <div ref={outputRef} className={styles.terminalViewport} aria-live="polite">
-      {controls?.bashRunning ? <div className={styles.terminalRunningBlock}>
-        <span className={styles.terminalSpinner}><AliIcon name="reload" size={13} /></span>
-        <code>{controls.pendingCommand ?? command}</code>
-        <span>{t("commandPanel.running", { command: controls.pendingCommand ?? command })}</span>
-      </div> : null}
-
-      {latestBash ? <article className={styles.terminalBlock} data-status={latestBash.cancelled ? "cancelled" : latestBash.exitCode === 0 ? "success" : "failed"}>
-        <div className={styles.terminalBlockHeader}>
-          <span className={styles.terminalPrompt}>❯</span>
-          <code>{latestBash.command}</code>
-          <span className={styles.terminalExit}>{latestBash.cancelled ? t("commandPanel.cancelled") : t("commandPanel.exit", { code: latestBash.exitCode ?? "?" })}</span>
-          <button type="button" onClick={() => void navigator.clipboard.writeText(latestBash.command)} title={t("commandPanel.copyCommand")} aria-label={t("commandPanel.copyCommand")}><AliIcon name="copy" size={12} /></button>
-          <button type="button" onClick={() => chooseSuggestion(latestBash.command)} title={t("commandPanel.rerun")} aria-label={t("commandPanel.rerun")}><AliIcon name="reload" size={12} /></button>
-        </div>
+      {error ? <div className={styles.terminalError} role="alert">{error}</div> : null}
+      {output ? <article className={styles.terminalBlock}>
         <div className={styles.terminalFindBar}>
           <AliIcon name="search" size={12} />
           <input value={outputQuery} onChange={(event) => setOutputQuery(event.target.value)} placeholder={t("commandPanel.findOutput")} aria-label={t("commandPanel.findOutput")} />
           {outputQuery ? <><span>{t("commandPanel.findMatches", { count: outputMatchCount })}</span><button type="button" onClick={() => setOutputQuery("")} aria-label={t("review.clearSearch")}><AliIcon name="close" size={11} /></button></> : null}
         </div>
         <pre data-wrap={wrapOutput || undefined}>{outputLines.map((line, lineIndex) => <span className={styles.terminalOutputLine} key={lineIndex}>{parseAnsiLine(line).map((segment, segmentIndex) => <span key={segmentIndex} style={segment.style}>{highlightText(segment.text, outputQuery)}</span>)}{"\n"}</span>)}</pre>
-        <footer className={styles.terminalBlockFooter}>
-          <span>{latestBash.excludeFromContext ? t("commandPanel.contextExcluded") : t("commandPanel.contextIncluded")}</span>
-          <button type="button" onClick={() => void navigator.clipboard.writeText(latestBash.output)}><AliIcon name="copy" size={11} />{t("commandPanel.copy")}</button>
-        </footer>
-      </article> : !controls?.bashRunning ? <div className={styles.terminalEmpty}>
+      </article> : <div className={styles.terminalEmpty}>
         <span className={styles.terminalEmptyIcon}><AliIcon name="code" size={18} /></span>
-        <b>{t("commandPanel.emptyTitle")}</b>
-        <span>{t("commandPanel.empty")}</span>
-        <div className={styles.terminalQuickCommands} aria-label={t("commandPanel.quickCommands")}>
+        <b>{cwd ? t("commandPanel.emptyTitle") : t("commandPanel.noWorkspace")}</b>
+        <span>{cwd ? t("commandPanel.empty") : t("commandPanel.noWorkspaceDescription")}</span>
+        {cwd ? <div className={styles.terminalQuickCommands} aria-label={t("commandPanel.quickCommands")}>
           {QUICK_COMMANDS.map((quickCommand) => <button key={quickCommand} type="button" onClick={() => chooseSuggestion(quickCommand)}><code>{quickCommand}</code></button>)}
-        </div>
-      </div> : null}
+        </div> : null}
+      </div>}
     </div>
 
     <footer className={styles.terminalComposer}>
@@ -142,54 +183,27 @@ export function CommandPanel({ controls, cwd }: Props) {
           aria-activedescendant={suggestions[suggestionIndex] ? `command-history-option-${suggestionIndex}` : undefined}
           onFocus={() => setSuggestionsOpen(true)}
           onBlur={() => setSuggestionsOpen(false)}
-          onChange={(event) => {
-            setCommand(event.target.value);
-            setHistoryIndex(-1);
-            setSuggestionIndex(0);
-            setSuggestionsOpen(true);
-          }}
+          onChange={(event) => { setCommand(event.target.value); setHistoryIndex(-1); setSuggestionIndex(0); setSuggestionsOpen(true); }}
           onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              run(suggestions[suggestionIndex]);
-            } else if (event.key === "Tab" && suggestions[suggestionIndex]) {
-              event.preventDefault();
-              chooseSuggestion(suggestions[suggestionIndex]);
-            } else if (event.key === "Escape" && suggestions.length) {
-              event.preventDefault();
-              setSuggestionsOpen(false);
-            } else if (event.key === "ArrowDown" && suggestions.length) {
-              event.preventDefault();
-              setSuggestionIndex((current) => (current + 1) % suggestions.length);
-            } else if (event.key === "ArrowUp" && suggestions.length) {
-              event.preventDefault();
-              setSuggestionIndex((current) => (current - 1 + suggestions.length) % suggestions.length);
-            } else if (event.key === "ArrowUp" && history.length) {
-              event.preventDefault();
-              const next = Math.min(history.length - 1, historyIndex + 1);
-              setHistoryIndex(next); setCommand(history[next] ?? "");
-            } else if (event.key === "ArrowDown" && historyIndex >= 0) {
-              event.preventDefault();
-              const next = historyIndex - 1;
-              setHistoryIndex(next); setCommand(next >= 0 ? history[next] ?? "" : "");
-            }
+            if (event.key === "Enter") { event.preventDefault(); run(suggestions[suggestionIndex]); }
+            else if (event.key === "Tab" && suggestions[suggestionIndex]) { event.preventDefault(); chooseSuggestion(suggestions[suggestionIndex]); }
+            else if (event.key === "Escape" && suggestions.length) { event.preventDefault(); setSuggestionsOpen(false); }
+            else if (event.key === "ArrowDown" && suggestions.length) { event.preventDefault(); setSuggestionIndex((current) => (current + 1) % suggestions.length); }
+            else if (event.key === "ArrowUp" && suggestions.length) { event.preventDefault(); setSuggestionIndex((current) => (current - 1 + suggestions.length) % suggestions.length); }
+            else if (event.key === "ArrowUp" && history.length) { event.preventDefault(); const next = Math.min(history.length - 1, historyIndex + 1); setHistoryIndex(next); setCommand(history[next] ?? ""); }
+            else if (event.key === "ArrowDown" && historyIndex >= 0) { event.preventDefault(); const next = historyIndex - 1; setHistoryIndex(next); setCommand(next >= 0 ? history[next] ?? "" : ""); }
           }}
           placeholder={t("commandPanel.placeholder")}
           aria-label={t("commandPanel.placeholder")}
-          disabled={!controls || controls.bashRunning}
+          disabled={!cwd}
         />
         {suggestions.length ? <div id="command-history-suggestions" className={styles.commandSuggestions} role="listbox" aria-label={t("commandPanel.historyMatches")}>
           <div className={styles.commandSuggestionsHeader}><span>{t("commandPanel.historyMatches")}</span><span>{t("commandPanel.historyHint")}</span></div>
           {suggestions.map((suggestion, index) => <button key={suggestion} id={`command-history-option-${index}`} type="button" role="option" aria-selected={suggestionIndex === index} data-active={suggestionIndex === index || undefined} onMouseDown={(event) => event.preventDefault()} onMouseEnter={() => setSuggestionIndex(index)} onClick={() => chooseSuggestion(suggestion)}><AliIcon name="history" size={12} /><code>{suggestion}</code></button>)}
         </div> : null}
       </div>
-      {controls?.bashRunning
-        ? <button type="button" className={styles.terminalStopButton} onClick={controls.abort}><AliIcon name="stop" size={11} />{t("commandPanel.stop")}</button>
-        : <button className={styles.terminalRunButton} type="button" onClick={() => run()} disabled={!controls || controls.disabled || !command.trim()}><AliIcon name="play" size={11} /><span>{t("commandPanel.run")}</span></button>}
-      <div className={styles.terminalComposerMeta}>
-        <label className={styles.commandContextToggle}><input type="checkbox" checked={excludeFromContext} onChange={(event) => setExcludeFromContext(event.target.checked)} /><span aria-hidden="true" />{t("commandPanel.exclude")}</label>
-        <span className={styles.commandLimit}>{t("commandPanel.limit")}</span>
-      </div>
+      <button className={styles.terminalRunButton} type="button" onClick={() => run()} disabled={!cwd || submitting || !command.trim()}><AliIcon name="play" size={11} /><span>{t("commandPanel.run")}</span></button>
+      <div className={styles.terminalComposerMeta}><span className={styles.commandLimit}>{t("commandPanel.limit")}</span></div>
     </footer>
   </div>;
 }
@@ -203,10 +217,7 @@ function compactCwd(cwd: string): string {
 function countMatches(value: string, needle: string): number {
   let count = 0;
   let index = value.indexOf(needle);
-  while (index >= 0) {
-    count += 1;
-    index = value.indexOf(needle, index + Math.max(1, needle.length));
-  }
+  while (index >= 0) { count += 1; index = value.indexOf(needle, index + Math.max(1, needle.length)); }
   return count;
 }
 

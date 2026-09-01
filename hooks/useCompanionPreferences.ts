@@ -8,6 +8,12 @@ import {
   parseCompanionPreferences,
   type CompanionPreferences,
 } from "@/lib/companion-store";
+import type { CompanionRuntimeState } from "@/lib/companion-runtime";
+import { mergeCompanionRuntimePreferences } from "@/lib/companion-preference-sync";
+import {
+  createCompanionRuntimeChannel,
+  fetchCompanionRuntimeState,
+} from "@/lib/companion-runtime-client";
 
 export function useCompanionPreferences() {
   const { t } = useI18n();
@@ -38,6 +44,22 @@ export function useCompanionPreferences() {
       // Keep the feature usable in memory when persistence is unavailable.
     }
   }, [hydrated, preferences]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const controller = new AbortController();
+    const applyRuntime = (runtime: CompanionRuntimeState) => {
+      setPreferences((current) => mergeCompanionRuntimePreferences(current, runtime));
+    };
+    const channel = createCompanionRuntimeChannel(applyRuntime);
+    void fetchCompanionRuntimeState({ signal: controller.signal }).then(applyRuntime).catch(() => {
+      // A later companion broadcast will reconcile transient request failures.
+    });
+    return () => {
+      controller.abort();
+      channel?.close();
+    };
+  }, [hydrated]);
 
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {

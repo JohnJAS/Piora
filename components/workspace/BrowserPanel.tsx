@@ -130,7 +130,7 @@ function bookmarkBarNodes(profiles: ImportedChromeBookmarkProfile[]): ImportedCh
   return profiles.flatMap((profile) => profile.children);
 }
 
-export function BrowserPanel({ active, sessionId }: { active: boolean; sessionId: string | null }) {
+export function BrowserPanel({ active, maximized, sessionId }: { active: boolean; maximized: boolean; sessionId: string | null }) {
   const { t } = useI18n();
   const [desktopBridge, setDesktopBridge] = useState<DesktopBrowserBridge | null | undefined>(undefined);
 
@@ -141,11 +141,11 @@ export function BrowserPanel({ active, sessionId }: { active: boolean; sessionId
   if (desktopBridge === undefined) {
     return <div className={styles.browserLoading}>{t("browser.starting")}</div>;
   }
-  if (desktopBridge) return <DesktopBrowserPanel active={active} bridge={desktopBridge} sessionId={sessionId} />;
+  if (desktopBridge) return <DesktopBrowserPanel active={active} bridge={desktopBridge} maximized={maximized} sessionId={sessionId} />;
   return <ScreenshotBrowserPanel active={active} sessionId={sessionId} />;
 }
 
-function DesktopBrowserPanel({ active, bridge, sessionId }: { active: boolean; bridge: DesktopBrowserBridge; sessionId: string | null }) {
+function DesktopBrowserPanel({ active, bridge, maximized, sessionId }: { active: boolean; bridge: DesktopBrowserBridge; maximized: boolean; sessionId: string | null }) {
   const { t } = useI18n();
   const [state, setState] = useState<DesktopBrowserState | null>(null);
   const [address, setAddress] = useState("");
@@ -157,6 +157,8 @@ function DesktopBrowserPanel({ active, bridge, sessionId }: { active: boolean; b
   const [download, setDownload] = useState<DesktopBrowserDownload | null>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
+  const pendingViewportRef = useRef<{ bounds: { x: number; y: number; width: number; height: number }; visible: boolean } | null>(null);
+  const viewportSyncInFlightRef = useRef(false);
 
   const applyState = useCallback((next: DesktopBrowserState | null) => {
     if (!next) return;
@@ -201,34 +203,73 @@ function DesktopBrowserPanel({ active, bridge, sessionId }: { active: boolean; b
     };
   }, [applyState, bridge, t]);
 
+  const flushViewport = useCallback(async () => {
+    if (viewportSyncInFlightRef.current) return;
+    viewportSyncInFlightRef.current = true;
+    try {
+      while (pendingViewportRef.current) {
+        const next = pendingViewportRef.current;
+        pendingViewportRef.current = null;
+        await bridge.setViewport(next.bounds, next.visible);
+      }
+    } catch {
+      // A later resize, transition end, or reconnect will retry with the newest bounds.
+    } finally {
+      viewportSyncInFlightRef.current = false;
+      if (pendingViewportRef.current) void flushViewport();
+    }
+  }, [bridge]);
+
   const syncViewport = useCallback((visible = active && state?.url !== "about:blank") => {
     const element = viewportRef.current;
     if (!element) return;
     const rect = element.getBoundingClientRect();
-    void bridge.setViewport({
-      x: Math.round(rect.left),
-      y: Math.round(rect.top),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
-    }, visible && rect.width > 0 && rect.height > 0);
-  }, [active, bridge, state?.url]);
+    pendingViewportRef.current = {
+      bounds: {
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      },
+      visible: visible && rect.width > 0 && rect.height > 0,
+    };
+    void flushViewport();
+  }, [active, flushViewport, state?.url]);
 
   useEffect(() => {
     const element = viewportRef.current;
     if (!element) return;
-    const scheduleSync = () => window.requestAnimationFrame(() => syncViewport());
+    let frame = 0;
+    const scheduleSync = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => syncViewport());
+    };
     const observer = new ResizeObserver(scheduleSync);
+    const panel = element.closest("#file-panel");
     observer.observe(element);
     window.addEventListener("resize", scheduleSync);
     window.addEventListener("scroll", scheduleSync, true);
+    panel?.addEventListener("transitionend", scheduleSync);
     scheduleSync();
     return () => {
+      window.cancelAnimationFrame(frame);
       observer.disconnect();
       window.removeEventListener("resize", scheduleSync);
       window.removeEventListener("scroll", scheduleSync, true);
+      panel?.removeEventListener("transitionend", scheduleSync);
       syncViewport(false);
     };
   }, [syncViewport]);
+
+  useEffect(() => {
+    syncViewport();
+    const frame = window.requestAnimationFrame(() => window.requestAnimationFrame(() => syncViewport()));
+    const settle = window.setTimeout(() => syncViewport(), 240);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(settle);
+    };
+  }, [maximized, syncViewport]);
 
   const act = useCallback(async (input: DesktopBrowserAction) => {
     try {

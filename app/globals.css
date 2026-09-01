@@ -305,6 +305,70 @@ html[data-theme="sakura"] {
   --ambient-secondary: rgba(120, 87, 232, 0.08);
 }
 
+html[data-theme="kitty"] {
+  color-scheme: light;
+  --bg: #fff7fa;
+  --bg-panel: #fff0f5;
+  --bg-hover: #ffe3ed;
+  --bg-selected: #ffd4e3;
+  --border: #f4bfd1;
+  --border-strong: #e99ab6;
+  --text: #512b3a;
+  --text-muted: #86596a;
+  --text-dim: #76505e;
+  --accent: #b92d64;
+  --accent-hover: #9f2455;
+  --accent-subtle: rgba(230, 83, 131, 0.1);
+  --btn-primary-bg: #b92d64;
+  --btn-primary-fg: #ffffff;
+  --btn-primary-bg-hover: #9f2455;
+  --user-bg: #ffe0eb;
+  --assistant-bg: rgba(255, 252, 253, 0.72);
+  --tool-bg: #fff0f5;
+  --bg-subtle: rgba(230, 83, 131, 0.065);
+  --ambient-primary: rgba(230, 83, 131, 0.16);
+  --ambient-secondary: rgba(86, 199, 183, 0.1);
+  --surface-glass: rgba(255, 248, 251, 0.82);
+  --surface-highlight: rgba(255, 255, 255, 0.86);
+  --radius-control: 12px;
+  --radius-surface: 18px;
+  --radius-panel: 24px;
+  --shadow-surface: 0 12px 30px rgba(187, 75, 116, 0.12), 0 2px 7px rgba(187, 75, 116, 0.07);
+  --shadow-float: 0 22px 54px rgba(187, 75, 116, 0.16), 0 6px 16px rgba(187, 75, 116, 0.08);
+}
+
+html[data-theme="cloud-bear"] {
+  color-scheme: light;
+  --bg: #f4fbff;
+  --bg-panel: #eaf6ff;
+  --bg-hover: #dceeff;
+  --bg-selected: #cce5fc;
+  --border: #b9daf4;
+  --border-strong: #8fc0e8;
+  --text: #24445f;
+  --text-muted: #55758f;
+  --text-dim: #526f86;
+  --accent: #1769aa;
+  --accent-hover: #11588f;
+  --accent-subtle: rgba(63, 142, 232, 0.1);
+  --btn-primary-bg: #1769aa;
+  --btn-primary-fg: #ffffff;
+  --btn-primary-bg-hover: #11588f;
+  --user-bg: #d9edff;
+  --assistant-bg: rgba(250, 253, 255, 0.74);
+  --tool-bg: #eaf6ff;
+  --bg-subtle: rgba(63, 142, 232, 0.06);
+  --ambient-primary: rgba(63, 142, 232, 0.16);
+  --ambient-secondary: rgba(246, 194, 75, 0.1);
+  --surface-glass: rgba(246, 252, 255, 0.82);
+  --surface-highlight: rgba(255, 255, 255, 0.88);
+  --radius-control: 12px;
+  --radius-surface: 18px;
+  --radius-panel: 24px;
+  --shadow-surface: 0 12px 30px rgba(51, 119, 180, 0.12), 0 2px 7px rgba(51, 119, 180, 0.07);
+  --shadow-float: 0 22px 54px rgba(51, 119, 180, 0.16), 0 6px 16px rgba(51, 119, 180, 0.08);
+}
+
 html[data-theme="midnight"] {
   --bg: #0b1020;
   --bg-panel: #121a2e;

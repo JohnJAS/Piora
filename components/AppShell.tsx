@@ -2648,7 +2648,6 @@ export function AppShell() {
           onMention={handleAtMention}
           onMentions={handleAtMentions}
           onMentionLines={handleFileLineMention}
-          taskControls={taskControls}
           selectedAutomationId={selectedAutomationId}
           sessionId={selectedSession?.id ?? null}
           sessionName={selectedSession?.name}

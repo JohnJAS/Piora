@@ -11,7 +11,8 @@
     "records": [
       "batch-a-generation.md",
       "batch-b-generation.md",
-      "batch-c-generation.md"
+      "batch-c-generation.md",
+      "batch-d-generation.md"
     ]
   },
   "assetRoot": "/themes/dream-backgrounds/",
@@ -261,6 +262,22 @@
       "artworkStatus": "available",
       "appearance": "light",
       "fallback": "radial-gradient(circle at 82% 18%, rgba(251, 146, 60, 0.26), transparent 27%), radial-gradient(circle at 14% 78%, rgba(14, 116, 144, 0.24), transparent 31%), linear-gradient(145deg, #e0f2fe, #dbeafe 48%, #fff7ed)"
+    },
+    {
+      "id": "kitty-candy",
+      "nameKey": "background.preset.kittyCandy",
+      "asset": "/themes/dream-backgrounds/kitty-candy.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "radial-gradient(circle at 16% 22%, rgba(244, 114, 182, 0.28), transparent 28%), radial-gradient(circle at 84% 78%, rgba(94, 234, 212, 0.2), transparent 26%), linear-gradient(140deg, #fff7fa, #ffe4ed 54%, #fff4e8)"
+    },
+    {
+      "id": "cloud-bear",
+      "nameKey": "background.preset.cloudBear",
+      "asset": "/themes/dream-backgrounds/cloud-bear.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "radial-gradient(circle at 16% 72%, rgba(125, 211, 252, 0.32), transparent 30%), radial-gradient(circle at 86% 18%, rgba(250, 204, 21, 0.18), transparent 24%), linear-gradient(140deg, #f8fdff, #dff3ff 54%, #eef8ff)"
     }
   ]
 }
