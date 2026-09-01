@@ -1,20 +1,20 @@
-name: Harmony automation Windows preview
+name: Preview Windows desktop packages
 
 on:
   push:
     tags:
-      - "harmony-v*"
+      - "v*-beta.*"
 
 permissions:
   contents: write
 
 concurrency:
-  group: harmony-preview-${{ github.ref }}
+  group: preview-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   windows-preview:
-    name: Build and publish Harmony preview
+    name: Build, verify, and publish preview
     runs-on: windows-latest
     timeout-minutes: 90
 
@@ -34,11 +34,8 @@ jobs:
       - name: Verify preview tag and package metadata
         shell: pwsh
         run: |
-          if ($env:GITHUB_REF_NAME -notmatch '^harmony-v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
-            throw "Harmony preview tag must match harmony-vX.Y.Z: $env:GITHUB_REF_NAME"
-          }
-          $releaseTag = $env:GITHUB_REF_NAME.Substring('harmony-'.Length)
-          node scripts/verify-release-metadata.mjs $releaseTag
+          git fetch --no-tags --force origin +refs/heads/main:refs/remotes/origin/main
+          node scripts/verify-release-metadata.mjs $env:GITHUB_REF_NAME --prerelease --require-origin-main
 
       - name: Install dependencies
         run: npm ci
@@ -64,8 +61,12 @@ jobs:
       - name: Verify performance budgets
         run: npm run perf:check
 
-      - name: Build portable Windows application
-        run: npm run dist:win
+      - name: Build preview installer and portable application
+        run: npm run dist:win:preview
+
+      - name: Verify preview update metadata
+        shell: pwsh
+        run: node scripts/verify-windows-update-artifacts.mjs desktop/release $env:GITHUB_REF_NAME
 
       - name: Verify packaged standalone service
         run: npm run verify:package
@@ -75,60 +76,96 @@ jobs:
 
       - name: Smoke-test packaged Electron runtime
         shell: pwsh
+        run: node scripts/smoke-test-portable.mjs desktop/release/win-unpacked/Piora.exe --expected-version $env:GITHUB_REF_NAME --packaged-runtime
+
+      - name: Install and smoke-test preview installer
+        shell: pwsh
         run: |
-          $releaseTag = $env:GITHUB_REF_NAME.Substring('harmony-'.Length)
-          node scripts/smoke-test-portable.mjs desktop/release/win-unpacked/Piora.exe --expected-version $releaseTag --packaged-runtime
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $installer = (Resolve-Path -LiteralPath "desktop/release/Piora-$version-win-x64-setup.exe").Path
+          $installDirectory = Join-Path $env:RUNNER_TEMP "Piora-preview-$version"
+          $installation = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installDirectory") -Wait -PassThru
+          if ($installation.ExitCode -ne 0) {
+            throw "Preview NSIS installation failed with exit code $($installation.ExitCode)"
+          }
+          $installedExecutable = Join-Path $installDirectory 'Piora.exe'
+          if (-not (Test-Path -LiteralPath $installedExecutable -PathType Leaf)) {
+            throw "Installed preview executable is missing: $installedExecutable"
+          }
+          node scripts/smoke-test-portable.mjs $installedExecutable --expected-version $env:GITHUB_REF_NAME --packaged-runtime
 
       - name: Verify final portable wrapper
         shell: pwsh
         run: |
-          $releaseTag = $env:GITHUB_REF_NAME.Substring('harmony-'.Length)
-          node scripts/verify-portable-artifact.mjs --expected-version $releaseTag
+          node scripts/verify-portable-artifact.mjs --expected-version $env:GITHUB_REF_NAME
           $artifact = @(Get-ChildItem -LiteralPath desktop/release -Filter '*-portable.exe' -File)
           7z t $artifact[0].FullName
 
       - name: Generate checksums
         shell: pwsh
         run: |
-          $artifacts = @(Get-ChildItem -LiteralPath desktop/release -Filter '*-portable.exe' -File)
-          if ($artifacts.Count -ne 1) {
-            throw "Expected exactly one portable Windows executable; found $($artifacts.Count)."
-          }
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $releaseRoot = (Resolve-Path -LiteralPath desktop/release).Path
+          $expectedNames = @(
+            "Piora-$version-win-x64-portable.exe",
+            "Piora-$version-win-x64-setup.exe",
+            "Piora-$version-win-x64-setup.exe.blockmap",
+            "beta.yml"
+          )
+          $artifacts = @($expectedNames | ForEach-Object {
+            $path = Join-Path $releaseRoot $_
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Expected preview artifact is missing: $_"
+            }
+            Get-Item -LiteralPath $path
+          })
           $lines = foreach ($artifact in $artifacts) {
             $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName).Hash.ToLowerInvariant()
             "$hash  $($artifact.Name)"
           }
           Set-Content -LiteralPath desktop/release/SHA256SUMS.txt -Value $lines -Encoding ascii
 
-      - name: Upload verified preview artifact
+      - name: Upload verified preview payload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: piora-harmony-windows-${{ github.ref_name }}
+          name: piora-windows-${{ github.ref_name }}
           path: |
             desktop/release/*-portable.exe
+            desktop/release/*-setup.exe
+            desktop/release/*-setup.exe.blockmap
+            desktop/release/beta.yml
             desktop/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
 
-      - name: Create prerelease
+      - name: Create GitHub prerelease
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $assets = @(Get-ChildItem -LiteralPath desktop/release -Filter '*-portable.exe' -File | ForEach-Object FullName)
-          $assets += (Resolve-Path -LiteralPath desktop/release/SHA256SUMS.txt).Path
-          $releaseTag = $env:GITHUB_REF_NAME.Substring('harmony-'.Length)
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          $releaseRoot = (Resolve-Path -LiteralPath desktop/release).Path
+          $assets = @(
+            (Resolve-Path -LiteralPath (Join-Path $releaseRoot "Piora-$version-win-x64-setup.exe")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $releaseRoot "Piora-$version-win-x64-setup.exe.blockmap")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $releaseRoot "Piora-$version-win-x64-portable.exe")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $releaseRoot "beta.yml")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $releaseRoot "SHA256SUMS.txt")).Path
+          )
           $notes = @"
-          HarmonyOS NEXT automation preview ($releaseTag).
+          Piora $env:GITHUB_REF_NAME 内测版。
 
-          This preview adds USB/HDC device discovery, UI snapshots, structured device actions, an approximately 1 FPS local device projection in the right workspace, and a restricted AI device-control runtime. It requires a user-owned test device with developer/USB debugging authorization and an installed Huawei HDC runtime. Low-latency video streaming and redistribution of Huawei SDK binaries are intentionally not bundled.
+          包含可选择安装目录的 Windows 安装版、便携版和 beta 自动更新元数据。首次运行本内测版的设备会在本地保留内测身份，后续可同时接收正式版与内测版；已有正式用户不会被自动切换到内测通道。
 
-          This build is unsigned. Verify SHA256SUMS.txt before running. Device and third-party-app compatibility still depends on the connected phone's HarmonyOS/UiTest version.
+          此构建尚未进行正式发布，Windows 文件未做 Authenticode 签名，请使用 SHA256SUMS.txt 校验下载文件。
           "@
           gh release create $env:GITHUB_REF_NAME @assets `
             --repo $env:GITHUB_REPOSITORY `
-            --title "Piora Harmony Automation $releaseTag" `
+            --title "Piora $env:GITHUB_REF_NAME Preview" `
             --notes $notes `
             --verify-tag `
             --prerelease
+          if ($LASTEXITCODE -ne 0) {
+            throw "gh release create failed with exit code $LASTEXITCODE"
+          }

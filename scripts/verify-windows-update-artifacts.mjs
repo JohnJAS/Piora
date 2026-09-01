@@ -6,12 +6,12 @@ import { fileURLToPath } from "node:url";
 import { load as parseYaml } from "js-yaml";
 import { listPackage } from "@electron/asar";
 
-const VERSION_PATTERN = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const VERSION_PATTERN = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-beta\.(0|[1-9]\d*))?$/;
 
 function normalizeVersion(value) {
   const match = String(value ?? "").trim().match(VERSION_PATTERN);
   if (!match) throw new Error(`Expected a stable semantic version, received: ${value}`);
-  return `${match[1]}.${match[2]}.${match[3]}`;
+  return `${match[1]}.${match[2]}.${match[3]}${match[4] === undefined ? "" : `-beta.${match[4]}`}`;
 }
 
 async function sha512Base64(path) {
@@ -39,10 +39,12 @@ export function normalizeAsarEntry(entry) {
 export async function verifyWindowsUpdateArtifacts(releaseRoot, requestedVersion) {
   const root = resolve(releaseRoot);
   const version = normalizeVersion(requestedVersion);
+  const channel = version.includes("-beta.") ? "beta" : "latest";
   const installerName = `Piora-${version}-win-x64-setup.exe`;
   const installerPath = join(root, installerName);
   const blockmapPath = `${installerPath}.blockmap`;
-  const metadataPath = join(root, "latest.yml");
+  const metadataName = `${channel}.yml`;
+  const metadataPath = join(root, metadataName);
   const runtimeConfigPath = join(root, "win-unpacked", "resources", "app-update.yml");
   const applicationAsarPath = join(root, "win-unpacked", "resources", "app.asar");
 
@@ -59,28 +61,31 @@ export async function verifyWindowsUpdateArtifacts(releaseRoot, requestedVersion
     throw new Error(`${basename(blockmapPath)} is missing or unexpectedly small.`);
   }
 
-  const metadata = requireObject(parseYaml(metadataText), "latest.yml");
+  const metadata = requireObject(parseYaml(metadataText), metadataName);
   if (metadata.version !== version) {
-    throw new Error(`latest.yml version ${metadata.version} does not match ${version}.`);
+    throw new Error(`${metadataName} version ${metadata.version} does not match ${version}.`);
   }
   if (!Array.isArray(metadata.files) || metadata.files.length !== 1) {
-    throw new Error("latest.yml must describe exactly one Windows installer.");
+    throw new Error(`${metadataName} must describe exactly one Windows installer.`);
   }
-  const file = requireObject(metadata.files[0], "latest.yml files[0]");
+  const file = requireObject(metadata.files[0], `${metadataName} files[0]`);
   if (file.url !== installerName) {
-    throw new Error(`latest.yml points at ${file.url} instead of ${installerName}.`);
+    throw new Error(`${metadataName} points at ${file.url} instead of ${installerName}.`);
   }
   if (file.size !== installerStat.size) {
-    throw new Error(`latest.yml size for ${installerName} does not match the installer.`);
+    throw new Error(`${metadataName} size for ${installerName} does not match the installer.`);
   }
   const actualSha512 = await sha512Base64(installerPath);
   if (file.sha512 !== actualSha512) {
-    throw new Error(`latest.yml SHA-512 does not match ${installerName}.`);
+    throw new Error(`${metadataName} SHA-512 does not match ${installerName}.`);
   }
 
   const runtimeConfig = requireObject(parseYaml(runtimeConfigText), "app-update.yml");
   if (runtimeConfig.provider !== "github" || runtimeConfig.owner !== "kexijiang" || runtimeConfig.repo !== "Piora") {
     throw new Error("The packaged updater is not configured for kexijiang/Piora GitHub Releases.");
+  }
+  if (channel === "beta" && runtimeConfig.channel !== "beta") {
+    throw new Error("The packaged preview updater is not configured for the beta channel.");
   }
   const applicationEntries = new Set(listPackage(applicationAsarPath).map(normalizeAsarEntry));
   for (const requiredEntry of [
@@ -97,7 +102,7 @@ export async function verifyWindowsUpdateArtifacts(releaseRoot, requestedVersion
     installerName,
     installerSize: installerStat.size,
     blockmapName: basename(blockmapPath),
-    metadataName: basename(metadataPath),
+    metadataName,
     updaterRuntimeVerified: true,
     sha512: actualSha512,
   };

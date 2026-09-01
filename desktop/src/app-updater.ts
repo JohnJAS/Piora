@@ -1,5 +1,6 @@
 import type { AppUpdater } from "electron-updater";
 import type { Logger } from "./logger.js";
+import type { DesktopReleaseAudience } from "./release-audience.js";
 
 export type DesktopUpdateStatus =
   | "unsupported"
@@ -14,6 +15,7 @@ export type DesktopUpdateStatus =
 export interface DesktopUpdateState {
   status: DesktopUpdateStatus;
   currentVersion: string;
+  audience: DesktopReleaseAudience;
   availableVersion?: string;
   releaseNotes?: string;
   progressPercent?: number;
@@ -24,6 +26,11 @@ export interface DesktopUpdateState {
 }
 
 export type DesktopUpdateListener = (state: Readonly<DesktopUpdateState>) => void;
+
+export interface DesktopUpdateControllerOptions {
+  audience?: DesktopReleaseAudience;
+  prepareCheck?: () => Promise<boolean>;
+}
 
 function normalizedVersion(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -74,17 +81,20 @@ export class DesktopUpdateController {
     private readonly updater: AppUpdater | null,
     currentVersion: string,
     private readonly logger: Logger,
+    private readonly options: DesktopUpdateControllerOptions = {},
   ) {
+    const audience = options.audience ?? "stable";
     this.state = {
       status: updater ? "idle" : "unsupported",
       currentVersion: normalizedVersion(currentVersion) ?? currentVersion,
+      audience,
     };
 
     if (!updater) return;
     updater.autoDownload = false;
     updater.autoInstallOnAppQuit = false;
     updater.autoRunAppAfterInstall = true;
-    updater.allowPrerelease = false;
+    updater.allowPrerelease = audience === "preview";
     updater.logger = logger;
 
     updater.on("checking-for-update", () => {
@@ -151,8 +161,14 @@ export class DesktopUpdateController {
     if (this.checkPromise) return this.checkPromise;
 
     this.publish({ status: "checking" });
-    this.checkPromise = this.updater.checkForUpdates()
-      .then(() => undefined)
+    this.checkPromise = Promise.resolve()
+      .then(async () => {
+        if (this.options.prepareCheck && !await this.options.prepareCheck()) {
+          this.publish({ status: "up-to-date" });
+          return;
+        }
+        await this.updater?.checkForUpdates();
+      })
       .catch((error: unknown) => this.fail(error))
       .finally(() => {
         this.checkPromise = undefined;
@@ -186,7 +202,7 @@ export class DesktopUpdateController {
     this.publish({ status: "error", error: message });
   }
 
-  private publish(next: Omit<DesktopUpdateState, "currentVersion">): void {
+  private publish(next: Omit<DesktopUpdateState, "currentVersion" | "audience">): void {
     const keepsAvailableVersion = next.status === "available"
       || next.status === "downloading"
       || next.status === "downloaded";
@@ -197,6 +213,7 @@ export class DesktopUpdateController {
     this.state = {
       status: next.status,
       currentVersion: this.state.currentVersion,
+      audience: this.state.audience,
       ...(availableVersion ? { availableVersion } : {}),
       ...(releaseNotes ? { releaseNotes } : {}),
       ...(next.progressPercent === undefined ? {} : { progressPercent: next.progressPercent }),

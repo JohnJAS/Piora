@@ -1,7 +1,7 @@
 {
   "name": "@piora/desktop",
   "productName": "Piora",
-  "version": "0.4.39",
+  "version": "0.4.40-beta.1",
   "desktopName": "Piora",
   "private": true,
   "description": "Secure Electron desktop shell for Piora",
@@ -28,6 +28,7 @@
     "start": "npm run build && electron .",
     "pack": "electron-builder --config electron-builder.yml --dir --win --x64 --publish never",
     "dist": "electron-builder --config electron-builder.yml --win --x64 --publish never",
+    "dist:preview": "electron-builder --config electron-builder.preview.yml --win --x64 --publish never",
     "pack:linux": "electron-builder --config electron-builder.yml --dir --linux --x64 --publish never",
     "dist:linux": "electron-builder --config electron-builder.yml --linux AppImage --x64 --publish never"
   },

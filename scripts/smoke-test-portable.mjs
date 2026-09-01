@@ -12,7 +12,7 @@ import {
 } from "./isolated-process-env.mjs";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const STRICT_VERSION = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const STRICT_VERSION = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-beta\.(0|[1-9]\d*))?$/;
 // The first launch prepares the artifact-specific Electron runtime cache. On
 // slower Windows disks that one-time copy can take several minutes, while the
 // repeat-launch path is independently capped at three seconds below.
@@ -61,7 +61,7 @@ export function normalizeExpectedVersion(value) {
   if (value === undefined) return undefined;
   const match = STRICT_VERSION.exec(value);
   if (!match) {
-    throw new Error(`Expected version must match X.Y.Z or vX.Y.Z: ${value}`);
+    throw new Error(`Expected version must match X.Y.Z[-beta.N] or vX.Y.Z[-beta.N]: ${value}`);
   }
   return value.startsWith("v") ? value.slice(1) : value;
 }

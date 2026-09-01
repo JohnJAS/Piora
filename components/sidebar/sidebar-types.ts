@@ -89,6 +89,7 @@ declare global {
 export interface DesktopUpdateState {
   status: "unsupported" | "idle" | "checking" | "up-to-date" | "available" | "downloading" | "downloaded" | "error";
   currentVersion: string;
+  audience: "stable" | "preview";
   availableVersion?: string;
   releaseNotes?: string;
   progressPercent?: number;

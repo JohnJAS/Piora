@@ -335,7 +335,7 @@ export function CompanionPanel() {
   return (
     <main className={`${styles.panel} companion-panel-root`} aria-busy={busy}>
       <header className={styles.header}>
-        <div><h1>Piora 随身舱</h1><p>你的桌面伙伴、任务管家与临时资料架</p></div>
+        <div><h1>Piora 随身舱</h1><p>本地任务、专注与资料工具</p></div>
         <span className={styles.mood}>{state.mind.mood}</span>
       </header>
       <nav className={styles.tabs} aria-label="随身舱功能">

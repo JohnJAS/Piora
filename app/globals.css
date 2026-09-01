@@ -3526,6 +3526,24 @@ select:focus-visible,
   color: var(--text);
 }
 
+.desktop-titlebar-preview-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 19px;
+  margin: 0 4px 0 6px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: color-mix(in srgb, var(--accent) 84%, var(--text));
+  font-size: calc(var(--text-xs) * 0.87);
+  font-weight: 650;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 .desktop-titlebar-drag {
   min-width: 24px;
   height: 100%;

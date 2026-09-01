@@ -394,14 +394,19 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
 
       <div className={styles.tabs} role="tablist" aria-label={t("companion.json.tabs")}>
         {drafts.map((draft) => (
-          <div className={styles.tab} data-active={draft.id === activeDraft.id ? "true" : "false"} key={draft.id}>
+          <div
+            className={styles.tab}
+            data-active={draft.id === activeDraft.id ? "true" : "false"}
+            data-locked={draft.favorite ? "true" : "false"}
+            key={draft.id}
+          >
             <button type="button" role="tab" aria-selected={draft.id === activeDraft.id} title={t("companion.json.renameHint")} onClick={() => setActiveId(draft.id)} onDoubleClick={() => renameDraft(draft)}>
-              {draft.favorite ? "◆ " : ""}{draft.title}
+              {draft.title}
             </button>
             {draft.id !== TEMP_DRAFT_ID ? <button type="button" disabled={draft.favorite} onClick={() => closeDraft(draft.id)} aria-label={t("companion.json.closeTab", { title: draft.title })}>×</button> : null}
           </div>
         ))}
-        <button className={styles.addTab} type="button" disabled={drafts.length >= MAX_DRAFTS} onClick={() => addDraft()} aria-label={t("companion.json.addTab")}>＋</button>
+        <button className={styles.addTab} type="button" disabled={drafts.length >= MAX_DRAFTS} onClick={() => addDraft()} aria-label={t("companion.json.addTab")}>+</button>
       </div>
 
       <div className={styles.actionBar}>

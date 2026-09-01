@@ -1,0 +1,10 @@
+extends: electron-builder.yml
+
+# GitHub releases do not infer an updater channel from a prerelease version.
+# Pin beta metadata explicitly so preview installations can consume beta.yml.
+publish:
+  provider: github
+  owner: kexijiang
+  repo: Piora
+  releaseType: prerelease
+  channel: beta

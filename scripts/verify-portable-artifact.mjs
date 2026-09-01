@@ -5,12 +5,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const STRICT_VERSION = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const STRICT_VERSION = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-beta\.(0|[1-9]\d*))?$/;
 const MINIMUM_PORTABLE_BYTES = 50 * 1024 * 1024;
 
 export function normalizePortableVersion(value) {
   const match = STRICT_VERSION.exec(value ?? "");
-  if (!match) throw new Error(`Expected version must match X.Y.Z or vX.Y.Z: ${value ?? ""}`);
+  if (!match) throw new Error(`Expected version must match X.Y.Z[-beta.N] or vX.Y.Z[-beta.N]: ${value ?? ""}`);
   return value.startsWith("v") ? value.slice(1) : value;
 }
 

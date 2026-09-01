@@ -1968,6 +1968,14 @@ export function AppShell() {
                 <span>{menu.label}</span>
               </button>
             ))}
+            {desktopUpdateState?.audience === "preview" ? (
+              <span
+                className="desktop-titlebar-preview-badge"
+                title={locale === "zh-CN" ? "此设备接收正式版和内测版更新" : "This device receives stable and preview updates"}
+              >
+                {locale === "zh-CN" ? "内测版" : "Preview"}
+              </span>
+            ) : null}
             {desktopUpdateAvailable ? (
               <button
                 type="button"

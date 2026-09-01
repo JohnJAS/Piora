@@ -8,6 +8,7 @@ on:
 jobs:
   source-gate:
     name: Source gate (Ubuntu)
+    if: ${{ !contains(github.ref_name, '-') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

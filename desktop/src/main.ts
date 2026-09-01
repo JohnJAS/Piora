@@ -9,6 +9,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  net,
   Notification,
   screen,
   session as electronSession,
@@ -56,6 +57,8 @@ import {
   DesktopUpdateController,
   type DesktopUpdateState,
 } from "./app-updater.js";
+import { readOrCreateDesktopReleaseAudience } from "./release-audience.js";
+import { preparePreviewUpdateFeed } from "./update-release-selector.js";
 import {
   isDesktopApplicationTransportUrl,
   resolveDesktopDevelopmentRuntime,
@@ -181,6 +184,7 @@ let desktopUpdateController: DesktopUpdateController | undefined;
 let desktopUpdateState: DesktopUpdateState = {
   status: "unsupported",
   currentVersion: app.getVersion(),
+  audience: "stable",
 };
 let automaticUpdateCheckTimer: NodeJS.Timeout | undefined;
 
@@ -658,10 +662,27 @@ function initializeDesktopUpdater(log: Logger): void {
     && process.platform === "win32"
     && !PORTABLE_SMOKE_TEST
     && !process.env.PORTABLE_EXECUTABLE_FILE;
+  const currentVersion = app.getVersion();
+  const audience = readOrCreateDesktopReleaseAudience(app.getPath("userData"), currentVersion, log);
   desktopUpdateController = new DesktopUpdateController(
     supported ? autoUpdater : null,
-    app.getVersion(),
+    currentVersion,
     log,
+    {
+      audience,
+      ...(supported && audience === "preview"
+        ? {
+            prepareCheck: () => preparePreviewUpdateFeed(
+              autoUpdater,
+              currentVersion,
+              (url) => net.fetch(url, {
+                headers: { Accept: "application/atom+xml, application/xml;q=0.9" },
+              }),
+              log,
+            ),
+          }
+        : {}),
+    },
   );
   desktopUpdateController.subscribe(publishDesktopUpdateState);
   registerDesktopUpdateStateHandler();
@@ -1297,9 +1318,9 @@ function emitCompanionMotionState(direction: CompanionMotionDirection | null): v
   });
 }
 
-function positionCompanionBubble(): void {
+function positionCompanionBubble(petBounds?: Electron.Rectangle): void {
   if (!companionWindow || companionWindow.isDestroyed() || !companionBubbleWindow || companionBubbleWindow.isDestroyed()) return;
-  const pet = companionWindow.getBounds();
+  const pet = petBounds ?? companionWindow.getBounds();
   const display = screen.getDisplayNearestPoint({ x: pet.x + Math.round(pet.width / 2), y: pet.y });
   const area = display.workArea;
   const x = Math.min(
@@ -1307,7 +1328,10 @@ function positionCompanionBubble(): void {
     area.x + Math.max(0, area.width - COMPANION_BUBBLE_WIDTH),
   );
   const y = Math.max(area.y, pet.y - COMPANION_BUBBLE_HEIGHT + 16);
-  companionBubbleWindow.setBounds({ x, y, width: COMPANION_BUBBLE_WIDTH, height: COMPANION_BUBBLE_HEIGHT });
+  // Keep the speech surface on the exact same planned coordinates as the pet.
+  // Reading getBounds() immediately after setPosition() can return the previous
+  // native-window position on Windows and makes the bubble visibly trail.
+  companionBubbleWindow.setPosition(x, y, false);
 }
 
 function stopCompanionWindowMotion(): boolean {
@@ -1359,11 +1383,11 @@ function startCompanionWindowMotion(input: {
       facingDirection = nextFacingDirection;
       emitCompanionMotionState(facingDirection);
     }
-    positionCompanionBubble();
+    positionCompanionBubble({ ...bounds, x: point.x, y: point.y });
     if (elapsed < plan.durationMs) return;
     const finalPoint = companionMotionPoint(plan, plan.durationMs);
     companionWindow.setPosition(finalPoint.x, finalPoint.y, false);
-    positionCompanionBubble();
+    positionCompanionBubble({ ...bounds, x: finalPoint.x, y: finalPoint.y });
     stopCompanionWindowMotion();
   }, 16);
   companionMotionTimer.unref?.();
@@ -1391,7 +1415,7 @@ function updateCompanionWindowDrag(): boolean {
     display.workArea,
   );
   companionWindow.setPosition(target.x, target.y, false);
-  positionCompanionBubble();
+  positionCompanionBubble(target);
   return true;
 }
 
@@ -1523,7 +1547,10 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
     }
   });
   window.on("move", () => {
-    positionCompanionBubble();
+    // Programmatic motion and pointer dragging already position both native
+    // windows from one coordinate snapshot. Do not race that update with a
+    // delayed Windows `move` event carrying an older pet position.
+    if (!companionMotionTimer && !companionDragState) positionCompanionBubble();
     if (companionMoveTimer) clearTimeout(companionMoveTimer);
     companionMoveTimer = setTimeout(() => {
       if (!companionWindow || companionWindow.isDestroyed() || !logger) return;

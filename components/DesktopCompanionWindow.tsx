@@ -118,6 +118,7 @@ export function DesktopCompanionWindow() {
     autonomyLevel: CompanionAutonomyLevel;
   }>({ allowMovement: true, autonomyPaused: false, autonomyLevel: "balanced" });
   const movementAllowedRef = useRef(true);
+  const pointerOverPetRef = useRef(false);
   const lastTimerCompletionRequestRef = useRef<number | null>(null);
   const lastDecisionIdRef = useRef<string | null>(null);
   const pointerDragRef = useRef<{
@@ -153,7 +154,7 @@ export function DesktopCompanionWindow() {
       if (!response.ok || !payload?.decision) throw new Error(payload?.error || `HTTP ${response.status}`);
       if (requestId !== speechRequestRef.current) return;
       for (const action of payload.decision.actions ?? []) {
-        if (action.kind === "walk" && movementAllowedRef.current) {
+        if (action.kind === "walk" && movementAllowedRef.current && !pointerOverPetRef.current) {
           const wander = planCompanionWander({
             autonomyLevel: movementSettings.autonomyLevel,
             hasRunningTasks: runningTasks.length > 0,
@@ -469,7 +470,7 @@ export function DesktopCompanionWindow() {
       void bridge({ kind: "stop" });
       return;
     }
-    if (runtimeEventKind === "started" || runtimeEventKind === "completed") {
+    if ((runtimeEventKind === "started" || runtimeEventKind === "completed") && !pointerOverPetRef.current) {
       const wander = planCompanionWander({
         autonomyLevel: movementSettings.autonomyLevel,
         hasRunningTasks: runtimeEventKind === "started",
@@ -512,7 +513,7 @@ export function DesktopCompanionWindow() {
       });
       timer = window.setTimeout(() => {
         if (cancelled) return;
-        if (wander.shouldMove && pointerDragRef.current === null) {
+        if (wander.shouldMove && pointerDragRef.current === null && !pointerOverPetRef.current) {
           void bridge({
             kind: "walk",
             direction: wander.direction,
@@ -576,6 +577,15 @@ export function DesktopCompanionWindow() {
     void window.piDesktop?.moveCompanionWindow?.({ kind: "drag-start" });
   }, []);
 
+  const handlePetPointerEnter = useCallback(() => {
+    pointerOverPetRef.current = true;
+    void window.piDesktop?.moveCompanionWindow?.({ kind: "stop" });
+  }, []);
+
+  const handlePetPointerLeave = useCallback(() => {
+    pointerOverPetRef.current = false;
+  }, []);
+
   const handlePetPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     const drag = pointerDragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
@@ -589,7 +599,6 @@ export function DesktopCompanionWindow() {
     <main className={styles.window} aria-label={t("companion.desktopMode")} data-testid="desktop-companion-window">
       <div
         className={styles.dragSurface}
-        title={`${petLabel} · ${statusLabel} · ${cause} · ${t("companion.desktopInteractionHint")}`}
       >
         <div className={styles.activityBubbles} aria-live="polite" data-has-active-tasks={taskBubbles.length > 0}>
           {bubblesExpanded && bubbleItems.map((item) => (
@@ -636,8 +645,9 @@ export function DesktopCompanionWindow() {
             style={hitRegionStyle}
             type="button"
             data-testid="companion-pet-viewport"
-            aria-label={`${petLabel} · ${t("companion.pokeHint")}`}
-            title={t("companion.desktopInteractionHint")}
+            aria-label={`${petLabel} · ${statusLabel} · ${t("companion.pokeHint")}`}
+            onPointerEnter={handlePetPointerEnter}
+            onPointerLeave={handlePetPointerLeave}
             onPointerDown={handlePetPointerDown}
             onPointerMove={handlePetPointerMove}
             onPointerUp={(event) => endPointerDrag(event, false)}
