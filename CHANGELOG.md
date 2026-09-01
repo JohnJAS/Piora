@@ -4,6 +4,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.36] - 2026-09-01
+
+### 优化
+
+- 将新增的 10 套内置背景补充为完整的一键风格，点击后会同步应用主题配色、背景遮罩、模糊度以及项目侧栏和文件面板透明度。
+
 ## [0.4.35] - 2026-09-01
 
 ### 修复

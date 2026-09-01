@@ -234,7 +234,12 @@ export function useBackground() {
 
   const applyBuiltinPreset = useCallback((
     presetId: string,
-    options: { overlay?: number; blur?: number } = {},
+    options: {
+      overlay?: number;
+      blur?: number;
+      sidebarOverlay?: number;
+      filePanelOverlay?: number;
+    } = {},
   ) => {
     if (!getBackgroundPreset(presetId)) return;
     replaceCustomObjectUrl(null);
@@ -242,6 +247,8 @@ export function useBackground() {
       ...activateBackground(snapshot.preference, "builtin", presetId),
       overlay: Math.min(90, Math.max(0, Math.round(options.overlay ?? snapshot.preference.overlay))),
       blur: Math.min(24, Math.max(0, Math.round(options.blur ?? snapshot.preference.blur))),
+      sidebarOverlay: Math.min(90, Math.max(0, Math.round(options.sidebarOverlay ?? snapshot.preference.sidebarOverlay))),
+      filePanelOverlay: Math.min(90, Math.max(0, Math.round(options.filePanelOverlay ?? snapshot.preference.filePanelOverlay))),
     });
   }, [snapshot.preference]);
 
