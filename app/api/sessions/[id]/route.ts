@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { statSync } from "fs";
+import { existsSync, statSync } from "fs";
 import { createHash } from "node:crypto";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import {
@@ -11,6 +11,7 @@ import {
   listAllSessions,
 } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
+import { isMissingSessionFileError, resolveSessionDetailSource } from "@/lib/session-detail-source";
 import { purgeExpiredTrash, trashSession } from "@/lib/session-trash";
 
 // BranchNavigator still traverses recursively, so keep the response tree shallow.
@@ -121,8 +122,9 @@ async function buildSessionResponse(
   deferThinking: boolean,
   deferToolResultImages: boolean,
   includeTree: boolean,
+  manager?: SessionManager,
 ) {
-  const sm = SessionManager.open(filePath);
+  const sm = manager ?? SessionManager.open(filePath);
   const entries = sm.getEntries() as never;
   const leafId = sm.getLeafId();
   const tree = includeTree ? projectTreeForResponse(sm.getTree()) : [];
@@ -290,8 +292,12 @@ export async function GET(
 ) {
   const { id } = await params;
   try {
-    const filePath = await resolveSessionPath(id);
-    if (!filePath) {
+    const source = await resolveSessionDetailSource(id, {
+      getLiveSession: getRpcSession,
+      resolveSessionPath,
+      sessionFileExists: existsSync,
+    });
+    if (!source) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
@@ -299,14 +305,41 @@ export async function GET(
     const deferThinking = searchParams.has("deferThinking");
     const deferToolResultImages = searchParams.has("deferMedia");
     const includeTree = searchParams.has("includeTree");
-    const response = await loadCachedSessionResponse(
-      id,
-      filePath,
-      deferThinking,
-      deferToolResultImages,
-      includeTree,
-      req.headers.get("if-none-match"),
-    );
+    if (source.kind === "memory") {
+      const payload = await buildSessionResponse(
+        id,
+        source.filePath,
+        source.manager.getHeader()?.timestamp ?? new Date().toISOString(),
+        deferThinking,
+        deferToolResultImages,
+        includeTree,
+        source.manager,
+      );
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: {
+          "cache-control": "private, no-store",
+          "content-type": "application/json; charset=utf-8",
+        },
+      });
+    }
+
+    let response: Awaited<ReturnType<typeof loadCachedSessionResponse>>;
+    try {
+      response = await loadCachedSessionResponse(
+        id,
+        source.filePath,
+        deferThinking,
+        deferToolResultImages,
+        includeTree,
+        req.headers.get("if-none-match"),
+      );
+    } catch (error) {
+      if (!isMissingSessionFileError(error)) throw error;
+      invalidateSessionPathCache(id);
+      invalidateSessionListCache();
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
     const headers = {
       "cache-control": "private, no-cache",
       "content-type": "application/json; charset=utf-8",

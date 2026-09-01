@@ -39,6 +39,7 @@ test("cancels stale session loads when switching tasks", () => {
   assert.match(loadSource, /sessionLoadAbortRef\.current\?\.abort\(\)/);
   assert.match(loadSource, /signal: controller\.signal/);
   assert.match(loadSource, /if \(controller\.signal\.aborted\) return null/);
+  assert.match(loadSource, /throw await sessionResponseError\(res\)/);
 });
 
 test("settles the local stream as soon as the server accepts an abort", () => {

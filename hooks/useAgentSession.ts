@@ -346,6 +346,12 @@ function userMessageHasPromptMaterialMarker(message: AgentMessage): boolean {
   ));
 }
 
+async function sessionResponseError(response: Response): Promise<Error> {
+  const body = await response.json().catch(() => null) as { error?: unknown } | null;
+  const detail = typeof body?.error === "string" && body.error.trim() ? `: ${body.error}` : "";
+  return new Error(`HTTP ${response.status}${detail}`);
+}
+
 async function uploadPromptMaterialFiles(files: AttachedFile[]): Promise<PromptMaterialReference[]> {
   if (!files.length) return [];
   const response = await fetch("/api/prompt-materials", {
@@ -543,7 +549,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           }
           return null;
         }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw await sessionResponseError(res);
         d = await res.json() as SessionData;
       }
       if (sessionIdRef.current !== sid) return null;
