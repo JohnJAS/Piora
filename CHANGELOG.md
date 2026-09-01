@@ -4,6 +4,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.40-beta.7] - 2026-09-02
+
+### 修复
+
+- 修复 Windows 干净检出将 ArkUI golden fixture 转为 CRLF 后稳定生成测试误报的问题；测试现在规范化参考文件并继续强制生成器输出 LF。
+
 ## [0.4.40-beta.6] - 2026-09-02
 
 ### 修复
