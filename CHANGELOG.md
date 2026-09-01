@@ -4,7 +4,7 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
-## [0.4.40-beta.1] - 2026-09-01
+## [0.4.40-beta.2] - 2026-09-01
 
 ### 新增
 
