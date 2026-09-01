@@ -442,7 +442,7 @@ const harmonyDeviceTool = defineTool({
   promptGuidelines: [
     "For HarmonyOS app or device troubleshooting, call list_devices instead of assuming no device capability exists. Use list_processes and read_logs early for crashes, errors, startup failures, freezes, or unexpected behavior.",
     "Always list devices first. Process and log inspection are read-only and do not require control; acquire control before snapshots or state-changing UI actions.",
-    "Use snapshot followed by tap_ref whenever a UI node ref is available; refs and generations become stale after reconnects or newer snapshots.",
+    "Use snapshot followed by tap_ref whenever a UI node ref is available. Prefer the freshest ref; retained refs are revalidated against the live tree, and every ref becomes stale after a device reconnect.",
     "Coordinate taps and swipes are weaker than UI refs. Use them only when a fresh snapshot has no usable ref, always pass that snapshot generation, and never use coordinates for sensitive or ambiguous actions.",
     "After an action, prefer wait_for for a meaningful UI condition. Use wait_until_stable for visual-only transitions and wait_ms only as a bounded fallback when no observable completion condition exists.",
     "Never enter passwords, payment data, one-time codes, biometric prompts, or other secrets. Ask the user to complete sensitive steps manually.",

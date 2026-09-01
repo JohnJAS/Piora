@@ -44,6 +44,11 @@ const MIN_LEASE_TTL_MS = 5_000;
 const MAX_LEASE_TTL_MS = 30 * 60_000;
 const DEVICE_REFRESH_TTL_MS = 10_000;
 const DEVICE_MISSING_GRACE_REFRESHES = 2;
+// Keep a few lightweight semantic snapshots so an Agent can safely use a
+// second ref from the same observation after another action or observer has
+// advanced the current snapshot. Every retained target is re-read and
+// uniquely matched against the live UiTest tree immediately before tapping.
+const MAX_RETAINED_REFERENCE_SNAPSHOTS = 4;
 
 export interface AcquireLeaseOptions {
   serial: string;
@@ -63,6 +68,12 @@ export interface HarmonyDeviceManagerOptions {
 type Listener = (event: HarmonyManagerEvent) => void;
 
 interface StoredSnapshot extends HarmonySnapshot {
+  nodeByRef: Map<string, HarmonyUiNode>;
+}
+
+interface StoredReferenceSnapshot {
+  generation: number;
+  revision: number;
   nodeByRef: Map<string, HarmonyUiNode>;
 }
 
@@ -132,6 +143,7 @@ export class HarmonyDeviceManager {
   private readonly leasesBySerial = new Map<string, HarmonyLease>();
   private readonly leasesByToken = new Map<string, HarmonyLease>();
   private readonly snapshots = new Map<string, StoredSnapshot>();
+  private readonly referenceSnapshots = new Map<string, StoredReferenceSnapshot[]>();
   private readonly recordings = new Map<string, HarmonyRecordingState>();
   private readonly liveFrameControllers = new Map<string, AbortController>();
   private readonly liveFramePromises = new Map<string, Promise<HarmonySnapshot>>();
@@ -180,6 +192,25 @@ export class HarmonyDeviceManager {
     for (const listener of [...this.listeners]) {
       try { listener(event); } catch { /* A broken SSE client must not break device control. */ }
     }
+  }
+
+  private forgetDeviceSnapshots(serial: string): void {
+    this.snapshots.delete(serial);
+    this.referenceSnapshots.delete(serial);
+  }
+
+  private retainSnapshotReferences(serial: string, snapshot: StoredSnapshot): void {
+    const history = (this.referenceSnapshots.get(serial) ?? [])
+      .filter((entry) => entry.generation === snapshot.generation && entry.revision !== snapshot.revision);
+    history.push({
+      generation: snapshot.generation,
+      revision: snapshot.revision,
+      nodeByRef: snapshot.nodeByRef,
+    });
+    if (history.length > MAX_RETAINED_REFERENCE_SNAPSHOTS) {
+      history.splice(0, history.length - MAX_RETAINED_REFERENCE_SNAPSHOTS);
+    }
+    this.referenceSnapshots.set(serial, history);
   }
 
   subscribe(listener: Listener): () => void {
@@ -309,7 +340,7 @@ export class HarmonyDeviceManager {
       const current: HarmonyDevice = { ...device, generation, lastSeenAt: timestamp };
       this.devices.set(device.serial, current);
       normalized.push(current);
-      if (!previous || previous.generation !== generation) this.snapshots.delete(device.serial);
+      if (!previous || previous.generation !== generation) this.forgetDeviceSnapshots(device.serial);
       if (current.state !== "online") {
         const lease = this.leasesBySerial.get(device.serial);
         if (lease) this.removeLease(lease, "device_offline");
@@ -327,7 +358,7 @@ export class HarmonyDeviceManager {
         this.missingRefreshCounts.delete(serial);
         this.presentLastRefresh.delete(serial);
         this.devices.delete(serial);
-        this.snapshots.delete(serial);
+        this.forgetDeviceSnapshots(serial);
         const lease = this.leasesBySerial.get(serial);
         if (lease) this.removeLease(lease, "device_disconnected");
       }
@@ -484,8 +515,12 @@ export class HarmonyDeviceManager {
         nodeByRef: new Map((nodes ?? []).map((node) => [node.ref, node])),
       };
       // Live-view screenshot polling must not replace the latest UI-tree refs.
-      // A later tree capture still invalidates those refs by advancing revision.
-      if (includeTree) this.snapshots.set(options.serial, snapshot);
+      // A later tree capture becomes the public current snapshot; a bounded
+      // semantic history keeps older refs recoverable through live revalidation.
+      if (includeTree) {
+        this.snapshots.set(options.serial, snapshot);
+        this.retainSnapshotReferences(options.serial, snapshot);
+      }
       this.emit({ type: "snapshot", timestamp: snapshot.capturedAt, serial: options.serial, generation: device.generation, revision });
       const { nodeByRef, ...publicSnapshot } = snapshot;
       void nodeByRef;
@@ -647,7 +682,6 @@ export class HarmonyDeviceManager {
     generation: number | undefined,
     signal: AbortSignal | undefined,
     invoke: (backend: HarmonyAutomationBackend, queuedSignal: AbortSignal) => Promise<void>,
-    expectedSnapshotRevision?: number,
   ): Promise<HarmonyOperationResult> {
     validateSerial(serial);
     const lease = this.requireLease(serial, leaseToken);
@@ -661,14 +695,10 @@ export class HarmonyDeviceManager {
           retryable: true,
         });
       }
-      if (expectedSnapshotRevision !== undefined) {
-        const current = this.snapshots.get(serial);
-        if (!current || current.revision !== expectedSnapshotRevision) {
-          throw new HarmonyError("STALE_SNAPSHOT", "The UI reference was replaced by a newer snapshot", { retryable: true });
-        }
-      }
       // Any write may change the page, even when the device command later fails.
-      // Force callers to capture a new tree before reusing a UI reference.
+      // The public "latest snapshot" is therefore invalidated. Lightweight
+      // semantic refs are retained separately and must pass a fresh, unique
+      // live-tree match before they can be reused.
       this.snapshots.delete(serial);
       await invoke(this.requireBackend(), queuedSignal);
       this.emit({ type: "operation", timestamp: iso(this.now()), serial, operation, operationId });
@@ -698,15 +728,31 @@ export class HarmonyDeviceManager {
   }
 
   async tapRef(options: HarmonyTapRefOptions): Promise<HarmonyOperationResult> {
-    const snapshot = this.snapshots.get(options.serial);
-    if (!snapshot || snapshot.generation !== options.generation) {
-      throw new HarmonyError("STALE_SNAPSHOT", "The referenced snapshot is no longer current", { retryable: true });
+    validateSerial(options.serial);
+    if (!Number.isSafeInteger(options.generation) || options.generation < 0) {
+      throw new HarmonyError("INVALID_ARGUMENT", "A valid UI reference generation is required");
     }
-    const node = snapshot.nodeByRef.get(options.ref);
+    const identity = /^g(\d+)-r(\d+)-n(\d+)$/.exec(options.ref);
+    if (!identity) throw new HarmonyError("INVALID_ARGUMENT", "Invalid Harmony UI reference");
+    const refGeneration = Number(identity[1]);
+    const refRevision = Number(identity[2]);
+    if (!Number.isSafeInteger(refGeneration) || !Number.isSafeInteger(refRevision) || refGeneration !== options.generation) {
+      throw new HarmonyError("STALE_SNAPSHOT", "The UI reference does not belong to the requested device generation", { retryable: true });
+    }
+    const referenceSnapshot = this.referenceSnapshots.get(options.serial)?.find((entry) => (
+      entry.generation === options.generation && entry.revision === refRevision
+    ));
+    if (!referenceSnapshot) {
+      throw new HarmonyError("STALE_SNAPSHOT", "The referenced snapshot is no longer retained; observe the screen and use a fresh ref", { retryable: true });
+    }
+    const node = referenceSnapshot.nodeByRef.get(options.ref);
     if (!node?.bounds) throw new HarmonyError("INVALID_ARGUMENT", "UI reference does not have tappable bounds");
     if (node.enabled === false || node.visible === false) throw new HarmonyError("INVALID_ARGUMENT", "UI reference is not enabled or visible");
     if (node.clickable === false) throw new HarmonyError("INVALID_ARGUMENT", "UI reference is not clickable");
-    let strategy = "semantic_ref";
+    const current = this.snapshots.get(options.serial);
+    let strategy = current?.generation === options.generation && current.revision === refRevision
+      ? "semantic_ref"
+      : "retained_semantic_ref";
     let tappedX = Math.round((node.bounds.left + node.bounds.right) / 2);
     let tappedY = Math.round((node.bounds.top + node.bounds.bottom) / 2);
     const result = await this.action("tap_ref", options.serial, options.leaseToken, options.generation, options.signal,
@@ -770,7 +816,7 @@ export class HarmonyDeviceManager {
           tappedY,
           signal,
         );
-      }, snapshot.revision);
+      });
     return { ...result, strategy, x: tappedX, y: tappedY };
   }
 
@@ -935,6 +981,7 @@ export class HarmonyDeviceManager {
     }
     for (const lease of [...this.leasesByToken.values()]) this.removeLease(lease, reason);
     this.snapshots.clear();
+    this.referenceSnapshots.clear();
     for (const [serial, generation] of this.generations) {
       const nextGeneration = generation + 1;
       this.generations.set(serial, nextGeneration);
