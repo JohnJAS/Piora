@@ -99,6 +99,7 @@ export function SpritePet({
   overlayEvent,
   idleTricks = false,
   motionDirection = null,
+  onFrameChange,
 }: {
   pet: CompanionPetMetadata;
   status: CompanionActivity["status"];
@@ -109,6 +110,8 @@ export function SpritePet({
   idleTricks?: boolean;
   /** Physical desktop-window movement takes priority over in-place activity. */
   motionDirection?: "left" | "right" | null;
+  /** Lets the desktop surface align its hit target to the visible sprite frame. */
+  onFrameChange?: (frameIndex: number) => void;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const renderablePet = pet as unknown as RenderablePet;
@@ -284,8 +287,14 @@ export function SpritePet({
     return () => window.clearTimeout(timer);
   }, [idleTrickCapable, idleTricks, pendingOverlayAnimation, pendingTransientAnimation, pendingTrickAnimation, reducedMotion, stateIds, status]);
 
+  const absoluteFrame = frameIndices.length > 0
+    ? frameIndices[reducedMotion ? 0 : Math.min(frameOffset, frameIndices.length - 1)]
+    : 0;
+  useEffect(() => {
+    if (pet.atlasUrl && animation && frameIndices.length > 0 && !failed) onFrameChange?.(absoluteFrame);
+  }, [absoluteFrame, animation, failed, frameIndices.length, onFrameChange, pet.atlasUrl]);
+
   if (!pet.atlasUrl || !animation || frameIndices.length === 0 || failed) return <BuiltinPet status={status} />;
-  const absoluteFrame = frameIndices[reducedMotion ? 0 : Math.min(frameOffset, frameIndices.length - 1)];
   const framePosition = getCompanionAtlasFramePosition(grid.columns, grid.rows, absoluteFrame);
   const frameRatio = Math.max(0.01, grid.width / grid.height);
   const viewportRatio = 82 / 89;

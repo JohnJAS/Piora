@@ -19,6 +19,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useCompanionPets } from "@/hooks/useCompanionPets";
+import { useCompanionHitRegions } from "@/hooks/useCompanionHitRegions";
 import { useCompanionPreferences } from "@/hooks/useCompanionPreferences";
 import { useI18n } from "@/hooks/useI18n";
 import { useRunningTaskSnapshots } from "@/hooks/useTaskStatus";
@@ -47,6 +48,7 @@ import styles from "./DesktopCompanionWindow.module.css";
 
 const DEFAULT_ACTIVITY: CompanionActivity = { status: "idle", cause: "" };
 const PET_DRAG_THRESHOLD_PX = 5;
+const DEFAULT_PET_HIT_REGION = { left: 0.15, top: 0.19, width: 0.7, height: 0.79 };
 
 const AGENT_ACTIVITY_LABELS = {
   idle: "companion.agent.idle",
@@ -79,6 +81,25 @@ export function DesktopCompanionWindow() {
     () => pets.catalog?.installed.find((pet) => pet.id === preferences.selectedPetId) ?? null,
     [pets.catalog?.installed, preferences.selectedPetId],
   );
+  const [visibleFrameIndex, setVisibleFrameIndex] = useState(0);
+  const hitRegions = useCompanionHitRegions(activePet?.atlasUrl
+    ? {
+        url: activePet.atlasUrl,
+        frameWidth: activePet.frame.width,
+        frameHeight: activePet.frame.height,
+        columns: activePet.frame.columns,
+        rows: activePet.frame.rows,
+      }
+    : { url: "/companion-pets/piora-bot.webp" });
+  const hitRegion = hitRegions?.[visibleFrameIndex] ?? hitRegions?.[0] ?? DEFAULT_PET_HIT_REGION;
+  const hitRegionStyle = {
+    left: `${hitRegion.left * 100}%`,
+    top: `${hitRegion.top * 100}%`,
+    width: `${hitRegion.width * 100}%`,
+    height: `${hitRegion.height * 100}%`,
+  } satisfies CSSProperties;
+
+  useEffect(() => setVisibleFrameIndex(0), [activePet?.sourceKey]);
 
   // --- Pet interaction state: one-shot model-driven reactions. ---
   const [overlayEvent, setOverlayEvent] = useState<CompanionActivityEvent | null>(null);
@@ -606,11 +627,13 @@ export function DesktopCompanionWindow() {
                   overlayEvent={overlayEvent ?? undefined}
                   idleTricks={idleTricksEnabled}
                   motionDirection={motionDirection}
+                  onFrameChange={setVisibleFrameIndex}
                 />
               : <BuiltinPet status={motionDirection ? "running" : displayActivity.status} />}
           </div>
           <button
             className={styles.pet}
+            style={hitRegionStyle}
             type="button"
             data-testid="companion-pet-viewport"
             aria-label={`${petLabel} · ${t("companion.pokeHint")}`}

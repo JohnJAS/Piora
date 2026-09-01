@@ -152,8 +152,8 @@
 
 .pet {
   position: absolute;
-  left: 50%;
-  bottom: 2px;
+  left: 15%;
+  top: 19%;
   width: 92px;
   height: 112px;
   display: grid;
@@ -164,8 +164,7 @@
   background: transparent;
   cursor: grab;
   touch-action: none;
-  transform: translateX(-50%);
-  clip-path: ellipse(47% 48% at 50% 54%);
+  transform: none;
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
@@ -190,7 +189,7 @@
   background-image: none !important;
   box-shadow: none !important;
   filter: none;
-  transform: translateX(-50%) !important;
+  transform: none !important;
 }
 
 .bubbleToggle {
