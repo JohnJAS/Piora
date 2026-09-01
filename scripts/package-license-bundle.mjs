@@ -205,7 +205,7 @@ function runtimeIdentityFromLockEntry(installPath, metadata) {
   if (lockedName !== replacement.lockedName) {
     throw new Error(`Reviewed runtime replacement has an unexpected package name at ${normalizedPath}`);
   }
-  if (metadata.version === replacement.installedVersion) {
+  if (!replacement.lockedIntegrity && metadata.version === replacement.installedVersion) {
     return { name: replacement.installedName, version: replacement.installedVersion };
   }
   if (metadata.version !== replacement.lockedVersion) {

@@ -4,6 +4,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.40-beta.9] - 2026-09-02
+
+### 修复
+
+- 收紧 Hypium 已审查双重身份校验：即使锁文件被改成 tarball 内部误写版本，也不得绕过发布版本与完整性哈希约束。
+
 ## [0.4.40-beta.8] - 2026-09-02
 
 ### 修复
