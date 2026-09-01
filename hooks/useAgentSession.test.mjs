@@ -161,3 +161,19 @@ test("manual scrolling pauses live follow until jump-to-latest resumes it", () =
   assert.match(source, /window\.addEventListener\("pointerdown", markUserScrollIntent, \{ capture: true, passive: true \}\)/);
   assert.match(source, /window\.addEventListener\("wheel", markUserScrollIntent, \{ capture: true, passive: true \}\)/);
 });
+
+test("clamps the native chat scroller before it enters the live tail spacer", () => {
+  const clampSource = source.slice(
+    source.indexOf("const clampLiveTailScroll"),
+    source.indexOf("const markUserScrollIntent"),
+  );
+  const positionChangeSource = source.slice(
+    source.indexOf("const handleScrollPositionChange"),
+    source.indexOf("// Load session on mount"),
+  );
+
+  assert.match(clampSource, /getLiveTailScrollLimit/);
+  assert.match(clampSource, /pinnedScrollTop: liveTailPinnedScrollTopRef\.current/);
+  assert.match(clampSource, /container\.scrollTop = maxScrollTop/);
+  assert.match(positionChangeSource, /if \(clampLiveTailScroll\(\)\) return/);
+});

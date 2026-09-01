@@ -25,6 +25,7 @@ import {
 } from "@/lib/session-capabilities";
 import { runModelChange } from "@/lib/model-change-coordinator";
 import { useLiveOutputAutoScrollPreference } from "@/hooks/useLiveOutputAutoScrollPreference";
+import { getContentScrollMetrics, getLiveTailScrollLimit } from "@/lib/chat-scroll";
 import type {
   SessionSystemPromptBinding,
   SystemPromptSelection,
@@ -467,6 +468,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const executeBashRef = useRef<(command: string, excludeFromContext: boolean) => Promise<void> | undefined>(undefined);
   const userScrollIntentUntilRef = useRef(0);
   const ignoreProgrammaticScrollUntilRef = useRef(0);
+  const liveTailPinnedScrollTopRef = useRef<number | null>(null);
   const initialBottomPinCleanupRef = useRef<(() => void) | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1822,8 +1824,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // content stays pinned to the top (max(0, …)).
     const spacer = container.querySelector<HTMLElement>("[data-chat-tail-spacer]");
     const spacerHeight = spacer?.offsetHeight ?? 0;
+    const metrics = getContentScrollMetrics({
+      scrollHeight: container.scrollHeight,
+      scrollTop: container.scrollTop,
+      clientHeight: container.clientHeight,
+      transientTailHeight: spacerHeight,
+    });
+    liveTailPinnedScrollTopRef.current = spacer ? metrics.maxScrollTop : null;
     container.scrollTo({
-      top: Math.max(0, container.scrollHeight - spacerHeight - container.clientHeight),
+      top: metrics.maxScrollTop,
       behavior,
     });
   }, []);
@@ -1886,9 +1895,32 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const el = lastUserMsgRef.current;
     if (!container || !el) return;
     const elAbsTop = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
+    const targetScrollTop = Math.max(0, elAbsTop - 16);
+    liveTailPinnedScrollTopRef.current = targetScrollTop;
     ignoreProgrammaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_IGNORE_MS;
-    container.scrollTo({ top: elAbsTop - 16, behavior: "smooth" });
+    container.scrollTo({ top: targetScrollTop, behavior: "smooth" });
   }, [stopInitialBottomPin]);
+
+  const clampLiveTailScroll = useCallback((): boolean => {
+    const container = scrollContainerRef.current;
+    if (!container) return false;
+    const spacer = container.querySelector<HTMLElement>("[data-chat-tail-spacer]");
+    if (!spacer) {
+      liveTailPinnedScrollTopRef.current = null;
+      return false;
+    }
+    const maxScrollTop = getLiveTailScrollLimit({
+      scrollHeight: container.scrollHeight,
+      scrollTop: container.scrollTop,
+      clientHeight: container.clientHeight,
+      transientTailHeight: spacer.offsetHeight,
+      pinnedScrollTop: liveTailPinnedScrollTopRef.current,
+    });
+    if (container.scrollTop <= maxScrollTop + 1) return false;
+    ignoreProgrammaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_IGNORE_MS;
+    container.scrollTop = maxScrollTop;
+    return true;
+  }, []);
 
   const markUserScrollIntent = useCallback((event: Event) => {
     if (event instanceof KeyboardEvent) {
@@ -1910,6 +1942,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [liveOutputAutoScrollEnabled, stopInitialBottomPin]);
 
   const handleScrollPositionChange = useCallback(() => {
+    if (clampLiveTailScroll()) return;
     if (!agentRunningRef.current) return;
     if (Date.now() < ignoreProgrammaticScrollUntilRef.current) return;
     if (Date.now() > userScrollIntentUntilRef.current) return;
@@ -1918,7 +1951,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       liveOutputFollowRef.current = false;
       setLiveOutputFollowPaused(true);
     }
-  }, [liveOutputAutoScrollEnabled]);
+  }, [clampLiveTailScroll, liveOutputAutoScrollEnabled]);
 
   // Load session on mount
   useEffect(() => {

@@ -19,6 +19,10 @@ export interface ContentScrollMetrics {
   maxScrollTop: number;
 }
 
+export interface LiveTailScrollLimitInput extends ContentScrollMetricsInput {
+  pinnedScrollTop?: number | null;
+}
+
 /**
  * Normalize native scroll metrics to the height of actual conversation
  * content. The live-tail spacer may extend the browser's scroll range while
@@ -37,6 +41,31 @@ export function getContentScrollMetrics({
     scrollTop: Math.min(maxScrollTop, Math.max(0, scrollTop)),
     maxScrollTop,
   };
+}
+
+/**
+ * Limit native scrolling while the live-tail spacer is mounted. A pinned
+ * position may temporarily keep the latest user message near the top, but the
+ * spacer itself must never create additional user-scrollable blank space.
+ */
+export function getLiveTailScrollLimit({
+  scrollHeight,
+  scrollTop,
+  clientHeight,
+  transientTailHeight = 0,
+  pinnedScrollTop = null,
+}: LiveTailScrollLimitInput): number {
+  const metrics = getContentScrollMetrics({
+    scrollHeight,
+    scrollTop,
+    clientHeight,
+    transientTailHeight,
+  });
+  const nativeMaxScrollTop = Math.max(0, scrollHeight - Math.max(0, clientHeight));
+  const preservedPinnedTop = pinnedScrollTop === null
+    ? 0
+    : Math.max(0, pinnedScrollTop);
+  return Math.min(nativeMaxScrollTop, Math.max(metrics.maxScrollTop, preservedPinnedTop));
 }
 
 /**
