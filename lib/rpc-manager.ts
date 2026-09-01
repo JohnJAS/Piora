@@ -435,7 +435,13 @@ export class AgentSessionWrapper {
       return;
     }
     if (event.type === "extension_ui_request") {
-      this.setTaskActivity("approval", event.title ?? event.message ?? "Waiting for your input");
+      if (event.method === "setStatus") {
+        if (event.statusText) this.setTaskActivity("thinking", event.statusText);
+        return;
+      }
+      if (typeof event.method === "string" && ["request_user_input", "select", "confirm", "input", "editor", "custom"].includes(event.method)) {
+        this.setTaskActivity("approval", event.title ?? event.message ?? "Waiting for your input");
+      }
     }
   }
 

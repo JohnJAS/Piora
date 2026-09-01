@@ -3,7 +3,7 @@
 /* Browser frames are live, no-store screenshots; Next Image caching is intentionally not applicable. */
 /* eslint-disable @next/next/no-img-element */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   DesktopBrowserAction,
   DesktopBrowserDownload,
@@ -159,6 +159,8 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId }: { active:
   const addressRef = useRef<HTMLInputElement>(null);
   const pendingViewportRef = useRef<{ bounds: { x: number; y: number; width: number; height: number }; visible: boolean } | null>(null);
   const viewportSyncInFlightRef = useRef(false);
+  const panelActiveRef = useRef(active);
+  panelActiveRef.current = active;
 
   const applyState = useCallback((next: DesktopBrowserState | null) => {
     if (!next) return;
@@ -220,7 +222,7 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId }: { active:
     }
   }, [bridge]);
 
-  const syncViewport = useCallback((visible = active && state?.url !== "about:blank") => {
+  const syncViewport = useCallback((visible = state?.url !== "about:blank") => {
     const element = viewportRef.current;
     if (!element) return;
     const rect = element.getBoundingClientRect();
@@ -231,10 +233,17 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId }: { active:
         width: Math.round(rect.width),
         height: Math.round(rect.height),
       },
-      visible: visible && rect.width > 0 && rect.height > 0,
+      visible: panelActiveRef.current && visible && rect.width > 0 && rect.height > 0,
     };
     void flushViewport();
-  }, [active, flushViewport, state?.url]);
+  }, [flushViewport, state?.url]);
+
+  useLayoutEffect(() => {
+    // WebContentsView lives above the renderer DOM and is not clipped by the
+    // panel's width animation. Queue an explicit hide before paint so a widened
+    // browser view cannot remain over the chat after the panel is collapsed.
+    syncViewport(active && state?.url !== "about:blank");
+  }, [active, state?.url, syncViewport]);
 
   useEffect(() => {
     const element = viewportRef.current;

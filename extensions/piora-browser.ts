@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -16,6 +15,9 @@ type BrowserRuntime = {
   sessions: Map<string, BrowserSession>;
   activeSessionId: string | null;
   revision: number;
+  persistTimer: ReturnType<typeof setTimeout> | null;
+  persistChain: Promise<void>;
+  watchedPages: WeakSet<Page>;
 };
 
 declare global {
@@ -27,6 +29,9 @@ const runtime = globalThis.__pioraBrowserRuntime ??= {
   sessions: new Map(),
   activeSessionId: null,
   revision: 0,
+  persistTimer: null,
+  persistChain: Promise.resolve(),
+  watchedPages: new WeakSet(),
 };
 // Next.js keeps globals across hot reloads. Upgrade the pre-persistent-browser
 // runtime shape in place so development never produces a NaN revision.
@@ -34,6 +39,9 @@ if (!Number.isFinite(runtime.revision)) runtime.revision = 0;
 const hotRuntime = runtime as unknown as Partial<BrowserRuntime>;
 if (hotRuntime.activeSessionId === undefined) runtime.activeSessionId = null;
 if (hotRuntime.contextPromise === undefined) runtime.contextPromise = null;
+if (hotRuntime.persistTimer === undefined) runtime.persistTimer = null;
+if (!hotRuntime.persistChain) runtime.persistChain = Promise.resolve();
+if (!hotRuntime.watchedPages) runtime.watchedPages = new WeakSet();
 
 const MAX_SNAPSHOT_CHARS = 24_000;
 const MAX_INTERACTIVE_ELEMENTS = 160;
@@ -99,9 +107,13 @@ async function launchPersistentBrowser(): Promise<BrowserContext> {
       context.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
       await restoreBrowserState(context);
       context.on("close", () => {
+        if (runtime.persistTimer) clearTimeout(runtime.persistTimer);
         runtime.contextPromise = null;
         runtime.sessions.clear();
         runtime.activeSessionId = null;
+        runtime.persistTimer = null;
+        runtime.persistChain = Promise.resolve();
+        runtime.watchedPages = new WeakSet();
         runtime.revision += 1;
       });
       return context;
@@ -115,30 +127,33 @@ async function launchPersistentBrowser(): Promise<BrowserContext> {
 }
 
 async function persistBrowserState(context: BrowserContext): Promise<void> {
-  await context.storageState({ path: browserStorageStatePath() });
+  await context.storageState({ path: browserStorageStatePath(), indexedDB: true });
 }
 
 async function restoreBrowserState(context: BrowserContext): Promise<void> {
   try {
-    const saved = JSON.parse(await readFile(browserStorageStatePath(), "utf8")) as {
-      cookies?: Parameters<BrowserContext["addCookies"]>[0];
-      origins?: Array<{ origin?: unknown; localStorage?: Array<{ name?: unknown; value?: unknown }> }>;
-    };
-    if (Array.isArray(saved.cookies) && saved.cookies.length) await context.addCookies(saved.cookies);
-    const origins = Array.isArray(saved.origins)
-      ? saved.origins.flatMap((entry) => typeof entry.origin === "string" && Array.isArray(entry.localStorage)
-        ? [{ origin: entry.origin, values: entry.localStorage.filter((value): value is { name: string; value: string } => typeof value.name === "string" && typeof value.value === "string") }]
-        : [])
-      : [];
-    if (origins.length) {
-      await context.addInitScript((entries) => {
-        const current = entries.find((entry) => entry.origin === globalThis.location.origin);
-        for (const item of current?.values ?? []) globalThis.localStorage.setItem(item.name, item.value);
-      }, origins);
-    }
+    await context.setStorageState(browserStorageStatePath());
   } catch {
     // A missing or damaged state snapshot must not prevent the browser from starting.
   }
+}
+
+function scheduleBrowserStatePersistence(context: BrowserContext, delayMs = 600): void {
+  if (runtime.persistTimer) clearTimeout(runtime.persistTimer);
+  runtime.persistTimer = setTimeout(() => {
+    runtime.persistTimer = null;
+    runtime.persistChain = runtime.persistChain
+      .catch(() => undefined)
+      .then(() => persistBrowserState(context))
+      .catch(() => undefined);
+  }, delayMs);
+  runtime.persistTimer.unref?.();
+}
+
+function watchPagePersistence(context: BrowserContext, page: Page): void {
+  if (runtime.watchedPages.has(page)) return;
+  runtime.watchedPages.add(page);
+  page.on("domcontentloaded", () => scheduleBrowserStatePersistence(context));
 }
 
 async function getBrowserContext(): Promise<BrowserContext> {
@@ -151,7 +166,10 @@ async function getBrowserContext(): Promise<BrowserContext> {
 
 async function getSession(sessionId: string): Promise<BrowserSession> {
   const existing = runtime.sessions.get(sessionId);
-  if (existing && !existing.page.isClosed()) return existing;
+  if (existing && !existing.page.isClosed()) {
+    watchPagePersistence(existing.context, existing.page);
+    return existing;
+  }
   if (existing) {
     await existing.context.close().catch(() => undefined);
     runtime.sessions.delete(sessionId);
@@ -162,6 +180,7 @@ async function getSession(sessionId: string): Promise<BrowserSession> {
     ? context.pages().find((candidate) => candidate.url() === "about:blank")
     : undefined;
   const page = unusedInitialPage ?? await context.newPage();
+  watchPagePersistence(context, page);
   const session = { context, page };
   runtime.sessions.set(sessionId, session);
   runtime.activeSessionId = sessionId;
@@ -350,6 +369,7 @@ const browserTool = defineTool({
       }
       case "new_tab": {
         page = await session.context.newPage();
+        watchPagePersistence(session.context, page);
         session.page = page;
         if (params.url) await page.goto(requireHttpUrl(params.url), { waitUntil: "domcontentloaded" });
         break;
@@ -533,6 +553,7 @@ export async function performBrowserViewAction(input: BrowserViewAction): Promis
       break;
     case "new_tab":
       page = await session.context.newPage();
+      watchPagePersistence(session.context, page);
       session.page = page;
       break;
     case "switch_tab": {
@@ -556,10 +577,11 @@ export async function performBrowserViewAction(input: BrowserViewAction): Promis
     }
   }
   markActive(id, session);
-  const transientPointerAction = input.action === "mouse_move" || input.action === "mouse_down" || input.action === "mouse_up" || input.action === "scroll" || input.action === "resize";
+  const transientPointerAction = input.action === "mouse_move" || input.action === "mouse_down" || input.action === "scroll" || input.action === "resize";
   if (!transientPointerAction) {
     await page.waitForTimeout(80);
     await persistBrowserState(session.context);
+    scheduleBrowserStatePersistence(session.context);
   }
   return getBrowserViewState(id);
 }

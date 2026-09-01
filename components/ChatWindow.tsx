@@ -14,7 +14,7 @@ import type { NewSessionInitialPrompt } from "./new-session-types";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { ChatScrollRail } from "./ChatScrollRail";
 import { useI18n } from "@/hooks/useI18n";
-import { useAgentSession, type AgentPhase, type BuiltinSlashCommandResult, type NoticeItem, type SlashCommandInfo } from "@/hooks/useAgentSession";
+import { useAgentSession, type AgentPhase, type AttachedImage, type BuiltinSlashCommandResult, type NoticeItem, type SlashCommandInfo } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -33,6 +33,7 @@ import { getProjectLabel } from "@/lib/session-project-groups";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 import { UserInputCard } from "./UserInputCard";
 import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
+import { findVisionAgentStatus, VisionAgentStatus } from "./VisionAgentStatus";
 
 interface Props {
   session: SessionInfo | null;
@@ -61,6 +62,7 @@ interface Props {
   onOpenAutomation?: (automationId: string) => void;
   onCapabilitiesChange?: (capabilities: SessionCapabilitiesState | null) => void;
   onOpenCapabilitySettings?: () => void;
+  onOpenModels?: () => void;
   onPromptSubmitted?: () => void;
 }
 
@@ -160,6 +162,27 @@ function getUserInputText(message: AgentMessage): string | null {
   return text.length > 0 ? text : null;
 }
 
+function getVisionRetryPayload(messages: readonly AgentMessage[]): { message: string; images?: AttachedImage[] } | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "user") continue;
+    const text = getUserInputText(message) ?? "";
+    const images = Array.isArray(message.content)
+      ? message.content.flatMap((block) => {
+        if (block.type !== "image" || block.source.type !== "base64" || !block.source.data) return [];
+        const mimeType = block.source.media_type || "image/png";
+        return [{
+          data: block.source.data,
+          mimeType,
+          previewUrl: `data:${mimeType};base64,${block.source.data}`,
+        } satisfies AttachedImage];
+      })
+      : [];
+    if (text || images.length > 0) return { message: text, ...(images.length > 0 ? { images } : {}) };
+  }
+  return null;
+}
+
 function countToolCalls(messages: AgentMessage[], indices: number[]): number {
   let count = 0;
   for (const idx of indices) {
@@ -241,7 +264,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenCapabilitySettings, onPromptSubmitted }: Props) {
+export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenCapabilitySettings, onOpenModels, onPromptSubmitted }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
@@ -659,6 +682,12 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
     : null;
 
   const visibleExtensionStatuses = extensionStatuses;
+  const visionStatus = useMemo(() => findVisionAgentStatus(extensionStatuses), [extensionStatuses]);
+  const visionRetryPayload = useMemo(() => getVisionRetryPayload(messages), [messages]);
+  const retryVisionAnalysis = useCallback(() => {
+    if (sessionBusy || !visionRetryPayload) return;
+    void handleComposerSend(visionRetryPayload.message, visionRetryPayload.images);
+  }, [handleComposerSend, sessionBusy, visionRetryPayload]);
 
   const chatInputElement = (
     <ChatInput
@@ -1049,10 +1078,24 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
               <MessageView message={streamState.streamingMessage as AgentMessage} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile} onOpenAutomation={onOpenAutomation} />
             )}
 
-            {agentRunning && !streamState.streamingMessage && (
-              <div className="py-2 text-text-muted" style={{ fontSize: "var(--text-base)" }}>
-                <span className="animate-[pulse_1.5s_infinite]">{phaseLabel(agentPhase, t)}</span>
-              </div>
+            {agentRunning && !streamState.streamingMessage && visionStatus?.phase !== "failed" && (
+              visionStatus ? (
+                <VisionAgentStatus status={visionStatus} t={t} />
+              ) : (
+                <div className="py-2 text-text-muted" style={{ fontSize: "var(--text-base)" }} role="status" aria-live="polite">
+                  <span className="animate-[pulse_1.5s_infinite]">{phaseLabel(agentPhase, t)}</span>
+                </div>
+              )
+            )}
+
+            {visionStatus?.phase === "failed" && (
+              <VisionAgentStatus
+                status={visionStatus}
+                t={t}
+                onRetry={visionRetryPayload ? retryVisionAnalysis : undefined}
+                onConfigure={onOpenModels}
+                retryDisabled={sessionBusy}
+              />
             )}
 
             {bashRunning && !pendingBash && (

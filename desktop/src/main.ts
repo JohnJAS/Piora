@@ -189,6 +189,7 @@ let desktopUpdateState: DesktopUpdateState = {
 let automaticUpdateCheckTimer: NodeJS.Timeout | undefined;
 
 function attachDesktopBrowserManager(window: BrowserWindow, log: Logger): void {
+  void desktopBrowserManager?.flushStorage().catch((error) => log.warn("Unable to persist the previous browser session", error));
   desktopBrowserManager?.destroy();
   desktopBrowserManager = new DesktopBrowserManager(window, log, isTrustedMainWindowSender);
 }
@@ -2475,6 +2476,7 @@ async function stopApplication(): Promise<void> {
   logger?.info("Stopping Piora");
   if (automaticUpdateCheckTimer) clearTimeout(automaticUpdateCheckTimer);
   automaticUpdateCheckTimer = undefined;
+  await desktopBrowserManager?.flushStorage().catch((error) => logger?.warn("Unable to persist browser state during shutdown", error));
   desktopBrowserManager?.destroy();
   desktopBrowserManager = undefined;
   await requestHarmonyEmergencyStop("desktop_shutdown");

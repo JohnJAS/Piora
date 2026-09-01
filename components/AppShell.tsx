@@ -330,7 +330,7 @@ export function AppShell() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem("piora-right-panel-tab");
-    setRightPanelTab(stored === "automation" || stored === "review" || stored === "files" || stored === "commands" || stored === "browser" || stored === "harmony" ? stored : "home");
+    setRightPanelTab(stored === "automation" || stored === "review" || stored === "files" || stored === "commands" || stored === "browser" || stored === "design" || stored === "harmony" ? stored : "home");
     setRightPanelTabRestored(true);
   }, []);
 
@@ -465,6 +465,7 @@ export function AppShell() {
     setSettingsDialogOpen(true);
   }, [isMobile]);
   const openCapabilitySettings = useCallback(() => openSettings("extensions"), [openSettings]);
+  const openModelsSettings = useCallback(() => openSettings("models"), [openSettings]);
 
   const openSessionStatsPanel = useCallback(() => {
     if (isMobile) setSidebarOpen(false);
@@ -1558,6 +1559,7 @@ export function AppShell() {
     "panel.files": () => { setRightPanelTab("files"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "panel.commands": () => { setRightPanelTab("commands"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "panel.browser": () => { setRightPanelTab("browser"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
+    "panel.design": () => { setRightPanelTab("design"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "companion.togglePanel": () => { void window.piDesktop?.companionAction?.("open-panel"); },
     "panel.toggleSidebar": () => setSidebarOpen((open) => !open),
     "panel.close": () => setRightPanelOpen(false),
@@ -2616,6 +2618,7 @@ export function AppShell() {
                 onOpenAutomation={openAutomation}
                 onCapabilitiesChange={setSessionCapabilities}
                 onOpenCapabilitySettings={openCapabilitySettings}
+                onOpenModels={openModelsSettings}
                 onPromptSubmitted={() => setOnboardingPromptSubmittedKey((key) => key + 1)}
               />
             ) : initialCwdStatus === "validating" ? (

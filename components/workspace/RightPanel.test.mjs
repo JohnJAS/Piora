@@ -30,6 +30,7 @@ test("moves files and review into a Codex-style launcher and tool-tab workspace"
   assert.match(rightPanel, /<CommandPanel/);
   assert.match(rightPanel, /<BrowserPanel/);
   assert.match(rightPanel, /<SafeHarmonyPanel/);
+  assert.match(rightPanel, /<DesignToHarmonyPanel/);
   assert.match(rightPanel, /sessionRunning=\{props\.sessionRunning\}/);
   assert.match(rightPanel, /onGuideAgent=\{props\.onGuideAgent\}/);
   assert.match(rightPanel, /sessionTools\.panelDeviceUnavailable/);
@@ -37,6 +38,7 @@ test("moves files and review into a Codex-style launcher and tool-tab workspace"
   assert.match(rightPanel, /id: "review"/);
   assert.match(rightPanel, /id: "commands"/);
   assert.match(rightPanel, /id: "browser"/);
+  assert.match(rightPanel, /id: "design"/);
   assert.match(rightPanel, /id: "harmony"/);
   assert.match(rightPanel, /id: "files"/);
   assert.doesNotMatch(rightPanel, /workspace-search/);

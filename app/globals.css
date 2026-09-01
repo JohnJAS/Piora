@@ -1596,6 +1596,149 @@ select:focus-visible,
   overflow-wrap: anywhere;
 }
 
+.vision-agent-progress {
+  display: flex;
+  min-height: 40px;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 0;
+  color: var(--text-muted);
+  font-size: var(--text-base);
+}
+
+.vision-agent-progress-icon {
+  position: relative;
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--accent);
+}
+
+.vision-agent-progress[data-phase="analyzing"] .vision-agent-progress-icon::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 46%, transparent);
+  border-radius: inherit;
+  animation: vision-agent-pulse 1.4s ease-out infinite;
+  content: "";
+}
+
+.vision-agent-progress[data-phase="ready"] .vision-agent-progress-icon {
+  background: color-mix(in srgb, var(--status-ready) 10%, transparent);
+  color: var(--status-ready);
+}
+
+.vision-agent-failure {
+  display: flex;
+  width: min(680px, 100%);
+  align-items: flex-start;
+  gap: 10px;
+  margin: 8px 0 12px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--status-failed) 30%, var(--border));
+  border-radius: var(--radius-surface);
+  background: color-mix(in srgb, var(--status-failed) 5%, var(--bg-panel));
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.vision-agent-failure-icon {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  color: var(--status-failed);
+}
+
+.vision-agent-failure-content {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 3px;
+  line-height: 1.45;
+}
+
+.vision-agent-failure-content > strong {
+  color: var(--text);
+  font-size: var(--text-base);
+  font-weight: 620;
+}
+
+.vision-agent-failure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 7px;
+}
+
+.vision-agent-failure-actions > button {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.vision-agent-failure-actions > button:hover:not(:disabled),
+.vision-agent-failure-actions > button:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.vision-agent-failure-actions > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.vision-agent-failure-actions > details {
+  flex: 1 0 100%;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+}
+
+.vision-agent-failure-actions summary {
+  width: fit-content;
+  cursor: pointer;
+  user-select: none;
+}
+
+.vision-agent-failure-actions p {
+  margin: 6px 0 0;
+  padding: 7px 8px;
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--status-failed) 5%, var(--bg));
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+@keyframes vision-agent-pulse {
+  0% { opacity: 0.72; transform: scale(0.72); }
+  70%, 100% { opacity: 0; transform: scale(1.24); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vision-agent-progress[data-phase="analyzing"] .vision-agent-progress-icon::after {
+    animation: none;
+    opacity: 0.45;
+    transform: none;
+  }
+}
+
 .model-settings-control {
   position: relative;
   min-width: 0;

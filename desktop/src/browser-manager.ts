@@ -236,6 +236,9 @@ export class DesktopBrowserManager {
   private nextTabId = 1;
   private readonly browserSession: Session;
   private destroyed = false;
+  private storageFlushTimer: NodeJS.Timeout | undefined;
+  private storageFlushChain: Promise<void> = Promise.resolve();
+  private readonly handleCookieChanged = (): void => this.scheduleStorageFlush();
   private readonly handleDownload = (_event: Event, item: DownloadItem, contents: WebContents): void => {
     if (!this.tabs.some((tab) => tab.view.webContents === contents)) return;
     const send = (state: DesktopBrowserDownload["state"]): void => {
@@ -264,18 +267,43 @@ export class DesktopBrowserManager {
     this.registerIpc();
     this.window.on("hide", () => this.updateVisibility(false));
     this.window.on("show", () => this.updateVisibility());
-    this.window.on("closed", () => this.destroy());
+    this.window.on("closed", () => {
+      void this.flushStorage().catch((error) => this.log.warn("Unable to persist browser state while closing", error));
+      this.destroy();
+    });
   }
 
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    if (this.storageFlushTimer) clearTimeout(this.storageFlushTimer);
+    this.storageFlushTimer = undefined;
+    void this.flushStorage().catch((error) => this.log.warn("Unable to persist browser state while closing", error));
     this.browserSession.off("will-download", this.handleDownload);
+    this.browserSession.cookies.off("changed", this.handleCookieChanged);
     for (const tab of this.tabs.splice(0)) {
       if (!this.window.isDestroyed()) this.window.contentView.removeChildView(tab.view);
       if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
     }
     this.removeIpc();
+  }
+
+  flushStorage(): Promise<void> {
+    this.browserSession.flushStorageData();
+    this.storageFlushChain = this.storageFlushChain
+      .catch(() => undefined)
+      .then(() => this.browserSession.cookies.flushStore());
+    return this.storageFlushChain;
+  }
+
+  private scheduleStorageFlush(): void {
+    if (this.destroyed) return;
+    if (this.storageFlushTimer) clearTimeout(this.storageFlushTimer);
+    this.storageFlushTimer = setTimeout(() => {
+      this.storageFlushTimer = undefined;
+      void this.flushStorage().catch((error) => this.log.warn("Unable to persist browser state", error));
+    }, 600);
+    this.storageFlushTimer.unref?.();
   }
 
   private configureSession(): void {
@@ -298,6 +326,7 @@ export class DesktopBrowserManager {
     this.browserSession.setPermissionCheckHandler(() => false);
     this.browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
     this.browserSession.on("will-download", this.handleDownload);
+    this.browserSession.cookies.on("changed", this.handleCookieChanged);
   }
 
   private registerIpc(): void {
@@ -393,13 +422,18 @@ export class DesktopBrowserManager {
     });
     contents.on("did-stop-loading", () => {
       tab.loading = false;
+      this.scheduleStorageFlush();
       this.sendState();
     });
     contents.on("did-navigate", () => {
+      this.scheduleStorageFlush();
       this.updateVisibility();
       this.sendState();
     });
-    contents.on("did-navigate-in-page", () => this.sendState());
+    contents.on("did-navigate-in-page", () => {
+      this.scheduleStorageFlush();
+      this.sendState();
+    });
     contents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
       if (isMainFrame && errorCode !== -3) {
         this.log.warn("Browser navigation failed", { errorCode, errorDescription, validatedUrl });
@@ -659,6 +693,7 @@ export class DesktopBrowserManager {
         this.updateVisibility();
         this.sendState();
       }
+      this.scheduleStorageFlush();
       return agentTextResult(await this.pageSummary(contents), { action, url: browserUrl(contents.getURL()) });
     } finally {
       signal?.removeEventListener("abort", stopOnAbort);

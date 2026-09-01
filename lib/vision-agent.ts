@@ -350,6 +350,7 @@ export async function transformContextForTextOnlyModel(options: {
   modelRegistry?: ModelRegistry;
   cwd?: string;
   observe?: (images: readonly ImageContent[], question: string, signal?: AbortSignal) => Promise<string>;
+  onObservationStart?: (imageCount: number) => void;
   onCacheEntry?: (entry: VisionObservationCacheEntry) => void;
   onObservationFailure?: (reason: string) => void;
 }): Promise<AgentMessage[]> {
@@ -405,6 +406,7 @@ export async function transformContextForTextOnlyModel(options: {
       continue;
     }
     try {
+      options.onObservationStart?.(group.images.length);
       const text = await observe(group.images, question, signal);
       const entry: VisionObservationCacheEntry = {
         schemaVersion: 1,

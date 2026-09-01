@@ -2,6 +2,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { useI18n } from "@/hooks/useI18n";
 import { FileExplorer, type FileExplorerHandle } from "../FileExplorer";
 import { FileViewer } from "../FileViewer";
@@ -16,7 +17,7 @@ import styles from "./WorkspacePanel.module.css";
 import { AutomationPanel } from "../AutomationPanel";
 import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
 
-export type RightPanelTab = "home" | "automation" | "review" | "files" | "commands" | "browser" | "harmony";
+export type RightPanelTab = "home" | "automation" | "review" | "files" | "commands" | "browser" | "design" | "harmony";
 export interface RightPanelHandle { focusActiveTab: () => void; focusFileSearch: () => void; }
 
 interface Props {
@@ -58,9 +59,15 @@ const TOOLS: Array<{ id: Exclude<RightPanelTab, "home">; icon: AliIconName; shor
   { id: "review", icon: "diff", shortcut: "Ctrl+Shift+G" },
   { id: "commands", icon: "code" },
   { id: "browser", icon: "earth", shortcut: "Ctrl+T" },
+  { id: "design", icon: "workflow" },
   { id: "harmony", icon: "mobile" },
   { id: "files", icon: "folder-open", shortcut: "Ctrl+P" },
 ];
+
+const DesignToHarmonyPanel = dynamic(
+  () => import("./design-to-harmony/DesignToHarmonyPanel").then((module) => module.DesignToHarmonyPanel),
+  { ssr: false },
+);
 
 type ToolTab = Exclude<RightPanelTab, "home">;
 
@@ -295,6 +302,9 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     </section>
     <section id="workspace-harmony" role="tabpanel" aria-labelledby="workspace-harmony-tab" hidden={activeTab !== "harmony"} className={styles.panel}>
       {activeTab === "harmony" ? <div className={styles.capabilityPanel}>{capabilityAccess("device")}<div className={styles.capabilityPanelBody}><RenderErrorBoundary resetKey={`harmony:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><SafeHarmonyPanel active={active && activeTab === "harmony"} sessionRunning={props.sessionRunning} onGuideAgent={props.onGuideAgent} /></RenderErrorBoundary></div></div> : null}
+    </section>
+    <section id="workspace-design" role="tabpanel" aria-labelledby="workspace-design-tab" hidden={activeTab !== "design"} className={styles.panel}>
+      {activeTab === "design" ? <RenderErrorBoundary resetKey={`design:${cwd ?? "no-project"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><DesignToHarmonyPanel cwd={cwd} active={active && activeTab === "design"} onGuideAgent={props.onGuideAgent} /></RenderErrorBoundary> : null}
     </section>
     <section id="workspace-automation" role="tabpanel" aria-labelledby="workspace-automation-tab" hidden={activeTab !== "automation"} className={styles.panel}>
       {activeTab === "automation" ? <RenderErrorBoundary resetKey={`automation:${props.selectedAutomationId ?? "list"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><AutomationPanel automationId={props.selectedAutomationId} sessionId={props.sessionId} sessionName={props.sessionName} cwd={cwd} onSelectAutomation={props.onSelectAutomation} onAutomationChanged={props.onAutomationChanged} /></RenderErrorBoundary> : null}

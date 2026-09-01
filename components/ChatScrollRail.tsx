@@ -10,6 +10,7 @@ import {
   type RefObject,
   type WheelEvent,
 } from "react";
+import { getContentScrollMetrics } from "@/lib/chat-scroll";
 
 const MIN_THUMB_HEIGHT = 48;
 
@@ -46,10 +47,17 @@ export function ChatScrollRail({ ariaLabel, scrollContainer }: Props) {
   const measure = useCallback(() => {
     const scrollEl = scrollContainer.current;
     if (!scrollEl) return;
-    setMetrics({
+    const transientTail = scrollEl.querySelector<HTMLElement>("[data-chat-tail-spacer]");
+    const contentMetrics = getContentScrollMetrics({
       clientHeight: scrollEl.clientHeight,
       scrollHeight: scrollEl.scrollHeight,
       scrollTop: scrollEl.scrollTop,
+      transientTailHeight: transientTail?.offsetHeight ?? 0,
+    });
+    setMetrics({
+      clientHeight: scrollEl.clientHeight,
+      scrollHeight: contentMetrics.scrollHeight,
+      scrollTop: contentMetrics.scrollTop,
     });
   }, [scrollContainer]);
 
@@ -89,8 +97,11 @@ export function ChatScrollRail({ ariaLabel, scrollContainer }: Props) {
   const scrollable = maxScrollTop > 0 && thumbTravel > 0;
 
   const scrollTo = useCallback((top: number, behavior: ScrollBehavior = "auto") => {
-    scrollContainer.current?.scrollTo({ top, behavior });
-  }, [scrollContainer]);
+    scrollContainer.current?.scrollTo({
+      top: Math.min(maxScrollTop, Math.max(0, top)),
+      behavior,
+    });
+  }, [maxScrollTop, scrollContainer]);
 
   const onPointerDown = useCallback((event: PointerEvent<HTMLDivElement>) => {
     if (!scrollable || (event.pointerType === "mouse" && event.button !== 0)) return;
@@ -155,8 +166,8 @@ export function ChatScrollRail({ ariaLabel, scrollContainer }: Props) {
     const scrollEl = scrollContainer.current;
     if (!scrollEl) return;
     event.preventDefault();
-    scrollEl.scrollBy({ top: event.deltaY, left: event.deltaX, behavior: "auto" });
-  }, [scrollContainer]);
+    scrollTo(scrollEl.scrollTop + event.deltaY);
+  }, [scrollContainer, scrollTo]);
 
   if (!scrollable) return null;
 
