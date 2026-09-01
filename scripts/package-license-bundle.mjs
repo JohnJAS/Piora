@@ -35,6 +35,18 @@ const LICENSE_TEXT_NAME = /^(?:(?:un)?licen[cs]es?|copying)(?:[._-].*)?$/i;
 
 const REVIEWED_RUNTIME_REPLACEMENTS = Object.freeze([
   Object.freeze({
+    // The immutable npm artifact is published as 6.1.210, but its own
+    // package.json declares 6.1.0210. Record both identities instead of
+    // rewriting third-party bytes or losing the exact packaged SBOM entity.
+    lockPath: "node_modules/hypium-driver",
+    lockedName: "hypium-driver",
+    lockedVersion: "6.1.210",
+    lockedIntegrity: "sha512-YWvIWwl3tedNUV9FI2ZMD28AER+OXRofdvOe/v7sneOQcfrh3RPmzbAz2BKXi+VOXf4lj8HBOc4lRER0TCKjAw==",
+    installedName: "hypium-driver",
+    installedVersion: "6.1.0210",
+    mechanism: "published-tarball-manifest",
+  }),
+  Object.freeze({
     lockPath: "node_modules/@earendil-works/pi-coding-agent/node_modules/brace-expansion",
     lockedName: "brace-expansion",
     lockedVersion: "5.0.7",
@@ -202,6 +214,12 @@ function runtimeIdentityFromLockEntry(installPath, metadata) {
       `at ${normalizedPath}, found ${lockedName}@${metadata.version}`,
     );
   }
+  if (replacement.lockedIntegrity && metadata.integrity !== replacement.lockedIntegrity) {
+    throw new Error(
+      `Reviewed runtime replacement expected integrity ${replacement.lockedIntegrity} ` +
+      `at ${normalizedPath}, found ${metadata.integrity ?? "missing"}`,
+    );
+  }
   return {
     name: replacement.installedName,
     version: replacement.installedVersion,
@@ -209,6 +227,7 @@ function runtimeIdentityFromLockEntry(installPath, metadata) {
       lockPath: normalizedPath,
       lockedName: replacement.lockedName,
       lockedVersion: replacement.lockedVersion,
+      ...(replacement.lockedIntegrity ? { lockedIntegrity: replacement.lockedIntegrity } : {}),
       installedName: replacement.installedName,
       installedVersion: replacement.installedVersion,
       mechanism: replacement.mechanism,

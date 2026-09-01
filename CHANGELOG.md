@@ -4,6 +4,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.40-beta.8] - 2026-09-02
+
+### 修复
+
+- 记录 `hypium-driver@6.1.210` 不可变 npm tarball 内部误写为 `6.1.0210` 的双重身份与完整性哈希，使最终包的许可证清单和 SBOM 精确反映实际分发字节。
+
 ## [0.4.40-beta.7] - 2026-09-02
 
 ### 修复
