@@ -17,12 +17,21 @@ test("system prompt settings manage a reusable template library", () => {
   assert.match(editor, /requestConfirmation\(/);
   assert.doesNotMatch(editor, /window\.confirm/);
   assert.match(editor, /piora:system-prompt-changed/);
+  assert.match(editor, /selectorVisible/);
+  assert.match(editor, /PI_DEFAULT_SELECTION_ID/);
+  assert.match(editor, /system\.piDefaultPromptPreview/);
+  assert.match(editor, /\/api\/prompts\/optimize/);
+  assert.match(editor, /readPromptOptimizerModel/);
   assert.match(route, /createSystemPromptTemplate/);
   assert.match(route, /setDefaultSystemPromptTemplate/);
+  assert.match(route, /setSystemPromptSelectorVisible/);
 });
 
 test("new and existing conversations can select an isolated prompt snapshot", () => {
   assert.match(selector, /SystemPromptSelection/);
+  assert.match(selector, /createPortal/);
+  assert.match(selector, /catalog\?\.selectorVisible === false/);
+  assert.doesNotMatch(selector, /<select/);
   assert.match(projectPicker, /systemPromptSelection/);
   assert.match(chatWindow, /<SystemPromptSelector/);
   assert.match(sessionRoute, /createSessionSystemPromptBinding/);

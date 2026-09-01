@@ -42,3 +42,11 @@ test("backs off flapping streams until a connection is genuinely stable", () => 
 test("drops an overloaded H264 GOP until the next keyframe", () => {
   assert.match(source, /decoder\.decodeQueueSize > 8[\s\S]*firstKeyframe = false/);
 });
+
+test("falls back to interruptible screenshot observation when video is unavailable", () => {
+  assert.match(source, /const pollFrames = async/);
+  assert.match(source, /\/api\/harmony\/frame\?serial=/);
+  assert.match(source, /setMode\("frames"\)/);
+  assert.match(source, /\(!hasFrame && failures >= 1\) \|\| failures >= 3/);
+  assert.match(source, /Keep the last frame visible and retry/);
+});

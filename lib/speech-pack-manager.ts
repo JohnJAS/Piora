@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { createReadStream } from "node:fs";
 import {
   access,
+  copyFile,
   mkdir,
   open,
   readFile,
@@ -34,6 +35,8 @@ import {
 
 const PACK_DIRECTORY_NAME = `${LOCAL_SPEECH_PACK_ID}-${SPEECH_PACK_VERSION}`;
 const MANIFEST_NAME = "manifest.json";
+const MANUAL_DIRECTORY_NAME = `.manual-${PACK_DIRECTORY_NAME}-${speechRuntimeKey()}`;
+const MAX_MANUAL_SOURCE_BYTES = 320 * 1024 * 1024;
 
 interface InstalledSpeechManifest {
   schema: "piora-local-speech-pack-v1";
@@ -157,6 +160,100 @@ function digestMatches(source: SpeechDownloadSource, digest: Buffer): boolean {
   return actual === source.digest;
 }
 
+function requiredSpeechSources(): SpeechDownloadSource[] {
+  const runtimeSource = getSpeechRuntimeSource();
+  return runtimeSource
+    ? [SHERPA_NODE_SOURCE, runtimeSource, SENSEVOICE_MODEL_SOURCE, SENSEVOICE_TOKENS_SOURCE]
+    : [];
+}
+
+function manualSpeechPackDirectory(settings: Pick<SpeechSettings, "packDirectory">): string {
+  return join(resolve(settings.packDirectory), MANUAL_DIRECTORY_NAME);
+}
+
+async function verifySpeechSourceFile(source: SpeechDownloadSource, path: string): Promise<boolean> {
+  try {
+    const hash = createHash(source.algorithm);
+    for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
+    return digestMatches(source, hash.digest());
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+export async function getManualSpeechPackState(): Promise<{
+  version: string;
+  platformKey: string;
+  sources: Array<{ name: string; url: string; uploaded: boolean }>;
+  complete: boolean;
+}> {
+  const settings = await readSpeechSettings();
+  const directory = manualSpeechPackDirectory(settings);
+  const sources = await Promise.all(requiredSpeechSources().map(async (source) => ({
+    name: source.name,
+    url: source.url,
+    uploaded: await pathExists(join(directory, source.name)),
+  })));
+  return {
+    version: SPEECH_PACK_VERSION,
+    platformKey: speechRuntimeKey(),
+    sources,
+    complete: sources.length > 0 && sources.every((source) => source.uploaded),
+  };
+}
+
+export async function storeManualSpeechPackSource(
+  requestedName: string,
+  body: ReadableStream<Uint8Array> | null,
+  declaredBytes?: number,
+): Promise<Awaited<ReturnType<typeof getManualSpeechPackState>>> {
+  const source = requiredSpeechSources().find((candidate) => candidate.name === requestedName);
+  if (!source) throw new Error("This file does not belong to the current speech pack");
+  if (!body) throw new Error("The uploaded speech-pack file is empty");
+  if (declaredBytes !== undefined && (!Number.isFinite(declaredBytes) || declaredBytes <= 0 || declaredBytes > MAX_MANUAL_SOURCE_BYTES)) {
+    throw new Error("The uploaded speech-pack file is too large");
+  }
+  const settings = await readSpeechSettings();
+  const root = resolve(settings.packDirectory);
+  const directory = manualSpeechPackDirectory(settings);
+  assertManagedChild(root, directory);
+  await mkdir(directory, { recursive: true });
+  const destination = join(directory, source.name);
+  const temporary = `${destination}.${randomUUID()}.partial`;
+  const reader = body.getReader();
+  const handle = await open(temporary, "wx", 0o600);
+  const hash = createHash(source.algorithm);
+  let receivedBytes = 0;
+  let streamError: unknown;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      receivedBytes += value.byteLength;
+      if (receivedBytes > MAX_MANUAL_SOURCE_BYTES) throw new Error("The uploaded speech-pack file is too large");
+      hash.update(value);
+      await handle.write(value);
+    }
+  } catch (error) {
+    streamError = error;
+  } finally {
+    reader.releaseLock();
+    await handle.close();
+  }
+  if (streamError) {
+    await rm(temporary, { force: true }).catch(() => {});
+    throw streamError;
+  }
+  if (!digestMatches(source, hash.digest())) {
+    await rm(temporary, { force: true });
+    throw new Error(`Checksum verification failed for ${source.name}`);
+  }
+  await rm(destination, { force: true });
+  await rename(temporary, destination);
+  return getManualSpeechPackState();
+}
+
 async function downloadVerified(source: SpeechDownloadSource, destination: string): Promise<void> {
   updateInstallState({ currentFile: source.name });
   const temporary = `${destination}.partial`;
@@ -255,7 +352,7 @@ async function extractRuntimeArchive(
   });
 }
 
-async function installSpeechPack(settings: SpeechSettings): Promise<void> {
+async function installSpeechPack(settings: SpeechSettings, manualDirectory?: string): Promise<void> {
   const runtimeSource = getSpeechRuntimeSource();
   if (!runtimeSource) {
     throw new Error(`Local speech is not available for ${process.platform}/${process.arch}`);
@@ -281,10 +378,18 @@ async function installSpeechPack(settings: SpeechSettings): Promise<void> {
   try {
     const nodeArchive = join(downloads, SHERPA_NODE_SOURCE.name);
     const platformArchive = join(downloads, runtimeSource.name);
-    await downloadVerified(SHERPA_NODE_SOURCE, nodeArchive);
-    await downloadVerified(runtimeSource, platformArchive);
-    await downloadVerified(SENSEVOICE_MODEL_SOURCE, join(modelRoot, SENSEVOICE_MODEL_SOURCE.name));
-    await downloadVerified(SENSEVOICE_TOKENS_SOURCE, join(modelRoot, SENSEVOICE_TOKENS_SOURCE.name));
+    const stageSource = async (source: SpeechDownloadSource, destination: string) => {
+      if (!manualDirectory) return downloadVerified(source, destination);
+      const localSource = join(manualDirectory, source.name);
+      if (!(await verifySpeechSourceFile(source, localSource))) {
+        throw new Error(`Checksum verification failed for ${source.name}`);
+      }
+      await copyFile(localSource, destination);
+    };
+    await stageSource(SHERPA_NODE_SOURCE, nodeArchive);
+    await stageSource(runtimeSource, platformArchive);
+    await stageSource(SENSEVOICE_MODEL_SOURCE, join(modelRoot, SENSEVOICE_MODEL_SOURCE.name));
+    await stageSource(SENSEVOICE_TOKENS_SOURCE, join(modelRoot, SENSEVOICE_TOKENS_SOURCE.name));
 
     updateInstallState({ phase: "installing", currentFile: undefined });
     await extractRuntimeArchive(nodeArchive, runtimeRoot, SHERPA_NODE_SOURCE);
@@ -316,6 +421,7 @@ async function installSpeechPack(settings: SpeechSettings): Promise<void> {
     }
     await rename(staging, target);
     if (movedOldPack) await rm(backup, { recursive: true, force: true });
+    if (manualDirectory) await rm(manualDirectory, { recursive: true, force: true });
   } catch (error) {
     if (movedOldPack && !(await pathExists(target)) && await pathExists(backup)) {
       await rename(backup, target).catch(() => {});
@@ -349,6 +455,36 @@ export function startSpeechPackInstall(): SpeechInstallState {
     .finally(() => {
       installGlobal().running = null;
     });
+  return { ...global.state };
+}
+
+export function startManualSpeechPackInstall(): SpeechInstallState {
+  const global = installGlobal();
+  if (global.running) return { ...global.state };
+  updateInstallState(newInstallState("installing"));
+  global.running = readSpeechSettings()
+    .then(async (settings) => {
+      const directory = manualSpeechPackDirectory(settings);
+      const state = await getManualSpeechPackState();
+      if (!state.complete) throw new Error("Add all required speech-pack files before installing");
+      await installSpeechPack(settings, directory);
+    })
+    .then(() => {
+      updateInstallState({
+        phase: "complete",
+        currentFile: undefined,
+        error: undefined,
+        downloadedBytes: installGlobal().state.totalBytes,
+      });
+    })
+    .catch((error: unknown) => {
+      updateInstallState({
+        phase: "error",
+        currentFile: undefined,
+        error: error instanceof Error ? error.message : "Speech pack installation failed",
+      });
+    })
+    .finally(() => { installGlobal().running = null; });
   return { ...global.state };
 }
 
@@ -387,6 +523,7 @@ export async function removeSpeechPack(): Promise<SpeechStatus> {
     packDirectory: settings.customPackDirectory ? settings.packDirectory : null,
   });
   await rm(target, { recursive: true, force: true });
+  await rm(manualSpeechPackDirectory(settings), { recursive: true, force: true });
   updateInstallState(newInstallState());
   return getSpeechStatus();
 }

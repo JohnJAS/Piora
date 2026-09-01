@@ -6,6 +6,7 @@ import {
   deleteSystemPromptTemplate,
   readSystemPromptConfig,
   setDefaultSystemPromptTemplate,
+  setSystemPromptSelectorVisible,
   SYSTEM_PROMPT_MAX_LENGTH,
   SYSTEM_PROMPT_TEMPLATE_NAME_MAX_LENGTH,
   updateSystemPromptTemplate,
@@ -18,6 +19,7 @@ function response(config: SystemPromptConfig, refresh?: { reloadedSessions: numb
   return NextResponse.json({
     templates: config.templates,
     defaultTemplateId: config.defaultTemplateId,
+    selectorVisible: config.selectorVisible,
     prompt: defaultTemplate?.prompt ?? null,
     updatedAt: config.updatedAt,
     maxLength: SYSTEM_PROMPT_MAX_LENGTH,
@@ -64,8 +66,12 @@ export async function PATCH(request: Request) {
       id?: unknown;
       name?: unknown;
       prompt?: unknown;
+      selectorVisible?: unknown;
       defaultTemplateId?: unknown;
     };
+    if (Object.hasOwn(body, "selectorVisible")) {
+      return response(setSystemPromptSelectorVisible(body.selectorVisible));
+    }
     const config = Object.hasOwn(body, "defaultTemplateId")
       ? setDefaultSystemPromptTemplate(body.defaultTemplateId)
       : updateSystemPromptTemplate(body.id, { name: body.name, prompt: body.prompt });

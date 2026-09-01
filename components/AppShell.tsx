@@ -133,6 +133,7 @@ const SessionHistoryDialog = dynamic(() => import("./SessionHistoryDialog").then
 const CommandPalette = dynamic(() => import("./CommandPalette").then((module) => module.CommandPalette), { ssr: false });
 const DesktopUpdateDialog = dynamic(() => import("./DesktopUpdateDialog").then((module) => module.DesktopUpdateDialog), { ssr: false });
 const ShortcutSettings = dynamic(() => import("./ShortcutSettings").then((module) => module.ShortcutSettings), { ssr: false });
+const FirstRunOnboarding = dynamic(() => import("./FirstRunOnboarding").then((module) => module.FirstRunOnboarding), { ssr: false });
 
 export function AppShell() {
   const searchParams = useSearchParams();
@@ -213,6 +214,10 @@ export function AppShell() {
   const [sessionKey, setSessionKey] = useState(0);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
+  const [onboardingRestartKey, setOnboardingRestartKey] = useState(0);
+  const [onboardingProjectPickerRequestKey, setOnboardingProjectPickerRequestKey] = useState(0);
+  const [onboardingProjectCwd, setOnboardingProjectCwd] = useState<string | null>(null);
+  const [onboardingPromptSubmittedKey, setOnboardingPromptSubmittedKey] = useState(0);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [settingsKey, setSettingsKey] = useState<SettingsKey>("general");
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
@@ -1459,6 +1464,20 @@ export function AppShell() {
   const topbarLineStats = useMemo(() => topbarGitStatus ? getTrackedGitLineStats(topbarGitStatus) : { additions: 0, deletions: 0 }, [topbarGitStatus]);
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showConversation;
+  const onboardingProjectPath = onboardingProjectCwd ?? currentProjectCwd;
+
+  const handleOnboardingChooseProject = useCallback(() => {
+    if (showPlaceholder) {
+      setOnboardingProjectPickerRequestKey((key) => key + 1);
+      return;
+    }
+    handleOpenProjectPicker();
+  }, [handleOpenProjectPicker, showPlaceholder]);
+
+  const handlePrepareFirstPrompt = useCallback((prompt: string) => {
+    chatInputRef.current?.insertIfEmpty(prompt);
+    window.requestAnimationFrame(() => chatInputRef.current?.focus());
+  }, []);
 
   const handleNewSessionInCurrentProject = useCallback(() => {
     if (!currentProjectCwd) return;
@@ -1518,6 +1537,7 @@ export function AppShell() {
     "panel.files": () => { setRightPanelTab("files"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "panel.commands": () => { setRightPanelTab("commands"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "panel.browser": () => { setRightPanelTab("browser"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
+    "companion.togglePanel": () => { void window.piDesktop?.companionAction?.("open-panel"); },
     "panel.toggleSidebar": () => setSidebarOpen((open) => !open),
     "panel.close": () => setRightPanelOpen(false),
     "settings.general": () => openSettings("general"),
@@ -1558,6 +1578,18 @@ export function AppShell() {
   useEffect(() => {
     void window.piDesktop?.setKeyboardShortcuts?.(shortcutBindings);
   }, [shortcutBindings]);
+
+  useEffect(() => {
+    if (!window.piDesktop?.setNetworkProxy) return;
+    const controller = new AbortController();
+    void fetch("/api/network-proxy", { cache: "no-store", signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((settings: { mode: "system" | "manual" | "direct"; proxyUrl: string; bypass: string } | null) => (
+        settings ? window.piDesktop?.setNetworkProxy?.(settings) : undefined
+      ))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
   const piPaletteCommands = useMemo<Command[]>(() => piSlashCommands.map((item) => ({
     id: `pi:${item.source}:${item.name}`,
     group: "session",
@@ -1648,6 +1680,10 @@ export function AppShell() {
       onClose={() => setSettingsDialogOpen(false)}
       activeKey={settingsKey}
       onActiveKeyChange={setSettingsKey}
+      onOpenOnboarding={() => {
+        setSettingsDialogOpen(false);
+        setOnboardingRestartKey((key) => key + 1);
+      }}
       modelCwd={projectCwd ?? activeCwd ?? undefined}
       sections={{
         capabilityBundles: projectCwd ? (
@@ -2545,6 +2581,7 @@ export function AppShell() {
                 onOpenAutomation={openAutomation}
                 onCapabilitiesChange={setSessionCapabilities}
                 onOpenCapabilitySettings={openCapabilitySettings}
+                onPromptSubmitted={() => setOnboardingPromptSubmittedKey((key) => key + 1)}
               />
             ) : initialCwdStatus === "validating" ? (
               <div
@@ -2573,6 +2610,8 @@ export function AppShell() {
                 activeProjectRoot={activeProjectRoot}
                 chatInputRef={chatInputRef}
                 onLaunch={handleNewSessionLaunch}
+                onProjectSelected={setOnboardingProjectCwd}
+                projectPickerRequestKey={onboardingProjectPickerRequestKey}
               />
             ) : null}
             </div>
@@ -2651,6 +2690,8 @@ export function AppShell() {
           selectedAutomationId={selectedAutomationId}
           sessionId={selectedSession?.id ?? null}
           sessionName={selectedSession?.name}
+          sessionRunning={Boolean(taskControls?.disabled)}
+          onGuideAgent={() => chatInputRef.current?.focus()}
           onSelectAutomation={openAutomation}
           onAutomationChanged={() => setSessionKey((key) => key + 1)}
           capabilities={sessionCapabilities}
@@ -2687,6 +2728,18 @@ export function AppShell() {
         onRetry={handleRetryDesktopUpdate}
       />
     ) : null}
+    <FirstRunOnboarding
+      modelCwd={projectCwd ?? activeCwd}
+      modelsRefreshKey={modelsRefreshKey}
+      projectReady={Boolean(onboardingProjectPath)}
+      projectName={onboardingProjectPath ? getFileName(onboardingProjectPath) || onboardingProjectPath : null}
+      promptSubmittedKey={onboardingPromptSubmittedKey}
+      restartKey={onboardingRestartKey}
+      settingsOpen={settingsDialogOpen}
+      onOpenModels={() => openSettings("models")}
+      onChooseProject={handleOnboardingChooseProject}
+      onPrepareFirstPrompt={handlePrepareFirstPrompt}
+    />
     <ConfirmationHost />
     </>
   );

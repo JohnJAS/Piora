@@ -16,6 +16,7 @@ export interface SystemPromptConfig {
   version: typeof SYSTEM_PROMPT_CONFIG_VERSION;
   templates: SystemPromptTemplate[];
   defaultTemplateId: string | null;
+  selectorVisible: boolean;
   updatedAt: string | null;
 }
 
@@ -37,6 +38,7 @@ function emptyConfig(): SystemPromptConfig {
     version: SYSTEM_PROMPT_CONFIG_VERSION,
     templates: [],
     defaultTemplateId: null,
+    selectorVisible: true,
     updatedAt: null,
   };
 }
@@ -96,6 +98,7 @@ function migrateLegacyConfig(parsed: LegacySystemPromptConfig): SystemPromptConf
         updatedAt: timestamp,
       }],
       defaultTemplateId: LEGACY_DEFAULT_TEMPLATE_ID,
+      selectorVisible: true,
       updatedAt: timestamp,
     };
   } catch {
@@ -128,6 +131,7 @@ export function readSystemPromptConfig(path = systemPromptConfigPath()): SystemP
       defaultTemplateId: isTemplateId(current.defaultTemplateId) && ids.has(current.defaultTemplateId)
         ? current.defaultTemplateId
         : null,
+      selectorVisible: current.selectorVisible !== false,
       updatedAt: typeof current.updatedAt === "string" ? current.updatedAt : null,
     };
   } catch {
@@ -217,6 +221,15 @@ export function setDefaultSystemPromptTemplate(id: unknown, path = systemPromptC
     throw new Error("System prompt template not found.");
   }
   return persistSystemPromptConfig(withTimestamp(config, { defaultTemplateId: id }), path);
+}
+
+export function setSystemPromptSelectorVisible(
+  visible: unknown,
+  path = systemPromptConfigPath(),
+): SystemPromptConfig {
+  if (typeof visible !== "boolean") throw new Error("System prompt selector visibility must be a boolean.");
+  const config = readSystemPromptConfig(path);
+  return persistSystemPromptConfig(withTimestamp(config, { selectorVisible: visible }), path);
 }
 
 /** Backward-compatible mutation for older clients of PUT /api/system-prompt. */

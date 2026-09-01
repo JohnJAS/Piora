@@ -81,6 +81,7 @@ export const GUI_COMMANDS: Command[] = [
   command("panel.files", "panel", "commands.openFiles", { needs: "project" }),
   command("panel.commands", "panel", "commands.openCommands", { needs: "session" }),
   command("panel.browser", "panel", "commands.openBrowser"),
+  command("companion.togglePanel", "panel", "commands.openCompanionPanel"),
   command("panel.toggleSidebar", "panel", "commands.toggleSidebar"),
   command("panel.close", "panel", "commands.closePanel"),
   command("settings.general", "settings", "commands.settings"),

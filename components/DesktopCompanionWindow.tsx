@@ -137,9 +137,16 @@ export function DesktopCompanionWindow() {
             autonomyLevel: movementSettings.autonomyLevel,
             hasRunningTasks: runningTasks.length > 0,
           });
+          const followsModelDirection = action.direction === "left" || action.direction === "right";
           void window.piDesktop?.moveCompanionWindow?.({
             kind: "walk",
             direction: action.direction ?? wander.direction,
+            pattern: followsModelDirection ? "line" : wander.pattern,
+            angleRadians: followsModelDirection
+              ? action.direction === "left" ? Math.PI : 0
+              : wander.angleRadians,
+            curvature: wander.curvature,
+            clockwise: wander.clockwise,
             distance: action.distance ?? wander.distance,
             durationMs: wander.durationMs,
           });
@@ -449,6 +456,10 @@ export function DesktopCompanionWindow() {
       void bridge({
         kind: "walk",
         direction: wander.direction,
+        pattern: wander.pattern,
+        angleRadians: wander.angleRadians,
+        curvature: wander.curvature,
+        clockwise: wander.clockwise,
         distance: runtimeEventKind === "started" ? Math.min(90, wander.distance) : Math.max(80, wander.distance),
         durationMs: wander.durationMs,
       });
@@ -484,6 +495,10 @@ export function DesktopCompanionWindow() {
           void bridge({
             kind: "walk",
             direction: wander.direction,
+            pattern: wander.pattern,
+            angleRadians: wander.angleRadians,
+            curvature: wander.curvature,
+            clockwise: wander.clockwise,
             distance: wander.distance,
             durationMs: wander.durationMs,
           });
@@ -537,11 +552,7 @@ export function DesktopCompanionWindow() {
       moved: false,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
-    void window.piDesktop?.moveCompanionWindow?.({
-      kind: "drag-start",
-      screenX: event.screenX,
-      screenY: event.screenY,
-    });
+    void window.piDesktop?.moveCompanionWindow?.({ kind: "drag-start" });
   }, []);
 
   const handlePetPointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -550,11 +561,7 @@ export function DesktopCompanionWindow() {
     const distance = Math.hypot(event.screenX - drag.startX, event.screenY - drag.startY);
     if (!drag.moved && distance < PET_DRAG_THRESHOLD_PX) return;
     drag.moved = true;
-    void window.piDesktop?.moveCompanionWindow?.({
-      kind: "drag-move",
-      screenX: event.screenX,
-      screenY: event.screenY,
-    });
+    void window.piDesktop?.moveCompanionWindow?.({ kind: "drag-move" });
   }, []);
 
   return (
@@ -590,6 +597,18 @@ export function DesktopCompanionWindow() {
           ))}
         </div>
         <div className={styles.petStage} data-moving={motionDirection ?? undefined}>
+          <div className={styles.petVisual} data-testid="companion-pet-visual" aria-hidden="true">
+            {activePet
+              ? <SpritePet
+                  pet={activePet}
+                  status={displayActivity.status}
+                  event={displayActivity.event}
+                  overlayEvent={overlayEvent ?? undefined}
+                  idleTricks={idleTricksEnabled}
+                  motionDirection={motionDirection}
+                />
+              : <BuiltinPet status={motionDirection ? "running" : displayActivity.status} />}
+          </div>
           <button
             className={styles.pet}
             type="button"
@@ -606,18 +625,7 @@ export function DesktopCompanionWindow() {
               void window.piDesktop?.companionAction?.("open-panel");
               void react("double-click");
             }}
-          >
-            {activePet
-              ? <SpritePet
-                  pet={activePet}
-                  status={displayActivity.status}
-                  event={displayActivity.event}
-                  overlayEvent={overlayEvent ?? undefined}
-                  idleTricks={idleTricksEnabled}
-                  motionDirection={motionDirection}
-                />
-              : <BuiltinPet status={motionDirection ? "running" : displayActivity.status} />}
-          </button>
+          />
         </div>
         {bubbleItems.length > 0 ? (
           <button

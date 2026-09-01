@@ -22,10 +22,12 @@ import {
 } from "electron";
 import { autoUpdater } from "electron-updater";
 import {
-  companionMotionX,
+  companionFacingDirection,
+  companionMotionPoint,
   dragCompanionBounds,
-  planCompanionWalk,
+  planCompanionMotion,
   type CompanionMotionDirection,
+  type CompanionMotionPattern,
 } from "./companion-motion.js";
 import {
   readCompanionWindowPosition,
@@ -87,6 +89,7 @@ const COMPANION_MOTION_STATE_CHANNEL = "pi:companion-motion-state";
 const COMPANION_HIT_TEST_CHANNEL = "pi:companion-hit-test";
 const GLOBAL_SHORTCUT_CHANNEL = "pi:set-global-shortcut";
 const KEYBOARD_SHORTCUTS_CHANNEL = "pi:set-keyboard-shortcuts";
+const NETWORK_PROXY_CHANNEL = "pi:set-network-proxy";
 const HARMONY_RUNTIME_PICKER_CHANNEL = "pi:harmony-runtime-picker";
 const DESKTOP_UPDATE_STATE_GET_CHANNEL = "pi:update-state-get";
 const DESKTOP_UPDATE_STATE_CHANNEL = "pi:update-state";
@@ -142,6 +145,7 @@ let shutdownPromise: Promise<void> | undefined;
 let shutdownComplete = false;
 let applicationMenu: Menu | null = null;
 let keyboardShortcutBindings: DesktopShortcutBindings = { ...DEFAULT_DESKTOP_SHORTCUT_BINDINGS };
+let companionPanelShortcutAccelerator: string | undefined;
 let companionMoveTimer: NodeJS.Timeout | undefined;
 let companionMotionTimer: NodeJS.Timeout | undefined;
 let companionMotionRevision = 0;
@@ -424,8 +428,60 @@ function registerKeyboardShortcutHandler(): void {
       return false;
     }
     keyboardShortcutBindings = parsed;
+    const companionShortcutRegistered = syncCompanionPanelShortcut();
     installApplicationMenu();
+    return companionShortcutRegistered;
+  });
+}
+
+function parseDesktopNetworkProxySettings(input: unknown): {
+  mode: "system" | "manual" | "direct";
+  proxyUrl: string;
+  bypass: string;
+} | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const candidate = input as Record<string, unknown>;
+  if (candidate.mode !== "system" && candidate.mode !== "manual" && candidate.mode !== "direct") return null;
+  if (typeof candidate.proxyUrl !== "string" || typeof candidate.bypass !== "string") return null;
+  if (candidate.proxyUrl.length > 2_048 || candidate.bypass.length > 4_096) return null;
+  if (candidate.mode === "manual") {
+    try {
+      const url = new URL(candidate.proxyUrl);
+      if ((url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname) return null;
+    } catch {
+      return null;
+    }
+  }
+  return { mode: candidate.mode, proxyUrl: candidate.proxyUrl, bypass: candidate.bypass };
+}
+
+async function applyDesktopNetworkProxy(input: unknown): Promise<boolean> {
+  const settings = parseDesktopNetworkProxySettings(input);
+  if (!settings) return false;
+  const target = electronSession.fromPartition(DESKTOP_PARTITION, { cache: true });
+  try {
+    if (settings.mode === "manual") {
+      const bypass = ["<local>", ...settings.bypass.split(/[;,\s]+/).filter(Boolean)].join(",");
+      await target.setProxy({ mode: "fixed_servers", proxyRules: settings.proxyUrl, proxyBypassRules: bypass });
+    } else {
+      await target.setProxy({ mode: settings.mode });
+    }
+    await target.closeAllConnections();
     return true;
+  } catch (error) {
+    logger?.warn("Unable to apply desktop network proxy", {
+      mode: settings.mode,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
+function registerNetworkProxyHandler(): void {
+  ipcMain.removeHandler(NETWORK_PROXY_CHANNEL);
+  ipcMain.handle(NETWORK_PROXY_CHANNEL, (event, input: unknown) => {
+    if (!isTrustedMainWindowSender(event)) return false;
+    return applyDesktopNetworkProxy(input);
   });
 }
 
@@ -1252,10 +1308,14 @@ function stopCompanionWindowMotion(): boolean {
   return true;
 }
 
-function startCompanionWindowWalk(input: {
+function startCompanionWindowMotion(input: {
   distance: number;
   durationMs: number;
   direction?: CompanionMotionDirection;
+  pattern?: CompanionMotionPattern;
+  angleRadians?: number;
+  curvature?: number;
+  clockwise?: boolean;
 }): { ok: boolean; direction?: CompanionMotionDirection; durationMs?: number } {
   if (!companionWindow || companionWindow.isDestroyed()) return { ok: false };
   const bounds = companionWindow.getBounds();
@@ -1263,19 +1323,18 @@ function startCompanionWindowWalk(input: {
     x: bounds.x + Math.round(bounds.width / 2),
     y: bounds.y + Math.round(bounds.height / 2),
   });
-  const plan = planCompanionWalk(
+  const plan = planCompanionMotion(
     bounds,
     display.workArea,
-    input.distance,
-    input.durationMs,
-    input.direction,
+    input,
   );
   if (!plan) return { ok: false };
 
   stopCompanionWindowMotion();
   const revision = ++companionMotionRevision;
   const startedAt = Date.now();
-  emitCompanionMotionState(plan.direction);
+  let facingDirection = plan.direction;
+  emitCompanionMotionState(facingDirection);
   companionMotionTimer = setInterval(() => {
     if (revision !== companionMotionRevision || !companionWindow || companionWindow.isDestroyed()) {
       if (companionMotionTimer) clearInterval(companionMotionTimer);
@@ -1283,10 +1342,17 @@ function startCompanionWindowWalk(input: {
       return;
     }
     const elapsed = Date.now() - startedAt;
-    companionWindow.setPosition(companionMotionX(plan, elapsed), bounds.y, false);
+    const point = companionMotionPoint(plan, elapsed);
+    companionWindow.setPosition(point.x, point.y, false);
+    const nextFacingDirection = companionFacingDirection(plan, elapsed, facingDirection);
+    if (nextFacingDirection !== facingDirection) {
+      facingDirection = nextFacingDirection;
+      emitCompanionMotionState(facingDirection);
+    }
     positionCompanionBubble();
     if (elapsed < plan.durationMs) return;
-    companionWindow.setPosition(plan.targetX, bounds.y, false);
+    const finalPoint = companionMotionPoint(plan, plan.durationMs);
+    companionWindow.setPosition(finalPoint.x, finalPoint.y, false);
     positionCompanionBubble();
     stopCompanionWindowMotion();
   }, 16);
@@ -1294,23 +1360,24 @@ function startCompanionWindowWalk(input: {
   return { ok: true, direction: plan.direction, durationMs: plan.durationMs };
 }
 
-function startCompanionWindowDrag(screenX: number, screenY: number): boolean {
+function startCompanionWindowDrag(): boolean {
   if (!companionWindow || companionWindow.isDestroyed()) return false;
   stopCompanionWindowMotion();
   companionDragState = {
-    pointerStart: { x: screenX, y: screenY },
+    pointerStart: screen.getCursorScreenPoint(),
     startingBounds: companionWindow.getBounds(),
   };
   return true;
 }
 
-function updateCompanionWindowDrag(screenX: number, screenY: number): boolean {
+function updateCompanionWindowDrag(): boolean {
   if (!companionDragState || !companionWindow || companionWindow.isDestroyed()) return false;
-  const display = screen.getDisplayNearestPoint({ x: screenX, y: screenY });
+  const pointer = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(pointer);
   const target = dragCompanionBounds(
     companionDragState.startingBounds,
     companionDragState.pointerStart,
-    { x: screenX, y: screenY },
+    pointer,
     display.workArea,
   );
   companionWindow.setPosition(target.x, target.y, false);
@@ -1521,7 +1588,13 @@ function createCompanionPanelWindow(url: URL, log: Logger): BrowserWindow {
   installRendererDiagnostics(window, "Companion", log);
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, requestedUrl) => { if (!isAllowedAppUrl(requestedUrl, url.origin)) event.preventDefault(); });
-  window.once("ready-to-show", () => window.show());
+  window.once("ready-to-show", () => {
+    window.show();
+    window.focus();
+  });
+  window.on("blur", () => {
+    if (!window.isDestroyed() && window.isVisible()) window.hide();
+  });
   window.on("closed", () => { if (companionPanelWindow === window) companionPanelWindow = null; });
   void window.loadURL(new URL("/desktop-companion-panel", url).toString());
   return window;
@@ -1536,6 +1609,29 @@ function showCompanionPanel(): boolean {
   if (companionPanelWindow.isMinimized()) companionPanelWindow.restore();
   companionPanelWindow.show();
   companionPanelWindow.focus();
+  return true;
+}
+
+function toggleCompanionPanel(): boolean {
+  if (companionPanelWindow && !companionPanelWindow.isDestroyed() && companionPanelWindow.isVisible()) {
+    companionPanelWindow.hide();
+    return true;
+  }
+  return showCompanionPanel();
+}
+
+function syncCompanionPanelShortcut(): boolean {
+  const next = toElectronAccelerator(keyboardShortcutBindings["companion.togglePanel"]);
+  if (companionPanelShortcutAccelerator) {
+    globalShortcut.unregister(companionPanelShortcutAccelerator);
+    companionPanelShortcutAccelerator = undefined;
+  }
+  if (!next) return true;
+  if (!globalShortcut.register(next, toggleCompanionPanel)) {
+    logger?.warn("Unable to register companion panel shortcut", { accelerator: next });
+    return false;
+  }
+  companionPanelShortcutAccelerator = next;
   return true;
 }
 
@@ -1836,13 +1932,10 @@ function registerCompanionWindowHandlers(): void {
     if (request.kind === "stop") return { ok: stopCompanionWindowMotion() };
     if (request.kind === "drag-end") return { ok: finishCompanionWindowDrag() };
     if (request.kind === "drag-start" || request.kind === "drag-move") {
-      if (!Number.isFinite(request.screenX) || !Number.isFinite(request.screenY)) return { ok: false };
-      const screenX = Math.round(Number(request.screenX));
-      const screenY = Math.round(Number(request.screenY));
       return {
         ok: request.kind === "drag-start"
-          ? startCompanionWindowDrag(screenX, screenY)
-          : updateCompanionWindowDrag(screenX, screenY),
+          ? startCompanionWindowDrag()
+          : updateCompanionWindowDrag(),
       };
     }
     if (request.kind !== "walk") return { ok: false };
@@ -1851,12 +1944,22 @@ function registerCompanionWindowHandlers(): void {
     const direction = request.direction === "left" || request.direction === "right"
       ? request.direction
       : undefined;
+    const pattern = request.pattern === "line" || request.pattern === "arc" || request.pattern === "orbit"
+      ? request.pattern
+      : undefined;
     const distance = Number.isFinite(request.distance) ? Number(request.distance) : 120;
     const durationMs = Number.isFinite(request.durationMs) ? Number(request.durationMs) : 2_400;
-    return startCompanionWindowWalk({
+    const angleRadians = Number.isFinite(request.angleRadians) ? Number(request.angleRadians) : undefined;
+    const curvature = Number.isFinite(request.curvature) ? Number(request.curvature) : undefined;
+    const clockwise = typeof request.clockwise === "boolean" ? request.clockwise : undefined;
+    return startCompanionWindowMotion({
       distance,
       durationMs,
       ...(direction ? { direction } : {}),
+      ...(pattern ? { pattern } : {}),
+      ...(angleRadians !== undefined ? { angleRadians } : {}),
+      ...(curvature !== undefined ? { curvature } : {}),
+      ...(clockwise !== undefined ? { clockwise } : {}),
     });
   });
 
@@ -2241,6 +2344,7 @@ async function startApplication(): Promise<void> {
   registerCompanionWindowHandlers();
   registerGlobalShortcutHandler();
   registerKeyboardShortcutHandler();
+  registerNetworkProxyHandler();
   registerHarmonyRuntimePickerHandler();
   attachDesktopBrowserManager(mainWindow, logger);
   registerDirectoryPickerHandler();

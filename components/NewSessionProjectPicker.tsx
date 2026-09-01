@@ -44,11 +44,15 @@ export function NewSessionProjectPicker({
   activeProjectRoot,
   chatInputRef,
   onLaunch,
+  onProjectSelected,
+  projectPickerRequestKey = 0,
 }: {
   activeCwd?: string | null;
   activeProjectRoot?: string | null;
   chatInputRef?: RefObject<ChatInputHandle | null>;
   onLaunch: (request: NewSessionLaunch) => void;
+  onProjectSelected?: (cwd: string) => void;
+  projectPickerRequestKey?: number;
 }) {
   const { t } = useI18n();
   const localChatInputRef = useRef<ChatInputHandle>(null);
@@ -191,6 +195,14 @@ export function NewSessionProjectPicker({
   }, []);
 
   useEffect(() => {
+    if (projectPickerRequestKey <= 0) return;
+    pendingSubmissionClaimedRef.current = false;
+    setProjectRequired(true);
+    setSubmitAfterProjectSelection(false);
+    setProjectMenuOpen(true);
+  }, [projectPickerRequestKey]);
+
+  useEffect(() => {
     if (!projectMenuOpen) return;
     const frame = window.requestAnimationFrame(() => projectSearchRef.current?.focus());
     const closeOnPointer = (event: PointerEvent) => {
@@ -210,12 +222,13 @@ export function NewSessionProjectPicker({
 
   const chooseProject = useCallback((project: ProjectChoice) => {
     setSelectedProject(project);
+    onProjectSelected?.(project.cwd);
     setProjectRequired(false);
     setProjectError(null);
     setProjectMenuOpen(false);
     setProjectQuery("");
     window.requestAnimationFrame(() => effectiveChatInputRef.current?.focus());
-  }, [effectiveChatInputRef]);
+  }, [effectiveChatInputRef, onProjectSelected]);
 
   const validateAndChooseProject = useCallback(async (candidate: string) => {
     if (projectValidating) return;

@@ -3,6 +3,11 @@ import type { CompanionAutonomyLevel } from "./companion-runtime";
 export interface CompanionWanderPlan {
   delayMs: number;
   shouldMove: boolean;
+  pattern: "line" | "arc" | "orbit";
+  angleRadians: number;
+  curvature: number;
+  clockwise: boolean;
+  /** Sprite facing; the desktop motion path itself is fully two-dimensional. */
   direction: "left" | "right";
   distance: number;
   durationMs: number;
@@ -39,10 +44,21 @@ export function planCompanionWander(input: {
   const moveChance = profile.moveChance * (input.hasRunningTasks ? 0.62 : 1);
   const delayMs = Math.round(between(profile.delay, random) * focusSlowdown);
   const shouldMove = unit(random()) < moveChance;
-  const direction = unit(random()) < 0.5 ? "left" : "right";
+  const patternRoll = unit(random());
+  const pattern: CompanionWanderPlan["pattern"] = patternRoll < 0.44
+    ? "line"
+    : patternRoll < 0.8
+      ? "arc"
+      : "orbit";
+  const angleRadians = unit(random()) * Math.PI * 2;
+  const direction = Math.cos(angleRadians) < 0 ? "left" : "right";
+  const curvatureMagnitude = 0.24 + unit(random()) * 0.42;
+  const clockwise = unit(random()) < 0.5;
+  const curvature = Number(((clockwise ? 1 : -1) * curvatureMagnitude).toFixed(3));
   const rawDistance = between(profile.distance, random);
   const distance = Math.round(input.hasRunningTasks ? Math.min(rawDistance, 120) : rawDistance);
   const speed = between(profile.speed, random);
-  const durationMs = Math.round(Math.max(900, Math.min(5_200, distance / speed * 1_000)));
-  return { delayMs, shouldMove, direction, distance, durationMs };
+  const routeMultiplier = pattern === "orbit" ? 2.35 : pattern === "arc" ? 1.18 : 1;
+  const durationMs = Math.round(Math.max(900, Math.min(8_000, distance * routeMultiplier / speed * 1_000)));
+  return { delayMs, shouldMove, pattern, angleRadians, curvature, clockwise, direction, distance, durationMs };
 }

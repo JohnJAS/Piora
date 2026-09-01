@@ -149,7 +149,14 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
   return payload;
 }
 
-export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapshot?: (fingerprint: number) => void }) {
+type HarmonyPanelProps = {
+  active: boolean;
+  sessionRunning?: boolean;
+  onGuideAgent?: (() => void) | undefined;
+  onSnapshot?: (fingerprint: number) => void;
+};
+
+export function HarmonyPanel({ active, sessionRunning = false, onGuideAgent, onSnapshot }: HarmonyPanelProps) {
   const { locale } = useI18n();
   const chinese = locale === "zh-CN";
   const copy = useCallback((zh: string, en: string) => chinese ? zh : en, [chinese]);
@@ -217,6 +224,7 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
   const {
     frame: liveFrame,
     status: frameStatus,
+    mode: frameMode,
     error: frameLoadError,
     refresh: requestFrame,
   } = useHarmonyLiveFrame({
@@ -524,6 +532,7 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
   const frameMatchesDevice = Boolean(liveFrame && selected && liveFrame.serial === selected.serial && liveFrame.generation === selected.generation);
   const frameError = frameInteractionError ?? frameLoadError;
   const ownsRecoverableLease = Boolean(holder?.owner.kind === "manual" && holder.owner.id === ownerIdRef.current);
+  const agentHasControl = holder?.owner.kind === "agent";
   const canPointControl = Boolean(!busy && lease?.serial === selectedSerial && frameStatus === "live" && frameMatchesDevice && selected?.capabilities.tap);
   const runtimeReady = managerState?.runtime.status === "ready";
   const deviceStateLabel = selected?.state === "online"
@@ -623,6 +632,16 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
       )} title={copy("停止所有设备操作", "Stop all device actions")} aria-label={copy("停止所有设备操作", "Stop all device actions")}><AliIcon name="stop" size={13} /></button>
     </div>
     {holder ? <div className={styles.controlNotice}><AliIcon name={holder.owner.kind === "agent" ? "robot" : "mobile"} size={13} />{holder.owner.kind === "agent" ? copy("AI 正在控制这台设备", "AI is controlling this device") : copy("你正在控制这台设备", "You are controlling this device")}</div> : null}
+    {sessionRunning ? <div className={styles.observerNotice} data-agent-control={agentHasControl ? "true" : "false"}>
+      <span className={styles.observerCopy}>
+        <AliIcon name={agentHasControl ? "robot" : "mobile"} size={14} />
+        <span>
+          <strong>{agentHasControl ? copy("旁观模式 · Agent 正在操作", "Observer mode · Agent is operating") : copy("实时旁观已开启", "Live observation is on")}</strong>
+          <small>{copy("控制权保持互斥，但投屏会独立运行；发现动作不对可立即发送修正。", "Control stays exclusive, while the live view runs independently. Send a correction whenever an action looks wrong.")}</small>
+        </span>
+      </span>
+      {onGuideAgent ? <button type="button" onClick={onGuideAgent}><AliIcon name="message" size={13} />{copy("指导 Agent", "Guide Agent")}</button> : null}
+    </div> : null}
 
     <div className={styles.deviceTabs} role="tablist" aria-label={copy("设备工具", "Device tools")}>
       <button type="button" role="tab" aria-selected={viewMode === "screen"} onClick={() => setViewMode("screen")}><AliIcon name="mobile" size={13} />{copy("投屏", "Screen")}</button>
@@ -632,7 +651,11 @@ export function HarmonyPanel({ active, onSnapshot }: { active: boolean; onSnapsh
     {viewMode === "screen" ? <><div className={styles.deviceArea}>
       <div className={styles.frame} data-enabled={canPointControl ? "true" : "false"}>
         {selectedOnline ? <div className={styles.frameStatus} data-status={frameStatus} aria-live="polite">
-          <span />{frameStatus === "error" ? copy("视频流重连中", "Reconnecting stream") : frameStatus === "loading" ? copy("视频流连接中", "Connecting stream") : copy("实时视频流", "Live video")}
+          <span />{frameStatus === "error"
+            ? frameMode === "frames" ? copy("兼容投屏重试中", "Retrying compatible view") : copy("视频流重连中", "Reconnecting stream")
+            : frameStatus === "loading"
+              ? frameMode === "frames" ? copy("切换兼容投屏", "Switching to compatible view") : copy("视频流连接中", "Connecting stream")
+              : frameMode === "frames" ? copy("兼容投屏 · 自动刷新", "Compatible view · auto refresh") : copy("实时视频流", "Live video")}
           {frameSize ? ` · ${frameSize.width}×${frameSize.height}` : ""}
         </div> : null}
         {selectedOnline ? <canvas
@@ -752,12 +775,12 @@ class HarmonyPanelErrorBoundary extends Component<HarmonyPanelBoundaryProps, Har
   }
 }
 
-export function SafeHarmonyPanel({ active }: { active: boolean }) {
+export function SafeHarmonyPanel({ active, sessionRunning = false, onGuideAgent }: Omit<HarmonyPanelProps, "onSnapshot">) {
   const [snapshot, setSnapshot] = useState(0);
   const handleSnapshot = useCallback((fingerprint: number) => {
     setSnapshot((current) => (current === fingerprint ? current : fingerprint));
   }, []);
   return <HarmonyPanelErrorBoundary active={active} resetKey={String(snapshot)}>
-    <HarmonyPanel active={active} onSnapshot={handleSnapshot} />
+    <HarmonyPanel active={active} sessionRunning={sessionRunning} onGuideAgent={onGuideAgent} onSnapshot={handleSnapshot} />
   </HarmonyPanelErrorBoundary>;
 }

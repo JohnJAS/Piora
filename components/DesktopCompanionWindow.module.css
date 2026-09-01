@@ -142,10 +142,20 @@
   app-region: no-drag;
 }
 
+.petVisual {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
 .pet {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 92px;
+  height: 112px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -154,7 +164,8 @@
   background: transparent;
   cursor: grab;
   touch-action: none;
-  transform: none;
+  transform: translateX(-50%);
+  clip-path: ellipse(47% 48% at 50% 54%);
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
@@ -179,7 +190,7 @@
   background-image: none !important;
   box-shadow: none !important;
   filter: none;
-  transform: none !important;
+  transform: translateX(-50%) !important;
 }
 
 .bubbleToggle {

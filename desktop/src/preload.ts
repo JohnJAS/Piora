@@ -76,6 +76,10 @@ const runtime = Object.freeze({
   moveCompanionWindow(input: {
     kind: "walk" | "stop" | "drag-start" | "drag-move" | "drag-end";
     direction?: "left" | "right";
+    pattern?: "line" | "arc" | "orbit";
+    angleRadians?: number;
+    curvature?: number;
+    clockwise?: boolean;
     distance?: number;
     durationMs?: number;
     screenX?: number;
@@ -106,6 +110,9 @@ const runtime = Object.freeze({
   },
   setGlobalShortcut(enabled: boolean): Promise<boolean> {
     return ipcRenderer.invoke("pi:set-global-shortcut", enabled) as Promise<boolean>;
+  },
+  setNetworkProxy(settings: { mode: "system" | "manual" | "direct"; proxyUrl: string; bypass: string }): Promise<boolean> {
+    return ipcRenderer.invoke("pi:set-network-proxy", settings) as Promise<boolean>;
   },
   selectHarmonyRuntimePath(kind: "sdk" | "hdc"): Promise<string | null> {
     return ipcRenderer.invoke("pi:harmony-runtime-picker", kind) as Promise<string | null>;

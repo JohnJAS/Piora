@@ -1,8 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { useI18n } from "@/hooks/useI18n";
+import {
+  readPromptOptimizerModel,
+  readPromptOptimizerSystemPrompt,
+} from "@/lib/prompt-optimizer-settings";
 import type { SystemPromptCatalog, SystemPromptTemplate } from "@/lib/system-prompt-types";
 import { AliIcon } from "./AliIcon";
 import { requestConfirmation } from "./ConfirmDialog";
@@ -21,9 +25,18 @@ interface Props {
 const EMPTY_CATALOG: SystemPromptCatalog = {
   templates: [],
   defaultTemplateId: null,
+  selectorVisible: true,
   maxPromptLength: 100_000,
   maxNameLength: 80,
 };
+
+const PI_DEFAULT_SELECTION_ID = "__pi_default__";
+
+interface ModelsPayload {
+  modelList?: Array<{ provider: string; id: string }>;
+  defaultModel?: { provider: string; modelId: string } | null;
+  error?: string;
+}
 
 async function requestCatalog(method: string, body?: Record<string, unknown>): Promise<SystemPromptCatalog> {
   const response = await fetch("/api/system-prompt", {
@@ -41,6 +54,7 @@ async function requestCatalog(method: string, body?: Record<string, unknown>): P
 
 export function SystemPromptEditor({ effectivePrompt, compact = false, onSaved }: Props) {
   const { t } = useI18n();
+  const promptFieldId = useId();
   const [catalog, setCatalog] = useState<SystemPromptCatalog>(EMPTY_CATALOG);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -48,34 +62,53 @@ export function SystemPromptEditor({ effectivePrompt, compact = false, onSaved }
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
+  const [optimizationPreview, setOptimizationPreview] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const optimizerAbortRef = useRef<AbortController | null>(null);
 
   const selectedTemplate = catalog.templates.find((template) => template.id === selectedId) ?? null;
+  const showingPiDefault = !creating && selectedId === PI_DEFAULT_SELECTION_ID;
 
   const chooseTemplate = useCallback((template: SystemPromptTemplate) => {
+    optimizerAbortRef.current?.abort();
+    optimizerAbortRef.current = null;
+    setOptimizing(false);
     setSelectedId(template.id);
     setCreating(false);
     setName(template.name);
     setPrompt(template.prompt);
+    setOptimizationPreview(null);
+    setStatus(null);
+    setError(null);
+  }, []);
+
+  const choosePiDefault = useCallback(() => {
+    optimizerAbortRef.current?.abort();
+    optimizerAbortRef.current = null;
+    setOptimizing(false);
+    setSelectedId(PI_DEFAULT_SELECTION_ID);
+    setCreating(false);
+    setName("");
+    setPrompt("");
+    setOptimizationPreview(null);
     setStatus(null);
     setError(null);
   }, []);
 
   const applyCatalog = useCallback((next: SystemPromptCatalog, preferredId?: string | null) => {
     setCatalog(next);
+    if (preferredId === PI_DEFAULT_SELECTION_ID) {
+      choosePiDefault();
+      return;
+    }
     const nextSelected = next.templates.find((template) => template.id === preferredId)
       ?? next.templates.find((template) => template.id === next.defaultTemplateId)
-      ?? next.templates[0]
       ?? null;
     if (nextSelected) chooseTemplate(nextSelected);
-    else {
-      setSelectedId(null);
-      setCreating(true);
-      setName("");
-      setPrompt("");
-    }
-  }, [chooseTemplate]);
+    else choosePiDefault();
+  }, [choosePiDefault, chooseTemplate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,6 +120,8 @@ export function SystemPromptEditor({ effectivePrompt, compact = false, onSaved }
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [applyCatalog]);
+
+  useEffect(() => () => optimizerAbortRef.current?.abort(), []);
 
   const publish = useCallback((next: SystemPromptCatalog, preferredId?: string | null) => {
     applyCatalog(next, preferredId);
@@ -121,7 +156,7 @@ export function SystemPromptEditor({ effectivePrompt, compact = false, onSaved }
     setStatus(null);
     try {
       const next = await requestCatalog("PATCH", { defaultTemplateId: id });
-      publish(next, selectedId);
+      publish(next, id === null ? PI_DEFAULT_SELECTION_ID : selectedId);
       setStatus(t("system.defaultUpdated"));
     } catch (defaultError) {
       setError(defaultError instanceof Error ? defaultError.message : String(defaultError));
@@ -129,6 +164,70 @@ export function SystemPromptEditor({ effectivePrompt, compact = false, onSaved }
       setSaving(false);
     }
   }, [publish, selectedId, t]);
+
+  const setSelectorVisible = useCallback(async (visible: boolean) => {
+    setSaving(true);
+    setError(null);
+    setStatus(null);
+    try {
+      const next = await requestCatalog("PATCH", { selectorVisible: visible });
+      setCatalog(next);
+      window.dispatchEvent(new CustomEvent("piora:system-prompt-changed"));
+      onSaved?.();
+      setStatus(t("system.selectorVisibilitySaved"));
+    } catch (visibilityError) {
+      setError(visibilityError instanceof Error ? visibilityError.message : String(visibilityError));
+    } finally {
+      setSaving(false);
+    }
+  }, [onSaved, t]);
+
+  const optimizePrompt = useCallback(async () => {
+    const source = prompt.trim();
+    if (!source || optimizing) return;
+    optimizerAbortRef.current?.abort();
+    const controller = new AbortController();
+    optimizerAbortRef.current = controller;
+    setOptimizing(true);
+    setOptimizationPreview(null);
+    setError(null);
+    setStatus(null);
+    try {
+      const modelsResponse = await fetch("/api/models", { cache: "no-store", signal: controller.signal });
+      const models = await modelsResponse.json().catch(() => ({})) as ModelsPayload;
+      if (!modelsResponse.ok) throw new Error(models.error ?? t("system.optimizeFailed"));
+      const configured = readPromptOptimizerModel(window.localStorage);
+      const selected = configured && models.modelList?.some((model) => (
+        model.provider === configured.provider && model.id === configured.modelId
+      )) ? configured : models.defaultModel;
+      if (!selected) throw new Error(t("system.optimizeNoModel"));
+
+      const response = await fetch("/api/prompts/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: source,
+          provider: selected.provider,
+          modelId: selected.modelId,
+          systemPrompt: `${readPromptOptimizerSystemPrompt(window.localStorage)}\n\nThe text to optimize is a reusable system-prompt template. Preserve its intent and language. Improve the role, goals, constraints, tool guidance, boundaries, and verifiable outcomes where the source supports them. Do not invent project facts. Return only the optimized template text.`,
+        }),
+        signal: controller.signal,
+      });
+      const data = await response.json().catch(() => ({})) as { optimizedPrompt?: unknown; error?: unknown };
+      if (!response.ok || typeof data.optimizedPrompt !== "string" || !data.optimizedPrompt.trim()) {
+        throw new Error(typeof data.error === "string" ? data.error : t("system.optimizeFailed"));
+      }
+      const result = Array.from(data.optimizedPrompt.trim()).slice(0, catalog.maxPromptLength).join("");
+      setOptimizationPreview(result);
+    } catch (optimizeError) {
+      if (!controller.signal.aborted) {
+        setError(optimizeError instanceof Error ? optimizeError.message : t("system.optimizeFailed"));
+      }
+    } finally {
+      if (optimizerAbortRef.current === controller) optimizerAbortRef.current = null;
+      if (!controller.signal.aborted) setOptimizing(false);
+    }
+  }, [catalog.maxPromptLength, optimizing, prompt, t]);
 
   const remove = useCallback(async () => {
     if (!selectedTemplate || !await requestConfirmation({
@@ -157,6 +256,23 @@ export function SystemPromptEditor({ effectivePrompt, compact = false, onSaved }
 
   return (
     <div className={`${styles.editor}${compact ? ` ${styles.compact}` : ""}`}>
+      <label className={styles.visibilitySetting}>
+        <span className={styles.visibilityCopy}>
+          <strong>{t("system.selectorVisibilityTitle")}</strong>
+          <small>{t("system.selectorVisibilityDescription")}</small>
+        </span>
+        <span className={styles.switch}>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={catalog.selectorVisible}
+            disabled={loading || saving}
+            onChange={(event) => { void setSelectorVisible(event.target.checked); }}
+          />
+          <span aria-hidden="true" />
+        </span>
+      </label>
+
       <div className={styles.library}>
         <div className={styles.libraryHeader}>
           <span>{t("system.templateLibrary")}</span>
@@ -164,10 +280,14 @@ export function SystemPromptEditor({ effectivePrompt, compact = false, onSaved }
             type="button"
             disabled={loading || saving}
             onClick={() => {
+              optimizerAbortRef.current?.abort();
+              optimizerAbortRef.current = null;
+              setOptimizing(false);
               setCreating(true);
               setSelectedId(null);
               setName("");
               setPrompt("");
+              setOptimizationPreview(null);
               setStatus(null);
               setError(null);
             }}
@@ -181,8 +301,9 @@ export function SystemPromptEditor({ effectivePrompt, compact = false, onSaved }
             type="button"
             className={styles.piDefaultRow}
             data-default={catalog.defaultTemplateId === null ? "true" : undefined}
+            aria-pressed={showingPiDefault}
             disabled={saving}
-            onClick={() => void setDefault(null)}
+            onClick={choosePiDefault}
           >
             <AliIcon name="setting" size={14} />
             <span><strong>{t("system.piDefault")}</strong><small>{t("system.piDefaultDescription")}</small></span>
@@ -206,7 +327,7 @@ export function SystemPromptEditor({ effectivePrompt, compact = false, onSaved }
 
       <div className={styles.form}>
         <div className={styles.formHeading}>
-          <span>{t(creating ? "system.newTemplate" : "system.editTemplate")}</span>
+          <span>{t(showingPiDefault ? "system.piDefaultPreviewTitle" : creating ? "system.newTemplate" : "system.editTemplate")}</span>
           {!creating && selectedTemplate ? (
             <div>
               {catalog.defaultTemplateId !== selectedTemplate.id ? (
@@ -220,41 +341,104 @@ export function SystemPromptEditor({ effectivePrompt, compact = false, onSaved }
             </div>
           ) : null}
         </div>
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>{t("system.templateName")}</span>
-          <input
-            value={name}
-            maxLength={catalog.maxNameLength}
-            disabled={loading || saving}
-            placeholder={t("system.templateNamePlaceholder")}
-            onChange={(event) => { setName(event.target.value); setStatus(null); setError(null); }}
-          />
-        </label>
-        <label className={styles.field}>
-          <span className={styles.fieldLabel}>{t("system.customLabel")}</span>
-          <span className={styles.fieldDescription}>{t("system.templateDescription")}</span>
-          <textarea
-            className={styles.textarea}
-            value={prompt}
-            rows={compact ? 8 : 12}
-            maxLength={catalog.maxPromptLength}
-            disabled={loading || saving}
-            placeholder={t("system.customPlaceholder")}
-            onChange={(event) => { setPrompt(event.target.value); setStatus(null); setError(null); }}
-          />
-        </label>
+        {showingPiDefault ? (
+          <div className={styles.piDefaultPreview}>
+            <div className={styles.piDefaultPreviewHeader}>
+              <span><AliIcon name="setting" size={15} />{t("system.piDefault")}</span>
+              {catalog.defaultTemplateId !== null ? (
+                <button type="button" disabled={saving} onClick={() => void setDefault(null)}>
+                  {t("system.makeDefault")}
+                </button>
+              ) : <em>{t("system.defaultBadgeShort")}</em>}
+            </div>
+            <pre>{t("system.piDefaultPromptPreview")}</pre>
+            <p>{t("system.piDefaultPromptDynamicDescription")}</p>
+          </div>
+        ) : (
+          <>
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>{t("system.templateName")}</span>
+              <input
+                value={name}
+                maxLength={catalog.maxNameLength}
+                disabled={loading || saving}
+                placeholder={t("system.templateNamePlaceholder")}
+                onChange={(event) => { setName(event.target.value); setStatus(null); setError(null); }}
+              />
+            </label>
+            <div className={styles.field}>
+              <span className={styles.aiFieldHeading}>
+                <label className={styles.fieldLabel} htmlFor={promptFieldId}>{t("system.customLabel")}</label>
+                <button
+                  type="button"
+                  disabled={loading || saving || optimizing || !prompt.trim()}
+                  onClick={() => { void optimizePrompt(); }}
+                >
+                  <AliIcon name="sparkles" size={13} />
+                  {t(optimizing ? "system.optimizing" : "system.optimize")}
+                </button>
+              </span>
+              <span className={styles.fieldDescription}>{t("system.templateDescription")}</span>
+              <span className={styles.fieldDescription}>{t("system.optimizeDescription")}</span>
+              <textarea
+                id={promptFieldId}
+                className={styles.textarea}
+                value={prompt}
+                rows={compact ? 8 : 12}
+                maxLength={catalog.maxPromptLength}
+                disabled={loading || saving}
+                placeholder={t("system.customPlaceholder")}
+                onChange={(event) => {
+                  optimizerAbortRef.current?.abort();
+                  optimizerAbortRef.current = null;
+                  setOptimizing(false);
+                  setPrompt(event.target.value);
+                  setOptimizationPreview(null);
+                  setStatus(null);
+                  setError(null);
+                }}
+              />
+              {optimizationPreview ? (
+                <div className={styles.optimizationPreview}>
+                  <div><AliIcon name="sparkles" size={13} /><strong>{t("system.optimizePreview")}</strong></div>
+                  <pre>{optimizationPreview}</pre>
+                  <div className={styles.optimizationActions}>
+                    <button type="button" onClick={() => setOptimizationPreview(null)}>{t("system.keepOriginal")}</button>
+                    <button
+                      type="button"
+                      className={styles.primaryButton}
+                      onClick={() => {
+                        setPrompt(optimizationPreview);
+                        setOptimizationPreview(null);
+                        setStatus(null);
+                        setError(null);
+                      }}
+                    >
+                      {t("system.useOptimized")}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
 
-        <div className={styles.footer}>
-          <div className={styles.feedback}>
-            <span role={error ? "alert" : "status"} data-error={Boolean(error)}>{error ?? status ?? t("system.snapshotHint")}</span>
-            <span className={styles.count}>{Array.from(prompt).length.toLocaleString()} / {catalog.maxPromptLength.toLocaleString()}</span>
+            <div className={styles.footer}>
+              <div className={styles.feedback}>
+                <span role={error ? "alert" : "status"} data-error={Boolean(error)}>{error ?? status ?? t("system.snapshotHint")}</span>
+                <span className={styles.count}>{Array.from(prompt).length.toLocaleString()} / {catalog.maxPromptLength.toLocaleString()}</span>
+              </div>
+              <div className={styles.actions}>
+                <button className={styles.primaryButton} type="button" disabled={loading || saving || optimizing || !dirty || !name.trim()} onClick={() => void save()}>
+                  {saving ? t("system.saving") : t("system.saveTemplate")}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+        {showingPiDefault && (error || status) ? (
+          <div className={styles.previewFeedback} role={error ? "alert" : "status"} data-error={Boolean(error)}>
+            {error ?? status}
           </div>
-          <div className={styles.actions}>
-            <button className={styles.primaryButton} type="button" disabled={loading || saving || !dirty || !name.trim()} onClick={() => void save()}>
-              {saving ? t("system.saving") : t("system.saveTemplate")}
-            </button>
-          </div>
-        </div>
+        ) : null}
       </div>
 
       {!compact ? (

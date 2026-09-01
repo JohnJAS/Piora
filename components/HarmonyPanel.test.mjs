@@ -14,3 +14,12 @@ test("device actions keep the existing Harmony video connection alive", () => {
   assert.doesNotMatch(actionSource, /requestFrame/);
   assert.match(source, /onClick=\{requestFrame\}/);
 });
+
+test("keeps a read-only observer surface available while an Agent is running", () => {
+  assert.match(source, /sessionRunning/);
+  assert.match(source, /agentHasControl/);
+  assert.match(source, /旁观模式 · Agent 正在操作/);
+  assert.match(source, /投屏会独立运行/);
+  assert.match(source, /onGuideAgent/);
+  assert.match(source, /frameMode === "frames"/);
+});

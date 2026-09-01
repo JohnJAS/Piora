@@ -40,6 +40,10 @@ declare global {
       moveCompanionWindow?: (input: {
         kind: "walk" | "stop" | "drag-start" | "drag-move" | "drag-end";
         direction?: "left" | "right";
+        pattern?: "line" | "arc" | "orbit";
+        angleRadians?: number;
+        curvature?: number;
+        clockwise?: boolean;
         distance?: number;
         durationMs?: number;
         screenX?: number;
@@ -53,6 +57,11 @@ declare global {
       companionAction?: (action: "focus-main" | "open-settings" | "open-panel" | "hide") => Promise<boolean>;
       setGlobalShortcut?: (enabled: boolean) => Promise<boolean>;
       setKeyboardShortcuts?: (bindings: Record<string, string | null>) => Promise<boolean>;
+      setNetworkProxy?: (settings: {
+        mode: "system" | "manual" | "direct";
+        proxyUrl: string;
+        bypass: string;
+      }) => Promise<boolean>;
       selectHarmonyRuntimePath?: (kind: "sdk" | "hdc") => Promise<string | null>;
       onMenuAction?: (listener: (action: string) => void) => () => void;
       browser?: {

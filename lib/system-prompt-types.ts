@@ -23,6 +23,7 @@ export interface SessionSystemPromptBinding {
 export interface SystemPromptCatalog {
   templates: SystemPromptTemplate[];
   defaultTemplateId: string | null;
+  selectorVisible: boolean;
   maxPromptLength: number;
   maxNameLength: number;
 }

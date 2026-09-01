@@ -8,6 +8,7 @@ import { useSendShortcut } from "@/hooks/useSendShortcut";
 import { useStreamingSendPreference } from "@/hooks/useStreamingSendPreference";
 import { AliIcon } from "./AliIcon";
 import { SettingsPortabilityCard } from "./SettingsPortabilityCard";
+import { NetworkProxySettings } from "./NetworkProxySettings";
 import { SystemPromptEditor } from "./SystemPromptEditor";
 import { PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH, PROMPT_OPTIMIZER_SYSTEM_PROMPT } from "@/lib/prompt-optimizer";
 import {
@@ -35,6 +36,7 @@ interface Props {
   onClose: () => void;
   activeKey: SettingsKey;
   onActiveKeyChange: (key: SettingsKey) => void;
+  onOpenOnboarding?: () => void;
   modelCwd?: string;
   sections?: Partial<Record<SettingsKey, ReactNode>>;
   conversation: {
@@ -83,6 +85,7 @@ export function SettingsDialog({
   onClose,
   activeKey,
   onActiveKeyChange,
+  onOpenOnboarding,
   modelCwd,
   sections = {},
   conversation,
@@ -504,6 +507,20 @@ export function SettingsDialog({
                   <p>{t("settings.generalDescription")}</p>
                 </div>
                 <SettingsPortabilityCard />
+                <NetworkProxySettings />
+                {onOpenOnboarding ? <section className={styles.conversationSection}>
+                  <div className={styles.conversationRow}>
+                    <span className={styles.featureIcon}><AliIcon name="rocket" size={19} /></span>
+                    <div className={styles.conversationCopy}>
+                      <div className={styles.rowTitle}>{t("settings.firstRunGuideTitle")}</div>
+                      <div className={styles.rowDescription}>{t("settings.firstRunGuideDescription")}</div>
+                    </div>
+                    <button className={styles.primaryButton} type="button" onClick={onOpenOnboarding}>
+                      <AliIcon name="play" size={13} />
+                      {t("settings.firstRunGuideAction")}
+                    </button>
+                  </div>
+                </section> : null}
                 {desktop.available && window.piDesktop?.getAgentDataDirectory ? <section className={styles.conversationSection}>
                   <div className={styles.agentDataHeader}>
                     <div className={styles.conversationCopy}>

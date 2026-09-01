@@ -61,6 +61,7 @@ interface Props {
   onOpenAutomation?: (automationId: string) => void;
   onCapabilitiesChange?: (capabilities: SessionCapabilitiesState | null) => void;
   onOpenCapabilitySettings?: () => void;
+  onPromptSubmitted?: () => void;
 }
 
 export interface TaskControls {
@@ -240,7 +241,7 @@ function ProcessDetailsGroup({ messageCount, toolCallCount, children, t }: { mes
   );
 }
 
-export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenCapabilitySettings }: Props) {
+export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenCapabilitySettings, onPromptSubmitted }: Props) {
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
@@ -306,6 +307,10 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
   });
   const sessionBusy = agentRunning || bashRunning;
   const locallyClaimedInitialPromptRef = useRef<string | null>(null);
+  const handleComposerSend = useCallback(async (...args: Parameters<typeof handleSend>) => {
+    await handleSend(...args);
+    onPromptSubmitted?.();
+  }, [handleSend, onPromptSubmitted]);
 
   useEffect(() => {
     if (!isNew || !initialPrompt || sessionBusy || isAutoModelSelection) return;
@@ -316,8 +321,8 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
       initialPrompt.message,
       initialPrompt.images,
       initialPrompt.files,
-    );
-  }, [claimInitialPrompt, handleSend, initialPrompt, isAutoModelSelection, isNew, sessionBusy]);
+    ).then(() => onPromptSubmitted?.());
+  }, [claimInitialPrompt, handleSend, initialPrompt, isAutoModelSelection, isNew, onPromptSubmitted, sessionBusy]);
 
   // Builtin slash-command results echo into the conversation area instead of
   // only appearing as transient notices, so the user can see what a command
@@ -675,7 +680,7 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
           />
         </>
       )}
-      onSend={handleSend}
+      onSend={handleComposerSend}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type RefObject } from "react";
 
 export type HarmonyFrameStatus = "idle" | "loading" | "live" | "error";
+export type HarmonyFrameMode = "idle" | "video" | "frames";
 
 export interface HarmonyLiveFrame {
   serial: string;
@@ -133,6 +134,7 @@ function reconnectDelay(failures: number): number {
 export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [status, setStatus] = useState<HarmonyFrameStatus>("idle");
+  const [mode, setMode] = useState<HarmonyFrameMode>("idle");
   const [error, setError] = useState<string | null>(null);
   const [frame, setFrame] = useState<HarmonyLiveFrame | null>(null);
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
@@ -141,6 +143,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     if (!options.active || !options.enabled || !options.serial || options.generation === undefined) {
       setFrame(null);
       setStatus("idle");
+      setMode("idle");
       setError(null);
       return;
     }
@@ -157,6 +160,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     let activeAttempt: StreamAttempt | undefined;
     setFrame(null);
     setStatus("loading");
+    setMode("video");
     setError(null);
     const initialCanvas = options.canvasRef.current;
     initialCanvas?.getContext("2d")?.clearRect(0, 0, initialCanvas.width, initialCanvas.height);
@@ -328,6 +332,71 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       }
     };
 
+    const pollFrames = async () => {
+      let fallbackFailures = 0;
+      setMode("frames");
+      decoder?.close();
+      decoder = undefined;
+      config = undefined;
+      firstKeyframe = false;
+      while (!lifecycle.signal.aborted) {
+        if (document.hidden) {
+          await delay(1_000, lifecycle.signal);
+          continue;
+        }
+        try {
+          const response = await fetch(`/api/harmony/frame?serial=${encodeURIComponent(options.serial)}&v=${Date.now()}`, {
+            cache: "no-store",
+            signal: lifecycle.signal,
+          });
+          if (!response.ok) throw new Error(await responseError(response));
+          const generation = Number(response.headers.get("X-Harmony-Generation"));
+          const frameRevision = Number(response.headers.get("X-Harmony-Revision"));
+          if (!Number.isSafeInteger(generation) || !Number.isSafeInteger(frameRevision)) {
+            throw new Error("Device frame metadata is invalid");
+          }
+          const bitmap = await createImageBitmap(await response.blob());
+          try {
+            const canvas = options.canvasRef.current;
+            if (!canvas || disposed) return;
+            if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
+              canvas.width = bitmap.width;
+              canvas.height = bitmap.height;
+            }
+            canvas.getContext("2d", { alpha: false })?.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height);
+            hasFrame = true;
+            setFrame({
+              serial: options.serial,
+              generation,
+              revision: frameRevision,
+              width: bitmap.width,
+              height: bitmap.height,
+            });
+            setStatus("live");
+            setError(null);
+            fallbackFailures = 0;
+          } finally {
+            bitmap.close();
+          }
+          await delay(120, lifecycle.signal);
+        } catch (frameError) {
+          if (lifecycle.signal.aborted || disposed) return;
+          fallbackFailures += 1;
+          // Agent device actions intentionally interrupt an in-flight passive
+          // screenshot. Keep the last frame visible and retry instead of
+          // presenting the device as unavailable while the Agent is working.
+          if (!hasFrame) {
+            setStatus("error");
+            setError(frameError instanceof Error ? frameError.message : options.fallbackError);
+          } else {
+            setStatus("live");
+            setError(null);
+          }
+          await delay(Math.min(4_000, 250 * (2 ** Math.min(fallbackFailures - 1, 4))), lifecycle.signal);
+        }
+      }
+    };
+
     const connect = async () => {
       while (!lifecycle.signal.aborted) {
         const attempt: StreamAttempt = {
@@ -360,6 +429,16 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           decoder = undefined;
           config = undefined;
           firstKeyframe = false;
+          if ((!hasFrame && failures >= 1) || failures >= 3) {
+            // The packaged low-latency video service is not available on every
+            // device/decoder combination. Fall back to the existing bounded
+            // screenshot endpoint so observation remains available while the
+            // Agent holds the exclusive write lease.
+            await attempt.jpegChain.catch(() => undefined);
+            if (activeAttempt === attempt) activeAttempt = undefined;
+            await pollFrames();
+            return;
+          }
           await attempt.jpegChain.catch(() => undefined);
           await delay(reconnectDelay(failures), lifecycle.signal);
         } finally {
@@ -378,5 +457,5 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     };
   }, [options.active, options.canvasRef, options.enabled, options.fallbackError, options.generation, options.paused, options.serial, refreshKey]);
 
-  return { frame, status, error, refresh };
+  return { frame, status, mode, error, refresh };
 }

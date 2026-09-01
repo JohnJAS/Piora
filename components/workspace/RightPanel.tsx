@@ -46,6 +46,8 @@ interface Props {
   selectedAutomationId: string | null;
   sessionId: string | null;
   sessionName?: string;
+  sessionRunning?: boolean;
+  onGuideAgent?: (() => void) | undefined;
   onSelectAutomation?: (id: string) => void;
   onAutomationChanged?: () => void;
   capabilities: SessionCapabilitiesState | null;
@@ -87,7 +89,11 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
         : enabledCount === items.length
           ? "on"
           : "partial";
-    const labelKey = status === "on"
+    const labelKey = kind === "device" && status === "unavailable"
+      ? "sessionTools.panelDeviceUnavailable"
+      : kind === "device" && status === "off"
+        ? "sessionTools.panelDeviceAccessOff"
+        : status === "on"
       ? "sessionTools.panelAccessOn"
       : status === "partial"
         ? "sessionTools.panelAccessPartial"
@@ -288,7 +294,7 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
       {activeTab === "browser" ? <div className={styles.capabilityPanel}>{capabilityAccess("browser")}<div className={styles.capabilityPanelBody}><RenderErrorBoundary resetKey={`browser:${props.sessionId ?? "manual"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><BrowserPanel active={active && activeTab === "browser"} maximized={props.maximized} sessionId={props.sessionId} /></RenderErrorBoundary></div></div> : null}
     </section>
     <section id="workspace-harmony" role="tabpanel" aria-labelledby="workspace-harmony-tab" hidden={activeTab !== "harmony"} className={styles.panel}>
-      {activeTab === "harmony" ? <div className={styles.capabilityPanel}>{capabilityAccess("device")}<div className={styles.capabilityPanelBody}><RenderErrorBoundary resetKey={`harmony:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><SafeHarmonyPanel active={active && activeTab === "harmony"} /></RenderErrorBoundary></div></div> : null}
+      {activeTab === "harmony" ? <div className={styles.capabilityPanel}>{capabilityAccess("device")}<div className={styles.capabilityPanelBody}><RenderErrorBoundary resetKey={`harmony:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><SafeHarmonyPanel active={active && activeTab === "harmony"} sessionRunning={props.sessionRunning} onGuideAgent={props.onGuideAgent} /></RenderErrorBoundary></div></div> : null}
     </section>
     <section id="workspace-automation" role="tabpanel" aria-labelledby="workspace-automation-tab" hidden={activeTab !== "automation"} className={styles.panel}>
       {activeTab === "automation" ? <RenderErrorBoundary resetKey={`automation:${props.selectedAutomationId ?? "list"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><AutomationPanel automationId={props.selectedAutomationId} sessionId={props.sessionId} sessionName={props.sessionName} cwd={cwd} onSelectAutomation={props.onSelectAutomation} onAutomationChanged={props.onAutomationChanged} /></RenderErrorBoundary> : null}

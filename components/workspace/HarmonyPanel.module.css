@@ -36,7 +36,7 @@
   background: color-mix(in srgb, var(--bg) 96%, var(--surface-raised));
 }
 
-.toolbarTitle,.toolbarActions,.deviceBar,.keyRow,.inspectRow,.controlNotice,.safetyNote { display: flex; align-items: center; }
+.toolbarTitle,.toolbarActions,.deviceBar,.keyRow,.inspectRow,.controlNotice,.observerNotice,.observerCopy,.safetyNote { display: flex; align-items: center; }
 .toolbarTitle { min-width: 0; gap: 8px; }
 .toolbarTitle > span:last-child { min-width: 0; display: grid; gap: 1px; }
 .toolbarTitle strong { font-size: var(--text-xs); font-weight: 650; }
@@ -127,6 +127,14 @@
 .stopButton { color: var(--status-failed); }
 .stopButton:hover:not(:disabled) { border-color: color-mix(in srgb, var(--status-failed) 28%, var(--border)); background: color-mix(in srgb, var(--status-failed) 8%, transparent); color: var(--status-failed); }
 .controlNotice { min-height: 28px; flex: 0 0 auto; justify-content: center; gap: 6px; padding: 5px 8px; border-radius: 7px; background: color-mix(in srgb, var(--accent) 6%, transparent); color: var(--text-muted); font-size: var(--text-xs); }
+.observerNotice { min-width: 0; flex: 0 0 auto; justify-content: space-between; gap: 10px; padding: 7px 8px; border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--border)); border-radius: 9px; background: color-mix(in srgb, var(--accent) 5%, var(--bg)); }
+.observerNotice[data-agent-control="true"] { border-color: color-mix(in srgb, var(--accent) 24%, var(--border)); background: color-mix(in srgb, var(--accent) 8%, var(--bg)); }
+.observerCopy { min-width: 0; gap: 7px; color: var(--accent); }
+.observerCopy > span { min-width: 0; display: grid; gap: 1px; }
+.observerCopy strong { color: var(--text); font-size: var(--text-xs); font-weight: 650; }
+.observerCopy small { color: var(--text-dim); font-size: var(--text-xs); line-height: 1.35; }
+.observerNotice > button { min-height: 28px; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 5px; padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border)); border-radius: 7px; background: var(--bg); color: var(--text-muted); font-size: var(--text-xs); white-space: nowrap; }
+.observerNotice > button:hover { background: var(--bg-hover); color: var(--text); }
 
 .deviceTabs { display: inline-flex; width: fit-content; flex: 0 0 auto; gap: 2px; padding: 2px; border-radius: 8px; background: var(--surface-muted); }
 .deviceTabs button { min-height: 26px; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 0; border-radius: 6px; background: transparent; color: var(--text-dim); font-size: var(--text-xs); }

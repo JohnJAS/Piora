@@ -1,12 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { SpeechStatus } from "@/lib/speech-types";
 import { AliIcon } from "./AliIcon";
 import styles from "./SpeechSettings.module.css";
 
 const SPEECH_SETTINGS_CHANGED_EVENT = "piora:speech-settings-changed";
+
+interface ManualSpeechPackState {
+  version: string;
+  platformKey: string;
+  sources: Array<{ name: string; url: string; uploaded: boolean }>;
+  complete: boolean;
+}
 
 function formatBytes(bytes: number | null): string {
   if (!bytes || bytes <= 0) return "—";
@@ -30,13 +37,25 @@ export function SpeechSettings() {
   const [status, setStatus] = useState<SpeechStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [manualBusy, setManualBusy] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [manual, setManual] = useState<ManualSpeechPackState | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     const response = await fetch("/api/speech/settings", { cache: "no-store" });
     if (!response.ok) throw new Error(await responseError(response));
     const next = await response.json() as SpeechStatus;
     setStatus(next);
+    return next;
+  }, []);
+
+  const loadManual = useCallback(async () => {
+    const response = await fetch("/api/speech/manual", { cache: "no-store" });
+    if (!response.ok) throw new Error(await responseError(response));
+    const next = await response.json() as ManualSpeechPackState;
+    setManual(next);
     return next;
   }, []);
 
@@ -51,6 +70,12 @@ export function SpeechSettings() {
       });
     return () => { cancelled = true; };
   }, [load]);
+
+  useEffect(() => {
+    void loadManual().catch((loadError: unknown) => {
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    });
+  }, [loadManual]);
 
   useEffect(() => {
     if (status?.install.phase !== "downloading" && status?.install.phase !== "installing") return;
@@ -103,6 +128,45 @@ export function SpeechSettings() {
     const selected = await window.piDesktop?.selectSpeechPackDirectory?.(status?.packDirectory);
     if (selected) await patchSettings({ packDirectory: selected });
   });
+
+  const importManualFiles = useCallback(async (files: File[]) => {
+    if (!manual || files.length === 0) return;
+    const expected = new Set(manual.sources.map((source) => source.name));
+    const selected = files.filter((file) => expected.has(file.name));
+    if (selected.length === 0) {
+      setError(t("speech.manualUnknownFile"));
+      return;
+    }
+    setManualBusy(true);
+    setError(null);
+    try {
+      let next = manual;
+      for (const file of selected) {
+        const response = await fetch(`/api/speech/manual?name=${encodeURIComponent(file.name)}`, {
+          method: "PUT",
+          headers: { "content-type": "application/octet-stream" },
+          body: file,
+        });
+        if (!response.ok) throw new Error(await responseError(response));
+        const payload = await response.json() as { manual: ManualSpeechPackState };
+        next = payload.manual;
+        setManual(next);
+      }
+      await load();
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : String(importError));
+    } finally {
+      setManualBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, [load, manual, t]);
+
+  const handleDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDragActive(false);
+    if (status?.installed || manualBusy) return;
+    void importManualFiles(Array.from(event.dataTransfer.files));
+  }, [importManualFiles, manualBusy, status?.installed]);
 
   const installActive = status?.install.phase === "downloading" || status?.install.phase === "installing";
   const progress = status && status.install.totalBytes > 0
@@ -187,6 +251,54 @@ export function SpeechSettings() {
           )}
         </div>
         <p className={styles.networkNote}>{t("speech.networkNote")}</p>
+      </section>
+
+      <section className={styles.card}>
+        <div className={styles.cardHeader}>
+          <div>
+            <h3>{t("speech.manualTitle")}</h3>
+            <p>{t("speech.manualDescription")}</p>
+          </div>
+          <span className={styles.manualBadge}>{t("speech.manualAlwaysAvailable")}</span>
+        </div>
+        <div className={styles.downloadList}>
+          {manual?.sources.map((source, index) => (
+            <a key={source.name} href={source.url} target="_blank" rel="noreferrer" download={source.name}>
+              <span><AliIcon name="download" size={14} />{t("speech.manualDownloadFile", { index: index + 1 })}</span>
+              <code>{source.name}</code>
+              {source.uploaded ? <strong><AliIcon name="check" size={13} />{t("speech.manualAdded")}</strong> : null}
+            </a>
+          ))}
+        </div>
+        <div
+          className={styles.dropZone}
+          data-active={dragActive || undefined}
+          data-disabled={manualBusy || status?.installed || undefined}
+          onDragEnter={(event) => { event.preventDefault(); if (!status?.installed) setDragActive(true); }}
+          onDragOver={(event) => event.preventDefault()}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragActive(false);
+          }}
+          onDrop={handleDrop}
+        >
+          <AliIcon name={status?.installed ? "check-circle" : "cloud-upload"} size={24} />
+          <strong>{status?.installed ? t("speech.manualInstalled") : manualBusy ? t("speech.manualVerifying") : t("speech.manualDrop")}</strong>
+          <span>{status?.installed ? t("speech.manualInstalledHint") : t("speech.manualDropHint")}</span>
+          {!status?.installed ? (
+            <button type="button" className={styles.secondary} disabled={manualBusy} onClick={() => fileInputRef.current?.click()}>
+              {t("speech.manualChooseFiles")}
+            </button>
+          ) : null}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            hidden
+            disabled={manualBusy || status?.installed}
+            onChange={(event) => void importManualFiles(Array.from(event.target.files ?? []))}
+          />
+        </div>
+        <p className={styles.networkNote}>{t("speech.manualIntegrity")}</p>
       </section>
 
       <section className={styles.card}>
