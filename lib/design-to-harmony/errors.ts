@@ -14,9 +14,25 @@ export type DesignToHarmonyErrorCode =
   | "ANALYSIS_FAILED"
   | "ANALYSIS_TOO_LARGE"
   | "UNSUPPORTED_PROJECT"
+  | "IR_NOT_FOUND"
+  | "GENERATION_BLOCKED"
+  | "GENERATION_FAILED"
+  | "BUILD_TOOL_NOT_FOUND"
+  | "BUILD_SNAPSHOT_TOO_LARGE"
+  | "BUILD_FAILED"
+  | "VALIDATION_CANCELLED"
+  | "DEVICE_VALIDATION_FAILED"
+  | "PREVIEW_NOT_FOUND"
+  | "PREVIEW_CONFLICT"
+  | "PATCH_CONFLICT"
+  | "PATCH_STALE"
+  | "APPLY_TOKEN_INVALID"
+  | "APPLY_BLOCKED"
+  | "APPLY_FAILED"
+  | "APPLY_RECOVERY_REQUIRED"
   | "INTERNAL_ERROR";
 
-export type DesignToHarmonyErrorStage = "source" | "import" | "analyze" | "project" | "plan" | "store";
+export type DesignToHarmonyErrorStage = "source" | "import" | "analyze" | "project" | "plan" | "generate" | "preview" | "review" | "apply" | "build" | "device" | "visual" | "sync" | "store";
 
 export class DesignToHarmonyError extends Error {
   readonly code: DesignToHarmonyErrorCode;
@@ -59,7 +75,7 @@ export function asDesignToHarmonyError(error: unknown): DesignToHarmonyError {
       cause: error,
     });
   }
-  return new DesignToHarmonyError("INTERNAL_ERROR", "Design import failed", {
+  return new DesignToHarmonyError("INTERNAL_ERROR", "Design to Harmony operation failed", {
     status: 500,
     cause: error,
   });

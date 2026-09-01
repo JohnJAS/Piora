@@ -1,6 +1,6 @@
 {
   "name": "piora",
-  "version": "0.4.40-beta.4",
+  "version": "0.4.40-beta.5",
   "private": true,
   "description": "Open-source Pi coding agent desktop application",
   "author": {
@@ -106,6 +106,7 @@
     "brace-expansion": "5.0.9",
     "hypium-driver": "6.1.210",
     "json-bigint": "^1.0.0",
+    "json5": "^2.2.3",
     "jszip": "^3.10.1",
     "katex": "^0.16.47",
     "mammoth": "^1.12.1",
@@ -124,6 +125,7 @@
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "rrule": "^2.8.1",
+    "sharp": "^0.35.3",
     "tar": "7.5.22",
     "undici": "8.9.0"
   },

@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `ae8b5472d143dbb1c90ac08dfa744fe819ac35ac34f23b9990c25154f0171fb8`
+Lockfile SHA-256: `0b6014edd5cce608b68aa1162a6fa748c0b02fb5a9e360e4bdadf1be094a7a73`
 
-Unique locked packages: **1157**. Runtime packages: **702**. Build/development-only packages: **455**.
+Unique locked packages: **1157**. Runtime packages: **703**. Build/development-only packages: **454**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -101,7 +101,7 @@ Every locked package declares a license.
 | `@grpc/proto-loader` | `0.8.1` | Apache-2.0 | No |
 | `@iconify/types` | `2.0.0` | MIT | No |
 | `@iconify/utils` | `3.1.1` | MIT | No |
-| `@img/colour` | `1.1.0` | MIT | Yes |
+| `@img/colour` | `1.1.0` | MIT | No |
 | `@img/sharp-darwin-arm64` | `0.35.3` | Apache-2.0 | Yes |
 | `@img/sharp-darwin-x64` | `0.35.3` | Apache-2.0 | Yes |
 | `@img/sharp-freebsd-wasm32` | `0.35.3` | Apache-2.0 | Yes |
@@ -470,6 +470,7 @@ Every locked package declares a license.
 | `json-bigint` | `1.0.0` | MIT | No |
 | `json-parse-even-better-errors` | `2.3.1` | MIT | No |
 | `json-schema-to-ts` | `3.1.1` | MIT | No |
+| `json5` | `2.2.3` | MIT | No |
 | `jsonfile` | `6.2.1` | MIT | No |
 | `jszip` | `3.10.1` | (MIT OR GPL-3.0-or-later) | No |
 | `jwa` | `2.0.1` | MIT | No |
@@ -632,7 +633,7 @@ Every locked package declares a license.
 | `semver` | `7.8.0` | ISC | No |
 | `semver` | `7.8.5` | ISC | No |
 | `setimmediate` | `1.0.5` | MIT | No |
-| `sharp` | `0.35.3` | Apache-2.0 | Yes |
+| `sharp` | `0.35.3` | Apache-2.0 | No |
 | `shebang-command` | `2.0.0` | MIT | No |
 | `shebang-regex` | `3.0.0` | MIT | No |
 | `shell-quote` | `1.10.0` | MIT | No |
@@ -1012,7 +1013,6 @@ Every locked package declares a license.
 | `json-stable-stringify-without-jsonify` | `1.0.1` | MIT | No |
 | `json-stringify-safe` | `5.0.1` | ISC | Yes |
 | `json5` | `1.0.2` | MIT | No |
-| `json5` | `2.2.3` | MIT | No |
 | `jsonfile` | `4.0.0` | MIT | No |
 | `jsx-ast-utils` | `3.3.5` | MIT | No |
 | `keyv` | `4.5.4` | MIT | No |

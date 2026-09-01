@@ -41,6 +41,8 @@
     "node_modules.broken",
     "node_modules.broken/**",
     "website",
-    "website/**"
+    "website/**",
+    "lib/design-to-harmony/fixtures/harmony-flex/**",
+    "lib/design-to-harmony/fixtures/harmony-absolute/**"
   ]
 }

@@ -48,7 +48,7 @@ interface Props {
   sessionId: string | null;
   sessionName?: string;
   sessionRunning?: boolean;
-  onGuideAgent?: (() => void) | undefined;
+  onGuideAgent?: ((prompt?: string) => void) | undefined;
   onSelectAutomation?: (id: string) => void;
   onAutomationChanged?: () => void;
   capabilities: SessionCapabilitiesState | null;
@@ -304,7 +304,17 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
       {activeTab === "harmony" ? <div className={styles.capabilityPanel}>{capabilityAccess("device")}<div className={styles.capabilityPanelBody}><RenderErrorBoundary resetKey={`harmony:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><SafeHarmonyPanel active={active && activeTab === "harmony"} sessionRunning={props.sessionRunning} onGuideAgent={props.onGuideAgent} /></RenderErrorBoundary></div></div> : null}
     </section>
     <section id="workspace-design" role="tabpanel" aria-labelledby="workspace-design-tab" hidden={activeTab !== "design"} className={styles.panel}>
-      {activeTab === "design" ? <RenderErrorBoundary resetKey={`design:${cwd ?? "no-project"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><DesignToHarmonyPanel cwd={cwd} active={active && activeTab === "design"} onGuideAgent={props.onGuideAgent} /></RenderErrorBoundary> : null}
+      {activeTab === "design" ? <RenderErrorBoundary resetKey={`design:${cwd ?? "no-project"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><DesignToHarmonyPanel
+        cwd={cwd}
+        active={active && activeTab === "design"}
+        onGuideAgent={props.onGuideAgent}
+        onOpenFile={(path, name) => { props.onOpenFile(path, name); onActiveTabChange("files"); }}
+        onOpenReview={() => onActiveTabChange("review")}
+        onProjectChanged={() => {
+          props.onRefresh();
+          window.dispatchEvent(new CustomEvent("piora:git-status-changed", { detail: { cwd } }));
+        }}
+      /></RenderErrorBoundary> : null}
     </section>
     <section id="workspace-automation" role="tabpanel" aria-labelledby="workspace-automation-tab" hidden={activeTab !== "automation"} className={styles.panel}>
       {activeTab === "automation" ? <RenderErrorBoundary resetKey={`automation:${props.selectedAutomationId ?? "list"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><AutomationPanel automationId={props.selectedAutomationId} sessionId={props.sessionId} sessionName={props.sessionName} cwd={cwd} onSelectAutomation={props.onSelectAutomation} onAutomationChanged={props.onAutomationChanged} /></RenderErrorBoundary> : null}

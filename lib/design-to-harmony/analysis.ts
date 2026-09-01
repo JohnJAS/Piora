@@ -68,6 +68,7 @@ export async function analyzeDesignSelection(input: {
   targetNodeIds: string[];
   adapter: DesignSourceAdapter;
   project: HarmonyProjectInventory;
+  includeInteractionTargets?: boolean;
   signal?: AbortSignal;
 }): Promise<{ ir: NormalizedDesignIR; plan: HarmonyUiPlan }> {
   const targetNodeIds = validateDesignTargets(input.record, input.targetNodeIds);
@@ -99,6 +100,25 @@ export async function analyzeDesignSelection(input: {
     const fetched = await input.adapter.getNodes(input.record.source, dependencyIds, input.signal, sourceVersion);
     requirePayloads(dependencyIds, fetched);
     for (const payload of fetched) payloads.set(payload.id, payload);
+  }
+  if (input.includeInteractionTargets) {
+    const reachableNodeIds = collectDesignDependencies(ir).interactionNodeIds.filter((id) => payloads.has(id));
+    const expandedTargetNodeIds = [...new Set([...targetNodeIds, ...reachableNodeIds])].sort();
+    if (expandedTargetNodeIds.length > MAX_TARGETS) {
+      throw new DesignToHarmonyError("ANALYSIS_TOO_LARGE", `The selected flow reaches more than ${MAX_TARGETS} generated pages`, {
+        status: 413,
+        stage: "analyze",
+        details: { selectedTargets: targetNodeIds.length, reachableTargets: expandedTargetNodeIds.length - targetNodeIds.length },
+      });
+    }
+    if (expandedTargetNodeIds.length !== targetNodeIds.length) {
+      ir = normalizeDesignNodes({
+        sourceImportId: input.record.id,
+        sourceVersion,
+        targetNodeIds: expandedTargetNodeIds,
+        payloads: [...payloads.values()],
+      });
+    }
   }
   const dependencies = collectDesignDependencies(ir);
   const issues = validateNormalizedDesign(ir, input.record, input.project);

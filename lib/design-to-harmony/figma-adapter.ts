@@ -494,6 +494,13 @@ export class FigmaSourceAdapter implements DesignSourceAdapter {
     return assets.map(({ nodeId, url }) => ({ nodeId, url }));
   }
 
+  async getImageFills(ref: DesignSourceRef, signal?: AbortSignal): Promise<import("./types").DesignImageFillResult[]> {
+    const value = await this.request(`/v1/files/${encodeURIComponent(ref.fileKey)}/images`, signal);
+    const images = isRecord(value) && isRecord(value.meta) && isRecord(value.meta.images) ? value.meta.images : {};
+    return Object.entries(images).map(([imageRef, url]) => ({ imageRef, url: typeof url === "string" ? url : null }))
+      .sort((left, right) => left.imageRef.localeCompare(right.imageRef));
+  }
+
   async getVersion(ref: DesignSourceRef, signal?: AbortSignal): Promise<DesignSourceVersion> {
     const value = await this.request(`/v1/files/${encodeURIComponent(ref.fileKey)}/meta`, signal);
     if (!isRecord(value) || !isRecord(value.file)) {

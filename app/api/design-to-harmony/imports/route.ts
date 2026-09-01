@@ -4,6 +4,7 @@ import { FigmaSourceAdapter, parseFigmaSourceUrl } from "@/lib/design-to-harmony
 import { readFigmaAccessToken } from "@/lib/design-to-harmony/credential-store";
 import { getDesignImportStore } from "@/lib/design-to-harmony/import-store";
 import type { DesignImportRecord } from "@/lib/design-to-harmony/types";
+import { cleanupDesignToHarmonyCaches } from "@/lib/design-to-harmony/maintenance";
 import {
   designErrorResponse,
   noStoreDesignJson,
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
       updatedAt: timestamp,
     };
     await store.save(record);
+    cleanupDesignToHarmonyCaches();
     return noStoreDesignJson({ record, cached: false }, 201);
   } catch (error) {
     return designErrorResponse(error);

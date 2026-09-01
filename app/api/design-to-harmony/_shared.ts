@@ -67,3 +67,41 @@ export function validateDesignRunId(value: unknown): string {
   }
   return value;
 }
+
+export function validateDesignRevision(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    throw new DesignToHarmonyError("INVALID_ARGUMENT", "A positive expectedRevision is required", { status: 400 });
+  }
+  return value as number;
+}
+
+export function validateDesignStateRevision(value: unknown, label = "expected state revision"): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new DesignToHarmonyError("INVALID_ARGUMENT", `A non-negative ${label} is required`, { status: 400 });
+  }
+  return value as number;
+}
+
+export function validateDesignSha256(value: unknown, label = "hash"): string {
+  if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
+    throw new DesignToHarmonyError("INVALID_ARGUMENT", `A valid ${label} is required`, { status: 400 });
+  }
+  return value;
+}
+
+export function validateDesignRelativePaths(value: unknown, label = "paths"): string[] {
+  if (!Array.isArray(value) || value.length > 250) {
+    throw new DesignToHarmonyError("INVALID_ARGUMENT", `${label} must be a bounded array`, { status: 400 });
+  }
+  const paths = value.map((item) => {
+    if (typeof item !== "string" || !item || item.length > 512 || item.includes("\0") || /^[A-Za-z]:/.test(item)) {
+      throw new DesignToHarmonyError("INVALID_ARGUMENT", `${label} contains an invalid path`, { status: 400 });
+    }
+    const normalized = item.replace(/\\/g, "/");
+    if (normalized.startsWith("/") || normalized.split("/").some((segment) => !segment || segment === "." || segment === "..")) {
+      throw new DesignToHarmonyError("INVALID_ARGUMENT", `${label} contains an unsafe path`, { status: 400 });
+    }
+    return normalized;
+  });
+  return [...new Set(paths)].sort();
+}

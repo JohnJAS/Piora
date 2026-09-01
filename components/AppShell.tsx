@@ -2729,7 +2729,11 @@ export function AppShell() {
           sessionId={selectedSession?.id ?? null}
           sessionName={selectedSession?.name}
           sessionRunning={Boolean(taskControls?.disabled)}
-          onGuideAgent={() => chatInputRef.current?.focus()}
+          onGuideAgent={(prompt) => {
+            setRightPanelMaximized(false);
+            if (prompt?.trim()) chatInputRef.current?.prependText(prompt);
+            window.requestAnimationFrame(() => chatInputRef.current?.focus());
+          }}
           onSelectAutomation={openAutomation}
           onAutomationChanged={() => setSessionKey((key) => key + 1)}
           capabilities={sessionCapabilities}

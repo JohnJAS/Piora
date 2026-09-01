@@ -1,5 +1,6 @@
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import JSON5 from "json5";
 import type { HarmonyProjectComponent, HarmonyProjectInventory, HarmonyProjectModule } from "./types";
 
 const MAX_SCAN_FILES = 4_000;
@@ -41,6 +42,18 @@ function walkFiles(root: string, options: { maxDepth: number; extension?: string
   return { files, scanned: Math.min(scanned, MAX_SCAN_FILES), truncated };
 }
 
+function record(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function readJson5(path: string): Record<string, unknown> | undefined {
+  try { return record(JSON5.parse(readFileSync(path, "utf8"))); } catch { return undefined; }
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : typeof value === "number" && Number.isFinite(value) ? String(value) : undefined;
+}
+
 function moduleFromManifest(projectRoot: string, manifestPath: string): HarmonyProjectModule {
   const mainDirectory = dirname(manifestPath);
   const sourceDirectory = dirname(mainDirectory);
@@ -52,11 +65,22 @@ function moduleFromManifest(projectRoot: string, manifestPath: string): HarmonyP
     name: basename(filePath, ".ets"),
     relativePath: portablePath(relative(projectRoot, filePath)),
   }));
+  const manifest = readJson5(manifestPath);
+  const moduleConfig = record(manifest?.module);
+  const abilities = Array.isArray(moduleConfig?.abilities) ? moduleConfig.abilities.map(record).filter(Boolean) as Record<string, unknown>[] : [];
+  const moduleProfile = readJson5(join(moduleRoot, "build-profile.json5"));
+  const targets = Array.isArray(moduleProfile?.targets)
+    ? moduleProfile.targets.map(record).map((target) => stringValue(target?.name)).filter((value): value is string => Boolean(value))
+    : [];
   return {
-    name: basename(moduleRoot),
+    name: stringValue(moduleConfig?.name) ?? basename(moduleRoot),
     relativePath: portablePath(relative(projectRoot, moduleRoot)) || ".",
     ...(existsSync(etsRoot) ? { sourceRoot: portablePath(relative(projectRoot, etsRoot)) } : {}),
     ...(existsSync(resourceRoot) ? { resourceRoot: portablePath(relative(projectRoot, resourceRoot)) } : {}),
+    targets: targets.length ? [...new Set(targets)].sort() : ["default"],
+    ...(stringValue(moduleConfig?.type) ? { moduleType: stringValue(moduleConfig?.type) } : {}),
+    ...(stringValue(moduleConfig?.mainElement) ? { mainElement: stringValue(moduleConfig?.mainElement) } : {}),
+    ...(stringValue(abilities[0]?.name) ? { abilityName: stringValue(abilities[0]?.name) } : {}),
     components,
   };
 }
@@ -72,11 +96,25 @@ export function analyzeHarmonyProject(projectRootValue: string): HarmonyProjectI
     .map((manifest) => moduleFromManifest(projectRoot, manifest))
     .sort((left, right) => left.name.localeCompare(right.name) || left.relativePath.localeCompare(right.relativePath));
   const selectedModule = modules.find((module) => module.name.toLowerCase() === "entry")?.name ?? modules[0]?.name;
+  const selectedModuleConfig = modules.find((module) => module.name === selectedModule);
+  const buildProfile = readJson5(join(projectRoot, "build-profile.json5"));
+  const app = record(buildProfile?.app);
+  const products = Array.isArray(app?.products)
+    ? app.products.map(record).map((product) => stringValue(product?.name)).filter((value): value is string => Boolean(value))
+    : [];
+  const appScope = readJson5(join(projectRoot, "AppScope", "app.json5"));
+  const appConfig = record(appScope?.app);
   return {
     schemaVersion: 1,
     projectRoot,
     modules,
     ...(selectedModule ? { selectedModule } : {}),
+    ...(selectedModuleConfig?.targets[0] ? { selectedTarget: selectedModuleConfig.targets[0] } : {}),
+    products: products.length ? [...new Set(products)].sort() : ["default"],
+    selectedProduct: products[0] ?? "default",
+    ...(stringValue(app?.compileSdkVersion) ? { compileSdkVersion: stringValue(app?.compileSdkVersion) } : {}),
+    ...(stringValue(app?.compatibleSdkVersion) ? { compatibleSdkVersion: stringValue(app?.compatibleSdkVersion) } : {}),
+    ...(stringValue(appConfig?.bundleName) ? { bundleName: stringValue(appConfig?.bundleName) } : {}),
     scannedFiles: scan.scanned,
     truncated: scan.truncated,
   };

@@ -36,19 +36,21 @@ function isAnalysisRun(value: unknown): value is DesignAnalysisRun {
     && typeof run.sourceVersion === "string"
     && Array.isArray(run.targetNodeIds)
     && run.targetNodeIds.every((id) => typeof id === "string")
-    && ["planned", "failed", "interrupted"].includes(run.status ?? "")
+    && (run.scopeMode === undefined || run.scopeMode === "selection" || run.scopeMode === "flow")
+    && ["planned", "generating", "generated", "ready_to_apply", "applying", "applied", "validating", "cancelling", "cancelled", "failed", "interrupted"].includes(run.status ?? "")
     && typeof run.revision === "number"
     && typeof run.createdAt === "string"
     && typeof run.updatedAt === "string";
 }
 
-export function designAnalysisRunId(projectRoot: string, importId: string, sourceVersion: string, targetNodeIds: string[]): string {
+export function designAnalysisRunId(projectRoot: string, importId: string, sourceVersion: string, targetNodeIds: string[], scopeMode: "selection" | "flow" = "selection"): string {
   const digest = stableDesignHash({
     schema: "piora-design-analysis-run-v1",
     projectRoot: normalizedPath(projectRoot),
     importId,
     sourceVersion,
     targetNodeIds: [...new Set(targetNodeIds)].sort(),
+    ...(scopeMode === "flow" ? { scopeMode } : {}),
   });
   return `run_${digest.slice(0, 20)}`;
 }
@@ -59,6 +61,7 @@ export class DesignAnalysisRunStore {
 
   constructor(root = designToHarmonyDataRoot()) {
     this.filePath = join(resolve(root), "analysis-runs.json");
+    this.recoverInterruptedRuns();
   }
 
   private read(): RunStateFile {
@@ -76,6 +79,25 @@ export class DesignAnalysisRunStore {
   private write(state: RunStateFile): void {
     mkdirSync(dirname(this.filePath), { recursive: true, mode: 0o700 });
     writePrivateFileAtomicSync(this.filePath, `${JSON.stringify(state, null, 2)}\n`);
+  }
+
+  private recoverInterruptedRuns(): void {
+    const state = this.read();
+    let changed = false;
+    state.runs = state.runs.map((run) => {
+      if (!['generating', 'applying', 'validating', 'cancelling'].includes(run.status)) return run;
+      changed = true;
+      return {
+        ...run,
+        status: "interrupted" as const,
+        error: run.status === "applying"
+          ? { code: "APPLY_FAILED", message: "Project apply was interrupted by a process restart", retryable: true }
+          : run.status === "generating"
+            ? { code: "GENERATION_FAILED", message: "Generation was interrupted by a process restart", retryable: true }
+            : { code: "VALIDATION_CANCELLED", message: "Validation was interrupted by a process restart", retryable: true },
+      };
+    });
+    if (changed) this.write(state);
   }
 
   private async mutate<T>(operation: (state: RunStateFile) => T): Promise<T> {
@@ -100,10 +122,10 @@ export class DesignAnalysisRunStore {
     return this.read().runs.find((run) => run.id === id);
   }
 
-  findCached(projectRoot: string, importId: string, sourceVersion: string, targetNodeIds: string[]): DesignAnalysisRun | undefined {
-    const id = designAnalysisRunId(projectRoot, importId, sourceVersion, targetNodeIds);
+  findCached(projectRoot: string, importId: string, sourceVersion: string, targetNodeIds: string[], scopeMode: "selection" | "flow" = "selection"): DesignAnalysisRun | undefined {
+    const id = designAnalysisRunId(projectRoot, importId, sourceVersion, targetNodeIds, scopeMode);
     const run = this.get(id);
-    return run && samePath(run.projectRoot, projectRoot) && run.status === "planned" ? run : undefined;
+    return run && samePath(run.projectRoot, projectRoot) && ["planned", "generated", "applied"].includes(run.status) ? run : undefined;
   }
 
   async save(run: DesignAnalysisRun): Promise<DesignAnalysisRun> {
@@ -119,6 +141,7 @@ export class DesignAnalysisRunStore {
 declare global {
   var __pioraDesignAnalysisRunStore: DesignAnalysisRunStore | undefined;
   var __pioraDesignAnalysisStartLocks: Map<string, Promise<DesignAnalysisRun>> | undefined;
+  var __pioraDesignGenerationStartLocks: Map<string, Promise<DesignAnalysisRun>> | undefined;
 }
 
 export function getDesignAnalysisRunStore(): DesignAnalysisRunStore {
@@ -128,6 +151,23 @@ export function getDesignAnalysisRunStore(): DesignAnalysisRunStore {
 export function resetDesignAnalysisRunStoreForTests(): void {
   globalThis.__pioraDesignAnalysisRunStore = undefined;
   globalThis.__pioraDesignAnalysisStartLocks = undefined;
+  globalThis.__pioraDesignGenerationStartLocks = undefined;
+}
+
+export async function runDesignGenerationOnce(
+  id: string,
+  operation: () => Promise<DesignAnalysisRun>,
+): Promise<{ run: DesignAnalysisRun; joined: boolean }> {
+  const locks = globalThis.__pioraDesignGenerationStartLocks ??= new Map();
+  const existing = locks.get(id);
+  if (existing) return { run: await existing, joined: true };
+  const pending = Promise.resolve().then(operation);
+  locks.set(id, pending);
+  try {
+    return { run: await pending, joined: false };
+  } finally {
+    if (locks.get(id) === pending) locks.delete(id);
+  }
 }
 
 export async function runDesignAnalysisOnce(
