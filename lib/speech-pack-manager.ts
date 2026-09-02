@@ -6,6 +6,7 @@ import {
   copyFile,
   mkdir,
   open,
+  readdir,
   readFile,
   rename,
   rm,
@@ -35,6 +36,7 @@ import {
 } from "./speech-types";
 
 const PACK_DIRECTORY_NAME = `${LOCAL_SPEECH_PACK_ID}-${SPEECH_PACK_VERSION}`;
+const STAGING_DIRECTORY_NAME = `.${PACK_DIRECTORY_NAME}.staging`;
 const MANIFEST_NAME = "manifest.json";
 const MANUAL_DIRECTORY_NAME = `.manual-${PACK_DIRECTORY_NAME}-${speechRuntimeKey()}`;
 const MAX_MANUAL_SOURCE_BYTES = 320 * 1024 * 1024;
@@ -101,6 +103,64 @@ async function pathExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function isSpeechStagingDirectory(name: string): boolean {
+  return name === STAGING_DIRECTORY_NAME
+    || (name.startsWith(`.${PACK_DIRECTORY_NAME}.`) && name.endsWith(".staging"));
+}
+
+async function resumableStagingBytes(path: string, runtimeSource: SpeechRuntimeSource): Promise<number> {
+  const candidates = [
+    join(path, "downloads", SHERPA_NODE_SOURCE.name),
+    join(path, "downloads", `${SHERPA_NODE_SOURCE.name}.partial`),
+    join(path, "downloads", runtimeSource.name),
+    join(path, "downloads", `${runtimeSource.name}.partial`),
+    join(path, "model", SENSEVOICE_MODEL_SOURCE.name),
+    join(path, "model", `${SENSEVOICE_MODEL_SOURCE.name}.partial`),
+    join(path, "model", SENSEVOICE_TOKENS_SOURCE.name),
+    join(path, "model", `${SENSEVOICE_TOKENS_SOURCE.name}.partial`),
+  ];
+  let bytes = 0;
+  for (const candidate of candidates) {
+    try { bytes += (await stat(candidate)).size; } catch { /* This source has not started yet. */ }
+  }
+  return bytes;
+}
+
+async function prepareInstallStaging(root: string, runtimeSource: SpeechRuntimeSource): Promise<string> {
+  const preferred = join(root, STAGING_DIRECTORY_NAME);
+  assertManagedChild(root, preferred);
+  if (await pathExists(preferred)) return preferred;
+
+  const entries = await readdir(root, { withFileTypes: true });
+  const legacy = await Promise.all(entries
+    .filter((entry) => entry.isDirectory() && isSpeechStagingDirectory(entry.name))
+    .map(async (entry) => {
+      const path = join(root, entry.name);
+      return { path, bytes: await resumableStagingBytes(path, runtimeSource) };
+    }));
+  legacy.sort((left, right) => right.bytes - left.bytes);
+  for (const candidate of legacy) {
+    try {
+      await rename(candidate.path, preferred);
+      return preferred;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") return preferred;
+    }
+  }
+  return preferred;
+}
+
+async function removeAbandonedSpeechStaging(root: string): Promise<void> {
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  await Promise.all(entries
+    .filter((entry) => entry.isDirectory() && isSpeechStagingDirectory(entry.name))
+    .map(async (entry) => {
+      const path = join(root, entry.name);
+      assertManagedChild(root, path);
+      await rm(path, { recursive: true, force: true });
+    }));
 }
 
 async function readInstalledManifest(packPath: string): Promise<InstalledSpeechManifest | null> {
@@ -279,6 +339,39 @@ export async function storeManualSpeechPackSource(
 async function downloadVerified(source: SpeechDownloadSource, destination: string): Promise<void> {
   updateInstallState({ currentFile: source.name });
   const temporary = `${destination}.partial`;
+  if (await verifySpeechSourceFile(source, destination)) {
+    const completedBytes = (await stat(destination)).size;
+    updateInstallState({
+      downloadedBytes: Math.min(
+        installGlobal().state.totalBytes,
+        installGlobal().state.downloadedBytes + completedBytes,
+      ),
+    });
+    return;
+  }
+  await rm(destination, { force: true });
+
+  if (await verifySpeechSourceFile(source, temporary)) {
+    const completedBytes = (await stat(temporary)).size;
+    await rename(temporary, destination);
+    updateInstallState({
+      downloadedBytes: Math.min(
+        installGlobal().state.totalBytes,
+        installGlobal().state.downloadedBytes + completedBytes,
+      ),
+    });
+    return;
+  }
+
+  try {
+    const partialBytes = (await stat(temporary)).size;
+    updateInstallState({
+      downloadedBytes: Math.min(
+        installGlobal().state.totalBytes,
+        installGlobal().state.downloadedBytes + partialBytes,
+      ),
+    });
+  } catch { /* Start without a resumable partial. */ }
   let lastError: unknown;
   for (let attempt = 1; attempt <= 4; attempt += 1) {
     try {
@@ -382,10 +475,13 @@ async function installSpeechPack(settings: SpeechSettings, manualDirectory?: str
   const root = resolve(settings.packDirectory);
   const target = speechPackPath(settings);
   assertManagedChild(root, target);
-  if (await readInstalledManifest(target)) return;
+  if (await readInstalledManifest(target)) {
+    await removeAbandonedSpeechStaging(root);
+    return;
+  }
 
   await mkdir(root, { recursive: true });
-  const staging = join(root, `.${PACK_DIRECTORY_NAME}.${randomUUID()}.staging`);
+  const staging = await prepareInstallStaging(root, runtimeSource);
   const backup = join(root, `.${PACK_DIRECTORY_NAME}.${randomUUID()}.backup`);
   assertManagedChild(root, staging);
   assertManagedChild(root, backup);
@@ -444,11 +540,12 @@ async function installSpeechPack(settings: SpeechSettings, manualDirectory?: str
     await rename(staging, target);
     if (movedOldPack) await rm(backup, { recursive: true, force: true });
     if (manualDirectory) await rm(manualDirectory, { recursive: true, force: true });
+    await removeAbandonedSpeechStaging(root);
   } catch (error) {
     if (movedOldPack && !(await pathExists(target)) && await pathExists(backup)) {
       await rename(backup, target).catch(() => {});
     }
-    await rm(staging, { recursive: true, force: true }).catch(() => {});
+    // Keep verified files and partial downloads so a later retry can resume.
     throw error;
   }
 }
@@ -546,6 +643,7 @@ export async function removeSpeechPack(): Promise<SpeechStatus> {
   });
   await rm(target, { recursive: true, force: true });
   await rm(manualSpeechPackDirectory(settings), { recursive: true, force: true });
+  await removeAbandonedSpeechStaging(resolve(settings.packDirectory));
   updateInstallState(newInstallState());
   return getSpeechStatus();
 }
