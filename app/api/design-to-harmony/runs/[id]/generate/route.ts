@@ -1,9 +1,8 @@
 import { getDesignAnalysisIrStore } from "@/lib/design-to-harmony/analysis-ir-store";
 import { exportDesignAssets } from "@/lib/design-to-harmony/asset-export";
-import { readFigmaAccessToken } from "@/lib/design-to-harmony/credential-store";
 import { asDesignToHarmonyError, DesignToHarmonyError } from "@/lib/design-to-harmony/errors";
-import { FigmaSourceAdapter } from "@/lib/design-to-harmony/figma-adapter";
 import { getDesignImportStore } from "@/lib/design-to-harmony/import-store";
+import { createDesignSourceAdapter } from "@/lib/design-to-harmony/source-factory";
 import { getDesignPreviewWorkspace } from "@/lib/design-to-harmony/preview-workspace";
 import { getDesignAnalysisRunStore, runDesignGenerationOnce } from "@/lib/design-to-harmony/run-store";
 import { getDesignRunOperationRegistry } from "@/lib/design-to-harmony/run-operations";
@@ -95,7 +94,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         if (!designImport || !designProjectPathsEqual(designImport.projectRoot, current.projectRoot)) {
           throw new DesignToHarmonyError("IMPORT_NOT_FOUND", "The imported design snapshot is no longer available", { status: 409, retryable: true, stage: "generate" });
         }
-        const adapter = new FigmaSourceAdapter({ token: readFigmaAccessToken() });
+        const adapter = createDesignSourceAdapter(designImport.source);
         const exported = await exportDesignAssets({
           adapter,
           source: designImport.source,

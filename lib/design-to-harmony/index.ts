@@ -3,5 +3,7 @@ export * from "./data-root";
 export * from "./errors";
 export * from "./figma-adapter";
 export * from "./import-store";
+export * from "./octo-adapter";
 export * from "./source-adapter";
+export * from "./source-factory";
 export * from "./types";

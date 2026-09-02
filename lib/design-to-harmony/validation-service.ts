@@ -2,8 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { buildHarmonyPreview, type HarmonyBuildRuntimeOverride, type HarmonyBuildSelection } from "./build-adapter";
 import { exportDesignReferences } from "./asset-export";
-import { FigmaSourceAdapter } from "./figma-adapter";
-import { readFigmaAccessToken } from "./credential-store";
+import { createDesignSourceAdapter } from "./source-factory";
 import { getDesignImportStore } from "./import-store";
 import { DesignToHarmonyError } from "./errors";
 import { stableDesignHash } from "./stable-json";
@@ -138,7 +137,7 @@ export async function validateDesignRun(input: {
     const designImport = getDesignImportStore().get(input.run.importId);
     if (deviceResult.snapshot?.screenshot && designImport) {
       input.onProgress?.("visual", "Comparing the device screen with the design reference", 0.84);
-      const adapter = new FigmaSourceAdapter({ token: readFigmaAccessToken() });
+      const adapter = createDesignSourceAdapter(designImport.source);
       const references = await exportDesignReferences({ adapter, source: designImport.source, sourceVersion: input.run.sourceVersion, nodeIds: input.run.targetNodeIds.slice(0, 1), outputRoot: join(outputRoot, "references"), signal: input.signal });
       const reference = references[0];
       if (reference?.data && reference.path && deviceResult.actualPath) {

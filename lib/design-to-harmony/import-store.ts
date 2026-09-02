@@ -29,7 +29,7 @@ function isImportRecord(value: unknown): value is DesignImportRecord {
     && typeof record.projectRoot === "string"
     && typeof record.importedAt === "string"
     && typeof record.updatedAt === "string"
-    && Boolean(record.source && record.source.provider === "figma" && typeof record.source.fileKey === "string")
+    && Boolean(record.source && ["figma", "octo"].includes(record.source.provider ?? "") && typeof record.source.fileKey === "string")
     && Boolean(record.document && typeof record.document.name === "string");
 }
 

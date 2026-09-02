@@ -24,8 +24,19 @@ test("models a complete design document rather than a screenshot upload", () => 
   assert.match(panel, /role="treeitem"/);
   assert.match(panel, /aria-selected/);
   assert.match(panel, /aria-label=\{copy\("设计检查器"/);
-  assert.doesNotMatch(panel, /type="file"/);
+  assert.match(panel, /type="file"/);
+  assert.match(panel, /accept="\.json,application\/json"/);
+  assert.doesNotMatch(panel, /accept=.*(?:png|jpe?g)/i);
   assert.match(panel, /这里不是截图识别/);
+});
+
+test("imports structured Octo designs alongside Figma without creating a second code pipeline", () => {
+  assert.match(panel, /Octo Designer/);
+  assert.match(panel, /\/api\/design-to-harmony\/imports\/octo/);
+  assert.match(panel, /导入并解析 Octo 设计稿/);
+  assert.match(panel, /保留图层、布局、文本、组件、样式与交互/);
+  assert.match(panel, /activeImport\.source\.provider === "octo"/);
+  assert.match(panel, /importFigmaDesign/);
 });
 
 test("supports multi-scope analysis, isolated generation, and explicit reviewed apply", () => {

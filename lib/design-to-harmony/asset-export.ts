@@ -229,7 +229,7 @@ export async function exportDesignAssets(input: {
         ? await input.adapter.exportAssets(input.source, renderMissing.map((nodeId) => ({ nodeId, format: "png" as const, scale: 1 })), input.signal)
         : [];
     } catch (error) {
-      const reason = error instanceof Error ? error.message : "Figma could not render this asset";
+      const reason = error instanceof Error ? error.message : "The design source could not render this asset";
       for (const nodeId of renderMissing) fallbackReasons.set(nodeId, reason);
     }
     const byNode = new Map(renders.map((render) => [render.nodeId, render.url]));
@@ -238,7 +238,7 @@ export async function exportDesignAssets(input: {
       const fillUrl = fillUrls.get(plannedByNode.get(nodeId)?.sourceRef ?? "");
       const url = byNode.get(nodeId);
       if (!fillUrl && !url) {
-        fallbackReasons.set(nodeId, "Figma did not return a render for this node");
+        fallbackReasons.set(nodeId, "The design source did not return a render for this node");
         continue;
       }
       try {
@@ -251,7 +251,7 @@ export async function exportDesignAssets(input: {
         assets.push({ sourceNodeId: nodeId, mediaType: "image/png", data });
       } catch (error) {
         if (input.signal?.aborted) throw error;
-        fallbackReasons.set(nodeId, error instanceof Error ? error.message : "Figma asset download failed");
+        fallbackReasons.set(nodeId, error instanceof Error ? error.message : "Design asset download failed");
       }
     }
   }
@@ -273,7 +273,7 @@ export async function exportDesignReferences(input: {
   try {
     renders = await input.adapter.renderReference(input.source, nodeIds, input.signal);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Figma reference render failed";
+    const message = error instanceof Error ? error.message : "Design reference render failed";
     return nodeIds.map((nodeId) => ({ nodeId, error: message }));
   }
   const byNode = new Map(renders.map((render) => [render.nodeId, render.url]));
@@ -282,7 +282,7 @@ export async function exportDesignReferences(input: {
   for (const nodeId of nodeIds) {
     const url = byNode.get(nodeId);
     if (!url) {
-      result.push({ nodeId, error: "Figma did not return a reference render for this node" });
+      result.push({ nodeId, error: "The design source did not return a reference render for this node" });
       continue;
     }
     try {
@@ -293,7 +293,7 @@ export async function exportDesignReferences(input: {
       result.push({ nodeId, path, data });
     } catch (error) {
       if (input.signal?.aborted) throw error;
-      result.push({ nodeId, error: error instanceof Error ? error.message : "Figma reference download failed" });
+      result.push({ nodeId, error: error instanceof Error ? error.message : "Design reference download failed" });
     }
   }
   return result;

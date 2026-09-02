@@ -1,4 +1,6 @@
-export type DesignSourceProvider = "figma";
+export type DesignSourceProvider = "figma" | "octo";
+
+export type DesignSourceTransport = "link" | "file";
 
 export type DesignNodeType =
   | "DOCUMENT"
@@ -36,6 +38,8 @@ export interface DesignSourceRef {
   nodeId?: string;
   url: string;
   displayName?: string;
+  transport?: DesignSourceTransport;
+  originalFileName?: string;
 }
 
 export interface DesignSourceVersion {

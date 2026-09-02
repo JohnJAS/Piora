@@ -48,6 +48,7 @@ type ValidationDevice = {
 };
 type NavigationSection = "document" | "flows" | "components" | "tokens";
 type WorkbenchView = "design" | "plan" | "mapping" | "code" | "review" | "compare";
+type SourceMode = "octo" | "figma";
 
 function buildCodexRunContext(
   run: DesignAnalysisRun,
@@ -250,8 +251,12 @@ export function DesignToHarmonyPanel({ cwd, active, onGuideAgent, onOpenFile, on
   const [credential, setCredential] = useState<DesignCredentialStatus>({ provider: "figma", configured: false });
   const [imports, setImports] = useState<DesignImportRecord[]>([]);
   const [activeImportId, setActiveImportId] = useState("");
+  const [sourceMode, setSourceMode] = useState<SourceMode>("octo");
   const [sourceUrl, setSourceUrl] = useState("");
   const [token, setToken] = useState("");
+  const [octoFile, setOctoFile] = useState<File | null>(null);
+  const [octoDragActive, setOctoDragActive] = useState(false);
+  const [showImporter, setShowImporter] = useState(false);
   const [section, setSection] = useState<NavigationSection>("document");
   const [navigationQuery, setNavigationQuery] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState("");
@@ -286,6 +291,7 @@ export function DesignToHarmonyPanel({ cwd, active, onGuideAgent, onOpenFile, on
   const [notice, setNotice] = useState<string | null>(null);
   const workbenchVersionRef = useRef(0);
   const previewRequestRef = useRef(0);
+  const octoFileInputRef = useRef<HTMLInputElement>(null);
 
   const activeImport = useMemo(
     () => imports.find((item) => item.id === activeImportId) ?? imports[0] ?? null,
@@ -313,7 +319,10 @@ export function DesignToHarmonyPanel({ cwd, active, onGuideAgent, onOpenFile, on
     workbenchVersionRef.current += 1;
     previewRequestRef.current += 1;
     setActiveImportId(record.id);
-    setSourceUrl(record.source.url);
+    setSourceMode(record.source.provider);
+    setSourceUrl(record.source.provider === "figma" ? record.source.url : "");
+    setOctoFile(null);
+    setShowImporter(false);
     setSection("document");
     setNavigationQuery("");
     const initialNode = record.source.nodeId
@@ -416,7 +425,7 @@ export function DesignToHarmonyPanel({ cwd, active, onGuideAgent, onOpenFile, on
     return () => { controller.abort(); source.close(); };
   }, [analysisRun, copy, cwd, generating, validating]);
 
-  const importDesign = useCallback(async (forceRefresh = false) => {
+  const importFigmaDesign = useCallback(async (forceRefresh = false) => {
     if (!cwd || !sourceUrl.trim() || loading) return;
     setLoading(true);
     setError(null);
@@ -450,6 +459,33 @@ export function DesignToHarmonyPanel({ cwd, active, onGuideAgent, onOpenFile, on
       setLoading(false);
     }
   }, [chooseImport, copy, credential, cwd, loading, sourceUrl, token]);
+
+  const importOctoDesign = useCallback(async () => {
+    if (!cwd || !octoFile || loading) return;
+    setLoading(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const form = new FormData();
+      form.set("projectRoot", cwd);
+      form.set("file", octoFile, octoFile.name);
+      const payload = await jsonRequest<ImportResponse>("/api/design-to-harmony/imports/octo", { method: "POST", body: form });
+      setImports((current) => [payload.record, ...current.filter((item) => item.id !== payload.record.id)]);
+      chooseImport(payload.record);
+      setNotice(payload.cached
+        ? copy("已载入相同的 Octo 结构化设计稿。", "Loaded the matching structured Octo design from local cache.")
+        : copy("Octo 高保真设计稿已结构化导入，可以开始选择页面并生成鸿蒙代码。", "The high-fidelity Octo design was imported structurally and is ready for Harmony code generation."));
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : copy("Octo 设计稿导入失败", "Unable to import the Octo design"));
+    } finally {
+      setLoading(false);
+    }
+  }, [chooseImport, copy, cwd, loading, octoFile]);
+
+  const importSelectedSource = useCallback(async () => {
+    if (sourceMode === "octo") await importOctoDesign();
+    else await importFigmaDesign(false);
+  }, [importFigmaDesign, importOctoDesign, sourceMode]);
 
   const disconnect = useCallback(async () => {
     if (loading) return;
@@ -813,34 +849,69 @@ export function DesignToHarmonyPanel({ cwd, active, onGuideAgent, onOpenFile, on
     <span>{copy("正在读取设计工作区…", "Loading design workspace…")}</span>
   </div>;
 
-  if (!activeImport) return <div className={styles.setupRoot}>
+  if (!activeImport || showImporter) return <div className={styles.setupRoot}>
     <div className={styles.setupCard}>
       <div className={styles.setupHero}>
         <span className={styles.heroIcon}><AliIcon name="workflow" size={22} /></span>
         <div>
           <small>DESIGN TO ARKUI</small>
           <h2>{copy("导入完整设计稿", "Import a complete design file")}</h2>
-          <p>{copy("读取 Figma 的页面、画板、组件、流程、样式和变量。这里不是截图识别。", "Read pages, frames, components, flows, styles, and variables from Figma—not a screenshot.")}</p>
+          <p>{copy("读取 Octo 或 Figma 的页面、图层、组件、流程和样式。这里不是截图识别。", "Read pages, layers, components, flows, and styles from Octo or Figma—not a screenshot.")}</p>
         </div>
+        {activeImport ? <button className={styles.setupClose} type="button" aria-label={copy("返回设计工作台", "Return to design workbench")} onClick={() => { setShowImporter(false); setError(null); }}><AliIcon name="close" size={15} /></button> : null}
       </div>
       <ol className={styles.steps}>
         <li data-active="true"><span>1</span><div><b>{copy("连接设计源", "Connect source")}</b><small>{copy("令牌仅保存在本机", "Token stays on this device")}</small></div></li>
         <li><span>2</span><div><b>{copy("理解文档结构", "Understand structure")}</b><small>{copy("选择页面或用户流程", "Choose a page or user flow")}</small></div></li>
         <li><span>3</span><div><b>{copy("生成并验证", "Generate and verify")}</b><small>{copy("先暂存，再明确应用", "Stage before explicit apply")}</small></div></li>
       </ol>
-      <form className={styles.connectionForm} onSubmit={(event) => { event.preventDefault(); void importDesign(false); }}>
-        <label>
-          <span>{copy("Figma 文件链接", "Figma file link")}</span>
-          <div className={styles.inputShell}><AliIcon name="link" size={14} /><input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://www.figma.com/design/…" autoComplete="off" /></div>
-        </label>
-        <label>
-          <span>{credential.configured ? copy("更新访问令牌（可选）", "Replace access token (optional)") : copy("Figma 访问令牌", "Figma access token")}</span>
-          <div className={styles.inputShell}><AliIcon name="lock" size={14} /><input type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder={credential.configured ? "••••••••" : "figd_…"} autoComplete="off" /></div>
-        </label>
+      <form className={styles.connectionForm} onSubmit={(event) => { event.preventDefault(); void importSelectedSource(); }}>
+        <div className={styles.sourceTabs} role="tablist" aria-label={copy("设计稿来源", "Design source")}>
+          <button type="button" role="tab" aria-selected={sourceMode === "octo"} onClick={() => { setSourceMode("octo"); setError(null); }}><span className={styles.sourceTabMark} data-provider="octo">O</span><span><b>Octo Designer</b><small>{copy("导出的结构化 JSON", "Structured JSON export")}</small></span></button>
+          <button type="button" role="tab" aria-selected={sourceMode === "figma"} onClick={() => { setSourceMode("figma"); setError(null); }}><span className={styles.sourceTabMark} data-provider="figma">F</span><span><b>Figma</b><small>{copy("文件或节点链接", "File or node link")}</small></span></button>
+        </div>
+        {sourceMode === "octo" ? <>
+          <input
+            ref={octoFileInputRef}
+            className={styles.hiddenFileInput}
+            type="file"
+            accept=".json,application/json"
+            onChange={(event) => setOctoFile(event.target.files?.[0] ?? null)}
+          />
+          <div
+            className={styles.fileDrop}
+            data-active={octoDragActive ? "true" : undefined}
+            data-selected={octoFile ? "true" : undefined}
+            role="button"
+            tabIndex={0}
+            onClick={() => octoFileInputRef.current?.click()}
+            onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); octoFileInputRef.current?.click(); } }}
+            onDragEnter={(event) => { event.preventDefault(); setOctoDragActive(true); }}
+            onDragOver={(event) => { event.preventDefault(); setOctoDragActive(true); }}
+            onDragLeave={(event) => { if (event.currentTarget === event.target) setOctoDragActive(false); }}
+            onDrop={(event) => { event.preventDefault(); setOctoDragActive(false); setOctoFile(event.dataTransfer.files?.[0] ?? null); }}
+          >
+            <span><AliIcon name={octoFile ? "check-circle" : "upload"} size={20} /></span>
+            <div>
+              <b>{octoFile?.name ?? copy("选择或拖入 Octo JSON 设计稿", "Choose or drop an Octo JSON design")}</b>
+              <small>{octoFile ? `${(octoFile.size / 1024).toFixed(1)} KB` : copy("保留图层、布局、文本、组件、样式与交互；最大 16 MB", "Preserves layers, layout, text, components, styles, and interactions; 16 MB max")}</small>
+            </div>
+          </div>
+          <div className={styles.sourceHint}><AliIcon name="info" size={13} /><span>{copy("请从 Octo 的开发交付/结构化导出中取得 JSON。图片资源暂以明确占位符生成，不会伪装成完整还原。", "Use the JSON from Octo's developer handoff or structured export. Image assets currently generate explicit placeholders instead of pretending to be fully reproduced.")}</span></div>
+        </> : <>
+          <label>
+            <span>{copy("Figma 文件链接", "Figma file link")}</span>
+            <div className={styles.inputShell}><AliIcon name="link" size={14} /><input value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://www.figma.com/design/…" autoComplete="off" /></div>
+          </label>
+          <label>
+            <span>{credential.configured ? copy("更新访问令牌（可选）", "Replace access token (optional)") : copy("Figma 访问令牌", "Figma access token")}</span>
+            <div className={styles.inputShell}><AliIcon name="lock" size={14} /><input type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder={credential.configured ? "••••••••" : "figd_…"} autoComplete="off" /></div>
+          </label>
+        </>}
         {error ? <div className={styles.errorBanner} role="alert"><AliIcon name="alert" size={14} /><span>{error}</span></div> : null}
-        <button className={styles.primaryButton} type="submit" disabled={loading || !sourceUrl.trim() || (!credential.configured && !token.trim())}>
+        <button className={styles.primaryButton} type="submit" disabled={loading || (sourceMode === "octo" ? !octoFile : !sourceUrl.trim() || (!credential.configured && !token.trim()))}>
           {loading ? <AliIcon name="sync" size={14} /> : <AliIcon name="arrowright" size={14} />}
-          {loading ? copy("正在读取完整设计稿…", "Reading the complete design…") : copy("连接并导入", "Connect and import")}
+          {loading ? copy("正在读取完整设计稿…", "Reading the complete design…") : sourceMode === "octo" ? copy("导入并解析 Octo 设计稿", "Import and parse Octo design") : copy("连接并导入 Figma", "Connect and import Figma")}
         </button>
         <div className={styles.privacyNote}><AliIcon name="lock" size={12} /><span>{copy("只读访问；当前阶段不会创建、覆盖或删除项目文件。", "Read-only access; this phase never creates, overwrites, or deletes project files.")}</span></div>
       </form>
@@ -869,8 +940,8 @@ export function DesignToHarmonyPanel({ cwd, active, onGuideAgent, onOpenFile, on
   return <div className={styles.workbench}>
     <header className={styles.sourceBar}>
       <div className={styles.sourceIdentity}>
-        <span className={styles.figmaMark}>F</span>
-        <div><strong>{document.name}</strong><small>{copy("Figma 完整文件", "Complete Figma file")} · v{document.version.id.slice(0, 8)}</small></div>
+        <span className={styles.figmaMark} data-provider={activeImport.source.provider}>{activeImport.source.provider === "octo" ? "O" : "F"}</span>
+        <div><strong>{document.name}</strong><small>{activeImport.source.provider === "octo" ? copy("Octo 结构化设计稿", "Structured Octo design") : copy("Figma 完整文件", "Complete Figma file")} · v{document.version.id.slice(0, 8)}</small></div>
       </div>
       <div className={styles.sourceActions}>
         {project?.modules.length ? <select aria-label={copy("鸿蒙模块", "Harmony module")} value={selectedModule} disabled={busy} onChange={(event) => {
@@ -884,10 +955,11 @@ export function DesignToHarmonyPanel({ cwd, active, onGuideAgent, onOpenFile, on
           const record = imports.find((item) => item.id === event.target.value);
           if (record) chooseImport(record);
         }}>{imports.map((item) => <option key={item.id} value={item.id}>{item.document.name}</option>)}</select> : null}
-        <button type="button" title={copy("从 Figma 同步最新结构", "Sync latest structure from Figma")} disabled={loading || !credential.configured} onClick={() => { void importDesign(true); }}>
+        <button type="button" title={copy("导入新的设计稿", "Import another design")} disabled={loading} onClick={() => { setSourceMode(activeImport.source.provider); setShowImporter(true); setError(null); setNotice(null); }}><AliIcon name="plus" size={14} /><span>{copy("导入", "Import")}</span></button>
+        {activeImport.source.provider === "figma" ? <button type="button" title={copy("从 Figma 同步最新结构", "Sync latest structure from Figma")} disabled={loading || !credential.configured} onClick={() => { void importFigmaDesign(true); }}>
           <AliIcon name="sync" size={14} /><span>{copy("同步", "Sync")}</span>
-        </button>
-        <button type="button" title={copy("连接设置", "Connection settings")} disabled={loading} onClick={() => { void disconnect(); }}><AliIcon name="unlock" size={14} /></button>
+        </button> : null}
+        {activeImport.source.provider === "figma" ? <button type="button" title={copy("移除本机 Figma 令牌", "Remove the local Figma token")} disabled={loading} onClick={() => { void disconnect(); }}><AliIcon name="unlock" size={14} /></button> : null}
       </div>
     </header>
 

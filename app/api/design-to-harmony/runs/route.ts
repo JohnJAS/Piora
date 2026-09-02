@@ -1,9 +1,8 @@
 import { analyzeDesignSelection, validateDesignTargets } from "@/lib/design-to-harmony/analysis";
 import { getDesignAnalysisIrStore } from "@/lib/design-to-harmony/analysis-ir-store";
-import { readFigmaAccessToken } from "@/lib/design-to-harmony/credential-store";
 import { DesignToHarmonyError } from "@/lib/design-to-harmony/errors";
-import { FigmaSourceAdapter } from "@/lib/design-to-harmony/figma-adapter";
 import { getDesignImportStore } from "@/lib/design-to-harmony/import-store";
+import { createDesignSourceAdapter } from "@/lib/design-to-harmony/source-factory";
 import { analyzeHarmonyProject } from "@/lib/design-to-harmony/project-analyzer";
 import { designAnalysisRunId, getDesignAnalysisRunStore, runDesignAnalysisOnce } from "@/lib/design-to-harmony/run-store";
 import { calculateDesignIrSyncImpact, calculateDesignSyncImpact } from "@/lib/design-to-harmony/source-diff";
@@ -49,7 +48,7 @@ export async function POST(request: Request) {
     const id = designAnalysisRunId(projectRoot, importId, record.document.version.id, targetNodeIds, scopeMode);
     const result = await runDesignAnalysisOnce(id, async () => {
       const project = analyzeHarmonyProject(projectRoot);
-      const adapter = new FigmaSourceAdapter({ token: readFigmaAccessToken() });
+      const adapter = createDesignSourceAdapter(record.source);
       const { ir, plan } = await analyzeDesignSelection({ record, targetNodeIds, adapter, project, includeInteractionTargets: scopeMode === "flow" });
       irStore.save(id, ir);
       const previous = store.get(id);
