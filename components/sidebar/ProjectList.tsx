@@ -157,7 +157,7 @@ export function ProjectSessionGroup({
             title={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
             aria-label={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
           >
-            <AliIcon name="compose" size={14} />
+            <AliIcon name="comment" size={14} />
           </button>
         </div>
       </div>
