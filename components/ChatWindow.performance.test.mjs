@@ -29,6 +29,9 @@ test("materializes only the visible history tail", () => {
 test("uses a responsive conversation column with resize and scroll rails", () => {
   assert.match(source, /followDefaultWidth:\s*true/);
   assert.match(source, /const CHAT_COLUMN_LEFT_PADDING = 36/);
+  assert.match(source, /const CHAT_SCROLL_RAIL_GAP = 10/);
+  assert.match(source, /const CHAT_COLUMN_RIGHT_PADDING = CHAT_SCROLL_RAIL_WIDTH \+ CHAT_SCROLL_RAIL_GAP/);
+  assert.match(source, /const CHAT_INPUT_RIGHT_PADDING = CHAT_MINIMAP_WIDTH \+ CHAT_COLUMN_RIGHT_PADDING/);
   assert.match(source, /surfaceWidth - CHAT_COLUMN_LEFT_PADDING - CHAT_INPUT_RIGHT_PADDING/);
   assert.match(source, /className="chat-column"/);
   assert.match(source, /chat-column-resize-handle is-left/);
@@ -44,7 +47,11 @@ test("uses a responsive conversation column with resize and scroll rails", () =>
   assert.match(inputSource, /paddingLeft:\s*variant === "launcher" \? 0 : isMobile \? 16 : 36/);
   assert.match(globalCss, /\.chat-column-scroll-rail/);
   assert.match(globalCss, /\.chat-column-scroll-thumb/);
-  assert.match(globalCss, /\.chat-column-scroll-rail\s*\{[^}]*right:\s*calc\(38px \+ max\(0px, \(100% - 88px/s);
+  assert.match(source, /className="chat-scroll-rail-layout"/);
+  assert.match(source, /className="chat-column chat-scroll-rail-anchor"/);
+  assert.match(globalCss, /\.chat-scroll-rail-layout\s*\{[^}]*pointer-events:\s*none/s);
+  assert.match(globalCss, /\.chat-column-scroll-rail\s*\{[^}]*right:\s*-24px/s);
+  assert.match(globalCss, /\.chat-column-scroll-rail\s*\{[^}]*pointer-events:\s*auto/s);
   assert.match(globalCss, /\.chat-column-scroll-rail\s*\{[^}]*cursor:\s*default/s);
   assert.match(globalCss, /\.chat-column-scroll-thumb\s*\{[^}]*width:\s*6px[^}]*opacity:\s*0\.78/s);
   assert.match(scrollRailSource, /role="scrollbar"/);

@@ -91,7 +91,10 @@ function phaseLabel(phase: AgentPhase, t: (key: string, params?: Record<string, 
 const CHAT_MINIMAP_WIDTH = 36;
 const CHAT_COLUMN_PADDING = 16;
 const CHAT_COLUMN_LEFT_PADDING = 36;
-const CHAT_INPUT_RIGHT_PADDING = CHAT_COLUMN_PADDING + CHAT_MINIMAP_WIDTH;
+const CHAT_SCROLL_RAIL_WIDTH = 14;
+const CHAT_SCROLL_RAIL_GAP = 10;
+const CHAT_COLUMN_RIGHT_PADDING = CHAT_SCROLL_RAIL_WIDTH + CHAT_SCROLL_RAIL_GAP;
+const CHAT_INPUT_RIGHT_PADDING = CHAT_MINIMAP_WIDTH + CHAT_COLUMN_RIGHT_PADDING;
 const CHAT_COLUMN_DEFAULT_WIDTH = 820;
 const CHAT_COLUMN_MIN_WIDTH = 560;
 const CHAT_COLUMN_MAX_WIDTH = 1400;
@@ -859,7 +862,7 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
             left: 0,
             right: isMobile ? 0 : CHAT_MINIMAP_WIDTH,
             zIndex: 40,
-            padding: `0 ${CHAT_COLUMN_PADDING}px 0 ${CHAT_COLUMN_LEFT_PADDING}px`,
+            padding: `0 ${isMobile ? CHAT_COLUMN_PADDING : CHAT_COLUMN_RIGHT_PADDING}px 0 ${CHAT_COLUMN_LEFT_PADDING}px`,
             pointerEvents: "none",
           }}
         >
@@ -868,7 +871,7 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
           </div>
         </div>
         <div id="chat-scroll-container" ref={scrollContainerRef} className="chat-scroll-container flex-1 overflow-y-auto pt-4">
-          <div style={{ padding: `0 ${CHAT_COLUMN_PADDING}px 0 ${CHAT_COLUMN_LEFT_PADDING}px` }}>
+          <div style={{ padding: `0 ${isMobile ? CHAT_COLUMN_PADDING : CHAT_COLUMN_RIGHT_PADDING}px 0 ${CHAT_COLUMN_LEFT_PADDING}px` }}>
             <div className="chat-column">
               <ExtensionWidgets widgets={aboveEditorWidgets} />
 
@@ -1141,10 +1144,17 @@ export function ChatWindow({ session, focusEntryId, newSessionCwd, newSessionIni
           </div>
         </div>
         {isMobile ? null : (
-          <ChatScrollRail
-            ariaLabel={t("chat.scrollRail")}
-            scrollContainer={scrollContainerRef}
-          />
+          <div
+            className="chat-scroll-rail-layout"
+            style={{ right: CHAT_MINIMAP_WIDTH, padding: `0 ${CHAT_COLUMN_RIGHT_PADDING}px 0 ${CHAT_COLUMN_LEFT_PADDING}px` }}
+          >
+            <div className="chat-column chat-scroll-rail-anchor">
+              <ChatScrollRail
+                ariaLabel={t("chat.scrollRail")}
+                scrollContainer={scrollContainerRef}
+              />
+            </div>
+          </div>
         )}
         {isMobile ? null : (
           <RenderErrorBoundary

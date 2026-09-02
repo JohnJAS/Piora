@@ -961,13 +961,25 @@ select:focus-visible,
   left: max(2px, calc(-10px + max(0px, (100% - 68px - var(--chat-column-width, clamp(820px, 72vw, 1180px))) / 2)));
 }
 
-.chat-column-scroll-rail {
+.chat-scroll-rail-layout {
   position: absolute;
   z-index: 45;
+  inset: 0;
+  pointer-events: none;
+}
+
+.chat-scroll-rail-anchor {
+  position: relative;
+  height: 100%;
+}
+
+.chat-column-scroll-rail {
+  position: absolute;
   top: 0;
   bottom: 0;
-  right: calc(38px + max(0px, (100% - 88px - var(--chat-column-width, clamp(820px, 72vw, 1180px))) / 2));
+  right: -24px;
   width: 14px;
+  pointer-events: auto;
   cursor: default;
   touch-action: none;
   outline: none;

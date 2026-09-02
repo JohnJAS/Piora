@@ -16,6 +16,7 @@ const {
 } = await jiti.import("./MarkdownBody.tsx");
 const { normalizeDisplayMath } = await jiti.import("../lib/markdown.ts");
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+const markdownBodySource = readFileSync(new URL("./MarkdownBody.tsx", import.meta.url), "utf8");
 
 function renderMarkdown(markdown) {
   return renderToStaticMarkup(
@@ -50,6 +51,12 @@ test("keeps wide tables on one line inside a horizontal scroller", () => {
   assert.match(globalCss, /\.markdown-table-wrap\s*\{[^}]*overflow-x:\s*auto;[^}]*scrollbar-gutter:\s*stable;/s);
   assert.match(globalCss, /\.markdown-body table\s*\{[^}]*width:\s*max-content;[^}]*min-width:\s*100%;/s);
   assert.match(globalCss, /\.markdown-body th, \.markdown-body td\s*\{[^}]*white-space:\s*nowrap;/s);
+});
+
+test("opens Mermaid markdown in preview mode without flashing its source", () => {
+  assert.match(markdownBodySource, /<LazyMermaidBlock code=\{code\} isStreaming=\{isStreaming\} defaultPreview \/>/);
+  assert.match(markdownBodySource, /fallback=\{<MermaidPreviewFallback \/>\}/);
+  assert.match(markdownBodySource, /className="mermaid-block mermaid-block-loading"/);
 });
 
 test("renders safe raw HTML and sanitizes unsafe elements after the parser loads", async () => {

@@ -34,6 +34,17 @@ function CodeBlockFallback({ code, lang }: { code: string; lang: string }) {
   );
 }
 
+function MermaidPreviewFallback() {
+  return (
+    <div className="markdown-code-block">
+      <div className="markdown-code-header">
+        <span className="markdown-code-lang">mermaid</span>
+      </div>
+      <div className="mermaid-block mermaid-block-loading" />
+    </div>
+  );
+}
+
 export interface MarkdownBodyProps {
   children: string;
   className?: string;
@@ -55,8 +66,8 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
         if (lang === "mermaid") {
           const code = raw.replace(/\n$/, "");
           return (
-            <Suspense fallback={<CodeBlockFallback code={code} lang={lang} />}>
-              <LazyMermaidBlock code={code} isStreaming={isStreaming} />
+            <Suspense fallback={<MermaidPreviewFallback />}>
+              <LazyMermaidBlock code={code} isStreaming={isStreaming} defaultPreview />
             </Suspense>
           );
         }
