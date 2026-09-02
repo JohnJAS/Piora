@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `d042a1a040f411a9f4ca73d845b0394c5afc931e80ca4f60e1d24011bea4a74c`
+Lockfile SHA-256: `8de7e31ab14871e8fa8c18c1299eac8f8bd3f5ac98ba0b6b13ce6fb3e13956ed`
 
-Unique locked packages: **1157**. Runtime packages: **703**. Build/development-only packages: **454**.
+Unique locked packages: **1174**. Runtime packages: **720**. Build/development-only packages: **454**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -74,6 +74,14 @@ Every locked package declares a license.
 | `@babel/types` | `7.29.8` | MIT | No |
 | `@braintree/sanitize-url` | `7.1.2` | MIT | No |
 | `@chevrotain/types` | `11.1.2` | Apache-2.0 | No |
+| `@codemirror/autocomplete` | `6.20.3` | MIT | No |
+| `@codemirror/commands` | `6.11.0` | MIT | No |
+| `@codemirror/lang-json` | `6.0.2` | MIT | No |
+| `@codemirror/language` | `6.12.4` | MIT | No |
+| `@codemirror/lint` | `6.9.7` | MIT | No |
+| `@codemirror/search` | `6.7.2` | MIT | No |
+| `@codemirror/state` | `6.7.2` | MIT | No |
+| `@codemirror/view` | `6.43.10` | MIT | No |
 | `@earendil-works/pi-agent-core` | `0.84.3` | MIT | No |
 | `@earendil-works/pi-ai` | `0.84.3` | MIT | No |
 | `@earendil-works/pi-client` | `0.84.3` | MIT | No |
@@ -135,7 +143,12 @@ Every locked package declares a license.
 | `@jridgewell/sourcemap-codec` | `1.5.5` | MIT | No |
 | `@jridgewell/trace-mapping` | `0.3.31` | MIT | No |
 | `@js-sdsl/ordered-map` | `4.4.2` | MIT | No |
+| `@lezer/common` | `1.5.2` | MIT | No |
+| `@lezer/highlight` | `1.2.3` | MIT | No |
+| `@lezer/json` | `1.0.3` | MIT | No |
+| `@lezer/lr` | `1.4.10` | MIT | No |
 | `@lobehub/icons` | `5.16.0` | MIT | No |
+| `@marijn/find-cluster-break` | `1.0.4` | MIT | No |
 | `@mariozechner/clipboard` | `0.3.9` | MIT | Yes |
 | `@mariozechner/clipboard-darwin-arm64` | `0.3.9` | MIT | Yes |
 | `@mariozechner/clipboard-darwin-universal` | `0.3.9` | MIT | Yes |
@@ -294,6 +307,7 @@ Every locked package declares a license.
 | `client-only` | `0.0.1` | MIT | No |
 | `cliui` | `8.0.1` | ISC | No |
 | `clsx` | `2.1.1` | MIT | No |
+| `codemirror` | `6.0.2` | MIT | No |
 | `color-convert` | `2.0.1` | MIT | No |
 | `color-name` | `1.1.4` | MIT | No |
 | `combined-stream` | `1.0.8` | MIT | No |
@@ -310,6 +324,7 @@ Every locked package declares a license.
 | `cosmiconfig` | `7.1.0` | MIT | No |
 | `crc-32` | `1.2.2` | Apache-2.0 | No |
 | `crc32-stream` | `6.0.0` | MIT | No |
+| `crelt` | `1.0.7` | MIT | No |
 | `cross-spawn` | `7.0.6` | MIT | No |
 | `csstype` | `3.2.3` | MIT | No |
 | `cytoscape` | `3.33.3` | MIT | No |
@@ -657,6 +672,7 @@ Every locked package declares a license.
 | `strip-ansi` | `7.2.0` | MIT | No |
 | `strip-ansi-cjs` | `6.0.1` | MIT | No |
 | `strnum` | `2.3.0` | MIT | No |
+| `style-mod` | `4.1.3` | MIT | No |
 | `style-to-js` | `1.1.21` | MIT | No |
 | `style-to-object` | `1.0.14` | MIT | No |
 | `styled-jsx` | `5.1.6` | MIT | No |
@@ -696,6 +712,7 @@ Every locked package declares a license.
 | `vfile` | `6.0.3` | MIT | No |
 | `vfile-location` | `5.0.3` | MIT | No |
 | `vfile-message` | `4.0.3` | MIT | No |
+| `w3c-keyname` | `2.2.8` | MIT | No |
 | `web-namespaces` | `2.0.1` | MIT | No |
 | `web-streams-polyfill` | `3.3.3` | MIT | No |
 | `which` | `2.0.2` | ISC | No |
