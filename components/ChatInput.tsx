@@ -47,7 +47,7 @@ import { prioritizeProvider } from "@/lib/model-policy";
 import { isPlainEnter, matchesSendShortcut } from "@/lib/send-shortcut";
 import { AliIcon } from "./AliIcon";
 import { ModelProviderIcon } from "./ModelProviderIcon";
-import type { SessionStatsInfo } from "@/lib/pi-types";
+import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import type { ExtensionStatusItem } from "@/lib/types";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
 import { SessionToolsControl } from "./SessionToolsControl";
@@ -112,7 +112,7 @@ interface Props {
   draftKey?: string;
   /** Session working directory — enables the @ file autocomplete menu */
   cwd?: string | null;
-  contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
+  contextUsage?: ContextUsage | null;
   sessionStats?: SessionStatsInfo | null;
   extensionStatuses?: ExtensionStatusItem[];
   capabilities?: SessionCapabilitiesState;
@@ -1376,6 +1376,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         used: formatTokenCount(contextUsage.tokens),
         total: formatTokenCount(contextUsage.contextWindow),
       });
+  const contextBreakdownRows: [string, string][] | null = contextUsage?.breakdown ? [
+    [t("chat.contextSystemPrompt"), formatTokenCount(contextUsage.breakdown.systemPrompt)],
+    [t("chat.contextProjectInstructions"), formatTokenCount(contextUsage.breakdown.projectInstructions)],
+    [t("chat.contextToolDefinitions"), formatTokenCount(contextUsage.breakdown.toolDefinitions)],
+    [t("chat.contextConversationMessages"), formatTokenCount(contextUsage.breakdown.conversationMessages)],
+    ...(contextUsage.breakdown.otherRuntime > 0
+      ? [[t("chat.contextOtherRuntime"), formatTokenCount(contextUsage.breakdown.otherRuntime)] as [string, string]]
+      : []),
+  ] : null;
   const sessionMessageRows: [string, string][] = sessionStats ? [
     [t("session.user"), sessionStats.userMessages.toLocaleString(locale)],
     [t("session.assistant"), sessionStats.assistantMessages.toLocaleString(locale)],
@@ -2077,6 +2086,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   <span>{contextUsageLabel}</span>
                 </div>
                 <div className="context-usage-tooltip-value">{contextTokenLabel}</div>
+                {contextBreakdownRows ? (
+                  <div className="context-usage-breakdown">
+                    <div className="context-usage-breakdown-title">{t("chat.contextBreakdownTitle")}</div>
+                    {contextBreakdownRows.map(([label, value]) => (
+                      <div className="context-usage-breakdown-row" key={label}>
+                        <span>{label}</span>
+                        <strong>≈ {value}</strong>
+                      </div>
+                    ))}
+                    <div className="context-usage-tooltip-note">{t("chat.contextBreakdownNote")}</div>
+                  </div>
+                ) : <div className="context-usage-tooltip-note">{t("chat.contextIncludesSystemTools")}</div>}
               </div>
             </div> : null}
             {/* Codex-style model settings: one compact summary chip with focused submenus. */}

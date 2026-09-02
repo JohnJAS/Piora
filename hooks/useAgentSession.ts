@@ -12,8 +12,8 @@ import type {
 } from "@/lib/types";
 import { normalizeToolCalls } from "@/lib/normalize";
 import { AgentCommandError, createAgentSessionRequest, sendAgentCommand } from "@/lib/agent-client";
-import type { SessionStatsInfo } from "@/lib/pi-types";
-import { estimateSessionContextUsage } from "@/lib/context-usage";
+import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
+import { estimateSessionContextUsage, mergeContextUsageWithEstimate } from "@/lib/context-usage";
 import { isPromptMaterialRuntimeMessage, type PromptMaterialReference } from "@/lib/prompt-material-format";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 import { fetchModelCatalog, type ModelCatalogEntry } from "@/lib/model-catalog-client";
@@ -86,7 +86,7 @@ interface LastAssistantTextResponse {
 }
 
 type AgentStateResponse = {
-  contextUsage?: { percent: number | null; contextWindow: number; tokens: number | null } | null;
+  contextUsage?: ContextUsage | null;
   systemPrompt?: string;
   systemPromptBinding?: SessionSystemPromptBinding | null;
   thinkingLevel?: string;
@@ -441,7 +441,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [newSessionDefaultModel, setNewSessionDefaultModel] = useState<SelectedModel | null>(null);
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevelOption>("auto");
   const [retryInfo, setRetryInfo] = useState<{ attempt: number; maxAttempts: number; errorMessage?: string } | null>(null);
-  const [contextUsage, setContextUsage] = useState<{ percent: number | null; contextWindow: number; tokens: number | null } | null>(null);
+  const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
   const [systemPrompt, setSystemPrompt] = useState<string | null>(null);
   const [systemPromptBinding, setSystemPromptBinding] = useState<SessionSystemPromptBinding | null>(initialSessionData?.systemPromptBinding ?? null);
   const [systemPromptSelection, setSystemPromptSelection] = useState<SystemPromptSelection>(() => (
@@ -514,13 +514,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return estimateSessionContextUsage(messages, contextWindow);
   }, [displayModel, messages, modelList]);
   const effectiveContextUsage = useMemo(() => {
-    if (!agentRunning) return estimatedContextUsage ?? contextUsage;
-    if (!contextUsage) return estimatedContextUsage;
-    if (!estimatedContextUsage || contextUsage.tokens === null) return contextUsage;
-    return (estimatedContextUsage.tokens ?? 0) > contextUsage.tokens
-      ? estimatedContextUsage
-      : contextUsage;
-  }, [agentRunning, contextUsage, estimatedContextUsage]);
+    return mergeContextUsageWithEstimate(contextUsage, estimatedContextUsage);
+  }, [contextUsage, estimatedContextUsage]);
 
   const sessionStats = useMemo(() => {
     if (sessionStatsOverride) return sessionStatsOverride;

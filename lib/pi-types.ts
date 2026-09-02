@@ -11,6 +11,16 @@ export interface ContextUsage {
   percent: number | null;
   contextWindow: number;
   tokens: number | null;
+  breakdown?: ContextUsageBreakdown;
+}
+
+export interface ContextUsageBreakdown {
+  /** All fields are local estimates reconciled to the provider-reported total. */
+  conversationMessages: number;
+  otherRuntime: number;
+  projectInstructions: number;
+  systemPrompt: number;
+  toolDefinitions: number;
 }
 
 export interface ModelLike {
@@ -142,7 +152,14 @@ export interface AgentSessionLike {
   };
   readonly sessionManager: SessionManager;
   readonly settingsManager: SettingsManager;
-  readonly agent: { state?: { systemPrompt?: string; thinkingLevel?: string } };
+  readonly agent: {
+    state?: {
+      messages?: unknown[];
+      systemPrompt?: string;
+      thinkingLevel?: string;
+      tools?: unknown[];
+    };
+  };
   readonly extensionRunner: ExtensionRunnerLike;
   readonly promptTemplates: readonly PromptTemplateLike[];
   readonly resourceLoader: ResourceLoaderLike;

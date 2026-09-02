@@ -37,6 +37,7 @@ interface StoredWorkbench {
   drafts?: unknown;
   indent?: unknown;
   multiEscape?: unknown;
+  temporaryTitle?: unknown;
   wrap?: unknown;
 }
 
@@ -133,8 +134,10 @@ function numberTarget(content: string, cursor: number): TextTarget | null {
   return /^\d{10}$|^\d{13}$/.test(text) ? { end, kind: "number", start, text } : null;
 }
 
-function restoreDrafts(value: unknown): JsonDraft[] {
-  if (!Array.isArray(value)) return [TEMP_DRAFT];
+function restoreDrafts(value: unknown, temporaryTitle?: unknown): JsonDraft[] {
+  const restoredTemporaryTitle = typeof temporaryTitle === "string" ? temporaryTitle.trim().slice(0, 80) : "";
+  const temporaryDraft = { ...TEMP_DRAFT, title: restoredTemporaryTitle || TEMP_DRAFT.title };
+  if (!Array.isArray(value)) return [temporaryDraft];
   const restored = value.slice(0, MAX_DRAFTS - 1).flatMap((candidate, index) => {
     if (!candidate || typeof candidate !== "object") return [];
     const draft = candidate as Record<string, unknown>;
@@ -143,7 +146,7 @@ function restoreDrafts(value: unknown): JsonDraft[] {
     const id = typeof draft.id === "string" && /^json:[a-zA-Z0-9-]+$/.test(draft.id) ? draft.id : `json:restored-${index + 1}`;
     return title ? [{ content, favorite: draft.favorite === true, id, title }] : [];
   });
-  return [TEMP_DRAFT, ...restored];
+  return [temporaryDraft, ...restored];
 }
 
 export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_LIBRARY, onSaveResult }: Props) {
@@ -156,8 +159,11 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
   const [wrap, setWrap] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const [restored, setRestored] = useState(false);
   const editorRef = useRef<JsonCodeEditorHandle>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
   const noticeTimerRef = useRef<number | null>(null);
 
   const activeDraft = drafts.find((draft) => draft.id === activeId) ?? drafts[0];
@@ -168,7 +174,7 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
     try {
       const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "null") as StoredWorkbench | null;
       if (parsed && typeof parsed === "object") {
-        const nextDrafts = restoreDrafts(parsed.drafts);
+        const nextDrafts = restoreDrafts(parsed.drafts, parsed.temporaryTitle);
         setDrafts(nextDrafts);
         setActiveId(typeof parsed.activeId === "string" && nextDrafts.some((draft) => draft.id === parsed.activeId)
           ? parsed.activeId : TEMP_DRAFT_ID);
@@ -189,7 +195,8 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
     const timer = window.setTimeout(() => {
       try {
         const storedDrafts = drafts.filter((draft) => draft.id !== TEMP_DRAFT_ID);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({ activeId, autoExtract, drafts: storedDrafts, indent, multiEscape, wrap }));
+        const temporaryTitle = drafts.find((draft) => draft.id === TEMP_DRAFT_ID)?.title;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ activeId, autoExtract, drafts: storedDrafts, indent, multiEscape, temporaryTitle, wrap }));
       } catch {
         // The editor remains usable when storage is unavailable or full.
       }
@@ -201,14 +208,35 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
     if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
   }, []);
 
+  useEffect(() => {
+    if (!renamingId) return;
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, [renamingId]);
+
   const announce = (message: string) => {
     setNotice(message);
     if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
     noticeTimerRef.current = window.setTimeout(() => setNotice(""), 1_800);
   };
 
-  const updateDraft = (id: string, patch: Partial<Pick<JsonDraft, "content" | "favorite">>) => {
+  const updateDraft = (id: string, patch: Partial<Pick<JsonDraft, "content" | "favorite" | "title">>) => {
     setDrafts((current) => current.map((draft) => draft.id === id ? { ...draft, ...patch } : draft));
+  };
+
+  const startRenamingDraft = (draft: JsonDraft) => {
+    setActiveId(draft.id);
+    setRenameValue(draft.id === TEMP_DRAFT_ID && draft.title === TEMP_DRAFT.title ? t("companion.json.temporaryTab") : draft.title);
+    setRenamingId(draft.id);
+  };
+
+  const finishRenamingDraft = (id: string, commit: boolean) => {
+    if (commit) {
+      const nextTitle = renameValue.trim().slice(0, 80);
+      if (nextTitle) updateDraft(id, { title: nextTitle });
+    }
+    setRenamingId(null);
+    setRenameValue("");
   };
 
   const focusRange = (start: number, end = start) => {
@@ -383,9 +411,25 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
             data-locked={draft.favorite ? "true" : "false"}
             key={draft.id}
           >
-            <button type="button" role="tab" aria-selected={draft.id === activeDraft.id} onClick={() => setActiveId(draft.id)}>
-              {draft.id === TEMP_DRAFT_ID ? t("companion.json.temporaryTab") : draft.title}
-            </button>
+            {renamingId === draft.id ? (
+              <input
+                ref={renameInputRef}
+                className={styles.tabRenameInput}
+                value={renameValue}
+                maxLength={80}
+                aria-label={t("companion.json.renamePrompt")}
+                onChange={(event) => setRenameValue(event.target.value)}
+                onBlur={() => finishRenamingDraft(draft.id, true)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") { event.preventDefault(); finishRenamingDraft(draft.id, true); }
+                  if (event.key === "Escape") { event.preventDefault(); finishRenamingDraft(draft.id, false); }
+                }}
+              />
+            ) : (
+              <button type="button" role="tab" aria-selected={draft.id === activeDraft.id} title={t("companion.json.renameHint")} onClick={() => setActiveId(draft.id)} onDoubleClick={() => startRenamingDraft(draft)}>
+                {draft.id === TEMP_DRAFT_ID && draft.title === TEMP_DRAFT.title ? t("companion.json.temporaryTab") : draft.title}
+              </button>
+            )}
             {draft.id !== TEMP_DRAFT_ID ? <button type="button" disabled={draft.favorite} onClick={() => closeDraft(draft.id)} aria-label={t("companion.json.closeTab", { title: draft.title })}>×</button> : null}
           </div>
         ))}

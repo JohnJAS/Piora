@@ -18,7 +18,7 @@ import { useAgentSession, type AgentPhase, type AttachedImage, type BuiltinSlash
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
-import type { SessionStatsInfo } from "@/lib/pi-types";
+import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import { deriveCompanionActivityStatus, type CompanionActivity } from "@/lib/companion";
 import { AliIcon } from "./AliIcon";
 import {
@@ -51,7 +51,7 @@ interface Props {
   onSystemPromptChange?: (prompt: string | null) => void;
   onSessionStatsChange?: (stats: SessionStatsInfo | null) => void;
   onSessionStatsPanelOpen?: () => void;
-  onContextUsageChange?: (usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => void;
+  onContextUsageChange?: (usage: ContextUsage | null) => void;
   onOpenFile?: (filePath: string) => void;
   onCompanionActivityChange?: (activity: CompanionActivity) => void;
   onTaskControlsChange?: (controls: TaskControls | null) => void;

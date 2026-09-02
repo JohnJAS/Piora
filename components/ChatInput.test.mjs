@@ -203,6 +203,8 @@ test("renders an icon-only send control and dynamic context ring", () => {
   assert.match(html, /上下文窗口/);
   assert.match(html, /40% 已用/);
   assert.match(html, /已用 40k 个令牌，共 100k/);
+  assert.match(html, /包含系统提示词、项目指令、工具定义和对话消息/);
+  assert.match(globalCss, /\.context-usage-tooltip-note\s*\{/);
   assert.match(html, /data-model-brand="openai"/);
   assert.doesNotMatch(html, /<button[^>]*data-context-used/);
   assert.ok(html.indexOf("data-context-used") < html.indexOf('title="选择模型"'));
@@ -212,6 +214,40 @@ test("renders an icon-only send control and dynamic context ring", () => {
   assert.match(html, /width="18" height="18"[^>]*stroke-width="1\.75"[^>]*><path d="M5 21v-6"/);
   assert.match(html, /消息/);
   assert.match(html, /1,750/);
+});
+
+test("renders a reconciled context breakdown when the runtime provides one", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(
+      I18nProvider,
+      null,
+      React.createElement(ChatInput, {
+        onSend() {},
+        onAbort() {},
+        isStreaming: false,
+        contextUsage: {
+          percent: 52,
+          contextWindow: 100_000,
+          tokens: 52_000,
+          breakdown: {
+            systemPrompt: 8_000,
+            projectInstructions: 12_000,
+            toolDefinitions: 20_000,
+            conversationMessages: 1_000,
+            otherRuntime: 11_000,
+          },
+        },
+      }),
+    ),
+  );
+
+  assert.match(html, /上下文分项/);
+  assert.match(html, /系统提示词/);
+  assert.match(html, /项目指令/);
+  assert.match(html, /工具定义/);
+  assert.match(html, /对话消息/);
+  assert.match(html, /其他运行时/);
+  assert.match(html, /分项为本地估算，总数以模型供应商返回为准/);
 });
 
 test("uses the model family icon even when the provider is a custom gateway", () => {

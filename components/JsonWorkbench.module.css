@@ -9,6 +9,7 @@
 }
 
 .workbench button,
+.workbench input,
 .workbench select { font: inherit; }
 
 .workbench button,
@@ -87,6 +88,20 @@
 .tab[data-locked="true"] > button:first-child { padding-left: 4px; }
 .tab > button:last-child:not(:first-child) { width: 25px; flex: 0 0 25px; padding: 0; color: var(--text-dim); }
 .tab > button:last-child:not(:first-child):hover { color: var(--text); background: var(--bg-hover) !important; }
+.tabRenameInput {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  margin: 3px 4px;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--accent) 52%, var(--border));
+  border-radius: 5px;
+  outline: none;
+  color: var(--text);
+  background: var(--bg);
+  font-size: var(--text-xs);
+}
+.tabRenameInput:focus { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); }
 .addTab { width: 28px; min-height: 28px !important; flex: 0 0 28px; padding: 0 !important; border: 0 !important; font-size: var(--text-base) !important; }
 
 .actionBar {

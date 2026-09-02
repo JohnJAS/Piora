@@ -67,7 +67,7 @@ function replaceUrlWithoutNextNavigation(url: string): void {
   window.history.replaceState(nextState, "", url);
 }
 import type { ChatInputHandle } from "./ChatInput";
-import type { SessionStatsInfo } from "@/lib/pi-types";
+import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import { canSendCompanionPhrase, type CompanionActivity } from "@/lib/companion";
 import { buildCompanionInteractionContext, requestCompanionSpeech } from "@/lib/companion-interaction";
 import { AliIcon } from "./AliIcon";
@@ -403,8 +403,8 @@ export function AppShell() {
   }, []);
 
   // Context usage — populated by ChatWindow, displayed in top bar
-  const [contextUsage, setContextUsage] = useState<{ percent: number | null; contextWindow: number; tokens: number | null } | null>(null);
-  const handleContextUsageChange = useCallback((usage: { percent: number | null; contextWindow: number; tokens: number | null } | null) => {
+  const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
+  const handleContextUsageChange = useCallback((usage: ContextUsage | null) => {
     setContextUsage(usage);
   }, []);
 

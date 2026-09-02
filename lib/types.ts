@@ -74,6 +74,8 @@ export interface AssistantMessage {
     output: number;
     cacheRead: number;
     cacheWrite: number;
+    /** Provider-native total for the latest request, when available. */
+    totalTokens?: number;
     cost: {
       input: number;
       output: number;

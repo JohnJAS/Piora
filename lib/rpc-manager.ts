@@ -65,6 +65,7 @@ import type { SessionSystemPromptBinding, SystemPromptSelection } from "./system
 import { buildPromptWithMaterials, resolvePromptMaterialReferences, restorePromptMaterialDisplayPreview } from "./prompt-materials";
 import type { PromptMaterialReference } from "./prompt-material-format";
 import type { UserInputResult } from "./user-input";
+import { estimateContextUsageBreakdown } from "./context-usage";
 import {
   appendSessionCapabilityPolicy,
   buildSessionCapabilitiesState,
@@ -813,6 +814,13 @@ export class AgentSessionWrapper {
       case "get_state": {
         const model = this.inner.model;
         const contextUsage = this.inner.getContextUsage();
+        const agentState = this.inner.agent.state;
+        const contextBreakdown = contextUsage ? estimateContextUsageBreakdown({
+          messages: agentState?.messages ?? [],
+          systemPrompt: agentState?.systemPrompt ?? "",
+          tools: agentState?.tools ?? [],
+          totalTokens: contextUsage.tokens,
+        }) : undefined;
         return {
           sessionId: this.inner.sessionId,
           runtimeProfile: this.runtimeProfile,
@@ -835,7 +843,12 @@ export class AgentSessionWrapper {
             followUp: [...this.inner.getFollowUpMessages()],
           },
           contextUsage: contextUsage
-            ? { percent: contextUsage.percent, contextWindow: contextUsage.contextWindow, tokens: contextUsage.tokens }
+            ? {
+                percent: contextUsage.percent,
+                contextWindow: contextUsage.contextWindow,
+                tokens: contextUsage.tokens,
+                ...(contextBreakdown ? { breakdown: contextBreakdown } : {}),
+              }
             : null,
           systemPrompt: this.inner.agent.state?.systemPrompt ?? "",
           systemPromptBinding: this.getSystemPromptBinding(),

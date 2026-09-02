@@ -2971,7 +2971,7 @@ select:focus-visible,
   z-index: 520;
   bottom: calc(100% + 8px);
   left: 50%;
-  width: 170px;
+  width: 250px;
   padding: 10px 12px;
   border: 1px solid var(--border-soft);
   border-radius: 10px;
@@ -3004,6 +3004,44 @@ select:focus-visible,
   margin-top: 6px;
   font-size: var(--text-sm);
   line-height: 1.4;
+}
+
+.context-usage-tooltip-note {
+  margin-top: 5px;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.context-usage-breakdown {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border-soft);
+  text-align: left;
+}
+
+.context-usage-breakdown-title {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.context-usage-breakdown-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+}
+
+.context-usage-breakdown-row strong {
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 /* Tool rows, including MCP-provided tools, are expandable controls. Force an
