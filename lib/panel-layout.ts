@@ -5,13 +5,14 @@ export const WORKSPACE_MIN_WIDTH = 640;
 
 export const SIDEBAR_DEFAULT_WIDTH = 260;
 export const SIDEBAR_MIN_WIDTH = 180;
-export const SIDEBAR_MAX_WIDTH = 480;
+export const SIDEBAR_MAX_WIDTH = 3200;
 
 export const RIGHT_PANEL_FALLBACK_WIDTH = 560;
 export const RIGHT_PANEL_MIN_WIDTH = 300;
 export const RIGHT_PANEL_MAX_WIDTH = 1200;
 
 const DESKTOP_PANEL_GUTTER_RESERVE = 32;
+const SIDEBAR_MAX_VIEWPORT_RATIO = 0.66;
 
 export function isRightPanelOverlayViewport(viewportWidth: number): boolean {
   return viewportWidth > MOBILE_MAX_WIDTH && viewportWidth < SPLIT_PANEL_MIN_WIDTH;
@@ -38,8 +39,10 @@ export function getSidebarMaxWidth(options: {
   const overlay = isRightPanelOverlayViewport(viewportWidth);
   const visibleRightPanelWidth = !overlay && rightPanelOpen ? rightPanelWidth : 0;
   const gutterReserve = overlay ? 0 : DESKTOP_PANEL_GUTTER_RESERVE;
+  const proportionalMaxWidth = Math.floor(viewportWidth * SIDEBAR_MAX_VIEWPORT_RATIO);
   return Math.min(
     SIDEBAR_MAX_WIDTH,
+    proportionalMaxWidth,
     viewportWidth - WORKSPACE_MIN_WIDTH - visibleRightPanelWidth - gutterReserve,
   );
 }
