@@ -15,12 +15,38 @@ import {
 import {
   LARGE_PASTE_CHARACTER_THRESHOLD,
   MAX_ATTACHED_FILE_BYTES,
+  MAX_PROMPT_MATERIAL_COUNT,
   MAX_PROMPT_MATERIAL_BYTES,
   shouldMaterializeDirectPrompt,
 } from "@/lib/prompt-input-policy";
 import { ModelChangeCoordinator } from "@/lib/model-change-coordinator";
-const MAX_ATTACHED_FILES = 8;
+const MAX_ATTACHED_FILES = MAX_PROMPT_MATERIAL_COUNT;
 const COMPOSER_MAX_HEIGHT = 360;
+const IGNORED_NESTED_ATTACHMENT_DIRECTORIES = new Set([".git", ".next", "node_modules"]);
+
+type BrowserAttachmentFile = Pick<File, "name"> & { webkitRelativePath?: string };
+
+function normalizedAttachmentPath(file: BrowserAttachmentFile): string[] {
+  return (file.webkitRelativePath ?? "")
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment && segment !== "." && segment !== "..");
+}
+
+export function getAttachmentFileName(file: BrowserAttachmentFile): string {
+  const relativePath = normalizedAttachmentPath(file).join("/");
+  return relativePath || file.name;
+}
+
+export function isFolderAttachmentFileAllowed(file: BrowserAttachmentFile): boolean {
+  const pathSegments = normalizedAttachmentPath(file);
+  // The first segment is the folder the user explicitly selected. Only skip
+  // hidden/generated directories nested inside that explicit selection.
+  return !pathSegments.slice(1, -1).some((segment) => (
+    segment.startsWith(".") || IGNORED_NESTED_ATTACHMENT_DIRECTORIES.has(segment.toLocaleLowerCase())
+  ));
+}
 
 function resizeComposerTextarea(textarea: HTMLTextAreaElement): void {
   textarea.style.height = "auto";
@@ -366,6 +392,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const localVoiceStopRef = useRef<() => Promise<void>>(async () => {});
   const localVoiceCancelRef = useRef<() => void>(() => {});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
   const lastCompositionEndAtRef = useRef(0);
   const slashCommandsRequestedRef = useRef(false);
@@ -383,6 +410,10 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   attachedImagesRef.current = attachedImages;
   const attachedFilesRef = useRef(attachedFiles);
   attachedFilesRef.current = attachedFiles;
+
+  useEffect(() => {
+    if (folderInputRef.current) folderInputRef.current.webkitdirectory = true;
+  }, []);
 
   const stopVoiceInput = useCallback((abort = false) => {
     if (abort) localVoiceCancelRef.current();
@@ -461,33 +492,42 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (imageFiles.length) processImageFiles(imageFiles);
 
     const nonImageFiles = files.filter((file) => !file.type.startsWith("image/"));
+    const remainingCount = Math.max(0, MAX_ATTACHED_FILES - attachedFilesRef.current.length);
     let remainingBytes = MAX_PROMPT_MATERIAL_BYTES - attachedFilesRef.current
       .filter((file) => file.text != null)
       .reduce((total, file) => total + file.size, 0);
-    let rejected = false;
+    let rejectedForSize = false;
+    let rejectedForCount = false;
     const textFiles: File[] = [];
     for (const file of nonImageFiles) {
+      if (textFiles.length >= remainingCount) {
+        rejectedForCount = true;
+        continue;
+      }
       if (file.size > MAX_ATTACHED_FILE_BYTES || file.size > remainingBytes) {
-        rejected = true;
+        rejectedForSize = true;
         continue;
       }
       textFiles.push(file);
       remainingBytes -= file.size;
     }
-    if (rejected) {
+    if (rejectedForSize) {
       setAttachmentError(t("chat.attachmentTooLarge", { size: "100 MB" }));
+    } else if (rejectedForCount) {
+      setAttachmentError(t("chat.attachmentCountLimit", { count: MAX_ATTACHED_FILES }));
     }
     if (!textFiles.length) return;
     const prepared = await Promise.all(
       textFiles.map(async (file): Promise<AttachedFile> => {
+        const name = getAttachmentFileName(file);
         try {
           const text = await file.text();
           if (text.includes("\u0000")) {
-            return { name: file.name, size: file.size, text: null };
+            return { name, size: file.size, text: null };
           }
-          return { name: file.name, size: file.size, text };
+          return { name, size: file.size, text };
         } catch {
-          return { name: file.name, size: file.size, text: null };
+          return { name, size: file.size, text: null };
         }
       }),
     );
@@ -1442,7 +1482,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         paddingRight: variant === "launcher" ? 0 : isMobile ? 16 : 52, // desktop: 16px base + 36px for ChatMinimap alignment
       }}
     >
-      {/* Hidden file input */}
+      {/* Native pickers stay outside the visible composer so files and folders
+          remain separate, explicit choices in Chromium/Electron. */}
       <input
         ref={fileInputRef}
         type="file"
@@ -1452,6 +1493,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
         onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
           void processFileSelection(files);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        disabled={isStreaming}
+        style={{ display: "none" }}
+        onChange={(e) => {
+          const selectedFiles = Array.from(e.target.files ?? []);
+          const files = selectedFiles.filter(isFolderAttachmentFileAllowed);
+          if (selectedFiles.length > 0 && files.length === 0) {
+            setAttachmentError(t("chat.folderHasNoAttachableFiles"));
+          } else {
+            void processFileSelection(files);
+          }
           e.target.value = "";
         }}
       />
@@ -1953,6 +2011,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     <span className="composer-add-option-copy">
                       <strong>{t("chat.attachFiles")}</strong>
                       <small>{t("chat.attachFilesDescription")}</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="composer-add-option"
+                    onClick={() => {
+                      setAttachmentMenuOpen(false);
+                      folderInputRef.current?.click();
+                    }}
+                  >
+                    <span className="composer-add-option-icon"><AliIcon name="folder-open" size={15} /></span>
+                    <span className="composer-add-option-copy">
+                      <strong>{t("chat.attachFolder")}</strong>
+                      <small>{t("chat.attachFolderDescription")}</small>
                     </span>
                   </button>
                 </div>

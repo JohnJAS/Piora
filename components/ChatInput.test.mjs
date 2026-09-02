@@ -9,7 +9,15 @@ const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
 });
-const { ChatInput, ModelErrorBanner, filterModelOptions, getContextRemainingPercent, joinSpeechText } = await jiti.import("./ChatInput.tsx");
+const {
+  ChatInput,
+  ModelErrorBanner,
+  filterModelOptions,
+  getAttachmentFileName,
+  getContextRemainingPercent,
+  isFolderAttachmentFileAllowed,
+  joinSpeechText,
+} = await jiti.import("./ChatInput.tsx");
 // Import through the same tsconfig alias used by the component so Jiti reuses
 // the exact context module instead of creating a second provider instance.
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
@@ -143,6 +151,30 @@ test("turns long clipboard text into an editable material instead of filling the
   assert.match(chatInputSource, /kind: "paste" as const/);
   assert.match(chatInputSource, /restorePastedFile/);
   assert.match(chatInputSource, /maxHeight: "min\(38vh, 360px\)"/);
+});
+
+test("offers a folder picker and keeps useful relative paths", () => {
+  assert.equal(getAttachmentFileName({
+    name: "index.ts",
+    webkitRelativePath: "sample-project/src/index.ts",
+  }), "sample-project/src/index.ts");
+  assert.equal(getAttachmentFileName({ name: "notes.md" }), "notes.md");
+  assert.equal(isFolderAttachmentFileAllowed({
+    name: "package.json",
+    webkitRelativePath: "sample-project/node_modules/pkg/package.json",
+  }), false);
+  assert.equal(isFolderAttachmentFileAllowed({
+    name: "config",
+    webkitRelativePath: "sample-project/.git/config",
+  }), false);
+  assert.equal(isFolderAttachmentFileAllowed({
+    name: "settings.json",
+    webkitRelativePath: ".config/settings.json",
+  }), true);
+  assert.match(chatInputSource, /folderInputRef\.current\.webkitdirectory = true/);
+  assert.match(chatInputSource, /folderInputRef\.current\?\.click\(\)/);
+  assert.match(chatInputSource, /chat\.attachFolderDescription/);
+  assert.match(chatInputSource, /textFiles\.length >= remainingCount/);
 });
 
 test("inserts dictated text at the caret with locale-aware spacing", () => {

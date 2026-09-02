@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 import {
@@ -39,7 +39,14 @@ export function promptMaterialsRoot(agentDir = getAgentDir()): string {
 }
 
 function safeMaterialName(value: string | undefined, index = 0): string {
-  const cleaned = basename((value ?? "").replace(/[\u0000-\u001f]/g, " ")).trim().slice(0, 120);
+  const cleaned = (value ?? "")
+    .replace(/[\u0000-\u001f]/g, " ")
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment && segment !== "." && segment !== "..")
+    .join("/")
+    .slice(0, 240);
   return cleaned || `pasted-content-${index + 1}.txt`;
 }
 
