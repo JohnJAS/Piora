@@ -34,6 +34,20 @@ test("new tasks start from one production composer with progressive context cont
   assert.match(picker, /new-task:\$\{createLaunchId\(\)\}/);
 });
 
+test("global new-session actions open the project-selectable launcher", () => {
+  const requestHandler = shell.slice(
+    shell.indexOf("const handleRequestNewSession"),
+    shell.indexOf("const handleNewSessionLaunch"),
+  );
+  assert.match(requestHandler, /setSelectedSession\(null\)/);
+  assert.match(requestHandler, /setNewSessionCwd\(null\)/);
+  assert.match(requestHandler, /setInitialSessionRestored\(true\)/);
+  assert.doesNotMatch(requestHandler, /chat-workspace|handleNewSession/);
+  assert.match(shell, /case "new-session":\s*handleRequestNewSession\(\)/);
+  assert.match(shell, /<NewSessionProjectPicker[\s\S]*?activeCwd=\{activeCwd\}/);
+  assert.match(navigation, /if \(onRequestNewSession\) \{\s*onRequestNewSession\(\)/);
+});
+
 test("one Enter can choose a project and continue through the real first-send path", () => {
   assert.match(chatInput, /const accepted = onSend\(/);
   assert.match(chatInput, /if \(accepted === false\) return;[\s\S]*?clearInput\(\)/);

@@ -924,18 +924,22 @@ export function AppShell() {
   }, [isMobile]);
 
   const handleRequestNewSession = useCallback(() => {
-    void fetch("/api/chat-workspace", { cache: "no-store" })
-      .then(async (response) => {
-        const data = await response.json() as { cwd?: string; error?: string };
-        if (!response.ok || !data.cwd) throw new Error(data.error || `HTTP ${response.status}`);
-        handleNewSession(`chat-${Date.now()}`, data.cwd);
-        setInitialSessionRestored(true);
-      })
-      .catch((error) => {
-        setInitialCwdError(error instanceof Error ? error.message : String(error));
-        setInitialCwdStatus("error");
-      });
-  }, [handleNewSession]);
+    setSettingsDialogOpen(false);
+    setSelectedRoom(null);
+    setSelectedSession(null);
+    setNewSessionCwd(null);
+    setNewSessionInitialModel(null);
+    setNewSessionInitialPrompt(null);
+    setOnboardingProjectCwd(null);
+    setInitialCwdError(null);
+    setInitialCwdStatus("idle");
+    setInitialSessionRestored(true);
+    setSessionKey((key) => key + 1);
+    setSystemPrompt(null);
+    setActiveTopPanel(null);
+    if (isMobile) setSidebarOpen(false);
+    replaceUrlWithoutNextNavigation("/");
+  }, [isMobile]);
 
   const handleNewSessionLaunch = useCallback((request: NewSessionLaunch) => {
     if (activeCwd !== request.cwd) suppressCwdBumpRef.current = true;
@@ -999,8 +1003,7 @@ export function AppShell() {
     const unsubscribe = window.piDesktop?.onMenuAction?.((action) => {
       switch (action) {
         case "new-session":
-          if (activeCwd) handleNewSession(`menu-${Date.now()}`, activeCwd);
-          else setSidebarOpen(true);
+          handleRequestNewSession();
           break;
         case "choose-project":
           handleOpenProjectPicker();
@@ -1061,7 +1064,7 @@ export function AppShell() {
       }
     });
     return unsubscribe;
-  }, [activeCwd, handleNewSession, handleOpenDesktopUpdate, handleOpenProjectPicker, handleSidebarToggle, openSettings, setCompanionOpen, toggleCompanion]);
+  }, [handleOpenDesktopUpdate, handleOpenProjectPicker, handleRequestNewSession, handleSidebarToggle, openSettings, setCompanionOpen, toggleCompanion]);
 
   // Electron's titleBarOverlay does not make the browser-only
   // `(display-mode: window-controls-overlay)` media query true. Use the
