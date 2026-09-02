@@ -121,6 +121,10 @@ test("matches the Codex project rail with real pin, metadata, edit, and new-chat
   assert.match(source, /onTogglePinned/);
   assert.match(source, /onRenameProject/);
   assert.match(source, /onNewSession/);
+  assert.match(source, /sidebar\.openProjectInExplorer/);
+  assert.match(source, /disabled=\{!window\.piDesktop\?\.openPath\}/);
+  assert.match(source, /void openPath\(group\.projectRoot\)/);
+  assert.match(sidebarStyles, /button\.menuItem:disabled\s*\{[^}]*cursor:\s*default;[^}]*opacity:\s*0\.45/s);
   assert.match(source, /styles\.pinnedUnpin/);
   assert.match(source, /togglePinnedProject\(group\.projectRoot\)/);
 });
@@ -153,7 +157,7 @@ test("project session overflow is accessible and attention-aware", () => {
 test("project creation lives in the projects header without a duplicate list", () => {
   assert.match(source, /sidebar\.newProject/);
   assert.match(source, /sidebar\.useDefaultDirectory/);
-  assert.doesNotMatch(source, /sidebar\.openProject/);
+  assert.doesNotMatch(source, /t\("sidebar\.openProject"\)/);
   assert.doesNotMatch(source, /visibleProjects\.map/);
   assert.doesNotMatch(source, /filteredSessions/);
   assert.match(source, /className=\{styles\.sectionLabelActions\} style=\{\{ opacity: 1 \}\}/);

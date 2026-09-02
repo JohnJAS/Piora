@@ -1184,6 +1184,7 @@ export const enLocale: LocalePlugin = {
     "sidebar.unpinProject": "Unpin project",
     "sidebar.projectTaskSummary": "{count} tasks · {running} running",
     "sidebar.editProject": "Edit project",
+    "sidebar.openProjectInExplorer": "Open in File Explorer",
     "sidebar.projectName": "Project name",
     "sidebar.newProject": "New project",
     "sidebar.removeProject": "Remove from project list",

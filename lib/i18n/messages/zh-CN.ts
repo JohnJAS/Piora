@@ -1184,6 +1184,7 @@ export const zhCNLocale: LocalePlugin = {
     "sidebar.unpinProject": "取消置顶",
     "sidebar.projectTaskSummary": "{count} 个任务，{running} 个已开启",
     "sidebar.editProject": "编辑项目",
+    "sidebar.openProjectInExplorer": "在资源管理器中打开",
     "sidebar.projectName": "项目名称",
     "sidebar.newProject": "新建项目",
     "sidebar.removeProject": "从项目列表移除",

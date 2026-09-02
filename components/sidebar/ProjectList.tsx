@@ -292,7 +292,7 @@ function ProjectContextMenu({
     setEditing(false);
   };
   const left = Math.max(8, Math.min(anchor.x, window.innerWidth - 330));
-  const top = Math.max(8, Math.min(anchor.y, window.innerHeight - 270));
+  const top = Math.max(8, Math.min(anchor.y, window.innerHeight - 340));
 
   return (
     <div ref={menuRef} className={styles.projectMenu} role="menu" aria-label={t("sidebar.projectMenuFor", { project: displayLabel })} style={{ left, top }}>
@@ -353,6 +353,22 @@ function ProjectContextMenu({
           <span>{t("sidebar.editProject")}</span>
         </button>
       )}
+      <button
+        type="button"
+        className={styles.menuItem}
+        role="menuitem"
+        disabled={!window.piDesktop?.openPath}
+        onClick={() => {
+          const openPath = window.piDesktop?.openPath;
+          if (!openPath) return;
+          onClose();
+          void openPath(group.projectRoot);
+        }}
+        title={group.projectRoot}
+      >
+        <AliIcon name="folder-open" size={14} />
+        <span>{t("sidebar.openProjectInExplorer")}</span>
+      </button>
       <button type="button" className={styles.menuItem} role="menuitem" onClick={() => { onNewSession(); onClose(); }}>
         <AliIcon name="compose" size={14} />
         <span>{t("sidebar.newChat")}</span>
