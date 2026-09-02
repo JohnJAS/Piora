@@ -1,5 +1,6 @@
 import type { SessionInfo } from "@/lib/types";
 import type { CollaborationRoom } from "@/lib/room-types";
+import type { SettingsKey } from "@/lib/settings-search";
 
 declare global {
   interface Window {
@@ -169,7 +170,7 @@ export interface SessionSidebarProps {
   selectedCwd?: string | null;
   onCwdChange?: (cwd: string | null, projectRoot?: string | null) => void;
   onFocusFileSearch?: () => void;
-  onOpenSettings?: () => void;
+  onOpenSettings?: (key?: SettingsKey) => void;
   activeProjectRoot?: string | null;
 }
 

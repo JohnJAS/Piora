@@ -21,6 +21,7 @@ import {
   writePromptOptimizerSystemPrompt,
 } from "@/lib/prompt-optimizer-settings";
 import { SESSION_TITLE_PROMPT_MAX_LENGTH } from "@/lib/session-title-prompt";
+import type { SettingsKey } from "@/lib/settings-search";
 import {
   SESSION_TITLE_PROMPT,
   readSessionTitleModel,
@@ -73,7 +74,7 @@ function titleModelValue(model: SessionTitleModelPreference): string {
   return JSON.stringify(model);
 }
 
-export type SettingsKey = "general" | "conversation" | "shortcuts" | "speech" | "automations" | "models" | "capabilityBundles" | "extensions" | "skills" | "plugins" | "harmony" | "appearance" | "language" | "companion" | "remote" | "usage" | "archived";
+export type { SettingsKey } from "@/lib/settings-search";
 
 interface SettingsEntry {
   key: SettingsKey;

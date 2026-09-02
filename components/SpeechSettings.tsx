@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { matchManualSpeechSourceName } from "@/lib/speech-manual-file";
 import type { SpeechStatus } from "@/lib/speech-types";
 import { AliIcon } from "./AliIcon";
 import styles from "./SpeechSettings.module.css";
@@ -45,6 +46,7 @@ export function SpeechSettings() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [manualBusy, setManualBusy] = useState(false);
+  const [manualFeedback, setManualFeedback] = useState<{ kind: "info" | "success" | "error"; message: string } | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [manual, setManual] = useState<ManualSpeechPackState | null>(null);
@@ -138,18 +140,28 @@ export function SpeechSettings() {
 
   const importManualFiles = useCallback(async (files: File[]) => {
     if (!manual || files.length === 0) return;
-    const expected = new Set(manual.sources.map((source) => source.name));
-    const selected = files.filter((file) => expected.has(file.name));
+    const expectedNames = manual.sources.map((source) => source.name);
+    const selected = files.flatMap((file) => {
+      const sourceName = matchManualSpeechSourceName(file.name, expectedNames);
+      return sourceName ? [{ file, sourceName }] : [];
+    });
     if (selected.length === 0) {
-      setError(t("speech.manualUnknownFile"));
+      const message = t("speech.manualUnknownFile");
+      setError(message);
+      setManualFeedback({ kind: "error", message });
       return;
     }
     setManualBusy(true);
     setError(null);
+    setManualFeedback(null);
     try {
       let next = manual;
-      for (const file of selected) {
-        const response = await fetch(`/api/speech/manual?name=${encodeURIComponent(file.name)}`, {
+      for (const { file, sourceName } of selected) {
+        setManualFeedback({
+          kind: "info",
+          message: t("speech.manualVerifyingFile", { name: sourceName }),
+        });
+        const response = await fetch(`/api/speech/manual?name=${encodeURIComponent(sourceName)}`, {
           method: "PUT",
           headers: { "content-type": "application/octet-stream" },
           body: file,
@@ -158,10 +170,23 @@ export function SpeechSettings() {
         const payload = await response.json() as { manual: ManualSpeechPackState };
         next = payload.manual;
         setManual(next);
+        const uploadedCount = next.sources.filter((source) => source.uploaded).length;
+        setManualFeedback({
+          kind: "success",
+          message: next.complete
+            ? t("speech.manualAllAdded")
+            : t("speech.manualFileAdded", {
+                name: sourceName,
+                count: uploadedCount,
+                total: next.sources.length,
+              }),
+        });
       }
       await load();
     } catch (importError) {
-      setError(importError instanceof Error ? importError.message : String(importError));
+      const message = importError instanceof Error ? importError.message : String(importError);
+      setError(message);
+      setManualFeedback({ kind: "error", message });
     } finally {
       setManualBusy(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -306,6 +331,15 @@ export function SpeechSettings() {
             onChange={(event) => void importManualFiles(Array.from(event.target.files ?? []))}
           />
         </div>
+        {manualFeedback ? (
+          <div
+            className={styles.manualFeedback}
+            data-kind={manualFeedback.kind}
+            role={manualFeedback.kind === "error" ? "alert" : "status"}
+          >
+            {manualFeedback.message}
+          </div>
+        ) : null}
         <p className={styles.networkNote}>{t("speech.manualIntegrity")}</p>
         <p className={styles.networkNote}>{t("speech.manualChecksumHelp")}</p>
       </section>

@@ -38,6 +38,10 @@
 .dropZone strong { color: var(--text); font-size: var(--text-sm); }
 .dropZone span { font-size: var(--text-xs); }
 .dropZone button { margin-top: 5px; padding: 7px 11px; border-radius: var(--radius-control); cursor: pointer; }
+.manualFeedback { margin-top: 10px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; color: var(--text-muted); background: var(--bg); font-size: var(--text-xs); line-height: 1.5; overflow-wrap: anywhere; }
+.manualFeedback[data-kind="info"] { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--bg)); }
+.manualFeedback[data-kind="success"] { border-color: color-mix(in srgb, #22a85f 42%, var(--border)); color: #16824b; background: color-mix(in srgb, #22a85f 8%, var(--bg)); }
+.manualFeedback[data-kind="error"] { border-color: color-mix(in srgb, #dc3545 45%, var(--border)); color: #c93442; background: color-mix(in srgb, #dc3545 8%, var(--bg)); }
 .progressBlock { margin-top: 15px; }
 .progressBlock > div { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: var(--text-xs); }
 .progressBlock progress { display: block; width: 100%; height: 7px; accent-color: var(--accent); }

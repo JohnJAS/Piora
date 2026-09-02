@@ -23,16 +23,26 @@ export async function PUT(request: Request) {
   const name = new URL(request.url).searchParams.get("name") ?? "";
   const contentLength = request.headers.get("content-length");
   try {
+    console.info("[speech/manual] import started", { name, contentLength });
     const manual = await storeManualSpeechPackSource(
       name,
       request.body,
       contentLength ? Number(contentLength) : undefined,
     );
-    if (!manual.complete) return json({ manual, install: null }, 202);
+    if (!manual.complete) {
+      console.info("[speech/manual] import verified", { name, complete: false });
+      return json({ manual, install: null }, 202);
+    }
     const install = startManualSpeechPackInstall();
     after(() => waitForSpeechPackInstall());
+    console.info("[speech/manual] import verified", { name, complete: true });
     return json({ manual, install }, 202);
   } catch (error) {
+    console.error("[speech/manual] import failed", {
+      name,
+      contentLength,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return json({ error: error instanceof Error ? error.message : "Unable to import speech-pack file" }, 400);
   }
 }

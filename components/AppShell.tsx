@@ -11,7 +11,7 @@ import { NewSessionProjectPicker } from "./NewSessionProjectPicker";
 import type { NewSessionInitialPrompt, NewSessionLaunch } from "./new-session-types";
 import type { Tab } from "./TabBar";
 import type { RightPanelHandle, RightPanelTab } from "./workspace/RightPanel";
-import type { SettingsKey } from "./SettingsDialog";
+import type { SettingsKey } from "@/lib/settings-search";
 import { isDarkTheme, useTheme, type Theme, type ThemePreset } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -1693,7 +1693,7 @@ export function AppShell() {
         setRightPanelOpen(true);
         requestAnimationFrame(() => rightPanelRef.current?.focusFileSearch());
       }}
-      onOpenSettings={() => openSettings()}
+      onOpenSettings={(key) => openSettings(key)}
     />
   );
 

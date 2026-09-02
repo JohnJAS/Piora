@@ -27,6 +27,7 @@ import {
   type SpeechRuntimeSource,
 } from "./speech-pack-catalog";
 import { readSpeechSettings, writeSpeechSettings, type SpeechSettings } from "./speech-settings";
+import { matchManualSpeechSourceName } from "./speech-manual-file";
 import {
   LOCAL_SPEECH_PACK_ID,
   type SpeechInstallState,
@@ -221,7 +222,9 @@ export async function storeManualSpeechPackSource(
   body: ReadableStream<Uint8Array> | null,
   declaredBytes?: number,
 ): Promise<Awaited<ReturnType<typeof getManualSpeechPackState>>> {
-  const source = requiredSpeechSources().find((candidate) => candidate.name === requestedName);
+  const sources = requiredSpeechSources();
+  const resolvedName = matchManualSpeechSourceName(requestedName, sources.map((source) => source.name));
+  const source = sources.find((candidate) => candidate.name === resolvedName);
   if (!source) throw new Error("This file does not belong to the current speech pack");
   if (!body) throw new Error("The uploaded speech-pack file is empty");
   if (declaredBytes !== undefined && (!Number.isFinite(declaredBytes) || declaredBytes <= 0 || declaredBytes > MAX_MANUAL_SOURCE_BYTES)) {

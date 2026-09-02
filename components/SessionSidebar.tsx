@@ -531,11 +531,14 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     {conversationSearchOpen ? (
       <ConversationSearchDialog
         sessions={allSessions}
+        hasProject={Boolean(activeProjectRoot)}
         onClose={() => setConversationSearchOpen(false)}
         onSelect={(session, entryId) => {
           if (onSelectSearchResult) onSelectSearchResult(session, entryId);
           else onSelectSession(session);
         }}
+        onSelectSession={onSelectSession}
+        onOpenSettings={(key) => onOpenSettings?.(key)}
       />
     ) : null}
     </>
