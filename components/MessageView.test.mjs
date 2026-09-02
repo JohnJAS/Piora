@@ -14,6 +14,8 @@ const { MessageView, getAutomationToolCardDetails, getUserMessagePreview } = awa
 // the exact context module instead of creating a second provider instance.
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const messageImageSource = readFileSync(new URL("./MessageImage.tsx", import.meta.url), "utf8");
+const messageViewSource = readFileSync(new URL("./MessageView.tsx", import.meta.url), "utf8");
+const globalStyles = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
 function renderMessage(message, props = {}) {
   return renderToStaticMarkup(
@@ -114,6 +116,26 @@ test("renders partial assistant content before the provider error", () => {
 
   assert.match(html, /Partial response/);
   assert.match(html, /Error: Connection closed/);
+});
+
+test("renders thinking as a rounded disclosure whose content uses Markdown", () => {
+  const html = renderMessage({
+    role: "assistant",
+    provider: "openai",
+    model: "gpt-test",
+    content: [{ type: "thinking", thinking: "## Plan\n\n- inspect\n- fix" }],
+  });
+  const thinkingBlockSource = messageViewSource.slice(
+    messageViewSource.indexOf("function ThinkingBlock"),
+    messageViewSource.indexOf("function ToolCallBlock"),
+  );
+
+  assert.match(html, /class="thinking-block"/);
+  assert.match(html, /class="thinking-block-trigger"/);
+  assert.match(html, /aria-expanded="false"/);
+  assert.match(thinkingBlockSource, /<MarkdownBody className="markdown-thinking"[^>]*>\{display\.content\}<\/MarkdownBody>/);
+  assert.doesNotMatch(thinkingBlockSource, /whiteSpace:\s*"pre-wrap"/);
+  assert.match(globalStyles, /\.thinking-block\s*\{[^}]*border-radius:\s*12px/s);
 });
 
 test("renders file edits as a collapsed change card with line stats", () => {

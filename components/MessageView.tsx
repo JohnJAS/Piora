@@ -791,7 +791,7 @@ function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCal
   }
   if (block.type === "thinking") {
     const thinkingBlock = block as ThinkingContent;
-    return <ThinkingBlock block={thinkingBlock} duration={streamingDuration} sessionId={sessionId} entryId={entryId} blockIndex={thinkingBlock.deferredBlockIndex ?? blockIndex} />;
+    return <ThinkingBlock block={thinkingBlock} duration={streamingDuration} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} sessionId={sessionId} entryId={entryId} blockIndex={thinkingBlock.deferredBlockIndex ?? blockIndex} />;
   }
   if (block.type === "toolCall") {
     const tc = block as ToolCallContent;
@@ -806,9 +806,12 @@ function TextBlock({ block, isStreaming, cwd, onOpenFile }: { block: TextContent
   return <MarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile}>{block.text}</MarkdownBody>;
 }
 
-function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
+function ThinkingBlock({ block, duration, isStreaming, cwd, onOpenFile, sessionId, entryId, blockIndex }: {
   block: ThinkingContent;
   duration?: number;
+  isStreaming?: boolean;
+  cwd?: string;
+  onOpenFile?: (filePath: string) => void;
   sessionId?: string;
   entryId?: string;
   blockIndex: number;
@@ -840,56 +843,30 @@ function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
     : getThinkingBlockDisplay(block, sourceKey, loadState);
 
   return (
-    <div
-      style={{
-        border: "1px solid var(--border)",
-        borderRadius: 6,
-        overflow: "hidden",
-        fontSize: "var(--text-base)",
-      }}
-    >
+    <div className={`thinking-block${expanded ? " is-expanded" : ""}`}>
       <button
         type="button"
+        className="thinking-block-trigger"
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          width: "100%",
-          padding: "6px 10px",
-          background: "var(--bg-panel)",
-          border: "none",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-          fontSize: "var(--text-sm)",
-          textAlign: "left",
-        }}
       >
-         <span>{t("i18n.thinking")}</span>
+        <span className="thinking-block-chevron" aria-hidden="true">
+          <AliIcon name="chevron-right" size={12} strokeWidth={1.8} />
+        </span>
+        <span className="thinking-block-label">{t("i18n.thinking")}</span>
         {duration !== undefined && (
-          <span style={{ marginLeft: "auto", fontSize: "var(--text-xs)", color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>{duration}s</span>
+          <span className="thinking-block-duration">{duration}s</span>
         )}
       </button>
       {expanded && (
-        <div
-          style={{
-            padding: "8px 10px",
-            color: display.status === "error" ? "#f87171" : "var(--text-muted)",
-            fontSize: "var(--text-sm)",
-            lineHeight: 1.6,
-            whiteSpace: "pre-wrap",
-            background: "var(--bg-panel)",
-            borderTop: "1px solid var(--border)",
-          }}
-        >
-           {display.status === "loading"
-             ? t("i18n.loadingThinking")
-             : display.status === "error"
-               ? display.error
-               : display.status === "content"
-                 ? display.content
-                 : null}
+        <div className={`thinking-block-content${display.status === "error" ? " is-error" : ""}`}>
+          {display.status === "loading"
+            ? <span className="thinking-block-status">{t("i18n.loadingThinking")}</span>
+            : display.status === "error"
+              ? <span className="thinking-block-status">{display.error}</span>
+              : display.status === "content"
+                ? <MarkdownBody className="markdown-thinking" isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile}>{display.content}</MarkdownBody>
+                : null}
         </div>
       )}
     </div>
