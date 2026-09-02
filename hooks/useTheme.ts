@@ -2,6 +2,30 @@
 
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { UiThemePackId } from "../lib/ui-theme-packs.ts";
+import {
+  isDarkTheme,
+  isTheme,
+  LEGACY_THEME_STORAGE_KEY,
+  parseStoredTheme,
+  readStoredThemePreference,
+  serializeThemePreference,
+  THEME_PRESETS,
+  THEME_STORAGE_KEY,
+  type Theme,
+} from "../lib/theme-preferences.ts";
+
+export {
+  isDarkTheme,
+  isTheme,
+  LEGACY_THEME_STORAGE_KEY,
+  parseStoredTheme,
+  readStoredThemePreference,
+  serializeThemePreference,
+  THEME_INITIALIZATION_SCRIPT,
+  THEME_PRESETS,
+  THEME_STORAGE_KEY,
+} from "../lib/theme-preferences.ts";
+export type { Theme, ThemePreset } from "../lib/theme-preferences.ts";
 
 /** Static CSS that a theme pack injects only while that theme is active
     (docs/PIORA_UI_STYLE_SPEC.md §2.6 / task T-02 S8 — no unconditional import). */
@@ -9,99 +33,8 @@ const THEME_PACK_STYLESHEETS: Partial<Record<UiThemePackId, string>> = {
   "codex-dream-skin": "/themes/codex-dream-skin/skin.css",
 };
 
-export type Theme =
-  | "light"
-  | "dark"
-  | "starlight"
-  | "ivory"
-  | "doodle"
-  | "fortune"
-  | "nordic"
-  | "sakura"
-  | "kitty"
-  | "cloud-bear"
-  | "anime-sky"
-  | "anime-sakura"
-  | "anime-magic"
-  | "anime-neon"
-  | "anime-star"
-  | "midnight"
-  | "forest"
-  | "cyber"
-  | "ember"
-  | "dream";
-
-export interface ThemePreset {
-  id: Theme;
-  isDark: boolean;
-  packId?: UiThemePackId;
-  preview: {
-    background: string;
-    accent: string;
-  };
-}
-
-export const THEME_PRESETS: readonly ThemePreset[] = [
-  { id: "light", isDark: false, preview: { background: "#fffdfc", accent: "#3569d4" } },
-  { id: "dark", isDark: true, preview: { background: "#1a1a1a", accent: "#60a5fa" } },
-  { id: "starlight", isDark: false, preview: { background: "#f3f2ff", accent: "#7857e8" } },
-  { id: "ivory", isDark: false, preview: { background: "#f8f5e9", accent: "#78834f" } },
-  { id: "doodle", isDark: false, preview: { background: "#fff9e9", accent: "#0e9f8f" } },
-  { id: "fortune", isDark: false, preview: { background: "#fff5dc", accent: "#b92c25" } },
-  { id: "nordic", isDark: false, preview: { background: "#f5f9fc", accent: "#146c82" } },
-  { id: "sakura", isDark: false, preview: { background: "#fff7fa", accent: "#a63d68" } },
-  { id: "kitty", isDark: false, preview: { background: "#fff5f8", accent: "#e65383" } },
-  { id: "cloud-bear", isDark: false, preview: { background: "#f3faff", accent: "#3f8ee8" } },
-  { id: "anime-sky", isDark: false, preview: { background: "#f3faff", accent: "#17639a" } },
-  { id: "anime-sakura", isDark: false, preview: { background: "#fff6f3", accent: "#a83c5e" } },
-  { id: "anime-magic", isDark: true, preview: { background: "#0d1029", accent: "#a994ff" } },
-  { id: "anime-neon", isDark: true, preview: { background: "#061326", accent: "#45d9ff" } },
-  { id: "anime-star", isDark: true, preview: { background: "#07131e", accent: "#4cb7e8" } },
-  { id: "midnight", isDark: true, preview: { background: "#0b1020", accent: "#8b9dff" } },
-  { id: "forest", isDark: true, preview: { background: "#101914", accent: "#6fcf97" } },
-  { id: "cyber", isDark: true, preview: { background: "#07191c", accent: "#4fd1c5" } },
-  { id: "ember", isDark: true, preview: { background: "#1b1110", accent: "#ff9a62" } },
-  { id: "dream", isDark: true, packId: "codex-dream-skin", preview: { background: "#111318", accent: "#8da397" } },
-] as const;
-
-export const THEME_STORAGE_KEY = "pi-theme:v1";
-export const LEGACY_THEME_STORAGE_KEY = "pi-theme";
-
-const THEME_IDS = new Set<Theme>(THEME_PRESETS.map(({ id }) => id));
-const DARK_THEME_IDS = new Set<Theme>(
-  THEME_PRESETS.filter(({ isDark }) => isDark).map(({ id }) => id),
-);
 const listeners = new Set<() => void>();
 let storageListenerAttached = false;
-
-export function isTheme(value: unknown): value is Theme {
-  return typeof value === "string" && THEME_IDS.has(value as Theme);
-}
-
-export function isDarkTheme(theme: Theme): boolean {
-  return DARK_THEME_IDS.has(theme);
-}
-
-/** Accepts both the versioned payload and the old plain `pi-theme` value. */
-export function parseStoredTheme(value: string | null): Theme | null {
-  if (!value) return null;
-  if (isTheme(value)) return value;
-
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (parsed && typeof parsed === "object" && "theme" in parsed) {
-      const theme = (parsed as { theme?: unknown }).theme;
-      return isTheme(theme) ? theme : null;
-    }
-  } catch {
-    // A malformed preference falls back to the legacy key or the light theme.
-  }
-  return null;
-}
-
-export function serializeThemePreference(theme: Theme): string {
-  return JSON.stringify({ theme });
-}
 
 function subscribe(cb: () => void): () => void {
   if (!storageListenerAttached && typeof window !== "undefined") {
@@ -200,6 +133,17 @@ function transitionToTheme(theme: Theme, origin?: ThemeChangeOrigin, appearanceA
 
 export function useTheme() {
   const theme = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
+  // Recover from a cached or older document bootstrap as well as the normal
+  // pre-hydration initializer. This keeps the persisted preference authoritative.
+  useEffect(() => {
+    try {
+      const stored = readStoredThemePreference(localStorage);
+      if (stored && stored !== getSnapshot()) applyTheme(stored, false);
+    } catch {
+      // Storage can be unavailable in private or restricted browser contexts.
+    }
+  }, []);
 
   // Load the active theme pack's stylesheet on demand and unload it when the
   // theme changes, so non-pack themes never ship the pack's CSS (T-02 S8).

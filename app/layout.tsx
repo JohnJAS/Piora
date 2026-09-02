@@ -4,11 +4,11 @@ import { AppTooltip } from "@/components/AppTooltip";
 import { PwaRegistration } from "@/components/PwaRegistration";
 import { BACKGROUND_INITIALIZATION_SCRIPT } from "@/lib/backgrounds";
 import { FONT_PREFERENCE_INITIALIZATION_SCRIPT } from "@/lib/font-preferences";
+import { THEME_INITIALIZATION_SCRIPT } from "@/lib/theme-preferences";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 import "./theme-backgrounds.css";
 
-const themeInitializationScript = `(function(){try{var a=["light","dark","starlight","ivory","doodle","fortune","nordic","sakura","midnight","forest","cyber","ember","dream"],k=["dark","midnight","forest","cyber","ember","dream"],f=function(x){return a.indexOf(x)>-1},t=null,v=localStorage.getItem("pi-theme:v1");if(v){try{var p=JSON.parse(v);if(p&&f(p.theme))t=p.theme}catch(_){}}if(!t){var l=localStorage.getItem("pi-theme");if(f(l))t=l}if(!t)t="light";var r=document.documentElement,d=k.indexOf(t)>-1;r.setAttribute("data-theme",t);r.classList.toggle("dark",d);r.style.colorScheme=d?"dark":"light"}catch(_){}})();`;
 const surfaceInitializationScript = `(function(){try{if(location.pathname==="/desktop-pet"||location.pathname==="/desktop-companion-bubble")document.documentElement.classList.add("desktop-pet-document")}catch(_){}})();`;
 
 export const metadata: Metadata = {
@@ -60,7 +60,7 @@ export default function RootLayout({
         <meta name="google" content="notranslate" />
         <script
           dangerouslySetInnerHTML={{
-            __html: themeInitializationScript,
+            __html: THEME_INITIALIZATION_SCRIPT,
           }}
         />
         <script
