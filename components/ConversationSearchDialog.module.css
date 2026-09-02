@@ -57,7 +57,7 @@
   background: var(--bg);
   color: var(--text-dim);
   font: inherit;
-  font-size: 10px;
+  font-size: calc(var(--text-xs) * .84);
   line-height: 1.4;
   text-align: center;
 }
@@ -181,7 +181,7 @@
   border-top: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
   background: color-mix(in srgb, var(--bg) 55%, transparent);
   color: var(--text-dim);
-  font-size: 10px;
+  font-size: calc(var(--text-xs) * .84);
 }
 
 .empty {

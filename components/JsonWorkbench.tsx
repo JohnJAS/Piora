@@ -5,8 +5,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ClipboardEvent as ReactClipboardEvent,
-  type KeyboardEvent,
 } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import {
@@ -16,6 +14,7 @@ import {
   type JsonWorkbenchOptions,
 } from "@/lib/json-workbench";
 import type { CompanionLibraryItem } from "@/lib/companion-store";
+import { JsonCodeEditor, type JsonCodeEditorHandle, type JsonEditorShortcut } from "./JsonCodeEditor";
 import styles from "./JsonWorkbench.module.css";
 
 const STORAGE_KEY = "piora-json-workbench-v1";
@@ -158,7 +157,7 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [restored, setRestored] = useState(false);
-  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<JsonCodeEditorHandle>(null);
   const noticeTimerRef = useRef<number | null>(null);
 
   const activeDraft = drafts.find((draft) => draft.id === activeId) ?? drafts[0];
@@ -208,14 +207,13 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
     noticeTimerRef.current = window.setTimeout(() => setNotice(""), 1_800);
   };
 
-  const updateDraft = (id: string, patch: Partial<Pick<JsonDraft, "content" | "favorite" | "title">>) => {
+  const updateDraft = (id: string, patch: Partial<Pick<JsonDraft, "content" | "favorite">>) => {
     setDrafts((current) => current.map((draft) => draft.id === id ? { ...draft, ...patch } : draft));
   };
 
   const focusRange = (start: number, end = start) => {
     window.requestAnimationFrame(() => {
-      editorRef.current?.focus();
-      editorRef.current?.setSelectionRange(start, end);
+      editorRef.current?.focusRange(start, end);
     });
   };
 
@@ -228,10 +226,8 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
   };
 
   const resolveTarget = (action: JsonWorkbenchAction): TextTarget => {
-    const editor = editorRef.current;
     const content = activeDraft.content;
-    const start = editor?.selectionStart ?? 0;
-    const end = editor?.selectionEnd ?? start;
+    const { start, end } = editorRef.current?.getSelection() ?? { end: 0, start: 0 };
     if (start !== end) return { end, kind: "selection", start, text: content.slice(start, end) };
     if (action === "timestamp") {
       const number = numberTarget(content, start);
@@ -300,12 +296,6 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
     if (activeId === id) setActiveId(nextDrafts[Math.max(0, index - 1)]?.id ?? TEMP_DRAFT_ID);
   };
 
-  const renameDraft = (draft: JsonDraft) => {
-    if (draft.id === TEMP_DRAFT_ID) return;
-    const next = window.prompt(t("companion.json.renamePrompt"), draft.title)?.trim().slice(0, 80);
-    if (next) updateDraft(draft.id, { title: next });
-  };
-
   const pasteRaw = async (intoNewDraft = false) => {
     setError("");
     try {
@@ -315,21 +305,22 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
         addDraft(undefined, text);
         return;
       }
-      const editor = editorRef.current;
-      replaceRange({ end: editor?.selectionEnd ?? 0, start: editor?.selectionStart ?? 0 }, text);
+      const selection = editorRef.current?.getSelection() ?? { end: 0, start: 0 };
+      replaceRange(selection, text);
     } catch {
       setError(t("companion.json.clipboardError"));
     }
   };
 
-  const handlePaste = (event: ReactClipboardEvent<HTMLTextAreaElement>) => {
-    const pasted = event.clipboardData.getData("text");
-    if (!pasted) return;
-    const formatted = smartFormatJson(pasted, options);
-    if (!formatted.changed) return;
-    event.preventDefault();
-    replaceRange({ end: event.currentTarget.selectionEnd, start: event.currentTarget.selectionStart }, formatted.output);
-    announce(t("companion.json.autoFormatted"));
+  const formatPastedText = (pasted: string): string | null => {
+    try {
+      const formatted = smartFormatJson(pasted, options);
+      if (!formatted.changed) return null;
+      announce(t("companion.json.autoFormatted"));
+      return formatted.output;
+    } catch {
+      return null;
+    }
   };
 
   const cycleDraft = (backward: boolean) => {
@@ -338,17 +329,14 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
     setActiveId(drafts[next].id);
   };
 
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (!(event.ctrlKey || event.metaKey || event.altKey)) return;
-    const key = event.key.toLowerCase();
-    if (key === "enter") performAction("format");
-    else if (key === "t") addDraft();
-    else if (key === "n") void pasteRaw(true);
-    else if (key === "tab") cycleDraft(event.shiftKey);
-    else if (key === "l") updateDraft(activeDraft.id, { favorite: !activeDraft.favorite });
-    else if (key === "q") closeDraft(activeDraft.id);
-    else return;
-    event.preventDefault();
+  const handleEditorShortcut = (shortcut: JsonEditorShortcut) => {
+    if (shortcut === "format") performAction("format");
+    else if (shortcut === "new") addDraft();
+    else if (shortcut === "paste-new") void pasteRaw(true);
+    else if (shortcut === "cycle-forward") cycleDraft(false);
+    else if (shortcut === "cycle-backward") cycleDraft(true);
+    else if (shortcut === "toggle-lock") updateDraft(activeDraft.id, { favorite: !activeDraft.favorite });
+    else if (shortcut === "close") closeDraft(activeDraft.id);
   };
 
   const saveResult = async () => {
@@ -375,11 +363,6 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
 
   return (
     <section className={styles.workbench} data-compact={compact ? "true" : "false"} aria-label={t("companion.json.title")}>
-      <header className={styles.heading}>
-        <div><strong>{t("companion.json.title")}</strong><p>{t("companion.json.description")}</p></div>
-        <span>{t("companion.json.localOnly")}</span>
-      </header>
-
       <div className={styles.libraryBridge}>
         <select aria-label={t("companion.json.loadLibrary")} defaultValue="" onChange={(event) => {
           const item = reusableLibrary.find((entry) => entry.id === event.target.value);
@@ -400,8 +383,8 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
             data-locked={draft.favorite ? "true" : "false"}
             key={draft.id}
           >
-            <button type="button" role="tab" aria-selected={draft.id === activeDraft.id} title={t("companion.json.renameHint")} onClick={() => setActiveId(draft.id)} onDoubleClick={() => renameDraft(draft)}>
-              {draft.title}
+            <button type="button" role="tab" aria-selected={draft.id === activeDraft.id} onClick={() => setActiveId(draft.id)}>
+              {draft.id === TEMP_DRAFT_ID ? t("companion.json.temporaryTab") : draft.title}
             </button>
             {draft.id !== TEMP_DRAFT_ID ? <button type="button" disabled={draft.favorite} onClick={() => closeDraft(draft.id)} aria-label={t("companion.json.closeTab", { title: draft.title })}>×</button> : null}
           </div>
@@ -411,9 +394,14 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
 
       <div className={styles.actionBar}>
         <button className={styles.primary} type="button" onClick={() => performAction("format")}>{t("companion.json.action.format")}</button>
-        {(["get", "url", "base64", "serialize", "timestamp", "unicode", "utf8"] as const).map((action) => (
-          <button key={action} type="button" onClick={() => performAction(action)}>{labelFor(action)}</button>
-        ))}
+        <details>
+          <summary>{t("companion.json.transformTools")}</summary>
+          <div className={styles.menu}>
+            {(["get", "url", "base64", "serialize", "timestamp", "unicode", "utf8"] as const).map((action) => (
+              <button key={action} type="button" onClick={() => performAction(action)}>{labelFor(action)}</button>
+            ))}
+          </div>
+        </details>
         <details>
           <summary>{t("companion.json.action.unescape")}</summary>
           <div className={styles.menu}>
@@ -432,19 +420,16 @@ export function JsonWorkbench({ busy = false, compact = false, library = EMPTY_L
         <button type="button" onClick={() => void pasteRaw()}>{t("companion.json.rawPaste")}</button>
       </div>
 
-      <textarea
+      <JsonCodeEditor
         ref={editorRef}
-        className={styles.editor}
-        data-wrap={wrap ? "true" : "false"}
+        className={styles.editorHost}
+        ariaLabel={t("companion.json.editorLabel")}
         value={activeDraft.content}
-        maxLength={MAX_CONTENT_LENGTH}
-        onChange={(event) => { updateDraft(activeDraft.id, { content: event.target.value }); setError(""); }}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
+        onChange={(content) => { updateDraft(activeDraft.id, { content: content.slice(0, MAX_CONTENT_LENGTH) }); setError(""); }}
+        onPasteText={formatPastedText}
+        onShortcut={handleEditorShortcut}
         placeholder={t("companion.json.placeholder")}
-        spellCheck={false}
-        wrap={wrap ? "soft" : "off"}
-        style={{ tabSize: indent }}
+        wrap={wrap}
       />
 
       <div className={styles.settings}>

@@ -95,6 +95,27 @@ test("browser tool execution does not force open the workspace panel", () => {
   assert.match(toolStartSource, /setAgentPhase/);
 });
 
+test("shows steering and follow-up messages in the composer tray immediately", () => {
+  const steerSource = source.slice(
+    source.indexOf("  const handleSteer = useCallback"),
+    source.indexOf("  const handlePromptWithStreamingBehavior = useCallback"),
+  );
+  const promptSource = source.slice(
+    source.indexOf("  const handlePromptWithStreamingBehavior = useCallback"),
+    source.indexOf("  const handleFollowUp = useCallback"),
+  );
+  const followUpSource = source.slice(
+    source.indexOf("  const handleFollowUp = useCallback"),
+    source.indexOf("  const handleAbortCompaction = useCallback"),
+  );
+
+  assert.match(steerSource, /setQueuedMessages[\s\S]*appendQueuedMessage\(current, "steering", message\)[\s\S]*await sendAgentCommand/);
+  assert.match(steerSource, /catch[\s\S]*removeLastQueuedMessage\(current, "steering", message\)/);
+  assert.match(promptSource, /queueKind = behavior === "steer" \? "steering" : "followUp"/);
+  assert.match(promptSource, /setQueuedMessages[\s\S]*appendQueuedMessage\(current, queueKind, message\)/);
+  assert.match(followUpSource, /setQueuedMessages[\s\S]*appendQueuedMessage\(current, "followUp", message\)[\s\S]*await sendAgentCommand/);
+});
+
 test("waits for the session scroll container before consuming the initial bottom scroll", () => {
   const scrollEffectSource = source.slice(
     source.indexOf("// Loading may publish the message array"),

@@ -28,6 +28,7 @@ import {
 } from "@/lib/companion-store";
 import { JsonWorkbench } from "./JsonWorkbench";
 import { CompanionStorageSettings } from "./CompanionStorageSettings";
+import { AliIcon, type AliIconName } from "./AliIcon";
 import styles from "./CompanionPanel.module.css";
 
 type Tab = "now" | "tasks" | "focus" | "library" | "memory" | "mind";
@@ -330,20 +331,24 @@ export function CompanionPanel() {
   const pendingRecords = useMemo(() => state.taskRecords.filter((item) => item.reviewStatus === "pending"), [state.taskRecords]);
   const confirmedRecords = useMemo(() => state.taskRecords.filter((item) => item.reviewStatus === "confirmed"), [state.taskRecords]);
   const focusRemainingSeconds = getCompanionFocusRemainingSeconds(state.focusTimer, clock);
-  const tabs: Array<[Tab, string]> = [["now", "现在"], ["tasks", "任务"], ["focus", "番茄钟"], ["library", "资料"], ["memory", "记忆"], ["mind", "心智"]];
+  const tabs: Array<{ id: Tab; icon: AliIconName; label: string }> = [
+    { id: "now", icon: "home", label: "现在" },
+    { id: "tasks", icon: "check", label: "任务" },
+    { id: "focus", icon: "calendar", label: "番茄钟" },
+    { id: "library", icon: "database", label: "资料" },
+    { id: "memory", icon: "message", label: "记忆" },
+    { id: "mind", icon: "robot", label: "心智" },
+  ];
+  const activeTabLabel = tabs.find((item) => item.id === tab)?.label;
 
   return (
     <main className={`${styles.panel} companion-panel-root`} aria-busy={busy}>
-      <header className={styles.header}>
-        <div><h1>Piora 随身舱</h1><p>本地任务、专注与资料工具</p></div>
-        <span className={styles.mood}>{state.mind.mood}</span>
-      </header>
-      <nav className={styles.tabs} aria-label="随身舱功能">
-        {tabs.map(([id, label]) => <button type="button" key={id} data-active={tab === id} onClick={() => setTab(id)}>{label}</button>)}
+      <nav className={styles.tabs} role="tablist" aria-label="随身舱功能">
+        {tabs.map(({ id, icon, label }) => <button type="button" role="tab" key={id} aria-selected={tab === id} data-active={tab === id} onClick={() => setTab(id)}><AliIcon name={icon} size={14} /><span>{label}</span></button>)}
       </nav>
       {error ? <div className={styles.error}>{error}</div> : null}
 
-      <section className={styles.content}>
+      <section className={styles.content} role="tabpanel" aria-label={activeTabLabel}>
         {tab === "now" ? <>
           <article className={styles.hero}>
             <span>刚才的想法</span>

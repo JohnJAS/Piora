@@ -109,6 +109,19 @@ function normalizeQueuedMessages(q?: { steering?: string[]; followUp?: string[] 
   return { steering: q?.steering ?? [], followUp: q?.followUp ?? [] };
 }
 
+function appendQueuedMessage(current: QueuedMessages, kind: keyof QueuedMessages, message: string): QueuedMessages {
+  return { ...current, [kind]: [...current[kind], message] };
+}
+
+function removeLastQueuedMessage(current: QueuedMessages, kind: keyof QueuedMessages, message: string): QueuedMessages {
+  const index = current[kind].lastIndexOf(message);
+  if (index === -1) return current;
+  return {
+    ...current,
+    [kind]: [...current[kind].slice(0, index), ...current[kind].slice(index + 1)],
+  };
+}
+
 type ExtensionUiDialogRequest = Extract<ExtensionUiRequest, { method: "request_user_input" | "select" | "confirm" | "input" | "editor" }>;
 type ExtensionUiCustomRequest = Extract<ExtensionUiRequest, { method: "custom" }>;
 export type NoticeType = "info" | "success" | "warning" | "error";
@@ -1724,6 +1737,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current;
     if (!sid) return;
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
+    setQueuedMessages((current) => appendQueuedMessage(current, "steering", message));
     try {
       await sendAgentCommand(sid, {
         type: "steer",
@@ -1731,6 +1745,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
+      setQueuedMessages((current) => removeLastQueuedMessage(current, "steering", message));
       console.error("Failed to steer:", e);
     }
   }, []);
@@ -1743,6 +1758,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current;
     if (!sid) return;
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
+    const queueKind = behavior === "steer" ? "steering" : "followUp";
+    setQueuedMessages((current) => appendQueuedMessage(current, queueKind, message));
     try {
       await sendAgentCommand(sid, {
         type: "prompt",
@@ -1751,6 +1768,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
+      setQueuedMessages((current) => removeLastQueuedMessage(current, queueKind, message));
       console.error("Failed to queue prompt:", e);
     }
   }, []);
@@ -1759,6 +1777,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current;
     if (!sid) return;
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
+    setQueuedMessages((current) => appendQueuedMessage(current, "followUp", message));
     try {
       await sendAgentCommand(sid, {
         type: "follow_up",
@@ -1766,6 +1785,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         ...(piImages?.length ? { images: piImages } : {}),
       });
     } catch (e) {
+      setQueuedMessages((current) => removeLastQueuedMessage(current, "followUp", message));
       console.error("Failed to follow up:", e);
     }
   }, []);

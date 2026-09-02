@@ -1639,8 +1639,8 @@ function createCompanionPanelWindow(url: URL, log: Logger): BrowserWindow {
     if (quitRequested || shutdownComplete) return;
     event.preventDefault();
     companionPanelKeepVisibleUntilClose = false;
-    if (window.isMaximized()) window.unmaximize();
     window.hide();
+    if (window.isMaximized()) window.unmaximize();
   });
   window.on("closed", () => {
     companionPanelKeepVisibleUntilClose = false;
@@ -1663,10 +1663,17 @@ function showCompanionPanel(): boolean {
 }
 
 function toggleCompanionPanel(): boolean {
-  if (companionPanelWindow && !companionPanelWindow.isDestroyed() && companionPanelWindow.isVisible()) {
+  if (
+    companionPanelWindow
+    && !companionPanelWindow.isDestroyed()
+    && (companionPanelWindow.isVisible() || companionPanelWindow.isMinimized() || companionPanelWindow.isMaximized())
+  ) {
     companionPanelKeepVisibleUntilClose = false;
-    if (companionPanelWindow.isMaximized()) companionPanelWindow.unmaximize();
+    const wasMaximized = companionPanelWindow.isMaximized();
     companionPanelWindow.hide();
+    // On Windows an asynchronous unmaximize can reactivate a visible native
+    // window. Hide first, then restore its normal bounds while it is hidden.
+    if (wasMaximized) companionPanelWindow.unmaximize();
     return true;
   }
   return showCompanionPanel();
