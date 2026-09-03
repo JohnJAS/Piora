@@ -164,6 +164,14 @@ test("project creation lives in the projects header without a duplicate list", (
   assert.match(source, /className=\{styles\.sectionLabelActions\} style=\{\{ opacity: 1 \}\}/);
 });
 
+test("toggles all visible project folders from the projects header", () => {
+  assert.match(source, /const allProjectsCollapsed = projectGroups\.length > 0[\s\S]*?projectGroups\.every/);
+  assert.match(source, /sidebar\.expandAllProjects/);
+  assert.match(source, /sidebar\.collapseAllProjects/);
+  assert.match(source, /const next = new Set\(previous\)[\s\S]*?next\.delete\(group\.key\)[\s\S]*?next\.add\(group\.key\)/);
+  assert.match(source, /name=\{allProjectsCollapsed \? "expand" : "collapse"\}/);
+});
+
 test("exposes the existing validated project picker to shell-level project actions", () => {
   assert.match(source, /export interface SessionSidebarHandle\s*\{\s*openProjectPicker:\s*\(\) => void;/);
   assert.match(source, /forwardRef<SessionSidebarHandle, Props>/);

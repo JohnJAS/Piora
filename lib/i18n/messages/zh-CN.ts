@@ -1194,6 +1194,8 @@ export const zhCNLocale: LocalePlugin = {
     "sidebar.confirmSwitchWhileRunning": "当前会话仍在回答。切换项目会离开该对话，回答会在后台继续。仍然切换？",
     "sidebar.expandProject": "展开项目",
     "sidebar.collapseProject": "折叠项目",
+    "sidebar.expandAllProjects": "展开全部项目",
+    "sidebar.collapseAllProjects": "折叠全部项目",
     "sidebar.newConversation": "新对话",
     "sidebar.showMoreSessions": "显示另外 {count} 个会话",
     "sidebar.showFewerSessions": "收起会话",

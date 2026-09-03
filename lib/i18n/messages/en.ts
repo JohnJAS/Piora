@@ -1194,6 +1194,8 @@ export const enLocale: LocalePlugin = {
     "sidebar.confirmSwitchWhileRunning": "This conversation is still responding. Switching projects will leave it; the response continues in the background. Switch anyway?",
     "sidebar.expandProject": "Expand project",
     "sidebar.collapseProject": "Collapse project",
+    "sidebar.expandAllProjects": "Expand all projects",
+    "sidebar.collapseAllProjects": "Collapse all projects",
     "sidebar.newConversation": "New conversation",
     "sidebar.showMoreSessions": "Show {count} more",
     "sidebar.showFewerSessions": "Show fewer",
