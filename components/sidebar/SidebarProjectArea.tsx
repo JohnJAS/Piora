@@ -46,6 +46,8 @@ interface ProjectDragState {
 export function SidebarProjectArea(props: Props) {
   const { t } = useI18n();
   const { loading, error, projectsHovered, setProjectsHovered, handleDefaultCwd, handleCustomPathClick, projectGroups, selectedProject, collapsedProjectKeys, expandedProjectSessionKeys, setCollapsedProjectKeys, setExpandedProjectSessionKeys, selectedSessionId, runningSessionIds, unreadSessionIds, attentionSessionIds, moveTargets, setSelectedCwd, homeDir, handleSelectSessionFromList, handleNewSessionInProject, loadSessions, handleSessionDeletedWithUndo, sessionFlags, patchSessionFlag, duplicateSession, markSessionUnread, moveSession, pinnedProjectRoots, projectAliases, togglePinnedProject, renameProject, removeProject, onReorderProjects, sessionOrder, onReorderSessions } = props;
+  const allProjectsCollapsed = projectGroups.length > 0
+    && projectGroups.every((group) => collapsedProjectKeys.has(group.key));
   const projectScrollRef = useRef<HTMLDivElement>(null);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const candidateRef = useRef<{ pointerId: number; root: string; x: number; y: number } | null>(null);
@@ -164,6 +166,27 @@ export function SidebarProjectArea(props: Props) {
         >
           <span>{t("sidebar.projects")}</span>
           <div className={styles.sectionLabelActions} style={{ opacity: 1 }}>
+            {projectGroups.length > 0 && (
+              <button
+                type="button"
+                className={styles.rowAction}
+                onClick={() => {
+                  setCollapsedProjectKeys((previous) => {
+                    const shouldExpandAll = projectGroups.every((group) => previous.has(group.key));
+                    const next = new Set(previous);
+                    for (const group of projectGroups) {
+                      if (shouldExpandAll) next.delete(group.key);
+                      else next.add(group.key);
+                    }
+                    return next;
+                  });
+                }}
+                title={t(allProjectsCollapsed ? "sidebar.expandAllProjects" : "sidebar.collapseAllProjects")}
+                aria-label={t(allProjectsCollapsed ? "sidebar.expandAllProjects" : "sidebar.collapseAllProjects")}
+              >
+                <AliIcon name={allProjectsCollapsed ? "expand" : "collapse"} size={12} />
+              </button>
+            )}
             <button
               type="button"
               className={styles.rowAction}
