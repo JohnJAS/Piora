@@ -51,14 +51,13 @@ export function NewSessionProjectPicker({
   activeProjectRoot?: string | null;
   chatInputRef?: RefObject<ChatInputHandle | null>;
   onLaunch: (request: NewSessionLaunch) => void;
-  onProjectSelected?: (cwd: string) => void;
+  onProjectSelected?: (cwd: string | null) => void;
   projectPickerRequestKey?: number;
 }) {
   const { t } = useI18n();
   const localChatInputRef = useRef<ChatInputHandle>(null);
   const effectiveChatInputRef = chatInputRef ?? localChatInputRef;
   const draftKey = useRef(`new-task:${createLaunchId()}`).current;
-  const pendingSubmissionClaimedRef = useRef(false);
   const projectControlRef = useRef<HTMLDivElement>(null);
   const projectSearchRef = useRef<HTMLInputElement>(null);
 
@@ -70,19 +69,15 @@ export function NewSessionProjectPicker({
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [modelsReloadKey, setModelsReloadKey] = useState(0);
   const [loadedModelCwd, setLoadedModelCwd] = useState<string | null | undefined>(undefined);
-  const [selectedProject, setSelectedProject] = useState<ProjectChoice | null>(() => activeCwd ? {
-    root: activeProjectRoot ?? activeCwd,
-    cwd: activeCwd,
-    sessionCount: 0,
-    latestModified: null,
-  } : null);
+  const [projectlessCwd, setProjectlessCwd] = useState<string | null>(null);
+  const [projectlessError, setProjectlessError] = useState<string | null>(null);
+  const [projectlessReloadKey, setProjectlessReloadKey] = useState(0);
+  const [selectedProject, setSelectedProject] = useState<ProjectChoice | null>(null);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
-  const [projectRequired, setProjectRequired] = useState(false);
   const [projectQuery, setProjectQuery] = useState("");
   const [directoryPickerOpen, setDirectoryPickerOpen] = useState(false);
   const [projectValidating, setProjectValidating] = useState(false);
   const [projectError, setProjectError] = useState<string | null>(null);
-  const [submitAfterProjectSelection, setSubmitAfterProjectSelection] = useState(false);
   const [systemPromptSelection, setSystemPromptSelection] = useState<SystemPromptSelection>({ mode: "default" });
 
   useEffect(() => {
@@ -99,15 +94,22 @@ export function NewSessionProjectPicker({
   }, []);
 
   useEffect(() => {
-    if (!activeCwd) return;
-    const root = activeProjectRoot ?? activeCwd;
-    setSelectedProject((current) => current?.cwd === activeCwd && current.root === root ? current : {
-      root,
-      cwd: activeCwd,
-      sessionCount: current?.root === root ? current.sessionCount : 0,
-      latestModified: current?.root === root ? current.latestModified : null,
-    });
-  }, [activeCwd, activeProjectRoot]);
+    let cancelled = false;
+    const controller = new AbortController();
+    setProjectlessCwd(null);
+    setProjectlessError(null);
+    void fetch("/api/chat-workspace", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json() as { cwd?: string; error?: string };
+        if (!response.ok || !data.cwd) throw new Error(data.error ?? `HTTP ${response.status}`);
+        if (!cancelled) setProjectlessCwd(data.cwd);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted || cancelled) return;
+        setProjectlessError(error instanceof Error ? error.message : String(error));
+      });
+    return () => { cancelled = true; controller.abort(); };
+  }, [projectlessReloadKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -180,25 +182,19 @@ export function NewSessionProjectPicker({
     return match ? { provider: match.provider, modelId: match.id } : null;
   }, [models, selectedModelKey]);
 
-  const selectedProjectModelReady = Boolean(
-    selectedProject
-    && selectedModel
+  const launchReady = Boolean(
+    selectedModel
     && !modelsLoading
-    && loadedModelCwd === selectedProject.cwd,
+    && loadedModelCwd === (selectedProject?.cwd ?? null)
+    && (selectedProject || projectlessCwd),
   );
 
-  const cancelPendingProjectSubmission = useCallback(() => {
-    pendingSubmissionClaimedRef.current = false;
+  const closeProjectMenu = useCallback(() => {
     setProjectMenuOpen(false);
-    setProjectRequired(false);
-    setSubmitAfterProjectSelection(false);
   }, []);
 
   useEffect(() => {
     if (projectPickerRequestKey <= 0) return;
-    pendingSubmissionClaimedRef.current = false;
-    setProjectRequired(true);
-    setSubmitAfterProjectSelection(false);
     setProjectMenuOpen(true);
   }, [projectPickerRequestKey]);
 
@@ -206,10 +202,10 @@ export function NewSessionProjectPicker({
     if (!projectMenuOpen) return;
     const frame = window.requestAnimationFrame(() => projectSearchRef.current?.focus());
     const closeOnPointer = (event: PointerEvent) => {
-      if (!projectControlRef.current?.contains(event.target as Node)) cancelPendingProjectSubmission();
+      if (!projectControlRef.current?.contains(event.target as Node)) closeProjectMenu();
     };
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") cancelPendingProjectSubmission();
+      if (event.key === "Escape") closeProjectMenu();
     };
     document.addEventListener("pointerdown", closeOnPointer);
     document.addEventListener("keydown", closeOnEscape);
@@ -218,12 +214,20 @@ export function NewSessionProjectPicker({
       document.removeEventListener("pointerdown", closeOnPointer);
       document.removeEventListener("keydown", closeOnEscape);
     };
-  }, [cancelPendingProjectSubmission, projectMenuOpen]);
+  }, [closeProjectMenu, projectMenuOpen]);
+
+  const chooseProjectless = useCallback(() => {
+    setSelectedProject(null);
+    onProjectSelected?.(null);
+    setProjectError(null);
+    setProjectMenuOpen(false);
+    setProjectQuery("");
+    window.requestAnimationFrame(() => effectiveChatInputRef.current?.focus());
+  }, [effectiveChatInputRef, onProjectSelected]);
 
   const chooseProject = useCallback((project: ProjectChoice) => {
     setSelectedProject(project);
     onProjectSelected?.(project.cwd);
-    setProjectRequired(false);
     setProjectError(null);
     setProjectMenuOpen(false);
     setProjectQuery("");
@@ -262,9 +266,7 @@ export function NewSessionProjectPicker({
     try {
       const selected = await selectDirectory();
       if (selected) await validateAndChooseProject(selected);
-      else setSubmitAfterProjectSelection(false);
     } catch (error) {
-      setSubmitAfterProjectSelection(false);
       setProjectError(error instanceof Error ? error.message : String(error));
     }
   }, [validateAndChooseProject]);
@@ -274,17 +276,11 @@ export function NewSessionProjectPicker({
     images?: AttachedImage[],
     files?: AttachedFile[],
   ): false | void => {
-    if (!selectedProject) {
-      pendingSubmissionClaimedRef.current = false;
-      setProjectRequired(true);
-      setSubmitAfterProjectSelection(true);
-      setProjectMenuOpen(true);
-      return false;
-    }
-    if (!selectedModel || !selectedProjectModelReady) return false;
+    const cwd = selectedProject?.cwd ?? projectlessCwd;
+    if (!cwd || !selectedModel || !launchReady) return false;
     onLaunch({
-      cwd: selectedProject.cwd,
-      projectRoot: selectedProject.root,
+      cwd,
+      projectRoot: selectedProject?.root ?? null,
       model: selectedModel,
       prompt: {
         id: createLaunchId(),
@@ -294,33 +290,19 @@ export function NewSessionProjectPicker({
         systemPromptSelection,
       },
     });
-  }, [onLaunch, selectedModel, selectedProject, selectedProjectModelReady, systemPromptSelection]);
-
-  useEffect(() => {
-    if (!submitAfterProjectSelection || !selectedProjectModelReady) return;
-    if (pendingSubmissionClaimedRef.current) return;
-    pendingSubmissionClaimedRef.current = true;
-    setSubmitAfterProjectSelection(false);
-    effectiveChatInputRef.current?.submit();
-  }, [effectiveChatInputRef, selectedProjectModelReady, submitAfterProjectSelection]);
+  }, [launchReady, onLaunch, projectlessCwd, selectedModel, selectedProject, systemPromptSelection]);
 
   const modelsUnavailable = !modelsLoading && models.length === 0;
   const modelSelectionBlocked = modelsLoading
     || !selectedModel
-    || (selectedProject ? loadedModelCwd !== selectedProject.cwd : loadedModelCwd !== null);
+    || (selectedProject ? loadedModelCwd !== selectedProject.cwd : loadedModelCwd !== null || !projectlessCwd);
 
   const projectControl = (
     <div ref={projectControlRef} className={styles.projectControl}>
       <button
         type="button"
         className={styles.projectTrigger}
-        data-required={projectRequired || undefined}
-        onClick={() => {
-          pendingSubmissionClaimedRef.current = false;
-          setProjectRequired(false);
-          setSubmitAfterProjectSelection(false);
-          setProjectMenuOpen((open) => !open);
-        }}
+        onClick={() => setProjectMenuOpen((open) => !open)}
         aria-haspopup="listbox"
         aria-expanded={projectMenuOpen}
         title={selectedProject?.root ?? t("newSession.chooseProject")}
@@ -336,7 +318,7 @@ export function NewSessionProjectPicker({
             className={styles.projectBackdrop}
             aria-label={t("chat.close")}
             tabIndex={-1}
-            onClick={cancelPendingProjectSubmission}
+            onClick={closeProjectMenu}
           />
           <div className={styles.projectPopover}>
             <label className={styles.projectSearch}>
@@ -350,6 +332,18 @@ export function NewSessionProjectPicker({
               />
             </label>
             <div className={styles.projectList} role="listbox" aria-label={t("newSession.chooseProject")}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={!selectedProject}
+                onClick={chooseProjectless}
+              >
+                <AliIcon name="message" size={15} />
+                <span>
+                  <strong>{t("newSession.projectless")}</strong>
+                  <small>{t("newSession.projectlessDescription")}</small>
+                </span>
+              </button>
               {filteredProjects.map((project) => (
                 <button
                   key={project.root}
@@ -414,10 +408,15 @@ export function NewSessionProjectPicker({
             </>
           )}
         />
-        {(projectError || modelsUnavailable) ? (
+        {(projectError || (!selectedProject && projectlessError) || modelsUnavailable) ? (
           <div className={styles.statusRow} role="alert">
-            <span>{projectError ?? modelsError ?? t("newSession.modelsUnavailable")}</span>
-            {!projectError && modelsUnavailable ? (
+            <span>{projectError ?? (!selectedProject ? projectlessError : null) ?? modelsError ?? t("newSession.modelsUnavailable")}</span>
+            {!projectError && !selectedProject && projectlessError ? (
+              <button type="button" onClick={() => setProjectlessReloadKey((key) => key + 1)}>
+                <AliIcon name="reload" size={12} />
+                {t("newSession.retryModels")}
+              </button>
+            ) : !projectError && modelsUnavailable ? (
               <button type="button" disabled={modelsLoading} onClick={() => setModelsReloadKey((key) => key + 1)}>
                 <AliIcon name="reload" size={12} />
                 {t("newSession.retryModels")}
@@ -431,10 +430,8 @@ export function NewSessionProjectPicker({
           busy={projectValidating}
           error={projectError}
           onCancel={() => {
-            pendingSubmissionClaimedRef.current = false;
             setDirectoryPickerOpen(false);
             setProjectError(null);
-            setSubmitAfterProjectSelection(false);
           }}
           onSelect={(path) => void validateAndChooseProject(path)}
         />

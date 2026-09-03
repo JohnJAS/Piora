@@ -7,6 +7,7 @@ const launcher = await readFile(new URL("./NewSessionLauncher.tsx", import.meta.
 const chatInput = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
 const chatWindow = await readFile(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 const shell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
+const launchTypes = await readFile(new URL("./new-session-types.ts", import.meta.url), "utf8");
 const navigation = await readFile(new URL("./sidebar/SidebarNavigation.tsx", import.meta.url), "utf8");
 const taskRow = await readFile(new URL("./sidebar/TaskRow.tsx", import.meta.url), "utf8");
 const backgrounds = await readFile(new URL("../app/theme-backgrounds.css", import.meta.url), "utf8");
@@ -48,13 +49,18 @@ test("global new-session actions open the project-selectable launcher", () => {
   assert.match(navigation, /if \(onRequestNewSession\) \{\s*onRequestNewSession\(\)/);
 });
 
-test("one Enter can choose a project and continue through the real first-send path", () => {
+test("new conversations default to projectless and keep workspace selection optional", () => {
   assert.match(chatInput, /const accepted = onSend\(/);
   assert.match(chatInput, /if \(accepted === false\) return;[\s\S]*?clearInput\(\)/);
-  assert.match(chatInput, /submit\(\) \{[\s\S]*?submitRef\.current\(\)/);
-  assert.match(picker, /if \(!selectedProject\) \{[\s\S]*?setSubmitAfterProjectSelection\(true\)[\s\S]*?return false/);
-  assert.match(picker, /effectiveChatInputRef\.current\?\.submit\(\)/);
-  assert.doesNotMatch(picker, /requestAnimationFrame\(\(\) => effectiveChatInputRef\.current\?\.submit/);
+  assert.match(picker, /fetch\("\/api\/chat-workspace"/);
+  assert.match(picker, /const \[selectedProject, setSelectedProject\] = useState<ProjectChoice \| null>\(null\)/);
+  assert.match(picker, /const cwd = selectedProject\?\.cwd \?\? projectlessCwd/);
+  assert.match(picker, /projectRoot: selectedProject\?\.root \?\? null/);
+  assert.match(picker, /const chooseProjectless = useCallback/);
+  assert.match(picker, /t\("newSession\.projectless"\)/);
+  assert.doesNotMatch(picker, /setSubmitAfterProjectSelection|setProjectRequired/);
+  assert.match(launchTypes, /projectRoot: string \| null/);
+  assert.match(shell, /if \(request\.projectRoot\)[\s\S]*?setActiveCwd\(null\)/);
   assert.match(picker, /onLaunch\(\{[\s\S]*?prompt: \{[\s\S]*?message,[\s\S]*?images,[\s\S]*?files/);
   assert.match(picker, /systemPromptSelection/);
   assert.doesNotMatch(picker, /prompt: \{[\s\S]*?options/);
@@ -67,19 +73,19 @@ test("one Enter can choose a project and continue through the real first-send pa
   assert.match(chatWindow, /void handleSend\([\s\S]*?initialPrompt\.message,[\s\S]*?initialPrompt\.images,[\s\S]*?initialPrompt\.files/);
   assert.doesNotMatch(shell, /pendingLandingDraftRef|pendingLandingModelRef/);
   assert.match(picker, /const modelsUnavailable = !modelsLoading && models\.length === 0/);
-  assert.match(picker, /projectError \|\| modelsUnavailable/);
+  assert.match(picker, /projectError \|\| \(!selectedProject && projectlessError\) \|\| modelsUnavailable/);
   assert.match(picker, /modelError=\{models\.length > 0 \? modelsError : null\}/);
   assert.match(picker, /className=\{styles\.projectBackdrop\}/);
 });
 
-test("project browsing is selection-only and cancel cannot leak an old landing draft", async () => {
+test("project browsing is selection-only and cancellation preserves projectless mode", async () => {
   const [preload, desktopMain] = await Promise.all([
     readFile(new URL("../desktop/src/preload.ts", import.meta.url), "utf8"),
     readFile(new URL("../desktop/src/main.ts", import.meta.url), "utf8"),
   ]);
   assert.match(picker, /window\.piDesktop\?\.selectDirectory/);
   assert.match(picker, /const selected = await selectDirectory\(\)/);
-  assert.match(picker, /else setSubmitAfterProjectSelection\(false\)/);
+  assert.doesNotMatch(picker, /setSubmitAfterProjectSelection|pendingSubmissionClaimedRef/);
   assert.match(picker, /<DirectoryPicker/);
   assert.match(picker, /fetch\("\/api\/cwd\/validate"/);
   assert.doesNotMatch(picker, /onNewSession|pendingLanding|openProjectPicker/);

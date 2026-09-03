@@ -942,10 +942,16 @@ export function AppShell() {
   }, [isMobile]);
 
   const handleNewSessionLaunch = useCallback((request: NewSessionLaunch) => {
-    if (activeCwd !== request.cwd) suppressCwdBumpRef.current = true;
-    activeProjectRootRef.current = request.projectRoot;
-    setActiveProjectRoot(request.projectRoot);
-    setActiveCwd(request.cwd);
+    if (request.projectRoot) {
+      if (activeCwd !== request.cwd) suppressCwdBumpRef.current = true;
+      activeProjectRootRef.current = request.projectRoot;
+      setActiveProjectRoot(request.projectRoot);
+      setActiveCwd(request.cwd);
+    } else {
+      activeProjectRootRef.current = null;
+      setActiveProjectRoot(null);
+      setActiveCwd(null);
+    }
     handleNewSession(`project-picker-${Date.now()}`, request.cwd, request.model, request.prompt);
   }, [activeCwd, handleNewSession]);
 

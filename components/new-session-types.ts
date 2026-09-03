@@ -12,7 +12,7 @@ export interface NewSessionInitialPrompt {
 
 export interface NewSessionLaunch {
   cwd: string;
-  projectRoot: string;
+  projectRoot: string | null;
   model: { provider: string; modelId: string };
   prompt: NewSessionInitialPrompt;
 }
