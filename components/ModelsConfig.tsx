@@ -1990,6 +1990,7 @@ export function ModelsConfig({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedOk, setSavedOk] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [draggingProvider, setDraggingProvider] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<"connection" | "models">("connection");
   useEffect(() => setDetailTab("connection"), [selection]);
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([]);
@@ -2130,6 +2131,21 @@ export function ModelsConfig({
 
   const updateProvider = useCallback((name: string, p: ProviderEntry) => {
     setConfig((prev) => ({ ...prev, providers: { ...(prev.providers ?? {}), [name]: p } }));
+  }, []);
+
+  const reorderProviders = useCallback((source: string, target: string) => {
+    if (source === target) return;
+    setConfig((prev) => {
+      const entries = Object.entries(prev.providers ?? {});
+      const sourceIndex = entries.findIndex(([name]) => name === source);
+      const targetIndex = entries.findIndex(([name]) => name === target);
+      if (sourceIndex < 0 || targetIndex < 0) return prev;
+      const [entry] = entries.splice(sourceIndex, 1);
+      entries.splice(sourceIndex < targetIndex ? targetIndex - 1 : targetIndex, 0, entry);
+      return { ...prev, providers: Object.fromEntries(entries) };
+    });
+    setSavedOk(false);
+    setSaveError(null);
   }, []);
 
   const editProviderName = useCallback((name: string, value: string) => {
@@ -2891,8 +2907,28 @@ export function ModelsConfig({
                     {/* Provider row */}
                     <div
                       className={styles.providerRow} data-selected={isProviderSelected}
+                      draggable={!saving}
                       onClick={() => setSelection({ type: "provider", name: pName })}
-                      style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 8px", borderRadius: "var(--radius-control)", cursor: "pointer", background: isProviderSelected ? "var(--bg-selected)" : "none" }}
+                      onDragStart={(event) => {
+                        if (saving) { event.preventDefault(); return; }
+                        setDraggingProvider(pName);
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", pName);
+                      }}
+                      onDragOver={(event) => {
+                        if (draggingProvider && draggingProvider !== pName) {
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                        }
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const source = draggingProvider ?? event.dataTransfer.getData("text/plain");
+                        if (source) reorderProviders(source, pName);
+                        setDraggingProvider(null);
+                      }}
+                      onDragEnd={() => setDraggingProvider(null)}
+                      style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 8px", borderRadius: "var(--radius-control)", cursor: saving ? "default" : draggingProvider === pName ? "grabbing" : "grab", opacity: draggingProvider === pName ? 0.55 : 1, background: isProviderSelected ? "var(--bg-selected)" : "none" }}
                       onMouseEnter={(e) => { if (!isProviderSelected) e.currentTarget.style.background = "var(--bg-hover)"; }}
                       onMouseLeave={(e) => { if (!isProviderSelected) e.currentTarget.style.background = "none"; }}
                     >
