@@ -3,11 +3,35 @@
 All notable changes to Piora are documented here. The project follows [Semantic Versioning](https://semver.org/) after the first tagged public release.
 
 ## [Unreleased]
+`r`n### Remote API 与 Obsidian 客户端
 
+- 新增稳定服务身份接口、能力协商、实例绑定请求头和本机服务发现，供本地 Obsidian 客户端安全选择 Piora 实例。
+- 增强远程会话创建的幂等恢复：创建意图、JSONL 种子和授权归属跨进程落盘，覆盖初始化中断、授权竞态、响应丢失和损坏记录失败关闭。
+- 新增 notes-only 创建策略、目录边界、命令级取消，以及有界正文/工具事件流和持续授权校验。
+- 新增 Remote API 回归测试与中文接口文档；配套客户端和模块架构见 `JohnJAS/piora-obsidian`。
+- 相关讨论：[#84](https://github.com/kexijiang/Piora/issues/84)，实现：[#85](https://github.com/kexijiang/Piora/pull/85)。`r`n`r`n
+<<<<<<< HEAD
 ### 模型配置
 
 - 模型配置页支持拖动调整自定义供应商顺序，保存后写入 `models.json` 并在刷新后保持。
 
+=======
+### Remote API 与 Obsidian 客户端
+
+- 新增稳定服务身份接口、能力协商、实例绑定请求头和本机服务发现，供本地 Obsidian 客户端安全选择 Piora 实例。
+- 增强远程会话创建的幂等恢复：创建意图、JSONL 种子和授权归属跨进程落盘，覆盖初始化中断、授权竞态、响应丢失和损坏记录失败关闭。
+- 新增 notes-only 创建策略、目录边界、命令级取消，以及有界正文/工具事件流和持续授权校验。
+- 新增 Remote API 回归测试与中文接口文档；配套客户端和模块架构见 `JohnJAS/piora-obsidian`。
+- 相关讨论：[#84](https://github.com/kexijiang/Piora/issues/84)，实现：[#85](https://github.com/kexijiang/Piora/pull/85)。
+
+## [0.4.41-beta.39] - 2026-09-13
+
+在 beta.38 已合入的修复基础上重新发布，补全测试分片与停止后消息恢复的更新说明。
+
+### 群聊侧边栏
+
+- 群聊标题右侧的新建按钮改为仅在标题区域悬停或聚焦时显示，与项目和聊天列表保持一致。
+>>>>>>> 8ec0e1c (docs: document Remote API integration)
 
 ### 测试执行
 
