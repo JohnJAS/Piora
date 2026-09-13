@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.41-beta.39] - 2026-09-13
+
+在 beta.38 已合入的修复基础上重新发布，补全测试分片与停止后消息恢复的更新说明。
+
 ### 测试执行
 
 - 修正 npm 转发测试参数的位置，确保 3 组分片实际各执行一部分用例，合计覆盖完整测试；测试失败继续向 CI 返回失败状态。
