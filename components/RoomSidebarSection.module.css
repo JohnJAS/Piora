@@ -31,6 +31,18 @@
   cursor: pointer;
 }
 
+.heading .addButton {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+}
+
+.heading:hover .addButton,
+.heading:has(:focus-visible) .addButton {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .addButton:hover,
 .addButton:focus-visible,
 .closeButton:hover,
