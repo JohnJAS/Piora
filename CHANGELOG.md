@@ -4,6 +4,11 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 模型配置
+
+- 模型配置页支持拖动调整自定义供应商顺序，保存后写入 `models.json` 并在刷新后保持。
+
+
 ### 测试执行
 
 - 修正 npm 转发测试参数的位置，确保 3 组分片实际各执行一部分用例，合计覆盖完整测试；测试失败继续向 CI 返回失败状态。

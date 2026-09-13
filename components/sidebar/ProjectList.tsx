@@ -154,7 +154,7 @@ export function ProjectSessionGroup({
           </button>
           <button
             type="button"
-            className={styles.rowAction}
+            className={`${styles.rowAction} ${styles.projectMenuAction}`}
             onClick={() => onNewSession?.(group.preferredCwd)}
             title={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
             aria-label={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
