@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 侧边栏
+
+- 项目行的“新建对话”按钮与右侧更多操作按钮统一为悬停、聚焦或选中项目时显示，减少常驻操作对侧边栏空间的占用。
+
 ## [0.4.41-beta.39] - 2026-09-13
 
 在 beta.38 已合入的修复基础上重新发布，补全测试分片与停止后消息恢复的更新说明。
