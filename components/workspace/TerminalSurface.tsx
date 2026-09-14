@@ -151,7 +151,10 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
             if (disposed) return;
             try {
               const message = JSON.parse(event.data);
-              if (terminalId) {
+              if (transport === "ssh" && message.type === "snapshot" && message.snapshot && !message.snapshot.session) {
+                message.snapshot = { session: message.snapshot, output: message.snapshot.output || "" };
+              }
+              if (terminalId && transport === "shell") {
                 if (message.terminalId !== terminalId || !Number.isInteger(message.generation) || !Number.isInteger(message.sequence)) return;
                 if (message.generation < generation || message.generation === generation && (message.sequence < sequence || message.sequence === sequence && message.type !== "snapshot")) return;
                 if (message.generation > generation) renderEpoch++;
@@ -183,9 +186,10 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
           }
           const snapshot = await response.json();
           if (disposed) return;
-          onMessage({ data: JSON.stringify(terminalId
-            ? { type: "snapshot", terminalId, generation: snapshot.session.generation, sequence: snapshot.sequence, snapshot }
-            : { type: "snapshot", ...snapshot }) });
+          const value = transport === "ssh"
+            ? { type: "snapshot", terminalId, generation: 0, sequence: 0, snapshot: { session: snapshot.snapshot, output: "" } }
+            : { type: "snapshot", terminalId, generation: snapshot.session.generation, sequence: snapshot.sequence, snapshot };
+          onMessage({ data: JSON.stringify(value) });
           events = new EventSource(terminalId ? transport === "ssh" ? `/api/ssh/sessions/${terminalId}/events` : `/api/shell/sessions/${terminalId}/events` : `/api/terminal/events?cwd=${encodeURIComponent(cwd)}`);
           events.onmessage = onMessage;
           events.onerror = () => { if (!disposed) latest.current.onStatus?.(false, ""); };

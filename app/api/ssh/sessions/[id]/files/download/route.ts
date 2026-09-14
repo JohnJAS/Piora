@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSSHSession } from "@/lib/ssh/session-manager";
+import { isApiRequestAllowed } from "@/lib/request-security";
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  if (!isApiRequestAllowed(request)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   const session = getSSHSession((await context.params).id);
   if (!session) return NextResponse.json({ error: "SSH session not found" }, { status: 404 });
   const path = new URL(request.url).searchParams.get("path");
