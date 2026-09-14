@@ -4,7 +4,7 @@ import {
   type ScopedModel,
 } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { prioritizeProvider, resolveDefaultModelPreference } from "./model-policy";
+import { resolveDefaultModelPreference } from "./model-policy";
 import { modelScopeWarnings } from "./model-scope";
 
 export interface ModelScopeModelView {
@@ -131,10 +131,7 @@ export async function buildModelScopeSettingsState(options: {
   defaultModel?: string;
   environment?: Record<string, string | undefined>;
 }): Promise<ModelScopeSettingsState> {
-  const available = prioritizeProvider(
-    [...await options.runtime.getAvailable()],
-    (model) => model.provider,
-  );
+  const available = [...await options.runtime.getAvailable()];
   const availableByKey = new Map<string, Model<Api>>();
   for (const model of available) {
     const key = modelKey(model);

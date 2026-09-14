@@ -4,6 +4,11 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 模型设置
+
+- 增加“设为默认”按钮；默认模型在新对话和模型选择器中优先显示，其余模型保持配置顺序。
+- 左侧模型渠道下的默认模型显示“默认”标签，并让标签紧跟模型名称。
+
 ## [0.4.41-beta.44] - 2026-09-14
 
 ### 快捷回复

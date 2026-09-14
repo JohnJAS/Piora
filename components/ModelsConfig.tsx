@@ -2250,7 +2250,7 @@ export function ModelsConfig({
   }, [config.providers, persistDeletion]);
 
   const updateModelScope = useCallback(async (
-    action: "hide" | "restore" | "hide-provider" | "restore-provider" | "restore-all",
+    action: "set-default" | "hide" | "restore" | "hide-provider" | "restore-provider" | "restore-all",
     target?: Pick<ManagedModel, "provider" | "id"> | { provider: string },
   ): Promise<boolean> => {
     if (modelScopeMutationRef.current) return false;
@@ -2621,11 +2621,6 @@ export function ModelsConfig({
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text)", fontSize: "var(--text-sm)", fontWeight: 500 }}>
                         {model.name || model.id}
                       </span>
-                      {isDefault && (
-                        <span style={{ flexShrink: 0, padding: "1px 5px", borderRadius: 999, background: "var(--bg-selected)", color: "var(--accent)", fontSize: "var(--text-xs)", fontWeight: 600 }}>
-                          {t("models.defaultBadge")}
-                        </span>
-                      )}
                     </span>
                     <code style={{ display: "block", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--text-dim)", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>
                       {model.id}
@@ -2709,6 +2704,23 @@ export function ModelsConfig({
                       : testState.phase === "idle"
                         ? t("i18n.test")
                         : t("models.testAgain")}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={scopeMutationBusy || isDefault}
+                    onClick={() => { void updateModelScope("set-default", model); }}
+                    title={isDefault ? "当前默认模型" : "设为默认模型"}
+                    aria-label={isDefault ? "当前默认模型" : "设为默认模型"}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      minWidth: 28, height: 28, padding: "0 7px", border: "1px solid var(--border)",
+                      borderRadius: "var(--radius-control)", background: isDefault ? "var(--bg-selected)" : "transparent",
+                      color: isDefault ? "var(--accent)" : "var(--text-muted)",
+                      cursor: scopeMutationBusy || isDefault ? "default" : "pointer",
+                      opacity: scopeMutationBusy ? 0.55 : 1, fontSize: "var(--text-xs)", whiteSpace: "nowrap",
+                    }}
+                  >
+                    {isDefault ? "默认" : "设为默认"}
                   </button>
                   <button
                     type="button"
@@ -3016,9 +3028,13 @@ export function ModelsConfig({
                           onMouseEnter={(e) => { if (!isModelSelected) e.currentTarget.style.background = "var(--bg-hover)"; }}
                           onMouseLeave={(e) => { if (!isModelSelected) e.currentTarget.style.background = "none"; }}
                         >
-                          <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: m.id ? "var(--text-muted)" : "var(--text-dim)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <span style={{ fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)", color: m.id ? "var(--text-muted)" : "var(--text-dim)", flex: "0 1 auto", maxWidth: "calc(100% - 52px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                              {m.id || t("i18n.newModel")}
                           </span>
+                          {modelScope?.effectiveDefault?.provider === pName && modelScope.effectiveDefault.modelId === m.id && (
+                            <span className={styles.defaultBadge}>{t("models.defaultBadge")}</span>
+                          )}
+                          <span style={{ flex: 1 }} />
                           {m.reasoning && (
                             <span style={{ fontSize: "var(--text-xs)", padding: "1px 4px", background: "rgba(99,102,241,0.12)", color: "rgba(99,102,241,0.8)", borderRadius: 3, flexShrink: 0 }}>T</span>
                           )}

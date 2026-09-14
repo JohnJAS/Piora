@@ -2,7 +2,7 @@ import type { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { invalidateModelsCache, loadModelsWithCache, withModelRuntimeError, type ModelsData } from "@/lib/models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "@/lib/model-scope";
-import { prioritizeProvider, resolveDefaultModelPreference } from "@/lib/model-policy";
+import { resolveDefaultModelPreference } from "@/lib/model-policy";
 import {
   createCoreModelServices,
   createTrustedModelServices,
@@ -59,7 +59,7 @@ async function loadModels(cwd: string): Promise<ModelsData> {
     settings.getEnabledModels(),
   );
   const { visible, thinkingLevelPins, warnings } = scope;
-  const orderedVisible = prioritizeProvider(visible, (model) => model.provider);
+  const orderedVisible = visible;
   modelList = orderedVisible.map((m) => ({
     id: m.id,
     name: m.name,
@@ -86,6 +86,8 @@ async function loadModels(cwd: string): Promise<ModelsData> {
   });
   if (initial.model) {
     defaultModel = { provider: initial.model.provider, modelId: initial.model.id };
+    const isDefault = (model: typeof modelList[number]) => model.provider === defaultModel?.provider && model.id === defaultModel.modelId;
+    modelList = [...modelList.filter(isDefault), ...modelList.filter((model) => !isDefault(model))];
   }
 
   return withModelRuntimeError(
