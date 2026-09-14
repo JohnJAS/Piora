@@ -54,6 +54,10 @@ test("long code lines stay intact and scroll inside both bounded diff surfaces",
   assert.match(styles, /\.splitCode\s*\{[^}]*white-space:\s*pre;/s);
   assert.match(messageView, /className="file-change-diff"/);
   assert.match(globalStyles, /\.file-change-diff\s*\{[^}]*max-height:[^;}]+;[^}]*scrollbar-gutter:\s*stable;/s);
+  // A wheel over a short diff must chain to the conversation instead of being
+  // swallowed by an `overscroll-behavior: contain` scroller without a scrollbar.
+  assert.match(globalStyles, /\.file-change-diff\s*\{[^}]*overscroll-behavior:\s*auto;/s);
+  assert.doesNotMatch(globalStyles, /\.file-change-diff\s*\{[^}]*overscroll-behavior:\s*contain;/s);
   assert.match(reviewPanel, /className=\{styles\.reviewDiff\}/);
   assert.match(workspaceStyles, /\.reviewDiff\s*\{[^}]*height:\s*100%;[^}]*max-width:\s*100%;/s);
 });

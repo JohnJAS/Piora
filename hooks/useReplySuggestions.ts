@@ -4,6 +4,15 @@ import { defaultReplySettings, REPLY_PROTOCOL_VERSION, type ReplyResult, type Re
 import { readReplySettings, subscribeReplySettings } from "@/lib/reply-suggestions-settings";
 import { cacheReply, readComposerRecord, replyCacheKey } from "@/lib/reply-storage";
 
+function waitForSettlement(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = () => { clearTimeout(timer); signal.removeEventListener("abort", abort); reject(signal.reason); };
+    const timer = setTimeout(() => { signal.removeEventListener("abort", abort); resolve(); }, ms);
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+  });
+}
+
 export function useReplySuggestions(source: ReplySource | null, locale: string) {
   const [settings, setSettings] = useState(defaultReplySettings);
   const [retryState, retry] = useState({ key: "", count: 0 });
@@ -27,19 +36,28 @@ export function useReplySuggestions(source: ReplySource | null, locale: string) 
       if (!alive) return;
       const [snapshot, model, systemPrompt, language] = JSON.parse(key) as [ReplySource, unknown, string, string];
       try {
-        const res = await fetch(`/api/sessions/${encodeURIComponent(snapshot.sessionId)}/reply-suggestions`, {
-          method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
-          body: JSON.stringify({ sourceEntryId: snapshot.sourceEntryId, leafId: snapshot.leafId, model, systemPrompt, locale: language }),
-        });
-        const data = await res.json();
-        if (!alive) return;
-        if (!res.ok) { if (res.status !== 409) setState({ key, error: data.code ?? "provider_error" }); return; }
-        if (!Array.isArray(data.groups)) throw new Error("invalid_output");
-        setState({ key, result: data });
-        if (cacheKey) void cacheReply(cacheKey, data).catch(() => {});
+        const delays = [300, 900, 1_800];
+        for (let pendingAttempt = 0; ; pendingAttempt++) {
+          const res = await fetch(`/api/sessions/${encodeURIComponent(snapshot.sessionId)}/reply-suggestions`, {
+            method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+            body: JSON.stringify({ sourceEntryId: snapshot.sourceEntryId, leafId: snapshot.leafId, model, systemPrompt, locale: language }),
+          });
+          const data = await res.json();
+          if (!alive) return;
+          if (res.status === 409 && data.code === "stale_source" && pendingAttempt < delays.length) {
+            await waitForSettlement(delays[pendingAttempt], controller.signal);
+            if (!alive) return;
+            continue;
+          }
+          if (!res.ok) { setState({ key, error: data.code ?? "provider_error" }); return; }
+          if (!Array.isArray(data.groups)) { setState({ key, error: "invalid_output" }); return; }
+          setState({ key, result: data });
+          if (cacheKey) void cacheReply(cacheKey, data).catch(() => {});
+          return;
+        }
       } catch { if (alive && !controller.signal.aborted) setState({ key, error: "network_error" }); }
     })();
     return () => { alive = false; controller.abort(); };
   }, [key, attempt]);
-  return { sourceKey: key, result: state.key === key ? state.result : undefined, error: state.key === key ? state.error : undefined, retry: () => retry((current) => ({ key, count: current.key === key ? current.count + 1 : 1 })) };
+  return { sourceKey: key, loading: !!key && (state.key !== key || (!state.result && !state.error)), result: state.key === key ? state.result : undefined, error: state.key === key ? state.error : undefined, retry: () => retry((current) => ({ key, count: current.key === key ? current.count + 1 : 1 })) };
 }

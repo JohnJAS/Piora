@@ -68,6 +68,8 @@ export interface UserMessage {
 
 export interface AssistantMessage {
   role: "assistant";
+  /** Live server estimate, independent of the currently mounted chat view. */
+  streamingMetrics?: import("./streaming-metrics").StreamingMetrics;
   content: AssistantContentBlock[];
   model: string;
   provider: string;

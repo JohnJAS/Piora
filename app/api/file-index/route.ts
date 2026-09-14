@@ -52,6 +52,7 @@ interface CacheEntry {
 // not be recomputed within a short window.
 declare global {
   var __piFileIndexCache: Map<string, CacheEntry> | undefined;
+  var __piFileIndexPending: Map<string, Promise<CacheEntry>> | undefined;
 }
 
 function getIndexCache(): Map<string, CacheEntry> {
@@ -77,15 +78,15 @@ async function listWithGit(cwd: string): Promise<FileListing | null> {
   }
 }
 
-function listWithWalk(cwd: string): FileListing {
+async function listWithWalk(cwd: string): Promise<FileListing> {
   const files: string[] = [];
   // BFS so shallow files win when the cap truncates the listing.
   const queue: Array<{ abs: string; rel: string; depth: number }> = [{ abs: cwd, rel: "", depth: 0 }];
-  while (queue.length > 0) {
-    const { abs, rel, depth } = queue.shift()!;
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const { abs, rel, depth } = queue[cursor];
     let dirents: fs.Dirent[];
     try {
-      dirents = fs.readdirSync(abs, { withFileTypes: true });
+      dirents = await fs.promises.readdir(abs, { withFileTypes: true });
     } catch {
       continue;
     }
@@ -144,13 +145,20 @@ export async function GET(req: NextRequest) {
     const now = Date.now();
     let cached = cache.get(cwd);
     if (!cached || cached.expiresAt <= now) {
-      const listing = (await listWithGit(cwd)) ?? listWithWalk(cwd);
-      for (const [key, entry] of cache) {
-        if (entry.expiresAt <= now) cache.delete(key);
+      const pending: Map<string, Promise<CacheEntry>> = globalThis.__piFileIndexPending ??= new Map();
+      let refresh = pending.get(cwd);
+      if (!refresh) {
+        refresh = (async () => {
+          const listing = (await listWithGit(cwd)) ?? await listWithWalk(cwd);
+          const entry = { listing, expiresAt: Date.now() + CACHE_TTL_MS };
+          cache.delete(cwd);
+          cache.set(cwd, entry);
+          if (cache.size > CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value!);
+          return entry;
+        })().finally(() => pending.delete(cwd));
+        pending.set(cwd, refresh);
       }
-      if (cache.size >= CACHE_MAX_ENTRIES) cache.clear();
-      cached = { listing, expiresAt: now + CACHE_TTL_MS };
-      cache.set(cwd, cached);
+      cached = await refresh;
     }
 
     if (query) {

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useReplyDraft } from "@/hooks/useReplyDraft";
+import { AliIcon } from "./AliIcon";
 import { defaultReplySettings, REPLY_DEFAULT_PROMPT, REPLY_MAX_PROMPT, unicodeLength, type ReplyResult } from "@/lib/reply-suggestions";
 import { readReplySettings, saveReplySettings } from "@/lib/reply-suggestions-settings";
 import { ReplySuggestionBar, replyErrorKey } from "./ReplySuggestionBar";
@@ -63,10 +64,14 @@ export function ReplySuggestionsSettings({ cwd }: { cwd?: string }) {
         {(modelsError || (config.model && !available)) && <small>{t("reply.unavailable")} <button type="button" className={styles.action} onClick={() => setCatalogAttempt((n) => n + 1)}>{t("reply.retry")}</button></small>}
       </div>
       <label className={styles.field}><span>{t("reply.prompt")}</span><small>{t("reply.promptHelp")}</small><textarea aria-label={t("reply.prompt")} value={config.systemPrompt} onChange={(e) => { setConfig({ ...config, systemPrompt: e.target.value }); setStatus(""); }} /></label>
-      <div className={styles.footer}><span role="status">{status ? t(status) : `${unicodeLength(config.systemPrompt).toLocaleString()} / 8,000`}</span><div className={styles.actions}>
+      <div className={styles.footer}><span>{unicodeLength(config.systemPrompt).toLocaleString()} / 8,000</span><div className={styles.actions}>
         <button type="button" className={settingsStyles.secondaryButton} onClick={() => { setConfig({ ...config, systemPrompt: REPLY_DEFAULT_PROMPT }); setStatus(""); }}>{t("reply.restore")}</button>
-        <button type="button" className={settingsStyles.primaryButton} disabled={!validPrompt || (config.enabled && !available)} onClick={() => { try { saveReplySettings(config); setStatus("reply.saved"); } catch { setStatus("reply.saveFailed"); } }}>{t("reply.save")}</button>
+        <button type="button" aria-label={t("reply.save")} className={settingsStyles.primaryButton} disabled={!validPrompt || (config.enabled && !config.model)} onClick={() => { try { saveReplySettings(config); setStatus("reply.saved"); } catch { setStatus("reply.saveFailed"); } }}>{status === "reply.saved" ? <><AliIcon name="check" size={14} />{t("reply.saved")}</> : t("reply.save")}</button>
       </div></div>
+      {status && <div role={status === "reply.saveFailed" ? "alert" : "status"} className={styles.saveFeedback} data-state={status === "reply.saved" ? "saved" : "error"}>
+        <AliIcon name={status === "reply.saved" ? "check" : "alert"} size={16} />
+        <span>{t(status === "reply.saved" ? "reply.savedDetail" : "reply.saveFailed")}</span>
+      </div>}
       {!validPrompt && <p role="status" className={styles.note}>{t("reply.invalid")}</p>}
       <details className={styles.test}><summary>{t("reply.preview")}</summary><div className={styles.settingsBody}>
         <p className={styles.note}>{t("reply.previewHelp")}</p>

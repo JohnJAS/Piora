@@ -2461,6 +2461,18 @@ select:focus-visible,
   transition: background-color 120ms ease;
 }
 .chat-disclosure.is-expanded { background: var(--bg-panel); }
+/* A quiet resting surface keeps collapsed rows recognizable over wallpaper. */
+.chat-disclosure--surface {
+  border: 1px solid color-mix(in srgb, var(--border) 82%, var(--text-muted));
+  background: color-mix(in srgb, var(--bg-panel) 84%, transparent);
+}
+.chat-disclosure--surface:hover,
+.chat-disclosure--surface:focus-within {
+  border-color: color-mix(in srgb, var(--border) 64%, var(--text-muted));
+}
+.chat-disclosure--surface > .chat-disclosure-content {
+  border-top: 1px solid var(--border-soft);
+}
 .chat-disclosure-header { display: flex; min-width: 0; align-items: flex-start; }
 .chat-disclosure-trigger {
   display: grid;
@@ -2483,6 +2495,16 @@ select:focus-visible,
   transition: background-color 120ms ease;
 }
 .chat-disclosure-trigger:hover { background: var(--bg-hover); }
+/* Standalone process rows use the same card treatment as tool disclosures. */
+.chat-disclosure-trigger.chat-process-toggle {
+  border: 1px solid color-mix(in srgb, var(--border) 82%, var(--text-muted));
+  background: color-mix(in srgb, var(--bg-panel) 84%, transparent);
+}
+.chat-disclosure-trigger.chat-process-toggle:hover,
+.chat-disclosure-trigger.chat-process-toggle:focus-visible {
+  border-color: color-mix(in srgb, var(--border) 64%, var(--text-muted));
+  background: var(--bg-hover);
+}
 .chat-disclosure-trigger:focus-visible,
 .chat-disclosure-action:focus-visible,
 .command-icon-button:focus-visible,
@@ -2496,7 +2518,7 @@ select:focus-visible,
 .chat-disclosure-chevron {
   grid-column: 1;
   flex: 0 0 12px;
-  color: var(--text-dim);
+  color: var(--text-muted);
   transition: transform 140ms ease;
 }
 [aria-expanded="true"] > .chat-disclosure-chevron,
@@ -2571,7 +2593,12 @@ select:focus-visible,
 .chat-disclosure--inline > .chat-disclosure-header > .chat-disclosure-trigger {
   grid-template-columns: 12px minmax(0, 1fr);
   min-height: 32px;
-  padding: 6px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-panel) 55%, transparent);
+}
+.chat-disclosure--inline > .chat-disclosure-header > .chat-disclosure-trigger:hover {
+  background: var(--bg-hover);
 }
 .chat-disclosure--inline > .chat-disclosure-header .chat-disclosure-icon,
 .chat-disclosure--inline > .chat-disclosure-header .chat-disclosure-description,
@@ -3468,7 +3495,10 @@ select:focus-visible,
 .file-change-diff {
   max-height: min(520px, 55vh);
   overflow: auto;
-  overscroll-behavior: contain;
+  /* Chain the wheel to the conversation when this diff has nothing left to
+     scroll. `contain` swallowed the gesture even on a diff without a
+     scrollbar, so hovering the card blocked scrolling the chat entirely. */
+  overscroll-behavior: auto;
   scrollbar-gutter: stable;
 }
 
@@ -4178,9 +4208,10 @@ pre, code {
   gap: 5px;
   width: 100%;
   margin-top: 7px;
-  padding: 6px 0;
-  border: 0;
-  background: transparent;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: color-mix(in srgb, var(--bg-panel) 55%, transparent);
   color: var(--text-muted);
   font: inherit;
   font-size: var(--text-xs);
@@ -4188,6 +4219,7 @@ pre, code {
 }
 
 .message-user-expand:hover {
+  background: var(--bg-hover);
   color: var(--accent);
 }
 
@@ -4251,7 +4283,9 @@ pre, code {
   align-items: center;
   gap: 8px;
   min-height: 32px;
-  padding: 6px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-panel) 55%, transparent);
   border-radius: var(--radius-control);
   list-style: none;
   cursor: pointer;

@@ -30,6 +30,13 @@ function renderMessage(message, props = {}) {
   );
 }
 
+test("mounting a live message immediately displays the server rate without restarting a timer", () => {
+  const message = { role: "assistant", model: "model", content: [{ type: "text", text: "already generated ".repeat(1000) }], streamingMetrics: { generation: 3, tokensPerSecond: 42.5 } };
+  for (let view = 0; view < 3; view++) assert.match(renderMessage(message, { isStreaming: true }), /≈42\.5/);
+  assert.doesNotMatch(renderMessage({ ...message, streamingMetrics: undefined }, { isStreaming: true }), /t\/s/);
+  assert.doesNotMatch(renderMessage(message), /t\/s/);
+});
+
 test("history rendering keeps disclosure and copy while suppressing conversation mutations", () => {
   const html = renderMessage({ role: "user", content: "保留历史问题" }, {
     mode: "history", entryId: "question", prevAssistantEntryId: "answer",

@@ -24,7 +24,7 @@ export async function GET(
     async start(controller) {
       let closed = false;
       let unsubscribe = () => {};
-      const timers: { heartbeat?: ReturnType<typeof setInterval> } = {};
+      const timers: { heartbeat?: ReturnType<typeof setInterval>; metrics?: ReturnType<typeof setInterval> } = {};
       const encoder = new TextEncoder();
       const transport = createAgentEventTransport((data) => {
         if (closed) return;
@@ -36,6 +36,7 @@ export async function GET(
         closed = true;
         transport.close();
         if (timers.heartbeat) clearInterval(timers.heartbeat);
+        if (timers.metrics) clearInterval(timers.metrics);
         unsubscribe();
         req.signal.removeEventListener("abort", cleanup);
         try { controller.close(); } catch { /* Already cancelled. */ }
@@ -52,6 +53,14 @@ export async function GET(
       }
       transport.push({ type: "connected", sessionId: id, runtimeProfile });
       unsubscribe = resolved.onEvent((event) => transport.push(event));
+      // Seed content and its server-owned rate immediately on session switch
+      // or reconnect, including when the model is currently silent.
+      const message = resolved.getStreamingMessage();
+      if (message) transport.push({ type: "message_update", message });
+      timers.metrics = setInterval(() => {
+        const streamingMetrics = resolved.getStreamingMetrics();
+        if (streamingMetrics) transport.push({ type: "message_metrics", streamingMetrics });
+      }, 1_000);
       timers.heartbeat = setInterval(() => {
         if (!closed) {
           try { controller.enqueue(encoder.encode(":\n\n")); } catch { cleanup(); }

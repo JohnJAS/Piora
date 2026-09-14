@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import { buildSessionContext, resolveSessionPath } from "./session-reader";
 import { getRpcSession } from "./rpc-manager";
 import { createTrustedModelServices, ModelRequestCwdError, resolveModelRequestCwd } from "./model-runtime-context";
@@ -94,10 +95,20 @@ export async function handleReplyRequest(request: Request, sessionId?: string): 
       const { visible } = await resolveVisibleModels(modelRuntime, settingsManager.getEnabledModels());
       const model = visible.find((m) => m.provider === settings.model!.provider && m.id === settings.model!.modelId);
       if (!model) throw new ReplyError("model_unavailable", 422);
+      const levels = getSupportedThinkingLevels(model);
+      // These SDK adapters explicitly disable thinking when reasoning is absent.
+      // Keep that faster path; other adapters can omit the effort and leave a
+      // provider default active, so send the lowest supported effort there.
+      const disablesThinking = levels.includes("off") && (
+        model.api === "anthropic-messages" || model.api === "google-generative-ai" || model.api === "google-vertex"
+        || (model.api === "openai-responses" && model.provider !== "github-copilot")
+        || (model.api === "openai-completions" && typeof model.thinkingLevelMap?.off === "string")
+      );
+      const reasoning = disablesThinking ? undefined : levels.find((level) => level !== "off");
       const message = await modelRuntime.completeSimple(model, {
         systemPrompt: `${settings.systemPrompt}\n\n${REPLY_JSON_PROTOCOL}`,
         messages: [{ role: "user", content: JSON.stringify({ locale, assistantText: source }), timestamp: Date.now() }],
-      }, { maxTokens: 3072, maxRetries: 0, timeoutMs: 15_000, cacheRetention: "none", signal });
+      }, { reasoning, maxTokens: 3072, maxRetries: 0, timeoutMs: 15_000, cacheRetention: "none", signal });
       signal.throwIfAborted();
       if (message.stopReason !== "stop") throw new ReplyError("provider_error", 502);
       try { return parseReplyResult(message.content.filter((b) => b.type === "text").map((b) => b.text).join("\n"), source); }

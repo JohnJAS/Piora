@@ -65,9 +65,10 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 import {
-  buildEntriesFromFiles, buildAtInsertText, extractAtQuery, filterFileEntries,
+  buildAtInsertText, extractAtQuery, filterFileEntries,
   type AtQueryMatch, type FileIndexEntry,
 } from "@/lib/file-fuzzy";
+import { getCachedFileIndex, loadFileIndex, type ClientFileIndex } from "@/lib/file-index-client";
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
@@ -377,7 +378,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [historyActiveIndex, setHistoryActiveIndex] = useState(0);
 
-  const [fileIndex, setFileIndex] = useState<{ cwd: string; entries: FileIndexEntry[]; truncated: boolean } | null>(null);
+  const [fileIndex, setFileIndex] = useState<ClientFileIndex | null>(() => cwd ? getCachedFileIndex(cwd) : null);
   const [fileIndexLoading, setFileIndexLoading] = useState(false);
   const [atServerResult, setAtServerResult] = useState<{ cwd: string; query: string; matches: FileIndexEntry[] } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -409,8 +410,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const slashItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const atItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const historyItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const fileIndexMetaRef = useRef<{ cwd: string; fetchedAt: number } | null>(null);
-  const fileIndexFetchingRef = useRef<string | null>(null);
   const draftKeyRef = useRef(draftKey);
   const retryOfPromptIdsRef = useRef<string[]>(draftKey ? getDraft(draftKey)?.retryOfPromptIds ?? [] : []);
   const valueRef = useRef(value);
@@ -1017,18 +1016,21 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (!needsServerSearch || !cwd || !atQueryText) return;
     const fetchCwd = cwd;
     const query = atQueryText;
+    const controller = new AbortController();
     const timer = setTimeout(() => {
-      fetch(`/api/file-index?cwd=${encodeURIComponent(fetchCwd)}&q=${encodeURIComponent(query)}`)
+      fetch(`/api/file-index?cwd=${encodeURIComponent(fetchCwd)}&q=${encodeURIComponent(query)}`, { signal: controller.signal })
         .then((res) => {
           if (!res.ok) throw new Error(`file search failed: ${res.status}`);
           return res.json() as Promise<{ matches?: FileIndexEntry[] }>;
         })
-        .then((data) => setAtServerResult({ cwd: fetchCwd, query, matches: data.matches ?? [] }))
+        .then((data) => {
+          if (!controller.signal.aborted) setAtServerResult({ cwd: fetchCwd, query, matches: data.matches ?? [] });
+        })
         .catch(() => {
           // Keep showing local matches; the next keystroke retries.
         });
     }, 150);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [needsServerSearch, atQueryText, cwd]);
 
   const serverResultInUse = needsServerSearch
@@ -1050,34 +1052,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     setAtActiveIndex(0);
   }, [atTokenKey]);
 
-  // Fetch the file index when the menu opens. The server caches per cwd for
-  // ~10s, so re-opening refreshes cheaply; while typing nothing refetches.
+  // Warm the directory after the composer mounts, before @ is needed. Reuse
+  // other sessions' entries immediately and refresh stale data in the background.
   const atTokenActive = atQuery !== null;
   useEffect(() => {
-    if (!atTokenActive || !cwd) return;
-    const meta = fileIndexMetaRef.current;
-    if (meta && meta.cwd === cwd && Date.now() - meta.fetchedAt < 10_000) return;
-    if (fileIndexFetchingRef.current === cwd) return;
-    fileIndexFetchingRef.current = cwd;
-    const fetchCwd = cwd;
-    setFileIndexLoading(true);
-    fetch(`/api/file-index?cwd=${encodeURIComponent(fetchCwd)}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`file index failed: ${res.status}`);
-        return res.json() as Promise<{ files?: string[]; truncated?: boolean }>;
-      })
-      .then((data) => {
-        setFileIndex({ cwd: fetchCwd, entries: buildEntriesFromFiles(data.files ?? []), truncated: !!data.truncated });
-        fileIndexMetaRef.current = { cwd: fetchCwd, fetchedAt: Date.now() };
-      })
-      .catch(() => {
-        // Leave any previous index in place; next open retries.
-        fileIndexMetaRef.current = null;
-      })
-      .finally(() => {
-        fileIndexFetchingRef.current = null;
-        setFileIndexLoading(false);
-      });
+    if (!cwd) return;
+    let cancelled = false;
+    const cached = getCachedFileIndex(cwd);
+    setFileIndex(cached);
+    setFileIndexLoading(!cached);
+    const refresh = () => {
+      void loadFileIndex(cwd)
+        .then((index) => { if (!cancelled) setFileIndex(index); })
+        .catch(() => { /* Keep cached entries; the next open retries. */ })
+        .finally(() => { if (!cancelled) setFileIndexLoading(false); });
+    };
+    const timer = setTimeout(refresh, atTokenActive ? 0 : 400);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [atTokenActive, cwd]);
 
   const applyAtCompletion = useCallback((entry: FileIndexEntry) => {

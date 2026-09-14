@@ -5,13 +5,13 @@ import { chooseReply, replySpanKey, type ReplyDraft, type ReplySpan } from "@/li
 import type { ReplyGroup, ReplyOption, ReplyResult } from "@/lib/reply-suggestions";
 import styles from "./ReplySuggestionBar.module.css";
 
-interface Props { sourceKey: string; result?: ReplyResult; error?: string; retry?: () => void; draft: ReplyDraft; onChange: (draft: ReplyDraft, caret?: number) => void; preview?: boolean }
-export function replyErrorKey(error: string) { return `reply.error.${["model_unavailable", "invalid_settings", "timeout", "invalid_output", "network_error", "busy"].includes(error) ? error : "provider_error"}`; }
+interface Props { sourceKey: string; result?: ReplyResult; error?: string; loading?: boolean; retry?: () => void; draft: ReplyDraft; onChange: (draft: ReplyDraft, caret?: number) => void; preview?: boolean }
+export function replyErrorKey(error: string) { return `reply.error.${["model_unavailable", "invalid_settings", "timeout", "invalid_output", "network_error", "busy", "stale_source"].includes(error) ? error : "provider_error"}`; }
 export function ReplySuggestionBar(props: Props) {
   // Remount presentation state for every source/config while keeping the parent-owned draft intact.
   return <ReplyChoices key={props.sourceKey} {...props} />;
 }
-function ReplyChoices({ sourceKey, result, error, draft, onChange }: Props) {
+function ReplyChoices({ sourceKey, result, error, loading, retry, preview, draft, onChange }: Props) {
   const { t } = useI18n();
   const [conflict, setConflict] = useState<{ span: ReplySpan; group: ReplyGroup; option: ReplyOption } | null>(null);
   const pointer = useRef(false);
@@ -21,8 +21,14 @@ function ReplyChoices({ sourceKey, result, error, draft, onChange }: Props) {
     if (next.conflict) { setConflict({ span: next.conflict, group, option }); return; }
     setConflict(null); onChange(next.draft, mouse ? next.caret : undefined);
   };
-  // Keep the composer quiet: one flat row of bubbles, with no persistent controls.
-  if (error || !result?.groups.length) return null;
+  // Successful extraction stays a flat row of bubbles. Only pending/failed
+  // requests need a small status, so a failure cannot look like "no choices".
+  if (error) return preview ? null : <div className={styles.extractionStatus} role="status">
+    <span>{t(replyErrorKey(error))}</span>
+    {retry && <button type="button" className={styles.action} onClick={retry}>{t("reply.retry")}</button>}
+  </div>;
+  if (loading) return <div className={styles.extractionStatus} role="status">{t("reply.testing")}</div>;
+  if (!result?.groups.length) return null;
   const choices = result.groups.flatMap((group) => group.options.map((option) => ({ group, option })));
   return <section className={styles.bar} aria-label={t("reply.title")}>
     <div className={styles.options}>

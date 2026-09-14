@@ -2454,9 +2454,11 @@ function createStartupWindow(log: Logger): { window: BrowserWindow; ready: Promi
     finishIntro();
   };
   const cleanupNavigationGuard = () => {
-    webContents.removeListener("will-navigate", blockIntroNavigation);
-    webContents.removeListener("did-navigate", onNavigation);
-    window.removeListener("closed", onClosed);
+    if (!webContents.isDestroyed()) {
+      webContents.removeListener("will-navigate", blockIntroNavigation);
+      webContents.removeListener("did-navigate", onNavigation);
+    }
+    if (!window.isDestroyed()) window.removeListener("closed", onClosed);
   };
   const onNavigation = (_event: Electron.Event, target: string) => {
     if (isStartupDocumentUrl(target, startupPath)) return;
@@ -2505,7 +2507,7 @@ function createStartupWindow(log: Logger): { window: BrowserWindow; ready: Promi
   }
   const handedOff = finished.then(async () => {
     log.info("Releasing startup animation");
-    webContents.removeListener("ipc-message", continueIntro);
+    if (!webContents.isDestroyed()) webContents.removeListener("ipc-message", continueIntro);
     // Leave the Chromium/IPC callback before starting another native operation.
     await new Promise<void>(resolveTurn => setImmediate(resolveTurn));
     if (!window.isDestroyed() && !webContents.isDestroyed()) {

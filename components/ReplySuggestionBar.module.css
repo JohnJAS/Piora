@@ -9,6 +9,7 @@
 .conflict { margin-top: 8px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-control, 8px); background: var(--bg-panel); }
 .conflict p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 8px 0; }
 .note { color: var(--text-muted); margin: 8px 0 0; font-size: var(--text-xs); }
+.extractionStatus { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 0; color: var(--text-muted); font-size: var(--text-xs); line-height: 1.5; }
 .settingsBody { display: grid; gap: 16px; }
 .field { display: grid; gap: 8px; color: var(--text); font-size: var(--text-sm); }
 .field input:not([type="checkbox"]), .field select, .field textarea, .previewDraft { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-control, 8px); background: var(--bg); color: var(--text); font: inherit; }
@@ -17,6 +18,10 @@
 .toggle { display: flex; align-items: center; gap: 8px; font-size: var(--text-sm); }
 .toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
 .footer { justify-content: space-between; font-size: var(--text-xs); color: var(--text-muted); }
+.saveFeedback { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--status-ready) 30%, var(--border)); border-radius: var(--radius-control, 8px); background: color-mix(in srgb, var(--status-ready) 8%, var(--bg-panel)); color: var(--text); font-size: var(--text-sm); line-height: 1.5; }
+.saveFeedback svg { flex-shrink: 0; color: var(--status-ready); }
+.saveFeedback[data-state="error"] { border-color: color-mix(in srgb, var(--status-failed) 35%, var(--border)); background: color-mix(in srgb, var(--status-failed) 8%, var(--bg-panel)); }
+.saveFeedback[data-state="error"] svg { color: var(--status-failed); }
 .test { border-top: 1px solid var(--border); padding-top: 16px; }
 .test summary { cursor: pointer; font-size: var(--text-sm); }
 .test[open] summary { margin-bottom: 16px; }

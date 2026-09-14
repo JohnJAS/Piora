@@ -602,8 +602,7 @@ function AssistantMessageView({
   const providerError = getAssistantErrorMessage(message, { isStreaming });
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
-  const streamStartRef = useRef<number | null>(null);
-  const [tps, setTps] = useState<number | null>(null);
+  const tps = isStreaming ? message.streamingMetrics?.tokensPerSecond ?? null : null;
   const blockItemsRef = useRef(blockItems);
   blockItemsRef.current = blockItems;
 
@@ -657,13 +656,10 @@ function AssistantMessageView({
         }
         return next;
       });
-      streamStartRef.current = null;
-      setTps(null);
       return;
     }
     const tick = () => {
       const items = blockItemsRef.current;
-      const bs = items.map(({ block }) => block);
       const now = Date.now();
 
       // Record start time for each block the first time we see it
@@ -687,17 +683,6 @@ function AssistantMessageView({
         }
         return changed ? next : prev;
       });
-
-      let chars = 0;
-      for (const b of bs) {
-        if (b.type === "text") chars += (b as TextContent).text?.length ?? 0;
-        else if (b.type === "thinking") chars += (b as ThinkingContent).thinking?.length ?? 0;
-        else if (b.type === "toolCall") chars += JSON.stringify((b as ToolCallContent).input ?? {}).length;
-      }
-      if (chars === 0) return;
-      if (streamStartRef.current === null) streamStartRef.current = now;
-      const elapsed = (now - streamStartRef.current) / 1000;
-      if (elapsed > 0.5) setTps(chars / 4 / elapsed);
     };
     const id = setInterval(tick, 300);
     return () => clearInterval(id);
@@ -749,7 +734,7 @@ function AssistantMessageView({
                     const bg = tps >= 50 ? "#53b3cb" : tps >= 30 ? "#9bc53d" : tps >= 15 ? "#f9c22e" : "#e01a4f";
                     return (
                       <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 4, background: bg, color: "#fff", fontSize: "var(--text-xs)", fontWeight: 400 }}>
-                        {tps.toFixed(1)} t/s
+                        ≈{tps.toFixed(1)} t/s
                       </span>
                     );
                   })()}

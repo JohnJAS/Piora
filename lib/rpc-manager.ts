@@ -1,6 +1,8 @@
 import { recordAgentTerminalEvent } from "./agent-terminal-registry";
+import { StreamingMetricsTracker } from "./streaming-metrics";
 import { assertRemotePolicyCommand, readRemoteSessionPolicy, remotePolicyResources, type RemoteSessionPolicy } from "./remote-session-policy";
 import { RemoteContentProjection } from "./remote-content";
+import { readPendingSessionModel, clearPendingSessionModel } from "./session-model-selection";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
@@ -10,6 +12,8 @@ import { resolve } from "node:path";
 import { validateAgentImages } from "./image-attachments";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
+import { runPromptWithModelFallback } from "./model-fallback";
+import { readModelFallbackConfig } from "./model-fallback-config";
 import { applyConfiguredImageInput } from "./model-capabilities";
 import { resolveDefaultModelPreference } from "./model-policy";
 import {
@@ -70,6 +74,7 @@ import { buildPromptWithMaterials, resolvePromptMaterialReferences, restorePromp
 import type { PromptMaterialReference } from "./prompt-material-format";
 import type { UserInputResult } from "./user-input";
 import { estimateContextUsageBreakdown } from "./context-usage";
+import { mergeCommandOutputDetails } from "./command-execution";
 import {
   fitToolNamesWithinDefinitionBudget,
   estimateToolDefinitionPromptTokens,
@@ -147,6 +152,8 @@ type ExtensionBindingOptions = {
 export interface RpcSessionStartOptions {
   preparedSessionFile?: string;
   remotePolicy?: RemoteSessionPolicy;
+  /** Pinned Team profiles prohibit startup model fallback. */
+  allowModelFallback?: boolean;
   toolNames?: string[];
   capabilitySelection?: SessionCapabilitySelection;
   initialModel?: { provider: string; modelId: string };
@@ -176,11 +183,15 @@ export class AgentSessionWrapper {
   // set before the async SDK call so two callers cannot both observe idle.
   private promptAdmissionBusy = false;
   private stopping = false;
+  private abortedQueuedMessages: { id: string; steering: string[]; followUp: string[] } | undefined;
   private abortCleanupTask: Promise<void> = Promise.resolve();
   private shutdownTask: Promise<void> = Promise.resolve();
   private abortGeneration = 0;
   private promptTasks = new Set<Promise<void>>();
   private lastPromptFailed = false;
+  private lastAssistantResponse: unknown;
+  private readonly streamingMetrics = new StreamingMetricsTracker();
+  private pendingClientPromptId: string | undefined;
   private lastPromptErrorSummary: string | undefined;
   private runStartedAt: number | null = null;
   private taskActivity: TaskRuntimeActivity | null = null;
@@ -200,7 +211,7 @@ export class AgentSessionWrapper {
   private onDestroyCallbacks = new Set<() => void>();
   private activePromptRun: PromptRunIdentity | undefined;
   private activeCommandId: string | undefined;
-  private runtimeToolCalls = new Map<string, { toolName: string; args: unknown }>();
+  private runtimeToolCalls = new Map<string, { toolName: string; args: unknown; outputDetails?: Record<string, unknown> }>();
   private capabilityPolicy: SessionCapabilityPolicy;
   private capabilityCatalog: ReturnType<typeof buildSessionCapabilityCatalog>;
   private toolNameCeiling: Set<string> | undefined;
@@ -444,6 +455,7 @@ export class AgentSessionWrapper {
   /** Start one ordinary prompt with a stable command correlation id. */
   async startTrackedPrompt(input: {
     commandId: string;
+    clientPromptId?: string;
     source: SessionMessageSourceKind;
     roomContext?: SessionRoomContext;
     message: string;
@@ -452,6 +464,8 @@ export class AgentSessionWrapper {
     teamExecution?: TeamExecutionContext;
   }): Promise<{ accepted: true; sessionId: string; commandId: string; runId: string }> {
     if (input.teamExecution) this.validateTeamRuntimePolicy(input.teamExecution);
+    // Keep even a first-send/auth failure discoverable after server restart.
+    if (input.source === "ui") this.persistSessionFile();
     await this.send({ type: "prompt", ...input });
     const runId = this.activePromptRun?.runId;
     if (!runId) throw new Error("Prompt was not admitted by the target session.");
@@ -585,9 +599,19 @@ export class AgentSessionWrapper {
 
   start(): void {
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
+      this.streamingMetrics.update(event);
       this.remoteContent.update(event);
+      if (event.type === "message_end" && (event.message as { role?: string } | undefined)?.role === "user" && this.pendingClientPromptId) {
+        // The SDK emits this event before appending the same object to its
+        // SessionManager. Persist the receipt alongside the actual user text.
+        (event.message as { clientPromptId?: string }).clientPromptId = this.pendingClientPromptId;
+        this.pendingClientPromptId = undefined;
+      }
       this.resetIdleTimer();
       this.updateActivityFromEvent(event);
+      if (event.type === "message_end" && (event.message as { role?: string } | undefined)?.role === "assistant") {
+        this.lastAssistantResponse = event.message;
+      }
       if (event.type === "tool_execution_start") {
         const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : "";
         const toolName = typeof event.toolName === "string" ? event.toolName : "";
@@ -595,11 +619,26 @@ export class AgentSessionWrapper {
           this.runtimeToolCalls.set(toolCallId, { toolName, args: event.args });
         }
       }
+      if (event.type === "tool_execution_update") {
+        const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : "";
+        const started = toolCallId ? this.runtimeToolCalls.get(toolCallId) : undefined;
+        const partial = event.partialResult as { details?: unknown } | undefined;
+        if (started && partial?.details && typeof partial.details === "object" && !Array.isArray(partial.details)) {
+          started.outputDetails = { ...started.outputDetails, ...(partial.details as Record<string, unknown>) };
+        }
+      }
       if (event.type === "tool_execution_end") {
         const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : "";
         const started = toolCallId ? this.runtimeToolCalls.get(toolCallId) : undefined;
-        if (toolCallId) this.runtimeToolCalls.delete(toolCallId);
         const toolName = started?.toolName ?? (typeof event.toolName === "string" ? event.toolName : "");
+        // Shell tools can throw after producing a truncated output snapshot. Pi's
+        // error conversion keeps the text but replaces details with {}, so merge
+        // the last streamed metadata back before the toolResult is persisted.
+        if (started?.outputDetails && event.result && typeof event.result === "object") {
+          const result = event.result as { details?: unknown };
+          result.details = mergeCommandOutputDetails(toolName, started.outputDetails, result.details);
+        }
+        if (toolCallId) this.runtimeToolCalls.delete(toolCallId);
         if (this.activePromptRun && toolCallId && toolName) {
           void captureTeamRuntimeToolResult(
             this.activePromptRun,
@@ -618,7 +657,14 @@ export class AgentSessionWrapper {
         this.runtimeToolCalls.clear();
         invalidateSessionListCache();
       }
-      this.emit(event);
+      // Cancelled transport events may arrive while the next prompt is already
+      // waiting in the router inbox. They must not paint as that new prompt.
+      if (!this.stopping) {
+        const message = event.type === "message_start" || event.type === "message_update"
+          ? this.streamingMetrics.getMessage() : null;
+        this.emit(message && (event.message as { role?: string } | undefined)?.role === "assistant"
+          ? { ...event, message } : event);
+      }
       // Lifecycle state is immediate; high-frequency text/tool activity is
       // coalesced so a token stream cannot rebuild every live-session snapshot.
       if (isImmediateRunningSnapshotEvent(event)) notifyRunningChange();
@@ -810,6 +856,14 @@ export class AgentSessionWrapper {
     };
   }
 
+  getStreamingMessage() {
+    return !this._alive || this.stopping ? null : this.streamingMetrics.getMessage();
+  }
+
+  getStreamingMetrics() {
+    return !this._alive || this.stopping ? null : this.streamingMetrics.getMetrics();
+  }
+
   onDestroy(cb: () => void): () => void {
     this.onDestroyCallbacks.add(cb);
     return () => this.onDestroyCallbacks.delete(cb);
@@ -851,6 +905,7 @@ export class AgentSessionWrapper {
         if (!streamingBehavior) {
           this.assertSessionIdle("send a prompt");
           if (this.promptAdmissionBusy) throw new Error("Cannot send a prompt while the session is starting another prompt");
+          this.abortedQueuedMessages = undefined;
         }
         const teamExecution = command.teamExecution as TeamExecutionContext | undefined;
         if (teamExecution && streamingBehavior) throw new Error("Team execution context cannot be attached to a follow-up prompt.");
@@ -859,6 +914,7 @@ export class AgentSessionWrapper {
           ? command.commandId.trim()
           : `cmd_${randomUUID()}`;
         const originalPromptMessage = String(command.message ?? "");
+        if (!streamingBehavior) this.pendingClientPromptId = typeof command.clientPromptId === "string" ? command.clientPromptId : undefined;
         const runtimePromptMessage = promptMaterials?.length
           ? buildPromptWithMaterials(originalPromptMessage, resolvePromptMaterialReferences(promptMaterials))
           : originalPromptMessage;
@@ -879,7 +935,6 @@ export class AgentSessionWrapper {
           : this.activePromptRun!;
         if (ownsPromptRun) {
           this.activePromptRun = promptRun;
-          this.remoteContent.resetForRun(promptRun.runId);
           this.activeCommandId = commandId;
           this.emit({
             type: "prompt_started",
@@ -900,15 +955,47 @@ export class AgentSessionWrapper {
             throw new Error("Prompt cancelled");
           }
         };
-        const promptTask = Promise.resolve().then(() => {
-          assertNotAborted();
-          return this.inner.prompt(runtimePromptMessage, {
-            ...(promptImages?.length ? { images: promptImages } : {}),
-            ...(streamingBehavior ? { streamingBehavior } : {}),
-            source: "rpc",
-            // SDK abort() only sees an active model run, not asynchronous auth,
-            // input hooks or pre-prompt compaction. Fence that late model start.
-            preflightResult: (success) => { if (success) assertNotAborted(); },
+        const promptTask = Promise.resolve().then(async () => {
+          if (!streamingBehavior) {
+            const pendingModel = readPendingSessionModel(this.sessionId);
+            if (pendingModel) {
+              assertNotAborted();
+              const model = this.inner.modelRuntime.getModel(pendingModel.provider, pendingModel.modelId);
+              if (!model) throw new Error(`Model not found: ${pendingModel.provider}/${pendingModel.modelId}`);
+              await this.inner.setModel(applyConfiguredImageInput(model));
+              this.persistSessionFile();
+              clearPendingSessionModel(this.sessionId, pendingModel.revision);
+              this.emit({ type: "project_model_changed", provider: model.provider, modelId: model.id });
+              assertNotAborted();
+            }
+          }
+          const prompt = (admitted: () => void) => {
+            assertNotAborted();
+            return this.inner.prompt(runtimePromptMessage, {
+              ...(promptImages?.length ? { images: promptImages } : {}),
+              ...(streamingBehavior ? { streamingBehavior } : {}),
+              source: "rpc",
+              // SDK abort() only sees an active model run, not asynchronous auth,
+              // input hooks or pre-prompt compaction. Fence that late model start.
+              preflightResult: (success) => { if (success) { assertNotAborted(); admitted(); } },
+            });
+          };
+          // Queuing a message does not own the running model's result.
+          if (streamingBehavior) return prompt(() => {});
+          return runPromptWithModelFallback({
+            session: this.inner,
+            enabled: () => readModelFallbackConfig().enabled && (!teamExecution || getRoom(teamExecution.roomId).members
+              .find((member) => member.memberId === teamExecution.memberId)?.profile.modelPolicy.mode === "session"),
+            assertActive: assertNotAborted,
+            lastAssistant: () => this.lastAssistantResponse,
+            images: Boolean(promptImages?.length),
+            onSwitch: (from, to) => {
+              invalidateModelsCache();
+              invalidateSessionListCache();
+              this.setTaskActivity("retry", `Switching model: ${from} → ${to}`);
+              this.emit({ type: "model_fallback", sessionId: this.sessionId, commandId, runId: promptRun.runId, from, to, model: this.inner.model, thinkingLevel: this.inner.agent.state?.thinkingLevel });
+            },
+            prompt,
           });
         })
           .then(async () => {
@@ -920,7 +1007,7 @@ export class AgentSessionWrapper {
           }
           if (!streamingBehavior) {
             this.promptAdmissionBusy = false;
-            this.emit({ type: "prompt_done", sessionId: this.sessionId, commandId, runId: promptRun.runId, timestamp: Date.now() });
+            this.emit({ type: "prompt_done", sessionId: this.sessionId, commandId, runId: promptRun.runId, timestamp: Date.now(), aborted: abortGeneration !== this.abortGeneration });
           }
           this.flushPendingProjectCapabilitySettings();
           notifyRunningChange();
@@ -944,10 +1031,11 @@ export class AgentSessionWrapper {
             timestamp: Date.now(),
             errorMessage: error instanceof Error ? error.message : String(error),
           });
-          if (!streamingBehavior) this.emit({ type: "prompt_done", sessionId: this.sessionId, commandId, runId: promptRun.runId, timestamp: Date.now() });
+          if (!streamingBehavior) this.emit({ type: "prompt_done", sessionId: this.sessionId, commandId, runId: promptRun.runId, timestamp: Date.now(), aborted: cancelled });
           this.flushPendingProjectCapabilitySettings();
           notifyRunningChange();
         }).finally(() => {
+          if (!streamingBehavior && this.pendingClientPromptId === command.clientPromptId) this.pendingClientPromptId = undefined;
           this.promptTasks.delete(promptTask);
         });
         this.promptTasks.add(promptTask);
@@ -955,7 +1043,13 @@ export class AgentSessionWrapper {
       }
 
       case "abort": {
-        if (this.stopping) return { accepted: true };
+        const receipt = () => ({
+          accepted: true,
+          ...(this.abortedQueuedMessages ? { queuedMessages: this.abortedQueuedMessages } : {}),
+        });
+        // Keep the handoff available when the client retries a lost stop reply.
+        // A new prompt clears it, so a later stop cannot replay the previous queue.
+        if (this.stopping || (!this.isRunning() && this.abortedQueuedMessages)) return receipt();
         const promptRun = this.activePromptRun;
         this.abortGeneration += 1;
         this.stopping = true;
@@ -974,7 +1068,8 @@ export class AgentSessionWrapper {
         const compactionTask = signal(() => this.inner.abortCompaction());
         const bashTask = signal(() => this.inner.abortBash());
         const queueTask = signal(() => {
-          this.inner.clearQueue();
+          const queued = this.inner.clearQueue();
+          this.abortedQueuedMessages = queued.steering.length || queued.followUp.length ? { id: randomUUID(), ...queued } : undefined;
           this.emit({ type: "queue_update", steering: [], followUp: [] });
         });
         const uiTasks = [
@@ -997,7 +1092,7 @@ export class AgentSessionWrapper {
           this.emit({ type: "session_idle", sessionId: this.sessionId });
           notifyRunningChange();
         });
-        return { accepted: true };
+        return receipt();
       }
 
       case "get_state": {
@@ -1051,6 +1146,7 @@ export class AgentSessionWrapper {
       }
 
       case "set_model": {
+        this.assertSessionIdle("change model");
         const { provider, modelId } = command as { provider: string; modelId: string };
         let model = this.inner.modelRuntime.getModel(provider, modelId);
         if (!model) {
@@ -1059,6 +1155,8 @@ export class AgentSessionWrapper {
         }
         if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
         await this.inner.setModel(applyConfiguredImageInput(model));
+        this.persistSessionFile();
+        clearPendingSessionModel(this.sessionId);
         invalidateModelsCache();
         invalidateSessionListCache();
         return { id: model.id, provider: model.provider };
@@ -2092,11 +2190,14 @@ export function notifyRunningChange(): void {
  * thinking pin, and SDK scopedModels share one settings snapshot.
  * Pass options.toolNames to pre-configure active tools (empty = all disabled).
  */
-export async function stopRpcSessionsForFileMutation(ids: readonly string[]): Promise<void> {
+export async function stopRpcSessionsForFileMutation(ids: readonly string[], options: { rejectRunning?: boolean } = {}): Promise<void> {
   const selected = new Set(ids);
   // Starts admitted before the mutation lock may still be constructing a wrapper.
   await Promise.allSettled([...getLocks()].filter(([key]) => ids.some((id) => key.endsWith(`:${id}`))).map(([, promise]) => promise));
   await drainSessionFileOperations(ids);
+  if (options.rejectRunning && [...getRegistry()].some(([id, session]) => selected.has(id) && session.isRunning())) {
+    throw new Error("任务正在运行，请停止或等待完成后再删除消息。");
+  }
   await Promise.all([...getRegistry()].filter(([id]) => selected.has(id)).map(([, session]) => session.shutdownForFileMutation()));
 }
 
@@ -2266,10 +2367,12 @@ export async function startRpcSession(
       settingsModel: defaultModelId,
       environment: process.env,
     });
-    const initial = sessionFile
+    const pendingModel = readPendingSessionModel(sessionId);
+    const initial = sessionFile && !pendingModel
       ? { scopedModels: [...scope.scopedModels] }
       : selectInitialModelScope(scope, {
-        ...(initialModel ? { requestedModel: initialModel } : {}),
+        allowUnavailableRequestedModel: options.allowModelFallback !== false && readModelFallbackConfig().enabled,
+        ...(pendingModel ? { requestedModel: pendingModel } : initialModel ? { requestedModel: initialModel } : {}),
         ...(preferredDefault ? { defaultModel: preferredDefault } : {}),
         ...(thinkingLevel ? { thinkingLevel } : {}),
       });
@@ -2281,6 +2384,11 @@ export async function startRpcSession(
       ...(initial.scopedModels.length > 0 ? { scopedModels: initial.scopedModels } : {}),
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
+    if (pendingModel && inner.model?.provider === pendingModel.provider && inner.model.id === pendingModel.modelId) {
+      await inner.setModel(applyConfiguredImageInput(inner.model));
+      persistLazySessionManager(inner.sessionManager);
+      clearPendingSessionModel(sessionId, pendingModel.revision);
+    }
     if (inner.model) {
       const configuredModel = applyConfiguredImageInput(inner.model);
       // Do not re-select an unchanged restored model: packaged smoke tests use
@@ -2307,6 +2415,15 @@ export async function startRpcSession(
     if (!sessionFile && !projectToolRecord) appendSessionCapabilityPolicy(inner.sessionManager, restoredPolicy);
 
     const realSessionId = inner.sessionId as string;
+    if (!sessionFile && initialModel && inner.model
+      && (initialModel.provider !== inner.model.provider || initialModel.modelId !== inner.model.id)) {
+      await inner.sendCustomMessage({
+        customType: "piora-model-fallback",
+        content: `Requested model ${initialModel.provider}/${initialModel.modelId} is unavailable. Starting this task with ${inner.model.provider}/${inner.model.id}.`,
+        display: true,
+        details: { from: `${initialModel.provider}/${initialModel.modelId}`, to: `${inner.model.provider}/${inner.model.id}`, attempt: 1 },
+      }, { triggerTurn: false });
+    }
     const realSessionFile = inner.sessionFile as string | undefined;
     try {
       await bindSessionAgentRuntimeProfile(realSessionId, runtimeProfile);

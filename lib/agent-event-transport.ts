@@ -1,8 +1,8 @@
 /** Browser transport; the SDK and extension event contract stays unchanged. */
 type Event = { type: string; [key: string]: unknown };
 type Message = { role: string; content: Array<Record<string, unknown>>; [key: string]: unknown };
-type Delta = { type: "message_delta"; index: number; field: "text" | "thinking"; delta: string };
-type BlockUpdate = { type: "message_block"; index: number; block: Record<string, unknown> };
+type Delta = { type: "message_delta"; index: number; field: "text" | "thinking"; delta: string; streamingMetrics?: unknown };
+type BlockUpdate = { type: "message_block"; index: number; block: Record<string, unknown>; streamingMetrics?: unknown };
 
 export function createAgentEventTransport(write: (event: Event) => void, options: { incremental?: boolean; intervalMs?: number } = {}) {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -44,6 +44,7 @@ export function createAgentEventTransport(write: (event: Event) => void, options
             if (pending?.type !== "message_block" || pending.index !== index) flush();
             pending = { type: "message_block", index, block: { ...block } };
           }
+          if (message.streamingMetrics !== undefined) pending.streamingMetrics = message.streamingMetrics;
           timer ??= setTimeout(flush, options.intervalMs ?? 32);
           return;
         }
@@ -72,6 +73,13 @@ export function createAgentEventDecoder() {
   return (event: Event): Event | null => {
     if (event.type === "connected" || event.type === "message_end") current = undefined;
     if (event.type === "message_start" || event.type === "message_update") current = event.message as Message | undefined;
+    if (event.type === "message_metrics") {
+      const metrics = event.streamingMetrics as { generation?: number } | undefined;
+      const previous = current?.streamingMetrics as { generation?: number } | undefined;
+      if (!current || !metrics || metrics.generation !== previous?.generation) return null;
+      current = { ...current, streamingMetrics: metrics };
+      return { type: "message_update", message: current };
+    }
     if (event.type !== "message_delta" && event.type !== "message_block") return event;
     if (!current || !Number.isInteger(event.index) || (event.index as number) < 0) return null;
     const index = event.index as number;
@@ -82,7 +90,7 @@ export function createAgentEventDecoder() {
       if ((field !== "text" && field !== "thinking") || typeof delta !== "string" || !content[index]) return null;
       content[index] = { ...content[index], [field]: String(content[index][field] ?? "") + delta };
     }
-    current = { ...current, content };
+    current = { ...current, content, ...(event.streamingMetrics !== undefined ? { streamingMetrics: event.streamingMetrics } : {}) };
     return { type: "message_update", message: current };
   };
 }

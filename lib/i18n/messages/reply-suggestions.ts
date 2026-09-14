@@ -1,4 +1,6 @@
 export const replySuggestionsZh: Record<string, string> = {
+  "reply.savedDetail": "快捷回复设置已保存，将用于后续提取。",
+  "reply.error.stale_source": "会话尚未就绪或内容已变化，可稍后重试提取。",
   "reply.title": "快捷回复", "reply.description": "从助手已经提出的建议和选项中提取快捷回复，点击加入输入框，可组合后一起发送。",
   "reply.enable": "自动提取快捷回复", "reply.model": "提取模型", "reply.chooseModel": "请选择独立的提取模型", "reply.searchModels": "搜索模型或提供商", "reply.unavailable": "当前不可用，请检查模型配置和登录状态",
   "reply.prompt": "提取提示词", "reply.promptHelp": "提示词决定提取规则；JSON 输出格式由应用固定管理。",
@@ -11,6 +13,8 @@ export const replySuggestionsZh: Record<string, string> = {
   "reply.error.model_unavailable": "提取模型不可用，请重新选择或登录提供商。", "reply.error.invalid_settings": "提取设置不完整，请选择模型并保存提示词。", "reply.error.timeout": "提取超时，可以稍后重试。", "reply.error.invalid_output": "模型返回的选项未通过校验。", "reply.error.provider_error": "提取模型请求失败，请检查提供商连接。", "reply.error.network_error": "网络请求失败，请稍后重试。", "reply.error.busy": "提取请求较多，请稍后重试。",
 };
 export const replySuggestionsEn: Record<string, string> = {
+  "reply.savedDetail": "Quick reply settings saved. They will be used for subsequent extractions.",
+  "reply.error.stale_source": "The conversation is not ready or its content changed. Try extracting again shortly.",
   "reply.title": "Quick replies", "reply.description": "Extract choices and suggestions already offered by the assistant. Click to add them to your draft and send several together.",
   "reply.enable": "Extract quick replies automatically", "reply.model": "Extraction model", "reply.chooseModel": "Choose a dedicated extraction model", "reply.searchModels": "Search models or providers", "reply.unavailable": "Unavailable — check model configuration and sign-in",
   "reply.prompt": "Extraction prompt", "reply.promptHelp": "This prompt controls extraction rules. The app manages the JSON output format.",

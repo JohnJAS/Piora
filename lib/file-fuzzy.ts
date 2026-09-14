@@ -124,17 +124,30 @@ export function filterFileEntries(
 ): FileIndexEntry[] {
   const lowerQuery = query.toLowerCase();
   if (!lowerQuery) return entries.slice(0, limit);
+  if (limit <= 0) return [];
 
-  const scored: Array<{ entry: FileIndexEntry; score: number }> = [];
+  type RankedEntry = { entry: FileIndexEntry; score: number; depth: number };
+  const compare = (a: RankedEntry, b: RankedEntry) => b.score - a.score
+    || a.depth - b.depth || a.entry.path.localeCompare(b.entry.path);
+  const scored: RankedEntry[] = [];
   for (const entry of entries) {
     const score = scoreEntry(entry, lowerQuery);
-    if (score > 0) scored.push({ entry, score });
+    if (score <= 0) continue;
+    const candidate = { entry, score, depth: pathDepth(entry.path) };
+    // Only rank the visible top results, rather than sort every matching file
+    // on each keystroke in a large project. Preserve the existing tie-breaks.
+    if (scored.length >= limit && compare(candidate, scored[scored.length - 1]) >= 0) continue;
+    let low = 0;
+    let high = scored.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (compare(candidate, scored[middle]) < 0) high = middle;
+      else low = middle + 1;
+    }
+    scored.splice(low, 0, candidate);
+    if (scored.length > limit) scored.pop();
   }
-  scored.sort((a, b) =>
-    b.score - a.score
-    || pathDepth(a.entry.path) - pathDepth(b.entry.path)
-    || a.entry.path.localeCompare(b.entry.path));
-  return scored.slice(0, limit).map((s) => s.entry);
+  return scored.map((s) => s.entry);
 }
 
 export interface AtInsertion {
