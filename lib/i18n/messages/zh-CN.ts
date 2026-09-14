@@ -22,6 +22,7 @@ export const zhCNLocale: LocalePlugin = {
     "models.ui.providers": "模型渠道",
     "models.ui.providerName": "渠道名称",
     "models.providerNameRequired": "渠道名称不能为空。",
+    "models.modelIdRequired": "模型 ID 不能为空，请填写后再保存。",
     "models.providerNameDuplicate": "渠道名称“{name}”已存在，请使用不同的名称。",
     "models.ui.addProvider": "添加渠道",
     "models.ui.connection": "连接设置",

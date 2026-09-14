@@ -32,6 +32,7 @@
   gap: 10px;
   padding: 0 15px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: var(--floating-section);
   color: var(--text-dim);
 }
 
@@ -57,7 +58,7 @@
   padding: 2px 6px;
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   border-radius: var(--radius-control);
-  background: var(--bg);
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
   color: var(--text-dim);
   font: inherit;
   font-size: calc(var(--text-xs) * .84);
@@ -79,7 +80,7 @@
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-radius: var(--radius-control);
   outline: 0;
-  background: var(--bg);
+  background: color-mix(in srgb, var(--bg) 44%, transparent);
   color: var(--text-muted);
   font: inherit;
   font-size: var(--text-xs);
@@ -127,7 +128,7 @@
 .row:hover,
 .row:focus-visible,
 .row[data-active="true"] {
-  background: var(--bg-selected);
+  background: color-mix(in srgb, var(--bg-selected) 72%, transparent);
 }
 
 .rowIcon {
@@ -182,7 +183,7 @@
   gap: 12px;
   padding: 5px 14px;
   border-top: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  background: var(--floating-section);
   color: var(--text-dim);
   font-size: calc(var(--text-xs) * .84);
 }

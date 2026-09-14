@@ -228,9 +228,10 @@ const inputStyle = {
   boxSizing: "border-box" as const,
 };
 
-function TextInput({ value, onChange, placeholder, mono }: { value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean }) {
+function TextInput({ value, onChange, placeholder, mono, invalid = false }: { value: string; onChange: (v: string) => void; placeholder?: string; mono?: boolean; invalid?: boolean }) {
   return <input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
-    style={{ ...inputStyle, fontFamily: mono ? "var(--font-mono)" : "inherit" }} />;
+    aria-invalid={invalid || undefined}
+    style={{ ...inputStyle, borderColor: invalid ? "color-mix(in srgb, #ef4444 58%, var(--border))" : "var(--border)", fontFamily: mono ? "var(--font-mono)" : "inherit" }} />;
 }
 
 function SecretTextInput({
@@ -1183,7 +1184,10 @@ function ModelDetail({
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <Field label={t("models.form.modelId")}><TextInput value={model.id} onChange={(v) => set("id", v)} placeholder="model-id" mono /></Field>
+        <Field label={t("models.form.modelId")}>
+          <TextInput value={model.id} onChange={(v) => set("id", v)} placeholder="model-id" mono invalid={!model.id.trim()} />
+          {!model.id.trim() && <span data-model-id-required style={{ color: "#ef4444", fontSize: "var(--text-xs)", lineHeight: 1.4 }}>{t("models.modelIdRequired")}</span>}
+        </Field>
         <Field label={t("models.form.name")}><TextInput value={model.name ?? ""} onChange={(v) => set("name", v || undefined)} placeholder={t("models.form.displayName")} /></Field>
       </div>
 
@@ -2349,6 +2353,15 @@ export function ModelsConfig({
 
   const handleSave = useCallback(async () => {
     if (configMutationRef.current) return;
+    for (const [providerName, provider] of Object.entries(config.providers ?? {})) {
+      const invalidIndex = (provider.models ?? []).findIndex((model) => !model.id.trim());
+      if (invalidIndex >= 0) {
+        setSelection({ type: "model", providerName, index: invalidIndex });
+        setDetailTab("connection");
+        setSaveError(t("models.modelIdRequired"));
+        return;
+      }
+    }
     // Keep names as drafts until the same save that persists the other fields.
     // Resolve all names together so collisions cannot silently drop a provider.
     const names = new Map<string, string>();

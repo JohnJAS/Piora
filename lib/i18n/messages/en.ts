@@ -22,6 +22,7 @@ export const enLocale: LocalePlugin = {
     "models.ui.providers": "Model providers",
     "models.ui.providerName": "Provider name",
     "models.providerNameRequired": "Provider name cannot be empty.",
+    "models.modelIdRequired": "Model ID is required before saving.",
     "models.providerNameDuplicate": "A provider named “{name}” already exists. Choose a different name.",
     "models.ui.addProvider": "Add provider",
     "models.ui.connection": "Connection settings",

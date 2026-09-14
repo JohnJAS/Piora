@@ -92,11 +92,14 @@
   --focus-ring: color-mix(in srgb, var(--accent) 72%, white);
   --scrollbar-size: 8px;
   --scrollbar-thumb: color-mix(in srgb, var(--text-dim) 48%, transparent);
-  --floating-background: color-mix(in srgb, var(--bg) 54%, transparent);
+  --floating-background: color-mix(in srgb, var(--bg) 40%, transparent);
   --floating-section: color-mix(in srgb, var(--bg-panel) 18%, transparent);
   --floating-border: color-mix(in srgb, var(--text-muted) 18%, transparent);
-  --floating-filter: blur(18px) saturate(1.04);
+  --floating-filter: blur(20px) saturate(1.12);
   --floating-shadow: 0 12px 36px rgb(0 0 0 / 14%), inset 0 1px 0 rgb(255 255 255 / 8%);
+  --composer-background: color-mix(in srgb, var(--bg) 34%, transparent);
+  --composer-border: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  --composer-filter: blur(22px) saturate(1.14);
   --dialog-background: var(--floating-background);
   --dialog-padding: 20px;
   --overlay-blur: 6px;
@@ -1482,7 +1485,9 @@ select:focus-visible,
   padding: 6px;
   border: 0;
   border-radius: var(--radius-control);
-  background: var(--surface-raised);
+  background: var(--composer-background);
+  -webkit-backdrop-filter: var(--composer-filter);
+  backdrop-filter: var(--composer-filter);
   box-shadow: var(--shadow-surface);
 }
 
@@ -1559,6 +1564,11 @@ select:focus-visible,
 .chat-composer-surface {
   position: relative;
   z-index: 1;
+  border-color: var(--composer-border) !important;
+  background: var(--composer-background) !important;
+  -webkit-backdrop-filter: var(--composer-filter);
+  backdrop-filter: var(--composer-filter);
+  box-shadow: var(--shadow-composer) !important;
 }
 
 .extension-status-control {
@@ -3257,15 +3267,17 @@ select:focus-visible,
 
 
 .composer-surface {
-  border-color: transparent !important;
+  border-color: var(--composer-border) !important;
   border-radius: var(--radius-panel) !important;
-  background: var(--surface-raised) !important;
+  background: var(--composer-background) !important;
+  -webkit-backdrop-filter: var(--composer-filter);
+  backdrop-filter: var(--composer-filter);
   box-shadow: var(--shadow-composer);
   transition: border-color 0.18s var(--motion-ease-out), box-shadow 0.18s var(--motion-ease-out), background 0.18s var(--motion-ease-out), transform 0.18s var(--motion-ease-out);
 }
 
 .composer-surface:focus-within {
-  border-color: transparent !important;
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--composer-border)) !important;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 8%, transparent), var(--shadow-composer) !important;
   transform: translateY(-1px);
 }
@@ -5469,6 +5481,7 @@ span.linenumber {
   gap: 4px 12px;
   padding: 9px 12px;
   border-bottom: 1px solid var(--border);
+  background: var(--floating-section);
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
@@ -5498,7 +5511,8 @@ span.linenumber {
   font: var(--text-sm)/1.45 var(--font-mono);
 }
 
-.file-mention-item[data-active="true"] { background: var(--bg-selected); }
+.file-mention-item:hover,
+.file-mention-item[data-active="true"] { background: color-mix(in srgb, var(--bg-selected) 72%, transparent); }
 .file-mention-icon { flex: none; display: flex; padding-top: 3px; }
 .file-mention-copy { min-width: 0; flex: 1; display: grid; gap: 2px; }
 .file-mention-name { overflow-wrap: anywhere; font-weight: 550; }
@@ -5532,6 +5546,8 @@ span.linenumber {
     --floating-background: var(--bg);
     --floating-section: var(--bg-panel);
     --floating-filter: none;
+    --composer-background: var(--bg);
+    --composer-filter: none;
     --overlay-blur: 0px;
   }
 }
