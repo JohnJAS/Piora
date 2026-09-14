@@ -21,13 +21,12 @@ function ReplyChoices({ sourceKey, result, error, loading, retry, preview, draft
     if (next.conflict) { setConflict({ span: next.conflict, group, option }); return; }
     setConflict(null); onChange(next.draft, mouse ? next.caret : undefined);
   };
-  // Successful extraction stays a flat row of bubbles. Only pending/failed
-  // requests need a small status, so a failure cannot look like "no choices".
+  // Extraction runs without a placeholder; failures still offer a retry.
   if (error) return preview ? null : <div className={styles.extractionStatus} role="status">
     <span>{t(replyErrorKey(error))}</span>
     {retry && <button type="button" className={styles.action} onClick={retry}>{t("reply.retry")}</button>}
   </div>;
-  if (loading) return <div className={styles.extractionStatus} role="status">{t("reply.testing")}</div>;
+  if (loading) return null;
   if (!result?.groups.length) return null;
   const choices = result.groups.flatMap((group) => group.options.map((option) => ({ group, option })));
   return <section className={styles.bar} aria-label={t("reply.title")}>

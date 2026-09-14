@@ -76,7 +76,7 @@ export function ReplySuggestionsSettings({ cwd }: { cwd?: string }) {
       <details className={styles.test}><summary>{t("reply.preview")}</summary><div className={styles.settingsBody}>
         <p className={styles.note}>{t("reply.previewHelp")}</p>
         <label className={styles.field}><span>{t("reply.sample")}</span><textarea value={sample} onChange={(e) => setSample(e.target.value)} /></label>
-        <div><button type="button" className={settingsStyles.secondaryButton} disabled={testing || !available || !validPrompt || !sample.trim() || unicodeLength(sample) > 24_000} onClick={() => void test()}>{t(testing ? "reply.testing" : "reply.test")}</button></div>
+        <div><button type="button" className={settingsStyles.secondaryButton} disabled={testing || !available || !validPrompt || !sample.trim() || unicodeLength(sample) > 24_000} onClick={() => void test()}>{t("reply.test")}</button></div>
         {preview && preview.key !== testKey && <p role="status" className={styles.note}>{t("reply.stalePreview")}</p>}
         {preview?.key === testKey && <div>
           {preview.error && <p role="alert" className={styles.note}>{t(replyErrorKey(preview.error))}</p>}

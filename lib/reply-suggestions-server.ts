@@ -111,7 +111,7 @@ export async function handleReplyRequest(request: Request, sessionId?: string): 
       }, { reasoning, maxTokens: 3072, maxRetries: 0, timeoutMs: 15_000, cacheRetention: "none", signal });
       signal.throwIfAborted();
       if (message.stopReason !== "stop") throw new ReplyError("provider_error", 502);
-      try { return parseReplyResult(message.content.filter((b) => b.type === "text").map((b) => b.text).join("\n"), source); }
+      try { return parseReplyResult(message.content.filter((b) => b.type === "text").map((b) => b.text).join("\n")); }
       catch { throw new ReplyError("invalid_output", 502); }
     });
     if (snapshot && digest([sessionId, await sourceSnapshot(sessionId!, entryId, requestedLeaf), source]) !== sourceKey) { cache.delete(key); throw new ReplyError("stale_source", 409); }

@@ -4,6 +4,13 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.4.41-beta.44] - 2026-09-14
+
+### 快捷回复
+
+- 取消提取结果的数量、字数、重复项、单选项数和原文依据匹配等硬性校验，避免一个字段不符导致全部选项被拒绝；兼容 Markdown 包裹的 JSON 和缺省字段。
+- 快捷回复在后台提取，聊天区和设置测试按钮不再显示“正在提取”；结果就绪后显示选项。
+
 ## [0.4.41-beta.43] - 2026-09-14
 
 ### 会话稳定性
