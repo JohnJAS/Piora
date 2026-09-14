@@ -4,7 +4,7 @@ import { assertRemotePolicyCommand, readRemoteSessionPolicy, remotePolicyResourc
 import { RemoteContentProjection } from "./remote-content";
 import { readPendingSessionModel, clearPendingSessionModel } from "./session-model-selection";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, createBashToolDefinition, getAgentDir, initTheme, SessionManager, SettingsManager, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import { assertSessionNotMutating, drainSessionFileOperations, runSessionFileOperation, trackSessionFileOperation } from "./session-mutation";
@@ -100,6 +100,7 @@ import {
   type ProjectToolSettingsRecord,
 } from "./project-tool-settings";
 import { resolveProject } from "./worktree";
+import { getSSHSessionForAgent } from "./ssh/session-manager";
 
 // ============================================================================
 // Types
@@ -2377,6 +2378,15 @@ export async function startRpcSession(
         ...(preferredDefault ? { defaultModel: preferredDefault } : {}),
         ...(thinkingLevel ? { thinkingLevel } : {}),
       });
+    const remoteSSH = getSSHSessionForAgent(sessionId);
+    const customTools = remoteSSH ? [createBashToolDefinition(cwd, {
+      operations: {
+        exec: async (command, _commandCwd, executionOptions) => {
+          const result = await remoteSSH.exec(command, { signal: executionOptions.signal, timeout: executionOptions.timeout, onData: executionOptions.onData });
+          return { exitCode: result.exitCode };
+        },
+      },
+    })] : undefined;
     const { session: inner } = await createAgentSessionFromServices({
       services,
       sessionManager,
@@ -2384,6 +2394,7 @@ export async function startRpcSession(
       ...(initial.thinkingLevel ? { thinkingLevel: initial.thinkingLevel } : {}),
       ...(initial.scopedModels.length > 0 ? { scopedModels: initial.scopedModels } : {}),
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
+      ...(customTools ? { customTools: customTools as unknown as NonNullable<Parameters<typeof createAgentSessionFromServices>[0]["customTools"]> } : {}),
     });
     installImageContextPolicy(inner.agent);
     if (pendingModel && inner.model?.provider === pendingModel.provider && inner.model.id === pendingModel.modelId) {

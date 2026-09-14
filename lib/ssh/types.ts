@@ -18,6 +18,7 @@ export interface SSHSessionSnapshot {
   username: string;
   cwd: string;
   connected: boolean;
+  output: string;
   mode: "independent" | "agent-controlled";
   agentSessionId?: string;
 }
