@@ -1171,6 +1171,7 @@ export const zhCNLocale: LocalePlugin = {
     "workspace.review": "审阅",
     "workspace.files": "文件",
     "workspace.commands": "终端",
+    "workspace.ssh": "SSH",
     "workspace.browser": "浏览器",
     "workspace.design": "设计转鸿蒙",
     "workspace.harmony": "鸿蒙设备",

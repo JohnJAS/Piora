@@ -379,7 +379,7 @@ export function AppShell() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem("piora-right-panel-tab");
-    setRightPanelTab(stored === "automation" || stored === "review" || stored === "files" || stored === "commands" || stored === "browser" || stored === "design" || stored === "harmony" ? stored : "home");
+    setRightPanelTab(stored === "automation" || stored === "review" || stored === "files" || stored === "commands" || stored === "ssh" || stored === "browser" || stored === "design" || stored === "harmony" ? stored : "home");
     setRightPanelTabRestored(true);
   }, []);
 
