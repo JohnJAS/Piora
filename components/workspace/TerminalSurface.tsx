@@ -17,6 +17,7 @@ export interface TerminalSurfaceHandle {
 interface Props {
   cwd?: string | null;
   terminalId?: string;
+  transport?: "shell" | "ssh";
   subscribeToShell?: (listener: (event: ShellEvent) => void) => () => void;
   inputEnabled?: boolean;
   output?: string;
@@ -25,7 +26,7 @@ interface Props {
   onError?: (error: string) => void;
 }
 
-export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function TerminalSurface({ cwd, terminalId, subscribeToShell, inputEnabled = true, output = "", readOnly = false, onStatus, onError }, ref) {
+export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function TerminalSurface({ cwd, terminalId, transport = "shell", subscribeToShell, inputEnabled = true, output = "", readOnly = false, onStatus, onError }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
   const search = useRef<SearchAddon | null>(null);
@@ -117,7 +118,7 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
         chain = chain.then(async () => {
           if (disposed) return;
           if (terminalId && queuedGeneration !== generation) return;
-          const response = await fetch(terminalId ? `/api/shell/sessions/${terminalId}/actions` : "/api/terminal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, ...body, ...(terminalId ? { generation: queuedGeneration } : {}) }), signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)]) });
+          const response = await fetch(terminalId ? transport === "ssh" ? `/api/ssh/sessions/${terminalId}/actions` : `/api/shell/sessions/${terminalId}/actions` : "/api/terminal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, ...body, ...(terminalId ? { generation: queuedGeneration } : {}) }), signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)]) });
           if (!response.ok) throw new Error((await response.json()).error ?? `HTTP ${response.status}`);
           // Drain even successful replies before dequeuing the next keystroke.
           await response.arrayBuffer();
@@ -175,7 +176,7 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
           }
           // Startup returns as soon as the PTY exists, before profiles finish.
           // Use that snapshot before SSE reserves a long-lived HTTP connection.
-          const response = await fetch(terminalId ? `/api/shell/sessions/${terminalId}/actions` : "/api/terminal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, action: "start" }), signal: abort.signal });
+          const response = await fetch(terminalId ? transport === "ssh" ? `/api/ssh/sessions/${terminalId}/actions` : `/api/shell/sessions/${terminalId}/actions` : "/api/terminal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, action: "start" }), signal: abort.signal });
           if (!response.ok) {
             const body = await response.json().catch(() => null);
             throw new Error(body?.error ?? `HTTP ${response.status}`);
@@ -185,7 +186,7 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
           onMessage({ data: JSON.stringify(terminalId
             ? { type: "snapshot", terminalId, generation: snapshot.session.generation, sequence: snapshot.sequence, snapshot }
             : { type: "snapshot", ...snapshot }) });
-          events = new EventSource(terminalId ? `/api/shell/sessions/${terminalId}/events` : `/api/terminal/events?cwd=${encodeURIComponent(cwd)}`);
+          events = new EventSource(terminalId ? transport === "ssh" ? `/api/ssh/sessions/${terminalId}/events` : `/api/shell/sessions/${terminalId}/events` : `/api/terminal/events?cwd=${encodeURIComponent(cwd)}`);
           events.onmessage = onMessage;
           events.onerror = () => { if (!disposed) latest.current.onStatus?.(false, ""); };
         })().catch((error) => { if (!disposed) latest.current.onError?.(String(error)); });
@@ -233,7 +234,7 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
       };
     })().catch((error) => { if (!disposed) latest.current.onError?.(String(error)); });
     return () => { disposed = true; abort.abort(); cleanup(); };
-  }, [cwd, readOnly, terminalId, subscribeToShell]);
+  }, [cwd, readOnly, terminalId, transport, subscribeToShell]);
 
   useEffect(() => { if (terminal.current) terminal.current.options.disableStdin = readOnly || !inputEnabled; }, [inputEnabled, readOnly]);
 
