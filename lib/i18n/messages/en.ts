@@ -1171,6 +1171,7 @@ export const enLocale: LocalePlugin = {
     "workspace.review": "Review",
     "workspace.files": "Files",
     "workspace.commands": "Terminal",
+    "workspace.ssh": "SSH",
     "workspace.browser": "Browser",
     "workspace.design": "Design to Harmony",
     "workspace.harmony": "Harmony device",

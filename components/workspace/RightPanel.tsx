@@ -15,9 +15,10 @@ import { RenderErrorBoundary } from "../RenderErrorBoundary";
 import { AliIcon, type AliIconName } from "../AliIcon";
 import styles from "./WorkspacePanel.module.css";
 import { AutomationPanel } from "../AutomationPanel";
+import { SSHPanel } from "./SSHPanel";
 import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
 
-export type RightPanelTab = "home" | "automation" | "review" | "files" | "commands" | "browser" | "design" | "harmony";
+export type RightPanelTab = "home" | "automation" | "review" | "files" | "commands" | "ssh" | "browser" | "design" | "harmony";
 export interface RightPanelHandle { focusActiveTab: () => void; focusFileSearch: () => void; }
 
 interface Props {
@@ -60,6 +61,7 @@ const TOOLS: Array<{ id: Exclude<RightPanelTab, "home">; icon: AliIconName; shor
   { id: "automation", icon: "calendar" },
   { id: "review", icon: "diff", shortcut: "Ctrl+Shift+G" },
   { id: "commands", icon: "code" },
+  { id: "ssh", icon: "code" },
   { id: "browser", icon: "earth", shortcut: "Ctrl+T" },
   { id: "design", icon: "workflow" },
   { id: "harmony", icon: "mobile" },
@@ -305,6 +307,9 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     </section>
     <section id="workspace-commands" role="tabpanel" aria-labelledby="workspace-commands-tab" hidden={activeTab !== "commands"} className={styles.panel}>
       {active && activeTab === "commands" ? <RenderErrorBoundary resetKey={`commands:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><CommandPanel cwd={cwd} sessionId={props.sessionId} onClose={() => closeTool("commands")} onSettings={props.onOpenShellSettings} onToChat={props.onGuideAgent} onOpenFile={file => { props.onOpenFile(file, file.replace(/\\/g, "/").split("/").pop() || file); onActiveTabChange("files"); }} onOpenUrl={url => { if (/^https?:\/\//i.test(url)) { setBrowserNavigation({ id: crypto.randomUUID(), url }); onActiveTabChange("browser"); } }} /></RenderErrorBoundary> : null}
+    </section>
+    <section id="workspace-ssh" role="tabpanel" aria-labelledby="workspace-ssh-tab" hidden={activeTab !== "ssh"} className={styles.panel}>
+      {active && activeTab === "ssh" ? <RenderErrorBoundary resetKey={`ssh:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><SSHPanel /></RenderErrorBoundary> : null}
     </section>
     <section id="workspace-browser" role="tabpanel" aria-labelledby="workspace-browser-tab" hidden={activeTab !== "browser"} className={styles.panel}>
       {activeTab === "browser" ? <div className={styles.capabilityPanel}>{capabilityAccess("browser")}<div className={styles.capabilityPanelBody}><RenderErrorBoundary resetKey={`browser:${props.sessionId ?? "manual"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><BrowserPanel active={active && activeTab === "browser"} maximized={props.maximized} sessionId={props.sessionId} navigationRequest={browserNavigation} onNavigationConsumed={() => setBrowserNavigation(undefined)} /></RenderErrorBoundary></div></div> : null}
