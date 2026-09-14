@@ -71,6 +71,10 @@ export async function resolveVisibleModels(
   modelRuntime: ModelRuntime,
   patterns: string[] | undefined,
 ): Promise<ModelScopeResult> {
+  // The SDK retains built-in models after a configuration failure. Never turn
+  // that failure into an implicit model switch in the selector or at startup.
+  const runtimeError = modelRuntime.getError?.();
+  if (runtimeError) throw new Error(runtimeError);
   const cleaned = (patterns ?? []).map((pattern) => pattern.trim()).filter(Boolean);
   if (cleaned.length === 0) {
     return {

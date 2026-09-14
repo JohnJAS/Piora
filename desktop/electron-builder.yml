@@ -83,6 +83,18 @@ extraResources:
 win:
   icon: icon.ico
   extraResources:
+    - from: build/speech
+      to: speech
+      filter:
+        - "**/*"
+        - "!**/*.partial"
+        - "!**/node_modules{,/**/*}"
+    # Copy native speech packages explicitly; broad resource copies omit
+    # nested node_modules and would leave an installed app unable to recognize.
+    - from: build/speech/sensevoice-small-int8-1.13.6-sensevoice-2024-07-17/runtime/node_modules
+      to: speech/sensevoice-small-int8-1.13.6-sensevoice-2024-07-17/runtime/node_modules
+      filter:
+        - "**/*"
     - from: build/powershell
       to: powershell
       filter:

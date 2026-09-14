@@ -34,7 +34,7 @@ import {
   type SpeechStatus,
 } from "./speech-types";
 
-const PACK_DIRECTORY_NAME = `${LOCAL_SPEECH_PACK_ID}-${SPEECH_PACK_VERSION}`;
+export const PACK_DIRECTORY_NAME = `${LOCAL_SPEECH_PACK_ID}-${SPEECH_PACK_VERSION}`;
 const STAGING_DIRECTORY_NAME = `.${PACK_DIRECTORY_NAME}.staging`;
 const MANIFEST_NAME = "manifest.json";
 const MANUAL_DIRECTORY_NAME = `.manual-${PACK_DIRECTORY_NAME}-${speechRuntimeKey()}`;
@@ -194,25 +194,36 @@ async function readInstalledManifest(packPath: string): Promise<InstalledSpeechM
 
 export async function getSpeechStatus(): Promise<SpeechStatus> {
   const settings = await readSpeechSettings();
-  const packPath = speechPackPath(settings);
-  const manifest = await readInstalledManifest(packPath);
+  const { path: packPath, manifest, bundled } = await resolveInstalledSpeechPack(settings);
   const hardware = detectSpeechHardware();
   return {
     enabled: settings.enabled,
     available: settings.enabled && manifest !== null && hardware.supported,
     installed: manifest !== null,
+    bundled,
     engine: "sherpa-onnx",
     model: "SenseVoiceSmall INT8",
     packId: LOCAL_SPEECH_PACK_ID,
     packVersion: SPEECH_PACK_VERSION,
     packDirectory: settings.packDirectory,
     packPath,
-    approximateDownloadBytes: SPEECH_PACK_APPROXIMATE_DOWNLOAD_BYTES,
+    approximateDownloadBytes: bundled ? 0 : SPEECH_PACK_APPROXIMATE_DOWNLOAD_BYTES,
     installedBytes: manifest?.installedBytes ?? null,
     languages: ["zh", "en", "yue", "ja", "ko"],
     hardware,
     install: { ...installGlobal().state },
   };
+}
+
+async function resolveInstalledSpeechPack(settings: SpeechSettings) {
+  const localPath = speechPackPath(settings);
+  const local = await readInstalledManifest(localPath);
+  if (local) return { path: localPath, manifest: local, bundled: false };
+  const bundlePath = process.env.PIORA_BUNDLED_SPEECH_PACK?.trim();
+  const bundle = bundlePath ? await readInstalledManifest(resolve(bundlePath)) : null;
+  return bundle && bundlePath
+    ? { path: resolve(bundlePath), manifest: bundle, bundled: true }
+    : { path: localPath, manifest: null, bundled: false };
 }
 
 function digestMatches(source: SpeechDownloadSource, digest: Buffer): boolean {
@@ -488,7 +499,7 @@ async function extractRuntimeArchive(
   });
 }
 
-async function installSpeechPack(settings: SpeechSettings, manualDirectory?: string): Promise<void> {
+export async function installSpeechPack(settings: SpeechSettings, manualDirectory?: string): Promise<void> {
   const runtimeSource = getSpeechRuntimeSource();
   if (!runtimeSource) {
     throw new Error(`Local speech is not available for ${process.platform}/${process.arch}`);
@@ -642,7 +653,7 @@ export async function updateSpeechSettings(input: {
   const nextEnabled = directoryChanged ? false : input.enabled ?? current.enabled;
   if (nextEnabled) {
     const packDirectory = input.packDirectory?.trim() || current.packDirectory;
-    const manifest = await readInstalledManifest(speechPackPath({ packDirectory }));
+    const { manifest } = await resolveInstalledSpeechPack({ ...current, packDirectory });
     if (!manifest) throw new Error("Download the local speech pack before enabling speech recognition");
   }
   await writeSpeechSettings({
@@ -656,6 +667,7 @@ export async function updateSpeechSettings(input: {
 
 export async function removeSpeechPack(): Promise<SpeechStatus> {
   const settings = await readSpeechSettings();
+  if ((await resolveInstalledSpeechPack(settings)).bundled) throw new Error("The bundled speech pack is managed by application updates");
   const target = speechPackPath(settings);
   assertManagedChild(settings.packDirectory, target);
   await writeSpeechSettings({
@@ -679,8 +691,8 @@ export async function verifiedSpeechPackPath(): Promise<{
   settings: SpeechSettings;
 }> {
   const settings = await readSpeechSettings();
-  const path = speechPackPath(settings);
+  const { path, manifest } = await resolveInstalledSpeechPack(settings);
   if (!settings.enabled) throw new Error("Local speech recognition is disabled");
-  if (!(await readInstalledManifest(path))) throw new Error("Local speech pack is not installed");
+  if (!manifest) throw new Error("Local speech pack is not installed");
   return { path, settings };
 }

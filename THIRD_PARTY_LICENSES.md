@@ -2,7 +2,7 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `512a643ca1bdddd3de53840faf16438a38ab4563247e516b95492555fb5c864b`
+Lockfile SHA-256: `8486b9e0ab61f4ea82930ead97f06ec8ba848a9097f044e751bbd621b3fdd98e`
 
 Unique locked packages: **1271**. Runtime packages: **825**. Build/development-only packages: **446**.
 
@@ -1296,3 +1296,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `yallist` | `4.0.0` | ISC | No |
 | `yocto-queue` | `0.1.0` | MIT | No |
 | `zod-validation-error` | `4.0.2` | MIT | No |
+
+## Bundled Windows offline speech
+
+SenseVoiceSmall INT8 by Alibaba/FunAudioLLM, converted by Fangjun Kuang, with sherpa-onnx 1.13.6. Model weights use the FunASR Model Open Source License Agreement; the toolkit uses MIT and sherpa-onnx uses Apache-2.0. Exact model hashes, upstream attribution, and separate license texts are recorded in [speech provenance](third_party/sensevoice/SOURCE.md) and copied into resources/speech with the native runtime notices.

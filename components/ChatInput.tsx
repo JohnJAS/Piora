@@ -400,8 +400,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     modelChangeCoordinatorRef.current = new ModelChangeCoordinator();
   }
   const speechInsertionRef = useRef<{ before: string; after: string; language: string } | null>(null);
-  const localVoiceStopRef = useRef<() => Promise<void>>(async () => {});
+  const localVoiceStopRef = useRef<() => Promise<boolean>>(async () => false);
   const localVoiceCancelRef = useRef<() => void>(() => {});
+  const localVoiceActiveRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
@@ -770,6 +771,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (sendingRef.current) return;
     sendingRef.current = true;
     try {
+    const originDraftKey = draftKeyRef.current;
+    if (localVoiceActiveRef.current) {
+      const insertion = speechInsertionRef.current;
+      const finished = await localVoiceStopRef.current();
+      if (!finished || draftKeyRef.current !== originDraftKey || speechInsertionRef.current !== insertion) return;
+    }
+    const value = valueRef.current;
     const msg = value.trim();
     if (!msg && !attachedImages.length && !attachedFiles.length) return;
     if (isStreaming || isProcessingImages || isAutoModelSelection) return;
@@ -836,7 +844,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     } catch (error) {
       setAttachmentError(error instanceof Error ? error.message : String(error));
     } finally { sendingRef.current = false; }
-  }, [value, attachedImages, attachedFiles, isStreaming, isProcessingImages, isAutoModelSelection, onBuiltinCommand, onSend, clearInput, contextUsage, t, replyDraftRef, resetReplyDraft]);
+  }, [attachedImages, attachedFiles, isStreaming, isProcessingImages, isAutoModelSelection, onBuiltinCommand, onSend, clearInput, contextUsage, t, replyDraftRef, resetReplyDraft]);
 
   useEffect(() => {
     submitRef.current = () => { void handleSend(); };
@@ -947,10 +955,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const insertion = speechInsertionRef.current;
     if (!insertion) return;
     const next = joinSpeechText(insertion.before, transcript, insertion.after, insertion.language);
-    speechInsertionRef.current = null;
+    // Each update replaces the current dictation, preserving the original
+    // selection. Typing, sending or switching drafts cancels this insertion.
     setValue(next.value);
+    valueRef.current = next.value;
     updateAtQuery(next.value, next.selection);
     requestAnimationFrame(() => {
+      if (speechInsertionRef.current !== insertion) return;
       const element = textareaRef.current;
       if (!element) return;
       element.focus({ preventScroll: true });
@@ -985,6 +996,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   });
   localVoiceStopRef.current = localDictation.stop;
   localVoiceCancelRef.current = localDictation.cancel;
+  localVoiceActiveRef.current = localDictation.phase !== "idle";
   const localVoiceEnabled = localDictation.available && localDictation.supported;
   const localVoiceRecording = localVoiceEnabled
     && (localDictation.phase === "starting" || localDictation.phase === "recording");
@@ -1168,12 +1180,18 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
   const sendQueued = useCallback(async (mode: "steer" | "followup") => {
     if (sendingRef.current) return;
-    const msg = value.trim();
-    if (!msg || attachedImages.length || attachedFiles.length) return;
     const streamingBehavior = mode === "steer" ? "steer" : "followUp";
     const sentDraftKey = draftKeyRef.current;
     sendingRef.current = true;
     try {
+      if (localVoiceActiveRef.current) {
+        const insertion = speechInsertionRef.current;
+        const finished = await localVoiceStopRef.current();
+        if (!finished || draftKeyRef.current !== sentDraftKey || speechInsertionRef.current !== insertion) return;
+      }
+      const value = valueRef.current;
+      const msg = value.trim();
+      if (!msg || attachedImages.length || attachedFiles.length) return;
       let accepted: boolean | void;
       if (msg.startsWith("/") && onPromptWithStreamingBehavior) {
         accepted = await onPromptWithStreamingBehavior(msg, streamingBehavior);
@@ -1194,7 +1212,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     } finally {
       sendingRef.current = false;
     }
-  }, [value, attachedImages, attachedFiles, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput]);
+  }, [attachedImages, attachedFiles, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput]);
 
   const submitStreamingMessage = useCallback(() => {
     if (!canQueueStreamingMessage) return;

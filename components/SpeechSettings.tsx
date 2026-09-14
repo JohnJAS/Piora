@@ -253,14 +253,14 @@ export function SpeechSettings() {
             <p>{t("speech.packDescription")}</p>
           </div>
           <span className={status?.installed ? styles.ready : styles.notInstalled}>
-            {status ? status.installed ? t("speech.installed") : t("speech.notInstalled") : "—"}
+            {status ? status.bundled ? t("speech.bundled") : status.installed ? t("speech.installed") : t("speech.notInstalled") : "—"}
           </span>
         </div>
 
         <div className={styles.factGrid}>
           <div><span>{t("speech.engine")}</span><strong>sherpa-onnx · SenseVoiceSmall INT8</strong></div>
           <div><span>{t("speech.languages")}</span><strong>{status?.languages.join(" / ") ?? "—"}</strong></div>
-          <div><span>{t("speech.downloadSize")}</span><strong>{formatBytes(status?.approximateDownloadBytes ?? null)}</strong></div>
+          <div><span>{t("speech.downloadSize")}</span><strong>{status?.bundled ? t("speech.noDownload") : formatBytes(status?.approximateDownloadBytes ?? null)}</strong></div>
           <div><span>{t("speech.diskUsage")}</span><strong>{formatBytes(status?.installedBytes ?? null)}</strong></div>
         </div>
 
@@ -277,16 +277,16 @@ export function SpeechSettings() {
             <button type="button" className={styles.primary} disabled={busy || installActive || !status?.hardware.supported} onClick={install}>
               <AliIcon name="download" size={14} />{t("speech.download")}
             </button>
-          ) : (
+          ) : !status.bundled ? (
             <button type="button" className={styles.danger} disabled={busy || installActive} onClick={remove}>
               <AliIcon name="delete" size={14} />{t("speech.remove")}
             </button>
-          )}
+          ) : null}
         </div>
-        <p className={styles.networkNote}>{t("speech.networkNote")}</p>
+        <p className={styles.networkNote}>{t(status?.bundled ? "speech.bundledHint" : "speech.networkNote")}</p>
       </section>
 
-      <section className={styles.card}>
+      {!status?.bundled && <section className={styles.card}>
         <div className={styles.cardHeader}>
           <div>
             <h3 data-settings-id="speech.manual">{t("speech.manualTitle")}</h3>
@@ -343,7 +343,7 @@ export function SpeechSettings() {
         ) : null}
         <p className={styles.networkNote}>{t("speech.manualIntegrity")}</p>
         <p className={styles.networkNote}>{t("speech.manualChecksumHelp")}</p>
-      </section>
+      </section>}
 
       <section className={styles.card}>
         <div className={styles.cardHeader}>

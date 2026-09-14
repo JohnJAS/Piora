@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  containsAudibleSpeech,
   encodePcm16Wav,
   MAX_VOICE_RECORDING_MS,
-  mergeAudioChunks,
   resampleAudio,
 } from "@/lib/voice-audio";
+
+import { LiveDictation } from "@/lib/live-dictation";
 
 export type LocalDictationPhase = "idle" | "starting" | "recording" | "transcribing";
 export type LocalDictationError = "permission" | "microphone" | "no-speech" | "generic";
@@ -23,7 +23,7 @@ interface AudioCapture {
   source: MediaStreamAudioSourceNode;
   processor: ScriptProcessorNode;
   silentGain: GainNode;
-  chunks: Float32Array[];
+  dictation: LiveDictation;
   sampleRate: number;
 }
 
@@ -56,7 +56,7 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
   const mountedRef = useRef(true);
   const onTranscriptRef = useRef(onTranscript);
   const languageRef = useRef(language);
-  const stopRef = useRef<() => Promise<void>>(async () => {});
+  const stopRef = useRef<() => Promise<boolean>>(async () => false);
   onTranscriptRef.current = onTranscript;
   languageRef.current = language;
 
@@ -76,60 +76,31 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
     requestRef.current = null;
     const capture = captureRef.current;
     captureRef.current = null;
+    capture?.dictation.cancel();
     releaseCapture(capture);
     setCurrentPhase("idle");
   }, [clearTimer, setCurrentPhase]);
 
   const stop = useCallback(async () => {
     const capture = captureRef.current;
-    if (!capture || (phaseRef.current !== "recording" && phaseRef.current !== "starting")) return;
+    if (!capture) { if (phaseRef.current === "starting") cancel(); return false; }
     clearTimer();
-    captureRef.current = null;
     releaseCapture(capture);
-
-    const samples = mergeAudioChunks(capture.chunks);
-    if (samples.length === 0) {
-      setCurrentPhase("idle");
-      if (mountedRef.current) setError("no-speech");
-      return;
-    }
-
-    if (!containsAudibleSpeech(samples, capture.sampleRate)) {
-      setCurrentPhase("idle");
-      if (mountedRef.current) setError("no-speech");
-      return;
-    }
-
     setCurrentPhase("transcribing");
-    const controller = new AbortController();
-    requestRef.current = controller;
+    const controller = requestRef.current;
     try {
-      const pcm = resampleAudio(samples, capture.sampleRate);
-      const wav = encodePcm16Wav(pcm);
-      const wavBuffer = new ArrayBuffer(wav.byteLength);
-      new Uint8Array(wavBuffer).set(wav);
-      const response = await fetch(`/api/speech/transcribe?language=${languageRef.current}`, {
-        method: "POST",
-        headers: { "content-type": "audio/wav" },
-        body: wavBuffer,
-        signal: controller.signal,
-      });
-      const payload = await response.json().catch(() => ({})) as { text?: unknown };
-      if (!response.ok) throw new Error("Local transcription failed");
-      const text = typeof payload.text === "string" ? payload.text.trim() : "";
-      if (!text) {
-        if (mountedRef.current) setError("no-speech");
-      } else {
-        if (mountedRef.current) setError(null);
-        onTranscriptRef.current(text);
+      const recognized = await capture.dictation.finish();
+      if (requestRef.current === controller && !controller?.signal.aborted && mountedRef.current && !recognized) setError("no-speech");
+      return requestRef.current === controller && !controller?.signal.aborted && recognized;
+    } catch { return false; /* The live decoder already reports the failure. */ }
+    finally {
+      if (requestRef.current === controller) {
+        captureRef.current = null;
+        requestRef.current = null;
+        setCurrentPhase("idle");
       }
-    } catch {
-      if (!controller.signal.aborted && mountedRef.current) setError("generic");
-    } finally {
-      if (requestRef.current === controller) requestRef.current = null;
-      if (!controller.signal.aborted) setCurrentPhase("idle");
     }
-  }, [clearTimer, setCurrentPhase]);
+  }, [cancel, clearTimer, setCurrentPhase]);
   stopRef.current = stop;
 
   const start = useCallback(async () => {
@@ -141,6 +112,9 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
     }
     setError(null);
     setCurrentPhase("starting");
+    const controller = new AbortController();
+    requestRef.current = controller;
+    const recordingLanguage = languageRef.current;
     let stream: MediaStream | null = null;
     let context: AudioContext | null = null;
     try {
@@ -153,19 +127,48 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
         },
         video: false,
       });
-      if ((phaseRef.current as LocalDictationPhase) !== "starting") {
+      if (controller.signal.aborted || requestRef.current !== controller) {
         for (const track of stream.getTracks()) track.stop();
         return;
       }
       context = new AudioContextClass();
       await context.resume();
+      if (controller.signal.aborted || requestRef.current !== controller) { for (const track of stream.getTracks()) track.stop(); void context.close().catch(() => {}); return; }
       const source = context.createMediaStreamSource(stream);
       const processor = context.createScriptProcessor(4096, 1, 1);
       const silentGain = context.createGain();
-      const chunks: Float32Array[] = [];
+      const dictation = new LiveDictation({
+        sampleRate: context.sampleRate,
+        language: recordingLanguage,
+        transcribe: async samples => {
+          const wav = encodePcm16Wav(resampleAudio(samples, context!.sampleRate));
+          const timeout = new AbortController();
+          const timer = setTimeout(() => timeout.abort(), 20_000);
+          try {
+            const response = await fetch(`/api/speech/transcribe?language=${recordingLanguage}`, {
+              method: "POST", headers: { "content-type": "audio/wav" },
+              body: new Uint8Array(wav).buffer,
+              signal: AbortSignal.any([controller.signal, timeout.signal]),
+            });
+            const payload = await response.json() as { text?: unknown };
+            if (!response.ok) throw new Error("Local transcription failed");
+            return typeof payload.text === "string" ? payload.text : "";
+          } finally { clearTimeout(timer); }
+        },
+        onText: text => {
+          if (!controller.signal.aborted && requestRef.current === controller && mountedRef.current) {
+            setError(null); onTranscriptRef.current(text);
+          }
+        },
+        onError: () => {
+          if (!controller.signal.aborted && requestRef.current === controller && mountedRef.current) {
+            cancel(); setError("generic");
+          }
+        },
+      });
       silentGain.gain.value = 0;
       processor.onaudioprocess = (event) => {
-        chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+        dictation.push(new Float32Array(event.inputBuffer.getChannelData(0)));
       };
       source.connect(processor);
       processor.connect(silentGain);
@@ -176,7 +179,7 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
         source,
         processor,
         silentGain,
-        chunks,
+        dictation,
         sampleRate: context.sampleRate,
       };
       setCurrentPhase("recording");
@@ -184,13 +187,15 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
     } catch (captureError) {
       for (const track of stream?.getTracks() ?? []) track.stop();
       if (context) void context.close().catch(() => {});
+      if (controller.signal.aborted || requestRef.current !== controller || !mountedRef.current) return;
+      requestRef.current = null;
       const name = captureError instanceof DOMException ? captureError.name : "";
       if (name === "NotAllowedError" || name === "SecurityError") setError("permission");
       else if (name === "NotFoundError" || name === "NotReadableError") setError("microphone");
       else setError("generic");
       setCurrentPhase("idle");
     }
-  }, [setCurrentPhase]);
+  }, [cancel, setCurrentPhase]);
 
   const toggle = useCallback(async () => {
     if (phaseRef.current === "recording" || phaseRef.current === "starting") await stop();
@@ -227,6 +232,7 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
       mountedRef.current = false;
       clearTimer();
       requestRef.current?.abort();
+      captureRef.current?.dictation.cancel();
       releaseCapture(captureRef.current);
       captureRef.current = null;
     };

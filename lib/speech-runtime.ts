@@ -160,9 +160,11 @@ function decodePcm16Wav(bytes: Uint8Array): SherpaWave {
   return { samples, sampleRate: format.sampleRate };
 }
 
-export async function transcribeLocalSpeechWav(bytes: Uint8Array, language: "zh" | "en" = "zh"): Promise<string> {
+export async function transcribeLocalSpeechWav(bytes: Uint8Array, language: "zh" | "en" = "zh", signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
   const runtime = await getRuntime(language);
   const job = runtime.tail.then(async () => {
+    signal?.throwIfAborted();
     let wave: SherpaWave;
     try {
       wave = decodePcm16Wav(bytes);
@@ -174,9 +176,11 @@ export async function transcribeLocalSpeechWav(bytes: Uint8Array, language: "zh"
     }
     if (!containsAudibleSpeech(wave.samples, wave.sampleRate)) return "";
     const recognizer = await runtime.recognizer;
+    signal?.throwIfAborted();
     const stream = recognizer.createStream();
     stream.acceptWaveform(wave);
     const result = await recognizer.decodeAsync(stream);
+    signal?.throwIfAborted();
     const text = normalizeSenseVoiceText(result?.text);
     return language === "zh" ? toSimplifiedChinese(text) : text;
   });

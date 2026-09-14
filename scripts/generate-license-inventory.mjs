@@ -130,6 +130,10 @@ export function renderLicenseInventory(records, lockfileSha256) {
     `Archive SHA-256: \`${bundledPowerShell.sha256}\`.`,
     "",
     renderTable("Build and development dependency closure", development),
+    "## Bundled Windows offline speech",
+    "",
+    "SenseVoiceSmall INT8 by Alibaba/FunAudioLLM, converted by Fangjun Kuang, with sherpa-onnx 1.13.6. Model weights use the FunASR Model Open Source License Agreement; the toolkit uses MIT and sherpa-onnx uses Apache-2.0. Exact model hashes, upstream attribution, and separate license texts are recorded in [speech provenance](third_party/sensevoice/SOURCE.md) and copied into resources/speech with the native runtime notices.",
+    "",
   ].join("\n");
 }
 

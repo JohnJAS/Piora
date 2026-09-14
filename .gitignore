@@ -93,3 +93,4 @@ yarn-error.log*
 next-env.d.ts
 /public/vendor/vditor/
 .factory
+desktop/build/speech/

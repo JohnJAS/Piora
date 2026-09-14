@@ -18,7 +18,10 @@
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-panel);
   background: var(--dialog-background);
-  box-shadow: var(--shadow-float);
+  border-color: var(--floating-border);
+  -webkit-backdrop-filter: var(--floating-filter);
+  backdrop-filter: var(--floating-filter);
+  box-shadow: var(--floating-shadow);
   color: var(--text);
 }
 

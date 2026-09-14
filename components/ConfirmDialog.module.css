@@ -19,8 +19,11 @@
   border-radius: var(--radius-panel);
   outline: 0;
   background: var(--dialog-background);
+  border-color: var(--floating-border);
+  -webkit-backdrop-filter: var(--floating-filter);
+  backdrop-filter: var(--floating-filter);
   color: var(--text);
-  box-shadow: var(--shadow-float);
+  box-shadow: var(--floating-shadow);
 }
 
 .body {
@@ -50,7 +53,7 @@
   gap: 7px;
   padding: 10px 12px;
   border-top: 1px solid var(--border-soft);
-  background: color-mix(in srgb, var(--surface-muted) 64%, transparent);
+  background: var(--floating-section);
 }
 
 .actions button {

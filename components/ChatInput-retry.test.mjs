@@ -20,6 +20,9 @@ function composer(onSend) {
     shouldMaterializeDirectPrompt: () => false, t: (key) => key,
     sendingRef: { current: false }, draftKeyRef: { current: "session" },
     retryOfPromptIdsRef: { current: [] },
+    localVoiceActiveRef: { current: false },
+    localVoiceStopRef: { current: async () => {} },
+    speechInsertionRef: { current: null },
     modelChangeCoordinatorRef: { current: { waitForIdle: async () => true } },
     imageToDraftImage: ({ data, mimeType }) => ({ data, mimeType }),
     draftImagesToAttachedImages: (images) => images.map((image) => ({ ...image, previewUrl: "blob:restored" })),
@@ -42,6 +45,16 @@ function composer(onSend) {
   };
   return { env, send: new Function("env", `with (env) { ${js}; return handleSend; }`)(env) };
 }
+
+test("sending waits for the final dictation and preserves the draft when decoding fails", async () => {
+  const sent = [];
+  const { env, send } = composer(async text => { sent.push(text); return true; });
+  env.localVoiceActiveRef.current = true;
+  env.localVoiceStopRef.current = async () => false;
+  await send(); assert.deepEqual(sent, []); assert.equal(env.valueRef.current, " original\nmessage ");
+  env.localVoiceStopRef.current = async () => { env.setValue("完整的最后一句。"); return true; };
+  await send(); assert.deepEqual(sent, ["完整的最后一句。"]);
+});
 
 test("sending an automatically restored failed draft links retries and resets after success", async () => {
   const submissions = [];

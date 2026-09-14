@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Local speech recognition is unavailable" }, { status: 503 });
     }
     const bytes = await readBytesWithinLimit(request, MAX_AUDIO_BYTES);
-    const text = await transcribeLocalSpeechWav(bytes, language);
+    const text = await transcribeLocalSpeechWav(bytes, language, request.signal);
     return NextResponse.json({ text });
   } catch (error) {
     if (error instanceof ByteBodyTooLargeError) {

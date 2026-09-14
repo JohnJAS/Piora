@@ -18,6 +18,8 @@ module.exports = async function prepareDesktopBuild(context) {
   if (targetPlatform !== "win32") return true;
   const { stagePowerShell } = await import("./stage-powershell.mjs");
   await stagePowerShell(projectRoot);
+  const { stageSpeech } = await import("./stage-speech.mjs");
+  await stageSpeech(projectRoot);
   const customTemplatePath = join(projectRoot, "desktop", "build", "portable-cache.nsi");
   const builderPackagePath = require.resolve("app-builder-lib/package.json", { paths: [projectRoot] });
   const stockTemplatePath = join(dirname(builderPackagePath), "templates", "nsis", "portable.nsi");

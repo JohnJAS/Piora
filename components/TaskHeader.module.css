@@ -132,8 +132,11 @@
   padding: 4px;
   border: 1px solid var(--border);
   border-radius: var(--radius-panel);
-  background: var(--bg-panel);
-  box-shadow: var(--shadow-popover);
+  background: var(--floating-background);
+  border-color: var(--floating-border);
+  -webkit-backdrop-filter: var(--floating-filter);
+  backdrop-filter: var(--floating-filter);
+  box-shadow: var(--floating-shadow);
 }
 
 .menu button {

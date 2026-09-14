@@ -92,7 +92,12 @@
   --focus-ring: color-mix(in srgb, var(--accent) 72%, white);
   --scrollbar-size: 8px;
   --scrollbar-thumb: color-mix(in srgb, var(--text-dim) 48%, transparent);
-  --dialog-background: var(--bg);
+  --floating-background: color-mix(in srgb, var(--bg) 54%, transparent);
+  --floating-section: color-mix(in srgb, var(--bg-panel) 18%, transparent);
+  --floating-border: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  --floating-filter: blur(18px) saturate(1.04);
+  --floating-shadow: 0 12px 36px rgb(0 0 0 / 14%), inset 0 1px 0 rgb(255 255 255 / 8%);
+  --dialog-background: var(--floating-background);
   --dialog-padding: 20px;
   --overlay-blur: 6px;
   --radius-control: 8px;    /* buttons, inputs, badges, small cards */
@@ -2460,15 +2465,17 @@ select:focus-visible,
   color: var(--text);
   transition: background-color 120ms ease;
 }
-.chat-disclosure.is-expanded { background: var(--bg-panel); }
-/* A quiet resting surface keeps collapsed rows recognizable over wallpaper. */
-.chat-disclosure--surface {
-  border: 1px solid color-mix(in srgb, var(--border) 82%, var(--text-muted));
-  background: color-mix(in srgb, var(--bg-panel) 84%, transparent);
+/* Let wallpaper show through; a thin edge and light blur distinguish controls. */
+.chat-disclosure--surface,
+.chat-disclosure-trigger.chat-process-toggle {
+  border: 1px solid color-mix(in srgb, var(--text-muted) 16%, transparent);
+  background: color-mix(in srgb, var(--bg) 10%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(1.04);
+  backdrop-filter: blur(10px) saturate(1.04);
 }
 .chat-disclosure--surface:hover,
 .chat-disclosure--surface:focus-within {
-  border-color: color-mix(in srgb, var(--border) 64%, var(--text-muted));
+  border-color: color-mix(in srgb, var(--text-muted) 26%, transparent);
 }
 .chat-disclosure--surface > .chat-disclosure-content {
   border-top: 1px solid var(--border-soft);
@@ -2494,16 +2501,11 @@ select:focus-visible,
   cursor: pointer;
   transition: background-color 120ms ease;
 }
-.chat-disclosure-trigger:hover { background: var(--bg-hover); }
-/* Standalone process rows use the same card treatment as tool disclosures. */
-.chat-disclosure-trigger.chat-process-toggle {
-  border: 1px solid color-mix(in srgb, var(--border) 82%, var(--text-muted));
-  background: color-mix(in srgb, var(--bg-panel) 84%, transparent);
-}
+.chat-disclosure-trigger:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
 .chat-disclosure-trigger.chat-process-toggle:hover,
 .chat-disclosure-trigger.chat-process-toggle:focus-visible {
-  border-color: color-mix(in srgb, var(--border) 64%, var(--text-muted));
-  background: var(--bg-hover);
+  border-color: color-mix(in srgb, var(--text-muted) 26%, transparent);
+  background: color-mix(in srgb, var(--bg) 18%, transparent);
 }
 .chat-disclosure-trigger:focus-visible,
 .chat-disclosure-action:focus-visible,
@@ -2594,11 +2596,11 @@ select:focus-visible,
   grid-template-columns: 12px minmax(0, 1fr);
   min-height: 32px;
   padding: 6px 8px;
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-panel) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 12%, transparent);
+  background: transparent;
 }
 .chat-disclosure--inline > .chat-disclosure-header > .chat-disclosure-trigger:hover {
-  background: var(--bg-hover);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
 }
 .chat-disclosure--inline > .chat-disclosure-header .chat-disclosure-icon,
 .chat-disclosure--inline > .chat-disclosure-header .chat-disclosure-description,
@@ -3531,8 +3533,8 @@ select:focus-visible,
   left: var(--app-tooltip-arrow-x);
   width: 6px;
   height: 6px;
-  border: solid var(--border-soft);
-  background: var(--surface-raised);
+  border: solid var(--floating-border);
+  background: var(--floating-background);
   content: "";
   transform: translateX(-50%) rotate(45deg);
 }
@@ -3645,23 +3647,26 @@ select:focus-visible,
 
 .app-shell-dialog-backdrop {
   background: var(--overlay-scrim) !important;
-  backdrop-filter: blur(10px) saturate(0.9) !important;
+  -webkit-backdrop-filter: blur(var(--overlay-blur)) saturate(0.96) !important;
+  backdrop-filter: blur(var(--overlay-blur)) saturate(0.96) !important;
 }
 
 .app-shell-dialog {
-  border-color: var(--border-soft) !important;
+  border-color: var(--floating-border) !important;
   border-radius: var(--radius-panel) !important;
-  background: var(--bg-panel) !important;
-  box-shadow: var(--shadow-popover) !important;
+  background: var(--floating-background) !important;
+  -webkit-backdrop-filter: var(--floating-filter);
+  backdrop-filter: var(--floating-filter);
+  box-shadow: var(--floating-shadow) !important;
 }
 
 .app-shell-dialog-header {
   border-bottom-color: var(--border-soft) !important;
-  background: color-mix(in srgb, var(--surface-raised) 70%, transparent);
+  background: var(--floating-section);
 }
 
 .app-shell-dialog-body {
-  background: color-mix(in srgb, var(--surface) 74%, transparent);
+  background: transparent;
 }
 
 .soft-settings-section button {
@@ -5499,3 +5504,34 @@ span.linenumber {
 .file-mention-name { overflow-wrap: anywhere; font-weight: 550; }
 .file-mention-directory { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); font-size: var(--text-xs); }
 .file-mention-empty { padding: 10px; color: var(--text-dim); font-size: var(--text-sm); }
+
+/* Shared floating surfaces. Keep blur on the opened layer, not its trigger or page. */
+.model-settings-popover,
+.model-settings-submenu,
+.composer-add-menu,
+.streaming-action-menu,
+.slash-command-menu,
+.file-mention-menu,
+.session-tools-popover,
+.session-stats-tooltip,
+.command-execution-dialog,
+.app-tooltip {
+  background: var(--floating-background);
+  border-color: var(--floating-border);
+  -webkit-backdrop-filter: var(--floating-filter);
+  backdrop-filter: var(--floating-filter);
+  box-shadow: var(--floating-shadow);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  :root { --floating-background: var(--bg); }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --floating-background: var(--bg);
+    --floating-section: var(--bg-panel);
+    --floating-filter: none;
+    --overlay-blur: 0px;
+  }
+}

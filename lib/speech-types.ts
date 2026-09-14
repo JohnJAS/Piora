@@ -27,6 +27,7 @@ export interface SpeechStatus {
   enabled: boolean;
   available: boolean;
   installed: boolean;
+  bundled: boolean;
   engine: "sherpa-onnx";
   model: "SenseVoiceSmall INT8";
   packId: typeof LOCAL_SPEECH_PACK_ID;

@@ -99,3 +99,28 @@
 @media(prefers-reduced-motion:reduce) { .dialog button { transition: none; } }
 
 .connectionCard>details:last-child{margin-bottom:0}
+
+/* Floating settings share the dialog glass; embedded settings keep their page surface. */
+.dialog:global(.app-shell-dialog) {
+  --bg: inherit;
+  --bg-panel: inherit;
+  --bg-hover: inherit;
+  --bg-selected: inherit;
+  --border: inherit;
+  --text: inherit;
+  --text-muted: inherit;
+  --text-dim: inherit;
+  --accent: inherit;
+  --accent-subtle: inherit;
+  color-scheme: inherit;
+}
+.dialog:global(.app-shell-dialog) .header,
+.dialog:global(.app-shell-dialog) .detail,
+.dialog:global(.app-shell-dialog) .footer { background: transparent; }
+.dialog:global(.app-shell-dialog) .sidebar { background: var(--floating-section)!important; }
+.dialog:global(.app-shell-dialog) .tabs { background: var(--floating-background); }
+.dialog:global(.app-shell-dialog) input:not([type="checkbox"]),
+.dialog:global(.app-shell-dialog) select,
+.dialog:global(.app-shell-dialog) .advanced,
+.dialog:global(.app-shell-dialog) .tableHeader,
+.dialog:global(.app-shell-dialog) .visionPage>div { background: var(--floating-section); }

@@ -20,7 +20,7 @@ Piora 是基于 [Pi](https://github.com/earendil-works/pi) 构建的开源 AI �
 
 项目由 [pi-web](https://github.com/agegr/pi-web) 演进而来，沿用 Pi 的 AgentSession、JSONL 会话、模型接入和扩展机制，由社区独立维护，不隶属于 Pi、pi-web、OpenAI 或 Codex。
 
-本文对应源码版本 `0.4.41-beta.40`。可下载版本以 [GitHub Releases](https://github.com/kexijiang/Piora/releases) 为准。
+本文对应源码版本 `0.4.41-beta.41`。可下载版本以 [GitHub Releases](https://github.com/kexijiang/Piora/releases) 为准。
 
 ## 能做什么
 
@@ -84,6 +84,8 @@ Piora 不提供统一模型订阅或内置 API Key。请求费用、额度和数
 | 群聊 | 创建多 Agent 协作空间，配置成员、职责、并发与共享工作区 |
 | 随身舱 | 待办、专注、Markdown 中转站、JSON 工具、桌宠和记忆设置 |
 | 设置 | 模型、外观、快捷键、语音、扩展、Skills、插件、通知与更新 |
+
+Windows 桌面包内置离线语音资源：SenseVoiceSmall INT8 模型和 sherpa-onnx 运行时随安装版、便携版一起分发，在设置中开启后无需额外下载。录音时持续更新输入文字，停顿或停止后定稿。模型权重约 239 MB，运行时另约 24 MB；具体安装包压缩体积以 GitHub Actions 产物为准。
 
 中转站是一套本地 Markdown 编辑器：每个文件显示为顶部标签页，支持即时排版、源码模式、自动保存、草稿恢复、导入导出和图片插入。切换标签页不会丢失正在编辑的内容。
 

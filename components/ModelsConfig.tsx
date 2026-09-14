@@ -1988,6 +1988,8 @@ export function ModelsConfig({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadConfig, setReloadConfig] = useState(0);
   const [savedOk, setSavedOk] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [draggingProvider, setDraggingProvider] = useState<string | null>(null);
@@ -2015,7 +2017,9 @@ export function ModelsConfig({
     persistedModelTargetsRef.current = new WeakMap();
     for (const [provider, value] of Object.entries(saved.providers ?? {})) {
       persistedProviderNamesRef.current.set(provider, provider);
-      for (const model of value.models ?? []) persistedModelTargetsRef.current.set(model, { provider, id: model.id });
+      for (const model of value.models ?? []) {
+        if (model.id.trim()) persistedModelTargetsRef.current.set(model, { provider, id: model.id });
+      }
     }
   }, []);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -2100,8 +2104,10 @@ export function ModelsConfig({
   }, [loadOAuthProviders, loadApiKeyProviders]);
 
   useEffect(() => {
+    setLoading(true);
+    setLoadError(null);
     fetch("/api/models-config")
-      .then((r) => r.json())
+      .then(async (r) => { const data = await r.json(); if (!r.ok || data.error) throw new Error(data.error ?? `HTTP ${r.status}`); return data; })
       .then((d: ModelsJson) => {
         const normalized = d.providers ? d : { ...d, providers: {} };
         setConfig(normalized);
@@ -2110,12 +2116,12 @@ export function ModelsConfig({
           collectConfiguredModelRefs(normalized).map(configuredModelKey),
         );
       })
-      .catch(() => setConfig({ providers: {} }))
+      .catch((error) => setLoadError(error instanceof Error ? error.message : String(error)))
       .finally(() => setLoading(false));
     refreshAuthProviders();
     void loadModelScope();
     void loadModelCapabilities();
-  }, [loadModelCapabilities, loadModelScope, refreshAuthProviders, rememberPersistedConfig]);
+  }, [loadModelCapabilities, loadModelScope, refreshAuthProviders, rememberPersistedConfig, reloadConfig]);
 
   useEffect(() => {
     setManagedModelTests({});
@@ -2221,14 +2227,19 @@ export function ModelsConfig({
   const removeModel = useCallback((providerName: string, index: number) => {
     const model = config.providers?.[providerName]?.models?.[index];
     if (!model) return;
-    void persistDeletion(persistedModelTargetsRef.current.get(model), () => {
+    const apply = () => {
       setConfig((prev) => {
         const provider = prev.providers?.[providerName] ?? {};
         const models = (provider.models ?? []).filter(entry => entry !== model);
         return { ...prev, providers: { ...(prev.providers ?? {}), [providerName]: { ...provider, models: models.length ? models : undefined } } };
       });
       setSelection({ type: "provider", name: providerName });
-    });
+    };
+    const target = persistedModelTargetsRef.current.get(model);
+    // An incomplete new row has no disk identity and requires no API mutation.
+    // It must remain removable even while another settings request is pending.
+    if (!target) apply();
+    else void persistDeletion(target, apply);
   }, [config.providers, persistDeletion]);
 
   const updateModelScope = useCallback(async (
@@ -2809,7 +2820,7 @@ export function ModelsConfig({
         </div>
 
         {/* Body */}
-        <div inert={saving} aria-busy={saving} style={{ flex: 1, display: "flex", flexDirection: isMobile ? "column" : "row", overflow: "hidden" }}>
+        <div inert={saving || loading || !!loadError} aria-busy={saving || loading} style={{ flex: 1, display: loadError ? "none" : "flex", flexDirection: isMobile ? "column" : "row", overflow: "hidden" }}>
 
           {/* Left: tree */}
           <div className={styles.sidebar} style={{
@@ -2987,6 +2998,7 @@ export function ModelsConfig({
                             type="button"
                             onClick={async (e) => {
                               e.stopPropagation();
+                              if (!persistedModelTargetsRef.current.has(m)) { removeModel(pName, i); return; }
                               const label = m.id || t("i18n.newModel");
                               if (await requestConfirmation({ title: t("i18n.delete"), message: t("models.deleteModelConfirm", { id: label }), confirmLabel: t("i18n.delete"), tone: "danger" })) removeModel(pName, i);
                             }}
@@ -3046,12 +3058,13 @@ export function ModelsConfig({
         </div>
 
         {/* Footer */}
+        {loadError && <div role="alert" style={{ padding: 20, color: "#f87171", flex: 1 }}><ModelErrorText value={loadError} /><button onClick={() => setReloadConfig(n => n + 1)}>{t("common.retry")}</button></div>}
         <div className={styles.footer} style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "10px 18px", borderTop: "1px solid var(--border)", flexShrink: 0 }}>
           {saveError && <span role="alert" style={{ fontSize: "var(--text-sm)", color: "#f87171", flex: 1 }}>{<ModelErrorText value={saveError} />}</span>}
           {!embedded && <button onClick={onClose} disabled={modelScopeBusyKey !== null || saving} style={{ padding: "6px 14px", background: "none", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", color: "var(--text-muted)", cursor: modelScopeBusyKey !== null || saving ? "not-allowed" : "pointer", opacity: modelScopeBusyKey !== null || saving ? 0.55 : 1, fontSize: "var(--text-base)" }}>
              {t("i18n.close")}
           </button>}
-          <button onClick={handleSave} disabled={saving || savedOk} style={{
+          <button onClick={handleSave} disabled={saving || savedOk || loading || !!loadError} style={{
             position: "relative",
             padding: "6px 16px",
             minWidth: 92,

@@ -119,6 +119,9 @@ function getUserInputText(message: AgentMessage): string | null {
 }
 
 export function ChatWindow({ historyVisible = false, onHistoryControlsChange, session, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenModels, onPromptSubmitted }: Props) {
+  // A new-chat action remounts this window. Directory names cannot identify
+  // drafts: two new chats in the same project must never restore each other.
+  const [newChatDraftKey] = useState(() => `new:${crypto.randomUUID()}`);
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
@@ -594,7 +597,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
       slashCommandsLoading={slashCommandsLoading}
       onLoadSlashCommands={loadSlashCommands}
       onBuiltinCommand={handleBuiltinCommandWithEcho}
-      draftKey={session?.id ?? (newSessionCwd ? `new:${newSessionCwd}` : undefined)}
+      draftKey={session?.id ?? newChatDraftKey}
       cwd={session?.cwd ?? newSessionCwd}
       contextUsage={contextUsage}
       sessionStats={sessionStats}

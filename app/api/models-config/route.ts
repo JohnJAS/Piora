@@ -6,6 +6,7 @@ import { writePrivateFileAtomicSync } from "@/lib/atomic-file";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { invalidateServicesCache } from "@/lib/rpc-manager";
 import { normalizeModelConfigCosts } from "@/lib/model-config-cost";
+import { stripJsonComments } from "@/lib/mcp-capabilities";
 
 export const dynamic = "force-dynamic";
 
@@ -13,14 +14,29 @@ function getModelsPath(): string {
   return join(getAgentDir(), "models.json");
 }
 
-function readModelsJson(strict = false): Record<string, unknown> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function readModelsJson(): Record<string, unknown> {
   const path = getModelsPath();
   if (!existsSync(path)) return { providers: {} };
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-  } catch (error) {
-    if (strict) throw error;
-    return { providers: {} };
+    const config = JSON.parse(stripJsonComments(readFileSync(path, "utf8").replace(/^\uFEFF/, "")));
+    if (!isRecord(config) || !isRecord(config.providers)) {
+      throw new Error("Invalid configuration structure");
+    }
+    for (const provider of Object.values(config.providers)) {
+      if (!isRecord(provider)) throw new Error("Invalid provider");
+      if (provider.models !== undefined && (!Array.isArray(provider.models)
+        || provider.models.some(model => !isRecord(model) || typeof model.id !== "string"))) {
+        throw new Error("Invalid models");
+      }
+    }
+    return config;
+  } catch {
+    // Parse errors can include fragments of API keys; do not echo file content.
+    throw new Error(`无法读取 models.json：请检查 JSON 格式和 providers/models 字段，修复后重新加载。文件：${path}`);
   }
 }
 
@@ -32,7 +48,8 @@ function writeModelsJson(data: Record<string, unknown>): void {
 }
 
 export async function GET() {
-  return NextResponse.json(readModelsJson());
+  try { return NextResponse.json(readModelsJson()); }
+  catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 422 }); }
 }
 
 export async function PUT(req: Request) {
@@ -67,7 +84,7 @@ export async function DELETE(req: Request) {
   try {
     // Read the latest file and change only the requested entry. Deleting must
     // neither save unrelated form drafts nor overwrite an unreadable config.
-    const config = readModelsJson(true);
+    const config = readModelsJson();
     const providers = config.providers as Record<string, { models?: Array<{ id: string }> }> | undefined;
     if (providers && Object.hasOwn(providers, target.provider)) {
       if (target.id === undefined) delete providers[target.provider];
@@ -78,7 +95,7 @@ export async function DELETE(req: Request) {
       }
       writeModelsJson(config);
     }
-    const savedProviders = readModelsJson(true).providers as typeof providers;
+    const savedProviders = readModelsJson().providers as typeof providers;
     const savedProvider = savedProviders && Object.hasOwn(savedProviders, target.provider) ? savedProviders[target.provider] : undefined;
     if (target.id === undefined ? savedProvider !== undefined : savedProvider?.models?.some(model => model.id === target.id)) {
       throw new Error("删除结果尚未写入配置，请检查文件是否被其他程序修改。");

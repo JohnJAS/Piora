@@ -863,6 +863,10 @@ async function main() {
       const shellRoot = join(temporaryDirectory, "powershell");
       await cp(join(dirname(packagedWebRoot), "powershell"), shellRoot, { recursive: true });
       await verifyStagedPowerShell(shellRoot);
+      const { verifyStagedSpeech } = await import("./stage-speech.mjs");
+      const speechRoot = join(temporaryDirectory, "speech");
+      await cp(join(dirname(packagedWebRoot), "speech"), speechRoot, { recursive: true });
+      await verifyStagedSpeech(speechRoot);
     }
     const isolatedAgentDir = join(temporaryDirectory, "agent");
     const isolatedHomeDir = join(temporaryDirectory, "home");
@@ -953,6 +957,22 @@ async function main() {
     });
     if (!companionPageResponse.ok) {
       throw new Error(`Packaged companion page returned ${companionPageResponse.status}`);
+    }
+    if (process.platform === "win32") {
+      const headers = { "X-Pi-Desktop-Token": token };
+      const speech = await fetch(`${origin}/api/speech/settings`, { headers }).then(response => response.json());
+      if (!speech.installed || !speech.bundled) throw new Error("Packaged offline speech is not discoverable");
+      const enabled = await fetch(`${origin}/api/speech/settings`, {
+        method: "PATCH", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ enabled: true }),
+      });
+      if (!enabled.ok) throw new Error("Unable to enable bundled offline speech");
+      const { createJiti } = await import("jiti");
+      const { encodePcm16Wav } = await createJiti(import.meta.url).import("../lib/voice-audio.ts");
+      const samples = Float32Array.from({ length: 8_000 }, (_, index) => Math.sin(index * 0.1) * 0.05);
+      const decoded = await fetch(`${origin}/api/speech/transcribe?language=zh`, {
+        method: "POST", headers: { ...headers, "content-type": "audio/wav" }, body: encodePcm16Wav(samples), signal: AbortSignal.timeout(60_000),
+      });
+      if (!decoded.ok || typeof (await decoded.json()).text !== "string") throw new Error("Packaged offline speech inference failed");
     }
     const clipboardPageStatuses = {};
     for (const surface of ["quick", "shelf"]) {
