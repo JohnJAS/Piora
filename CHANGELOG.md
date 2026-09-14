@@ -4,7 +4,7 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
-## [0.4.41-beta.41] - 2026-09-14
+## [0.4.41-beta.42] - 2026-09-14
 
 ### 透明磨砂界面
 
