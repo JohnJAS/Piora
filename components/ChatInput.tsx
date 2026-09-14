@@ -76,7 +76,6 @@ import { useApplicationShortcuts } from "@/hooks/useApplicationShortcuts";
 import { useLocalDictation } from "@/hooks/useLocalDictation";
 import { useSendShortcut } from "@/hooks/useSendShortcut";
 import { useStreamingSendPreference } from "@/hooks/useStreamingSendPreference";
-import { prioritizeProvider } from "@/lib/model-policy";
 import { isPlainEnter, matchesSendShortcut } from "@/lib/send-shortcut";
 import { formatShortcutBinding, isMacPlatform, shortcutMatchesEvent, shouldPreserveApplicationShortcut } from "@/lib/keyboard-shortcuts";
 import { AliIcon } from "./AliIcon";
@@ -1520,19 +1519,13 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   // Build model options: prefer modelList (has provider info), fallback to modelNames
   const modelOptions: ModelOption[] = (() => {
     if (modelList && modelList.length > 0) {
-      return prioritizeProvider(
-        modelList.map((m) => ({ provider: m.provider, modelId: m.id, name: m.name })),
-        (option) => option.provider,
-      );
+      return modelList.map((m) => ({ provider: m.provider, modelId: m.id, name: m.name }));
     }
-    return prioritizeProvider(
-      Object.entries(modelNames ?? {}).map(([modelId, name]) => ({
+    return Object.entries(modelNames ?? {}).map(([modelId, name]) => ({
         provider: model?.provider ?? "unknown",
         modelId,
         name,
-      })),
-      (option) => option.provider,
-    );
+      }));
   })();
   const filteredModelOptions = filterModelOptions(modelOptions, modelFilter);
   const showModelFilter = modelOptions.length > MODEL_FILTER_THRESHOLD;

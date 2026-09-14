@@ -49,8 +49,15 @@ function publicState(
   };
 }
 
-function readMutation(body: PatchBody): ModelScopeMutation {
+type SettingsMutation = ModelScopeMutation | { action: "set-default"; provider: string; id: string };
+
+function readMutation(body: PatchBody): SettingsMutation {
   if (body.action === "restore-all") return { action: "restore-all" };
+  if (body.action === "set-default") {
+    if (typeof body.provider !== "string" || !body.provider.trim()) throw new TypeError("provider is required for setting a default model");
+    if (typeof body.id !== "string" || !body.id.trim()) throw new TypeError("id is required for setting a default model");
+    return { action: body.action, provider: body.provider.trim(), id: body.id.trim() };
+  }
   if (body.action === "hide-provider" || body.action === "restore-provider") {
     if (typeof body.provider !== "string" || !body.provider.trim()) {
       throw new TypeError("provider is required for provider visibility changes");
@@ -58,7 +65,7 @@ function readMutation(body: PatchBody): ModelScopeMutation {
     return { action: body.action, provider: body.provider.trim() };
   }
   if (body.action !== "hide" && body.action !== "restore") {
-    throw new TypeError("action must be hide, restore, hide-provider, restore-provider, or restore-all");
+    throw new TypeError("action must be set-default, hide, restore, hide-provider, restore-provider, or restore-all");
   }
   if (typeof body.provider !== "string" || !body.provider.trim()) {
     throw new TypeError("provider is required for hide and restore");
@@ -137,7 +144,7 @@ export async function PATCH(req: Request) {
     return jsonError("invalid_request", "cwd must be a string.", 400);
   }
 
-  let mutation: ModelScopeMutation;
+  let mutation: SettingsMutation;
   try {
     mutation = readMutation(body);
   } catch (error) {
@@ -151,12 +158,25 @@ export async function PATCH(req: Request) {
   try {
     const cwd = await resolveModelRequestCwd(body.cwd);
     const { services, settings, state, projectOverride } = await loadState(cwd);
-    if (projectOverride) {
+    if (projectOverride && mutation.action !== "set-default") {
       return jsonError(
         "project_scope_override",
         "This project defines .pi/settings.json enabledModels, which overrides the global model scope.",
         409,
       );
+    }
+
+    if (mutation.action === "set-default") {
+      const model = state.models.find((item) => item.provider === mutation.provider && item.id === mutation.id);
+      if (!model) throw new ModelScopeMutationError("model_not_found", `Model is not available: ${mutation.provider}/${mutation.id}`);
+      if (!model.enabled) return jsonError("model_disabled", "Enable the model before setting it as default.", 409);
+      settings.setDefaultModelAndProvider(mutation.provider, mutation.id);
+      await settings.flush();
+      const errors = settings.drainErrors();
+      if (errors.length > 0) throw new ModelScopeSettingsWriteError(errors);
+      invalidateModelsCache();
+      const nextState = await buildModelScopeSettingsState({ runtime: services.modelRuntime, enabledPatterns: settings.getEnabledModels(), defaultProvider: settings.getDefaultProvider(), defaultModel: settings.getDefaultModel(), environment: process.env });
+      return Response.json(publicState(nextState, projectOverride, true));
     }
 
     const result = mutateModelScopeSettings(state, mutation);

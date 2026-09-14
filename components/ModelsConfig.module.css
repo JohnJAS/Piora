@@ -99,6 +99,7 @@
 @media(prefers-reduced-motion:reduce) { .dialog button { transition: none; } }
 
 .connectionCard>details:last-child{margin-bottom:0}
+.defaultBadge { flex-shrink: 0; padding: 1px 5px; border-radius: 999px; background: var(--bg-selected); color: var(--accent); font-size: var(--text-xs); font-weight: 600; white-space: nowrap; }
 
 /* Floating settings share the dialog glass; embedded settings keep their page surface. */
 .dialog:global(.app-shell-dialog) {
