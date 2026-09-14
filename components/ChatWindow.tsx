@@ -177,7 +177,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     lastUserMsgRef,
     pendingScrollToUserRef,
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange, handleScrollToBottom, pauseHistoryFollow, handleDeleteMessage, deletingMessage,
-    handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
+    handleCompact, handleDismissCompactError, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
     handleThinkingLevelChange, handleSystemPromptSelection, loadSlashCommands,
@@ -584,6 +584,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
       onAbortCompaction={handleAbortCompaction}
       isCompacting={isCompacting}
       compactError={compactError}
+      onDismissCompactError={handleDismissCompactError}
       compactResult={compactResult}
       thinkingLevel={thinkingLevel}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}

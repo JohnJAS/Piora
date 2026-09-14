@@ -2175,6 +2175,7 @@ export const enLocale: LocalePlugin = {
     "chat.commandCopy": "Copy the last assistant message",
     "chat.compacted": "Compacted",
     "chat.compactErrorHint": "Compaction summarizes the conversation with the current model's endpoint. If this keeps failing, check the model's context declaration and OpenAI-completions compat overrides in Settings > Models, then retry compaction.",
+    "chat.dismissCompactError": "Dismiss compaction error",
     "chat.tokensSaved": "{saved} saved",
     "fileEditor.lineCountOne": "1 line",
     "fileEditor.lineCount": "{count} lines",

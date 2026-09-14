@@ -2175,6 +2175,7 @@ export const zhCNLocale: LocalePlugin = {
     "chat.commandCopy": "复制最后一条助手消息",
     "chat.compacted": "已压缩",
     "chat.compactErrorHint": "自动压缩会用当前模型的端点生成对话摘要。若持续失败，请在“设置 → 模型”检查该模型的上下文声明与 OpenAI-completions 兼容性覆盖，然后重试压缩。",
+    "chat.dismissCompactError": "关闭压缩错误提示",
     "chat.tokensSaved": "节省 {saved}",
     "fileEditor.lineCountOne": "1 行",
     "fileEditor.lineCount": "{count} 行",

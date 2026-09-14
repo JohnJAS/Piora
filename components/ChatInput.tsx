@@ -127,6 +127,7 @@ interface Props {
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
   compactError?: string | null;
+  onDismissCompactError?: () => void;
   compactResult?: CompactResultInfo | null;
   thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
@@ -323,7 +324,7 @@ export function ModelErrorBanner({ error, title = "模型错误" }: { error?: st
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, onModelChange,
-  onCompact, onAbortCompaction, isCompacting, compactError, compactResult,
+  onCompact, onAbortCompaction, isCompacting, compactError, onDismissCompactError, compactResult,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
@@ -1696,12 +1697,43 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               lineHeight: 1.5,
               whiteSpace: "pre-wrap",
               overflowWrap: "anywhere",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 8,
             }}
           >
-            {compactError}
-            <span style={{ display: "block", marginTop: 4, fontFamily: "inherit", fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
-              {t("chat.compactErrorHint")}
-            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              {compactError}
+              <span style={{ display: "block", marginTop: 4, fontFamily: "inherit", fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
+                {t("chat.compactErrorHint")}
+              </span>
+            </div>
+            {onDismissCompactError && (
+              <button
+                type="button"
+                onClick={onDismissCompactError}
+                title={t("chat.dismissCompactError")}
+                aria-label={t("chat.dismissCompactError")}
+                style={{
+                  display: "inline-flex",
+                  width: 24,
+                  height: 24,
+                  flex: "none",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  margin: -3,
+                  padding: 0,
+                  border: 0,
+                  borderRadius: "var(--radius-control)",
+                  background: "transparent",
+                  color: "currentColor",
+                  cursor: "pointer",
+                  opacity: 0.78,
+                }}
+              >
+                <AliIcon name="close" size={12} />
+              </button>
+            )}
           </div>
         )}
         {/* Image previews */}

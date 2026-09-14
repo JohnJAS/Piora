@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 会话稳定性
+
+- 自动压缩或摘要失败时，主对话输入区上方的错误提示支持手动关闭，并会在 12 秒后自动消失，不再长期占据聊天界面。
+
 ### 输入与搜索界面
 
 - 聊天输入框、@ 文件选择、会话搜索和命令搜索统一为高透明度毛玻璃表面，并增强背景模糊和光感；浅深主题下保留清晰文字、边框、选中状态和无透明效果回退。

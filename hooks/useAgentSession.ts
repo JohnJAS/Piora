@@ -217,6 +217,7 @@ const EVENT_STREAM_CONNECT_TIMEOUT_MS = 30_000;
 const MAX_NOTICES = 5;
 const NOTICE_VISIBLE_MS = 5000;
 const NOTICE_EXIT_ANIMATION_MS = 180;
+const COMPACT_ERROR_VISIBLE_MS = 12_000;
 const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " ", "Space", "Spacebar"]);
 
 type EventStreamConnectionStatus = "connected" | "timeout" | "closed";
@@ -1867,6 +1868,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [isCompacting, loadSession]);
 
+  const handleDismissCompactError = useCallback(() => {
+    setCompactError(null);
+  }, []);
+
   const modelLoadIdRef = useRef(0);
   const loadModels = useCallback(async (signal?: AbortSignal, forceRefresh = false) => {
     const loadId = ++modelLoadIdRef.current;
@@ -2436,6 +2441,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [compactResult]);
 
   useEffect(() => {
+    if (!compactError) return;
+    const timer = setTimeout(() => setCompactError(null), COMPACT_ERROR_VISIBLE_MS);
+    return () => clearTimeout(timer);
+  }, [compactError]);
+
+  useEffect(() => {
     if (noticeState.visible.length === 0) return;
     const exiting = noticeState.visible.find((notice) => notice.exiting);
     if (exiting) {
@@ -2475,7 +2486,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange, handleDeleteMessage, deletingMessage,
     handleScrollToBottom, pauseHistoryFollow,
     switchHistoryBranch, forkHistoryQuestion,
-    handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
+    handleCompact, handleDismissCompactError, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
     handleThinkingLevelChange, handleCapabilitySelection, handleSystemPromptSelection, loadSlashCommands, setActiveLeafId, setData, setMessages,

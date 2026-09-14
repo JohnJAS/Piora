@@ -402,6 +402,7 @@ test("renders compact errors above the input as a wrapping alert", () => {
         onSend() {},
         onAbort() {},
         onCompact() {},
+        onDismissCompactError() {},
         isStreaming: false,
         compactError: error,
       }),
@@ -412,6 +413,7 @@ test("renders compact errors above the input as a wrapping alert", () => {
   assert.match(html, /Compaction failed: OpenAI API error/);
   assert.match(html, /&lt;html&gt;request forbidden&lt;\/html&gt;/);
   assert.match(html, /white-space:pre-wrap/);
+  assert.match(html, /aria-label="关闭压缩错误提示"/);
   assert.ok(html.indexOf('role="alert"') < html.indexOf("<textarea"));
 });
 
