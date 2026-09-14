@@ -49,6 +49,16 @@ export class SSHSession {
   }
 
   write(data: string): void { if (!this.channel) throw new Error("SSH session is not connected"); this.channel.write(data); }
+  async exec(command: string): Promise<{ output: string; exitCode: number | null }> {
+    await this.connect();
+    return new Promise((resolve, reject) => this.client.exec(`cd ${JSON.stringify(this.currentCwd)} && ${command}`, (error, channel) => {
+      if (error) return reject(error);
+      const chunks: Buffer[] = [];
+      channel.on("data", (data: Buffer) => { chunks.push(data); this.emit({ type: "output", data: data.toString("utf8") }); });
+      channel.stderr.on("data", (data: Buffer) => { chunks.push(data); this.emit({ type: "output", data: data.toString("utf8") }); });
+      channel.on("close", (code: number | null) => resolve({ output: Buffer.concat(chunks).toString("utf8"), exitCode: code }));
+    }));
+  }
   bindAgent(agentSessionId: string): void { this.mode = "agent-controlled"; this.agentSessionId = agentSessionId; this.emit({ type: "snapshot", snapshot: this.snapshot() }); }
   unbindAgent(): void { this.mode = "independent"; delete this.agentSessionId; this.emit({ type: "snapshot", snapshot: this.snapshot() }); }
   async sftp(): Promise<SFTPWrapper> { if (this.sftpClient) return this.sftpClient; await this.connect(); const value = await new Promise<SFTPWrapper>((resolve, reject) => this.client.sftp((error, result) => error ? reject(error) : resolve(result))); this.sftpClient = value; return value; }
