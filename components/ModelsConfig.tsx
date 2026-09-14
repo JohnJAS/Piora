@@ -2713,7 +2713,7 @@ export function ModelsConfig({
                     aria-label={isDefault ? "当前默认模型" : "设为默认模型"}
                     style={{
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      minWidth: 28, height: 28, padding: "0 7px", border: "1px solid var(--border)",
+                      width: 70, height: 28, padding: "0 7px", border: "1px solid var(--border)",
                       borderRadius: "var(--radius-control)", background: isDefault ? "var(--bg-selected)" : "transparent",
                       color: isDefault ? "var(--accent)" : "var(--text-muted)",
                       cursor: scopeMutationBusy || isDefault ? "default" : "pointer",
