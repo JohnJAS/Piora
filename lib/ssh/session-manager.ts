@@ -49,6 +49,8 @@ export class SSHSession {
   }
 
   write(data: string): void { if (!this.channel) throw new Error("SSH session is not connected"); this.channel.write(data); }
+  bindAgent(agentSessionId: string): void { this.mode = "agent-controlled"; this.agentSessionId = agentSessionId; this.emit({ type: "snapshot", snapshot: this.snapshot() }); }
+  unbindAgent(): void { this.mode = "independent"; delete this.agentSessionId; this.emit({ type: "snapshot", snapshot: this.snapshot() }); }
   async sftp(): Promise<SFTPWrapper> { if (this.sftpClient) return this.sftpClient; await this.connect(); const value = await new Promise<SFTPWrapper>((resolve, reject) => this.client.sftp((error, result) => error ? reject(error) : resolve(result))); this.sftpClient = value; return value; }
   close(): void { this.channel?.close(); this.client.end(); this.connected = false; }
 }
