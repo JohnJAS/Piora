@@ -9,6 +9,7 @@ import { AliIcon } from "../AliIcon";
 import styles from "../SessionSidebar.module.css";
 import { ProjectSessionGroup } from "./ProjectList";
 import type { SessionMoveTarget } from "./TaskContextMenu";
+import { isProjectNotificationMuted } from "@/lib/project-notification-preferences";
 
 interface Props {
   loading: boolean; error: string | null;
@@ -25,6 +26,7 @@ interface Props {
   sessionFlags: SessionFlags;
   patchSessionFlag: (session: SessionInfo, patch: { pinned?: boolean; archived?: boolean }) => Promise<void>;
   duplicateSession: (session: SessionInfo) => Promise<void>; pinnedProjectRoots: Set<string>; projectAliases: Record<string, string>;
+  mutedProjectRoots: ReadonlySet<string>; toggleProjectMuted: (root: string) => void;
   markSessionUnread: (session: SessionInfo) => void;
   moveSession: (session: SessionInfo, target: SessionMoveTarget) => Promise<void>;
   togglePinnedProject: (root: string) => void; renameProject: (root: string, alias: string) => void; removeProject: (root: string) => void;
@@ -44,7 +46,7 @@ interface ProjectDragState {
 
 export function SidebarProjectArea(props: Props) {
   const { t } = useI18n();
-  const { loading, error, handleDefaultCwd, handleCustomPathClick, projectGroups, selectedProject, collapsedProjectKeys, expandedProjectSessionKeys, setCollapsedProjectKeys, setExpandedProjectSessionKeys, selectedSessionId, runningSessionIds, unreadSessionIds, attentionSessionIds, moveTargets, setSelectedCwd, homeDir, handleSelectSessionFromList, handleNewSessionInProject, loadSessions, handleSessionDeletedWithUndo, sessionFlags, patchSessionFlag, duplicateSession, markSessionUnread, moveSession, pinnedProjectRoots, projectAliases, togglePinnedProject, renameProject, removeProject, onReorderProjects, sessionOrder, onReorderSessions } = props;
+  const { loading, error, handleDefaultCwd, handleCustomPathClick, projectGroups, selectedProject, collapsedProjectKeys, expandedProjectSessionKeys, setCollapsedProjectKeys, setExpandedProjectSessionKeys, selectedSessionId, runningSessionIds, unreadSessionIds, attentionSessionIds, moveTargets, setSelectedCwd, homeDir, handleSelectSessionFromList, handleNewSessionInProject, loadSessions, handleSessionDeletedWithUndo, sessionFlags, patchSessionFlag, duplicateSession, markSessionUnread, moveSession, pinnedProjectRoots, projectAliases, mutedProjectRoots, toggleProjectMuted, togglePinnedProject, renameProject, removeProject, onReorderProjects, sessionOrder, onReorderSessions } = props;
   const allProjectsCollapsed = projectGroups.length > 0
     && projectGroups.every((group) => collapsedProjectKeys.has(group.key));
   const projectScrollRef = useRef<HTMLDivElement>(null);
@@ -275,6 +277,8 @@ export function SidebarProjectArea(props: Props) {
             isPinned={pinnedProjectRoots.has(group.projectRoot)}
             displayLabel={projectAliases[group.projectRoot] ?? getProjectLabel(group.projectRoot)}
             onTogglePinned={() => togglePinnedProject(group.projectRoot)}
+            notificationsMuted={isProjectNotificationMuted(mutedProjectRoots, group.projectRoot)}
+            onToggleNotifications={() => toggleProjectMuted(group.projectRoot)}
             onRenameProject={(alias) => renameProject(group.projectRoot, alias)}
             onRemoveProject={() => removeProject(group.projectRoot)}
             isDragging={dragState?.sourceRoot === group.projectRoot}

@@ -10,8 +10,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
   try {
-    const sessionId = new URL(request.url).searchParams.get("sessionId")?.trim() || undefined;
-    return NextResponse.json(await getBrowserViewState(sessionId), {
+    return NextResponse.json(await getBrowserViewState(), {
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch (error) {

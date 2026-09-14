@@ -211,7 +211,6 @@ let serverEntryPath: string | undefined;
 let serverHostEntryPath: string | undefined;
 let piAgentDirectoryPath: string | undefined;
 let desktopBrowserManager: DesktopBrowserManager | undefined;
-const desktopBrowserRequestControllers = new Map<string, AbortController>();
 let desktopUpdateController: DesktopUpdateController | undefined;
 let updateSchedule: UpdateSchedule = { enabled: false, time: "03:00" };
 let scheduledUpdateTimer: NodeJS.Timeout | undefined;
@@ -246,34 +245,7 @@ async function handleStandaloneMessage(message: unknown): Promise<unknown> {
       return { type: "pi-desktop:clipboard-backup-response", requestId, ok: true, snapshotId: requestId };
     } catch (error) { return { type: "pi-desktop:clipboard-backup-response", requestId, ok: false, error: error instanceof Error ? error.message : "backup_clipboard_unavailable" }; }
   }
-  if (candidate.type === "pi-desktop:browser-cancel" && typeof candidate.requestId === "string") {
-    desktopBrowserRequestControllers.get(candidate.requestId)?.abort("browser_request_cancelled");
-    return undefined;
-  }
-  if (candidate.type !== "pi-desktop:browser-request" || typeof candidate.requestId !== "string") return undefined;
-  const requestId = candidate.requestId.slice(0, 160);
-  const controller = new AbortController();
-  desktopBrowserRequestControllers.set(requestId, controller);
-  try {
-    if (!desktopBrowserManager) throw new Error("The visible desktop browser is not ready.");
-    if (typeof candidate.sessionId !== "string" || candidate.sessionId.length > 512) throw new Error("Invalid browser Session id.");
-    if (!candidate.params || typeof candidate.params !== "object" || Array.isArray(candidate.params)) throw new Error("Invalid browser action payload.");
-    const result = await desktopBrowserManager.performAgentAction(
-      candidate.sessionId,
-      candidate.params as Record<string, unknown>,
-      controller.signal,
-    );
-    return { type: "pi-desktop:browser-response", requestId, ok: true, result };
-  } catch (error) {
-    return {
-      type: "pi-desktop:browser-response",
-      requestId,
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  } finally {
-    desktopBrowserRequestControllers.delete(requestId);
-  }
+  return undefined;
 }
 
 function installRendererDiagnostics(window: BrowserWindow, surface: "Main" | "Companion", log: Logger): void {

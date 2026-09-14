@@ -24,6 +24,8 @@ import {
   useCompletionNotification,
 } from "@/hooks/useCompletionNotification";
 import { useRunningTaskSnapshots } from "@/hooks/useTaskStatus";
+import { useProjectNotificationPreferences } from "@/hooks/useProjectNotificationPreferences";
+import { isProjectNotificationMuted } from "@/lib/project-notification-preferences";
 import { useCompanionPets } from "@/hooks/useCompanionPets";
 import { useCompanionPreferences } from "@/hooks/useCompanionPreferences";
 import { useCompanionWorkRhythm } from "@/hooks/useCompanionWorkRhythm";
@@ -162,6 +164,7 @@ export function AppShell() {
     notifyAutomation,
     notifyUserInput,
   } = useCompletionNotification();
+  const { mutedProjectRoots } = useProjectNotificationPreferences();
   const runningTaskSnapshots = useRunningTaskSnapshots();
   const companionWorkRhythm = useCompanionWorkRhythm(runningTaskSnapshots);
   useEffect(() => {
@@ -174,7 +177,20 @@ export function AppShell() {
         const payload = await response.json() as { notifications?: Array<{ id: string; title: string; status: "succeeded" | "failed" | "interrupted"; sessionId?: string }> };
         const notifications = Array.isArray(payload.notifications) ? payload.notifications : [];
         const delivered: string[] = [];
+        let sessionsById = new Map<string, SessionInfo>();
+        if (notifications.some((notification) => notification.sessionId)) {
+          const sessionsResponse = await fetch("/api/sessions", { cache: "no-store" });
+          if (sessionsResponse.ok) {
+            const sessionsPayload = await sessionsResponse.json() as { sessions?: SessionInfo[] };
+            sessionsById = new Map((sessionsPayload.sessions ?? []).map((session) => [session.id, session]));
+          }
+        }
         for (const notification of notifications) {
+          const session = notification.sessionId ? sessionsById.get(notification.sessionId) : undefined;
+          if (session && isProjectNotificationMuted(mutedProjectRoots, session.projectRoot ?? session.cwd)) {
+            delivered.push(notification.id);
+            continue;
+          }
           if (await notifyAutomation(notification.title, notification.status, notification.sessionId)) delivered.push(notification.id);
         }
         if (delivered.length > 0 && !stopped) {
@@ -185,7 +201,7 @@ export function AppShell() {
     void poll();
     const timer = setInterval(() => void poll(), 10_000);
     return () => { stopped = true; clearInterval(timer); };
-  }, [notificationEnabled, notifyAutomation]);
+  }, [mutedProjectRoots, notificationEnabled, notifyAutomation]);
   const isMobile = useIsMobile();
   const [selectedSession, setSelectedSession] = useState<SessionInfo | null>(null);
   const selectedSessionIdRef = useRef<string | null>(null);
@@ -203,14 +219,27 @@ export function AppShell() {
       runningTaskSnapshots.filter((snapshot) => snapshot.pendingApproval).map((snapshot) => snapshot.id),
     );
     const previous = pendingInputSessionsRef.current;
-    const appInForeground = document.visibilityState === "visible" && document.hasFocus();
-    for (const snapshot of runningTaskSnapshots) {
-      if (!snapshot.pendingApproval || previous.has(snapshot.id)) continue;
-      if (snapshot.id === selectedSession?.id && appInForeground) continue;
-      void notifyUserInput(snapshot.title ?? undefined, snapshot.id);
-    }
+    const newlyPending = runningTaskSnapshots.filter((snapshot) => snapshot.pendingApproval && !previous.has(snapshot.id));
     pendingInputSessionsRef.current = pendingIds;
-  }, [runningTaskSnapshots, selectedSession?.id, notifyUserInput]);
+    if (newlyPending.length === 0) return;
+    const appInForeground = document.visibilityState === "visible" && document.hasFocus();
+    void (async () => {
+      let sessionsById = new Map<string, SessionInfo>();
+      if (newlyPending.some((snapshot) => snapshot.id !== selectedSession?.id)) {
+        const response = await fetch("/api/sessions", { cache: "no-store" }).catch(() => null);
+        if (response?.ok) {
+          const payload = await response.json() as { sessions?: SessionInfo[] };
+          sessionsById = new Map((payload.sessions ?? []).map((session) => [session.id, session]));
+        }
+      }
+      for (const snapshot of newlyPending) {
+        if (snapshot.id === selectedSession?.id && appInForeground) continue;
+        const session = snapshot.id === selectedSession?.id ? selectedSession : sessionsById.get(snapshot.id);
+        if (session && isProjectNotificationMuted(mutedProjectRoots, session.projectRoot ?? session.cwd)) continue;
+        void notifyUserInput(snapshot.title ?? undefined, snapshot.id);
+      }
+    })();
+  }, [mutedProjectRoots, runningTaskSnapshots, selectedSession, notifyUserInput]);
 
   const lastClaimedInitialPromptRef = useRef<string | null>(null);
   const automaticTitleRequestsRef = useRef<Set<string>>(new Set());
@@ -1305,8 +1334,13 @@ export function AppShell() {
     void optimizeUnnamedSessionTitle(sessionId);
     const taskTitle = selectedSession?.name
       || (activeCwd ? getFileName(activeCwd) || activeCwd : undefined);
-    void notifyCompletion(taskTitle, sessionId);
-  }, [activeCwd, notifyCompletion, optimizeUnnamedSessionTitle, selectedSession?.name]);
+    const projectRoot = selectedSession?.id === sessionId
+      ? selectedSession.projectRoot ?? selectedSession.cwd
+      : activeProjectRoot ?? activeCwd;
+    if (!isProjectNotificationMuted(mutedProjectRoots, projectRoot)) {
+      void notifyCompletion(taskTitle, sessionId);
+    }
+  }, [activeCwd, activeProjectRoot, mutedProjectRoots, notifyCompletion, optimizeUnnamedSessionTitle, selectedSession]);
 
   const handleTaskControlsChange = useCallback((controls: TaskControls | null) => {
     setTaskControls(controls);
@@ -1688,6 +1722,7 @@ export function AppShell() {
     "panel.commands": () => { setRightPanelTab("commands"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "panel.browser": () => { setRightPanelTab("browser"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "panel.design": () => { setRightPanelTab("design"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
+    "composer.voiceInput": () => { chatInputRef.current?.focus(); chatInputRef.current?.toggleVoiceInput(); },
     "companion.togglePanel": () => { void window.piDesktop?.companionAction?.("open-panel"); },
     "companion.clipboard": () => { void window.piDesktop?.clipboard?.historyV2?.open("quick"); },
     "panel.toggleSidebar": () => setSidebarOpen((open) => !open),
@@ -1719,6 +1754,9 @@ export function AppShell() {
         isMacPlatform(window.piDesktop?.platform),
       ));
       if (!shortcut) return;
+      // The composer owns this shortcut so it remains available while its
+      // textarea is focused and ignores editors, terminals, and other inputs.
+      if (shortcut.id === "composer.voiceInput") return;
       if (historyDialogOpen && shortcut.id.startsWith("session.")) return;
       event.preventDefault();
       if (shortcut.id === "palette.open") setCommandPaletteOpen(true);

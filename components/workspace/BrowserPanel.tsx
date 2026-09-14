@@ -13,7 +13,6 @@ import type {
 } from "@/components/sidebar/sidebar-types";
 import { useI18n } from "@/hooks/useI18n";
 import { createBrowserViewportSync } from "@/lib/browser-viewport-sync";
-import { useBrowserMode } from "@/hooks/useBrowserMode";
 import { AliIcon } from "../AliIcon";
 import styles from "./WorkspacePanel.module.css";
 
@@ -149,19 +148,14 @@ export function BrowserPanel({ active, maximized, sessionId, navigationRequest, 
     setDesktopBridge(window.piDesktop?.browser ?? null);
   }, []);
 
-  const { mode, error: modeError } = useBrowserMode(active);
-
   if (desktopBridge === undefined) {
     return <div className={styles.browserLoading}>{t("browser.starting")}</div>;
   }
   return <div className={styles.browserRoot}>
-    {modeError ? <div className={styles.browserError} role="alert">{modeError}</div> : null}
     <div className={styles.browserModeContent}>
-      {mode === "background" ? <ScreenshotBrowserPanel active={active} sessionId={sessionId} navigationRequest={navigationRequest} onNavigationConsumed={onNavigationConsumed} />
-        : mode === "builtin" ? desktopBridge
-          ? <DesktopBrowserPanel active={active} bridge={desktopBridge} maximized={maximized} sessionId={sessionId} navigationRequest={navigationRequest} onNavigationConsumed={onNavigationConsumed} />
-          : <ScreenshotBrowserPanel active={active} sessionId={sessionId} navigationRequest={navigationRequest} onNavigationConsumed={onNavigationConsumed} />
-          : <div className={styles.browserLoading}>{t("browser.starting")}</div>}
+      {desktopBridge
+        ? <DesktopBrowserPanel active={active} bridge={desktopBridge} maximized={maximized} sessionId={sessionId} navigationRequest={navigationRequest} onNavigationConsumed={onNavigationConsumed} />
+        : <ScreenshotBrowserPanel active={active} navigationRequest={navigationRequest} onNavigationConsumed={onNavigationConsumed} />}
     </div>
   </div>;
 }
@@ -436,7 +430,7 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
   </div>;
 }
 
-function ScreenshotBrowserPanel({ active, sessionId, navigationRequest, onNavigationConsumed }: { active: boolean; sessionId: string | null } & BrowserNavigationProps) {
+function ScreenshotBrowserPanel({ active, navigationRequest, onNavigationConsumed }: { active: boolean } & BrowserNavigationProps) {
   const { t } = useI18n();
   const [state, setState] = useState<BrowserState | null>(null);
   const [address, setAddress] = useState("");
@@ -460,8 +454,7 @@ function ScreenshotBrowserPanel({ active, sessionId, navigationRequest, onNaviga
 
   const refresh = useCallback(async () => {
     try {
-      const query = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
-      const response = await fetch(`/api/browser${query}`, { cache: "no-store" });
+      const response = await fetch("/api/browser", { cache: "no-store" });
       const payload = await response.json() as BrowserState & { error?: string };
       if (!response.ok) throw new Error(payload.error || t("browser.unavailable"));
       setState((previous) => {
@@ -476,7 +469,7 @@ function ScreenshotBrowserPanel({ active, sessionId, navigationRequest, onNaviga
       const message = refreshError instanceof Error ? refreshError.message : t("browser.unavailable");
       setError(message);
     }
-  }, [sessionId, t]);
+  }, [t]);
 
   useEffect(() => {
     if (!active) return;
@@ -492,7 +485,7 @@ function ScreenshotBrowserPanel({ active, sessionId, navigationRequest, onNaviga
         const response = await fetch("/api/browser", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...input, ...(sessionId ? { sessionId } : {}) }),
+          body: JSON.stringify(input),
         });
         const payload = await response.json() as BrowserState & { error?: string };
         if (!response.ok) throw new Error(payload.error || t("browser.actionFailed"));
@@ -512,7 +505,7 @@ function ScreenshotBrowserPanel({ active, sessionId, navigationRequest, onNaviga
     });
     actionQueueRef.current = queued;
     return queued;
-  }, [applyState, sessionId, t]);
+  }, [applyState, t]);
 
   useRequestedNavigation(navigationRequest, active && Boolean(state), act, onNavigationConsumed);
 
@@ -639,7 +632,7 @@ function ScreenshotBrowserPanel({ active, sessionId, navigationRequest, onNaviga
       onContextMenu={(event) => event.preventDefault()}
       onWheel={(event) => { event.preventDefault(); void act({ action: "scroll", deltaY: event.deltaY }, { transient: true, focusKeyboard: false, refreshScreenshot: true }); }}
     >
-      {state ? <img src={`/api/browser/screenshot?v=${screenshotKey}${sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : ""}`} alt={t("browser.pagePreview")} draggable={false} /> : <div className={styles.browserLoading}>{t("browser.starting")}</div>}
+      {state ? <img src={`/api/browser/screenshot?v=${screenshotKey}`} alt={t("browser.pagePreview")} draggable={false} /> : <div className={styles.browserLoading}>{t("browser.starting")}</div>}
       {state?.url === "about:blank" ? <div className={styles.browserStart}>
         <AliIcon name="earth" size={28} />
         <strong>{t("browser.startTitle")}</strong>

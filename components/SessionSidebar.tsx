@@ -25,6 +25,7 @@ import { RoomSidebarSection } from "./RoomSidebarSection";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 import { ConversationSearchDialog } from "./ConversationSearchDialog";
 import type { SessionMoveTarget } from "./sidebar/TaskContextMenu";
+import { useProjectNotificationPreferences } from "@/hooks/useProjectNotificationPreferences";
 
 export type { SessionSidebarHandle } from "./sidebar/sidebar-types";
 
@@ -45,6 +46,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   const [deletedSessionToast, setDeletedSessionToast] = useState<{ session: SessionInfo; key: number } | null>(null);
   const [archivedSessionToast, setArchivedSessionToast] = useState<SessionInfo | null>(null);
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
+  const { mutedProjectRoots, toggleProjectMuted } = useProjectNotificationPreferences();
   const deletedSessionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const {
     collapsedProjectKeys, setCollapsedProjectKeys,
@@ -63,7 +65,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     customPathOpen, setCustomPathOpen, customPathError, setCustomPathError,
     customPathValidating, commitCustomPath, handleCustomPathClick, handleDefaultCwd,
   } = useProjectPicker({ setSelectedCwd, setRememberedProjectRoots, setHiddenProjectRoots, onProjectSelected: handlePickedProject });
-  const { allSessions, loading, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions, markSessionUnread } = useSessionCatalog({ selectedSessionId, refreshKey });
+  const { allSessions, loading, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions, markSessionUnread } = useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectRoots });
   const {
     worktreeState, wtFilter, setWtFilter, wtDropdownOpen, setWtDropdownOpen,
     wtNewOpen, setWtNewOpen, wtNewBranch, setWtNewBranch, wtError, setWtError,
@@ -496,6 +498,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         loadSessions={loadSessions} handleSessionDeletedWithUndo={handleSessionDeletedWithUndo}
         sessionFlags={sessionFlags} patchSessionFlag={patchSessionFlag}
         duplicateSession={duplicateSession} markSessionUnread={(session) => markSessionUnread(session.id)} moveSession={moveSession} pinnedProjectRoots={pinnedProjectRoots} projectAliases={projectAliases}
+        mutedProjectRoots={mutedProjectRoots} toggleProjectMuted={toggleProjectMuted}
         togglePinnedProject={togglePinnedProject} renameProject={renameProject} removeProject={removeProject}
         onReorderProjects={reorderProjects}
         sessionOrder={sessionOrder} onReorderSessions={reorderSessions}

@@ -12,7 +12,6 @@ import { DesktopAutoLaunchSetting } from "./DesktopAutoLaunchSetting";
 import { DesktopUpdateScheduleSetting } from "./DesktopUpdateScheduleSetting";
 import { SettingsPortabilityCard } from "./SettingsPortabilityCard";
 import { NetworkProxySettings } from "./NetworkProxySettings";
-import { BrowserModeSetting } from "./BrowserModeSetting";
 import { ReplySuggestionsSettings } from "./ReplySuggestionsSettings";
 import { SystemPromptEditor } from "./SystemPromptEditor";
 import { PROMPT_OPTIMIZER_MAX_SYSTEM_PROMPT_LENGTH, PROMPT_OPTIMIZER_SYSTEM_PROMPT } from "@/lib/prompt-optimizer";
@@ -593,7 +592,6 @@ export function SettingsDialog({
                   <p>{t("settings.generalDescription")}</p>
                 </div>
                 <div data-settings-id="general.portability"><SettingsPortabilityCard /></div>
-                <BrowserModeSetting />
                 <div data-settings-id="general.proxy"><NetworkProxySettings /></div>
                 {onOpenOnboarding ? <section className={styles.conversationSection}>
                   <div className={styles.conversationRow}>

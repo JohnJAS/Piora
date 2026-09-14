@@ -39,45 +39,71 @@
   transform: rotate(45deg);
 }
 
-.timerBubble {
+.statusStack {
+  width: 270px;
+  min-width: 0;
   display: grid;
-  min-width: 154px;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 2px 12px;
-  padding: 9px 14px 10px;
+  gap: 3px;
+  padding: 6px 10px;
 }
 
-.timerBubble strong {
+.focusRow {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 8px;
+  padding: 0 2px 4px;
+  border-bottom: 1px solid rgba(91, 75, 58, .12);
+}
+
+.focusRow strong {
   grid-row: 1 / span 2;
   grid-column: 2;
   color: #171411;
-  font: 700 calc(var(--text-base) * 1.375)/1 var(--font-mono, ui-monospace, "Cascadia Mono", monospace);
+  font: 700 calc(var(--text-base) * 1.15)/1 var(--font-mono, ui-monospace, "Cascadia Mono", monospace);
   letter-spacing: -.04em;
 }
 
 .timerPhase { font-weight: 700; }
-.timerBubble small { color: rgba(39, 35, 31, .65); font-size: var(--text-xs); }
+.focusRow small { color: rgba(39, 35, 31, .65); font-size: calc(var(--text-xs) * .9); line-height: 1.1; }
 
-.taskBubble {
-  width: 270px;
+.taskRow {
   min-width: 0;
-  padding: 9px 14px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 1px 2px;
+}
+
+.statusDot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--companion-row-status, #6b7280);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--companion-row-status, #6b7280) 14%, transparent);
+}
+
+.taskCopy {
+  min-width: 0;
+  flex: 1;
   display: grid;
-  gap: 2px;
-  text-wrap: nowrap;
+  gap: 0;
 }
 
 .taskHeading {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
+  line-height: 1.2;
 }
 
 .taskHeading strong {
   flex: 1;
   min-width: 0;
+  font-size: var(--text-sm);
 }
 
 .taskHeading small {
@@ -85,15 +111,15 @@
 }
 
 .taskHeading strong,
-.taskActivity,
 .taskMessage {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.taskActivity,
+.taskMessage,
 .taskHeading small {
   color: rgba(39, 35, 31, .65);
-  font-size: var(--text-xs);
+  font-size: calc(var(--text-xs) * .9);
+  line-height: 1.15;
 }

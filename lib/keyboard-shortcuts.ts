@@ -11,6 +11,7 @@ export const APPLICATION_SHORTCUTS = [
   { id: "panel.commands", titleKey: "commands.openCommands", descriptionKey: "shortcuts.openCommandsDescription", defaultBinding: "Mod+Backquote" },
   { id: "panel.review", titleKey: "commands.openReview", descriptionKey: "shortcuts.openReviewDescription", defaultBinding: "Mod+Shift+G" },
   { id: "panel.browser", titleKey: "commands.openBrowser", descriptionKey: "shortcuts.openBrowserDescription", defaultBinding: "Mod+T" },
+  { id: "composer.voiceInput", titleKey: "commands.voiceInput", descriptionKey: "shortcuts.voiceInputDescription", defaultBinding: "Mod+Shift+M" },
   { id: "companion.togglePanel", titleKey: "commands.openCompanionPanel", descriptionKey: "shortcuts.companionPanelDescription", defaultBinding: "Ctrl+Space" },
   { id: "companion.clipboard", titleKey: "commands.openClipboard", descriptionKey: "shortcuts.clipboardDescription", defaultBinding: "Mod+Alt+V" },
   { id: "settings.general", titleKey: "commands.settings", descriptionKey: "shortcuts.settingsDescription", defaultBinding: "Mod+," },

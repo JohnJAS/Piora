@@ -72,11 +72,13 @@ import { getCachedFileIndex, loadFileIndex, type ClientFileIndex } from "@/lib/f
 import { FolderIcon, getFileIcon } from "./FileIcons";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
+import { useApplicationShortcuts } from "@/hooks/useApplicationShortcuts";
 import { useLocalDictation } from "@/hooks/useLocalDictation";
 import { useSendShortcut } from "@/hooks/useSendShortcut";
 import { useStreamingSendPreference } from "@/hooks/useStreamingSendPreference";
 import { prioritizeProvider } from "@/lib/model-policy";
 import { isPlainEnter, matchesSendShortcut } from "@/lib/send-shortcut";
+import { formatShortcutBinding, isMacPlatform, shortcutMatchesEvent, shouldPreserveApplicationShortcut } from "@/lib/keyboard-shortcuts";
 import { AliIcon } from "./AliIcon";
 import { ModelProviderIcon } from "./ModelProviderIcon";
 import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
@@ -165,6 +167,7 @@ export interface ChatInputHandle {
   restoreFailedPrompt: (text: string, files?: AttachedFile[], images?: AttachedImage[]) => void;
   /** Send a separate local UI shortcut without replacing the user's draft. */
   sendText: (text: string) => boolean;
+  toggleVoiceInput: () => void;
 }
 
 const COMPOSITION_END_ENTER_GRACE_MS = 100;
@@ -343,6 +346,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const { t, locale } = useI18n();
   const isMobile = useIsMobile();
   const { shortcut: sendShortcut } = useSendShortcut();
+  const { bindings: applicationShortcutBindings } = useApplicationShortcuts();
+  const voiceInputBinding = applicationShortcutBindings["composer.voiceInput"];
+  const voiceInputShortcut = formatShortcutBinding(
+    voiceInputBinding,
+    isMacPlatform(typeof window === "undefined" ? undefined : window.piDesktop?.platform),
+  );
   const { preference: streamingSendPreference } = useStreamingSendPreference();
   const { draft: replyDraft, current: replyDraftRef, setValue, commit: commitReplyDraft, reset: resetReplyDraft, undo: undoReplyDraft } = useReplyDraft(() => {
     const saved = draftKey ? getDraft(draftKey) : null;
@@ -404,6 +413,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const localVoiceStopRef = useRef<() => Promise<boolean>>(async () => false);
   const localVoiceCancelRef = useRef<() => void>(() => {});
   const localVoiceActiveRef = useRef(false);
+  const voiceToggleRef = useRef<() => void>(() => {});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
@@ -558,6 +568,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       if (!message || isStreaming || isAutoModelSelection) return false;
       onSend(message);
       return true;
+    },
+    toggleVoiceInput() {
+      voiceToggleRef.current();
     },
     insertIfEmpty(text: string) {
       const ta = textareaRef.current;
@@ -1011,6 +1024,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (localDictation.phase === "idle") prepareVoiceInsertion();
     void localDictation.toggle();
   }, [localDictation, localVoiceEnabled, prepareVoiceInsertion]);
+  voiceToggleRef.current = toggleVoiceInput;
+
+  useEffect(() => {
+    const handleVoiceShortcut = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented || !voiceInputSupported || !shortcutMatchesEvent(
+        event,
+        voiceInputBinding,
+        isMacPlatform(window.piDesktop?.platform),
+      )) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (shouldPreserveApplicationShortcut(event.target) && !target?.closest(".chat-composer-surface")) return;
+      event.preventDefault();
+      toggleVoiceInput();
+    };
+    window.addEventListener("keydown", handleVoiceShortcut);
+    return () => window.removeEventListener("keydown", handleVoiceShortcut);
+  }, [toggleVoiceInput, voiceInputBinding, voiceInputSupported]);
 
   const atQueryText = atQuery?.query ?? null;
   const atLocalMatches: FileIndexEntry[] = React.useMemo(() => (
@@ -2190,7 +2220,12 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                   disabled={voiceTranscribing}
                   aria-pressed={voiceListening}
                   aria-label={voiceListening ? t("chat.stopVoiceInput") : t("chat.startVoiceInput")}
-                  title={voiceListening ? t("chat.stopVoiceInput") : t("chat.startVoiceInput")}
+                  title={voiceInputShortcut
+                    ? t("chat.voiceInputShortcutHint", {
+                      action: voiceListening ? t("chat.stopVoiceInput") : t("chat.startVoiceInput"),
+                      shortcut: voiceInputShortcut,
+                    })
+                    : voiceListening ? t("chat.stopVoiceInput") : t("chat.startVoiceInput")}
                 >
                   <AliIcon name="microphone" size={15} />
                 </button>

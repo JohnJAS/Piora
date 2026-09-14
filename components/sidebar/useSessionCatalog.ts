@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRunningTaskRuntimeState } from "@/hooks/useTaskStatus";
 import type { SessionInfo } from "@/lib/types";
+import { filterMutedSessionIds } from "@/lib/project-notification-preferences";
 import { loadUnreadSessionIds, saveUnreadSessionIds } from "./sidebar-utils";
 
 export interface SessionCompletionAnnouncement {
@@ -10,7 +11,7 @@ export interface SessionCompletionAnnouncement {
   title: string;
 }
 
-export function useSessionCatalog({ selectedSessionId, refreshKey }: { selectedSessionId: string | null; refreshKey?: number }) {
+export function useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectRoots }: { selectedSessionId: string | null; refreshKey?: number; mutedProjectRoots: ReadonlySet<string> }) {
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,14 +68,16 @@ export function useSessionCatalog({ selectedSessionId, refreshKey }: { selectedS
   useEffect(() => {
     const previous = previousRunningSessionIdsRef.current;
     const completed = [...previous].filter((id) => !runningSessionIds.has(id));
-    const unreadCompleted = completed.filter((id) => id !== selectedSessionId);
-    if (completed.length > 0) {
-      const latest = allSessions.find((session) => session.id === completed[completed.length - 1]);
+    const completedWithPrompts = filterMutedSessionIds(completed, allSessions, mutedProjectRoots);
+    const unreadCompleted = completedWithPrompts.filter((id) => id !== selectedSessionId);
+    if (completedWithPrompts.length > 0) {
+      const latestId = completedWithPrompts[completedWithPrompts.length - 1];
+      const latest = allSessions.find((session) => session.id === latestId);
       setCompletionAnnouncement({
-        count: completed.length,
-        title: latest?.name || latest?.firstMessage.slice(0, 80) || completed[completed.length - 1].slice(0, 12),
+        count: completedWithPrompts.length,
+        title: latest?.name || latest?.firstMessage.slice(0, 80) || latestId.slice(0, 12),
       });
-    } else if (runningSessionIds.size > 0) {
+    } else if (completed.length > 0 || runningSessionIds.size > 0) {
       setCompletionAnnouncement(null);
     }
     if (unreadCompleted.length > 0 || runningSessionIds.size > 0) {
@@ -93,7 +96,14 @@ export function useSessionCatalog({ selectedSessionId, refreshKey }: { selectedS
       )));
     }
     previousRunningSessionIdsRef.current = runningSessionIds;
-  }, [allSessions, runningSessionIds, selectedSessionId]);
+  }, [allSessions, mutedProjectRoots, runningSessionIds, selectedSessionId]);
+
+  useEffect(() => {
+    setUnreadSessionIds((previous) => {
+      const next = new Set(filterMutedSessionIds(previous, allSessions, mutedProjectRoots));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [allSessions, mutedProjectRoots]);
 
   useEffect(() => {
     if (!selectedSessionId) return;

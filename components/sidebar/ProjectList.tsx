@@ -44,6 +44,8 @@ export function ProjectSessionGroup({
   isPinned,
   displayLabel,
   onTogglePinned,
+  notificationsMuted,
+  onToggleNotifications,
   onRenameProject,
   onRemoveProject,
   isDragging,
@@ -78,6 +80,8 @@ export function ProjectSessionGroup({
   isPinned: boolean;
   displayLabel: string;
   onTogglePinned: () => void;
+  notificationsMuted: boolean;
+  onToggleNotifications: () => void;
   onRenameProject: (alias: string) => void;
   onRemoveProject: () => void;
   isDragging: boolean;
@@ -222,6 +226,8 @@ export function ProjectSessionGroup({
           runningCount={runningCount}
           isPinned={isPinned}
           onTogglePinned={onTogglePinned}
+          notificationsMuted={notificationsMuted}
+          onToggleNotifications={onToggleNotifications}
           onRenameProject={onRenameProject}
           onRemoveProject={onRemoveProject}
           onNewSession={() => onNewSession?.(group.preferredCwd)}
@@ -243,6 +249,8 @@ function ProjectContextMenu({
   runningCount,
   isPinned,
   onTogglePinned,
+  notificationsMuted,
+  onToggleNotifications,
   onRenameProject,
   onRemoveProject,
   onNewSession,
@@ -256,6 +264,8 @@ function ProjectContextMenu({
   runningCount: number;
   isPinned: boolean;
   onTogglePinned: () => void;
+  notificationsMuted: boolean;
+  onToggleNotifications: () => void;
   onRenameProject: (alias: string) => void;
   onRemoveProject: () => void;
   onNewSession: () => void;
@@ -298,7 +308,7 @@ function ProjectContextMenu({
     setEditing(false);
   };
   const left = Math.max(8, Math.min(anchor.x, window.innerWidth - 330));
-  const top = Math.max(8, Math.min(anchor.y, window.innerHeight - 340));
+  const top = Math.max(8, Math.min(anchor.y, window.innerHeight - 380));
 
   return (
     <div ref={menuRef} className={styles.projectMenu} role="menu" aria-label={t("sidebar.projectMenuFor", { project: displayLabel })} style={{ left, top }}>
@@ -320,6 +330,17 @@ function ProjectContextMenu({
         <span>{t("sidebar.projectTaskSummary", { count: group.sessions.length, running: runningCount })}</span>
       </div>
       <button type="button" className={styles.menuItem} role="menuitem" onClick={onChangeModels}><AliIcon name="setting" size={14} /><span>{locale === "zh-CN" ? "批量切换会话模型…" : "Change models for all sessions…"}</span></button>
+      <button
+        type="button"
+        className={styles.menuItem}
+        role="menuitemcheckbox"
+        aria-checked={notificationsMuted}
+        title={t("sidebar.projectNotificationsDescription")}
+        onClick={() => { onToggleNotifications(); onClose(); }}
+      >
+        <AliIcon name="notification" size={14} style={{ opacity: notificationsMuted ? 0.45 : 1 }} />
+        <span>{t(notificationsMuted ? "sidebar.enableProjectNotifications" : "sidebar.disableProjectNotifications")}</span>
+      </button>
       <div className={styles.menuDivider} />
       {metadata?.repository && (
         <div className={styles.menuItem} title={metadata.repository}>
