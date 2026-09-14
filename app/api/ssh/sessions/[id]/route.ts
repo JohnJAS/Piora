@@ -12,3 +12,13 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
   closeSSHSession(id);
   return NextResponse.json({ ok: true });
 }
+
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  const session = getSSHSession((await context.params).id);
+  if (!session) return NextResponse.json({ error: "SSH session not found" }, { status: 404 });
+  const body = await request.json() as { mode?: string; agentSessionId?: string };
+  if (body.mode === "agent-controlled" && body.agentSessionId) session.bindAgent(body.agentSessionId);
+  else if (body.mode === "independent") session.unbindAgent();
+  else return NextResponse.json({ error: "mode and agentSessionId are required" }, { status: 400 });
+  return NextResponse.json({ snapshot: session.snapshot() });
+}
