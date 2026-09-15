@@ -188,7 +188,9 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
           if (disposed) return;
           const value = transport === "ssh"
             ? { type: "snapshot", terminalId, generation: 0, sequence: 0, snapshot: { session: snapshot.snapshot, output: "" } }
-            : { type: "snapshot", terminalId, generation: snapshot.session.generation, sequence: snapshot.sequence, snapshot };
+            : terminalId
+              ? { type: "snapshot", terminalId, generation: snapshot.session.generation, sequence: snapshot.sequence, snapshot }
+              : { type: "snapshot", ...snapshot };
           onMessage({ data: JSON.stringify(value) });
           events = new EventSource(terminalId ? transport === "ssh" ? `/api/ssh/sessions/${terminalId}/events` : `/api/shell/sessions/${terminalId}/events` : `/api/terminal/events?cwd=${encodeURIComponent(cwd)}`);
           events.onmessage = onMessage;
