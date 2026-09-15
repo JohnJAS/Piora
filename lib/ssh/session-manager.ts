@@ -1,4 +1,4 @@
-import { randomUUID, randomBytes } from "node:crypto";
+import { randomUUID, randomBytes, createHash } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import { Client, type ClientChannel, type SFTPWrapper } from "ssh2";
 import type { SSHConnectionOptions, SSHSessionEvent, SSHSessionSnapshot } from "./types";
@@ -6,7 +6,7 @@ import type { SSHConnectionOptions, SSHSessionEvent, SSHSessionSnapshot } from "
 type Listener = (event: SSHSessionEvent) => void;
 
 export class SSHSession {
-  private readonly client = new Client();
+  private client: Client | null = null;
   private channel: ClientChannel | null = null;
   private sftpClient: SFTPWrapper | null = null;
   private readonly listeners = new Set<Listener>();
@@ -17,6 +17,7 @@ export class SSHSession {
   private readonly decoder = new StringDecoder("utf8");
   private execution: { output: string; onData?: (data: Buffer) => void; finish: (error?: Error, code?: number) => void } | null = null;
   private connected = false;
+  private fingerprint?: string;
   readonly id = randomUUID();
   mode: SSHSessionSnapshot["mode"] = "independent";
   agentSessionId?: string;
@@ -24,7 +25,7 @@ export class SSHSession {
   constructor(private readonly options: SSHConnectionOptions) {}
 
   snapshot(): SSHSessionSnapshot {
-    return { id: this.id, host: this.options.host, port: this.options.port ?? 22, username: this.options.username, cwd: this.currentCwd, connected: this.connected, output: this.output, mode: this.mode, ...(this.agentSessionId ? { agentSessionId: this.agentSessionId } : {}) };
+    return { id: this.id, host: this.options.host, port: this.options.port ?? 22, username: this.options.username, cwd: this.currentCwd, connected: this.connected, output: this.output, mode: this.mode, ...(this.agentSessionId ? { agentSessionId: this.agentSessionId } : {}), ...(this.fingerprint ? { hostFingerprint: this.fingerprint } : {}) };
   }
 
   subscribe(listener: Listener): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -32,20 +33,30 @@ export class SSHSession {
 
   async connect(): Promise<void> {
     if (this.connected) return;
+    const client = new Client();
+    this.client = client;
     await new Promise<void>((resolve, reject) => {
-      this.client.once("ready", () => {
+      client.once("ready", () => {
         this.connected = true;
         this.emit({ type: "status", connected: true });
-        void this.openShell().then(resolve, reject);
+        void this.openShell(client).then(resolve, reject);
       });
-      this.client.once("error", error => { this.emit({ type: "status", connected: false, error: error.message }); reject(error); });
-      this.client.once("close", () => { this.connected = false; this.channel = null; this.sftpClient = null; this.emit({ type: "status", connected: false }); });
-      this.client.connect({ host: this.options.host, port: this.options.port ?? 22, username: this.options.username, ...(this.options.auth.type === "password" ? { password: this.options.auth.password } : { privateKey: this.options.auth.privateKey, passphrase: this.options.auth.passphrase }), readyTimeout: 15_000 });
+      client.once("error", error => { this.emit({ type: "status", connected: false, error: error.message }); reject(error); });
+      client.once("close", () => { this.connected = false; this.channel = null; this.sftpClient = null; if (this.client === client) this.client = null; this.emit({ type: "status", connected: false }); });
+      client.connect({ host: this.options.host, port: this.options.port ?? 22, username: this.options.username, ...(this.options.auth.type === "password" ? { password: this.options.auth.password } : { privateKey: this.options.auth.privateKey, passphrase: this.options.auth.passphrase }), hostVerifier: (key: Buffer) => {
+        const fingerprint = `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}`;
+        this.fingerprint = fingerprint;
+        const identity = `${this.options.host}:${this.options.port ?? 22}`;
+        const expected = this.options.hostFingerprint ?? trustedHosts.get(identity);
+        if (expected && expected !== fingerprint) return false;
+        trustedHosts.set(identity, fingerprint);
+        return true;
+      }, readyTimeout: 15_000 });
     });
   }
 
-  private async openShell(): Promise<void> {
-    await new Promise<void>((resolve, reject) => this.client.shell({ term: "xterm-256color", cols: this.options.cols ?? 100, rows: this.options.rows ?? 30 }, (error, channel) => {
+  private async openShell(client: Client): Promise<void> {
+    await new Promise<void>((resolve, reject) => client.shell({ term: "xterm-256color", cols: this.options.cols ?? 100, rows: this.options.rows ?? 30 }, (error, channel) => {
       if (error) return reject(error);
       this.channel = channel;
       channel.on("data", (data: Buffer) => this.receive(this.decoder.write(data)));
@@ -115,12 +126,13 @@ export class SSHSession {
   }
   bindAgent(agentSessionId: string): void { this.mode = "agent-controlled"; this.agentSessionId = agentSessionId; this.emit({ type: "snapshot", snapshot: this.snapshot() }); }
   unbindAgent(): void { this.mode = "independent"; delete this.agentSessionId; this.emit({ type: "snapshot", snapshot: this.snapshot() }); }
-  async sftp(): Promise<SFTPWrapper> { if (this.sftpClient) return this.sftpClient; await this.connect(); const value = await new Promise<SFTPWrapper>((resolve, reject) => this.client.sftp((error, result) => error ? reject(error) : resolve(result))); this.sftpClient = value; return value; }
-  close(): void { this.execution?.finish(new Error("SSH session closed")); this.channel?.close(); this.client.end(); this.connected = false; }
+  async sftp(): Promise<SFTPWrapper> { if (this.sftpClient) return this.sftpClient; await this.connect(); if (!this.client) throw new Error("SSH is disconnected"); const value = await new Promise<SFTPWrapper>((resolve, reject) => this.client!.sftp((error, result) => error ? reject(error) : resolve(result))); this.sftpClient = value; return value; }
+  close(): void { this.execution?.finish(new Error("SSH session closed")); this.channel?.close(); this.client?.end(); this.client = null; this.connected = false; }
 }
 
-declare global { var __pioraSSHSessions: Map<string, SSHSession> | undefined; }
+declare global { var __pioraSSHSessions: Map<string, SSHSession> | undefined; var __pioraSSHTrustedHosts: Map<string, string> | undefined; }
 const sessions = globalThis.__pioraSSHSessions ??= new Map<string, SSHSession>();
+const trustedHosts = globalThis.__pioraSSHTrustedHosts ??= new Map<string, string>();
 export function createSSHSession(options: SSHConnectionOptions): SSHSession { const session = new SSHSession(options); sessions.set(session.id, session); return session; }
 export function getSSHSession(id: string): SSHSession | undefined { return sessions.get(id); }
 export function closeSSHSession(id: string): void { sessions.get(id)?.close(); sessions.delete(id); }
