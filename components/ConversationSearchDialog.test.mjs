@@ -15,5 +15,10 @@ test("unified search combines recent chats, message matches, and settings in a c
   assert.match(source, /event\.key === "ArrowDown"/);
   assert.match(source, /event\.key === "Enter"/);
   assert.match(styles, /width: min\(590px, 100%\)/);
-  assert.match(styles, /backdrop-filter: blur/);
+  const backdrop = styles.match(/\.backdrop\s*\{([^}]+)\}/)?.[1];
+  const dialog = styles.match(/\.dialog\s*\{([^}]+)\}/)?.[1];
+  assert.ok(backdrop, "search backdrop styles must exist");
+  assert.ok(dialog, "search dialog styles must exist");
+  assert.doesNotMatch(backdrop, /backdrop-filter\s*:/, "the overlay must not blur the page before the dialog samples it");
+  assert.match(dialog, /backdrop-filter:\s*var\(--floating-filter\)/, "search must use the shared adjustable glass filter");
 });
