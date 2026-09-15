@@ -8,6 +8,7 @@ export const enLocale: LocalePlugin = {
   label: "English",
   messages: {
     ...replySuggestionsEn,
+    "input.imageContextHint": "Images are sent for this turn only. Attach them again to inspect them in a later turn.",
     "chat.deleteMessage": "Delete message",
     "chat.deletingMessage": "Deleting…",
     "chat.deleteMessageBusy": "Stop the task or wait for it to finish before deleting messages.",

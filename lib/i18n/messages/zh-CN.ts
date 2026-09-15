@@ -7,6 +7,7 @@ export const zhCNLocale: LocalePlugin = {
   id: "zh-CN",
   label: "简体中文",
   messages: {
+    "input.imageContextHint": "图片仅随本轮任务发送，原图保留在聊天中；后续需重新看图时请再次附加。",
     ...replySuggestionsZh,
     "chat.deleteMessage": "删除消息",
     "chat.deletingMessage": "正在删除…",

@@ -10,6 +10,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { assertSessionNotMutating, drainSessionFileOperations, runSessionFileOperation, trackSessionFileOperation } from "./session-mutation";
 import { resolve } from "node:path";
 import { validateAgentImages } from "./image-attachments";
+import { installImageContextPolicy } from "./image-context";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import { runPromptWithModelFallback } from "./model-fallback";
@@ -2384,6 +2385,7 @@ export async function startRpcSession(
       ...(initial.scopedModels.length > 0 ? { scopedModels: initial.scopedModels } : {}),
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
+    installImageContextPolicy(inner.agent);
     if (pendingModel && inner.model?.provider === pendingModel.provider && inner.model.id === pendingModel.modelId) {
       await inner.setModel(applyConfiguredImageInput(inner.model));
       persistLazySessionManager(inner.sessionManager);

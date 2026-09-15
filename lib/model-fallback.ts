@@ -3,6 +3,7 @@ import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike } from "./pi-types";
 import { applyConfiguredImageInput } from "./model-capabilities";
 import { resolveVisibleModels } from "./model-scope";
+import { omitHistoricalImages } from "./image-context";
 
 export const MAX_MODEL_FALLBACKS = 3;
 
@@ -38,7 +39,7 @@ function assistantError(message: unknown): string | undefined {
 }
 
 function hasImages(messages: readonly unknown[]): boolean {
-  return messages.some((message) => {
+  return omitHistoricalImages(messages).some((message) => {
     const content = (message as { content?: unknown } | null)?.content;
     return Array.isArray(content) && content.some((block) => block?.type === "image");
   });

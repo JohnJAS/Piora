@@ -1803,6 +1803,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 </button>
               </div>
             ))}
+            <div style={{ flexBasis: "100%", color: "var(--text-muted)", fontSize: "var(--text-xs)" }}>
+              {t("input.imageContextHint")}
+            </div>
           </div>
         )}
 
