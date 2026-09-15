@@ -71,6 +71,7 @@ function publicState(
     definitionTokens: estimateToolDefinitionPromptTokens(context.tools.filter((tool) => names.has(tool.name))),
     definitionTokenLimit: TOOL_DEFINITION_PROMPT_TOKEN_LIMIT,
     diagnostics: context.diagnostics,
+    runtime: context.runtime,
     ...(options.appliedSessions === undefined ? {} : { appliedSessions: options.appliedSessions }),
     ...(options.deferredSessions === undefined ? {} : { deferredSessions: options.deferredSessions }),
     ...(options.failedSessions === undefined ? {} : { failedSessions: options.failedSessions }),
