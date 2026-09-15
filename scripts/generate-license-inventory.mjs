@@ -9,8 +9,11 @@ const scriptPath = fileURLToPath(import.meta.url);
 const defaultProjectRoot = resolve(dirname(scriptPath), "..");
 const bundledPowerShell = JSON.parse(await readFile(resolve(defaultProjectRoot, "third_party/powershell/manifest.json"), "utf8"));
 const REVIEWED_LICENSE_DECLARATIONS = new Map([
+  ["buildcheck@0.0.7", "MIT"],
+  ["cpu-features@0.0.10", "MIT"],
   ["format@0.2.2", "MIT"],
   ["khroma@2.1.0", "MIT"],
+  ["ssh2@1.17.0", "MIT"],
 ]);
 
 function compareText(left, right) {
