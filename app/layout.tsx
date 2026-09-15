@@ -6,6 +6,7 @@ import { PwaRegistration } from "@/components/PwaRegistration";
 import { BACKGROUND_INITIALIZATION_SCRIPT } from "@/lib/backgrounds";
 import { FONT_PREFERENCE_INITIALIZATION_SCRIPT } from "@/lib/font-preferences";
 import { THEME_INITIALIZATION_SCRIPT } from "@/lib/theme-preferences";
+import { INTERFACE_TRANSPARENCY_INITIALIZATION_SCRIPT } from "@/lib/interface-transparency";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 import "./theme-backgrounds.css";
@@ -58,6 +59,7 @@ export default function RootLayout({
   return (
     <html lang="en" translate="no" className="notranslate" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: INTERFACE_TRANSPARENCY_INITIALIZATION_SCRIPT }} />
         <meta name="google" content="notranslate" />
         <script
           dangerouslySetInnerHTML={{

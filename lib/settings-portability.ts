@@ -16,6 +16,7 @@ import {
   type FontPreference,
 } from "./font-preferences.ts";
 import type { Locale } from "./i18n/types.ts";
+import { INTERFACE_TRANSPARENCY_STORAGE_KEY, parseInterfaceTransparency, serializeInterfaceTransparency } from "./interface-transparency.ts";
 import {
   LEGACY_THEME_STORAGE_KEY,
   THEME_STORAGE_KEY,
@@ -36,6 +37,7 @@ export type PortableSettingKey =
   | "theme"
   | "background"
   | "font"
+  | "interfaceTransparency"
   | "locale"
   | "completionNotifications"
   | "globalShortcut";
@@ -46,6 +48,7 @@ export interface PortableSettingsPreferences {
   theme: Theme;
   background?: BackgroundPreference;
   font: FontPreference;
+  interfaceTransparency?: number;
   locale: Locale;
   completionNotifications: boolean;
   globalShortcut: boolean;
@@ -87,6 +90,7 @@ const PREFERENCE_KEYS = new Set<PortableSettingKey>([
   "theme",
   "background",
   "font",
+  "interfaceTransparency",
   "locale",
   "completionNotifications",
   "globalShortcut",
@@ -94,7 +98,7 @@ const PREFERENCE_KEYS = new Set<PortableSettingKey>([
 const BACKGROUND_KEYS = new Set(["schemaVersion", "source", "presetId", "overlay", "blur"]);
 const FONT_KEYS = new Set(["schemaVersion", "family", "size", "weight"]);
 const BACKGROUND_IDS = new Set(BACKGROUND_PRESETS.map((preset) => preset.id));
-const DIFF_ORDER: PortableSettingKey[] = ["theme", "background", "font", "locale", "completionNotifications", "globalShortcut"];
+const DIFF_ORDER: PortableSettingKey[] = ["theme", "background", "font", "interfaceTransparency", "locale", "completionNotifications", "globalShortcut"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -146,6 +150,7 @@ export function readPortableSettingsPreferences(
       theme,
       ...(background.source !== "custom" ? { background } : {}),
       font: parseStoredFontPreference(storage.getItem(FONT_PREFERENCE_STORAGE_KEY)),
+      interfaceTransparency: parseInterfaceTransparency(storage.getItem(INTERFACE_TRANSPARENCY_STORAGE_KEY)),
       locale: isLocale(storage.getItem(LOCALE_STORAGE_KEY)) ? storage.getItem(LOCALE_STORAGE_KEY) as Locale : currentLocale,
       completionNotifications: readBoolean(storage, COMPLETION_NOTIFICATION_STORAGE_KEY),
       globalShortcut: readBoolean(storage, GLOBAL_SHORTCUT_STORAGE_KEY),
@@ -194,6 +199,7 @@ export function parsePortableSettings(text: string): PortableSettingsBundle {
   const preferences = value.preferences;
   if (!isTheme(preferences.theme)
     || !isPortableFont(preferences.font)
+    || (preferences.interfaceTransparency !== undefined && (!Number.isInteger(preferences.interfaceTransparency) || (preferences.interfaceTransparency as number) < 0 || (preferences.interfaceTransparency as number) > 100))
     || !isLocale(preferences.locale)
     || typeof preferences.completionNotifications !== "boolean"
     || typeof preferences.globalShortcut !== "boolean"
@@ -210,6 +216,7 @@ export function parsePortableSettings(text: string): PortableSettingsBundle {
       theme: preferences.theme,
       ...(preferences.background ? { background: preferences.background } : {}),
       font: normalizeFontPreference(preferences.font),
+      ...(preferences.interfaceTransparency !== undefined ? { interfaceTransparency: preferences.interfaceTransparency as number } : {}),
       locale: preferences.locale,
       completionNotifications: preferences.completionNotifications,
       globalShortcut: preferences.globalShortcut,
@@ -237,8 +244,9 @@ export function applyPortableSettings(storage: StorageLike, bundle: PortableSett
   storage.setItem(LEGACY_THEME_STORAGE_KEY, isDarkTheme(preferences.theme) ? "dark" : "light");
   if (preferences.background) storage.setItem(BACKGROUND_PREFERENCE_STORAGE_KEY, serializeBackgroundPreference(preferences.background));
   storage.setItem(FONT_PREFERENCE_STORAGE_KEY, serializeFontPreference(preferences.font));
+  if (preferences.interfaceTransparency !== undefined) storage.setItem(INTERFACE_TRANSPARENCY_STORAGE_KEY, serializeInterfaceTransparency(preferences.interfaceTransparency));
   storage.setItem(LOCALE_STORAGE_KEY, preferences.locale);
   storage.setItem(COMPLETION_NOTIFICATION_STORAGE_KEY, String(preferences.completionNotifications));
   storage.setItem(GLOBAL_SHORTCUT_STORAGE_KEY, String(preferences.globalShortcut));
-  return DIFF_ORDER.filter((key) => key !== "background" || preferences.background !== undefined);
+  return DIFF_ORDER.filter((key) => preferences[key] !== undefined);
 }

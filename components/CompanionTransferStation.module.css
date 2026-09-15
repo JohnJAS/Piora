@@ -1,7 +1,8 @@
-.station { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 18px; color: var(--text); font-size: var(--text-xs); }
+.station { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; color: var(--text); font-size: var(--text-xs); }
 .heading, .headingActions, .documentHeader, .documentActions, .editorToolbar, .documentStatus { display: flex; align-items: center; gap: 8px; }
 .heading { justify-content: space-between; flex-wrap: wrap; }
-.heading h1 { margin: 0; font-size: calc(var(--text-xl) * 1.1); font-weight: 600; letter-spacing: -.5px; }
+.heading h1 { margin: 0; font-size: var(--text-lg); font-weight: 600; letter-spacing: -.3px; }
+.headingActions { flex-wrap: wrap; gap: 4px; }
 .heading h1 span { margin-left: 8px; font: calc(var(--text-xs) * .87) var(--font-mono); letter-spacing: .4px; color: var(--text-dim); }
 .heading p { margin: 5px 0 0; font-size: var(--text-xs); color: var(--text-dim); }
 .station button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 9px; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; font: inherit; }
@@ -9,7 +10,7 @@
 .station button:focus-visible, .station a:focus-visible { outline: 2px solid var(--pocket-accent, #7d896c); outline-offset: 2px; }
 .station button:disabled { opacity: .45; cursor: not-allowed; }
 .station .primary { background: var(--btn-primary-bg); color: var(--btn-primary-fg); padding-inline: 12px; }
-.workspace { flex: 1; min-width: 0; min-height: min(580px, 70dvh); display: flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.workspace { flex: 1; min-width: 0; min-height: min(580px, 70dvh); display: flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; container: transfer-workspace / inline-size; }
 .editorArea { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .fileSidebar { width: clamp(160px, 22%, 230px); flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg-panel); border-right: 1px solid var(--border); }
 .fileSidebarHeader, .folderActions, .folderForm { display: flex; align-items: center; gap: 2px; padding: 6px; min-width: 0; }
@@ -43,14 +44,13 @@
 .search input { min-width: 0; width: 100%; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; font-size: var(--text-xs) !important; }
 .listEmpty { padding: 10px; white-space: nowrap; font-size: var(--text-xs); color: var(--text-dim); }
 .document { min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
-.documentHeader { padding: 17px 20px 8px; flex-wrap: wrap; }
+.documentHeader { flex-shrink: 0; padding: 8px 14px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
 .station .title { min-width: 100px; flex: 1; padding: 0 !important; border: 0 !important; box-shadow: none !important; background: transparent !important; color: var(--text); font-size: calc(var(--text-xl) * .95) !important; font-weight: 600 !important; }
 .documentActions { margin-left: auto; gap: 0; }
-.editorToolbar { flex-wrap: wrap; padding: 5px 16px 9px; border-bottom: 1px solid var(--border); gap: 1px; }
+.editorToolbar { flex-wrap: wrap; padding: 0 8px; border-inline: 1px solid var(--border); gap: 1px; }
 .editorToolbar button { min-width: 28px; height: 28px; padding: 4px 6px; font-size: var(--text-sm); }
-.toolbarSpace { flex: 1; }
 .editorToolbar button[aria-pressed="true"] { background: var(--bg-selected); }
-.documentStatus { margin-top: auto; padding: 10px 16px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: calc(var(--text-xs) * .87); flex-wrap: wrap; }
+.documentStatus { flex-shrink: 0; margin-top: auto; min-height: 30px; padding: 4px 14px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: calc(var(--text-xs) * .87); flex-wrap: wrap; }
 .documentStatus > span { flex: 1; min-width: 80px; }
 .documentStatus [role="alert"] { color: var(--status-failed, #bf6c63); overflow-wrap: anywhere; }
 .documentStatus small { margin-left: auto; white-space: nowrap; font-size: calc(var(--text-xs) * .87); }
@@ -64,9 +64,10 @@
 .imageDocument h2 { font-size: calc(var(--text-lg) * 1.05); overflow-wrap: anywhere; }
 .imageDocument a { color: var(--text-muted); }
 .largeImage { height: 45dvh; margin: 16px 0; background-size: contain; background-repeat: no-repeat; background-position: center; }
-.workspaceFrame { position: relative; flex: 0 0 auto; max-width: 100%; min-height: 360px; margin-inline: auto; }
+.workspaceFrame { position: relative; display: flex; flex-direction: column; flex: 0 0 auto; max-width: 100%; min-height: 360px; margin-inline: auto; }
 .workspaceFrame[data-auto-height="true"] { flex: 1 0 360px; }
-.workspaceFrame .workspace { width: 100%; height: 100%; min-height: 0; flex: none; }
+.workspaceFrame .workspace { width: 100%; min-height: 0; flex: 1; }
+.workspaceFrame[data-expanded="true"] .workspaceGrip { display: none; }
 .workspaceGrip { position: absolute; z-index: 4; touch-action: none; user-select: none; display: flex; align-items: center; justify-content: center; outline: none; border-radius: 5px; }
 .workspaceGrip[data-edge="left"], .workspaceGrip[data-edge="right"] { width: 12px; top: 16px; bottom: 16px; cursor: ew-resize; }
 .workspaceGrip[data-edge="left"] { left: -6px; }
@@ -88,16 +89,15 @@
 .deleteConfirmation > div { display: flex; justify-content: flex-end; }
 @media (hover: none) { .station .treeDelete { opacity: 1; } }
 .workspace .fileSidebar { width: var(--transfer-sidebar-width, 210px); max-width: 45%; border-right: 0; }
-.workspace[data-focus="true"] .fileSidebar, .workspace[data-focus="true"] .breadcrumb { display: none; }
+.workspace[data-focus="true"] .fileSidebar, .workspace[data-focus="true"] .breadcrumb, .workspace[data-focus="true"] .outline, .workspace[data-focus="true"] .tabBar > button:first-child { display: none; }
 .resizeHandle { flex: 0 0 6px; cursor: col-resize; touch-action: none; border-inline: 2px solid transparent; background: var(--border); background-clip: content-box; }
 .resizeHandle:hover, .resizeHandle:focus-visible { background-color: var(--accent); outline: none; }
 .editorArea, .tabPane, .document { min-height: 0; }
 .writingBody { display: flex; flex: 1; min-height: 0; min-width: 0; }
-.writingContent { flex: 1; min-height: 0; min-width: 0; overflow: auto; }
+.writingContent { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .editorMount[hidden] { display: none; }
-.editorMount { height: 100%; min-height: 0; }
-.editorHint { color: var(--text-dim); font-size: calc(var(--ui-font-size) * 11 / 14); padding: 4px 0; }
-.readingPreview { box-sizing: border-box; max-width: var(--writing-width, 820px); margin: 0 auto; padding: 22px 24px 80px; font-size: var(--writing-size, 16px); }
+.editorMount { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.readingPreview { box-sizing: border-box; width: 100%; max-width: var(--writing-width, 100%); flex: 1; min-height: 0; overflow: auto; margin: 0 auto; padding: 18px 24px 48px; font-size: var(--writing-size, 16px); }
 .document :global(.pocket-markdown-editor) { max-width: none; margin: 0; padding: 0; }
 .readingPreview { line-height: 1.9; overflow-wrap: anywhere; }
 .outline { flex: 0 0 170px; max-width: 30%; overflow: auto; border-right: 1px solid var(--border); padding: 12px 0; }
@@ -108,5 +108,13 @@
 .layoutControls input { width: 100px; accent-color: var(--pocket-accent, #7d896c); }
 .layoutControls output { min-width: 45px; font-variant-numeric: tabular-nums; }
 .layoutControls > span { color: var(--text-dim); margin-left: auto; }
+.widthModes { display: inline-flex; padding: 2px; border: 1px solid var(--border); border-radius: 7px; }
+.widthModes button[aria-pressed="true"] { background: var(--bg-selected); color: var(--text); }
+@container transfer-workspace (max-width: 760px) {
+  .workspace .fileSidebar { width: 150px; max-width: 32%; }
+  .documentHeader { gap: 4px; padding-inline: 10px; }
+  .documentHeader .title { font-size: var(--text-lg) !important; }
+  .editorToolbar { padding-inline: 4px; }
+}
 @media (max-width: 760px) { .heading h1 span { display: none; } .documentHeader { padding-inline: 12px; } .editorToolbar { padding-inline: 8px; } .search { flex-basis: 110px; } }
 @media (max-width: 540px) { .fileSidebar { width: 145px; } .station { gap: 12px; } .documentStatus small { display: none; } .station .fileTab { max-width: 130px; } .openTabsMenu { max-width: 55px; } }

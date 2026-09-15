@@ -8,7 +8,7 @@ type Size = { width: number | null; height: number | null };
 type Edge = "left" | "right" | "bottom" | "corner";
 export interface TransferWorkspaceFrameHandle { resetSize(): void }
 
-export const TransferWorkspaceFrame = forwardRef<TransferWorkspaceFrameHandle, { children: ReactNode }>(function TransferWorkspaceFrame({ children }, ref) {
+export const TransferWorkspaceFrame = forwardRef<TransferWorkspaceFrameHandle, { children: ReactNode; expanded?: boolean }>(function TransferWorkspaceFrame({ children, expanded = false }, ref) {
   const frame = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<Size>({ width: null, height: null });
   const current = useRef(size);
@@ -44,7 +44,7 @@ export const TransferWorkspaceFrame = forwardRef<TransferWorkspaceFrameHandle, {
     persist();
   };
   const labels: Record<Edge, string> = { left: "从左侧调整中转站宽度", right: "从右侧调整中转站宽度", bottom: "调整中转站高度", corner: "调整中转站宽度和高度" };
-  return <div ref={frame} className={styles.workspaceFrame} data-auto-height={size.height === null} style={{ width: size.width === null ? "100%" : `${size.width}px`, height: size.height === null ? undefined : `${size.height}px` }}>
+  return <div ref={frame} className={styles.workspaceFrame} data-expanded={expanded} data-auto-height={expanded || size.height === null} style={{ width: expanded || size.width === null ? "100%" : `${size.width}px`, height: expanded || size.height === null ? undefined : `${size.height}px` }}>
     {children}
     {(["left", "right", "bottom", "corner"] as const).map((edge) => <div key={edge} className={styles.workspaceGrip} data-edge={edge} role={edge === "corner" ? "button" : "separator"} tabIndex={0}
       aria-label={labels[edge]} title={`${labels[edge]} · 拖动或方向键调整 · 双击恢复`}

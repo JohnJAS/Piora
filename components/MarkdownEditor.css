@@ -20,8 +20,8 @@
 .pocket-markdown-editor .vditor-menu--current { background: var(--bg-selected); color: var(--text); }
 .pocket-markdown-editor .vditor-content { min-height: 0; }
 .pocket-markdown-editor .vditor-reset, .pocket-markdown-editor .vditor-sv {
-  width: 100%; max-width: var(--writing-width, 820px); margin: 0 auto;
-  padding: 24px 28px 100px !important; color: var(--text); background: transparent;
+  width: 100%; max-width: var(--writing-width, 100%); margin: 0 auto;
+  padding: 18px 24px 48px !important; color: var(--text); background: transparent;
   font-family: var(--ui-font-family, system-ui), sans-serif; font-size: var(--writing-size, 16px); line-height: 1.85;
   min-height: 100%; outline: none; overflow-wrap: anywhere;
 }

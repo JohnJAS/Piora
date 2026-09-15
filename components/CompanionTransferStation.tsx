@@ -90,19 +90,17 @@ function MarkdownDocument({ item, write, onCreated, onDeleted, registerSave }: {
   return <article className={styles.document} aria-label="Markdown 文档">
     <div className={styles.documentHeader}>
       <input className={styles.title} aria-label="文档标题" maxLength={120} placeholder="未命名文档" value={draft.title} onChange={(event) => controller.update({ title: event.target.value })} />
+      <div className={styles.editorToolbar} role="toolbar" aria-label="文档视图">
+        <button type="button" aria-pressed={outlineVisible} onClick={() => setOutlineVisible(!outlineVisible)}>大纲</button>
+        <button type="button" title="查找与替换 · Ctrl+F / Ctrl+H" aria-label="查找与替换" disabled={preview} onClick={() => editor.current?.search()}><AliIcon name="search" size={14} /></button>
+        <button type="button" aria-pressed={preview} onClick={() => { void editor.current?.flush().then((ok) => { if (ok) setPreview(!preview); }); }}>{preview ? "编辑" : "阅读"}</button>
+      </div>
       <div className={styles.documentActions}>
         <button type="button" title="导出 Markdown（有本机图片时打包为 ZIP）" aria-label="导出 Markdown" disabled={actionPending} onClick={() => void action(async () => { if (await editor.current?.flush() === false) return; const current = controller.getSnapshot(); await downloadMarkdown(current.title, current.content); })}><AliIcon name="download" size={15} /></button>
         <button type="button" title="复制 Markdown" aria-label="复制 Markdown" onClick={() => void action(async () => { if (await editor.current?.flush() === false) return; await copyText(controller.getSnapshot().content); setNotice("已复制 Markdown"); })}><AliIcon name="copy" size={15} /></button>
         <button type="button" aria-label="删除文档" disabled={actionPending} onClick={remove}>{confirmDelete ? "确认删除" : <AliIcon name="delete" size={15} />}</button>
         {confirmDelete ? <button type="button" onClick={() => setConfirmDelete(false)}>取消</button> : null}
       </div>
-    </div>
-    <div className={styles.editorToolbar} role="toolbar" aria-label="文档视图">
-      <span className={styles.editorHint}>Markdown</span>
-      <span className={styles.toolbarSpace} />
-      <button type="button" aria-pressed={outlineVisible} onClick={() => setOutlineVisible(!outlineVisible)}>大纲</button>
-      <button type="button" title="查找与替换 · Ctrl+F / Ctrl+H" disabled={preview} onClick={() => editor.current?.search()}><AliIcon name="search" size={14} /></button>
-      <button type="button" aria-pressed={preview} onClick={() => { void editor.current?.flush().then((ok) => { if (ok) setPreview(!preview); }); }}>{preview ? "编辑" : "阅读"}</button>
     </div>
     <div className={styles.writingBody}>
       {outlineVisible ? <nav className={styles.outline} aria-label="文档大纲">{outline.length ? outline.map((heading) => <button type="button" key={heading.offset} title={heading.title} style={{ paddingLeft: 10 + (heading.level - 1) * 12 }} onClick={() => { setPreview(false); requestAnimationFrame(() => editor.current?.jumpTo(heading.offset)); }}>{heading.title || "无标题"}</button>) : <p>使用 # 标题建立大纲</p>}</nav> : null}
@@ -133,6 +131,7 @@ export function CompanionTransferStation({ items, loaded, loading, pending, erro
   const [busy, setBusy] = useState(false);
   const [layoutOpen, setLayoutOpen] = useState(false);
   const [writingWidth, setWritingWidth] = useState(820);
+  const [writingMode, setWritingMode] = useState<"fluid" | "fixed">("fluid");
   const [writingSize, setWritingSize] = useState(16);
   const [focusMode, setFocusMode] = useState(false);
   const widthRef = useRef(210);
@@ -140,8 +139,8 @@ export function CompanionTransferStation({ items, loaded, loading, pending, erro
   const workspaceFrame = useRef<TransferWorkspaceFrameHandle>(null);
   const sidebarResize = useResizablePanel({ ariaLabel: "调整文件列表宽度", cssVariable: "--transfer-sidebar-width", defaultWidth: 210, minWidth: 130, maxWidth: 420,
     getMaxWidth: () => Math.max(130, Math.min(420, (stationRef.current?.clientWidth ?? 800) * .45)), growthDirection: "right", storageKey: "piora:transfer-sidebar-width:v1", widthRef, panelRef: stationRef });
-  useEffect(() => { try { const saved = JSON.parse(localStorage.getItem("piora:transfer-writing:v1") ?? "null"); if (saved) { if (Number.isFinite(saved.width)) setWritingWidth(Math.max(420, Math.min(1400, saved.width))); if (Number.isFinite(saved.size)) setWritingSize(Math.max(12, Math.min(24, saved.size))); } } catch { /* Optional layout. */ } }, []);
-  const updateWriting = (width: number, size: number) => { setWritingWidth(width); setWritingSize(size); try { localStorage.setItem("piora:transfer-writing:v1", JSON.stringify({ width, size })); } catch { /* Layout still works. */ } };
+  useEffect(() => { try { const saved = JSON.parse(localStorage.getItem("piora:transfer-writing:v1") ?? "null"); if (saved) { if (Number.isFinite(saved.width)) setWritingWidth(Math.max(420, Math.min(1400, saved.width))); if (Number.isFinite(saved.size)) setWritingSize(Math.max(12, Math.min(24, saved.size))); setWritingMode(saved.mode === "fixed" || (saved.mode === undefined && Number.isFinite(saved.width) && saved.width !== 820) ? "fixed" : "fluid"); } } catch { /* Optional layout. */ } }, []);
+  const updateWriting = (width: number, size: number, mode = writingMode) => { setWritingWidth(width); setWritingSize(size); setWritingMode(mode); try { localStorage.setItem("piora:transfer-writing:v1", JSON.stringify({ width, size, mode })); } catch { /* Layout still works. */ } };
   const saves = useRef(new Map<string, () => Promise<boolean>>());
   const closing = useRef(new Set<string>());
   const registerSave = useCallback((id: string, save: (() => Promise<boolean>) | null) => { if (save) saves.current.set(id, save); else saves.current.delete(id); }, []);
@@ -232,8 +231,9 @@ export function CompanionTransferStation({ items, loaded, loading, pending, erro
     event.preventDefault(); void importFiles(Array.from(event.dataTransfer.files));
   }}>
     <header className={styles.heading}>
-      <div><h1>中转站 <span>Markdown</span></h1><p>随手记录，安心写作。</p></div>
+      <div><h1>中转站 <span>Markdown</span></h1></div>
       <div className={styles.headingActions}>
+        <button type="button" aria-label="铺满中转站工作区" title="恢复工作区为随窗口自适应大小" onClick={() => workspaceFrame.current?.resetSize()}>铺满工作区</button>
         <button type="button" aria-expanded={layoutOpen} onClick={() => setLayoutOpen(!layoutOpen)}>版式</button>
         <button type="button" aria-pressed={focusMode} onClick={() => setFocusMode(!focusMode)}>{focusMode ? "退出专注" : "专注"}</button>
         <button type="button" disabled={busy || pending || !loaded} onClick={() => input.current?.click()}>导入</button>
@@ -243,10 +243,15 @@ export function CompanionTransferStation({ items, loaded, loading, pending, erro
     </header>
     <input ref={input} hidden type="file" accept=".md,.markdown,.txt,image/png,image/jpeg,image/webp,image/gif" multiple onChange={(event) => { void importFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} />
     {settings ? <CompanionStorageSettings scope="library" compact /> : null}
-    {layoutOpen ? <div className={styles.layoutControls}><label>正文宽度 <input type="range" min="420" max="1400" step="20" value={writingWidth} onChange={(event) => updateWriting(Number(event.target.value), writingSize)} /><output>{writingWidth} px</output></label><label>字号 <input type="range" min="12" max="24" value={writingSize} onChange={(event) => updateWriting(writingWidth, Number(event.target.value))} /><output>{writingSize} px</output></label><button type="button" onClick={() => { sidebarResize.resetWidth(); workspaceFrame.current?.resetSize(); updateWriting(820, 16); }}>恢复默认</button><span>拖动左右边缘或底部调整大小</span></div> : null}
+    {layoutOpen ? <div className={styles.layoutControls}>
+      <div className={styles.widthModes} role="group" aria-label="正文布局"><button type="button" aria-pressed={writingMode === "fluid"} onClick={() => updateWriting(writingWidth, writingSize, "fluid")}>自适应宽度</button><button type="button" aria-pressed={writingMode === "fixed"} onClick={() => updateWriting(writingWidth, writingSize, "fixed")}>固定栏宽</button></div>
+      {writingMode === "fixed" ? <label>正文宽度 <input type="range" min="420" max="1400" step="20" value={writingWidth} onChange={(event) => updateWriting(Number(event.target.value), writingSize)} /><output>{writingWidth} px</output></label> : null}
+      <label>字号 <input type="range" min="12" max="24" value={writingSize} onChange={(event) => updateWriting(writingWidth, Number(event.target.value))} /><output>{writingSize} px</output></label>
+      <button type="button" onClick={() => { sidebarResize.resetWidth(); workspaceFrame.current?.resetSize(); updateWriting(820, 16, "fluid"); }}>恢复默认</button><span>{writingMode === "fluid" ? "正文随编辑区宽度自动伸展" : "正文居中，保留舒适的阅读栏宽"}</span>
+    </div> : null}
     {error || notice ? <div className={styles.error} role="alert"><span>{notice || error}</span><button type="button" onClick={() => { setNotice(""); void refresh().catch(() => {}); }}>重试</button></div> : null}
-    <TransferWorkspaceFrame ref={workspaceFrame}>
-    <div ref={stationRef} className={styles.workspace} data-focus={focusMode} style={{ "--writing-width": `${writingWidth}px`, "--writing-size": `${writingSize}px` } as CSSProperties}>
+    <TransferWorkspaceFrame ref={workspaceFrame} expanded={focusMode}>
+    <div ref={stationRef} className={styles.workspace} data-focus={focusMode} data-writing-layout={writingMode} style={{ "--writing-width": writingMode === "fluid" ? "100%" : `${writingWidth}px`, "--writing-size": `${writingSize}px` } as CSSProperties}>
       {sidebarVisible ? <TransferFileTree items={items} selectedId={selected?.id ?? null} folderId={folderId} query={query} onQuery={setQuery} onOpen={open} onFolder={setFolderId} disabled={busy || pending || !loaded}
         onDeleteFile={deleteFile}
         onMove={(id, parentId) => { void move(id, parentId); }}

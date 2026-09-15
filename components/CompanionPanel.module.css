@@ -176,7 +176,7 @@
 .libraryPane { display: flex; flex: 1; min-height: 0; min-width: 0; width: 100%; }
 .libraryPane[hidden] { display: none; }
 .content[data-tool="library"] > * { width: 100%; max-width: none; }
-.content[data-tool="library"] { display: flex; flex-direction: column; }
+.content[data-tool="library"] { display: flex; flex-direction: column; padding: 12px 16px 16px; }
 .content[data-tool="clipboard"] > * { width: 100%; max-width: 1240px; }
 .content[data-tool="json"] { display: flex; padding: 18px; overflow: hidden; }
 .jsonPane { flex: 1; min-width: 0; min-height: 0; display: flex; }

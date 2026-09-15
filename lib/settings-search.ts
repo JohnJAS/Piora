@@ -62,6 +62,7 @@ export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   { id: "appearance.looks", section: "appearance", labelKey: "appearance.looks", descriptionKey: "appearance.looksHint", keywords: ["style", "preset", "风格", "配色"] },
   { id: "appearance.font", section: "appearance", labelKey: "appearance.font.title", descriptionKey: "appearance.font.hint", keywords: ["size", "family", "weight", "bold", "字体", "字号", "粗细", "加粗"] },
   { id: "appearance.background", section: "appearance", labelKey: "background.title", descriptionKey: "settings.appearanceDescription", keywords: ["wallpaper", "image", "背景", "图片"] },
+  { id: "appearance.transparency", section: "appearance", labelKey: "appearance.transparency.title", descriptionKey: "appearance.transparency.hint", keywords: ["transparency", "opacity", "glass", "透明", "毛玻璃", "输入框", "搜索框", "浮层"] },
   { id: "language", section: "language", labelKey: "common.language", descriptionKey: "settings.languageDescription", keywords: ["locale", "english", "chinese", "语言", "中文", "英文"] },
 
   { id: "companion", section: "companion", labelKey: "companion.settingsTitle", descriptionKey: "companion.settingsDescription", keywords: ["pet", "desktop pet", "宠物", "桌宠"] },

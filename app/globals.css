@@ -92,14 +92,18 @@
   --focus-ring: color-mix(in srgb, var(--accent) 72%, white);
   --scrollbar-size: 8px;
   --scrollbar-thumb: color-mix(in srgb, var(--text-dim) 48%, transparent);
-  --floating-background: color-mix(in srgb, var(--bg) 40%, transparent);
-  --floating-section: color-mix(in srgb, var(--bg-panel) 18%, transparent);
-  --floating-border: color-mix(in srgb, var(--text-muted) 18%, transparent);
-  --floating-filter: blur(20px) saturate(1.12);
-  --floating-shadow: 0 12px 36px rgb(0 0 0 / 14%), inset 0 1px 0 rgb(255 255 255 / 8%);
-  --composer-background: color-mix(in srgb, var(--bg) 34%, transparent);
-  --composer-border: color-mix(in srgb, var(--text-muted) 18%, transparent);
-  --composer-filter: blur(22px) saturate(1.14);
+  /* A thin tint preserves backdrop color; edge light supplies the glass shape. */
+  --interface-transparency: 80;
+  --glass-edge-light: rgb(255 255 255 / 48%);
+  --floating-background: linear-gradient(135deg, color-mix(in srgb, var(--bg) clamp(0%, calc(100% - var(--interface-transparency) * 0.9%), 100%), transparent), color-mix(in srgb, var(--bg) clamp(0%, calc(100% - var(--interface-transparency) * 1%), 100%), transparent));
+  --floating-section: color-mix(in srgb, var(--bg-panel) 10%, transparent);
+  --floating-border: color-mix(in srgb, var(--text-muted) 14%, transparent);
+  --floating-filter: blur(16px) saturate(1.18);
+  --floating-shadow: inset 0 1px 0 var(--glass-edge-light), inset 0 -1px 0 rgb(255 255 255 / 4%), 0 16px 40px rgb(0 0 0 / 10%), 0 3px 10px rgb(0 0 0 / 4%);
+  --composer-background: linear-gradient(125deg, color-mix(in srgb, var(--bg) clamp(0%, calc(100% - var(--interface-transparency) * 0.975%), 100%), transparent), color-mix(in srgb, var(--bg) clamp(0%, calc(100% - var(--interface-transparency) * 1.075%), 100%), transparent));
+  --composer-border: color-mix(in srgb, var(--text-muted) 14%, transparent);
+  --composer-filter: blur(14px) saturate(1.18);
+  --search-overlay-scrim: rgb(16 20 28 / 12%);
   --dialog-background: var(--floating-background);
   --dialog-padding: 20px;
   --overlay-blur: 6px;
@@ -111,7 +115,7 @@
   --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
   --shadow-surface: 0 10px 30px rgba(24, 24, 27, 0.075), 0 2px 8px rgba(24, 24, 27, 0.035);
   --shadow-float: 0 20px 55px rgba(24, 24, 27, 0.11), 0 6px 18px rgba(24, 24, 27, 0.06);
-  --shadow-composer: 0 16px 36px rgba(24, 24, 27, 0.08), 0 3px 10px rgba(24, 24, 27, 0.045);
+  --shadow-composer: inset 0 1px 0 var(--glass-edge-light), inset 0 -1px 0 rgb(255 255 255 / 4%), 0 10px 28px rgb(24 24 27 / 6%), 0 2px 6px rgb(24 24 27 / 3%);
   --ambient-primary: rgba(47, 111, 235, 0.11);
   --ambient-secondary: rgba(124, 58, 237, 0.065);
   --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
@@ -202,7 +206,8 @@ html.dark {
   --surface-highlight: rgba(255, 255, 255, 0.055);
   --shadow-float: 0 24px 64px rgba(0, 0, 0, 0.38), 0 7px 20px rgba(0, 0, 0, 0.24);
   --shadow-surface: 0 12px 34px rgba(0, 0, 0, 0.26), 0 3px 10px rgba(0, 0, 0, 0.16);
-  --shadow-composer: 0 18px 42px rgba(0, 0, 0, 0.28), 0 4px 12px rgba(0, 0, 0, 0.18);
+  --glass-edge-light: rgb(255 255 255 / 13%);
+  --shadow-composer: inset 0 1px 0 var(--glass-edge-light), inset 0 -1px 0 rgb(255 255 255 / 3%), 0 12px 32px rgb(0 0 0 / 20%), 0 2px 8px rgb(0 0 0 / 10%);
 }
 
 html[data-theme="starlight"] {
@@ -5538,7 +5543,10 @@ span.linenumber {
 }
 
 @supports not (backdrop-filter: blur(1px)) {
-  :root { --floating-background: var(--bg); }
+  :root {
+    --floating-background: var(--bg);
+    --composer-background: var(--bg);
+  }
 }
 
 @media (prefers-reduced-transparency: reduce) {

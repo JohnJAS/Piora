@@ -5,8 +5,8 @@
   display: grid;
   place-items: start center;
   padding: min(17vh, 150px) 18px 24px;
-  background: var(--overlay-scrim);
-  backdrop-filter: blur(var(--overlay-blur));
+  /* Keep the backdrop unfiltered so the dialog can sample the page itself. */
+  background: var(--search-overlay-scrim);
 }
 
 .dialog {

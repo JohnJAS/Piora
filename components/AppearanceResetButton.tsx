@@ -5,12 +5,14 @@ import { useBackground } from "@/hooks/useBackground";
 import { useFontPreferences } from "@/hooks/useFontPreferences";
 import { useI18n } from "@/hooks/useI18n";
 import { useTheme } from "@/hooks/useTheme";
+import { useInterfaceTransparency } from "@/hooks/useInterfaceTransparency";
 import { AliIcon } from "./AliIcon";
 
 export function AppearanceResetButton() {
   const { t } = useI18n();
   const { setTheme } = useTheme();
   const { reset: resetFont } = useFontPreferences();
+  const { reset: resetTransparency } = useInterfaceTransparency();
   const { reset: resetBackground, busy } = useBackground();
   const [resetting, setResetting] = useState(false);
   const [complete, setComplete] = useState(false);
@@ -21,6 +23,7 @@ export function AppearanceResetButton() {
     setComplete(false);
     setTheme("light");
     resetFont();
+    resetTransparency();
     try {
       await resetBackground();
       setComplete(true);

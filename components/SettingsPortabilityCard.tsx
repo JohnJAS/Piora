@@ -160,6 +160,7 @@ function formatValue(
   if (value === undefined) return t("settings.portability.notIncluded");
   if (typeof value === "boolean") return t(value ? "settings.portability.enabled" : "settings.portability.disabled");
   if (typeof value === "string") return value;
+  if (typeof value === "number") return `${value}%`;
   if (key === "font" && "family" in value) return `${value.family} · ${value.size}px · ${t(`appearance.font.weight.${value.weight}`)}`;
   if (key === "background" && "source" in value) return value.source === "builtin"
     ? `${value.presetId} · ${value.overlay}% · ${value.blur}px`

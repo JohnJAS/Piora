@@ -131,6 +131,7 @@ const ExtensionsConfig = dynamic(() => import("./ExtensionsConfig").then((module
 const CapabilityBundlesConfig = dynamic(() => import("./CapabilityBundlesConfig").then((module) => module.CapabilityBundlesConfig), { ssr: false, loading: SettingsSectionLoading });
 const ProjectToolsConfig = dynamic(() => import("./ProjectToolsConfig").then((module) => module.ProjectToolsConfig), { ssr: false, loading: SettingsSectionLoading });
 const BackgroundSettings = dynamic(() => import("./BackgroundSettings").then((module) => module.BackgroundSettings), { ssr: false });
+const InterfaceTransparencySettings = dynamic(() => import("./InterfaceTransparencySettings").then((module) => module.InterfaceTransparencySettings), { ssr: false });
 const AppearanceLooks = dynamic(() => import("./AppearanceLooks").then((module) => module.AppearanceLooks), { ssr: false });
 const AppearanceResetButton = dynamic(() => import("./AppearanceResetButton").then((module) => module.AppearanceResetButton), { ssr: false });
 const FontSettings = dynamic(() => import("./FontSettings").then((module) => module.FontSettings), { ssr: false });
@@ -1953,6 +1954,7 @@ export function AppShell() {
               )}
             </section>
             <div data-settings-id="appearance.font"><FontSettings /></div>
+            <div data-settings-id="appearance.transparency"><InterfaceTransparencySettings /></div>
             <div data-settings-id="appearance.background"><BackgroundSettings /></div>
           </div>
         ),

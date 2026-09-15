@@ -1,0 +1,16 @@
+.section { display: grid; gap: 10px; padding: 18px 0; border-top: 1px solid var(--border); }
+.header, .label, .ends { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.header h3 { margin: 0; font-size: var(--text-sm); }
+.header button { padding: 5px 9px; border: 1px solid var(--border); border-radius: var(--radius-control); background: transparent; color: var(--text-muted); font: inherit; font-size: var(--text-xs); cursor: pointer; }
+.header button:hover { background: var(--bg-hover); color: var(--text); }
+.section p { margin: 0; color: var(--text-dim); font-size: var(--text-xs); line-height: 1.5; }
+.preview { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; padding: 24px; border-radius: var(--radius-panel); background: radial-gradient(ellipse at 12% 15%, color-mix(in srgb, var(--accent) 42%, transparent), transparent 65%), radial-gradient(ellipse at 85% 100%, color-mix(in srgb, var(--text-muted) 32%, transparent), transparent 65%), var(--bg-panel); }
+.previewComposer, .previewSearch { flex: 1 1 150px; padding: 18px 16px; border: 1px solid var(--composer-border); border-radius: var(--radius-surface); background: var(--composer-background); -webkit-backdrop-filter: var(--composer-filter); backdrop-filter: var(--composer-filter); box-shadow: var(--shadow-composer); color: var(--text); font-size: var(--text-sm); }
+.previewSearch { background: var(--floating-background); border-color: var(--floating-border); -webkit-backdrop-filter: var(--floating-filter); backdrop-filter: var(--floating-filter); box-shadow: var(--floating-shadow); }
+.label { font-size: var(--text-sm); color: var(--text-muted); }
+.label output { font-variant-numeric: tabular-nums; }
+.range { width: 100%; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.range:focus-visible, .header button:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 3px; }
+.ends { color: var(--text-dim); font-size: var(--text-xs); }
+.section .reduced { display: none; }
+@media (prefers-reduced-transparency: reduce) { .section .reduced { display: block; } }
