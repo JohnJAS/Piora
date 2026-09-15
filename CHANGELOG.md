@@ -2,7 +2,7 @@
 
 All notable changes to Piora are documented here. The project follows [Semantic Versioning](https://semver.org/) after the first tagged public release.
 
-## [Unreleased]
+## [Unreleased]`r`n`r`n### SSH 终端基础`r`n`r`n- 引入 SSH 会话、SFTP 文件管理和模型命令绑定，支持同一远程 Shell 的目录与环境状态同步。
 
 ## [0.4.41-beta.49] - 2026-09-15
 
@@ -66,14 +66,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ### 输入与搜索界面
 
-<<<<<<< HEAD
 - 外观设置新增“界面透明度”滑块，输入框、搜索框与相关浮层可在 0–100% 间统一调整，提供实时预览、自动保存与恢复默认，并随应用备份保留。
 - 进一步降低聊天输入框与浮层的底色覆盖，减轻模糊和阴影，加入细微渐变与高光边缘，让背景色彩更自然地透出。
 - 减轻会话搜索与命令搜索的全屏遮罩，移除会话搜索重复的背景模糊；保留减少透明效果偏好，并补齐不支持背景模糊时输入框的实色回退。
-=======
 - 引入独立 SSH 会话管理基础，支持交互式远程 Shell、连接状态事件和 SFTP 通道，为右侧终端面板及模型远程会话绑定提供运行时能力。
 - 右侧工作区新增 SSH 标签页和独立 SSH 连接表单，可直接打开交互式远程终端。
->>>>>>> a4b22c4 (feat: add independent SSH terminal panel)
+- SSH 终端命令复用同一个远程 Shell，保留 `cd` 和环境变量；模型绑定后通过 SDK 的 bash 执行接口运行远程命令，并加入主机密钥 TOFU 校验、取消和重连处理。
 
 ## [0.4.41-beta.44] - 2026-09-14
 

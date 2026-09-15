@@ -7,6 +7,7 @@ export interface SSHConnectionOptions {
   port?: number;
   username: string;
   auth: SSHAuth;
+  hostFingerprint?: string;
   cols?: number;
   rows?: number;
 }
@@ -20,6 +21,7 @@ export interface SSHSessionSnapshot {
   connected: boolean;
   output: string;
   mode: "independent" | "agent-controlled";
+  hostFingerprint?: string;
   agentSessionId?: string;
 }
 
