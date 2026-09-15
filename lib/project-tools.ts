@@ -24,6 +24,7 @@ import {
 } from "./project-tool-settings";
 import { BUILTIN_AGENT_TOOLS } from "./tool-presets";
 import { resolveProject } from "./worktree";
+import { inspectToolRuntime, type ToolRuntimeInfo } from "./tool-runtime";
 
 export interface ProjectToolsContext {
   projectRoot: string;
@@ -32,6 +33,7 @@ export interface ProjectToolsContext {
   capabilities: SessionCapabilitiesState;
   record: ProjectToolSettingsRecord | null;
   diagnostics: Array<{ path: string; error: string }>;
+  runtime: ToolRuntimeInfo[];
 }
 
 function builtInToolDefinitions(cwd: string, profile: AgentRuntimeProfile): ToolInfo[] {
@@ -114,5 +116,6 @@ export async function loadProjectToolsContext(
     capabilities: buildProjectToolsCapabilities(tools, profile, record),
     record,
     diagnostics: loaded.errors,
+    runtime: inspectToolRuntime(),
   };
 }

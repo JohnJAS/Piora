@@ -11,6 +11,7 @@ import type {
 } from "@/lib/session-capabilities";
 import { AliIcon, type AliIconName } from "./AliIcon";
 import styles from "./ProjectToolsConfig.module.css";
+import type { ToolRuntimeInfo } from "@/lib/tool-runtime";
 
 interface ProjectToolsResponse {
   projectRoot: string;
@@ -19,6 +20,7 @@ interface ProjectToolsResponse {
   definitionTokens: number;
   definitionTokenLimit: number;
   diagnostics: Array<{ path: string; error: string }>;
+  runtime: ToolRuntimeInfo[];
   appliedSessions?: number;
   deferredSessions?: number;
   failedSessions?: number;
@@ -165,6 +167,32 @@ export function ProjectToolsConfig({ cwd, onChanged }: Props) {
       <strong>{t("projectTools.scope")}</strong>
       <code title={data.projectRoot}>{data.projectRoot}</code>
     </div> : null}
+
+    {data ? <section className={styles.runtime} aria-labelledby="project-tools-runtime">
+      <div className={styles.sectionHeader}>
+        <div>
+          <strong id="project-tools-runtime">{t("projectTools.runtimeTitle")}</strong>
+          <small className={styles.runtimeDescription}>{t("projectTools.runtimeDescription")}</small>
+        </div>
+        {data.runtime.some((tool) => tool.offline) ? <span className={styles.runtimeOffline}>{t("projectTools.runtimeOffline")}</span> : null}
+      </div>
+      <div className={styles.runtimeList}>
+        {data.runtime.map((tool) => {
+          const available = tool.status === "available";
+          return <div className={styles.runtimeRow} key={tool.id} data-available={available || undefined}>
+            <span className={styles.runtimeIcon}><AliIcon name="code" size={14} /></span>
+            <span className={styles.copy}>
+              <strong>{tool.label}</strong>
+              <small>{available
+                ? `${tool.version ?? t("projectTools.runtimeUnknownVersion")} · ${tool.source === "managed" ? t("projectTools.runtimeManaged") : t("projectTools.runtimeSystem")}`
+                : t("projectTools.runtimeMissing")}</small>
+            </span>
+            <span className={styles.runtimeState} data-available={available || undefined}>{available ? t("projectTools.runtimeAvailable") : t("projectTools.runtimeUnavailable")}</span>
+            {tool.path ? <code title={tool.path}>{tool.path}</code> : null}
+          </div>;
+        })}
+      </div>
+    </section> : null}
 
     {error ? <div className={styles.error} role="alert">{error}</div> : null}
     {message ? <div className={styles.notice} role="status">{message}</div> : null}
