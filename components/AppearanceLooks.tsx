@@ -564,9 +564,10 @@ export function AppearanceLooks() {
         ) : null}
       </div>
 
+      <details className="appearance-custom-details">
+        <summary id={customTitleId}>{t("appearance.custom.title")}</summary>
       <div aria-labelledby={customTitleId} style={{ marginTop: 14, padding: 12, display: "grid", gap: 10, border: "1px solid var(--border)", borderRadius: "var(--radius-surface)", background: "color-mix(in srgb, var(--bg-panel) 78%, transparent)" }}>
         <div>
-          <h4 id={customTitleId} style={{ margin: 0, fontSize: "var(--text-sm)" }}>{t("appearance.custom.title")}</h4>
           <p style={{ margin: "3px 0 0", color: "var(--text-dim)", fontSize: "var(--text-xs)", lineHeight: 1.5 }}>{t("appearance.custom.description")}</p>
         </div>
         <div style={{ padding: "8px 10px", borderRadius: "var(--radius-control)", background: "var(--bg-subtle)", color: "var(--text-muted)", fontSize: "var(--text-xs)", lineHeight: 1.55 }}>
@@ -606,6 +607,7 @@ export function AppearanceLooks() {
           {customLook ? <span style={{ alignSelf: "center", color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>{t("appearance.custom.saved", { name: customLook.name })}</span> : null}
         </div>
       </div>
+      </details>
     </section>
   );
 }

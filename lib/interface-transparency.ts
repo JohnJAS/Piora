@@ -18,9 +18,16 @@ export function parseInterfaceTransparency(raw: string | null): number {
   }
 }
 
+export function hasInterfaceTransparencyPreference(raw: string | null): boolean {
+  try {
+    const value = JSON.parse(raw ?? "null");
+    return value?.schemaVersion === 1 && typeof value.transparency === "number" && Number.isFinite(value.transparency);
+  } catch { return false; }
+}
+
 export function serializeInterfaceTransparency(value: number): string {
   return JSON.stringify({ schemaVersion: 1, transparency: normalizeInterfaceTransparency(value) });
 }
 
 // Apply before first paint, matching the other appearance preferences.
-export const INTERFACE_TRANSPARENCY_INITIALIZATION_SCRIPT = `(function(){try{var v=JSON.parse(localStorage.getItem("${INTERFACE_TRANSPARENCY_STORAGE_KEY}")||"null"),n=v&&v.schemaVersion===1?v.transparency:null,t=typeof n==="number"&&Number.isFinite(n)?Math.min(100,Math.max(0,Math.round(n))):${DEFAULT_INTERFACE_TRANSPARENCY},r=document.documentElement;r.dataset.interfaceTransparency=String(t);r.style.setProperty("--interface-transparency",String(t))}catch(_){}})();`;
+export const INTERFACE_TRANSPARENCY_INITIALIZATION_SCRIPT = `(function(){try{var v=JSON.parse(localStorage.getItem("${INTERFACE_TRANSPARENCY_STORAGE_KEY}")||"null"),n=v&&v.schemaVersion===1?v.transparency:null,e=typeof n==="number"&&Number.isFinite(n),t=e?Math.min(100,Math.max(0,Math.round(n))):${DEFAULT_INTERFACE_TRANSPARENCY},r=document.documentElement;r.dataset.interfaceTransparency=String(t);if(e)r.dataset.interfaceTransparencyOverride="true";r.style.setProperty("--interface-transparency",String(t))}catch(_){}})();`;

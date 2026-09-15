@@ -133,14 +133,16 @@ export function CompanionTransferStation({ items, loaded, loading, pending, erro
   const [writingWidth, setWritingWidth] = useState(820);
   const [writingMode, setWritingMode] = useState<"fluid" | "fixed">("fluid");
   const [writingSize, setWritingSize] = useState(16);
+  const [writingSizeDraft, setWritingSizeDraft] = useState("16");
+  useEffect(() => { setWritingSizeDraft(String(writingSize)); }, [writingSize]);
   const [focusMode, setFocusMode] = useState(false);
   const widthRef = useRef(210);
   const stationRef = useRef<HTMLDivElement>(null);
   const workspaceFrame = useRef<TransferWorkspaceFrameHandle>(null);
   const sidebarResize = useResizablePanel({ ariaLabel: "调整文件列表宽度", cssVariable: "--transfer-sidebar-width", defaultWidth: 210, minWidth: 130, maxWidth: 420,
     getMaxWidth: () => Math.max(130, Math.min(420, (stationRef.current?.clientWidth ?? 800) * .45)), growthDirection: "right", storageKey: "piora:transfer-sidebar-width:v1", widthRef, panelRef: stationRef });
-  useEffect(() => { try { const saved = JSON.parse(localStorage.getItem("piora:transfer-writing:v1") ?? "null"); if (saved) { if (Number.isFinite(saved.width)) setWritingWidth(Math.max(420, Math.min(1400, saved.width))); if (Number.isFinite(saved.size)) setWritingSize(Math.max(12, Math.min(24, saved.size))); setWritingMode(saved.mode === "fixed" || (saved.mode === undefined && Number.isFinite(saved.width) && saved.width !== 820) ? "fixed" : "fluid"); } } catch { /* Optional layout. */ } }, []);
-  const updateWriting = (width: number, size: number, mode = writingMode) => { setWritingWidth(width); setWritingSize(size); setWritingMode(mode); try { localStorage.setItem("piora:transfer-writing:v1", JSON.stringify({ width, size, mode })); } catch { /* Layout still works. */ } };
+  useEffect(() => { try { const saved = JSON.parse(localStorage.getItem("piora:transfer-writing:v1") ?? "null"); if (saved) { if (Number.isFinite(saved.width)) setWritingWidth(Math.max(420, Math.min(1400, saved.width))); if (Number.isFinite(saved.size)) setWritingSize(Math.max(10, Math.min(48, Math.round(saved.size)))); setWritingMode(saved.mode === "fixed" || (saved.mode === undefined && Number.isFinite(saved.width) && saved.width !== 820) ? "fixed" : "fluid"); } } catch { /* Optional layout. */ } }, []);
+  const updateWriting = (width: number, size: number, mode = writingMode) => { size = Number.isFinite(size) ? Math.max(10, Math.min(48, Math.round(size))) : 16; setWritingWidth(width); setWritingSize(size); setWritingMode(mode); try { localStorage.setItem("piora:transfer-writing:v1", JSON.stringify({ width, size, mode })); } catch { /* Layout still works. */ } };
   const saves = useRef(new Map<string, () => Promise<boolean>>());
   const closing = useRef(new Set<string>());
   const registerSave = useCallback((id: string, save: (() => Promise<boolean>) | null) => { if (save) saves.current.set(id, save); else saves.current.delete(id); }, []);
@@ -234,7 +236,7 @@ export function CompanionTransferStation({ items, loaded, loading, pending, erro
       <div><h1>中转站 <span>Markdown</span></h1></div>
       <div className={styles.headingActions}>
         <button type="button" aria-label="铺满中转站工作区" title="恢复工作区为随窗口自适应大小" onClick={() => workspaceFrame.current?.resetSize()}>铺满工作区</button>
-        <button type="button" aria-expanded={layoutOpen} onClick={() => setLayoutOpen(!layoutOpen)}>版式</button>
+        <button type="button" aria-expanded={layoutOpen} onClick={() => setLayoutOpen(!layoutOpen)}>字号与版式</button>
         <button type="button" aria-pressed={focusMode} onClick={() => setFocusMode(!focusMode)}>{focusMode ? "退出专注" : "专注"}</button>
         <button type="button" disabled={busy || pending || !loaded} onClick={() => input.current?.click()}>导入</button>
         <button className={styles.primary} type="button" disabled={busy || pending || !loaded} onClick={() => void create()}><AliIcon name="plus" size={14} />新建</button>
@@ -246,7 +248,11 @@ export function CompanionTransferStation({ items, loaded, loading, pending, erro
     {layoutOpen ? <div className={styles.layoutControls}>
       <div className={styles.widthModes} role="group" aria-label="正文布局"><button type="button" aria-pressed={writingMode === "fluid"} onClick={() => updateWriting(writingWidth, writingSize, "fluid")}>自适应宽度</button><button type="button" aria-pressed={writingMode === "fixed"} onClick={() => updateWriting(writingWidth, writingSize, "fixed")}>固定栏宽</button></div>
       {writingMode === "fixed" ? <label>正文宽度 <input type="range" min="420" max="1400" step="20" value={writingWidth} onChange={(event) => updateWriting(Number(event.target.value), writingSize)} /><output>{writingWidth} px</output></label> : null}
-      <label>字号 <input type="range" min="12" max="24" value={writingSize} onChange={(event) => updateWriting(writingWidth, Number(event.target.value))} /><output>{writingSize} px</output></label>
+      <label>字号 <input type="range" min="10" max="48" value={writingSize} onChange={(event) => updateWriting(writingWidth, Number(event.target.value))} /></label>
+      <label>自定义字号 <input className={styles.fontSizeInput} type="number" min="10" max="48" step="1" inputMode="numeric" value={writingSizeDraft}
+        onChange={event => { const value = event.currentTarget.value; setWritingSizeDraft(value); if (value !== "" && Number(value) >= 10 && Number(value) <= 48) updateWriting(writingWidth, Number(value)); }}
+        onBlur={() => { const next = writingSizeDraft.trim() === "" ? writingSize : Math.max(10, Math.min(48, Math.round(Number(writingSizeDraft)))); updateWriting(writingWidth, Number.isFinite(next) ? next : writingSize); setWritingSizeDraft(String(Number.isFinite(next) ? next : writingSize)); }}
+        onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} />px</label>
       <button type="button" onClick={() => { sidebarResize.resetWidth(); workspaceFrame.current?.resetSize(); updateWriting(820, 16, "fluid"); }}>恢复默认</button><span>{writingMode === "fluid" ? "正文随编辑区宽度自动伸展" : "正文居中，保留舒适的阅读栏宽"}</span>
     </div> : null}
     {error || notice ? <div className={styles.error} role="alert"><span>{notice || error}</span><button type="button" onClick={() => { setNotice(""); void refresh().catch(() => {}); }}>重试</button></div> : null}

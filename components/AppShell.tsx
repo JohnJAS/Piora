@@ -14,7 +14,7 @@ import type { Tab } from "./TabBar";
 import type { RightPanelHandle, RightPanelTab } from "./workspace/RightPanel";
 import type { RoomWorkspaceHandle } from "./RoomWorkspace";
 import type { SettingsKey } from "@/lib/settings-search";
-import { useTheme, type Theme, type ThemePreset } from "@/hooks/useTheme";
+import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -130,11 +130,7 @@ const PluginsConfig = dynamic(() => import("./PluginsConfig").then((module) => m
 const ExtensionsConfig = dynamic(() => import("./ExtensionsConfig").then((module) => module.ExtensionsConfig), { ssr: false, loading: SettingsSectionLoading });
 const CapabilityBundlesConfig = dynamic(() => import("./CapabilityBundlesConfig").then((module) => module.CapabilityBundlesConfig), { ssr: false, loading: SettingsSectionLoading });
 const ProjectToolsConfig = dynamic(() => import("./ProjectToolsConfig").then((module) => module.ProjectToolsConfig), { ssr: false, loading: SettingsSectionLoading });
-const BackgroundSettings = dynamic(() => import("./BackgroundSettings").then((module) => module.BackgroundSettings), { ssr: false });
-const InterfaceTransparencySettings = dynamic(() => import("./InterfaceTransparencySettings").then((module) => module.InterfaceTransparencySettings), { ssr: false });
-const AppearanceLooks = dynamic(() => import("./AppearanceLooks").then((module) => module.AppearanceLooks), { ssr: false });
-const AppearanceResetButton = dynamic(() => import("./AppearanceResetButton").then((module) => module.AppearanceResetButton), { ssr: false });
-const FontSettings = dynamic(() => import("./FontSettings").then((module) => module.FontSettings), { ssr: false });
+const AppearanceSettings = dynamic(() => import("./AppearanceSettings").then((module) => module.AppearanceSettings), { ssr: false });
 const CompanionSettingsDialog = dynamic(() => import("./CompanionSettingsDialog").then((module) => module.CompanionSettingsDialog), { ssr: false });
 const RemoteControlSettings = dynamic(() => import("./RemoteControlSettings").then((module) => module.RemoteControlSettings), { ssr: false });
 const HarmonyStorageSettings = dynamic(() => import("./HarmonyStorageSettings").then((module) => module.HarmonyStorageSettings), { ssr: false });
@@ -154,7 +150,7 @@ export function AppShell() {
   const [initialNavigation] = useState(() => getInitialNavigation(searchParams ?? new URLSearchParams()));
   const [appHydrated, setAppHydrated] = useState(false);
   useEffect(() => setAppHydrated(true), []);
-  const { theme, themes, setTheme } = useTheme();
+  useTheme();
   const { locale, setLocale, t: translate, supportedLocales } = useI18n();
   const { bindings: shortcutBindings } = useApplicationShortcuts();
   const {
@@ -407,7 +403,6 @@ export function AppShell() {
   const activeCompanionPet = companionPets.catalog?.installed.find(
     (pet) => pet.id === companionPreferences.selectedPetId,
   ) ?? null;
-  const [moreThemesOpen, setMoreThemesOpen] = useState(false);
   const [companionActivity, setCompanionActivity] = useState<CompanionActivity>(() => ({
     status: "idle",
     cause: "",
@@ -1924,40 +1919,7 @@ export function AppShell() {
             onReloaded={() => setSessionKey((key) => key + 1)}
           />
         ) : chooseSettingsProject,
-        appearance: (
-          <div className="settings-embedded-surface" style={{ height: "100%", overflowY: "auto", padding: "26px 30px 34px" }}>
-            <div style={{ marginBottom: 22 }}>
-              <h2 style={{ margin: 0, color: "var(--text)", fontSize: "calc(var(--text-lg) * 1.22)", fontWeight: 680 }}>{translate("appearance.title")}</h2>
-              <p style={{ margin: "7px 0 0", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>{translate("appearance.description")}</p>
-              <AppearanceResetButton />
-            </div>
-            <div data-settings-id="appearance.looks"><AppearanceLooks /></div>
-            <section data-settings-id="appearance.theme" aria-labelledby="settings-appearance-theme" style={{ paddingBottom: 16 }}>
-              <h3 id="settings-appearance-theme" style={{ margin: "0 0 3px", fontSize: "var(--text-sm)" }}>{translate("appearance.theme")}</h3>
-              <p style={{ margin: "0 0 10px", color: "var(--text-dim)", fontSize: "var(--text-xs)" }}>{translate("appearance.themeHint")}</p>
-              <div role="radiogroup" aria-label={translate("appearance.theme")} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(108px, 1fr))", gap: 8 }}>
-                {themes.filter(({ id }) => id === "light" || id === "dark").map((preset) => (
-                  <ThemeOption key={preset.id} preset={preset} theme={theme} onSelect={setTheme} translate={translate} />
-                ))}
-              </div>
-              <button type="button" className="theme-menu-option" aria-expanded={moreThemesOpen} onClick={() => setMoreThemesOpen((open) => !open)} style={{ width: "100%", marginTop: 10, padding: "7px 9px", display: "flex", alignItems: "center", gap: 7, border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "transparent", color: "var(--text-muted)", cursor: "pointer", fontSize: "var(--text-xs)" }}>
-                <AliIcon name={moreThemesOpen ? "arrowdown" : "arrowright"} size={12} />
-                <span style={{ flex: 1, textAlign: "left" }}>{translate("theme.more")}</span>
-                <span>{themes.length - 2}</span>
-              </button>
-              {moreThemesOpen && (
-                <div role="radiogroup" aria-label={translate("theme.more")} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(108px, 1fr))", gap: 8, marginTop: 8 }}>
-                  {themes.filter(({ id }) => id !== "light" && id !== "dark").map((preset) => (
-                    <ThemeOption key={preset.id} preset={preset} theme={theme} onSelect={setTheme} translate={translate} />
-                  ))}
-                </div>
-              )}
-            </section>
-            <div data-settings-id="appearance.font"><FontSettings /></div>
-            <div data-settings-id="appearance.transparency"><InterfaceTransparencySettings /></div>
-            <div data-settings-id="appearance.background"><BackgroundSettings /></div>
-          </div>
-        ),
+        appearance: <AppearanceSettings />,
         language: (
           <div className="settings-embedded-surface" style={{ height: "100%", overflowY: "auto", padding: "26px 30px" }}>
             <h2 style={{ margin: 0, color: "var(--text)", fontSize: "calc(var(--text-lg) * 1.22)", fontWeight: 680 }}>{translate("common.language")}</h2>
@@ -2967,66 +2929,5 @@ export function AppShell() {
     />
     <ConfirmationHost />
     </>
-  );
-}
-
-interface ThemeOptionProps {
-  preset: ThemePreset;
-  theme: Theme;
-  onSelect: (next: Theme, origin?: { x: number; y: number }) => void;
-  translate: (key: string, params?: Record<string, string | number>) => string;
-}
-
-function ThemeOption({ preset, theme, onSelect, translate }: ThemeOptionProps) {
-  const selected = theme === preset.id;
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      className="theme-menu-option"
-      data-theme-id={preset.id}
-      onClick={(event) => {
-        const rect = event.currentTarget.getBoundingClientRect();
-        onSelect(preset.id, { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
-      }}
-      style={{
-        minWidth: 0,
-        padding: 8,
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        border: selected ? "1px solid var(--accent)" : "1px solid var(--border)",
-        borderRadius: "var(--radius-control)",
-        background: selected ? "var(--bg-selected)" : "var(--bg)",
-        color: "var(--text)",
-        cursor: "pointer",
-        textAlign: "left",
-        fontSize: "var(--text-xs)",
-        transition: "border-color 0.12s, background 0.12s",
-      }}
-    >
-      <span
-        aria-hidden="true"
-        style={{
-          position: "relative",
-          width: 28,
-          height: 28,
-          flex: "0 0 28px",
-          overflow: "hidden",
-          borderRadius: "var(--radius-small)",
-          background: preset.preview.background,
-          border: "1px solid color-mix(in srgb, var(--border) 72%, var(--text-dim))",
-        }}
-      >
-        <span style={{ position: "absolute", right: 4, bottom: 4, width: 8, height: 8, borderRadius: "50%", background: preset.preview.accent }} />
-      </span>
-      <span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {translate(`theme.${preset.id}.name`)}
-      </span>
-      {selected ? (
-        <AliIcon name="check" size={13} style={{ color: "var(--accent)" }} />
-      ) : null}
-    </button>
   );
 }

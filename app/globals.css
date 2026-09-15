@@ -5550,7 +5550,7 @@ span.linenumber {
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  :root {
+  :root:not([data-interface-transparency-override="true"]) {
     --floating-background: var(--bg);
     --floating-section: var(--bg-panel);
     --floating-filter: none;

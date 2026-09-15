@@ -55,7 +55,7 @@ export function FontSettings() {
   };
 
   return (
-    <section className="soft-settings-section" aria-labelledby={titleId} style={{ padding: "16px 0", borderTop: "1px solid var(--border)" }}>
+    <section className="soft-settings-section" aria-labelledby={titleId}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 9 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
           <h3 id={titleId} style={{ margin: 0, fontSize: "var(--text-sm)", fontWeight: 700 }}>

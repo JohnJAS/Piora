@@ -100,12 +100,14 @@
 .readingPreview { box-sizing: border-box; width: 100%; max-width: var(--writing-width, 100%); flex: 1; min-height: 0; overflow: auto; margin: 0 auto; padding: 18px 24px 48px; font-size: var(--writing-size, 16px); }
 .document :global(.pocket-markdown-editor) { max-width: none; margin: 0; padding: 0; }
 .readingPreview { line-height: 1.9; overflow-wrap: anywhere; }
+.readingPreview :global(.markdown-body) { font-size: inherit; }
 .outline { flex: 0 0 170px; max-width: 30%; overflow: auto; border-right: 1px solid var(--border); padding: 12px 0; }
 .outline button { display: block; text-align: left; width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border-radius: 0; }
 .outline p { padding: 8px; color: var(--text-dim); }
 .layoutControls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding: 10px 12px; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; }
 .layoutControls label { display: flex; align-items: center; gap: 8px; }
 .layoutControls input { width: 100px; accent-color: var(--pocket-accent, #7d896c); }
+.layoutControls .fontSizeInput { width: 66px; min-height: 30px; padding: 4px 6px; border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--text); background: var(--bg); font: inherit; }
 .layoutControls output { min-width: 45px; font-variant-numeric: tabular-nums; }
 .layoutControls > span { color: var(--text-dim); margin-left: auto; }
 .widthModes { display: inline-flex; padding: 2px; border: 1px solid var(--border); border-radius: 7px; }

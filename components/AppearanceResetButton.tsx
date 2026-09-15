@@ -8,7 +8,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useInterfaceTransparency } from "@/hooks/useInterfaceTransparency";
 import { AliIcon } from "./AliIcon";
 
-export function AppearanceResetButton() {
+export function AppearanceResetButton({ compact = false }: { compact?: boolean }) {
   const { t } = useI18n();
   const { setTheme } = useTheme();
   const { reset: resetFont } = useFontPreferences();
@@ -34,7 +34,7 @@ export function AppearanceResetButton() {
   };
 
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 12 }}>
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 9, marginTop: compact ? 0 : 12 }}>
       <button
         type="button"
         data-appearance-reset
@@ -57,10 +57,10 @@ export function AppearanceResetButton() {
         }}
       >
         <AliIcon name="reload" size={13} />
-        {resetting ? t("appearance.resetting") : t("appearance.resetAll")}
+        {resetting ? t("appearance.resetting") : t(compact ? "appearance.transparency.reset" : "appearance.resetAll")}
       </button>
       <span aria-live="polite" style={{ color: complete ? "var(--status-ready)" : "var(--text-dim)", fontSize: "var(--text-xs)" }}>
-        {complete ? t("appearance.resetComplete") : t("appearance.resetHint")}
+        {complete ? t("appearance.resetComplete") : compact ? "" : t("appearance.resetHint")}
       </span>
     </div>
   );

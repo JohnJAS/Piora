@@ -128,6 +128,13 @@ export function SettingsDialog({
       const target = [...root.querySelectorAll<HTMLElement>("[data-settings-id]")]
         .find((element) => element.dataset.settingsId === targetItem.id);
       if (!target) return false;
+      const hiddenPanel = target.closest<HTMLElement>('[role="tabpanel"][hidden]');
+      if (hiddenPanel) {
+        const tab = [...root.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+          .find(element => element.getAttribute("aria-controls") === hiddenPanel.id);
+        tab?.click();
+        return false;
+      }
       target.scrollIntoView({ block: "center", behavior: "instant" });
       const oldTabIndex = target.getAttribute("tabindex");
       target.tabIndex = -1;
@@ -141,7 +148,7 @@ export function SettingsDialog({
       return true;
     };
     const observer = new MutationObserver(() => { if (locate()) observer.disconnect(); });
-    if (!locate()) observer.observe(root, { childList: true, subtree: true });
+    if (!locate()) observer.observe(root, { childList: true, attributes: true, attributeFilter: ["hidden"], subtree: true });
     const timeout = window.setTimeout(() => { observer.disconnect(); cleanupHighlight?.(); }, 8_000);
     return () => { observer.disconnect(); window.clearTimeout(timeout); cleanupHighlight?.(); };
   }, [activeKey, open, searchQuery, targetItem]);
