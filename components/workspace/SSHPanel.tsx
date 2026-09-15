@@ -6,6 +6,7 @@ import { TerminalSurface } from "./TerminalSurface";
 import { SSHConnectionDialog } from "./SSHConnectionDialog";
 import styles from "./TerminalPanel.module.css";
 
+import type { SSHAuth } from "@/lib/ssh/types";
 interface Snapshot { id: string; host: string; port: number; username: string; cwd: string; connected: boolean; mode: "independent" | "agent-controlled" }
 interface Entry { name: string; path: string; type: "file" | "directory" | "other"; size: number }
 
@@ -16,7 +17,7 @@ export function SSHPanel({ agentSessionId }: { agentSessionId?: string | null })
   const [error, setError] = useState<string | null>(null);
   const [path, setPath] = useState("."); const [entries, setEntries] = useState<Entry[]>([]);
   const loadFiles = useCallback(async (nextPath: string) => { if (!snapshot) return; try { const response = await fetch(`/api/ssh/sessions/${snapshot.id}/files?path=${encodeURIComponent(nextPath)}`); const data = await response.json(); if (!response.ok) throw new Error(data.error || "Unable to read remote directory"); setPath(data.path); setEntries(data.entries); } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); } }, [snapshot]);
-  const connect = async (value: { host: string; port: number; username: string; auth: { type: "password"; password: string } }) => {
+  const connect = async (value: { host: string; port: number; username: string; auth: SSHAuth }) => {
     setConnecting(true); setError(null);
     try { const response = await fetch("/api/ssh/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(value) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`); setSnapshot(data.snapshot); setPath(data.snapshot.cwd || "."); setDialog(false); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
