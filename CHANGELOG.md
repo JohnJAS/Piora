@@ -11,6 +11,7 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 ### 工程维护
 
 - 补充 SSH 运行时依赖及其间接原生依赖的版本级 MIT 许可证审阅声明，确保发布许可证清单校验覆盖新增依赖。
+- 将 SSH 库保留为服务端运行时依赖，避免 Windows 构建把可选原生加速模块当作 JavaScript 打包。
 
 ## [0.4.41-beta.49] - 2026-09-15
 

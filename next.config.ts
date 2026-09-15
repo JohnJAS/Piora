@@ -50,6 +50,7 @@ const nextConfig: NextConfig = {
     "playwright-core",
     "proper-lockfile",
     "hypium-driver",
+    "ssh2",
   ],
   webpack(config, { isServer, dev }) {
     // Shared desktop TypeScript uses Node16 .js import specifiers.
@@ -74,6 +75,7 @@ const nextConfig: NextConfig = {
         "@earendil-works/pi-tui",
         "playwright-core",
         "hypium-driver",
+        "ssh2",
       );
     }
     return config;
