@@ -8,6 +8,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 - 引入 SSH 会话、SFTP 文件管理和模型命令绑定，支持同一远程 Shell 的目录与环境状态同步。
 
+### 工程维护
+
+- 补充 SSH 运行时依赖及其间接原生依赖的版本级 MIT 许可证审阅声明，确保发布许可证清单校验覆盖新增依赖。
+
 ## [0.4.41-beta.49] - 2026-09-15
 
 ### 图片上下文

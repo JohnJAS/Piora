@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `da34329ca6b70e4e15fae04b3d6fa50e1ec2e1fba354e2b1b9750e92aca5c79d`
+Lockfile SHA-256: `d15ed209fb30900ea301620ce87d5023d27427f1ec3f3c075d03adba744fc0f4`
 
-Unique locked packages: **1271**. Runtime packages: **825**. Build/development-only packages: **446**.
+Unique locked packages: **1281**. Runtime packages: **835**. Build/development-only packages: **446**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -271,11 +271,13 @@ Every locked package declares a license.
 | `@types/katex` | `0.16.8` | MIT | No |
 | `@types/mdast` | `4.0.4` | MIT | No |
 | `@types/ms` | `2.1.0` | MIT | No |
+| `@types/node` | `18.19.130` | MIT | No |
 | `@types/node` | `22.19.19` | MIT | No |
 | `@types/node` | `25.9.5` | MIT | No |
 | `@types/parse-json` | `4.0.2` | MIT | No |
 | `@types/prismjs` | `1.26.6` | MIT | No |
 | `@types/retry` | `0.12.0` | MIT | No |
+| `@types/ssh2` | `1.15.6` | MIT | No |
 | `@types/trusted-types` | `2.0.7` | MIT | Yes |
 | `@types/unist` | `2.0.11` | MIT | No |
 | `@types/unist` | `3.0.3` | MIT | No |
@@ -301,6 +303,7 @@ Every locked package declares a license.
 | `archiver-utils` | `5.0.2` | MIT | No |
 | `argparse` | `1.0.10` | MIT | No |
 | `argparse` | `2.0.1` | Python-2.0 | No |
+| `asn1` | `0.2.6` | MIT | No |
 | `async` | `3.2.6` | MIT | No |
 | `asyncbox` | `3.0.0` | Apache-2.0 | No |
 | `asynckit` | `0.4.0` | MIT | No |
@@ -317,6 +320,7 @@ Every locked package declares a license.
 | `bare-url` | `2.5.3` | Apache-2.0 | No |
 | `base64-js` | `1.5.1` | MIT | No |
 | `baseline-browser-mapping` | `2.11.9` | Apache-2.0 | No |
+| `bcrypt-pbkdf` | `1.0.2` | BSD-3-Clause | No |
 | `bignumber.js` | `9.3.1` | MIT | No |
 | `bluebird` | `3.4.7` | MIT | No |
 | `bluebird` | `3.7.2` | MIT | No |
@@ -328,6 +332,7 @@ Every locked package declares a license.
 | `buffer-crc32` | `1.0.0` | MIT | No |
 | `buffer-equal-constant-time` | `1.0.1` | BSD-3-Clause | No |
 | `buffer-from` | `1.1.2` | MIT | No |
+| `buildcheck` | `0.0.7` | MIT | Yes |
 | `builder-util-runtime` | `9.7.0` | MIT | No |
 | `bytes` | `3.1.2` | MIT | No |
 | `call-bind-apply-helpers` | `1.0.2` | MIT | No |
@@ -365,6 +370,7 @@ Every locked package declares a license.
 | `cose-base` | `1.0.3` | MIT | No |
 | `cose-base` | `2.2.0` | MIT | No |
 | `cosmiconfig` | `7.1.0` | MIT | No |
+| `cpu-features` | `0.0.10` | MIT | Yes |
 | `crc-32` | `1.2.2` | Apache-2.0 | No |
 | `crc32-stream` | `6.0.0` | MIT | No |
 | `crelt` | `1.0.7` | MIT | No |
@@ -643,6 +649,7 @@ Every locked package declares a license.
 | `mlly` | `1.8.2` | MIT | No |
 | `moment` | `2.30.1` | MIT | No |
 | `ms` | `2.1.3` | MIT | No |
+| `nan` | `2.28.0` | MIT | Yes |
 | `nanoid` | `3.3.18` | MIT | No |
 | `negotiator` | `1.1.0` | MIT | No |
 | `next` | `16.3.3` | MIT | No |
@@ -756,6 +763,7 @@ Every locked package declares a license.
 | `source-map-support` | `0.5.21` | MIT | No |
 | `space-separated-tokens` | `2.0.2` | MIT | No |
 | `sprintf-js` | `1.0.3` | BSD-3-Clause | No |
+| `ssh2` | `1.17.0` | MIT | No |
 | `statuses` | `2.0.2` | MIT | No |
 | `streamx` | `2.28.1` | MIT | No |
 | `string-width` | `4.2.3` | MIT | No |
@@ -789,11 +797,13 @@ Every locked package declares a license.
 | `ts-algebra` | `2.0.0` | MIT | No |
 | `ts-dedent` | `2.2.0` | MIT | No |
 | `tslib` | `2.8.1` | 0BSD | No |
+| `tweetnacl` | `0.14.5` | Unlicense | No |
 | `type-is` | `2.1.0` | MIT | No |
 | `typebox` | `1.3.7` | MIT | No |
 | `ufo` | `1.6.4` | MIT | No |
 | `underscore` | `1.13.8` | MIT | No |
 | `undici` | `8.9.0` | MIT | No |
+| `undici-types` | `5.26.5` | MIT | No |
 | `undici-types` | `6.21.0` | MIT | No |
 | `undici-types` | `7.24.6` | MIT | No |
 | `unified` | `11.0.5` | MIT | No |
