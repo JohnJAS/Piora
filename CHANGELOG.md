@@ -2,7 +2,11 @@
 
 All notable changes to Piora are documented here. The project follows [Semantic Versioning](https://semver.org/) after the first tagged public release.
 
-## [Unreleased]`r`n`r`n### SSH 终端基础`r`n`r`n- 引入 SSH 会话、SFTP 文件管理和模型命令绑定，支持同一远程 Shell 的目录与环境状态同步。
+## [Unreleased]
+
+### SSH 终端基础
+
+- 引入 SSH 会话、SFTP 文件管理和模型命令绑定，支持同一远程 Shell 的目录与环境状态同步。
 
 ## [0.4.41-beta.49] - 2026-09-15
 
