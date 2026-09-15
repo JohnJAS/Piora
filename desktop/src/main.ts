@@ -728,7 +728,7 @@ function initializeDesktopUpdater(log: Logger): void {
               autoUpdater,
               currentVersion,
               (url) => net.fetch(url, {
-                headers: { Accept: "application/atom+xml, application/xml;q=0.9" },
+                headers: { Accept: "application/atom+xml, application/xml;q=0.9, */*;q=0.8" },
               }),
               log,
             ),

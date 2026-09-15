@@ -92,26 +92,37 @@ export function selectDesktopReleaseCandidate(
 export async function preparePreviewUpdateFeed(
   updater: AppUpdater,
   currentVersion: string,
-  fetchFeed: (url: string) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>,
+  fetchResource: (url: string) => Promise<{ ok: boolean; status: number; text(): Promise<string> }>,
   logger: Logger,
 ): Promise<boolean> {
-  const response = await fetchFeed(RELEASES_ATOM_URL);
+  const response = await fetchResource(RELEASES_ATOM_URL);
   if (!response.ok) throw new Error(`GitHub release feed returned HTTP ${response.status}`);
-  const tags = releaseTagsFromAtom(await response.text());
-  const candidate = selectDesktopReleaseCandidate(tags, currentVersion, "preview");
-  if (!candidate) {
-    logger.info("No eligible preview or stable desktop update is available", { currentVersion });
-    return false;
+  let tags = releaseTagsFromAtom(await response.text());
+  while (tags.length > 0) {
+    const candidate = selectDesktopReleaseCandidate(tags, currentVersion, "preview");
+    if (!candidate) break;
+    const releaseUrl = `${RELEASE_DOWNLOAD_ROOT}/${encodeURIComponent(candidate.tag)}`;
+    // GitHub's Atom feed also includes tags without a published release. Only
+    // hand a candidate to electron-updater once its channel metadata exists.
+    const metadata = await fetchResource(`${releaseUrl}/${candidate.channel}.yml`);
+    if (metadata.status === 404 || metadata.status === 410) {
+      logger.info("Skipping desktop release without update metadata", { ...candidate, status: metadata.status });
+      tags = tags.filter((tag) => tag !== candidate.tag);
+      continue;
+    }
+    if (!metadata.ok) {
+      throw new Error(`GitHub update metadata for ${candidate.tag} returned HTTP ${metadata.status}`);
+    }
+    await metadata.text();
+
+    updater.allowPrerelease = true;
+    updater.channel = candidate.channel;
+    updater.allowDowngrade = false;
+    updater.setFeedURL({ provider: "generic", url: releaseUrl, channel: candidate.channel });
+    logger.info("Selected desktop update candidate", candidate);
+    return true;
   }
 
-  updater.allowPrerelease = true;
-  updater.channel = candidate.channel;
-  updater.allowDowngrade = false;
-  updater.setFeedURL({
-    provider: "generic",
-    url: `${RELEASE_DOWNLOAD_ROOT}/${encodeURIComponent(candidate.tag)}`,
-    channel: candidate.channel,
-  });
-  logger.info("Selected desktop update candidate", candidate);
-  return true;
+  logger.info("No eligible preview or stable desktop update is available", { currentVersion });
+  return false;
 }
