@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createSSHSession } from "@/lib/ssh/session-manager";
+import { createSSHSession, listSSHSessions } from "@/lib/ssh/session-manager";
 import type { SSHConnectionOptions } from "@/lib/ssh/types";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
 import { parseJsonWithinLimit } from "@/lib/bounded-json";
@@ -18,4 +18,9 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 502 });
   }
+}
+
+export async function GET(request: Request) {
+  if (!isApiRequestAllowed(request)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  return NextResponse.json({ sessions: listSSHSessions() }, { headers: { "Cache-Control": "no-store" } });
 }

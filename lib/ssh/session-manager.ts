@@ -134,6 +134,7 @@ declare global { var __pioraSSHSessions: Map<string, SSHSession> | undefined; va
 const sessions = globalThis.__pioraSSHSessions ??= new Map<string, SSHSession>();
 const trustedHosts = globalThis.__pioraSSHTrustedHosts ??= new Map<string, string>();
 export function createSSHSession(options: SSHConnectionOptions): SSHSession { const session = new SSHSession(options); sessions.set(session.id, session); return session; }
+export function listSSHSessions(): SSHSessionSnapshot[] { return [...sessions.values()].map(session => session.snapshot()); }
 export function getSSHSession(id: string): SSHSession | undefined { return sessions.get(id); }
 export function closeSSHSession(id: string): void { sessions.get(id)?.close(); sessions.delete(id); }
 export function getSSHSessionForAgent(agentSessionId: string): SSHSession | undefined {
