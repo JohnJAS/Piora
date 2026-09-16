@@ -18,6 +18,7 @@ import {
   TOOL_DEFINITION_PROMPT_TOKEN_LIMIT,
 } from "@/lib/tool-definition-budget";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
+import { installToolRuntime, type ManagedToolId } from "@/lib/tool-runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -145,5 +146,25 @@ export async function PATCH(request: Request) {
     const message = error instanceof Error ? error.message : String(error);
     const status = message === "Access denied" ? 403 : error instanceof TypeError ? 400 : 500;
     return NextResponse.json({ error: message }, { status });
+  }
+}
+
+export async function POST(request: Request) {
+  if (!isApiRequestAllowed(request)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  if (!hasJsonContentType(request)) return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+  let body: { cwd?: unknown; tool?: unknown };
+  try { body = await request.json() as { cwd?: unknown; tool?: unknown }; }
+  catch { return NextResponse.json({ error: "Request body must be valid JSON" }, { status: 400 }); }
+  const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
+  const tool = body.tool === "fd" || body.tool === "rg" ? body.tool as ManagedToolId : null;
+  if (!cwd || !tool) return NextResponse.json({ error: "cwd and a supported tool are required" }, { status: 400 });
+  try {
+    await assertAllowedCwd(cwd);
+    const result = await installToolRuntime(tool);
+    const context = await loadProjectToolsContext(cwd);
+    return NextResponse.json({ runtime: context.runtime, installed: result.status === "installed", path: result.path });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ error: message }, { status: message === "Access denied" ? 403 : 500 });
   }
 }

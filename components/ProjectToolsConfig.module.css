@@ -147,6 +147,19 @@
   white-space: nowrap;
 }
 
+.installButton {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.installButton:disabled { cursor: default; opacity: 0.5; }
+
 .notice,
 .error,
 .empty {
