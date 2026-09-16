@@ -2,8 +2,9 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { platform as hostPlatform } from "node:os";
 import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, getPackageDir } from "@earendil-works/pi-coding-agent";
 
 export type ToolRuntimeStatus = "available" | "missing" | "error";
 export type ToolRuntimeSource = "managed" | "system" | "unavailable";
@@ -37,11 +38,10 @@ const DEFINITIONS = [
 type EnsureTool = (tool: ManagedToolId, onStatus?: (status: { type: string; message: string }) => void) => Promise<string | undefined>;
 
 async function defaultEnsureTool(tool: ManagedToolId, onStatus?: (status: { type: string; message: string }) => void): Promise<string | undefined> {
-  const { dirname, join } = await import("node:path");
-  const { pathToFileURL } = await import("node:url");
-  const packageFile = require.resolve("@earendil-works/pi-coding-agent/package.json");
-  const modulePath = pathToFileURL(join(dirname(packageFile), "dist", "utils", "tools-manager.js")).href;
-  const toolManager = await import(modulePath) as { ensureTool: EnsureTool };
+  // package.json is not an exported subpath. The SDK exposes its real package
+  // directory; load its shipped manager with Node rather than a Webpack context.
+  const modulePath = pathToFileURL(join(getPackageDir(), "dist", "utils", "tools-manager.js")).href;
+  const toolManager = await import(/* webpackIgnore: true */ modulePath) as { ensureTool: EnsureTool };
   return toolManager.ensureTool(tool, onStatus);
 }
 
