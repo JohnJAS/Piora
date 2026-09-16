@@ -8,6 +8,7 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 - 在项目工具设置中显示 `rg` 和 `fd` 的可用状态、版本、路径与来源，并提示离线模式和缺失依赖，便于定位内置搜索工具报错。
 - 为缺失的 `rg` / `fd` 提供安装与重试入口，复用 Pi SDK 下载到用户级工具目录。
+- 安装工具时显示检查、下载、验证和完成阶段，并保留下载失败原因。
 
 ## [0.4.41-beta.50] - 2026-09-16
 

@@ -18,7 +18,8 @@ import {
   TOOL_DEFINITION_PROMPT_TOKEN_LIMIT,
 } from "@/lib/tool-definition-budget";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
-import { installToolRuntime, type ManagedToolId } from "@/lib/tool-runtime";
+import { inspectToolRuntime, installToolRuntime, type ManagedToolId } from "@/lib/tool-runtime";
+import { createToolInstallResponse } from "@/lib/tool-install-stream";
 
 export const dynamic = "force-dynamic";
 
@@ -160,9 +161,8 @@ export async function POST(request: Request) {
   if (!cwd || !tool) return NextResponse.json({ error: "cwd and a supported tool are required" }, { status: 400 });
   try {
     await assertAllowedCwd(cwd);
-    const result = await installToolRuntime(tool);
-    const context = await loadProjectToolsContext(cwd);
-    return NextResponse.json({ runtime: context.runtime, installed: result.status === "installed", path: result.path });
+    return createToolInstallResponse(tool,
+      (onStatus) => installToolRuntime(tool, undefined, onStatus), inspectToolRuntime);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: message === "Access denied" ? 403 : 500 });
