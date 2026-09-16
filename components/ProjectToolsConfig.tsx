@@ -73,6 +73,7 @@ export function ProjectToolsConfig({ cwd, onChanged }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [installing, setInstalling] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -126,6 +127,30 @@ export function ProjectToolsConfig({ cwd, onChanged }: Props) {
       setSaving(false);
     }
   }, [cwd, data, onChanged, saving, t]);
+
+  const install = useCallback(async (tool: "fd" | "rg") => {
+    if (installing) return;
+    setInstalling(tool);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/project-tools", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd, tool }),
+      });
+      const next = await response.json() as ProjectToolsResponse;
+      if (!response.ok || next.error) throw new Error(next.error ?? `HTTP ${response.status}`);
+      setData((current) => current ? { ...current, runtime: next.runtime } : next);
+      setMessage(next.runtime.find((item) => item.id === tool)?.status === "available"
+        ? t("projectTools.runtimeInstalled")
+        : t("projectTools.runtimeInstallFailed"));
+    } catch (installError) {
+      setError(installError instanceof Error ? installError.message : String(installError));
+    } finally {
+      setInstalling(null);
+    }
+  }, [cwd, installing, t]);
 
   const groups = useMemo(() => GROUPS.map((kind) => ({
     kind,
@@ -188,7 +213,7 @@ export function ProjectToolsConfig({ cwd, onChanged }: Props) {
                 : t("projectTools.runtimeMissing")}</small>
             </span>
             <span className={styles.runtimeState} data-available={available || undefined}>{available ? t("projectTools.runtimeAvailable") : t("projectTools.runtimeUnavailable")}</span>
-            {tool.path ? <code title={tool.path}>{tool.path}</code> : null}
+            {tool.path ? <code title={tool.path}>{tool.path}</code> : !tool.offline ? <button type="button" className={styles.installButton} disabled={installing !== null} onClick={() => void install(tool.id)}>{installing === tool.id ? t("projectTools.runtimeInstalling") : t("projectTools.runtimeInstall")}</button> : null}
           </div>;
         })}
       </div>

@@ -19,6 +19,8 @@ export interface ToolRuntimeInfo {
   error?: string;
 }
 
+export type ManagedToolId = "fd" | "rg";
+
 interface InspectOptions {
   agentDir?: string;
   platform?: NodeJS.Platform;
@@ -31,6 +33,26 @@ const DEFINITIONS = [
   { id: "fd" as const, label: "fd", binary: "fd", systemNames: ["fd", "fdfind"] },
   { id: "rg" as const, label: "ripgrep", binary: "rg", systemNames: ["rg"] },
 ];
+
+type EnsureTool = (tool: ManagedToolId, onStatus?: (status: { type: string; message: string }) => void) => Promise<string | undefined>;
+
+async function defaultEnsureTool(tool: ManagedToolId, onStatus?: (status: { type: string; message: string }) => void): Promise<string | undefined> {
+  const { dirname, join } = await import("node:path");
+  const { pathToFileURL } = await import("node:url");
+  const packageFile = require.resolve("@earendil-works/pi-coding-agent/package.json");
+  const modulePath = pathToFileURL(join(dirname(packageFile), "dist", "utils", "tools-manager.js")).href;
+  const toolManager = await import(modulePath) as { ensureTool: EnsureTool };
+  return toolManager.ensureTool(tool, onStatus);
+}
+
+export async function installToolRuntime(
+  tool: ManagedToolId,
+  ensure: EnsureTool = defaultEnsureTool,
+  onStatus?: (status: { type: string; message: string }) => void,
+): Promise<{ path: string | null; status: "installed" | "unavailable" }> {
+  const path = await ensure(tool, onStatus);
+  return { path: path ?? null, status: path ? "installed" : "unavailable" };
+}
 
 function isOffline(env: NodeJS.ProcessEnv): boolean {
   const value = env.PI_OFFLINE?.trim().toLowerCase();
