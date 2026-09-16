@@ -4,7 +4,7 @@ import type { ShellEvent, ShellInputMode, ShellReference, ShellSession, ShellSna
 import { shellRequest, applyShellEvent, mergeShellTimeline } from "@/lib/shell/client";
 import { confirmShellSubmission, pendingShellSubmissions, saveShellSubmission, type ShellSubmission } from "@/lib/shell/recovery";
 
-export function useSmartShell(cwd: string) {
+export function useSmartShell(cwd: string, native = false) {
   const [inventory, setInventory] = useState<{ cwd: string; sessions: ShellSession[] }>({ cwd, sessions: [] });
   const sessions = inventory.cwd === cwd ? inventory.sessions : [];
   const [selection, setSelection] = useState<{ cwd: string; id: string | null }>({ cwd, id: null });
@@ -44,27 +44,27 @@ export function useSmartShell(cwd: string) {
     previous?.controller.abort();
     const controller = new AbortController();
     const request = ++inventoryRequest.current;
-    const promise = shellRequest<{ sessions: ShellSession[] }>(`sessions?cwd=${encodeURIComponent(cwd)}`, undefined, { signal: controller.signal, timeoutMs: 15_000 }).then(result => {
+    const promise = shellRequest<{ sessions: ShellSession[] }>(`sessions?cwd=${encodeURIComponent(cwd)}&native=${native}`, undefined, { signal: controller.signal, timeoutMs: 15_000 }).then(result => {
       if (!controller.signal.aborted && scope.current === cwd && request === inventoryRequest.current) setInventory({ cwd, sessions: result.sessions });
       return result.sessions;
     }).finally(() => { if (inventoryFlight.current?.controller === controller) inventoryFlight.current = null; });
     inventoryFlight.current = { cwd, controller, promise };
     return promise;
-  }, [cwd]);
+  }, [cwd, native]);
   const select = useCallback((id: string) => {
     setError(""); if (active.current !== id) setConnected(false);
     active.current = id; setSelection({ cwd, id });
-    try { localStorage.setItem(`piora-shell-active:${cwd}`, id); } catch { /* Selection is also recoverable from the session list. */ }
-  }, [cwd]);
+    try { localStorage.setItem(`${native ? "piora-terminal-active" : "piora-shell-active"}:${cwd}`, id); } catch { /* Selection is also recoverable from the session list. */ }
+  }, [cwd, native]);
   const create = useCallback(async () => {
     const signal = operations.current?.signal;
     try {
-      const created = await shellRequest<ShellSnapshot>("sessions", { cwd }, { signal });
+      const created = await shellRequest<ShellSnapshot>("sessions", { cwd, native }, { signal });
       if (signal?.aborted || scope.current !== cwd) return;
       setInventory(previous => ({ cwd, sessions: [...(previous.cwd === cwd ? previous.sessions : []), created.session] }));
       select(created.session.id);
     } catch (cause) { if (!signal?.aborted) setError(String(cause)); }
-  }, [cwd, select]);
+  }, [cwd, native, select]);
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>, loading = false;
@@ -77,10 +77,10 @@ export function useSmartShell(cwd: string) {
         const list = await refreshSessions();
         if (controller.signal.aborted) return;
         let selected: string | null = null;
-        try { selected = localStorage.getItem(`piora-shell-active:${cwd}`); } catch { /* Optional preference. */ }
+        try { selected = localStorage.getItem(`${native ? "piora-terminal-active" : "piora-shell-active"}:${cwd}`); } catch { /* Optional preference. */ }
         if (list.length) select(list.find(item => item.id === active.current)?.id || list.find(item => item.id === selected)?.id || list[0].id);
         else {
-          const created = await shellRequest<ShellSnapshot>("sessions", { cwd, ensure: true }, { signal: controller.signal, timeoutMs: 15_000 });
+          const created = await shellRequest<ShellSnapshot>("sessions", { cwd, native, ensure: true }, { signal: controller.signal, timeoutMs: 15_000 });
           if (!controller.signal.aborted) { setInventory({ cwd, sessions: [created.session] }); select(created.session.id); }
         }
         if (!controller.signal.aborted) setConnectionError("");
@@ -95,7 +95,7 @@ export function useSmartShell(cwd: string) {
       controller.abort(); inventoryFlight.current?.controller.abort(); clearTimeout(timer);
       window.removeEventListener("online", resume); document.removeEventListener("visibilitychange", resume);
     };
-  }, [cwd, refreshSessions, select, retryKey]);
+  }, [cwd, native, refreshSessions, select, retryKey]);
   useEffect(() => {
     if (!activeId) return;
     const controller = new AbortController(); let disposed = false, sseConnected = false, reconciling = false;
@@ -126,7 +126,11 @@ export function useSmartShell(cwd: string) {
     let events: EventSource | undefined;
     const publishSnapshot = (next: ShellSnapshot) => {
       lastSnapshot = Date.now();
-      publish({ type: "snapshot", snapshot: next, terminalId: activeId, generation: next.session.generation, sequence: next.sequence });
+      // A healthy stream already delivered this output. Replaying it on every
+      // poll resets xterm's cursor/scroll position and redraws history hints.
+      if (!current.current || current.current.session.generation !== next.session.generation || current.current.sequence !== next.sequence) {
+        publish({ type: "snapshot", snapshot: next, terminalId: activeId, generation: next.session.generation, sequence: next.sequence });
+      }
       if (!disposed) { setConnected(true); setConnectionError(""); }
     };
     const closeStream = () => { events?.close(); events = undefined; sseConnected = false; };
@@ -163,7 +167,7 @@ export function useSmartShell(cwd: string) {
     // Finish the short startup request before reserving a long-lived HTTP/1
     // connection. Its snapshot also makes the terminal usable if SSE stalls.
     void reconcile();
-    void pendingShellSubmissions(activeId).then(items => { if (!disposed) setPending(items); }).catch(cause => { if (!disposed) setError(String(cause)); });
+    if (!native) void pendingShellSubmissions(activeId).then(items => { if (!disposed) setPending(items); }).catch(cause => { if (!disposed) setError(String(cause)); });
     const refresh = () => {
       if (disposed) return;
       if (document.hidden) { closeStream(); return; }
@@ -185,7 +189,7 @@ export function useSmartShell(cwd: string) {
     const timer = setInterval(refresh, 2500);
     window.addEventListener("online", resume); document.addEventListener("visibilitychange", resume);
     return () => { disposed = true; controller.abort(); events?.close(); clearInterval(timer); window.removeEventListener("online", resume); document.removeEventListener("visibilitychange", resume); };
-  }, [activeId, cwd, refreshSessions, retryKey]);
+  }, [activeId, cwd, native, refreshSessions, retryKey]);
   const action = useCallback(async (body: object) => {
     if (!activeId) return;
     const signal = operations.current?.signal;
@@ -224,7 +228,7 @@ export function useSmartShell(cwd: string) {
     catch (cause) { if (!signal?.aborted) setError(String(cause)); }
   }, [cwd, refreshSessions]);
   const loadArchive = useCallback(async (initial = false) => {
-    if (!activeId) return;
+    if (!activeId || native) return;
     const previous = !initial && archived.current?.terminalId === activeId ? archived.current : null;
     if (!initial && (!previous || !previous.nextCursor && !previous.failed || previous.loading)) return;
     archiveRequest.current?.abort();
@@ -238,7 +242,7 @@ export function useSmartShell(cwd: string) {
       const next = { terminalId: activeId, loading: false, failed: false, nextCursor: page.nextCursor, commands: [...new Map([...page.commands, ...retained.commands].map(item => [item.id, item])).values()], runs: [...new Map([...page.runs, ...retained.runs].map(item => [item.id, item])).values()] };
       archived.current = next; setArchive(next);
     } catch (cause) { if (!controller.signal.aborted && active.current === activeId) { const next = { ...(archived.current?.terminalId === activeId ? archived.current : value), loading: false, failed: true }; archived.current = next; setArchive(next); setError(String(cause)); } }
-  }, [activeId]);
+  }, [activeId, native]);
   useEffect(() => { void loadArchive(true); return () => archiveRequest.current?.abort(); }, [loadArchive]);
   const combined = useMemo(() => snapshot?.session.id === activeId ? archive?.terminalId === activeId ? mergeShellTimeline(snapshot, archive) : snapshot : null, [snapshot, archive, activeId]);
   return { sessions, activeId, select, create, close, snapshot: combined, getSnapshot: () => current.current, subscribe, action, submit, pending, error, setError, connectionError, reconnect: () => setRetryKey(key => key + 1), connected, refreshSessions, loadOlder: () => loadArchive(), hasOlder: archive?.terminalId === activeId && Boolean(archive.nextCursor || archive.failed), loadingOlder: archive?.terminalId === activeId && archive.loading };

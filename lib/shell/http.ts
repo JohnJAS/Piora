@@ -28,7 +28,7 @@ export async function handleShellRequest(request: Request, parts: string[]): Pro
     if (method === "GET") {
       if (endpoint === "profiles") return json({ profiles: await discoverShellProfiles() });
       if (endpoint === "settings") return json(await readShellSettings());
-      if (endpoint === "sessions") return json({ sessions: await listShells(shellText(url.searchParams.get("cwd"), "cwd", 4096)) });
+      if (endpoint === "sessions") return json({ sessions: await listShells(shellText(url.searchParams.get("cwd"), "cwd", 4096), url.searchParams.get("native") === "true") });
       if (endpoint === "history") {
         const query: HistoryQuery = { query: (url.searchParams.get("q") || "").slice(0, 500), limit: Number(url.searchParams.get("limit")) || 50, offset: Number(url.searchParams.get("offset")) || 0, favorite: url.searchParams.get("favorite") === "true", suggestions: url.searchParams.get("suggestions") === "true" };
         for (const key of ["cwd", "shell", "source", "status"] as const) { const value = url.searchParams.get(key); if (value) Object.assign(query, { [key]: value }); }
@@ -83,7 +83,7 @@ export async function handleShellRequest(request: Request, parts: string[]): Pro
     }
     if (endpoint === "sessions") {
       const cwd = shellText(data.cwd, "cwd", 4096);
-      const session = data.ensure === true ? await ensureDefaultShell(cwd) : await createShell(cwd, typeof data.executable === "string" ? data.executable : null);
+      const session = data.ensure === true ? await ensureDefaultShell(cwd, data.native === true) : await createShell(cwd, typeof data.executable === "string" ? data.executable : null, cwd, data.native === true);
       return json(session.snapshot(), 201);
     }
     if (endpoint === "history/sync") return json({ sources: await syncShellHistory(true) });
@@ -113,6 +113,7 @@ export async function handleShellRequest(request: Request, parts: string[]): Pro
         switch (data.action) {
           case "start": await session.connect(); break;
           case "submit": {
+            if (session.state.profile.native) throw new ShellError("Type commands directly in the terminal", 409, "native_terminal");
             const text = shellText(data.text, "input", 32000);
             const mode = data.mode === "command" || data.mode === "agent" ? data.mode : "auto" as ShellInputMode;
             const requestId = shellId(data.clientRequestId);

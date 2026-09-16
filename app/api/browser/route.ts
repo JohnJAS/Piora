@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { InvalidJsonBodyError, JsonBodyTooLargeError, parseJsonWithinLimit } from "@/lib/bounded-json";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
-import { getBrowserViewState, performBrowserViewAction } from "@/extensions/piora-browser";
+import { getAgentBrowserViewState, getBrowserViewState, performBrowserViewAction } from "@/extensions/piora-browser";
 
 export const dynamic = "force-dynamic";
 
@@ -9,8 +9,12 @@ export async function GET(request: Request) {
   if (!isApiRequestAllowed(request)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
+  const sessionId = new URL(request.url).searchParams.get("sessionId");
+  if (sessionId !== null && (sessionId.length === 0 || sessionId.length > 128)) {
+    return NextResponse.json({ error: "Invalid session ID" }, { status: 400 });
+  }
   try {
-    return NextResponse.json(await getBrowserViewState(), {
+    return NextResponse.json(sessionId === null ? await getBrowserViewState() : await getAgentBrowserViewState(sessionId), {
       headers: { "Cache-Control": "private, no-store" },
     });
   } catch (error) {
@@ -21,6 +25,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   if (!isApiRequestAllowed(request)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  }
+  if (new URL(request.url).searchParams.has("sessionId")) {
+    return NextResponse.json({ error: "Agent browser view is read-only" }, { status: 400 });
   }
   if (!hasJsonContentType(request)) {
     return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });

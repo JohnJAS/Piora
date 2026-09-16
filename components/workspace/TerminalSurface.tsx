@@ -22,11 +22,12 @@ interface Props {
   inputEnabled?: boolean;
   output?: string;
   readOnly?: boolean;
+  autoFocus?: boolean;
   onStatus?: (connected: boolean, shell: string) => void;
   onError?: (error: string) => void;
 }
 
-export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function TerminalSurface({ cwd, terminalId, transport = "shell", subscribeToShell, inputEnabled = true, output = "", readOnly = false, onStatus, onError }, ref) {
+export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function TerminalSurface({ cwd, terminalId, transport = "shell", subscribeToShell, inputEnabled = true, output = "", readOnly = false, autoFocus = false, onStatus, onError }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
   const search = useRef<SearchAddon | null>(null);
@@ -69,6 +70,7 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
       term.loadAddon(fit);
       term.loadAddon(finder);
       term.open(host.current);
+      if (autoFocus && host.current.clientWidth && host.current.clientHeight) term.focus();
       terminal.current = term;
       search.current = finder;
       let chain = Promise.resolve();
@@ -171,7 +173,7 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
               } else if (message.type === "snapshot" || message.type === "status") latest.current.onStatus?.(message.connected, message.shell);
             } catch { /* Ignore malformed transport frames. */ }
           };
-          // The command cards already own this shell's stream. Reuse it rather
+          // The terminal session hook already owns this stream. Reuse it rather
           // than occupying a second HTTP/1 connection for the native viewport.
           if (terminalId && subscribeToShell) {
             unsubscribe = subscribeToShell(message => onMessage({ data: JSON.stringify(message) }));
@@ -240,7 +242,7 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
       };
     })().catch((error) => { if (!disposed) latest.current.onError?.(String(error)); });
     return () => { disposed = true; abort.abort(); cleanup(); };
-  }, [cwd, readOnly, terminalId, transport, subscribeToShell]);
+  }, [cwd, readOnly, terminalId, transport, subscribeToShell, autoFocus]);
 
   useEffect(() => { if (terminal.current) terminal.current.options.disableStdin = readOnly || !inputEnabled; }, [inputEnabled, readOnly]);
 

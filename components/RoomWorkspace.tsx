@@ -20,7 +20,7 @@ import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
 import { useSendShortcut } from "@/hooks/useSendShortcut";
 import { isPlainEnter, matchesSendShortcut } from "@/lib/send-shortcut";
 import { AliIcon } from "./AliIcon";
-import { MarkdownBody } from "./MarkdownBody";
+import { LazyMarkdownBody as MarkdownBody } from "./LazyMarkdownBody";
 import { CollapsibleUserContent } from "./CollapsibleUserContent";
 import { RoomSettingsDialog } from "./RoomSettingsDialog";
 import { RoomMessageNavigator } from "./RoomMessageNavigator";
@@ -154,7 +154,7 @@ function roleLabel(role: CollaborationRoom["members"][number]["role"]): string {
   return ({ coordinator: "协调者", planner: "规划者", worker: "执行者", reviewer: "审查者", participant: "参与者" })[role];
 }
 
-const RoomMessageList = memo(function RoomMessageList({
+export const RoomMessageList = memo(function RoomMessageList({
   messages,
   members,
   presenceBySession,
@@ -189,7 +189,7 @@ const RoomMessageList = memo(function RoomMessageList({
 }) {
   const entries = useMemo(() => roomConversationEntries(messages, activities), [messages, activities]);
   return (
-    <div ref={messagesRef} className={styles.messages} aria-live="polite" data-room-message-list="">
+    <div ref={messagesRef} className={`${styles.messages} overflow-y-auto`} aria-live="polite" data-room-message-list="">
       <div>
       {entries.length === 0 ? <div className={styles.emptyState}>
         <span className={styles.groupAvatar}><AliIcon name="messages" size={19} /></span>
@@ -207,24 +207,24 @@ const RoomMessageList = memo(function RoomMessageList({
           <span className={styles.avatar}><AliIcon name="messages" size={14} /></span>
           <div className={styles.messageColumn}>
             <div className={styles.messageMeta}><strong>Piora</strong><time dateTime={new Date(message.createdAt).toISOString()}>{formatTime(message.createdAt)}</time></div>
-            <div className={styles.bubble}><MarkdownBody cwd={room.projectRoot}>{message.content}</MarkdownBody></div>
+            <div className={styles.bubble}><MarkdownBody cwd={room.projectRoot} className="markdown-assistant-message">{message.content}</MarkdownBody></div>
           </div>
         </article>;
         if (message.author.kind === "system") return <div ref={registerMessage} key={message.id} className={styles.systemMessage}>{localizedSystemMessage(message.content)}</div>;
         const isUser = message.author.kind === "user";
         const member = members.get(message.author.id);
         const author = message.author.name || (member ? getRoomMemberName(member) : message.author.id);
-        return <article ref={registerMessage} key={message.id} className={`${styles.message}${isUser ? ` ${styles.userMessage}` : ""}`}>
+        return <article ref={registerMessage} key={message.id} className={`${styles.message} ${isUser ? styles.userMessage : styles.assistantMessage}`}>
           {!isUser ? <span className={styles.avatar}>{initials(author)}</span> : null}
           <div className={styles.messageColumn}>
             <div className={styles.messageMeta}>
               <strong>{author}</strong>
               <time dateTime={new Date(message.createdAt).toISOString()}>{formatTime(message.createdAt)}</time>
             </div>
-            <div className={styles.bubble}>
+            <div className={isUser ? styles.bubble : "message-assistant-blocks"}>
               {isUser
                 ? <CollapsibleUserContent message={message} cwd={room.projectRoot} sessionId={actorSessionId} onRetry={onRetry} retryDisabled={retryDisabled} />
-                : <MarkdownBody cwd={room.projectRoot}>{message.content}</MarkdownBody>}
+                : <MarkdownBody cwd={room.projectRoot} className="markdown-assistant-message">{message.content}</MarkdownBody>}
             </div>
           </div>
         </article>;

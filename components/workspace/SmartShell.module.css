@@ -19,6 +19,7 @@
 .status i { width: 5px; height: 5px; border-radius: 100%; background: var(--text-dim); }
 .status[data-ready=true] i { background: var(--shell-accent); }
 .body { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+.terminalHint { color: var(--text-muted); font-size: var(--text-xs, 12px); text-align: right; overflow-wrap: anywhere; }
 .scroll { height: 100%; overflow: auto; overscroll-behavior: contain; padding: 12px; }
 .native { height: 100%; min-height: 160px; background: #101419; }
 /* The shared PTY also prints while command cards are shown. Keep its viewport

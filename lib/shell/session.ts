@@ -37,7 +37,9 @@ export class ManagedShellSession {
 
   constructor(readonly state: ShellSession, readonly store: ShellStore, private dataDirectory = shellDataDirectory()) {
     this.idleTimer = setInterval(() => {
-      if (!this.listeners.size && !this.state.activeCommandId && !this.state.activeRunId && Date.now() - this.lastActivity > 20 * 60_000) void this.stop();
+      // Native shells deliberately have no command hooks. They may be running
+      // a silent interactive program; only an explicit close should kill it.
+      if (!this.state.profile.native && !this.listeners.size && !this.state.activeCommandId && !this.state.activeRunId && Date.now() - this.lastActivity > 20 * 60_000) void this.stop();
     }, 60_000);
     this.idleTimer.unref();
   }
@@ -89,18 +91,18 @@ export class ManagedShellSession {
     if (this.state.profile.bundled) {
       const profile = await bundledPowerShellProfile();
       if (!profile) throw new ShellError("Bundled PowerShell is unavailable", 503);
-      this.state.profile = profile;
+      this.state.profile = this.state.profile.native ? { ...profile, native: true, integrated: false } : profile;
     }
     const token = randomBytes(24).toString("hex");
     const launch = await prepareShellLaunch(this.state.profile, this.state.id, token, this.dataDirectory);
     this.state.generation += 1;
     const generation = this.state.generation;
     this.state.integration = this.state.profile.integrated ? "starting" : "unavailable";
-    this.state.integrationError = this.state.profile.integrated ? null : "This shell supports the native terminal view only.";
+    this.state.integrationError = this.state.profile.integrated || this.state.profile.native ? null : "This shell supports the native terminal view only.";
     this.protocolReplied = false;
     this.rawCapture = false;
     this.liveCommands = [];
-    this.parser = new ShellProtocolParser(token, message => { if (this.state.generation === generation) this.onIntegration(message); }, data => this.append(data));
+    this.parser = this.state.profile.native ? null : new ShellProtocolParser(token, message => { if (this.state.generation === generation) this.onIntegration(message); }, data => this.append(data));
     const ready = new Promise<void>(resolve => { this.readyResolve = resolve; });
     this.child = loadTerminalPty().spawn(this.state.profile.executable, launch.args, { env: launch.env, cwd: this.state.cwd, name: "xterm-256color", cols: this.cols, rows: this.rows, useConptyDll: process.platform === "win32" });
     this.state.connected = true;

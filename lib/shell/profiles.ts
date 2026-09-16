@@ -56,9 +56,31 @@ export async function resolveShellProfile(configured?: string | null): Promise<S
 }
 const shQuote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 
+/** The interactive terminal is independent of legacy Smart Shell preferences. */
+export async function resolveNativeShellProfile(): Promise<ShellProfile> {
+  if (process.platform !== "win32") {
+    return { ...await resolveShellProfile(process.env.SHELL || "/bin/bash"), integrated: false, native: true };
+  }
+  const bundled = await bundledPowerShellProfile();
+  if (bundled) return { ...bundled, integrated: false, native: true };
+  const executable = await findExecutable("pwsh")
+    || await findExecutable(path.join(process.env.ProgramFiles || "C:\\Program Files", "PowerShell", "7", "pwsh.exe"));
+  if (!executable) throw new Error("PowerShell 7 is unavailable. Install PowerShell 7 or repair the Piora installation.");
+  return { ...profileFor(executable), label: "PowerShell 7", integrated: false, native: true };
+}
+
+// Run after the user's normal profiles, in this process only. Keep the native
+// prompt, key bindings, history path/save policy and sensitive-command filter.
+// Inline startup also works where execution policy forbids loading our scripts.
+export const nativePowerShellStartup = "try { Import-Module PSReadLine -MinimumVersion 2.2.0 -ErrorAction Stop; Set-PSReadLineOption -PredictionSource History -PredictionViewStyle InlineView -ErrorAction Stop } catch { Write-Warning ('History suggestions unavailable: ' + $_.Exception.Message) }";
+
 export async function prepareShellLaunch(profile: ShellProfile, id: string, token: string, directory = shellDataDirectory()) {
   const env = Object.fromEntries(Object.entries({ ...process.env, TERM: "xterm-256color", TERM_PROGRAM: "Piora" }).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
   let args: string[] = [];
+  if (profile.native) {
+    delete env.PIORA_SHELL_TOKEN;
+    return { args: profile.kind === "powershell" ? ["-NoExit", "-Command", nativePowerShellStartup] : ["bash", "zsh"].includes(profile.kind) ? ["-i"] : [], env };
+  }
   if (!profile.integrated) return { args: profile.kind === "cmd" ? ["/D", "/Q", "/K"] : [], env };
   const root = path.join(directory, "integration", id);
   const extension = profile.kind === "powershell" ? "ps1" : profile.kind;

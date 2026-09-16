@@ -43,6 +43,7 @@ type BrowserAction = {
 
 const BROWSER_ONBOARDING_KEY = "piora-desktop-browser-onboarding-v1";
 const BROWSER_BOOKMARKS_KEY = "piora-desktop-browser-bookmarks-v2";
+const BROWSER_FOLLOW_AGENT_KEY = "piora-browser-follow-agent-v1";
 
 type DesktopBrowserBridge = NonNullable<NonNullable<Window["piDesktop"]>["browser"]>;
 
@@ -143,20 +144,109 @@ function useRequestedNavigation(request: BrowserNavigationProps["navigationReque
 export function BrowserPanel({ active, maximized, sessionId, navigationRequest, onNavigationConsumed }: { active: boolean; maximized: boolean; sessionId: string | null } & BrowserNavigationProps) {
   const { t } = useI18n();
   const [desktopBridge, setDesktopBridge] = useState<DesktopBrowserBridge | null | undefined>(undefined);
+  const [followAgent, setFollowAgent] = useState<boolean | null>(null);
 
   useEffect(() => {
     setDesktopBridge(window.piDesktop?.browser ?? null);
+    try {
+      setFollowAgent(window.localStorage.getItem(BROWSER_FOLLOW_AGENT_KEY) === "true");
+    } catch {
+      setFollowAgent(false);
+    }
   }, []);
 
-  if (desktopBridge === undefined) {
+  if (desktopBridge === undefined || followAgent === null) {
     return <div className={styles.browserLoading}>{t("browser.starting")}</div>;
   }
+  const toggleFollowAgent = () => {
+    const next = !followAgent;
+    setFollowAgent(next);
+    try {
+      window.localStorage.setItem(BROWSER_FOLLOW_AGENT_KEY, String(next));
+    } catch {
+      // The mode still changes for this panel when browser storage is unavailable.
+    }
+  };
   return <div className={styles.browserRoot}>
+    <div className={styles.browserModeBar}>
+      <div className={styles.browserModeCopy}>
+        <strong>{t("browser.followAgent")}</strong>
+        <span>{t("browser.followAgentDescription")}</span>
+      </div>
+      <button type="button" role="switch" aria-checked={followAgent} aria-label={t("browser.followAgent")} title={t("browser.followAgentDescription")} onClick={toggleFollowAgent}>
+        <span aria-hidden="true" />
+      </button>
+    </div>
     <div className={styles.browserModeContent}>
-      {desktopBridge
+      {followAgent
+        ? <AgentBrowserPanel active={active} sessionId={sessionId} />
+        : desktopBridge
         ? <DesktopBrowserPanel active={active} bridge={desktopBridge} maximized={maximized} sessionId={sessionId} navigationRequest={navigationRequest} onNavigationConsumed={onNavigationConsumed} />
         : <ScreenshotBrowserPanel active={active} navigationRequest={navigationRequest} onNavigationConsumed={onNavigationConsumed} />}
     </div>
+  </div>;
+}
+
+function AgentBrowserPanel({ active, sessionId }: { active: boolean; sessionId: string | null }) {
+  const { t } = useI18n();
+  const [snapshot, setSnapshot] = useState<{ sessionId: string; state: BrowserState | null } | null>(null);
+  const [error, setError] = useState<{ sessionId: string; message: string } | null>(null);
+  const [screenshotKey, setScreenshotKey] = useState(0);
+
+  useEffect(() => {
+    if (!active || !sessionId) return;
+    let cancelled = false;
+    let pending = false;
+    const refresh = async () => {
+      if (pending) return;
+      pending = true;
+      try {
+        const response = await fetch(`/api/browser?sessionId=${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+        const payload = await response.json() as BrowserState | null | { error: string };
+        if (!response.ok) throw new Error(payload && "error" in payload ? payload.error : t("browser.unavailable"));
+        if (cancelled) return;
+        setSnapshot({ sessionId, state: payload as BrowserState | null });
+        setScreenshotKey((key) => key + 1);
+        setError(null);
+      } catch (cause) {
+        if (!cancelled) setError({ sessionId, message: cause instanceof Error ? cause.message : t("browser.unavailable") });
+      } finally {
+        pending = false;
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 900);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [active, sessionId, t]);
+
+  const state = snapshot?.sessionId === sessionId ? snapshot.state : null;
+  const message = error?.sessionId === sessionId ? error.message : null;
+  const hasPage = state && state.url !== "about:blank";
+  const emptyTitle = !sessionId
+    ? t("browser.agentNoSession")
+    : snapshot?.sessionId !== sessionId && !message
+      ? t("browser.agentConnecting")
+      : t("browser.agentWaiting");
+
+  return <div className={styles.browserRoot} data-agent-browser="true">
+    <div className={styles.browserTabs} aria-label={t("browser.tabs")}>
+      {state?.tabs.map((tab) => <span key={`${tab.index}-${tab.url}`} className={styles.browserAgentTab} data-active={state.activeTabIndex === tab.index ? "true" : undefined} title={tab.url}>
+        <AliIcon name="earth" size={13} /><b>{tab.title || t("browser.newTab")}</b>
+      </span>)}
+    </div>
+    <div className={styles.browserAgentAddress} title={state?.url || undefined} aria-label={t("browser.address")}>
+      <AliIcon name="lock" size={13} />
+      <span>{state?.url && state.url !== "about:blank" ? state.url : t("browser.agentAddressEmpty")}</span>
+    </div>
+    {message ? <div className={styles.browserError} role="alert">{message}</div> : null}
+    <div className={`${styles.browserViewport} ${styles.browserAgentViewport}`}>
+      {hasPage && sessionId ? <img src={`/api/browser/screenshot?sessionId=${encodeURIComponent(sessionId)}&v=${screenshotKey}`} alt={t("browser.agentPagePreview")} draggable={false} /> : <div className={styles.browserStart} role="status">
+        <AliIcon name="earth" size={28} />
+        <strong>{emptyTitle}</strong>
+        <span>{t("browser.agentWaitingDescription")}</span>
+      </div>}
+    </div>
+    <div className={styles.browserPrivacy}>{t("browser.agentReadOnlyNotice")}</div>
   </div>;
 }
 
