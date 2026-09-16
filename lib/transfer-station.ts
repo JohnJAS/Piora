@@ -68,15 +68,27 @@ export function addTransferItem(input: { content: string; title?: string; kind?:
   catch (error) { if (imagePath) unlinkSync(imagePath); throw error; }
   return item;
 }
-export function updateTransferItem(id: string, patch: { pinned?: boolean; title?: string; remove?: boolean; content?: string; expectedUpdatedAt?: number; parentId?: string | null }, environment: RuntimeHomeEnvironment = process.env) {
+export function updateTransferItem(id: string, patch: { pinned?: boolean; title?: string; remove?: boolean; trash?: boolean; restore?: boolean; content?: string; expectedUpdatedAt?: number; parentId?: string | null }, environment: RuntimeHomeEnvironment = process.env) {
   const items = readTransferItems(environment);
   const item = items.find((entry) => entry.id === id);
   if (!item) throw new Error("内容已不存在，请刷新后重试。");
   if (patch.expectedUpdatedAt !== undefined && patch.expectedUpdatedAt !== item.updatedAt) throw new TransferDocumentConflict();
   if (patch.content !== undefined && (item.kind === "image" || item.kind === "folder" || typeof patch.content !== "string" || patch.content.length > 200_000)) throw new Error("文档内容无效，最多支持 200,000 字符。");
-  if (patch.remove && item.kind === "folder" && items.some((entry) => entry.parentId === id)) throw new Error("文件夹中还有内容，请先移出文件后再删除。");
+  if (patch.remove && item.kind === "folder" && items.some((entry) => entry.parentId === id)) throw new Error("文件夹中还有内容，请先永久删除或恢复其中的内容。");
+  if (patch.trash && item.kind === "folder" && items.some((entry) => entry.parentId === id && !entry.deletedAt)) throw new Error("文件夹中还有内容，请先移出或删除其中的内容。");
   const parentId = patch.parentId === undefined ? undefined : validateParent(items, patch.parentId, id);
-  const next = patch.remove ? items.filter((entry) => entry.id !== id) : items.map((entry) => entry.id === id ? { ...entry, ...(parentId !== undefined ? { parentId } : {}), ...(typeof patch.pinned === "boolean" ? { pinned: patch.pinned } : {}), ...(patch.title?.trim() ? { title: patch.title.trim().slice(0, 120) } : {}), ...(patch.content !== undefined ? { content: patch.content, language: "markdown" } : {}), updatedAt: Math.max(Date.now(), item.updatedAt + 1) } : entry);
+  const restoreIds = new Set<string>();
+  if (patch.restore) {
+    let restoring: CompanionLibraryItem | undefined = item;
+    while (restoring && !restoreIds.has(restoring.id)) { restoreIds.add(restoring.id); restoring = restoring.parentId ? items.find((entry) => entry.id === restoring!.parentId) : undefined; }
+  }
+  const next = patch.remove ? items.filter((entry) => entry.id !== id) : items.map((entry) => {
+    if (entry.id !== id && !restoreIds.has(entry.id)) return entry;
+    if (entry.id !== id) { const restored = { ...entry, updatedAt: Math.max(Date.now(), entry.updatedAt + 1) }; delete restored.deletedAt; return restored; }
+    const updated = { ...entry, ...(parentId !== undefined ? { parentId } : {}), ...(typeof patch.pinned === "boolean" ? { pinned: patch.pinned } : {}), ...(patch.title?.trim() ? { title: patch.title.trim().slice(0, 120) } : {}), ...(patch.content !== undefined ? { content: patch.content, language: "markdown" } : {}), ...(patch.trash ? { deletedAt: Date.now() } : {}), updatedAt: Math.max(Date.now(), item.updatedAt + 1) };
+    if (patch.restore) delete updated.deletedAt;
+    return updated;
+  });
   writeItems(next, environment);
   if (patch.remove && item.fileName && /^item-[a-f0-9-]+\.(png|jpeg|webp|gif)$/.test(item.fileName)) {
     try { unlinkSync(join(getPocketStorageInfo("library", environment).directory, item.fileName)); } catch { /* An orphan is safer than losing the manifest update. */ }

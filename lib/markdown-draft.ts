@@ -25,7 +25,9 @@ export function createMarkdownDraft(item: CompanionLibraryItem, persist: Persist
     try {
       if (snapshot.dirty || snapshot.saving) storage?.setItem(key, JSON.stringify({ title: snapshot.title, content: snapshot.content, revision }));
       else storage?.removeItem(key);
-    } catch { /* A failed disk save is still reported and the in-memory draft remains editable. */ }
+    } catch {
+      if (snapshot.dirty && !snapshot.error) publish({ error: "无法写入本机恢复副本；请立即重试保存，关闭前不要退出应用。" });
+    }
   };
   try {
     const draft = JSON.parse(storage?.getItem(key) ?? "null");
@@ -78,9 +80,14 @@ export function createMarkdownDraft(item: CompanionLibraryItem, persist: Persist
     },
     save,
     syncMetadata(next: CompanionLibraryItem) {
-      // Folder moves do not invalidate an in-progress content draft. Only
-      // advance the revision when the persisted text still matches our base.
-      if (!inFlight && next.updatedAt > revision && equal(next, saved)) { revision = next.updatedAt; cache(); }
+      if (inFlight || next.updatedAt <= revision) return;
+      const external = { title: next.title, content: next.content };
+      // Clean documents follow disk changes. Dirty drafts only accept metadata
+      // revisions that leave their last saved text untouched.
+      if (!snapshot.dirty) {
+        revision = next.updatedAt; saved = external;
+        publish({ ...external, dirty: false, error: "", recovered: false }); cache();
+      } else if (equal(external, saved)) { revision = next.updatedAt; cache(); }
     },
     dispose() { clearTimeout(timer); if (!snapshot.error) void save(); },
   };

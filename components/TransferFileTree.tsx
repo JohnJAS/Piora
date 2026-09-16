@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CompanionLibraryItem } from "@/lib/companion-store";
 import { transferTreeRows } from "@/lib/transfer-workspace";
 import { AliIcon } from "./AliIcon";
@@ -17,20 +17,27 @@ export function TransferFileTree({ items, selectedId, folderId, query, onQuery, 
   const [editing, setEditing] = useState<"create" | "rename" | null>(null);
   const [name, setName] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [sort, setSort] = useState<"name" | "recent">("name");
+  const searchRef = useRef<HTMLInputElement>(null);
   const deleting = items.find((item) => item.id === deleteId);
-  const rows = useMemo(() => transferTreeRows(items, collapsed, query), [items, collapsed, query]);
+  const rows = useMemo(() => transferTreeRows(items, collapsed, query, sort), [items, collapsed, query, sort]);
   const folder = items.find((item) => item.id === folderId);
   const drop = (event: React.DragEvent, parentId: string | null) => {
     const id = event.dataTransfer.getData("application/x-piora-transfer-id");
     if (!id) return;
     event.preventDefault(); event.stopPropagation(); onMove(id, parentId);
   };
+  useEffect(() => {
+    const quickOpen = (event: KeyboardEvent) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "p") { event.preventDefault(); searchRef.current?.focus(); searchRef.current?.select(); } };
+    window.addEventListener("keydown", quickOpen); return () => window.removeEventListener("keydown", quickOpen);
+  }, []);
   return <nav className={styles.fileSidebar} aria-label="文件夹和文件">
     <div className={styles.fileSidebarHeader}>
       <button type="button" aria-pressed={folderId === null} onClick={() => onFolder(null)} onDragOver={(event) => { if (event.dataTransfer.types.includes("application/x-piora-transfer-id")) event.preventDefault(); }} onDrop={(event) => drop(event, null)}><AliIcon name="folder-open" size={14} />所有文件</button>
       <button type="button" title="新建文件夹" aria-label="新建文件夹" disabled={disabled} onClick={() => { setEditing("create"); setName(""); }}><AliIcon name="plus" size={14} /></button>
+      <select aria-label="文件排序" value={sort} onChange={(event) => setSort(event.target.value as "name" | "recent")}><option value="name">名称</option><option value="recent">最近修改</option></select>
     </div>
-    <label className={styles.search}><AliIcon name="search" size={14} /><input aria-label="搜索文档" placeholder="搜索文件…" value={query} onChange={(event) => onQuery(event.target.value)} /></label>
+    <label className={styles.search}><AliIcon name="search" size={14} /><input ref={searchRef} aria-label="搜索文档" placeholder="搜索文件… · Ctrl+P" value={query} onChange={(event) => onQuery(event.target.value)} /></label>
     {folder ? <div className={styles.folderActions}><span title={folder.title}>{folder.title}</span>
       <button type="button" aria-label="重命名文件夹" title="重命名文件夹" disabled={disabled} onClick={() => { setEditing("rename"); setName(folder.title); }}><AliIcon name="edit" size={12} /></button>
       <button type="button" aria-label="删除空文件夹" title="删除空文件夹" disabled={disabled || items.some((item) => item.parentId === folder.id)} onClick={onDeleteFolder}><AliIcon name="delete" size={12} /></button>

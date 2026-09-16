@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `d15ed209fb30900ea301620ce87d5023d27427f1ec3f3c075d03adba744fc0f4`
+Lockfile SHA-256: `1a5e25f86b821731da413f98db8a815c1d91ce0c355b6063fbfbf219ec76073d`
 
-Unique locked packages: **1281**. Runtime packages: **835**. Build/development-only packages: **446**.
+Unique locked packages: **1312**. Runtime packages: **865**. Build/development-only packages: **447**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -76,12 +76,30 @@ Every locked package declares a license.
 | `@chevrotain/types` | `11.1.2` | Apache-2.0 | No |
 | `@codemirror/autocomplete` | `6.20.3` | MIT | No |
 | `@codemirror/commands` | `6.11.0` | MIT | No |
+| `@codemirror/lang-angular` | `0.1.4` | MIT | No |
+| `@codemirror/lang-cpp` | `6.0.3` | MIT | No |
 | `@codemirror/lang-css` | `6.3.1` | MIT | No |
+| `@codemirror/lang-go` | `6.0.1` | MIT | No |
 | `@codemirror/lang-html` | `6.4.12` | MIT | No |
+| `@codemirror/lang-java` | `6.0.2` | MIT | No |
 | `@codemirror/lang-javascript` | `6.2.5` | MIT | No |
+| `@codemirror/lang-jinja` | `6.0.1` | MIT | No |
 | `@codemirror/lang-json` | `6.0.2` | MIT | No |
+| `@codemirror/lang-less` | `6.0.2` | MIT | No |
+| `@codemirror/lang-liquid` | `6.3.2` | MIT | No |
 | `@codemirror/lang-markdown` | `6.5.2` | MIT | No |
+| `@codemirror/lang-php` | `6.0.2` | MIT | No |
+| `@codemirror/lang-python` | `6.2.1` | MIT | No |
+| `@codemirror/lang-rust` | `6.0.2` | MIT | No |
+| `@codemirror/lang-sass` | `6.0.2` | MIT | No |
+| `@codemirror/lang-sql` | `6.10.0` | MIT | No |
+| `@codemirror/lang-vue` | `0.1.3` | MIT | No |
+| `@codemirror/lang-wast` | `6.0.2` | MIT | No |
+| `@codemirror/lang-xml` | `6.1.0` | MIT | No |
+| `@codemirror/lang-yaml` | `6.1.3` | MIT | No |
 | `@codemirror/language` | `6.12.4` | MIT | No |
+| `@codemirror/language-data` | `6.5.2` | MIT | No |
+| `@codemirror/legacy-modes` | `6.5.4` | MIT | No |
 | `@codemirror/lint` | `6.9.7` | MIT | No |
 | `@codemirror/search` | `6.7.2` | MIT | No |
 | `@codemirror/state` | `6.7.2` | MIT | No |
@@ -167,13 +185,22 @@ Every locked package declares a license.
 | `@koromix/koffi-win32-ia32` | `3.2.1` | MIT | Yes |
 | `@koromix/koffi-win32-x64` | `3.2.1` | MIT | Yes |
 | `@lezer/common` | `1.5.2` | MIT | No |
+| `@lezer/cpp` | `1.1.6` | MIT | No |
 | `@lezer/css` | `1.3.6` | MIT | No |
+| `@lezer/go` | `1.0.1` | MIT | No |
 | `@lezer/highlight` | `1.2.3` | MIT | No |
 | `@lezer/html` | `1.3.13` | MIT | No |
+| `@lezer/java` | `1.1.4` | MIT | No |
 | `@lezer/javascript` | `1.5.4` | MIT | No |
 | `@lezer/json` | `1.0.3` | MIT | No |
 | `@lezer/lr` | `1.4.10` | MIT | No |
 | `@lezer/markdown` | `1.7.2` | MIT | No |
+| `@lezer/php` | `1.0.6` | MIT | No |
+| `@lezer/python` | `1.1.19` | MIT | No |
+| `@lezer/rust` | `1.0.2` | MIT | No |
+| `@lezer/sass` | `1.1.0` | MIT | No |
+| `@lezer/xml` | `1.0.6` | MIT | No |
+| `@lezer/yaml` | `1.0.4` | MIT | No |
 | `@lobehub/icons` | `5.16.0` | MIT | No |
 | `@marijn/find-cluster-break` | `1.0.4` | MIT | No |
 | `@mariozechner/clipboard` | `0.3.9` | MIT | Yes |
@@ -188,6 +215,7 @@ Every locked package declares a license.
 | `@mariozechner/clipboard-win32-arm64-msvc` | `0.3.9` | MIT | Yes |
 | `@mariozechner/clipboard-win32-x64-msvc` | `0.3.9` | MIT | Yes |
 | `@mermaid-js/parser` | `1.2.0` | MIT | No |
+| `@mixmark-io/domino` | `2.2.0` | BSD-2-Clause | No |
 | `@modelcontextprotocol/sdk` | `1.30.0` | MIT | No |
 | `@next/env` | `16.3.3` | MIT | No |
 | `@next/swc-darwin-arm64` | `16.3.3` | MIT | Yes |
@@ -426,7 +454,6 @@ Every locked package declares a license.
 | `detect-libc` | `2.1.2` | Apache-2.0 | No |
 | `devlop` | `1.1.0` | MIT | No |
 | `diff` | `8.0.4` | BSD-3-Clause | No |
-| `diff-match-patch` | `1.0.5` | Apache-2.0 | No |
 | `dingbat-to-unicode` | `1.0.1` | BSD-2-Clause | No |
 | `dompurify` | `3.4.13` | (MPL-2.0 OR Apache-2.0) | No |
 | `duck` | `0.1.12` | BSD | No |
@@ -505,6 +532,7 @@ Every locked package declares a license.
 | `hast-util-parse-selector` | `4.0.0` | MIT | No |
 | `hast-util-raw` | `9.1.0` | MIT | No |
 | `hast-util-sanitize` | `5.0.2` | MIT | No |
+| `hast-util-to-html` | `9.0.5` | MIT | No |
 | `hast-util-to-jsx-runtime` | `2.3.6` | MIT | No |
 | `hast-util-to-parse5` | `8.0.1` | MIT | No |
 | `hast-util-to-text` | `4.0.2` | MIT | No |
@@ -718,6 +746,7 @@ Every locked package declares a license.
 | `rehype-katex` | `7.0.1` | MIT | No |
 | `rehype-raw` | `7.0.0` | MIT | No |
 | `rehype-sanitize` | `6.0.0` | MIT | No |
+| `rehype-stringify` | `10.0.1` | MIT | No |
 | `remark-gfm` | `4.0.1` | MIT | No |
 | `remark-math` | `6.0.0` | MIT | No |
 | `remark-parse` | `11.0.0` | MIT | No |
@@ -797,6 +826,8 @@ Every locked package declares a license.
 | `ts-algebra` | `2.0.0` | MIT | No |
 | `ts-dedent` | `2.2.0` | MIT | No |
 | `tslib` | `2.8.1` | 0BSD | No |
+| `turndown` | `7.2.4` | MIT | No |
+| `turndown-plugin-gfm` | `1.0.2` | MIT | No |
 | `tweetnacl` | `0.14.5` | Unlicense | No |
 | `type-is` | `2.1.0` | MIT | No |
 | `typebox` | `1.3.7` | MIT | No |
@@ -820,7 +851,6 @@ Every locked package declares a license.
 | `util-deprecate` | `1.0.2` | MIT | No |
 | `uuid` | `11.1.1` | MIT | No |
 | `vary` | `1.1.2` | MIT | No |
-| `vditor` | `4.0.0` | MIT | No |
 | `vfile` | `6.0.3` | MIT | No |
 | `vfile-location` | `5.0.3` | MIT | No |
 | `vfile-message` | `4.0.3` | MIT | No |
@@ -947,6 +977,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `@types/responselike` | `1.0.3` | MIT | No |
 | `@types/stats.js` | `0.17.4` | MIT | No |
 | `@types/three` | `0.185.4` | MIT | No |
+| `@types/turndown` | `5.0.6` | MIT | No |
 | `@types/webxr` | `0.5.24` | MIT | No |
 | `@typescript-eslint/eslint-plugin` | `8.57.1` | MIT | No |
 | `@typescript-eslint/parser` | `8.57.1` | MIT | No |

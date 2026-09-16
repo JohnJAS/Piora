@@ -25,7 +25,7 @@ export function transferFolderPath(items: CompanionLibraryItem[], id: string | n
   return names.join(" / ");
 }
 
-export function transferTreeRows(items: CompanionLibraryItem[], collapsed: Set<string>, query: string) {
+export function transferTreeRows(items: CompanionLibraryItem[], collapsed: Set<string>, query: string, sort: "name" | "recent" = "name") {
   const byId = new Map(items.map((item) => [item.id, item]));
   const visible = new Set<string>();
   const search = query.trim().toLocaleLowerCase();
@@ -45,7 +45,7 @@ export function transferTreeRows(items: CompanionLibraryItem[], collapsed: Set<s
   const seen = new Set<string>();
   const walk = (parent: string | null, depth: number) => {
     const group = children.get(parent) ?? [];
-    group.sort((a, b) => Number(b.kind === "folder") - Number(a.kind === "folder") || a.title.localeCompare(b.title, "zh-CN", { numeric: true }));
+    group.sort((a, b) => Number(b.kind === "folder") - Number(a.kind === "folder") || (sort === "recent" ? b.updatedAt - a.updatedAt : a.title.localeCompare(b.title, "zh-CN", { numeric: true })));
     for (const item of group) {
       if (seen.has(item.id) || !visible.has(item.id)) continue;
       seen.add(item.id); rows.push({ item, depth });

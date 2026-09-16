@@ -35,8 +35,8 @@ export async function PATCH(request: Request) {
   if (!isApiRequestAllowed(request)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   if (!hasJsonContentType(request)) return NextResponse.json({ error: "Expected JSON" }, { status: 415 });
   try {
-    const input = await parseJsonWithinLimit(request, 2 * 1024 * 1024) as { id: string; pinned?: boolean; title?: string; remove?: boolean; content?: string; expectedUpdatedAt?: number; parentId?: string | null };
-    if (typeof input.id !== "string" || (input.title !== undefined && typeof input.title !== "string") || (input.content !== undefined && typeof input.content !== "string") || (input.expectedUpdatedAt !== undefined && !Number.isSafeInteger(input.expectedUpdatedAt))) throw new Error("文档内容无效。");
+    const input = await parseJsonWithinLimit(request, 2 * 1024 * 1024) as { id: string; pinned?: boolean; title?: string; remove?: boolean; trash?: boolean; restore?: boolean; content?: string; expectedUpdatedAt?: number; parentId?: string | null };
+    if (typeof input.id !== "string" || (input.title !== undefined && typeof input.title !== "string") || (input.content !== undefined && typeof input.content !== "string") || (input.expectedUpdatedAt !== undefined && !Number.isSafeInteger(input.expectedUpdatedAt)) || [input.remove, input.trash, input.restore].some((value) => value !== undefined && typeof value !== "boolean") || [input.remove, input.trash, input.restore].filter(Boolean).length > 1) throw new Error("文档内容无效。");
     initialize(); updateTransferItem(input.id, input);
     return NextResponse.json({ items: transferItemsForClient() });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: error instanceof TransferDocumentConflict ? 409 : 400 }); }

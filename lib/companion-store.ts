@@ -54,6 +54,7 @@ export interface CompanionLibraryItem {
   content: string;
   language?: string;
   parentId?: string | null;
+  deletedAt?: number;
   pinned: boolean;
   createdAt: number;
   updatedAt: number;
