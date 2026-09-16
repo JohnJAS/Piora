@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/hooks/useI18n";
 import type {
@@ -12,6 +12,7 @@ import type {
 import { AliIcon, type AliIconName } from "./AliIcon";
 import styles from "./ProjectToolsConfig.module.css";
 import type { ToolRuntimeInfo } from "@/lib/tool-runtime";
+import { readToolInstallProgress, type ToolInstallPhase } from "@/lib/tool-install-progress";
 
 interface ProjectToolsResponse {
   projectRoot: string;
@@ -74,6 +75,13 @@ export function ProjectToolsConfig({ cwd, onChanged }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
+  const [installProgress, setInstallProgress] = useState<{ tool: string; phase: ToolInstallPhase | "done" | "failed"; error?: string } | null>(null);
+  const installRequest = useRef<AbortController | null>(null);
+
+  useEffect(() => () => {
+    installRequest.current?.abort();
+    installRequest.current = null;
+  }, [cwd]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,28 +137,38 @@ export function ProjectToolsConfig({ cwd, onChanged }: Props) {
   }, [cwd, data, onChanged, saving, t]);
 
   const install = useCallback(async (tool: "fd" | "rg") => {
-    if (installing) return;
+    if (installRequest.current) return;
+    const controller = new AbortController();
+    installRequest.current = controller;
     setInstalling(tool);
+    setInstallProgress({ tool, phase: "checking" });
     setError(null);
     setMessage(null);
     try {
       const response = await fetch("/api/project-tools", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "application/x-ndjson" },
         body: JSON.stringify({ cwd, tool }),
+        signal: controller.signal,
       });
-      const next = await response.json() as ProjectToolsResponse;
-      if (!response.ok || next.error) throw new Error(next.error ?? `HTTP ${response.status}`);
-      setData((current) => current ? { ...current, runtime: next.runtime } : next);
-      setMessage(next.runtime.find((item) => item.id === tool)?.status === "available"
-        ? t("projectTools.runtimeInstalled")
-        : t("projectTools.runtimeInstallFailed"));
+      await readToolInstallProgress(response, (event) => {
+        if (controller.signal.aborted) return;
+        if (event.type === "progress") setInstallProgress({ tool, phase: event.phase });
+        if (event.type === "done") {
+          setData((current) => current ? { ...current, runtime: event.runtime } : current);
+          setInstallProgress({ tool, phase: "done" });
+          setMessage(t("projectTools.runtimeInstalled"));
+        }
+      });
     } catch (installError) {
-      setError(installError instanceof Error ? installError.message : String(installError));
+      if (!controller.signal.aborted) setInstallProgress({ tool, phase: "failed", error: installError instanceof Error ? installError.message : String(installError) });
     } finally {
-      setInstalling(null);
+      if (installRequest.current === controller) {
+        installRequest.current = null;
+        setInstalling(null);
+      }
     }
-  }, [cwd, installing, t]);
+  }, [cwd, t]);
 
   const groups = useMemo(() => GROUPS.map((kind) => ({
     kind,
@@ -204,7 +222,10 @@ export function ProjectToolsConfig({ cwd, onChanged }: Props) {
       <div className={styles.runtimeList}>
         {data.runtime.map((tool) => {
           const available = tool.status === "available";
-          return <div className={styles.runtimeRow} key={tool.id} data-available={available || undefined}>
+          const progress = installProgress?.tool === tool.id ? installProgress : null;
+          const busy = progress && progress.phase !== "done" && progress.phase !== "failed";
+          return <div className={styles.runtimeItem} key={tool.id}>
+          <div className={styles.runtimeRow} data-available={available || undefined}>
             <span className={styles.runtimeIcon}><AliIcon name="code" size={14} /></span>
             <span className={styles.copy}>
               <strong>{tool.label}</strong>
@@ -212,8 +233,14 @@ export function ProjectToolsConfig({ cwd, onChanged }: Props) {
                 ? `${tool.version ?? t("projectTools.runtimeUnknownVersion")} · ${tool.source === "managed" ? t("projectTools.runtimeManaged") : t("projectTools.runtimeSystem")}`
                 : t("projectTools.runtimeMissing")}</small>
             </span>
-            <span className={styles.runtimeState} data-available={available || undefined}>{available ? t("projectTools.runtimeAvailable") : t("projectTools.runtimeUnavailable")}</span>
-            {tool.path ? <code title={tool.path}>{tool.path}</code> : !tool.offline ? <button type="button" className={styles.installButton} disabled={installing !== null} onClick={() => void install(tool.id)}>{installing === tool.id ? t("projectTools.runtimeInstalling") : t("projectTools.runtimeInstall")}</button> : null}
+            <span className={styles.runtimeState} data-available={available || undefined}>{busy ? t("projectTools.runtimeInstalling") : available ? t("projectTools.runtimeAvailable") : t("projectTools.runtimeUnavailable")}</span>
+            {tool.path ? <code title={tool.path}>{tool.path}</code> : !tool.offline ? <button type="button" className={styles.installButton} disabled={installing !== null} onClick={() => void install(tool.id)}>{installing === tool.id ? t("projectTools.runtimeInstalling") : progress?.phase === "failed" ? t("projectTools.runtimeRetry") : t("projectTools.runtimeInstall")}</button> : null}
+          </div>
+          {progress ? <div className={styles.installProgress} data-failed={progress.phase === "failed" || undefined}>
+            <span role="status">{t(`projectTools.runtimePhase.${progress.phase}`)}</span>
+            {busy ? <progress aria-label={`${tool.label} ${t(`projectTools.runtimePhase.${progress.phase}`)}`} /> : null}
+            {progress.error ? <small role="alert">{progress.error}</small> : null}
+          </div> : null}
           </div>;
         })}
       </div>
