@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 工程设计
+
+- 新增 Piora 与小艺Harness独立品牌构建设计，覆盖品牌配置、桌面元数据、图标、启动动画、数据隔离、更新源和打包验收边界。
+
 ## [0.4.41-beta.54] - 2026-09-17
 
 ### 图片输入
@@ -115,7 +119,6 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 - 将原生 PowerShell 交互回归纳入 Windows 终端专项测试，并移除群聊排版测试中的本机固定路径，确保发布验证可在干净环境中运行。
 
 ## [0.4.41-beta.50] - 2026-09-16
-
 ### SSH 终端基础
 
 - 引入 SSH 会话、SFTP 文件管理和模型命令绑定，支持同一远程 Shell 的目录与环境状态同步。
