@@ -1,6 +1,6 @@
 # Piora / XiaoYiHarness 品牌构建
 
-本功能对应 GitHub issue #105。当前为开发中实现：工作流和本地回归已接入，但尚未完成 GitHub Actions 实际打包、连续版本安装升级与全部运行时身份验收，不能据此宣称可以正式发布。
+本功能对应 GitHub issue #105。Windows 双品牌打包、真实运行时检查与 XiaoYiHarness 连续版本安装升级已通过非发布 Actions 验证。尚未正式发布；开发示例品牌素材需确认，stable/Linux 发布矩阵尚未实跑。
 
 ## 使用边界
 
@@ -73,6 +73,13 @@ XiaoYiHarness 包内使用专属 `app-update-xiaoyi.yml`，在检查更新前指
 node --test lib/branding-preparation.test.mjs lib/desktop-brand-updates.test.mjs lib/brand-builder-metadata.test.mjs lib/brand-release-assembly.test.mjs lib/brand-release-workflows.test.mjs
 ```
 
-发布前还必须在 Actions 完成实际构建、两个连续 XiaoYiHarness 版本的安装升级、旧会话/设置保留、AppId 与 userData/sessionData/Agent 目录/partition/单实例兼容，以及下载、定时更新和安装前任务保护回归。开发示例图标和未完成的实际升级验收不能被标记为通过。
+2026-09-17，提交 `c79994c45753ab32d9ebb97da48b200414313270` 的 [Actions 验证运行](https://github.com/JohnJAS/Piora/actions/runs/35206131448) 全部通过：
 
-`brand-verification.yml` 是不发布 Release 的独立验证工作流。在隔离 checkout 中使用 `0.0.0-beta.1` / `0.0.0-beta.2` 测试版本，同步根/桌面 package、锁文件与测试更新说明，分别构建并验证，然后在托管 Windows runner 上连续安装。测试产物仅保留为短期 Actions artifacts，不创建标签，不拥有仓库发布写权限。成功时保存 `brand-upgrade-evidence`，其中记录版本、共享 AppId 对应的安装注册项、运行时路径、文件保留检查，以及打包应用通过只读会话 API 列举并加载旧消息的结果。该流程显式启用真实单实例锁：第一个进程保持运行时第二个进程必须被锁拒绝，再等待首个进程正常退出。以上项目尚待 Actions 实际执行，不能仅凭脚本存在标记通过。
+- Piora beta.1 与 XiaoYiHarness beta.1/beta.2 的 Windows NSIS/portable 构建、清单/哈希/说明、运行包及真实窗口品牌检查。
+- XiaoYiHarness beta.1 → beta.2 实际覆盖安装；两次安装注册项保持相同 AppId 派生 GUID 和安装路径，名称及版本正确。
+- 三份预置文件逐字节保留；旧会话在升级前后均可经应用 API 列举并读取消息。
+- 在隔离测试资料目录中，userData/sessionData/Agent 根保持一致，partition 为 `persist:piora`；两版均实际验证第二实例被拒绝。
+
+这不是通过已发布 Release 下载触发的自动升级，也未实跑 stable/Linux 发布矩阵或用户真实资料迁移。更新选择、串包拒绝、资格隔离及安装前保护有针对性回归；正式发布仍需确认素材并执行对应发布门禁。本地全量测试此前仍有三项 PowerShell/PTY 环境相关失败，不能宣称全量测试全部通过。
+
+`brand-verification.yml` 是不发布 Release 的独立验证工作流。在隔离 checkout 中使用 `0.0.0-beta.1` / `0.0.0-beta.2` 测试版本，同步根/桌面 package、锁文件、许可证清单与测试更新说明，分别构建并验证，然后在托管 Windows runner 上连续安装。测试产物仅保留为短期 Actions artifacts，不创建标签，不拥有仓库发布写权限。成功时保存 `brand-upgrade-evidence`，其中记录版本、共享 AppId 对应的安装注册项、运行时路径、文件保留检查，以及打包应用通过只读会话 API 列举并加载旧消息的结果。该流程显式启用真实单实例锁：第一个进程保持运行时第二个进程必须被锁拒绝，再等待首个进程正常退出。
