@@ -19,6 +19,7 @@ export interface SSHSessionSnapshot {
   username: string;
   cwd: string;
   connected: boolean;
+  busy: boolean;
   output: string;
   mode: "independent" | "agent-controlled";
   hostFingerprint?: string;
@@ -29,4 +30,14 @@ export type SSHSessionEvent =
   | { type: "snapshot"; snapshot: SSHSessionSnapshot }
   | { type: "output"; data: string }
   | { type: "status"; connected: boolean; error?: string }
+  | { type: "busy"; busy: boolean }
+  | { type: "clear" }
   | { type: "cwd"; cwd: string };
+
+export interface SSHFileEntry {
+  name: string;
+  path: string;
+  type: "file" | "directory" | "other";
+  size: number;
+  modifiedAt: number | null;
+}

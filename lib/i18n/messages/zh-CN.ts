@@ -1,12 +1,14 @@
 import { replySuggestionsZh } from "./reply-suggestions";
 import type { LocalePlugin } from "../types";
 import { smartShellZh } from "./smart-shell";
+import { sshZh } from "./ssh";
 
 /** Pi Web 内置简体中文语言包。 */
 export const zhCNLocale: LocalePlugin = {
   id: "zh-CN",
   label: "简体中文",
   messages: {
+    ...sshZh,
     "input.imageContextHint": "图片仅随本轮任务发送，原图保留在聊天中；后续需重新看图时请再次附加。",
     ...replySuggestionsZh,
     "chat.deleteMessage": "删除消息",
@@ -2110,6 +2112,10 @@ export const zhCNLocale: LocalePlugin = {
     "chat.attachmentTooLarge": "单个附件及本条消息的附件总量不能超过 {size}。",
     "chat.imageTooLarge": "单张图片及本条消息的图片总量不能超过 {size}。",
     "chat.processingImages": "正在处理图片…",
+    "chat.processingFiles": "正在准备文件…",
+    "chat.attachedLocalHint": "发送文件路径，模型按需读取文件内容",
+    "chat.attachmentReadFailed": "无法添加附件，请重新选择文件：{error}",
+    "chat.attachmentMissingPath": "旧附件没有保留文件内容或路径，请移除后重新添加。",
     "chat.openImage": "打开第 {count} 张图片",
     "chat.projectlessGuide": "当前会话未关联项目；你可以直接选择模型并聊天。会话类型：",
     "chat.projectGuide": "模型可在左上角“设置 → 模型”中配置；项目可通过顶部项目菜单切换。当前项目：",

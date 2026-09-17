@@ -6,9 +6,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   if (!isApiRequestAllowed(request)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   const session = getSSHSession((await context.params).id);
   if (!session) return NextResponse.json({ error: "SSH session not found" }, { status: 404 });
-  const path = new URL(request.url).searchParams.get("path") || ".";
+  const requestedPath = new URL(request.url).searchParams.get("path") || ".";
   try {
     const sftp = await session.sftp();
+    const path = await new Promise<string>((resolve, reject) => sftp.realpath(requestedPath, (error, result) => error ? reject(error) : resolve(result)));
     const entries = await new Promise<Array<{ name: string; path: string; type: "file" | "directory" | "other"; size: number; modifiedAt: number | null }>>((resolve, reject) => {
       sftp.readdir(path, (error, list) => {
         if (error) return reject(error);

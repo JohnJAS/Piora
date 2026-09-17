@@ -9,6 +9,7 @@ import type { ReplySource } from "@/lib/reply-suggestions";
 import { useAnchoredMenuPosition } from "@/hooks/useAnchoredMenuPosition";
 import { readPromptOptimizerModel, readPromptOptimizerSystemPrompt } from "@/lib/prompt-optimizer-settings";
 import type { AttachedFile, BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
+import { storeBrowserFiles } from "@/lib/file-attachments";
 import { clearDraft, getDraft, setDraft, hydrateDraft, DRAFT_STORAGE_ERROR_EVENT, type ChatDraftFile, type ChatDraftImage } from "@/lib/draft-store";
 import {
   MAX_ATTACHED_IMAGE_BYTES,
@@ -376,6 +377,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   ));
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [isProcessingImages, setIsProcessingImages] = useState(false);
+  const [isProcessingFiles, setIsProcessingFiles] = useState(false);
   const trimmedValue = value.trimStart();
   const bashMode = attachedImages.length === 0 && attachedFiles.length === 0 && trimmedValue.startsWith("!");
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
@@ -427,6 +429,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const attachedImagesRef = useRef(attachedImages);
   const pendingImageCountRef = useRef(0);
   const pendingImageBytesRef = useRef(0);
+  const pendingFileCountRef = useRef(0);
   valueRef.current = value;
   attachedImagesRef.current = attachedImages;
   const attachedFilesRef = useRef(attachedFiles);
@@ -513,46 +516,55 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (imageFiles.length) processImageFiles(imageFiles);
 
     const nonImageFiles = files.filter((file) => !file.type.startsWith("image/"));
-    const remainingCount = Math.max(0, MAX_ATTACHED_FILES - attachedFilesRef.current.length);
-    let remainingBytes = MAX_PROMPT_MATERIAL_BYTES - attachedFilesRef.current
-      .filter((file) => file.text != null)
-      .reduce((total, file) => total + file.size, 0);
+    const remainingCount = Math.max(0, MAX_ATTACHED_FILES - attachedFilesRef.current.length - pendingFileCountRef.current);
+    const originDraftKey = draftKeyRef.current;
+    const selected = nonImageFiles.slice(0, remainingCount);
+    const prepared = new Map<File, AttachedFile>();
+    const browserFiles: File[] = [];
+    let remainingBytes = MAX_PROMPT_MATERIAL_BYTES;
     let rejectedForSize = false;
-    let rejectedForCount = false;
-    const textFiles: File[] = [];
-    for (const file of nonImageFiles) {
-      if (textFiles.length >= remainingCount) {
-        rejectedForCount = true;
+    for (const file of selected) {
+      let path = "";
+      try { path = window.piDesktop?.files?.getPathForFile(file) ?? ""; } catch { /* Browser upload fallback. */ }
+      if (path) {
+        prepared.set(file, { name: getAttachmentFileName(file), size: file.size, text: null, path });
         continue;
       }
       if (file.size > MAX_ATTACHED_FILE_BYTES || file.size > remainingBytes) {
         rejectedForSize = true;
         continue;
       }
-      textFiles.push(file);
+      browserFiles.push(file);
       remainingBytes -= file.size;
     }
     if (rejectedForSize) {
       setAttachmentError(t("chat.attachmentTooLarge", { size: "100 MB" }));
-    } else if (rejectedForCount) {
+    } else if (nonImageFiles.length > remainingCount) {
       setAttachmentError(t("chat.attachmentCountLimit", { count: MAX_ATTACHED_FILES }));
     }
-    if (!textFiles.length) return;
-    const prepared = await Promise.all(
-      textFiles.map(async (file): Promise<AttachedFile> => {
-        const name = getAttachmentFileName(file);
-        try {
-          const text = await file.text();
-          if (text.includes("\u0000")) {
-            return { name, size: file.size, text: null };
-          }
-          return { name, size: file.size, text };
-        } catch {
-          return { name, size: file.size, text: null };
-        }
-      }),
-    );
-    setAttachedFiles((prev) => [...prev, ...prepared].slice(0, MAX_ATTACHED_FILES));
+    if (!selected.length) return;
+    pendingFileCountRef.current += selected.length;
+    setIsProcessingFiles(true);
+    try {
+      if (browserFiles.length) {
+        const stored = await storeBrowserFiles(browserFiles, browserFiles.map(getAttachmentFileName));
+        browserFiles.forEach((file, index) => prepared.set(file, stored[index]));
+      }
+    } catch (error) {
+      if (draftKeyRef.current === originDraftKey) {
+        setAttachmentError(t("chat.attachmentReadFailed", { error: error instanceof Error ? error.message : String(error) }));
+      }
+    } finally {
+      const attachments = selected.flatMap((file) => prepared.has(file) ? [prepared.get(file)!] : []);
+      if (draftKeyRef.current === originDraftKey) {
+        setAttachedFiles((prev) => [...prev, ...attachments].slice(0, MAX_ATTACHED_FILES));
+      } else if (originDraftKey && attachments.length) {
+        const origin = getDraft(originDraftKey) ?? { value: "", images: [], files: [] };
+        setDraft(originDraftKey, { ...origin, files: [...origin.files, ...attachments].slice(0, MAX_ATTACHED_FILES) });
+      }
+      pendingFileCountRef.current -= selected.length;
+      if (!pendingFileCountRef.current) setIsProcessingFiles(false);
+    }
   }, [isStreaming, processImageFiles, t]);
 
   useImperativeHandle(ref, () => ({
@@ -793,7 +805,11 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     const value = valueRef.current;
     const msg = value.trim();
     if (!msg && !attachedImages.length && !attachedFiles.length) return;
-    if (isStreaming || isProcessingImages || isAutoModelSelection) return;
+    if (isStreaming || isProcessingImages || pendingFileCountRef.current > 0 || isAutoModelSelection) return;
+    if (attachedFiles.some((file) => !file.path && file.text == null)) {
+      setAttachmentError(t("chat.attachmentMissingPath"));
+      return;
+    }
     if (!await modelChangeCoordinatorRef.current!.waitForIdle()) return;
     if (!attachedImages.length && !attachedFiles.length && msg.startsWith("/") && onBuiltinCommand) {
       const result = await onBuiltinCommand(msg);
@@ -934,7 +950,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = hasInputText && attachedImages.length === 0 && attachedFiles.length === 0;
   const primaryStreamingMode = streamingSendPreference.enabled ? streamingSendPreference.behavior : "steer";
-  const canSend = !isProcessingImages
+  const canSend = !isProcessingImages && !isProcessingFiles
     && !isAutoModelSelection
     && (hasInputText || attachedImages.length > 0 || attachedFiles.length > 0);
   const canOptimizePrompt = hasInputText
@@ -1464,12 +1480,15 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   }, []);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
-    const items = Array.from(e.clipboardData?.items ?? []);
-    const imageItems = items.filter((item) => item.type.startsWith("image/"));
-    if (imageItems.length) {
+    const files = Array.from(e.clipboardData?.files ?? []);
+    if (!files.length) {
+      files.push(...Array.from(e.clipboardData?.items ?? [])
+        .filter((item) => item.kind === "file")
+        .map((item) => item.getAsFile()).filter((file): file is File => file !== null));
+    }
+    if (files.length) {
       e.preventDefault();
-      const files = imageItems.map((item) => item.getAsFile()).filter((f): f is File => f !== null);
-      processImageFiles(files);
+      void processFileSelection(files);
       return;
     }
     const pastedText = e.clipboardData?.getData("text/plain") ?? "";
@@ -1482,7 +1501,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
       text: pastedText,
       kind: "paste" as const,
     }].slice(0, MAX_ATTACHED_FILES));
-  }, [processImageFiles, t]);
+  }, [processFileSelection, t]);
 
   useEffect(() => {
     if (slashQuery === null) {
@@ -1779,6 +1798,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {attachmentError}
           </div>
         )}
+        {isProcessingFiles && <div role="status" style={{ marginBottom: 6, color: "var(--text-muted)", fontSize: "var(--text-xs)" }}>{t("chat.processingFiles")}</div>}
         {attachedImages.length > 0 && (
           <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
             {attachedImages.map((img, i) => (
@@ -1815,7 +1835,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
             {attachedFiles.map((file, i) => (
               <div
                 key={`${file.name}:${i}`}
-                title={file.text == null ? t("chat.attachedBinaryHint") : `${file.name} · ${formatFileSize(file.size)}`}
+                title={file.path ? `${file.path}\n${t("chat.attachedLocalHint")}` : file.text == null ? t("chat.attachmentMissingPath") : `${file.name} · ${formatFileSize(file.size)}`}
                 style={{
                   display: "flex", alignItems: "center", gap: 6,
                   maxWidth: 260, padding: "4px 6px 4px 8px",
@@ -1827,6 +1847,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>
                   {file.name}
                 </span>
+                {file.path && <span style={{ flexShrink: 0, color: "var(--text-dim)" }}>{formatFileSize(file.size)}</span>}
                 {file.kind === "paste" && (
                   <button
                     type="button"
@@ -2671,8 +2692,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 type="button"
                 onClick={handleSend}
                 disabled={!canSend}
-                title={t(isProcessingImages ? "chat.processingImages" : isAutoModelSelection ? "chat.selectModel" : "chat.send")}
-                aria-label={t(isProcessingImages ? "chat.processingImages" : isAutoModelSelection ? "chat.selectModel" : "chat.send")}
+                title={t(isProcessingImages ? "chat.processingImages" : isProcessingFiles ? "chat.processingFiles" : isAutoModelSelection ? "chat.selectModel" : "chat.send")}
+                aria-label={t(isProcessingImages ? "chat.processingImages" : isProcessingFiles ? "chat.processingFiles" : isAutoModelSelection ? "chat.selectModel" : "chat.send")}
                 style={{
                   width: 32, height: 32, padding: 0, flexShrink: 0,
                   display: "flex", alignItems: "center", justifyContent: "center",

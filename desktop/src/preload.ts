@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { ClipboardBridge, ClipboardChange, ClipboardMutation, ClipboardOperation, ClipboardQuery } from "./clipboard-types.js";
 declare const document: { documentElement: { inert: boolean } };
 
@@ -99,6 +99,11 @@ const runtime = Object.freeze({
   openPath(filePath: string): Promise<boolean> {
     return ipcRenderer.invoke("pi:open-path", filePath) as Promise<boolean>;
   },
+  files: Object.freeze({
+    // Only File objects provided by Chromium can reveal a path. Constructed
+    // browser Files return "" and use the server's byte-preserving upload.
+    getPathForFile: (file: Parameters<typeof webUtils.getPathForFile>[0]): string => webUtils.getPathForFile(file),
+  }),
   clipboard: Object.freeze({
     historyV2: clipboardHistory,
     readText: (): Promise<string> => ipcRenderer.invoke("pi:clipboard-read", false),

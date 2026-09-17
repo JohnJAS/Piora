@@ -6,6 +6,7 @@ import type { SearchAddon } from "@xterm/addon-search";
 import { copyText, readClipboardText } from "@/lib/clipboard";
 import { isTerminalProtocolReply } from "@/lib/terminal-input";
 import type { ShellEvent } from "@/lib/shell/types";
+import type { SSHSessionEvent } from "@/lib/ssh/types";
 import "@xterm/xterm/css/xterm.css";
 import styles from "./TerminalPanel.module.css";
 
@@ -19,6 +20,7 @@ interface Props {
   terminalId?: string;
   transport?: "shell" | "ssh";
   subscribeToShell?: (listener: (event: ShellEvent) => void) => () => void;
+  subscribeToSSH?: (listener: (event: SSHSessionEvent) => void) => () => void;
   inputEnabled?: boolean;
   output?: string;
   readOnly?: boolean;
@@ -27,7 +29,7 @@ interface Props {
   onError?: (error: string) => void;
 }
 
-export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function TerminalSurface({ cwd, terminalId, transport = "shell", subscribeToShell, inputEnabled = true, output = "", readOnly = false, autoFocus = false, onStatus, onError }, ref) {
+export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function TerminalSurface({ cwd, terminalId, transport = "shell", subscribeToShell, subscribeToSSH, inputEnabled = true, output = "", readOnly = false, autoFocus = false, onStatus, onError }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const terminal = useRef<Terminal | null>(null);
   const search = useRef<SearchAddon | null>(null);
@@ -169,12 +171,16 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
               if (terminalId && (message.type === "snapshot" || message.type === "session")) {
                 const session = message.type === "snapshot" ? message.snapshot.session : message.session;
                 term.options.disableStdin = !latest.current.inputEnabled || session.owner === "agent";
-                latest.current.onStatus?.(session.connected, session.profile.label);
+                latest.current.onStatus?.(session.connected, transport === "ssh" ? "SSH" : session.profile.label);
               } else if (message.type === "snapshot" || message.type === "status") latest.current.onStatus?.(message.connected, message.shell);
             } catch { /* Ignore malformed transport frames. */ }
           };
           // The terminal session hook already owns this stream. Reuse it rather
           // than occupying a second HTTP/1 connection for the native viewport.
+          if (terminalId && transport === "ssh" && subscribeToSSH) {
+            unsubscribe = subscribeToSSH(message => onMessage({ data: JSON.stringify(message) }));
+            return;
+          }
           if (terminalId && subscribeToShell) {
             unsubscribe = subscribeToShell(message => onMessage({ data: JSON.stringify(message) }));
             return;
@@ -189,7 +195,7 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
           const snapshot = await response.json();
           if (disposed) return;
           const value = transport === "ssh"
-            ? { type: "snapshot", terminalId, generation: 0, sequence: 0, snapshot: { session: snapshot.snapshot, output: "" } }
+            ? { type: "snapshot", terminalId, generation: 0, sequence: 0, snapshot: { session: snapshot.snapshot, output: snapshot.snapshot.output || "" } }
             : terminalId
               ? { type: "snapshot", terminalId, generation: snapshot.session.generation, sequence: snapshot.sequence, snapshot }
               : { type: "snapshot", ...snapshot };
@@ -242,7 +248,7 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
       };
     })().catch((error) => { if (!disposed) latest.current.onError?.(String(error)); });
     return () => { disposed = true; abort.abort(); cleanup(); };
-  }, [cwd, readOnly, terminalId, transport, subscribeToShell, autoFocus]);
+  }, [cwd, readOnly, terminalId, transport, subscribeToShell, subscribeToSSH, autoFocus]);
 
   useEffect(() => { if (terminal.current) terminal.current.options.disableStdin = readOnly || !inputEnabled; }, [inputEnabled, readOnly]);
 

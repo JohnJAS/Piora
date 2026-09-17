@@ -5,6 +5,7 @@ import type { SettingsKey } from "@/lib/settings-search";
 declare global {
   interface Window {
     piDesktop?: {
+      files?: { getPathForFile: (file: File) => string };
       restartForDataImport?: () => Promise<boolean>;
       launcher?: {
         list: (refresh?: boolean) => Promise<{ supported: boolean; warning: string; items: Array<{ id: string; name: string; kind: "app" | "setting"; keywords: string; description: string }> }>;

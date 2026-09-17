@@ -16,6 +16,7 @@ function composer(onSend) {
     attachedImages: [{ data: "YWJj", mimeType: "image/png", previewUrl: "blob:preview" }],
     attachedFiles: [{ name: "notes.txt", text: "full attachment", size: 15 }],
     isStreaming: false, isProcessingImages: false, isAutoModelSelection: false,
+    pendingFileCountRef: { current: 0 },
     onBuiltinCommand: undefined, contextUsage: null,
     shouldMaterializeDirectPrompt: () => false, t: (key) => key,
     sendingRef: { current: false }, draftKeyRef: { current: "session" },

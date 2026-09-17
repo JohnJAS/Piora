@@ -360,14 +360,8 @@ export interface AttachedImage {
   previewUrl: string;
 }
 
-/** A non-image file attached from the composer. `text` is uploaded as a
- * prompt material; binary files only contribute their name. */
-export interface AttachedFile {
-  name: string;
-  size: number;
-  text: string | null;
-  kind?: "file" | "paste";
-}
+export type { AttachedFile } from "@/lib/file-attachments";
+import { buildLocalFilePrompt, type AttachedFile } from "@/lib/file-attachments";
 
 function userMessageHasPromptMaterialMarker(message: AgentMessage): boolean {
   if (message.role !== "user") return false;
@@ -1449,6 +1443,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   ) => {
     const trimmedMessage = message.trim();
     if (!trimmedMessage && !images?.length && !files?.length) return false;
+    if (files?.some((file) => !file.path && file.text == null)) {
+      setError(translateRef.current("chat.attachmentMissingPath"));
+      return false;
+    }
     if (agentRunningRef.current || bashRunningRef.current || messageMutationRef.current) return false;
     const isSlashCommandPrompt = !images?.length && !files?.length && trimmedMessage.startsWith("/");
 
@@ -1470,14 +1468,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     promptSettlementByRunRef.current.clear();
     promptSettlementPollByRunRef.current.clear();
 
-    const materialFiles = (files ?? []).filter((file) => file.text != null);
+    const materialFiles = (files ?? []).filter((file) => !file.path && file.text != null);
     const pasteFiles = materialFiles.filter((file) => file.kind === "paste");
     const attachedTextFiles = materialFiles.filter((file) => file.kind !== "paste");
-    const nameOnlyFiles = (files ?? []).filter((file) => file.text == null);
-    const fileTexts = nameOnlyFiles.map((file) => `附件: ${file.name}（二进制文件，仅提供文件名）`).join("\n\n");
-    const effectiveMessage = fileTexts ? `${fileTexts}\n\n${message}` : message;
+    const localFiles = (files ?? []).filter((file) => file.path);
+    const effectiveMessage = buildLocalFilePrompt(message, localFiles);
     const displayMessage = [
-      effectiveMessage.trim(),
+      message.trim(),
+      ...localFiles.map((file) => `附件: ${file.name}（${file.size} 字节）\n${file.path}`),
       ...attachedTextFiles.map((file) => `附件: ${file.name}（${file.size} 字节）`),
       ...pasteFiles.map((file) => file.text!.trim()),
     ]

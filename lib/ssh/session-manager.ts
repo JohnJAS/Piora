@@ -1,7 +1,8 @@
-import { randomUUID, randomBytes, createHash } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import { Client, type ClientChannel, type SFTPWrapper } from "ssh2";
 import type { SSHConnectionOptions, SSHSessionEvent, SSHSessionSnapshot } from "./types";
+import { authenticateSSH } from "./connection";
 
 type Listener = (event: SSHSessionEvent) => void;
 
@@ -14,9 +15,11 @@ export class SSHSession {
   private output = "";
   private pending = "";
   private readonly marker = `\x1b]633;Piora;${randomBytes(24).toString("hex")};`;
-  private readonly decoder = new StringDecoder("utf8");
+  private decoder = new StringDecoder("utf8");
   private execution: { output: string; onData?: (data: Buffer) => void; finish: (error?: Error, code?: number) => void } | null = null;
   private connected = false;
+  private connecting: Promise<void> | null = null;
+  private connectionAbort: AbortController | null = null;
   private fingerprint?: string;
   readonly id = randomUUID();
   mode: SSHSessionSnapshot["mode"] = "independent";
@@ -25,7 +28,7 @@ export class SSHSession {
   constructor(private readonly options: SSHConnectionOptions) {}
 
   snapshot(): SSHSessionSnapshot {
-    return { id: this.id, host: this.options.host, port: this.options.port ?? 22, username: this.options.username, cwd: this.currentCwd, connected: this.connected, output: this.output, mode: this.mode, ...(this.agentSessionId ? { agentSessionId: this.agentSessionId } : {}), ...(this.fingerprint ? { hostFingerprint: this.fingerprint } : {}) };
+    return { id: this.id, host: this.options.host, port: this.options.port ?? 22, username: this.options.username, cwd: this.currentCwd, connected: this.connected, busy: !!this.execution, output: this.output, mode: this.mode, ...(this.agentSessionId ? { agentSessionId: this.agentSessionId } : {}), ...(this.fingerprint ? { hostFingerprint: this.fingerprint } : {}) };
   }
 
   subscribe(listener: Listener): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
@@ -33,36 +36,56 @@ export class SSHSession {
 
   async connect(): Promise<void> {
     if (this.connected) return;
-    const client = new Client();
-    this.client = client;
-    await new Promise<void>((resolve, reject) => {
-      client.once("ready", () => {
+    if (this.connecting) return this.connecting;
+    const abort = new AbortController();
+    this.connectionAbort = abort;
+    const work = (async () => {
+      const { client, fingerprint } = await authenticateSSH(this.options, abort.signal);
+      if (abort.signal.aborted) { client.destroy(); throw new Error("SSH connection cancelled"); }
+      this.client = client;
+      this.fingerprint = fingerprint;
+      const disconnected = (error?: Error) => {
+        if (this.client !== client) return;
+        this.client = null; this.channel = null; this.sftpClient = null; this.connected = false;
+        this.execution?.finish(error ?? new Error("SSH connection closed"));
+        this.emit({ type: "status", connected: false, ...(error ? { error: error.message } : {}) });
+        client.destroy();
+      };
+      client.on("error", disconnected);
+      client.once("close", () => disconnected());
+      try {
+        await this.openShell(client);
+        if (this.client !== client || abort.signal.aborted) throw new Error("SSH connection closed");
         this.connected = true;
         this.emit({ type: "status", connected: true });
-        void this.openShell(client).then(resolve, reject);
-      });
-      client.once("error", error => { this.emit({ type: "status", connected: false, error: error.message }); reject(error); });
-      client.once("close", () => { this.connected = false; this.channel = null; this.sftpClient = null; if (this.client === client) this.client = null; this.emit({ type: "status", connected: false }); });
-      client.connect({ host: this.options.host, port: this.options.port ?? 22, username: this.options.username, ...(this.options.auth.type === "password" ? { password: this.options.auth.password } : { privateKey: this.options.auth.privateKey, passphrase: this.options.auth.passphrase }), hostVerifier: (key: Buffer) => {
-        const fingerprint = `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}`;
-        this.fingerprint = fingerprint;
-        const identity = `${this.options.host}:${this.options.port ?? 22}`;
-        const expected = this.options.hostFingerprint ?? trustedHosts.get(identity);
-        if (expected && expected !== fingerprint) return false;
-        trustedHosts.set(identity, fingerprint);
-        return true;
-      }, readyTimeout: 15_000 });
-    });
+      } catch (error) { disconnected(error instanceof Error ? error : new Error(String(error))); throw error; }
+    })();
+    this.connecting = work;
+    try { await work; }
+    finally { if (this.connecting === work) { this.connecting = null; this.connectionAbort = null; } }
   }
 
   private async openShell(client: Client): Promise<void> {
-    await new Promise<void>((resolve, reject) => client.shell({ term: "xterm-256color", cols: this.options.cols ?? 100, rows: this.options.rows ?? 30 }, (error, channel) => {
-      if (error) return reject(error);
+    await new Promise<void>((resolve, reject) => {
+      const closed = () => finish(new Error("SSH connection closed before the shell opened"));
+      const timer = setTimeout(() => finish(new Error("SSH shell request timed out")), 15_000);
+      const finish = (error?: Error) => { clearTimeout(timer); client.removeListener("close", closed); if (error) reject(error); else resolve(); };
+      client.once("close", closed);
+      client.shell({ term: "xterm-256color", cols: this.options.cols ?? 100, rows: this.options.rows ?? 30 }, (error, channel) => {
+      if (error) return finish(error);
+      if (this.client !== client) { channel.close(); return finish(new Error("SSH connection closed")); }
       this.channel = channel;
+      this.pending = "";
+      this.decoder = new StringDecoder("utf8");
+      this.currentCwd = ".";
+      this.emit({ type: "cwd", cwd: "." });
       channel.on("data", (data: Buffer) => this.receive(this.decoder.write(data)));
-      channel.on("close", () => { this.channel = null; this.execution?.finish(new Error("SSH shell closed")); });
-      resolve();
-    }));
+      const stderr = new StringDecoder("utf8");
+      channel.stderr.on("data", (data: Buffer) => this.append(stderr.write(data)));
+      channel.on("close", () => { if (this.channel === channel) this.close(); });
+      finish();
+      });
+    });
   }
 
   private append(data: string): void {
@@ -98,6 +121,8 @@ export class SSHSession {
   write(data: string): void {
     if (!this.channel) throw new Error("SSH session is not connected");
     if (this.execution) throw new Error("A model command is running; stop it before entering terminal input");
+    // Interactive commands can change cwd without a shell integration marker.
+    if (this.currentCwd !== ".") { this.currentCwd = "."; this.emit({ type: "cwd", cwd: "." }); }
     this.channel.write(data);
   }
   resize(cols: number, rows: number): void {
@@ -114,9 +139,11 @@ export class SSHSession {
       const timer = setTimeout(cancel, Math.min(options.timeout ?? 120, 3600) * 1000);
       this.execution = { output: "", onData: options.onData, finish: (error, code) => {
         const output = this.execution?.output ?? ""; this.execution = null;
+        this.emit({ type: "busy", busy: false });
         clearTimeout(timer); options.signal?.removeEventListener("abort", cancel);
         if (error) reject(error); else resolve({ output, exitCode: code ?? null });
       } };
+      this.emit({ type: "busy", busy: true });
       options.signal?.addEventListener("abort", cancel, { once: true });
       // eval runs in the existing interactive POSIX shell: cwd and exports persist.
       const quoted = `'${command.replace(/'/g, `'"'"'`)}'`;
@@ -126,13 +153,27 @@ export class SSHSession {
   }
   bindAgent(agentSessionId: string): void { this.mode = "agent-controlled"; this.agentSessionId = agentSessionId; this.emit({ type: "snapshot", snapshot: this.snapshot() }); }
   unbindAgent(): void { this.mode = "independent"; delete this.agentSessionId; this.emit({ type: "snapshot", snapshot: this.snapshot() }); }
-  async sftp(): Promise<SFTPWrapper> { if (this.sftpClient) return this.sftpClient; await this.connect(); if (!this.client) throw new Error("SSH is disconnected"); const value = await new Promise<SFTPWrapper>((resolve, reject) => this.client!.sftp((error, result) => error ? reject(error) : resolve(result))); this.sftpClient = value; return value; }
-  close(): void { this.execution?.finish(new Error("SSH session closed")); this.channel?.close(); this.client?.end(); this.client = null; this.connected = false; }
+  clearOutput(): void { this.output = ""; this.emit({ type: "clear" }); }
+  async sftp(): Promise<SFTPWrapper> {
+    if (!this.client || !this.connected) throw new Error("SSH is disconnected");
+    if (this.sftpClient) return this.sftpClient;
+    const client = this.client;
+    const value = await new Promise<SFTPWrapper>((resolve, reject) => client.sftp((error, result) => error ? reject(error) : resolve(result)));
+    if (client !== this.client) { value.end(); throw new Error("SSH is disconnected"); }
+    this.sftpClient = value; return value;
+  }
+  close(): void {
+    this.connectionAbort?.abort();
+    this.execution?.finish(new Error("SSH session closed"));
+    const client = this.client, channel = this.channel;
+    this.client = null; this.channel = null; this.sftpClient = null; this.connected = false;
+    channel?.close(); client?.end();
+    this.emit({ type: "status", connected: false });
+  }
 }
 
-declare global { var __pioraSSHSessions: Map<string, SSHSession> | undefined; var __pioraSSHTrustedHosts: Map<string, string> | undefined; }
+declare global { var __pioraSSHSessions: Map<string, SSHSession> | undefined; }
 const sessions = globalThis.__pioraSSHSessions ??= new Map<string, SSHSession>();
-const trustedHosts = globalThis.__pioraSSHTrustedHosts ??= new Map<string, string>();
 export function createSSHSession(options: SSHConnectionOptions): SSHSession { const session = new SSHSession(options); sessions.set(session.id, session); return session; }
 export function listSSHSessions(): SSHSessionSnapshot[] { return [...sessions.values()].map(session => session.snapshot()); }
 export function getSSHSession(id: string): SSHSession | undefined { return sessions.get(id); }

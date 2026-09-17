@@ -176,7 +176,6 @@ test("offers a folder picker and keeps useful relative paths", () => {
   assert.match(chatInputSource, /folderInputRef\.current\.webkitdirectory = true/);
   assert.match(chatInputSource, /folderInputRef\.current\?\.click\(\)/);
   assert.match(chatInputSource, /chat\.attachFolderDescription/);
-  assert.match(chatInputSource, /textFiles\.length >= remainingCount/);
 });
 
 test("inserts dictated text at the caret with locale-aware spacing", () => {
@@ -420,12 +419,12 @@ test("renders compact errors above the input as a wrapping alert", () => {
 test("does not send text before an attached image finishes loading", () => {
   assert.match(chatInputSource, /const \[isProcessingImages, setIsProcessingImages\] = useState\(false\)/);
   assert.match(chatInputSource, /setIsProcessingImages\(true\)[\s\S]*?pendingImageCountRef\.current <= 0[\s\S]*?setIsProcessingImages\(false\)/);
-  assert.match(chatInputSource, /if \(isStreaming \|\| isProcessingImages \|\| isAutoModelSelection\) return/);
+  assert.match(chatInputSource, /if \(isStreaming \|\| isProcessingImages \|\| pendingFileCountRef\.current > 0 \|\| isAutoModelSelection\) return/);
   assert.match(chatInputSource, /const canSend = !isProcessingImages/);
 });
 
 test("new conversations wait only until a default or explicit model resolves", () => {
-  assert.match(chatInputSource, /if \(isStreaming \|\| isProcessingImages \|\| isAutoModelSelection\) return/);
+  assert.match(chatInputSource, /if \(isStreaming \|\| isProcessingImages \|\| pendingFileCountRef\.current > 0 \|\| isAutoModelSelection\) return/);
   assert.match(chatInputSource, /const canSend = !isProcessingImages[\s\S]*?&& !isAutoModelSelection/);
   assert.match(chatInputSource, /const displayModelName = model && !isAutoModelSelection/);
   assert.match(chatInputSource, /const canOptimizePrompt = hasInputText[\s\S]*?&& !isAutoModelSelection/);

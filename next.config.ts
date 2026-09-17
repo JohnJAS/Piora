@@ -12,6 +12,9 @@ try {
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // Proxy clones request bodies before the route reads them. Its 10 MiB
+  // default truncates supported file uploads; leave room for multipart headers.
+  experimental: { proxyClientMaxBodySize: 101 * 1024 * 1024 },
   // The app has a dedicated transparent desktop-pet renderer. Next's floating
   // development badge otherwise appears as an unexplained black disc inside
   // that frameless window; compiler and runtime errors remain enabled.

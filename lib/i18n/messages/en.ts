@@ -1,12 +1,14 @@
 import { replySuggestionsEn } from "./reply-suggestions";
 import type { LocalePlugin } from "../types";
 import { smartShellEn } from "./smart-shell";
+import { sshEn } from "./ssh";
 
 /** Pi Web 内置英语语言包。 */
 export const enLocale: LocalePlugin = {
   id: "en",
   label: "English",
   messages: {
+    ...sshEn,
     ...replySuggestionsEn,
     "input.imageContextHint": "Images are sent for this turn only. Attach them again to inspect them in a later turn.",
     "chat.deleteMessage": "Delete message",
@@ -2110,6 +2112,10 @@ export const enLocale: LocalePlugin = {
     "chat.attachmentTooLarge": "Each attachment and the total attachments in one message must be {size} or smaller.",
     "chat.imageTooLarge": "Each image and the total images in one message must be {size} or smaller.",
     "chat.processingImages": "Processing images…",
+    "chat.processingFiles": "Preparing files…",
+    "chat.attachedLocalHint": "Sends the file path so the model can read its contents as needed",
+    "chat.attachmentReadFailed": "Could not attach the file. Please select it again: {error}",
+    "chat.attachmentMissingPath": "This older attachment has no content or file path. Remove it and attach the file again.",
     "chat.openImage": "Open image {count}",
     "chat.projectlessGuide": "This conversation is not linked to a project. Choose a model and start chatting. Conversation type: ",
     "chat.projectGuide": "Configure models in Settings → Models or switch projects from the top project menu. Current project: ",

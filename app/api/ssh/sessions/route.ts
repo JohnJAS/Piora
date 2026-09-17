@@ -1,22 +1,29 @@
 import { NextResponse } from "next/server";
-import { createSSHSession, listSSHSessions } from "@/lib/ssh/session-manager";
-import type { SSHConnectionOptions } from "@/lib/ssh/types";
+import { closeSSHSession, createSSHSession, listSSHSessions } from "@/lib/ssh/session-manager";
+import { parseSSHConnection, testSSHConnection, sshErrorCode, SSHValidationError } from "@/lib/ssh/connection";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
-import { parseJsonWithinLimit } from "@/lib/bounded-json";
+import { parseJsonWithinLimit, InvalidJsonBodyError, JsonBodyTooLargeError } from "@/lib/bounded-json";
 
 export async function POST(request: Request) {
   try {
     if (!isApiRequestAllowed(request)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
     if (!hasJsonContentType(request)) return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
-    const body = await parseJsonWithinLimit(request, 2 * 1024 * 1024) as Partial<SSHConnectionOptions>;
-    if (!body.host || !body.username || !body.auth || (body.auth.type !== "password" && body.auth.type !== "privateKey")) {
-      return NextResponse.json({ error: "host, username and password/privateKey auth are required" }, { status: 400 });
+    const body = await parseJsonWithinLimit(request, 2 * 1024 * 1024);
+    const options = parseSSHConnection(body);
+    if ((body as { testOnly?: unknown }).testOnly === true) {
+      await testSSHConnection(options, request.signal);
+      return NextResponse.json({ tested: true });
     }
-    const session = createSSHSession({ host: body.host, username: body.username, port: body.port, auth: body.auth, cols: body.cols, rows: body.rows });
-    await session.connect();
+    const session = createSSHSession(options);
+    const cancel = () => closeSSHSession(session.id);
+    request.signal.addEventListener("abort", cancel, { once: true });
+    try { request.signal.throwIfAborted(); await session.connect(); }
+    catch (error) { closeSSHSession(session.id); throw error; }
+    finally { request.signal.removeEventListener("abort", cancel); }
     return NextResponse.json({ snapshot: session.snapshot() });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 502 });
+    const status = error instanceof JsonBodyTooLargeError ? 413 : error instanceof SSHValidationError || error instanceof InvalidJsonBodyError ? 400 : 502;
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error), code: sshErrorCode(error) }, { status });
   }
 }
 

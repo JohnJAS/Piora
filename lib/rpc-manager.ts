@@ -15,7 +15,7 @@ import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import { runPromptWithModelFallback } from "./model-fallback";
 import { readModelFallbackConfig } from "./model-fallback-config";
-import { applyConfiguredImageInput } from "./model-capabilities";
+import { applyConfiguredImageInput, modelSupportsImages } from "./model-capabilities";
 import { resolveDefaultModelPreference } from "./model-policy";
 import {
   applyExtensionLoadPlan,
@@ -893,8 +893,18 @@ export class AgentSessionWrapper {
       }
       const imageError = validateAgentImages(command.images);
       if (imageError) throw new Error(imageError);
-      if (Array.isArray(command.images) && command.images.length > 0 && !this.inner.model?.input?.includes("image")) {
-        throw new Error("The selected model does not support image input. Choose an image-capable model.");
+      if (Array.isArray(command.images) && command.images.length > 0) {
+        // Ordinary prompts apply pending project models and fresh capability
+        // settings below. Validate that target, not the previous live model.
+        // Steering/follow-ups still belong to the currently running model.
+        const isNewTurn = type === "prompt" && !command.streamingBehavior;
+        const pending = isNewTurn ? readPendingSessionModel(this.sessionId) : undefined;
+        const targetModel = pending
+          ? this.inner.modelRuntime.getModel(pending.provider, pending.modelId)
+          : this.inner.model;
+        if (!(isNewTurn ? modelSupportsImages(targetModel) : targetModel?.input?.includes("image"))) {
+          throw new Error("The selected model does not support image input. Choose an image-capable model.");
+        }
       }
     }
 
@@ -969,6 +979,18 @@ export class AgentSessionWrapper {
               clearPendingSessionModel(this.sessionId, pendingModel.revision);
               this.emit({ type: "project_model_changed", provider: model.provider, modelId: model.id });
               assertNotAborted();
+            }
+            if (this.inner.model) {
+              const configuredModel = applyConfiguredImageInput(this.inner.model);
+              if (configuredModel !== this.inner.model) {
+                assertNotAborted();
+                await this.inner.setModel(configuredModel);
+                assertNotAborted();
+              }
+            }
+            // Settings or the pending model can change during async admission.
+            if (promptImages?.length && !this.inner.model?.input?.includes("image")) {
+              throw new Error("The selected model does not support image input. Choose an image-capable model.");
             }
           }
           const prompt = (admitted: () => void) => {

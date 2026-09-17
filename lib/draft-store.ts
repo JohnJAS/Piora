@@ -1,17 +1,13 @@
 import { readComposerRecord, writeComposerRecord, readComposerDraftEntries, replaceComposerDraftEntries } from "./reply-storage";
 import type { ReplySpan } from "./reply-draft";
+import type { AttachedFile } from "./file-attachments";
 
 export interface ChatDraftImage {
   data: string;
   mimeType: string;
 }
 
-export interface ChatDraftFile {
-  name: string;
-  size: number;
-  text: string | null;
-  kind?: "file" | "paste";
-}
+export type ChatDraftFile = AttachedFile;
 
 export interface ChatDraft {
   value: string;
