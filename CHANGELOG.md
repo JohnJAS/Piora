@@ -6,7 +6,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ### 工程设计
 
-- 新增 Piora 与小艺Harness独立品牌构建设计，覆盖品牌配置、桌面元数据、图标、启动动画、数据隔离、更新源和打包验收边界。
+- 新增 Piora 与 XiaoYiHarness 独立品牌构建设计，覆盖品牌配置、桌面元数据、图标、启动动画、数据隔离、更新源和打包验收边界。
+- 补充同一 App 的换皮构建设计：保持 Piora AppId、数据、更新身份和内部协议不变，仅在打包时替换 XiaoYiHarness 的名称、图标和启动资源。
 
 ## [0.4.41-beta.54] - 2026-09-17
 

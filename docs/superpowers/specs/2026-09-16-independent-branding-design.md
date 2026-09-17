@@ -1,37 +1,37 @@
-# 独立品牌构建与发布设计：Piora / 小艺Harness
+# 独立品牌构建与发布设计：Piora / XiaoYiHarness
 
 ## 状态
 
 - 提案：已确认
 - 范围：仅打包前选择品牌
 - 默认品牌：Piora
-- 目标品牌：小艺Harness（独立产品）
+- 目标品牌：XiaoYiHarness（独立产品）
 
 ## 目标
 
-让同一套代码可以在构建阶段选择不同品牌，并生成完整一致的独立桌面产品。未设置品牌时必须保持现有 Piora 行为；选择 `xiaoyi-harness` 时，安装包、可执行文件、快捷方式、窗口、托盘、通知、启动动画、图标、Web metadata、数据目录和更新源都使用小艺Harness身份。
+让同一套代码可以在构建阶段选择不同品牌，并生成完整一致的独立桌面产品。未设置品牌时必须保持现有 Piora 行为；选择 `xiaoyi-harness` 时，安装包、可执行文件、快捷方式、窗口、托盘、通知、启动动画、图标、Web metadata、数据目录和更新源都使用XiaoYiHarness身份。
 
 安装后的用户不修改品牌配置。Windows 可执行文件元数据、安装包名称、卸载项、系统图标、AppUserModelId 和数字签名均在构建阶段确定。
 
 ## 非目标
 
-- 不在运行时支持把已安装的 Piora 改名为小艺Harness。
+- 不在运行时支持把已安装的 Piora 改名为XiaoYiHarness。
 - 不修改 `piora-*` 协议、session 格式、数据库格式和扩展 id。
-- 不让小艺Harness读取 Piora 的更新源。
+- 不让XiaoYiHarness读取 Piora 的更新源。
 - 不在第一版自动合并两个产品的会话数据。
 
 ## 产品身份
 
-| 字段 | Piora | 小艺Harness |
+| 字段 | Piora | XiaoYiHarness |
 | --- | --- | --- |
 | brand id | `piora` | `xiaoyi-harness` |
-| display name | Piora | 小艺Harness |
+| display name | Piora | XiaoYiHarness |
 | Windows AppId | `io.github.kexijiang.piora` | 独立 AppId，例如 `com.xiaoyi.harness` |
-| data directory | `Piora` | `XiaoyiHarness` |
+| data directory | `Piora` | `XiaoYiHarness` |
 | browser partition | `persist:piora` | `persist:xiaoyi-harness` |
-| update repository | Piora | 小艺Harness独立仓库 |
+| update repository | Piora | XiaoYiHarness独立仓库 |
 
-界面显示使用中文产品名，文件系统目录和可执行文件使用稳定英文 slug，避免 Windows 路径和工具链的兼容问题。
+界面显示名称统一使用 XiaoYiHarness，文件系统目录和可执行文件名称保持稳定，不随展示文案变化。
 
 ## 配置结构
 
@@ -141,7 +141,7 @@ electron-builder 的以下字段由当前品牌生成：
 
 ## 数据隔离与单实例
 
-品牌身份决定 Electron `userData`、浏览器 partition、窗口状态、更新状态、日志、剪贴板数据库和默认 agent 数据目录。Piora 与小艺Harness必须可以同时安装并运行，不能共享 Cookie、缓存、单实例锁或更新状态。
+品牌身份决定 Electron `userData`、浏览器 partition、窗口状态、更新状态、日志、剪贴板数据库和默认 agent 数据目录。Piora 与XiaoYiHarness必须可以同时安装并运行，不能共享 Cookie、缓存、单实例锁或更新状态。
 
 ## Web 接入
 
@@ -174,23 +174,23 @@ NEXT_PUBLIC_PIORA_BRAND=xiaoyi-harness
 
 ## 更新与发布
 
-小艺Harness拥有独立 GitHub Release 仓库、更新 manifest、artifact 命名和发布说明。构建与发布检查必须验证：
+XiaoYiHarness拥有独立 GitHub Release 仓库、更新 manifest、artifact 命名和发布说明。构建与发布检查必须验证：
 
 - 安装包与 AppId 匹配
 - `latest.yml` / `beta.yml` 指向正确仓库和产品名
 - 更新说明与目标版本 CHANGELOG 一致
-- 安装包、portable、快捷方式和卸载项使用小艺Harness
-- Piora 不会接收小艺Harness的更新，反之亦然
+- 安装包、portable、快捷方式和卸载项使用XiaoYiHarness
+- Piora 不会接收XiaoYiHarness的更新，反之亦然
 
 ## 数据迁移
 
-由于是独立产品，小艺Harness默认不读取 Piora 数据。后续建议加入“从 Piora 导入”入口，先备份、不覆盖已有数据、记录来源并支持失败回滚。第一版可以先不实现自动迁移，但设计需保留入口和版本兼容边界。
+由于是独立产品，XiaoYiHarness默认不读取 Piora 数据。后续建议加入“从 Piora 导入”入口，先备份、不覆盖已有数据、记录来源并支持失败回滚。第一版可以先不实现自动迁移，但设计需保留入口和版本兼容边界。
 
 ## 测试与验收
 
 新增配置测试、桌面品牌测试和打包品牌验证脚本，覆盖：
 
-- Piora、小艺Harness、未知 brand id
+- Piora、XiaoYiHarness、未知 brand id
 - 缺失/损坏图标、海报和视频
 - Windows NSIS、portable、Linux AppImage
 - 启动动画、托盘、快捷方式、卸载项
@@ -208,17 +208,17 @@ scripts/verify-packaged-brand.mjs
 
 ## 实施顺序
 
-1. 品牌 schema、默认 Piora 配置和小艺Harness配置。
+1. 品牌 schema、默认 Piora 配置和XiaoYiHarness配置。
 2. 统一 brand loader 与资源校验。
 3. 图标、favicon、启动媒体和 portable splash 构建切换。
 4. Electron 主进程、托盘、通知、窗口标题和数据目录接入。
 5. Web metadata 和 AppShell 接入。
 6. electron-builder 动态配置、独立 AppId 和发布源。
 7. 打包验证、双产品并行运行验证和更新元数据验证。
-8. 后续增加 Piora → 小艺Harness 数据导入。
+8. 后续增加 Piora → XiaoYiHarness 数据导入。
 
 ## 决策记录
 
 - 品牌只在打包前选择，不支持安装后换品牌。
-- 小艺Harness是独立产品，不覆盖 Piora 安装，也不复用 Piora AppId。
+- XiaoYiHarness是独立产品，不覆盖 Piora 安装，也不复用 Piora AppId。
 - 用户可见品牌全部配置化；内部协议和历史数据格式保持 Piora 兼容标识。
