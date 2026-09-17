@@ -10,6 +10,35 @@
   background: var(--bg-panel);
   font-size: var(--text-sm, 13px);
 }
+.multiRoot { display: flex; flex-direction: column; min-width: 0; }
+.hostTabs { display: flex; align-items: stretch; gap: 4px; min-height: 45px; padding: 6px 12px 0; overflow-x: auto; border-bottom: 1px solid var(--border); scrollbar-width: thin; flex-shrink: 0; }
+.hostTab { flex: 0 1 174px; min-width: 78px; max-width: 220px; padding: 6px 10px; gap: 7px; border: 1px solid transparent !important; border-bottom: 0 !important; border-radius: var(--radius-control) var(--radius-control) 0 0 !important; color: var(--text-muted) !important; }
+.hostTab[aria-current="page"] { color: var(--text) !important; background: var(--bg-panel) !important; border-color: var(--border) !important; box-shadow: inset 0 2px var(--accent); }
+.hostTab > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hostTab i { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; }
+.hostTab i[data-connected="true"] { background: var(--status-ready); }
+.tabBusy { margin-left: auto; color: var(--accent); font-size: 9px; }
+.addHost { flex: 0 0 auto; padding: 6px 10px; color: var(--text-muted) !important; white-space: nowrap; }
+.hostContent { min-width: 0; min-height: 0; flex: 1; overflow: hidden; }
+.savedHosts, .vaultBar { width: 100%; max-width: 440px; margin: 0 auto 20px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg); }
+.savedHeading { display: flex; align-items: center; justify-content: space-between; padding-bottom: 8px; color: var(--text-muted); }
+.savedRow { display: flex; align-items: center; gap: 6px; padding: 8px 0; border-top: 1px solid var(--border); min-width: 0; }
+.savedRow > button { flex: 0 0 auto; padding: 6px; }
+.savedIdentity { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 3px; }
+.savedIdentity strong, .savedIdentity span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.savedIdentity span { color: var(--text-dim); font-size: var(--text-xs, 12px); }
+.vaultBar { display: flex; flex-direction: column; gap: 10px; }
+.vaultBar p { color: var(--text-muted); line-height: 1.5; margin-top: 4px; }
+.vaultBar form { display: flex; gap: 8px; }
+.vaultBar form input { flex: 1; }
+.vaultBar > button { align-self: flex-start; }
+.systemVault { width: 100%; max-width: 440px; margin: 0 auto 16px; color: var(--text-muted); font-size: var(--text-xs, 12px); }
+@container ssh (max-width: 360px) {
+  .addHost span { display: none; }
+  .savedRow { flex-wrap: wrap; }
+  .savedIdentity { flex-basis: 100%; }
+  .vaultBar form { flex-direction: column; }
+}
 .root *, .root *::before, .root *::after { box-sizing: border-box; }
 .root button, .root input, .root textarea, .root summary { font: inherit; }
 .root button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; cursor: pointer; border: 0; color: inherit; background: transparent; border-radius: var(--radius-control); }
@@ -78,7 +107,8 @@
 .terminal .tools button { min-height: 30px; padding: 5px 6px; color: #bec6cf; white-space: nowrap; }
 .terminal .tools button:hover, .terminal .tools button[aria-expanded="true"] { background: #ffffff12; color: #ffffff; }
 .terminalViewport { flex: 1; position: relative; min-height: 0; min-width: 0; overflow: hidden; }
-.terminalFooter { padding: 8px 16px; font-size: var(--text-xs, 12px); color: #a6afb9; flex-shrink: 0; }
+.terminalFooter { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 16px; font-size: var(--text-xs, 12px); color: #a6afb9; flex-shrink: 0; }
+.terminalFooter button { color: #f6c5c5; padding: 3px 8px; border: 1px solid #a75a5a; }
 .find { display: flex; align-items: center; gap: 5px; padding: 8px 12px; background: #1b2026; }
 .find input { flex: 1; width: 0; background: #101419; color: #dce3ec; border-color: #3b434e; height: 32px; }
 .find button { padding: 6px; }

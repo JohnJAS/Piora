@@ -83,6 +83,12 @@ const CAPABILITY_DEFINITIONS: readonly CapabilityDefinition[] = [
     matches: (name) => name === "browser",
   },
   {
+    legacyId: "ssh",
+    kind: "workspace",
+    profiles: ["normal"],
+    matches: (name) => name === "ssh",
+  },
+  {
     legacyId: "harmony",
     kind: "device",
     profiles: ["normal", "device-control"],
@@ -117,7 +123,7 @@ const CAPABILITY_DEFINITIONS: readonly CapabilityDefinition[] = [
 const PRESET_TOOL_NAMES: Record<Exclude<SessionCapabilityPreset, "custom">, ReadonlySet<string>> = {
   chat: new Set(),
   // The optional computer extension is registered only after explicit opt-in.
-  coding: new Set([...BUILTIN_AGENT_TOOLS, "browser", "harmony_control", "computer_control"]),
+  coding: new Set([...BUILTIN_AGENT_TOOLS, "browser", "ssh", "harmony_control", "computer_control"]),
   research: new Set(["browser"]),
   device: new Set(HARMONY_AGENT_TOOLS),
 };
@@ -125,6 +131,7 @@ const PRESET_TOOL_NAMES: Record<Exclude<SessionCapabilityPreset, "custom">, Read
 const TOOL_ORDER = new Map([
   ...BUILTIN_AGENT_TOOLS,
   "browser",
+  "ssh",
   "piora_request_user_input",
   "piora_automation",
   "piora_room",
@@ -251,6 +258,9 @@ export function restoreSessionCapabilityPolicy(
     if (!restored.knownCapabilityIds.includes("tool:harmony_control") && restored.enabledCapabilityIds.some((id) => id.startsWith("tool:harmony_"))) {
       enabledIds.add("tool:harmony_control");
     }
+    if (profile === "normal" && restored.preset === "coding" && !restored.knownCapabilityIds.includes("tool:ssh")) {
+      enabledIds.add("tool:ssh");
+    }
     const catalogIds = new Set(catalog.map((item) => item.id));
     const migratedIds = catalog
       .filter((item) => enabledIds.has(item.id) || CAPABILITY_DEFINITIONS.some((definition) => (
@@ -346,6 +356,7 @@ export function createDefaultSessionCapabilitiesState(
     : [
         ...BUILTIN_AGENT_TOOLS,
         "browser",
+        "ssh",
         "harmony_control",
         "piora_automation",
         "piora_room",

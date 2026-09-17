@@ -16,6 +16,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   if (body.action === "input" && typeof body.data === "string") { session.write(body.data); return NextResponse.json({ ok: true }); }
   if (body.action === "exec" && typeof body.data === "string") { const result = await session.exec(body.data); return NextResponse.json(result); }
   if (body.action === "close") { session.close(); return NextResponse.json({ ok: true }); }
+  if (body.action === "stop") { session.stopExecution(); return NextResponse.json({ snapshot: session.snapshot() }); }
   if (body.action === "clear") { session.clearOutput(); return NextResponse.json({ ok: true }); }
   return NextResponse.json({ error: "Unsupported SSH action" }, { status: 400 });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : String(error), code: sshErrorCode(error) }, { status: 502 }); }

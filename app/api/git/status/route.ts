@@ -1,6 +1,6 @@
 import fs from "fs";
 import { NextRequest, NextResponse } from "next/server";
-import { getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
+import { allowFileRoot, getAllowedFileRoots, isExistingFilePathAllowed, isFilePathAllowed, isWindowsAbsolutePath } from "@/lib/file-access";
 import { getCachedGitStatus } from "@/lib/git-status-cache";
 
 export async function GET(request: NextRequest) {
@@ -29,6 +29,10 @@ export async function GET(request: NextRequest) {
     }
 
     const status = await getCachedGitStatus(cwd);
+    // A session opened from a repository subdirectory still owns the Git
+    // worktree. Make the canonical root available to the review's follow-up
+    // reads and writes after the requested cwd has passed the allow-list.
+    if (status.repositoryRoot) allowFileRoot(status.repositoryRoot);
     return NextResponse.json(request.nextUrl.searchParams.get("projection") === "summary" ? { ...status, files: [] } : status);
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });

@@ -5,7 +5,7 @@ import type { SSHSessionEvent, SSHSessionSnapshot } from "@/lib/ssh/types";
 import { sshRequest, SSHRequestError } from "@/lib/ssh/client";
 
 /** One SSE connection for both metadata and xterm. Only the session id is stored. */
-export function useSSHSession(scope: string) {
+export function useSSHSession(scope: string, explicitId?: string | null) {
   const storageKey = `piora:ssh:v1:${scope}`;
   const [snapshot, setSnapshot] = useState<SSHSessionSnapshot | null>(null);
   const [restoring, setRestoring] = useState(true);
@@ -28,10 +28,10 @@ export function useSSHSession(scope: string) {
     for (const listener of listeners.current) listener(event);
   }, []);
   const remember = useCallback((value: SSHSessionSnapshot | null) => {
-    try { if (value) sessionStorage.setItem(storageKey, value.id); else sessionStorage.removeItem(storageKey); } catch { /* Storage may be disabled. */ }
+    try { if (value) sessionStorage.setItem(storageKey, value.id); else if (explicitId === undefined) sessionStorage.removeItem(storageKey); } catch { /* Storage may be disabled. */ }
     if (value) receive({ type: "snapshot", snapshot: value });
     else { current.current = null; setSnapshot(null); setStreamReady(false); }
-  }, [receive, storageKey]);
+  }, [receive, storageKey, explicitId]);
   const subscribe = useCallback((listener: (event: SSHSessionEvent) => void) => {
     listeners.current.add(listener);
     if (current.current) listener({ type: "snapshot", snapshot: current.current });
@@ -42,8 +42,8 @@ export function useSSHSession(scope: string) {
     void (async () => {
       setRestoring(true); setRestoreError(false);
       try {
-        let id: string | null = null;
-        try { id = sessionStorage.getItem(storageKey); } catch { /* No saved session. */ }
+        let id: string | null = explicitId ?? null;
+        if (explicitId === undefined) try { id = sessionStorage.getItem(storageKey); } catch { /* No saved session. */ }
         if (id) {
           const result = await sshRequest<{ snapshot: SSHSessionSnapshot }>(`/api/ssh/sessions/${encodeURIComponent(id)}`, { signal: abort.signal });
           if (!abort.signal.aborted) receive({ type: "snapshot", snapshot: result.snapshot });
@@ -56,7 +56,7 @@ export function useSSHSession(scope: string) {
       } finally { if (!abort.signal.aborted) setRestoring(false); }
     })();
     return () => abort.abort();
-  }, [storageKey, receive, remember, restoreAttempt]);
+  }, [storageKey, explicitId, receive, remember, restoreAttempt]);
   const id = snapshot?.id;
   useEffect(() => {
     if (!id) return;

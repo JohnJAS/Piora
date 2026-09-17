@@ -20,13 +20,14 @@ Piora 是基于 [Pi](https://github.com/earendil-works/pi) 构建的开源 AI �
 
 项目由 [pi-web](https://github.com/agegr/pi-web) 演进而来，沿用 Pi 的 AgentSession、JSONL 会话、模型接入和扩展机制，由社区独立维护，不隶属于 Pi、pi-web、OpenAI 或 Codex。
 
-本文对应源码版本 `0.4.41-beta.54`。可下载版本以 [GitHub Releases](https://github.com/kexijiang/Piora/releases) 为准。
+本文对应源码版本 `0.4.41-beta.55`。可下载版本以 [GitHub Releases](https://github.com/kexijiang/Piora/releases) 为准。
 
 ## 能做什么
 
 - 在项目会话或无项目聊天中使用不同模型，支持思考等级、图片、Markdown、Mermaid、数学公式和长会话。
-- 浏览和编辑项目文件，查看 Git 差异，执行暂存、提交、推送等常用操作。
+- 浏览和编辑项目文件；在审阅区逐文件或逐区块暂存、提交，并预览目标分支后推送。可管理远程仓库，或通过[浏览器授权服务](services/git-oauth/README.md)连接 GitHub、GitLab、Gitee 后创建远程仓库。
 - 使用交互终端和内置浏览器，并让 Agent 调用相应工具完成任务。
+- 在右侧 SSH 工作台保存并同时连接多台远程主机；当前任务的 Agent 可用独立 SSH 工具执行远程命令和文件操作，本地终端保持本地执行。
 - 创建多 Agent 群聊，配置协调者、执行者和审查者，查看成员活动与共享产物。
 - 管理定时任务、Skills、扩展和插件，按项目或会话选择 Agent 可用能力。
 - 连接 OpenHarmony 设备进行投屏、UI 树观察和自动化；在 Windows 上可选启用桌面控制。
@@ -96,6 +97,7 @@ Windows 桌面包内置离线语音资源：SenseVoiceSmall INT8 模型和 sherp
 - **Windows 电脑控制**：在电脑控制设置中点击连接即可启用扩展并连接 Windows-MCP。需要本机安装 `uv`；新建编码会话后 `computer_control` 会进入可用工具列表。
 - **OpenHarmony 设备**：安装 DevEco Studio 或 Command Line Tools，开启设备 USB 调试并完成授权，然后在鸿蒙设备面板选择 HDC 和目标设备。
 - **定时任务**：可创建沿用当前会话的周期跟进，或针对项目独立运行的任务。调度依赖 Piora 在本机保持运行。
+- **SSH 远程工作台**：右侧打开 SSH，给主机命名并测试、保存或直接连接。多台连接显示为独立标签；在已有任务中连接的主机会自动关联给该任务的 Agent。桌面版使用系统加密保存凭据，独立网页运行需先设置主密码。详见 [SSH 工作台说明](docs/SSH_WORKBENCH.md)。
 - **桌宠**：在设置中启用。透明区域会穿透点击，实际宠物区域可拖动和交互；窗口会保持固定尺寸并被校正到可见屏幕内。
 
 # 目录说明

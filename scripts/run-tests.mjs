@@ -10,6 +10,7 @@ const child = spawn(process.execPath, [
   "hooks/*.test.mjs",
   "lib/*.test.mjs",
   "lib/i18n/*.test.mjs",
+  "services/git-oauth/*.test.mjs",
 ], { stdio: "inherit", windowsHide: true });
 
 child.once("error", error => {

@@ -1,7 +1,7 @@
 "use client";
 import { requestGitStatus } from "@/lib/git-status-client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { GitFileDiffResponse, GitStatusResponse } from "@/lib/git-types";
 import { parseUnifiedDiff, type Hunk } from "@/lib/diff-parse";
@@ -11,7 +11,8 @@ import { DiffView } from "../DiffView";
 import { AliIcon } from "../AliIcon";
 import { requestConfirmation } from "../ConfirmDialog";
 import { getFileIcon } from "../FileIcons";
-import { ChangeList, type ChangeGroup, type ChangeListItem } from "./ChangeList";
+import { ChangeList, toReviewPath, type ChangeGroup, type ChangeListItem } from "./ChangeList";
+import { GitPushDialog } from "./GitPushDialog";
 import styles from "./WorkspacePanel.module.css";
 
 interface Props {
@@ -58,14 +59,20 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
   const [branchState, setBranchState] = useState<GitBranchesState>({ currentBranch: null, branches: [] });
   const [switchingBranch, setSwitchingBranch] = useState<string | null>(null);
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [showCommit, setShowCommit] = useState(false);
+  const [showCommit, setShowCommit] = useState(true);
+  const [showPush, setShowPush] = useState(false);
+  const [integration, setIntegration] = useState<"merge" | "rebase" | null>(null);
+  const [showDivergenceActions, setShowDivergenceActions] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [commitMessage, setCommitMessage] = useState("");
+  const [recentMessages, setRecentMessages] = useState<string[]>([]);
   const [amend, setAmend] = useState(false);
-  const [includeUnstaged, setIncludeUnstaged] = useState(true);
+  const [identityConfigured, setIdentityConfigured] = useState<boolean | null>(null);
+  const [identityName, setIdentityName] = useState("");
+  const [identityEmail, setIdentityEmail] = useState("");
   const commitMessageRef = useRef<HTMLTextAreaElement>(null);
   const diffsRef = useRef(diffs);
   const loadingDiffsRef = useRef(loadingDiffs);
@@ -125,7 +132,10 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     if (!cwd) { setStatus(EMPTY_STATUS); return; }
     setLoading(true); setError(null);
     try {
-      const data = await requestGitStatus(cwd, { signal: controller.signal });
+      const initial = await requestGitStatus(cwd, { signal: controller.signal });
+      const data = initial.repositoryRoot && initial.repositoryRoot !== cwd
+        ? await requestGitStatus(initial.repositoryRoot, { signal: controller.signal })
+        : initial;
       diffGenerationRef.current += 1;
       setStatus(data);
       setDiffs({});
@@ -158,6 +168,77 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     if (!status.repositoryRoot) return;
     void loadBranches();
   }, [loadBranches, status.branch, status.repositoryRoot]);
+  useEffect(() => {
+    if (!status.repositoryRoot) return;
+    let active = true;
+    void fetch(`/api/git/identity?cwd=${encodeURIComponent(status.repositoryRoot)}`, { cache: "no-store" })
+      .then(async (response) => response.ok ? await response.json() as { name: string; email: string; configured: boolean } : null)
+      .then((data) => { if (active && data) { setIdentityConfigured(data.configured); setIdentityName(data.name); setIdentityEmail(data.email); } })
+      .catch((cause: unknown) => { if (active) setError(String(cause)); });
+    return () => { active = false; };
+  }, [status.repositoryRoot]);
+  const draftKey = status.repositoryRoot && status.branch ? `piora:commit-draft:${status.repositoryRoot}:${status.branch}` : null;
+  useEffect(() => {
+    if (!draftKey || !status.repositoryRoot) return;
+    try {
+      setCommitMessage((current) => current || localStorage.getItem(draftKey) || "");
+      const saved = JSON.parse(localStorage.getItem(`piora:commit-history:${status.repositoryRoot}`) || "[]") as unknown;
+      setRecentMessages(Array.isArray(saved) ? saved.filter((item): item is string => typeof item === "string").slice(0, 20) : []);
+    } catch { setRecentMessages([]); }
+  }, [draftKey, status.repositoryRoot]);
+  useEffect(() => {
+    if (draftKey) { try { localStorage.setItem(draftKey, commitMessage); } catch { /* Keep the in-memory draft. */ } }
+  }, [draftKey, commitMessage]);
+
+  const saveIdentity = async () => {
+    if (!status.repositoryRoot || busy) return;
+    setBusy(true); setError(null);
+    try {
+      const response = await fetch("/api/git/identity", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd: status.repositoryRoot, name: identityName, email: identityEmail }) });
+      const data = await response.json() as { error?: string; configured?: boolean };
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      setIdentityConfigured(data.configured === true);
+      setToast(t("review.identitySaved"));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(false); }
+  };
+
+  const loadIntegration = useCallback(async () => {
+    if (!status.repositoryRoot) return;
+    try {
+      const response = await fetch(`/api/git/sync?cwd=${encodeURIComponent(status.repositoryRoot)}`, { cache: "no-store" });
+      const data = await response.json() as { integration?: "merge" | "rebase" | null };
+      if (response.ok) setIntegration(data.integration ?? null);
+    } catch { /* The next Git action will show a concrete error. */ }
+  }, [status.repositoryRoot]);
+  useEffect(() => { void loadIntegration(); }, [loadIntegration]);
+
+  const sync = useCallback(async (action: "fetch" | "pull" | "continue" | "abort", mode: "ff-only" | "merge" | "rebase" = "ff-only") => {
+    if (!status.repositoryRoot || busy) return;
+    if (action === "abort" && !await requestConfirmation({
+      title: t("review.abortSyncTitle"), message: t("review.abortSyncConfirm"), confirmLabel: t("review.abortSync"), tone: "danger",
+    })) return;
+    setBusy(true); setError(null);
+    try {
+      const remote = status.upstream?.split("/")[0] ?? "origin";
+      const branch = status.upstream?.slice(remote.length + 1) || branchState.currentBranch || status.branch || "";
+      const response = await fetch("/api/git/sync", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd: status.repositoryRoot, action, remote, branch, mode }) });
+      const data = await response.json() as { error?: string; code?: string; integration?: "merge" | "rebase" | null };
+      if (!response.ok) {
+        if (action === "pull" && mode === "ff-only" && data.code === "git_failed") setShowDivergenceActions(true);
+        throw new Error(data.error || `HTTP ${response.status}`);
+      }
+      setIntegration(data.integration ?? null);
+      setShowDivergenceActions(false);
+      setToast(t(action === "fetch" ? "review.fetchDone" : action === "abort" ? "review.abortDone" : "review.syncDone"));
+      onRefresh();
+      window.dispatchEvent(new CustomEvent("piora:git-status-changed", { detail: { cwd } }));
+      await loadStatus();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(false); void loadIntegration(); }
+  }, [branchState.currentBranch, busy, cwd, loadIntegration, loadStatus, onRefresh, status.branch, status.repositoryRoot, status.upstream, t]);
 
   useEffect(() => {
     if (!status.repositoryRoot) return;
@@ -185,7 +266,7 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     setLoadingDiffs((current) => new Set([...current, ...missing.map((item) => item.key)]));
     void Promise.all(missing.map(async (item) => {
       try {
-        const response = await fetch(`/api/git/diff?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(item.file.filePath)}&scope=${item.group === "staged" ? "staged" : "worktree"}`, { cache: "no-store" });
+        const response = await fetch(`/api/git/diff?cwd=${encodeURIComponent(status.repositoryRoot ?? cwd)}&path=${encodeURIComponent(item.file.filePath)}&scope=${item.group === "staged" ? "staged" : "worktree"}`, { cache: "no-store" });
         const data = await response.json() as GitFileDiffResponse & { error?: string };
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
         if (generation === diffGenerationRef.current) setDiffs((current) => ({ ...current, [item.key]: data }));
@@ -195,7 +276,7 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
         setLoadingDiffs((current) => { const next = new Set(current); next.delete(item.key); return next; });
       }
     }));
-  }, [cwd, selectedItem]);
+  }, [cwd, selectedItem, status.repositoryRoot]);
 
   const expandContext = useCallback(async (item: ChangeListItem) => {
     if (!cwd || loadingContextKeys.has(item.key)) return;
@@ -203,7 +284,7 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     setLoadingContextKeys((current) => new Set(current).add(item.key));
     setError(null);
     try {
-      const response = await fetch(`/api/git/diff?cwd=${encodeURIComponent(cwd)}&path=${encodeURIComponent(item.file.filePath)}&scope=${item.group === "staged" ? "staged" : "worktree"}&context=all`, { cache: "no-store" });
+      const response = await fetch(`/api/git/diff?cwd=${encodeURIComponent(status.repositoryRoot ?? cwd)}&path=${encodeURIComponent(item.file.filePath)}&scope=${item.group === "staged" ? "staged" : "worktree"}&context=all`, { cache: "no-store" });
       const data = await response.json() as GitFileDiffResponse & { error?: string };
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       if (generation === diffGenerationRef.current) {
@@ -214,7 +295,7 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     } finally {
       setLoadingContextKeys((current) => { const next = new Set(current); next.delete(item.key); return next; });
     }
-  }, [cwd, loadingContextKeys]);
+  }, [cwd, loadingContextKeys, status.repositoryRoot]);
 
   const mutate = useCallback(async (action: "stage" | "unstage" | "revert", targetItems: ChangeListItem[], options?: { hunk?: Hunk }) => {
     if (!cwd || targetItems.length === 0 || busy) return;
@@ -224,7 +305,8 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
       const normalized = rawPath.replace(/\\/g, "/");
       return normalized.toLocaleLowerCase().startsWith(`${root.toLocaleLowerCase()}/`) ? normalized.slice(root.length + 1) : normalized;
     }).filter((path) => path.length > 0))];
-    const body: Record<string, unknown> = { cwd, paths: relativePaths };
+    const gitCwd = status.repositoryRoot ?? cwd;
+    const body: Record<string, unknown> = { cwd: gitCwd, paths: relativePaths };
     const itemDiff = targetItems.length === 1 ? diffs[targetItems[0].key] : undefined;
     if (action === "revert") {
       const changedLines = options?.hunk?.lines.filter((line) => line.kind === "added" || line.kind === "removed").length
@@ -237,7 +319,7 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
       })) return;
     }
     if (action === "revert" || options?.hunk) {
-      const hashResponse = await fetch("/api/git/diff-hash", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, paths: relativePaths }) });
+      const hashResponse = await fetch("/api/git/diff-hash", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd: gitCwd, paths: relativePaths }) });
       const hashData = await hashResponse.json() as { diffHash?: string; error?: string };
       if (!hashResponse.ok || !hashData.diffHash) { setError(hashData.error || "Unable to verify diff"); return; }
       body.diffHash = hashData.diffHash;
@@ -256,47 +338,28 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     finally { setBusy(false); }
   }, [busy, cwd, diffs, loadStatus, onRefresh, status.repositoryRoot, t]);
 
-  const push = useCallback(async () => {
-    if (!cwd || busy) return;
-    setBusy(true); setError(null);
-    try {
-      const response = await fetch("/api/git/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) });
-      const data = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-      setToast(t("review.pushDone"));
-      setShowCommit(false);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { setBusy(false); }
-  }, [busy, cwd, t]);
-
   const commit = useCallback(async (pushAfterCommit = false) => {
     if (!cwd || busy) return;
-    const resolvedMessage = commitMessage.trim() || t("review.generatedCommitMessage", { count: status.files.length });
+    const resolvedMessage = commitMessage.trim();
+    if (!resolvedMessage) { setError(t("review.commitMessageRequired")); return; }
     setBusy(true); setError(null);
     try {
-      const response = await fetch("/api/git/commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, message: resolvedMessage, amend, includeUnstaged }) });
+      const response = await fetch("/api/git/commit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd: status.repositoryRoot ?? cwd, message: resolvedMessage, amend }) });
       const data = await response.json() as { sha?: string; error?: string };
       if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
       const shortSha = data.sha?.slice(0, 8) ?? "";
-      if (pushAfterCommit) {
-        const pushResponse = await fetch("/api/git/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) });
-        const pushData = await pushResponse.json() as { error?: string };
-        if (!pushResponse.ok) {
-          setToast(t("review.commitDone", { sha: shortSha }));
-          setCommitMessage(""); setShowCommit(false);
-          onRefresh();
-          window.dispatchEvent(new CustomEvent("piora:git-status-changed", { detail: { cwd } }));
-          await loadStatus();
-          setError(t("review.commitPushFailed", { error: pushData.error || `HTTP ${pushResponse.status}` }));
-          return;
-        }
+      if (status.repositoryRoot) {
+        const next = [resolvedMessage, ...recentMessages.filter((item) => item !== resolvedMessage)].slice(0, 20);
+        setRecentMessages(next);
+        try { localStorage.setItem(`piora:commit-history:${status.repositoryRoot}`, JSON.stringify(next)); } catch { /* Commit has already succeeded. */ }
       }
-      setToast(t(pushAfterCommit ? "review.commitPushDone" : "review.commitDone", { sha: shortSha }));
+      setToast(t("review.commitDone", { sha: shortSha }));
       setCommitMessage(""); setShowCommit(false);
       onRefresh(); window.dispatchEvent(new CustomEvent("piora:git-status-changed", { detail: { cwd } })); await loadStatus();
+      if (pushAfterCommit) setShowPush(true);
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setBusy(false); }
-  }, [amend, busy, commitMessage, cwd, includeUnstaged, loadStatus, onRefresh, status.files.length, t]);
+  }, [amend, busy, commitMessage, cwd, loadStatus, onRefresh, recentMessages, status.repositoryRoot, t]);
 
   const toggleReviewed = (key: string) => setReviewedKeys((current) => toggleSet(current, key));
 
@@ -338,25 +401,51 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
     branch={branchState.currentBranch ?? status.branch ?? t("review.workingTree")}
     commitMessage={commitMessage}
     setCommitMessage={setCommitMessage}
+    recentMessages={recentMessages}
     commitMessageRef={commitMessageRef}
-    includeUnstaged={includeUnstaged}
-    setIncludeUnstaged={setIncludeUnstaged}
     amend={amend}
     setAmend={setAmend}
+    identityConfigured={identityConfigured}
+    identityName={identityName}
+    identityEmail={identityEmail}
+    setIdentityName={setIdentityName}
+    setIdentityEmail={setIdentityEmail}
+    onSaveIdentity={() => void saveIdentity()}
     stagedCount={stagedItems.length}
-    worktreeCount={worktreeItems.length}
-    additions={status.additions}
-    deletions={status.deletions}
     busy={busy}
     onCommit={(pushAfterCommit) => void commit(pushAfterCommit)}
-    onPush={() => void push()}
+    onPush={() => { setShowCommit(false); setShowPush(true); }}
     t={t}
   />;
+  const pushDialog = showPush && cwd && status.repositoryRoot
+    ? <GitPushDialog cwd={status.repositoryRoot} branch={branchState.currentBranch ?? status.branch ?? ""} upstream={status.upstream}
+      onClose={() => setShowPush(false)} onPushed={() => {
+        setToast(t("review.pushDone"));
+        onRefresh();
+        window.dispatchEvent(new CustomEvent("piora:git-status-changed", { detail: { cwd } }));
+        void loadStatus();
+      }} /> : null;
+
+  const initializeRepository = async () => {
+    if (!cwd || busy) return;
+    setBusy(true); setError(null);
+    try {
+      const response = await fetch("/api/git/init", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd }) });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      window.dispatchEvent(new CustomEvent("piora:git-status-changed", { detail: { cwd } }));
+      await loadStatus(); onRefresh();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { setBusy(false); }
+  };
 
   if (!cwd) return <ReviewEmpty message={t("review.selectProject")} />;
   if (loading && status.files.length === 0) return <ReviewEmpty message={t("review.loading")} loading />;
-  if (!status.isGitRepository) return <ReviewEmpty message={error || t("review.notGit")} />;
-  if (items.length === 0) return <div className={styles.reviewRoot}><ReviewTopBar status={status} mode={mode} setMode={setMode} busy={busy} onRefresh={loadStatus} branches={branchState.branches} currentBranch={branchState.currentBranch} switchingBranch={switchingBranch} onSwitchBranch={switchBranch} commitControl={commitControl} reviewedCount={0} totalCount={0} t={t} /><ReviewEmpty message={error || toast || t("review.clean")} /></div>;
+  if (!status.isGitRepository) return <div className={styles.reviewRoot}>
+    <ReviewEmpty message={error || t("review.notGit")} />
+    <footer className={styles.reviewFooter}><button type="button" disabled={busy} onClick={() => void initializeRepository()}>{t("review.initializeRepository")}</button></footer>
+  </div>;
+  if (items.length === 0) return <div className={styles.reviewRoot}><ReviewTopBar status={status} mode={mode} setMode={setMode} busy={busy} onRefresh={loadStatus} branches={branchState.branches} currentBranch={branchState.currentBranch} switchingBranch={switchingBranch} onSwitchBranch={switchBranch} onOpenCommit={() => setShowCommit((open) => !open)} reviewedCount={0} totalCount={0} t={t} onSync={sync} integration={integration} showDivergenceActions={showDivergenceActions} /><ReviewEmpty message={error || toast || t("review.clean")} />{commitControl}{pushDialog}</div>;
 
   const scopeCounts: Record<ReviewScope, number> = {
     all: items.length,
@@ -371,11 +460,12 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
   };
 
   return <div className={styles.reviewRoot} aria-busy={busy}>
+    {pushDialog}
     <div className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">
       {activeKey ? t("review.selectedChange", { path: items.find((item) => item.key === activeKey)?.file.filePath ?? "" }) : t("review.noSelectedChange")}
     </div>
     <ReviewTopBar status={status} mode={mode} setMode={setMode} busy={busy} onRefresh={loadStatus} branches={branchState.branches} currentBranch={branchState.currentBranch} switchingBranch={switchingBranch} onSwitchBranch={switchBranch} t={t}
-      commitControl={commitControl} reviewedCount={reviewedCount} totalCount={items.length} />
+      onOpenCommit={() => setShowCommit((open) => !open)} reviewedCount={reviewedCount} totalCount={items.length} onSync={sync} integration={integration} showDivergenceActions={showDivergenceActions} />
 
     <div className={styles.reviewWorkbench}>
       <aside className={styles.reviewNavigator} aria-label={t("review.changesTree")}>
@@ -402,10 +492,11 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
         </div>
         {filteredItems.length ? <ChangeList
           items={filteredItems}
+          repositoryRoot={status.repositoryRoot ?? cwd}
           selectedKey={selectedItem?.key ?? null}
-          checkedKeys={reviewedKeys}
+          busy={busy}
           onSelect={(item) => setActiveKey(item.key)}
-          onToggle={(item) => toggleReviewed(item.key)}
+          onToggleStage={(item) => void mutate(item.group === "staged" ? "unstage" : "stage", [item])}
         /> : <div className={styles.reviewNoResults}>{t("review.noMatches")}</div>}
       </aside>
 
@@ -413,6 +504,7 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
         {selectedItem ? <>
           <FileReviewHeader
             item={selectedItem}
+            repositoryRoot={status.repositoryRoot ?? cwd}
             reviewed={reviewedKeys.has(selectedItem.key)}
             busy={busy}
             onReview={() => toggleReviewed(selectedItem.key)}
@@ -435,6 +527,7 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
       </main>
     </div>
 
+    {commitControl}
     <footer className={styles.reviewFooter}>
       <div className={styles.reviewFooterBar}>
         <span>{stagedItems.length ? t("review.readyToCommit", { count: stagedItems.length }) : t("review.nothingStaged")}</span>
@@ -449,7 +542,7 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
   </div>;
 }
 
-function ReviewTopBar({ status, mode, setMode, busy, onRefresh, branches, currentBranch, switchingBranch, onSwitchBranch, commitControl, reviewedCount, totalCount, t }: {
+function ReviewTopBar({ status, mode, setMode, busy, onRefresh, branches, currentBranch, switchingBranch, onSwitchBranch, onOpenCommit, reviewedCount, totalCount, onSync, integration, showDivergenceActions, t }: {
   status: GitStatusResponse;
   mode: DiffMode;
   setMode: (mode: DiffMode) => void;
@@ -459,7 +552,10 @@ function ReviewTopBar({ status, mode, setMode, busy, onRefresh, branches, curren
   currentBranch: string | null;
   switchingBranch: string | null;
   onSwitchBranch: (branch: string) => void | Promise<void>;
-  commitControl?: ReactNode;
+  onOpenCommit: () => void;
+  onSync: (action: "fetch" | "pull" | "continue" | "abort", mode?: "ff-only" | "merge" | "rebase") => Promise<void>;
+  integration: "merge" | "rebase" | null;
+  showDivergenceActions: boolean;
   reviewedCount: number;
   totalCount: number;
   t: ReturnType<typeof useI18n>["t"];
@@ -498,13 +594,23 @@ function ReviewTopBar({ status, mode, setMode, busy, onRefresh, branches, curren
       </div> : null}
     </div>
     <div className={styles.reviewToolbarActions}>
+      {status.upstream ? <span title={status.upstream}>{status.upstream} ↑{status.ahead ?? 0} ↓{status.behind ?? 0}</span> : null}
+      <button type="button" disabled={busy} onClick={() => void onSync("fetch")}>{t("review.fetch")}</button>
+      {integration ? <>
+        <button type="button" disabled={busy} onClick={() => void onSync("continue")}>{t("review.continueSync")}</button>
+        <button type="button" disabled={busy} onClick={() => void onSync("abort")}>{t("review.abortSync")}</button>
+      </> : <button type="button" disabled={busy || !status.upstream} onClick={() => void onSync("pull")}>{t("review.pull")}</button>}
+      {showDivergenceActions && !integration ? <>
+        <button type="button" disabled={busy} onClick={() => void onSync("pull", "merge")}>{t("review.pullMerge")}</button>
+        <button type="button" disabled={busy} onClick={() => void onSync("pull", "rebase")}>{t("review.pullRebase")}</button>
+      </> : null}
       {totalCount > 0 ? <span className={styles.reviewToolbarProgress}>{t("review.progress", { reviewed: reviewedCount, total: totalCount })}</span> : null}
       <div className={styles.reviewViewToggle} role="group" aria-label={t("review.viewMode")}>
         <button type="button" aria-pressed={mode === "unified"} onClick={() => setMode("unified")}>{t("review.view.unified")}</button>
         <button type="button" aria-pressed={mode === "split"} onClick={() => setMode("split")}>{t("review.view.split")}</button>
       </div>
       <button type="button" className={styles.iconAction} onClick={() => void onRefresh()} disabled={busy} title={t("review.refresh")} aria-label={t("review.refresh")}><AliIcon name="reload" size={14} /></button>
-      {commitControl}
+      <button type="button" className={styles.commitTrigger} disabled={busy} onClick={onOpenCommit}><AliIcon name="branches" size={13} />{t("review.commitOrPush")}</button>
     </div>
   </header>;
 }
@@ -515,15 +621,17 @@ function CommitControl({
   branch,
   commitMessage,
   setCommitMessage,
+  recentMessages,
   commitMessageRef,
-  includeUnstaged,
-  setIncludeUnstaged,
   amend,
   setAmend,
+  identityConfigured,
+  identityName,
+  identityEmail,
+  setIdentityName,
+  setIdentityEmail,
+  onSaveIdentity,
   stagedCount,
-  worktreeCount,
-  additions,
-  deletions,
   busy,
   onCommit,
   onPush,
@@ -534,65 +642,66 @@ function CommitControl({
   branch: string;
   commitMessage: string;
   setCommitMessage: (message: string) => void;
+  recentMessages: string[];
   commitMessageRef: RefObject<HTMLTextAreaElement | null>;
-  includeUnstaged: boolean;
-  setIncludeUnstaged: (include: boolean) => void;
   amend: boolean;
   setAmend: (amend: boolean) => void;
+  identityConfigured: boolean | null;
+  identityName: string;
+  identityEmail: string;
+  setIdentityName: (name: string) => void;
+  setIdentityEmail: (email: string) => void;
+  onSaveIdentity: () => void;
   stagedCount: number;
-  worktreeCount: number;
-  additions: number;
-  deletions: number;
   busy: boolean;
   onCommit: (pushAfterCommit: boolean) => void;
   onPush: () => void;
   t: ReturnType<typeof useI18n>["t"];
 }) {
-  const rootRef = useRef<HTMLDivElement>(null);
-  const canCommit = stagedCount > 0 || (includeUnstaged && worktreeCount > 0) || amend;
+  const canCommit = identityConfigured !== false && commitMessage.trim().length > 0 && (stagedCount > 0 || amend);
 
   useEffect(() => {
     if (!open) return;
-    const dismiss = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) onOpenChange(false);
-    };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") onOpenChange(false);
     };
-    window.addEventListener("pointerdown", dismiss);
     window.addEventListener("keydown", closeOnEscape);
-    return () => {
-      window.removeEventListener("pointerdown", dismiss);
-      window.removeEventListener("keydown", closeOnEscape);
-    };
+    return () => window.removeEventListener("keydown", closeOnEscape);
   }, [onOpenChange, open]);
 
-  return <div ref={rootRef} className={styles.commitControl}>
-    <button type="button" className={styles.commitTrigger} aria-haspopup="dialog" aria-expanded={open} disabled={busy} onClick={() => {
-      onOpenChange(!open);
-      if (!open) requestAnimationFrame(() => commitMessageRef.current?.focus({ preventScroll: true }));
-    }}><AliIcon name="branches" size={13} /><span>{t("review.commitOrPush")}</span><AliIcon name={open ? "arrowup" : "arrowdown"} size={10} /></button>
-    {open ? <div className={styles.commitPopover} role="dialog" aria-label={t("review.commitOrPush")}>
-      <div className={styles.commitBranch}><AliIcon name="branches" size={12} /><b>{branch}</b></div>
+  if (!open) return null;
+  return <section className={styles.commitDock} role="region" aria-label={t("review.commitOrPush")}>
+    <div className={styles.commitPopover}>
+      <div className={styles.commitBranch}><AliIcon name="branches" size={12} /><b>{branch}</b><button type="button" onClick={() => onOpenChange(false)} aria-label={t("review.closeCommit")}>×</button></div>
       <textarea ref={commitMessageRef} value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} onKeyDown={(event) => {
         if (!isCommitKeyboardShortcut(event.nativeEvent) || !canCommit) return;
         event.preventDefault();
         onCommit(false);
       }} placeholder={t("review.commitMessagePlaceholder")} aria-label={t("review.commitMessage")} aria-describedby="review-commit-shortcut" rows={4} />
       <span id="review-commit-shortcut" className={styles.srOnly}>{t("review.commitShortcut")}</span>
-      {worktreeCount > 0 ? <label className={styles.includeUnstagedToggle}><input type="checkbox" checked={includeUnstaged} onChange={(event) => setIncludeUnstaged(event.target.checked)} />{t("review.includeUnstaged")}<span className={styles.commitStats}><span className={styles.additions}>+{additions}</span><span className={styles.deletions}>-{deletions}</span></span></label> : null}
+      {recentMessages.length ? <select value="" onChange={(event) => setCommitMessage(event.target.value)} aria-label={t("review.recentCommitMessages")}>
+        <option value="">{t("review.recentCommitMessages")}</option>
+        {recentMessages.map((message) => <option key={message} value={message}>{message.slice(0, 80)}</option>)}
+      </select> : null}
+      {identityConfigured === false ? <div className={styles.commitIdentity}>
+        <strong>{t("review.identityRequired")}</strong>
+        <input value={identityName} onChange={(event) => setIdentityName(event.target.value)} placeholder={t("review.gitName")} aria-label={t("review.gitName")} />
+        <input value={identityEmail} onChange={(event) => setIdentityEmail(event.target.value)} placeholder={t("review.gitEmail")} aria-label={t("review.gitEmail")} />
+        <button type="button" disabled={busy || !identityName.trim() || !identityEmail.trim()} onClick={onSaveIdentity}>{t("review.saveIdentity")}</button>
+      </div> : null}
+      <span className={styles.commitStats}>{t("review.commitPreview", { count: stagedCount })}</span>
       <label className={styles.amendToggle}><input type="checkbox" checked={amend} onChange={(event) => setAmend(event.target.checked)} />{t("review.amend")}</label>
       <div className={styles.commitMenuActions}>
         <button type="button" disabled={busy || !canCommit} aria-keyshortcuts="Control+Enter Meta+Enter" onClick={() => onCommit(false)}><AliIcon name="check" size={13} />{t("review.commitOnly")}<kbd>Ctrl+↵</kbd></button>
         <button type="button" disabled={busy || !canCommit} onClick={() => onCommit(true)}><AliIcon name="cloud-upload" size={13} />{t("review.commitAndPush")}</button>
         <button type="button" disabled={busy} onClick={onPush}><AliIcon name="upload" size={13} />{t("review.pushOnly")}</button>
       </div>
-    </div> : null}
-  </div>;
+    </div>
+  </section>;
 }
 
-function FileReviewHeader({ item, reviewed, busy, onReview, onOpen, onStage, onRevert, t }: { item: ChangeListItem; reviewed: boolean; busy: boolean; onReview: () => void; onOpen: () => void; onStage: () => void; onRevert: () => void; t: ReturnType<typeof useI18n>["t"] }) {
-  const { name, parent } = splitPath(item.file.filePath);
+function FileReviewHeader({ item, repositoryRoot, reviewed, busy, onReview, onOpen, onStage, onRevert, t }: { item: ChangeListItem; repositoryRoot: string; reviewed: boolean; busy: boolean; onReview: () => void; onOpen: () => void; onStage: () => void; onRevert: () => void; t: ReturnType<typeof useI18n>["t"] }) {
+  const { name, parent } = splitPath(toReviewPath(item.file.filePath, repositoryRoot));
   return <header className={styles.reviewFileHeader}>
     <span className={styles.reviewFileIcon}>{getFileIcon(name, 14)}</span>
     <div className={styles.reviewFileIdentity} title={item.file.filePath}><b>{name}</b>{parent ? <small>{parent}/</small> : null}</div>

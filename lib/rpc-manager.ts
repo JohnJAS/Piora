@@ -4,7 +4,7 @@ import { assertRemotePolicyCommand, readRemoteSessionPolicy, remotePolicyResourc
 import { RemoteContentProjection } from "./remote-content";
 import { readPendingSessionModel, clearPendingSessionModel } from "./session-model-selection";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { createAgentSessionFromServices, createAgentSessionServices, createBashToolDefinition, getAgentDir, initTheme, SessionManager, SettingsManager, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
+import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
 import { randomUUID } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import { assertSessionNotMutating, drainSessionFileOperations, runSessionFileOperation, trackSessionFileOperation } from "./session-mutation";
@@ -100,7 +100,7 @@ import {
   type ProjectToolSettingsRecord,
 } from "./project-tool-settings";
 import { resolveProject } from "./worktree";
-import { getSSHSessionForAgent } from "./ssh/session-manager";
+import { listSSHSessionSummariesForAgent, subscribeSSHRegistry } from "./ssh/session-manager";
 
 // ============================================================================
 // Types
@@ -2400,15 +2400,6 @@ export async function startRpcSession(
         ...(preferredDefault ? { defaultModel: preferredDefault } : {}),
         ...(thinkingLevel ? { thinkingLevel } : {}),
       });
-    const remoteSSH = getSSHSessionForAgent(sessionId);
-    const customTools = remoteSSH ? [createBashToolDefinition(cwd, {
-      operations: {
-        exec: async (command, _commandCwd, executionOptions) => {
-          const result = await remoteSSH.exec(command, { signal: executionOptions.signal, timeout: executionOptions.timeout, onData: executionOptions.onData });
-          return { exitCode: result.exitCode };
-        },
-      },
-    })] : undefined;
     const { session: inner } = await createAgentSessionFromServices({
       services,
       sessionManager,
@@ -2416,7 +2407,6 @@ export async function startRpcSession(
       ...(initial.thinkingLevel ? { thinkingLevel: initial.thinkingLevel } : {}),
       ...(initial.scopedModels.length > 0 ? { scopedModels: initial.scopedModels } : {}),
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
-      ...(customTools ? { customTools: customTools as unknown as NonNullable<Parameters<typeof createAgentSessionFromServices>[0]["customTools"]> } : {}),
     });
     installImageContextPolicy(inner.agent);
     if (pendingModel && inner.model?.provider === pendingModel.provider && inner.model.id === pendingModel.modelId) {
@@ -2485,6 +2475,21 @@ export async function startRpcSession(
       getServicesCache().delete(sessionServicesKey);
     });
     registry.set(realSessionId, wrapper);
+    let previousSSHInventory = JSON.stringify(listSSHSessionSummariesForAgent(realSessionId).map(item => [item.id, item.connected]));
+    const unsubscribeSSH = subscribeSSHRegistry((owner) => {
+      if (owner && owner !== realSessionId) return;
+      const current = JSON.stringify(listSSHSessionSummariesForAgent(realSessionId).map(item => [item.id, item.connected]));
+      if (current === previousSSHInventory) return;
+      previousSSHInventory = current;
+      if (!inner.isStreaming || !inner.getActiveToolNames().includes("ssh")) return;
+      const available = listSSHSessionSummariesForAgent(realSessionId).map(item => item.id + " | " + (item.hostName || item.host) + " | " + (item.connected ? "connected" : "disconnected")).join("\n");
+      void inner.sendCustomMessage({
+        customType: "piora-ssh-availability",
+        content: "SSH connections linked to this task changed. Call ssh sessions for the current list.\n" + (available || "None."),
+        display: false,
+      }, { deliverAs: "steer", triggerTurn: true }).catch(error => console.error("[pi-web] SSH availability update failed:", error));
+    });
+    wrapper.onDestroy(unsubscribeSSH);
     wrapper.beginExtensionBinding({ forceEmptySystemPrompt: inner.getActiveToolNames().length === 0 });
 
     return { session: wrapper, realSessionId };

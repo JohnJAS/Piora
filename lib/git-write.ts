@@ -56,21 +56,23 @@ export function validateGitWritePaths(cwd: string, paths: unknown, allowedRoots:
 
 interface GitResult { stdout: string; stderr: string; }
 
-async function runGit(cwd: string, args: string[], stdin?: string): Promise<GitResult> {
+export async function runGit(cwd: string, args: string[], stdin?: string, timeoutMs = GIT_TIMEOUT_MS, envOverrides: Record<string, string> = {}): Promise<GitResult> {
   return await new Promise((resolve, reject) => {
     const child = spawn("git", ["-C", cwd, ...args], {
       shell: false,
       windowsHide: true,
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, LC_ALL: "C" },
+      env: { ...process.env, LC_ALL: "C", GIT_TERMINAL_PROMPT: "0", ...envOverrides },
     });
     let stdout = ""; let stderr = ""; let size = 0;
-    const timer = setTimeout(() => child.kill(), GIT_TIMEOUT_MS);
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
     child.stdout.on("data", (chunk: Buffer) => { size += chunk.length; if (size <= MAX_OUTPUT_BYTES) stdout += chunk.toString("utf8"); });
     child.stderr.on("data", (chunk: Buffer) => { size += chunk.length; if (size <= MAX_OUTPUT_BYTES) stderr += chunk.toString("utf8"); });
     child.on("error", (error) => { clearTimeout(timer); reject(new GitWriteError(error.message, 500, "spawn_failed")); });
     child.on("close", (code) => {
       clearTimeout(timer);
+      if (timedOut) return reject(new GitWriteError(`Git operation timed out after ${Math.round(timeoutMs / 1000)} seconds`, 504, "git_timeout"));
       if (size > MAX_OUTPUT_BYTES) return reject(new GitWriteError("Git output exceeded the safe limit", 413, "output_too_large"));
       if (code !== 0) return reject(new GitWriteError((stderr || stdout || `git exited with ${code}`).trim(), 409, "git_failed"));
       resolve({ stdout, stderr });
@@ -98,14 +100,14 @@ async function assertFreshHash(cwd: string, paths: string[], expectedHash?: stri
   if (!/^[a-f0-9]{64}$/i.test(expectedHash) || actualHash !== expectedHash) throw new GitWriteError("The diff changed; refresh before applying the hunk", 409, "stale_diff");
 }
 
-async function assertRepositoryReady(cwd: string): Promise<string> {
+async function assertRepositoryReady(cwd: string, allowConflicts = false): Promise<string> {
   let repositoryRoot: string;
   try { repositoryRoot = (await runGit(cwd, ["rev-parse", "--show-toplevel"])).stdout.trim(); }
   catch { throw new GitWriteError("The selected directory is not a Git repository", 400, "not_git_repository"); }
   const status = (await runGit(cwd, ["status", "--porcelain=v1", "-z"])).stdout;
   for (const entry of status.split("\0")) {
     const code = entry.slice(0, 2);
-    if (code.includes("U") || code === "AA" || code === "DD") throw new GitWriteError("Resolve Git conflicts before changing the index or working tree", 409, "conflict");
+    if (!allowConflicts && (code.includes("U") || code === "AA" || code === "DD")) throw new GitWriteError("Resolve Git conflicts before changing the index or working tree", 409, "conflict");
   }
   return repositoryRoot;
 }
@@ -127,7 +129,9 @@ export async function computeGitDiffHash(cwd: string, paths: string[]): Promise<
 }
 
 export async function stageGitPaths(cwd: string, paths: string[], patchText?: string, expectedHash?: string): Promise<void> {
-  await assertRepositoryReady(cwd);
+  // Staging a resolved conflict is how Git records the resolution. Other
+  // write actions remain blocked until all unmerged entries are resolved.
+  await assertRepositoryReady(cwd, true);
   if (patchText) {
     assertPatchMatchesPaths(patchText, paths);
     await assertFreshHash(cwd, paths, expectedHash);

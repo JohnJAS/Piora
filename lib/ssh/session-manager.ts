@@ -1,7 +1,7 @@
 import { randomUUID, randomBytes } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import { Client, type ClientChannel, type SFTPWrapper } from "ssh2";
-import type { SSHConnectionOptions, SSHSessionEvent, SSHSessionSnapshot } from "./types";
+import type { SSHConnectionOptions, SSHSessionEvent, SSHSessionSnapshot, SSHSessionSummary } from "./types";
 import { authenticateSSH } from "./connection";
 
 type Listener = (event: SSHSessionEvent) => void;
@@ -24,15 +24,23 @@ export class SSHSession {
   readonly id = randomUUID();
   mode: SSHSessionSnapshot["mode"] = "independent";
   agentSessionId?: string;
+  ownerSessionId?: string;
+  readonly hostId?: string;
+  readonly hostName?: string;
 
-  constructor(private readonly options: SSHConnectionOptions) {}
+  constructor(private readonly options: SSHConnectionOptions, identity?: { hostId?: string; hostName?: string; ownerSessionId?: string }) {
+    this.hostId = identity?.hostId; this.hostName = identity?.hostName; this.ownerSessionId = identity?.ownerSessionId;
+  }
 
   snapshot(): SSHSessionSnapshot {
-    return { id: this.id, host: this.options.host, port: this.options.port ?? 22, username: this.options.username, cwd: this.currentCwd, connected: this.connected, busy: !!this.execution, output: this.output, mode: this.mode, ...(this.agentSessionId ? { agentSessionId: this.agentSessionId } : {}), ...(this.fingerprint ? { hostFingerprint: this.fingerprint } : {}) };
+    return { id: this.id, ...(this.hostId ? { hostId: this.hostId } : {}), ...(this.hostName ? { hostName: this.hostName } : {}), ...(this.ownerSessionId ? { ownerSessionId: this.ownerSessionId } : {}), host: this.options.host, port: this.options.port ?? 22, username: this.options.username, cwd: this.currentCwd, connected: this.connected, busy: !!this.execution, output: this.output, mode: this.mode, ...(this.agentSessionId ? { agentSessionId: this.agentSessionId } : {}), ...(this.fingerprint ? { hostFingerprint: this.fingerprint } : {}) };
   }
 
   subscribe(listener: Listener): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-  private emit(event: SSHSessionEvent): void { for (const listener of this.listeners) { try { listener(event); } catch { /* detached client */ } } }
+  private emit(event: SSHSessionEvent): void {
+    for (const listener of this.listeners) { try { listener(event); } catch { /* detached client */ } }
+    if (event.type !== "output" && event.type !== "cwd") emitSSHRegistryChange(this.ownerSessionId);
+  }
 
   async connect(): Promise<void> {
     if (this.connected) return;
@@ -121,6 +129,7 @@ export class SSHSession {
   write(data: string): void {
     if (!this.channel) throw new Error("SSH session is not connected");
     if (this.execution) throw new Error("A model command is running; stop it before entering terminal input");
+    if (this.agentSessionId) throw new Error("Unlink this SSH connection from the AI task before manual terminal input");
     // Interactive commands can change cwd without a shell integration marker.
     if (this.currentCwd !== ".") { this.currentCwd = "."; this.emit({ type: "cwd", cwd: "." }); }
     this.channel.write(data);
@@ -151,9 +160,20 @@ export class SSHSession {
       this.channel!.write(`eval ${quoted}; __piora_status=$?; printf '${format}' "$__piora_status" "$PWD"\n`);
     });
   }
-  bindAgent(agentSessionId: string): void { this.mode = "agent-controlled"; this.agentSessionId = agentSessionId; this.emit({ type: "snapshot", snapshot: this.snapshot() }); }
+  bindAgent(agentSessionId: string): void {
+    if (this.ownerSessionId && this.ownerSessionId !== agentSessionId) throw new Error("SSH connection belongs to another task");
+    const oldOwner = this.ownerSessionId;
+    this.ownerSessionId = agentSessionId; this.mode = "agent-controlled"; this.agentSessionId = agentSessionId; this.emit({ type: "snapshot", snapshot: this.snapshot() });
+    if (oldOwner !== agentSessionId) emitSSHRegistryChange(oldOwner);
+  }
   unbindAgent(): void { this.mode = "independent"; delete this.agentSessionId; this.emit({ type: "snapshot", snapshot: this.snapshot() }); }
   clearOutput(): void { this.output = ""; this.emit({ type: "clear" }); }
+  stopExecution(): void {
+    if (!this.execution) throw new Error("No SSH command is running");
+    // Closing this shell is the only reliable way to stop a remote process tree.
+    // The visible output is retained and the user can reconnect explicitly.
+    this.close();
+  }
   async sftp(): Promise<SFTPWrapper> {
     if (!this.client || !this.connected) throw new Error("SSH is disconnected");
     if (this.sftpClient) return this.sftpClient;
@@ -172,12 +192,23 @@ export class SSHSession {
   }
 }
 
-declare global { var __pioraSSHSessions: Map<string, SSHSession> | undefined; }
+type RegistryListener = (ownerSessionId?: string) => void;
+declare global { var __pioraSSHSessions: Map<string, SSHSession> | undefined; var __pioraSSHRegistryListeners: Set<RegistryListener> | undefined; }
 const sessions = globalThis.__pioraSSHSessions ??= new Map<string, SSHSession>();
-export function createSSHSession(options: SSHConnectionOptions): SSHSession { const session = new SSHSession(options); sessions.set(session.id, session); return session; }
+const registryListeners = globalThis.__pioraSSHRegistryListeners ??= new Set<RegistryListener>();
+function emitSSHRegistryChange(ownerSessionId?: string): void { for (const listener of registryListeners) { try { listener(ownerSessionId); } catch { /* detached observer */ } } }
+export function subscribeSSHRegistry(listener: RegistryListener): () => void { registryListeners.add(listener); return () => registryListeners.delete(listener); }
+export function createSSHSession(options: SSHConnectionOptions, identity?: { hostId?: string; hostName?: string; ownerSessionId?: string }): SSHSession {
+  const session = new SSHSession(options, identity); sessions.set(session.id, session); emitSSHRegistryChange(session.ownerSessionId); return session;
+}
 export function listSSHSessions(): SSHSessionSnapshot[] { return [...sessions.values()].map(session => session.snapshot()); }
+export function listSSHSessionsForOwner(ownerSessionId?: string): SSHSessionSnapshot[] { return [...sessions.values()].filter(session => session.ownerSessionId === ownerSessionId).map(session => session.snapshot()); }
+export function listSSHSessionSummariesForAgent(agentSessionId: string): SSHSessionSummary[] {
+  return [...sessions.values()].filter(session => session.agentSessionId === agentSessionId).map(session => { const { output: _output, ...summary } = session.snapshot(); void _output; return summary; });
+}
 export function getSSHSession(id: string): SSHSession | undefined { return sessions.get(id); }
-export function closeSSHSession(id: string): void { sessions.get(id)?.close(); sessions.delete(id); }
+export function closeSSHSession(id: string): void { const session = sessions.get(id); if (!session) return; session.close(); sessions.delete(id); emitSSHRegistryChange(session.ownerSessionId); }
+export function getSSHSessionsForAgent(agentSessionId: string): SSHSession[] { return [...sessions.values()].filter(session => session.agentSessionId === agentSessionId); }
 export function getSSHSessionForAgent(agentSessionId: string): SSHSession | undefined {
   for (const session of sessions.values()) if (session.agentSessionId === agentSessionId) return session;
   return undefined;
