@@ -17,7 +17,7 @@
 .hostTab > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hostTab i { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); flex-shrink: 0; }
 .hostTab i[data-connected="true"] { background: var(--status-ready); }
-.tabBusy { margin-left: auto; color: var(--accent); font-size: 9px; }
+.tabBusy { margin-left: auto; color: var(--accent); font-size: var(--text-xs, 12px); }
 .addHost { flex: 0 0 auto; padding: 6px 10px; color: var(--text-muted) !important; white-space: nowrap; }
 .hostContent { min-width: 0; min-height: 0; flex: 1; overflow: hidden; }
 .savedHosts, .vaultBar { width: 100%; max-width: 440px; margin: 0 auto 20px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg); }

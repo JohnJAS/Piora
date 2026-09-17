@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { load, dump } from "js-yaml";
 import sharp from "sharp";
 import { loadBranding, runtimeBranding } from "./branding-config.mjs";
-import { buildBrandIcons } from "./build-brand-icon.mjs";
+import { buildBrandIcons, buildTrayIco } from "./build-brand-icon.mjs";
 
 export function createBrandBuilderConfig(base, brand, preview = false) {
   const config = structuredClone(base);
@@ -22,7 +22,7 @@ export function createBrandBuilderConfig(base, brand, preview = false) {
   else delete config.portable.splashImage;
   config.extraResources = config.extraResources.map(entry => {
     if (entry.to === "startup") return { from: "../.branding/resources/startup", to: "startup" };
-    if (entry.to === "tray-icon.ico") return { from: "../.branding/resources/icon.ico", to: entry.to };
+    if (entry.to === "tray-icon.ico") return { from: "../.branding/resources/tray.ico", to: entry.to };
     if (entry.to === "tray-icon.png") return { from: "../.branding/resources/tray.png", to: entry.to };
     return entry;
   });
@@ -51,6 +51,8 @@ export async function prepareBranding(projectRoot = resolve(import.meta.dirname,
   const htmlName = brand.displayName.replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
   await writeFile(resolve(projectRoot, "public/offline.html"), offlineTemplate.replaceAll("{{APP_DISPLAY_NAME}}", htmlName));
   await copyFile(brand.assets.trayIcon ?? resolve(resources, "icon.png"), resolve(resources, "tray.png"));
+  if (brand.assets.trayIcon) await buildTrayIco(brand.assets.trayIcon, resolve(resources, "tray.ico"));
+  else await copyFile(resolve(resources, "icon.ico"), resolve(resources, "tray.ico"));
   await copyFile(resolve(resources, "icon.png"), resolve(startup, "icon.png"));
   for (const [key, destination] of [["startupVideo", "startup/polaris-rover.mp4"], ["startupPoster", "startup/polaris-rover.jpg"], ["portableSplash", "portable-splash.bmp"]]) {
     if (brand.assets[key]) await copyFile(brand.assets[key], resolve(resources, destination));

@@ -1,6 +1,6 @@
 # Piora / XiaoYiHarness 品牌构建
 
-本功能对应 GitHub issue #105。Windows 双品牌打包、真实运行时检查与 XiaoYiHarness 连续版本安装升级已通过非发布 Actions 验证。尚未正式发布；开发示例品牌素材需确认，stable/Linux 发布矩阵尚未实跑。
+本功能对应 GitHub issue #105。Windows 双品牌打包、真实运行时检查与 XiaoYiHarness 连续版本安装升级已通过非发布 Actions 验证。尚未正式发布；XiaoYiHarness 已选用 02「交织 H」图标，此次图标替换尚未重新打包验收，stable/Linux 发布矩阵尚未实跑。
 
 ## 使用边界
 
@@ -19,7 +19,9 @@
 | Piora | `Piora` | `latest.yml` | `beta.yml` |
 | XiaoYiHarness | `XiaoYiHarness` | `xiaoyi-latest.yml` | `xiaoyi-beta.yml` |
 
-XiaoYiHarness 必须提供自己的 `icon.svg`。当前仓库内的图标仅为开发示例，正式发布前必须替换为确认的品牌素材。SVG 必须自包含，不能引用外部文件、脚本或活动内容。素材路径必须位于品牌自己的目录内。
+XiaoYiHarness 使用自己的 `icon.svg`，对应已选定的 02「交织 H」方案：深色圆角底、白色 H 骨架与绿色连接带。源文件使用纯矢量形状，不含字体、脚本或外部引用；桌面 ICO、Web/PWA 图标和静态启动图均由它生成。素材路径必须位于品牌自己的目录内。
+
+专用托盘使用 `trayIcon: "tray.png"`，保留可编辑源 `tray.svg`。它针对小尺寸加粗笔画并放大标志占比；品牌准备会生成包含 16/24/32/48/64/128/256 像素的 `tray.ico` 供 Windows 使用，其他平台使用 PNG。修改 SVG 后应重新导出 256×256 PNG；两份源素材需保持一致。未配置专用托盘时仍复用主图标，Piora 行为不变。
 
 可选素材字段：`trayIcon`（PNG）、`startupVideo`（MP4）、`startupPoster`（JPEG）、`portableSplash`（BMP）。缺少定制视频/海报时，启动页使用定制名称和静态图标；缺少定制 portable splash 时禁用旧 splash，不使用 Piora 视频或海报作为回退。
 

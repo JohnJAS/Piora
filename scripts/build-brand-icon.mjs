@@ -3,22 +3,6 @@ import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import sharp from "sharp";
 
-export async function buildBrandIcons(projectRoot, sourcePath, desktopDirectory = "desktop/build") {
-const svg = await readFile(sourcePath);
-
-async function renderPng(size) {
-  return sharp(svg, { density: 384 })
-    .resize(size, size, { fit: "fill" })
-    .png({ compressionLevel: 9 })
-    .toBuffer();
-}
-
-async function writePng(relativePath, size) {
-  const outputPath = resolve(projectRoot, relativePath);
-  await mkdir(dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, await renderPng(size));
-}
-
 function buildIco(images) {
   const headerSize = 6;
   const entrySize = 16;
@@ -43,6 +27,29 @@ function buildIco(images) {
   });
 
   return Buffer.concat([header, ...images.map(({ bytes }) => bytes)]);
+}
+
+export async function buildTrayIco(sourcePath, outputPath) {
+  const images = await Promise.all([16, 24, 32, 48, 64, 128, 256].map(async size => ({
+    size, bytes: await sharp(sourcePath).resize(size, size, { fit: "contain" }).png({ compressionLevel: 9 }).toBuffer(),
+  })));
+  await writeFile(outputPath, buildIco(images));
+}
+
+export async function buildBrandIcons(projectRoot, sourcePath, desktopDirectory = "desktop/build") {
+const svg = await readFile(sourcePath);
+
+async function renderPng(size) {
+  return sharp(svg, { density: 384 })
+    .resize(size, size, { fit: "fill" })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+}
+
+async function writePng(relativePath, size) {
+  const outputPath = resolve(projectRoot, relativePath);
+  await mkdir(dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, await renderPng(size));
 }
 
 await Promise.all([
