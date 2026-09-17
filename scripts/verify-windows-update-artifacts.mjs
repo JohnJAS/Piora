@@ -105,7 +105,7 @@ export async function verifyWindowsUpdateArtifacts(releaseRoot, requestedVersion
     if (runtimeConfig.updaterCacheDirName !== brand.updaterCacheDirName) throw new Error("Updater cache does not match build brand");
     const packed = JSON.parse(await readFile(join(root, "win-unpacked/resources/brand.json"), "utf8"));
     if (JSON.stringify(packed) !== JSON.stringify(runtimeBranding(brand))) throw new Error("Packaged brand does not match requested build");
-    const generated = extractFile(applicationAsarPath, "dist/generated/brand.js").toString("utf8");
+    const generated = extractFile(applicationAsarPath, join("dist", "generated", "brand.js")).toString("utf8");
     if (!generated.includes(JSON.stringify(brand.artifactPrefix)) || !generated.includes(JSON.stringify(brand.updateChannels.stable))
       || !generated.includes(JSON.stringify(brand.updateChannels.preview))) throw new Error("Compiled desktop brand does not match packaged brand");
     const packedManifest = JSON.parse(extractFile(applicationAsarPath, "package.json").toString("utf8"));

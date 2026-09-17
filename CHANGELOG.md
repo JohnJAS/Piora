@@ -6,6 +6,7 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ### 品牌构建与更新（开发中）
 
+- 修复 Windows 包内品牌校验读取 ASAR 嵌套路径时的分隔符兼容问题，并增加两种品牌的真实归档回归测试。
 - 增加构建时选择 XiaoYiHarness 的品牌配置、名称与图标准备；默认保持 Piora，定制品牌没有视频时使用自己的静态启动资源。
 - XiaoYiHarness 使用同一发布仓库中的专属 stable/beta 清单、更新资格记录和下载缓存；缺少专属清单时跳过版本，拒绝跨品牌安装包引用。
 - beta 与 stable 发布流程改为隔离构建两种品牌，汇总前分别验证产物校验和及更新说明，防止同名文件覆盖；连续版本实际安装升级及 GitHub Actions 实跑验证尚未完成。
