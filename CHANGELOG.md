@@ -6,6 +6,7 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ### 品牌构建与更新（开发中）
 
+- 修复 CI 中仍匹配旧启动素材报错的过期测试，改为检查分品牌校验入口，并补充两种品牌配置错配的拒绝测试；保留素材缺失、损坏与旧品牌资源残留的校验。
 - XiaoYiHarness 增加小尺寸专用「交织 H」托盘图标；Windows 托盘 ICO 也从专用素材生成，修复配置托盘 PNG 后仍使用主图标的问题，Piora 默认托盘素材保持不变。
 - 同步 upstream 至 beta.57 的 Git、SSH 与发布门禁更新，保留分品牌构建和更新行为，并刷新对应锁文件的许可证清单。
 - 包内启动素材校验按品牌核对静态图标与可选视频，拒绝旧品牌资源残留；CI 连续版本测试同步生成对应锁文件的许可证清单，保留正式包校验门禁。
