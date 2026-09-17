@@ -1,10 +1,11 @@
+import { brandText } from "@/lib/branding";
 import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: "/",
-    name: "Piora",
-    short_name: "Piora",
+    name: brandText("Piora"),
+    short_name: brandText("Piora"),
     description: "Local web interface for the pi coding agent",
     start_url: "/",
     scope: "/",

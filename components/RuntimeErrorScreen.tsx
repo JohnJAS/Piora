@@ -1,4 +1,5 @@
 "use client";
+import { brandText } from "@/lib/branding";
 
 import { useEffect, useMemo, useState } from "react";
 import { copyText } from "@/lib/clipboard";
@@ -36,7 +37,7 @@ export function RuntimeErrorScreen({ error, reset }: RuntimeErrorScreenProps) {
     <main style={styles.page}>
       <section style={styles.card} role="alert">
         <div style={styles.mark} aria-hidden="true">!</div>
-        <h1 style={styles.title}>{chinese ? "Piora 页面遇到问题" : "Piora could not render this page"}</h1>
+        <h1 style={styles.title}>{chinese ? brandText("Piora 页面遇到问题") : brandText("Piora could not render this page")}</h1>
         <p style={styles.copy}>
           {chinese
             ? assetLoadError

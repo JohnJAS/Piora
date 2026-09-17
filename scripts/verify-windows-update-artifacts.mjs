@@ -4,8 +4,9 @@ import { readFile, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { load as parseYaml } from "js-yaml";
-import { listPackage } from "@electron/asar";
+import { listPackage, extractFile } from "@electron/asar";
 import { extractVersionNotes } from "./create-release-notes.mjs";
+import { loadBranding, runtimeBranding } from "./branding-config.mjs";
 
 const VERSION_PATTERN = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-beta\.(0|[1-9]\d*))?$/;
 
@@ -46,16 +47,17 @@ export function verifyUpdateReleaseNotes(metadata, expected, label = "update met
   }
 }
 
-export async function verifyWindowsUpdateArtifacts(releaseRoot, requestedVersion, expectedReleaseNotes) {
+export async function verifyWindowsUpdateArtifacts(releaseRoot, requestedVersion, expectedReleaseNotes, brand) {
   const root = resolve(releaseRoot);
   const version = normalizeVersion(requestedVersion);
-  const channel = version.includes("-beta.") ? "beta" : "latest";
-  const installerName = `Piora-${version}-win-x64-setup.exe`;
+  const audience = version.includes("-beta.") ? "preview" : "stable";
+  const channel = brand?.updateChannels[audience] ?? (audience === "preview" ? "beta" : "latest");
+  const installerName = `${brand?.artifactPrefix ?? "Piora"}-${version}-win-x64-setup.exe`;
   const installerPath = join(root, installerName);
   const blockmapPath = `${installerPath}.blockmap`;
   const metadataName = `${channel}.yml`;
   const metadataPath = join(root, metadataName);
-  const runtimeConfigPath = join(root, "win-unpacked", "resources", "app-update.yml");
+  const runtimeConfigPath = join(root, "win-unpacked", "resources", brand?.id === "xiaoyi-harness" ? "app-update-xiaoyi.yml" : "app-update.yml");
   const applicationAsarPath = join(root, "win-unpacked", "resources", "app.asar");
 
   const [installerStat, blockmapStat, metadataText, runtimeConfigText] = await Promise.all([
@@ -80,14 +82,14 @@ export async function verifyWindowsUpdateArtifacts(releaseRoot, requestedVersion
     throw new Error(`${metadataName} must describe exactly one Windows installer.`);
   }
   const file = requireObject(metadata.files[0], `${metadataName} files[0]`);
-  if (file.url !== installerName) {
+  if (file.url !== installerName || (metadata.path !== undefined && metadata.path !== installerName)) {
     throw new Error(`${metadataName} points at ${file.url} instead of ${installerName}.`);
   }
   if (file.size !== installerStat.size) {
     throw new Error(`${metadataName} size for ${installerName} does not match the installer.`);
   }
   const actualSha512 = await sha512Base64(installerPath);
-  if (file.sha512 !== actualSha512) {
+  if (file.sha512 !== actualSha512 || (metadata.sha512 !== undefined && metadata.sha512 !== actualSha512)) {
     throw new Error(`${metadataName} SHA-512 does not match ${installerName}.`);
   }
 
@@ -95,8 +97,19 @@ export async function verifyWindowsUpdateArtifacts(releaseRoot, requestedVersion
   if (runtimeConfig.provider !== "github" || runtimeConfig.owner !== "kexijiang" || runtimeConfig.repo !== "Piora") {
     throw new Error("The packaged updater is not configured for kexijiang/Piora GitHub Releases.");
   }
-  if (channel === "beta" && runtimeConfig.channel !== "beta") {
+  if ((brand || channel === "beta") && runtimeConfig.channel !== channel) {
     throw new Error("The packaged preview updater is not configured for the beta channel.");
+  }
+  if (metadata.packages !== undefined) throw new Error("Unexpected web-installer packages in update metadata");
+  if (brand) {
+    if (runtimeConfig.updaterCacheDirName !== brand.updaterCacheDirName) throw new Error("Updater cache does not match build brand");
+    const packed = JSON.parse(await readFile(join(root, "win-unpacked/resources/brand.json"), "utf8"));
+    if (JSON.stringify(packed) !== JSON.stringify(runtimeBranding(brand))) throw new Error("Packaged brand does not match requested build");
+    const generated = extractFile(applicationAsarPath, join("dist", "generated", "brand.js")).toString("utf8");
+    if (!generated.includes(JSON.stringify(brand.artifactPrefix)) || !generated.includes(JSON.stringify(brand.updateChannels.stable))
+      || !generated.includes(JSON.stringify(brand.updateChannels.preview))) throw new Error("Compiled desktop brand does not match packaged brand");
+    const packedManifest = JSON.parse(extractFile(applicationAsarPath, "package.json").toString("utf8"));
+    if (packedManifest.productName !== brand.displayName || packedManifest.version !== version) throw new Error("Packaged application name/version mismatch");
   }
   const applicationEntries = new Set(listPackage(applicationAsarPath).map(normalizeAsarEntry));
   for (const requiredEntry of [
@@ -128,7 +141,8 @@ async function main() {
     await readFile(new URL("../package.json", import.meta.url), "utf8"),
   ).version;
   const changelog = await readFile(new URL("../CHANGELOG.md", import.meta.url), "utf8");
-  const result = await verifyWindowsUpdateArtifacts(releaseRoot, version, extractVersionNotes(changelog, version));
+  const brand = await loadBranding(resolve(import.meta.dirname, ".."));
+  const result = await verifyWindowsUpdateArtifacts(releaseRoot, version, extractVersionNotes(changelog, version), brand);
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 

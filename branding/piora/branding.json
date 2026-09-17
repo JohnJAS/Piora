@@ -1,0 +1,6 @@
+{
+  "id": "piora",
+  "displayName": "Piora",
+  "artifactPrefix": "Piora",
+  "updateChannels": { "stable": "latest", "preview": "beta" }
+}

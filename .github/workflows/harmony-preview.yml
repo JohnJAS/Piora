@@ -19,9 +19,23 @@ jobs:
       platforms: '["windows-latest"]'
 
   windows-preview:
-    name: Build and verify preview
+    name: Build and verify preview (${{ matrix.brand }})
     runs-on: windows-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - brand: piora
+            prefix: Piora
+            channel: beta
+          - brand: xiaoyi-harness
+            prefix: XiaoYiHarness
+            channel: xiaoyi-beta
+    env:
+      PIORA_BRAND: ${{ matrix.brand }}
+      BRAND_PREFIX: ${{ matrix.prefix }}
+      BRAND_CHANNEL: ${{ matrix.channel }}
 
     steps:
       - name: Check out tagged source
@@ -81,15 +95,15 @@ jobs:
 
       - name: Smoke-test packaged Electron runtime
         shell: pwsh
-        run: node scripts/smoke-test-portable.mjs desktop/release/win-unpacked/Piora.exe --expected-version $env:GITHUB_REF_NAME --packaged-runtime
+        run: node scripts/smoke-test-portable.mjs desktop/release/win-unpacked/Piora.exe --expected-version $env:GITHUB_REF_NAME --packaged-runtime --expected-brand $env:PIORA_BRAND
 
       - name: Install and smoke-test preview installer
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          $installer = (Resolve-Path -LiteralPath "desktop/release/Piora-$version-win-x64-setup.exe").Path
-          $installDirectory = Join-Path $env:RUNNER_TEMP "Piora-preview-$version"
-          $installation = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installDirectory") -Wait -PassThru
+          $installer = (Resolve-Path -LiteralPath "desktop/release/$env:BRAND_PREFIX-$version-win-x64-setup.exe").Path
+          $installDirectory = Join-Path $env:RUNNER_TEMP "$env:BRAND_PREFIX-preview-$version"
+          $installation = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installDirectory") -WindowStyle Hidden -Wait -PassThru
           if ($installation.ExitCode -ne 0) {
             throw "Preview NSIS installation failed with exit code $($installation.ExitCode)"
           }
@@ -97,7 +111,7 @@ jobs:
           if (-not (Test-Path -LiteralPath $installedExecutable -PathType Leaf)) {
             throw "Installed preview executable is missing: $installedExecutable"
           }
-          node scripts/smoke-test-portable.mjs $installedExecutable --expected-version $env:GITHUB_REF_NAME --packaged-runtime
+          node scripts/smoke-test-portable.mjs $installedExecutable --expected-version $env:GITHUB_REF_NAME --packaged-runtime --expected-brand $env:PIORA_BRAND
 
       - name: Verify final portable wrapper
         shell: pwsh
@@ -112,10 +126,10 @@ jobs:
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           $releaseRoot = (Resolve-Path -LiteralPath desktop/release).Path
           $expectedNames = @(
-            "Piora-$version-win-x64-portable.exe",
-            "Piora-$version-win-x64-setup.exe",
-            "Piora-$version-win-x64-setup.exe.blockmap",
-            "beta.yml"
+            "$env:BRAND_PREFIX-$version-win-x64-portable.exe",
+            "$env:BRAND_PREFIX-$version-win-x64-setup.exe",
+            "$env:BRAND_PREFIX-$version-win-x64-setup.exe.blockmap",
+            "$env:BRAND_CHANNEL.yml"
           )
           $artifacts = @($expectedNames | ForEach-Object {
             $path = Join-Path $releaseRoot $_
@@ -137,17 +151,26 @@ jobs:
       - name: Upload verified preview payload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: piora-windows-${{ github.ref_name }}
+          name: ${{ matrix.brand }}-windows-${{ github.ref_name }}
           path: |
             desktop/release/*-portable.exe
             desktop/release/*-setup.exe
             desktop/release/*-setup.exe.blockmap
-            desktop/release/beta.yml
+            desktop/release/${{ matrix.channel }}.yml
             desktop/release/SHA256SUMS.txt
             desktop/release/release-notes.md
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+      - name: Upload release assembly tooling
+        if: matrix.brand == 'piora'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: brand-release-tooling-${{ github.ref_name }}
+          path: scripts/assemble-brand-release.mjs
+          if-no-files-found: error
+          retention-days: 14
 
   publish-preview:
     name: Publish verified preview
@@ -158,11 +181,25 @@ jobs:
       contents: write
 
     steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.19.0
+
       - name: Download verified preview payload
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: piora-windows-${{ github.ref_name }}
-          path: desktop/release
+          pattern: '*-${{ github.ref_name }}'
+          path: downloaded-brands
+          merge-multiple: false
+
+      - name: Verify and assemble both brands
+        shell: pwsh
+        run: |
+          $notes = "downloaded-brands/piora-windows-$env:GITHUB_REF_NAME/release-notes.md"
+          New-Item -ItemType Directory -Path desktop -Force | Out-Null
+          node "downloaded-brands/brand-release-tooling-$env:GITHUB_REF_NAME/assemble-brand-release.mjs" downloaded-brands desktop/release $env:GITHUB_REF_NAME $notes
+          if ($LASTEXITCODE -ne 0) { throw 'Brand release assembly failed' }
 
       - name: Create GitHub prerelease
         shell: pwsh
@@ -176,6 +213,10 @@ jobs:
             (Resolve-Path -LiteralPath (Join-Path $releaseRoot "Piora-$version-win-x64-setup.exe.blockmap")).Path,
             (Resolve-Path -LiteralPath (Join-Path $releaseRoot "Piora-$version-win-x64-portable.exe")).Path,
             (Resolve-Path -LiteralPath (Join-Path $releaseRoot "beta.yml")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $releaseRoot "XiaoYiHarness-$version-win-x64-setup.exe")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $releaseRoot "XiaoYiHarness-$version-win-x64-setup.exe.blockmap")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $releaseRoot "XiaoYiHarness-$version-win-x64-portable.exe")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $releaseRoot "xiaoyi-beta.yml")).Path,
             (Resolve-Path -LiteralPath (Join-Path $releaseRoot "SHA256SUMS.txt")).Path
           )
           $releaseNotesPath = (Resolve-Path -LiteralPath (Join-Path $releaseRoot "release-notes.md")).Path

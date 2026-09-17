@@ -30,6 +30,7 @@ export type DesktopUpdateListener = (state: Readonly<DesktopUpdateState>) => voi
 export interface DesktopUpdateControllerOptions {
   audience?: DesktopReleaseAudience;
   prepareCheck?: () => Promise<boolean>;
+  validateUpdateInfo?: (info: unknown) => void;
 }
 
 function normalizedVersion(value: unknown): string | undefined {
@@ -104,6 +105,7 @@ export class DesktopUpdateController {
       this.publish({ status: "up-to-date" });
     });
     updater.on("update-available", (info) => {
+      try { this.options.validateUpdateInfo?.(info); } catch (error) { this.fail(error); return; }
       const availableVersion = normalizedVersion(info.version);
       const releaseNotes = normalizedReleaseNotes(info.releaseNotes);
       this.publish({
@@ -125,6 +127,7 @@ export class DesktopUpdateController {
       });
     });
     updater.on("update-downloaded", (info) => {
+      try { this.options.validateUpdateInfo?.(info); } catch (error) { this.fail(error); return; }
       const availableVersion = normalizedVersion(info.version);
       const releaseNotes = normalizedReleaseNotes(info.releaseNotes);
       this.publish({

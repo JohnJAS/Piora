@@ -1,4 +1,5 @@
 "use client";
+import { brandText, APP_DISPLAY_NAME } from "@/lib/branding";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
@@ -358,7 +359,7 @@ export function CompanionPanel() {
   return (
     <main className={`${styles.panel} companion-panel-root`} aria-busy={busy}>
       <aside className={styles.sidebar}>
-        <div className={styles.brand}><Image className={styles.brandMark} src="/icons/icon-192.png" width={34} height={34} alt="Piora" unoptimized /><span>随身舱<small>PIORA POCKET</small></span></div>
+        <div className={styles.brand}><Image className={styles.brandMark} src="/icons/icon-192.png" width={34} height={34} alt={brandText("Piora")} unoptimized /><span>随身舱<small>{APP_DISPLAY_NAME.toUpperCase()} POCKET</small></span></div>
         <nav className={styles.tabs} role="tablist" aria-orientation="vertical" aria-label="随身舱功能" onKeyDown={(event) => {
           if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
           event.preventDefault();
@@ -401,7 +402,7 @@ export function CompanionPanel() {
 
         <div hidden={tab !== "tasks"}>
           <CompanionTodoList todos={state.todos} busy={busy} onChange={(update) => mutate((current) => ({ ...current, todos: update(current.todos) }))} />
-          {runningTasks.length ? <article className={styles.card}><b>正在运行的 Piora 任务</b><div className={styles.agentTasks}>{runningTasks.map((task) => <div key={task.id}><strong>{task.title || task.taskRun?.objective || task.id.slice(0, 8)}</strong><span>{task.activity?.message || task.taskRun?.progress || task.runtime}</span></div>)}</div></article> : null}
+          {runningTasks.length ? <article className={styles.card}><b>正在运行的 {APP_DISPLAY_NAME} 任务</b><div className={styles.agentTasks}>{runningTasks.map((task) => <div key={task.id}><strong>{task.title || task.taskRun?.objective || task.id.slice(0, 8)}</strong><span>{task.activity?.message || task.taskRun?.progress || task.runtime}</span></div>)}</div></article> : null}
           <details className={styles.disclosure}><summary>自动记录设置</summary>
             <label className={styles.toggle}>
               <input type="checkbox" checked={state.settings.autoCaptureSessions} onChange={() => void mutate((current) => ({ ...current, settings: { ...current.settings, autoCaptureSessions: !current.settings.autoCaptureSessions } }))} />

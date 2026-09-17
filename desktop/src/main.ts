@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { createSmokeSessionProbe } from "./smoke-session-probe.js";
 import { SystemLauncher } from "./system-launcher";
 import { ClipboardController, ClipboardDraftFlushError } from "./clipboard-controller.js";
 import { accessSync, constants as fsConstants, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
@@ -73,6 +74,8 @@ import {
 } from "./app-updater.js";
 import { readOrCreateDesktopReleaseAudience } from "./release-audience.js";
 import { preparePreviewUpdateFeed } from "./update-release-selector.js";
+import { APP_BRAND, APP_DISPLAY_NAME, brandText } from "./branding.js";
+import { validateBrandUpdateInfo } from "./update-brand-validation.js";
 import {
   isDesktopApplicationTransportUrl,
   resolveDesktopDevelopmentRuntime,
@@ -135,6 +138,7 @@ const MAX_NOTIFICATION_SESSION_ID_LENGTH = 512;
 const MAX_RENDERER_CONSOLE_MESSAGE_LENGTH = 8_192;
 const PORTABLE_SMOKE_TEST = process.env.PIORA_SMOKE_TEST === "1"
   || process.argv.includes("--smoke-test");
+const VERIFY_SMOKE_SINGLE_INSTANCE = PORTABLE_SMOKE_TEST && process.env.PIORA_SMOKE_VERIFY_SINGLE_INSTANCE === "1";
 const STARTUP_SHELL_BACKGROUND = "#080a0f";
 const PI_AGENT_DIRECTORY_ENV = "PI_CODING_AGENT_DIR";
 const desktopDevelopmentRuntime = resolveDesktopDevelopmentRuntime();
@@ -322,8 +326,8 @@ function resolvePiAgentDirectory(log: Logger): string {
 function installPortableDesktopShortcut(log: Logger): PortableShortcutResult | undefined {
   try {
     const description = app.getLocale().toLowerCase().startsWith("zh")
-      ? "启动 Piora"
-      : "Launch Piora";
+      ? brandText("启动 Piora")
+      : brandText("Launch Piora");
     const result = ensurePortableDesktopShortcut({
       platform: process.platform,
       isPackaged: app.isPackaged,
@@ -390,25 +394,25 @@ function getCompletionNotificationCopy(taskTitle: string | undefined): {
 } {
   const isChinese = app.getLocale().toLowerCase().startsWith("zh");
   return {
-    title: taskTitle ? `${taskTitle} - Piora` : "Piora",
+    title: taskTitle ? `${taskTitle} - ${APP_DISPLAY_NAME}` : brandText("Piora"),
     body: isChinese
-      ? "任务已完成，可以回到 Piora 查看结果。"
-      : "Task completed. Open Piora to review the result.",
+      ? brandText("任务已完成，可以回到 Piora 查看结果。")
+      : brandText("Task completed. Open Piora to review the result."),
   };
 }
 
 function getAutomationNotificationCopy(taskTitle: string | undefined, status: "succeeded" | "failed" | "interrupted"): { title: string; body: string } {
   const isChinese = app.getLocale().toLowerCase().startsWith("zh");
   const body = isChinese
-    ? status === "succeeded" ? "定时任务已完成，可以回到 Piora 查看结果。" : status === "interrupted" ? "定时任务因 Piora 重启而中断。" : "定时任务执行失败，请回到 Piora 查看详情。"
-    : status === "succeeded" ? "Scheduled task completed. Open Piora to review the result." : status === "interrupted" ? "Scheduled task was interrupted when Piora restarted." : "Scheduled task failed. Open Piora to review the details.";
-  return { title: taskTitle ? `${taskTitle} - Piora` : "Piora", body };
+    ? status === "succeeded" ? brandText("定时任务已完成，可以回到 Piora 查看结果。") : status === "interrupted" ? brandText("定时任务因 Piora 重启而中断。") : brandText("定时任务执行失败，请回到 Piora 查看详情。")
+    : status === "succeeded" ? brandText("Scheduled task completed. Open Piora to review the result.") : status === "interrupted" ? brandText("Scheduled task was interrupted when Piora restarted.") : brandText("Scheduled task failed. Open Piora to review the details.");
+  return { title: taskTitle ? `${taskTitle} - ${APP_DISPLAY_NAME}` : brandText("Piora"), body };
 }
 
 function getUserInputNotificationCopy(taskTitle: string | undefined): { title: string; body: string } {
   const isChinese = app.getLocale().toLowerCase().startsWith("zh");
   return {
-    title: taskTitle ? `${taskTitle} - Piora` : "Piora",
+    title: taskTitle ? `${taskTitle} - ${APP_DISPLAY_NAME}` : brandText("Piora"),
     body: isChinese
       ? "模型提出了问题，正在等待你的回复。"
       : "The model asked a question and is waiting for your reply.",
@@ -561,7 +565,7 @@ function notifyUpdateAvailable(state: DesktopUpdateState): void {
   const chinese = app.getLocale().toLowerCase().startsWith("zh");
   const version = updateVersionLabel(state);
   const notification = new Notification({
-    title: chinese ? `Piora${version} 可以更新` : `Piora${version} is available`,
+    title: chinese ? `${APP_DISPLAY_NAME}${version} 可以更新` : `${APP_DISPLAY_NAME}${version} is available`,
     body: chinese
       ? "点击应用顶部的下载图标，查看本次更新内容和下载进度。"
       : "Use the download icon in the title bar to review changes and download progress.",
@@ -655,13 +659,13 @@ async function installDownloadedDesktopUpdate(confirmInstallation = true, silent
   if (confirmInstallation) {
     const result = await showDesktopMessage({
       type: "question",
-      title: chinese ? "安装 Piora 更新" : "Install Piora update",
+      title: chinese ? brandText("安装 Piora 更新") : brandText("Install Piora update"),
       message: chinese
-        ? `安装并重启 Piora${updateVersionLabel(desktopUpdateState)}？`
-        : `Install Piora${updateVersionLabel(desktopUpdateState)} and restart?`,
+        ? `安装并重启 ${APP_DISPLAY_NAME}${updateVersionLabel(desktopUpdateState)}？`
+        : `Install ${APP_DISPLAY_NAME}${updateVersionLabel(desktopUpdateState)} and restart?`,
       detail: chinese
-        ? "Piora 会安全停止本地服务，安装完成后自动重新打开。会话和设置数据不会被删除。"
-        : "Piora will safely stop its local service and reopen after installation. Chats and settings will not be deleted.",
+        ? brandText("Piora 会安全停止本地服务，安装完成后自动重新打开。会话和设置数据不会被删除。")
+        : brandText("Piora will safely stop its local service and reopen after installation. Chats and settings will not be deleted."),
       buttons: [chinese ? "安装并重启" : "Install and restart", chinese ? "稍后" : "Later"],
       defaultId: 0,
       cancelId: 1,
@@ -687,7 +691,7 @@ async function installDownloadedDesktopUpdate(confirmInstallation = true, silent
     }
     shutdownComplete = true;
     if (!silent) dialog.showErrorBox(
-      chinese ? "无法安装 Piora 更新" : "Unable to install Piora update",
+      chinese ? brandText("无法安装 Piora 更新") : brandText("Unable to install Piora update"),
       error instanceof Error ? error.message : String(error),
     );
     app.relaunch();
@@ -719,7 +723,7 @@ async function handleDesktopUpdateMenuAction(): Promise<void> {
     await showDesktopMessage({
       type: "error",
       title: chinese ? "检查更新失败" : "Update check failed",
-      message: chinese ? "暂时无法检查更新" : "Piora could not check for updates",
+      message: chinese ? "暂时无法检查更新" : brandText("Piora could not check for updates"),
       ...(checked.error ? { detail: checked.error } : {}),
       buttons: [chinese ? "知道了" : "OK"],
       defaultId: 0,
@@ -734,14 +738,19 @@ function initializeDesktopUpdater(log: Logger): void {
     && !PORTABLE_SMOKE_TEST
     && !process.env.PORTABLE_EXECUTABLE_FILE;
   const currentVersion = app.getVersion();
-  const audience = readOrCreateDesktopReleaseAudience(app.getPath("userData"), currentVersion, log);
+  const audience = readOrCreateDesktopReleaseAudience(app.getPath("userData"), currentVersion, log, APP_BRAND.id);
+  if (supported && APP_BRAND.id === "xiaoyi-harness") {
+    // Packaged custom config also isolates the updater's on-disk download cache.
+    autoUpdater.updateConfigPath = join(process.resourcesPath, "app-update-xiaoyi.yml");
+  }
   desktopUpdateController = new DesktopUpdateController(
     supported ? autoUpdater : null,
     currentVersion,
     log,
     {
       audience,
-      ...(supported && audience === "preview"
+      ...(APP_BRAND.id === "xiaoyi-harness" ? { validateUpdateInfo: (info: unknown) => validateBrandUpdateInfo(info, APP_BRAND) } : {}),
+      ...(supported && (audience === "preview" || APP_BRAND.id === "xiaoyi-harness")
         ? {
             prepareCheck: () => preparePreviewUpdateFeed(
               autoUpdater,
@@ -750,6 +759,7 @@ function initializeDesktopUpdater(log: Logger): void {
                 headers: { Accept: "application/atom+xml, application/xml;q=0.9, */*;q=0.8" },
               }),
               log,
+              APP_BRAND.id === "xiaoyi-harness" ? { audience, brand: APP_BRAND } : undefined,
             ),
           }
         : {}),
@@ -807,21 +817,21 @@ function installApplicationMenu(): void {
   const zh = app.getLocale().toLowerCase().startsWith("zh");
   const copy = zh ? {
     file: "文件", edit: "编辑", view: "视图", help: "帮助",
-    newSession: "新聊天", openFolder: "打开文件夹", close: "关闭", quit: "退出 Piora",
+    newSession: "新聊天", openFolder: "打开文件夹", close: "关闭", quit: brandText("退出 Piora"),
     undo: "撤销", redo: "重做", cut: "剪切", copy: "复制", paste: "粘贴", delete: "删除", selectAll: "全选", settings: "设置",
     sidebar: "切换侧栏", files: "切换文件面板", commands: "打开命令面板", review: "打开审查面板", browser: "浏览器", companion: "显示/隐藏桌面宠物", find: "搜索聊天记录",
     actualSize: "实际大小", zoomIn: "放大", zoomOut: "缩小", fullscreen: "切换全屏",
-    documentation: "文档", about: "关于 Piora", aboutDetail: "基于 Pi Agent 与 pi-web 的开源桌面应用。",
+    documentation: "文档", about: brandText("关于 Piora"), aboutDetail: "基于 Pi Agent 与 pi-web 的开源桌面应用。",
     checkUpdates: "检查更新…", checkingUpdates: "正在检查更新…", updateAvailable: "有更新",
     downloadingUpdate: "正在下载更新", restartToInstall: "安装并重启", retryUpdate: "检查更新失败，点击重试",
     installAutoUpdateEdition: "获取支持自动更新的安装版…",
   } : {
     file: "File", edit: "Edit", view: "View", help: "Help",
-    newSession: "New chat", openFolder: "Open folder", close: "Close", quit: "Quit Piora",
+    newSession: "New chat", openFolder: "Open folder", close: "Close", quit: brandText("Quit Piora"),
     undo: "Undo", redo: "Redo", cut: "Cut", copy: "Copy", paste: "Paste", delete: "Delete", selectAll: "Select all", settings: "Settings",
     sidebar: "Toggle sidebar", files: "Toggle Files panel", commands: "Open Commands panel", review: "Open Review panel", browser: "Browser", companion: "Show/hide desktop pet", find: "Search conversations",
     actualSize: "Actual size", zoomIn: "Zoom in", zoomOut: "Zoom out", fullscreen: "Toggle full screen",
-    documentation: "Documentation", about: "About Piora", aboutDetail: "An open-source desktop application built with Pi Agent and pi-web.",
+    documentation: "Documentation", about: brandText("About Piora"), aboutDetail: "An open-source desktop application built with Pi Agent and pi-web.",
     checkUpdates: "Check for updates…", checkingUpdates: "Checking for updates…", updateAvailable: "Update available",
     downloadingUpdate: "Downloading update", restartToInstall: "Install and restart", retryUpdate: "Update check failed — retry",
     installAutoUpdateEdition: "Get the auto-updating installer…",
@@ -848,7 +858,7 @@ function installApplicationMenu(): void {
         return { label: copy.checkingUpdates, enabled: false };
       case "available":
         return {
-          label: `${copy.updateAvailable}: Piora${updateVersion} — ${zh ? "点击下载" : "click to download"}`,
+          label: `${copy.updateAvailable}: ${APP_DISPLAY_NAME}${updateVersion} — ${zh ? "点击下载" : "click to download"}`,
           click: () => { void handleDesktopUpdateMenuAction(); },
         };
       case "downloading":
@@ -858,7 +868,7 @@ function installApplicationMenu(): void {
         };
       case "downloaded":
         return {
-          label: `${copy.restartToInstall} Piora${updateVersion}`,
+          label: `${copy.restartToInstall} ${APP_DISPLAY_NAME}${updateVersion}`,
           click: () => { void handleDesktopUpdateMenuAction(); },
         };
       case "error":
@@ -915,7 +925,7 @@ function installApplicationMenu(): void {
             const options: MessageBoxOptions = {
               type: "info",
               title: copy.about,
-              message: `Piora ${app.getVersion()}`,
+              message: `${APP_DISPLAY_NAME} ${app.getVersion()}`,
               detail: copy.aboutDetail,
             };
             void (mainWindow
@@ -1675,7 +1685,7 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
   window.webContents.on("context-menu", () => {
     if (window.isDestroyed()) return;
     Menu.buildFromTemplate([
-      { label: "打开 Piora", click: () => { focusMainWindow(); } },
+      { label: brandText("打开 Piora"), click: () => { focusMainWindow(); } },
       { label: "打开随身舱", click: () => { showCompanionPanel(); } },
       { label: "桌宠设置", click: () => { focusMainWindow("companion-settings"); } },
       { type: "separator" },
@@ -1778,7 +1788,7 @@ function createCompanionPanelWindow(url: URL, log: Logger, initialTool?: "clipbo
     minHeight: 520,
     focusable: true,
     show: false,
-    title: "Piora 随身舱",
+    title: brandText("Piora 随身舱"),
     backgroundColor: "#f8f3ed",
     autoHideMenuBar: true,
     webPreferences: {
@@ -1975,9 +1985,9 @@ function installNativeContextMenu(window: BrowserWindow): void {
 function updateTrayMenu(): void {
   if (!tray) return;
   const isChinese = app.getLocale().toLowerCase().startsWith("zh");
-  tray.setToolTip(runningTaskCount > 0 ? `Piora · ${runningTaskCount}` : "Piora");
+  tray.setToolTip(runningTaskCount > 0 ? `${APP_DISPLAY_NAME} · ${runningTaskCount}` : brandText("Piora"));
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: isChinese ? "显示 Piora" : "Show Piora", click: () => focusMainWindow() },
+    { label: isChinese ? brandText("显示 Piora") : brandText("Show Piora"), click: () => focusMainWindow() },
     { label: isChinese ? "新任务" : "New task", click: () => focusMainWindow("new-session") },
     { label: isChinese ? "打开随身舱" : "Open companion panel", click: () => showCompanionPanel() },
     {
@@ -1987,7 +1997,7 @@ function updateTrayMenu(): void {
     { label: isChinese ? `运行中任务：${runningTaskCount}` : `Running tasks: ${runningTaskCount}`, enabled: false },
     { type: "separator" },
     {
-      label: isChinese ? "彻底退出 Piora" : "Quit Piora completely",
+      label: isChinese ? brandText("彻底退出 Piora") : brandText("Quit Piora completely"),
       click: () => {
         quitRequested = true;
         app.quit();
@@ -2271,7 +2281,7 @@ function createMainWindowShell(log: Logger): MainWindowShell {
     minWidth: 900,
     minHeight: 640,
     show: false,
-    title: "Piora",
+    title: brandText("Piora"),
     backgroundColor: STARTUP_SHELL_BACKGROUND,
     autoHideMenuBar: true,
     ...integratedTitleBar,
@@ -2424,7 +2434,7 @@ function createStartupWindow(log: Logger): { window: BrowserWindow; ready: Promi
   const previousVersion = readLastLaunchedVersion(app.getPath("userData"), log);
   const firstLaunchOfVersion = previousVersion !== app.getVersion();
   const updated = Boolean(previousVersion) && firstLaunchOfVersion;
-  const mediaDirectory = app.isPackaged ? join(process.resourcesPath, "startup") : resolve(__dirname, "../build/startup");
+  const mediaDirectory = app.isPackaged ? join(process.resourcesPath, "startup") : resolve(__dirname, "../../.branding/resources/startup");
   const media = loadStartupMedia(mediaDirectory);
   const startupPath = join(app.getPath("userData"), "startup.html");
   let finishIntro!: () => void;
@@ -2573,8 +2583,8 @@ function handleUnexpectedServerExit(exit: ServerExit): void {
   logger?.error("Web server stopped unexpectedly", exit);
   const options: MessageBoxOptions = {
     type: "error" as const,
-    title: "Piora",
-    message: "The local Piora service stopped unexpectedly.",
+    title: brandText("Piora"),
+    message: brandText("The local Piora service stopped unexpectedly."),
     ...(logger ? { detail: `See ${logger.filePath} for details.` } : {}),
   };
 
@@ -2660,6 +2670,10 @@ async function startApplication(): Promise<void> {
     await loadApplicationWindow(mainWindow, serverUrl, logger);
     startup.ensureVisible();
     const rendererState = await waitForSmokeRenderer(mainWindow);
+    const smokeSessionId = process.env.PIORA_SMOKE_SESSION_ID;
+    const preservedSession = smokeSessionId
+      ? await mainWindow.webContents.executeJavaScript(createSmokeSessionProbe(smokeSessionId, process.env.PIORA_SMOKE_SESSION_TEXT ?? ""), true)
+      : undefined;
     await startup.ready;
     writeFileSync(
       resolve(smokeMarker),
@@ -2667,6 +2681,15 @@ async function startApplication(): Promise<void> {
         schema: "piora-portable-smoke-v1",
         ok: true,
         appVersion: app.getVersion(),
+        brand: APP_BRAND,
+        runtimePaths: {
+          userData: app.getPath("userData"),
+          sessionData: app.getPath("sessionData"),
+          agentDirectory: piAgentDirectoryPath,
+          partition: DESKTOP_PARTITION,
+        },
+        windowTitle: mainWindow.getTitle(),
+        ...(preservedSession ? { preservedSession } : {}),
         rendererLoaded: rendererState.rendererLoaded,
         preloadBridgeReady: rendererState.preloadBridgeReady,
         appShellReady: rendererState.appShellReady,
@@ -2674,6 +2697,13 @@ async function startApplication(): Promise<void> {
       { encoding: "utf8", flag: "wx" },
     );
     logger.info("Portable smoke test reached a healthy bundled service and renderer");
+    const smokeHoldPath = VERIFY_SMOKE_SINGLE_INSTANCE ? process.env.PIORA_SMOKE_HOLD_PATH : undefined;
+    if (smokeHoldPath) {
+      if (dirname(resolve(smokeHoldPath)) !== resolve(app.getPath("userData"))) throw new Error("Smoke hold file must be inside the isolated profile");
+      const deadline = Date.now() + 30_000;
+      while (!existsSync(smokeHoldPath) && Date.now() < deadline) await new Promise(resolveDelay => setTimeout(resolveDelay, 100));
+      if (!existsSync(smokeHoldPath)) throw new Error("Single-instance smoke probe did not release the first process");
+    }
     await stopApplication();
     shutdownComplete = true;
     mainWindow.destroy();
@@ -2750,8 +2780,13 @@ async function stopApplication(): Promise<void> {
 // Smoke tests run in isolated user-data directories and may execute beside a
 // user's installed Piora. They must not lose their startup marker to the
 // installed app's single-instance lock.
-const hasSingleInstanceLock = PORTABLE_SMOKE_TEST || app.requestSingleInstanceLock();
+const hasSingleInstanceLock = (PORTABLE_SMOKE_TEST && !VERIFY_SMOKE_SINGLE_INSTANCE) || app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
+  const smokeLockMarker = VERIFY_SMOKE_SINGLE_INSTANCE ? process.env.PIORA_SMOKE_LOCK_MARKER : undefined;
+  if (smokeLockMarker) {
+    if (dirname(resolve(smokeLockMarker)) !== resolve(app.getPath("userData"))) throw new Error("Smoke lock marker must be inside the isolated profile");
+    writeFileSync(smokeLockMarker, JSON.stringify({ blocked: true, brandId: APP_BRAND.id }), { encoding: "utf8", flag: "wx" });
+  }
   logger.info("Another Piora instance owns the lock; forwarding activation and exiting");
   // A newly downloaded portable version may be opened while an older Piora is
   // still resident in the tray. It cannot take over that live single-instance
@@ -2763,11 +2798,11 @@ if (!hasSingleInstanceLock) {
       const chinese = app.getLocale().toLowerCase().startsWith("zh");
       await dialog.showMessageBox({
         type: "info",
-        title: "Piora",
-        message: chinese ? "旧版 Piora 仍在后台运行" : "An older Piora is still running",
+        title: brandText("Piora"),
+        message: chinese ? brandText("旧版 Piora 仍在后台运行") : brandText("An older Piora is still running"),
         detail: chinese
-          ? `已为 Piora ${app.getVersion()} 创建桌面快捷方式。请从系统托盘退出旧版本，然后重新打开桌面上的 Piora。`
-          : `A Desktop shortcut was created for Piora ${app.getVersion()}. Quit the older version from the system tray, then open Piora from the Desktop again.`,
+          ? `已为 ${APP_DISPLAY_NAME} ${app.getVersion()} 创建桌面快捷方式。请从系统托盘退出旧版本，然后重新打开桌面上的 ${APP_DISPLAY_NAME}。`
+          : `A Desktop shortcut was created for ${APP_DISPLAY_NAME} ${app.getVersion()}. Quit the older version from the system tray, then open ${APP_DISPLAY_NAME} from the Desktop again.`,
         buttons: [chinese ? "知道了" : "OK"],
         defaultId: 0,
       });
@@ -2827,7 +2862,7 @@ if (!hasSingleInstanceLock) {
     try {
       const chinese = app.getLocale().toLowerCase().startsWith("zh");
       const result = await dialog.showMessageBox({
-        type: "error", title: "Piora", message: chinese ? "Piora 启动失败" : "Piora could not start", detail,
+        type: "error", title: brandText("Piora"), message: chinese ? brandText("Piora 启动失败") : brandText("Piora could not start"), detail,
         buttons: logger?.fileLoggingAvailable
           ? (chinese ? ["关闭", "复制错误信息", "打开日志文件夹"] : ["Close", "Copy error details", "Open log folder"])
           : (chinese ? ["关闭", "复制错误信息"] : ["Close", "Copy error details"]),
@@ -2837,7 +2872,7 @@ if (!hasSingleInstanceLock) {
       if (result.response === 2 && logger?.fileLoggingAvailable) shell.showItemInFolder(logger.filePath);
     } catch (dialogError) {
       logger?.error("Unable to display startup diagnostics", dialogError);
-      dialog.showErrorBox("Piora could not start", detail);
+      dialog.showErrorBox(brandText("Piora could not start"), detail);
     }
     await server?.stop().catch((shutdownError) => {
       logger?.error("Unable to stop the web server after a startup failure", shutdownError);

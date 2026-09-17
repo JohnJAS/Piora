@@ -53,6 +53,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Upload release assembly tooling
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: brand-release-tooling-${{ github.ref_name }}
+          path: scripts/assemble-brand-release.mjs
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Verify release-tree hygiene
         run: npm run verify:hygiene
 
@@ -69,10 +77,24 @@ jobs:
         run: npm run verify:backgrounds
 
   windows-build:
-    name: Build and verify Windows portable packages
+    name: Build and verify windows (${{ matrix.brand }})
     needs: source-gate
     runs-on: windows-latest
     timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - brand: piora
+            prefix: Piora
+            channel: latest
+          - brand: xiaoyi-harness
+            prefix: XiaoYiHarness
+            channel: xiaoyi-latest
+    env:
+      PIORA_BRAND: ${{ matrix.brand }}
+      BRAND_PREFIX: ${{ matrix.prefix }}
+      BRAND_CHANNEL: ${{ matrix.channel }}
     permissions:
       contents: read
 
@@ -115,15 +137,15 @@ jobs:
         # The same payload has already passed package isolation checks; exercise
         # the packaged Electron runtime directly here and keep the portable
         # wrapper's cached-launch gate for developer/release-machine validation.
-        run: node scripts/smoke-test-portable.mjs desktop/release/win-unpacked/Piora.exe --expected-version "$env:GITHUB_REF_NAME" --packaged-runtime
+        run: node scripts/smoke-test-portable.mjs desktop/release/win-unpacked/Piora.exe --expected-version "$env:GITHUB_REF_NAME" --packaged-runtime --expected-brand $env:PIORA_BRAND
 
       - name: Install and smoke-test NSIS application
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          $installer = (Resolve-Path -LiteralPath "desktop/release/Piora-$version-win-x64-setup.exe").Path
-          $installDirectory = Join-Path $env:RUNNER_TEMP "Piora-installed-$version"
-          $installation = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installDirectory") -Wait -PassThru
+          $installer = (Resolve-Path -LiteralPath "desktop/release/$env:BRAND_PREFIX-$version-win-x64-setup.exe").Path
+          $installDirectory = Join-Path $env:RUNNER_TEMP "$env:BRAND_PREFIX-installed-$version"
+          $installation = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installDirectory") -WindowStyle Hidden -Wait -PassThru
           if ($installation.ExitCode -ne 0) {
             throw "NSIS installation failed with exit code $($installation.ExitCode)"
           }
@@ -131,14 +153,14 @@ jobs:
           if (-not (Test-Path -LiteralPath $installedExecutable -PathType Leaf)) {
             throw "Installed Piora executable is missing: $installedExecutable"
           }
-          node scripts/smoke-test-portable.mjs $installedExecutable --expected-version "$env:GITHUB_REF_NAME" --packaged-runtime
+          node scripts/smoke-test-portable.mjs $installedExecutable --expected-version "$env:GITHUB_REF_NAME" --packaged-runtime --expected-brand $env:PIORA_BRAND
 
       - name: Create and verify extract-and-run archive
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           $source = (Resolve-Path -LiteralPath desktop/release/win-unpacked).Path
-          $archive = Join-Path (Resolve-Path -LiteralPath desktop/release).Path "Piora-$version-win-x64.zip"
+          $archive = Join-Path (Resolve-Path -LiteralPath desktop/release).Path "$env:BRAND_PREFIX-$version-win-x64.zip"
           Compress-Archive -Path (Join-Path $source '*') -DestinationPath $archive -CompressionLevel Optimal
 
           & 7z t $archive
@@ -165,11 +187,11 @@ jobs:
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           $releaseRoot = (Resolve-Path -LiteralPath desktop/release).Path
           $expectedNames = @(
-            "Piora-$version-win-x64-portable.exe",
-            "Piora-$version-win-x64-setup.exe",
-            "Piora-$version-win-x64-setup.exe.blockmap",
-            "latest.yml",
-            "Piora-$version-win-x64.zip"
+            "$env:BRAND_PREFIX-$version-win-x64-portable.exe",
+            "$env:BRAND_PREFIX-$version-win-x64-setup.exe",
+            "$env:BRAND_PREFIX-$version-win-x64-setup.exe.blockmap",
+            "$env:BRAND_CHANNEL.yml",
+            "$env:BRAND_PREFIX-$version-win-x64.zip"
           )
           $artifacts = @($expectedNames | ForEach-Object {
             $path = Join-Path $releaseRoot $_
@@ -190,23 +212,37 @@ jobs:
       - name: Upload verified release payload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: piora-windows-${{ github.ref_name }}
+          name: ${{ matrix.brand }}-windows-${{ github.ref_name }}
           path: |
             desktop/release/*-portable.exe
             desktop/release/*-setup.exe
             desktop/release/*-setup.exe.blockmap
             desktop/release/*-win-x64.zip
-            desktop/release/latest.yml
+            desktop/release/${{ matrix.channel }}.yml
             desktop/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
 
   linux-build:
-    name: Build and verify Linux AppImage
+    name: Build and verify linux (${{ matrix.brand }})
     needs: source-gate
     runs-on: ubuntu-latest
     timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - brand: piora
+            prefix: Piora
+            channel: latest
+          - brand: xiaoyi-harness
+            prefix: XiaoYiHarness
+            channel: xiaoyi-latest
+    env:
+      PIORA_BRAND: ${{ matrix.brand }}
+      BRAND_PREFIX: ${{ matrix.prefix }}
+      BRAND_CHANNEL: ${{ matrix.channel }}
     permissions:
       contents: read
 
@@ -242,24 +278,24 @@ jobs:
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
-          artifact="desktop/release/Piora-$version-linux-x64-portable.AppImage"
+          artifact="desktop/release/${BRAND_PREFIX}-$version-linux-x64-portable.AppImage"
           test -f "$artifact"
           chmod +x "$artifact"
           (cd desktop/release && "./$(basename "$artifact")" --appimage-extract >/dev/null)
-          xvfb-run -a node scripts/smoke-test-portable.mjs desktop/release/squashfs-root/AppRun --expected-version "$GITHUB_REF_NAME" --packaged-runtime
+          xvfb-run -a node scripts/smoke-test-portable.mjs desktop/release/squashfs-root/AppRun --expected-version "$GITHUB_REF_NAME" --packaged-runtime --expected-brand "$PIORA_BRAND"
 
       - name: Generate Linux checksum
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
-          artifact="desktop/release/Piora-$version-linux-x64-portable.AppImage"
+          artifact="desktop/release/${BRAND_PREFIX}-$version-linux-x64-portable.AppImage"
           hash="$(sha256sum "$artifact" | cut -d' ' -f1)"
           printf '%s  %s\n' "$hash" "$(basename "$artifact")" > desktop/release/SHA256SUMS-linux.txt
 
       - name: Upload verified Linux payload
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: piora-linux-${{ github.ref_name }}
+          name: ${{ matrix.brand }}-linux-${{ github.ref_name }}
           path: |
             desktop/release/*-linux-x64-portable.AppImage
             desktop/release/SHA256SUMS-linux.txt
@@ -276,83 +312,24 @@ jobs:
       contents: write
 
     steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.19.0
+
       - name: Download verified release payload
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: piora-*-${{ github.ref_name }}
-          path: release-payload
-          merge-multiple: true
+          pattern: '*-${{ github.ref_name }}'
+          path: downloaded-brands
+          merge-multiple: false
 
-      - name: Verify downloaded SHA-256 checksums
+      - name: Verify and assemble both brands
         shell: pwsh
         run: |
-          $root = (Resolve-Path -LiteralPath release-payload).Path
-          $checksumPath = Join-Path $root 'SHA256SUMS.txt'
-          if (-not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) {
-            throw 'SHA256SUMS.txt is missing from the downloaded artifact.'
-          }
-
-          $expected = @{}
-          foreach ($line in Get-Content -LiteralPath $checksumPath) {
-            if ($line -notmatch '^([0-9a-fA-F]{64})  ([^\\/]+\.(?:exe|zip|blockmap|yml))$') {
-              throw "Malformed checksum line: $line"
-            }
-            $name = $Matches[2]
-            if ($expected.ContainsKey($name)) {
-              throw "Duplicate checksum entry: $name"
-            }
-            $expected[$name] = $Matches[1].ToLowerInvariant()
-          }
-
-          $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          $expectedNames = @(
-            "Piora-$version-win-x64-portable.exe",
-            "Piora-$version-win-x64-setup.exe",
-            "Piora-$version-win-x64-setup.exe.blockmap",
-            "latest.yml",
-            "Piora-$version-win-x64.zip"
-          )
-          $artifacts = @(Get-ChildItem -LiteralPath $root -File | Where-Object {
-            $_.Name -in $expectedNames
-          })
-          if ($artifacts.Count -ne $expectedNames.Count -or $artifacts.Count -ne $expected.Count) {
-            throw 'Release artifact count does not match SHA256SUMS.txt.'
-          }
-          foreach ($artifact in $artifacts) {
-            if (-not $expected.ContainsKey($artifact.Name)) {
-              throw "Release artifact is not listed in SHA256SUMS.txt: $($artifact.Name)"
-            }
-            $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact.FullName).Hash.ToLowerInvariant()
-            if ($actual -ne $expected[$artifact.Name]) {
-              throw "SHA-256 mismatch for $($artifact.Name)"
-            }
-          }
-
-      - name: Verify Linux checksum and combine manifest
-        shell: pwsh
-        run: |
-          $root = (Resolve-Path -LiteralPath release-payload).Path
-          $linuxChecksumPath = Join-Path $root 'SHA256SUMS-linux.txt'
-          $combinedChecksumPath = Join-Path $root 'SHA256SUMS.txt'
-          $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          $expectedName = "Piora-$version-linux-x64-portable.AppImage"
-          $line = @(Get-Content -LiteralPath $linuxChecksumPath)
-          if ($line.Count -ne 1 -or $line[0] -notmatch '^([0-9a-fA-F]{64})  ([^\\/]+\.AppImage)$') {
-            throw 'Linux checksum manifest is malformed.'
-          }
-          if ($Matches[2] -ne $expectedName) {
-            throw "Unexpected Linux artifact in checksum manifest: $($Matches[2])"
-          }
-          $artifact = Join-Path $root $expectedName
-          if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) {
-            throw "Expected Linux release artifact is missing: $expectedName"
-          }
-          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $artifact).Hash.ToLowerInvariant()
-          if ($actual -ne $Matches[1].ToLowerInvariant()) {
-            throw "SHA-256 mismatch for $expectedName"
-          }
-          Add-Content -LiteralPath $combinedChecksumPath -Value $line[0] -Encoding ascii
-          Remove-Item -LiteralPath $linuxChecksumPath -Force
+          $notes = "downloaded-brands/piora-release-notes-$env:GITHUB_REF_NAME/release-notes.md"
+          node "downloaded-brands/brand-release-tooling-$env:GITHUB_REF_NAME/assemble-brand-release.mjs" downloaded-brands release-payload $env:GITHUB_REF_NAME $notes
+          if ($LASTEXITCODE -ne 0) { throw 'Brand release assembly failed' }
 
       - name: Publish stable release
         shell: pwsh
@@ -367,7 +344,13 @@ jobs:
             (Resolve-Path -LiteralPath (Join-Path $root "latest.yml")).Path,
             (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-win-x64-portable.exe")).Path,
             (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-win-x64.zip")).Path,
-            (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-linux-x64-portable.AppImage")).Path
+            (Resolve-Path -LiteralPath (Join-Path $root "Piora-$version-linux-x64-portable.AppImage")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $root "XiaoYiHarness-$version-win-x64-setup.exe")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $root "XiaoYiHarness-$version-win-x64-setup.exe.blockmap")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $root "xiaoyi-latest.yml")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $root "XiaoYiHarness-$version-win-x64-portable.exe")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $root "XiaoYiHarness-$version-win-x64.zip")).Path,
+            (Resolve-Path -LiteralPath (Join-Path $root "XiaoYiHarness-$version-linux-x64-portable.AppImage")).Path
           )
           $assets += (Resolve-Path -LiteralPath (Join-Path $root 'SHA256SUMS.txt')).Path
           # Stable desktop release notes were generated from the tagged CHANGELOG

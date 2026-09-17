@@ -1,3 +1,4 @@
+import { brandText } from "@/lib/branding";
 import type { Metadata, Viewport } from "next";
 import { BackgroundBootstrap } from "@/components/BackgroundBootstrap";
 import { ApplicationRestoreGate } from "@/components/ApplicationRestoreGate";
@@ -14,9 +15,9 @@ import "./theme-backgrounds.css";
 const surfaceInitializationScript = `(function(){try{if(location.pathname==="/desktop-pet"||location.pathname==="/desktop-companion-bubble"){var r=document.documentElement;r.classList.add("desktop-pet-document");r.style.setProperty("color-scheme","light","important");r.style.setProperty("background","transparent","important")}}catch(_){}})();`;
 
 export const metadata: Metadata = {
-  title: "Piora",
+  title: brandText("Piora"),
   description: "Local-first desktop GUI for the Pi coding agent",
-  applicationName: "Piora",
+  applicationName: brandText("Piora"),
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
@@ -37,7 +38,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Piora",
+    title: brandText("Piora"),
   },
   formatDetection: {
     telephone: false,

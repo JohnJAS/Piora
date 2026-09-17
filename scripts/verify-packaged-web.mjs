@@ -12,6 +12,7 @@ import { generateLicenseInventory } from "./generate-license-inventory.mjs";
 import { generatePackageLicenseBundle } from "./package-license-bundle.mjs";
 import { verifyPackagedClipboard } from "./verify-packaged-clipboard.mjs";
 import { verifyPackagedShell } from "./verify-packaged-shell.mjs";
+import { verifyBrandStartupAssets } from "./verify-brand-startup-assets.mjs";
 import {
   createIsolatedProcessEnvironment,
   prepareIsolatedEnvironment,
@@ -573,11 +574,7 @@ async function inspectElectronShell(webRoot, required) {
     throw new Error(`Electron app.asar is missing beside the packaged web tree: ${appAsarPath}`);
   }
   await assertFile(trayIconPath);
-  for (const name of ["polaris-rover.mp4", "polaris-rover.jpg"]) {
-    const source = await readFile(join(projectRoot, "desktop", "build", "startup", name));
-    const packaged = await readFile(join(resourcesRoot, "startup", name));
-    if (!source.equals(packaged)) throw new Error(`Packaged startup media is missing or differs from source: ${name}`);
-  }
+  await verifyBrandStartupAssets(projectRoot, resourcesRoot);
 
   await generateLicenseInventory({ projectRoot, check: true });
   for (const fileName of ["LICENSE", "NOTICE", "THIRD_PARTY_LICENSES.md"]) {

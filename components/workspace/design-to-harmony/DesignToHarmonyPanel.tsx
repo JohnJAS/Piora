@@ -1,5 +1,7 @@
 "use client";
 
+import { brandText } from "@/lib/branding";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { useI18n } from "@/hooks/useI18n";
@@ -1141,7 +1143,7 @@ export function DesignToHarmonyPanel({ cwd, active, onGuideAgent, onOpenFile, on
                 : plan
                   ? blockingIssueCount > 0
                     ? copy("先处理阻断问题才能生成", "Resolve blocking issues before generation")
-                    : copy("只写入 Piora 隔离预览区", "Writes only to Piora's isolated preview")
+                    : brandText(copy("只写入 Piora 隔离预览区", "Writes only to Piora's isolated preview"))
                   : copy("只生成分析计划，不写入项目", "Creates a plan without writing to the project")}
             onClick={() => {
               if (review) {

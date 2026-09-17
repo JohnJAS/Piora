@@ -1,4 +1,5 @@
 "use client";
+import { brandText, APP_DISPLAY_NAME } from "@/lib/branding";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -57,10 +58,10 @@ function getBrowserNotificationCopy(taskTitle: string | undefined): {
   const isChinese = typeof navigator !== "undefined"
     && navigator.language.toLowerCase().startsWith("zh");
   return {
-    title: taskTitle ? `${taskTitle} - Piora` : "Piora",
+    title: taskTitle ? `${taskTitle} - ${APP_DISPLAY_NAME}` : brandText("Piora"),
     body: isChinese
-      ? "任务已完成，可以回到 Piora 查看结果。"
-      : "Task completed. Open Piora to review the result.",
+      ? brandText("任务已完成，可以回到 Piora 查看结果。")
+      : brandText("Task completed. Open Piora to review the result."),
   };
 }
 
@@ -71,7 +72,7 @@ function getUserInputNotificationCopy(taskTitle: string | undefined): {
   const isChinese = typeof navigator !== "undefined"
     && navigator.language.toLowerCase().startsWith("zh");
   return {
-    title: taskTitle ? `${taskTitle} - Piora` : "Piora",
+    title: taskTitle ? `${taskTitle} - ${APP_DISPLAY_NAME}` : brandText("Piora"),
     body: isChinese
       ? "模型提出了问题，正在等待你的回复。"
       : "The model asked a question and is waiting for your reply.",
@@ -209,7 +210,7 @@ export function useCompletionNotification() {
 
   const notifyAutomation = useCallback(async (taskTitle: string, status: "succeeded" | "failed" | "interrupted", sessionId?: string): Promise<boolean> => {
     if (!enabledRef.current) return false;
-    const safeTaskTitle = sanitizeCompletionTaskTitle(taskTitle) ?? "Piora";
+    const safeTaskTitle = sanitizeCompletionTaskTitle(taskTitle) ?? brandText("Piora");
     const safeSessionId = sanitizeNotificationSessionId(sessionId);
     const desktopBridge = getDesktopNotificationBridge();
     if (desktopBridge?.notifyAutomation) {
@@ -221,10 +222,10 @@ export function useCompletionNotification() {
     }
     const chinese = navigator.language.toLowerCase().startsWith("zh");
     const body = chinese
-      ? status === "succeeded" ? "定时任务已完成，可以回到 Piora 查看结果。" : status === "interrupted" ? "定时任务因 Piora 重启而中断。" : "定时任务执行失败，请回到 Piora 查看详情。"
-      : status === "succeeded" ? "Scheduled task completed. Open Piora to review the result." : status === "interrupted" ? "Scheduled task was interrupted when Piora restarted." : "Scheduled task failed. Open Piora to review the details.";
+      ? status === "succeeded" ? brandText("定时任务已完成，可以回到 Piora 查看结果。") : status === "interrupted" ? brandText("定时任务因 Piora 重启而中断。") : brandText("定时任务执行失败，请回到 Piora 查看详情。")
+      : status === "succeeded" ? brandText("Scheduled task completed. Open Piora to review the result.") : status === "interrupted" ? brandText("Scheduled task was interrupted when Piora restarted.") : brandText("Scheduled task failed. Open Piora to review the details.");
     try {
-      const notification = new Notification(`${safeTaskTitle} - Piora`, { body, tag: `piora-automation-${status}` });
+      const notification = new Notification(`${safeTaskTitle} - ${APP_DISPLAY_NAME}`, { body, tag: `piora-automation-${status}` });
       attachBrowserNotificationNavigation(notification, safeSessionId);
       return true;
     } catch { return false; }
