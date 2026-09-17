@@ -1,4 +1,5 @@
 "use client";
+import { brandText, APP_DISPLAY_NAME } from "@/lib/branding";
 import { requestGitStatus } from "@/lib/git-status-client";
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
@@ -1801,7 +1802,7 @@ export function AppShell() {
   const settingsProjectCwd = projectCwd ?? activeCwd;
   const chooseSettingsProject = <div style={{ padding: 32, display: "grid", alignContent: "start", gap: 16 }}><p>{translate("settings.capabilities.noProject")}</p><button type="button" style={{ justifySelf: "start", padding: "8px 14px", borderRadius: "var(--radius-control)", border: "1px solid var(--border)", color: "var(--text)", background: "var(--bg-panel)", cursor: "pointer" }} onClick={() => { setSettingsDialogOpen(false); handleOpenProjectPicker(); }}>{translate("projectMenu.switchProject")}</button></div>;
   const activeCwdName = activeCwd ? getFileName(activeCwd) || activeCwd : null;
-  const baseWindowTitle = activeCwdName ? `${activeCwdName} - Piora` : "Piora";
+  const baseWindowTitle = activeCwdName ? `${activeCwdName} - ${APP_DISPLAY_NAME}` : brandText("Piora");
   const hasPendingInput = runningTaskSnapshots.some((snapshot) => snapshot.pendingApproval);
   const windowTitle = hasPendingInput
     ? `${baseWindowTitle}${translate("app.titlePendingInput")}`
@@ -2120,8 +2121,8 @@ export function AppShell() {
                 className="desktop-titlebar-update-button"
                 data-status={desktopUpdateState?.status}
                 onClick={handleOpenDesktopUpdate}
-                aria-label={locale === "zh-CN" ? "下载 Piora 更新" : "Download Piora update"}
-                title={locale === "zh-CN" ? "Piora 有可用更新" : "A Piora update is available"}
+                aria-label={locale === "zh-CN" ? brandText("下载 Piora 更新") : brandText("Download Piora update")}
+                title={locale === "zh-CN" ? brandText("Piora 有可用更新") : brandText("A Piora update is available")}
               >
                 <AliIcon name="download" size={15} />
                 <span className="desktop-titlebar-update-dot" aria-hidden="true" />

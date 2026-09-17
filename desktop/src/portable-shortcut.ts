@@ -1,7 +1,7 @@
 import { existsSync, lstatSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { APP_BRAND, APP_DISPLAY_NAME } from "./branding.js";
 
-const PORTABLE_FILE_PATTERN = /^Piora-(\d+)\.(\d+)\.(\d+)-win-x64-portable\.exe$/i;
 const PACKAGED_FILE_PATTERN = /^Piora\.exe$/i;
 const SHORTCUT_APP_ID = "io.github.kexijiang.piora";
 
@@ -49,31 +49,36 @@ function regularFileExists(path: string): boolean {
   }
 }
 
-export function portableVersionFromPath(path: string): readonly [bigint, bigint, bigint] | undefined {
-  const match = PORTABLE_FILE_PATTERN.exec(basename(path.replaceAll("\\", "/")));
-  if (!match) return undefined;
-  const [, major, minor, patch] = match;
-  if (major === undefined || minor === undefined || patch === undefined) return undefined;
-  return [BigInt(major), BigInt(minor), BigInt(patch)];
+type DesktopVersion = readonly [bigint, bigint, bigint, bigint?];
+
+export function portableVersionFromPath(path: string, artifactPrefix: string = APP_BRAND.artifactPrefix): DesktopVersion | undefined {
+  const filename = basename(path.replaceAll("\\", "/"));
+  const prefix = `${artifactPrefix}-`;
+  if (!filename.startsWith(prefix) || !filename.endsWith("-win-x64-portable.exe")) return undefined;
+  return parseDesktopVersion(filename.slice(prefix.length, -"-win-x64-portable.exe".length));
 }
 
-export function parseDesktopVersion(value: string): readonly [bigint, bigint, bigint] | undefined {
-  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value);
+export function parseDesktopVersion(value: string): DesktopVersion | undefined {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$/.exec(value);
   if (!match) return undefined;
-  const [, major, minor, patch] = match;
+  const [, major, minor, patch, beta] = match;
   if (major === undefined || minor === undefined || patch === undefined) return undefined;
+  if (beta !== undefined) return [BigInt(major), BigInt(minor), BigInt(patch), BigInt(beta)];
   return [BigInt(major), BigInt(minor), BigInt(patch)];
 }
 
 export function comparePortableVersions(
-  left: readonly [bigint, bigint, bigint],
-  right: readonly [bigint, bigint, bigint],
+  left: DesktopVersion,
+  right: DesktopVersion,
 ): number {
   for (const index of [0, 1, 2] as const) {
     if (left[index] > right[index]) return 1;
     if (left[index] < right[index]) return -1;
   }
-  return 0;
+  if (left[3] === right[3]) return 0;
+  if (left[3] === undefined) return 1;
+  if (right[3] === undefined) return -1;
+  return left[3] > right[3] ? 1 : -1;
 }
 
 export function ensurePortableDesktopShortcut(
@@ -83,7 +88,7 @@ export function ensurePortableDesktopShortcut(
   if (!options.isPackaged) return { status: "skipped", reason: "development-runtime" };
   if (options.isSmokeTest) return { status: "skipped", reason: "smoke-test" };
 
-  const shortcutPath = join(resolve(options.desktopDirectory), "Piora.lnk");
+  const shortcutPath = join(resolve(options.desktopDirectory), `${APP_DISPLAY_NAME}.lnk`);
   if (existsSync(shortcutPath)) return { status: "kept-existing", shortcutPath };
 
   const requestedPath = options.portableExecutablePath?.trim();
@@ -110,7 +115,7 @@ export function ensurePortableDesktopShortcut(
     {
       target,
       cwd: dirname(target),
-      description: `Piora ${options.appVersion} — ${options.description}`,
+      description: `${APP_DISPLAY_NAME} ${options.appVersion} — ${options.description}`,
       appUserModelId: SHORTCUT_APP_ID,
       ...(iconAvailable ? { icon: options.iconPath, iconIndex: 0 } : {}),
     },

@@ -5,6 +5,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 const eslintConfig = [
   {
     ignores: [
+      ".branding/**",
       ".verification/**",
       "**/.next/**",
       "local-pets/**",

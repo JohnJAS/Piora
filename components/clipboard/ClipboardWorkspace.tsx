@@ -1,4 +1,5 @@
 "use client";
+import { brandText } from "@/lib/branding";
 import { useClipboardI18n } from "./useClipboardI18n";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { ClipboardBridge, ClipboardChange, ClipboardDetail, ClipboardFilter, ClipboardItem, ClipboardMutation, ClipboardOperation, ClipboardQuery, ClipboardStatus } from "@/desktop/src/clipboard-types";
@@ -312,7 +313,7 @@ export function ClipboardWorkspace({ surface = "manager", onSave, visible = true
     else if (action === "export") void run(async () => { setArchiveWarnings([]); if (await bridge!.exportArchive()) setNotice("已导出历史、格式、图片和暂存记录。"); });
     else if (action === "import") void run(async () => { setArchiveWarnings([]); const result = await bridge!.importArchive(); if (result) { setArchiveWarnings(result.warnings); setNotice(tr("已导入 {imported} 条新记录，合并 {merged} 条重复记录。", { imported: result.imported, merged: result.merged })); refresh(); } });
   };
-  if (bridge === null) return <section className={styles.unsupported}><h2>{tr("剪贴板需要 Piora 桌面端")}</h2><p>{tr("在新版桌面端打开后，可开启系统剪贴板记录、搜索和粘贴。")}</p></section>;
+  if (bridge === null) return <section className={styles.unsupported}><h2>{brandText(tr("剪贴板需要 Piora 桌面端"))}</h2><p>{tr("在新版桌面端打开后，可开启系统剪贴板记录、搜索和粘贴。")}</p></section>;
   return <section className={styles.workspace} data-surface={surface} data-locale={locale} data-preview={view.preview} data-detail={narrowDetail} data-multiple={selected.length > 0} aria-label={surface === "shelf" ? tr("屏幕暂存") : tr("剪贴板")} onKeyDown={keyDown}>
     {copyNotice && visible ? <div className={styles.copyToast} role="status" aria-live="polite"><span aria-hidden="true">✓</span>{tr("已复制")}</div> : null}
     <ClipboardToolbar surface={surface} view={view} status={status} busy={busy} search={search} onAction={toolbarAction} onView={patch => { if (Object.keys(patch).every(key => key === "preview")) guard(() => { setView(existing => ({ ...existing, ...patch })); setNarrowDetail(true); }); else { changeView(patch); setNarrowDetail(false); } }} />

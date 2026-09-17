@@ -1,9 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import sharp from "sharp";
 
-const projectRoot = resolve(import.meta.dirname, "..");
-const sourcePath = resolve(projectRoot, "desktop/build/piora-icon.svg");
+export async function buildBrandIcons(projectRoot, sourcePath, desktopDirectory = "desktop/build") {
 const svg = await readFile(sourcePath);
 
 async function renderPng(size) {
@@ -46,8 +46,8 @@ function buildIco(images) {
 }
 
 await Promise.all([
-  writePng("desktop/build/icon.png", 1024),
-  writePng("desktop/build/icon-transparent.png", 1024),
+  writePng(`${desktopDirectory}/icon.png`, 1024),
+  writePng(`${desktopDirectory}/icon-transparent.png`, 1024),
   writePng("public/icons/icon-192.png", 192),
   writePng("public/icons/icon-512.png", 512),
   writePng("public/icons/apple-touch-icon.png", 180),
@@ -58,12 +58,13 @@ const icoImages = await Promise.all(
   icoSizes.map(async (size) => ({ size, bytes: await renderPng(size) })),
 );
 const ico = buildIco(icoImages);
-await writeFile(resolve(projectRoot, "desktop/build/icon.ico"), ico);
+await writeFile(resolve(projectRoot, desktopDirectory, "icon.ico"), ico);
 await writeFile(resolve(projectRoot, "app/favicon.ico"), ico);
 
-console.log(JSON.stringify({
-  brand: "Piora",
-  source: sourcePath,
-  pngSizes: [180, 192, 512, 1024],
-  icoSizes,
-}));
+return { source: sourcePath, pngSizes: [180, 192, 512, 1024], icoSizes };
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const projectRoot = resolve(import.meta.dirname, "..");
+  console.log(JSON.stringify(await buildBrandIcons(projectRoot, resolve(projectRoot, "desktop/build/piora-icon.svg"))));
+}

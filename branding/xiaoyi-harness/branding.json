@@ -1,0 +1,7 @@
+{
+  "id": "xiaoyi-harness",
+  "displayName": "XiaoYiHarness",
+  "artifactPrefix": "XiaoYiHarness",
+  "icon": "icon.svg",
+  "updateChannels": { "stable": "xiaoyi-latest", "preview": "xiaoyi-beta" }
+}

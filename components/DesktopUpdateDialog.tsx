@@ -1,4 +1,5 @@
 "use client";
+import { brandText, APP_DISPLAY_NAME } from "@/lib/branding";
 
 import { useRef } from "react";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
@@ -80,10 +81,10 @@ export function DesktopUpdateDialog({
           <div className={styles.heading}>
             <h2 id="desktop-update-title">{upToDate
               ? (chinese ? "已是最新版本" : "You’re up to date")
-              : (chinese ? "Piora 更新" : "Piora update")}</h2>
+              : (chinese ? brandText("Piora 更新") : brandText("Piora update"))}</h2>
             <p id="desktop-update-summary">
               {upToDate
-                ? `Piora v${state.currentVersion}`
+                ? `${APP_DISPLAY_NAME} v${state.currentVersion}`
                 : version
                 ? (chinese ? `${version} 已准备好` : `${version} is ready`)
                 : (chinese ? "有可用的新版本" : "A new version is available")}
@@ -99,7 +100,7 @@ export function DesktopUpdateDialog({
             <section className={styles.currentVersionCard} aria-label={chinese ? "当前版本状态" : "Current version status"}>
               <div>
                 <span className={styles.currentVersionLabel}>{chinese ? "当前版本" : "Current version"}</span>
-                <strong>Piora v{state.currentVersion}</strong>
+                <strong>{APP_DISPLAY_NAME} v{state.currentVersion}</strong>
               </div>
               <span className={styles.latestBadge}>
                 <span aria-hidden="true" />
@@ -130,7 +131,7 @@ export function DesktopUpdateDialog({
                 <div className={styles.progressValue} style={{ width: `${progress}%` }} />
               </div>
               <div className={styles.progressDetail}>{state.status === "downloaded"
-                ? (chinese ? "安装时 Piora 会自动重新打开" : "Piora will reopen automatically after installation")
+                ? (chinese ? brandText("安装时 Piora 会自动重新打开") : brandText("Piora will reopen automatically after installation"))
                 : progressDetail}</div>
             </section>
           ) : null}

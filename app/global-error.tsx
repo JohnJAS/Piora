@@ -1,4 +1,5 @@
 "use client";
+import { APP_DISPLAY_NAME } from "@/lib/branding";
 
 import { RuntimeErrorScreen } from "@/components/RuntimeErrorScreen";
 
@@ -12,7 +13,7 @@ export default function GlobalError({
   return (
     <html lang="zh-CN">
       <head>
-        <title>Piora</title>
+        <title>{APP_DISPLAY_NAME}</title>
       </head>
       <body style={{ margin: 0 }}>
         <RuntimeErrorScreen error={error} reset={reset} />

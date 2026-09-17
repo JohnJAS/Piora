@@ -1,4 +1,5 @@
 "use client";
+import { APP_DISPLAY_NAME } from "@/lib/branding";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
@@ -451,8 +452,8 @@ export function RoomSettingsDialog({
 
             {section === "workspace" ? (
               <div className={styles.page}>
-                <div className={styles.pageHeading}><h3>共享工作区</h3><p>智能体在这里交换文件；消息、任务与审计仍由 Piora 独立托管。</p></div>
-                <div className={styles.segmented}><button type="button" className={workspaceMode === "managed" ? styles.selected : ""} onClick={() => setWorkspaceMode("managed")}>Piora 托管</button><button type="button" className={workspaceMode === "custom" ? styles.selected : ""} onClick={() => setWorkspaceMode("custom")}>项目内目录</button></div>
+                <div className={styles.pageHeading}><h3>共享工作区</h3><p>智能体在这里交换文件；消息、任务与审计仍由 {APP_DISPLAY_NAME} 独立托管。</p></div>
+                <div className={styles.segmented}><button type="button" className={workspaceMode === "managed" ? styles.selected : ""} onClick={() => setWorkspaceMode("managed")}>{APP_DISPLAY_NAME} 托管</button><button type="button" className={workspaceMode === "custom" ? styles.selected : ""} onClick={() => setWorkspaceMode("custom")}>项目内目录</button></div>
                 <label className={styles.field}><span>工作区名称</span><input value={workspaceLabel} onChange={(event) => setWorkspaceLabel(event.target.value)} /></label>
                 <label className={styles.field}><span>目录</span><div className={styles.pathField}><input value={workspacePath} onChange={(event) => { setWorkspacePath(event.target.value); setWorkspaceMode("custom"); }} aria-describedby="workspace-path-help" /><button type="button" onClick={() => { void chooseWorkspacePath(); }}>浏览…</button></div><small id="workspace-path-help">编辑目录会切换为自定义模式；目录必须位于任一群成员的项目内，保存时会自动创建。</small></label>
                 <AITextAreaField label="协作约定" help="约定文件放哪里、如何命名、怎样交付，以及哪些范围禁止覆盖；团队成员会共同遵守。" purpose="多智能体共享工作区的协作约定" value={workspaceInstructions} onChange={setWorkspaceInstructions} cwd={room.projectRoot} rows={6} placeholder="例如：每个任务写独立报告，不覆盖其他成员目录" />

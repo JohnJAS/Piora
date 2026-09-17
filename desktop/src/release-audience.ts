@@ -18,16 +18,17 @@ export function inferDesktopBuildAudience(version: string): DesktopReleaseAudien
   return PREVIEW_VERSION_PATTERN.test(version.trim()) ? "preview" : "stable";
 }
 
-function audiencePath(userDataDirectory: string): string {
-  return join(userDataDirectory, RELEASE_AUDIENCE_FILE);
+function audiencePath(userDataDirectory: string, brandId: "piora" | "xiaoyi-harness"): string {
+  return join(userDataDirectory, brandId === "piora" ? RELEASE_AUDIENCE_FILE : "release-audience-xiaoyi-harness.json");
 }
 
 function readPersistedAudience(
   userDataDirectory: string,
   logger: Logger,
+  brandId: "piora" | "xiaoyi-harness",
 ): DesktopReleaseAudience | undefined {
   try {
-    const parsed = JSON.parse(readFileSync(audiencePath(userDataDirectory), "utf8")) as unknown;
+    const parsed = JSON.parse(readFileSync(audiencePath(userDataDirectory, brandId), "utf8")) as unknown;
     if (!parsed || typeof parsed !== "object") return undefined;
     const marker = parsed as Partial<PersistedReleaseAudience>;
     if (marker.schema !== 1) return undefined;
@@ -48,8 +49,9 @@ function persistAudience(
   audience: DesktopReleaseAudience,
   sourceVersion: string,
   logger: Logger,
+  brandId: "piora" | "xiaoyi-harness",
 ): void {
-  const targetPath = audiencePath(userDataDirectory);
+  const targetPath = audiencePath(userDataDirectory, brandId);
   const temporaryPath = `${targetPath}.${process.pid}.tmp`;
   const marker: PersistedReleaseAudience = {
     schema: 1,
@@ -79,11 +81,12 @@ export function readOrCreateDesktopReleaseAudience(
   userDataDirectory: string,
   currentVersion: string,
   logger: Logger,
+  brandId: "piora" | "xiaoyi-harness" = "piora",
 ): DesktopReleaseAudience {
-  const persisted = readPersistedAudience(userDataDirectory, logger);
+  const persisted = readPersistedAudience(userDataDirectory, logger, brandId);
   if (persisted) return persisted;
 
   const audience = inferDesktopBuildAudience(currentVersion);
-  persistAudience(userDataDirectory, audience, currentVersion, logger);
+  persistAudience(userDataDirectory, audience, currentVersion, logger, brandId);
   return audience;
 }

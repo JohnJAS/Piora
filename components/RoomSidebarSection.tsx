@@ -1,4 +1,5 @@
 "use client";
+import { brandText } from "@/lib/branding";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getRoomMemberName, getRoomMemberSessionId, type CollaborationRoom } from "@/lib/room-types";
@@ -218,7 +219,7 @@ export function RoomSidebarSection({
             <div className={styles.dialogBody}>
               <label className={styles.field}>
                 <span>群名称</span>
-                <input ref={nameInputRef} value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：Piora 重构讨论组" maxLength={120} />
+                <input ref={nameInputRef} value={name} onChange={(event) => setName(event.target.value)} placeholder={brandText("例如：Piora 重构讨论组")} maxLength={120} />
               </label>
               <details className={styles.advancedCreate}>
                 <summary>更多设置（可选）<small>当前 {selectedIds.size} 个智能体</small></summary>

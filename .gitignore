@@ -96,3 +96,8 @@ next-env.d.ts
 desktop/build/speech/
 
 .worktrees/
+
+# Generated build-time brand identity and isolated desktop assets
+/.branding/
+/lib/generated/brand.ts
+/desktop/src/generated/brand.ts

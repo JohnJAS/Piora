@@ -1,5 +1,7 @@
 "use client";
 
+import { brandText } from "@/lib/branding";
+
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useHarmonyLiveFrame } from "@/hooks/useHarmonyLiveFrame";
@@ -522,7 +524,7 @@ export function HarmonyPanel({ active, sessionRunning = false, onGuideAgent, onS
     return <div className={styles.gate}>
       <AliIcon name="mobile" size={34} />
       <h2>{copy("鸿蒙设备控制", "Harmony device control")}</h2>
-      <p>{copy("该能力仅在 Piora 桌面应用中提供。", "This capability is available only in the Piora desktop app.")}</p>
+      <p>{brandText(copy("该能力仅在 Piora 桌面应用中提供。", "This capability is available only in the Piora desktop app."))}</p>
       {error ? <div className={styles.error} role="alert">{error}</div> : null}
     </div>;
   }

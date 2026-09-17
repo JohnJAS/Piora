@@ -1,4 +1,5 @@
 "use client";
+import { APP_DISPLAY_NAME } from "@/lib/branding";
 
 import { memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, type Ref, type RefObject, type ReactNode } from "react";
 import {
@@ -206,7 +207,7 @@ export const RoomMessageList = memo(function RoomMessageList({
         if (isPioraQuestion) return <article ref={registerMessage} key={message.id} className={`${styles.message} ${styles.pioraQuestion}`}>
           <span className={styles.avatar}><AliIcon name="messages" size={14} /></span>
           <div className={styles.messageColumn}>
-            <div className={styles.messageMeta}><strong>Piora</strong><time dateTime={new Date(message.createdAt).toISOString()}>{formatTime(message.createdAt)}</time></div>
+            <div className={styles.messageMeta}><strong>{APP_DISPLAY_NAME}</strong><time dateTime={new Date(message.createdAt).toISOString()}>{formatTime(message.createdAt)}</time></div>
             <div className={styles.bubble}><MarkdownBody cwd={room.projectRoot} className="markdown-assistant-message">{message.content}</MarkdownBody></div>
           </div>
         </article>;
@@ -234,7 +235,7 @@ export const RoomMessageList = memo(function RoomMessageList({
         {teamActivity && activeTeamRun ? <details className={styles.activityCard}>
           <summary><i aria-hidden="true" /><strong>{teamActivity}</strong><AliIcon name="chevron-right" size={13} /></summary>
           <div><span>{teamRunDisplayPhaseLabel(activeTeamRun)}</span><small>{Object.values(activeTeamRun.tasks).filter((task) => task.status === "completed").length}/{Object.keys(activeTeamRun.tasks).length} 个任务已完成</small></div>
-        </details> : teamActivity ? <span><i aria-hidden="true" />Piora：{teamActivity}</span> : null}
+        </details> : teamActivity ? <span><i aria-hidden="true" />{APP_DISPLAY_NAME}：{teamActivity}</span> : null}
         {[...presenceBySession.keys()].map((sessionId) => <span key={sessionId}><i aria-hidden="true" />{memberName(room, sessionId)} 正在处理…</span>)}
       </div> : null}
       </div>

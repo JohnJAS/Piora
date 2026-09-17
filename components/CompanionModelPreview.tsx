@@ -1,4 +1,5 @@
 "use client";
+import { APP_DISPLAY_NAME } from "@/lib/branding";
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
@@ -28,7 +29,7 @@ export function CompanionModelPreview() {
   const tripoYor = pet?.id === "yor-v25-3d";
 
   return <main className={styles.page}>
-    <header className={styles.header}><Link href="/">PIORA</Link><span>{zh ? "桌宠实验室 / 01" : "COMPANION LAB / 01"}</span></header>
+    <header className={styles.header}><Link href="/">{APP_DISPLAY_NAME.toUpperCase()}</Link><span>{zh ? "桌宠实验室 / 01" : "COMPANION LAB / 01"}</span></header>
     <section className={styles.layout}>
       <div className={styles.copy}>
         <span className={styles.eyebrow}>{zh ? "一个新伙伴" : "MEET YOUR COMPANION"}</span>

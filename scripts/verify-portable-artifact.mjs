@@ -3,6 +3,7 @@
 import { open, readdir, stat } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadBranding } from "./branding-config.mjs";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const STRICT_VERSION = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-beta\.(0|[1-9]\d*))?$/;
@@ -14,9 +15,9 @@ export function normalizePortableVersion(value) {
   return value.startsWith("v") ? value.slice(1) : value;
 }
 
-export async function findPortableArtifact(releaseRoot, expectedVersion) {
+export async function findPortableArtifact(releaseRoot, expectedVersion, artifactPrefix = "Piora") {
   const version = normalizePortableVersion(expectedVersion);
-  const expectedName = `Piora-${version}-win-x64-portable.exe`;
+  const expectedName = `${artifactPrefix}-${version}-win-x64-portable.exe`;
   const entries = await readdir(releaseRoot, { withFileTypes: true });
   const candidates = entries.filter((entry) => entry.isFile() && /-portable\.exe$/i.test(entry.name));
   if (candidates.length !== 1 || candidates[0].name !== expectedName) {
@@ -60,12 +61,13 @@ async function main() {
     throw new Error("--expected-version requires X.Y.Z or vX.Y.Z");
   }
   const expectedVersion = arguments_[versionIndex + 1];
+  const brand = await loadBranding(projectRoot);
   const suppliedPath = arguments_.find((argument, index) =>
     !argument.startsWith("--") && index !== versionIndex + 1
   );
   const path = suppliedPath
     ? resolve(projectRoot, suppliedPath)
-    : await findPortableArtifact(resolve(projectRoot, "desktop", "release"), expectedVersion);
+    : await findPortableArtifact(resolve(projectRoot, "desktop", "release"), expectedVersion, brand.artifactPrefix);
   console.log(JSON.stringify(await verifyPortableArtifact(path, expectedVersion)));
 }
 

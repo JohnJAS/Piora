@@ -1,4 +1,5 @@
 "use client";
+import { brandText } from "@/lib/branding";
 import { useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { snapshotClientBackup } from "@/lib/app-backup-client";
@@ -25,7 +26,7 @@ export function ApplicationBackupCard() {
     setStatus(zh ? "正在验证密码、备份完整性和文件校验值…" : "Checking the password, archive integrity and file checksums…");
     const result = await api({ action: "preview", id: current!.id, password }); setPreview(result.manifest); setStatus("");
   });
-  const restart = async () => { const restarted = await window.piDesktop?.restartForDataImport?.(); if (!restarted) setStatus(zh ? "备份已准备好。请完全退出并重新启动 Piora（网页版请重启服务进程），重启时会完成恢复。" : "Restore is ready. Quit and restart Piora (restart the server process in web mode) to finish restoring." ); };
+  const restart = async () => { const restarted = await window.piDesktop?.restartForDataImport?.(); if (!restarted) setStatus(zh ? brandText("备份已准备好。请完全退出并重新启动 Piora（网页版请重启服务进程），重启时会完成恢复。") : brandText("Restore is ready. Quit and restart Piora (restart the server process in web mode) to finish restoring.") ); };
   const apply = () => run(async () => { if (!upload) return; setStatus(zh ? "正在准备恢复，原数据将保留为恢复副本…" : "Preparing restore and retaining the original data as a recovery copy…"); await api({ action: "prepare", id: upload.id, previousClient: await snapshotClientBackup(), mappings: Object.entries(mappings).filter(([, to]) => to.trim()).map(([from, to]) => ({ from, to: to.trim() })) }); setReady(true); await restart(); });
   const errors: Record<string, [string, string]> = {
     backup_auth: ["密码错误或备份已损坏。请检查后重试，原数据未更改。", "Wrong password or damaged archive. Check and retry; existing data is unchanged."],
@@ -48,6 +49,6 @@ export function ApplicationBackupCard() {
       {preview.projects.map((project) => <label key={project} style={{ display: "grid", gap: 5, marginBlock: 12, overflowWrap: "anywhere" }}><span>{project}</span><input aria-label={`${zh ? "新项目路径" : "New project path"}: ${project}`} placeholder={zh ? "新电脑的项目文件夹（留空保留原路径）" : "New project folder (blank keeps original path)"} value={mappings[project] ?? ""} onChange={(event) => setMappings({ ...mappings, [project]: event.target.value })} /></label>)}
       {preview.warnings.length > 2 ? <details><summary>{zh ? "未打包的链接资源" : "Excluded linked resources"}</summary>{preview.warnings.slice(2).map((warning, index) => <p key={index} style={{ overflowWrap: "anywhere" }}>{warning}</p>)}</details> : null}
       <button type="button" className={styles.primaryButton} disabled={busy} onClick={() => void apply()}>{zh ? "导入并重启" : "Import and restart"}</button></div> : null}
-    {ready ? <button type="button" disabled={busy} onClick={() => void run(restart)}>{zh ? "重新启动 Piora" : "Restart Piora"}</button> : null}
+    {ready ? <button type="button" disabled={busy} onClick={() => void run(restart)}>{zh ? brandText("重新启动 Piora") : brandText("Restart Piora")}</button> : null}
   </section>;
 }
