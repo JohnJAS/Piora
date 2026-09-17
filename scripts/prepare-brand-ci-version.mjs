@@ -1,6 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { generateLicenseInventory } from "./generate-license-inventory.mjs";
 
 // Test-only versions: never tag, publish, or commit the modified checkout.
 export async function prepareBrandCiVersion(root, sequence) {
@@ -20,6 +21,7 @@ export async function prepareBrandCiVersion(root, sequence) {
     await writeFile(resolve(root, file), JSON.stringify(value, null, 2) + "\n");
   }
   await writeFile(resolve(root, "CHANGELOG.md"), changelog.replace("## [Unreleased]", `## [Unreleased]\n\n## [${version}]\n\n- 仅供 CI 品牌安装升级验收的测试版本 ${sequence}，禁止发布。`));
+  await generateLicenseInventory({ projectRoot: root });
   return version;
 }
 

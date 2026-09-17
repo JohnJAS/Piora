@@ -4,6 +4,7 @@ import test from "node:test";
 
 const rightPanel = fs.readFileSync(new URL("./RightPanel.tsx", import.meta.url), "utf8");
 const review = fs.readFileSync(new URL("./ReviewPanel.tsx", import.meta.url), "utf8");
+const pushDialog = fs.readFileSync(new URL("./GitPushDialog.tsx", import.meta.url), "utf8");
 const changeList = fs.readFileSync(new URL("./ChangeList.tsx", import.meta.url), "utf8");
 const shell = fs.readFileSync(new URL("../AppShell.tsx", import.meta.url), "utf8");
 const sidebar = fs.readFileSync(new URL("../SessionSidebar.tsx", import.meta.url), "utf8");
@@ -52,18 +53,13 @@ test("moves files and review into a Codex-style launcher and tool-tab workspace"
 
 test("the command panel owns a persistent workspace shell while file lookup stays in Files", () => {
   const commandPanel = fs.readFileSync(new URL("./CommandPanel.tsx", import.meta.url), "utf8");
-  const terminal = fs.readFileSync(new URL("./TerminalSurface.tsx", import.meta.url), "utf8");
-  assert.match(commandPanel, /useAgentTerminal\(sessionId\)/);
-  assert.match(commandPanel, /<TerminalSurface/);
-  assert.match(commandPanel, /role="tablist"/);
-  assert.match(commandPanel, /agent\.commands/);
-  assert.match(terminal, /\/api\/terminal\/events/);
-  assert.match(commandPanel, /\/api\/terminal/);
-  assert.match(terminal, /new EventSource/);
-  assert.match(terminal, /action: "start"/);
-  assert.match(terminal, /action: "input", data/);
+  const smartShell = fs.readFileSync(new URL("./SmartShellPanel.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(commandPanel, /controls\.runCommand|excludeFromContext/);
-  assert.match(shell, /navigate\.searchFiles[\s\S]*?setRightPanelTab\("files"\)/);
+  assert.match(commandPanel, /SmartShellPanel/);
+  assert.match(smartShell, /role="tablist"/);
+  assert.match(smartShell, /useSmartShell/);
+  assert.match(smartShell, /shell\.action/);
+  assert.match(shell, /searchFiles/);
   assert.match(shell, /focusFileSearch/);
 });
 
@@ -92,8 +88,11 @@ test("review groups changes, supports keyboard navigation, diff rendering, and s
   assert.doesNotMatch(review, /reviewOverview|FileIndexRow|loadMoreFiles/);
   assert.match(review, /`\/api\/git\/\$\{action\}`/);
   assert.match(review, /"\/api\/git\/commit"/);
-  assert.match(review, /"\/api\/git\/push"/);
-  assert.match(review, /includeUnstaged/);
+  assert.match(pushDialog, /"\/api\/git\/push"/);
+  assert.match(pushDialog, /"\/api\/git\/push\/preview"/);
+  assert.match(changeList, /onToggleStage/);
+  assert.match(changeList, /item\.group === "staged"/);
+  assert.doesNotMatch(review, /includeUnstaged/);
   assert.match(review, /review\.commitAndPush/);
   assert.match(review, /context=all/);
   assert.doesNotMatch(review, /className=\{styles\.fileCollapse\}/);

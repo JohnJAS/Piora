@@ -14,6 +14,9 @@ export interface SSHConnectionOptions {
 
 export interface SSHSessionSnapshot {
   id: string;
+  hostId?: string;
+  hostName?: string;
+  ownerSessionId?: string;
   host: string;
   port: number;
   username: string;
@@ -25,6 +28,7 @@ export interface SSHSessionSnapshot {
   hostFingerprint?: string;
   agentSessionId?: string;
 }
+export type SSHSessionSummary = Omit<SSHSessionSnapshot, "output">;
 
 export type SSHSessionEvent =
   | { type: "snapshot"; snapshot: SSHSessionSnapshot }

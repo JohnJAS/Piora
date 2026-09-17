@@ -18,15 +18,23 @@ export interface ChangeListItem {
 
 interface Props {
   items: ChangeListItem[];
+  repositoryRoot: string;
   selectedKey: string | null;
-  checkedKeys: Set<string>;
+  busy: boolean;
   onSelect: (item: ChangeListItem) => void;
-  onToggle: (item: ChangeListItem) => void;
+  onToggleStage: (item: ChangeListItem) => void;
 }
 
 const GROUPS: ChangeGroup[] = ["staged", "unstaged", "untracked"];
 
-export function ChangeList({ items, selectedKey, checkedKeys, onSelect, onToggle }: Props) {
+export function toReviewPath(filePath: string, repositoryRoot: string): string {
+  const normalized = filePath.replace(/\\/g, "/");
+  const root = repositoryRoot.replace(/\\/g, "/").replace(/\/$/, "");
+  return normalized.toLocaleLowerCase().startsWith(`${root.toLocaleLowerCase()}/`)
+    ? normalized.slice(root.length + 1) : normalized;
+}
+
+export function ChangeList({ items, repositoryRoot, selectedKey, busy, onSelect, onToggleStage }: Props) {
   const { t } = useI18n();
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const pendingFocusKey = useRef<string | null>(null);
@@ -86,8 +94,9 @@ export function ChangeList({ items, selectedKey, checkedKeys, onSelect, onToggle
         <div id={titleId} className={styles.groupTitle}>{t(`review.group.${group}`)}<span>{groupSize}</span></div>
         {groupEntries.map(({ item, positionInGroup }) => {
           const path = typeof item.file?.filePath === "string" ? item.file.filePath : "";
-          const name = path.replace(/\\/g, "/").split("/").pop() ?? path;
-          const parent = path.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
+          const displayPath = toReviewPath(path, repositoryRoot);
+          const name = displayPath.split("/").pop() ?? displayPath;
+          const parent = displayPath.split("/").slice(0, -1).join("/");
           const parentLabel = compactParentPath(parent);
           return <div
             key={item.key}
@@ -111,7 +120,7 @@ export function ChangeList({ items, selectedKey, checkedKeys, onSelect, onToggle
                 selectAndFocus(orderedItems[nextIndex]);
               } else if (event.key === " " || event.key === "Spacebar") {
                 event.preventDefault();
-                onToggle(item);
+                if (!busy) onToggleStage(item);
               } else if (event.key === "Enter") {
                 event.preventDefault();
                 selectAndFocus(item);
@@ -122,10 +131,11 @@ export function ChangeList({ items, selectedKey, checkedKeys, onSelect, onToggle
             <input
               className={styles.changeCheckbox}
               type="checkbox"
-              checked={checkedKeys.has(item.key)}
-              aria-label={t("review.selectFile", { name })}
+              checked={item.group === "staged"}
+              disabled={busy}
+              aria-label={t(item.group === "staged" ? "review.unstageFile" : "review.stageFile", { name })}
               onClick={(event) => event.stopPropagation()}
-              onChange={() => onToggle(item)}
+              onChange={() => onToggleStage(item)}
             />
             <span className={styles.changeName} title={path}>{parentLabel ? <small>{parentLabel}/</small> : null}<b>{name}</b></span>
             <span className={styles.lineStats}>

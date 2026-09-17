@@ -136,6 +136,14 @@ async function readBranchLabel(repositoryRoot: string): Promise<string | null> {
   }
 }
 
+async function readUpstream(repositoryRoot: string): Promise<{ upstream: string | null; ahead: number; behind: number }> {
+  try {
+    const upstream = (await git(repositoryRoot, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"])).trim();
+    const counts = (await git(repositoryRoot, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"])).trim().split(/\s+/).map(Number);
+    return { upstream, ahead: counts[0] ?? 0, behind: counts[1] ?? 0 };
+  } catch { return { upstream: null, ahead: 0, behind: 0 }; }
+}
+
 async function readTrackedLineStats(
   repositoryRoot: string,
   cwd: string,
@@ -189,7 +197,7 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResponse> {
     };
   }
 
-  const [allEntries, branch] = await Promise.all([readStatusEntries(repositoryRoot), readBranchLabel(repositoryRoot)]);
+  const [allEntries, branch, tracking] = await Promise.all([readStatusEntries(repositoryRoot), readBranchLabel(repositoryRoot), readUpstream(repositoryRoot)]);
   const ignoredPaths = await readIgnoredPaths(repositoryRoot, allEntries.map((entry) => entry.path));
   const entries = allEntries.filter((entry) => !ignoredPaths.has(entry.path));
   const trackedLineStats = await readTrackedLineStats(repositoryRoot, resolvedCwd, ignoredPaths);
@@ -215,6 +223,7 @@ export async function getGitStatus(cwd: string): Promise<GitStatusResponse> {
     isGitRepository: true,
     repositoryRoot,
     branch,
+    ...tracking,
     files,
     additions: trackedLineStats.additions,
     deletions: trackedLineStats.deletions,

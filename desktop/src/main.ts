@@ -19,6 +19,7 @@ import {
   powerMonitor,
   protocol,
   screen,
+  safeStorage,
   session as electronSession,
   shell,
   globalShortcut,
@@ -239,7 +240,25 @@ async function handleStandaloneMessage(message: unknown): Promise<unknown> {
     requestId?: unknown;
     sessionId?: unknown;
     params?: unknown;
+    action?: unknown;
+    value?: unknown;
   };
+  if (candidate.type === "pi-desktop:ssh-vault-request" && typeof candidate.requestId === "string" && /^[a-f0-9-]{36}$/.test(candidate.requestId)) {
+    const requestId = candidate.requestId;
+    try {
+      if (candidate.action !== "encrypt" && candidate.action !== "decrypt" && candidate.action !== "status") throw new Error("Invalid vault operation");
+      if (typeof candidate.value !== "string" || candidate.value.length > 2 * 1024 * 1024) throw new Error("Invalid vault value");
+      const available = safeStorage.isEncryptionAvailable() && (process.platform !== "linux" || safeStorage.getSelectedStorageBackend() !== "basic_text");
+      if (candidate.action === "status") return { type: "pi-desktop:ssh-vault-response", requestId, ok: true, value: available ? "available" : "unavailable" };
+      if (!available) throw new Error("System encryption is unavailable");
+      const value = candidate.action === "encrypt"
+        ? safeStorage.encryptString(candidate.value).toString("base64url")
+        : safeStorage.decryptString(Buffer.from(candidate.value, "base64url"));
+      return { type: "pi-desktop:ssh-vault-response", requestId, ok: true, value };
+    } catch (error) {
+      return { type: "pi-desktop:ssh-vault-response", requestId, ok: false, error: error instanceof Error ? error.message : "System encryption failed" };
+    }
+  }
   if (candidate.type === "pi-desktop:clipboard-backup-request" && typeof candidate.requestId === "string" && /^[a-f0-9-]{36}$/.test(candidate.requestId)) {
     const requestId = candidate.requestId;
     try {

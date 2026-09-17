@@ -36,6 +36,14 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
     required: true,
   },
   {
+    id: "piora:ssh",
+    fileName: "piora-ssh.ts",
+    name: "Piora SSH",
+    description: "Task-scoped remote terminals and file operations for connected SSH hosts.",
+    profiles: ["normal"],
+    required: true,
+  },
+  {
     id: "piora:harmony",
     fileName: "piora-harmony.ts",
     name: "Piora Harmony",
