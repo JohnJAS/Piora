@@ -32,8 +32,8 @@ import {
 import { autoUpdater } from "electron-updater";
 import { ScheduledDesktopUpdater, parseUpdateSchedule, type UpdateSchedule } from "./update-schedule.js";
 import { readUpdateSchedule, writeUpdateSchedule } from "./desktop-state.js";
-import { readLastLaunchedVersion, writeLastLaunchedVersion } from "./desktop-state.js";
-import { createStartupDocument, isStartupDocumentUrl, loadStartupMedia, STARTUP_MEDIA_TIMEOUT_MS, STARTUP_CONTINUE_CHANNEL } from "./startup-scene.js";
+import { readLastLaunchedVersion, writeLastLaunchedVersion, hasShownXiaoyiStartup, markXiaoyiStartupShown } from "./desktop-state.js";
+import { createStartupDocument, isStartupDocumentUrl, loadStartupMedia, STARTUP_MEDIA_TIMEOUT_MS, STARTUP_CONTINUE_CHANNEL, XIAOYI_FIRST_STARTUP_MS } from "./startup-scene.js";
 import {
   companionFacingDirection,
   companionMotionPoint,
@@ -2434,16 +2434,20 @@ function createStartupWindow(log: Logger): { window: BrowserWindow; ready: Promi
   const previousVersion = readLastLaunchedVersion(app.getPath("userData"), log);
   const firstLaunchOfVersion = previousVersion !== app.getVersion();
   const updated = Boolean(previousVersion) && firstLaunchOfVersion;
+  const firstXiaoyiStartup = APP_BRAND.id === "xiaoyi-harness" && !PORTABLE_SMOKE_TEST
+    && !hasShownXiaoyiStartup(app.getPath("userData"), log);
   const mediaDirectory = app.isPackaged ? join(process.resourcesPath, "startup") : resolve(__dirname, "../../.branding/resources/startup");
   const media = loadStartupMedia(mediaDirectory);
   const startupPath = join(app.getPath("userData"), "startup.html");
   let finishIntro!: () => void;
-  const finished = new Promise<void>((resolveIntro) => { finishIntro = resolveIntro; });
+  let introSettled = false;
+  let firstUseTimer: ReturnType<typeof setTimeout> | undefined;
+  const finished = new Promise<void>((resolveIntro) => { finishIntro = () => { introSettled = true; resolveIntro(); }; });
   // Start the watchdog before loading: a failed navigation never emits
   // ready-to-show, so it must not be responsible for releasing startup.
   const introTimer = setTimeout(finishIntro, STARTUP_MEDIA_TIMEOUT_MS);
   introTimer.unref();
-  void finished.then(() => clearTimeout(introTimer));
+  void finished.then(() => { clearTimeout(introTimer); if (firstUseTimer) clearTimeout(firstUseTimer); });
   const blockIntroNavigation = (event: Electron.Event) => {
     // Keep the old document from replacing an in-flight application load.
     // Main-process loadURL does not emit will-navigate.
@@ -2452,7 +2456,7 @@ function createStartupWindow(log: Logger): { window: BrowserWindow; ready: Promi
   const continueIntro = (event: Electron.IpcMainEvent, channel: string) => {
     if (channel !== STARTUP_CONTINUE_CHANNEL || webContents.isDestroyed() || !event.senderFrame
       || event.senderFrame !== webContents.mainFrame || !isStartupDocumentUrl(event.senderFrame.url, startupPath)) return;
-    finishIntro();
+    if (!firstXiaoyiStartup) finishIntro();
   };
   const cleanupNavigationGuard = () => {
     if (!webContents.isDestroyed()) {
@@ -2488,11 +2492,20 @@ function createStartupWindow(log: Logger): { window: BrowserWindow; ready: Promi
         writeFileSync(resolve(startupMarker), `${JSON.stringify({ schema: "piora-startup-v1", ready: true, surface: "electron-shell" })}\n`, { encoding: "utf8", flag: "wx" });
       }
       resolveReady(readyAt);
-      if (!firstLaunchOfVersion || !media.video || PORTABLE_SMOKE_TEST) finishIntro();
+      if (firstXiaoyiStartup && !introSettled) {
+        // Count visible time, not service startup or file loading. Once visible,
+        // the five-second timer replaces the navigation watchdog.
+        clearTimeout(introTimer);
+        firstUseTimer = setTimeout(() => {
+          if (introSettled || window.isDestroyed()) return;
+          markXiaoyiStartupShown(app.getPath("userData"), log);
+          finishIntro();
+        }, XIAOYI_FIRST_STARTUP_MS);
+      } else if (APP_BRAND.id === "xiaoyi-harness" || !firstLaunchOfVersion || !media.video || PORTABLE_SMOKE_TEST) finishIntro();
     };
     window.once("ready-to-show", ensureVisible);
   });
-  const startupDocument = createStartupDocument({ chinese: app.getLocale().toLocaleLowerCase().startsWith("zh"), version: app.getVersion(), updated, ...media });
+  const startupDocument = createStartupDocument({ chinese: app.getLocale().toLocaleLowerCase().startsWith("zh"), version: app.getVersion(), updated, ...media, allowSkip: !firstXiaoyiStartup });
   let navigation: Promise<void> = Promise.resolve();
   try {
     // The embedded film exceeds Chromium's navigation URL limit. Loading the

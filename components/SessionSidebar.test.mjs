@@ -16,6 +16,14 @@ const source = [mainSource, taskRowSource, ...splitSources].join("\n");
 const sessionItemSource = taskRowSource.slice(taskRowSource.indexOf("export const TaskRow = memo(function TaskRow("));
 const sidebarSource = source;
 
+test("custom brand sidebar keeps the name and settings without a duplicate logo", () => {
+  const navigation = splitSources[1];
+  assert.match(navigation, /APP_BRAND\.id === "piora" && <span className=\{styles\.brandMark\}/);
+  assert.doesNotMatch(navigation, /next\/image|<Image\b|<img\b/);
+  assert.match(navigation, /<span>\{APP_DISPLAY_NAME\}<\/span>/);
+  assert.match(navigation, /onClick=\{\(\) => onOpenSettings\?\.\(\)\}/);
+});
+
 test("empty sessions use a friendly localized title instead of an internal placeholder", () => {
   assert.match(taskRowSource, /t\("sidebar\.newConversation"\)/);
   assert.doesNotMatch(taskRowSource, /\(no messages\)/);

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { APP_BRAND, APP_DISPLAY_NAME } from "./branding.js";
 
 export const STARTUP_CINEMATIC_MS = 8_000;
+export const XIAOYI_FIRST_STARTUP_MS = 5_000;
 // Allow media initialization without cutting the eight-second film's closing title.
 export const STARTUP_MEDIA_TIMEOUT_MS = STARTUP_CINEMATIC_MS + 2_000;
 export const STARTUP_CONTINUE_CHANNEL = "pi:startup-continue";
@@ -38,7 +39,7 @@ export function loadStartupMedia(directory: string): { video?: string; poster?: 
   return { ...(video ? { video } : {}), ...(poster ? { poster } : {}), ...(icon ? { icon } : {}) };
 }
 
-export function createStartupDocument(options: { chinese: boolean; version: string; updated: boolean; video?: string; poster?: string; icon?: string }): string {
+export function createStartupDocument(options: { chinese: boolean; version: string; updated: boolean; video?: string; poster?: string; icon?: string; allowSkip?: boolean }): string {
   const { chinese: zh, updated, video, poster } = options;
   const name = escapeHtml(APP_DISPLAY_NAME);
   const wordmark = APP_BRAND.id === "piora" ? "π / PIORA" : name;
@@ -56,6 +57,7 @@ main{position:absolute;top:25%;left:5%;right:5%;display:flex;align-items:flex-st
 .film .scene{object-fit:contain}.film .fallback{background:#080a0f}.film .top,.film .intro-copy,.film .shade,.film .progress{display:none}.film .statusbox{top:18px;bottom:auto;left:auto;right:20px;width:auto;max-width:calc(100vw - 40px);display:flex;align-items:center;gap:16px;padding:7px 9px 7px 14px;background:rgba(8,10,15,.65);border:1px solid rgba(180,198,220,.12);border-radius:12px}.film .status{font-size:11px;color:#aeb8c8}.film button{border-color:rgba(180,198,220,.24)}.film .version{color:#8c98aa}
 @media(prefers-reduced-motion:reduce){video{display:none}.progress:after{animation:none;width:70%}}
 ${APP_BRAND.id !== "piora" ? ".intro-copy{min-width:0;max-width:100%}.title{font-size:clamp(24px,5vw,64px);letter-spacing:.02em;overflow-wrap:anywhere}.wordmark{letter-spacing:.04em;overflow-wrap:anywhere}" : ""}
+${options.allowSkip === false ? "#skip-intro{display:none}" : ""}
 </style></head><body class="${video ? "film" : "poster"}">
 <div class="fallback"></div>${poster ? `<img class="scene" src="${poster}" alt="">` : ""}${video ? `<video class="scene" autoplay muted playsinline preload="auto" ${poster ? `poster="${poster}"` : ""} aria-hidden="true"><source src="${video}" type="video/mp4"></video>` : ""}<div class="shade"></div>
 <header class="top"><div class="wordmark">${wordmark}</div>${APP_BRAND.id === "piora" ? '<div class="mission"><span class="live"></span>POLARIS EXPEDITION<br>PX-06 · 2076</div>' : ""}</header>
