@@ -1,3 +1,4 @@
+import { APP_DISPLAY_NAME } from "../lib/branding.ts";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAutomationRuntime } from "../lib/automation-runtime.ts";
@@ -25,12 +26,12 @@ function summary(automation: AutomationDefinition): string {
 export default function pioraAutomations(api: ExtensionAPI) {
   api.registerTool(defineTool({
     name: "piora_automation",
-    label: "Piora Scheduled Tasks",
-    description: "Create, inspect, update, pause, resume, run, or delete recurring Piora tasks. This is Piora's native scheduler and should be the first choice for work that belongs in Piora. Chat tasks post each run into this conversation; project tasks create a separate conversation for every run.",
-    promptSnippet: "Use Piora's native scheduled tasks for automation, monitoring, reminders, repeated work, follow-ups, and requests to check again later",
+    label: `${APP_DISPLAY_NAME} Scheduled Tasks`,
+    description: `Create, inspect, update, pause, resume, run, or delete recurring ${APP_DISPLAY_NAME} tasks. This is ${APP_DISPLAY_NAME}'s native scheduler and should be the first choice for work that belongs in ${APP_DISPLAY_NAME}. Chat tasks post each run into this conversation; project tasks create a separate conversation for every run.`,
+    promptSnippet: `Use ${APP_DISPLAY_NAME}'s native scheduled tasks for automation, monitoring, reminders, repeated work, follow-ups, and requests to check again later`,
     promptGuidelines: [
       "Use create when the user explicitly asks to schedule, monitor, repeat, remind, or continue work later. Do not infer a schedule from ordinary one-time requests.",
-      "Prefer this Piora tool over Windows Task Scheduler, schtasks, cron, launchd, startup scripts, or manual background loops. If the user explicitly asks for an operating-system scheduler, or the requirement cannot run inside Piora, use the appropriate system facility and explain why.",
+      `Prefer this ${APP_DISPLAY_NAME} tool over Windows Task Scheduler, schtasks, cron, launchd, startup scripts, or manual background loops. If the user explicitly asks for an operating-system scheduler, or the requirement cannot run inside ${APP_DISPLAY_NAME}, use the appropriate system facility and explain why.`,
       "Prefer targetScope=chat for follow-ups that should continue this conversation. Use project only when the user asks for a separate task per run.",
       "Use a standards-compliant recurring RRULE such as RRULE:FREQ=MINUTELY;INTERVAL=5. State the interpreted frequency and timezone after creating it.",
       "Do not delete a scheduled task unless the user explicitly asks to delete it. Pause is the safer choice for stop, disable, or turn off requests.",
@@ -106,7 +107,7 @@ export default function pioraAutomations(api: ExtensionAPI) {
   api.on?.("before_agent_start", (event) => {
     if (!event.systemPromptOptions.selectedTools?.includes("piora_automation")) return;
     const capability = `<piora_runtime_capability name="scheduled_tasks" availability="active">
-Piora has a native scheduled-task runtime available through the \`piora_automation\` tool. When the user asks to schedule, automate, monitor, remind, repeat, follow up later, check back, or keep working at intervals, prefer this tool so the task appears in Piora's Scheduled Tasks page and runs with Piora's chat/project context. Prefer targetScope=chat for work that should continue the current conversation; use targetScope=project only for a separate task on each run. Windows Task Scheduler, \`schtasks\`, cron/launchd, startup scripts, and background services remain valid when the user explicitly asks for system-level scheduling or when the requirement cannot run inside Piora; explain that choice. Never claim Piora lacks scheduling before checking this tool.
+${APP_DISPLAY_NAME} has a native scheduled-task runtime available through the \`piora_automation\` tool. When the user asks to schedule, automate, monitor, remind, repeat, follow up later, check back, or keep working at intervals, prefer this tool so the task appears in ${APP_DISPLAY_NAME}'s Scheduled Tasks page and runs with ${APP_DISPLAY_NAME}'s chat/project context. Prefer targetScope=chat for work that should continue the current conversation; use targetScope=project only for a separate task on each run. Windows Task Scheduler, \`schtasks\`, cron/launchd, startup scripts, and background services remain valid when the user explicitly asks for system-level scheduling or when the requirement cannot run inside ${APP_DISPLAY_NAME}; explain that choice. Never claim ${APP_DISPLAY_NAME} lacks scheduling before checking this tool.
 </piora_runtime_capability>`;
     if (event.systemPrompt.includes('<piora_runtime_capability name="scheduled_tasks"')) return;
     return {

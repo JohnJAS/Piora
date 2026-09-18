@@ -23,6 +23,8 @@ XiaoYiHarness 使用自己的 `icon.svg`，对应已选定的 02「交织 H」�
 
 专用托盘使用 `trayIcon: "tray.png"`，保留可编辑源 `tray.svg`。它针对小尺寸加粗笔画并放大标志占比；品牌准备会生成包含 16/24/32/48/64/128/256 像素的 `tray.ico` 供 Windows 使用，其他平台使用 PNG。修改 SVG 后应重新导出 256×256 PNG；两份源素材需保持一致。未配置专用托盘时仍复用主图标，Piora 行为不变。
 
+XiaoYiHarness 首次使用时，静态开屏从窗口显示起至少保留 5 秒，期间隐藏跳过按钮。完成后在用户数据目录的 `desktop-state.json` 中保存独立的 `xiaoyiStartupShown` 标记，与 Piora 的版本启动记录无关；后续启动、版本升级不再强制等待。服务加载超过 5 秒时继续等待服务，加载失败或提前关闭不记录完成；隔离的打包冒烟测试不消耗该标记。Piora 原视频开屏行为不变。
+
 可选素材字段：`trayIcon`（PNG）、`startupVideo`（MP4）、`startupPoster`（JPEG）、`portableSplash`（BMP）。缺少定制视频/海报时，启动页使用定制名称和静态图标；缺少定制 portable splash 时禁用旧 splash，不使用 Piora 视频或海报作为回退。
 
 品牌准备生成 `.branding/`、Web/Electron 静态常量及 Web 图标。它不修改原始 Piora SVG 和视频。切换品牌时重新生成输出，保证 `piora → xiaoyi-harness → piora` 不残留上一品牌的已知启动资源。不要提交生成的常量或将定制图标覆盖提交为默认 Web 素材。

@@ -1,3 +1,4 @@
+import { APP_DISPLAY_NAME } from "./branding.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -48,9 +49,9 @@ export function beginPromptRun(
   sessionId: string,
   context: { source?: SessionMessageSourceKind; roomContext?: SessionRoomContext } = {},
 ): PromptRunIdentity {
-  if (existsSync(join(`${getRuntimeAgentDataDirectory()}.piora-transfer`, "pending.json"))) throw new Error("Piora data import is ready. Restart the application before starting another task.");
+  if (existsSync(join(`${getRuntimeAgentDataDirectory()}.piora-transfer`, "pending.json"))) throw new Error(`${APP_DISPLAY_NAME} data import is ready. Restart the application before starting another task.`);
   if ((globalThis.__pioraDesktopUpdateLease?.expiresAt ?? 0) > Date.now()) {
-    throw new Error("Piora is installing an update. Retry after the application reopens.");
+    throw new Error(`${APP_DISPLAY_NAME} is installing an update. Retry after the application reopens.`);
   }
   if (!sessionId) throw new Error("Cannot begin a prompt run without a session id.");
   const runs = getRuns();

@@ -1,7 +1,6 @@
 "use client";
 import { APP_DISPLAY_NAME } from "@/lib/branding";
 import { APP_BRAND } from "@/lib/branding";
-import Image from "next/image";
 
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useI18n } from "@/hooks/useI18n";
@@ -32,7 +31,7 @@ export function SidebarNavigation(props: Props) {
   return <>
       <div className={styles.brandRow}>
         <button type="button" className={styles.brandButton} aria-label={t("sidebar.appMenu")}>
-          <span className={styles.brandMark} aria-hidden="true">{APP_BRAND.id === "piora" ? "π" : <Image src="/icons/icon-192.png" width={24} height={24} alt="" unoptimized />}</span>
+          {APP_BRAND.id === "piora" && <span className={styles.brandMark} aria-hidden="true">π</span>}
           <span>{APP_DISPLAY_NAME}</span>
         </button>
         <div className={styles.brandActions}>

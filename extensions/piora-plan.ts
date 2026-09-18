@@ -1,3 +1,4 @@
+import { APP_DISPLAY_NAME } from "../lib/branding.ts";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 
@@ -89,8 +90,8 @@ function updatePlanUi(ctx: ExtensionContext, state: PlanArtifactState | undefine
 function createPlanExecutionTool(api: ExtensionAPI) {
   return defineTool({
     name: "piora_plan_execution",
-    label: "Piora Plan Execution",
-    description: "Track an approved plan execution created by the optional Piora Plans extension. Start and complete dependency-ordered steps, then verify the result.",
+    label: `${APP_DISPLAY_NAME} Plan Execution`,
+    description: `Track an approved plan execution created by the optional ${APP_DISPLAY_NAME} Plans extension. Start and complete dependency-ordered steps, then verify the result.`,
     promptSnippet: "Track execution progress against the approved structured plan",
     promptGuidelines: [
       "Before working on a step, call start_step. After concrete work and checks for that step, call complete_step with a concise result.",
@@ -227,7 +228,7 @@ function planExecutionSummary(state: PlanArtifactState): string {
 function createPlanTool(api: ExtensionAPI) {
   return defineTool({
     name: "piora_plan",
-    label: "Piora Structured Plan",
+    label: `${APP_DISPLAY_NAME} Structured Plan`,
     description: "Save a structured plan as optional extension metadata for later review. Saving a plan does not approve or execute it.",
     promptSnippet: "Optionally store a structured plan for explicit user review",
     promptGuidelines: [
@@ -379,7 +380,7 @@ export default function pioraPlan(api: ExtensionAPI) {
         }
         requestedExecutions.add(sessionId);
         api.sendUserMessage(`Execute the approved saved plan: ${state.plan.objective}`);
-        ctx.ui.notify("Plan execution queued by the Piora Plans extension.", "info");
+        ctx.ui.notify(`Plan execution queued by the ${APP_DISPLAY_NAME} Plans extension.`, "info");
         return;
       } else if (action !== "status") {
         ctx.ui.notify("Usage: /plan [status|approve|cancel|execute]", "error");

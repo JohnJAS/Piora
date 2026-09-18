@@ -1,3 +1,4 @@
+import { APP_DISPLAY_NAME } from "./branding";
 import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -15,14 +16,14 @@ export interface FirstPartyExtensionDescriptor {
 
 export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = [
   {
-    id: "piora:computer", fileName: "piora-computer.ts", name: "Piora Computer Control",
+    id: "piora:computer", fileName: "piora-computer.ts", name: `${APP_DISPLAY_NAME} Computer Control`,
     description: "Optional Windows desktop control through Windows-MCP, with one compact tool and on-demand schemas. Requires uv; the pinned backend downloads on first connection.",
     profiles: ["normal"], defaultEnabled: false,
   },
   {
     id: "piora:file-changes",
     fileName: "piora-file-changes.ts",
-    name: "Piora File Changes",
+    name: `${APP_DISPLAY_NAME} File Changes`,
     description: "Captures per-operation file diffs for the conversation timeline.",
     profiles: ["normal"],
     required: true,
@@ -30,7 +31,7 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
   {
     id: "piora:browser",
     fileName: "piora-browser.ts",
-    name: "Piora Browser",
+    name: `${APP_DISPLAY_NAME} Browser`,
     description: "Private headless browser and page inspection tools.",
     profiles: ["normal"],
     required: true,
@@ -38,7 +39,7 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
   {
     id: "piora:ssh",
     fileName: "piora-ssh.ts",
-    name: "Piora SSH",
+    name: `${APP_DISPLAY_NAME} SSH`,
     description: "Task-scoped remote terminals and file operations for connected SSH hosts.",
     profiles: ["normal"],
     required: true,
@@ -46,7 +47,7 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
   {
     id: "piora:harmony",
     fileName: "piora-harmony.ts",
-    name: "Piora Harmony",
+    name: `${APP_DISPLAY_NAME} Harmony`,
     description: "Approved OpenHarmony device inspection and control tools.",
     profiles: ["normal", "device-control"],
     required: true,
@@ -54,7 +55,7 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
   {
     id: "piora:vision-agent",
     fileName: "piora-vision-agent.ts",
-    name: "Piora Visual Agent",
+    name: `${APP_DISPLAY_NAME} Visual Agent`,
     description: "Lets text-only primary models inspect images through a user-selected multimodal model.",
     profiles: ["normal"],
     required: true,
@@ -62,7 +63,7 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
   {
     id: "piora:automations",
     fileName: "piora-automations.ts",
-    name: "Piora Scheduled Tasks",
+    name: `${APP_DISPLAY_NAME} Scheduled Tasks`,
     description: "Recurring chat heartbeats and standalone project task scheduling.",
     profiles: ["normal"],
     required: true,
@@ -70,7 +71,7 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
   {
     id: "piora:goal",
     fileName: "piora-goal.ts",
-    name: "Piora Goals",
+    name: `${APP_DISPLAY_NAME} Goals`,
     description: "Optional goal tracking tools and /goal commands for long-running work.",
     profiles: ["normal"],
     defaultEnabled: false,
@@ -78,7 +79,7 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
   {
     id: "piora:plan",
     fileName: "piora-plan.ts",
-    name: "Piora Plans",
+    name: `${APP_DISPLAY_NAME} Plans`,
     description: "Optional structured planning and plan-execution tools with /plan commands.",
     profiles: ["normal"],
     defaultEnabled: false,
@@ -86,7 +87,7 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
   {
     id: "piora:room",
     fileName: "piora-room.ts",
-    name: "Piora Rooms",
+    name: `${APP_DISPLAY_NAME} Rooms`,
     description: "Multi-agent room messaging, task coordination, and shared artifacts.",
     profiles: ["normal"],
   },

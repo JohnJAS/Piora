@@ -1,3 +1,4 @@
+import { APP_DISPLAY_NAME } from "../lib/branding.ts";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
@@ -51,8 +52,8 @@ export default function pioraUserInput(api: ExtensionAPI) {
   api.registerTool(defineTool({
     name: "piora_request_user_input",
     label: "Ask User",
-    description: "Show a native Piora question card and wait for the user's structured response. Supports up to three single-choice, multiple-choice, or text questions in one call. Use this when a user decision or missing answer is genuinely required to continue.",
-    promptSnippet: "Ask focused questions through Piora's native user-input card instead of burying choices in ordinary chat text",
+    description: `Show a native ${APP_DISPLAY_NAME} question card and wait for the user's structured response. Supports up to three single-choice, multiple-choice, or text questions in one call. Use this when a user decision or missing answer is genuinely required to continue.`,
+    promptSnippet: `Ask focused questions through ${APP_DISPLAY_NAME}'s native user-input card instead of burying choices in ordinary chat text`,
     promptGuidelines: [
       "Use this tool when the user's answer changes the implementation, scope, preference, or next action and cannot be safely inferred.",
       "Prefer one call with all closely related questions (maximum three). Keep headers short, questions concrete, and options mutually distinct.",
@@ -113,7 +114,7 @@ export default function pioraUserInput(api: ExtensionAPI) {
     if (event.systemPrompt.includes('<piora_runtime_capability name="user_input_card"')) return;
     return {
       systemPrompt: `${event.systemPrompt}\n\n<piora_runtime_capability name="user_input_card" availability="active">
-Piora can display a native interactive question card through the \`piora_request_user_input\` tool and return the user's structured answers. When you genuinely need the user to choose among options, select multiple applicable items, or provide missing text before continuing, prefer this tool over an unstructured list of questions in ordinary chat. Ask no more than three focused questions per call, do not request secrets, wait for the result, and never invent an answer after cancellation.
+${APP_DISPLAY_NAME} can display a native interactive question card through the \`piora_request_user_input\` tool and return the user's structured answers. When you genuinely need the user to choose among options, select multiple applicable items, or provide missing text before continuing, prefer this tool over an unstructured list of questions in ordinary chat. Ask no more than three focused questions per call, do not request secrets, wait for the result, and never invent an answer after cancellation.
 </piora_runtime_capability>`,
     };
   });

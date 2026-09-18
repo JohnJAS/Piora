@@ -1,3 +1,4 @@
+import { APP_DISPLAY_NAME } from "../lib/branding.ts";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 
@@ -70,8 +71,8 @@ function updateGoalUi(ctx: ExtensionContext, state: GoalRunState | undefined): v
 function createGoalTool(api: ExtensionAPI) {
   return defineTool({
   name: "piora_goal",
-  label: "Piora Goals",
-  description: "Create, inspect, checkpoint, verify, or finish an optional persistent goal. The tool is available only when the Piora Goals extension is enabled.",
+  label: `${APP_DISPLAY_NAME} Goals`,
+  description: `Create, inspect, checkpoint, verify, or finish an optional persistent goal. The tool is available only when the ${APP_DISPLAY_NAME} Goals extension is enabled.`,
   promptSnippet: "Optionally create and manage persistent goals",
   promptGuidelines: [
     "Call start only when the user explicitly asks to track work as a persistent goal or invokes the goal workflow.",
@@ -135,7 +136,7 @@ function createGoalTool(api: ExtensionAPI) {
         state = persistGoal(api, waitGoalForUser(identity, message));
         break;
     }
-    if (!state) throw new Error("No Piora goal exists for this session.");
+    if (!state) throw new Error(`No ${APP_DISPLAY_NAME} goal exists for this session.`);
     if (params.action !== "status" && state.runId !== identity.runId) {
       throw new Error("The goal is not attached to the current prompt. Send another message to resume it.");
     }

@@ -1,3 +1,4 @@
+import { APP_DISPLAY_NAME } from "../branding";
 import { createHash, randomUUID } from "node:crypto";
 import { open } from "node:fs/promises";
 import path from "node:path";
@@ -15,7 +16,7 @@ import { redactShellSecrets, syncShellHistory } from "./history";
 import { createShell } from "./registry";
 import type { CommandBlock, ShellReference, ShellRun } from "./types";
 
-const SYSTEM_PROMPT = `You are Piora's Shell Agent, operating an actual persistent terminal.
+const SYSTEM_PROMPT = `You are ${APP_DISPLAY_NAME}'s Shell Agent, operating an actual persistent terminal.
 Understand the user's task, briefly state the steps, execute them, inspect results and verify the outcome.
 Use the actual shell syntax and cwd reported by tools. Directory and variables persist within each terminal.
 Use execute for commands; all commands go through the server's execution/approval gate. Never bypass approval through another tool or shell.

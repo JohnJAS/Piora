@@ -1,3 +1,4 @@
+import { APP_DISPLAY_NAME } from "./branding";
 import { createHash, randomUUID } from "node:crypto";
 import {
   appendFileSync,
@@ -391,7 +392,7 @@ export function createRoom(input: {
   appendRoomMessage(id, {
     authorKind: "system",
     authorId: "piora",
-    authorName: "Piora",
+    authorName: `${APP_DISPLAY_NAME}`,
     content: `${input.creator.name || input.creator.sessionId} 创建了协作空间。`,
   });
   return getRoom(id);
@@ -454,7 +455,7 @@ export function addRoomMember(roomId: string, input: {
     appendRoomMessage(roomId, {
       authorKind: "system",
       authorId: "piora",
-      authorName: "Piora",
+      authorName: `${APP_DISPLAY_NAME}`,
       content: `${input.name || input.sessionId} 加入了协作空间。`,
     });
   }
@@ -480,7 +481,7 @@ export function addManagedRoomMember(roomId: string, input: {
     const profile = validateTeamAgentProfile(structuredClone(input.profile));
     const binding = structuredClone(input.binding);
     if (!binding.sessionId || !binding.managedByPiora) {
-      throw new Error("托管智能体必须绑定到由 Piora 创建的会话。");
+      throw new Error(`托管智能体必须绑定到由 ${APP_DISPLAY_NAME} 创建的会话。`);
     }
     if (binding.cwd) binding.cwd = resolve(binding.cwd);
     if (binding.projectRoot) binding.projectRoot = resolve(binding.projectRoot);
@@ -512,7 +513,7 @@ export function addManagedRoomMember(roomId: string, input: {
   appendRoomMessage(roomId, {
     authorKind: "system",
     authorId: "piora",
-    authorName: "Piora",
+    authorName: `${APP_DISPLAY_NAME}`,
     content: `${input.profile.name} 加入了协作空间。`,
   });
   return getRoom(roomId);
@@ -552,7 +553,7 @@ export function removeRoomMember(roomId: string, sessionId: string, requestedBy?
   appendRoomMessage(roomId, {
     authorKind: "system",
     authorId: "piora",
-    authorName: "Piora",
+    authorName: `${APP_DISPLAY_NAME}`,
     content: `${member.name || member.sessionId} 已离开协作空间。`,
   });
   return getRoom(roomId);
@@ -602,7 +603,7 @@ export function updateRoomProfile(roomId: string, requestedBy: string, input: { 
   appendRoomAudit(roomId, requestedBy, "room.updated", `更新协作空间资料：「${room.name}」。`);
   emitRoomEvent({ type: "room", roomId, room });
   if (previousName !== room.name) {
-    appendRoomMessage(roomId, { authorKind: "system", authorId: "piora", authorName: "Piora", content: `协作空间已从「${previousName}」更名为「${room.name}」。` });
+    appendRoomMessage(roomId, { authorKind: "system", authorId: "piora", authorName: `${APP_DISPLAY_NAME}`, content: `协作空间已从「${previousName}」更名为「${room.name}」。` });
   }
   return getRoom(roomId);
 }
@@ -638,7 +639,7 @@ export function updateRoomWorkspace(roomId: string, requestedBy: string, input: 
   writeRoom(room);
   appendRoomAudit(roomId, requestedBy, "workspace.updated", `将共享工作区修改为 ${workspacePath}。`);
   emitRoomEvent({ type: "room", roomId, room });
-  appendRoomMessage(roomId, { authorKind: "system", authorId: "piora", authorName: "Piora", content: `共享工作区已修改为 ${workspacePath}。` });
+  appendRoomMessage(roomId, { authorKind: "system", authorId: "piora", authorName: `${APP_DISPLAY_NAME}`, content: `共享工作区已修改为 ${workspacePath}。` });
   return getRoom(roomId);
 }
 
@@ -696,7 +697,7 @@ export function updateRoomMember(roomId: string, requestedBy: string, memberId: 
   appendRoomAudit(roomId, requestedBy, "member.updated", `更新智能体「${member.name || member.sessionId}」的身份与职责。`);
   emitRoomEvent({ type: "room", roomId, room });
   appendRoomMessage(roomId, {
-    authorKind: "system", authorId: "piora", authorName: "Piora",
+    authorKind: "system", authorId: "piora", authorName: `${APP_DISPLAY_NAME}`,
     content: nextSessionId === previousSessionId ? `${member.name} 的身份与职责已更新。` : `${member.name} 已换绑到会话 ${nextSessionId.slice(0, 8)}。`,
   });
   return getRoom(roomId);
