@@ -61,7 +61,7 @@ const TOOLS: Array<{ id: Exclude<RightPanelTab, "home">; icon: AliIconName; shor
   { id: "automation", icon: "calendar" },
   { id: "review", icon: "diff", shortcut: "Ctrl+Shift+G" },
   { id: "commands", icon: "code" },
-  { id: "ssh", icon: "code" },
+  { id: "ssh", icon: "server" },
   { id: "browser", icon: "earth", shortcut: "Ctrl+T" },
   { id: "design", icon: "workflow" },
   { id: "harmony", icon: "mobile" },

@@ -132,7 +132,7 @@ export function SSHConnectionDialog({ onConnected, agentSessionId }: { onConnect
     </section> : null}
     {vault?.mode === "desktop" ? <div className={styles.systemVault}>{t("ssh.systemVault")}</div> : null}
     <form ref={form} className={styles.connectForm} onChange={() => setResult(null)} onSubmit={event => { event.preventDefault(); void submit(false); }}>
-      <div className={styles.connectMark}><AliIcon name="code" size={26} /></div>
+      <div className={styles.connectMark}><AliIcon name="server" size={26} /></div>
       <h2>{t("ssh.title")}</h2><p className={styles.subtitle}>{t("ssh.subtitle")}</p>
       <fieldset disabled={busy !== null} className={styles.fields}>
         <label htmlFor={id + "-name"}>{t("ssh.hostName")}<input id={id + "-name"} value={hostName} onChange={event => setHostName(event.target.value)} placeholder={t("ssh.hostNamePlaceholder")} maxLength={80} /></label>

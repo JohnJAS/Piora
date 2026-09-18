@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 界面
+
+- SSH 工作台入口与连接页改用服务器图标，便于与本地终端区分。
+
 ### 品牌构建与更新（开发中）
 
 - 修正 XiaoYiHarness 的内置提示词、工具能力说明、扩展显示名及协作系统消息仍自称 Piora 的问题，使用构建品牌名称；保留工具名、协议标识与内部路径，不替换用户提示词和历史消息。
