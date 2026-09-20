@@ -7,6 +7,7 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 ### 界面修复
 
 - 修复桌面下拉菜单仍跟随系统语言的问题：启动时同步应用语言，切换中英文后立即更新菜单，更新状态刷新后也保留所选语言。
+- 修复 Windows 英文菜单快捷键仍显示“逗号”等中文键名的问题：标点快捷键显示为 `Settings (Ctrl+,)` 等符号提示，并保留原生快捷键功能。
 
 ## [0.5.1] - 2026-09-20
 

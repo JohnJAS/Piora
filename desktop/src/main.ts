@@ -87,6 +87,7 @@ import {
   type DesktopShortcutBindings,
   type DesktopShortcutId,
 } from "./keyboard-shortcuts.js";
+import { withSymbolicMenuShortcuts } from "./menu-shortcuts.js";
 import {
   readDesktopAutoLaunchState,
   resolveDesktopLoginItemOptions,
@@ -939,7 +940,7 @@ function installApplicationMenu(): void {
     },
   ];
 
-  applicationMenu = Menu.buildFromTemplate(template);
+  applicationMenu = Menu.buildFromTemplate(withSymbolicMenuShortcuts(template, process.platform));
   Menu.setApplicationMenu(applicationMenu);
 }
 
