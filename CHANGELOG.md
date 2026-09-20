@@ -4,6 +4,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### XiaoYiHarness 官网
+
+- 新增独立的 `website-xiaoyi/` 官网源码，使用与品牌图标一致的深墨色、薄荷绿主题，展示真实桌面工作区截图并支持查看原图。
+- 下载入口精确匹配同一发行版中的 XiaoYiHarness 安装版、便携版、ZIP 与 Linux AppImage；接口失败或品牌产物不完整时回退到已核验版本，避免跨品牌下载。
+- 提供独立的依赖锁文件、检查命令与 Sites 构建配置，记录公开网址和部署流程；隔离官网与主应用的类型检查及生成目录。
+
 ## [0.5.1] - 2026-09-20
 
 ### 运行日志
