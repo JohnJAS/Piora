@@ -42,6 +42,7 @@ declare global {
       notifyUserInput?: (taskTitle?: string, sessionId?: string) => Promise<boolean>;
       onNotificationSession?: (listener: (sessionId: string) => void) => () => void;
       openMenu?: (menu: "file" | "edit" | "view" | "help", x: number, y: number) => Promise<boolean>;
+      setMenuLocale?: (locale: "en" | "zh-CN") => Promise<boolean>;
       getUpdateState?: () => Promise<DesktopUpdateState | null>;
       getUpdateSchedule?: () => Promise<{ enabled: boolean; time: string; supported: boolean } | null>;
       setUpdateSchedule?: (input: { enabled: boolean; time: string }) => Promise<{ enabled: boolean; time: string; supported: boolean } | null>;

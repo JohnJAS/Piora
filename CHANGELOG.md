@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 界面修复
+
+- 修复桌面下拉菜单仍跟随系统语言的问题：启动时同步应用语言，切换中英文后立即更新菜单，更新状态刷新后也保留所选语言。
+
 ## [0.5.1] - 2026-09-20
 
 ### 运行日志

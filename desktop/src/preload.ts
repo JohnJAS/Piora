@@ -73,6 +73,9 @@ const runtime = Object.freeze({
   openMenu(menu: "file" | "edit" | "view" | "help", x: number, y: number): Promise<boolean> {
     return ipcRenderer.invoke("pi:open-application-menu", menu, x, y) as Promise<boolean>;
   },
+  setMenuLocale(locale: "en" | "zh-CN"): Promise<boolean> {
+    return ipcRenderer.invoke("pi:set-application-menu-locale", locale) as Promise<boolean>;
+  },
   getUpdateState() {
     return ipcRenderer.invoke("pi:update-state-get");
   },

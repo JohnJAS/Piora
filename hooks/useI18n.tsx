@@ -119,6 +119,13 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
+    void window.piDesktop?.setMenuLocale?.(locale).catch((error: unknown) => {
+      console.warn("Failed to sync desktop menu language", error);
+    });
+  }, [hydrated, locale]);
+
+  useEffect(() => {
     const sync = (event: StorageEvent) => {
       if (event.key === LOCALE_STORAGE_KEY && (event.newValue === "en" || event.newValue === "zh-CN")) setLocale(event.newValue);
     };
