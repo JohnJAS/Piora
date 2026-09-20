@@ -487,6 +487,17 @@
   font: var(--text-xs)/1.45 var(--font-mono);
 }
 
+.runtimeLogPath {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text);
+  font: var(--text-xs)/1.5 var(--font-mono);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
 .agentDataMigration {
   display: flex;
   align-items: flex-start;

@@ -124,6 +124,9 @@ const runtime = Object.freeze({
   getAgentDataDirectory() {
     return ipcRenderer.invoke("pi:agent-data-directory-get");
   },
+  getRuntimeLog() {
+    return ipcRenderer.invoke("pi:runtime-log-get");
+  },
   selectAgentDataDirectory(defaultPath?: string): Promise<string | null> {
     return ipcRenderer.invoke("pi:agent-data-directory-picker", defaultPath) as Promise<string | null>;
   },

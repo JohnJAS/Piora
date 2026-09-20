@@ -9,6 +9,7 @@ import { useStreamingSendPreference } from "@/hooks/useStreamingSendPreference";
 import { useLiveOutputAutoScrollPreference } from "@/hooks/useLiveOutputAutoScrollPreference";
 import { AliIcon } from "./AliIcon";
 import { DesktopAutoLaunchSetting } from "./DesktopAutoLaunchSetting";
+import { RuntimeLogSettings } from "./RuntimeLogSettings";
 import { DesktopUpdateScheduleSetting } from "./DesktopUpdateScheduleSetting";
 import { SettingsPortabilityCard } from "./SettingsPortabilityCard";
 import { NetworkProxySettings } from "./NetworkProxySettings";
@@ -600,6 +601,7 @@ export function SettingsDialog({
                 </div>
                 <div data-settings-id="general.portability"><SettingsPortabilityCard /></div>
                 <div data-settings-id="general.proxy"><NetworkProxySettings /></div>
+                {desktop.available ? <RuntimeLogSettings /> : null}
                 {onOpenOnboarding ? <section className={styles.conversationSection}>
                   <div className={styles.conversationRow}>
                     <span className={styles.featureIcon}><AliIcon name="rocket" size={19} /></span>

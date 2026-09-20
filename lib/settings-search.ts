@@ -23,6 +23,7 @@ export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   { id: "general.onboarding", section: "general", labelKey: "settings.firstRunGuideTitle", descriptionKey: "settings.firstRunGuideDescription", keywords: ["welcome", "guide", "新手", "引导"] },
   { id: "general.proxy", section: "general", labelKey: "networkProxy.title", descriptionKey: "networkProxy.description", keywords: ["http", "https", "network", "代理", "网络"] },
   { id: "general.autoLaunch", section: "general", requiresDesktop: true, labelKey: "settings.autoLaunch", descriptionKey: "settings.autoLaunchDescription", keywords: ["startup", "boot", "login", "开机", "启动"] },
+  { id: "general.runtimeLog", section: "general", requiresDesktop: true, labelKey: "settings.runtimeLog.title", descriptionKey: "settings.runtimeLog.description", keywords: ["log", "logs", "diagnostics", "path", "日志", "诊断", "路径", "文件夹"] },
   { id: "general.globalShortcut", section: "general", requiresDesktop: true, labelKey: "settings.globalShortcut", descriptionKey: "settings.globalShortcutDescription", keywords: ["hotkey", "keyboard", "快捷键"] },
 
   { id: "conversation", section: "conversation", labelKey: "settings.conversation", descriptionKey: "settings.conversationDescription", keywords: ["chat", "session", "聊天", "会话"] },

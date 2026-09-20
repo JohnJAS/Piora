@@ -19,6 +19,7 @@ declare global {
         writeImage: (data: string) => Promise<void>;
       };
       selectDirectory: () => Promise<string | null>;
+      getRuntimeLog?: () => Promise<{ filePath: string; fileLoggingAvailable: boolean } | null>;
       selectSpeechPackDirectory?: (defaultPath?: string) => Promise<string | null>;
       getAgentDataDirectory?: () => Promise<{
         currentDirectory: string;

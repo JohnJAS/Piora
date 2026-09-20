@@ -2050,6 +2050,14 @@ function registerGlobalShortcutHandler(): void {
   });
 }
 
+function registerRuntimeLogHandler(): void {
+  ipcMain.removeHandler("pi:runtime-log-get");
+  ipcMain.handle("pi:runtime-log-get", (event) => {
+    if (!isTrustedMainWindowSender(event) || !logger) return null;
+    return { filePath: logger.filePath, fileLoggingAvailable: logger.fileLoggingAvailable };
+  });
+}
+
 function registerAutoLaunchHandlers(): void {
   const options = resolveDesktopLoginItemOptions({
     platform: process.platform,
@@ -2664,6 +2672,7 @@ async function startApplication(): Promise<void> {
   registerCompletionNotificationHandler();
   registerCompanionWindowHandlers();
   registerAutoLaunchHandlers();
+  registerRuntimeLogHandler();
   registerGlobalShortcutHandler();
   registerKeyboardShortcutHandler();
   registerNetworkProxyHandler();
