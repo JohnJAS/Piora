@@ -87,6 +87,7 @@ import {
   type DesktopShortcutBindings,
   type DesktopShortcutId,
 } from "./keyboard-shortcuts.js";
+import { withSymbolicMenuShortcuts } from "./menu-shortcuts.js";
 import {
   readDesktopAutoLaunchState,
   resolveDesktopLoginItemOptions,
@@ -101,6 +102,7 @@ const DESKTOP_TOKEN_HEADER = "X-Pi-Desktop-Token";
 const COMPLETION_NOTIFICATION_CHANNEL = "pi:completion-notification";
 const NOTIFICATION_SESSION_CHANNEL = "pi:notification-session";
 const APPLICATION_MENU_CHANNEL = "pi:open-application-menu";
+const APPLICATION_MENU_LOCALE_CHANNEL = "pi:set-application-menu-locale";
 const REVEAL_PATH_CHANNEL = "pi:reveal-path";
 const OPEN_PATH_CHANNEL = "pi:open-path";
 const DIRECTORY_PICKER_CHANNEL = "pi:directory-picker";
@@ -192,6 +194,7 @@ let serverUrl: URL | undefined;
 let shutdownPromise: Promise<void> | undefined;
 let shutdownComplete = false;
 let applicationMenu: Menu | null = null;
+let applicationMenuLocale: "en" | "zh-CN" | undefined;
 let keyboardShortcutBindings: DesktopShortcutBindings = { ...DEFAULT_DESKTOP_SHORTCUT_BINDINGS };
 let companionPanelShortcutAccelerator: string | undefined;
 let companionPanelKeepVisibleUntilClose = false;
@@ -814,7 +817,7 @@ function initializeDesktopUpdater(log: Logger): void {
 }
 
 function installApplicationMenu(): void {
-  const zh = app.getLocale().toLowerCase().startsWith("zh");
+  const zh = applicationMenuLocale ? applicationMenuLocale === "zh-CN" : app.getLocale().toLowerCase().startsWith("zh");
   const copy = zh ? {
     file: "文件", edit: "编辑", view: "视图", help: "帮助",
     newSession: "新聊天", openFolder: "打开文件夹", close: "关闭", quit: brandText("退出 Piora"),
@@ -937,11 +940,20 @@ function installApplicationMenu(): void {
     },
   ];
 
-  applicationMenu = Menu.buildFromTemplate(template);
+  applicationMenu = Menu.buildFromTemplate(withSymbolicMenuShortcuts(template, process.platform));
   Menu.setApplicationMenu(applicationMenu);
 }
 
 function registerApplicationMenuPopupHandler(): void {
+  ipcMain.removeHandler(APPLICATION_MENU_LOCALE_CHANNEL);
+  ipcMain.handle(APPLICATION_MENU_LOCALE_CHANNEL, (event, locale: unknown): boolean => {
+    if (!isTrustedMainWindowSender(event) || (locale !== "en" && locale !== "zh-CN")) return false;
+    if (applicationMenuLocale !== locale) {
+      applicationMenuLocale = locale;
+      installApplicationMenu();
+    }
+    return true;
+  });
   ipcMain.removeHandler(APPLICATION_MENU_CHANNEL);
   ipcMain.handle(
     APPLICATION_MENU_CHANNEL,
