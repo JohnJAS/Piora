@@ -14,6 +14,10 @@ const REVIEWED_LICENSE_DECLARATIONS = new Map([
   ["format@0.2.2", "MIT"],
   ["khroma@2.1.0", "MIT"],
   ["ssh2@1.17.0", "MIT"],
+  // socket.io-client -> engine.io-client. The immutable 2.1.2 package ships
+  // an MIT LICENSE and a legacy `licenses` manifest field that npm omits from
+  // package-lock metadata.
+  ["xmlhttprequest-ssl@2.1.2", "MIT"],
 ]);
 
 function compareText(left, right) {

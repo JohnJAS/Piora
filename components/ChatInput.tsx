@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useReplyDraft } from "@/hooks/useReplyDraft";
 import { useReplySuggestions } from "@/hooks/useReplySuggestions";
 import { ReplySuggestionBar } from "./ReplySuggestionBar";
+import { CompactionProgress } from "./CompactionProgress";
 import type { ReplySource } from "@/lib/reply-suggestions";
 import { useAnchoredMenuPosition } from "@/hooks/useAnchoredMenuPosition";
 import { readPromptOptimizerModel, readPromptOptimizerSystemPrompt } from "@/lib/prompt-optimizer-settings";
@@ -1712,8 +1713,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
              {t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts })}{retryInfo.errorMessage && <span style={{ opacity: 0.7, marginLeft: 4 }}>— {retryInfo.errorMessage}</span>}
           </div>
         )}
+        {isCompacting ? <CompactionProgress key={draftKey} onStop={onAbortCompaction} /> : null}
         {compactResultText && (
-          <div style={{
+          <div role="status" aria-live="polite" style={{
             marginBottom: 8, padding: "5px 10px",
             background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.24)",
             borderRadius: "var(--radius-control)", fontSize: "var(--text-sm)", color: "rgba(5,150,105,0.95)",

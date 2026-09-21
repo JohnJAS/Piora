@@ -74,7 +74,8 @@ export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   { id: "companion.model", section: "companion", labelKey: "companion.model.title", descriptionKey: "companion.model.description", keywords: ["interaction", "model", "互动", "模型"] },
 
   { id: "remote", section: "remote", labelKey: "remote.title", descriptionKey: "remote.description", keywords: ["http", "sse", "token", "远程", "令牌"] },
-  { id: "harmony", section: "harmony", labelKey: "harmonyStorage.title", descriptionKey: "harmonyStorage.description", keywords: ["openharmony", "screenshot", "recording", "鸿蒙", "截图", "录屏"] },
+  { id: "harmony", section: "harmony", labelKey: "harmonyStorage.title", descriptionKey: "harmonyStorage.description", keywords: ["openharmony", "arkts", "lint", "deveco", "screenshot", "recording", "鸿蒙", "语法", "语义", "规范", "截图", "录屏"] },
+  { id: "harmony.checks", section: "harmony", requiresDesktop: true, labelKey: "harmonyCheck.settingsTitle", descriptionKey: "harmonyCheck.settingsDescription", keywords: ["arkts", "lsp", "codelinter", "deveco", "check", "鸿蒙", "检查", "修复"] },
   { id: "harmony.screenshots", section: "harmony", requiresDesktop: true, labelKey: "harmonyStorage.screenshotDirectory", descriptionKey: "harmonyStorage.screenshotDescription", keywords: ["png", "folder", "截图", "文件夹"] },
   { id: "harmony.recordings", section: "harmony", requiresDesktop: true, labelKey: "harmonyStorage.recordingDirectory", descriptionKey: "harmonyStorage.recordingDescription", keywords: ["mp4", "folder", "录屏", "文件夹"] },
   { id: "usage", section: "usage", labelKey: "usage.title", descriptionKey: "usage.description", keywords: ["token", "statistics", "usage", "用量", "统计"] },

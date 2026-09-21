@@ -8,6 +8,7 @@ import { useHarmonyLiveFrame } from "@/hooks/useHarmonyLiveFrame";
 import { formatHarmonyDeviceLabel } from "@/lib/harmony/device-label";
 import { AliIcon } from "../AliIcon";
 import { HarmonyLogViewer } from "./HarmonyLogViewer";
+import { HarmonyCheckPanel } from "./HarmonyCheckPanel";
 import styles from "./HarmonyPanel.module.css";
 
 type RuntimeProfile = "normal" | "device-control";
@@ -154,11 +155,13 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 type HarmonyPanelProps = {
   active: boolean;
   sessionRunning?: boolean;
-  onGuideAgent?: (() => void) | undefined;
+  cwd?: string | null;
+  onOpenFile?: (path: string, line: number) => void;
+  onGuideAgent?: ((prompt?: string) => void) | undefined;
   onSnapshot?: (fingerprint: number) => void;
 };
 
-export function HarmonyPanel({ active, sessionRunning = false, onGuideAgent, onSnapshot }: HarmonyPanelProps) {
+export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, onGuideAgent, onSnapshot }: HarmonyPanelProps) {
   const { locale } = useI18n();
   const chinese = locale === "zh-CN";
   const copy = useCallback((zh: string, en: string) => chinese ? zh : en, [chinese]);
@@ -174,7 +177,7 @@ export function HarmonyPanel({ active, sessionRunning = false, onGuideAgent, onS
   const [visionModelKey, setVisionModelKey] = useState("");
   const [shareScreenshot, setShareScreenshot] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"screen" | "logs">("screen");
+  const [viewMode, setViewMode] = useState<"screen" | "logs" | "check">("screen");
   const [diagnostics, setDiagnostics] = useState<unknown>(null);
   const [tree, setTree] = useState<unknown>(null);
   const [text, setText] = useState("");
@@ -642,12 +645,13 @@ export function HarmonyPanel({ active, sessionRunning = false, onGuideAgent, onS
           <small>{copy("控制权保持互斥，但投屏会独立运行；发现动作不对可立即发送修正。", "Control stays exclusive, while the live view runs independently. Send a correction whenever an action looks wrong.")}</small>
         </span>
       </span>
-      {onGuideAgent ? <button type="button" onClick={onGuideAgent}><AliIcon name="message" size={13} />{copy("指导 Agent", "Guide Agent")}</button> : null}
+      {onGuideAgent ? <button type="button" onClick={() => onGuideAgent()}><AliIcon name="message" size={13} />{copy("指导 Agent", "Guide Agent")}</button> : null}
     </div> : null}
 
     <div className={styles.deviceTabs} role="tablist" aria-label={copy("设备工具", "Device tools")}>
       <button type="button" role="tab" aria-selected={viewMode === "screen"} onClick={() => setViewMode("screen")}><AliIcon name="mobile" size={13} />{copy("投屏", "Screen")}</button>
       <button type="button" role="tab" aria-selected={viewMode === "logs"} onClick={() => setViewMode("logs")}><AliIcon name="code" size={13} />{copy("日志", "Logs")}</button>
+      <button type="button" role="tab" aria-selected={viewMode === "check"} onClick={() => setViewMode("check")}><AliIcon name="check-circle" size={13} />{copy("代码检查", "Code checks")}</button>
     </div>
 
     {viewMode === "screen" ? <><div className={styles.deviceArea}>
@@ -734,7 +738,8 @@ export function HarmonyPanel({ active, sessionRunning = false, onGuideAgent, onS
           <pre>{JSON.stringify({ selected, holder, snapshot, diagnostics, tree }, null, 2)}</pre>
         </details>
       </div>
-    </details></> : <HarmonyLogViewer active={active && viewMode === "logs"} serial={selectedSerial} online={Boolean(selectedOnline)} copy={copy} />}
+    </details></> : viewMode === "logs" ? <HarmonyLogViewer active={active && viewMode === "logs"} serial={selectedSerial} online={Boolean(selectedOnline)} copy={copy} />
+      : <HarmonyCheckPanel active={active && viewMode === "check"} cwd={cwd} onOpenFile={onOpenFile} onGuideAgent={onGuideAgent} />}
 
     {frameError ? <div className={styles.frameError} role="status">{frameError}</div> : null}
     {error ? <div className={styles.error} role="alert">{error}</div> : null}
@@ -777,12 +782,12 @@ class HarmonyPanelErrorBoundary extends Component<HarmonyPanelBoundaryProps, Har
   }
 }
 
-export function SafeHarmonyPanel({ active, sessionRunning = false, onGuideAgent }: Omit<HarmonyPanelProps, "onSnapshot">) {
+export function SafeHarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, onGuideAgent }: Omit<HarmonyPanelProps, "onSnapshot">) {
   const [snapshot, setSnapshot] = useState(0);
   const handleSnapshot = useCallback((fingerprint: number) => {
     setSnapshot((current) => (current === fingerprint ? current : fingerprint));
   }, []);
   return <HarmonyPanelErrorBoundary active={active} resetKey={String(snapshot)}>
-    <HarmonyPanel active={active} sessionRunning={sessionRunning} onGuideAgent={onGuideAgent} onSnapshot={handleSnapshot} />
+    <HarmonyPanel active={active} sessionRunning={sessionRunning} cwd={cwd} onOpenFile={onOpenFile} onGuideAgent={onGuideAgent} onSnapshot={handleSnapshot} />
   </HarmonyPanelErrorBoundary>;
 }

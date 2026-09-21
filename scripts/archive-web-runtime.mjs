@@ -6,5 +6,8 @@ export async function createWebRuntimeArchive(source, destination) {
   // Sharp's versioned @img bindings must also be available to the native loader.
   // Shell workers and scripts are opened by Node workers / external shells.
   // They must live at the real sidecar paths resolved by shellAssetPath().
-  await createPackageWithOptions(source, destination, { unpackDir: "**/{node-pty,@img,shell/runtime}" });
+  // The DevEco CLI is started as a child-process script. Keep its executable
+  // package on disk while preserving the virtual runtime.asar path used by
+  // Electron's ASAR-aware filesystem.
+  await createPackageWithOptions(source, destination, { unpackDir: "**/{node-pty,@img,@deveco,shell/runtime}" });
 }

@@ -52,7 +52,7 @@ const packagedRuntimeArchive = join(packagedWebRoot, "runtime.asar");
 let activeServerStderr = "";
 
 export function verifyPackagedCoreTools(tools) {
-  const required = ["browser", "harmony_control", "piora_room"];
+  const required = ["browser", "harmony_control", "piora_harmony_check", "piora_room"];
   const optional = ["piora_goal", "piora_plan", "piora_plan_execution", "computer_control"];
   const inspect = (name) => {
     const tool = tools.find((entry) => entry.name === name);
@@ -60,7 +60,9 @@ export function verifyPackagedCoreTools(tools) {
   };
   const core = required.map(inspect);
   if (core.some((tool) => !tool.loaded)) throw new Error(`Packaged first-party tools failed to load: ${JSON.stringify(core)}`);
-  if (core.some((tool) => tool.active !== (tool.name === "browser" || tool.name === "harmony_control"))) {
+  if (core.some((tool) => tool.active !== (
+    tool.name === "browser" || tool.name === "harmony_control" || tool.name === "piora_harmony_check"
+  ))) {
     throw new Error(`Packaged first-party tools do not match the compact coding preset: ${JSON.stringify(core)}`);
   }
   if (tools.some((tool) => tool.name.startsWith("harmony_") && tool.name !== "harmony_control")) {
@@ -120,6 +122,8 @@ const requiredPaths = [
   ".next/server/app/desktop-clipboard/page_client-reference-manifest.js",
   "node_modules/next/package.json",
   "node_modules/@modelcontextprotocol/sdk/package.json",
+  "node_modules/@deveco/deveco-cli/package.json",
+  "node_modules/@deveco/deveco-cli/dist/cli.js",
   "node_modules/@earendil-works/pi-agent-core/package.json",
   "node_modules/@earendil-works/pi-ai/package.json",
   "node_modules/@earendil-works/pi-coding-agent/package.json",

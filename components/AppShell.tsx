@@ -1939,7 +1939,7 @@ export function AppShell() {
           <RemoteControlSettings sessionId={selectedSession?.id ?? null} />
         ),
         harmony: (
-          <HarmonyStorageSettings />
+          <HarmonyStorageSettings cwd={currentProjectPath ?? settingsProjectCwd ?? activeCwd ?? undefined} />
         ),
         speech: (
           <SpeechSettings />
