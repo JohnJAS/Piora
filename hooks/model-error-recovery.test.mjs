@@ -14,6 +14,7 @@ function bind(callback, scope) {
 }
 const loadCallback = findNode(node => ts.isVariableDeclaration(node) && node.name.getText(source) === "loadModels").initializer.arguments[0];
 const recoveryCallback = findNode(node => ts.isCallExpression(node) && node.expression.getText(source) === "useEffect" && node.arguments[0]?.getText(source).includes("if (!modelError) return;")).arguments[0];
+const dismissalCallback = findNode(node => ts.isCallExpression(node) && node.expression.getText(source) === "useEffect" && node.arguments[0]?.getText(source).includes("MODEL_ERROR_VISIBLE_MS")).arguments[0];
 
 test("a repaired catalog clears the error and stale or cancelled responses cannot restore it", async () => {
   const requests = [];
@@ -83,4 +84,22 @@ test("error recovery retries in the foreground, resumes on visibility and cancel
   document.dispatchEvent(new Event("visibilitychange"));
   window.dispatchEvent(new Event("online"));
   assert.equal(calls.length, 2);
+});
+
+test("model errors dismiss after twenty seconds and reset the timer when replaced", () => {
+  let callback;
+  let cleared;
+  let error = "context window exceeded";
+  const cleanup = bind(dismissalCallback, {
+    modelError: error,
+    MODEL_ERROR_VISIBLE_MS: 20_000,
+    setModelError: value => { error = value; },
+    setTimeout: (next, delay) => { assert.equal(delay, 20_000); callback = next; return 17; },
+    clearTimeout: id => { cleared = id; },
+  })();
+  assert.equal(error, "context window exceeded");
+  callback();
+  assert.equal(error, null);
+  cleanup();
+  assert.equal(cleared, 17);
 });

@@ -120,6 +120,8 @@ const requiredPaths = [
   ".next/server/app/desktop-clipboard/page_client-reference-manifest.js",
   "node_modules/next/package.json",
   "node_modules/@modelcontextprotocol/sdk/package.json",
+  "node_modules/@deveco/deveco-cli/package.json",
+  "node_modules/@deveco/deveco-cli/dist/cli.js",
   "node_modules/@earendil-works/pi-agent-core/package.json",
   "node_modules/@earendil-works/pi-ai/package.json",
   "node_modules/@earendil-works/pi-coding-agent/package.json",

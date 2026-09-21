@@ -218,6 +218,7 @@ const EVENT_STREAM_CONNECT_TIMEOUT_MS = 30_000;
 const MAX_NOTICES = 5;
 const NOTICE_VISIBLE_MS = 5000;
 const NOTICE_EXIT_ANIMATION_MS = 180;
+const MODEL_ERROR_VISIBLE_MS = 20_000;
 const COMPACT_ERROR_VISIBLE_MS = 12_000;
 const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " ", "Space", "Spacebar"]);
 
@@ -2436,6 +2437,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       window.removeEventListener("online", onVisible);
     };
   }, [modelError, loadModels, modelsRefreshKey]);
+
+  // Model/runtime errors are actionable when they first appear, but a failed
+  // model switch (for example to a model whose context window is too small)
+  // must not leave the composer blocked by a permanent banner.
+  useEffect(() => {
+    if (!modelError) return;
+    const timer = setTimeout(() => setModelError(null), MODEL_ERROR_VISIBLE_MS);
+    return () => clearTimeout(timer);
+  }, [modelError]);
 
   useEffect(() => {
     if (!compactResult) return;

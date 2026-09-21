@@ -28,6 +28,12 @@ const nextConfig: NextConfig = {
   // explicit root, monorepo/workspace detection can broaden the standalone
   // trace and make the packaged output less deterministic.
   outputFileTracingRoot: __dirname,
+  // The Harmony checker launches the pinned DevEco CLI as an owned child
+  // process. Its executable and resource archives are runtime data rather
+  // than modules imported into a Next route, so include the package explicitly.
+  outputFileTracingIncludes: {
+    "/*": ["./node_modules/@deveco/deveco-cli/**/*"],
+  },
   // Browser profiles contain user-owned cookies, storage and cache files. They
   // are runtime data, never application dependencies. Excluding them also
   // prevents node-file-trace from following a developer's local profile when
@@ -44,6 +50,7 @@ const nextConfig: NextConfig = {
   },
   serverExternalPackages: [
     "@modelcontextprotocol/sdk",
+    "@deveco/deveco-cli",
     "node-pty",
     "undici",
     "@earendil-works/pi-coding-agent",
@@ -76,6 +83,7 @@ const nextConfig: NextConfig = {
         "@earendil-works/pi-agent-core",
         "@earendil-works/pi-ai",
         "@earendil-works/pi-tui",
+        "@deveco/deveco-cli",
         "playwright-core",
         "hypium-driver",
         "ssh2",
