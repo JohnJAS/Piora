@@ -113,6 +113,7 @@ const runtime = Object.freeze({
     writeText: (text: string): Promise<void> => ipcRenderer.invoke("pi:clipboard-write", text, false),
     readImage: (): Promise<string | null> => ipcRenderer.invoke("pi:clipboard-read", true),
     writeImage: (data: string): Promise<void> => ipcRenderer.invoke("pi:clipboard-write", data, true),
+    copyHarmonyMedia: (media: { kind: "screenshot" | "recording"; path: string }): Promise<void> => ipcRenderer.invoke("pi:harmony-media-copy", media),
   }),
   launcher: Object.freeze({
     list: (refresh = false) => ipcRenderer.invoke("pi:launcher-list", refresh),

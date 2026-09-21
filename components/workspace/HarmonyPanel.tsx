@@ -6,6 +6,7 @@ import { Component, useCallback, useEffect, useMemo, useRef, useState, type Erro
 import { useI18n } from "@/hooks/useI18n";
 import { useHarmonyLiveFrame } from "@/hooks/useHarmonyLiveFrame";
 import { formatHarmonyDeviceLabel } from "@/lib/harmony/device-label";
+import { copyText } from "@/lib/clipboard";
 import { AliIcon } from "../AliIcon";
 import { HarmonyLogViewer } from "./HarmonyLogViewer";
 import { HarmonyCheckPanel } from "./HarmonyCheckPanel";
@@ -32,6 +33,12 @@ type HarmonyState = {
 type ManualLease = { token: string; serial: string; expiresAt: string };
 type RecordingState = { serial: string; recordingId: string; startedAt: string; ownerId: string };
 type MediaArtifact = { kind: "screenshot" | "recording"; path: string; filename: string; size: number };
+type MediaNotice = {
+  message: string;
+  artifact?: MediaArtifact;
+  copyStatus?: "copying" | "copied" | "failed";
+  pathStatus?: "copying" | "copied" | "failed";
+};
 type RuntimeCandidate = { hdcPath: string; sdkPath: string; source: "selection" | "environment" | "config" | "deveco" | "path" | "bundled" };
 type VisionModel = { provider: string; modelId: string; name: string };
 function recordOf(value: unknown): Record<string, unknown> | null {
@@ -154,6 +161,8 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 
 type HarmonyPanelProps = {
   active: boolean;
+  maximized?: boolean;
+  onMaximizedChange?: (maximized: boolean) => void;
   sessionRunning?: boolean;
   cwd?: string | null;
   onOpenFile?: (path: string, line: number) => void;
@@ -161,7 +170,9 @@ type HarmonyPanelProps = {
   onSnapshot?: (fingerprint: number) => void;
 };
 
-export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, onGuideAgent, onSnapshot }: HarmonyPanelProps) {
+type FrameZoom = "fit" | "100" | "150" | "200";
+
+export function HarmonyPanel({ active, maximized = false, onMaximizedChange, sessionRunning = false, cwd, onOpenFile, onGuideAgent, onSnapshot }: HarmonyPanelProps) {
   const { locale } = useI18n();
   const chinese = locale === "zh-CN";
   const copy = useCallback((zh: string, en: string) => chinese ? zh : en, [chinese]);
@@ -177,7 +188,11 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
   const [visionModelKey, setVisionModelKey] = useState("");
   const [shareScreenshot, setShareScreenshot] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<"screen" | "logs" | "check">("screen");
+  const [viewMode, setViewMode] = useState<"media" | "logs" | "check">("media");
+  const [frameZoom, setFrameZoom] = useState<FrameZoom>("fit");
+  const [drawerHeight, setDrawerHeight] = useState(176);
+  const [drawerCollapsed, setDrawerCollapsed] = useState(false);
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
   const [diagnostics, setDiagnostics] = useState<unknown>(null);
   const [tree, setTree] = useState<unknown>(null);
   const [text, setText] = useState("");
@@ -188,11 +203,15 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
   const [frameInteractionError, setFrameInteractionError] = useState<string | null>(null);
   const [frameSize, setFrameSize] = useState<{ width: number; height: number } | null>(null);
   const [recording, setRecording] = useState<RecordingState | null>(null);
-  const [mediaNotice, setMediaNotice] = useState<string | null>(null);
+  const [mediaNotice, setMediaNotice] = useState<MediaNotice | null>(null);
   const ownerIdRef = useRef("");
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const frameRef = useRef<HTMLCanvasElement>(null);
+  const frameViewportRef = useRef<HTMLDivElement>(null);
   const leaseRef = useRef<ManualLease | null>(null);
+  const drawerHeightRef = useRef(drawerHeight);
+  const drawerResizeRef = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null);
+  const framePanRef = useRef<{ pointerId: number; startX: number; startY: number; scrollLeft: number; scrollTop: number } | null>(null);
 
   useEffect(() => {
     const ownerKey = "piora-harmony-manual-owner-v1";
@@ -216,6 +235,18 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
   const selectedGeneration = selected?.generation;
   const canScreenshot = Boolean(selectedOnline && selected?.capabilities.screenshot);
 
+  useEffect(() => {
+    try {
+      const stored = Number(window.localStorage.getItem("piora-harmony-drawer-height-v1"));
+      if (Number.isFinite(stored) && stored >= 96 && stored <= 420) setDrawerHeight(stored);
+    } catch { /* The default drawer size remains usable without storage. */ }
+  }, []);
+
+  useEffect(() => {
+    drawerHeightRef.current = drawerHeight;
+    try { window.localStorage.setItem("piora-harmony-drawer-height-v1", String(drawerHeight)); } catch { /* Persistence is optional. */ }
+  }, [drawerHeight]);
+
   // Tell the isolating boundary whenever a fresh poll replaced the panel data
   // so it can automatically retry rendering after transient bad payloads.
   useEffect(() => {
@@ -233,7 +264,7 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
     error: frameLoadError,
     refresh: requestFrame,
   } = useHarmonyLiveFrame({
-    active: active && desktopAvailable && viewMode === "screen",
+    active: active && desktopAvailable,
     enabled: Boolean(selectedOnline),
     serial: selectedSerial,
     generation: selectedGeneration,
@@ -353,6 +384,20 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
   }, [active, desktopAvailable, selectedSerial]);
 
   useEffect(() => {
+    if (!recording) {
+      setRecordingElapsed(0);
+      return;
+    }
+    const startedAt = Date.parse(recording.startedAt);
+    const updateElapsed = () => setRecordingElapsed(Number.isFinite(startedAt)
+      ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000))
+      : 0);
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1_000);
+    return () => window.clearInterval(timer);
+  }, [recording]);
+
+  useEffect(() => {
     if (!lease) return;
     const timer = window.setInterval(() => {
       void jsonRequest<{ lease: ManualLease }>("/api/harmony/manual", {
@@ -399,11 +444,11 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
     }).catch(() => undefined);
   }, [active, lease]);
 
-  const run = useCallback(async <T,>(operation: () => Promise<T>, after?: (value: T) => void) => {
+  const run = useCallback(async <T,>(operation: () => Promise<T>, after?: (value: T) => void | Promise<void>) => {
     setBusy(true);
     try {
       const value = await operation();
-      after?.(value);
+      await after?.(value);
       setError(null);
       return value;
     } catch (operationError) {
@@ -440,23 +485,45 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
     (payload) => setLease(payload.lease),
   );
 
+  const copyMediaArtifact = async (artifact: MediaArtifact) => {
+    const label = artifact.kind === "screenshot" ? copy("截图", "Screenshot") : copy("录屏文件", "Recording file");
+    setViewMode("media");
+    setDrawerCollapsed(false);
+    setMediaNotice({ artifact, copyStatus: "copying", message: copy(`${label}已保存，正在复制…`, `${label} saved. Copying…`) });
+    try {
+      const writeMedia = window.piDesktop?.clipboard?.copyHarmonyMedia;
+      if (!writeMedia) throw new Error("Media clipboard unavailable");
+      await writeMedia({ kind: artifact.kind, path: artifact.path });
+      setMediaNotice((current) => current?.artifact === artifact
+        ? { artifact, copyStatus: "copied", message: copy(`${label}已保存并复制到剪贴板`, `${label} saved and copied to clipboard`) }
+        : current);
+    } catch {
+      // Saving succeeded even if clipboard access failed; keep the path available.
+      setMediaNotice((current) => current?.artifact === artifact
+        ? { artifact, copyStatus: "failed", message: copy(`${label}已保存，但复制失败，可重试或复制路径。`, `${label} saved, but copying failed. Retry or copy the path.`) }
+        : current);
+    }
+  };
+
+  const copyMediaPath = async () => {
+    const artifact = mediaNotice?.artifact;
+    if (!artifact) return;
+    const updatePathStatus = (pathStatus: MediaNotice["pathStatus"]) => setMediaNotice((current) => current?.artifact === artifact ? { ...current, pathStatus } : current);
+    updatePathStatus("copying");
+    try {
+      await copyText(artifact.path);
+      updatePathStatus("copied");
+    } catch {
+      updatePathStatus("failed");
+    }
+  };
+
   const release = () => lease && void run(
-    async () => {
-      if (recording?.ownerId === ownerIdRef.current && recording.serial === lease.serial) {
-        const payload = await jsonRequest<{ artifact: MediaArtifact }>("/api/harmony/media", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "stop_recording", serial: lease.serial, leaseToken: lease.token, ownerId: ownerIdRef.current }),
-        });
-        setRecording(null);
-        setMediaNotice(copy(`录屏已保存到 ${payload.artifact.path}`, `Recording saved to ${payload.artifact.path}`));
-      }
-      return await jsonRequest("/api/harmony/manual", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "release", leaseToken: lease.token }),
-      });
-    },
+    () => jsonRequest("/api/harmony/manual", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "release", leaseToken: lease.token }),
+    }),
     () => setLease(null),
   );
 
@@ -470,25 +537,26 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
   };
 
   const mediaAction = (mediaActionName: "capture_screenshot" | "start_recording" | "stop_recording") => {
-    if (!selectedSerial || !lease) return;
+    if (!selectedSerial) return;
     void run(async () => await jsonRequest<{ artifact?: MediaArtifact; recording?: RecordingState }>("/api/harmony/media", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: mediaActionName,
         serial: selectedSerial,
-        leaseToken: lease.token,
         ownerId: ownerIdRef.current,
       }),
-    }), (payload) => {
+    }), async (payload) => {
       if (payload.recording) {
         setRecording(payload.recording);
-        setMediaNotice(copy("录屏已开始；结束控制时会自动停止并保存。", "Recording started; releasing control will stop and save it."));
+        setMediaNotice({ message: copy("录屏已开始，可继续查看或控制设备。", "Recording started. You can keep viewing or controlling the device.") });
+        setViewMode("media");
+        setDrawerCollapsed(false);
       } else if (payload.artifact) {
         if (payload.artifact.kind === "recording") setRecording(null);
-        setMediaNotice(payload.artifact.kind === "screenshot"
-          ? copy(`截图已保存到 ${payload.artifact.path}`, `Screenshot saved to ${payload.artifact.path}`)
-          : copy(`录屏已保存到 ${payload.artifact.path}`, `Recording saved to ${payload.artifact.path}`));
+        setViewMode("media");
+        setDrawerCollapsed(false);
+        await copyMediaArtifact(payload.artifact);
       }
     });
   };
@@ -523,6 +591,24 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
     return { x, y };
   };
 
+  const formatRecordingElapsed = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+
+  const resizeDrawer = (event: React.PointerEvent<HTMLDivElement>) => {
+    const resize = drawerResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    const nextHeight = Math.max(96, Math.min(420, resize.startHeight + resize.startY - event.clientY));
+    setDrawerHeight(nextHeight);
+    if (drawerCollapsed) setDrawerCollapsed(false);
+  };
+
+  const panFrame = (event: React.PointerEvent<HTMLDivElement>) => {
+    const pan = framePanRef.current;
+    const viewport = frameViewportRef.current;
+    if (!pan || !viewport || pan.pointerId !== event.pointerId) return;
+    viewport.scrollLeft = pan.scrollLeft + pan.startX - event.clientX;
+    viewport.scrollTop = pan.scrollTop + pan.startY - event.clientY;
+  };
+
   if (profile === "web") {
     return <div className={styles.gate}>
       <AliIcon name="mobile" size={34} />
@@ -548,14 +634,41 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
         ? copy("设备离线", "Offline")
         : copy("未连接", "Not connected");
   const visionModel = visionModels.find((model) => `${model.provider}\u0000${model.modelId}` === visionModelKey);
+  const zoomScale = frameZoom === "fit" ? null : Number(frameZoom) / 100;
+  const frameCanvasStyle = zoomScale && frameSize
+    ? { width: frameSize.width * zoomScale, height: frameSize.height * zoomScale, maxWidth: "none", maxHeight: "none" }
+    : undefined;
+  const ownsRecording = recording?.ownerId === ownerIdRef.current;
 
   return <div className={styles.root}>
-    <header className={styles.toolbar}>
-      <div className={styles.toolbarTitle}>
+    <header className={styles.deviceHeader}>
+      <div className={styles.deviceIdentity}>
         <span className={styles.deviceMark}><AliIcon name="mobile" size={15} /></span>
-        <span><strong>{copy("鸿蒙设备", "Harmony device")}</strong><small data-state={runtimeReady ? "ready" : "idle"}>{runtimeReady ? copy("服务已就绪", "Ready") : copy("需要设置", "Setup needed")}</small></span>
+        <select aria-label={copy("选择设备", "Select device")} value={selectedSerial} onChange={(event) => {
+          const nextSerial = event.target.value;
+          if (lease) {
+            const token = lease.token;
+            setLease(null);
+            void jsonRequest("/api/harmony/manual", {
+              method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "release", leaseToken: token }),
+            }).catch(() => undefined);
+          }
+          setSelectedSerial(nextSerial);
+          setTree(null);
+          setFrameSize(null);
+          setRecording(null);
+          setMediaNotice(null);
+          setFrameZoom("fit");
+        }}>
+          {!devices.length ? <option value="">{copy("没有设备", "No device")}</option> : null}
+          {devices.map((device) => <option key={device.serial} value={device.serial}>{formatHarmonyDeviceLabel(device)}</option>)}
+        </select>
+        <span className={styles.deviceState} data-state={selected?.state ?? "unknown"}><i />{deviceStateLabel}</span>
       </div>
       <div className={styles.toolbarActions}>
+        {onMaximizedChange ? <button className={styles.focusButton} type="button" onClick={() => onMaximizedChange(!maximized)} title={maximized ? copy("返回双栏", "Return to split view") : copy("专注投屏", "Focus screen")}>
+          <AliIcon name={maximized ? "fullscreen-exit" : "fullscreen"} size={14} /><span>{maximized ? copy("返回双栏", "Split view") : copy("专注投屏", "Focus screen")}</span>
+        </button> : null}
         <button className={styles.iconButton} type="button" onClick={() => { requestFrame(); void refresh(); }} disabled={busy} title={copy("刷新设备", "Refresh devices")} aria-label={copy("刷新设备", "Refresh devices")}><AliIcon name="reload" size={14} /></button>
         <button className={styles.iconButton} type="button" onClick={() => setSettingsOpen((open) => !open)} aria-pressed={settingsOpen} title={copy("设备设置", "Device settings")} aria-label={copy("设备设置", "Device settings")}><AliIcon name="setting" size={15} /></button>
       </div>
@@ -605,57 +718,55 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
       </div>
     </section> : null}
 
-    <main className={styles.content}>
-    <div className={styles.deviceBar}>
-      <select aria-label={copy("选择设备", "Select device")} value={selectedSerial} onChange={(event) => {
-        const nextSerial = event.target.value;
-        if (lease) {
-          const token = lease.token;
-          setLease(null);
-          void jsonRequest("/api/harmony/manual", {
-            method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "release", leaseToken: token }),
-          }).catch(() => undefined);
-        }
-        setSelectedSerial(nextSerial);
-        setTree(null);
-        setFrameSize(null);
-        setRecording(null);
-        setMediaNotice(null);
-      }}>
-        {!devices.length ? <option value="">{copy("没有设备", "No device")}</option> : null}
-        {devices.map((device) => <option key={device.serial} value={device.serial}>{formatHarmonyDeviceLabel(device)}</option>)}
-      </select>
-      <span className={styles.deviceState} data-state={selected?.state ?? "unknown"}><i />{deviceStateLabel}</span>
+    <main className={styles.workspace}>
+    <div className={styles.actionBar}>
+      <button className={styles.captureButton} type="button" disabled={!canScreenshot || busy} onClick={() => mediaAction("capture_screenshot")}><AliIcon name="save" size={13} />{copy("截图", "Screenshot")}</button>
+      {recording
+        ? <button className={ownsRecording ? styles.recordingButton : undefined} type="button" disabled={busy || !ownsRecording} onClick={() => mediaAction("stop_recording")}><AliIcon name="stop" size={13} />{ownsRecording ? copy(`停止录屏 · ${formatRecordingElapsed(recordingElapsed)}`, `Stop recording · ${formatRecordingElapsed(recordingElapsed)}`) : copy("Agent 正在录屏", "Agent recording")}</button>
+        : <button type="button" disabled={!selectedOnline || busy} onClick={() => mediaAction("start_recording")}><AliIcon name="play" size={13} />{copy("开始录屏", "Start recording")}</button>}
       {lease?.serial === selectedSerial
-        ? <button className={styles.controlButton} type="button" onClick={release}>{copy("结束控制", "Release")}</button>
+        ? <button className={styles.controlButton} type="button" disabled={busy} onClick={release}><AliIcon name="mobile" size={13} />{copy("结束控制", "Release control")}</button>
         : <button className={styles.controlButton} type="button" disabled={!selected || selected.state !== "online" || (Boolean(holder) && !ownsRecoverableLease)} onClick={acquire}>
-          {ownsRecoverableLease ? copy("继续控制", "Resume") : copy("控制设备", "Control")}
+          <AliIcon name="mobile" size={13} />{ownsRecoverableLease ? copy("继续控制", "Resume control") : copy("手动控制", "Manual control")}
         </button>}
       <button className={`${styles.iconButton} ${styles.stopButton}`} type="button" onClick={() => void run(
         () => jsonRequest("/api/harmony/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "emergency_stop", reason: "desktop-panel" }) }),
         () => { setLease(null); void refresh(); },
       )} title={copy("停止所有设备操作", "Stop all device actions")} aria-label={copy("停止所有设备操作", "Stop all device actions")}><AliIcon name="stop" size={13} /></button>
+      <div className={styles.zoomControls} aria-label={copy("画面缩放", "Screen zoom")}>
+        <button type="button" disabled={frameZoom === "fit"} onClick={() => setFrameZoom((current) => current === "200" ? "150" : current === "150" ? "100" : "fit")} aria-label={copy("缩小画面", "Zoom out")}><AliIcon name="minus" size={13} /></button>
+        <select aria-label={copy("画面缩放", "Screen zoom")} value={frameZoom} onChange={(event) => setFrameZoom(event.target.value as FrameZoom)}>
+          <option value="fit">{copy("适应窗口", "Fit")}</option>
+          <option value="100">100%</option>
+          <option value="150">150%</option>
+          <option value="200">200%</option>
+        </select>
+        <button type="button" disabled={frameZoom === "200"} onClick={() => setFrameZoom((current) => current === "fit" ? "100" : current === "100" ? "150" : "200")} aria-label={copy("放大画面", "Zoom in")}><AliIcon name="plus" size={13} /></button>
+      </div>
     </div>
-    {holder ? <div className={styles.controlNotice}><AliIcon name={holder.owner.kind === "agent" ? "robot" : "mobile"} size={13} />{holder.owner.kind === "agent" ? copy("AI 正在控制这台设备", "AI is controlling this device") : copy("你正在控制这台设备", "You are controlling this device")}</div> : null}
-    {sessionRunning ? <div className={styles.observerNotice} data-agent-control={agentHasControl ? "true" : "false"}>
-      <span className={styles.observerCopy}>
-        <AliIcon name={agentHasControl ? "robot" : "mobile"} size={14} />
-        <span>
-          <strong>{agentHasControl ? copy("旁观模式 · Agent 正在操作", "Observer mode · Agent is operating") : copy("实时旁观已开启", "Live observation is on")}</strong>
-          <small>{copy("控制权保持互斥，但投屏会独立运行；发现动作不对可立即发送修正。", "Control stays exclusive, while the live view runs independently. Send a correction whenever an action looks wrong.")}</small>
-        </span>
-      </span>
-      {onGuideAgent ? <button type="button" onClick={() => onGuideAgent()}><AliIcon name="message" size={13} />{copy("指导 Agent", "Guide Agent")}</button> : null}
+
+    {sessionRunning || holder ? <div className={styles.activityBar} data-agent-control={agentHasControl ? "true" : "false"}>
+      <span><AliIcon name={agentHasControl ? "robot" : "mobile"} size={13} />{agentHasControl ? copy("旁观模式 · Agent 正在操作", "Observer mode · Agent is operating") : holder ? copy("你正在控制这台设备", "You are controlling this device") : copy("实时旁观已开启", "Live observation is on")}</span>
+      {agentHasControl && onGuideAgent ? <button type="button" onClick={() => onGuideAgent()}><AliIcon name="message" size={12} />{copy("指导 Agent", "Guide Agent")}</button> : null}
     </div> : null}
 
-    <div className={styles.deviceTabs} role="tablist" aria-label={copy("设备工具", "Device tools")}>
-      <button type="button" role="tab" aria-selected={viewMode === "screen"} onClick={() => setViewMode("screen")}><AliIcon name="mobile" size={13} />{copy("投屏", "Screen")}</button>
-      <button type="button" role="tab" aria-selected={viewMode === "logs"} onClick={() => setViewMode("logs")}><AliIcon name="code" size={13} />{copy("日志", "Logs")}</button>
-      <button type="button" role="tab" aria-selected={viewMode === "check"} onClick={() => setViewMode("check")}><AliIcon name="check-circle" size={13} />{copy("代码检查", "Code checks")}</button>
-    </div>
-
-    {viewMode === "screen" ? <><div className={styles.deviceArea}>
-      <div className={styles.frame} data-enabled={canPointControl ? "true" : "false"}>
+    <div className={styles.deviceArea}>
+      <div
+        ref={frameViewportRef}
+        className={styles.frameViewport}
+        data-pannable={frameZoom !== "fit" && !canPointControl ? "true" : "false"}
+        onPointerDown={(event) => {
+          if (frameZoom === "fit" || canPointControl) return;
+          const viewport = frameViewportRef.current;
+          if (!viewport) return;
+          framePanRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={panFrame}
+        onPointerUp={(event) => { if (framePanRef.current?.pointerId === event.pointerId) framePanRef.current = null; }}
+        onPointerCancel={() => { framePanRef.current = null; }}
+      >
+      <div className={styles.frame} data-enabled={canPointControl ? "true" : "false"} data-zoom={frameZoom}>
         {selectedOnline ? <div className={styles.frameStatus} data-status={frameStatus} aria-live="polite">
           <span />{frameStatus === "error"
             ? frameMode === "frames" ? copy("兼容投屏重试中", "Retrying compatible view") : copy("视频流重连中", "Reconnecting stream")
@@ -666,6 +777,7 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
         </div> : null}
         {selectedOnline ? <canvas
           ref={frameRef}
+          style={frameCanvasStyle}
           role="img"
           aria-label={copy("手机实时视频流", "Live device video stream")}
           onPointerDown={(event) => {
@@ -693,10 +805,12 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
           <span>{copy("实时视频会显示在这里", "The live video stream will appear here")}</span>
           {!runtimeReady ? <button type="button" onClick={() => setSettingsOpen(true)}>{copy("打开设置", "Open settings")}</button> : null}
         </div>}
+        {frameError ? <div className={styles.frameError} role="status">{frameError}</div> : null}
+      </div>
       </div>
     </div>
 
-    <div className={styles.quickControls}>
+    {lease?.serial === selectedSerial ? <div className={styles.quickControls}>
       <div className={styles.keyRow} aria-label={copy("系统按键", "System keys")}>
         <button type="button" disabled={!lease || busy || !selected?.capabilities.keys} onClick={() => void action({ action: "press_key", key: "back" })} title={copy("返回", "Back")}><AliIcon name="arrowleft" size={14} /><span>{copy("返回", "Back")}</span></button>
         <button type="button" disabled={!lease || busy || !selected?.capabilities.keys} onClick={() => void action({ action: "press_key", key: "home" })} title={copy("主页", "Home")}><AliIcon name="home" size={14} /><span>{copy("主页", "Home")}</span></button>
@@ -706,44 +820,91 @@ export function HarmonyPanel({ active, sessionRunning = false, cwd, onOpenFile, 
         <input aria-label={copy("输入到手机", "Type on device")} placeholder={copy("输入文字", "Type text")} value={text} onChange={(event) => setText(event.target.value)} />
         <button className={styles.iconButton} type="submit" disabled={!lease || !text || busy || !selected?.capabilities.inputText} title={copy("发送到手机", "Send to device")} aria-label={copy("发送到手机", "Send to device")}><AliIcon name="enter" size={14} /></button>
       </form>
-    </div>
+    </div> : null}
 
-    <div className={styles.mediaRow} aria-label={copy("截图与录屏", "Capture and recording")}>
-      <button type="button" disabled={!lease || !canScreenshot || busy} onClick={() => mediaAction("capture_screenshot")}><AliIcon name="save" size={13} />{copy("保存截图", "Save screenshot")}</button>
-      {recording
-        ? <button type="button" disabled={!lease || busy || recording.ownerId !== ownerIdRef.current} onClick={() => mediaAction("stop_recording")}><AliIcon name="stop" size={13} />{copy("停止并保存录屏", "Stop and save recording")}</button>
-        : <button type="button" disabled={!lease || !selectedOnline || busy} onClick={() => mediaAction("start_recording")}><AliIcon name="play" size={13} />{copy("开始录屏", "Start recording")}</button>}
-      {recording ? <span className={styles.recordingState}><i />{recording.ownerId === ownerIdRef.current ? copy("正在录屏", "Recording") : copy("AI 正在录屏", "Agent recording")}</span> : null}
-    </div>
-    {mediaNotice ? <div className={styles.mediaNotice} role="status">{mediaNotice}</div> : null}
+    <div
+      className={styles.drawerResizeHandle}
+      role="separator"
+      tabIndex={0}
+      aria-orientation="horizontal"
+      aria-label={copy("调整投屏与工具区高度", "Resize screen and tools")}
+      aria-valuemin={96}
+      aria-valuemax={420}
+      aria-valuenow={drawerHeight}
+      onPointerDown={(event) => {
+        drawerResizeRef.current = { pointerId: event.pointerId, startY: event.clientY, startHeight: drawerHeightRef.current };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={resizeDrawer}
+      onPointerUp={(event) => { if (drawerResizeRef.current?.pointerId === event.pointerId) drawerResizeRef.current = null; }}
+      onPointerCancel={() => { drawerResizeRef.current = null; }}
+      onKeyDown={(event) => {
+        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+        event.preventDefault();
+        setDrawerCollapsed(false);
+        setDrawerHeight((height) => Math.max(96, Math.min(420, height + (event.key === "ArrowUp" ? 16 : -16))));
+      }}
+    ><span /></div>
 
-    <details className={styles.moreActions}>
-      <summary>{copy("更多操作", "More actions")}</summary>
-      <div className={styles.moreBody}>
-        <form className={styles.launchForm} onSubmit={(event) => { event.preventDefault(); if (bundleName) void action({ action: "launch_app", bundleName, abilityName: abilityName || undefined }); }}>
-          <div className={styles.sectionLabel}><strong>{copy("打开应用", "Open app")}</strong><small>{copy("输入应用标识", "Enter the app identifier")}</small></div>
-          <input aria-label="Bundle" value={bundleName} onChange={(event) => setBundleName(event.target.value)} placeholder="com.example.app" />
-          <input aria-label="Ability" value={abilityName} onChange={(event) => setAbilityName(event.target.value)} placeholder={copy("Ability（可选）", "Ability (optional)")} />
-          <button type="submit" disabled={!lease || !bundleName || busy || !selected?.capabilities.launchApp}>{copy("打开", "Open")}</button>
-        </form>
-        <div className={styles.inspectRow}>
-          <button type="button" disabled={!selectedOnline || busy} onClick={requestFrame}><AliIcon name="reload" size={13} />{copy("重连视频流", "Reconnect video")}</button>
-          <button type="button" disabled={!selectedOnline || busy || !selected?.capabilities.uiTree} onClick={() => void run(
-            () => jsonRequest<{ snapshot: unknown }>(`/api/harmony/tree?serial=${encodeURIComponent(selectedSerial)}`),
-            (payload) => setTree(payload.snapshot),
-          )}><AliIcon name="code" size={13} />{copy("读取界面结构", "Read interface structure")}</button>
-        </div>
-        <details className={styles.diagnostics}>
-          <summary>{copy("开发者信息", "Developer details")}</summary>
-          <pre>{JSON.stringify({ selected, holder, snapshot, diagnostics, tree }, null, 2)}</pre>
-        </details>
+    <section className={styles.toolDrawer} style={{ height: drawerCollapsed ? 35 : drawerHeight }}>
+      <div className={styles.drawerTabs} role="tablist" aria-label={copy("辅助工具", "Device tools")}>
+        <button type="button" role="tab" aria-selected={viewMode === "media"} onClick={() => { setViewMode("media"); setDrawerCollapsed(false); }}>{copy("截图与录屏", "Media")}</button>
+        <button type="button" role="tab" aria-selected={viewMode === "logs"} onClick={() => { setViewMode("logs"); setDrawerCollapsed(false); }}>{copy("设备日志", "Device logs")}</button>
+        <button type="button" role="tab" aria-selected={viewMode === "check"} onClick={() => { setViewMode("check"); setDrawerCollapsed(false); }}>{copy("代码检查", "Code checks")}</button>
+        <span className={styles.drawerTabSpacer} />
+        <button className={styles.iconButton} type="button" onClick={() => setDrawerCollapsed((collapsed) => !collapsed)} aria-label={drawerCollapsed ? copy("展开辅助工具", "Expand tools") : copy("收起辅助工具", "Collapse tools")}><AliIcon name={drawerCollapsed ? "arrowup" : "arrowdown"} size={13} /></button>
       </div>
-    </details></> : viewMode === "logs" ? <HarmonyLogViewer active={active && viewMode === "logs"} serial={selectedSerial} online={Boolean(selectedOnline)} copy={copy} />
-      : <HarmonyCheckPanel active={active && viewMode === "check"} cwd={cwd} onOpenFile={onOpenFile} onGuideAgent={onGuideAgent} />}
+      {!drawerCollapsed ? <div className={styles.drawerBody}>
+        {viewMode === "media" ? <div className={styles.mediaWorkspace}>
+          {mediaNotice ? <div className={styles.mediaNotice} role="status" aria-live="polite">
+            <span>{mediaNotice.message}</span>
+            {mediaNotice.artifact ? <>
+              <div className={styles.mediaPath}>
+                <span>{copy("保存路径", "Saved to")}</span>
+                <code>{mediaNotice.artifact.path}</code>
+              </div>
+              <div className={styles.mediaNoticeActions}>
+                <button type="button" disabled={mediaNotice.copyStatus === "copying" || mediaNotice.pathStatus === "copying"} onClick={() => void copyMediaPath()}>
+                  <AliIcon name="copy" size={13} />{mediaNotice.pathStatus === "copied" ? copy("路径已复制", "Path copied") : copy("复制路径", "Copy path")}
+                </button>
+                {mediaNotice.copyStatus === "failed" ? <button type="button" disabled={busy || mediaNotice.pathStatus === "copying"} onClick={() => void run(() => copyMediaArtifact(mediaNotice.artifact!))}>{copy("重新复制", "Retry copy")}</button> : null}
+                {mediaNotice.pathStatus === "failed" ? <span>{copy("路径复制失败，请重试", "Could not copy the path. Please retry.")}</span> : null}
+              </div>
+            </> : null}
+          </div> : <div className={styles.mediaEmpty}>{copy("截图和录屏可直接使用，不需要先取得设备控制权。", "Screenshots and recordings are available without taking device control first.")}</div>}
 
-    {frameError ? <div className={styles.frameError} role="status">{frameError}</div> : null}
+          <details className={styles.moreActions}>
+            <summary>{copy("更多操作", "More actions")}</summary>
+            <div className={styles.moreBody}>
+              <form className={styles.launchForm} onSubmit={(event) => { event.preventDefault(); if (bundleName) void action({ action: "launch_app", bundleName, abilityName: abilityName || undefined }); }}>
+                <div className={styles.sectionLabel}><strong>{copy("打开应用", "Open app")}</strong><small>{copy("输入应用标识", "Enter the app identifier")}</small></div>
+                <input aria-label="Bundle" value={bundleName} onChange={(event) => setBundleName(event.target.value)} placeholder="com.example.app" />
+                <input aria-label="Ability" value={abilityName} onChange={(event) => setAbilityName(event.target.value)} placeholder={copy("Ability（可选）", "Ability (optional)")} />
+                <button type="submit" disabled={!lease || !bundleName || busy || !selected?.capabilities.launchApp}>{copy("打开", "Open")}</button>
+              </form>
+              <div className={styles.inspectRow}>
+                <button type="button" disabled={!selectedOnline || busy} onClick={requestFrame}><AliIcon name="reload" size={13} />{copy("重连视频流", "Reconnect video")}</button>
+                <button type="button" disabled={!selectedOnline || busy || !selected?.capabilities.uiTree} onClick={() => void run(
+                  () => jsonRequest<{ snapshot: unknown }>(`/api/harmony/tree?serial=${encodeURIComponent(selectedSerial)}`),
+                  (payload) => setTree(payload.snapshot),
+                )}><AliIcon name="code" size={13} />{copy("读取界面结构", "Read interface structure")}</button>
+              </div>
+              <details className={styles.diagnostics}>
+                <summary>{copy("开发者信息", "Developer details")}</summary>
+                <pre>{JSON.stringify({ selected, holder, snapshot, diagnostics, tree }, null, 2)}</pre>
+              </details>
+            </div>
+          </details>
+        </div> : viewMode === "logs" ? <HarmonyLogViewer active={active} serial={selectedSerial} online={Boolean(selectedOnline)} copy={copy} />
+          : <HarmonyCheckPanel active={active} cwd={cwd} onOpenFile={onOpenFile} onGuideAgent={onGuideAgent} />}
+      </div> : null}
+    </section>
+
+    <div className={styles.statusBar}>
+      <span>{lease?.serial === selectedSerial ? copy("手动控制 · 点击、滑动和输入已启用", "Manual control · touch and typing enabled") : copy("查看模式 · 截图和录屏可直接使用", "View mode · screenshots and recordings are ready")}</span>
+      <span><AliIcon name="lock" size={11} />{copy("AI 控制前会先征求你的同意", "AI asks before taking control")}</span>
+    </div>
     {error ? <div className={styles.error} role="alert">{error}</div> : null}
-    <p className={styles.safetyNote}><AliIcon name="lock" size={12} />{copy("AI 控制前会先征求你的同意", "AI asks before taking control")}</p>
     </main>
   </div>;
 }

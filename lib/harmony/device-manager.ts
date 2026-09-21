@@ -722,15 +722,17 @@ export class HarmonyDeviceManager {
 
   async startRecording(options: {
     serial: string;
-    leaseToken: string;
+    leaseToken?: string;
     ownerId: string;
     signal?: AbortSignal;
   }): Promise<HarmonyRecordingState> {
     validateSerial(options.serial);
     await this.interruptLiveFrame(options.serial, "start_recording");
     return await this.enqueue("start_recording", async (signal, operationId) => {
-      const lease = this.requireLease(options.serial, options.leaseToken);
-      if (lease.owner.id !== options.ownerId) throw new HarmonyError("LEASE_REQUIRED", "The recording owner does not hold this device lease");
+      if (options.leaseToken) {
+        const lease = this.requireLease(options.serial, options.leaseToken);
+        if (lease.owner.id !== options.ownerId) throw new HarmonyError("LEASE_REQUIRED", "The recording owner does not hold this device lease");
+      }
       if (this.recordings.has(options.serial)) throw new HarmonyError("DEVICE_BUSY", "This Harmony device is already recording");
       const backend = this.requireBackend();
       if (!backend.startRecording) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Harmony screen recording is unavailable on this device runtime");
@@ -752,15 +754,17 @@ export class HarmonyDeviceManager {
 
   async stopRecording(options: {
     serial: string;
-    leaseToken: string;
+    leaseToken?: string;
     ownerId: string;
     signal?: AbortSignal;
   }): Promise<HarmonyMediaArtifact> {
     validateSerial(options.serial);
     await this.interruptLiveFrame(options.serial, "stop_recording");
     return await this.enqueue("stop_recording", async (signal, operationId) => {
-      const lease = this.requireLease(options.serial, options.leaseToken);
-      if (lease.owner.id !== options.ownerId) throw new HarmonyError("LEASE_REQUIRED", "The recording owner does not hold this device lease");
+      if (options.leaseToken) {
+        const lease = this.requireLease(options.serial, options.leaseToken);
+        if (lease.owner.id !== options.ownerId) throw new HarmonyError("LEASE_REQUIRED", "The recording owner does not hold this device lease");
+      }
       const state = this.recordings.get(options.serial);
       if (!state) throw new HarmonyError("INVALID_ARGUMENT", "This Harmony device is not recording");
       if (state.ownerId !== options.ownerId) throw new HarmonyError("DEVICE_BUSY", "The recording belongs to another controller");

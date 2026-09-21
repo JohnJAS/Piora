@@ -160,6 +160,11 @@
 .recordingState { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; color: var(--status-failed); font-size: var(--text-xs); white-space: nowrap; }
 .recordingState i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent); }
 .mediaNotice { flex: 0 0 auto; padding: 6px 8px; border-radius: var(--radius-control); background: color-mix(in srgb, var(--accent) 7%, transparent); color: var(--text-muted); font-size: var(--text-xs); line-height: 1.45; overflow-wrap: anywhere; }
+.mediaPath { display: grid; min-width: 0; gap: 2px; margin-top: 5px; }
+.mediaPath code { color: var(--text); font-family: var(--font-mono); white-space: pre-wrap; user-select: text; }
+.mediaNoticeActions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.mediaNoticeActions button { display: inline-flex; align-items: center; gap: 4px; min-height: var(--control-height-compact); padding: 3px 7px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg); color: var(--text-muted); font-size: inherit; }
+.mediaNoticeActions button:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
 .keyRow { gap: 3px; }
 .keyRow button { min-height: var(--control-height); display: inline-flex; flex: 1; align-items: center; justify-content: center; gap: 5px; padding: 4px 8px; border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--text-muted); font-size: var(--text-xs); }
 .keyRow button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--border) 70%, transparent); background: var(--bg-hover); color: var(--text); }
@@ -229,4 +234,87 @@
   .keyRow button { min-width: 34px; }
   .controlButton { padding-inline: 7px; }
   .settingsPanel { right: 4px; width: calc(100% - 8px); }
+}
+
+/* Screen-first workspace layout. The live device stays visible while tools use a resizable drawer. */
+.deviceHeader {
+  min-height: 45px;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px 5px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  background: color-mix(in srgb, var(--bg) 96%, var(--surface-raised));
+}
+.deviceIdentity { min-width: 0; display: flex; align-items: center; gap: 7px; }
+.deviceIdentity select { min-width: 80px; max-width: min(360px, 48vw); height: 30px; overflow: hidden; border: 0; background: transparent; color: var(--text); padding: 0 24px 0 2px; font-size: var(--text-sm); font-weight: 600; text-overflow: ellipsis; }
+.focusButton { min-height: var(--control-height-compact); display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--text-muted); font-size: var(--text-xs); white-space: nowrap; }
+.focusButton:hover { background: var(--bg-hover); color: var(--text); }
+
+.workspace { min-height: 0; display: flex; flex: 1 1 auto; flex-direction: column; overflow: hidden; }
+.actionBar { min-height: 41px; display: flex; flex: 0 0 auto; align-items: center; gap: 4px; padding: 5px 8px; border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent); background: var(--bg); }
+.actionBar > button,.zoomControls button { min-height: var(--control-height-compact); display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--border) 76%, transparent); border-radius: var(--radius-control); background: transparent; color: var(--text-muted); font-size: var(--text-xs); white-space: nowrap; }
+.actionBar > button:hover:not(:disabled),.zoomControls button:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.captureButton { border-color: var(--btn-primary-bg) !important; background: var(--btn-primary-bg) !important; color: var(--btn-primary-fg) !important; }
+.recordingButton { border-color: color-mix(in srgb, var(--status-failed) 30%, var(--border)) !important; background: color-mix(in srgb, var(--status-failed) 8%, transparent) !important; color: var(--status-failed) !important; font-variant-numeric: tabular-nums; }
+.zoomControls { min-width: 0; display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.zoomControls button { width: 27px; padding: 3px; border-color: transparent; }
+.zoomControls select { width: 92px; height: 29px; border: 1px solid color-mix(in srgb, var(--border) 76%, transparent); border-radius: var(--radius-control); background: var(--bg); color: var(--text-muted); padding: 2px 5px; font-size: var(--text-xs); }
+.activityBar { min-height: 30px; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 9px; border-bottom: 1px solid color-mix(in srgb, var(--accent) 14%, var(--border)); background: color-mix(in srgb, var(--accent) 5%, var(--bg)); color: var(--text-muted); font-size: var(--text-xs); }
+.activityBar > span,.activityBar > button { display: inline-flex; align-items: center; gap: 5px; }
+.activityBar > button { min-height: 23px; padding: 2px 6px; border: 1px solid color-mix(in srgb, var(--border) 72%, transparent); border-radius: var(--radius-control); background: var(--bg); color: var(--text-muted); font-size: inherit; }
+
+.workspace .deviceArea { min-height: 150px; flex: 1 1 auto; overflow: hidden; background: #090a0d; }
+.frameViewport { width: 100%; height: 100%; overflow: auto; overscroll-behavior: contain; touch-action: none; scrollbar-gutter: stable; }
+.frameViewport[data-pannable="true"] { cursor: grab; }
+.frameViewport[data-pannable="true"]:active { cursor: grabbing; }
+.frameViewport[data-pannable="true"] canvas { cursor: inherit; }
+.workspace .frame { position: relative; width: max-content; min-width: 100%; height: max-content; min-height: 100%; display: grid; place-items: center; overflow: visible; border: 0; border-radius: 0; background: #090a0d; }
+.workspace .frame[data-zoom="fit"] { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.workspace .frame canvas { grid-area: 1 / 1; flex: none; }
+.workspace .frame[data-zoom="fit"] canvas { width: auto; height: auto; min-width: 0; min-height: 0; max-width: 100%; max-height: 100%; flex: 0 1 auto; }
+.workspace .frameStatus { position: sticky; z-index: 3; top: 9px; left: 9px; grid-area: 1 / 1; align-self: start; justify-self: start; margin: 9px; }
+.workspace .frame[data-zoom="fit"] .frameStatus { position: absolute; margin: 0; }
+.workspace .frameError { position: sticky; z-index: 3; bottom: 8px; grid-area: 1 / 1; align-self: end; justify-self: center; max-width: calc(100% - 16px); margin: 8px; }
+
+.workspace .quickControls { min-height: 39px; display: grid; flex: 0 0 auto; grid-template-columns: auto minmax(140px, 1fr); align-items: center; gap: 5px; padding: 3px 8px; border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent); background: var(--bg); }
+.workspace .keyRow { display: flex; }
+.workspace .keyRow button { min-height: 30px; min-width: 34px; padding: 3px 7px; }
+.workspace .textControl { height: 31px; }
+
+.drawerResizeHandle { height: 7px; display: grid; flex: 0 0 7px; place-items: center; border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent); background: var(--bg); cursor: row-resize; touch-action: none; }
+.drawerResizeHandle span { width: 34px; height: 2px; border-radius: 2px; background: var(--text-dim); opacity: .55; }
+.toolDrawer { min-height: 35px; max-height: calc(100% - 190px); display: flex; flex: 0 0 auto; flex-direction: column; overflow: hidden; background: var(--bg); }
+.drawerTabs { min-height: 35px; display: flex; flex: 0 0 auto; align-items: center; gap: 4px; padding: 0 7px; border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent); }
+.drawerTabs > button:not(.iconButton) { min-height: 34px; padding: 4px 5px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-dim); font-size: var(--text-xs); }
+.drawerTabs > button[aria-selected="true"] { border-bottom-color: var(--text); color: var(--text); }
+.drawerTabSpacer { flex: 1; }
+.drawerBody { min-height: 0; flex: 1; overflow: auto; }
+.drawerBody > * { min-height: 0; height: 100%; }
+.mediaWorkspace { display: block; overflow: auto; padding: 8px 10px; }
+.mediaEmpty { padding: 8px; color: var(--text-dim); font-size: var(--text-xs); }
+.mediaWorkspace .mediaNotice { margin: 0; }
+.mediaWorkspace .moreActions { margin-top: 7px; }
+.statusBar { min-height: 25px; display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 9px; border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent); background: color-mix(in srgb, var(--bg) 95%, var(--surface-raised)); color: var(--text-dim); font-size: var(--text-xs); }
+.statusBar > span { display: inline-flex; align-items: center; gap: 4px; }
+.workspace > .error { position: absolute; z-index: 30; right: 10px; bottom: 31px; left: 10px; margin: 0; }
+
+@media (max-width: 680px) {
+  .deviceIdentity select { max-width: 42vw; }
+  .focusButton span { display: none; }
+  .actionBar { flex-wrap: wrap; }
+  .zoomControls { flex: 1 0 100%; justify-content: center; margin-left: 0; }
+  .workspace .quickControls { grid-template-columns: 1fr; }
+  .statusBar > span:last-child { display: none; }
+}
+
+@media (max-width: 440px) {
+  .deviceHeader { padding-inline: 6px; }
+  .deviceIdentity { flex: 1; }
+  .deviceIdentity select { width: 100%; max-width: none; }
+  .actionBar > button:not(.iconButton) { flex: 1 1 auto; }
+  .drawerTabs { overflow-x: auto; }
+  .drawerTabs > button:not(.iconButton) { white-space: nowrap; }
 }

@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import { createSmokeSessionProbe } from "./smoke-session-probe.js";
 import { SystemLauncher } from "./system-launcher";
 import { ClipboardController, ClipboardDraftFlushError } from "./clipboard-controller.js";
+import { copyHarmonyMedia } from "./harmony-media-clipboard.js";
+import { pathToFileURL } from "node:url";
 import { accessSync, constants as fsConstants, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { waitForDevelopmentPageAssets } from "./development-readiness.js";
@@ -1040,7 +1042,31 @@ function registerFileShellHandlers(): void {
     return launcher.open(id);
   });
   // App-owned main frames only; third-party browser tabs never receive this bridge.
-  for (const channel of ["pi:clipboard-read", "pi:clipboard-write"]) ipcMain.removeHandler(channel);
+  for (const channel of ["pi:clipboard-read", "pi:clipboard-write", "pi:harmony-media-copy"]) ipcMain.removeHandler(channel);
+  ipcMain.handle("pi:harmony-media-copy", async (event, value: unknown) => {
+    if (!isTrustedMainWindowSender(event) || !serverUrl || !applicationToken || !mainWindow) throw new Error("Untrusted Harmony clipboard request");
+    const response = await fetch(new URL("/api/harmony/media", serverUrl), {
+      headers: { [DESKTOP_TOKEN_HEADER]: applicationToken }, signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) throw new Error("Harmony media storage is unavailable");
+    const { storage } = await response.json() as { storage: { screenshotDirectory: string; recordingDirectory: string } };
+    await copyHarmonyMedia(value, storage, {
+      writeImage: (png) => {
+        const picture = nativeImage.createFromBuffer(png);
+        if (picture.isEmpty()) throw new Error("Invalid Harmony screenshot");
+        clipboard.writeImage(picture);
+      },
+      writeFile: (path) => {
+        if (process.platform === "win32") {
+          const native = clipboardController?.runtime.native;
+          if (!native || !mainWindow || mainWindow.isDestroyed()) throw new Error("Native file clipboard is unavailable");
+          native.writeFiles([path], mainWindow);
+        } else if (process.platform === "linux") {
+          clipboard.writeBuffer("text/uri-list", Buffer.from(`${pathToFileURL(path).href}\r\n`));
+        } else throw new Error("File clipboard is unavailable on this platform");
+      },
+    });
+  });
   ipcMain.handle("pi:clipboard-read", (event, image: unknown) => {
     if (!isTrustedMainWindowSender(event) && !isTrustedCompanionSurfaceSender(event)) throw new Error("Untrusted clipboard request");
     if (image === true) {

@@ -166,7 +166,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     loading, error, messages, entryIds, streamState, replyHistorySettling, activeLeafId, switchHistoryBranch, forkHistoryQuestion,
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
-    isCompacting, compactError, compactResult, displayModel: displayModelValue, sessionStats,
+    isCompacting, compactionStartedAt, compactError, compactResult, displayModel: displayModelValue, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages, capabilities,
     liveOutputFollowPaused,
     notices, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
@@ -177,7 +177,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     lastUserMsgRef,
     pendingScrollToUserRef,
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange, handleScrollToBottom, pauseHistoryFollow, handleDeleteMessage, deletingMessage,
-    handleCompact, handleDismissCompactError, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
+    handleCompact, handleDismissCompactError, handleDismissCompactResult, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
     handleThinkingLevelChange, handleSystemPromptSelection, loadSlashCommands,
@@ -583,9 +583,11 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
       onCompact={session ? handleCompact : undefined}
       onAbortCompaction={handleAbortCompaction}
       isCompacting={isCompacting}
+      compactionStartedAt={compactionStartedAt}
       compactError={compactError}
       onDismissCompactError={handleDismissCompactError}
       compactResult={compactResult}
+      onDismissCompactResult={handleDismissCompactResult}
       thinkingLevel={thinkingLevel}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       availableThinkingLevels={availableThinkingLevels}

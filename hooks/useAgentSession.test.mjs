@@ -309,7 +309,7 @@ test("visible termination precedes a stalled history reload and is idempotent", 
     closeEvents: () => calls.push("close"),
     setAgentRunning: (value) => calls.push(["running", value]),
     setReplyHistorySettling: (value) => calls.push(["replySettling", value]),
-    setAgentPhase: () => {}, setRetryInfo: () => {}, setIsCompacting: () => {},
+    setAgentPhase: () => {}, setRetryInfo: () => {}, setIsCompacting: () => {}, setCompactionStartedAt: () => {},
     setExtensionDialog: () => {}, setExtensionCustomUi: () => {},
     dispatch: (action) => calls.push(action.type), onAgentEnd: () => calls.push("notify"),
     loadSession: () => { calls.push("history"); return history; },
@@ -372,6 +372,67 @@ test("refreshes context usage during streaming and after assistant messages", ()
   assert.match(messageUpdateSource, /CONTEXT_USAGE_REFRESH_MS/);
   assert.match(messageUpdateSource, /refreshContextUsage\(sessionIdRef\.current\)/);
   assert.match(messageEndSource, /completed\?\.role === "assistant"[\s\S]*refreshContextUsage/);
+});
+
+function compactionRecoveryHarness() {
+  const end = "  }, [agentRunning, closeEvents, isCompacting, loadSession]);";
+  const effect = source.slice(source.indexOf("  // A manual compaction"), source.indexOf(end) + end.length);
+  let cleanup, poll;
+  const calls = [];
+  const listeners = new Map();
+  const env = {
+    isCompacting: true, agentRunning: false,
+    sessionIdRef: { current: "session-a" }, phaseEventRevisionRef: { current: 0 },
+    agentRunningRef: { current: false }, bashRunningRef: { current: false }, manualCompactionPendingRef: { current: false },
+    response: { state: { isCompacting: true, compactionStartedAt: 100_000 } },
+    fetch: async () => ({ ok: true, json: async () => env.response }),
+    useEffect: callback => { cleanup = callback(); },
+    setCompactionStartedAt: value => calls.push(["startedAt", value]), setIsCompacting: value => calls.push(["active", value]),
+    closeEvents: () => calls.push(["close"]), loadSession: async sid => calls.push(["load", sid]),
+    AGENT_STATE_RECONCILE_MS: 2500, AbortSignal,
+    window: {
+      setInterval: callback => { poll = callback; return 1; }, clearInterval() {},
+      addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name),
+    },
+    document: { visibilityState: "visible", addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener: name => listeners.delete(name) },
+  };
+  const js = ts.transpileModule(effect, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  new Function("env", `with(env) { ${js} }`)(env);
+  return { env, calls, listeners, poll: () => poll(), cleanup: () => cleanup() };
+}
+
+test("manual compaction recovers its original clock and settles after a missed end event", async () => {
+  const h = compactionRecoveryHarness();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(h.calls, [["startedAt", 100_000]]);
+  h.env.response = { state: { isCompacting: false, compactionStartedAt: null } };
+  h.env.manualCompactionPendingRef.current = true;
+  h.poll();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.calls.length, 1, "a command awaiting admission/response stays locked");
+  h.env.manualCompactionPendingRef.current = false;
+  h.listeners.get("online")();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(h.calls.slice(1), [["active", false], ["startedAt", null], ["close"], ["load", "session-a"]]);
+  h.cleanup();
+  assert.equal(h.listeners.size, 0);
+});
+
+test("old compaction snapshots cannot overwrite newer events or a switched-away view", async () => {
+  for (const boundary of ["event", "unmount", "session"]) {
+    const h = compactionRecoveryHarness();
+    await new Promise(resolve => setImmediate(resolve));
+    let release;
+    h.env.fetch = () => new Promise(resolve => { release = resolve; });
+    h.poll();
+    if (boundary === "event") h.env.phaseEventRevisionRef.current += 1;
+    if (boundary === "session") h.env.sessionIdRef.current = "session-b";
+    if (boundary === "unmount") h.cleanup();
+    release({ ok: true, json: async () => ({ state: { isCompacting: false } }) });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(h.calls, [["startedAt", 100_000]], boundary);
+    h.cleanup();
+  }
 });
 
 test("browser tool execution does not force open the workspace panel", () => {

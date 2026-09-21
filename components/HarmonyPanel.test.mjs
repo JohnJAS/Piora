@@ -19,7 +19,18 @@ test("keeps a read-only observer surface available while an Agent is running", (
   assert.match(source, /sessionRunning/);
   assert.match(source, /agentHasControl/);
   assert.match(source, /旁观模式 · Agent 正在操作/);
-  assert.match(source, /投屏会独立运行/);
+  assert.match(source, /查看模式 · 截图和录屏可直接使用/);
   assert.match(source, /onGuideAgent/);
   assert.match(source, /frameMode === "frames"/);
+});
+
+test("keeps passive media controls independent and gives the screen resizable focus space", () => {
+  const mediaSource = source.slice(source.indexOf("  const mediaAction ="), source.indexOf("  const saveSettings ="));
+  assert.match(source, /disabled=\{!canScreenshot \|\| busy\}/);
+  assert.match(mediaSource, /if \(!selectedSerial\) return/);
+  assert.doesNotMatch(mediaSource, /if \(!selectedSerial \|\| !lease\) return/);
+  assert.match(source, /piora-harmony-drawer-height-v1/);
+  assert.match(source, /role="separator"/);
+  assert.match(source, /frameZoom/);
+  assert.match(source, /onMaximizedChange\(!maximized\)/);
 });

@@ -196,6 +196,7 @@ export class AgentSessionWrapper {
   private pendingClientPromptId: string | undefined;
   private lastPromptErrorSummary: string | undefined;
   private runStartedAt: number | null = null;
+  private compactionStartedAt: number | null = null;
   private taskActivity: TaskRuntimeActivity | null = null;
   private cachedSessionTitle: string | null = null;
   private fallbackTaskTitle: string | null = null;
@@ -581,7 +582,12 @@ export class AgentSessionWrapper {
       return;
     }
     if (event.type === "compaction_start" || event.type === "auto_compaction_start") {
+      this.compactionStartedAt ??= Date.now();
       this.setTaskActivity("compacting", "Compacting conversation context");
+      return;
+    }
+    if (event.type === "compaction_end" || event.type === "auto_compaction_end") {
+      this.compactionStartedAt = null;
       return;
     }
     if (event.type === "auto_retry_start") {
@@ -816,6 +822,9 @@ export class AgentSessionWrapper {
   }
 
   private emit(event: AgentEvent): void {
+    if (event.type === "compaction_start" || event.type === "auto_compaction_start") {
+      event = { ...event, compactionStartedAt: this.compactionStartedAt };
+    }
     recordAgentTerminalEvent(this.sessionId, event);
     for (const l of this.listeners) l(event);
   }
@@ -1138,6 +1147,7 @@ export class AgentSessionWrapper {
           isPromptRunning: this.promptRunning,
           isBashRunning: this.inner.isBashRunning,
           isCompacting: this.inner.isCompacting,
+          compactionStartedAt: this.inner.isCompacting ? this.compactionStartedAt : null,
           runtime: this.getRuntime(),
           activeTools: Array.from(this.runtimeToolCalls, ([id, tool]) => ({ id, name: tool.toolName })),
           pendingApproval: this.pendingUiResponses.size > 0 || this.activeCustomUis.size > 0,

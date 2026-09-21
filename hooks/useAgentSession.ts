@@ -106,6 +106,7 @@ type AgentStateResponse = {
   isPromptRunning?: boolean;
   isBashRunning?: boolean;
   isCompacting?: boolean;
+  compactionStartedAt?: number | null;
   runtime?: string;
   activeTools?: { id: string; name: string }[];
   extensionStatuses?: ExtensionStatusItem[];
@@ -463,6 +464,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [currentModelOverride, setCurrentModelOverride] = useState<{ provider: string; modelId: string } | null>(null);
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
   const [isCompacting, setIsCompacting] = useState(false);
+  const [compactionStartedAt, setCompactionStartedAt] = useState<number | null>(null);
+  const manualCompactionPendingRef = useRef(false);
   const [compactError, setCompactError] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<CompactResultInfo | null>(null);
   const [agentPhase, setAgentPhase] = useState<AgentPhase>(null);
@@ -1051,6 +1054,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentPhase(null);
       setRetryInfo(null);
       setIsCompacting(false);
+      setCompactionStartedAt(null);
       setExtensionDialog(null);
       setExtensionCustomUi(null);
       dispatch({ type: "end" });
@@ -1169,7 +1173,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // Mirror compaction state unconditionally: a missed compaction_end
       // would otherwise leave the "Stop compaction" UI stuck. No state
       // (wrapper destroyed) means nothing is compacting.
-      setIsCompacting(cancelledPromptRunIdRef.current === runId ? false : state?.isCompacting ?? false);
+      if (phaseEventRevisionRef.current === phaseRevision) {
+        const compacting = cancelledPromptRunIdRef.current !== runId && (state?.isCompacting ?? false);
+        setIsCompacting(compacting);
+        setCompactionStartedAt(compacting ? state?.compactionStartedAt ?? null : null);
+      }
       setQueuedMessages(normalizeQueuedMessages(state?.queuedMessages));
       if (state?.capabilities !== undefined) setCapabilities(state.capabilities);
       if (state?.model && phaseEventRevisionRef.current === phaseRevision) {
@@ -1230,6 +1238,47 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       window.removeEventListener("online", reconcile);
     };
   }, [agentRunning, reconcileAgentState]);
+
+  // A manual compaction has no prompt run. Keep recovering its server state
+  // after navigation too, including a missed end event between GET and SSE.
+  useEffect(() => {
+    if (!isCompacting || agentRunning) return;
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    let disposed = false;
+    const reconcile = async () => {
+      const revision = phaseEventRevisionRef.current;
+      try {
+        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`, { signal: AbortSignal.timeout(10_000) });
+        if (!res.ok) return;
+        const data = await res.json() as { state?: AgentStateResponse };
+        if (disposed || sessionIdRef.current !== sid || phaseEventRevisionRef.current !== revision || agentRunningRef.current) return;
+        if (data.state?.isCompacting) {
+          setCompactionStartedAt(data.state.compactionStartedAt ?? null);
+        } else if (!manualCompactionPendingRef.current) {
+          setIsCompacting(false);
+          setCompactionStartedAt(null);
+          if (!bashRunningRef.current) closeEvents();
+          void loadSession(sid);
+        }
+      } catch {
+        // Keep the current timer during a connection loss; retry on recovery.
+      }
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void reconcile();
+    };
+    void reconcile();
+    const interval = window.setInterval(() => void reconcile(), AGENT_STATE_RECONCILE_MS);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", reconcile);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", reconcile);
+    };
+  }, [agentRunning, closeEvents, isCompacting, loadSession]);
 
   useEffect(() => {
     agentRunningRef.current = agentRunning;
@@ -1418,12 +1467,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "auto_compaction_start":
       case "compaction_start":
         setIsCompacting(true);
+        setCompactionStartedAt(typeof event.compactionStartedAt === "number" ? event.compactionStartedAt : null);
         setCompactError(null);
         setCompactResult(null);
         break;
       case "auto_compaction_end":
       case "compaction_end":
-        setIsCompacting(false);
+        // The initiating view still owns a blocking POST; keep its command
+        // locked until that response settles, even when SSE finishes first.
+        setIsCompacting(manualCompactionPendingRef.current);
+        setCompactionStartedAt(null);
+        if (!agentRunningRef.current && !bashRunningRef.current) closeEvents();
         if (event.errorMessage) {
           setCompactError(event.errorMessage as string);
           setCompactResult(null);
@@ -1436,7 +1490,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
     }
-  }, [addNotice, handleExtensionUiRequest, loadSession, refreshContextUsage, setExtensionDialog, waitForPromptSettlement]);
+  }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, refreshContextUsage, setExtensionDialog, waitForPromptSettlement]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (
@@ -1667,6 +1721,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setAgentPhase({ kind: "stopping" });
     setRetryInfo(null);
     setIsCompacting(false);
+    setCompactionStartedAt(null);
     setExtensionDialog(null);
     setExtensionCustomUi(null);
     if (preparingPromptRunIdRef.current === runId) {
@@ -1856,11 +1911,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const handleCompact = useCallback(async () => {
     const sid = sessionIdRef.current;
-    if (!sid || isCompacting) return;
+    if (!sid || isCompacting || manualCompactionPendingRef.current) return;
+    manualCompactionPendingRef.current = true;
     setIsCompacting(true);
+    setCompactionStartedAt(null);
     setCompactError(null);
     setCompactResult(null);
     try {
+      await ensureEventsConnected(sid);
       const result = await sendAgentCommand<CompactCommandResult>(sid, { type: "compact" });
       setCompactResult(readCompactResult(result, "manual"));
       await loadSession(sid, true);
@@ -1868,12 +1926,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setCompactError(e instanceof Error ? e.message : String(e));
       setCompactResult(null);
     } finally {
+      manualCompactionPendingRef.current = false;
       setIsCompacting(false);
+      setCompactionStartedAt(null);
+      if (!agentRunningRef.current && !bashRunningRef.current) closeEvents();
     }
-  }, [isCompacting, loadSession]);
+  }, [closeEvents, ensureEventsConnected, isCompacting, loadSession]);
 
   const handleDismissCompactError = useCallback(() => {
     setCompactError(null);
+  }, []);
+
+  const handleDismissCompactResult = useCallback(() => {
+    setCompactResult(null);
   }, []);
 
   const modelLoadIdRef = useRef(0);
@@ -1925,13 +1990,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return result;
     };
 
+    let ownsCompaction = false;
     try {
       switch (commandName) {
         case "compact": {
-          if (!sid || isCompacting) return complete({ handled: true, error: "No active session to compact" });
+          if (!sid || isCompacting || manualCompactionPendingRef.current) return complete({ handled: true, error: "No active session to compact" });
+          ownsCompaction = true;
+          manualCompactionPendingRef.current = true;
           setIsCompacting(true);
+          setCompactionStartedAt(null);
           setCompactError(null);
           setCompactResult(null);
+          await ensureEventsConnected(sid);
           const result = await sendAgentCommand<CompactCommandResult>(sid, {
             type: "compact",
             ...(args ? { customInstructions: args } : {}),
@@ -1987,9 +2057,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch (e) {
       return complete({ handled: true, error: e instanceof Error ? e.message : String(e) });
     } finally {
-      if (commandName === "compact") setIsCompacting(false);
+      if (ownsCompaction) {
+        manualCompactionPendingRef.current = false;
+        setIsCompacting(false);
+        setCompactionStartedAt(null);
+        if (!agentRunningRef.current && !bashRunningRef.current) closeEvents();
+      }
     }
-  }, [addNotice, ensureNewSession, isCompacting, loadModels, loadSession, loadSlashCommands, promoteNewSession, onSessionStatsPanelOpen]);
+  }, [addNotice, closeEvents, ensureEventsConnected, ensureNewSession, isCompacting, loadModels, loadSession, loadSlashCommands, promoteNewSession, onSessionStatsPanelOpen]);
 
   // Queued (undelivered) messages live in the queue panel only; the chat gets
   // the real user message when pi delivers it (user message_end event). An
@@ -2239,6 +2314,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       loadSession(session.id, initialSessionData === null, true, takePrefetchedSession(session)).then((agentState) => {
         if (agentState?.running) {
           invalidatePrefetchedSession(session.id);
+          if (agentState.state?.isCompacting) void connectEvents(session.id);
           if (agentState.state?.isStreaming || agentState.state?.isPromptRunning || agentState.state?.runtime === "stopping") {
             agentRunningRef.current = true;
             setAgentRunning(true);
@@ -2246,7 +2322,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
               : agentState.state.activeTools?.length ? { kind: "running_tools", tools: agentState.state.activeTools }
                 : agentState.state.isStreaming ? { kind: "waiting_model" } : { kind: "running_command" });
             dispatch({ type: "start" });
-            void connectEvents(session.id);
+            if (!agentState.state.isCompacting) void connectEvents(session.id);
             if (!agentState.state.isStreaming && agentState.state.isPromptRunning) {
               void waitForPromptSettlement(session.id);
             }
@@ -2259,6 +2335,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         if (agentState?.state) {
           if (agentState.state.isCompacting !== undefined) setIsCompacting(agentState.state.isCompacting);
+          setCompactionStartedAt(agentState.state.isCompacting ? agentState.state.compactionStartedAt ?? null : null);
           if (agentState.state.contextUsage !== undefined) setContextUsage(agentState.state.contextUsage ?? null);
           if (agentState.state.systemPrompt !== undefined) setSystemPrompt(agentState.state.systemPrompt ?? null);
           if (agentState.state.systemPromptBinding !== undefined) {
@@ -2485,7 +2562,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     data, loading, error, activeLeafId, messages, entryIds, streamState, replyHistorySettling,
     agentRunning, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
     retryInfo, contextUsage: effectiveContextUsage, systemPrompt, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
-    isCompacting, compactError, compactResult, currentModel, displayModel, sessionStats,
+    isCompacting, compactionStartedAt, compactError, compactResult, currentModel, displayModel, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages, capabilities, capabilitiesSaving,
     liveOutputFollowPaused: liveOutputAutoScrollEnabled && agentRunning && liveOutputFollowPaused,
     notices: noticeState.visible, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
@@ -2499,7 +2576,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange, handleDeleteMessage, deletingMessage,
     handleScrollToBottom, pauseHistoryFollow,
     switchHistoryBranch, forkHistoryQuestion,
-    handleCompact, handleDismissCompactError, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
+    handleCompact, handleDismissCompactError, handleDismissCompactResult, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleBuiltinSlashCommand,
     handleThinkingLevelChange, handleCapabilitySelection, handleSystemPromptSelection, loadSlashCommands, setActiveLeafId, setData, setMessages,

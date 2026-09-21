@@ -15,6 +15,15 @@ function requiredString(body: Record<string, unknown>, key: string, maximum = 25
   return value;
 }
 
+function optionalString(body: Record<string, unknown>, key: string, maximum = 256): string | undefined {
+  const value = body[key];
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string" || !value.trim() || value.length > maximum) {
+    throw new HarmonyError("INVALID_ARGUMENT", `${key} must be a non-empty string of at most ${maximum} characters when provided`);
+  }
+  return value;
+}
+
 export async function GET(request: Request) {
   const denied = requireHarmonyAccess(request);
   if (denied) return denied;
@@ -43,15 +52,15 @@ export async function POST(request: Request) {
   try {
     const body = await parseJsonWithinLimit(request, 8 * 1024) as Record<string, unknown>;
     const serial = requiredString(body, "serial", 256);
-    const leaseToken = requiredString(body, "leaseToken", 256);
     const manager = getHarmonyDeviceManager();
     if (body.action === "capture_screenshot") {
-      const artifact = await manager.captureScreenshotArtifact({ serial, leaseToken, signal: request.signal });
+      const artifact = await manager.captureScreenshotArtifact({ serial, signal: request.signal });
       return noStoreJson({ artifact });
     }
     const ownerId = requiredString(body, "ownerId", 160);
+    const leaseToken = optionalString(body, "leaseToken", 256);
     if (body.action === "start_recording") {
-      const recording = await manager.startRecording({ serial, leaseToken, ownerId, signal: request.signal });
+      const recording = await manager.startRecording({ serial, ownerId, ...(leaseToken ? { leaseToken } : {}), signal: request.signal });
       return noStoreJson({ recording: {
         serial: recording.serial,
         recordingId: recording.recordingId,
@@ -60,7 +69,7 @@ export async function POST(request: Request) {
       } });
     }
     if (body.action === "stop_recording") {
-      const artifact = await manager.stopRecording({ serial, leaseToken, ownerId, signal: request.signal });
+      const artifact = await manager.stopRecording({ serial, ownerId, ...(leaseToken ? { leaseToken } : {}), signal: request.signal });
       return noStoreJson({ artifact });
     }
     throw new HarmonyError("INVALID_ARGUMENT", "Unsupported Harmony media action");

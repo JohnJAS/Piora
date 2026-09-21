@@ -56,6 +56,12 @@ const eslintConfig = [
       complexity: ["error", 25],
     },
   },
+  {
+    files: ["artifacts/**/export_icons.cjs"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
 ];
 
 export default eslintConfig;

@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useReplyDraft } from "@/hooks/useReplyDraft";
 import { useReplySuggestions } from "@/hooks/useReplySuggestions";
 import { ReplySuggestionBar } from "./ReplySuggestionBar";
-import { CompactionProgress } from "./CompactionProgress";
+import { CompactionProgress, CompactionResult } from "./CompactionProgress";
 import type { ReplySource } from "@/lib/reply-suggestions";
 import { useAnchoredMenuPosition } from "@/hooks/useAnchoredMenuPosition";
 import { readPromptOptimizerModel, readPromptOptimizerSystemPrompt } from "@/lib/prompt-optimizer-settings";
@@ -129,9 +129,11 @@ interface Props {
   onCompact?: () => void;
   onAbortCompaction?: () => void;
   isCompacting?: boolean;
+  compactionStartedAt?: number | null;
   compactError?: string | null;
   onDismissCompactError?: () => void;
   compactResult?: CompactResultInfo | null;
+  onDismissCompactResult?: () => void;
   thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   onThinkingLevelChange?: (level: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max") => void;
   availableThinkingLevels?: string[] | null;
@@ -328,7 +330,7 @@ export function ModelErrorBanner({ error, title = "模型错误" }: { error?: st
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, onModelChange,
-  onCompact, onAbortCompaction, isCompacting, compactError, onDismissCompactError, compactResult,
+  onCompact, onAbortCompaction, isCompacting, compactionStartedAt = null, compactError, onDismissCompactError, compactResult, onDismissCompactResult,
   thinkingLevel, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   retryInfo, queuedMessages, inputHistory = [], onRecallQueue,
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
@@ -1599,12 +1601,6 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     [t("session.total"), sessionStats.tokens.total.toLocaleString(locale)],
   ] : [];
 
-  const compactSavedTokens = compactResult
-    ? Math.max(0, compactResult.tokensBefore - compactResult.estimatedTokensAfter)
-    : 0;
-  const compactResultText = compactResult
-    ? `${compactResult.reason && compactResult.reason !== "manual" ? `${compactResult.reason[0].toUpperCase()}${compactResult.reason.slice(1)} ` : t("chat.compacted")} ${formatTokenCount(compactResult.tokensBefore)} -> ${formatTokenCount(compactResult.estimatedTokensAfter)} tokens (${t("chat.tokensSaved", { saved: formatTokenCount(compactSavedTokens) })})`
-    : null;
   // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -1713,18 +1709,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
              {t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts })}{retryInfo.errorMessage && <span style={{ opacity: 0.7, marginLeft: 4 }}>— {retryInfo.errorMessage}</span>}
           </div>
         )}
-        {isCompacting ? <CompactionProgress key={draftKey} onStop={onAbortCompaction} /> : null}
-        {compactResultText && (
-          <div role="status" aria-live="polite" style={{
-            marginBottom: 8, padding: "5px 10px",
-            background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.24)",
-            borderRadius: "var(--radius-control)", fontSize: "var(--text-sm)", color: "rgba(5,150,105,0.95)",
-            display: "flex", alignItems: "center", gap: 6,
-          }}>
-            <AliIcon name="check" size={11} />
-            {compactResultText}
-          </div>
-        )}
+        {isCompacting ? <CompactionProgress key={draftKey} startedAt={compactionStartedAt} onStop={onAbortCompaction} /> : null}
+        {!isCompacting && compactResult ? <CompactionResult result={compactResult} onDismiss={onDismissCompactResult} /> : null}
         {compactError && (
           <div
             className="composer-surface"

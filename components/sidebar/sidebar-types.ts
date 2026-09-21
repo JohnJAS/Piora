@@ -17,6 +17,7 @@ declare global {
         writeText: (text: string) => Promise<void>;
         readImage: () => Promise<string | null>;
         writeImage: (data: string) => Promise<void>;
+        copyHarmonyMedia?: (media: { kind: "screenshot" | "recording"; path: string }) => Promise<void>;
       };
       selectDirectory: () => Promise<string | null>;
       getRuntimeLog?: () => Promise<{ filePath: string; fileLoggingAvailable: boolean } | null>;

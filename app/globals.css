@@ -1947,78 +1947,196 @@ select:focus-visible,
   border-top: 1px solid var(--border-soft);
 }
 
-.compaction-progress {
-  margin-bottom: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--bg-panel);
+.compaction-notice {
+  width: min(100%, 560px);
+  margin: 0 auto 12px;
+  padding: 20px 24px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-panel);
+  background: var(--bg);
+  box-shadow: var(--shadow-surface);
   color: var(--text);
-  font-size: var(--text-sm);
+  font-size: var(--text-base);
+  line-height: 1.5;
 }
 
-.compaction-progress-heading {
+.compaction-notice-heading {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 12px;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.compaction-notice-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.compaction-notice-title {
+  min-width: 0;
+  font-size: var(--text-lg);
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.compaction-notice-description {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.compaction-progress-spinner {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  margin-top: 1px;
+  border: 3px solid color-mix(in srgb, var(--status-running) 22%, transparent);
+  border-top-color: var(--status-running);
+  border-right-color: var(--status-running);
+  border-radius: 50%;
+  animation: compaction-progress-spin 1s linear infinite;
 }
 
 .compaction-progress-elapsed {
+  flex: none;
+  margin-top: 1px;
+  padding: 4px 10px;
+  border-radius: var(--radius-panel);
+  background: var(--bg-panel);
   color: var(--text-muted);
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
+.compaction-progress-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  margin-top: 18px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
 .compaction-progress-stop {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--control-height);
   margin-left: auto;
-  padding: 3px 7px;
+  padding: 5px 10px;
   border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.compaction-progress-stop-icon {
+  width: 9px;
+  height: 9px;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.compaction-result-dismiss {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  margin-left: auto;
+  margin-right: -7px;
+  border: 0;
   border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
 }
 
-.compaction-progress-stop:hover {
+.compaction-progress-stop:hover,
+.compaction-result-dismiss:hover {
   background: var(--bg-hover);
   color: var(--text);
 }
 
-.compaction-progress-stop:focus-visible {
+.compaction-progress-stop:focus-visible,
+.compaction-result-dismiss:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-.compaction-progress-hint {
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-}
-
 .compaction-progress-track {
   height: 3px;
-  margin-top: 9px;
+  margin-top: 20px;
   overflow: hidden;
   border-radius: 2px;
-  background: var(--border);
+  background: var(--bg-hover);
 }
 
 .compaction-progress-track > span {
   display: block;
-  width: 35%;
+  width: 24%;
   height: 100%;
   border-radius: inherit;
-  background: var(--accent);
+  background: var(--status-running);
   animation: compaction-progress-slide 1.6s ease-in-out infinite alternate;
 }
 
 @keyframes compaction-progress-slide {
   from { transform: translateX(0); }
-  to { transform: translateX(185%); }
+  to { transform: translateX(316%); }
+}
+
+@keyframes compaction-progress-spin {
+  to { transform: rotate(360deg); }
+}
+
+.compaction-result .compaction-notice-heading {
+  align-items: center;
+}
+
+.compaction-result-icon {
+  flex: none;
+  color: var(--status-ready);
+}
+
+.compaction-result-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  margin-top: 16px;
+  color: var(--text-dim);
+  font-size: var(--text-xl);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.compaction-result-after {
+  color: var(--text);
+}
+
+.compaction-result-unit {
+  font-size: var(--text-base);
+  font-weight: 400;
+}
+
+@media (max-width: 480px) {
+  .compaction-notice { padding: 16px; }
+  .compaction-notice-heading { gap: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .compaction-progress-spinner,
   .compaction-progress-track > span { animation: none; }
+  .compaction-progress-stop { transition: none; }
 }
 
 .model-settings-compaction {
