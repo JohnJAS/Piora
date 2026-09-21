@@ -166,8 +166,9 @@ test("renders a provider error when the assistant message has no content", () =>
   });
 
   assert.match(html, /role="alert"/);
-  assert.match(html, /Error: OpenAI API error \(403\)/);
+  assert.match(html, /错误：OpenAI API error \(403\)/);
   assert.match(html, /&lt;html&gt;request forbidden&lt;\/html&gt;/);
+  assert.doesNotMatch(html, /已停止生成/);
 });
 
 test("renders the final response duration in the assistant footer", () => {
@@ -194,7 +195,23 @@ test("renders partial assistant content before the provider error", () => {
   });
 
   assert.match(html, /Partial response/);
-  assert.match(html, /Error: Connection closed/);
+  assert.match(html, /错误：Connection closed/);
+  assert.ok(html.indexOf("Partial response") < html.indexOf("错误：Connection closed"));
+});
+
+test("cancelled responses show a Chinese status and retain partial content", () => {
+  for (const [stopReason, errorMessage] of [
+    ["aborted", "This operation was aborted"],
+    ["error", "Error: this operation was abourted"],
+  ]) {
+    for (const content of [[], [{ type: "text", text: "Partial response" }]]) {
+      const html = renderMessage({ role: "assistant", content, stopReason, errorMessage });
+      assert.match(html, /role="status"/);
+      assert.match(html, /已停止生成/);
+      assert.doesNotMatch(html, /role="alert"|operation was ab/);
+      if (content.length) assert.match(html, /Partial response/);
+    }
+  }
 });
 
 test("renders thinking as an accessible disclosure whose content uses Markdown", () => {
