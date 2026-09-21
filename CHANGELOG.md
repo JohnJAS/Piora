@@ -6,6 +6,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ### 测试验证
 
+- 模型提问倒计时浏览器测试暂停真实时间流逝，仅通过测试时钟推进，严格校验 60、10、40 秒及到期关闭，避免慢速 Windows runner 操作期间跨秒导致误报。
+- 鸿蒙环境测试按平台验证失败原因：Windows 校验无效的 DevEco 手动路径，其他平台校验不支持提示，避免 Linux CI 错用 Windows 错误断言；均要求环境不可用。
 - 剪贴板浏览器测试的列表与详情夹具改为返回独立副本，与 Electron IPC 行为保持一致，避免修改测试数据时共享引用导致预览刷新依赖渲染时序；补充快照隔离断言，继续验证长内容预览截断与原文完整性。
 
 ### XiaoYiHarness 官网
