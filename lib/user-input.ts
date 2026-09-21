@@ -1,6 +1,15 @@
 export const USER_INPUT_MAX_QUESTIONS = 3;
 export const USER_INPUT_MAX_OPTIONS = 6;
 export const USER_INPUT_MAX_TEXT_LENGTH = 8_000;
+export const USER_INPUT_DEFAULT_TIMEOUT_MS = 60_000;
+export const USER_INPUT_MIN_TIMEOUT_MS = 30_000;
+export const USER_INPUT_MAX_TIMEOUT_MS = 300_000;
+
+/** A question must always have a finite deadline, including older extensions. */
+export function userInputTimeoutMs(value?: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return USER_INPUT_DEFAULT_TIMEOUT_MS;
+  return Math.min(USER_INPUT_MAX_TIMEOUT_MS, Math.max(USER_INPUT_MIN_TIMEOUT_MS, Math.round(value)));
+}
 
 export type UserInputQuestionKind = "single_select" | "multi_select" | "text";
 
@@ -24,7 +33,7 @@ export type UserInputAnswers = Record<string, string[]>;
 
 export type UserInputResult =
   | { answers: UserInputAnswers }
-  | { cancelled: true };
+  | { cancelled: true; reason?: "timeout" };
 
 type RawQuestion = Omit<UserInputQuestion, "required"> & { required?: boolean };
 

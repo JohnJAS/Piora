@@ -1,5 +1,5 @@
 import type { AgentMessage, AssistantMessage, AssistantContentBlock } from "./types";
-import { countToolCallBlocks, getAssistantErrorMessage, getDisplayableAssistantBlocks, hasFileMutationBlocks, splitFinalAssistantBlocks } from "./message-display";
+import { countToolCallBlocks, hasAssistantNotice, getDisplayableAssistantBlocks, hasFileMutationBlocks, splitFinalAssistantBlocks } from "./message-display";
 import { isCommandToolName } from "./command-execution";
 
 export function isChatTurnAnchor(message: AgentMessage): boolean {
@@ -35,7 +35,7 @@ export function buildChatHistoryRows(messages: AgentMessage[], entryIds: string[
   const addMessage = (index: number, prefix = "message", override?: AgentMessage, options: Partial<ChatHistoryRow> = {}) => {
     const message = override ?? messages[index];
     if (message.role === "toolResult" || message.role === "assistant"
-      && !getDisplayableAssistantBlocks(message).length && !getAssistantErrorMessage(message)) return;
+      && !getDisplayableAssistantBlocks(message).length && !hasAssistantNotice(message)) return;
     const key = `${prefix}:${entryIds[index] || (message.role === "user" ? message.clientPromptId : undefined) || index}`;
     rows.push({ key, index, message, ...options });
     if (entryIds[index] && options.attachRef !== false) entryRows.set(entryIds[index], key);
@@ -58,7 +58,7 @@ export function buildChatHistoryRows(messages: AgentMessage[], entryIds: string[
     const assistant = messages[final] as AssistantMessage;
     const split = splitFinalAssistantBlocks(assistant);
     const processMessage = split.processBlocks.length ? withBlocks(assistant, split.processBlocks, true) : undefined;
-    const answer = split.answerBlocks.length || getAssistantErrorMessage(assistant) ? withBlocks(assistant, split.answerBlocks) : undefined;
+    const answer = split.answerBlocks.length || hasAssistantNotice(assistant) ? withBlocks(assistant, split.answerBlocks) : undefined;
     const count = process.length + Number(Boolean(processMessage));
     const changes = process.some((i) => messages[i].role === "assistant" && hasVisibleToolOutput(getDisplayableAssistantBlocks(messages[i] as AssistantMessage)))
       || hasVisibleToolOutput(split.processBlocks);

@@ -61,11 +61,6 @@ export function ClipboardWorkspace({ surface = "manager", onSave, visible = true
   const [notice, setNotice] = useState("");
   const [copyNotice, setCopyNotice] = useState<{ ids: string[] } | null>(null);
   const [imagePreview, setImagePreview] = useState<ClipboardItem | null>(null);
-  useEffect(() => {
-    if (!copyNotice) return;
-    const timer = setTimeout(() => setCopyNotice(null), 1300);
-    return () => clearTimeout(timer);
-  }, [copyNotice]);
   const [newCount, setNewCount] = useState(0);
   const [settings, setSettings] = useState(false);
   const [separator, setSeparator] = useState("\n");
@@ -104,6 +99,14 @@ export function ClipboardWorkspace({ surface = "manager", onSave, visible = true
   const report = useCallback((error: unknown) => setError(errorText(error)), []);
   const draftGuard = useClipboardDraftGuard(report);
   const { guard, draft: draftRef } = draftGuard;
+  useEffect(() => {
+    if (!copyNotice) return;
+    const timer = setTimeout(() => {
+      setCopyNotice(null);
+      if (surface === "quick") guard(() => { void bridge?.hide().catch(report); });
+    }, surface === "quick" ? 350 : 1300);
+    return () => clearTimeout(timer);
+  }, [copyNotice, surface, bridge, guard, report]);
   useFocusTrap(modal, visible && Boolean(draftGuard.open || settings || confirm || merge !== null));
   useEffect(() => { setRecovered(value => value?.entryId === active?.id ? value : null); }, [active?.id]);
   const detailChanged = useCallback(() => { setError(""); refresh(); }, [refresh]);
@@ -130,6 +133,7 @@ export function ClipboardWorkspace({ surface = "manager", onSave, visible = true
       if (change.error) { report(change.error); refresh(); }
       if (change.targetToken) targetToken.current = change.targetToken;
       if (change.reason === "open" && surface === "quick") {
+        setCopyNotice(null);
         if (draftRef.current?.dirty) { setNotice("已保留未保存的编辑，保存或放弃后可查看最新记录。"); updateStatus(); return; }
         lastQuery.current = null; setView(initialView("quick")); setSelected([]); setActiveId(null); setSettings(false); setConfirm(null); setMerge(null); setError(""); setNotice(""); setScroll(0); setNewCount(0);
         if (list.current) list.current.scrollTop = 0;

@@ -4,6 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useI18n } from "@/hooks/useI18n";
+import { useDialogCountdown } from "@/hooks/useExtensionDialog";
 import type { ExtensionUiRequest } from "@/lib/types";
 import { USER_INPUT_MAX_TEXT_LENGTH, type UserInputAnswers } from "@/lib/user-input";
 import { AliIcon } from "./AliIcon";
@@ -26,6 +27,8 @@ export function UserInputCard({
   ));
   const [customText, setCustomText] = useState<Record<string, string>>({});
   const [attempted, setAttempted] = useState(false);
+  const remainingSeconds = useDialogCountdown(request.expiresAt);
+  const expired = () => Boolean(request.expiresAt && Date.now() >= request.expiresAt);
 
   // The "Other" free-text answer for select questions is kept outside the
   // selection state and merged in only when it is non-empty, so a custom
@@ -45,8 +48,8 @@ export function UserInputCard({
     !question.required || (mergedAnswers[question.id]?.some((value) => value.trim().length > 0) ?? false)
   ));
 
-  const cancel = () => onRespond(request, { cancelled: true });
-  useFocusTrap(dialogRef, true, { initialFocus: firstControlRef, onEscape: cancel });
+  const cancel = () => { if (!expired()) onRespond(request, { cancelled: true }); };
+  useFocusTrap(dialogRef, remainingSeconds !== 0, { initialFocus: firstControlRef, onEscape: cancel });
 
   const setSingle = (id: string, value: string) => {
     setAnswers((current) => ({ ...current, [id]: [value] }));
@@ -74,10 +77,13 @@ export function UserInputCard({
     }
   };
   const submit = () => {
+    if (expired()) return;
     setAttempted(true);
     if (!complete) return;
     onRespond(request, { answers: mergedAnswers });
   };
+
+  if (remainingSeconds === 0) return null;
 
   return createPortal(
     <div className={styles.backdrop} role="presentation">
@@ -87,7 +93,7 @@ export function UserInputCard({
         role="dialog"
         aria-modal="true"
         aria-labelledby={`user-input-title-${request.id}`}
-        aria-describedby={request.description ? `user-input-description-${request.id}` : undefined}
+        aria-describedby={[request.description ? `user-input-description-${request.id}` : "", remainingSeconds !== null ? `user-input-timeout-${request.id}` : ""].filter(Boolean).join(" ") || undefined}
         onKeyDown={(event) => {
           if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
             event.preventDefault();
@@ -196,9 +202,14 @@ export function UserInputCard({
         </div>
 
         <footer className={styles.footer}>
-          <div className={styles.waiting}><span aria-hidden="true" />{t("userInput.waiting")}</div>
+          <div className={styles.waiting}>
+            {remainingSeconds === null ? t("userInput.waiting") : <>
+              <strong role="timer" aria-live="off" data-urgent={remainingSeconds <= 10 || undefined}>{t("userInput.countdown", { seconds: remainingSeconds })}</strong>
+              <span id={`user-input-timeout-${request.id}`}>{t("userInput.timeoutHint")}</span>
+            </>}
+          </div>
           <div className={styles.actions}>
-            <button className={styles.secondary} type="button" onClick={cancel}>{t("chat.cancel")}</button>
+            <button className={styles.secondary} type="button" onClick={cancel}>{t("userInput.skip")}</button>
             <button className={styles.primary} type="button" onClick={submit} aria-disabled={!complete}>
               {t("userInput.submit")}
               <span className={styles.shortcut}>Ctrl ↵</span>

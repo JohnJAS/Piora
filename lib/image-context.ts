@@ -1,4 +1,5 @@
 import type { Agent } from "@earendil-works/pi-agent-core";
+import { prepareModelImageContext, type ModelImageCache } from "./model-image-context";
 
 export const HISTORICAL_IMAGE_PLACEHOLDER = "[Historical image omitted from this request. The original remains in the chat record. Ask the user to attach it again if visual inspection is needed; do not infer unseen details.]";
 
@@ -21,9 +22,10 @@ export function omitHistoricalImages<T>(messages: readonly T[]): T[] {
 
 export function installImageContextPolicy(agent: Pick<Agent, "transformContext">): void {
   const previous = agent.transformContext?.bind(agent);
+  const cache: ModelImageCache = new WeakMap();
   agent.transformContext = async (messages, signal) => {
     // Keep extension context hooks and cancellation, then apply the outgoing policy.
     const context = previous ? await previous(messages, signal) : messages;
-    return omitHistoricalImages(context);
+    return prepareModelImageContext(omitHistoricalImages(context), signal, cache);
   };
 }

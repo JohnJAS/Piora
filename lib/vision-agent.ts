@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { prepareModelImageContext } from "./model-image-context";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -172,6 +173,7 @@ export async function analyzeImagesWithVisionModel(options: {
     content.push({ type: "text", text: `IMAGE ${index + 1}` }, image);
   });
 
+  const messages = await prepareModelImageContext([{ role: "user" as const, content, timestamp: Date.now() }], signal);
   const message = await completeVisionRequest((requestSignal) => registry.complete(model, {
     systemPrompt: [
       "You are a visual perception sidecar for a separate text-only reasoning model.",
@@ -181,7 +183,7 @@ export async function analyzeImagesWithVisionModel(options: {
       "Return compact structured text using these headings: SUMMARY, DETAILS, TEXT, SPATIAL_RELATIONSHIPS, UNCERTAINTY.",
       "If there are multiple images, distinguish them by IMAGE number and compare them only when the user task requires it.",
     ].join(" "),
-    messages: [{ role: "user", content, timestamp: Date.now() }],
+    messages,
   }, {
     maxTokens: VISION_MAX_TOKENS,
     maxRetries: 1,

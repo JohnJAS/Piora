@@ -10,6 +10,7 @@ import { InvalidJsonBodyError, JsonBodyTooLargeError, parseJsonWithinLimit } fro
 import { latestReplySource, parseReplyResult, REPLY_JSON_PROTOCOL, REPLY_PROTOCOL_VERSION, replySourceText, unicodeLength, validateReplySettings, type ReplyResult } from "./reply-suggestions";
 
 class ReplyError extends Error { constructor(readonly code: string, readonly status = 400) { super(code); } }
+export const REPLY_EXTRACTION_TIMEOUT_MS = 60_000;
 type Flight = { promise: Promise<ReplyResult>; controller: AbortController; users: number };
 const globals = globalThis as typeof globalThis & { __pioraReplyFlights?: Map<string, Flight>; __pioraReplyCache?: Map<string, { result: ReplyResult; expires: number }> };
 const flights: Map<string, Flight> = globals.__pioraReplyFlights ??= new Map<string, Flight>();
@@ -41,7 +42,7 @@ async function sharedExtraction(key: string, signal: AbortSignal, run: (signal: 
     const controller = new AbortController();
     flight = { controller, users: 0, promise: Promise.resolve({ groups: [] }) };
     const current = flight;
-    const timeout = setTimeout(() => controller.abort(new ReplyError("timeout", 504)), 15_000);
+    const timeout = setTimeout(() => controller.abort(new ReplyError("timeout", 504)), REPLY_EXTRACTION_TIMEOUT_MS);
     current.promise = new Promise<ReplyResult>((resolve, reject) => {
       const abort = () => reject(controller.signal.reason ?? new ReplyError("cancelled", 499));
       controller.signal.addEventListener("abort", abort, { once: true });
@@ -108,7 +109,7 @@ export async function handleReplyRequest(request: Request, sessionId?: string): 
       const message = await modelRuntime.completeSimple(model, {
         systemPrompt: `${settings.systemPrompt}\n\n${REPLY_JSON_PROTOCOL}`,
         messages: [{ role: "user", content: JSON.stringify({ locale, assistantText: source }), timestamp: Date.now() }],
-      }, { reasoning, maxTokens: 3072, maxRetries: 0, timeoutMs: 15_000, cacheRetention: "none", signal });
+      }, { reasoning, maxTokens: 3072, maxRetries: 0, timeoutMs: REPLY_EXTRACTION_TIMEOUT_MS, cacheRetention: "none", signal });
       signal.throwIfAborted();
       if (message.stopReason !== "stop") throw new ReplyError("provider_error", 502);
       try { return parseReplyResult(message.content.filter((b) => b.type === "text").map((b) => b.text).join("\n")); }

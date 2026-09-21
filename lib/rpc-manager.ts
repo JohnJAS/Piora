@@ -73,7 +73,7 @@ import {
 import type { SessionSystemPromptBinding, SystemPromptSelection } from "./system-prompt-types";
 import { buildPromptWithMaterials, resolvePromptMaterialReferences, restorePromptMaterialDisplayPreview } from "./prompt-materials";
 import type { PromptMaterialReference } from "./prompt-material-format";
-import type { UserInputResult } from "./user-input";
+import { userInputTimeoutMs, type UserInputResult } from "./user-input";
 import { estimateContextUsageBreakdown } from "./context-usage";
 import { mergeCommandOutputDetails } from "./command-execution";
 import {
@@ -1718,6 +1718,7 @@ export class AgentSessionWrapper {
     parseResponse: (response: ExtensionUiResponse) => T,
     timeout?: number,
     signal?: AbortSignal,
+    timeoutValue: T = defaultValue,
   ): Promise<T> {
     if (signal?.aborted || this.stopping || !this._alive) return Promise.resolve(defaultValue);
 
@@ -1730,6 +1731,7 @@ export class AgentSessionWrapper {
     };
 
     return new Promise((resolve) => {
+      let settled = false;
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
       const cleanup = () => {
         if (timeoutId) clearTimeout(timeoutId);
@@ -1738,19 +1740,26 @@ export class AgentSessionWrapper {
         this.pendingUiResponses.delete(id);
         notifyRunningChange();
       };
-      const settle = (value: T) => {
+      const settle = (value: T, reason: "answered" | "cancelled" | "timeout") => {
+        if (settled) return;
+        settled = true;
         cleanup();
+        this.emit({ type: "extension_ui_request", id, method: "close", reason });
         resolve(value);
       };
-      const onAbort = () => settle(defaultValue);
+      const onAbort = () => settle(defaultValue, "cancelled");
 
-      if (timeout) timeoutId = setTimeout(() => settle(defaultValue), timeout);
+      if (timeout) timeoutId = setTimeout(() => settle(timeoutValue, "timeout"), timeout);
       signal?.addEventListener("abort", onAbort, { once: true });
 
       this.pendingUiRequests.set(id, fullRequest as AgentEvent);
       this.pendingUiResponses.set(id, {
-        resolve: (response) => settle(parseResponse(response)),
-        cancel: () => settle(defaultValue),
+        resolve: (response) => {
+          // Check wall time as well: a delayed timer must not admit a late answer.
+          if (fullRequest.expiresAt && Date.now() >= fullRequest.expiresAt) settle(timeoutValue, "timeout");
+          else settle(parseResponse(response), "cancelled" in response ? "cancelled" : "answered");
+        },
+        cancel: onAbort,
       });
       this.emit(fullRequest as AgentEvent);
       notifyRunningChange();
@@ -1769,8 +1778,9 @@ export class AgentSessionWrapper {
         },
         { cancelled: true } as UserInputResult,
         (response) => "answers" in response ? { answers: response.answers } : { cancelled: true },
-        opts?.timeout,
+        userInputTimeoutMs(opts?.timeout),
         opts?.signal,
+        { cancelled: true, reason: "timeout" } as UserInputResult,
       ),
       select: (title, options, opts) => this.requestExtensionUi(
         { method: "select", title, options, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },

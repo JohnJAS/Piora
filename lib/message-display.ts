@@ -104,6 +104,19 @@ export function getAssistantErrorMessage(
   return errorMessage || "Unknown provider error";
 }
 
+/** Match cancellation signatures only, never arbitrary upstream/network errors. */
+export function isAssistantAborted(message: AssistantMessage, options: DisplayOptions = {}): boolean {
+  if (options.isStreaming) return false;
+  if (message.stopReason === "aborted") return true;
+  if (message.stopReason !== "error") return false;
+  const text = (message.errorMessage ?? "").trim().replace(/^(?:(?:Error|AbortError|DOMException):\s*)+/i, "");
+  return /^(?:(?:(?:this|the) )?operation (?:was )?ab(?:or|our)ted|request (?:was )?aborted|the user aborted a request|aborted)\.?$/i.test(text);
+}
+
+export function hasAssistantNotice(message: AssistantMessage): boolean {
+  return isAssistantAborted(message) || Boolean(getAssistantErrorMessage(message));
+}
+
 function isFinalAnswerBlock(block: AssistantContentBlock): boolean {
   return block.type === "text" || block.type === "image";
 }
