@@ -132,6 +132,12 @@ export type ExtensionUiRequest =
   | {
       type: "extension_ui_request";
       id: string;
+      method: "close";
+      reason: "answered" | "cancelled" | "timeout";
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
       method: "request_user_input";
       title: string;
       description?: string;

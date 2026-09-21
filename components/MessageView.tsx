@@ -13,6 +13,7 @@ import { commandExitCode, commandResultMetadata, commandStatus, isCommandToolNam
 import { getFileChangeInfo, type FileChangeInfo } from "@/lib/file-change";
 import {
   getAssistantErrorMessage,
+  isAssistantAborted,
   getThinkingBlockDisplay,
   isEmptyThinkingBlock,
   shouldSubscribeToThinkingLoad,
@@ -600,6 +601,7 @@ function AssistantMessageView({
     .filter(({ block }) => !isEmptyThinkingBlock(block, { isStreaming }));
   const blocks = blockItems.map(({ block }) => block);
   const providerError = getAssistantErrorMessage(message, { isStreaming });
+  const stopped = isAssistantAborted(message, { isStreaming });
   const [hovered, setHovered] = useState(false);
   const [copied, setCopied] = useState(false);
   const tps = isStreaming ? message.streamingMetrics?.tokensPerSecond ?? null : null;
@@ -688,7 +690,7 @@ function AssistantMessageView({
     return () => clearInterval(id);
   }, [isStreaming]);
 
-  if (blocks.length === 0 && !isStreaming && !providerError) return null;
+  if (blocks.length === 0 && !isStreaming && !providerError && !stopped) return null;
 
   return (
     <div
@@ -751,16 +753,16 @@ function AssistantMessageView({
         ))}
       </div>
 
-      {providerError && (
+      {(providerError || stopped) && (
         <div
-          role="alert"
+          role={stopped ? "status" : "alert"}
           style={{
             marginTop: blocks.length > 0 ? 8 : 0,
             padding: "7px 10px",
-            border: "1px solid rgba(239,68,68,0.3)",
+            border: stopped ? "1px solid var(--border)" : "1px solid rgba(239,68,68,0.3)",
             borderRadius: "var(--radius-control)",
-            background: "rgba(239,68,68,0.07)",
-            color: "#ef4444",
+            background: stopped ? "var(--bg-panel)" : "rgba(239,68,68,0.07)",
+            color: stopped ? "var(--text-muted)" : "#ef4444",
             fontFamily: "var(--font-mono)",
             fontSize: "var(--text-sm)",
             lineHeight: 1.5,
@@ -768,7 +770,7 @@ function AssistantMessageView({
             overflowWrap: "anywhere",
           }}
         >
-          Error: {providerError}
+          {stopped ? t("chat.generationStopped") : t("chat.providerError", { reason: providerError ?? "" })}
         </div>
       )}
 

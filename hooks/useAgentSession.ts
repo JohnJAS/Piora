@@ -18,6 +18,7 @@ import { AgentCommandError, createAgentSessionRequest, sendAgentCommand } from "
 import { getDraft, setDraft, type ChatDraft } from "@/lib/draft-store";
 import { reduceAgentPhase, type AgentPhase } from "@/lib/agent-phase";
 import { useI18n } from "@/hooks/useI18n";
+import { useExtensionDialog } from "@/hooks/useExtensionDialog";
 import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import { estimateSessionContextUsage, mergeContextUsageWithEstimate } from "@/lib/context-usage";
 import { isPromptMaterialRuntimeMessage, type PromptMaterialReference } from "@/lib/prompt-material-format";
@@ -468,7 +469,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [slashCommandsLoading, setSlashCommandsLoading] = useState(false);
   const [noticeState, dispatchNotice] = useReducer(noticeReducer, { visible: [], pending: [] });
   const [sessionStatsOverride, setSessionStatsOverride] = useState<SessionStatsInfo | null>(null);
-  const [extensionDialog, setExtensionDialog] = useState<ExtensionUiDialogRequest | null>(null);
+  const { dialog: extensionDialog, setDialog: setExtensionDialog, receiveDialog } = useExtensionDialog();
   const [extensionCustomUi, setExtensionCustomUi] = useState<ExtensionUiCustomRequest | null>(null);
   const [extensionStatuses, setExtensionStatuses] = useState<ExtensionStatusItem[]>([]);
   const [extensionWidgets, setExtensionWidgets] = useState<ExtensionWidgetItem[]>([]);
@@ -880,7 +881,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch (e) {
       console.error("Failed to send extension UI response:", e);
     }
-  }, []);
+  }, [setExtensionDialog]);
 
   const sendExtensionCustomInput = useCallback(async (request: ExtensionUiCustomRequest, data: string) => {
     const sid = sessionIdRef.current;
@@ -987,7 +988,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "confirm":
       case "input":
       case "editor":
-        setExtensionDialog(request);
+      case "close":
+        receiveDialog(request);
+        if (request.method === "close" && request.reason === "timeout") {
+          addNotice({ id: `question-timeout-${request.id}`, message: t("userInput.expired"), type: "info" });
+        }
         break;
       case "notify": {
         addNotice({
@@ -1030,7 +1035,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         });
         break;
     }
-  }, [addNotice, opts.chatInputRef]);
+  }, [addNotice, opts.chatInputRef, receiveDialog, t]);
 
   const finishPromptWithoutStream = useCallback((sid: string | null = sessionIdRef.current, runId = promptRunIdRef.current) => {
     // End the visible run synchronously. History/state hydration is not part
@@ -1063,7 +1068,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     })().finally(() => { if (promptRunIdRef.current === runId) setReplyHistorySettling(false); });
     promptSettlementByRunRef.current.set(runId, settlement);
     return settlement;
-  }, [closeEvents, loadSession, onAgentEnd]);
+  }, [closeEvents, loadSession, onAgentEnd, setExtensionDialog]);
 
   const waitForPromptSettlement = useCallback((sid: string, runId = promptRunIdRef.current) => {
     const existing = promptSettlementPollByRunRef.current.get(runId);
@@ -1430,7 +1435,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
     }
-  }, [addNotice, handleExtensionUiRequest, loadSession, refreshContextUsage, waitForPromptSettlement]);
+  }, [addNotice, handleExtensionUiRequest, loadSession, refreshContextUsage, setExtensionDialog, waitForPromptSettlement]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (
@@ -1712,7 +1717,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       if (abortRequestRunIdRef.current === runId) abortRequestRunIdRef.current = null;
     }
-  }, [addNotice, finishPromptWithoutStream, handleSend, opts.chatInputRef, t]);
+  }, [addNotice, finishPromptWithoutStream, handleSend, opts.chatInputRef, setExtensionDialog, t]);
 
   const handleDeleteMessage = useCallback(async (message: AgentMessage, entryId?: string) => {
     if (messageMutationRef.current || agentRunningRef.current || bashRunningRef.current || isCompacting) throw new Error(t("chat.deleteMessageBusy"));
