@@ -374,9 +374,14 @@ async function main() {
     "pi-ai",
   );
   const hypiumRuntimeRoot = join(projectRoot, "node_modules", "hypium-driver");
+  const devecoCliRuntimeRoot = join(projectRoot, "node_modules", "@deveco", "deveco-cli");
   const dependencyAssets = await collectRuntimeDependencyAssets([
     piAiProviderRuntimeRoot,
     hypiumRuntimeRoot,
+    // The Harmony checker is loaded from first-party extension source. Stage
+    // the complete DevEco CLI production closure because Next cannot trace
+    // its CLI entry point, MCP server, or dynamically loaded check engines.
+    devecoCliRuntimeRoot,
     // sharp resolves its versioned native bindings and optional platform
     // packages dynamically; the static trace can omit those binaries.
     join(projectRoot, "node_modules", "sharp"),

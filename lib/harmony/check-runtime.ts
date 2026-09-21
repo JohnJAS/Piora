@@ -21,7 +21,8 @@ import type {
 // The desktop supervisor launches Next with the standalone web root as cwd;
 // development and tests use the repository root. A direct runtime path avoids
 // webpack rewriting createRequire/import.meta.url to an `(rsc)` pseudo-path.
-const CLI_PACKAGE_PATH = join(process.cwd(), "node_modules", "@deveco", "deveco-cli", "package.json");
+const HARMONY_CHECK_RUNTIME_ROOT = process.env.PIORA_WEB_RUNTIME_ROOT?.trim() || process.cwd();
+const CLI_PACKAGE_PATH = join(HARMONY_CHECK_RUNTIME_ROOT, "node_modules", "@deveco", "deveco-cli", "package.json");
 const CLI_PACKAGE = JSON.parse(readFileSync(CLI_PACKAGE_PATH, "utf8")) as { version?: string };
 export const DEVECO_CLI_VERSION = CLI_PACKAGE.version ?? "1.3.3";
 export const DEVECO_CLI_PATH = join(dirname(CLI_PACKAGE_PATH), "dist", "cli.js");
