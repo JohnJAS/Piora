@@ -552,6 +552,10 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    if (!rightPanelOpen || rightPanelTab !== "automation") setSelectedAutomationId(null);
+  }, [rightPanelOpen, rightPanelTab]);
+
+  useEffect(() => {
     if (!activeTopPanel || !topBarRef.current) return;
     const update = () => {
       const topBarRect = topBarRef.current!.getBoundingClientRect();
@@ -2885,7 +2889,7 @@ export function AppShell() {
             if (prompt?.trim()) chatInputRef.current?.prependText(prompt);
             window.requestAnimationFrame(() => chatInputRef.current?.focus());
           }}
-          onSelectAutomation={openAutomation}
+          onSelectAutomation={setSelectedAutomationId}
           onAutomationChanged={() => setSessionKey((key) => key + 1)}
           capabilities={selectedRoom ? null : sessionCapabilities}
         /> : null}

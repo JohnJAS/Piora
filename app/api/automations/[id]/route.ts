@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { parseJsonWithinLimit } from "@/lib/bounded-json";
 import { getAutomationStore } from "@/lib/automation-store";
 import type { UpdateAutomationInput } from "@/lib/automation-types";
-import { resolveOrStartRpcSession } from "@/lib/session-runtime-resolver";
+import type { resolveOrStartRpcSession } from "@/lib/session-runtime-resolver";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +29,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const nextTarget = patch.target ?? current.target;
     let targetSession: Awaited<ReturnType<typeof resolveOrStartRpcSession>> | undefined;
     if (nextKind === "heartbeat" && nextTarget.type === "session") {
+      const { resolveOrStartRpcSession } = await import("@/lib/session-runtime-resolver");
       targetSession = await resolveOrStartRpcSession(nextTarget.sessionId);
     }
     const automation = await store.update(id, patch);
