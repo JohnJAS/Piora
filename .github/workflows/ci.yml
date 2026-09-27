@@ -1,6 +1,16 @@
 name: CI
 
 on:
+  workflow_dispatch:
+    inputs:
+      run_hardware:
+        description: Run explicit scenarios on the approved Harmony hardware runner
+        type: boolean
+        default: false
+      hardware_plan:
+        description: Repository-relative JSON acceptance plan
+        type: string
+        default: tests/harmony-device-plan.json
   pull_request:
   push:
     branches:
@@ -56,6 +66,9 @@ jobs:
         if: runner.os == 'Linux'
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Verify Harmony schemas and documentation
+        run: npm run harmony:docs:check
+
       - name: Verify release-tree hygiene
         run: npm run verify:hygiene
 
@@ -82,3 +95,34 @@ jobs:
       - name: Verify packaged standalone service in isolation
         if: runner.os == 'Windows'
         run: npm run verify:package
+
+  harmony-hardware:
+    name: Harmony hardware acceptance (opt-in)
+    if: github.event_name == 'workflow_dispatch' && inputs.run_hardware
+    runs-on: [self-hosted, Windows, harmony-device]
+    environment: harmony-hardware
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - run: npm ci
+      - run: npm run build:harmony-worker
+      - name: Run explicit device scenarios
+        shell: pwsh
+        env:
+          HARMONY_SERIAL: ${{ secrets.HARMONY_DEVICE_SERIAL }}
+          HARMONY_PLAN: ${{ inputs.hardware_plan }}
+          PIORA_HARMONY_TEST_CONTROL: '1'
+        run: node scripts/verify-harmony-device.mjs --serial "$env:HARMONY_SERIAL" --plan "$env:HARMONY_PLAN"
+      - name: Publish hardware summary
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path .verification/harmony-device-report.json) {
+            Get-Content .verification/harmony-device-report.json | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          }

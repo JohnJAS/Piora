@@ -62,6 +62,9 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Verify Harmony schemas and documentation
+        run: npm run harmony:docs:check
+
       - name: Verify release-tree hygiene
         run: npm run verify:hygiene
 

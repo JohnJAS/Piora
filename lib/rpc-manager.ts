@@ -2390,6 +2390,9 @@ export async function startRpcSession(
   const inflight = locks.get(lockKey);
   if (inflight) return inflight;
 
+  const sessionServicesKey = `${runtimeProfile}:${sessionId}`;
+  let startupInner: AgentSessionLike | undefined;
+  let startupWrapper: AgentSessionWrapper | undefined;
   const finishStartingSession = trackStartingSession(cwd);
   const starting = (async () => {
     // Some extensions access the SDK's global theme even outside the terminal UI.
@@ -2450,11 +2453,8 @@ export async function startRpcSession(
 
     // Build services first so extension-registered providers are available
     // before the SDK restores the saved model from the session file.
-    // Services are cached per cwd: reusing the model runtime + resource loader
-    // turns a ~5-8s session start into milliseconds and stops session creation
-    // from blocking the event loop (which stalled session loading and left the
-    // composer hidden while switching sessions).
-    const sessionServicesKey = `${runtimeProfile}:${sessionId}`;
+    // Services belong to this session only: extension runtime bindings are
+    // mutable and must never be shared with another task in the same cwd.
     let services = getServicesCache().get(sessionServicesKey);
     if (!services && notesOnly) {
       services = await createAgentSessionServices({ cwd, agentDir, settingsManager: SettingsManager.create(cwd, agentDir), resourceLoaderOptions: remotePolicyResources(remotePolicy) });
@@ -2544,6 +2544,7 @@ export async function startRpcSession(
       ...(initial.scopedModels.length > 0 ? { scopedModels: initial.scopedModels } : {}),
       ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
     });
+    startupInner = inner;
     // The SDK stream function reads this from SettingsManager on every request.
     // Leave the Agent override unset so its startup snapshot cannot mask updates.
     inner.agent.maxRetryDelayMs = undefined;
@@ -2602,17 +2603,18 @@ export async function startRpcSession(
       projectManaged: Boolean(projectToolRecord),
       ...(notesOnly ? { toolNameCeiling: [] } : toolNames !== undefined ? { toolNameCeiling: toolNames } : {}),
     });
+    startupWrapper = wrapper;
+    wrapper.onDestroy(() => {
+      if (registry.get(realSessionId) === wrapper) registry.delete(realSessionId);
+      // A disposed AgentSession owns the ResourceLoader/runtime binding held by
+      // its service bundle. Never reuse that bundle after the wrapper dies.
+      getServicesCache().delete(sessionServicesKey);
+    });
     wrapper.initializeSessionCapabilities();
     wrapper.start();
 
     if (realSessionFile) cacheSessionPath(realSessionId, realSessionFile);
 
-    wrapper.onDestroy(() => {
-      registry.delete(realSessionId);
-      // A disposed AgentSession owns the ResourceLoader/runtime binding held by
-      // its service bundle. Never reuse that bundle after the wrapper dies.
-      getServicesCache().delete(sessionServicesKey);
-    });
     registry.set(realSessionId, wrapper);
     let previousSSHInventory = JSON.stringify(listSSHSessionSummariesForAgent(realSessionId).map(item => [item.id, item.connected]));
     const unsubscribeSSH = subscribeSSHRegistry((owner) => {
@@ -2632,7 +2634,24 @@ export async function startRpcSession(
     wrapper.beginExtensionBinding({ forceEmptySystemPrompt: inner.getActiveToolNames().length === 0 });
 
     return { session: wrapper, realSessionId };
-  })().finally(() => {
+  })().catch(async (error) => {
+    // Model selection, profile binding and capability setup can fail after
+    // allocating services or an SDK session. A retry must start with clean
+    // extension bindings, and failed starts must not retain their histories.
+    getServicesCache().delete(sessionServicesKey);
+    try {
+      if (startupWrapper) {
+        startupWrapper.destroy();
+        await startupWrapper.shutdownForFileMutation();
+      } else if (startupInner) {
+        try { await startupInner.extensionRunner.emit?.({ type: "session_shutdown", reason: "shutdown" }); }
+        finally { startupInner.dispose?.(); }
+      }
+    } catch (cleanupError) {
+      console.error("[pi-web] Failed session startup cleanup:", cleanupError instanceof Error ? cleanupError.message : cleanupError);
+    }
+    throw error;
+  }).finally(() => {
     locks.delete(lockKey);
     finishStartingSession();
   });

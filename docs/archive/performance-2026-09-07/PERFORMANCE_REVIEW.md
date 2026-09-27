@@ -1,3 +1,5 @@
+> 历史记录：对应 2026 年 9 月初的性能工作，不是当前功能待办或本次验收结论。现行约束见 [AGENTS.md](../../../AGENTS.md)，预算见 [检查脚本](../../../scripts/check-performance-budgets.mjs)。
+
 # 性能与交互检查（2026-09-05，当前工作区）
 
 以下发现记录的是 9 月 5 日的检查基线，位置行号也对应当时版本。随后已按用户授权修改代码；当前进度和验证边界见 [OPTIMIZATION_PROGRESS.md](./OPTIMIZATION_PROGRESS.md)，不能把下面的基线描述当作当前未修复列表。

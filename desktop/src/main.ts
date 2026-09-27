@@ -2194,6 +2194,9 @@ function createStandaloneForProfile(profile: RuntimeProfile): {
     harmonyToolsDirectory: app.isPackaged
       ? join(process.resourcesPath, "harmony-tools")
       : join(app.getAppPath(), "..", "third_party", "harmony-tools", process.platform === "win32" ? "windows-x64" : process.platform),
+    ...(process.platform === "win32" ? { winAppPath: app.isPackaged
+      ? join(process.resourcesPath, "winappcli", "winapp.exe")
+      : join(app.getAppPath(), "..", "node_modules", "@microsoft", "winappcli", "bin", "win-x64", "winapp.exe") } : {}),
     token: applicationToken,
     logger,
     runtimeProfile: profile,
@@ -2848,7 +2851,8 @@ async function startApplication(): Promise<void> {
   // An aborted first document can suppress ready-to-show even after a later
   // successful navigation. Do not leave the recovered application hidden.
   startup.ensureVisible();
-  void clipboardController.warm().catch(error => logger?.warn("Clipboard window preload failed", error));
+  // Clipboard capture and shortcuts are already active; create the renderer
+  // only when opened instead of retaining a hidden Chromium page at startup.
   writeLastLaunchedVersion(app.getPath("userData"), app.getVersion(), logger);
   logger.info("Application window is ready", { elapsedMs: Date.now() - startupStartedAt });
   recordStartupStage("ready");

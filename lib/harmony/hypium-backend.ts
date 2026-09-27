@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { join } from "node:path";
+import { lockSync } from "proper-lockfile";
 
 import { writePrivateFileAtomicSync } from "../atomic-file";
 import { HarmonyError } from "./errors";
@@ -32,33 +33,25 @@ export interface HypiumAutomationStatus {
   retryAt?: string;
 }
 
-function disableHypiumTelemetry(): void {
-  const directory = join(homedir(), ".hypium");
+export function disableHypiumTelemetry(directory = join(homedir(), ".hypium")): void {
   const path = join(directory, ".hypium_driver_config");
   try {
-    let disabled = false;
-    try {
-      disabled = (JSON.parse(readFileSync(path, "utf8")) as { telemetry?: unknown }).telemetry === false;
-    } catch { /* Missing or malformed settings are replaced with the privacy-safe Piora policy. */ }
-    if (disabled) return;
     mkdirSync(directory, { recursive: true });
-    writePrivateFileAtomicSync(path, `${JSON.stringify({ telemetry: false })}\n`);
+    const release = lockSync(path, { realpath: false });
+    try {
+      let settings: Record<string, unknown> = {};
+      try { settings = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>; }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+      if (!settings || typeof settings !== "object" || Array.isArray(settings)) throw new Error("Invalid Hypium settings");
+      if (settings.telemetry !== false) writePrivateFileAtomicSync(path, `${JSON.stringify({ ...settings, telemetry: false })}\n`);
+    } finally { release(); }
   } catch (error) {
     throw new HarmonyError(
       "AUTOMATION_DRIVER_UNAVAILABLE",
       "Hypium telemetry could not be disabled, so Piora refused to start the third-party driver",
-      { cause: error, retryable: true },
+      { cause: error, retryable: true, details: { dispatchState: "not-sent" } },
     );
   }
-}
-
-function prependHdcDirectory(hdcPath: string): void {
-  const key = Object.keys(process.env).find((name) => name.toLocaleLowerCase() === "path") ?? "PATH";
-  const directory = dirname(hdcPath);
-  const entries = (process.env[key] ?? "").split(delimiter).filter(Boolean);
-  const normalized = process.platform === "win32" ? directory.toLocaleLowerCase() : directory;
-  if (entries.some((entry) => (process.platform === "win32" ? entry.toLocaleLowerCase() : entry) === normalized)) return;
-  process.env[key] = [directory, ...entries].join(delimiter);
 }
 
 function timeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
@@ -101,7 +94,7 @@ function matchPattern(module: HypiumModule, selector: HarmonyUiSelector): import
 function selectorBy(module: HypiumModule, selector: HarmonyUiSelector): HypiumBy {
   validateHarmonySelector(selector);
   if (selector.description !== undefined || selector.visible !== undefined) {
-    throw new HarmonyError("CAPABILITY_UNAVAILABLE", "This selector requires Piora's layout fallback instead of Hypium semantic lookup");
+    throw new HarmonyError("CAPABILITY_UNAVAILABLE", "This selector requires Piora's layout fallback instead of Hypium semantic lookup", { details: { dispatchState: "not-sent" } });
   }
   const pattern = matchPattern(module, selector);
   let by: HypiumBy | undefined;
@@ -118,7 +111,7 @@ function selectorBy(module: HypiumModule, selector: HarmonyUiSelector): HypiumBy
     if (value === undefined) continue;
     extend((source) => source[key](value), () => module.BY[key](value));
   }
-  if (!by) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Hypium requires a supported semantic selector field");
+  if (!by) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Hypium requires a supported semantic selector field", { details: { dispatchState: "not-sent" } });
   if (selector.within) by = by.within(selectorBy(module, selector.within));
   if (selector.before) by = by.isBefore(selectorBy(module, selector.before));
   if (selector.after) by = by.isAfter(selectorBy(module, selector.after));
@@ -170,7 +163,6 @@ export class HypiumAutomationDriver {
     });
     this.now = options.now ?? Date.now;
     this.preparePrivacy = options.preparePrivacy ?? disableHypiumTelemetry;
-    prependHdcDirectory(options.hdcPath);
   }
 
   private async module(): Promise<HypiumModule> {
@@ -178,7 +170,7 @@ export class HypiumAutomationDriver {
       this.preparePrivacy();
       this.modulePromise = this.importDriver().catch((error) => {
         this.modulePromise = undefined;
-        throw new HarmonyError("AUTOMATION_DRIVER_UNAVAILABLE", "Unable to load hypium-driver", { cause: error, retryable: true });
+        throw new HarmonyError("AUTOMATION_DRIVER_UNAVAILABLE", "Unable to load hypium-driver", { cause: error, retryable: true, details: { dispatchState: "not-sent" } });
       });
     }
     return await this.modulePromise;
@@ -188,7 +180,7 @@ export class HypiumAutomationDriver {
     const coolingUntil = this.cooldowns.get(serial) ?? 0;
     if (coolingUntil > this.now()) {
       throw new HarmonyError("AUTOMATION_DRIVER_UNAVAILABLE", "Hypium is cooling down after a connection failure", {
-        details: { retryAt: new Date(coolingUntil).toISOString() }, retryable: true,
+        details: { dispatchState: "not-sent", retryAt: new Date(coolingUntil).toISOString() }, retryable: true,
       });
     }
     const existing = this.sessions.get(serial);
@@ -218,7 +210,7 @@ export class HypiumAutomationDriver {
       } catch (error) {
         this.cooldowns.set(serial, this.now() + DRIVER_COOLDOWN_MS);
         throw new HarmonyError("AUTOMATION_DRIVER_UNAVAILABLE", "Hypium could not connect to the Harmony device", {
-          cause: error, retryable: true,
+          cause: error, retryable: true, details: { dispatchState: "not-sent" },
         });
       }
     })();
@@ -255,32 +247,54 @@ export class HypiumAutomationDriver {
     }
   }
 
+  async execute(serial: string, operation: string, args: unknown[], signal?: AbortSignal): Promise<{ used: true; value: unknown } | { used: false }> {
+    return await this.tryRun(serial, operation, signal, async (driver, module) => {
+      if (signal?.aborted) throw new HarmonyError("COMMAND_ABORTED", "Driver operation cancelled", { details: { dispatchState: "not-sent" } });
+      const n = args.map(Number);
+      if (operation === "tap") return await driver.click(n[0], n[1]);
+      if (operation === "double_tap") return await driver.doubleClick(n[0], n[1]);
+      if (operation === "long_press") return await driver.longClick(n[0], n[1]);
+      if (operation === "swipe" || operation === "drag") return await driver[operation](n[0], n[1], n[2], n[3], n[4]);
+      if (operation === "fling") return await driver.fling(n[0], n[1], n[2], n[3], 20, n[4]);
+      if (operation === "press_key") {
+        if (args[0] === "back") return await driver.pressBack();
+        if (args[0] === "home") return await driver.pressHome();
+        if (args[0] !== "recents" && args[0] !== "enter") throw new HarmonyError("INVALID_ARGUMENT", "Unsupported logical key");
+        return await driver.triggerKey(args[0] === "recents" ? module.KeyCode.APPSELECT : module.KeyCode.ENTER);
+      }
+      if (operation === "input_text") {
+        const component = await resolveSemanticComponent(driver, module, { focused: true }, 1000);
+        if (signal?.aborted) throw new HarmonyError("COMMAND_ABORTED", "Text operation cancelled");
+        await component.inputText(String(args[0]));
+        if (await component.getText() !== args[0]) throw new HarmonyError("SCENARIO_FAILED", "Focused text readback mismatch", { details: { dispatchState: "sent", verification: "failed" } });
+        return;
+      }
+      throw new HarmonyError("INVALID_ARGUMENT", "Unsupported worker operation");
+    });
+  }
+
   async semanticAction(serial: string, request: HarmonySemanticActionRequest, signal?: AbortSignal): Promise<HarmonySemanticActionResult> {
+    if (request.action === "scroll_find") throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Use bounded layout scrolling; Hypium scrollSearch cannot enforce a swipe budget", { details: { dispatchState: "not-sent" } });
     return await this.run(serial, request.action, signal, async (driver, module) => {
       const timeoutMs = Math.max(100, Math.min(60_000, Math.round(request.timeoutMs ?? 3_000)));
-      let component: HypiumComponent;
-      if (request.action === "scroll_find") {
-        if (!request.container) {
-          throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Hypium scroll search requires a semantic container selector");
-        }
-        if (request.selector.index !== undefined) {
-          throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Indexed scroll search requires Piora's layout fallback");
-        }
-        const container = await resolveSemanticComponent(driver, module, request.container, timeoutMs);
-        component = container.scrollSearch(selectorBy(module, request.selector));
-      } else {
-        component = await resolveSemanticComponent(driver, module, request.selector, timeoutMs);
-      }
+      const component = await resolveSemanticComponent(driver, module, request.selector, timeoutMs);
       if (!await component.exist()) throw new HarmonyError("UI_TARGET_NOT_FOUND", "No UI element matched the requested selector", { retryable: true });
-      if (request.action === "tap" || (request.action === "scroll_find" && request.tapAfterScroll)) await component.click();
+      const check = () => { if (signal?.aborted) throw new HarmonyError("COMMAND_ABORTED", "Semantic action was cancelled", { details: { dispatchState: "not-sent" } }); };
+      check();
+      if (request.action === "tap") await component.click();
       else if (request.action === "double_tap") await component.doubleClick();
       else if (request.action === "long_press") await component.longClick();
-      else if (request.action === "clear_text") await component.clearText();
-      else if (request.action === "input_text") {
-        if (typeof request.text !== "string" || request.text.length === 0) {
-          throw new HarmonyError("INVALID_ARGUMENT", "Semantic text input requires non-empty text");
-        }
-        await component.inputText(request.text, request.append ? { addition: true } : undefined);
+      else if (request.action === "input_text" || request.action === "clear_text") {
+        if (request.action === "input_text" && typeof request.text !== "string") throw new HarmonyError("INVALID_ARGUMENT", "Semantic text input requires text");
+        const before = await component.getText();
+        const expected = request.action === "clear_text" ? "" : (request.append ? before : "") + request.text;
+        check();
+        if (request.action === "clear_text") await component.clearText();
+        else await component.inputText(request.text!, request.append ? { addition: true } : undefined);
+        const after = await component.getText();
+        if (after !== expected) throw new HarmonyError("SCENARIO_FAILED", "Text readback did not match the requested value", {
+          details: { dispatchState: "sent", effect: "unknown", verification: "failed", expectedLength: expected.length, actualLength: after.length },
+        });
       }
       return { strategy: "hypium_semantic_rpc" };
     });

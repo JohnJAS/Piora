@@ -21,6 +21,7 @@ function publicSnapshot(snapshot: HarmonySnapshot): unknown {
     generation: snapshot.generation,
     revision: snapshot.revision,
     capturedAt: snapshot.capturedAt,
+    quality: snapshot.quality,
     tree: snapshot.tree,
     nodes: snapshot.nodes,
     ...(snapshot.screenshot ? {
@@ -44,6 +45,15 @@ export async function POST(request: Request) {
       throw new HarmonyError("INVALID_ARGUMENT", "Request body must be a JSON object");
     }
     const body = parsed as Record<string, unknown>;
+    if (body.action === "remove") {
+      getHarmonyDeviceManager().removeExecution(requiredString(body, "executionId", 36), requiredString(body, "serial", 256));
+      return noStoreJson({ removed: true });
+    }
+    if (body.resumeExecutionId !== undefined) {
+      const result = await getHarmonyDeviceManager().resumeScenario(requiredString(body, "resumeExecutionId", 36), requiredString(body, "serial", 256), requiredString(body, "leaseToken", 256), request.signal);
+      const { finalSnapshot, ...summary } = result;
+      return noStoreJson({ result: { ...summary, ...(finalSnapshot ? { finalSnapshot: publicSnapshot(finalSnapshot) } : {}) } });
+    }
     if (!Array.isArray(body.steps)) throw new HarmonyError("INVALID_ARGUMENT", "steps must be an array");
     if (body.policy !== undefined && (!body.policy || typeof body.policy !== "object" || Array.isArray(body.policy))) {
       throw new HarmonyError("INVALID_ARGUMENT", "policy must be a JSON object when provided");
@@ -65,4 +75,10 @@ export async function POST(request: Request) {
     if (error instanceof InvalidJsonBodyError) return noStoreJson({ error: "Invalid JSON body" }, { status: 400 });
     return harmonyErrorResponse(error);
   }
+}
+
+export async function GET(request: Request) {
+  const denied = requireHarmonyAccess(request); if (denied) return denied;
+  try { return noStoreJson({ executions: getHarmonyDeviceManager().listExecutions(new URL(request.url).searchParams.get("serial") ?? undefined) }); }
+  catch (error) { return harmonyErrorResponse(error); }
 }

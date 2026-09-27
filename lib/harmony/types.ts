@@ -36,6 +36,8 @@ export interface HarmonyLeaseOwner {
 }
 
 export interface HarmonyLease {
+  deviceEpoch: number;
+  leaseEpoch: number;
   token: string;
   serial: string;
   owner: HarmonyLeaseOwner;
@@ -103,6 +105,8 @@ export interface HarmonyLogOptions {
 }
 
 export interface HarmonySnapshot {
+  geometry?: import("./observation/geometry").HarmonyGeometry;
+  quality?: import("./contracts/observations").HarmonyObservationQuality;
   serial: string;
   generation: number;
   revision: number;
@@ -113,6 +117,7 @@ export interface HarmonySnapshot {
 }
 
 export interface HarmonyManagerState {
+  controls?: Array<{ serial: string; status: "stopping" | "recovering"; cleanup: "pending" | "uncertain" }>;
   runtime: {
     status: "unresolved" | "ready" | "unavailable" | "error";
     hdcPath?: string;
@@ -189,6 +194,7 @@ export interface HarmonyDiagnostics {
 }
 
 export interface HarmonyOperationResult {
+  receipt?: import("./contracts/receipts").HarmonyReceipt;
   serial: string;
   operationId: number;
   generation: number;
@@ -207,6 +213,8 @@ export interface HarmonySnapshotOptions {
 }
 
 export interface HarmonyTapOptions {
+  coordinateSpace?: "native" | "frame";
+  geometryId?: string;
   serial: string;
   leaseToken: string;
   x: number;
@@ -226,6 +234,8 @@ export interface HarmonyTapRefOptions {
 }
 
 export interface HarmonySwipeOptions {
+  coordinateSpace?: "native" | "frame";
+  geometryId?: string;
   serial: string;
   leaseToken: string;
   fromX: number;
@@ -304,6 +314,8 @@ export interface HarmonyWaitCondition {
 }
 
 export type HarmonyScenarioStep =
+  | { id?: string; action: "voice_input"; audioAssetId: string; profileId: string; timeoutMs?: number; geometryId?: string; requiredMode?: "tap" | "push-to-talk" }
+  | { id?: string; action: "geometry_assert"; rotation: 0 | 90 | 180 | 270 }
   | { id?: string; action: "tap" | "double_tap" | "long_press"; selector: HarmonyUiSelector; waitFor?: HarmonyWaitCondition }
   | { id?: string; action: "input_text"; selector: HarmonyUiSelector; text: string; append?: boolean; waitFor?: HarmonyWaitCondition }
   | { id?: string; action: "clear_text"; selector: HarmonyUiSelector; waitFor?: HarmonyWaitCondition }
@@ -336,13 +348,16 @@ export interface HarmonyScenarioStepResult {
   index: number;
   id?: string;
   action: HarmonyScenarioStep["action"];
-  status: "passed" | "failed";
+  status: "passed" | "failed" | "not-run" | "running";
+  receipt?: import("./contracts/receipts").HarmonyReceipt;
+  error?: ReturnType<import("./errors").HarmonyError["toJSON"]>;
   durationMs: number;
   strategy?: string;
   message?: string;
 }
 
 export interface HarmonyScenarioResult {
+  executionId?: string;
   serial: string;
   generation: number;
   status: "passed" | "failed";
@@ -390,6 +405,7 @@ export interface BackendDevice {
 }
 
 export interface BackendSnapshot {
+  quality?: import("./contracts/observations").HarmonyObservationQuality;
   tree?: unknown;
   nodes?: Array<Omit<HarmonyUiNode, "ref" | "parentRef"> & { parentIndex?: number }>;
   screenshot?: HarmonyScreenshot;
@@ -399,6 +415,12 @@ export interface HarmonyAutomationBackend {
   readonly kind: string;
   readonly hdcPath?: string;
   listDevices(signal?: AbortSignal): Promise<BackendDevice[]>;
+  applications?(serial: string, query?: string, bundleName?: string, signal?: AbortSignal): Promise<import("./observation/applications").HarmonyApplication[]>;
+  appTestAudio?(serial: string, packet: string, signal?: AbortSignal): Promise<void>;
+  doctorProbes?(serial: string, signal?: AbortSignal): Promise<{ hdcVersion?: string; checks: import("./contracts/capabilities").HarmonyDoctorReport["checks"] }>;
+  probeCapabilities?(serial: string, signal?: AbortSignal): Promise<import("./contracts/capabilities").HarmonyActionCapability[]>;
+  keyHold?(serial: string, key: import("./input/key-catalog").PhysicalKey, durationMs: number, signal?: AbortSignal): Promise<{ cleanup: "complete" }>;
+  touchHold?(serial: string, x: number, y: number, durationMs: number, signal?: AbortSignal): Promise<{ cleanup: "complete" }>;
   listProcesses?(serial: string, signal?: AbortSignal): Promise<HarmonyProcess[]>;
   streamLogs?(serial: string, onEntries: (entries: HarmonyLogEntry[]) => void, signal?: AbortSignal): Promise<void>;
   readLogs?(
@@ -412,6 +434,9 @@ export interface HarmonyAutomationBackend {
   startRecording?(serial: string, remoteName: string, signal?: AbortSignal): Promise<void>;
   stopRecording?(serial: string, remoteName: string, destinationPath: string, signal?: AbortSignal): Promise<number>;
   openVideoStream?(serial: string, signal?: AbortSignal): Promise<HarmonyVideoConnection>;
+  mirrorPackagePath?(): string;
+  displayGeometry?(serial: string, signal?: AbortSignal): Promise<import("./observation/geometry").NativeDisplayGeometry>;
+  initializeMirror?(serial: string, hapPath: string, signal?: AbortSignal): Promise<void>;
   tap(serial: string, x: number, y: number, signal?: AbortSignal): Promise<void>;
   doubleTap?(serial: string, x: number, y: number, signal?: AbortSignal): Promise<void>;
   longPress?(serial: string, x: number, y: number, signal?: AbortSignal): Promise<void>;
@@ -458,13 +483,14 @@ export interface HarmonyAutomationBackend {
   stopApp?(serial: string, bundleName: string, signal?: AbortSignal): Promise<void>;
   clearAppData?(serial: string, bundleName: string, signal?: AbortSignal): Promise<void>;
   uninstallPackage?(serial: string, bundleName: string, signal?: AbortSignal): Promise<void>;
-  waitForIdle?(serial: string, idleMs: number, timeoutMs: number, signal?: AbortSignal): Promise<void>;
+  waitForIdle?(serial: string, idleMs: number, timeoutMs: number, signal?: AbortSignal): Promise<void | { strategy: "driver_idle" | "bounded_delay" }>;
   semanticAction?(
     serial: string,
     request: HarmonySemanticActionRequest,
     signal?: AbortSignal,
   ): Promise<HarmonySemanticActionResult>;
   resetAutomation?(serial?: string): Promise<void>;
+  interruptedForwards?(serial: string): Array<{ localPort: number; remotePort: number; state: string }>;
   automationDiagnostics?(): NonNullable<HarmonyDiagnostics["automation"]>;
   dispose?(): Promise<void> | void;
 }

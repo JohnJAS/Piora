@@ -54,11 +54,13 @@ export function ChatScrollRail({ ariaLabel, scrollContainer }: Props) {
       scrollTop: scrollEl.scrollTop,
       transientTailHeight: transientTail?.offsetHeight ?? 0,
     });
-    setMetrics({
+    const next = {
       clientHeight: scrollEl.clientHeight,
       scrollHeight: contentMetrics.scrollHeight,
       scrollTop: contentMetrics.scrollTop,
-    });
+    };
+    setMetrics(previous => previous.clientHeight === next.clientHeight
+      && previous.scrollHeight === next.scrollHeight && previous.scrollTop === next.scrollTop ? previous : next);
   }, [scrollContainer]);
 
   const scheduleMeasure = useCallback(() => {

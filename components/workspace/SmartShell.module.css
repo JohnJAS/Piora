@@ -1,4 +1,4 @@
-.root { --shell-accent: var(--accent, #72cdb6); container-type: inline-size; display: flex; flex-direction: column; height: 100%; min-height: 0; color: var(--text); background: var(--bg-panel); font-size: var(--text-sm, 13px); }
+.root { --shell-accent: var(--accent, #72cdb6); container-type: inline-size; display: flex; flex-direction: column; height: 100%; min-width: 0; min-height: 0; color: var(--text); background: var(--bg-panel); font-size: var(--text-sm, 13px); }
 .root button, .settings button { cursor: pointer; font: inherit; color: inherit; border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 5px 8px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .root button:hover, .settings button:hover { background: var(--bg-hover); }
 .root button:disabled, .settings button:disabled { cursor: default; opacity: .4; }
@@ -6,6 +6,8 @@
 .header { display: flex; align-items: center; gap: 8px; padding: 12px 14px 9px; }
 .brand { color: var(--shell-accent); display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
 .brand strong { font-size: calc(var(--ui-font-size) * 14 / 14); font-weight: 650; }
+.shellPicker { min-width: 0; max-width: 128px; padding: 5px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+.brand strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tabs { display: flex; gap: 4px; overflow-x: auto; padding: 0 10px 8px; flex-shrink: 0; }
 .terminalTab { display: flex; flex-shrink: 0; align-items: center; border: 1px solid var(--border); border-radius: 7px; max-width: 200px; }
 .terminalTab[data-active=true] { background: var(--bg-selected); border-color: color-mix(in srgb, var(--shell-accent) 45%, var(--border)); }
@@ -109,6 +111,10 @@
 .settingsSection { display: grid; gap: 16px; padding: 18px; border: 1px solid var(--border); background: var(--bg-panel); border-radius: 10px; min-width: 0; }
 .settingsSection h3 { font-size: calc(var(--ui-font-size) * 14 / 14); font-weight: 600; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .settingsSection .field { grid-template-columns: 150px minmax(0, 1fr); align-items: center; }
+.settings .timeoutField { display: grid; align-items: center; gap: 8px; grid-template-columns: 150px minmax(0, 180px); }
+.settings .timeoutField input { min-width: 0; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 6px; padding: 8px; font: inherit; }
+.timeoutActions { display: flex; align-items: center; gap: 10px; }
+.timeoutActions span { color: var(--text-muted); font-size: calc(var(--ui-font-size) * 12 / 14); }
 .settingRow { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .settingRow strong { font-size: calc(var(--ui-font-size) * 13 / 14); font-weight: 500; }
 .settingRow p { font-size: calc(var(--ui-font-size) * 12 / 14); }
@@ -125,4 +131,5 @@
 .settings .addSource { justify-self: start; border-color: var(--border); }
 .approval .primary { background: #d8ad58 !important; color: #201a0d !important; }
 @container (max-width: 400px) { .blockActions button { padding: 4px; } .inputBar { flex-wrap: wrap; } .views button { padding-inline: 8px; } .inputBar .model { flex: 1 1 110px; } }
-@media (max-width: 650px) { .settings { padding: 16px; } .settingsSection { padding: 12px; } .settingsSection .field { grid-template-columns: 1fr; } .source { grid-template-columns: 1fr; } .source small { grid-column: 1; } }
+@container (max-width: 450px) { .header { gap: 3px; padding-inline: 8px; } .brand strong { display: none; } .shellPicker { max-width: 110px; } }
+@media (max-width: 650px) { .settings { padding: 16px; } .settingsSection { padding: 12px; } .settingsSection .field, .settings .timeoutField { grid-template-columns: 1fr; } .source { grid-template-columns: 1fr; } .source small { grid-column: 1; } }

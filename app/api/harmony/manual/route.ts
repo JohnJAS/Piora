@@ -21,9 +21,14 @@ export async function POST(request: Request) {
   try {
     const body = await parseJsonWithinLimit(request, 8 * 1024) as Record<string, unknown>;
     const manager = getHarmonyDeviceManager();
-    if (body.action === "acquire") {
+    if (body.action === "acquire" || body.action === "takeover") {
       if (!validSerial(body.serial) || !validIdentity(body.ownerId)) {
         throw new HarmonyError("INVALID_ARGUMENT", "A valid serial and ownerId are required");
+      }
+      if (body.action === "takeover") {
+        if (body.confirmed !== true) throw new HarmonyError("INVALID_ARGUMENT", "Explicitly confirm stopping the current controller before taking over");
+        const stopped = await manager.stopDevice(body.serial, "manual_takeover");
+        if (stopped.cleanup !== "complete") throw new HarmonyError("DEVICE_BUSY", "Cleanup is uncertain; confirm release on the phone before taking control");
       }
       const lease = await manager.acquireLease({
         serial: body.serial,

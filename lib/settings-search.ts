@@ -63,6 +63,8 @@ export interface SettingsSearchItem {
 export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   { id: "shell", section: "shell", labelKey: "shell.title", descriptionKey: "shell.description", keywords: ["terminal", "shell", "PowerShell", "终端", "命令"] },
   { id: "shell.history", section: "shell", labelKey: "shell.history", descriptionKey: "shell.nativeHistoryHint", keywords: ["history", "PowerShell", "PSReadLine", "历史", "提示", "补全"] },
+  { id: "shell.defaultShell", section: "shell", labelKey: "shell.defaultShell", descriptionKey: "shell.nativeProfileHint", keywords: ["bash", "powershell", "cmd", "wsl", "zsh", "shell", "终端", "切换", "默认"] },
+  { id: "shell.agentTimeout", section: "shell", labelKey: "shell.agentTimeoutTitle", descriptionKey: "shell.agentTimeoutDescription", keywords: ["bash", "powershell", "timeout", "duration", "命令", "超时", "时长"] },
   { id: "shortcuts.voice", section: "shortcuts", labelKey: "commands.voiceInput", descriptionKey: "shortcuts.voiceInputDescription", keywords: ["voice", "dictation", "microphone", "shortcut", "语音", "听写", "麦克风", "快捷键"] },
   { id: "general.updateSchedule", section: "general", requiresDesktop: true, labelKey: "settings.updateSchedule", descriptionKey: "settings.updateScheduleDescription", keywords: ["update", "schedule", "silent", "更新", "静默", "安装", "定时"] },
   { id: "general", section: "general", labelKey: "settings.general", descriptionKey: "settings.generalDescription", keywords: ["preferences", "偏好"] },

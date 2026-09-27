@@ -79,6 +79,15 @@ extraResources:
     filter:
       - "LICENSE"
       - "SOURCE.md"
+  - from: ../third_party/mediabunny
+    to: licenses/mediabunny
+    filter:
+      - "LICENSE"
+      - "SOURCE.md"
+  - from: ../node_modules/mediabunny/src
+    to: licenses/mediabunny/source
+    filter:
+      - "**/*"
   - from: ../third_party/react-screenshots
     to: licenses/react-screenshots
     filter:
@@ -88,6 +97,12 @@ extraResources:
 win:
   icon: icon.ico
   extraResources:
+    - from: ../node_modules/@microsoft/winappcli/bin/win-x64
+      to: winappcli
+      filter:
+        - "**/*"
+    - from: ../node_modules/@microsoft/winappcli/LICENSE
+      to: licenses/winappcli-LICENSE
     - from: build/speech
       to: speech
       filter:

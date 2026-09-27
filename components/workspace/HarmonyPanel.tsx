@@ -6,10 +6,13 @@ import { Component, useCallback, useEffect, useMemo, useRef, useState, type Erro
 import { useI18n } from "@/hooks/useI18n";
 import { useHarmonyLiveFrame } from "@/hooks/useHarmonyLiveFrame";
 import { formatHarmonyDeviceLabel } from "@/lib/harmony/device-label";
+import { framePointFromClient } from "@/lib/harmony/observation/geometry";
 import { copyText } from "@/lib/clipboard";
 import { AliIcon } from "../AliIcon";
 import { HarmonyLogViewer } from "./HarmonyLogViewer";
 import { HarmonyCheckPanel } from "./HarmonyCheckPanel";
+import { ApprovalDialog } from "./harmony/ApprovalDialog";
+import { WorkbenchTools } from "./harmony/WorkbenchTools";
 import styles from "./HarmonyPanel.module.css";
 
 type RuntimeProfile = "normal" | "device-control";
@@ -544,6 +547,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       body: JSON.stringify({
         action: mediaActionName,
         serial: selectedSerial,
+        leaseToken: lease?.token,
         ownerId: ownerIdRef.current,
       }),
     }), async (payload) => {
@@ -585,10 +589,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
     const canvas = frameRef.current;
     if (!canvas || !frameSize) return null;
     const bounds = canvas.getBoundingClientRect();
-    const x = Math.round(((event.clientX - bounds.left) / bounds.width) * frameSize.width);
-    const y = Math.round(((event.clientY - bounds.top) / bounds.height) * frameSize.height);
-    if (x < 0 || y < 0 || x >= frameSize.width || y >= frameSize.height) return null;
-    return { x, y };
+    return framePointFromClient(event.clientX, event.clientY, bounds, frameSize.width, frameSize.height);
   };
 
   const formatRecordingElapsed = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
@@ -723,16 +724,20 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       <button className={styles.captureButton} type="button" disabled={!canScreenshot || busy} onClick={() => mediaAction("capture_screenshot")}><AliIcon name="save" size={13} />{copy("截图", "Screenshot")}</button>
       {recording
         ? <button className={ownsRecording ? styles.recordingButton : undefined} type="button" disabled={busy || !ownsRecording} onClick={() => mediaAction("stop_recording")}><AliIcon name="stop" size={13} />{ownsRecording ? copy(`停止录屏 · ${formatRecordingElapsed(recordingElapsed)}`, `Stop recording · ${formatRecordingElapsed(recordingElapsed)}`) : copy("Agent 正在录屏", "Agent recording")}</button>
-        : <button type="button" disabled={!selectedOnline || busy} onClick={() => mediaAction("start_recording")}><AliIcon name="play" size={13} />{copy("开始录屏", "Start recording")}</button>}
+        : <button type="button" disabled={!selectedOnline || !lease || busy} onClick={() => mediaAction("start_recording")}><AliIcon name="play" size={13} />{copy("开始录屏", "Start recording")}</button>}
       {lease?.serial === selectedSerial
         ? <button className={styles.controlButton} type="button" disabled={busy} onClick={release}><AliIcon name="mobile" size={13} />{copy("结束控制", "Release control")}</button>
         : <button className={styles.controlButton} type="button" disabled={!selected || selected.state !== "online" || (Boolean(holder) && !ownsRecoverableLease)} onClick={acquire}>
           <AliIcon name="mobile" size={13} />{ownsRecoverableLease ? copy("继续控制", "Resume control") : copy("手动控制", "Manual control")}
         </button>}
+      {holder && !ownsRecoverableLease && !lease ? <button type="button" disabled={busy} onClick={() => void run(
+        () => jsonRequest<{ lease: ManualLease }>("/api/harmony/manual", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "takeover", confirmed: true, serial: selectedSerial, ownerId: ownerIdRef.current }) }),
+        payload => { setLease(payload.lease); void refresh(); },
+      )}>{copy("停止当前控制者并接管", "Stop current controller and take over")}</button> : null}
       <button className={`${styles.iconButton} ${styles.stopButton}`} type="button" onClick={() => void run(
-        () => jsonRequest("/api/harmony/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "emergency_stop", reason: "desktop-panel" }) }),
+        () => jsonRequest("/api/harmony/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "stop_device", serial: selectedSerial }) }),
         () => { setLease(null); void refresh(); },
-      )} title={copy("停止所有设备操作", "Stop all device actions")} aria-label={copy("停止所有设备操作", "Stop all device actions")}><AliIcon name="stop" size={13} /></button>
+      )} title={copy("停止当前设备操作", "Stop this device")} aria-label={copy("停止当前设备操作", "Stop this device")}><AliIcon name="stop" size={13} /></button>
       <div className={styles.zoomControls} aria-label={copy("画面缩放", "Screen zoom")}>
         <button type="button" disabled={frameZoom === "fit"} onClick={() => setFrameZoom((current) => current === "200" ? "150" : current === "150" ? "100" : "fit")} aria-label={copy("缩小画面", "Zoom out")}><AliIcon name="minus" size={13} /></button>
         <select aria-label={copy("画面缩放", "Screen zoom")} value={frameZoom} onChange={(event) => setFrameZoom(event.target.value as FrameZoom)}>
@@ -790,14 +795,18 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
             const to = imagePoint(event);
             pointerStartRef.current = null;
             if (!from || !to || !lease || !liveFrame || !frameMatchesDevice) return;
+            if (!liveFrame.geometryId) {
+              setFrameInteractionError(copy("无法确认原生坐标，请重新连接或使用界面控件定位。", "Native coordinates are unavailable. Reconnect or use semantic controls."));
+              return;
+            }
             const distance = Math.hypot(to.x - from.x, to.y - from.y);
             if (distance > 12 && !selected?.capabilities.swipe) {
               setFrameInteractionError(copy("当前设备不支持滑动注入。", "This device does not support swipe injection."));
               return;
             }
             void action(distance > 12
-              ? { action: "swipe", fromX: from.x, fromY: from.y, toX: to.x, toY: to.y, durationMs: 300, generation: liveFrame.generation }
-              : { action: "tap", x: to.x, y: to.y, generation: liveFrame.generation });
+              ? { action: "swipe", fromX: from.x, fromY: from.y, toX: to.x, toY: to.y, durationMs: 300, generation: liveFrame.generation, coordinateSpace: "frame", geometryId: liveFrame.geometryId }
+              : { action: "tap", x: to.x, y: to.y, generation: liveFrame.generation, coordinateSpace: "frame", geometryId: liveFrame.geometryId });
           }}
         /> : <div className={styles.frameEmpty}>
           <AliIcon name="mobile" size={28} />
@@ -810,6 +819,8 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
       </div>
     </div>
 
+    <ApprovalDialog serial={selectedSerial} active={active} chinese={chinese} />
+    <WorkbenchTools key={selectedSerial} serial={selectedSerial} active={active} chinese={chinese} leaseToken={lease?.token} geometryId={liveFrame?.geometryId} cwd={cwd} ownerId={ownerIdRef.current} />
     {lease?.serial === selectedSerial ? <div className={styles.quickControls}>
       <div className={styles.keyRow} aria-label={copy("系统按键", "System keys")}>
         <button type="button" disabled={!lease || busy || !selected?.capabilities.keys} onClick={() => void action({ action: "press_key", key: "back" })} title={copy("返回", "Back")}><AliIcon name="arrowleft" size={14} /><span>{copy("返回", "Back")}</span></button>
@@ -883,12 +894,15 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, ses
                 <button type="submit" disabled={!lease || !bundleName || busy || !selected?.capabilities.launchApp}>{copy("打开", "Open")}</button>
               </form>
               <div className={styles.inspectRow}>
+                <button type="button" disabled={!selectedOnline || !lease || busy} onClick={() => void action({ action: "initialize_mirror" }).then(result => { if (result !== undefined) requestFrame(); })}>{copy("初始化投屏服务（需授权）", "Initialize video service (approval required)")}</button>
                 <button type="button" disabled={!selectedOnline || busy} onClick={requestFrame}><AliIcon name="reload" size={13} />{copy("重连视频流", "Reconnect video")}</button>
                 <button type="button" disabled={!selectedOnline || busy || !selected?.capabilities.uiTree} onClick={() => void run(
                   () => jsonRequest<{ snapshot: unknown }>(`/api/harmony/tree?serial=${encodeURIComponent(selectedSerial)}`),
                   (payload) => setTree(payload.snapshot),
                 )}><AliIcon name="code" size={13} />{copy("读取界面结构", "Read interface structure")}</button>
               </div>
+              <p>{copy("投屏不会自动唤醒或解锁手机；请在手机上手动解锁并完成屏幕采集授权。", "Mirroring never wakes or unlocks your phone. Unlock it and grant capture permission on the phone.")}</p>
+              <button type="button" disabled={busy} onClick={() => void run(() => jsonRequest("/api/harmony/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "emergency_stop", reason: "desktop-global-stop" }) }), () => setLease(null))}>{copy("停止所有设备操作", "Stop all devices")}</button>
               <details className={styles.diagnostics}>
                 <summary>{copy("开发者信息", "Developer details")}</summary>
                 <pre>{JSON.stringify({ selected, holder, snapshot, diagnostics, tree }, null, 2)}</pre>

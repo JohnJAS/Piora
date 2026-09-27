@@ -26,6 +26,7 @@ export interface StandaloneServerOptions {
   agentDirectory: string;
   speechPacksDirectory?: string;
   harmonyToolsDirectory?: string;
+  winAppPath?: string;
   token: string;
   logger: Logger;
   preferredPort?: number;
@@ -313,6 +314,7 @@ export class StandaloneServer {
           ...(this.options.harmonyToolsDirectory
             ? { PIORA_HARMONY_TOOLS_DIR: this.options.harmonyToolsDirectory }
             : {}),
+          ...(this.options.winAppPath ? { PIORA_WINAPP_PATH: this.options.winAppPath } : {}),
           // Desktop requests use the per-launch token below. Do not inherit an
           // unrelated shell-wide Basic Auth password that the renderer and
           // health probe cannot satisfy.

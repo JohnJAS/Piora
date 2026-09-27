@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `71df8d92e9e8c5440b9f98313158ef629d38e9c2acf2e13ed95497494ef20868`
+Lockfile SHA-256: `09730e51c8083328fcbcc22ed47fabed2750f38f9a4d3e05938a30b3474be2e5`
 
-Unique locked packages: **1369**. Runtime packages: **929**. Build/development-only packages: **440**.
+Unique locked packages: **1373**. Runtime packages: **933**. Build/development-only packages: **440**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -216,6 +216,7 @@ Every locked package declares a license.
 | `@mariozechner/clipboard-win32-arm64-msvc` | `0.3.9` | MIT | Yes |
 | `@mariozechner/clipboard-win32-x64-msvc` | `0.3.9` | MIT | Yes |
 | `@mermaid-js/parser` | `1.2.0` | MIT | No |
+| `@microsoft/winappcli` | `0.7.0` | MIT | Yes |
 | `@mixmark-io/domino` | `2.2.0` | BSD-2-Clause | No |
 | `@modelcontextprotocol/sdk` | `1.30.0` | MIT | No |
 | `@next/env` | `16.3.3` | MIT | No |
@@ -297,6 +298,8 @@ Every locked package declares a license.
 | `@types/d3-transition` | `3.0.9` | MIT | No |
 | `@types/d3-zoom` | `3.0.8` | MIT | No |
 | `@types/debug` | `4.1.13` | MIT | No |
+| `@types/dom-mediacapture-transform` | `0.1.12` | MIT | No |
+| `@types/dom-webcodecs` | `0.1.13` | MIT | No |
 | `@types/estree` | `1.0.8` | MIT | No |
 | `@types/estree-jsx` | `1.0.5` | MIT | No |
 | `@types/geojson` | `7946.0.16` | MIT | No |
@@ -665,6 +668,7 @@ Every locked package declares a license.
 | `mdast-util-to-markdown` | `2.1.2` | MIT | No |
 | `mdast-util-to-string` | `4.0.0` | MIT | No |
 | `media-typer` | `1.1.1` | MIT | No |
+| `mediabunny` | `1.60.0` | MPL-2.0 | No |
 | `merge-descriptors` | `2.0.0` | MIT | No |
 | `mermaid` | `11.16.1` | MIT | No |
 | `micromark` | `4.0.2` | MIT | No |

@@ -1,6 +1,8 @@
+import { actionCatalog, validateAction } from "./contracts/actions";
 import { extname, isAbsolute } from "node:path";
 
 import { asHarmonyError, HarmonyError } from "./errors";
+import { requireValidObservation } from "./observation/quality";
 import { findHarmonyNodes, harmonyNodeCenter, resolveHarmonyNode, validateHarmonySelector } from "./selector";
 import type {
   HarmonyAutomationBackend,
@@ -20,21 +22,21 @@ const MAX_TEXT_LENGTH = 8_192;
 const MAX_TEXT_BYTES = 16 * 1024;
 const MAX_SCENARIO_TIMEOUT_MS = 5 * 60_000;
 const APP_IDENTIFIER_PATTERN = /^[A-Za-z][A-Za-z0-9_.]{0,255}$/;
-const SCENARIO_ACTIONS = new Set<HarmonyScenarioStep["action"]>([
-  "tap", "double_tap", "long_press", "input_text", "clear_text", "scroll_find",
-  "swipe", "fling", "press_key", "launch_app", "stop_app", "clear_app_data",
-  "uninstall_app", "install_app", "wait_for", "assert", "wait_idle", "checkpoint",
-]);
+const SCENARIO_ACTIONS = new Set(Object.entries(actionCatalog).filter(([, value]) => "scenario" in value).map(([key]) => key));
 
 export interface HarmonyScenarioExecutorContext {
   serial: string;
   generation: number;
+  leaseEpoch?: number;
   backend: HarmonyAutomationBackend;
   signal: AbortSignal;
   now?: () => number;
   capture(options: { includeTree: boolean; includeScreenshot: boolean }, signal?: AbortSignal): Promise<HarmonySnapshot>;
   invalidateSnapshot(): void;
   beforeStep?(): void;
+  scrollBudget?: { remaining: number };
+  compound?(step: Extract<HarmonyScenarioStep, { action: "voice_input" | "geometry_assert" }>, signal: AbortSignal): Promise<string>;
+  onStep?(result: HarmonyScenarioStepResult, checkpoint?: { name: string; stepIndex: number; snapshot: HarmonySnapshot }): Promise<void> | void;
 }
 
 function bounded(value: number | undefined, fallback: number, minimum: number, maximum: number, name: string): number {
@@ -138,6 +140,7 @@ export function validateHarmonyScenario(options: HarmonyScenarioOptions): void {
   normalizePolicy(options.policy);
   for (const [index, typedStep] of options.steps.entries()) {
     if (!record(typedStep)) throw new HarmonyError("INVALID_ARGUMENT", `Scenario step ${index} is invalid`);
+    validateAction(typedStep, "scenario");
     const step = typedStep as Record<string, unknown>;
     const prefix = `steps[${index}]`;
     if (typeof step.action !== "string" || !SCENARIO_ACTIONS.has(step.action as HarmonyScenarioStep["action"])) {
@@ -221,6 +224,7 @@ async function waitFor(
   do {
     context.beforeStep?.();
     latest = await context.capture({ includeTree: true, includeScreenshot: false }, context.signal);
+    requireValidObservation(latest, condition.exists === false);
     const matches = findHarmonyNodes(latest.nodes ?? [], condition.selector);
     const present = condition.selector.index === undefined
       ? matches.length > 0
@@ -253,11 +257,17 @@ async function semanticOrLayout(
       return result.strategy;
     } catch (error) {
       const normalized = asHarmonyError(error);
-      if (normalized.code !== "CAPABILITY_UNAVAILABLE" && normalized.code !== "AUTOMATION_DRIVER_UNAVAILABLE") throw error;
+      if ((normalized.code !== "CAPABILITY_UNAVAILABLE" && normalized.code !== "AUTOMATION_DRIVER_UNAVAILABLE") || normalized.details?.dispatchState !== "not-sent") throw error;
     }
   }
 
+  if (step.action === "input_text" || step.action === "clear_text") {
+    throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Exact set, append and clear require a semantic text provider with readback", {
+      details: { dispatchState: "not-sent", requiredCapability: "semantic_text" },
+    });
+  }
   const snapshot = await context.capture({ includeTree: true, includeScreenshot: false }, context.signal);
+  requireValidObservation(snapshot);
   const node = resolveHarmonyNode(snapshot.nodes ?? [], step.selector);
   const point = harmonyNodeCenter(node);
   context.invalidateSnapshot();
@@ -268,11 +278,6 @@ async function semanticOrLayout(
   } else if (step.action === "long_press") {
     if (!context.backend.longPress) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Long press is unavailable");
     await context.backend.longPress(context.serial, point.x, point.y, context.signal);
-  } else if (step.action === "input_text") {
-    await context.backend.tap(context.serial, point.x, point.y, context.signal);
-    await context.backend.inputText(context.serial, step.text, context.signal);
-  } else {
-    throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Clearing a semantic text component requires the Hypium automation driver");
   }
   return "layout_revalidated_coordinates";
 }
@@ -280,30 +285,13 @@ async function semanticOrLayout(
 async function scrollFind(
   context: HarmonyScenarioExecutorContext,
   step: Extract<HarmonyScenarioStep, { action: "scroll_find" }>,
-  policy: Required<HarmonyScenarioPolicy>,
 ): Promise<string> {
-  if (context.backend.semanticAction && step.container) {
-    try {
-      const result = await context.backend.semanticAction(context.serial, {
-        action: "scroll_find",
-        selector: step.selector,
-        container: step.container,
-        tapAfterScroll: step.tap,
-        timeoutMs: policy.defaultTimeoutMs,
-      }, context.signal);
-      context.invalidateSnapshot();
-      return result.strategy;
-    } catch (error) {
-      const normalized = asHarmonyError(error);
-      if (normalized.code !== "CAPABILITY_UNAVAILABLE" && normalized.code !== "AUTOMATION_DRIVER_UNAVAILABLE"
-        && normalized.code !== "UI_TARGET_NOT_FOUND") throw error;
-    }
-  }
-
+  // Hypium scrollSearch has no direction/count contract. Use one bounded gesture at a time.
   const maxSwipes = bounded(step.maxSwipes, 8, 1, 30, "scroll_find.maxSwipes");
   const direction = step.direction ?? "down";
   for (let attempt = 0; attempt <= maxSwipes; attempt += 1) {
     const snapshot = await context.capture({ includeTree: true, includeScreenshot: false }, context.signal);
+    requireValidObservation(snapshot);
     const matches = findHarmonyNodes(snapshot.nodes ?? [], step.selector);
     if (matches.length > 0) {
       const node = resolveHarmonyNode(snapshot.nodes ?? [], step.selector);
@@ -319,8 +307,9 @@ async function scrollFind(
     // "down" means advancing toward content below, which requires an upward finger gesture.
     const gesture = gestureCoordinates(snapshot.nodes ?? [], direction === "down" ? "up" : "down", container);
     context.invalidateSnapshot();
+    if (context.scrollBudget && context.scrollBudget.remaining-- <= 0) throw new HarmonyError("SCENARIO_FAILED", "Scenario exhausted its cumulative 60-swipe search budget", { details: { dispatchState: "not-sent" } });
     await context.backend.swipe(context.serial, gesture.fromX, gesture.fromY, gesture.toX, gesture.toY, 350, context.signal);
-    if (context.backend.waitForIdle) await context.backend.waitForIdle(context.serial, 150, 2_000, context.signal).catch(() => undefined);
+    if (context.backend.waitForIdle) await context.backend.waitForIdle(context.serial, 150, 2_000, context.signal);
   }
   throw new HarmonyError("UI_TARGET_NOT_FOUND", "The requested UI target was not found after bounded scrolling", {
     details: { maxSwipes }, retryable: true,
@@ -333,6 +322,10 @@ async function executeStep(
   policy: Required<HarmonyScenarioPolicy>,
 ): Promise<string | undefined> {
   context.beforeStep?.();
+  if (step.action === "voice_input" || step.action === "geometry_assert") {
+    if (!context.compound) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "This scenario runtime has no compound action provider", { details: { dispatchState: "not-sent" } });
+    return context.compound(step, context.signal);
+  }
   if (step.action === "checkpoint") return "checkpoint";
   if (step.action === "wait_for") {
     await waitFor(context, step.condition, policy);
@@ -345,28 +338,33 @@ async function executeStep(
   if (step.action === "wait_idle") {
     const idleMs = bounded(step.idleMs, 250, 50, 10_000, "wait_idle.idleMs");
     const timeoutMs = bounded(step.timeoutMs, 5_000, idleMs, 60_000, "wait_idle.timeoutMs");
-    if (context.backend.waitForIdle) await context.backend.waitForIdle(context.serial, idleMs, timeoutMs, context.signal);
-    else await delay(idleMs, context.signal);
-    return context.backend.waitForIdle ? "driver_idle" : "bounded_delay";
+    if (context.backend.waitForIdle) {
+      const receipt = await context.backend.waitForIdle(context.serial, idleMs, timeoutMs, context.signal);
+      return receipt?.strategy ?? "driver_idle";
+    }
+    await delay(idleMs, context.signal);
+    return "bounded_delay";
   }
   if (step.action === "tap" || step.action === "double_tap" || step.action === "long_press"
     || step.action === "input_text" || step.action === "clear_text") {
     const strategy = await semanticOrLayout(context, step, policy);
     if (step.waitFor) await waitFor(context, step.waitFor, policy);
     else if (policy.settleAfterAction && context.backend.waitForIdle) {
-      await context.backend.waitForIdle(context.serial, 150, 2_000, context.signal).catch(() => undefined);
+      await context.backend.waitForIdle(context.serial, 150, 2_000, context.signal);
     }
     return strategy;
   }
   if (step.action === "scroll_find") {
-    const strategy = await scrollFind(context, step, policy);
+    const strategy = await scrollFind(context, step);
     if (step.waitFor) await waitFor(context, step.waitFor, policy);
     return strategy;
   }
   if (step.action === "swipe" || step.action === "fling") {
     const snapshot = await context.capture({ includeTree: true, includeScreenshot: false }, context.signal);
+    requireValidObservation(snapshot);
     const gesture = gestureCoordinates(snapshot.nodes ?? [], step.direction);
     context.invalidateSnapshot();
+    if (step.action === "fling" && !context.backend.fling) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "No fling provider is available", { details: { dispatchState: "not-sent" } });
     if (step.action === "fling" && context.backend.fling) {
       await context.backend.fling(context.serial, gesture.fromX, gesture.fromY, gesture.toX, gesture.toY, step.durationMs, context.signal);
     } else {
@@ -374,7 +372,7 @@ async function executeStep(
     }
     if (step.waitFor) await waitFor(context, step.waitFor, policy);
     else if (policy.settleAfterAction && context.backend.waitForIdle) {
-      await context.backend.waitForIdle(context.serial, 150, 2_000, context.signal).catch(() => undefined);
+      await context.backend.waitForIdle(context.serial, 150, 2_000, context.signal);
     }
     return "relative_gesture";
   }
@@ -433,7 +431,7 @@ export async function runHarmonyScenario(
   else context.signal.addEventListener("abort", forwardAbort, { once: true });
   const scenarioTimeout = setTimeout(() => executionController.abort("scenario_timeout"), MAX_SCENARIO_TIMEOUT_MS);
   scenarioTimeout.unref?.();
-  const executionContext: HarmonyScenarioExecutorContext = { ...context, signal: executionController.signal };
+  const executionContext: HarmonyScenarioExecutorContext = { ...context, signal: executionController.signal, scrollBudget: { remaining: 60 } };
 
   try {
     for (const [index, step] of options.steps.entries()) {
@@ -442,35 +440,64 @@ export async function runHarmonyScenario(
         break;
       }
       const stepStarted = now();
+      let dispatched = false;
+      const writes = new Set(["tap", "doubleTap", "longPress", "swipe", "fling", "drag", "semanticAction", "inputText", "pressKey", "launchApp", "stopApp", "clearAppData", "installPackage", "uninstallPackage"]);
+      const receipt = (state: "not-sent" | "sent" | "unknown", verification: "passed" | "failed" | "not-run") => ({
+        action: step.action, dispatchState: state, effect: state === "not-sent" ? "not-applied" as const : "unknown" as const,
+        verification, provider: context.backend.kind, deviceEpoch: context.generation, leaseEpoch: context.leaseEpoch ?? 0,
+        startedAt: new Date(stepStarted).toISOString(), completedAt: new Date(now()).toISOString(),
+      });
+      const backend = new Proxy(context.backend, { get(target, key) {
+        const value = Reflect.get(target, key);
+        if (typeof value !== "function") return value;
+        return (...args: unknown[]) => { if (writes.has(String(key))) dispatched = true; return value.apply(target, args); };
+      } });
       try {
-        const strategy = await executeStep(executionContext, step, policy);
+        await context.onStep?.({ index, id: step.id, action: step.action, status: "running", durationMs: 0, receipt: receipt("unknown", "not-run") });
+        if (step.action === "voice_input") dispatched = true;
+        const strategy = await executeStep({ ...executionContext, backend }, step, policy);
         if (step.action === "checkpoint") checkpoint = { name: step.name, stepIndex: index };
         results.push({
           index,
           ...(step.id ? { id: step.id } : {}),
           action: step.action,
           status: "passed",
+          receipt: receipt(dispatched ? "sent" : "not-sent", ["assert", "wait_for", "geometry_assert", "voice_input", "input_text", "clear_text"].includes(step.action) || ("waitFor" in step && step.waitFor) ? "passed" : "not-run"),
           durationMs: Math.max(0, now() - stepStarted),
           ...(strategy ? { strategy } : {}),
         });
+        await context.onStep?.(results[results.length - 1], step.action === "checkpoint" ? {
+          name: step.name, stepIndex: index, snapshot: await executionContext.capture({ includeTree: true, includeScreenshot: false }, executionContext.signal),
+        } : undefined);
       } catch (error) {
         const normalized = asHarmonyError(error);
-        if (context.signal.aborted) throw normalized;
+        if (results.at(-1)?.index === index) results.pop();
         const timedOut = executionController.signal.aborted && executionController.signal.reason === "scenario_timeout";
         results.push({
           index,
           ...(step.id ? { id: step.id } : {}),
           action: step.action,
           status: "failed",
+          error: normalized.toJSON(),
+          receipt: receipt(normalized.details?.dispatchState === "not-sent" ? "not-sent" : dispatched ? "unknown" : "not-sent", "failed"),
           durationMs: Math.max(0, now() - stepStarted),
           message: timedOut
             ? "[SCENARIO_FAILED] Harmony scenario exceeded the five-minute execution limit"
             : `[${normalized.code}] ${normalized.message}`,
         });
+        await context.onStep?.(results[results.length - 1]);
+        if (context.signal.aborted) throw normalized;
         break;
       }
     }
 
+    for (let index = results.length; index < options.steps.length; index += 1) {
+      const step = options.steps[index];
+      results.push({ index, id: step.id, action: step.action, status: "not-run", durationMs: 0, receipt: {
+        action: step.action, dispatchState: "not-sent", effect: "not-applied", verification: "not-run", provider: context.backend.kind,
+        deviceEpoch: context.generation, leaseEpoch: context.leaseEpoch ?? 0, startedAt: new Date(now()).toISOString(), completedAt: new Date(now()).toISOString(),
+      } });
+    }
     let finalSnapshot: HarmonySnapshot | undefined;
     try {
       finalSnapshot = await executionContext.capture(

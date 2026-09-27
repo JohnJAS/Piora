@@ -4,9 +4,10 @@ import {
   getAgentDir,
 } from "@earendil-works/pi-coding-agent";
 import { closeSync, openSync, readSync } from "node:fs";
-import { normalize as normalizePath } from "node:path";
+import { join, normalize as normalizePath } from "node:path";
 import type { AgentMessage, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
-import type { SessionEntry as PiSessionEntry, SessionInfo as PiSessionInfo } from "@earendil-works/pi-coding-agent";
+import type { SessionEntry as PiSessionEntry } from "@earendil-works/pi-coding-agent";
+import { SessionCatalogIndex } from "./session-catalog-index";
 import { normalizeToolCalls } from "./normalize";
 import { sessionPathKey } from "./session-path";
 import { resolveProject, type ProjectInfo } from "./worktree";
@@ -17,7 +18,8 @@ import { getProjectlessChatWorkspace } from "./projectless-chat-server";
 export { getAgentDir };
 
 async function loadAllSessions(): Promise<SessionInfo[]> {
-  const piSessions: PiSessionInfo[] = await SessionManager.listAll();
+  const index = globalThis.__pioraSessionCatalogIndex ??= new SessionCatalogIndex();
+  const piSessions = await index.list(join(getAgentDir(), "sessions"));
   const pathToId = new Map<string, string>();
   for (const s of piSessions) pathToId.set(sessionPathKey(s.path), s.id);
 
@@ -89,6 +91,7 @@ export async function listAllSessions(): Promise<SessionInfo[]> {
 // Session path caches, stored in globalThis for hot-reload safety.
 // ============================================================================
 declare global {
+  var __pioraSessionCatalogIndex: SessionCatalogIndex | undefined;
   var __piSessionPathCache: Map<string, string> | undefined;
   var __piPathToSessionIdCache: Map<string, string> | undefined;
   var __piSessionListPromise: Promise<SessionInfo[]> | undefined;

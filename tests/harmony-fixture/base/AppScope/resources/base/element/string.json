@@ -1,0 +1,12 @@
+{
+  "string": [
+    {
+      "name": "app_name",
+      "value": "Piora Audio Fixture"
+    },
+    {
+      "name": "mic_reason",
+      "value": "Capture audio for a user-started microphone test"
+    }
+  ]
+}

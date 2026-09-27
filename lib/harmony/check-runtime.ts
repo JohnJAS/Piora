@@ -142,10 +142,20 @@ export function collectArktsFiles(projectRoot: string, requested?: string[]): st
 
 export function sourceFingerprint(projectRoot: string): string {
   const hash = createHash("sha256");
-  for (const file of collectArktsFiles(projectRoot)) {
-    const stat = statSync(file);
-    hash.update(relative(projectRoot, file).replace(/\\/g, "/")).update("\0").update(String(stat.size)).update("\0").update(String(stat.mtimeMs)).update("\n");
+  for (const file of collectArktsFiles(projectRoot).sort()) {
+    hash.update(relative(projectRoot, file).replace(/\\/g, "/")).update("\0").update(readFileSync(file)).update("\n");
   }
+  const visitConfig = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.isSymbolicLink()) continue;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory() && !IGNORE_DIRECTORIES.has(entry.name)) visitConfig(path);
+      else if (entry.isFile() && (["build-profile.json5", "oh-package.json5", "oh-package-lock.json5", "code-linter.json5", "module.json5", "app.json5", "hvigorfile.ts"].includes(entry.name) || entry.name.endsWith(".d.ts"))) {
+        hash.update(relative(projectRoot, path).replace(/\\/g, "/")).update("\0").update(readFileSync(path));
+      }
+    }
+  };
+  visitConfig(projectRoot);
   return hash.digest("hex");
 }
 

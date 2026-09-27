@@ -4,8 +4,9 @@ import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } fro
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
 import { createRequire } from "node:module";
+import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { extractAll, listPackage } from "@electron/asar";
 import { generateLicenseInventory } from "./generate-license-inventory.mjs";
@@ -49,6 +50,7 @@ const expectedBundledPetIds = Object.freeze([
   "shadow-kit",
 ]);
 const packagedRuntimeArchive = join(packagedWebRoot, "runtime.asar");
+const execFileAsync = promisify(execFile);
 let activeServerStderr = "";
 
 export function verifyPackagedCoreTools(tools) {
@@ -105,6 +107,7 @@ const requiredPaths = [
   "extensions/piora-browser.ts",
   "extensions/piora-file-changes.ts",
   "extensions/piora-harmony.ts",
+  ".harmony-worker/harmony/runtime/worker-entry.js",
   "extensions/piora-computer.ts",
   "lib/computer-control.ts",
   "extensions/piora-vision-agent.ts",
@@ -135,6 +138,7 @@ const requiredPaths = [
   "node_modules/tslib/package.json",
   "node_modules/node-pty/package.json",
   "node_modules/hypium-driver/package.json",
+  "node_modules/mediabunny/package.json",
   "node_modules/hypium-driver/build/lib/resource/uitest_agent_v1.2.2.so",
   "node_modules/xmldom/package.json",
 ];
@@ -580,6 +584,25 @@ async function inspectElectronShell(webRoot, required) {
   }
   await assertFile(trayIconPath);
   await verifyBrandStartupAssets(projectRoot, resourcesRoot);
+  if (isWindowsPackage) {
+    const winappRoot = join(resourcesRoot, "winappcli");
+    const sourceRoot = join(projectRoot, "node_modules", "@microsoft", "winappcli");
+    for (const fileName of ["winapp.exe", "libHarfBuzzSharp.dll", "libSkiaSharp.dll"]) {
+      const [sourcePath, packagedPath] = [join(sourceRoot, "bin", "win-x64", fileName), join(winappRoot, fileName)];
+      await assertFile(packagedPath);
+      const [sourceBytes, packagedBytes] = await Promise.all([readFile(sourcePath), readFile(packagedPath)]);
+      if (!sourceBytes.equals(packagedBytes)) throw new Error(`Packaged winapp CLI file differs from locked dependency: ${fileName}`);
+    }
+    const [sourceLicense, packagedLicense] = await Promise.all([
+      readFile(join(sourceRoot, "LICENSE")), readFile(join(resourcesRoot, "licenses", "winappcli-LICENSE")),
+    ]);
+    if (!sourceLicense.equals(packagedLicense)) throw new Error("Packaged winapp CLI license differs from locked dependency");
+    const options = { windowsHide: true, timeout: 15_000, maxBuffer: 1024 * 1024, env: { ...process.env, WINAPP_CLI_TELEMETRY_OPTOUT: "1" } };
+    const { stdout: version } = await execFileAsync(join(winappRoot, "winapp.exe"), ["--version"], options);
+    if (version.trim().split(/\s+/).at(-1) !== "0.7.0") throw new Error(`Packaged winapp CLI version mismatch: ${version.slice(-100)}`);
+    const { stdout: windows } = await execFileAsync(join(winappRoot, "winapp.exe"), ["ui", "list-windows", "--json"], options);
+    if (!Array.isArray(JSON.parse(windows))) throw new Error("Packaged winapp CLI could not list Windows windows");
+  }
 
   await generateLicenseInventory({ projectRoot, check: true });
   for (const fileName of ["LICENSE", "NOTICE", "THIRD_PARTY_LICENSES.md"]) {
@@ -631,6 +654,13 @@ async function inspectElectronShell(webRoot, required) {
     const packagedBytes = await readFile(join(packagedScreenshotAttributionRoot, fileName));
     if (!sourceBytes.equals(packagedBytes)) throw new Error(`Packaged screenshot attribution is stale: ${fileName}`);
   }
+  for (const fileName of ["LICENSE", "SOURCE.md"]) {
+    const source = await readFile(join(projectRoot, "third_party", "mediabunny", fileName));
+    const packaged = await readFile(join(resourcesRoot, "licenses", "mediabunny", fileName));
+    if (!source.equals(packaged)) throw new Error(`Packaged Mediabunny attribution is stale: ${fileName}`);
+  }
+  const mediaSource = await readFile(join(projectRoot, "node_modules", "mediabunny", "src", "index.ts"));
+  if (!mediaSource.equals(await readFile(join(resourcesRoot, "licenses", "mediabunny", "source", "index.ts")))) throw new Error("Packaged MPL source is missing or stale");
   for (const licensePath of [
     join(unpackedRoot, "LICENSE.electron.txt"),
     join(unpackedRoot, "LICENSES.chromium.html"),
@@ -794,6 +824,8 @@ async function main() {
     await assertFile(join(runtimeWebRoot, requiredPath));
   }
   const requirePackagedRuntime = createRequire(join(runtimeWebRoot, "package.json"));
+  const packagedMedia = requirePackagedRuntime("mediabunny");
+  if (typeof packagedMedia.Output !== "function" || typeof packagedMedia.EncodedVideoPacketSource !== "function") throw new Error("Packaged owned-recording muxer is unavailable");
   const packagedHypium = requirePackagedRuntime("hypium-driver");
   if (typeof packagedHypium?.UiDriver?.connect !== "function" || typeof packagedHypium?.BY?.text !== "function") {
     throw new Error("Packaged Hypium runtime does not expose the required UiDriver/BY API");
@@ -801,6 +833,9 @@ async function main() {
   const packagedXmlDom = JSON.parse(await readFile(join(runtimeWebRoot, "node_modules", "xmldom", "package.json"), "utf8"));
   if (packagedXmlDom.name !== "@xmldom/xmldom" || packagedXmlDom.version !== "0.9.12") {
     throw new Error("Packaged Hypium runtime does not use the reviewed xmldom 0.9.12 override");
+  }
+  for (const relative of [".harmony-worker/harmony/runtime/worker-entry.js", "lib/harmony/audio/acoustic-provider.ps1", "node_modules/hypium-driver/build/lib/resource/uitest_agent_v1.2.2.so"]) {
+    await assertFile(join(`${packagedRuntimeArchive}.unpacked`, relative));
   }
   const packagedPiAiRuntime = await verifyPackagedPiAiRuntime(runtimeWebRoot);
   const packagedPiAiModules = await verifyPackagedPiAiModuleSurface(runtimeWebRoot);

@@ -1,3 +1,5 @@
+> 历史设计/审计：当前运行规范以 [现行设备指南](HARMONYOS_DEVICE_AUTOMATION.md) 为准。旧 profile、审批和坐标回退描述不能作为当前实施要求。
+
 # HarmonyOS NEXT 自动化优化方案
 
 > 日期：2026-08-14

@@ -8,7 +8,7 @@ import { shellAssetPath, shellDataDirectory } from "./store";
 export function profileFor(executable: string): ShellProfile {
   const name = path.basename(executable).replace(/\.exe$/i, "").toLowerCase();
   const kind = ["pwsh", "powershell"].includes(name) ? "powershell" : name === "bash" ? "bash" : name === "zsh" ? "zsh" : name === "cmd" ? "cmd" : "custom";
-  const label = name === "pwsh" ? "PowerShell" : name === "powershell" ? "Windows PowerShell" : name === "bash" ? process.platform === "win32" ? "Git Bash" : "Bash" : name === "zsh" ? "Zsh" : name === "cmd" ? "Command Prompt" : path.basename(executable);
+  const label = name === "pwsh" ? "PowerShell 7" : name === "powershell" ? "Windows PowerShell" : name === "bash" ? process.platform === "win32" ? "Git Bash" : "Bash" : name === "zsh" ? "Zsh" : name === "cmd" ? "Command Prompt" : name === "wsl" ? "WSL" : path.basename(executable);
   return { executable, label, kind, integrated: ["powershell", "bash", "zsh"].includes(kind) };
 }
 export async function findExecutable(name: string): Promise<string | null> {
@@ -16,14 +16,14 @@ export async function findExecutable(name: string): Promise<string | null> {
   const directories = path.isAbsolute(name) ? [""] : (process.env.PATH || "").split(path.delimiter).filter(Boolean);
   for (const directory of directories) for (const extension of extensions) {
     const candidate = path.resolve(directory, name + extension.toLowerCase());
-    try { await access(candidate, process.platform === "win32" ? constants.F_OK : constants.X_OK); return candidate; } catch { /* Next candidate. */ }
+    try { await access(candidate, process.platform === "win32" ? constants.F_OK : constants.X_OK); if ((await stat(candidate)).isFile()) return candidate; } catch { /* Next candidate. */ }
   }
   return null;
 }
 export async function discoverShellProfiles(): Promise<ShellProfile[]> {
   const bundled = await bundledPowerShellProfile();
   const candidates = process.platform === "win32"
-    ? ["pwsh", "powershell", process.env.ComSpec || "cmd", "C:\\Program Files\\Git\\bin\\bash.exe"]
+    ? ["pwsh", path.join(process.env.ProgramFiles || "C:\\Program Files", "PowerShell", "7", "pwsh.exe"), "powershell", process.env.ComSpec || "cmd", "C:\\Program Files\\Git\\bin\\bash.exe"]
     : [process.env.SHELL || "/bin/bash", "/bin/bash", "/bin/zsh", "/bin/sh"];
   if (process.platform === "win32") {
     const git = await findExecutable("git");
@@ -57,7 +57,17 @@ export async function resolveShellProfile(configured?: string | null): Promise<S
 const shQuote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 
 /** The interactive terminal is independent of legacy Smart Shell preferences. */
-export async function resolveNativeShellProfile(): Promise<ShellProfile> {
+export async function discoverNativeShellProfiles(): Promise<ShellProfile[]> {
+  const profiles = await discoverShellProfiles();
+  if (process.platform === "win32") {
+    const wsl = await findExecutable("wsl");
+    if (wsl) profiles.push(profileFor(wsl));
+  }
+  return profiles.map(profile => ({ ...profile, native: true, integrated: false }));
+}
+
+export async function resolveNativeShellProfile(configured?: string | null): Promise<ShellProfile> {
+  if (configured) return { ...await resolveShellProfile(configured), integrated: false, native: true };
   if (process.platform !== "win32") {
     return { ...await resolveShellProfile(process.env.SHELL || "/bin/bash"), integrated: false, native: true };
   }
@@ -65,7 +75,11 @@ export async function resolveNativeShellProfile(): Promise<ShellProfile> {
   if (bundled) return { ...bundled, integrated: false, native: true };
   const executable = await findExecutable("pwsh")
     || await findExecutable(path.join(process.env.ProgramFiles || "C:\\Program Files", "PowerShell", "7", "pwsh.exe"));
-  if (!executable) throw new Error("PowerShell 7 is unavailable. Install PowerShell 7 or repair the Piora installation.");
+  if (!executable) {
+    const fallback = (await discoverNativeShellProfiles())[0];
+    if (!fallback) throw new Error("No shell executable is available");
+    return fallback;
+  }
   return { ...profileFor(executable), label: "PowerShell 7", integrated: false, native: true };
 }
 
@@ -79,6 +93,10 @@ export async function prepareShellLaunch(profile: ShellProfile, id: string, toke
   let args: string[] = [];
   if (profile.native) {
     delete env.PIORA_SHELL_TOKEN;
+    if (process.platform === "win32" && profile.kind === "bash") {
+      env.CHERE_INVOKING = "1";
+      return { args: ["--login", "-i"], env };
+    }
     return { args: profile.kind === "powershell" ? ["-NoExit", "-Command", nativePowerShellStartup] : ["bash", "zsh"].includes(profile.kind) ? ["-i"] : [], env };
   }
   if (!profile.integrated) return { args: profile.kind === "cmd" ? ["/D", "/Q", "/K"] : [], env };

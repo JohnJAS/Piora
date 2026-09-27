@@ -13,6 +13,7 @@ import type {
 } from "@/components/sidebar/sidebar-types";
 import { useI18n } from "@/hooks/useI18n";
 import { createBrowserViewportSync } from "@/lib/browser-viewport-sync";
+import { pollVisibleDocument } from "@/lib/visible-poller";
 import { AliIcon } from "../AliIcon";
 import styles from "./WorkspacePanel.module.css";
 
@@ -195,28 +196,20 @@ function AgentBrowserPanel({ active, sessionId }: { active: boolean; sessionId: 
 
   useEffect(() => {
     if (!active || !sessionId) return;
-    let cancelled = false;
-    let pending = false;
-    const refresh = async () => {
-      if (pending) return;
-      pending = true;
+    const polling = pollVisibleDocument(async (signal) => {
       try {
-        const response = await fetch(`/api/browser?sessionId=${encodeURIComponent(sessionId)}`, { cache: "no-store" });
+        const response = await fetch(`/api/browser?sessionId=${encodeURIComponent(sessionId)}`, { cache: "no-store", signal });
         const payload = await response.json() as BrowserState | null | { error: string };
         if (!response.ok) throw new Error(payload && "error" in payload ? payload.error : t("browser.unavailable"));
-        if (cancelled) return;
+        if (signal.aborted) return;
         setSnapshot({ sessionId, state: payload as BrowserState | null });
         setScreenshotKey((key) => key + 1);
         setError(null);
       } catch (cause) {
-        if (!cancelled) setError({ sessionId, message: cause instanceof Error ? cause.message : t("browser.unavailable") });
-      } finally {
-        pending = false;
+        if (!signal.aborted) setError({ sessionId, message: cause instanceof Error ? cause.message : t("browser.unavailable") });
       }
-    };
-    void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 900);
-    return () => { cancelled = true; window.clearInterval(timer); };
+    }, 900);
+    return () => polling.stop();
   }, [active, sessionId, t]);
 
   const state = snapshot?.sessionId === sessionId ? snapshot.state : null;
@@ -542,10 +535,11 @@ function ScreenshotBrowserPanel({ active, navigationRequest, onNavigationConsume
     setError(null);
   }, []);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await fetch("/api/browser", { cache: "no-store" });
+      const response = await fetch("/api/browser", { cache: "no-store", signal });
       const payload = await response.json() as BrowserState & { error?: string };
+      if (signal?.aborted) return;
       if (!response.ok) throw new Error(payload.error || t("browser.unavailable"));
       setState((previous) => {
         if (!previous || previous.revision !== payload.revision || previous.url !== payload.url) {
@@ -556,6 +550,7 @@ function ScreenshotBrowserPanel({ active, navigationRequest, onNavigationConsume
       });
       setError(null);
     } catch (refreshError) {
+      if (signal?.aborted) return;
       const message = refreshError instanceof Error ? refreshError.message : t("browser.unavailable");
       setError(message);
     }
@@ -563,9 +558,8 @@ function ScreenshotBrowserPanel({ active, navigationRequest, onNavigationConsume
 
   useEffect(() => {
     if (!active) return;
-    void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 900);
-    return () => window.clearInterval(timer);
+    const polling = pollVisibleDocument(refresh, 900);
+    return () => polling.stop();
   }, [active, refresh]);
 
   const act = useCallback((input: BrowserAction, options: { transient?: boolean; focusKeyboard?: boolean; refreshScreenshot?: boolean } = {}) => {

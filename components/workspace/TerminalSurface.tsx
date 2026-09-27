@@ -117,29 +117,53 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
       let resizeTimer: ReturnType<typeof setTimeout> | undefined;
       let resizeFrame = 0;
       let lastResize = "";
-      const post = (body: object) => {
+      let resizing = false;
+      const post = (body: object | (() => object | null)) => {
         const queuedGeneration = generation;
         chain = chain.then(async () => {
           if (disposed) return;
           if (terminalId && queuedGeneration !== generation) return;
-          const response = await fetch(terminalId ? transport === "ssh" ? `/api/ssh/sessions/${terminalId}/actions` : `/api/shell/sessions/${terminalId}/actions` : "/api/terminal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, ...body, ...(terminalId ? { generation: queuedGeneration } : {}) }), signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)]) });
+          const value = typeof body === "function" ? body() : body;
+          if (!value) return;
+          const response = await fetch(terminalId ? transport === "ssh" ? `/api/ssh/sessions/${terminalId}/actions` : `/api/shell/sessions/${terminalId}/actions` : "/api/terminal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, ...value, ...(terminalId ? { generation: queuedGeneration } : {}) }), signal: AbortSignal.any([abort.signal, AbortSignal.timeout(15_000)]) });
           if (!response.ok) throw new Error((await response.json()).error ?? `HTTP ${response.status}`);
           // Drain even successful replies before dequeuing the next keystroke.
           await response.arrayBuffer();
-        }).catch((error) => { if (!disposed) latest.current.onError?.(String(error)); });
+        }).catch((error) => { if (typeof body === "function") lastResize = ""; if (!disposed) latest.current.onError?.(String(error)); });
+        return chain;
+      };
+      const sizeKey = () => `${generation}:${term.cols}:${term.rows}`;
+      const schedulePtyResize = () => {
+        if (disposed || readOnly || !cwd || terminalId && generation < 0 || resizing || resizeTimer || sizeKey() === lastResize) return;
+        // Coalesce rapid drags without queueing stale sizes behind keystrokes.
+        resizeTimer = setTimeout(() => {
+          resizeTimer = undefined;
+          if (disposed) return;
+          resizing = true;
+          let attemptedKey = "";
+          void post(() => {
+            attemptedKey = sizeKey();
+            if (attemptedKey === lastResize) return null;
+            lastResize = attemptedKey;
+            return { action: "resize", cols: term.cols, rows: term.rows };
+          }).finally(() => {
+            resizing = false;
+            if (attemptedKey !== sizeKey()) schedulePtyResize();
+          });
+        }, 50);
       };
       const resize = () => {
         cancelAnimationFrame(resizeFrame);
+        resizeFrame = 0;
         if (disposed) return;
         if (!host.current?.clientWidth || !host.current.clientHeight) return;
         if (!fitVisibleHost()) { resizeFrame = requestAnimationFrame(resize); return; }
         flushOutput();
-        const key = `${generation}:${term.cols}:${term.rows}`;
-        if (!readOnly && cwd && key !== lastResize) { lastResize = key; post({ action: "resize", cols: term.cols, rows: term.rows }); }
+        schedulePtyResize();
       };
       const observer = new ResizeObserver(() => {
-        clearTimeout(resizeTimer);
-        resizeTimer = setTimeout(resize, 80);
+        // Fit/reflow while the divider is moving, not only after dragging stops.
+        if (!resizeFrame) resizeFrame = requestAnimationFrame(resize);
       });
       observer.observe(host.current);
       resize();

@@ -9,5 +9,7 @@ export async function createWebRuntimeArchive(source, destination) {
   // The DevEco CLI is started as a child-process script. Keep its executable
   // package on disk while preserving the virtual runtime.asar path used by
   // Electron's ASAR-aware filesystem.
-  await createPackageWithOptions(source, destination, { unpackDir: "**/{node-pty,@img,@deveco,shell/runtime}" });
+  // Harmony children, PowerShell audio helpers and HDC-pushed driver resources
+  // require real sidecar files, with ordinary Node resolution inside the child.
+  await createPackageWithOptions(source, destination, { unpackDir: "**/{node-pty,@img,@deveco,shell/runtime,hypium-driver,harmony/audio,.harmony-worker}" });
 }

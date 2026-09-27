@@ -64,11 +64,11 @@ export class ClipboardRuntime {
     powerMonitor.on("lock-screen", this.lock); powerMonitor.on("unlock-screen", this.unlock);
     this.timer = setInterval(() => {
       if (this.listener === "polling") void this.capture(false).catch(() => {});
-      if (Date.now() - this.lastHousekeeping > 60_000) {
+      if (Date.now() - this.lastHousekeeping >= 60_000) {
         this.lastHousekeeping = Date.now();
         void Promise.all([this.store.prune(), this.dragCache.clean()]).catch(cause => { this.error = String(cause); this.emit("status"); });
       }
-    }, 500);
+    }, this.listener === "native" ? 60_000 : 500);
     this.initialized = true;
     // Populate the first view from the current system clipboard too. Automatic
     // capture still honors a saved pause, app exclusions and locked screens.

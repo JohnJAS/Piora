@@ -1,3 +1,5 @@
+> 历史设计/审计：当前运行规范以 [现行设备指南](HARMONYOS_DEVICE_AUTOMATION.md) 为准。旧 profile、审批和坐标回退描述不能作为当前实施要求。
+
 # Piora 集成 HarmonyOS NEXT 真机自动化控制：可行性与技术设计
 
 > 状态：v0.2.1 已实现；2026-08-14 完成首轮可靠性与安全加固

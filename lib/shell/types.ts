@@ -5,6 +5,8 @@ export type ShellRunStatus = "running" | "awaiting_approval" | "awaiting_input" 
 export type CommandStatus = "accepted" | "running" | "completed" | "failed" | "interrupted" | "unknown";
 
 export interface ShellModelPreference { provider: string; modelId: string; thinkingLevel?: string }
+export interface NativeShellSettings { executable: string | null; bundled?: boolean }
+export interface NativeShellConfig extends NativeShellSettings { profiles: ShellProfile[] }
 export interface ShellSettings {
   executable: string | null;
   model: ShellModelPreference | null;

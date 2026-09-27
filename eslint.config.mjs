@@ -7,6 +7,7 @@ const eslintConfig = [
     ignores: [
       ".branding/**",
       ".verification/**",
+      ".harmony-worker/**",
       "**/.next/**",
       "local-pets/**",
       ".pi/**",

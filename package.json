@@ -1,6 +1,6 @@
 {
   "name": "piora",
-  "version": "0.5.2-beta.9",
+  "version": "0.5.2-beta.10",
   "private": true,
   "description": "Open-source Pi coding agent desktop application",
   "author": {
@@ -61,11 +61,11 @@
   ],
   "scripts": {
     "brand:prepare": "node scripts/prepare-branding.mjs",
-    "predev": "npm run brand:prepare",
-    "predev:desktop": "npm run brand:prepare",
-    "predev:lan": "npm run brand:prepare",
-    "prebuild": "npm run brand:prepare",
-    "prebuild:web": "npm run brand:prepare",
+    "predev": "npm run brand:prepare && npm run build:harmony-worker",
+    "predev:desktop": "npm run brand:prepare && npm run build:harmony-worker",
+    "predev:lan": "npm run brand:prepare && npm run build:harmony-worker",
+    "prebuild": "npm run brand:prepare && npm run build:harmony-worker",
+    "prebuild:web": "npm run brand:prepare && npm run build:harmony-worker",
     "pretypecheck": "npm run brand:prepare",
     "brand:icons": "node scripts/build-brand-icon.mjs",
     "dev": "next dev -H 127.0.0.1 -p 30141 --webpack",
@@ -76,12 +76,13 @@
     "build:desktop": "npm run build --workspace @piora/desktop",
     "build:app": "npm run build:web && npm run build:desktop",
     "typecheck": "tsc --noEmit && npm run typecheck --workspace @piora/desktop",
-    "pretest": "npm run build:desktop",
+    "pretest": "npm run build:harmony-worker && npm run build:desktop",
     "test": "node scripts/run-tests.mjs",
     "test:shell-resource": "node --test --test-concurrency=1 --test-name-pattern=\"clipboard copies on click|packaged Electron Shell opens|managed xterm handles|managed PTY preserves state|native PowerShell preserves\" lib/clipboard-click-browser.test.mjs lib/shell-packaging.test.mjs lib/shell-runtime.test.mjs lib/shell-surface-browser.test.mjs lib/native-terminal-browser.test.mjs",
     "test:team": "node --test lib/team-*.test.mjs lib/runtime-evidence.test.mjs components/CollapsibleUserContent.test.mjs",
     "test:team:acceptance": "node scripts/run-team-acceptance.mjs",
     "test:team:soak": "node scripts/run-team-soak.mjs",
+    "build:harmony-worker": "tsc -p tsconfig.harmony-worker.json",
     "test:harmony-check": "node --test lib/harmony-check.test.mjs",
     "test:harmony-check:real": "node scripts/verify-harmony-check.mjs",
     "perf:check": "node scripts/check-performance-budgets.mjs",
@@ -106,7 +107,11 @@
     "postinstall": "node scripts/patch-bundled-dependencies.mjs && npm run brand:prepare",
     "start": "next start -H 127.0.0.1 -p 30141",
     "start:lan": "next start -H 0.0.0.0 -p 30141",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "harmony:docs": "node scripts/generate-harmony-docs.mjs",
+    "harmony:docs:check": "node scripts/generate-harmony-docs.mjs --check && node scripts/verify-harmony-docs.mjs",
+    "harmony:fixture:prepare": "node scripts/prepare-harmony-fixture.mjs",
+    "harmony:fixture:verify-hap": "node scripts/verify-harmony-fixture-hap.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.3",
@@ -138,6 +143,7 @@
     "jszip": "^3.10.1",
     "katex": "^0.16.47",
     "mammoth": "^1.12.1",
+    "mediabunny": "1.60.0",
     "mermaid": "^11.16.1",
     "next": "^16.3.3",
     "node-pty": "1.1.0",
@@ -184,5 +190,8 @@
     "jiti": "^2.7.0",
     "postcss": "^8.5.25",
     "tailwindcss": "^4.3.3"
+  },
+  "optionalDependencies": {
+    "@microsoft/winappcli": "0.7.0"
   }
 }

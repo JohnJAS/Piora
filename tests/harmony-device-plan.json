@@ -1,0 +1,8 @@
+{
+  "description": "Fixture smoke acceptance only. Install the production fixture and unlock manually before starting; voice, physical keys and rotation need separate calibrated plans.",
+  "scenarios": [
+    { "name": "Launch fixture", "template": "launch-and-verify", "parameters": { "bundleName": "dev.piora.audio.fixture", "title": "Piora microphone fixture" } },
+    { "name": "Exact Chinese input", "template": "chinese-input", "parameters": { "text": "你好，鸿蒙 👋\n第二行 $ ` \"" } },
+    { "name": "Read-only checkpoint", "template": "safe-recovery", "parameters": { "target": "fixture-title" } }
+  ]
+}

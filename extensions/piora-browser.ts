@@ -1,6 +1,6 @@
 import { APP_DISPLAY_NAME } from "../lib/branding.ts";
 import { existsSync } from "node:fs";
-import { readFile, rename } from "node:fs/promises";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, getAgentDir, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -124,10 +124,18 @@ async function launchPersistentBrowser(): Promise<BrowserContext> {
   );
 }
 
-async function persistBrowserState(context: BrowserContext): Promise<void> {
-  const file = browserStorageStatePath();
-  await context.storageState({ path: `${file}.tmp`, indexedDB: true });
-  await rename(`${file}.tmp`, file);
+export function persistBrowserState(context: BrowserContext): Promise<void> {
+  // Chromium already persists localStorage/IndexedDB in its profile. Recovery
+  // below only needs session cookies; exporting every origin's databases after
+  // each XHR repeatedly copied large site data that was never read on restore.
+  const write = runtime.persistChain.catch(() => undefined).then(async () => {
+    const file = browserStorageStatePath();
+    const cookies = (await context.cookies()).filter(cookie => cookie.expires === -1);
+    await writeFile(`${file}.tmp`, JSON.stringify({ cookies }), { mode: 0o600 });
+    await rename(`${file}.tmp`, file);
+  });
+  runtime.persistChain = write.catch(() => undefined);
+  return write;
 }
 
 async function restoreBrowserState(context: BrowserContext): Promise<void> {
@@ -152,10 +160,7 @@ function scheduleBrowserStatePersistence(context: BrowserContext, delayMs = 600)
   if (runtime.persistTimer) return;
   runtime.persistTimer = setTimeout(() => {
     runtime.persistTimer = null;
-    runtime.persistChain = runtime.persistChain
-      .catch(() => undefined)
-      .then(() => persistBrowserState(context))
-      .catch(() => undefined);
+    void persistBrowserState(context).catch(() => undefined);
   }, delayMs);
   runtime.persistTimer.unref?.();
 }
@@ -498,14 +503,28 @@ async function describeBrowserView(session: BrowserSession): Promise<BrowserView
   };
 }
 
+// Multiple windows may preview the same Agent. Share only the in-flight frame;
+// a completed frame is not retained or reused after navigation/interaction.
+const pendingPreviewFrames = new WeakMap<Page, Promise<Buffer>>();
+function capturePreviewFrame(page: Page): Promise<Buffer> {
+  const pending = pendingPreviewFrames.get(page);
+  if (pending) return pending;
+  const capture = page.screenshot({ type: "png", animations: "disabled" });
+  pendingPreviewFrames.set(page, capture);
+  void capture.finally(() => {
+    if (pendingPreviewFrames.get(page) === capture) pendingPreviewFrames.delete(page);
+  }).catch(() => undefined);
+  return capture;
+}
+
 export async function getBrowserViewScreenshot(): Promise<Buffer> {
   const { session } = await getBrowserUiSession();
-  return session.page.screenshot({ type: "png", animations: "disabled" });
+  return capturePreviewFrame(session.page);
 }
 
 export async function getAgentBrowserViewScreenshot(sessionId: string): Promise<Buffer | null> {
   const session = agentBrowserSession(sessionId);
-  return session ? session.page.screenshot({ type: "png", animations: "disabled" }) : null;
+  return session ? capturePreviewFrame(session.page) : null;
 }
 
 type BrowserViewAction = {

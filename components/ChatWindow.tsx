@@ -321,16 +321,15 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     }
     return result;
   }, [handleBuiltinSlashCommand]);
-  const latestBash = useMemo(() => {
-    if (streamState.streamingMessage?.role === "bashExecution") {
-      return streamState.streamingMessage as BashExecutionMessage;
-    }
+  const latestHistoricalBash = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const message = messages[index];
       if (message.role === "bashExecution") return message;
     }
     return null;
-  }, [messages, streamState.streamingMessage]);
+  }, [messages]);
+  const latestBash = streamState.streamingMessage?.role === "bashExecution"
+    ? streamState.streamingMessage as BashExecutionMessage : latestHistoricalBash;
   useEffect(() => { onSlashCommandsChange?.(slashCommands); }, [onSlashCommandsChange, slashCommands]);
   useEffect(() => {
     if (session?.id) void loadSlashCommands();
@@ -612,28 +611,23 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     return () => { observer.disconnect(); container.removeEventListener("scroll", onScroll); };
   }, [replySource, scrollContainerRef]);
 
+  // Keep the composer independent of token/status-clock renders. Its own input,
+  // model, queue and recovery state still update immediately.
+  const composerContextControl = useMemo(() => (
+    <>
+      {isEmptyNew ? <NewSessionContextChip label={newSessionProjectLabel} title={isProjectlessChat ? undefined : messageCwd} /> : null}
+      <SystemPromptSelector selection={systemPromptSelection} binding={systemPromptBinding}
+        disabled={sessionBusy || systemPromptSaving} onChange={handleSystemPromptSelection} />
+    </>
+  ), [isEmptyNew, newSessionProjectLabel, isProjectlessChat, messageCwd, systemPromptSelection, systemPromptBinding, sessionBusy, systemPromptSaving, handleSystemPromptSelection]);
+
   const chatInputElement = (
     <ChatInput
       ref={chatInputRef}
       replySource={replySource}
       variant={isEmptyNew ? "launcher" : "conversation"}
       placeholder={isEmptyNew ? t("newSession.placeholder") : undefined}
-      contextControl={(
-        <>
-          {isEmptyNew ? (
-            <NewSessionContextChip
-              label={newSessionProjectLabel}
-              title={isProjectlessChat ? undefined : messageCwd}
-            />
-          ) : null}
-          <SystemPromptSelector
-            selection={systemPromptSelection}
-            binding={systemPromptBinding}
-            disabled={sessionBusy || systemPromptSaving}
-            onChange={handleSystemPromptSelection}
-          />
-        </>
-      )}
+      contextControl={composerContextControl}
       onSend={handleComposerSend}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}

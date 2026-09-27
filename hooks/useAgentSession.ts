@@ -490,6 +490,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
   const agentRunningRef = useRef(false);
+  const reconciliationRef = useRef<{ sid: string; runId: number; controller: AbortController } | null>(null);
   useEffect(() => {
     const receive = (event: Event) => {
       const detail = (event as CustomEvent).detail;
@@ -1180,15 +1181,21 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (!agentRunningRef.current) return;
     if (preparingPromptRunIdRef.current === promptRunIdRef.current) return;
     const runId = promptRunIdRef.current;
+    const pending = reconciliationRef.current;
+    if (pending?.sid === sid && pending.runId === runId) return;
+    // A slow old run must not block recovery of the newly selected run.
+    pending?.controller.abort();
+    const request = { sid, runId, controller: new AbortController() };
+    reconciliationRef.current = request;
     const phaseRevision = phaseEventRevisionRef.current;
     try {
-      const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`, { signal: AbortSignal.timeout(10_000) });
+      const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`, { signal: AbortSignal.any([request.controller.signal, AbortSignal.timeout(10_000)]) });
       if (!res.ok) return;
       const data = await res.json() as { running?: boolean; state?: AgentStateResponse };
       // A slow response can straddle a run boundary (previous run finished
       // and the user already started the next one while this request was in
       // flight) — everything in it is stale, drop it.
-      if (promptRunIdRef.current !== runId || !agentRunningRef.current) return;
+      if (request.controller.signal.aborted || sessionIdRef.current !== sid || promptRunIdRef.current !== runId || !agentRunningRef.current) return;
       const state = data.state;
       // Mirror compaction state unconditionally: a missed compaction_end
       // would otherwise leave the "Stop compaction" UI stuck. No state
@@ -1236,6 +1243,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       await finishPromptWithoutStream(sid, runId);
     } catch {
       // Network still down — the next poll / visibility / online tick retries.
+    } finally {
+      if (reconciliationRef.current === request) reconciliationRef.current = null;
     }
   }, [finishPromptWithoutStream, restoreStatusClock]);
 
@@ -1258,6 +1267,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     window.addEventListener("online", reconcile);
     return () => {
       clearInterval(interval);
+      reconciliationRef.current?.controller.abort();
+      reconciliationRef.current = null;
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("online", reconcile);
     };
@@ -1270,10 +1281,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current;
     if (!sid) return;
     let disposed = false;
+    let pending = false;
+    const controller = new AbortController();
     const reconcile = async () => {
+      if (disposed || pending) return;
+      pending = true;
       const revision = phaseEventRevisionRef.current;
       try {
-        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`, { signal: AbortSignal.timeout(10_000) });
+        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) });
         if (!res.ok) return;
         const data = await res.json() as { state?: AgentStateResponse };
         if (disposed || sessionIdRef.current !== sid || phaseEventRevisionRef.current !== revision || agentRunningRef.current) return;
@@ -1287,6 +1302,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
       } catch {
         // Keep the current timer during a connection loss; retry on recovery.
+      } finally {
+        pending = false;
       }
     };
     const onVisible = () => {
@@ -1298,6 +1315,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     window.addEventListener("online", reconcile);
     return () => {
       disposed = true;
+      controller.abort();
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("online", reconcile);

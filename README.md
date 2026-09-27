@@ -20,7 +20,7 @@ Piora 是基于 [Pi](https://github.com/earendil-works/pi) 构建的开源 AI �
 
 项目由 [pi-web](https://github.com/agegr/pi-web) 演进而来，沿用 Pi 的 AgentSession、JSONL 会话、模型接入和扩展机制，由社区独立维护，不隶属于 Pi、pi-web、OpenAI 或 Codex。
 
-本文对应源码版本 `0.5.2-beta.9`（beta）。可下载版本以 [GitHub Releases](https://github.com/kexijiang/Piora/releases) 为准。
+本文对应源码版本 `0.5.2-beta.10`（beta）。可下载版本以 [GitHub Releases](https://github.com/kexijiang/Piora/releases) 为准。
 
 桌面端可在“设置 > 数据与诊断 > 运行日志”查看实际日志文件路径、复制路径或打开所在文件夹。本次 beta 构建提供 Piora 与 XiaoYiHarness 品牌的 Windows 安装版和便携版；ZIP 与 Linux AppImage 请使用稳定版发布，XiaoYiHarness 使用新的名称与“交织 H”图标。
 
@@ -59,9 +59,9 @@ Piora 是基于 [Pi](https://github.com/earendil-works/pi) 构建的开源 AI �
 
 Windows 目标系统为 Windows 10/11 x64。安装包已包含 Piora 运行时，普通使用不需要另外安装 Node.js。开发工具、Git、编译器以及第三方 Skills 所需程序仍需按任务准备。
 
-未发布源码已接入内置 PowerShell 7：下一次 Windows 安装版、便携版和 ZIP 构建会携带完整 PowerShell 与 .NET 运行库，默认直接使用随包版本，无需额外安装。具体发布状态以 Releases 为准。
+本版本源码已接入内置 PowerShell 7：Windows 发布构建携带完整 PowerShell 与 .NET 运行库，默认直接使用随包版本，无需额外安装。具体发布状态以 Releases 为准。
 
-源码中的终端已改为直接操作 PowerShell 7，保留原生提示符、配置文件和交互输入。PSReadLine 会在输入时以灰字提示历史命令：默认在行尾按 `→` 接受建议，`↑` / `↓` 翻阅历史，`Ctrl+R` 搜索历史，`Tab` 补全命令和路径，`Ctrl+C` 中断执行。历史沿用 PowerShell 自己的文件及保存偏好；其他系统使用默认 Shell。
+源码中的终端支持从已安装的 PowerShell、Git Bash、命令提示符、WSL 等 Shell 中选择并新建标签，也可在“设置 → 终端”保存默认 Shell；Windows 自动选择时优先使用 PowerShell 7，其他系统使用默认 Shell。PowerShell 保留原生提示符、配置文件和交互输入，PSReadLine 会在输入时以灰字提示历史命令：默认在行尾按 `→` 接受建议，`↑` / `↓` 翻阅历史，`Ctrl+R` 搜索历史，`Tab` 补全命令和路径，`Ctrl+C` 中断执行。历史沿用 PowerShell 自己的文件及保存偏好。
 
 ## 2. 配置第一个模型
 
@@ -97,8 +97,8 @@ Windows 桌面包内置离线语音资源：SenseVoiceSmall INT8 模型和 sherp
 
 ## 5. 可选能力
 
-- **Windows 电脑控制**：在电脑控制设置中点击连接即可启用扩展并连接 Windows-MCP。需要本机安装 `uv`；新建编码会话后 `computer_control` 会进入可用工具列表。
-- **OpenHarmony 设备**：安装 DevEco Studio 或 Command Line Tools，开启设备 USB 调试并完成授权，然后在鸿蒙设备面板选择 HDC 和目标设备。
+- **Windows 电脑控制**：在电脑控制设置中点击连接即可启用扩展。安装包内置 winapp CLI，优先用 UIA 控件模式执行操作；控件不可用时由当前会话的视觉模型识别截图，再通过 Windows-MCP 操作。Windows-MCP 仍需本机安装 `uv`；新建编码会话后 `computer_control` 会进入可用工具列表。
+- **OpenHarmony 设备**：安装 DevEco Studio 或 Command Line Tools，开启 USB 调试并授权。在鸿蒙工作台检测设备、搜索测试应用、预览并执行场景；Agent 需任务应用授权，危险操作单次批准。投屏不自动解锁，按键保持和手机声学识音需要逐设备校准。见 [首次连接](docs/harmony/quickstart.md)、[能力目录](docs/harmony/capabilities.md) 和 [实测范围](docs/harmony/compatibility.md)。
 - **定时任务**：可创建沿用当前会话的周期跟进，或针对项目独立运行的任务。调度依赖 Piora 在本机保持运行。
 - **SSH 远程工作台**：右侧打开 SSH，给主机命名并测试、保存或直接连接。多台连接显示为独立标签；在已有任务中连接的主机会自动关联给该任务的 Agent。桌面版使用系统加密保存凭据，独立网页运行需先设置主密码。详见 [SSH 工作台说明](docs/SSH_WORKBENCH.md)。
 - **桌宠**：在设置中启用。透明区域会穿透点击，实际宠物区域可拖动和交互；窗口会保持固定尺寸并被校正到可见屏幕内。
@@ -217,8 +217,8 @@ CI 与发布流程通过同一份测试工作流，将完整测试按文件分�
 
 - 当前 Beta 是预览通道，可能存在尚未覆盖的设备、显示器、缩放比例和第三方模型兼容问题。
 - Windows 安装包暂未启用代码签名，首次下载或启动时可能出现系统信誉提示。
-- Beta 自动构建当前只发布 Windows x64；Linux x64 AppImage 由稳定版流程生成。Linux 不包含 Windows 专用电脑控制和本地 Whisper 运行时。
-- Windows 电脑控制依赖 `uv` 和首次连接时下载的固定版本 Windows-MCP/Python 环境；无障碍树质量会影响桌面读取和操作效果。
+- Beta 自动构建当前只发布 Windows x64；Linux x64 AppImage 由稳定版流程生成。Linux 不包含 Windows 专用电脑控制和本地 SenseVoiceSmall / sherpa-onnx 听写运行时。
+- Windows 电脑控制的 UIA 后端随 Windows 安装包提供；截图兜底依赖 `uv` 和首次连接时下载的固定版本 Windows-MCP/Python 环境。自定义控件可能需要视觉模型；锁屏、UAC 安全桌面和更高权限的应用无法通过普通桌面会话操控。
 - OpenHarmony 投屏与自动化依赖官方 HDC、设备开发者选项和 USB 授权；不同设备与系统版本需要实机验证。
 - 定时任务、后台 Agent 和本地更新调度需要 Piora 进程保持运行；电脑关机、休眠或应用完全退出后不会继续执行。
 - 关闭主窗口通常会收起到系统托盘。需要完全退出时，请使用托盘菜单中的退出命令。
@@ -227,3 +227,5 @@ CI 与发布流程通过同一份测试工作流，将完整测试按文件分�
 - 桌宠、启动动画、透明窗口和多显示器行为虽然有自动回归保护，特殊显卡驱动或远程桌面环境仍可能需要单独反馈与复现。
 
 遇到无法启动、黑屏或安装问题，请查看 [黑屏排查指南](docs/open-source/BLACK_SCREEN_TROUBLESHOOTING.md) 并在 [Issues](https://github.com/kexijiang/Piora/issues) 提交可复现信息。
+
+更多文档见[文档索引](docs/README.md)。

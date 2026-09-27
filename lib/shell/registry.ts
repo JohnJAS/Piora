@@ -4,7 +4,7 @@ import { validateTerminalCwd } from "../terminal-session";
 import { getShellStore } from "./store";
 import { ManagedShellSession } from "./session";
 import { resolveNativeShellProfile, resolveShellProfile } from "./profiles";
-import { readShellSettings } from "./settings";
+import { readNativeShellSettings, readShellSettings } from "./settings";
 import { ShellError, shellId } from "./errors";
 import type { ShellSession } from "./types";
 
@@ -25,7 +25,7 @@ export async function ensureDefaultShell(cwd: string, native = false): Promise<M
 export async function createShell(cwd: string, executable?: string | null, workspaceCwd = cwd, native = false): Promise<ManagedShellSession> {
   cwd = await validateTerminalCwd(cwd);
   workspaceCwd = await validateTerminalCwd(workspaceCwd);
-  const profile = native ? await resolveNativeShellProfile() : await resolveShellProfile(executable || (await readShellSettings()).executable);
+  const profile = native ? await resolveNativeShellProfile(executable || (await readNativeShellSettings()).executable) : await resolveShellProfile(executable || (await readShellSettings()).executable);
   const now = Date.now();
   const state: ShellSession = { id: randomUUID(), title: path.basename(cwd), initialCwd: cwd, workspaceCwd, cwd, profile, createdAt: now, updatedAt: now, generation: 0, connected: false, integration: "starting", integrationError: null, owner: "human", activeCommandId: null, activeRunId: null, model: null, draft: "", closed: false };
   const store = getShellStore(); await store.put("session", state.id, state);
@@ -46,7 +46,7 @@ export async function getShell(id: string): Promise<ManagedShellSession> {
     // Existing automatically selected PowerShell tabs adopt the packaged shell.
     // Explicit custom shell preferences are still honored.
     if (state.profile.native) {
-      state.profile = await resolveNativeShellProfile();
+      state.profile = await resolveNativeShellProfile(state.profile.bundled ? process.env.PIORA_BUNDLED_PWSH || state.profile.executable : state.profile.executable);
     } else if (state.profile.kind === "powershell" && !state.profile.bundled && process.env.PIORA_BUNDLED_PWSH) {
       const settings = await readShellSettings();
       if (!settings.executable && !process.env.PI_TERMINAL_SHELL) state.profile = await resolveShellProfile();

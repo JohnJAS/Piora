@@ -29,7 +29,14 @@ const MeasuredRow = memo(function MeasuredRow({ rowKey, measure, children }: { r
       if (rect.width > 0 && rect.height > 0) measure(rowKey, rect.height);
     };
     update();
-    const observer = new ResizeObserver(update);
+    const observer = new ResizeObserver(([entry]) => {
+      // ResizeObserver already measured the border box. Reading layout again
+      // for every changed message forces unnecessary synchronous layout work.
+      const box = entry?.borderBoxSize?.[0];
+      if (box) {
+        if (box.inlineSize > 0 && box.blockSize > 0) measure(rowKey, box.blockSize);
+      } else update();
+    });
     observer.observe(element, { box: "border-box" });
     return () => observer.disconnect();
   }, [rowKey, measure]);

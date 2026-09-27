@@ -101,3 +101,6 @@ desktop/build/speech/
 /.branding/
 /lib/generated/brand.ts
 /desktop/src/generated/brand.ts
+
+# Compiled isolated Harmony driver; staged by release CI
+.harmony-worker/

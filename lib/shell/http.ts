@@ -9,8 +9,8 @@ import { isTerminalSessionError } from "../terminal-session";
 import { createShell, getShell, listShells, closeShell, ensureDefaultShell } from "./registry";
 import { getShellStore } from "./store";
 import { ShellError, isShellError, shellId, shellText } from "./errors";
-import { discoverShellProfiles, resolveShellProfile } from "./profiles";
-import { readShellSettings, writeShellSettings, normalizeShellModel, normalizeShellSettings } from "./settings";
+import { discoverNativeShellProfiles, discoverShellProfiles, resolveNativeShellProfile, resolveShellProfile } from "./profiles";
+import { readNativeShellSettings, writeNativeShellSettings, readShellSettings, writeShellSettings, normalizeShellModel, normalizeShellSettings } from "./settings";
 import { discoverHistorySources, syncShellHistory } from "./history";
 import { shellCompletions, commandCatalog } from "./completions";
 import { classifyShellInput } from "./intent";
@@ -27,6 +27,10 @@ export async function handleShellRequest(request: Request, parts: string[]): Pro
     const store = getShellStore();
     if (method === "GET") {
       if (endpoint === "profiles") return json({ profiles: await discoverShellProfiles() });
+      if (endpoint === "native-settings") {
+        const [settings, profiles] = await Promise.all([readNativeShellSettings(), discoverNativeShellProfiles()]);
+        return json({ ...settings, profiles });
+      }
       if (endpoint === "settings") return json(await readShellSettings());
       if (endpoint === "sessions") return json({ sessions: await listShells(shellText(url.searchParams.get("cwd"), "cwd", 4096), url.searchParams.get("native") === "true") });
       if (endpoint === "history") {
@@ -68,6 +72,12 @@ export async function handleShellRequest(request: Request, parts: string[]): Pro
     const body = await parseJsonWithinLimit(request, 512 * 1024);
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new ShellError("Request must be a JSON object");
     const data = body as Record<string, unknown>;
+    if (endpoint === "native-settings") {
+      if (data.executable !== null && typeof data.executable !== "string") throw new ShellError("Invalid Shell executable");
+      const executable = typeof data.executable === "string" ? shellText(data.executable, "executable", 4096).trim() : null;
+      const profile = executable ? await resolveNativeShellProfile(executable) : null;
+      return json(await writeNativeShellSettings({ executable: profile?.executable || null, ...(profile?.bundled ? { bundled: true } : {}) }));
+    }
     if (endpoint === "settings") {
       const settings = normalizeShellSettings(data);
       if (settings.executable) await resolveShellProfile(settings.executable);

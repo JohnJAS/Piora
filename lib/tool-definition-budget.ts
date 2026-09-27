@@ -63,22 +63,26 @@ export function fitToolNamesWithinDefinitionBudget(
   const toolNames: string[] = [];
   const droppedToolNames: string[] = [];
   const seen = new Set<string>();
+  // JSON array size is the sum of its entries, commas and two brackets.
+  // Measure each definition once instead of reserializing the entire prefix
+  // for every candidate (quadratic work for large extension inventories).
+  let promptBytes = 2;
   for (const name of requestedToolNames) {
     if (seen.has(name)) continue;
     seen.add(name);
     const definition = definitions.get(name);
     if (!definition) continue;
-    const next = [...toolNames, name];
-    const tokens = estimateToolDefinitionPromptTokens(next.map((candidate) => definitions.get(candidate)!));
-    if (tokens <= tokenLimit) toolNames.push(name);
+    const definitionBytes = measureToolDefinitionPromptBytes([definition]) - 2;
+    const nextBytes = promptBytes + definitionBytes + (toolNames.length > 0 ? 1 : 0);
+    if (Math.ceil(nextBytes / 3) <= tokenLimit) { toolNames.push(name); promptBytes = nextBytes; }
     else droppedToolNames.push(name);
   }
 
   return {
     toolNames,
     droppedToolNames,
-    promptBytes: measureToolDefinitionPromptBytes(toolNames.map((name) => definitions.get(name)!)),
-    promptTokens: estimateToolDefinitionPromptTokens(toolNames.map((name) => definitions.get(name)!)),
+    promptBytes,
+    promptTokens: Math.ceil(promptBytes / 3),
     tokenLimit,
   };
 }

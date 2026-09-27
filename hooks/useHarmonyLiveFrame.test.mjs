@@ -30,6 +30,7 @@ async function mountLiveFrame(videoResponse, decoderClass) {
     async fetch(url, options) {
       calls.push(url);
       if (url.includes("/video?")) return await videoResponse(options);
+      if (url.includes("/geometry?")) return { ok: true, async json() { return { geometry: { geometryId: "geometry", frameWidth: 100, frameHeight: 200 } }; } };
       return { ok: true, headers: new Headers({ "X-Harmony-Generation": "1", "X-Harmony-Revision": "1" }), async blob() { return new Blob(["frame"]); } };
     },
     async createImageBitmap() { return { width: 100, height: 200, close() {} }; },
@@ -132,7 +133,8 @@ test("backs off flapping streams until a connection is genuinely stable", () => 
   assert.match(source, /STABLE_STREAM_FRAMES = 30/);
   assert.match(source, /STABLE_STREAM_MS = 5_000/);
   assert.match(source, /attempt\.decodedFrames >= STABLE_STREAM_FRAMES/);
-  assert.match(source, /failures > 1/);
+  assert.match(source, /failures \+= 1/);
+  assert.match(source, /setFrame\(previous => previous \? \{ \.\.\.previous, geometryId: undefined \} : previous\)/);
   assert.match(source, /reconnectDelay\(failures\)/);
 });
 

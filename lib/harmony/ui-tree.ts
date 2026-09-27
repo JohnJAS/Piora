@@ -1,4 +1,4 @@
-import type { HarmonyBounds } from "./types";
+import type { HarmonyBounds, BackendSnapshot } from "./types";
 
 export interface ParsedUiNode {
   parentIndex?: number;
@@ -134,4 +134,21 @@ export function flattenUiTree(tree: unknown, maxNodes = 10_000): ParsedUiNode[] 
 
   visit(tree);
   return result;
+}
+
+/** Empty/unknown dump formats cannot establish that a screen has no controls. */
+export function parseUiObservation(tree: unknown, maxNodes = 10_000): BackendSnapshot {
+  const parsed = flattenUiTree(tree, maxNodes + 1);
+  const truncated = parsed.length > maxNodes;
+  const validEmpty = Array.isArray(tree) && tree.length === 0;
+  const recognized = parsed.length > 0 || validEmpty;
+  return {
+    tree,
+    nodes: parsed.slice(0, maxNodes),
+    quality: {
+      treeStatus: truncated ? "partial" : recognized ? "valid" : "unavailable",
+      scopeComplete: recognized && !truncated,
+      scope: recognized ? "active-windows" : "unknown",
+    },
+  };
 }

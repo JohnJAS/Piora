@@ -6,8 +6,8 @@
  * whole task on a tool call that never returns. This extension intercepts shell
  * arguments before the original tool executes, preserving its configuration:
  *
- * - inject a default timeout when the model omits one (env:
- *   `PIORA_SHELL_TIMEOUT_SECONDS`, default 600s),
+ * - inject a configurable default timeout when the model omits one
+ *   (saved preference, then `PIORA_SHELL_TIMEOUT_SECONDS`, default 1800s),
  * - reject obvious long-running server/watch commands with actionable guidance
  *   (run them in the background instead),
  * - reject obvious interactive commands that would wait for terminal input.
@@ -16,18 +16,9 @@
  * is a legitimate way to smoke-test a server startup.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { readShellTimeoutSettings } from "../lib/shell-timeout-settings.ts";
 
-export const DEFAULT_SHELL_TIMEOUT_SECONDS = 600;
-const MAX_TIMEOUT_SECONDS = 2_147_483;
-
-export function readShellTimeoutSeconds(
-  env: Readonly<Record<string, string | undefined>> = process.env,
-): number {
-  const parsed = Number(env.PIORA_SHELL_TIMEOUT_SECONDS?.trim());
-  return Number.isFinite(parsed) && parsed > 0
-    ? Math.max(1, Math.min(Math.floor(parsed), MAX_TIMEOUT_SECONDS))
-    : DEFAULT_SHELL_TIMEOUT_SECONDS;
-}
+export { DEFAULT_SHELL_TIMEOUT_SECONDS, readShellTimeoutSeconds } from "../lib/shell-timeout-settings.ts";
 
 interface SimpleCommand { words: string[]; background: boolean }
 
@@ -145,11 +136,13 @@ export function resolveShellGuard(
   return { kind: "run", timeout: defaultTimeoutSeconds };
 }
 
-export default function pioraShellGuard(api: ExtensionAPI): void {
-  const defaultTimeoutSeconds = readShellTimeoutSeconds();
+export default function pioraShellGuard(
+  api: ExtensionAPI,
+  readDefaultTimeoutSeconds = () => readShellTimeoutSettings().timeoutSeconds,
+): void {
   api.on("tool_call", (event) => {
     if (event.toolName !== "bash" && event.toolName !== "powershell") return;
-    const guard = resolveShellGuard(event.input, defaultTimeoutSeconds);
+    const guard = resolveShellGuard(event.input, readDefaultTimeoutSeconds());
     if (guard.kind === "reject") return { block: true, reason: guard.message };
     event.input.timeout = guard.timeout;
   });

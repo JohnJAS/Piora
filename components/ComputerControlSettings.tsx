@@ -4,7 +4,8 @@ import { useI18n } from "@/hooks/useI18n";
 
 export function ComputerControlSettings() {
   const { t } = useI18n();
-  const [state, setState] = useState<{ supported: boolean; connected: boolean; stopped: boolean; error?: string } | null>(null);
+  const [state, setState] = useState<{ supported: boolean; connected: boolean; stopped: boolean; error?: string;
+    uia?: { available: boolean; connected: boolean; version: string }; windowsMcp?: { connected: boolean; version: string } } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const requestId = useRef(0);
@@ -32,7 +33,7 @@ export function ComputerControlSettings() {
     finally { if (id === requestId.current) setBusy(false); }
   }
   return <section className="ui-settings-card" aria-labelledby="computer-control-title">
-    <div className="ui-settings-card-heading"><h3 id="computer-control-title">{t("computer.title")}</h3><span className="ui-status-badge">Windows-MCP</span></div>
+    <div className="ui-settings-card-heading"><h3 id="computer-control-title">{t("computer.title")}</h3><span className="ui-status-badge">UIA + Windows-MCP</span></div>
     <p>{t("computer.description")}</p>
     <p>{t("computer.setup")}</p>
     <div className="ui-inline-actions">
@@ -40,6 +41,7 @@ export function ComputerControlSettings() {
       <button type="button" className="ui-button" disabled={!state?.supported} onClick={() => void action("stop")}>{t("computer.stop")}</button>
       <span role="status">{t(!state?.supported ? "computer.desktopOnly" : state.stopped ? "computer.stopped" : state.connected ? "computer.connected" : "computer.disconnected")}</span>
     </div>
+    {state?.supported ? <p role="status">{t("computer.uiaStatus")}: {state.uia?.connected ? t("computer.connected") : state.uia?.available ? t("computer.disconnected") : t("computer.missing")} · Windows-MCP: {state.windowsMcp?.connected ? t("computer.connected") : t("computer.disconnected")}</p> : null}
     {error ? <p className="ui-error" role="alert">{error}</p> : null}
   </section>;
 }

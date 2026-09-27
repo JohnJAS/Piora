@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { InvalidJsonBodyError, JsonBodyTooLargeError } from "@/lib/bounded-json";
 import { isApiRequestAllowed } from "@/lib/request-security";
 import { isValidDesktopToken, PI_DESKTOP_TOKEN_HEADER } from "@/lib/web-auth";
 import { asHarmonyError, HarmonyError, type HarmonyErrorCode } from "@/lib/harmony/errors";
@@ -13,6 +14,10 @@ const ERROR_STATUS: Partial<Record<HarmonyErrorCode, number>> = {
   LEASE_CONFLICT: 409,
   LEASE_EXPIRED: 409,
   STALE_SNAPSHOT: 409,
+  OBSERVATION_UNAVAILABLE: 409,
+  APPROVAL_REQUIRED: 403,
+  SCREEN_LOCKED: 409,
+  DEVICE_BUSY: 409,
   CAPABILITY_UNAVAILABLE: 501,
   UI_TARGET_NOT_FOUND: 404,
   UI_TARGET_AMBIGUOUS: 409,
@@ -43,6 +48,8 @@ export function requireHarmonyAccess(request: Request): NextResponse | null {
 }
 
 export function harmonyErrorResponse(error: unknown): NextResponse {
+  if (error instanceof JsonBodyTooLargeError) return noStoreJson({ error: "Request body is too large" }, { status: 413 });
+  if (error instanceof InvalidJsonBodyError) return noStoreJson({ error: "Invalid JSON body" }, { status: 400 });
   const harmonyError = asHarmonyError(error);
   return NextResponse.json(
     { error: harmonyError.toJSON() },

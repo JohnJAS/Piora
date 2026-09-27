@@ -32,7 +32,7 @@ const nextConfig: NextConfig = {
   // process. Its executable and resource archives are runtime data rather
   // than modules imported into a Next route, so include the package explicitly.
   outputFileTracingIncludes: {
-    "/*": ["./node_modules/@deveco/deveco-cli/**/*"],
+    "/*": ["./node_modules/@deveco/deveco-cli/**/*", "./.harmony-worker/**/*"],
   },
   // Browser profiles contain user-owned cookies, storage and cache files. They
   // are runtime data, never application dependencies. Excluding them also
@@ -60,6 +60,7 @@ const nextConfig: NextConfig = {
     "playwright-core",
     "proper-lockfile",
     "hypium-driver",
+    "mediabunny",
     "ssh2",
   ],
   webpack(config, { isServer, dev }) {
@@ -86,6 +87,7 @@ const nextConfig: NextConfig = {
         "@deveco/deveco-cli",
         "playwright-core",
         "hypium-driver",
+    "mediabunny",
         "ssh2",
       );
     }

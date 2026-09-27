@@ -3,6 +3,7 @@
 import { useRef } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useSmartShell } from "@/hooks/useSmartShell";
+import { useNativeShellConfig } from "@/hooks/useNativeShellConfig";
 import { AliIcon } from "../AliIcon";
 import { TerminalSurface, type TerminalSurfaceHandle } from "./TerminalSurface";
 import styles from "./SmartShell.module.css";
@@ -20,6 +21,7 @@ export interface SmartShellPanelProps {
 export function SmartShellPanel({ cwd, onClose, onSettings }: SmartShellPanelProps) {
   const { t } = useI18n();
   const shell = useSmartShell(cwd, true);
+  const { config, error: profileError } = useNativeShellConfig();
   const terminal = useRef<TerminalSurfaceHandle>(null);
   const state = shell.snapshot?.session;
   const act = (action: string) => { void shell.action({ action }).then(() => terminal.current?.focus()).catch(() => {}); };
@@ -29,6 +31,11 @@ export function SmartShellPanel({ cwd, onClose, onSettings }: SmartShellPanelPro
       <div className={styles.brand}><AliIcon name="code" size={18} /><strong>{state?.profile.label || t("shell.title")}</strong></div>
       {onSettings ? <button title={t("shell.settings")} aria-label={t("shell.settings")} onClick={onSettings}><AliIcon name="setting" size={15} /></button> : null}
       <button title={t("shell.new")} aria-label={t("shell.new")} onClick={() => void shell.create()}><AliIcon name="plus" size={16} /></button>
+      <select className={styles.shellPicker} aria-label={t("shell.chooseShell")} title={t("shell.chooseShell")} value="" disabled={!config}
+        onChange={event => { if (event.target.value) void shell.create(event.target.value); }}>
+        <option value="" disabled>{t("shell.chooseShell")}</option>
+        {config?.profiles.map(profile => <option key={profile.executable} value={profile.executable}>{profile.label}{profile.bundled ? ` (${t("shell.bundled")})` : ""}</option>)}
+      </select>
       <button title={t("shell.clear")} aria-label={t("shell.clear")} disabled={!state?.connected} onClick={() => { void shell.action({ action: "input", data: "\f", generation: state?.generation }).then(() => terminal.current?.focus()).catch(() => {}); }}><AliIcon name="clear" size={15} /></button>
       <button title={t("shell.restart")} aria-label={t("shell.restart")} disabled={!state} onClick={() => act("restart")}><AliIcon name="reload" size={15} /></button>
       {onClose ? <button title={t("workspace.closeTool")} aria-label={t("workspace.closeTool")} onClick={onClose}><AliIcon name="close" size={15} /></button> : null}
@@ -40,6 +47,7 @@ export function SmartShellPanel({ cwd, onClose, onSettings }: SmartShellPanelPro
       </div>
     )}</div>
     {shell.error ? <div className={styles.error} role="alert">{shell.error}<button aria-label={t("workspace.closeTool")} onClick={() => shell.setError("")}>×</button></div> : null}
+    {profileError ? <div className={styles.error} role="alert">{profileError}</div> : null}
     {shell.connectionError ? <div className={styles.error} role="alert">{shell.connectionError}<button onClick={shell.reconnect}>{t("shell.retry")}</button></div> : null}
     <div className={styles.body}>
       {state ? <div className={styles.native}>

@@ -6,6 +6,7 @@ export type HarmonyFrameStatus = "idle" | "loading" | "live" | "error";
 export type HarmonyFrameMode = "idle" | "video" | "frames";
 
 export interface HarmonyLiveFrame {
+  geometryId?: string;
   serial: string;
   generation: number;
   revision: number;
@@ -43,6 +44,9 @@ type StreamConfig = {
 };
 
 type StreamAttempt = {
+  geometryCheckedAt?: number;
+  geometryRefreshing?: boolean;
+  geometryId?: string;
   controller: AbortController;
   watchdog?: number;
   reader?: ReadableStreamDefaultReader<Uint8Array>;
@@ -183,18 +187,24 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
 
     const publishFrame = (width: number, height: number, attempt: StreamAttempt) => {
       if (disposed) return;
+      if (!attempt.geometryRefreshing && performance.now() - (attempt.geometryCheckedAt ?? 0) > 1500) {
+        attempt.geometryRefreshing = true; attempt.geometryCheckedAt = performance.now();
+        void fetch(`/api/harmony/geometry?serial=${encodeURIComponent(options.serial)}&space=video`, { cache: "no-store", signal: attempt.controller.signal })
+          .then(async response => { if (!response.ok) throw new Error("Geometry unavailable"); const { geometry } = await response.json(); if (activeAttempt === attempt) attempt.geometryId = geometry?.frameWidth === width && geometry?.frameHeight === height ? geometry.geometryId : undefined; })
+          .catch(() => { attempt.geometryId = undefined; }).finally(() => { attempt.geometryRefreshing = false; });
+      }
       revision += 1;
       attempt.decodedFrames += 1;
       armWatchdog(attempt);
       if (attempt.decodedFrames >= STABLE_STREAM_FRAMES || performance.now() - attempt.startedAt >= STABLE_STREAM_MS) {
         failures = 0;
       }
-      const nextFrame = { serial: options.serial, generation: options.generation!, revision, width, height };
+      const nextFrame = { serial: options.serial, generation: options.generation!, revision, width, height, geometryId: attempt.geometryId };
       if (!hasFrame) {
         hasFrame = true;
         setFrame(nextFrame);
       } else {
-        setFrame((current) => current && current.width === width && current.height === height ? current : nextFrame);
+        setFrame((current) => current && current.width === width && current.height === height && current.geometryId === nextFrame.geometryId ? current : nextFrame);
       }
       setStatus("live");
       setError(null);
@@ -282,6 +292,12 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     const processPacket = async (type: number, payload: Uint8Array, attempt: StreamAttempt) => {
       if (type === VIDEO_CONFIG) {
         config = parseConfig(payload);
+        attempt.geometryId = undefined;
+        const geometryResponse = await fetch(`/api/harmony/geometry?serial=${encodeURIComponent(options.serial)}&space=video`, { cache: "no-store", signal: attempt.controller.signal }).catch(() => null);
+        if (geometryResponse?.ok) {
+          const { geometry } = await geometryResponse.json();
+          if (geometry?.frameWidth === config.width && geometry?.frameHeight === config.height) attempt.geometryId = geometry.geometryId;
+        }
         await configureDecoder(config, attempt);
         return;
       }
@@ -349,6 +365,8 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     };
 
     const pollFrames = async () => {
+      let fallbackGeometry: { width: number; height: number; geometryId: string } | undefined;
+      let fallbackGeometryCheckedAt = 0;
       let fallbackFailures = 0;
       setMode("frames");
       closeDecoder();
@@ -380,7 +398,18 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
             }
             canvas.getContext("2d", { alpha: false })?.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height);
             hasFrame = true;
+            if (fallbackGeometry?.width !== bitmap.width || fallbackGeometry?.height !== bitmap.height || performance.now() - fallbackGeometryCheckedAt > 1500) {
+              fallbackGeometry = undefined; fallbackGeometryCheckedAt = performance.now();
+              const response = await fetch(`/api/harmony/geometry?serial=${encodeURIComponent(options.serial)}&space=screenshot`, { cache: "no-store", signal: lifecycle.signal }).catch(() => null);
+              if (response?.ok) {
+                const { geometry } = await response.json();
+                if (geometry?.frameWidth === bitmap.width && geometry?.frameHeight === bitmap.height) {
+                  fallbackGeometry = { width: bitmap.width, height: bitmap.height, geometryId: geometry.geometryId };
+                }
+              }
+            }
             setFrame({
+              geometryId: fallbackGeometry?.geometryId,
               serial: options.serial,
               generation,
               revision: frameRevision,
@@ -404,8 +433,10 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
             setStatus("error");
             setError(frameError instanceof Error ? frameError.message : options.fallbackError);
           } else {
-            setStatus("live");
-            setError(null);
+            setStatus("error");
+            setFrame(previous => previous ? { ...previous, geometryId: undefined } : previous);
+            fallbackGeometry = undefined;
+            setError(frameError instanceof Error ? frameError.message : options.fallbackError);
           }
           await delay(Math.min(4_000, 250 * (2 ** Math.min(fallbackFailures - 1, 4))), lifecycle.signal);
         }
@@ -439,13 +470,9 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           attempt.controller.abort();
           if (lifecycle.signal.aborted || disposed) return;
           failures += 1;
-          if (!hasFrame || failures > 1) {
-            setStatus("error");
-            setError(attempt.failure?.message ?? (streamError instanceof Error ? streamError.message : options.fallbackError));
-          } else {
-            setStatus("live");
-            setError(null);
-          }
+          setStatus("error");
+          setFrame(previous => previous ? { ...previous, geometryId: undefined } : previous);
+          setError(attempt.failure?.message ?? (streamError instanceof Error ? streamError.message : options.fallbackError));
           closeDecoder();
           config = undefined;
           firstKeyframe = false;

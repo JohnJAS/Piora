@@ -1,6 +1,6 @@
 "use client";
 
-import { lazy, Suspense, useMemo, type MouseEvent } from "react";
+import { lazy, memo, Suspense, useDeferredValue, useMemo, type MouseEvent } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { resolveLocalFileHref } from "@/lib/file-links";
 import { encodeFilePathForApi } from "@/lib/file-paths";
@@ -55,7 +55,14 @@ export interface MarkdownBodyProps {
   onOpenFile?: (filePath: string) => void;
 }
 
-export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile }: MarkdownBodyProps) {
+export const MarkdownBody = memo(function MarkdownBody(props: MarkdownBodyProps) {
+  const deferredText = useDeferredValue(props.children);
+  // Schedule streaming Markdown behind urgent typing/navigation. The final
+  // message is always rendered immediately, including the final code/math block.
+  return <MarkdownRenderer {...props}>{props.isStreaming ? deferredText : props.children}</MarkdownRenderer>;
+});
+
+const MarkdownRenderer = memo(function MarkdownRenderer({ children, className, isStreaming, cwd, onOpenFile }: MarkdownBodyProps) {
   const normalizedMarkdown = useMemo(() => normalizeTextHighlights(normalizeDisplayMath(children)), [children]);
   const baseRehypePlugins = useMarkdownRehypePlugins(normalizedMarkdown);
   const isAssistantMessage = className?.split(/\s+/).includes("markdown-assistant-message") ?? false;
@@ -168,4 +175,4 @@ export function MarkdownBody({ children, className, isStreaming, cwd, onOpenFile
       </ReactMarkdown>
     </div>
   );
-}
+});

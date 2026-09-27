@@ -18,6 +18,7 @@ import { AutomationPanel } from "../AutomationPanel";
 import { SSHPanel } from "./SSHPanel";
 import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
 import type { PromptFileChanges } from "@/lib/prompt-file-changes";
+import { pollVisibleDocument } from "@/lib/visible-poller";
 
 export type RightPanelTab = "home" | "automation" | "review" | "files" | "commands" | "ssh" | "browser" | "design" | "harmony";
 export interface RightPanelHandle { focusActiveTab: () => void; focusFileSearch: () => void; }
@@ -126,17 +127,18 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     const sessionId = props.sessionId;
     setRunChanges((current) => current?.sessionId === sessionId ? current : null);
     let cancelled = false;
-    const load = async () => {
+    const load = async (signal: AbortSignal) => {
       try {
-        const response = await fetch(`/api/agent/${encodeURIComponent(sessionId)}/changes`, { cache: "no-store" });
+        const response = await fetch(`/api/agent/${encodeURIComponent(sessionId)}/changes`, { cache: "no-store", signal });
         if (!response.ok) return;
         const data = await response.json() as PromptFileChanges | null;
-        if (!cancelled) setRunChanges(data);
-      } catch { if (!cancelled) setRunChanges(null); }
+        if (!cancelled && !signal.aborted) setRunChanges(data);
+      } catch { if (!cancelled && !signal.aborted) setRunChanges(null); }
     };
-    void load();
-    const timer = props.sessionRunning ? window.setInterval(() => void load(), 2500) : null;
-    return () => { cancelled = true; if (timer !== null) window.clearInterval(timer); };
+    const controller = new AbortController();
+    const polling = props.sessionRunning ? pollVisibleDocument(load, 2500) : null;
+    if (!polling) void load(controller.signal);
+    return () => { cancelled = true; controller.abort(); polling?.stop(); };
   }, [activeTab, props.sessionId, props.sessionRunning, refreshKey]);
 
   const changeTreeWidth = (candidate: number) => {

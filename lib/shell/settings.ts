@@ -1,6 +1,6 @@
 import { getShellStore } from "./store";
 import { ShellError } from "./errors";
-import type { ShellModelPreference, ShellSettings, HistorySource } from "./types";
+import type { ShellModelPreference, ShellSettings, HistorySource, NativeShellSettings } from "./types";
 
 export const DEFAULT_SHELL_SETTINGS: ShellSettings = { executable: null, model: null, importSystemHistory: true, importPiHistory: true, sources: [] };
 export function normalizeShellModel(value: unknown): ShellModelPreference | null {
@@ -35,4 +35,17 @@ export async function writeShellSettings(value: unknown): Promise<ShellSettings>
   const settings = normalizeShellSettings(value);
   const store = getShellStore(); await store.ready;
   await store.call("setValue", { key: "settings", value: settings }); return settings;
+}
+
+/** Keep the interactive terminal's default separate from legacy agent shell preferences. */
+export async function readNativeShellSettings(): Promise<NativeShellSettings> {
+  const store = getShellStore(); await store.ready;
+  const settings = await store.call<NativeShellSettings | null>("getValue", { key: "native-settings" });
+  return { executable: settings?.bundled && process.env.PIORA_BUNDLED_PWSH || (typeof settings?.executable === "string" ? settings.executable : null), ...(settings?.bundled ? { bundled: true } : {}) };
+}
+
+export async function writeNativeShellSettings(settings: NativeShellSettings): Promise<NativeShellSettings> {
+  const store = getShellStore(); await store.ready;
+  await store.call("setValue", { key: "native-settings", value: settings });
+  return settings;
 }

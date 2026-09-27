@@ -16,7 +16,7 @@ test("Harmony screen workspace supports passive media, copy feedback, zoom, focu
   try {
     await writeFile(path.join(root, "loader.cjs"), `const ts=require(${JSON.stringify(require.resolve("typescript"))});module.exports=s=>ts.transpileModule(s,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText`);
     await writeFile(path.join(root, "css.cjs"), 'module.exports=s=>"export default "+JSON.stringify(Object.fromEntries([...s.matchAll(/\\.([a-zA-Z][\\w-]*)/g)].map(m=>[m[1],m[1]])))');
-    await writeFile(path.join(root, "stubs.tsx"), `import {useEffect} from "react";export const useI18n=()=>({locale:"zh-CN"});export const useHarmonyLiveFrame=options=>{useEffect(()=>{if(!options.enabled)return;const canvas=options.canvasRef.current;if(!canvas)return;canvas.width=1080;canvas.height=2400;const context=canvas.getContext("2d");context.fillStyle="#f7f8fa";context.fillRect(0,0,1080,2400);context.fillStyle="#15181d";context.font="600 92px sans-serif";context.fillText("设置",80,230);context.fillStyle="#e8ebef";for(let y=340;y<2100;y+=250)context.fillRect(65,y,950,180);context.fillStyle="#333942";context.font="48px sans-serif";["无线网络","蓝牙","移动网络","显示和亮度","声音和振动","通知和状态栏","应用和服务"].forEach((text,index)=>context.fillText(text,105,445+index*250));},[options.canvasRef,options.enabled,options.serial]);return{status:"live",mode:"video",frame:{width:1080,height:2400,serial:"phone",generation:1},refresh:()=>{}}};export const AliIcon=({name})=><span aria-hidden="true" style={{display:"inline-block",fontSize:10,lineHeight:1}}>{name==="mobile"?"▯":"◆"}</span>;export const HarmonyLogViewer=()=>null;export const HarmonyCheckPanel=()=>null;`);
+    await writeFile(path.join(root, "stubs.tsx"), `import {useEffect} from "react";export const useI18n=()=>({locale:"zh-CN"});export const useHarmonyLiveFrame=options=>{useEffect(()=>{if(!options.enabled)return;const canvas=options.canvasRef.current;if(!canvas)return;canvas.width=1080;canvas.height=2400;const context=canvas.getContext("2d");context.fillStyle="#f7f8fa";context.fillRect(0,0,1080,2400);context.fillStyle="#15181d";context.font="600 92px sans-serif";context.fillText("设置",80,230);context.fillStyle="#e8ebef";for(let y=340;y<2100;y+=250)context.fillRect(65,y,950,180);context.fillStyle="#333942";context.font="48px sans-serif";["无线网络","蓝牙","移动网络","显示和亮度","声音和振动","通知和状态栏","应用和服务"].forEach((text,index)=>context.fillText(text,105,445+index*250));},[options.canvasRef,options.enabled,options.serial]);return{status:"live",mode:"video",frame:{width:1080,height:2400,serial:"phone",generation:1,geometryId:"geometry"},refresh:()=>{}}};export const AliIcon=({name})=><span aria-hidden="true" style={{display:"inline-block",fontSize:10,lineHeight:1}}>{name==="mobile"?"▯":"◆"}</span>;export const HarmonyLogViewer=()=>null;export const HarmonyCheckPanel=()=>null;`);
     await writeFile(path.join(root, "entry.tsx"), `import React,{useState} from "react";import {createRoot} from "react-dom/client";import {HarmonyPanel} from "@/components/workspace/HarmonyPanel";function Fixture(){const[maximized,setMaximized]=useState(false);window.maximized=maximized;return <HarmonyPanel active maximized={maximized} onMaximizedChange={setMaximized}/>};createRoot(document.getElementById("root")).render(<Fixture/>);`);
     const aliases = Object.fromEntries(["@/hooks/useI18n", "@/hooks/useHarmonyLiveFrame", "../AliIcon", "./HarmonyLogViewer", "./HarmonyCheckPanel"].map(name => [name, path.join(root, "stubs.tsx")]));
     const compiler = webpack({ mode: "development", target: "web", devtool: false,
@@ -50,7 +50,7 @@ test("Harmony screen workspace supports passive media, copy feedback, zoom, focu
       const input = request.postDataJSON();
       if (input) requests.push(input);
       if (url.pathname.endsWith("/profile")) data = { profile: "normal" };
-      if (url.pathname.endsWith("/devices")) data = { devices: [{ serial: "phone", name: "HUAWEI Mate 70 Pro", state: "online", generation: 1, capabilities: { screenshot: true } }] };
+      if (url.pathname.endsWith("/devices")) data = { devices: [{ serial: "phone", name: "HUAWEI Mate 70 Pro", state: "online", generation: 1, capabilities: { screenshot: true, tap: true, swipe: true } }] };
       if (url.pathname.endsWith("/manual")) data = input?.action === "acquire" ? { lease: { token: "lease", serial: "phone", expiresAt: "2099-01-01T00:00:00Z" } } : {};
       if (url.pathname.endsWith("/media")) {
         if (input?.action === "capture_screenshot") data = { artifact: screenshot };
@@ -80,6 +80,14 @@ test("Harmony screen workspace supports passive media, copy feedback, zoom, focu
     await page.evaluate(() => { window.failPath = true; });
     await page.getByRole("button", { name: "路径已复制", exact: true }).click();
     await page.getByText("路径复制失败，请重试", { exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "开始录屏", exact: true }).isEnabled(), false);
+    await page.getByRole("button", { name: "手动控制", exact: true }).click();
+    await page.getByRole("button", { name: "结束控制", exact: true }).waitFor();
+    const inputCanvas = await page.locator("canvas").boundingBox();
+    const [tapRequest] = await Promise.all([page.waitForRequest(request => request.url().endsWith("/action")), page.mouse.click(inputCanvas.x + inputCanvas.width / 2, inputCanvas.y + inputCanvas.height / 2)]);
+    const tap = tapRequest.postDataJSON();
+    assert.ok(tap); assert.equal(tap.geometryId, "geometry"); assert.equal(tap.coordinateSpace, "frame");
+    assert.ok(Math.abs(tap.x - 540) < 2 && Math.abs(tap.y - 1200) < 2);
     await page.getByRole("button", { name: "开始录屏", exact: true }).click();
     await page.getByRole("button", { name: /停止录屏/ }).click();
     await page.getByText("录屏文件已保存并复制到剪贴板", { exact: true }).waitFor();
@@ -88,7 +96,8 @@ test("Harmony screen workspace supports passive media, copy feedback, zoom, focu
     await page.getByRole("button", { name: /停止录屏/ }).click();
     await page.getByText("录屏文件已保存，但复制失败，可重试或复制路径。", { exact: true }).waitFor();
     const mediaRequests = requests.filter(request => ["capture_screenshot", "start_recording", "stop_recording"].includes(request.action));
-    assert.ok(mediaRequests.every(request => request.leaseToken === undefined), "passive media does not require a control lease");
+    assert.ok(mediaRequests.filter(request => request.action === "capture_screenshot").every(request => request.leaseToken === undefined), "passive screenshots do not require control");
+    assert.ok(mediaRequests.filter(request => request.action === "start_recording").every(request => request.leaseToken === "lease"), "recording requires the current control lease");
     assert.equal(await page.locator(".mediaPath code").textContent(), video.path);
     await page.evaluate(() => { window.failMedia = false; });
     await page.getByRole("button", { name: "重新复制", exact: true }).click();
@@ -110,11 +119,18 @@ test("Harmony screen workspace supports passive media, copy feedback, zoom, focu
     assert.ok(Math.abs(Number(await page.evaluate(() => localStorage.getItem("piora-harmony-drawer-height-v1"))) - drawerAfter.height) < 1);
     await page.getByRole("button", { name: "专注投屏" }).click();
     assert.equal(await page.evaluate(() => window.maximized), true);
-    await page.getByRole("button", { name: "手动控制", exact: true }).click();
     await page.getByRole("button", { name: "结束控制", exact: true }).waitFor();
     await page.getByRole("textbox", { name: "输入到手机" }).waitFor();
     await page.getByRole("button", { name: "结束控制", exact: true }).click();
     assert.equal(requests.at(-1).action, "release");
+    await page.getByText("设备测试工作台", { exact: true }).click();
+    await page.getByText("连接 USB 并在手机确认调试授权。", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "语音", exact: true }).click();
+    await page.getByRole("button", { name: "在所选输出预览语料", exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "在所选输出预览语料", exact: true }).isEnabled(), false);
+    await page.getByRole("button", { name: "按键与触摸", exact: true }).click();
+    await page.getByRole("combobox", { name: "按键", exact: true }).selectOption("power");
+    await page.getByText("将本次校准保存为助手入口（可选）", { exact: true }).waitFor();
     await page.setViewportSize({ width: 360, height: 900 });
     assert.equal(await page.locator("#root").evaluate(root => root.scrollWidth > root.clientWidth), false);
     if (process.env.PIORA_HARMONY_SCREENSHOT_DIR) {

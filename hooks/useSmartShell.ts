@@ -56,10 +56,10 @@ export function useSmartShell(cwd: string, native = false) {
     active.current = id; setSelection({ cwd, id });
     try { localStorage.setItem(`${native ? "piora-terminal-active" : "piora-shell-active"}:${cwd}`, id); } catch { /* Selection is also recoverable from the session list. */ }
   }, [cwd, native]);
-  const create = useCallback(async () => {
+  const create = useCallback(async (executable?: string) => {
     const signal = operations.current?.signal;
     try {
-      const created = await shellRequest<ShellSnapshot>("sessions", { cwd, native }, { signal });
+      const created = await shellRequest<ShellSnapshot>("sessions", { cwd, native, ...(executable ? { executable } : {}) }, { signal });
       if (signal?.aborted || scope.current !== cwd) return;
       setInventory(previous => ({ cwd, sessions: [...(previous.cwd === cwd ? previous.sessions : []), created.session] }));
       select(created.session.id);

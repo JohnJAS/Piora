@@ -82,6 +82,7 @@ const assets = [
     // relative imports through this tree. Stage the complete Piora library so
     // adding a transitive helper cannot silently break only packaged builds.
     ["Piora runtime support modules", "lib"],
+    ["Isolated Harmony driver worker", ".harmony-worker"],
   ].map(([name, relativePath]) => ({
     name,
     source: join(projectRoot, relativePath),
