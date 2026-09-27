@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 文件工作区
+
+- 编辑器浮动搜索栏图标随界面字号缩放，默认字号下保持原有大小，并修复固定像素字号导致的字体偏好测试与 CI 失败。
+
 ### 模型设置
 
 - 修复英文界面中“设为默认”和“默认”按钮及提示仍显示中文的问题，按钮宽度随译文调整。

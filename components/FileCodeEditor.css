@@ -36,7 +36,7 @@ html.dark .piora-file-code-editor {
 .piora-file-code-editor .cm-panels-top .cm-panel { pointer-events: auto; }
 .piora-file-code-editor .piora-search--floating { display: block; padding: 6px; border: 1px solid var(--border); border-radius: 11px; background: var(--bg-panel); box-shadow: 0 10px 30px rgb(0 0 0 / 18%); }
 .piora-file-code-editor .piora-search--floating .piora-search-row { flex-wrap: nowrap; gap: 3px; }
-.piora-file-code-editor .piora-search--floating .piora-search-icon { flex: 0 0 22px; text-align: center; font-size: 21px; line-height: 1; color: var(--text-muted); }
+.piora-file-code-editor .piora-search--floating .piora-search-icon { flex: 0 0 22px; text-align: center; font-size: calc(var(--ui-font-size) * 1.5); line-height: 1; color: var(--text-muted); }
 .piora-file-code-editor .piora-search--floating input[name="search"] { flex: 1 1 auto; min-width: 50px; height: 30px; padding-inline: 7px; border: 0; background: transparent; box-shadow: none; }
 .piora-file-code-editor .piora-search--floating input[name="search"]:focus { outline: 0; }
 .piora-file-code-editor .piora-search--floating .piora-search-count { flex: 0 0 auto; min-width: 46px; text-align: center; white-space: nowrap; }
