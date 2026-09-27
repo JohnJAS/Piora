@@ -9,6 +9,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vinext build",
     "build:sites": "vinext build",
+    "build:vercel": "next build",
     "start": "next start",
     "lint": "eslint . --ignore-pattern .next --ignore-pattern dist --ignore-pattern .vinext",
     "typecheck": "tsc --noEmit",

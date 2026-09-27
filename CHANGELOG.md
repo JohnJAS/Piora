@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### XiaoYiHarness 官网
+
+- 官网新增 Vercel 部署入口与 Tailwind CSS 构建配置，公开地址为 https://xiaoyiharness.vercel.app；保留现有 Sites 地址与构建方式，并补充两种托管方式的发布说明。
+
 ### 文件工作区
 
 - 编辑器浮动搜索栏图标随界面字号缩放，默认字号下保持原有大小，并修复固定像素字号导致的字体偏好测试与 CI 失败。
