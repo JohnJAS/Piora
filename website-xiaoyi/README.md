@@ -2,7 +2,10 @@
 
 基于 Piora 仓库 `website/` 的独立品牌站，使用深墨色、薄荷绿视觉与真实工作区截图，保留产品功能介绍。源码位于本仓库 `website-xiaoyi/`，依赖与构建独立管理。
 
-公开网址：https://xiaoyiharness.sjjworkspace.chatgpt.site
+公开网址：
+
+- Vercel：https://xiaoyiharness.vercel.app
+- Sites：https://xiaoyiharness.sjjworkspace.chatgpt.site
 
 ## 下载与链接
 
@@ -21,7 +24,13 @@ Sites 使用 `npm run build`（Vinext / Cloudflare Worker）生成发布产物�
 
 GitHub 提交与 PR 不会自动更新线上站点。目前发布需要将此目录同步到该站点关联的 Sites 源码仓库，再构建、保存站点版本并发布到现有站点；无需创建新站点。构建输出位于 `dist/`，不提交依赖、生成文件或部署凭据。
 
-原 Piora 页面为 Next.js 项目，也可在 Vercel 中以 `website/` 为 Root Directory、使用 Next.js 预设和 `npm run build` 部署。此独立站已将构建命令调整为 Sites 所需的 Vinext。
+### Vercel
+
+从 GitHub 导入本仓库时，Vercel 项目的 Root Directory 使用 `website-xiaoyi/`，框架预设使用 Next.js；从下述 CLI 命令部署时，上传根目录就是当前官网目录。目录内的 `vercel.json` 指定 `npm ci` 安装依赖、`npm run build:vercel` 构建；Vercel 在云端执行构建。`postcss.config.mjs` 为 Next.js 提供 Tailwind CSS 支持。
+
+现有独立项目为 `innovation-tea/xiaoyiharness`。运行 `npx vercel login` 登录，进入 `website-xiaoyi/` 后运行 `npx vercel deploy --prod --yes --project xiaoyiharness --scope innovation-tea`。勿关联到 Piora 项目。当前使用 CLI 发布，尚未配置 GitHub 自动部署。
+
+页面规范网址、站点地图和 robots 默认读取 Vercel 的 `VERCEL_PROJECT_PRODUCTION_URL`；绑定自定义域名后可设置 `NEXT_PUBLIC_SITE_URL` 覆盖。Sites 继续使用现有网址与 `npm run build:sites`，默认 `npm run build` 也仍面向 Sites。
 
 ## 来源
 
