@@ -2291,7 +2291,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const targetScrollTop = Math.max(0, elAbsTop - 16);
     liveTailPinnedScrollTopRef.current = targetScrollTop;
     ignoreProgrammaticScrollUntilRef.current = Date.now() + PROGRAMMATIC_SCROLL_IGNORE_MS;
-    container.scrollTo({ top: targetScrollTop, behavior: "smooth" });
+    // Virtual rows publish measured heights in the next frame. A smooth
+    // animation still sits at the old viewport when that frame captures its
+    // reading anchor, so the correction can cancel the send jump entirely.
+    container.scrollTo({ top: targetScrollTop, behavior: "instant" });
     return true;
   }, [stopInitialBottomPin]);
 
