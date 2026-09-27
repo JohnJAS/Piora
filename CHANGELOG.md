@@ -7,6 +7,7 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 ### 文件工作区
 
 - 编辑器浮动搜索栏图标随界面字号缩放，默认字号下保持原有大小，并修复固定像素字号导致的字体偏好测试与 CI 失败。
+- 文件引用菜单的浏览器回归测试在输入框重新挂载完成后再输入，避免 Windows CI 偶发操作旧输入框而等待超时，保留文件索引缓存与菜单行为断言。
 
 ### 模型设置
 
