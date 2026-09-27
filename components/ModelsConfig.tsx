@@ -2669,18 +2669,18 @@ export function ModelsConfig({
                     type="button"
                     disabled={scopeMutationBusy || isDefault}
                     onClick={() => { void updateModelScope("set-default", model); }}
-                    title={isDefault ? "当前默认模型" : "设为默认模型"}
-                    aria-label={isDefault ? "当前默认模型" : "设为默认模型"}
+                    title={isDefault ? t("models.currentDefaultModel") : t("models.setDefaultModel")}
+                    aria-label={isDefault ? t("models.currentDefaultModel") : t("models.setDefaultModel")}
                     style={{
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      width: 70, height: 28, padding: "0 7px", border: "1px solid var(--border)",
+                      minWidth: 70, flexShrink: 0, height: 28, padding: "0 7px", border: "1px solid var(--border)",
                       borderRadius: "var(--radius-control)", background: isDefault ? "var(--bg-selected)" : "transparent",
                       color: isDefault ? "var(--accent)" : "var(--text-muted)",
                       cursor: scopeMutationBusy || isDefault ? "default" : "pointer",
                       opacity: scopeMutationBusy ? 0.55 : 1, fontSize: "var(--text-xs)", whiteSpace: "nowrap",
                     }}
                   >
-                    {isDefault ? "默认" : "设为默认"}
+                    {isDefault ? t("models.defaultBadge") : t("models.setDefault")}
                   </button>
                   <button
                     type="button"
@@ -2733,14 +2733,13 @@ export function ModelsConfig({
     if (!selection) return null;
     if (selection.type === "vision-agent") return <div className={styles.visionPage}><VisionAgentDetail cwd={cwd} /></div>;
     const selectedProvider = selection.type === "provider" ? selection.name : selection.type === "model" ? selection.providerName : selection.providerId;
-    if (detailTab === "models") return renderManagedModels(selectedProvider);
+    if (selection.type === "managed" || (detailTab === "models" && selection.type !== "model")) return renderManagedModels(selectedProvider);
     if (selection.type === "oauth") {
       const p = oauthProviders.find((p) => p.id === selection.providerId);
       if (!p) return null;
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <OAuthDetail key={p.id} provider={p} onRefresh={refreshProviderState} />
-          {renderManagedModels(p.id)}
         </div>
       );
     }
@@ -2750,17 +2749,12 @@ export function ModelsConfig({
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <ApiKeyDetail key={p.id} provider={p} onRefresh={refreshProviderState} />
-          {renderManagedModels(p.id)}
         </div>
       );
-    }
-    if (selection.type === "managed") {
-      return renderManagedModels(selection.providerId);
     }
     if (selection.type === "provider") {
       const provider = config.providers?.[selection.name];
       if (!provider) return null;
-      const hasManagedModels = (modelScope?.models ?? []).some((model) => model.provider === selection.name);
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <ProviderDetail
@@ -2773,7 +2767,6 @@ export function ModelsConfig({
             onDelete={() => deleteProvider(selection.name)}
             onAddModels={(models) => addDiscoveredModels(selection.name, models)}
           />
-          {hasManagedModels && renderManagedModels(selection.name)}
         </div>
       );
     }
@@ -3051,7 +3044,16 @@ export function ModelsConfig({
           {/* Right: detail */}
           <div className={styles.detail} style={{ flex: 1, overflowY: "auto", padding: 20 }}>
             <nav className={styles.tabs} aria-label={t("models.ui.sections")}>
-              {selection?.type !== "vision-agent" ? <><button aria-pressed={detailTab === "connection"} onClick={() => setDetailTab("connection")}><AliIcon name="link" size={17} />{t("models.ui.connection")}</button><button aria-pressed={detailTab === "models"} onClick={() => setDetailTab("models")}><AliIcon name="brain" size={17} />{t("models.ui.models")}</button></> : <button aria-pressed="true">{t("models.ui.vision")}</button>}
+              {selection?.type === "vision-agent" ? (
+                <button aria-pressed="true">{t("models.ui.vision")}</button>
+              ) : selection?.type === "model" || selection?.type === "managed" ? (
+                <button aria-pressed="true"><AliIcon name="brain" size={17} />{t("models.ui.models")}</button>
+              ) : selection ? (
+                <>
+                  <button aria-pressed={detailTab === "connection"} onClick={() => setDetailTab("connection")}><AliIcon name="link" size={17} />{t("models.ui.connection")}</button>
+                  <button aria-pressed={detailTab === "models"} onClick={() => setDetailTab("models")}><AliIcon name="brain" size={17} />{t("models.ui.models")}</button>
+                </>
+              ) : null}
             </nav>
             {loading ? null : detailContent ?? (
               <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-dim)", fontSize: "var(--text-base)" }}>
