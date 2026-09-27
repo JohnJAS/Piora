@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, realpath, writeFile, utimes } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { lstat, mkdir, writeFile, utimes } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
 import { readBoundedRegularFile, enforceArtifactQuota } from "../runtime/bounded-file";
 import { HarmonyError } from "../errors";
 
@@ -31,7 +31,7 @@ export function parsePcmWav(data: Buffer): Omit<AudioAsset, "id" | "hash"> & { p
 export class AudioAssetStore {
   constructor(private readonly directory: string) {}
   async import(path: string): Promise<AudioAsset> {
-    if (!isAbsolute(path) || resolve(await realpath(path)) !== resolve(path)) throw new HarmonyError("INVALID_ARGUMENT", "Audio source must be a local regular file without symlink traversal");
+    if (!isAbsolute(path)) throw new HarmonyError("INVALID_ARGUMENT", "Audio source must be a local regular file without symlink traversal");
     const info = await lstat(path);
     if (!info.isFile() || info.isSymbolicLink() || info.size > maxBytes) throw new HarmonyError("INVALID_ARGUMENT", "Audio source is invalid or too large");
     const data = await readBoundedRegularFile(path, maxBytes);

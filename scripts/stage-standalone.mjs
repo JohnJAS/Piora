@@ -388,6 +388,9 @@ async function main() {
   const dependencyAssets = await collectRuntimeDependencyAssets([
     piAiProviderRuntimeRoot,
     hypiumRuntimeRoot,
+    // Next traces the ESM entry while source-loaded extensions use Jiti's
+    // CommonJS entry. Preserve both conditional exports and their dependencies.
+    join(projectRoot, "node_modules", "mediabunny"),
     // The Harmony checker is loaded from first-party extension source. Stage
     // the complete DevEco CLI production closure because Next cannot trace
     // its CLI entry point, MCP server, or dynamically loaded check engines.

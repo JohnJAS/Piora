@@ -4,7 +4,7 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
-## [0.5.2-beta.10] - 2026-09-28
+## [0.5.2-beta.11] - 2026-09-28
 
 ### Windows 屏幕截图
 
@@ -13,6 +13,9 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 - 截图附件在草稿持久保存后才确认完成，且不影响发送失败时的原草稿恢复；保存对话框取消时保留选区和标注。截图编辑器字号跟随界面设置，开源组件的 MIT 许可证与来源记录随包保留。
 
 ### 鸿蒙设备测试工作台
+
+- 修复 Windows 临时目录大小写与 8.3 短路径导致 WAV、HAP 和开发报告被错误拒绝；逐层检查目录项继续禁止符号链接或 junction 重定向，保留文件容量、内容哈希与读取一致性校验。
+- 补齐安装包中 MP4 媒体库的 CommonJS 和 ESM 入口及依赖，避免开发环境可录制而安装后模块加载失败。
 
 - 投屏改为被动观察：缺少投屏服务时提供显式安装授权，锁屏或无法确认锁状态时提示用户手动解锁，不自动开屏、滑动或解锁。
 - 设备控制绑定任务、设备连接代际和授权应用；安装、卸载、清数据、投屏初始化及校准使用限时一次性批准，安装授权绑定 HAP 内容哈希。租约到期和停止立即阻止后续输入，多设备互不误停。

@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
-import { lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, unlinkSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { mkdirSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
 import { writePrivateFileAtomicSync } from "../../atomic-file";
-import { HarmonyError } from "../errors";
+import { assertUnredirectedPathSync } from "./path-safety";
 interface ForwardRecord { id: string; serial: string; pid: number; localPort: number; remotePort: number; state: "pending" | "established"; createdAt: string }
 /** Crash records are diagnostic only: another process never removes these forwards automatically. */
 export class ForwardOwnershipStore {
   constructor(private readonly directory: string) {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
-    if (lstatSync(directory).isSymbolicLink() || resolve(realpathSync(directory)) !== resolve(directory)) throw new HarmonyError("INVALID_ARGUMENT", "Forward journal cannot use redirected storage");
+    assertUnredirectedPathSync(directory);
   }
   create(serial: string, localPort: number, remotePort: number): ForwardRecord {
     const record: ForwardRecord = { id: randomUUID(), serial, pid: process.pid, localPort, remotePort, state: "pending", createdAt: new Date().toISOString() };

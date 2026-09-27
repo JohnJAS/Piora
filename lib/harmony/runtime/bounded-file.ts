@@ -1,11 +1,13 @@
-import { lstat, open, realpath, readdir, unlink } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { lstat, open, readdir, unlink } from "node:fs/promises";
+import { join } from "node:path";
 import { HarmonyError } from "../errors";
+import { assertUnredirectedPath } from "./path-safety";
 
 /** Cap allocation and bytes read even when a file grows after admission. */
 export async function readBoundedRegularFile(path: string, maximum: number): Promise<Buffer> {
   const before = await lstat(path);
-  if (!before.isFile() || before.isSymbolicLink() || before.size > maximum || resolve(await realpath(path)) !== resolve(path)) throw new HarmonyError("INVALID_ARGUMENT", "Artifact must be a bounded regular file without redirected parents");
+  if (!before.isFile() || before.isSymbolicLink() || before.size > maximum) throw new HarmonyError("INVALID_ARGUMENT", "Artifact must be a bounded regular file without redirected parents");
+  await assertUnredirectedPath(path);
   const handle = await open(path, "r");
   try {
     const opened = await handle.stat();
@@ -26,7 +28,8 @@ export async function readBoundedRegularFile(path: string, maximum: number): Pro
 /** Only generated hash filenames in a private store are eligible for expiry. */
 export async function enforceArtifactQuota(directory: string, extension: "wav" | "hap", incomingBytes: number, now = Date.now()) {
   const directoryInfo = await lstat(directory);
-  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink() || resolve(await realpath(directory)) !== resolve(directory)) throw new HarmonyError("INVALID_ARGUMENT", "Private artifact storage cannot contain redirected paths");
+  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) throw new HarmonyError("INVALID_ARGUMENT", "Private artifact storage cannot contain redirected paths");
+  await assertUnredirectedPath(directory);
   const names = await readdir(directory);
   const pattern = new RegExp(`^[a-f0-9]{64}\\.${extension}$`);
   let bytes = 0, count = 0;

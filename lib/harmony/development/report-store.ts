@@ -1,14 +1,15 @@
-import { mkdirSync, readdirSync, unlinkSync, realpathSync, lstatSync } from "node:fs";
+import { mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { writePrivateFileAtomicSync } from "../../atomic-file";
 import { readBoundedRegularFile } from "../runtime/bounded-file";
+import { assertUnredirectedPathSync } from "../runtime/path-safety";
 import { HarmonyError } from "../errors";
 import type { validateDevelopmentOnDevice } from "./validation-chain";
 
 type Report = Awaited<ReturnType<typeof validateDevelopmentOnDevice>> & { savedAt?: string };
 /** Private diagnostics can contain app logs. Keep at most 20 completed reports. */
 export class DevelopmentReportStore {
-  constructor(private readonly directory: string) { mkdirSync(directory, { recursive: true, mode: 0o700 }); if (lstatSync(directory).isSymbolicLink() || resolve(realpathSync(directory)) !== resolve(directory)) throw new HarmonyError("INVALID_ARGUMENT", "Report store cannot use redirected storage"); }
+  constructor(private readonly directory: string) { mkdirSync(directory, { recursive: true, mode: 0o700 }); assertUnredirectedPathSync(directory); }
   async list(projectRoot?: string): Promise<Report[]> {
     const records: Report[] = [];
     for (const name of readdirSync(this.directory).filter(name => /^[a-f0-9-]{36}\.json$/.test(name))) {

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, realpath } from "node:fs/promises";
+import { lstat } from "node:fs/promises";
 import { extname, isAbsolute, resolve } from "node:path";
 import { readBoundedRegularFile } from "../runtime/bounded-file";
 import { HarmonyError, asHarmonyError } from "../errors";
@@ -21,7 +21,7 @@ export async function validateDevelopmentOnDevice(options: DevelopmentValidation
   validateHarmonyScenario(options);
   if (!isAbsolute(options.projectRoot) || !isAbsolute(options.hapPath) || extname(options.hapPath).toLowerCase() !== ".hap" || !/^[A-Za-z][A-Za-z0-9_.]{0,255}$/.test(options.bundleName)) throw new HarmonyError("INVALID_ARGUMENT", "Choose an absolute project, HAP and application identifier");
   const info = await lstat(options.hapPath);
-  if (!info.isFile() || info.isSymbolicLink() || info.size < 1 || info.size > 256 * 1024 * 1024 || await realpath(options.hapPath) !== resolve(options.hapPath)) throw new HarmonyError("INVALID_ARGUMENT", "HAP must be a bounded regular artifact");
+  if (!info.isFile() || info.isSymbolicLink() || info.size < 1 || info.size > 256 * 1024 * 1024) throw new HarmonyError("INVALID_ARGUMENT", "HAP must be a bounded regular artifact");
   const digest = async () => createHash("sha256").update(await readBoundedRegularFile(options.hapPath, 256 * 1024 * 1024)).digest("hex");
   const artifactHash = await digest(), initialSource = dependencies.fingerprint(options.projectRoot);
   const stages: Array<{ stage: string; status: string; timestamp: string; details?: unknown }> = [];

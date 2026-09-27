@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, writeFile, realpath } from "node:fs/promises";
+import { lstat, mkdir, writeFile } from "node:fs/promises";
 import { extname, isAbsolute, join, resolve } from "node:path";
 import { readBoundedRegularFile, enforceArtifactQuota } from "../runtime/bounded-file";
 import { HarmonyError } from "../errors";
@@ -62,7 +62,7 @@ export class HarmonyApprovalStore {
         throw new HarmonyError("INVALID_ARGUMENT", "An absolute HAP artifact path is required");
       }
       const info = await lstat(path).catch(() => undefined);
-      if (!info?.isFile() || info.isSymbolicLink() || await realpath(path) !== resolve(path) || info.size <= 0 || info.size > 256 * 1024 * 1024) {
+      if (!info?.isFile() || info.isSymbolicLink() || info.size <= 0 || info.size > 256 * 1024 * 1024) {
         throw new HarmonyError("INVALID_ARGUMENT", "HAP must be a regular file between 1 byte and 256 MiB");
       }
       data = await readBoundedRegularFile(path, 256 * 1024 * 1024);
@@ -90,7 +90,6 @@ export class HarmonyApprovalStore {
     if (!data || !artifactHash) return {};
     await mkdir(this.artifactDirectory, { recursive: true, mode: 0o700 });
     await enforceArtifactQuota(this.artifactDirectory, "hap", data.length);
-    if (await realpath(this.artifactDirectory) !== resolve(this.artifactDirectory)) throw new HarmonyError("INVALID_ARGUMENT", "Artifact storage cannot contain redirected paths");
     const artifactPath = join(this.artifactDirectory, `${artifactHash}.hap`);
     try { await writeFile(artifactPath, data, { flag: "wx", mode: 0o600 }); }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
