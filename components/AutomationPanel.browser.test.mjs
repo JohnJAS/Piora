@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
@@ -28,9 +28,11 @@ test("automations reopen after saving in settings and the controlled workspace p
       createRoot(document.getElementById('root')).render(<App/>);`);
     const compiler = webpack({ mode: "development", target: "web", devtool: false, entry: path.join(directory, "entry.tsx"), output: { path: directory, filename: "bundle.js" }, resolve: { extensions: [".tsx", ".ts", ".js"], modules: [path.join(repo, "node_modules")], alias: { "@": repo } }, module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: path.join(directory, "loader.cjs") }, { test: /\.css$/, use: path.join(directory, "css.cjs") }] } });
     await new Promise((resolve, reject) => compiler.run((error, stats) => compiler.close(() => error || stats.hasErrors() ? reject(error || new Error(stats.toString({ all: false, errors: true }))) : resolve())));
-    const bundle = await readFile(path.join(directory, "bundle.js"));
+    const scripts = new Map(await Promise.all((await readdir(directory))
+      .filter(file => file.endsWith(".js"))
+      .map(async file => [`/${file}`, await readFile(path.join(directory, file))])));
     browser = await chromium.launch({ channel: "msedge", headless: true });
-    const page = await browser.newPage();
+    const page = await browser.newPage({ locale: "en-US" });
     page.setDefaultTimeout(5000);
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
@@ -42,7 +44,8 @@ test("automations reopen after saving in settings and the controlled workspace p
     await page.route("http://automation.test/**", async route => {
       const url = new URL(route.request().url());
       const method = route.request().method();
-      if (url.pathname === "/bundle.js") return route.fulfill({ contentType: "text/javascript", body: bundle });
+      if (scripts.has(url.pathname)) return route.fulfill({ contentType: "text/javascript", body: scripts.get(url.pathname) });
+      if (route.request().resourceType() === "script") return route.fulfill({ status: 404, body: "Unknown test script" });
       if (!url.pathname.startsWith("/api/")) return route.fulfill({ contentType: "text/html", body: '<html lang="zh-CN"><meta charset="utf-8"><div id="root"></div><script src="/bundle.js"></script></html>' });
       if (method === "POST" || method === "PATCH") {
         if (failSave) return route.fulfill({ status: 503, json: { error: "保存失败" } });
@@ -55,6 +58,7 @@ test("automations reopen after saving in settings and the controlled workspace p
       return route.fulfill({ json: { automation, runs: [] } });
     });
     await page.goto("http://automation.test/");
+    await page.waitForFunction(() => document.documentElement.lang === "en");
     for (const mode of ["settings", "workspace"]) {
       await page.evaluate(mode => window.showPanel(mode), mode);
       await page.locator('[data-settings-id="automations.new"]').click();
@@ -94,7 +98,7 @@ test("automations reopen after saving in settings and the controlled workspace p
       await row.click();
       await page.getByRole("alert").waitFor();
       failDetail = false;
-      await page.getByRole("button", { name: "重试", exact: true }).click();
+      await page.getByRole("button", { name: "Retry", exact: true }).click();
       await page.locator("textarea").waitFor();
       assert.equal(await page.locator("textarea").inputValue(), "edited prompt");
       await page.evaluate(() => window.showPanel("closed"));
