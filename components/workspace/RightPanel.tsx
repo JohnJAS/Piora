@@ -53,7 +53,7 @@ interface Props {
   sessionRunning?: boolean;
   onGuideAgent?: ((prompt?: string) => void) | undefined;
   onOpenShellSettings?: () => void;
-  onSelectAutomation?: (id: string) => void;
+  onSelectAutomation?: (id: string | null) => void;
   onAutomationChanged?: () => void;
   capabilities: SessionCapabilitiesState | null;
 }
@@ -420,7 +420,7 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
       /></RenderErrorBoundary> : null}
     </section>
     <section id="workspace-automation" role="tabpanel" aria-labelledby="workspace-automation-tab" hidden={activeTab !== "automation"} className={styles.panel}>
-      {activeTab === "automation" ? <RenderErrorBoundary resetKey={`automation:${props.selectedAutomationId ?? "list"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><AutomationPanel automationId={props.selectedAutomationId} sessionId={props.sessionId} sessionName={props.sessionName} cwd={cwd} onSelectAutomation={props.onSelectAutomation} onAutomationChanged={props.onAutomationChanged} /></RenderErrorBoundary> : null}
+      {active && activeTab === "automation" ? <RenderErrorBoundary resetKey={`automation:${props.selectedAutomationId ?? "list"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><AutomationPanel automationId={props.selectedAutomationId} sessionId={props.sessionId} sessionName={props.sessionName} cwd={cwd} onSelectAutomation={props.onSelectAutomation} onAutomationChanged={props.onAutomationChanged} /></RenderErrorBoundary> : null}
     </section>
   </div>;
 });

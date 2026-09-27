@@ -22,7 +22,7 @@ interface AutomationPanelProps {
   sessionName?: string;
   cwd?: string | null;
   embedded?: boolean;
-  onSelectAutomation?: (id: string) => void;
+  onSelectAutomation?: (id: string | null) => void;
   onAutomationChanged?: () => void;
 }
 
@@ -94,7 +94,8 @@ export function AutomationPanel({ automationId, sessionId, sessionName, cwd, emb
   const [error, setError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const effectiveId = automationId ?? selectedId;
+  const effectiveId = automationId !== undefined ? automationId : selectedId;
+  const detailReady = Boolean(effectiveId && detail?.automation.id === effectiveId);
   const loadList = useCallback(async (signal?: AbortSignal) => {
     const payload = await readSettingsJson<{ automations: AutomationSummary[] }>("/api/automations", signal);
     setItems(payload.automations);
@@ -118,7 +119,7 @@ export function AutomationPanel({ automationId, sessionId, sessionName, cwd, emb
   }, [effectiveId, loadDetail, loadList, retryKey]);
 
   useEffect(() => {
-    if (!effectiveId || loading) return;
+    if (!effectiveId || loading || !detailReady) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
@@ -128,7 +129,7 @@ export function AutomationPanel({ automationId, sessionId, sessionName, cwd, emb
     };
     timer = setTimeout(refresh, 5_000);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [effectiveId, loadDetail, loading]);
+  }, [effectiveId, loadDetail, loading, detailReady]);
 
   const targetDescription = useMemo(() => draft.kind === "heartbeat"
     ? (sessionName || detail?.automation.target.type === "session" && detail.automation.target.sessionName || t("automations.currentChat"))
@@ -138,6 +139,15 @@ export function AutomationPanel({ automationId, sessionId, sessionName, cwd, emb
     setCreating(false);
     setSelectedId(id);
     onSelectAutomation?.(id);
+  };
+
+  const showList = () => {
+    setCreating(false);
+    setSelectedId(null);
+    setDetail(null);
+    setMenuOpen(false);
+    setError(null);
+    onSelectAutomation?.(null);
   };
 
   const save = async () => {
@@ -150,16 +160,13 @@ export function AutomationPanel({ automationId, sessionId, sessionName, cwd, emb
         : { type: "project" as const, cwd: cwd ?? (detail?.automation.target.type === "project" ? detail.automation.target.cwd : "") };
       const body = { kind: draft.kind, name: draft.name, prompt: draft.prompt, status: draft.status, rrule: rule, timezone: draft.timezone, target, notificationPolicy: draft.notificationPolicy };
       if (creating || !effectiveId) {
-        const created = await jsonRequest<{ automation: AutomationDefinition }>("/api/automations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        setCreating(false);
-        setSelectedId(created.automation.id);
-        onSelectAutomation?.(created.automation.id);
+        await jsonRequest("/api/automations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       } else {
         await jsonRequest(`/api/automations/${encodeURIComponent(effectiveId)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        await loadDetail(effectiveId);
       }
-      await loadList();
+      showList();
       onAutomationChanged?.();
+      await loadList();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -200,7 +207,7 @@ export function AutomationPanel({ automationId, sessionId, sessionName, cwd, emb
     setSaving(true);
     try {
       await jsonRequest(`/api/automations/${encodeURIComponent(effectiveId)}`, { method: "DELETE" });
-      setSelectedId(null); setDetail(null); setCreating(false); await loadList(); onAutomationChanged?.();
+      showList(); onAutomationChanged?.(); await loadList();
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setSaving(false); }
   };
@@ -209,15 +216,15 @@ export function AutomationPanel({ automationId, sessionId, sessionName, cwd, emb
     setSelectedId(null); setDetail(null); setCreating(true); setDraft(newDraft(Boolean(sessionId))); setError(null);
   };
 
-  const showingEditor = creating || Boolean(effectiveId && detail);
+  const showingEditor = creating || Boolean(effectiveId);
   return <div className={`${styles.root}${embedded ? ` ${styles.embedded}` : ""}`}>
     <header className={styles.header}>
       <div>
-        <h2>{showingEditor ? (creating ? t("automations.new") : detail?.automation.name) : t("automations.title")}</h2>
+        <h2>{showingEditor ? (creating ? t("automations.new") : items.find((item) => item.id === effectiveId)?.name ?? (detailReady ? detail?.automation.name : t("automations.loading"))) : t("automations.title")}</h2>
         {!showingEditor ? <><p>{t("automations.description")}</p><p data-settings-id="automations.notifications">{t("automations.notificationsHint")}</p></> : null}
       </div>
       <div className={styles.headerActions}>
-        {showingEditor && embedded ? <button type="button" onClick={() => { setCreating(false); setSelectedId(null); setDetail(null); }}><AliIcon name="arrowleft" size={14} />{t("automations.all")}</button> : null}
+        {showingEditor ? <button type="button" onClick={showList} disabled={saving}><AliIcon name="arrowleft" size={14} />{t("automations.all")}</button> : null}
         {!showingEditor ? (
           <button
             type="button"
@@ -231,7 +238,7 @@ export function AutomationPanel({ automationId, sessionId, sessionName, cwd, emb
             <span>{t("automations.newShort")}</span>
           </button>
         ) : null}
-        {showingEditor && !creating ? <div className={styles.moreWrap}>
+        {showingEditor && !creating && detailReady ? <div className={styles.moreWrap}>
           <button type="button" aria-label={t("automations.more")} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}><AliIcon name="ellipsis" size={16} /></button>
           {menuOpen ? <div className={styles.moreMenu} role="menu">
             <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); void runNow(); }} disabled={saving || detail?.automation.running}>{t("automations.runNow")}</button>
@@ -248,7 +255,7 @@ export function AutomationPanel({ automationId, sessionId, sessionName, cwd, emb
         <span className={styles.listText}><strong>{item.name}</strong><small>{item.status === "ACTIVE" ? t("automations.active") : t("automations.paused")} · {scheduleLabel(item.rrule, t)}</small></span>
         <span className={styles.chevron}>›</span>
       </button>)}
-    </div> : <div className={styles.editor}>
+    </div> : !creating && !detailReady ? <div className={styles.state} role="status">{!error ? t("automations.loading") : null}</div> : <div className={styles.editor}>
       <label className={styles.promptField}>
         <span>{t("automations.name")}</span>
         <input value={draft.name} maxLength={200} onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))} placeholder={t("automations.namePlaceholder")} />
