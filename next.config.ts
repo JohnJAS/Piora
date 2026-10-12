@@ -61,6 +61,8 @@ const nextConfig: NextConfig = {
     "@earendil-works/pi-agent-core",
     "@earendil-works/pi-ai",
     "@earendil-works/pi-tui",
+    // Share transport/error class identities with the external native SDK.
+    "@earendil-works/pi-mcp",
     "playwright-core",
     "proper-lockfile",
     "hypium-driver",
@@ -88,6 +90,7 @@ const nextConfig: NextConfig = {
         "@earendil-works/pi-agent-core",
         "@earendil-works/pi-ai",
         "@earendil-works/pi-tui",
+        "@earendil-works/pi-mcp",
         "@deveco/deveco-cli",
         "playwright-core",
         "hypium-driver",
