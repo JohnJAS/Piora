@@ -8,7 +8,7 @@
 
 fixture 可通过 `npm run harmony:fixture:prepare -- debug <新目录>` 或 production 生成。DevEco CLI 检查通过不等于 HAP 已签名或已安装。生产 HAP 在受控 CI 构建后用 `npm run harmony:fixture:verify-hap -- <生产HAP>` 扫描测试入口。签名材料由环境提供，不提交私钥或修改用户签名配置。
 
-beta 投屏资源使用 tagged run 的 `[self-hosted, Windows, harmony-device, harmony-api26, ephemeral]` runner。`build-harmony-mirror-release.mjs` 先生成 public unsigned release-mode HAP，再从完全相同的字节生成独立的 private DevEco device-signed acceptance HAP；官方工具核对应用证书、debug Profile、bundle、普通权限和目标手机 allow-list。`verify-harmony-mirror-device.mjs` 仅对私有副本执行普通安装（不使用 `-r`）、版本回读、启动、明确授权、真实视频包、截图及卸载缺席门禁。
+投屏组件随包分发仓库内审阅过的固定副本，tagged 打包全程使用 GitHub 托管 runner，不需要专用 runner 或真机。若需生成新的投屏组件，维护者可手工运行 `build-harmony-mirror-release.mjs`：先生成 public unsigned release-mode HAP，再从完全相同的字节生成独立的 private DevEco device-signed acceptance HAP；官方工具核对应用证书、debug Profile、bundle、普通权限和目标手机 allow-list 后，`verify-harmony-mirror-device.mjs` 仅对私有副本执行普通安装（不使用 `-r`）、版本回读、启动、明确授权、真实视频包、截图及卸载缺席门禁。
 
 真机门禁通过后，staging 只保留 public unsigned HAP、manifest、脱敏 receipt 与 `SOURCE.md`。workflow 的无条件清理会删除 private acceptance HAP 和临时验签文件，上传清单不包含任何 device-signed HAP。GitHub-hosted Windows 下载这些同 run 公开文件，打包前后重验 receipt 与 unsigned HAP 的 SHA-256；这份 receipt 证明相同 unsigned 输入曾生成私有验收副本，不把公开 HAP 描述成已签名。
 

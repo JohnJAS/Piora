@@ -181,28 +181,16 @@ test('generated SOURCE note binds the same run and rejects stale legacy text', a
   await assert.rejects(readAndVerifySourceNote(fixture.directory, fixture.manifest, fixture.receipt), /SOURCE\.md is stale/);
 });
 
-test('tag workflows upload only the accepted public unsigned HAP while private signing stays ephemeral', async () => {
+test('tag workflows package the bundled mirror HAP on hosted runners without a per-tag device chain', async () => {
   const preview = await readFile(new URL('../.github/workflows/harmony-preview.yml', import.meta.url), 'utf8');
   const release = await readFile(new URL('../.github/workflows/release.yml', import.meta.url), 'utf8');
   const publish = await readFile(new URL('../.github/workflows/publish-preview.yml', import.meta.url), 'utf8');
   for (const workflow of [preview, release]) {
-    assert.match(workflow, /runs-on: \[self-hosted, Windows, harmony-device, harmony-api26, ephemeral\]/);
-    assert.match(workflow, /build-harmony-mirror-release\.mjs/);
-    assert.match(workflow, /PIORA_HARMONY_SIGNING_CONFIG_PATH is required on the dedicated runner/);
-    assert.match(workflow, /HARMONY_SERIAL: \$\{\{ secrets\.HARMONY_DEVICE_SERIAL \}\}/);
-    assert.match(workflow, /\.private-acceptance\/OHScrcpyServer\.acceptance\.hap/);
-    assert.match(workflow, /verify-harmony-mirror-device\.mjs \$resources --accepted-hap \$acceptedHap --serial \$env:HARMONY_SERIAL/);
-    assert.match(workflow, /stage-harmony-mirror-artifact\.mjs/);
-    assert.match(workflow, /name: harmony-mirror-resource-\$\{\{ github\.ref_name \}\}/);
-    assert.match(workflow, /harmony-mirror-signature-verification\.json/);
-    assert.match(workflow, /PIORA_REQUIRE_HARMONY_RELEASE_RESOURCE: '1'/);
-    assert.match(workflow, /name: Remove private signing and acceptance files\s+if: always\(\)/);
-    const upload = workflow.match(/name: Upload accepted Harmony mirror resource[\s\S]*?if-no-files-found: error/)?.[0] ?? '';
-    assert.match(upload, /OHScrcpyServer\.hap/);
-    assert.match(upload, /harmony-mirror-manifest\.json/);
-    assert.match(upload, /harmony-mirror-signature-verification\.json/);
-    assert.match(upload, /SOURCE\.md/);
-    assert.doesNotMatch(upload, /acceptance\.hap|\.private-acceptance|\.signing|\.ohos/i);
+    assert.doesNotMatch(workflow, /harmony-mirror/);
+    assert.doesNotMatch(workflow, /self-hosted|harmony-device|harmony-api26/);
+    assert.doesNotMatch(workflow, /build-harmony-mirror-release\.mjs|verify-harmony-mirror-device\.mjs|stage-harmony-mirror-artifact\.mjs|verify-harmony-mirror-artifact\.mjs/);
+    assert.doesNotMatch(workflow, /PIORA_REQUIRE_HARMONY_RELEASE_RESOURCE|PIORA_HARMONY_SIGNING_CONFIG_PATH|HARMONY_DEVICE_SERIAL/);
+    assert.match(workflow, /runs-on: windows-latest/);
   }
   const beforeBuild = await readFile(new URL('./electron-before-build.cjs', import.meta.url), 'utf8');
   const verifier = await readFile(new URL('./verify-harmony-mirror-artifact.mjs', import.meta.url), 'utf8');
@@ -228,8 +216,8 @@ test('tag workflows upload only the accepted public unsigned HAP while private s
   assert.match(builder, /from: \.\.\/lib\/harmony\/runtime\/PioraHapSigner\.java/);
   assert.doesNotMatch(builder, /OHScrcpyServer\.acceptance\.hap|\.private-acceptance/);
   assert.doesNotMatch(preview, /gh release create/);
-  assert.match(preview, /needs: harmony-mirror/);
-  assert.match(release, /needs: \[source-gate, harmony-mirror\]/);
+  assert.doesNotMatch(preview, /needs: harmony-mirror/);
+  assert.doesNotMatch(release, /harmony-mirror/);
   assert.match(publish, /workflow_dispatch:/);
   assert.match(publish, /environment: preview-publish/);
   assert.match(publish, /run-id: \$\{\{ inputs\.build_run_id \}\}/);

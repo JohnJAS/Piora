@@ -620,8 +620,17 @@ async function prepare(options: LocalSigningOptions): Promise<string> {
   if (!/^[0-9a-f]{64}$/i.test(options.deviceUdid)) throw new Error("connected phone returned an invalid UDID");
   const sourceHap = resolve(options.sourceHapPath);
   const sourceBytes = await regularFile(sourceHap, MAX_HAP_BYTES);
-  const publicReceipt = await jsonFile(join(dirname(sourceHap), "harmony-mirror-signature-verification.json"), 1024 * 1024);
-  validatePublicMirrorReceipt(publicReceipt, sourceBytes);
+  // The release pipeline may ship a same-run public acceptance receipt next to
+  // the unsigned HAP. The reviewed bundled HAP can also ship without one (no
+  // per-tag rebuild); then provenance checking is skipped while the structural
+  // artifact validation below still applies. A present receipt must validate.
+  let publicReceipt: unknown;
+  try {
+    publicReceipt = await jsonFile(join(dirname(sourceHap), "harmony-mirror-signature-verification.json"), 1024 * 1024);
+  } catch (error) {
+    if (!isMissing(error)) throw error;
+  }
+  if (publicReceipt !== undefined) validatePublicMirrorReceipt(publicReceipt, sourceBytes);
   const preview = await previewHapArtifact(sourceHap, options.signal);
   if (preview.bundleName !== MIRROR_BUNDLE || preview.versionCode === undefined || preview.versionName === undefined
     || !preview.abilities.includes("EntryAbility")) throw new Error("installed Piora mirror resource is invalid");

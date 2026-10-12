@@ -1,6 +1,8 @@
+> **当前策略（自 0.5.5-beta.19 起）**：tagged 打包不再重构建、签名或真机验收投屏组件；安装包与便携包随包分发仓库内审阅过的 `third_party/harmony-tools/windows-x64/OHScrcpyServer.hap`，全程使用 GitHub 托管 runner。下文描述的同 run 重构建与私有验收链保留为维护者手工工具（`build-harmony-mirror-release.mjs` 等），仅在需要生成新组件时执行。
+
 # unsigned 投屏组件的发行与私有签名门禁
 
-Windows beta 不能继续携带旧 1.0.3 HAP，也不能给旧字节补写来源。tag workflow 必须在同一次 GitHub Actions run 中构建新的 public unsigned HAP，从完全相同的输入生成仅供验收的 private DevEco device-signed HAP，完成官方验签、真机验收和 provenance 记录，再把 unsigned HAP 与脱敏收据交给 GitHub-hosted Windows 打桌面包。私有签名 HAP 不进入 artifact 或安装包。
+手工生成新组件时不能给旧字节补写来源：必须在同一次操作中构建新的 public unsigned HAP，从完全相同的输入生成仅供验收的 private DevEco device-signed HAP，完成官方验签、真机验收和 provenance 记录，再把 unsigned HAP 与脱敏收据交给 GitHub-hosted Windows 打桌面包。私有签名 HAP 不进入 artifact 或安装包。
 
 ## 专用 runner
 
@@ -36,6 +38,6 @@ Piora 为这台手机生成并官方验签私有缓存副本，确认 bundle、�
 
 `harmony-preview.yml` 只构建并上传已验证的 installer/portable，不创建 GitHub Release。下载这次 run 的桌面 artifact，用真正的 Piora 安装包和手机完成最终验收后，才可手动运行 `publish-preview.yml`，输入原 beta tag 和构建 run ID。发布 job 绑定 `preview-publish` environment；仓库必须为这个 environment 配置 required reviewers 后，才能依赖它提供人工批准门禁。job 还会核对 run 是该 tag 提交上成功完成的 `harmony-preview.yml`，并且只下载和发布那次 run 的字节。
 
-这一拆分允许一次代码/tag 推送完成候选构建，同时避免 tag 一推送就公开尚未经过安装包实机验收的 beta。当前 beta.17 包含多来源技能管理、Windows 目录构建完整性修复及此前的生产依赖安全升级，必须用修复后的依赖重新完成同次 run 的构建和验收链，不能沿用旧候选 HAP 或安装包。本地审计和回归通过不能代替 tagged CI 与最终 Piora 桌面端和真实手机完整验收；没有对应记录时，不得写成 beta.17 已通过或已发布。完整更新说明和审计剩余项见 `CHANGELOG.md` 的同版本章节。
+这一拆分允许一次代码/tag 推送完成候选构建，同时避免 tag 一推送就公开尚未经过安装包实机验收的 beta。当前 beta.19 包含多来源技能管理、Windows 目录构建完整性修复及此前的生产依赖安全升级，打包随包分发仓库内审阅过的固定 HAP；如生成新组件，必须重新完成同次 run 的构建和验收链，不能沿用旧候选 HAP 或安装包。本地审计和回归通过不能代替 tagged CI 与最终 Piora 桌面端和真实手机完整验收；没有对应记录时，不得写成 beta.19 已通过或已发布。完整更新说明和审计剩余项见 `CHANGELOG.md` 的同版本章节。
 
 本地只能运行来源、receipt、运行时签名和 workflow 的单元测试；不得本地生成可发布的 HAP 或桌面包。进入 staging 的 public unsigned HAP 必须来自 tagged CI run，并由同一输入生成的私有 device-signed 副本完成上述真机门禁。

@@ -4,6 +4,36 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.5.5-beta.19] - 2026-10-12
+
+### 发布打包
+
+- 打包不再重构建、签名或真机验收鸿蒙投屏组件：安装包与便携包随包分发仓库内审阅过的 `OHScrcpyServer.hap` 固定副本，`harmony-preview.yml` 与 `release.yml` 全部在 GitHub 托管 runner 上完成构建与验包，移除专用 runner、设备 secret、签名材料与同 run 收据的要求，打包因此不再依赖自托管 runner 或连接手机。
+- 运行时“初始化投屏服务”的本地签名流程保留对随包收据的逐字节校验能力：收据存在时仍严格校验来源与验收绑定，缺失时跳过来源校验并保留 HAP 结构校验（bundle、版本与 `EntryAbility`）；投屏仍为实时视频，安装与本地签名仍要求本机 DevEco 登录、API 26 工具链与有效 debug Profile。
+- 生成新投屏组件的同 run 重构建与私有 DevEco device-signed 验收链保留为维护者手工工具，不再参与常规打包；相关文档已更新。
+
+### Pi 1.0.2 与原生 MCP
+
+- Pi 运行时从 0.84.3 升级至 1.0.2，适配消息接收、结构化系统上下文和工具参数；保留原始会话历史，避免上下文用量重复计算，并兼容新的会话目录发现顺序。
+- 设置 → 插件新增原生 MCP 配置，支持 stdio、Streamable HTTP、显式 OAuth 登录与重连。启用连接并重载普通会话后，可在设置 → 项目工具中逐项启用工具与服务器资源。
+- 修复历史会话或空闲超时后 MCP 设置报错、项目配置不可用的问题；配置保存后关闭并重开设置仍保留待重载提示，并防止重复操作和过期异步结果回写。
+- 修复禁用 MCP 或服务器后状态误报为需要授权的问题。工具、资源和注册服务器连接权限分别校验；撤销授权、禁用或修改配置后阻止旧连接继续调用、登录或重连。
+- 支持工具直接暴露、延迟发现、Codemode 和隐藏模式；保留异步发现后的既有选择，同一工作区的不同会话仍独立执行权限策略，嵌套调用不能扩大权限。
+- 对 MCP 服务端错误、日志、进度与结果中的已知认证信息脱敏，避免进入模型上下文或会话记录；旧 MCP adapter 配置保持独立。
+
+### 会话与打包兼容
+
+- 修复停止任务时异步插入消息可能串入下一次发送的问题；上下文裁剪后保留 Shell 指令和工具定义，系统与工具配置消息保留在模型历史中并从聊天展示中隐藏。
+- 按 Pi 实际解析位置收集 Jiti，完整打包 HAP 预览的 JSZip/Pako 依赖，以及原生 MCP、Codemode 和 QuickJS worker/WASM，保持隔离运行校验。
+- 使用同一官方 Pi 发布包中的未打包代码统一解析 Undici 8.11.2，以发布包完整性及 985 个源码文件字节校验约束转换，并继续拒绝未经验证的内嵌依赖。
+- Windows 完整性测试使用无需提权的目录联接验证链接入口被拒绝；同步更新许可证清单，保留主线的技能来源、代理和打包修复。
+
+### 发布与验证
+
+- `0.5.5-beta.18` 的 tagged 候选仍按旧链路调度专用 runner，未产出桌面制品。本候选改用新的打包方式：不再重构建、签名或真机验收鸿蒙投屏组件，随包分发仓库内审阅过的 `OHScrcpyServer.hap` 固定副本，`harmony-preview.yml` 与 `release.yml` 的构建与验包全部在 GitHub 托管 runner 完成，打包不再依赖自托管 runner、签名材料或连接手机。
+- 用户可见更新点包含上两节（Pi 1.0.2 与原生 MCP、会话与打包兼容，来自 PR #142 与 beta.18 候选，尚未随包发布）与本次“发布打包”简化；生成新投屏组件的同 run 重构建与私有验收链保留为维护者手工工具。
+- 发布前在开发机复核：发布加固与投屏发布链相关测试 75+ 项通过（`release-hardening`、`harmony-mirror-release`、`harmony-mirror-provenance`、`harmony-mirror-signing`、`packaged-app-verification`、`harmony-packaging`），完整三段测试分片 2571 项通过（仅 2 例 companion-pet 为已知宿主环境差异，origin/main 基线同错复现），shell-resource 6/6，`typecheck`、`lint`（0 错误）、`harmony:docs:check`、`verify:hygiene`、`licenses:check` 与发布元数据校验通过。候选构建、安装包与真机验收未完成前不视为已发布。
+
 ## [0.5.5-beta.18] - 2026-10-12
 
 ### Pi 1.0.2 与原生 MCP
