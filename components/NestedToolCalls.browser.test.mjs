@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
@@ -25,15 +25,22 @@ test("live nested summaries batch updates, settle cancellation and restore saved
   const compiler = webpack({ mode: "development", target: "web", devtool: false, entry: path.join(root, "entry.tsx"), output: { path: root, filename: "bundle.js" }, resolve: { extensions: [".tsx", ".ts", ".js"], modules: [path.join(repo, "node_modules")], alias: { "@": repo } }, module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: path.join(root, "loader.cjs") }] } });
   await new Promise((resolve, reject) => compiler.run((error, stats) => compiler.close(() => error || stats.hasErrors() ? reject(error || Error(stats.toString({ all: false, errors: true }))) : resolve())));
   browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : "chromium", headless: true });
-  const page = await browser.newPage({ viewport: { width: 420, height: 700 } }), errors = [];
+  const page = await browser.newPage({ locale: "en-US", viewport: { width: 420, height: 700 } }), errors = [];
   page.on("pageerror", error => errors.push(error.message));
   const styles = await readFile(path.join(repo, "app/globals.css"), "utf8");
   const css = styles.slice(styles.indexOf(".nested-tool-calls"));
+  // The English catalog is a lazy webpack chunk, including in this fixture.
+  // Serve emitted scripts explicitly instead of falling back to HTML.
+  const scripts = new Map(await Promise.all((await readdir(root)).filter(name => name.endsWith(".js"))
+    .map(async name => [`/${name}`, await readFile(path.join(root, name), "utf8")])));
   await page.route("http://nested.test/**", async route => {
-    if (new URL(route.request().url()).pathname === "/bundle.js") return route.fulfill({ contentType: "application/javascript", body: await readFile(path.join(root, "bundle.js"), "utf8") });
+    const pathname = new URL(route.request().url()).pathname;
+    if (scripts.has(pathname)) return route.fulfill({ contentType: "application/javascript", body: scripts.get(pathname) });
+    if (pathname !== "/") return route.fulfill({ status: 404, body: "Not found" });
     await route.fulfill({ contentType: "text/html", body: `<meta charset="utf-8"><style>body{margin:16px}${css}</style><div id="root"></div><script src="/bundle.js"></script>` });
   });
   await page.goto("http://nested.test/");
+  await page.locator('html[lang="en"]').waitFor();
   await page.getByText("Codemode", { exact: true }).waitFor();
   await page.evaluate(() => {
     for (let i = 0; i < 100; i++) window.store.record({ type: "tool_execution_start", toolCallId: `root/${i}`, parentToolCallId: "root", toolName: `read-${i}` });
