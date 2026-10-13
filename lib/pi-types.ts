@@ -56,6 +56,8 @@ export interface NavigateTreeResult {
 }
 
 export interface SessionStatsInfo {
+  scope?: "session";
+  costStatus?: "known" | "partial" | "unknown";
   sessionFile?: string;
   sessionId: string;
   sessionName?: string;

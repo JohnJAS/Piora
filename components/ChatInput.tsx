@@ -2334,8 +2334,8 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
                 ) : (
                   <div className="session-stats-tooltip-empty">{t("session.load")}</div>
                 )}
-                {sessionStats && sessionStats.cost > 0 ? (
-                  <div className="session-stats-tooltip-cost"><span>{t("session.cost")}</span><strong>${sessionStats.cost.toFixed(4)}</strong></div>
+                {sessionStats ? (
+                  <div className="session-stats-tooltip-cost"><span>{t("session.cumulativeCost")}</span><strong>{sessionStats.costStatus === "unknown" ? t("session.costUnknown") : `$${sessionStats.cost.toFixed(4)}${sessionStats.costStatus === "partial" ? ` (${t("session.costPartial")})` : ""}`}</strong></div>
                 ) : null}
               </div>
             </div> : null}

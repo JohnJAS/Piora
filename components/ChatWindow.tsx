@@ -1,4 +1,5 @@
 "use client";
+import { NestedToolCallsContext } from "./NestedToolCalls";
 import { latestReplySource } from "@/lib/reply-suggestions";
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import type { HistoryChatControls } from "@/lib/history-navigation";
@@ -194,7 +195,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
   }, [chatInputRef]);
 
   const {
-    loading, error, messages, entryIds, streamState, replyHistorySettling, activeLeafId, switchHistoryBranch, forkHistoryQuestion,
+    nestedCallsStore, loading, error, messages, entryIds, streamState, replyHistorySettling, activeLeafId, switchHistoryBranch, forkHistoryQuestion,
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactionStartedAt, compactError, compactResult, displayModel: displayModelValue, sessionStats,
@@ -473,6 +474,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
       sessionStats.tokens.cacheWrite,
       sessionStats.tokens.total,
       sessionStats.cost ?? 0,
+      sessionStats.costStatus ?? "",
     ].join("|")
     : null;
   const sessionStatsRef = useRef(sessionStats);
@@ -691,6 +693,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
   }
 
   return (
+    <NestedToolCallsContext.Provider value={nestedCallsStore}>
     <div
       ref={chatSurfaceRef}
       className="relative flex h-full flex-col overflow-hidden"
@@ -925,6 +928,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
       )}
       {commandExecutionDialog ? <CommandExecutionDialog data={commandExecutionDialog} onClose={() => setCommandExecutionDialog(null)} /> : null}
     </div>
+    </NestedToolCallsContext.Provider>
   );
 }
 

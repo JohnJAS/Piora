@@ -30,6 +30,7 @@ function view(ctx: Context) {
   const config = loadNativeMcpConfig(ctx.agentDir, ctx.cwd, ctx.projectTrusted);
   const live = ctx.session?.nativeMcp?.snapshot();
   const liveStates = new Map(live?.servers.map(server => [server.name, server]) ?? []);
+  const globals = new Map(loadNativeMcpConfig(ctx.agentDir, ctx.cwd, false).servers.map(entry => [entry.name, entry.config]));
   return { enabled: readNativeMcpPreferences(ctx.agentDir).enabled, projectTrusted: ctx.projectTrusted,
     owner: live?.owner ?? "not-started", live: !!live,
     diagnostics: config.errors,
@@ -37,6 +38,7 @@ function view(ctx: Context) {
       const state = liveStates.get(entry.name);
       return { name: entry.name, source: entry.source, scope: entry.scope,
         override: entry.override, enabled: entry.config.enabled !== false,
+        ...(entry.scope === "global" && globals.has(entry.name) ? { globalSettings: { enabled: globals.get(entry.name)!.enabled !== false, exposure: globals.get(entry.name)!.exposure ?? "codemode" } } : {}),
         exposure: entry.config.exposure ?? "codemode", transport: "url" in entry.config ? "http" : "stdio",
         endpoint: "url" in entry.config ? new URL(entry.config.url).origin : entry.config.command,
         state: state?.state ?? (entry.config.enabled === false ? "disabled" : "configured"),
@@ -75,9 +77,9 @@ export async function PUT(request: Request) {
       ctx.session.nativeMcp.approveRegistered(body.name, body.enabled);
     } else if (body.action === "server" && typeof body.name === "string" && (body.scope === "global" || body.scope === "project")) {
       if (body.exposure !== undefined && !NATIVE_MCP_EXPOSURES.includes(body.exposure as NativeMcpExposure)) throw new Error("Unsupported MCP exposure");
-      if (body.enabled !== undefined && typeof body.enabled !== "boolean" || body.remove !== undefined && typeof body.remove !== "boolean") throw new Error("Invalid MCP operation");
+      if (body.enabled !== undefined && typeof body.enabled !== "boolean" || body.remove !== undefined && typeof body.remove !== "boolean" || body.restoreInheritance !== undefined && typeof body.restoreInheritance !== "boolean") throw new Error("Invalid MCP operation");
       updateNativeMcpServer(ctx.agentDir, ctx.cwd, ctx.projectTrusted, { name: body.name, scope: body.scope,
-        config: body.config, enabled: body.enabled as boolean | undefined, exposure: body.exposure as NativeMcpExposure | undefined, remove: body.remove as boolean | undefined });
+        config: body.config, enabled: body.enabled as boolean | undefined, exposure: body.exposure as NativeMcpExposure | undefined, remove: body.remove as boolean | undefined, restoreInheritance: body.restoreInheritance as boolean | undefined });
     } else throw new Error("Invalid MCP operation");
     invalidateServicesCache();
     return NextResponse.json(view(ctx));

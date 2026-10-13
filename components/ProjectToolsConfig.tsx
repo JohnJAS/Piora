@@ -30,6 +30,8 @@ interface ProjectToolsResponse {
 
 interface Props {
   cwd: string;
+  mcpFocus?: { name: string; toolNames: string[] } | null;
+  onClearMcpFocus?: () => void;
   onChanged?: (capabilities: SessionCapabilitiesState) => void;
 }
 
@@ -67,7 +69,7 @@ function iconFor(item: SessionCapabilityItem): AliIconName {
   }
 }
 
-export function ProjectToolsConfig({ cwd, onChanged }: Props) {
+export function ProjectToolsConfig({ cwd, onChanged, mcpFocus, onClearMcpFocus }: Props) {
   const { t } = useI18n();
   const [data, setData] = useState<ProjectToolsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -172,8 +174,8 @@ export function ProjectToolsConfig({ cwd, onChanged }: Props) {
 
   const groups = useMemo(() => GROUPS.map((kind) => ({
     kind,
-    items: data?.capabilities.items.filter((item) => item.kind === kind) ?? [],
-  })).filter((group) => group.items.length > 0), [data?.capabilities.items]);
+    items: data?.capabilities.items.filter((item) => item.kind === kind && (!mcpFocus || item.id === `mcp-resource:${mcpFocus.name}` || item.toolNames.some(name => mcpFocus.toolNames.includes(name)))) ?? [],
+  })).filter((group) => group.items.length > 0), [data?.capabilities.items, mcpFocus]);
 
   const toggle = (item: SessionCapabilityItem) => {
     if (!data || saving || !item.available) return;
@@ -249,6 +251,7 @@ export function ProjectToolsConfig({ cwd, onChanged }: Props) {
     {error ? <div className={styles.error} role="alert">{error}</div> : null}
     {message ? <div className={styles.notice} role="status">{message}</div> : null}
 
+    {mcpFocus ? <p>{t("nativeMcp.focusedTools", { server: mcpFocus.name })} <button type="button" onClick={onClearMcpFocus}>{t("nativeMcp.showAllTools")}</button></p> : null}
     {loading && !data ? <div className={styles.empty}>{t("projectTools.loading")}</div> : groups.length === 0 ? (
       <div className={styles.empty}>{t("projectTools.empty")}</div>
     ) : <div className={styles.groups}>
