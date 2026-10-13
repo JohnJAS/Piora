@@ -21,7 +21,7 @@ Piora 把 AI 对话、项目文件、代码编辑、Git 审阅、终端、浏览
 
 beta.19 尚待 tagged GitHub Actions 和真实 Piora 桌面端与手机对同批字节的完整验收，通过后才会出现在[所有发布](https://github.com/kexijiang/Piora/releases)。候选 Windows 包携带仓库内审阅过的 unsigned 投屏 HAP，打包全程 GitHub 托管，不再重构建该组件、也不要求专用 runner 或真机验收；只有用户明确初始化时，Piora 才调用本机已登录的 DevEco CLI 生成或更新设备调试 Profile，生成并验签设备绑定副本后安装。真机支持范围和待验项目见[鸿蒙设备验收矩阵](docs/harmony/atlas-acceptance.md)，完整版本变化及审计剩余项以 [CHANGELOG.md](CHANGELOG.md) 为准。
 
-[下载与安装](#下载与安装) · [开始使用](#开始使用) · [主要功能](#主要功能) · [鸿蒙设备工作台](#鸿蒙设备工作台) · [开发与贡献](#开发与贡献) · [文档索引](docs/README.md)
+[下载与安装](#下载与安装) · [开始使用](#开始使用) · [完整用户手册](docs/user-manual.zh-CN.md) · [主要功能](#主要功能) · [鸿蒙设备工作台](#鸿蒙设备工作台) · [开发与贡献](#开发与贡献) · [文档索引](docs/README.md)
 
 ## 下载与安装
 
@@ -47,6 +47,8 @@ chmod +x Piora-0.5.4-linux-x64-portable.AppImage
 其他版本和 Beta 预览版见 [所有发布](https://github.com/kexijiang/Piora/releases)。目前正式版提供 Windows 和 Linux x64，Beta 提供 Windows x64；没有 macOS 安装包。Windows 安装包尚未启用代码签名，首次启动可能出现系统信誉提示。
 
 ## 开始使用
+
+第一次使用或需要完整操作步骤，请阅读[中文用户手册](docs/user-manual.zh-CN.md)，涵盖模型配置、聊天与项目、Git、终端、SSH、定时任务、技能与 MCP、设备操作、备份迁移及常见问题。
 
 1. **配置模型**：打开“设置 → 模型”，填写 API Key，或使用服务支持的 OAuth / 设备码登录。自定义服务可配置地址和模型 ID，测试连接后选择默认模型。
 2. **选择工作位置**：添加本机文件夹作为项目，或新建无项目聊天。项目会话中的文件、终端和 Git 操作围绕所选目录展开。
