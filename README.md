@@ -17,9 +17,9 @@ Piora 把 AI 对话、项目文件、代码编辑、Git 审阅、终端、浏览
 
 项目基于 [Pi](https://github.com/earendil-works/pi)，由 [pi-web](https://github.com/agegr/pi-web) 演进而来，保留 Pi 的会话、模型接入与扩展机制。Piora 由社区独立维护，不隶属于 Pi、pi-web、OpenAI 或 Codex。
 
-最新正式版为 `0.5.4`，当前源码版本为 `0.5.5-beta.19`。此 beta 升级 Pi 至 1.0.2，新增原生 MCP 的 stdio、Streamable HTTP、OAuth 与工具授权，并修复历史或空闲会话的 MCP 设置及运行时打包兼容；同时保留多来源技能发现、安装与来源管理，并修复 Windows 目录构建的最终完整性清单生成；同时包含鸿蒙只读投屏、独立手机截图与录屏、文件树和路径跳转、按应用自动发现的 SQLite 工作台、投屏组件无替换弹窗安装，以及模型、登录、插件下载、内置浏览器与更新的全软件网络代理；同时移除内置 Goals / Plans 扩展、电脑桌面截图与鸿蒙代码检查入口，并修复新公告命中的生产依赖 high/critical 项，保留原有审计门禁。
+最新正式版为 `0.5.4`，当前源码版本为 `0.5.5-beta.20`。本轮基于 Pi 1.0.2 完善全会话费用统计、Codemode 嵌套调用展示，以及原生 MCP 的全局配置、项目覆盖和继承恢复，并新增完整中文用户手册。此前 beta 的原生 MCP、鸿蒙设备工作台和网络代理等能力继续保留，完整变化见 [CHANGELOG.md](CHANGELOG.md)。
 
-beta.19 尚待 tagged GitHub Actions 和真实 Piora 桌面端与手机对同批字节的完整验收，通过后才会出现在[所有发布](https://github.com/kexijiang/Piora/releases)。候选 Windows 包携带仓库内审阅过的 unsigned 投屏 HAP，打包全程 GitHub 托管，不再重构建该组件、也不要求专用 runner 或真机验收；只有用户明确初始化时，Piora 才调用本机已登录的 DevEco CLI 生成或更新设备调试 Profile，生成并验签设备绑定副本后安装。真机支持范围和待验项目见[鸿蒙设备验收矩阵](docs/harmony/atlas-acceptance.md)，完整版本变化及审计剩余项以 [CHANGELOG.md](CHANGELOG.md) 为准。
+beta.20 通过 tagged GitHub Actions 构建和校验 Windows 安装版与便携版，候选制品可在对应 Actions 运行中下载；正式提供预发布下载时会出现在[所有发布](https://github.com/kexijiang/Piora/releases)。Windows 包携带仓库内审阅过的 unsigned 投屏 HAP，打包全程 GitHub 托管，不再重构建该组件，也不依赖专用 runner 或连接手机。只有用户明确初始化时，Piora 才调用本机已登录的 DevEco CLI 生成或更新设备调试 Profile，生成并验签设备绑定副本后安装。真机支持范围和待验项目见[鸿蒙设备验收矩阵](docs/harmony/atlas-acceptance.md)。
 
 [下载与安装](#下载与安装) · [开始使用](#开始使用) · [完整用户手册](docs/user-manual.zh-CN.md) · [主要功能](#主要功能) · [鸿蒙设备工作台](#鸿蒙设备工作台) · [开发与贡献](#开发与贡献) · [文档索引](docs/README.md)
 
