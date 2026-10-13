@@ -576,12 +576,14 @@ export function PluginsConfig({
   sessionId,
   onClose,
   onReloaded,
+  onOpenProjectTools,
   embedded = false,
 }: {
   cwd: string;
   sessionId: string | null;
   onClose: () => void;
   onReloaded?: () => void;
+  onOpenProjectTools?: (server: { name: string; toolNames: string[] }) => void;
   embedded?: boolean;
 }) {
   const isMobile = useIsMobile();
@@ -959,7 +961,7 @@ export function PluginsConfig({
 
           <div style={{ flex: 1, overflowY: "auto", padding: embedded ? "20px 32px 36px" : 20 }}>
             {!embedded ? <CapabilityPrimer current="plugin" /> : null}
-            {nativeMcpMode ? <NativeMcpConfig key={`${cwd}:${sessionId ?? ""}`} cwd={cwd} sessionId={sessionId} onReloaded={onReloaded} /> : addMode ? (
+            {nativeMcpMode ? <NativeMcpConfig key={`${cwd}:${sessionId ?? ""}`} cwd={cwd} sessionId={sessionId} onReloaded={onReloaded} onOpenProjectTools={onOpenProjectTools} /> : addMode ? (
               <AddPluginPanel
                 cwd={cwd}
                 source={installSource}

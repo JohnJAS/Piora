@@ -1,4 +1,5 @@
 "use client";
+import { NestedToolCallsStore } from "@/lib/nested-tool-calls";
 
 import { createAgentEventDecoder } from "@/lib/agent-event-transport";
 import { savePendingPrompt, readPendingPrompts, mergePendingPrompts, confirmPendingPrompts, type PendingPrompt } from "@/lib/prompt-recovery";
@@ -44,6 +45,7 @@ import type {
 export type { AgentPhase } from "@/lib/agent-phase";
 
 export interface SessionData {
+  stats?: SessionStatsInfo;
   persistedPromptIds?: string[];
   sessionId: string;
   filePath: string;
@@ -99,6 +101,7 @@ interface LastAssistantTextResponse {
 }
 
 type AgentStateResponse = {
+  stats?: SessionStatsInfo;
   model?: { provider: string; id: string };
   contextUsage?: ContextUsage | null;
   systemPrompt?: string;
@@ -479,7 +482,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [slashCommands, setSlashCommands] = useState<SlashCommandInfo[]>([]);
   const [slashCommandsLoading, setSlashCommandsLoading] = useState(false);
   const [noticeState, dispatchNotice] = useReducer(noticeReducer, { visible: [], pending: [] });
-  const [sessionStatsOverride, setSessionStatsOverride] = useState<SessionStatsInfo | null>(null);
+  const [sessionStatsOverride, setSessionStatsOverride] = useState<SessionStatsInfo | null>(initialSessionData?.stats ?? null);
+  const statsRefreshSequence = useRef(0);
+  const [nestedCallsStore] = useState(() => new NestedToolCallsStore());
+  useEffect(() => () => nestedCallsStore.reset(), [nestedCallsStore]);
   const { dialog: extensionDialog, setDialog: setExtensionDialog, receiveDialog } = useExtensionDialog();
   const [extensionCustomUi, setExtensionCustomUi] = useState<ExtensionUiCustomRequest | null>(null);
   const [extensionStatuses, setExtensionStatuses] = useState<ExtensionStatusItem[]>([]);
@@ -566,43 +572,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [contextUsage, estimatedContextUsage]);
 
   const sessionStats = useMemo(() => {
-    if (sessionStatsOverride) return sessionStatsOverride;
-    const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 };
-    let cost = 0;
-    let userMessages = 0;
-    let assistantMessages = 0;
-    let toolResults = 0;
-    let toolCalls = 0;
-    for (const msg of messages) {
-      if (msg.role === "user") userMessages += 1;
-      if (msg.role === "toolResult") toolResults += 1;
-      if (msg.role !== "assistant") continue;
-      assistantMessages += 1;
-      const u = (msg as import("@/lib/types").AssistantMessage).usage;
-      toolCalls += (msg as import("@/lib/types").AssistantMessage).content.filter((c) => c.type === "toolCall").length;
-      if (!u) continue;
-      tokens.input += u.input ?? 0;
-      tokens.output += u.output ?? 0;
-      tokens.cacheRead += u.cacheRead ?? 0;
-      tokens.cacheWrite += u.cacheWrite ?? 0;
-      cost += u.cost?.total ?? 0;
-    }
-    tokens.total = tokens.input + tokens.output + tokens.cacheRead + tokens.cacheWrite;
-    if (tokens.total === 0 && messages.length === 0) return null;
-    return {
-      sessionFile: data?.filePath || undefined,
-      sessionId: sessionIdRef.current ?? session?.id ?? "",
-      sessionName: session?.name,
-      userMessages,
-      assistantMessages,
-      toolCalls,
-      toolResults,
-      totalMessages: messages.length,
-      tokens,
-      cost,
-      ...(effectiveContextUsage ? { contextUsage: effectiveContextUsage } : {}),
-    } satisfies SessionStatsInfo;
-  }, [messages, sessionStatsOverride, effectiveContextUsage, data?.filePath, session?.id, session?.name]);
+    if (!sessionStatsOverride || sessionStatsOverride.sessionId !== sessionIdRef.current) return null;
+    return { ...sessionStatsOverride, ...(effectiveContextUsage ? { contextUsage: effectiveContextUsage } : {}) };
+  }, [sessionStatsOverride, effectiveContextUsage]);
 
   const loadSession = useCallback(async (
     sid: string,
@@ -613,6 +585,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     sessionLoadAbortRef.current?.abort();
     const controller = new AbortController();
     sessionLoadAbortRef.current = controller;
+    const statsSequence = ++statsRefreshSequence.current;
     const runId = promptRunIdRef.current;
     let messagesLoaded = false;
     let timedOut = false;
@@ -652,7 +625,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (controller.signal.aborted || sessionIdRef.current !== sid || promptRunIdRef.current !== runId) return null;
       const recovered = mergePendingPrompts(d.context.messages, d.context.entryIds ?? [], await wait(readPendingPrompts(sid)), d.persistedPromptIds);
       if (controller.signal.aborted || sessionIdRef.current !== sid || promptRunIdRef.current !== runId) return null;
+      nestedCallsStore.reset();
       setData(d);
+      if (statsSequence === statsRefreshSequence.current) setSessionStatsOverride(d.stats ?? null);
       setActiveLeafId(d.leafId);
       setMessages(recovered.messages);
       setEntryIds(recovered.entryIds);
@@ -681,6 +656,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
         const liveState = agentState.state;
         if (liveState) {
+          if (liveState.stats && statsSequence === statsRefreshSequence.current) setSessionStatsOverride(liveState.stats);
           if (liveState.contextUsage !== undefined) setContextUsage(liveState.contextUsage ?? null);
           if (liveState.systemPrompt !== undefined) setSystemPrompt(liveState.systemPrompt ?? null);
           if (liveState.systemPromptBinding !== undefined) {
@@ -715,7 +691,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setLoading(false);
       }
     }
-  }, []);
+  }, [nestedCallsStore]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null) => {
     const runId = promptRunIdRef.current;
@@ -1072,6 +1048,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     if (promptRunIdRef.current !== runId) return Promise.resolve();
     const wasRunning = agentRunningRef.current;
     agentRunningRef.current = false;
+    nestedCallsStore.finish();
     closeEvents();
     optimisticUserMessageKeyRef.current = null;
     if (wasRunning) {
@@ -1098,7 +1075,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     })().finally(() => { if (promptRunIdRef.current === runId) setReplyHistorySettling(false); });
     promptSettlementByRunRef.current.set(runId, settlement);
     return settlement;
-  }, [closeEvents, loadSession, onAgentEnd, setExtensionDialog]);
+  }, [closeEvents, loadSession, nestedCallsStore, onAgentEnd, setExtensionDialog]);
 
   const waitForPromptSettlement = useCallback((sid: string, runId = promptRunIdRef.current) => {
     const existing = promptSettlementPollByRunRef.current.get(runId);
@@ -1177,11 +1154,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [loadSession, restoreStatusClock]);
 
   const refreshContextUsage = useCallback(async (sid: string) => {
+    const runId = promptRunIdRef.current;
+    const sequence = ++statsRefreshSequence.current;
     try {
       const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`, { signal: AbortSignal.timeout(10_000) });
       if (!res.ok || sessionIdRef.current !== sid) return;
       const data = await res.json() as { state?: AgentStateResponse };
-      if (sessionIdRef.current !== sid) return;
+      if (sessionIdRef.current !== sid || promptRunIdRef.current !== runId || sequence !== statsRefreshSequence.current) return;
+      if (data.state?.stats) setSessionStatsOverride(data.state.stats);
       if (data.state?.contextUsage !== undefined) {
         setContextUsage(data.state.contextUsage ?? null);
       }
@@ -1210,6 +1190,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const request = { sid, runId, controller: new AbortController() };
     reconciliationRef.current = request;
     const phaseRevision = phaseEventRevisionRef.current;
+    const statsSequence = ++statsRefreshSequence.current;
     try {
       const res = await fetch(`/api/agent/${encodeURIComponent(sid)}${commandQuery}`, { signal: AbortSignal.any([request.controller.signal, AbortSignal.timeout(10_000)]) });
       if (!res.ok) return;
@@ -1249,6 +1230,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       // Context usage is useful while the run is still active (especially
       // across multi-tool turns), so do not defer it until idle settlement.
+      if (state?.stats && statsSequence === statsRefreshSequence.current) setSessionStatsOverride(state.stats);
       if (state?.contextUsage !== undefined) setContextUsage(state.contextUsage ?? null);
       if (busy || !agentRunningRef.current) return;
       if (!isPromptCommandSettled(commandId, data.promptCommand)) return;
@@ -1354,6 +1336,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // Stop intent wins over buffered agent_start/tool/retry events, even
     // while the abort HTTP request or server cleanup is still pending.
     if (cancelledPromptRunIdRef.current === promptRunIdRef.current) return;
+    if (agentRunningRef.current) {
+      nestedCallsStore.beginRun(promptRunIdRef.current);
+      nestedCallsStore.record(event);
+    }
     phaseEventRevisionRef.current += 1;
     if (isRunProgressEvent(event.type)) activityClockRef.current = Date.now();
     if (["agent_start", "agent_end", "message_start", "message_update", "message_end", "tool_execution_start", "tool_execution_end"].includes(event.type)) {
@@ -1432,6 +1418,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // appending it again would duplicate it.
         if (!agentRunningRef.current) break;
         const completed = event.message as AgentMessage | undefined;
+        if (completed?.role === "toolResult") nestedCallsStore.finish(completed.toolCallId);
         if (completed?.role === "assistant" && completed.stopReason === "error") {
           suppressCompletionNotificationRef.current = true;
         }
@@ -1468,7 +1455,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         dispatch({ type: "reset" });
         setAgentPhase((phase) => bashRunningRef.current ? null : reduceAgentPhase(phase, event));
-        if (completed?.role === "assistant" && sessionIdRef.current) {
+        if ((completed?.role === "assistant" || completed?.role === "toolResult") && sessionIdRef.current) {
           void refreshContextUsage(sessionIdRef.current);
         }
         break;
@@ -1481,6 +1468,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       case "tool_execution_update": {
         if (!agentRunningRef.current) break;
+        if (typeof event.parentToolCallId === "string") break;
         const partial = event.partialResult as { content?: unknown; details?: unknown } | undefined;
         if (typeof event.toolCallId !== "string" || !Array.isArray(partial?.content)) break;
         const update: AgentMessage = {
@@ -1560,7 +1548,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
     }
-  }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, refreshContextUsage, setExtensionDialog, waitForPromptSettlement]);
+  }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, nestedCallsStore, refreshContextUsage, setExtensionDialog, waitForPromptSettlement]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (
@@ -2137,8 +2125,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
         case "session": {
           if (!sid) return complete({ handled: true, error: "No active session" });
-          const stats = await sendAgentCommand<SessionStatsInfo>(sid, { type: "get_session_stats" });
-          if (stats) {
+          const sequence = ++statsRefreshSequence.current;
+          const runId = promptRunIdRef.current;
+          const response = await fetch(`/api/sessions/${encodeURIComponent(sid)}/stats`);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const stats = await response.json() as SessionStatsInfo;
+          if (sessionIdRef.current === sid && promptRunIdRef.current === runId && sequence === statsRefreshSequence.current) {
             setSessionStatsOverride(stats);
           }
           onSessionStatsPanelOpen?.();
@@ -2661,13 +2653,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     return () => clearTimeout(t);
   }, [noticeState.visible]);
 
-  useEffect(() => {
-    setSessionStatsOverride(null);
-  }, [messages.length, contextUsage?.tokens, contextUsage?.percent, contextUsage?.contextWindow]);
-
   return {
     // State
-    data, loading, error, activeLeafId, messages, entryIds, streamState, replyHistorySettling,
+    nestedCallsStore, data, loading, error, activeLeafId, messages, entryIds, streamState, replyHistorySettling,
     agentRunning, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
     retryInfo, contextUsage: effectiveContextUsage, systemPrompt, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactionStartedAt, compactError, compactResult, currentModel, displayModel, sessionStats,

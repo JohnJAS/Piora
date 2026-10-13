@@ -30,6 +30,26 @@ function renderMessage(message, props = {}) {
   );
 }
 
+test("nested tool history restores bounded summaries without inventing child output or success", () => {
+  const message = { role: "assistant", content: [{ type: "toolCall", toolCallId: "parent", toolName: "codemode", input: {} }] };
+  const row = createVirtualRowState(); row.set("tool:parent", true);
+  const result = { role: "toolResult", toolCallId: "parent", content: [{ type: "text", text: "script partial output" }], isError: true,
+    nestedCalls: { complete: false, calls: [
+      { id: "parent/0", name: "search", status: "ok", durationMs: 120 },
+      { id: "parent/0/0", name: "read", status: "unfinished", argumentsBytes: 9000 },
+      { id: "parent/1", name: "inspect", status: "error", error: "safe fixture failure" },
+    ] } };
+  const html = renderToStaticMarkup(React.createElement(I18nProvider, null,
+    React.createElement(VirtualRowStateContext.Provider, { value: row }, React.createElement(MessageView, { message, mode: "history", toolResults: new Map([["parent", result]]) }))));
+  assert.match(html, /已完成 2\/3 个子调用/);
+  assert.match(html, /调用记录不完整/);
+  assert.match(html, /未确认完成/);
+  assert.match(html, /参数因大小限制已省略/);
+  assert.match(html, /不含子调用的完整输出/);
+  assert.match(html, /safe fixture failure/);
+  assert.doesNotMatch(html, /is-running/);
+});
+
 test("mounting a live message immediately displays the server rate without restarting a timer", () => {
   const message = { role: "assistant", model: "model", content: [{ type: "text", text: "already generated ".repeat(1000) }], streamingMetrics: { generation: 3, tokensPerSecond: 42.5 } };
   for (let view = 0; view < 3; view++) assert.match(renderMessage(message, { isStreaming: true }), /≈42\.5/);

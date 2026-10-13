@@ -279,6 +279,7 @@ export function AppShell() {
   const [onboardingProjectCwd, setOnboardingProjectCwd] = useState<string | null>(null);
   const [onboardingPromptSubmittedKey, setOnboardingPromptSubmittedKey] = useState(0);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [mcpToolsFocus, setMcpToolsFocus] = useState<{ name: string; toolNames: string[] } | null>(null);
   const [settingsKey, setSettingsKey] = useState<SettingsKey>("general");
   const [settingsItemId, setSettingsItemId] = useState<string>();
   const [historyDialogOpen, setHistoryDialogOpen] = useState(() => readHistoryLocation(searchParams ?? new URLSearchParams()).open);
@@ -1910,7 +1911,7 @@ export function AppShell() {
       onClose={() => setSettingsDialogOpen(false)}
       activeKey={settingsKey}
       focusedItemId={settingsItemId}
-      onActiveKeyChange={setSettingsKey}
+      onActiveKeyChange={(key) => { setMcpToolsFocus(null); setSettingsKey(key); }}
       onOpenOnboarding={() => {
         setSettingsDialogOpen(false);
         setOnboardingRestartKey((key) => key + 1);
@@ -1919,7 +1920,7 @@ export function AppShell() {
       sections={{
         shell: <SmartShellSettings cwd={projectCwd ?? activeCwd ?? undefined} />,
         tools: (currentProjectPath ?? settingsProjectCwd) ? (
-          <ProjectToolsConfig cwd={(currentProjectPath ?? settingsProjectCwd)!} onChanged={setSessionCapabilities} />
+          <ProjectToolsConfig cwd={(currentProjectPath ?? settingsProjectCwd)!} onChanged={setSessionCapabilities} mcpFocus={mcpToolsFocus} onClearMcpFocus={() => setMcpToolsFocus(null)} />
         ) : chooseSettingsProject,
         capabilityBundles: settingsProjectCwd ? (
           <CapabilityBundlesConfig
@@ -1962,6 +1963,7 @@ export function AppShell() {
             cwd={settingsProjectCwd!}
             sessionId={selectedSession?.id ?? null}
             onClose={() => setSettingsKey("extensions")}
+            onOpenProjectTools={(server) => { setMcpToolsFocus(server); setSettingsKey("tools"); }}
             onReloaded={() => setSessionKey((key) => key + 1)}
           />
         ) : chooseSettingsProject,
@@ -2622,7 +2624,7 @@ export function AppShell() {
                     const ctx = contextUsage ?? sessionStats.contextUsage;
                     const formatCompact = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${(n / 1000).toFixed(0)}k` : String(n);
                     const extraTokenRows = [
-                       ...(sessionStats.cost > 0 ? [[translate("session.cost"), `$${sessionStats.cost.toFixed(4)}`]] : []),
+                       [translate("session.cumulativeCost"), sessionStats.costStatus === "unknown" ? translate("session.costUnknown") : `$${sessionStats.cost.toFixed(4)}${sessionStats.costStatus === "partial" ? ` (${translate("session.costPartial")})` : ""}`],
                        ...(ctx?.contextWindow ? [[translate("session.context"), `${ctx.percent !== null ? `${ctx.percent.toFixed(1)}%` : "?"} / ${formatCompact(ctx.contextWindow)}`]] : []),
                     ];
                     const section = (

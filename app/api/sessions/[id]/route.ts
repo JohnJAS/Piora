@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { existsSync, statSync } from "fs";
 import { createHash } from "node:crypto";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
+import { summarizeSessionStats } from "@/lib/session-stats";
 import { persistedMessagePromptIds } from "@/lib/session-message-delete";
 import { readLatestSessionSystemPromptBinding } from "@/lib/session-system-prompt";
 import {
@@ -161,6 +162,7 @@ async function buildSessionResponse(
 
   return {
     sessionId: id,
+    stats: summarizeSessionStats(sm),
     // A live manager can contain buffered messages before its first disk flush.
     // User receipts require disk history; completed slash commands instead use
     // the durable command journal, since the SDK may never add a user message.

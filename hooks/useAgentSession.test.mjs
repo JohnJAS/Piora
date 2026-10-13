@@ -7,6 +7,7 @@ import ts from "typescript";
 import { randomUUID } from "node:crypto";
 import { createJiti } from "jiti";
 
+const { NestedToolCallsStore } = await createJiti(import.meta.url).import("../lib/nested-tool-calls.ts");
 const { buildLocalFilePrompt } = await createJiti(import.meta.url).import("../lib/file-attachments.ts");
 
 const source = await readFile(new URL("./useAgentSession.ts", import.meta.url), "utf8");
@@ -15,6 +16,7 @@ function historyHarness(overrides = {}) {
   const callbacks = source.slice(source.indexOf("  const switchHistoryBranch = useCallback"), source.indexOf("  const handleModelChange = useCallback"));
   const events = [];
   const env = {
+    nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 },
     useCallback: callback => callback, sessionIdRef: { current: "session" }, agentRunningRef: { current: false }, bashRunningRef: { current: false }, isCompacting: false,
     t: key => key, sendAgentCommand: async (_id, command) => { events.push(command.type); return command.type === "fork" ? { newSessionId: "new-session" } : {}; },
     loadContext: async () => { events.push("context"); return true; }, setActiveLeafId: id => events.push(`leaf:${id}`),
@@ -48,7 +50,8 @@ test("history fork seeds the original question and attachments without sending; 
 
 function sendHarness(overrides = {}) {
   const send = source.slice(source.indexOf("  const handleSend = useCallback"), source.indexOf("  const executeBash = useCallback"));
-  const env = { buildLocalFilePrompt, useCallback: (callback) => callback, isNew: false, newSessionCwd: null, session: { id: "session" }, crypto: { randomUUID },
+  const env = {
+    nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 }, buildLocalFilePrompt, useCallback: (callback) => callback, isNew: false, newSessionCwd: null, session: { id: "session" }, crypto: { randomUUID },
     t: (key) => key, userMessageKey: JSON.stringify, dispatch() {}, promoteNewSession() {}, addNotice() {}, closeEvents() {},
     ensureNewSession: async () => "session", ensureEventsConnected: async () => {}, waitForPromptSettlement() {},
     uploadPromptMaterialFiles: async () => [], AgentCommandError: class extends Error {}, EventStreamConnectionError: class extends Error {},
@@ -110,6 +113,7 @@ function abortHarness(overrides = {}) {
   const handler = source.slice(source.indexOf("  const handleAbort = useCallback"), source.indexOf("  const handleDeleteMessage = useCallback"));
   const calls = [];
   const env = {
+    nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 },
     useCallback: callback => callback, t: key => key, addNotice: notice => calls.push(notice), crypto: { randomUUID },
     normalizeQueuedMessages: queue => ({ steering: queue?.steering ?? [], followUp: queue?.followUp ?? [] }),
     sendAgentCommand: async () => ({ queuedMessages: { id: "queue-handoff", steering: ["correct this", "correct this"], followUp: ["then verify"] } }),
@@ -232,6 +236,7 @@ function promptSettlementHarness() {
   const calls = [], delays = [];
   let now = 0;
   const env = {
+    nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 },
     useCallback: callback => callback, AbortController, AbortSignal, Date: { now: () => now },
     PROMPT_SETTLE_INITIAL_DELAY_MS: 800, PROMPT_SETTLE_POLL_MS: 600, PROMPT_SETTLE_MAX_MS: 20000,
     delay: ms => new Promise(resolve => delays.push({ ms, resolve })),
@@ -669,6 +674,7 @@ test("cancels stale session loads when switching tasks", () => {
 function sessionLoadHarness(overrides = {}) {
   const load = source.slice(source.indexOf("  const loadSession = useCallback"), source.indexOf("  const loadContext = useCallback"));
   const env = {
+    nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 },
     useCallback: callback => callback, AbortController, URLSearchParams,
     sessionLoadAbortRef: { current: null }, sessionIdRef: { current: "session" }, promptRunIdRef: { current: 0 },
     translateRef: { current: key => key }, invalidatePrefetchedSession() {},
@@ -742,6 +748,7 @@ test("visible termination precedes a stalled history reload and is idempotent", 
     suppressCompletionNotificationRef: { current: true }, promptSettlementByRunRef: { current: new Map() },
   };
   const deps = {
+    nestedCallsStore: new NestedToolCallsStore(),
     ...refs, useCallback: (callback) => callback,
     closeEvents: () => calls.push("close"),
     setAgentRunning: (value) => calls.push(["running", value]),
@@ -818,6 +825,7 @@ function compactionRecoveryHarness() {
   const calls = [];
   const listeners = new Map();
   const env = {
+    nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 },
     isCompacting: true, agentRunning: false,
     sessionIdRef: { current: "session-a" }, phaseEventRevisionRef: { current: 0 },
     agentRunningRef: { current: false }, bashRunningRef: { current: false }, manualCompactionPendingRef: { current: false },
@@ -984,4 +992,36 @@ test("clamps the native chat scroller before it enters the live tail spacer", ()
   assert.match(clampSource, /pinnedScrollTop: liveTailPinnedScrollTopRef\.current/);
   assert.match(clampSource, /container\.scrollTop = maxScrollTop/);
   assert.match(positionChangeSource, /if \(clampLiveTailScroll\(\)\) return/);
+});
+
+
+test("nested live events stay under their parent and cancellation rejects late child events", () => {
+  const h = promptSubmissionHarness();
+  h.env.agentRunningRef.current = true; h.env.messages = [];
+  h.handleAgentEvent({ type: "tool_execution_start", toolCallId: "root/0", parentToolCallId: "root", toolName: "read" });
+  h.handleAgentEvent({ type: "tool_execution_update", toolCallId: "root/0", parentToolCallId: "root", partialResult: { content: [{ type: "text", text: "progress" }] } });
+  assert.deepEqual(h.env.messages, [], "child output must not create a transcript message");
+  assert.equal(h.env.nestedCallsStore.getSnapshot("root").calls[0].status, "running");
+  h.env.cancelledPromptRunIdRef.current = h.env.promptRunIdRef.current;
+  h.env.nestedCallsStore.finish();
+  h.handleAgentEvent({ type: "tool_execution_end", toolCallId: "root/0", parentToolCallId: "root", isError: false });
+  assert.equal(h.env.nestedCallsStore.getSnapshot("root").calls[0].status, "unfinished");
+  h.env.nestedCallsStore.reset();
+});
+
+test("whole-session stats reject delayed responses across refreshes and run boundaries", async () => {
+  const handler = source.slice(source.indexOf("  const refreshContextUsage = useCallback"), source.indexOf("  // Reconcile client streaming state"));
+  const requests = [], snapshots = [];
+  const env = { useCallback: callback => callback, promptRunIdRef: { current: 1 }, sessionIdRef: { current: "session" }, statsRefreshSequence: { current: 0 },
+    fetch: () => new Promise(resolve => requests.push(resolve)), setSessionStatsOverride: stats => snapshots.push(stats), setContextUsage() {} };
+  const js = ts.transpileModule(handler, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  const refresh = new Function("env", `with(env) { ${js}; return refreshContextUsage; }`)(env);
+  const response = cost => ({ ok: true, json: async () => ({ state: { stats: { cost } } }) });
+  const first = refresh("session"), second = refresh("session");
+  requests[1](response(2)); await second;
+  requests[0](response(1)); await first;
+  assert.deepEqual(snapshots, [{ cost: 2 }]);
+  const oldRun = refresh("session"); env.promptRunIdRef.current++;
+  requests[2](response(3)); await oldRun;
+  assert.deepEqual(snapshots, [{ cost: 2 }]);
 });

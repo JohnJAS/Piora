@@ -1,5 +1,6 @@
 "use client";
 import { messageImageUrl } from "@/lib/message-images";
+import { NestedToolCalls, useNestedToolCalls } from "./NestedToolCalls";
 
 import { createContext, useContext, memo, useState, useRef, useEffect, useMemo, useCallback, type ReactNode } from "react";
 import { useVirtualRowToggle } from "./VirtualRowState";
@@ -910,6 +911,7 @@ function ToolCallBlock({ block, result, duration, cwd, sessionId, onOpenFile, on
   const resultDiff = result && !result.isError ? getResultDiff(result) : null;
   const summary = summarizeToolDisclosure(block.toolName, block.input, result?.isStreaming ? undefined : result, t);
   const automationDetails = getAutomationToolCardDetails(block, result);
+  const nestedCalls = useNestedToolCalls(block.toolCallId, result?.nestedCalls);
 
   if (isCommandToolName(block.toolName)) {
     const output = toolResultText(result);
@@ -978,6 +980,7 @@ function ToolCallBlock({ block, result, duration, cwd, sessionId, onOpenFile, on
         {summary.detail ? <span className="tool-call-detail" title={summary.detail}>{summary.detail}</span> : null}
       </> : summary.detail ? <span title={summary.detail}>{summary.detail}</span> : undefined}
       metadata={<>
+        {nestedCalls ? <span>{t("nestedCalls.progress", { done: nestedCalls.calls.filter(call => call.status === "ok" || call.status === "error").length, total: nestedCalls.calls.length })}</span> : null}
         <span className={`chat-disclosure-status is-${historyMode && !result ? "unknown" : summary.status}`}>{t(historyMode && !result ? "history.noSavedResult" : summary.status === "running" ? "command.status.running" : summary.status === "error" ? "command.status.failed" : "command.status.success")}</span>
         {duration !== undefined ? <span>{duration}s</span> : null}
       </>}>
@@ -985,6 +988,7 @@ function ToolCallBlock({ block, result, duration, cwd, sessionId, onOpenFile, on
         ? <PairedDiffResult diff={resultDiff} />
         : <PairedResult text={resultText ?? ""} isEmpty={resultIsEmpty} isError={isError} />
         : <div className="chat-disclosure-notice">{t(historyMode ? "history.noSavedResult" : "command.waitingForOutput")}</div>}
+      {nestedCalls ? <NestedToolCalls snapshot={nestedCalls} /> : null}
       <ChatDisclosure variant="inline" expanded={diagnosticsOpen} onExpandedChange={setDiagnosticsOpen}
         label={t("toolSummary.diagnostics")}>
         <pre className="chat-disclosure-diagnostics">{diagnostics}</pre>

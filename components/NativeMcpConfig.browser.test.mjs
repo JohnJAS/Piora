@@ -14,7 +14,7 @@ test("native MCP configuration shows live ownership, explicit connection actions
   await writeFile(path.join(root, "loader.cjs"), `const ts=require(${JSON.stringify(require.resolve("typescript"))});module.exports=s=>ts.transpileModule(s,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText`);
   await writeFile(path.join(root, "css.cjs"), 'module.exports=s=>"export default "+JSON.stringify(Object.fromEntries([...s.matchAll(/\\.([a-zA-Z][\\w-]*)/g)].map(m=>[m[1],m[1]])))');
   await writeFile(path.join(root, "stubs.tsx"), `import {nativeMcpEn} from "@/lib/i18n/messages/native-mcp";export const useI18n=()=>({t:(key,params={})=>{const text=({...nativeMcpEn,"i18n.loading":"Loading","i18n.save":"Save","i18n.reloadSession":"Reload task"})[key];if(!text)throw Error("Missing translation "+key);return text.replace(/\\{([\\w.-]+)\\}/g,(token,name)=>params[name]??token)}});export const sendAgentCommand=async(id,command)=>{window.commands.push({id,command});await window.onFixtureCommand?.(command);};`);
-  await writeFile(path.join(root, "entry.tsx"), 'import React,{useState} from "react";import {createRoot} from "react-dom/client";import {NativeMcpConfig} from "@/components/NativeMcpConfig";function Fixture(){const[session,setSession]=useState("fixture-session");const[open,setOpen]=useState(true);window.setFixtureOpen=setOpen;window.setFixtureSession=setSession;window.reloadEvents??=0;return open?<NativeMcpConfig cwd="/fixture-workspace" sessionId={session} onReloaded={()=>window.reloadEvents++}/>:null};createRoot(document.getElementById("root")).render(<Fixture/>);');
+  await writeFile(path.join(root, "entry.tsx"), 'import React,{useState} from "react";import {createRoot} from "react-dom/client";import {NativeMcpConfig} from "@/components/NativeMcpConfig";function Fixture(){const[session,setSession]=useState("fixture-session");const[open,setOpen]=useState(true);window.setFixtureOpen=setOpen;window.setFixtureSession=setSession;window.reloadEvents??=0;return open?<NativeMcpConfig cwd="/fixture-workspace" sessionId={session} onReloaded={()=>window.reloadEvents++} onOpenProjectTools={server=>window.toolsFocus=server}/>:null};createRoot(document.getElementById("root")).render(<Fixture/>);');
   const compiler = webpack({ mode: "development", target: "web", devtool: false, entry: path.join(root, "entry.tsx"), output: { path: root, filename: "bundle.js" }, resolve: { extensions: [".tsx", ".ts", ".js"], modules: [path.join(repo, "node_modules")], alias: { "@/hooks/useI18n": path.join(root, "stubs.tsx"), "@/lib/agent-client": path.join(root, "stubs.tsx"), "@": repo } }, module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: path.join(root, "loader.cjs") }, { test: /\.css$/, use: path.join(root, "css.cjs") }] } });
   await new Promise((resolve, reject) => compiler.run((error, stats) => compiler.close(() => error || stats.hasErrors() ? reject(error || Error(stats.toString({ all: false, errors: true }))) : resolve())));
   browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : "chromium", headless: true, ...(process.env.PIORA_TEST_BROWSER_EXECUTABLE ? { executablePath: process.env.PIORA_TEST_BROWSER_EXECUTABLE } : {}) });
@@ -29,7 +29,11 @@ test("native MCP configuration shows live ownership, explicit connection actions
     if (url.pathname === "/bundle.js") { await route.fulfill({ contentType: "application/javascript", body: await readFile(path.join(root, "bundle.js"), "utf8") }); return; }
     if (url.pathname === "/fixture-reloaded") { state.reloadRequired = false; state.servers[0].configurationCurrent = true; await route.fulfill({ json: {} }); return; }
     if (url.pathname === "/api/mcp") {
-      if (route.request().method() === "PUT") { const body = route.request().postDataJSON(); mutations.push(body); state.reloadRequired = true; if (body.action === "integration") state.enabled = body.enabled; if (body.action === "server" && body.name === "fixture-http") state.servers[0].exposure = body.exposure ?? state.servers[0].exposure; }
+      if (route.request().method() === "PUT") { const body = route.request().postDataJSON(); mutations.push(body); state.reloadRequired = true; if (body.action === "integration") state.enabled = body.enabled; if (body.action === "server" && body.name === "fixture-http") {
+        const server = state.servers[0];
+        if (body.restoreInheritance) { delete server.override; Object.assign(server, server.globalSettings); }
+        else { server.exposure = body.exposure ?? server.exposure; if (body.scope === "project") server.override = "/fixture-workspace/.pi/mcp.json"; }
+      } }
       if (route.request().method() === "PUT" && pendingPut) await pendingPut;
       await route.fulfill({ json: state }); return;
     }
@@ -64,7 +68,7 @@ test("native MCP configuration shows live ownership, explicit connection actions
   await page.getByLabel("Server name", { exact: true }).fill("fixture-private");
   const editor = page.getByLabel("Server definition (strict JSON)", { exact: true });
   await editor.fill('{"url":"https://fixture.invalid/mcp","headers":{"Authorization":"FIXTURE_PRIVATE_HEADER"},"enabled":false}');
-  assert.notEqual(await page.locator('option[value="project"]').getAttribute("disabled"), null);
+  assert.notEqual(await page.locator('form option[value="project"]').getAttribute("disabled"), null);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.waitForFunction(() => document.querySelector("textarea").value === "");
   assert.ok(mutations.some(m => m.config?.headers?.Authorization === "FIXTURE_PRIVATE_HEADER" && m.scope === "global"));
@@ -118,6 +122,21 @@ test("native MCP configuration shows live ownership, explicit connection actions
   assert.equal(mutations.length, putsBefore + 1);
   assert.equal(await editor.inputValue(), '{"command":"fresh-editor","enabled":false}');
   assert.equal(await page.getByRole("alert").count(), 0);
+  state.projectTrusted = true; state.servers[0].globalSettings = { enabled: true, exposure: "deferred" };
+  await page.getByRole("button", { name: "Refresh status", exact: true }).click();
+  await page.getByRole("button", { name: "Create project override", exact: true }).click();
+  await page.getByRole("button", { name: "Restore global inheritance", exact: true }).waitFor();
+  assert.equal(await page.getByRole("combobox", { name: "fixture-http Apply changes to" }).inputValue(), "project");
+  await page.getByRole("combobox", { name: "fixture-http Tool exposure" }).selectOption("hidden");
+  await page.getByText("Effective in this project: Enabled · Hidden · Source: Project", { exact: true }).waitFor();
+  assert.deepEqual(mutations.at(-1), { cwd: "/fixture-workspace", sessionId: "fixture-session", action: "server", scope: "project", name: "fixture-http", exposure: "hidden" });
+  await page.getByRole("combobox", { name: "fixture-http Apply changes to" }).selectOption("global");
+  assert.equal(await page.getByRole("combobox", { name: "fixture-http Tool exposure" }).inputValue(), "deferred");
+  await page.getByRole("button", { name: "Restore global inheritance", exact: true }).click();
+  await page.getByRole("button", { name: "Create project override", exact: true }).waitFor();
+  assert.equal(mutations.at(-1).restoreInheritance, true);
+  await page.getByRole("button", { name: "Open project tools", exact: true }).click();
+  assert.deepEqual(await page.evaluate(() => window.toolsFocus), { name: "fixture-http", toolNames: [] });
   state.owner = "replacement";
   await page.getByRole("button", { name: "Refresh status", exact: true }).click(); await page.getByText("Connection owner: Replacement extension", { exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Reconnect", exact: true }).isDisabled(), true);

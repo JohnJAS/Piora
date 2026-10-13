@@ -81,6 +81,7 @@ import { buildPromptWithMaterials, resolvePromptMaterialReferences, restorePromp
 import type { PromptMaterialReference } from "./prompt-material-format";
 import { userInputTimeoutMs, type UserInputResult } from "./user-input";
 import { estimateContextUsageBreakdown } from "./context-usage";
+import { summarizeSessionStats } from "./session-stats";
 import { mergeCommandOutputDetails } from "./command-execution";
 import {
   fitToolNamesWithinDefinitionBudget,
@@ -1225,6 +1226,7 @@ export class AgentSessionWrapper {
         }) : undefined;
         return {
           sessionId: this.inner.sessionId,
+          stats: summarizeSessionStats(this.inner.sessionManager),
           runtimeProfile: this.runtimeProfile,
           remotePolicy: this.remotePolicy,
           sessionFile: this.inner.sessionFile ?? "",
@@ -1430,7 +1432,8 @@ export class AgentSessionWrapper {
 
       case "get_session_stats": {
         return {
-          ...this.inner.getSessionStats(),
+          ...summarizeSessionStats(this.inner.sessionManager),
+          contextUsage: this.inner.getContextUsage() ?? undefined,
           sessionName: this.cachedSessionTitle ?? undefined,
         };
       }

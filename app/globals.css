@@ -5809,3 +5809,10 @@ span.linenumber {
     --overlay-blur: 0px;
   }
 }
+
+/* Bounded, display-only summaries of a tool's nested calls. */
+.nested-tool-calls { padding: 8px 12px; border-top: 1px solid var(--border); color: var(--text-muted); font-size: var(--text-sm); }
+.nested-tool-calls p { margin: 4px 0; }
+.nested-tool-calls ul { list-style: none; padding: 0; margin: 8px 0; max-height: 320px; overflow: auto; }
+.nested-tool-calls li { padding: 5px 0; overflow-wrap: anywhere; }
+.nested-tool-calls pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; color: var(--text); }

@@ -140,7 +140,7 @@ export function loadNativeMcpConfig(agentDir: string, cwd: string, projectTruste
 }
 
 export function updateNativeMcpServer(agentDir: string, cwd: string, projectTrusted: boolean, input: {
-  name: string; scope: "global" | "project"; config?: unknown; enabled?: boolean; exposure?: NativeMcpExposure; remove?: boolean;
+  name: string; scope: "global" | "project"; config?: unknown; enabled?: boolean; exposure?: NativeMcpExposure; remove?: boolean; restoreInheritance?: boolean;
 }): void {
   if (!SERVER_NAME.test(input.name)) throw new Error("Invalid MCP server name");
   if (input.scope === "project" && !projectTrusted) throw new Error("Project MCP configuration requires existing project trust");
@@ -148,7 +148,14 @@ export function updateNativeMcpServer(agentDir: string, cwd: string, projectTrus
   checkConfigParents(input.scope === "global" ? agentDir : cwd, path);
   const file = readConfig(path);
   const servers = object(file.mcpServers) ? { ...file.mcpServers } : {};
-  if (input.remove) delete servers[input.name];
+  if (input.restoreInheritance) {
+    const existing = servers[input.name];
+    if (input.scope !== "project" || input.config !== undefined || input.remove || input.enabled !== undefined || input.exposure !== undefined) throw new Error("Invalid restore inheritance operation");
+    // A stale UI must never delete a full project server definition.
+    if (!object(existing) || Object.keys(existing).some(key => !["enabled", "exposure", "toolExposure"].includes(key))) throw new Error("Only a project override can restore inheritance");
+    if (!loadNativeMcpConfig(agentDir, cwd, false).servers.some(entry => entry.name === input.name)) throw new Error("Global MCP server no longer exists");
+    delete servers[input.name];
+  } else if (input.remove) delete servers[input.name];
   else if (input.config !== undefined) servers[input.name] = validateNativeMcpConfig(input.config, input.scope);
   else {
     const existing = servers[input.name];

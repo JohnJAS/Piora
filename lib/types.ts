@@ -94,6 +94,7 @@ export interface AssistantMessage {
 }
 
 export interface ToolResultMessage {
+  nestedCalls?: import("./nested-tool-calls").NestedCallsSnapshot;
   role: "toolResult";
   /** Transient output snapshot; never persisted to session history. */
   isStreaming?: boolean;

@@ -5,16 +5,17 @@ import { useI18n } from "@/hooks/useI18n";
 import styles from "./PluginsConfig.module.css";
 
 interface Server {
-  name: string; source: string; scope: "global" | "project" | "extension"; override?: string;
+  name: string; source: string; scope: "global" | "project" | "extension"; override?: string; globalSettings?: { enabled: boolean; exposure: string };
   enabled?: boolean; liveEndpoint?: string; configurationCurrent?: boolean; connectionAuthorized?: boolean; approvalRequired?: boolean; transport: string; endpoint: string; exposure: string; state: string;
   tools: Array<{ name: string; exposure: string }>; resources: boolean;
 }
 interface State { enabled: boolean; projectTrusted: boolean; owner: string; live: boolean; reloadRequired: boolean; servers: Server[]; diagnostics: string[] }
 const exposures = ["direct", "deferred", "codemode", "hidden"];
 
-export function NativeMcpConfig({ cwd, sessionId, onReloaded }: { cwd: string; sessionId: string | null; onReloaded?: () => void }) {
+export function NativeMcpConfig({ cwd, sessionId, onReloaded, onOpenProjectTools }: { cwd: string; sessionId: string | null; onReloaded?: () => void; onOpenProjectTools?: (server: { name: string; toolNames: string[] }) => void }) {
   const { t } = useI18n();
   const [data, setData] = useState<State | null>(null), [error, setError] = useState<string | null>(null);
+  const [editScopes, setEditScopes] = useState<Record<string, "global" | "project">>({});
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState(""), [scope, setScope] = useState<"global" | "project">("global"), [definition, setDefinition] = useState("");
   const sequence = useRef(0), busyRef = useRef(false), mounted = useRef(false), lifetime = useRef(0);
@@ -30,7 +31,7 @@ export function NativeMcpConfig({ cwd, sessionId, onReloaded }: { cwd: string; s
   }, [cwd, sessionId]);
   const invalidate = useCallback(() => { mounted.current = false; ++lifetime.current; ++sequence.current; }, []);
   useEffect(() => {
-    mounted.current = true; ++lifetime.current; busyRef.current = false; setBusy(false); setData(null);
+    mounted.current = true; ++lifetime.current; busyRef.current = false; setBusy(false); setData(null); setEditScopes({});
     const controller = new AbortController();
     void load(controller.signal);
     const interval = sessionId ? setInterval(() => { if (!busyRef.current) void load(controller.signal); }, 3000) : undefined;
@@ -75,17 +76,30 @@ export function NativeMcpConfig({ cwd, sessionId, onReloaded }: { cwd: string; s
       {!data.live ? <p>{t("nativeMcp.noLiveSession")}</p> : null}
       {data.reloadRequired ? <p>{t("nativeMcp.reloadHint")} <button type="button" disabled={busy || !sessionId} onClick={() => { void reload(); }}>{t("i18n.reloadSession")}</button></p> : null}
       <button type="button" disabled={busy} onClick={() => { if (!busyRef.current) void load(); }}>{t("nativeMcp.refresh")}</button>
-      {data.servers.length === 0 ? <p>{t("nativeMcp.empty")}</p> : data.servers.map(server => <details key={`${server.scope}:${server.name}`} className={styles.serverCard} open>
+      {data.servers.length === 0 ? <p>{t("nativeMcp.empty")}</p> : data.servers.map(server => {
+        const editScope = server.scope === "global" ? editScopes[server.name] ?? (server.override ? "project" : "global") : "project";
+        const editing = editScope === "global" ? server.globalSettings ?? server : server;
+        return <details key={`${server.scope}:${server.name}`} className={styles.serverCard} open>
         <summary className={styles.serverSummary}><strong>{server.name}</strong><span>{server.transport}</span><span>{t(`nativeMcp.state.${server.state}`)}</span></summary>
         <div className={styles.serverBody}>
           <p>{server.endpoint}</p>
           {server.configurationCurrent === false ? <p>{t("nativeMcp.pendingConfiguration")} {server.liveEndpoint ? t("nativeMcp.liveEndpoint", { endpoint: server.liveEndpoint }) : ""}</p> : null}
           <p>{t("nativeMcp.source", { source: server.source })}</p>
           {server.override ? <p>{t("nativeMcp.override", { path: server.override })}</p> : null}
+          <p>{t("nativeMcp.effective", { enabled: t(server.enabled !== false ? "nativeMcp.on" : "nativeMcp.off"), exposure: t(`nativeMcp.exposure.${server.exposure}`), scope: t(server.scope === "extension" ? "nativeMcp.extension" : server.override || server.scope === "project" ? "nativeMcp.project" : "nativeMcp.global") })}</p>
           {server.scope === "extension" ? <button type="button" disabled={busy || !sessionId} onClick={() => { void mutate({ action: "approve-registered", name: server.name, enabled: server.approvalRequired ?? server.state === "approval-required" }); }}>{(server.approvalRequired ?? server.state === "approval-required") ? t("nativeMcp.approve") : t("nativeMcp.revoke")}</button> : <>
-            <label><input type="checkbox" checked={server.enabled !== false} disabled={busy} onChange={event => { void mutate({ action: "server", scope: server.override ? "project" : server.scope, name: server.name, enabled: event.target.checked }); }} /> {t("nativeMcp.serverEnabled")}</label>
-            <label>{t("nativeMcp.exposure")} <select aria-label={`${server.name} ${t("nativeMcp.exposure")}`} value={server.exposure} disabled={busy} onChange={event => { void mutate({ action: "server", scope: server.override ? "project" : server.scope, name: server.name, exposure: event.target.value }); }}>{exposures.map(exposure => <option key={exposure} value={exposure}>{t(`nativeMcp.exposure.${exposure}`)}</option>)}</select></label>
+            {server.scope === "global" ? <>
+              <label>{t("nativeMcp.editScope")} <select aria-label={`${server.name} ${t("nativeMcp.editScope")}`} value={editScope} disabled={busy} onChange={event => setEditScopes(current => ({ ...current, [server.name]: event.target.value as "global" | "project" }))}>
+                <option value="global">{t("nativeMcp.allProjects")}</option><option value="project" disabled={!data.projectTrusted}>{t("nativeMcp.onlyProject")}</option>
+              </select></label>
+              <p>{t(editScope === "project" ? "nativeMcp.projectEditHint" : "nativeMcp.globalEditHint")}</p>
+              {!server.override ? <button type="button" disabled={busy || !data.projectTrusted} onClick={() => { void mutate({ action: "server", scope: "project", name: server.name, enabled: server.enabled !== false, exposure: server.exposure }).then(ok => { if (ok) setEditScopes(current => ({ ...current, [server.name]: "project" })); }); }}>{t("nativeMcp.createOverride")}</button> : <button type="button" disabled={busy || !data.projectTrusted} onClick={() => { void mutate({ action: "server", scope: "project", name: server.name, restoreInheritance: true }); }}>{t("nativeMcp.restoreInheritance")}</button>}
+            </> : <p>{t("nativeMcp.fullProjectDefinition")}</p>}
+            <label><input type="checkbox" checked={editing.enabled !== false} disabled={busy} onChange={event => { void mutate({ action: "server", scope: editScope, name: server.name, enabled: event.target.checked }); }} /> {t("nativeMcp.serverEnabled")}</label>
+            <label>{t("nativeMcp.exposure")} <select aria-label={`${server.name} ${t("nativeMcp.exposure")}`} value={editing.exposure} disabled={busy} onChange={event => { void mutate({ action: "server", scope: editScope, name: server.name, exposure: event.target.value }); }}>{exposures.map(exposure => <option key={exposure} value={exposure}>{t(`nativeMcp.exposure.${exposure}`)}</option>)}</select></label>
           </>}
+          <p>{t("nativeMcp.discoveryHint")}</p>
+          {onOpenProjectTools ? <button type="button" onClick={() => onOpenProjectTools({ name: server.name, toolNames: server.tools.map(tool => tool.name) })}>{t("nativeMcp.openProjectTools")}</button> : null}
           <p>{t("nativeMcp.liveTools", { count: server.tools.filter(tool => tool.exposure !== "hidden").length })}</p>
           {server.tools.length ? <ul>{server.tools.map(tool => <li key={tool.name}><code>{tool.name}</code> · {tool.exposure}</li>)}</ul> : null}
           {server.resources ? <p>{t("nativeMcp.resources")}</p> : null}
@@ -94,7 +108,7 @@ export function NativeMcpConfig({ cwd, sessionId, onReloaded }: { cwd: string; s
             {server.transport === "http" ? <button type="button" disabled={busy || !sessionId || !data.enabled || data.owner !== "native" || server.enabled === false || server.configurationCurrent === false || server.connectionAuthorized === false || server.approvalRequired || ["disabled", "approval-required", "closed"].includes(server.state)} onClick={() => { void command(`/mcp login ${server.name}`); }}>{t("nativeMcp.login")}</button> : null}
           </div>
         </div>
-      </details>)}
+      </details>; })}
       {data.diagnostics.length ? <ul role="status">{data.diagnostics.map((diagnostic, index) => <li key={index}>{diagnostic}</li>)}</ul> : null}
       <form style={{ display: "grid", gap: 8 }} onSubmit={event => {
         event.preventDefault();
