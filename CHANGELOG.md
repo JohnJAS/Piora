@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 用户文档
+
+- 新增完整中文用户手册，按安装入门、日常操作、功能配置、备份迁移和故障排查组织，补充任务示例与快捷键速查；在 README 和文档索引增加入口，并明确当前源码、未发布功能与安装版之间的适用范围。
+
 ## [0.5.5-beta.19] - 2026-10-12
 
 ### 发布打包
