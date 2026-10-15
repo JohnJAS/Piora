@@ -38,6 +38,7 @@ export async function GET(request: Request) {
         startedAt: recording.startedAt,
         ownerId: recording.ownerId,
         method: recording.method ?? "stream",
+        ...(recording.systemRecorderStateUnknown ? { systemRecorderStateUnknown: true } : {}),
       } : null,
       storage: resolveHarmonyStorage(manager.getConfig()),
     });
@@ -68,6 +69,7 @@ export async function POST(request: Request) {
         startedAt: recording.startedAt,
         ownerId: recording.ownerId,
         method: recording.method ?? "stream",
+        ...(recording.systemRecorderStateUnknown ? { systemRecorderStateUnknown: true } : {}),
       } });
     }
     if (body.action === "stop_recording") {
@@ -75,6 +77,20 @@ export async function POST(request: Request) {
       const artifact = await manager.stopRecording({ serial, ownerId, ...(leaseToken ? { leaseToken } : {}),
         ...(recordingId ? { recordingId } : {}), signal: request.signal });
       return noStoreJson({ artifact });
+    }
+    if (body.action === "retrieve_recording") {
+      // Retrieval only, after the user stopped an unconfirmed system recording on the phone.
+      const recordingId = optionalString(body, "recordingId", 64);
+      const artifact = await manager.retrieveRecording({ serial, ownerId, ...(leaseToken ? { leaseToken } : {}),
+        ...(recordingId ? { recordingId } : {}), signal: request.signal });
+      return noStoreJson({ artifact });
+    }
+    if (body.action === "abandon_recording") {
+      // PC-side only: forgets the unconfirmed recording; the phone gallery copy stays untouched.
+      const recordingId = optionalString(body, "recordingId", 64);
+      await manager.abandonRecording({ serial, ownerId, ...(leaseToken ? { leaseToken } : {}),
+        ...(recordingId ? { recordingId } : {}), signal: request.signal });
+      return noStoreJson({ abandoned: true });
     }
     throw new HarmonyError("INVALID_ARGUMENT", "Unsupported Harmony media action");
   } catch (error) {
