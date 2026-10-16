@@ -6,6 +6,8 @@ import {
   BRIDGE_UNAVAILABLE_ERROR,
   CDP_TIMEOUT_MS,
   EVALUATE_DISABLED_ERROR,
+  EVALUATE_PAGE_CHANGED_ERROR,
+  EVALUATE_SENSITIVE_REFUSAL,
   IDLE_UNLOAD_MS,
   ISOLATED_WORLD_ID,
   InFlightCounter,
@@ -24,12 +26,14 @@ import {
   classifyInputEvent,
   createPendingRequestTable,
   elementCenterInvocation,
+  evaluateAllowance,
   focusInvocation,
   formatSnapshot,
   httpUrl,
   isNonFatalNavigationError,
   isPausedAction,
   navigationFailure,
+  navigationTokenTabId,
   referencedTypeTargetIsFrame,
   resolveOwnedTab,
   scrollInvocation,
@@ -82,6 +86,8 @@ export interface BrowserAgentHost {
   capturePage(tabId: string, options: { stayHidden: boolean; stayAwake: boolean }): Promise<{ byteLength: number; base64: string }>;
   executeIsolated(tabId: string, worldId: number, code: string): Promise<unknown>;
   executeMain?(tabId: string, code: string): Promise<unknown>;
+  /** Tab id, main-frame navigation epoch, and URL. Different for each tab, including same-URL navigations. */
+  navigationToken(tabId: string): string;
   activateSessionTab?(sessionId: string, tabId: string): void;
   debuggerAttach(tabId: string, version: string): void;
   debuggerDetach(tabId: string): void;
@@ -114,6 +120,7 @@ export interface BrowserAgentRequest {
   fullPage?: boolean;
   reason?: string;
   confirmed?: boolean;
+  navigationToken?: string;
 }
 
 export interface BrowserAgentResponse {
@@ -151,7 +158,7 @@ interface TabMeta {
 const ACTIONS = new Set([
   "open", "back", "forward", "reload", "snapshot", "click", "type", "press", "scroll",
   "screenshot", "tabs", "new_tab", "switch_tab", "close_tab", "idle", "session_closed", "evaluate",
-  "wait_begin", "wait_end",
+  "evaluate_check", "wait_begin", "wait_end",
 ]);
 
 function safeRef(value: string | undefined): string | undefined {
@@ -463,6 +470,8 @@ export class BrowserAgentControl {
         return this.snapshot(request, signal);
       case "screenshot":
         return this.screenshot(request, signal);
+      case "evaluate_check":
+        return this.evaluateCheck(request, signal);
       case "evaluate":
         return this.evaluate(request, signal);
       case "click":
@@ -609,12 +618,36 @@ export class BrowserAgentControl {
     });
   }
 
+  private async evaluateCheck(request: BrowserAgentRequest, signal: AbortSignal): Promise<unknown> {
+    return this.withOwnedTab(request, signal, async (tab) => {
+      const decision = await this.inspectEvaluateTarget(tab.id);
+      this.throwIfAborted(signal);
+      const navigationToken = this.host.navigationToken(tab.id);
+      return {
+        action: "evaluate_check",
+        allowed: decision.allowed,
+        ...(decision.allowed ? {} : { reason: decision.reason ?? EVALUATE_SENSITIVE_REFUSAL }),
+        url: decision.url,
+        tabId: tab.id,
+        navigationToken,
+      };
+    });
+  }
+
   private async evaluate(request: BrowserAgentRequest, signal: AbortSignal): Promise<unknown> {
     if (request.confirmed !== true) throw new Error(EVALUATE_DISABLED_ERROR);
     if (request.text === undefined || !request.text.trim()) throw new Error("evaluate requires a JavaScript expression in text");
     if (!this.host.executeMain) throw new Error(EVALUATE_DISABLED_ERROR);
+    const token = request.navigationToken?.trim() ?? "";
+    if (!token) throw new Error(EVALUATE_PAGE_CHANGED_ERROR);
     const expression = request.text;
     return this.withOwnedTab(request, signal, async (tab) => {
+      const decision = await this.inspectEvaluateTarget(tab.id);
+      this.throwIfAborted(signal);
+      if (navigationTokenTabId(token) !== tab.id || this.host.navigationToken(tab.id) !== token) {
+        throw new Error(EVALUATE_PAGE_CHANGED_ERROR);
+      }
+      if (!decision.allowed) throw new Error(decision.reason ?? EVALUATE_SENSITIVE_REFUSAL);
       const value = await this.runTabOp(
         tab.id,
         () => this.host.executeMain!(tab.id, expression),
@@ -1029,6 +1062,22 @@ export class BrowserAgentControl {
     return this.runTabOp(tabId, () => this.host.debuggerSend(tabId, method, params), this.cdpTimeoutMs, `CDP command timed out: ${method}`);
   }
 
+  private async inspectEvaluateTarget(tabId: string): Promise<{ allowed: boolean; reason?: string; url: string }> {
+    const raw = await this.isolated(tabId, SNAPSHOT_COLLECT_SCRIPT);
+    const parsed = parseSnapshot(raw);
+    const loaded = this.tab(tabId);
+    const pageUrl = parsed.url || loaded?.url || "";
+    const title = parsed.title || loaded?.title || "";
+    const extraUrl = loaded?.url && loaded.url !== pageUrl ? loaded.url : "";
+    const decision = evaluateAllowance({
+      url: extraUrl ? `${pageUrl}\n${extraUrl}` : pageUrl,
+      title,
+      visibleText: parsed.visibleText,
+      passwordField: parsed.passwordField,
+    });
+    return { ...decision, url: pageUrl };
+  }
+
   private isolated(tabId: string, code: string): Promise<unknown> {
     return this.runTabOp(tabId, () => this.host.executeIsolated(tabId, ISOLATED_WORLD_ID, code), this.cdpTimeoutMs, "Browser tab script timed out");
   }
@@ -1261,6 +1310,8 @@ function normalizeRequest(message: unknown): BrowserAgentRequest | null {
   const reason = limited(typeof candidate.reason === "string" ? candidate.reason : undefined, 2000);
   if (reason) request.reason = reason;
   if (candidate.confirmed === true) request.confirmed = true;
+  const navigationToken = limited(typeof candidate.navigationToken === "string" ? candidate.navigationToken : undefined, 20_000);
+  if (navigationToken) request.navigationToken = navigationToken;
   return request;
 }
 
