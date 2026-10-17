@@ -125,6 +125,7 @@ const assets = [
     ["interactive terminal runtime", "node-pty"],
     // Code intelligence loads TypeScript from a worker by computed path.
     ["TypeScript language service", "typescript"],
+    ["TypeScript language service implementation", "@typescript/old"],
     ["SQLite error position parser", "@sqlite.org/sqlite-wasm"],
   ].map(([name, packageName]) => ({
     name,
@@ -387,6 +388,9 @@ async function main() {
     // the complete DevEco CLI production closure because Next cannot trace
     // its CLI entry point, MCP server, or dynamically loaded check engines.
     devecoCliRuntimeRoot,
+    // The 1.3.6 launcher declares the desktop implementation as optional for
+    // platform selection, but Piora requires it even with optional deps omitted.
+    join(projectRoot, "node_modules", "@deveco", "deveco-cli-common"),
     // Device text editing is reached through the source-loaded Harmony
     // extension, so Next cannot trace its GB18030/UTF-16 codec dependency.
     join(projectRoot, "node_modules", "iconv-lite"),
