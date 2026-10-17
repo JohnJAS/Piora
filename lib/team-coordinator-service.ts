@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { appendRoomMessage, findRoomMessageByCorrelationId, getRoom } from "./room-store";
+import { appendRoomMessage, findRoomMessage, findRoomMessageByCorrelationId, getRoom } from "./room-store";
+import { isCurrentRoomQuestion } from "./room-question";
 import { getSessionMessageRouter, type SessionMessageRouter } from "./session-message-router";
 import type { SessionCommandEvent } from "./session-message-types";
 import {
@@ -143,6 +144,7 @@ export class TeamCoordinatorService {
     correlationSuffix: string,
     content: string,
     member?: RoomMemberV3,
+    linkage?: { taskId: string; targetMemberIds: string[] },
   ): void {
     const correlationId = `team:${state.id}:${correlationSuffix}`;
     if (findRoomMessageByCorrelationId(state.roomId, correlationId)) return;
@@ -152,6 +154,10 @@ export class TeamCoordinatorService {
       authorName: member?.profile.name ?? "Piora",
       content,
       correlationId,
+      teamRunId: state.id,
+      ...linkage,
+      ...(correlationSuffix.startsWith("task:") && correlationSuffix.endsWith(":started") || correlationSuffix.startsWith("review:") && correlationSuffix.endsWith(":requested")
+        ? { kind: "handoff" as const } : {}),
     });
   }
 
@@ -176,6 +182,7 @@ export class TeamCoordinatorService {
           `task:${task.id}:attempt:${task.attempt}:started`,
           `@${member.profile.name} 请开始执行：**${task.title}**\n\n${task.description}`,
           coordinator,
+          { taskId: task.id, targetMemberIds: [member.memberId] },
         );
       }
       if (task.submission && member) {
@@ -206,6 +213,7 @@ export class TeamCoordinatorService {
         `review:${dispatch.dispatchId}:requested`,
         `@${reviewer.profile.name} 请现在审查 ${worker?.profile.name ?? "执行者"} 已提交的：**${task.title}**\n\n编码任务已提交，审查从此刻开始。`,
         coordinator,
+        { taskId: task.id, targetMemberIds: [reviewer.memberId] },
       );
     }
     for (const decision of Object.values(state.reviewDecisions)) {
@@ -404,8 +412,10 @@ export class TeamCoordinatorService {
       if (record.kind === "room_message") {
         const state = this.store.getTeamRun(roomId, teamRunId);
         if (state.phase !== "completed") continue;
-        const summary = record.payload.summary;
-        const authorMemberId = record.payload.authorMemberId;
+        // A rejected completion attempt may have journaled this outbox key.
+        // Only the validated completion event owns the final delivery content.
+        const summary = state.finalSummary;
+        const authorMemberId = state.coordinatorMemberId;
         if (typeof summary !== "string" || typeof authorMemberId !== "string") {
           await this.store.markTeamOutboxFailed(roomId, teamRunId, record.id, "TEAM_INVALID_CONTEXT");
           continue;
@@ -421,6 +431,9 @@ export class TeamCoordinatorService {
             authorName: author.profile.name,
             content: summary,
             correlationId: record.idempotencyKey,
+            teamRunId,
+            kind: "delivery",
+            promptRunId: typeof record.payload.promptRunId === "string" ? record.payload.promptRunId : Object.values(state.activeDispatches).find((dispatch) => dispatch.purpose === "synthesis" && dispatch.sessionId === author.binding.sessionId)?.promptRunId,
           });
         }
         await this.store.markTeamOutboxDelivered(roomId, teamRunId, record.id);
@@ -577,7 +590,7 @@ export class TeamCoordinatorService {
     if (tasks.some((task) => task.status === "blocked") && !canProgress) {
       const blockedTasks = tasks.filter((task) => task.status === "blocked");
       const detail = state.progressSummary?.trim() || "执行智能体没有提供更多说明";
-      const question = `任务“${blockedTasks.map((task) => task.title).join("、")}”遇到阻塞：${detail}\n请直接在群聊中告诉我应如何处理，我会带着你的回答自动继续运行。`;
+      const question = `任务“${blockedTasks.map((task) => task.title).join("、")}”遇到阻塞：${detail}\n请点击“回复这个问题”补充信息，我会带着你的回答继续运行。`;
       const waiting = await this.store.appendTeamRunEvents(state.roomId, state.id, state.revision, [{ type: "run.waiting_user", reason: question }]);
       const correlationId = `team:${state.id}:question:${waiting.retryGeneration ?? 0}`;
       if (!findRoomMessageByCorrelationId(state.roomId, correlationId)) {
@@ -587,6 +600,9 @@ export class TeamCoordinatorService {
           authorName: "Piora",
           content: `需要你的回答\n\n${question}`,
           correlationId,
+          teamRunId: state.id,
+          taskId: blockedTasks[0]?.id,
+          kind: "question",
         });
       }
       return waiting;
@@ -601,6 +617,7 @@ export class TeamCoordinatorService {
   private async reconcileUnlocked(roomId: string, teamRunId: string, _reason: ReconcileReason): Promise<TeamRunState> {
     void _reason;
     let state = this.store.getTeamRun(roomId, teamRunId);
+    if (state.stopRequested) return state;
     const room = getRoom(roomId);
     this.publishVisibleMilestones(state, room);
     if (isTerminalTeamRun(state)) return state;
@@ -641,20 +658,29 @@ export class TeamCoordinatorService {
     return this.serialize(roomId, teamRunId, () => this.reconcileUnlocked(roomId, teamRunId, reason));
   }
 
-  async resumeRun(roomId: string, teamRunId: string, guidance?: string): Promise<TeamRunState> {
-    const state = this.store.getTeamRun(roomId, teamRunId);
-    const resumed = await this.store.appendTeamRunEvents(roomId, teamRunId, state.revision, [{ type: "run.resumed", guidance }]);
+  async resumeRun(roomId: string, teamRunId: string, guidance?: string, questionId?: string, answerMessageId?: string): Promise<TeamRunState> {
+    const resumed = await this.serialize(roomId, "__create__", async () => {
+      const other = this.store.listTeamRuns(roomId, { includeTerminal: false, limit: 500 }).find((run) => run.id !== teamRunId && !isTerminalTeamRun(run));
+      if (other) throw new TeamError("TEAM_REVISION_CONFLICT", "请先完成或停止当前任务，再恢复历史任务。");
+      const state = this.store.getTeamRun(roomId, teamRunId);
+      const correlationId = answerMessageId ? `room-answer:${answerMessageId}` : undefined;
+      if (correlationId && this.store.listTeamRunEvents(roomId, teamRunId).some((entry) => entry.event.type === "run.resumed" && entry.correlationId === correlationId)) return state;
+      if (questionId && !isCurrentRoomQuestion(findRoomMessage(roomId, questionId), state)) throw new TeamError("TEAM_REVISION_CONFLICT", "问题已处理，请查看最新任务状态。");
+      return this.store.appendTeamRunEvents(roomId, teamRunId, state.revision, [{ event: { type: "run.resumed", guidance }, ...(correlationId ? { correlationId } : {}) }]);
+    });
     return this.reconcile(resumed.roomId, resumed.id, "user_resumed");
   }
 
   async cancelRun(roomId: string, teamRunId: string, reason: string): Promise<TeamRunState> {
-    let state = this.store.getTeamRun(roomId, teamRunId);
-    if (isTerminalTeamRun(state)) return state;
-    for (const dispatch of Object.values(state.activeDispatches)) {
-      if (activeDispatch(dispatch) && dispatch.commandId) await this.router!.cancelCommand(dispatch.commandId).catch(() => undefined);
-    }
-    state = this.store.getTeamRun(roomId, teamRunId);
-    return this.store.appendTeamRunEvents(roomId, teamRunId, state.revision, [{ type: "run.cancelled", reason }]);
+    return this.serialize(roomId, teamRunId, async () => {
+      let state = this.store.getTeamRun(roomId, teamRunId);
+      if (isTerminalTeamRun(state)) return state;
+      if (!state.stopRequested) state = await this.store.appendTeamRunEvents(roomId, teamRunId, state.revision, [{ type: "run.stop_requested", reason }]);
+      const stopped = await Promise.allSettled(state.stopRequested!.commandIds.map((id) => this.router!.cancelCommand(id)));
+      if (stopped.some((result) => result.status === "rejected")) throw new TeamError("TEAM_INTERNAL_ERROR", "部分成员尚未确认停止，请重试停止。任务队列暂不推进。");
+      state = this.store.getTeamRun(roomId, teamRunId);
+      return this.store.appendTeamRunEvents(roomId, teamRunId, state.revision, [{ type: "run.cancelled", reason: state.stopRequested!.reason }]);
+    });
   }
 
   async recoverAll(): Promise<void> {
@@ -665,6 +691,11 @@ export class TeamCoordinatorService {
       } catch { /* Corrupt/partial Rooms remain isolated from process startup. */ }
     }
     for (const state of await this.store.recoverUnfinishedTeamRuns()) {
+      if (state.stopRequested) {
+        try { await this.cancelRun(state.roomId, state.id, state.stopRequested.reason); }
+        catch (error) { console.error("[rooms] stop recovery requires retry", error); }
+        continue;
+      }
       for (const dispatch of Object.values(state.activeDispatches)) if (activeDispatch(dispatch)) this.ensureSessionSubscription(dispatch.sessionId);
       await this.reconcile(state.roomId, state.id, "startup");
     }
@@ -672,19 +703,17 @@ export class TeamCoordinatorService {
       for (const state of this.store.listTeamRuns(roomId, { limit: 500 })) {
         if (state.phase === "completed") await this.deliverPendingOutbox(roomId, state.id);
       }
+      try { await (await import("./room-submissions")).drainRoomSubmissions(roomId); } catch { /* Retry on the next reconnect; other rooms remain recoverable. */ }
     }
   }
 
   async onSessionCommandEvent(event: SessionCommandEvent): Promise<void> {
     if (!event.commandId) return;
-    const roomsRoot = this.store.roomsRoot;
-    const { readdirSync, existsSync } = await import("node:fs");
-    if (!existsSync(roomsRoot)) return;
-    for (const room of readdirSync(roomsRoot, { withFileTypes: true })) {
-      if (!room.isDirectory()) continue;
-      for (const state of this.store.listTeamRuns(room.name, { limit: 500, includeTerminal: false })) {
+    for (const roomId of this.store.listRoomIds()) {
+      for (const state of this.store.listTeamRuns(roomId, { limit: 500, includeTerminal: false })) {
         const dispatch = Object.values(state.activeDispatches).find((candidate) => candidate.commandId === event.commandId);
         if (!dispatch) continue;
+        if (state.stopRequested) return;
         let current = state;
         if (event.type === "prompt_started" && event.runId && dispatch.status !== "running") {
           current = await this.store.appendTeamRunEvents(state.roomId, state.id, state.revision, [{

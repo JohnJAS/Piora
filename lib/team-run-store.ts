@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
-import { getRoomsRoot } from "./room-store";
+import { getRoom, getRoomsRoot } from "./room-store";
 import { TeamError } from "./team-errors";
 import { isTerminalTeamRun, reduceTeamRunEvent, replayTeamRunEvents } from "./team-run-reducer";
 import {
@@ -421,6 +421,15 @@ export class TeamRunStore {
       return projection;
     });
     for (const event of emitted) this.broadcast(event);
+    if (emitted.some(({ event }) => ["run.completed", "run.failed", "run.cancelled"].includes(event.type))) {
+      // Never await intake while holding a coordinator/submission call chain.
+      const timer = setTimeout(() => {
+        try { getRoom(roomId); } catch { return; }
+        void import("./room-submissions").then(({ drainRoomSubmissions }) => drainRoomSubmissions(roomId))
+          .catch((error) => console.error("[rooms] queued submission recovery failed", error));
+      }, 0);
+      timer.unref?.();
+    }
     return state;
   }
 

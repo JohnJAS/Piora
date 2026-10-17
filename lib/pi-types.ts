@@ -80,6 +80,8 @@ export interface SessionStatsInfo {
 interface PromptTemplateLike {
   name: string;
   description?: string;
+  argumentHint?: string;
+  content?: string;
   sourceInfo: SlashCommandInfo["sourceInfo"];
 }
 
@@ -160,6 +162,8 @@ export interface AgentSessionLike {
   readonly sessionManager: SessionManager;
   readonly settingsManager: SettingsManager;
   readonly agent: {
+    steer?: Agent["steer"];
+    followUp?: Agent["followUp"];
     transformContext?: Agent["transformContext"];
     maxRetryDelayMs?: number;
     state?: {
@@ -182,12 +186,14 @@ export interface AgentSessionLike {
   dispose?(): void;
   subscribe(listener: (event: AgentSessionEvent) => void): () => void;
   prompt(text: string, options?: {
+    expandPromptTemplates?: boolean;
     images?: Array<{ type: "image"; data: string; mimeType: string }>;
     streamingBehavior?: "steer" | "followUp";
-    source?: "interactive" | "rpc";
+    source?: "interactive" | "rpc" | "extension";
     preflightResult?: PromptOptions["preflightResult"];
   }): Promise<void>;
   abort(): Promise<void>;
+  waitForIdle?(): Promise<void>;
   sendCustomMessage(message: { customType: string; content: string; display: boolean; details?: Record<string, unknown> }, options?: { triggerTurn?: boolean }): Promise<void>;
   executeBash(command: string, onChunk?: (chunk: string) => void, options?: { excludeFromContext?: boolean }): Promise<{ output: string; exitCode?: number; cancelled?: boolean; truncated?: boolean; fullOutputPath?: string }>;
   abortBash(): void;

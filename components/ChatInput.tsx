@@ -10,6 +10,9 @@ import type { ReplySource } from "@/lib/reply-suggestions";
 import { useAnchoredMenuPosition } from "@/hooks/useAnchoredMenuPosition";
 import { readPromptOptimizerModel, readPromptOptimizerSystemPrompt } from "@/lib/prompt-optimizer-settings";
 import type { AttachedFile, BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
+import type { ChatCommandCatalog, ChatInputOptions } from "@/lib/chat-command-types";
+import { createChatCommandCatalog, parseChatInput } from "@/lib/chat-command-input";
+import commandStyles from "./ChatCommandComposer.module.css";
 import { storeBrowserFiles } from "@/lib/file-attachments";
 import { clearDraft, getDraft, setDraft, hydrateDraft, deferDraftPersistence, DRAFT_STORAGE_ERROR_EVENT, type ChatDraftFile, type ChatDraftImage } from "@/lib/draft-store";
 import {
@@ -114,7 +117,10 @@ interface PromptOptimizationState {
 
 interface Props {
   replySource?: ReplySource | null;
-  onSend: (message: string, images?: AttachedImage[], files?: AttachedFile[], onDurable?: (clientPromptId?: string) => void, retryOfPromptIds?: string[]) => boolean | void | Promise<boolean | void>;
+  onSend: (message: string, images?: AttachedImage[], files?: AttachedFile[], onDurable?: (clientPromptId?: string) => void, retryOfPromptIds?: string[], inputOptions?: ChatInputOptions) => boolean | void | Promise<boolean | void>;
+  onQueueInput?: (message: string, images?: AttachedImage[], files?: AttachedFile[], onDurable?: (clientPromptId?: string) => void, inputOptions?: ChatInputOptions, retryOfPromptIds?: string[]) => Promise<boolean>;
+  commandCatalog?: ChatCommandCatalog;
+  slashCommandsError?: string | null;
   onAbort: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => boolean | void | Promise<boolean | void>;
   onFollowUp?: (message: string, images?: AttachedImage[]) => boolean | void | Promise<boolean | void>;
@@ -170,6 +176,7 @@ export interface ChatInputHandle {
   restoreFailedPrompt: (text: string, files?: AttachedFile[], images?: AttachedImage[]) => void;
   /** Send a separate local UI shortcut without replacing the user's draft. */
   sendText: (text: string) => boolean;
+  restoreCommandDraft: (draft: import("@/lib/draft-store").ChatDraft) => boolean;
   toggleVoiceInput: () => void;
 }
 
@@ -336,6 +343,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   slashCommands, slashCommandsLoading, onLoadSlashCommands,
   onBuiltinCommand,
   onPromptWithStreamingBehavior,
+  onQueueInput, commandCatalog, slashCommandsError,
   draftKey,
   cwd,
   contextUsage,
@@ -361,6 +369,11 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     return { value: saved?.value ?? "", spans: saved?.replySpans ?? [] };
   });
   const value = replyDraft.value;
+  const [commandInputOptions, setCommandInputOptions] = useState<ChatInputOptions>(() => draftKey ? getDraft(draftKey)?.commandInput ?? {} : {});
+  const commandInputOptionsRef = useRef(commandInputOptions);
+  commandInputOptionsRef.current = commandInputOptions;
+  const parsedCommandInput = parseChatInput(value, commandCatalog ?? createChatCommandCatalog(slashCommands ?? []), commandInputOptions);
+  const isCommandInput = commandInputOptions.inputMode !== "text" && value.trimStart().startsWith("/");
   const suggestions = useReplySuggestions(isStreaming || isCompacting ? null : replySource, locale);
   const [hydratedDraftKey, setHydratedDraftKey] = useState<string | undefined>(undefined);
   const [draftStorageError, setDraftStorageError] = useState(false);
@@ -643,6 +656,15 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     addFiles(files: File[]) {
       void processFileSelection(files);
     },
+    restoreCommandDraft(draft) {
+      if (valueRef.current.trim() || attachedImagesRef.current.length || attachedFilesRef.current.length) return false;
+      setCommandInputOptions(draft.commandInput ?? {});
+      resetReplyDraft({ value: draft.value, spans: draft.replySpans ?? [] });
+      setAttachedFiles(draftFilesToAttachedFiles(draft.files));
+      setAttachedImages(draftImagesToAttachedImages(draft.images));
+      retryOfPromptIdsRef.current = draft.retryOfPromptIds ?? [];
+      return true;
+    },
     restoreFailedPrompt(text: string, files?: AttachedFile[], images?: AttachedImage[]) {
       setValue((current) => current === text ? current : current ? [text, current].filter(Boolean).join("\n\n") : text);
       if (files?.length) setAttachedFiles((current) => [...files, ...current]);
@@ -690,6 +712,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   }, []);
 
   const clearInput = useCallback(() => {
+    setCommandInputOptions({});
     retryOfPromptIdsRef.current = [];
     stopVoiceInput(true);
     resetReplyDraft({ value: "", spans: [] });
@@ -711,13 +734,14 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     if (!draftKey || draftKeyRef.current !== draftKey || hydratedDraftKey !== draftKey) return;
     if (!value && !attachedImages.length && !attachedFiles.length) retryOfPromptIdsRef.current = [];
     setDraft(draftKey, {
+      commandInput: commandInputOptions,
       value: valueRef.current,
       replySpans: replyDraftRef.current.spans,
       images: attachedImagesRef.current.map(imageToDraftImage),
       files: attachedFilesRef.current.map(attachedFileToDraftFile),
       ...(retryOfPromptIdsRef.current.length ? { retryOfPromptIds: [...retryOfPromptIdsRef.current] } : {}),
     });
-  }, [attachedFiles, attachedImages, draftKey, value, replyDraft.spans, hydratedDraftKey, replyDraftRef]);
+  }, [attachedFiles, attachedImages, draftKey, value, replyDraft.spans, hydratedDraftKey, replyDraftRef, commandInputOptions]);
 
   useEffect(() => {
     const previousDraftKey = draftKeyRef.current;
@@ -731,11 +755,13 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
         replySpans: replyDraftRef.current.spans,
         images: attachedImagesRef.current.map(imageToDraftImage),
         files: attachedFilesRef.current.map(attachedFileToDraftFile),
+        commandInput: commandInputOptionsRef.current,
         ...(retryOfPromptIdsRef.current.length ? { retryOfPromptIds: [...retryOfPromptIdsRef.current] } : {}),
       });
     }
 
     const draft = draftKey ? getDraft(draftKey) : null;
+    setCommandInputOptions(draft?.commandInput ?? {});
     draftKeyRef.current = draftKey;
     retryOfPromptIdsRef.current = draft?.retryOfPromptIds ?? [];
     promptOptimizerAbortRef.current?.abort();
@@ -765,6 +791,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     void hydrateDraft(draftKey).then((saved) => {
       if (!alive || draftKeyRef.current !== draftKey) return;
       if (saved && replyDraftRef.current === before && attachedImagesRef.current === beforeImages && attachedFilesRef.current === beforeFiles) {
+        setCommandInputOptions(saved.commandInput ?? {});
         resetReplyDraft({ value: saved.value, spans: saved.replySpans ?? [] });
         retryOfPromptIdsRef.current = saved.retryOfPromptIds ?? [];
         setAttachedImages((images) => { images.forEach(revokeImagePreview); return draftImagesToAttachedImages(saved.images); });
@@ -795,7 +822,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     };
   }, [stopVoiceInput]);
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(async (overrideOptions?: ChatInputOptions) => {
     if (sendingRef.current) return;
     sendingRef.current = true;
     try {
@@ -807,15 +834,17 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     }
     const value = valueRef.current;
     const msg = value.trim();
+    const sentCommandOptions = { ...commandInputOptions, ...overrideOptions };
+    const commandSubmission = sentCommandOptions.inputMode !== "text" && msg.startsWith("/");
     if (!msg && !attachedImages.length && !attachedFiles.length) return;
-    if (isStreaming || isProcessingImages || pendingFileCountRef.current > 0 || isAutoModelSelection) return;
+    if ((isStreaming && !onQueueInput) || isProcessingImages || pendingFileCountRef.current > 0 || (isAutoModelSelection && !commandSubmission)) return;
     if (attachedFiles.some((file) => !file.path && file.text == null)) {
       setAttachmentError(t("chat.attachmentMissingPath"));
       return;
     }
     let messageToSend = value;
     let filesToSend = attachedFiles;
-    if (msg && shouldMaterializeDirectPrompt(msg, contextUsage)) {
+    if (msg && !commandSubmission && shouldMaterializeDirectPrompt(msg, contextUsage)) {
       const existingPastes = attachedFiles.filter((file) => file.kind === "paste" && file.text != null);
       const combined = [value, ...existingPastes.map((file) => file.text!)].join("\n\n");
       filesToSend = [
@@ -836,6 +865,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     const sentDraftKey = draftKeyRef.current;
     const sentRetryOfPromptIds = [...retryOfPromptIdsRef.current];
     const sentDraft = {
+      commandInput: sentCommandOptions,
       value: sentValue,
       replySpans: sentReplyDraft.spans,
       images: sentImages.map(imageToDraftImage),
@@ -866,6 +896,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
       if (valueRef.current || attachedImagesRef.current.length || attachedFilesRef.current.length) return;
       retryOfPromptIdsRef.current = retryOfPromptIds;
       resetReplyDraft(sentReplyDraft);
+      setCommandInputOptions(sentCommandOptions);
       setAttachedFiles(sentFiles);
       setAttachedImages(draftImagesToAttachedImages(sentImages.map(imageToDraftImage)));
       if (sentDraftKey) setDraft(sentDraftKey, { ...sentDraft, retryOfPromptIds });
@@ -876,22 +907,24 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
       restoreSubmittedDraft();
       return;
     }
-    if (!sentImages.length && !sentFiles.length && msg.startsWith("/") && onBuiltinCommand) {
+    if (!onQueueInput && !sentImages.length && !sentFiles.length && commandSubmission && onBuiltinCommand) {
       const result = await onBuiltinCommand(msg);
       if (result.handled) {
         if (result.error) restoreSubmittedDraft();
         return;
       }
     }
-    const accepted = await onSend(
+    const durable = (clientPromptId?: string) => {
+      submittedPromptId ??= clientPromptId;
+      resumeDraftPersistence();
+    };
+    const accepted = isStreaming && onQueueInput ? await onQueueInput(messageToSend, sentImages, filesToSend, durable, sentCommandOptions, sentRetryOfPromptIds) : await onSend(
       messageToSend,
       sentImages.length ? sentImages : undefined,
       filesToSend.length ? filesToSend : undefined,
-      (clientPromptId) => {
-        submittedPromptId ??= clientPromptId;
-        resumeDraftPersistence();
-      },
+      durable,
       sentRetryOfPromptIds.length ? sentRetryOfPromptIds : undefined,
+      sentCommandOptions,
     );
     if (accepted === false) { restoreSubmittedDraft(); return; }
     } catch (error) { restoreSubmittedDraft(); throw error; }
@@ -899,7 +932,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     } catch (error) {
       setAttachmentError(error instanceof Error ? error.message : String(error));
     } finally { sendingRef.current = false; }
-  }, [attachedImages, attachedFiles, isStreaming, isProcessingImages, isAutoModelSelection, onBuiltinCommand, onSend, clearInput, contextUsage, t, replyDraftRef, resetReplyDraft]);
+  }, [attachedImages, attachedFiles, isStreaming, isProcessingImages, isAutoModelSelection, onBuiltinCommand, onSend, onQueueInput, clearInput, contextUsage, t, replyDraftRef, resetReplyDraft, commandInputOptions]);
 
   useEffect(() => {
     submitRef.current = () => { void handleSend(); };
@@ -948,13 +981,13 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     }
   }, [cwd, isAutoModelSelection, isStreaming, model, t, value]);
 
-  const slashQuery = value.startsWith("/") && !/\s/.test(value.slice(1))
-    ? value.slice(1).toLowerCase()
+  const slashQuery = value.trimStart().startsWith("/") && !/\s/.test(value.trimStart().slice(1))
+    ? value.trimStart().slice(1).toLowerCase()
     : null;
 
   const filteredSlashCommands = (() => {
     if (slashQuery === null) return [];
-    return filterSlashCommandRegistry(buildSlashCommandRegistry(slashCommands ?? [], isStreaming), slashQuery, t);
+    return filterSlashCommandRegistry(buildSlashCommandRegistry(slashCommands ?? [], isStreaming, commandCatalog), slashQuery, t);
   })();
 
   const groupedSlashCommands = (() => {
@@ -974,10 +1007,10 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     ? t(slashQuery ? "chat.match" : "chat.command")
     : t(slashQuery ? "chat.matches" : "chat.commands", { count: filteredSlashCommands.length });
   const hasInputText = Boolean(value.trim());
-  const canQueueStreamingMessage = hasInputText && attachedImages.length === 0 && attachedFiles.length === 0;
-  const primaryStreamingMode = streamingSendPreference.enabled ? streamingSendPreference.behavior : "steer";
+  const canQueueStreamingMessage = onQueueInput ? hasInputText || attachedImages.length > 0 || attachedFiles.length > 0 : hasInputText && attachedImages.length === 0 && attachedFiles.length === 0;
+  const primaryStreamingMode = streamingSendPreference.enabled ? streamingSendPreference.behavior : "followup";
   const canSend = !isProcessingImages && !isProcessingFiles
-    && !isAutoModelSelection
+    && (!isAutoModelSelection || isCommandInput)
     && (hasInputText || attachedImages.length > 0 || attachedFiles.length > 0);
   const canOptimizePrompt = hasInputText
     && !isStreaming
@@ -1236,7 +1269,8 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   }, [commitReplyDraft]);
 
   const applySlashCommand = useCallback((command: SlashCommandPaletteItem) => {
-    if (isStreaming && command.source === "builtin") return;
+    if (command.supported === false) { setAttachmentError(t("chatCommands.unsupported")); return; }
+    setCommandInputOptions({ commandKey: command.key, catalogRevision: commandCatalog?.revision });
     const nextValue = `/${command.name} `;
     setValue(nextValue);
     setSlashMenuOpen(false);
@@ -1249,9 +1283,10 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
       ta.style.height = "auto";
       resizeComposerTextarea(ta);
     });
-  }, [isStreaming, setValue]);
+  }, [setValue, commandCatalog?.revision, t]);
 
   const sendQueued = useCallback(async (mode: "steer" | "followup") => {
+    if (onQueueInput) { await handleSend({ delivery: mode === "steer" ? "steer" : "next_turn" }); return; }
     if (sendingRef.current) return;
     const streamingBehavior = mode === "steer" ? "steer" : "followUp";
     const sentDraftKey = draftKeyRef.current;
@@ -1301,7 +1336,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
       resumeDraftPersistence();
       sendingRef.current = false;
     }
-  }, [attachedImages, attachedFiles, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, replyDraftRef, resetReplyDraft]);
+  }, [attachedImages, attachedFiles, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, replyDraftRef, resetReplyDraft, onQueueInput, handleSend]);
 
   const submitStreamingMessage = useCallback(() => {
     if (!canQueueStreamingMessage) return;
@@ -1427,6 +1462,12 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
         }
         if ((e.key === "Tab" || isPlainEnter(e)) && filteredSlashCommands[slashActiveIndex]) {
           e.preventDefault();
+          const selected = filteredSlashCommands[slashActiveIndex];
+          if (matchesSendShortcut(e, sendShortcut) && selected.name === slashQuery && selected.argumentMode !== "required") {
+            setSlashMenuOpen(false);
+            void handleSend();
+            return;
+          }
           applySlashCommand(filteredSlashCommands[slashActiveIndex]);
           return;
         }
@@ -1506,14 +1547,14 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
 
       if (matchesSendShortcut(e, sendShortcut)) {
         e.preventDefault();
-        if (isStreaming && (onSteer || onFollowUp)) {
+        if (isStreaming && !isCommandInput && (onQueueInput || onSteer || onFollowUp)) {
           submitStreamingMessage();
         } else {
           handleSend();
         }
       }
     },
-    [isStreaming, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, canQueueStreamingMessage, stopVoiceInput, localVoiceRecording, attachmentMenuOpen, streamingActionMenuOpen, streamingActionIndex, sendQueued, sendShortcut, submitStreamingMessage, undoReplyDraft]
+    [isStreaming, isCommandInput, onQueueInput, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, canQueueStreamingMessage, stopVoiceInput, localVoiceRecording, attachmentMenuOpen, streamingActionMenuOpen, streamingActionIndex, sendQueued, sendShortcut, submitStreamingMessage, undoReplyDraft]
   );
 
   const handleInput = useCallback(() => {
@@ -1987,9 +2028,10 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
             <div className="slash-command-menu" role="listbox" aria-label={t("chat.slashCommands", { label: slashCommandCountLabel })}>
               <div className="slash-command-menu-header">
                 <span>{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.slashCommands", { label: slashCommandCountLabel })}</span>
-                <span className="slash-command-menu-hints" aria-hidden="true"><kbd>↑</kbd><kbd>↓</kbd> {t("chat.commandSwitch")} · <kbd>↵</kbd> {t("chat.commandRun")} · <kbd>esc</kbd> {t("chat.commandClose")}</span>
+                <span className="slash-command-menu-hints" aria-hidden="true"><kbd>↑</kbd><kbd>↓</kbd> {t("chat.commandSwitch")} · <kbd>Tab</kbd> {t("chatCommands.selectHint")} · <kbd>esc</kbd> {t("chat.commandClose")}</span>
               </div>
               <div className="slash-command-menu-list">
+                {slashCommandsError && <div className="slash-command-menu-empty" role="alert">{t("chatCommands.catalogFailed")} · {slashCommandsError} <button type="button" onClick={() => void onLoadSlashCommands?.()}>{t("chatCommands.retry")}</button></div>}
                 {!slashCommandsLoading && filteredSlashCommands.length === 0 ? (
                   <div className="slash-command-menu-empty">{t("chat.noCommands")}</div>
                 ) : (
@@ -2010,7 +2052,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
                             type="button"
                             role="option"
                             aria-selected={active}
-                            aria-disabled={isStreaming && command.source === "builtin"}
+                            aria-disabled={command.supported === false}
                             className="slash-command-item"
                             data-active={active ? "true" : "false"}
                             onMouseDown={(e) => {
@@ -2019,7 +2061,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
                             }}
                             onMouseEnter={() => setSlashActiveIndex(index)}
                           >
-                            <span className="slash-command-item-name">/{command.name}</span>
+                            <span className="slash-command-item-name">/{command.name}{command.argumentHint ? ` ${command.argumentHint}` : ""}</span>
                             <span className="slash-command-item-desc">{isStreaming && command.source === "builtin" ? t("chat.commandWaitUntilIdle") : getSlashCommandDescription(command, t)}</span>
                             <span className="slash-command-item-source">{t(SLASH_SOURCE_GROUP_LABEL_KEYS[command.source])}</span>
                           </button>
@@ -2148,6 +2190,19 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
               transition: "border-color 0.15s, background 0.15s, box-shadow 0.15s",
             } as React.CSSProperties}
           >
+          {parsedCommandInput.kind === "command" && <div className={commandStyles.context}>
+            <span className={commandStyles.chip}><AliIcon name="code" size={12} /><code>/{parsedCommandInput.command.name}</code><button type="button" aria-label={t("chatCommands.remove")} onClick={() => { setValue([parsedCommandInput.arguments, parsedCommandInput.afterPrompt].filter(Boolean).join("\n\n")); setCommandInputOptions({}); }}><AliIcon name="close" size={11} /></button></span>
+            <span>{parsedCommandInput.command.source === "builtin" ? getSlashCommandDescription({ name: parsedCommandInput.command.name, source: "builtin", description: buildSlashCommandRegistry([], false).find(item => item.name === parsedCommandInput.command.name)?.description ?? "chatCommands.title" }, t) : parsedCommandInput.command.description}</span>
+            <span className={commandStyles.hint}>{t(parsedCommandInput.command.source === "extension" && isStreaming ? "chatCommands.extensionHint" : parsedCommandInput.command.argumentMode === "none" ? "chatCommands.noArguments" : "chatCommands.arguments")}{parsedCommandInput.command.argumentHint ? ` · ${parsedCommandInput.command.argumentHint}` : ""}</span>
+            {isStreaming && parsedCommandInput.command.source !== "builtin" && <label className={commandStyles.delivery}>
+              {t("chatCommands.delivery")}
+              <select aria-label={t("chatCommands.delivery")} value={commandInputOptions.delivery ?? (parsedCommandInput.command.source === "extension" ? "immediate" : "next_turn")} onChange={event => setCommandInputOptions(current => ({ ...current, delivery: event.target.value === "immediate" ? undefined : event.target.value as ChatInputOptions["delivery"] }))}>
+                {parsedCommandInput.command.source === "extension" ? <option value="immediate">{t("chatCommands.executeNow")}</option> : <><option value="steer">{t("chat.steer")}</option><option value="followUp">{t("chat.followUp")}</option></>}
+                <option value="next_turn">{t("chatCommands.afterTask")}</option>
+              </select>
+            </label>}
+            {parsedCommandInput.command.argumentMode !== "none" && commandInputOptions.afterPrompt === undefined && <button type="button" onClick={() => setCommandInputOptions(current => ({ ...current, afterPrompt: "" }))}>{t("chatCommands.addQuery")}</button>}
+          </div>}
           <textarea
             ref={textareaRef}
             aria-autocomplete="list"
@@ -2162,9 +2217,17 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
                 promptOptimizerAbortRef.current = null;
                 setPromptOptimization(null);
               }
-              setValue(e.target.value);
+              let nextValue = e.target.value;
+              const previousName = value.trimStart().match(/^\/([^\s]*)/)?.[1];
+              const nextName = nextValue.trimStart().match(/^\/([^\s]*)/)?.[1];
+              if (previousName !== nextName) setCommandInputOptions(current => ({ ...current, commandKey: undefined, catalogRevision: undefined }));
+              if (!nextValue.trimStart().startsWith("/") && commandInputOptions.afterPrompt?.trim()) {
+                nextValue = [nextValue, commandInputOptions.afterPrompt].filter(Boolean).join("\n\n");
+                setCommandInputOptions({});
+              }
+              setValue(nextValue);
               setHistoryMenuOpen(false);
-              updateAtQuery(e.target.value, e.target.selectionStart);
+              updateAtQuery(nextValue, e.target.selectionStart);
             }}
             onSelect={(e) => {
               const el = e.currentTarget;
@@ -2206,6 +2269,16 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
           />
 
           {/* Composer footer: attach + model selector (bottom-right of the input) */}
+          {parsedCommandInput.kind === "command" && parsedCommandInput.afterPrompt && <div className={commandStyles.sequence}>
+            <span className={commandStyles.number}>1</span>{t("chatCommands.commandStep", { name: parsedCommandInput.command.name })}<AliIcon name="arrowright" size={12} /><span className={commandStyles.number}>2</span>{t("chatCommands.promptStep")}
+          </div>}
+          {isCommandInput && commandInputOptions.afterPrompt !== undefined && <label className={commandStyles.afterPrompt}>
+            {t("chatCommands.query")}<textarea aria-label={t("chatCommands.query")} value={commandInputOptions.afterPrompt} placeholder={t("chatCommands.queryPlaceholder")} onChange={event => setCommandInputOptions(current => ({ ...current, afterPrompt: event.target.value }))} />
+            <button type="button" onClick={() => setCommandInputOptions(current => ({ ...current, afterPrompt: undefined }))}>{t("chatCommands.cancel")}</button>
+          </label>}
+          {isCommandInput && parsedCommandInput.kind === "invalid" && !slashMenuOpen && value.trim() !== "/" && <div className={commandStyles.validation} role="status">
+            <p>{t(`chatCommands.error.${parsedCommandInput.code}`, { name: parsedCommandInput.name })}</p><button type="button" onClick={() => { setValue([value, commandInputOptions.afterPrompt].filter(Boolean).join("\n\n")); setCommandInputOptions({ inputMode: "text" }); }}>{t("chatCommands.asText")}</button>
+          </div>}
           <div className="chat-composer-footer">
             <div ref={attachmentMenuRef} className="composer-add-control">
               {attachmentMenuOpen && (
@@ -2618,7 +2691,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
                 })()}
               </div>
             )}
-            {isStreaming ? (
+            {isStreaming && !isCommandInput ? (
               <div
                 ref={streamingActionMenuRef}
                 className="streaming-action-control"
@@ -2720,20 +2793,22 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
             ) : (
               <button
                 type="button"
-                onClick={handleSend}
+                onClick={() => void handleSend()}
                 disabled={!canSend}
-                title={t(isProcessingImages ? "chat.processingImages" : isProcessingFiles ? "chat.processingFiles" : isAutoModelSelection ? "chat.selectModel" : "chat.send")}
-                aria-label={t(isProcessingImages ? "chat.processingImages" : isProcessingFiles ? "chat.processingFiles" : isAutoModelSelection ? "chat.selectModel" : "chat.send")}
+                title={t(isCommandInput ? parsedCommandInput.kind === "command" && parsedCommandInput.afterPrompt ? "chatCommands.executeAndAsk" : "chatCommands.execute" : isProcessingImages ? "chat.processingImages" : isProcessingFiles ? "chat.processingFiles" : isAutoModelSelection ? "chat.selectModel" : "chat.send")}
+                aria-label={t(isCommandInput ? "chatCommands.execute" : isProcessingImages ? "chat.processingImages" : isProcessingFiles ? "chat.processingFiles" : isAutoModelSelection ? "chat.selectModel" : "chat.send")}
+                className={isCommandInput ? commandStyles.sendButton : undefined}
                 style={{
-                  width: 32, height: 32, padding: 0, flexShrink: 0,
+                  width: isCommandInput ? "auto" : 32, height: 32, padding: isCommandInput ? "0 10px" : 0, flexShrink: 0, gap: 6,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  border: "none", borderRadius: "50%",
+                  border: "none", borderRadius: isCommandInput ? "var(--radius-control)" : "50%",
                   background: canSend ? "var(--text)" : "var(--bg-hover)",
                   color: canSend ? "var(--bg)" : "var(--text-dim)",
                   cursor: canSend ? "pointer" : "not-allowed",
                   transition: "background 120ms ease, color 120ms ease, transform 120ms ease",
                 }}
               >
+                {isCommandInput && <span>{t(parsedCommandInput.kind === "command" && parsedCommandInput.afterPrompt ? "chatCommands.executeAndAsk" : parsedCommandInput.kind === "command" && parsedCommandInput.command.source === "extension" && isStreaming && commandInputOptions.delivery !== "next_turn" ? "chatCommands.executeNow" : "chatCommands.execute")}</span>}
                 <AliIcon name="send" size={16} />
               </button>
             )}

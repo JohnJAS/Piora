@@ -1,0 +1,16 @@
+.context { flex-basis: 100%; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--text-muted); font-size: var(--text-sm); }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg-panel); color: var(--text); font-size: var(--text-sm); }
+.chip code { font-family: var(--font-mono); }
+.chip button, .context button, .sequence button { background: transparent; border: 0; color: var(--text-muted); cursor: pointer; padding: 2px 3px; font: inherit; }
+.hint { flex-basis: 100%; color: var(--text-dim); font-size: var(--text-xs); }
+.delivery { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--text-xs); }
+.delivery select { max-width: 100%; padding: 4px 6px; background: var(--bg-panel); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-control); font: inherit; }
+.sequence { flex-basis: 100%; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 7px 9px; background: var(--bg-panel); border-radius: var(--radius-control); font-size: var(--text-xs); color: var(--text-muted); }
+.number { display: inline-grid; place-items: center; width: 17px; height: 17px; border: 1px solid var(--border-strong); border-radius: 50%; }
+.afterPrompt { flex-basis: 100%; display: grid; gap: 5px; font-size: var(--text-xs); color: var(--text-muted); }
+.afterPrompt textarea { min-height: 60px; resize: vertical; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg-panel); color: var(--text); font: inherit; }
+.validation { flex-basis: 100%; padding: 8px 10px; background: var(--bg-panel); border-radius: var(--radius-control); color: var(--text-muted); font-size: var(--text-sm); }
+.validation p { margin: 0 0 5px; }
+.validation button { border: 0; padding: 2px 0; background: transparent; color: var(--accent); cursor: pointer; font: inherit; }
+.sendButton { white-space: nowrap; font-size: var(--text-sm); }
+@media(pointer: coarse) { .chip button, .context button, .sequence button, .validation button, .delivery select { min-height: 44px; } .afterPrompt textarea, .delivery select { font-size: 16px; } }

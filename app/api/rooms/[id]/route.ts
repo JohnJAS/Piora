@@ -9,6 +9,7 @@ import {
   deleteRoom,
   finishRoomTask,
   getRoom,
+  findRoomMessage,
   heartbeatRoomTask,
   listPrivateNotes,
   listRoomMessages,
@@ -277,11 +278,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       maxAutoRounds: body.maxAutoRounds ?? 6,
     });
     if (body.action === "chat") {
-      const waitingRun = body.authorKind !== "session" && room.coordination.mode === "team"
-        ? getTeamRunStore().listTeamRuns(id, { limit: 100, includeTerminal: false }).find((run) => run.phase === "waiting_user")
+      const repliedMessage = body.replyTo ? findRoomMessage(id, body.replyTo) : undefined;
+      const questionRunId = /^team:([^:]+):question:/u.exec(repliedMessage?.correlationId ?? "")?.[1];
+      const waitingRun = body.authorKind !== "session" && room.coordination.mode === "team" && questionRunId
+        ? getTeamRunStore().listTeamRuns(id, { limit: 100, includeTerminal: false }).find((run) => run.phase === "waiting_user" && run.id === questionRunId)
         : undefined;
       if (waitingRun) {
-        const teamRun = await getTeamCoordinatorService().resumeRun(id, waitingRun.id, message.content);
+        const teamRun = await getTeamCoordinatorService().resumeRun(id, waitingRun.id, message.content, repliedMessage!.id);
         return NextResponse.json({ message, teamRun, dispatch: { dispatched: [], skipped: [] } });
       }
       const dispatch = await dispatchRoomChat(id, {

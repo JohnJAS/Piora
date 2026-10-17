@@ -22,6 +22,9 @@ import { reduceAgentPhase, type AgentPhase } from "@/lib/agent-phase";
 import { isRunProgressEvent, type RunStatusClock } from "@/lib/run-progress";
 import { useI18n } from "@/hooks/useI18n";
 import { useExtensionDialog } from "@/hooks/useExtensionDialog";
+import { useChatCommandOperations } from "@/hooks/useChatCommandOperations";
+import { createChatCommandCatalog, persistentChatInputOptions } from "@/lib/chat-command-input";
+import type { ChatCommandCatalog, ChatInputOptions } from "@/lib/chat-command-types";
 import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import { estimateSessionContextUsage, mergeContextUsageWithEstimate } from "@/lib/context-usage";
 import { isPromptMaterialRuntimeMessage, type PromptMaterialReference } from "@/lib/prompt-material-format";
@@ -417,6 +420,7 @@ type ModelEntry = ModelCatalogEntry;
 
 type SlashCommandsResponse = {
   commands?: SlashCommandInfo[];
+  catalog?: ChatCommandCatalog;
 };
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
@@ -481,6 +485,22 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [statusClock, setStatusClock] = useState<RunStatusClock | null>(null);
   const [slashCommands, setSlashCommands] = useState<SlashCommandInfo[]>([]);
   const [slashCommandsLoading, setSlashCommandsLoading] = useState(false);
+  const [slashCommandsError, setSlashCommandsError] = useState<string | null>(null);
+  const [commandCatalog, setCommandCatalog] = useState(() => createChatCommandCatalog([]));
+  const commandCatalogRef = useRef(commandCatalog);
+  const commandCatalogErrorRef = useRef<string | null>(null);
+  const commandCatalogLoadRef = useRef(0);
+  const commandCatalogScope = session?.id ?? `new:${newSessionCwd}`;
+  useEffect(() => {
+    commandCatalogLoadRef.current++;
+    const catalog = createChatCommandCatalog([]);
+    commandCatalogRef.current = catalog;
+    commandCatalogErrorRef.current = null;
+    setCommandCatalog(catalog);
+    setSlashCommands([]);
+    setSlashCommandsError(null);
+    setSlashCommandsLoading(false);
+  }, [commandCatalogScope]);
   const [noticeState, dispatchNotice] = useReducer(noticeReducer, { visible: [], pending: [] });
   const [sessionStatsOverride, setSessionStatsOverride] = useState<SessionStatsInfo | null>(initialSessionData?.stats ?? null);
   const statsRefreshSequence = useRef(0);
@@ -783,23 +803,34 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [isNew, newSessionCwd]);
 
   const loadSlashCommands = useCallback(async () => {
+    const sequence = ++commandCatalogLoadRef.current;
     const sid = sessionIdRef.current ?? await ensureNewSession();
     if (!sid) {
       setSlashCommands([]);
       return [] as SlashCommandInfo[];
     }
     setSlashCommandsLoading(true);
+    setSlashCommandsError(null);
+    commandCatalogErrorRef.current = null;
     try {
       const data = await sendAgentCommand<SlashCommandsResponse>(sid, { type: "get_commands" });
+      if (sequence !== commandCatalogLoadRef.current || sessionIdRef.current !== sid) return [] as SlashCommandInfo[];
       const commands = data?.commands ?? [];
+      const catalog = data?.catalog ?? createChatCommandCatalog(commands);
+      commandCatalogRef.current = catalog;
+      setCommandCatalog(catalog);
       setSlashCommands(commands);
       return commands;
     } catch (e) {
+      if (sequence !== commandCatalogLoadRef.current || sessionIdRef.current !== sid) return [] as SlashCommandInfo[];
       console.error("Failed to load slash commands:", e);
+      const message = e instanceof Error ? e.message : String(e);
+      setSlashCommandsError(message);
+      commandCatalogErrorRef.current = message;
       setSlashCommands([]);
       return [] as SlashCommandInfo[];
     } finally {
-      setSlashCommandsLoading(false);
+      if (sequence === commandCatalogLoadRef.current && sessionIdRef.current === sid) setSlashCommandsLoading(false);
     }
   }, [ensureNewSession]);
 
@@ -1551,19 +1582,52 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, nestedCallsStore, refreshContextUsage, setExtensionDialog, waitForPromptSettlement]);
   handleAgentEventRef.current = handleAgentEvent;
 
+  const chatCommands = useChatCommandOperations({
+    sessionId: session?.id ?? null,
+    scope: session?.id ?? `new:${newSessionCwd}`,
+    catalog: commandCatalog,
+    ensureSession: async () => sessionIdRef.current ?? await ensureNewSession(),
+    loadCatalog: async () => {
+      await loadSlashCommands();
+      if (commandCatalogErrorRef.current) throw new Error(commandCatalogErrorRef.current);
+      return commandCatalogRef.current;
+    },
+    connectModelEvents: ensureEventsConnected,
+    uploadFiles: uploadPromptMaterialFiles,
+    onAccepted: () => { if (isNew) promoteNewSession(); },
+    onFinished: record => {
+      if (record.targetSessionId !== sessionIdRef.current) return;
+      if (record.operation?.result?.stats) setSessionStatsOverride(record.operation.result.stats);
+      if (record.status === "completed" && record.operation?.command.name === "session") onSessionStatsPanelOpen?.();
+      if (record.status === "completed" && record.operation?.command.name === "reload") {
+        void loadSlashCommands();
+        void loadModels();
+        void sendAgentCommand<SessionCapabilitiesState>(record.targetSessionId, { type: "get_capabilities" }).then(setCapabilities).catch(() => {});
+      }
+      void loadSession(record.targetSessionId, false, true);
+      if (agentRunningRef.current) void waitForPromptSettlement(record.targetSessionId, promptRunIdRef.current);
+    },
+  });
+
+  const submitChatCommand = chatCommands.submit;
   const handleSend = useCallback(async (
     message: string,
     images?: AttachedImage[],
     files?: AttachedFile[],
     onDurable?: (clientPromptId?: string) => void,
     retryOfPromptIds?: string[],
+    inputOptions?: ChatInputOptions,
     resumedQueuePromptId?: string,
   ) => {
+    inputOptions = resumedQueuePromptId && message.trimStart().startsWith("/") ? { ...inputOptions, inputMode: "text" } : inputOptions;
     const trimmedMessage = message.trim();
     if (!trimmedMessage && !images?.length && !files?.length) return false;
     if (files?.some((file) => !file.path && file.text == null)) {
       setError(translateRef.current("chat.attachmentMissingPath"));
       return false;
+    }
+    if (inputOptions?.inputMode !== "text" && trimmedMessage.startsWith("/")) {
+      return submitChatCommand(message, images, files, onDurable, inputOptions, retryOfPromptIds);
     }
     if (agentRunningRef.current || bashRunningRef.current || messageMutationRef.current) return false;
     const isSlashCommandPrompt = !images?.length && !files?.length && trimmedMessage.startsWith("/");
@@ -1601,8 +1665,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       .join("\n\n");
 
     const imageBlocks = images?.map((img) => ({ type: "image" as const, source: { type: "base64" as const, media_type: img.mimeType, data: img.data } }));
-    const clientPromptId = resumedQueuePromptId ?? crypto.randomUUID();
+    const clientPromptId = resumedQueuePromptId ?? inputOptions?.submissionId ?? crypto.randomUUID();
     const recoveryDraft = { value: message, files: (files ?? []).map((file) => ({ ...file })), images: (images ?? []).map(({ data, mimeType }) => ({ data, mimeType })),
+      ...(inputOptions ? { commandInput: persistentChatInputOptions(inputOptions) } : {}),
       ...(retryOfPromptIds?.length ? { retryOfPromptIds: [...new Set(retryOfPromptIds)] } : {}),
     };
     const userMsg: import("@/lib/types").UserMessage = {
@@ -1647,6 +1712,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       try {
         const receipt = await sendAgentCommand<DispatchReceipt>(sid, {
           type: "prompt",
+          ...(inputOptions?.inputMode === "text" ? { type: "submit_input", inputMode: "text" } : {}),
           idempotencyKey: clientPromptId,
           message: effectiveMessage,
           ...(promptMaterials.length ? { materials: promptMaterials } : {}),
@@ -1740,7 +1806,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         cancelPreparedPromptRef.current = null;
       }
     }
-  }, [isNew, newSessionCwd, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, closeEvents, t]);
+  }, [isNew, newSessionCwd, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, closeEvents, t, submitChatCommand]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (agentRunningRef.current || bashRunningRef.current) return;
@@ -1843,7 +1909,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       // Normal submission commits the recovered text to IndexedDB and the
       // server inbox waits for stop cleanup before starting the next prompt.
       // It never clears a newer composer draft and opens a fresh SSE generation.
-      if (resumeText && !await handleSend(resumeText, undefined, undefined, undefined, undefined, queuedPromptId ?? crypto.randomUUID())) restoreQueuedDraft();
+      if (resumeText && !await handleSend(resumeText, undefined, undefined, undefined, undefined, undefined, queuedPromptId ?? crypto.randomUUID())) restoreQueuedDraft();
     } catch (e) {
       if (promptRunIdRef.current !== runId) return;
       addNotice({ type: "error", message: t("chat.stopFailed", { reason: e instanceof Error ? e.message : String(e) }) });
@@ -2659,7 +2725,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     agentRunning, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
     retryInfo, contextUsage: effectiveContextUsage, systemPrompt, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactionStartedAt, compactError, compactResult, currentModel, displayModel, sessionStats,
-    slashCommands, slashCommandsLoading, queuedMessages, capabilities, capabilitiesSaving,
+    slashCommands, slashCommandsLoading, slashCommandsError, commandCatalog, chatCommands, queuedMessages, capabilities, capabilitiesSaving,
     liveOutputFollowPaused: liveOutputAutoScrollEnabled && agentRunning && liveOutputFollowPaused,
     notices: noticeState.visible, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection: isNew && displayModel === null,

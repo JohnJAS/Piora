@@ -10,6 +10,7 @@ import { createJiti } from "jiti";
 const { NestedToolCallsStore } = await createJiti(import.meta.url).import("../lib/nested-tool-calls.ts");
 const { buildLocalFilePrompt } = await createJiti(import.meta.url).import("../lib/file-attachments.ts");
 const { normalizeToolCalls } = await createJiti(import.meta.url).import("../lib/normalize.ts");
+const { persistentChatInputOptions } = await createJiti(import.meta.url).import("../lib/chat-command-input.ts");
 
 const source = await readFile(new URL("./useAgentSession.ts", import.meta.url), "utf8");
 
@@ -49,6 +50,38 @@ test("history fork seeds the original question and attachments without sending; 
   assert.deepEqual(busy.events, []);
 });
 
+test("command catalog requests cannot overwrite a switched session or a newer catalog", async () => {
+  const callbacks = source.slice(source.indexOf("  const loadSlashCommands = useCallback"), source.indexOf("  const closeEvents = useCallback"));
+  const pending = [];
+  const env = {
+    useCallback: callback => callback, ensureNewSession: async () => "old", sessionIdRef: { current: "old" },
+    commandCatalogLoadRef: { current: 0 }, commandCatalogRef: { current: null }, commandCatalogErrorRef: { current: null },
+    setSlashCommands(value) { env.commands = value; }, setCommandCatalog(value) { env.catalog = value; },
+    setSlashCommandsError(value) { env.error = value; }, setSlashCommandsLoading(value) { env.loading = value; },
+    sendAgentCommand: () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
+  };
+  const js = ts.transpileModule(callbacks, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  const load = new Function("env", `with(env) { ${js}; return loadSlashCommands; }`)(env);
+  const old = load();
+  env.sessionIdRef.current = "new";
+  const fresh = load();
+  pending[1].resolve({ commands: [{ name: "new-command" }], catalog: { revision: "new" } });
+  await fresh;
+  pending[0].resolve({ commands: [{ name: "old-command" }], catalog: { revision: "old" } });
+  await old;
+  assert.equal(env.catalog.revision, "new");
+  assert.deepEqual(env.commands, [{ name: "new-command" }]);
+  const staleFailure = load();
+  const newest = load();
+  pending[3].resolve({ commands: [], catalog: { revision: "newest" } });
+  await newest;
+  pending[2].reject(new Error("old request failed"));
+  await staleFailure;
+  assert.equal(env.catalog.revision, "newest");
+  assert.equal(env.error, null);
+  assert.equal(env.loading, false);
+});
+
 function sendHarness(overrides = {}) {
   const send = source.slice(source.indexOf("  const handleSend = useCallback"), source.indexOf("  const executeBash = useCallback"));
   const env = {
@@ -57,6 +90,8 @@ function sendHarness(overrides = {}) {
     ensureNewSession: async () => "session", ensureEventsConnected: async () => {}, waitForPromptSettlement() {},
     uploadPromptMaterialFiles: async () => [], AgentCommandError: class extends Error {}, EventStreamConnectionError: class extends Error {},
     savePendingPrompt: async (record) => { env.saved = structuredClone(record); }, sendAgentCommand: async () => {},
+    submitChatCommand: async () => { throw new Error("Unexpected command submission in ordinary prompt test"); },
+    persistentChatInputOptions,
   };
   for (const name of new Set(send.match(/\b\w+Ref\b/g))) env[name] = { current: null };
   for (const name of new Set(send.match(/\bset[A-Z]\w+(?=\()/g))) env[name] = () => {};
@@ -102,12 +137,31 @@ test("actual send callback never starts the network when its durable recovery co
 test("resumed queue text uses durable prompt submission without reinterpreting a leading bang as a shell command", async () => {
   const commands = [];
   const { env, run } = sendHarness({ sendAgentCommand: async (_sid, command) => { commands.push(command); } });
-  assert.equal(await run("!This is guidance, not a shell command", undefined, undefined, undefined, undefined, "queue-handoff"), true);
+  assert.equal(await run("!This is guidance, not a shell command", undefined, undefined, undefined, undefined, undefined, "queue-handoff"), true);
   assert.equal(commands.length, 1);
   assert.equal(commands[0].type, "prompt");
   assert.equal(commands[0].idempotencyKey, env.saved.id);
   assert.equal(env.saved.id, "queue-handoff", "a retried handoff uses the same durable submission identity");
   assert.equal(env.saved.draft.value, commands[0].message);
+});
+
+test("literal slash handoffs keep one identity and retries do not retain that identity", async () => {
+  const commands = [];
+  const { env, run } = sendHarness({ sendAgentCommand: async (_sid, command) => { commands.push(command); } });
+  assert.equal(await run("/reload", undefined, undefined, undefined, undefined, { inputMode: "text", submissionId: "landing-id" }), true);
+  assert.equal(env.saved.id, "landing-id");
+  assert.deepEqual(env.saved.draft.commandInput, { inputMode: "text" });
+  assert.equal(commands[0].type, "submit_input");
+  assert.equal(commands[0].inputMode, "text");
+});
+
+test("resumed SDK slash guidance stays literal rather than becoming a fresh command", async () => {
+  const commands = [];
+  const { env, run } = sendHarness({ sendAgentCommand: async (_sid, command) => { commands.push(command); } });
+  assert.equal(await run("/reload", undefined, undefined, undefined, undefined, undefined, "queue-slash-id"), true);
+  assert.equal(env.saved.id, "queue-slash-id");
+  assert.equal(commands[0].type, "submit_input");
+  assert.equal(commands[0].inputMode, "text");
 });
 
 function abortHarness(overrides = {}) {
@@ -370,7 +424,8 @@ function promptSubmissionHarness(overrides = {}) {
     savePendingPrompt: async record => { h.env.saved = structuredClone(record); },
     setMessages: update => { h.env.messages = typeof update === "function" ? update(h.env.messages) : update; },
     reduceAgentPhase: (_phase, event) => ({ kind: event.type }), isRunProgressEvent: () => true,
-    handleExtensionUiRequest() {}, refreshContextUsage() {}, normalizeToolCalls,
+    handleExtensionUiRequest() {}, refreshContextUsage() {},
+    normalizeToolCalls,
     sendAgentCommand: async () => ({ accepted: true, sessionId: "session-a", commandId: "cmd-current", status: "queued" }),
     response: { running: true, state: { runtime: "idle", isStreaming: false, isPromptRunning: false, isCompacting: false }, promptCommand: { commandId: "cmd-current", status: "queued" } },
     ...overrides,

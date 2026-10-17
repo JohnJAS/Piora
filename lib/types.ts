@@ -62,6 +62,7 @@ export interface UserMessage {
   sendUnconfirmed?: boolean;
   /** Stable delivery identity persisted with the SDK user message. */
   clientPromptId?: string;
+  commandSubmission?: boolean;
   /** Local recovery includes complete file material, not just the display preview. */
   recoveryDraft?: import("./draft-store").ChatDraft;
 }

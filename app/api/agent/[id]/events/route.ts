@@ -1,6 +1,7 @@
 import { createAgentEventTransport } from "@/lib/agent-event-transport";
 import { getAgentRuntimeProfile } from "@/lib/agent-runtime-profile";
 import { resolveOrStartRpcSession } from "@/lib/session-runtime-resolver";
+import { createChatCommandEventResponse } from "@/lib/chat-command-events";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  if (new URL(req.url).searchParams.get("scope") === "commands") return createChatCommandEventResponse(req, id);
   const runtimeProfile = getAgentRuntimeProfile();
 
   const sessionReady = resolveOrStartRpcSession(id, { runtimeProfile })

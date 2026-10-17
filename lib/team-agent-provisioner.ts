@@ -7,6 +7,7 @@ import { createTeamAgentProfile, validateTeamAgentProfile } from "./team-agent-t
 import { addWorktree, canCreateDedicatedWorktree, removeWorktree } from "./worktree";
 import { TeamError } from "./team-errors";
 import type { CollaborationRoomV3, TeamAgentBinding, TeamAgentProfile } from "./team-types";
+import { configureTeamAgentTools } from "./team-agent-tools";
 
 function slug(value: string): string {
   return value.toLocaleLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 32) || "agent";
@@ -60,7 +61,7 @@ export async function resolveProvisionableTeamAgentProfile(
 export async function provisionTeamAgentSession(
   room: CollaborationRoomV3,
   profile: TeamAgentProfile,
-  memberId = randomUUID(),
+  memberId: string = randomUUID(),
 ): Promise<TeamAgentBinding> {
   let cwd = roomBaseCwd(room);
   let worktree: { path: string; branch: string } | undefined;
@@ -76,7 +77,7 @@ export async function provisionTeamAgentSession(
     const started = await startRpcSession(`team-provision-${memberId}`, "", cwd, sessionOptions(profile));
     sessionId = started.realSessionId;
     await started.session.waitUntilReady();
-    if (profile.toolPolicy.mode === "allowlist") await started.session.send({ type: "set_team_tools", toolNames: profile.toolPolicy.toolNames });
+    await configureTeamAgentTools(started.session, profile);
     await started.session.send({ type: "set_session_name", name: `${room.name} · ${profile.name}` });
     started.session.persistSessionFile();
     return {
@@ -130,9 +131,7 @@ export async function reconfigureTeamAgentSession(
     await started.session.send({ type: "set_model", provider: member.profile.modelPolicy.provider, modelId: member.profile.modelPolicy.modelId });
     await started.session.send({ type: "set_thinking_level", level: member.profile.modelPolicy.thinkingLevel });
   }
-  if (member.profile.toolPolicy.mode === "allowlist") {
-    await started.session.send({ type: "set_team_tools", toolNames: member.profile.toolPolicy.toolNames });
-  }
+  await configureTeamAgentTools(started.session, member.profile);
   await started.session.send({ type: "set_session_name", name: `${room.name} · ${member.profile.name}` });
   return { ...member.binding, status: "ready", boundAt: Date.now() };
 }

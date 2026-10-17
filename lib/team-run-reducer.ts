@@ -289,18 +289,31 @@ const TEAM_EVENT_HANDLERS: TeamEventHandlers = {
     if (!["planning", "running", "reviewing", "integrating", "synthesizing"].includes(state.phase)) fail(`Cannot record progress while run is ${state.phase}.`);
     state.progressSummary = requireText(event.summary, "Progress summary", 8_000);
   },
+  "run.guidance_added": (state, event) => {
+    if (["completed", "failed", "cancelled"].includes(state.phase)) fail("Cannot guide a terminal run.");
+    const messageId = requireText(event.messageId, "Guidance message id", 160);
+    state.guidance ??= [];
+    if (!state.guidance.some((item) => item.messageId === messageId)) state.guidance.push({ messageId, ...(event.memberIds ? { memberIds: event.memberIds } : {}) });
+  },
   "run.waiting_user": (state, event) => {
     if (!["planning", "running", "reviewing", "integrating", "synthesizing"].includes(state.phase)) fail(`Cannot wait for user while run is ${state.phase}.`);
     state.phase = "waiting_user";
     state.waitingReason = requireText(event.reason, "Waiting reason", 8_000);
   },
   "run.resumed": (state, event, envelope) => {
-    if (!["waiting_user", "interrupted"].includes(state.phase)) fail(`Cannot resume run while it is ${state.phase}.`);
+    if (!["waiting_user", "interrupted", "failed", "cancelled"].includes(state.phase)) fail(`Cannot resume run while it is ${state.phase}.`);
+    const resetAttempts = state.phase !== "waiting_user";
     state.phase = state.plan ? "running" : "planning";
+    state.finishedAt = undefined;
+    if (resetAttempts) state.schedulingSteps = 0;
     state.retryGeneration = (state.retryGeneration ?? 0) + 1;
     state.waitingReason = undefined;
     for (const task of Object.values(state.tasks)) {
-      if (!["blocked", "interrupted"].includes(task.status) || task.attempt >= task.maxAttempts) continue;
+      if (resetAttempts ? ["completed", "skipped"].includes(task.status) : !["blocked", "interrupted"].includes(task.status) || task.attempt >= task.maxAttempts) continue;
+      if (resetAttempts) {
+        task.attempt = 0;
+        for (const [id, decision] of Object.entries(state.reviewDecisions)) if (decision.taskId === task.id) delete state.reviewDecisions[id];
+      }
       task.status = "ready";
       task.assignedMemberId = undefined;
       task.assignedSessionId = undefined;
@@ -363,7 +376,19 @@ const TEAM_EVENT_HANDLERS: TeamEventHandlers = {
       if (activeDispatchStatus(dispatch.status)) updateDispatch(dispatch, envelope.at, { status: "interrupted", errorCode: "TEAM_RUN_INTERRUPTED", errorMessage: state.waitingReason });
     }
   },
+  "run.stop_requested": (state, event, envelope) => {
+    if (state.stopRequested) return;
+    const reason = requireText(event.reason, "Stop reason", 8_000);
+    state.stopRequested = { reason, commandIds: Object.values(state.activeDispatches).flatMap((dispatch) => activeDispatchStatus(dispatch.status) && dispatch.commandId ? [dispatch.commandId] : []), at: envelope.at };
+    state.phase = "interrupted";
+    state.waitingReason = reason;
+    for (const task of Object.values(state.tasks)) {
+      if (!TERMINAL_TASK_STATUSES.has(task.status)) task.status = "interrupted";
+      task.lease = undefined;
+    }
+  },
   "run.cancelled": (state, event, envelope) => {
+    state.stopRequested = undefined;
     state.phase = "cancelled";
     state.waitingReason = requireText(event.reason, "Cancellation reason", 8_000);
     state.finishedAt = envelope.at;
@@ -635,6 +660,7 @@ export function reduceTeamRunEvent(current: TeamRunState | undefined, envelope: 
     throw new TeamError("TEAM_EVENT_LOG_CORRUPT", "Team event cursor is not contiguous.", { expected: current.revision + 1, actual: envelope.cursor });
   }
   if (TERMINAL_RUN_PHASES.has(current.phase)) throw new TeamError("TEAM_ALREADY_TERMINAL", `TeamRun is already ${current.phase}.`);
+  if (current.stopRequested && !["run.stop_requested", "run.cancelled"].includes(event.type)) throw new TeamError("TEAM_INVALID_TRANSITION", "任务正在停止，确认停止前不能继续执行或恢复。");
   const state = copyState(current);
   state.revision = envelope.cursor;
   state.updatedAt = envelope.at;

@@ -2767,6 +2767,11 @@ async function startApplication(): Promise<void> {
   registerDirectoryPickerHandler();
   registerAgentDataDirectoryHandlers();
 
+  // The renderer requests these during hydration, including smoke mode.
+  installApplicationMenu();
+  registerApplicationMenuPopupHandler();
+  initializeDesktopUpdater(logger);
+
   if (PORTABLE_SMOKE_TEST) {
     const smokeMarker = process.env.PIORA_SMOKE_MARKER?.trim();
     if (!smokeMarker) {
@@ -2819,9 +2824,6 @@ async function startApplication(): Promise<void> {
     return;
   }
 
-  installApplicationMenu();
-  registerApplicationMenuPopupHandler();
-  initializeDesktopUpdater(logger);
   clipboardController = new ClipboardController({
     directory: join(app.getPath("userData"), "clipboard"), origin: serverUrl, partition: DESKTOP_PARTITION, host: mainWindow,
     trusted: event => isTrustedMainWindowSender(event) || isTrustedCompanionSurfaceSender(event),

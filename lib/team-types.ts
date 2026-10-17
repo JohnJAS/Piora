@@ -278,7 +278,9 @@ export interface TeamRunState {
   artifacts: Record<string, TeamArtifactReference>;
   reviewDecisions: Record<string, TeamReviewDecision>;
   progressSummary?: string;
+  guidance?: Array<{ messageId: string; memberIds?: string[] }>;
   waitingReason?: string;
+  stopRequested?: { reason: string; commandIds: string[]; at: number };
   finalSummary?: string;
   finalArtifactIds: string[];
   schedulingSteps: number;
@@ -300,6 +302,7 @@ export type TeamRunEvent =
   | { type: "plan.rejected"; reason: string }
   | { type: "run.started" }
   | { type: "run.progressed"; summary: string }
+  | { type: "run.guidance_added"; messageId: string; memberIds?: string[] }
   | { type: "run.waiting_user"; reason: string }
   | { type: "run.resumed"; guidance?: string }
   | { type: "run.synthesis_requested"; dispatch: TeamDispatchState }
@@ -307,6 +310,7 @@ export type TeamRunEvent =
   | { type: "run.failed"; reason: string }
   | { type: "run.interrupted"; reason: string }
   | { type: "run.cancelled"; reason: string }
+    | { type: "run.stop_requested"; reason: string }
   | { type: "task.created"; task: TeamTask }
   | { type: "task.ready"; taskId: string }
   | { type: "task.dispatch_requested"; taskId: string; dispatch: TeamDispatchState; leaseTokenHash: string }

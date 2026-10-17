@@ -7,6 +7,7 @@
 - [Harmony 设备指南](HARMONYOS_DEVICE_AUTOMATION.md)：连接、控制、语音、诊断、场景及验证
 - [SSH 工作台](SSH_WORKBENCH.md)
 - [开发约束与架构边界](../AGENTS.md)
+- [聊天命令处理与 UI 重设计](design/chat-command-flow.md)：输入语义、执行状态、接口及验收证据（未发布）
 - [版本更新说明](../CHANGELOG.md)
 
 历史方案保留原始上下文，不代表当前实现或未完成工作：

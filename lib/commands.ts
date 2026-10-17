@@ -1,4 +1,5 @@
 import { filterFileEntries } from "./file-fuzzy.ts";
+import type { ChatCommandCatalog, ChatCommandDescriptor } from "./chat-command-types";
 
 export type CommandGroup = "navigate" | "session" | "model" | "panel" | "settings" | "git";
 
@@ -36,7 +37,7 @@ export interface PiSlashCommand {
   sourceInfo?: { path: string; source: string; scope: "user" | "project" | "temporary"; origin: "package" | "top-level"; baseDir?: string };
 }
 
-export type SlashCommandPaletteItem = PiSlashCommand | { name: string; description: string; source: "builtin" };
+export type SlashCommandPaletteItem = (PiSlashCommand | { name: string; description: string; source: "builtin" }) & Partial<ChatCommandDescriptor>;
 export type SlashCommandSource = SlashCommandPaletteItem["source"];
 
 export const BUILTIN_SLASH_COMMANDS: SlashCommandPaletteItem[] = [
@@ -93,8 +94,9 @@ export const GUI_COMMANDS: Command[] = [
   command("git.refresh", "git", "commands.refreshGit", { needs: "git" }),
 ];
 
-export function buildSlashCommandRegistry(commands: PiSlashCommand[], busy: boolean): SlashCommandPaletteItem[] {
-  return [...(busy ? BUILTIN_SLASH_COMMANDS.filter((command) => command.name === "reload") : BUILTIN_SLASH_COMMANDS), ...commands];
+export function buildSlashCommandRegistry(commands: PiSlashCommand[], busy: boolean, catalog?: ChatCommandCatalog): SlashCommandPaletteItem[] {
+  if (catalog) return catalog.commands.map(command => ({ ...command, description: command.source === "builtin" ? BUILTIN_SLASH_COMMANDS.find(item => item.name === command.name)?.description ?? "chatCommands.unsupported" : command.description } as SlashCommandPaletteItem));
+  return [...BUILTIN_SLASH_COMMANDS.map(command => ({ ...command, ...(busy ? { busyBehavior: "wait" as const } : {}) })), ...commands];
 }
 
 export function getSlashCommandDescription(command: SlashCommandPaletteItem, t: (key: string) => string): string {

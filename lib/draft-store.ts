@@ -10,6 +10,13 @@ export interface ChatDraftImage {
 export type ChatDraftFile = AttachedFile;
 
 export interface ChatDraft {
+  roomInput?: {
+    sessionId?: string;
+    intent: "auto" | "new_task" | "answer";
+    mentions: import("./room-types").RoomMention[];
+    reply?: import("./room-types").RoomMessage;
+  };
+  commandInput?: import("./chat-command-types").ChatInputOptions;
   value: string;
   images: ChatDraftImage[];
   files: ChatDraftFile[];
@@ -83,6 +90,8 @@ function removeImportedDraft(key: string) { try { const saved = importedDrafts()
 function cloneDraft(draft: ChatDraft): ChatDraft {
   return {
     value: draft.value,
+    ...(draft.roomInput ? { roomInput: structuredClone(draft.roomInput) } : {}),
+    ...(draft.commandInput ? { commandInput: { ...draft.commandInput } } : {}),
     images: draft.images.map((image) => ({ ...image })),
     files: draft.files.map((file) => ({ ...file })),
     ...(draft.retryOfPromptIds?.length ? { retryOfPromptIds: [...draft.retryOfPromptIds] } : {}),

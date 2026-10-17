@@ -1,5 +1,6 @@
 import { recordAgentTerminalEvent } from "./agent-terminal-registry";
 import { StreamingMetricsTracker } from "./streaming-metrics";
+import { PromptInputEnrichment } from "./prompt-input-enrichment";
 import { reduceAgentPhase, type AgentPhase } from "./agent-phase";
 import { isRunProgressEvent } from "./run-progress";
 import { assertRemotePolicyCommand, readRemoteSessionPolicy, remotePolicyResources, type RemoteSessionPolicy } from "./remote-session-policy";
@@ -83,6 +84,9 @@ import { userInputTimeoutMs, type UserInputResult } from "./user-input";
 import { estimateContextUsageBreakdown } from "./context-usage";
 import { summarizeSessionStats } from "./session-stats";
 import { mergeCommandOutputDetails } from "./command-execution";
+import { ChatCommandActivityTracker } from "./chat-command-activity";
+import { createChatCommandCatalog, templateUsesArguments } from "./chat-command-input";
+import type { ChatCommandPhase } from "./chat-command-types";
 import {
   fitToolNamesWithinDefinitionBudget,
   estimateToolDefinitionPromptTokens,
@@ -198,6 +202,7 @@ export class AgentSessionWrapper {
   private abortGeneration = 0;
   private promptTasks = new Set<Promise<void>>();
   private inputAdmissions = 0;
+  private readonly chatCommandActivities = new ChatCommandActivityTracker();
   private lastPromptFailed = false;
   private lastAssistantResponse: unknown;
   private readonly streamingMetrics = new StreamingMetricsTracker();
@@ -226,6 +231,7 @@ export class AgentSessionWrapper {
   private systemPromptReloading = false;
   private onDestroyCallbacks = new Set<() => void>();
   private activePromptRun: PromptRunIdentity | undefined;
+  private readonly promptInputEnrichment = new PromptInputEnrichment();
   private activeCommandId: string | undefined;
   private runtimeToolCalls = new Map<string, { toolName: string; args: unknown; outputDetails?: Record<string, unknown> }>();
   private capabilityPolicy: SessionCapabilityPolicy;
@@ -251,6 +257,31 @@ export class AgentSessionWrapper {
     } = {},
   ) {
     this.nativeMcp = capabilityOptions.nativeMcp;
+    for (const delivery of ["steer", "followUp"] as const) {
+      const enqueue = inner.agent[delivery]?.bind(inner.agent);
+      if (enqueue) inner.agent[delivery] = message => {
+        if (message.role === "user") this.promptInputEnrichment.apply(message as { content?: unknown });
+        enqueue(message);
+      };
+    }
+    const prompt = inner.prompt.bind(inner);
+    inner.prompt = (text, options) => {
+      const execute = () => this.promptInputEnrichment.isolate(options?.source === "rpc", () => this.chatCommandActivities.track(prompt(text, { ...options, preflightResult: disposition => {
+        if (disposition === "started" || disposition === "queued") this.chatCommandActivities.phase("model");
+        options?.preflightResult?.(disposition);
+      } })));
+      if (options?.source === "extension" && !this.chatCommandActivities.commandId && !this.activePromptRun) return this.executeChatCommand(`cmd_${randomUUID()}`, text, undefined, { execute, source: "extension" });
+      return execute();
+    };
+    const sendCustomMessage = inner.sendCustomMessage?.bind(inner);
+    if (sendCustomMessage) inner.sendCustomMessage = (message, options) => {
+      const execute = () => {
+        if (options?.triggerTurn) this.chatCommandActivities.phase("model");
+        return this.chatCommandActivities.track(sendCustomMessage(message, options));
+      };
+      if (options?.triggerTurn && !this.chatCommandActivities.commandId && !this.activePromptRun) return this.executeChatCommand(`cmd_${randomUUID()}`, "Extension message", undefined, { execute, source: "extension" });
+      return execute();
+    };
     this.remotePolicy = readRemoteSessionPolicy(inner.sessionManager.getEntries());
     this.cachedSessionTitle = inner.sessionManager.getSessionName()?.trim() || null;
     this.capabilityCatalog = [...buildSessionCapabilityCatalog(inner.getAllTools(), runtimeProfile), ...this.nativeMcp?.resourceCatalog() ?? []];
@@ -293,6 +324,79 @@ export class AgentSessionWrapper {
 
   isRunning(): boolean {
     return this._alive && this.getRuntime() !== "idle";
+  }
+
+  async executeChatCommand(commandId: string, message: string, onPhase: (phase: ChatCommandPhase) => void = () => {}, activity?: { execute(): Promise<void>; source?: SessionMessageSourceKind }): Promise<void> {
+    assertRemotePolicyCommand(this.remotePolicy, { type: "prompt", message });
+    await this.waitForExtensionsBound();
+    if (!this._alive || this.stopping) throw new Error("Command cancelled");
+    const abortGeneration = this.abortGeneration;
+    let ownedRun: PromptRunIdentity | undefined;
+    let fileChangeCapture: ReturnType<typeof beginPromptFileChanges> | undefined;
+    let failed = false;
+    this.inputAdmissions++;
+    notifyRunningChange();
+    const execution = this.chatCommandActivities.run(commandId, activity?.execute ?? (() => this.inner.prompt(message, { source: "rpc", streamingBehavior: "steer" })), {
+      onPhase: phase => {
+        if (phase === "model" && !this.activePromptRun) {
+          this.beginRun("prompt", compactTaskActivityText(message) || "Extension request", "waiting_model");
+          this.lastPromptFailed = false;
+          this.lastPromptErrorSummary = undefined;
+          ownedRun = beginPromptRun(this.sessionId, { source: activity?.source ?? "ui" });
+          this.activePromptRun = ownedRun;
+          this.activeCommandId = commandId;
+          fileChangeCapture = beginPromptFileChanges(ownedRun, this.cwd);
+          this.emit({ type: "prompt_started", sessionId: this.sessionId, commandId, runId: ownedRun.runId, timestamp: Date.now() });
+        }
+        onPhase(phase);
+      },
+      assertActive: () => {
+        if (!this._alive || this.stopping || abortGeneration !== this.abortGeneration) throw new Error("Command cancelled");
+      },
+      waitForIdle: async () => {
+        if (!this.chatCommandActivities.hasModelWork) return;
+        await this.inner.waitForIdle?.();
+        const response = this.lastAssistantResponse as { stopReason?: string; errorMessage?: string } | undefined;
+        if (response?.stopReason === "error" || response?.stopReason === "aborted") throw new Error(response.errorMessage || `Command model ${response.stopReason}`);
+      },
+    });
+    const writer = execution.then(() => undefined, () => undefined);
+    this.promptTasks.add(writer);
+    try { await execution; }
+    catch (error) { failed = true; throw error; }
+    finally {
+      try {
+        if (ownedRun) {
+          const cancelled = abortGeneration !== this.abortGeneration || !this._alive;
+          try {
+            if (fileChangeCapture) await finishPromptFileChanges(fileChangeCapture, cancelled ? "aborted" : failed ? "error" : "complete");
+            await finishPromptRun(ownedRun, cancelled ? "abort" : failed ? "error" : "idle");
+          } finally {
+            if (this.activePromptRun?.runId === ownedRun.runId) this.activePromptRun = undefined;
+            if (this.activeCommandId === commandId) this.activeCommandId = undefined;
+            this.emit({ type: failed ? "prompt_error" : "prompt_done", sessionId: this.sessionId, commandId, runId: ownedRun.runId, timestamp: Date.now(), aborted: cancelled });
+          }
+        }
+      } finally {
+        this.promptTasks.delete(writer);
+        this.inputAdmissions--;
+        this.emit({ type: "session_idle", commandId });
+        notifyRunningChange();
+      }
+    }
+  }
+
+  async executeModelCommand(commandId: string, message: string, options: {
+    delivery: "steer" | "followUp";
+    images?: Array<{ type: "image"; data: string; mimeType: string }>;
+    materials?: PromptMaterialReference[];
+    promptSuffix?: string;
+  }, onPhase: (phase: ChatCommandPhase) => void): Promise<void> {
+    const materials = options.materials?.length ? resolvePromptMaterialReferences(options.materials) : [];
+    await this.executeChatCommand(commandId, message, onPhase, { execute: () => this.promptInputEnrichment.run(text => {
+      const enriched = options.promptSuffix ? `${text}\n\n${options.promptSuffix}` : text;
+      return materials.length ? buildPromptWithMaterials(enriched, materials) : enriched;
+    }, () => this.inner.prompt(message, { source: "rpc", streamingBehavior: options.delivery, ...(options.images?.length ? { images: options.images } : {}) })) });
   }
 
   getRemoteContentSnapshot() {
@@ -492,6 +596,8 @@ export class AgentSessionWrapper {
 
   /** Start one ordinary prompt with a stable command correlation id. */
   async startTrackedPrompt(input: {
+    promptSuffix?: string;
+    inputMode?: "text";
     commandId: string;
     clientPromptId?: string;
     source: SessionMessageSourceKind;
@@ -666,6 +772,7 @@ export class AgentSessionWrapper {
         && (event.message as { role?: string } | undefined)?.role === "system") return;
       this.streamingMetrics.update(event);
       this.remoteContent.update(event);
+      if (event.type === "message_start" && (event.message as { role?: string } | undefined)?.role === "user") this.promptInputEnrichment.apply(event.message as { content?: unknown });
       if (event.type === "message_end" && (event.message as { role?: string } | undefined)?.role === "user" && this.pendingClientPromptId) {
         // The SDK emits this event before appending the same object to its
         // SessionManager. Persist the receipt alongside the actual user text.
@@ -786,12 +893,16 @@ export class AgentSessionWrapper {
             notifyType: "warning",
             message: "Extension requested shutdown, but shutdown is not supported in Pi Web.",
           } as ExtensionUiRequest as AgentEvent),
-          onError: (error) => this.emit({
+          onError: (error) => {
+            this.chatCommandActivities.fail(new Error(error.error));
+            this.emit({
             type: "extension_error",
+            commandId: this.chatCommandActivities.commandId,
             extensionPath: error.extensionPath,
             event: error.event,
             error: error.error,
-          }),
+            });
+          },
         });
       } else {
         this.inner.extensionRunner.setUIContext?.(uiContext, "rpc");
@@ -998,16 +1109,26 @@ export class AgentSessionWrapper {
           this.abortedQueuedMessages = undefined;
         }
         const teamExecution = command.teamExecution as TeamExecutionContext | undefined;
+        const roomContext = command.roomContext as SessionRoomContext | undefined;
         if (teamExecution && streamingBehavior) throw new Error("Team execution context cannot be attached to a follow-up prompt.");
+        if (!streamingBehavior && command.source === "room" && !this.inner.getActiveToolNames().includes("piora_room")) {
+          if (teamExecution) validateTeamExecutionContext(teamExecution, this.sessionId);
+          const roomId = teamExecution?.roomId ?? roomContext?.roomId;
+          const member = roomId ? getRoom(roomId).members.find((candidate) => candidate.binding.sessionId === this.sessionId) : undefined;
+          if (!member) throw new TeamError("TEAM_INVALID_CONTEXT", "Room prompt requires a current member binding.");
+          // Reused ordinary sessions can inherit a coding preset without the
+          // collaboration tool. Enable it only for authenticated room admission;
+          // set_team_tools still enforces project restrictions and tool budgets.
+          await this.send({ type: "set_team_tools", toolNames: member.profile.toolPolicy.mode === "allowlist" ? member.profile.toolPolicy.toolNames : this.inner.getActiveToolNames() });
+        }
         if (teamExecution) this.validateTeamRuntimePolicy(teamExecution);
         const commandId = typeof command.commandId === "string" && command.commandId.trim()
           ? command.commandId.trim()
           : `cmd_${randomUUID()}`;
         const originalPromptMessage = String(command.message ?? "");
         if (!streamingBehavior) this.pendingClientPromptId = typeof command.clientPromptId === "string" ? command.clientPromptId : undefined;
-        const runtimePromptMessage = promptMaterials?.length
-          ? buildPromptWithMaterials(originalPromptMessage, resolvePromptMaterialReferences(promptMaterials))
-          : originalPromptMessage;
+        const resolvedPromptMaterials = promptMaterials?.length ? resolvePromptMaterialReferences(promptMaterials) : [];
+        const runtimePromptMessage = originalPromptMessage;
         if (!streamingBehavior) this.promptAdmissionBusy = true;
         const promptText = compactTaskActivityText(originalPromptMessage);
         this.fallbackTaskTitle = compactTaskActivityText(originalPromptMessage, 80) || this.fallbackTaskTitle;
@@ -1019,7 +1140,6 @@ export class AgentSessionWrapper {
         this.lastPromptErrorSummary = undefined;
         const ownsPromptRun = !streamingBehavior || !this.activePromptRun;
         const promptSource = command.source as SessionMessageSourceKind | undefined;
-        const roomContext = command.roomContext as SessionRoomContext | undefined;
         const promptRun = ownsPromptRun
           ? beginPromptRun(this.inner.sessionId, {
               ...(promptSource ? { source: promptSource } : {}),
@@ -1078,7 +1198,11 @@ export class AgentSessionWrapper {
           }
           const prompt = (admitted: () => void) => {
             assertNotAborted();
-            return this.inner.prompt(runtimePromptMessage, {
+            return this.promptInputEnrichment.run(text => {
+              const enriched = typeof command.promptSuffix === "string" && command.promptSuffix ? `${text}\n\n${command.promptSuffix}` : text;
+              return resolvedPromptMaterials.length ? buildPromptWithMaterials(enriched, resolvedPromptMaterials) : enriched;
+            }, () => this.inner.prompt(runtimePromptMessage, {
+              ...(command.inputMode === "text" ? { expandPromptTemplates: false } : {}),
               ...(promptImages?.length ? { images: promptImages } : {}),
               ...(streamingBehavior ? { streamingBehavior } : {}),
               source: "rpc",
@@ -1092,7 +1216,7 @@ export class AgentSessionWrapper {
                 // to the already-running prompt, not this admission.
                 if (disposition === "started") admitted();
               },
-            });
+            }));
           };
           // Queuing a message does not own the running model's result.
           if (streamingBehavior) return prompt(() => {});
@@ -1459,7 +1583,18 @@ export class AgentSessionWrapper {
         this.inputAdmissions++;
         notifyRunningChange();
         const admission = Promise.resolve().then(async () => {
-          const disposition = await (type === "steer"
+          const text = String(command.message ?? "").trimStart();
+          const invocationName = text.match(/^\/([^\s]+)/)?.[1];
+          const extensionCommand = invocationName && this.inner.extensionRunner.getRegisteredCommands().some(item => item.invocationName === invocationName);
+          if (extensionCommand && command.inputMode !== "text") {
+            await this.executeChatCommand(typeof command.commandId === "string" ? command.commandId : `cmd_${randomUUID()}`, text);
+            return { disposition: "handled" };
+          }
+          let literalDisposition: "handled" | "queued" | "started" | undefined;
+          const disposition = command.inputMode === "text" ? await this.inner.prompt(command.message as string, {
+            source: "rpc", expandPromptTemplates: false, streamingBehavior: type === "steer" ? "steer" : "followUp",
+            ...(images?.length ? { images } : {}), preflightResult: result => { literalDisposition = result; },
+          }).then(() => literalDisposition) : await (type === "steer"
             ? this.inner.steer(command.message as string, images?.length ? images : undefined)
             : this.inner.followUp(command.message as string, images?.length ? images : undefined));
           // SDK input hooks can finish after abort() has cleared the queue.
@@ -1517,7 +1652,11 @@ export class AgentSessionWrapper {
             sourceInfo: skill.sourceInfo,
           });
         }
-        return { commands };
+        const catalog = createChatCommandCatalog(commands.map(command => {
+          const template = command.source === "prompt" ? this.inner.promptTemplates.find(item => item.name === command.name) : undefined;
+          return { ...command, ...(template?.argumentHint ? { argumentHint: template.argumentHint } : {}), ...(template?.content !== undefined ? { usesTemplateArguments: templateUsesArguments(template.content) } : {}) };
+        }));
+        return { commands, catalog };
       }
 
       case "set_tools": {
@@ -1888,9 +2027,11 @@ export class AgentSessionWrapper {
     const fullRequest = {
       type: "extension_ui_request",
       id,
+      commandId: this.chatCommandActivities.commandId,
       ...request,
       ...(timeout ? { timeout, expiresAt: Date.now() + timeout } : {}),
     };
+    this.chatCommandActivities.phase("waiting_input");
 
     return new Promise((resolve) => {
       let settled = false;

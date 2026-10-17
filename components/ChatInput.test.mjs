@@ -9,7 +9,10 @@ import { fileURLToPath } from "node:url";
 const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
-  alias: { "./ReplySuggestionBar.module.css": fileURLToPath(new URL("../lib/css-module-test-stub.mjs", import.meta.url)) },
+  alias: {
+    "./ReplySuggestionBar.module.css": fileURLToPath(new URL("../lib/css-module-test-stub.mjs", import.meta.url)),
+    "./ChatCommandComposer.module.css": fileURLToPath(new URL("../lib/css-module-test-stub.mjs", import.meta.url)),
+  },
 });
 const {
   ChatInput,
@@ -450,12 +453,12 @@ test("renders compact errors above the input as a wrapping alert", () => {
 test("does not send text before an attached image finishes loading", () => {
   assert.match(chatInputSource, /const \[isProcessingImages, setIsProcessingImages\] = useState\(false\)/);
   assert.match(chatInputSource, /setIsProcessingImages\(true\)[\s\S]*?pendingImageCountRef\.current <= 0[\s\S]*?setIsProcessingImages\(false\)/);
-  assert.match(chatInputSource, /if \(isStreaming \|\| isProcessingImages \|\| pendingFileCountRef\.current > 0 \|\| isAutoModelSelection\) return/);
+  assert.match(chatInputSource, /if \(\(isStreaming && !onQueueInput\) \|\| isProcessingImages \|\| pendingFileCountRef\.current > 0 \|\| \(isAutoModelSelection && !commandSubmission\)\) return/);
   assert.match(chatInputSource, /const canSend = !isProcessingImages/);
 });
 
 test("new conversations wait only until a default or explicit model resolves", () => {
-  assert.match(chatInputSource, /if \(isStreaming \|\| isProcessingImages \|\| pendingFileCountRef\.current > 0 \|\| isAutoModelSelection\) return/);
+  assert.match(chatInputSource, /if \(\(isStreaming && !onQueueInput\) \|\| isProcessingImages \|\| pendingFileCountRef\.current > 0 \|\| \(isAutoModelSelection && !commandSubmission\)\) return/);
   assert.match(chatInputSource, /const canSend = !isProcessingImages[\s\S]*?&& !isAutoModelSelection/);
   assert.match(chatInputSource, /const displayModelName = model && !isAutoModelSelection/);
   assert.match(chatInputSource, /const canOptimizePrompt = hasInputText[\s\S]*?&& !isAutoModelSelection/);
@@ -465,9 +468,9 @@ test("new conversations wait only until a default or explicit model resolves", (
 });
 
 test("a rejected submission restores the optimistically cleared composer", () => {
-  assert.match(chatInputSource, /const accepted = await onSend\(/);
+  assert.match(chatInputSource, /const accepted = isStreaming && onQueueInput \? await onQueueInput\([\s\S]*? : await onSend\(/);
   assert.match(chatInputSource, /if \(accepted === false\) \{ restoreSubmittedDraft\(\); return; \}/);
-  assert.match(chatInputSource, /clearSubmittedDraft\(\);[\s\S]*?const accepted = await onSend\(/);
+  assert.match(chatInputSource, /clearSubmittedDraft\(\);[\s\S]*?const accepted =[\s\S]*?await onSend\(/);
   assert.match(chatInputSource, /submit\(\) \{[\s\S]*?submitRef\.current\(\)/);
 });
 

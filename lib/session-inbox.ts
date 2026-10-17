@@ -22,7 +22,9 @@ declare global {
 }
 
 export function sessionCommandBytes(command: SessionCommandRecord): number {
-  return Buffer.byteLength(command.content, "utf8") + (command.images ? Buffer.byteLength(JSON.stringify(command.images), "utf8") : 0);
+  return Buffer.byteLength(command.content, "utf8") + Buffer.byteLength(command.promptSuffix ?? "", "utf8")
+    + (command.operation ? Buffer.byteLength(JSON.stringify({ rawText: command.operation.rawText, arguments: command.operation.arguments, afterPrompt: command.operation.afterPrompt, descriptor: command.operation.command, inputOptions: command.operation.inputOptions }), "utf8") : 0)
+    + (command.images ? Buffer.byteLength(JSON.stringify(command.images), "utf8") : 0);
 }
 
 export class SessionInboxRegistry {

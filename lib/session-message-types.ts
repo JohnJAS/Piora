@@ -1,5 +1,6 @@
 import type { PersistedTeamExecutionRef, TeamExecutionContext } from "./team-types";
 import type { PromptMaterialReference } from "./prompt-material-format";
+import type { ChatCommandOperation } from "./chat-command-types";
 
 export type SessionMessageSourceKind = "ui" | "room" | "remote" | "extension" | "system";
 export type SessionDeliveryMode = "next_turn" | "steer";
@@ -26,6 +27,10 @@ export interface SessionMessageImage {
   mimeType: string;
 }
 export interface SessionMessageInput {
+  localFiles?: Array<{ name: string; size: number; path: string }>;
+  promptSuffix?: string;
+  inputMode?: "text";
+  operation?: ChatCommandOperation;
   targetSessionId: string;
   content: string;
   delivery?: SessionDeliveryMode;
@@ -39,6 +44,11 @@ export interface SessionMessageInput {
 }
 
 export interface SessionCommandRecord {
+  revision?: number;
+  localFiles?: Array<{ name: string; size: number; path: string }>;
+  promptSuffix?: string;
+  inputMode?: "text";
+  operation?: ChatCommandOperation;
   commandId: string;
   idempotencyKey: string;
   targetSessionId: string;
@@ -101,6 +111,7 @@ export interface SessionControlState {
 }
 
 export interface SessionCommandEvent {
+  revision?: number;
   cursor: number;
   type:
     | "prompt_started"
@@ -116,6 +127,7 @@ export interface SessionCommandEvent {
     | "command_cancelled"
     | "command_expired"
     | "command_interrupted"
+    | "command_progress"
     | "session_state";
   sessionId: string;
   commandId?: string;
@@ -126,4 +138,9 @@ export interface SessionCommandEvent {
   errorCode?: string;
   errorMessage?: string;
   state?: SessionControlState;
+  operation?: ChatCommandOperation;
+  idempotencyKey?: string;
+  acceptedAt?: number;
+  source?: SessionMessageSourceKind;
+  preview?: string;
 }

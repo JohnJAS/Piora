@@ -22,6 +22,17 @@ export class HarmonyRequestError extends Error {
   }
 
   messageFor(chinese: boolean): string {
+    if (this.reason === "local-file-unavailable") return chinese
+      ? "设备工具无法读取电脑上的文件。请确认文件仍存在且可读；超长路径会先通过私有临时副本传输。"
+      : "The device tool could not read the local file. Confirm it exists and is readable; long paths use a private temporary copy.";
+    if (this.reason === "local-file-staging-unavailable") return chinese
+      ? "无法建立安全的本地传输临时目录或副本。请检查临时目录权限和可用磁盘空间，然后重试。"
+      : "A private local transfer directory or copy could not be prepared. Check temporary directory permissions and free disk space.";
+    if (this.reason === "local-file-staging-cleanup-failed") return chinese
+      ? "本地传输临时文件未能清理，操作未标记为成功。请关闭占用临时文件的程序后重试。"
+      : "Private local transfer files could not be removed. The operation was not marked successful; close programs holding those files and retry.";
+    if (this.reason === "local-file-changed") return chinese ? "本地文件在传输准备时发生变化，请重新选择文件后重试。" : "The local file changed during transfer preparation. Select it again and retry.";
+    if (this.reason === "local-file-destination-exists") return chinese ? "本地下载目标已存在，未覆盖文件。" : "The local download destination already exists; it was not overwritten.";
     if (this.code === "CAPABILITY_UNAVAILABLE" && this.reason === "database-active-journal") return chinese
       ? "数据库带有 WAL 或 journal 文件，暂时无法验证一致性，未读取数据。请使用应用导出的一致备份；停止写入或关闭数据库后，系统仍可能保留这些文件。"
       : "WAL or journal files prevent verification of a consistent snapshot. No data was read. Use a consistent backup exported by the app; these files may remain after writes stop or the database closes.";

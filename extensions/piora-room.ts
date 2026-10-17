@@ -14,14 +14,18 @@ import {
   listRoomTasks,
   listRoomArtifacts,
   listRooms,
+  findRoomMessage,
+  readRoomMessageFullContent,
   heartbeatRoomTask,
   publishRoomArtifact,
 } from "../lib/room-store.ts";
 import { getRoomMemberInstructions, getRoomMemberName, getRoomMemberRole } from "../lib/room-types.ts";
 import { deriveRoomReplyRoutingMetadata, dispatchExplicitRoomMentions } from "../lib/room-chat.ts";
 import { assertSharedRoomReplyAllowed } from "../lib/room-prompt-auth.ts";
+import { getActivePromptRun } from "../lib/prompt-run-registry.ts";
 import { getActiveTeamPromptContext } from "../lib/team-prompt-context.ts";
 import { getTeamRun } from "../lib/team-run-store.ts";
+import { teamAssignmentText } from "../lib/team-assignment-view.ts";
 import {
   addTeamEvidence,
   completeTeamRun,
@@ -98,7 +102,8 @@ function dynamicTeamContext(sessionId: string): { systemPrompt: string; message:
     : context.purpose === "review"
       ? ["submit_review contract: provide verdict, summary, findings, and evidenceIds."]
       : context.purpose === "synthesis"
-        ? ["complete_run contract: provide summary, artifactIds, and successCriteriaEvidence with evidence for every required criterion."]
+        ? ["Before synthesis, call get_assignment to read the plan, submitted tasks, artifacts, review decisions and registered evidence IDs.",
+          "complete_run contract: provide summary, artifactIds, and successCriteriaEvidence mapping each required criterion ID to registered evidence IDs from run.evidence. Artifact IDs and prose are not evidence IDs. Reuse the verified worker/reviewer evidence; do not add evidence to __synthesis__."]
         : [
           "publish_artifact contract: `content` is the artifact summary; sourcePath is optional and, when present, must stay inside this Session workspace.",
           "After publishing artifacts and adding evidence, pass their returned IDs to submit_task via artifactIds and evidenceIds.",
@@ -118,6 +123,11 @@ function dynamicTeamContext(sessionId: string): { systemPrompt: string; message:
         `Purpose: ${context.purpose}`,
         "",
         `Top-level objective: ${run.objective}`,
+        "User guidance for this run:",
+        ...(run.guidance ?? []).filter((item) => !item.memberIds?.length || item.memberIds.includes(member.memberId) || member.profile.role === "coordinator").flatMap((item) => {
+          const message = findRoomMessage(room.id, item.messageId);
+          return message ? [readRoomMessageFullContent(room.id, message)] : [];
+        }),
         `Current task: ${task?.description ?? context.purpose}`,
         "Acceptance criteria:",
         ...(task?.acceptanceCriteria.map((criterion) => `- ${criterion}`) ?? ["- Submit the required structured result."]),
@@ -176,6 +186,7 @@ export default function pioraRoom(api: ExtensionAPI) {
         Type.Literal("list"),
         Type.Literal("read_shared"),
         Type.Literal("send_shared"),
+        Type.Literal("start_run"),
         Type.Literal("read_private"),
       Type.Literal("private_note"),
         Type.Literal("list_tasks"),
@@ -250,7 +261,10 @@ export default function pioraRoom(api: ExtensionAPI) {
     }),
     async execute(toolCallId, params, _signal, _onUpdate, ctx) {
       const sessionId = ctx.sessionManager.getSessionId();
-      if (params.action === "get_assignment") return textResult("Loaded the active structured Team assignment.", getTeamAssignment(sessionId, toolCallId));
+      if (params.action === "get_assignment") {
+        const assignment = getTeamAssignment(sessionId, toolCallId);
+        return textResult(`Loaded the active structured Team assignment.\n${teamAssignmentText(assignment.run, assignment.context.taskId)}`, assignment);
+      }
       if (params.action === "submit_plan") {
         if (!params.content || !params.assumptions || !params.successCriteria || !params.tasks) throw new Error("submit_plan requires `content` (the plan objective), assumptions, successCriteria, and tasks.");
         const state = await submitTeamPlan(sessionId, toolCallId, { objective: params.content, assumptions: params.assumptions, successCriteria: params.successCriteria, tasks: params.tasks });
@@ -288,6 +302,13 @@ export default function pioraRoom(api: ExtensionAPI) {
       const room = getRoom(params.roomId);
       const member = room.members.find((item) => item.sessionId === sessionId);
       if (!member) throw new Error("This session is not a member of that collaboration room.");
+      if (params.action === "start_run") {
+        assertSharedRoomReplyAllowed(sessionId, room.id);
+        const prompt = getActivePromptRun(sessionId);
+        if (!params.content || !params.replyTo || prompt?.roomContext?.messageId !== params.replyTo) throw new Error("start_run requires the current user message ID as replyTo and its objective as content.");
+        const { startRoomIntakeTask } = await import("../lib/room-submissions.ts");
+        return textResult("已建立团队任务，执行进展将显示在群聊中。请结束本轮接待。", { state: await startRoomIntakeTask(room.id, sessionId, params.replyTo, params.content) });
+      }
       if (params.action === "read_shared") {
         const messages = listRoomMessages(room.id, { afterSeq: params.afterSeq ?? 0 });
         const text = messages.map((message) => `[${message.seq}] ${message.author.name || message.author.id}: ${message.content}`).join("\n") || "No shared messages.";
@@ -368,6 +389,7 @@ export default function pioraRoom(api: ExtensionAPI) {
         authorName: member.name,
         content: params.content,
         replyTo: params.replyTo,
+        promptRunId: getActivePromptRun(sessionId)?.runId,
         ...deriveRoomReplyRoutingMetadata(room.id, params.replyTo),
       });
       const dispatch = getActiveTeamPromptContext(sessionId)

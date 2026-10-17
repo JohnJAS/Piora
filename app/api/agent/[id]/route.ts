@@ -7,6 +7,7 @@ import { resolveSessionAgentRuntimeProfile } from "@/lib/agent-profile-store";
 import { getSessionMessageRouter, SessionMessageRouterError } from "@/lib/session-message-router";
 import type { SessionCommandStatus } from "@/lib/session-message-types";
 import { randomUUID } from "node:crypto";
+import { dispatchChatInput, ChatInputDispatchError } from "@/lib/chat-input-dispatch";
 
 function messageIdempotency(id: string, body: Record<string, unknown>): string {
   return typeof body.idempotencyKey === "string" && body.idempotencyKey.trim()
@@ -54,6 +55,17 @@ export async function POST(
   try {
     const runtimeProfile = getAgentRuntimeProfile();
     const body = await req.json() as { type: string; [key: string]: unknown };
+    if (body.type === "submit_input") {
+      const result = await dispatchChatInput(id, body);
+      return NextResponse.json({ success: true, data: result });
+    }
+    if (body.type === "read_command_client_action" || body.type === "confirm_command_client_action") {
+      if (typeof body.commandId !== "string" || typeof body.requestId !== "string" || (body.type === "confirm_command_client_action" && typeof body.success !== "boolean")) return NextResponse.json({ error: "Invalid client action identity" }, { status: 400 });
+      const router = getSessionMessageRouter();
+      const result = body.type === "read_command_client_action" ? router.getClientAction(id, body.commandId, body.requestId)
+        : router.confirmClientAction(id, body.commandId, body.requestId, body.success as boolean, typeof body.error === "string" ? body.error : undefined);
+      return NextResponse.json({ success: true, data: result ?? null });
+    }
 
     if (body.type === "cancel_prompt_submission") {
       const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : "";
@@ -106,6 +118,7 @@ export async function POST(
 
     return NextResponse.json({ success: true, data: result });
   } catch (error) {
+    if (error instanceof ChatInputDispatchError) return NextResponse.json({ error: error.message, code: error.code, commandName: error.commandName }, { status: error.status });
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error), ...(error instanceof SessionMessageRouterError ? { code: error.code } : {}) }, { status: errorStatus(error) });
   }
 }

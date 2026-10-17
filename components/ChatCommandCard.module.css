@@ -1,0 +1,36 @@
+.card { margin: 12px 0 20px; border: 1px solid var(--border); border-radius: var(--radius-panel, 10px); background: var(--bg-panel); color: var(--text); overflow: hidden; font-size: var(--text-sm); }
+.header, .footer, .actions, .resources, .queueTitle, .queueRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.header { padding: 11px 14px; border-bottom: 1px solid var(--border); }
+.header code { font-family: var(--font-mono); font-weight: 500; }
+.source, .meta { color: var(--text-dim); font-size: var(--text-xs); }
+.status { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; }
+.success { color: var(--status-ready); }
+.failure, .actionError { color: var(--status-failed); }
+.warning { color: var(--status-attention); }
+.body { padding: 13px 14px; overflow-wrap: anywhere; }
+.body strong { font-weight: 500; }
+.body p { margin: 5px 0 0; color: var(--text-muted); white-space: pre-wrap; }
+.body p.failure { color: var(--status-failed); }
+.body p.warning { color: var(--status-attention); }
+.resources { margin-top: 12px; gap: 16px; color: var(--text-muted); }
+.numbers { font-variant-numeric: tabular-nums; }
+.footer { padding: 9px 14px; border-top: 1px solid var(--border); }
+.actions { margin-left: auto; }
+.card button, .queue button { border: 0; padding: 3px 0; background: transparent; color: var(--text-muted); font: inherit; cursor: pointer; }
+.card button:hover, .queue button:hover { color: var(--text); }
+.card button:disabled, .queue button:disabled { opacity: .5; cursor: default; }
+.card .primary { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; padding: 7px 10px; border-radius: var(--radius-control); background: var(--btn-primary-bg); color: var(--btn-primary-fg); }
+.details { margin-top: 12px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-control); }
+.details pre { margin: 0 0 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); }
+.details time { color: var(--text-dim); font-size: var(--text-xs); }
+.query { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.query > span { color: var(--text-dim); font-size: var(--text-xs); }
+.query button { margin-top: 8px; }
+.actionError { padding: 9px 14px; border-top: 1px solid var(--border); white-space: pre-wrap; }
+.queue { margin: 0 8px; padding: 10px 12px; border: 1px solid var(--border); border-bottom: 0; border-radius: 9px 9px 0 0; background: var(--bg-panel); font-size: var(--text-sm); }
+.queueTitle { color: var(--text-muted); margin-bottom: 5px; }
+.queueRow { padding: 5px 0; }
+.queueRow > span:first-child { flex: 1; min-width: 100px; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .actions { margin-left: 0; } .header, .footer, .body { padding-inline: 11px; } }
+@media (pointer: coarse) { .card button, .queue button { min-height: 44px; } }
+.body > pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; font-family: var(--font-mono); }

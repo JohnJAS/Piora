@@ -139,7 +139,7 @@ function attachRoomAliases(room: CollaborationRoom): CollaborationRoom {
   return room;
 }
 
-function withRoomLockSync<T>(roomId: string, operation: () => T): T {
+export function withRoomLockSync<T>(roomId: string, operation: () => T): T {
   const paths = roomPaths(roomId);
   mkdirSync(paths.root, { recursive: true });
   let release: (() => void) | undefined;
@@ -322,6 +322,7 @@ export function listRooms(sessionId?: string): CollaborationRoom[] {
 }
 
 export function createRoom(input: {
+  roomId?: string;
   name: string;
   description?: string;
   projectRoot?: string;
@@ -337,9 +338,10 @@ export function createRoom(input: {
     profile?: Partial<TeamAgentProfile>;
   };
 }): CollaborationRoom {
-  const id = randomUUID();
+  const id = input.roomId ?? randomUUID();
   const now = Date.now();
   const paths = roomPaths(id);
+  if (existsSync(paths.metadata)) throw new Error("Room already exists.");
   mkdirSync(paths.artifacts, { recursive: true });
   mkdirSync(paths.privateRoot, { recursive: true });
   mkdirSync(paths.workspace, { recursive: true });
@@ -783,7 +785,7 @@ export function updateRoomAgentBinding(
   return getRoom(roomId);
 }
 
-export function listRoomMessages(roomId: string, options: { afterSeq?: number; limit?: number } = {}): RoomMessage[] {
+export function listRoomMessages(roomId: string, options: { afterSeq?: number; beforeSeq?: number; limit?: number } = {}): RoomMessage[] {
   const path = roomPaths(roomId).messages;
   getRoom(roomId);
   if (!existsSync(path)) return [];
@@ -804,7 +806,7 @@ export function listRoomMessages(roomId: string, options: { afterSeq?: number; l
         return [message];
       } catch { return []; }
     })
-    .filter((message) => message.roomId === roomId && message.seq > afterSeq);
+    .filter((message) => message.roomId === roomId && message.seq > afterSeq && (options.beforeSeq === undefined || message.seq < options.beforeSeq));
   return messages.slice(-limit);
 }
 
@@ -815,6 +817,14 @@ export function appendRoomMessage(roomId: string, input: {
   content: string;
   replyTo?: string;
   correlationId?: string;
+  clientPromptId?: string;
+  promptRunId?: string;
+  threadRootId?: string;
+  teamRunId?: string;
+  taskId?: string;
+  kind?: RoomMessage["kind"];
+  targetMemberIds?: string[];
+  attachments?: RoomMessage["attachments"];
   forwardDepth?: number;
   autoRound?: number;
   maxAutoRounds?: number;
@@ -827,6 +837,7 @@ export function appendRoomMessage(roomId: string, input: {
     const room = getRoom(roomId);
     if (input.authorKind === "session") requireMember(room, input.authorId);
     const paths = roomPaths(roomId);
+    const parent = input.replyTo ? findRoomMessage(roomId, input.replyTo) : undefined;
     if (correlationId && existsSync(paths.messages)) {
       for (const line of readFileSync(paths.messages, "utf8").split(/\r?\n/)) {
         if (!line) continue;
@@ -862,6 +873,14 @@ export function appendRoomMessage(roomId: string, input: {
       createdAt: Date.now(),
       ...(input.replyTo ? { replyTo: input.replyTo } : {}),
       ...(correlationId ? { correlationId } : {}),
+      ...(input.clientPromptId ? { clientPromptId: input.clientPromptId } : {}),
+      ...(input.promptRunId ? { promptRunId: input.promptRunId } : {}),
+      ...((input.threadRootId ?? parent?.threadRootId) ? { threadRootId: input.threadRootId ?? parent?.threadRootId } : {}),
+      ...(input.teamRunId ? { teamRunId: input.teamRunId } : {}),
+      ...(input.taskId ? { taskId: input.taskId } : {}),
+      ...(input.kind ? { kind: input.kind } : {}),
+      ...(input.targetMemberIds?.length ? { targetMemberIds: input.targetMemberIds } : {}),
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
       ...(input.forwardDepth !== undefined ? { forwardDepth: Math.max(0, Math.min(8, Math.floor(input.forwardDepth))) } : {}),
       ...(input.autoRound !== undefined ? { autoRound: Math.max(0, Math.min(8, Math.floor(input.autoRound))) } : {}),
       ...(input.maxAutoRounds !== undefined ? { maxAutoRounds: Math.max(0, Math.min(8, Math.floor(input.maxAutoRounds))) } : {}),
@@ -900,7 +919,7 @@ export function readRoomMessageFullContent(roomId: string, messageOrId: RoomMess
   return content;
 }
 
-function findRoomMessage(roomId: string, messageId: string): RoomMessage | undefined {
+export function findRoomMessage(roomId: string, messageId: string): RoomMessage | undefined {
   const path = roomPaths(roomId).messages;
   getRoom(roomId);
   if (!existsSync(path)) return undefined;

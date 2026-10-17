@@ -91,8 +91,9 @@ export class SessionControlStore {
   completedSlashPromptIds(sessionId: string): string[] {
     return this.loadCommands(sessionId).filter((command) =>
       command.source === "ui" && command.status === "completed"
+      && command.inputMode !== "text"
       && command.delivery === "next_turn" && command.content.trimStart().startsWith("/")
-      && !command.images?.length && !command.materials?.length
+      && (command.operation || !command.images?.length && !command.materials?.length)
     ).map((command) => command.idempotencyKey);
   }
 

@@ -151,10 +151,44 @@ export interface RoomMessage {
   createdAt: number;
   replyTo?: string;
   correlationId?: string;
+  clientPromptId?: string;
+  promptRunId?: string;
+  threadRootId?: string;
+  teamRunId?: string;
+  taskId?: string;
+  kind?: "message" | "handoff" | "question" | "delivery";
+  targetMemberIds?: string[];
+  attachments?: RoomAttachment[];
   /** Bounded automatic-routing metadata used to prevent reply storms. */
   forwardDepth?: number;
   autoRound?: number;
   maxAutoRounds?: number;
+}
+
+export interface RoomAttachment {
+  name: string;
+  path: string;
+  mimeType?: string;
+}
+
+export interface RoomMention {
+  memberId: string;
+  start: number;
+  end: number;
+}
+
+export interface RoomSubmission {
+  clientPromptId: string;
+  messageId: string;
+  roomId: string;
+  status: "accepted" | "queued" | "delivered" | "error";
+  intent: "auto" | "new_task" | "answer" | "share";
+  targetMemberIds: string[];
+  commandIds: string[];
+  teamRunId?: string;
+  error?: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface RoomMessagePayloadMetadata {

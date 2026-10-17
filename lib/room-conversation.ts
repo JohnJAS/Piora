@@ -20,7 +20,8 @@ export function roomConversationEntries(messages: RoomMessage[], activities: Roo
   const entries: RoomConversationEntry[] = messages.map((message) => ({ key: `message:${message.id}`, timestamp: message.createdAt, kind: "message", message }));
   for (const activity of activities) {
     const timestamp = activity.startedAt ?? activity.updatedAt;
-    const hasFinalReply = activity.status !== "working" && Boolean(activity.text.trim()) && messages.some((message) => message.author.id === activity.sessionId && message.createdAt >= timestamp && message.content.trim() === activity.text.trim());
+    const hasFinalReply = messages.some((message) => message.author.id === activity.sessionId && message.promptRunId === activity.runId
+      && (activity.status !== "working" || message.kind === "delivery"));
     entries.push({ key: `activity:${activityKey(activity)}`, timestamp, kind: "activity", activity, hasFinalReply });
   }
   return entries.sort((a, b) => a.timestamp - b.timestamp || (a.kind === b.kind ? 0 : a.kind === "message" ? -1 : 1));

@@ -3,7 +3,7 @@ import { memo, useCallback, useImperativeHandle, useMemo, useRef, useState, type
 import { CompactProcessSummary } from "./CompactProcessSummary";
 import { buildCompactChatHistoryRows } from "@/lib/compact-chat-history";
 import { CompactProcessContext, RevealProcessCommandContext } from "./CompactProcessContext";
-import { buildChatHistoryRows, messageFingerprint } from "@/lib/chat-history";
+import { buildChatHistoryRows, insertCommandHistoryRows, messageFingerprint } from "@/lib/chat-history";
 import type { AgentMessage, ToolResultMessage } from "@/lib/types";
 import { useI18n } from "@/hooks/useI18n";
 import { MessageView } from "./MessageView";
@@ -11,6 +11,8 @@ import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { AliIcon } from "./AliIcon";
 import { ChatDisclosureTrigger } from "./ChatDisclosure";
 import { VirtualList, type VirtualListHandle } from "./VirtualList";
+import { ChatCommandCard, type ChatCommandCardActions } from "./ChatCommandCard";
+import type { ChatCommandView } from "@/lib/chat-command-types";
 
 export interface ChatHistoryHandle { revealEntry(id: string): void; cancelNavigation(): void }
 type MessageProps = ComponentProps<typeof MessageView>;
@@ -30,6 +32,8 @@ interface Props extends Pick<MessageProps, "modelNames" | "cwd" | "onOpenFile" |
   handleRef: Ref<ChatHistoryHandle>;
   onDeleteMessage?: (message: AgentMessage, entryId?: string) => Promise<void>;
   deleteDisabled?: boolean;
+  operations?: ChatCommandView[];
+  commandActions?: ChatCommandCardActions;
 }
 
 function DeleteMessageAction({ message, entryId, onDelete, disabled }: { message: AgentMessage; entryId?: string; onDelete: NonNullable<Props["onDeleteMessage"]>; disabled: boolean }) {
@@ -47,7 +51,7 @@ function DeleteMessageAction({ message, entryId, onDelete, disabled }: { message
 }
 
 /** Compact mode combines the live tail with the process; classic mode keeps it in ChatWindow. */
-export const ChatHistory = memo(function ChatHistory({ messages: savedMessages, compactProcess = false, streamingMessage, entryIds, busy, streaming, isNew, forkingEntryId, highlightedEntryId, lastUserMsgRef, pendingScrollToUserRef, scrollContainer, handleRef, onDeleteMessage, deleteDisabled = false, ...messageProps }: Props) {
+export const ChatHistory = memo(function ChatHistory({ messages: savedMessages, compactProcess = false, streamingMessage, entryIds, busy, streaming, isNew, forkingEntryId, highlightedEntryId, lastUserMsgRef, pendingScrollToUserRef, scrollContainer, handleRef, onDeleteMessage, deleteDisabled = false, operations = [], commandActions, ...messageProps }: Props) {
   const { t } = useI18n();
   const messages = useMemo(() => compactProcess && streamingMessage ? [...savedMessages, streamingMessage] : savedMessages, [compactProcess, savedMessages, streamingMessage]);
   const streamingIndex = compactProcess && streamingMessage ? messages.length - 1 : -1;
@@ -56,8 +60,8 @@ export const ChatHistory = memo(function ChatHistory({ messages: savedMessages, 
   const list = useRef<VirtualListHandle>(null);
   const { rows, entryRows } = useMemo(() => {
     const plan = compactProcess ? buildCompactChatHistoryRows(messages, entryIds, busy || streaming, expanded, streamingIndex) : buildChatHistoryRows(messages, entryIds, busy || streaming, expanded);
-    return plan;
-  }, [messages, entryIds, busy, streaming, expanded, compactProcess, streamingIndex]);
+    return { ...plan, rows: insertCommandHistoryRows(plan.rows, messages, entryIds, operations) };
+  }, [messages, entryIds, busy, streaming, expanded, compactProcess, streamingIndex, operations]);
   const keys = useMemo(() => rows.map((row) => row.key), [rows]);
   const metadata = useMemo(() => {
     const toolResults = new Map<string, ToolResultMessage>();
@@ -98,6 +102,7 @@ export const ChatHistory = memo(function ChatHistory({ messages: savedMessages, 
   const pendingUserKey = pendingScrollToUserRef.current ? rows.find((row) => !row.process && row.index === metadata.lastUser)?.key : undefined;
   return <VirtualList keys={keys} pinnedKeys={pendingUserKey ? [pendingUserKey] : []} estimate={160} initialTail scrollContainer={scrollContainer} handleRef={list} renderItem={(_key, rowIndex) => {
     const row = rows[rowIndex];
+    if (row.operation) return commandActions ? <ChatCommandCard record={row.operation} actions={commandActions} /> : null;
     if (row.compactProcess) return <CompactProcessSummary group={row.compactProcess}
       onToggle={() => { setInspectCommand(null); toggle(row.key); }}
       onInspectCommand={(id) => { setInspectCommand(id); setExpanded((previous) => new Set(previous).add(row.key)); }} />;

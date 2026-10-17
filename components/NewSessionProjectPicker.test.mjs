@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import ts from "typescript";
+import { createJiti } from "jiti";
+const { persistentChatInputOptions } = await createJiti(import.meta.url).import("../lib/chat-command-input.ts");
 
 const picker = await readFile(new URL("./NewSessionProjectPicker.tsx", import.meta.url), "utf8");
 const launcher = await readFile(new URL("./NewSessionLauncher.tsx", import.meta.url), "utf8");
@@ -12,6 +15,45 @@ const navigation = await readFile(new URL("./sidebar/SidebarNavigation.tsx", imp
 const taskRow = await readFile(new URL("./sidebar/TaskRow.tsx", import.meta.url), "utf8");
 const backgrounds = await readFile(new URL("../app/theme-backgrounds.css", import.meta.url), "utf8");
 const sidebarCss = await readFile(new URL("./SessionSidebar.module.css", import.meta.url), "utf8");
+
+test("landing commands keep explicit follow-up and durable identity through the handoff without requiring a model", async () => {
+  const callbacks = picker.slice(picker.indexOf("  const handleLandingSend = useCallback"), picker.indexOf("  const modelsUnavailable"));
+  const calls = [];
+  const env = { useCallback: callback => callback, selectedProject: null, projectlessCwd: "F:/workspace", selectedModel: null, launchReady: false, systemPromptSelection: null,
+    createLaunchId: () => "launch-id", persistentChatInputOptions, savePendingPrompt: async record => calls.push(["saved", record]), onLaunch: request => calls.push(["launch", request]) };
+  const js = ts.transpileModule(callbacks, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  const send = new Function("env", `with(env) { ${js}; return handleLandingSend; }`)(env);
+  assert.equal(await send("/name 新任务", undefined, undefined, id => calls.push(["durable", id]), undefined, { afterPrompt: "随后提问" }), true);
+  assert.deepEqual(calls.map(call => call[0]), ["saved", "durable", "launch"]);
+  assert.equal(calls[0][1].draft.commandInput.afterPrompt, "随后提问");
+  assert.equal(calls[2][1].prompt.commandInput.submissionId, "launch-id");
+  assert.equal(calls[2][1].prompt.commandInput.afterPrompt, "随后提问");
+  assert.equal(calls[2][1].prompt.id, "launch-id");
+  assert.equal(await send("普通问题"), false);
+});
+
+test("initial command handoff forwards options and restores a failed send without an unhandled rejection", async () => {
+  const callbacks = chatWindow.slice(chatWindow.lastIndexOf("  useEffect(() => {", chatWindow.indexOf("    if (!isNew || !initialPrompt")), chatWindow.indexOf("  const [commandExecutionDialog"));
+  for (const outcome of [true, false, "reject"]) {
+    const sends = [], restored = [];
+    let submitted = 0;
+    const initialPrompt = { id: "launch-id", message: "/name task", commandInput: { submissionId: "launch-id", afterPrompt: "question" }, files: [] };
+    const env = { useEffect: effect => effect(), isNew: true, initialPrompt, sessionBusy: false, isAutoModelSelection: true, locallyClaimedInitialPromptRef: { current: null },
+      claimInitialPrompt: () => true, chatInputRef: { current: { restoreCommandDraft: draft => restored.push(draft) } }, persistentChatInputOptions,
+      handleSend: async (...args) => { sends.push(args); if (outcome === "reject") throw new Error("failed"); return outcome; }, onPromptSubmitted: () => { submitted++; } };
+    const js = ts.transpileModule(callbacks, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+    new Function("env", `with(env) { ${js} }`)(env);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(sends.length, 1);
+    assert.deepEqual(sends[0][5], initialPrompt.commandInput);
+    assert.equal(submitted, outcome === true ? 1 : 0);
+    if (outcome !== true) {
+      assert.equal(restored[0].commandInput.afterPrompt, "question");
+      assert.equal(restored[0].commandInput.submissionId, undefined);
+      assert.deepEqual(restored[0].retryOfPromptIds, ["launch-id"]);
+    }
+  }
+});
 
 test("new tasks start from one production composer with progressive context controls", () => {
   assert.match(shell, /const effectiveNewSessionCwd = newSessionCwd;/);
@@ -50,7 +92,7 @@ test("global new-session actions open the project-selectable launcher", () => {
 });
 
 test("new conversations default to projectless and keep workspace selection optional", () => {
-  assert.match(chatInput, /const accepted = await onSend\(/);
+  assert.match(chatInput, /const accepted = [\s\S]*?await onSend\(/);
   assert.match(chatInput, /clearSubmittedDraft\(\);[\s\S]*?if \(accepted === false\) \{ restoreSubmittedDraft\(\); return; \}/);
   assert.match(picker, /fetch\("\/api\/chat-workspace"/);
   assert.match(picker, /const \[selectedProject, setSelectedProject\] = useState<ProjectChoice \| null>\(null\)/);

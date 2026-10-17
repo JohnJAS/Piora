@@ -4,6 +4,7 @@ import { SessionControlStore } from "@/lib/session-control-store";
 import { resolveSessionPath } from "@/lib/session-reader";
 import { getRpcSession } from "@/lib/rpc-manager";
 import { resolvePromptMaterialReferences } from "@/lib/prompt-materials";
+import { commandOperationView } from "@/lib/chat-command-events";
 
 /** Read the durable send archive even when a prompt never reached model history. */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -12,13 +13,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const commands = store.loadCommands(id).filter((command) => command.source === "ui");
   if (!commands.length && !getRpcSession(id) && !await resolveSessionPath(id)) return NextResponse.json({ error: "会话不存在" }, { status: 404 });
   const url = new URL(request.url);
+  if (url.searchParams.get("view") === "operations") {
+    const operations = commands.filter(command => command.operation).reverse();
+    const offset = Math.max(0, Number.parseInt(url.searchParams.get("offset") ?? "0", 10) || 0);
+    return NextResponse.json({ items: operations.slice(offset, offset + 50).map(commandOperationView), nextOffset: offset + 50 < operations.length ? offset + 50 : null }, { headers: { "Cache-Control": "no-store" } });
+  }
   const commandId = url.searchParams.get("commandId");
   if (commandId) {
     const command = commands.find((item) => item.commandId === commandId);
     if (!command) return NextResponse.json({ error: "发送记录不存在" }, { status: 404 });
     try {
       const files = command.materials?.length ? resolvePromptMaterialReferences(command.materials).map((file) => ({ name: file.name, size: file.byteLength, text: readFileSync(file.path, "utf8"), kind: "file" as const })) : [];
-      return NextResponse.json({ value: command.content, images: (command.images ?? []).map(({ data, mimeType }) => ({ data, mimeType })), files }, { headers: { "Cache-Control": "no-store" } });
+      return NextResponse.json({ value: command.operation?.rawText ?? command.content, images: (command.images ?? []).map(({ data, mimeType }) => ({ data, mimeType })), files: [...files, ...(command.localFiles ?? []).map(file => ({ ...file, text: null }))], ...(command.operation?.inputOptions ? { commandInput: command.operation.inputOptions } : {}) }, { headers: { "Cache-Control": "no-store" } });
     } catch {
       return NextResponse.json({ error: "附件无法完整读取，未恢复残缺内容。原发送记录仍保留。" }, { status: 409 });
     }

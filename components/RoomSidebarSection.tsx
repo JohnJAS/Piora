@@ -1,266 +1,163 @@
 "use client";
-import { brandText } from "@/lib/branding";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getRoomMemberName, getRoomMemberSessionId, type CollaborationRoom } from "@/lib/room-types";
+import type { CollaborationRoom } from "@/lib/room-types";
+import type { TeamAgentRole } from "@/lib/team-types";
 import type { SessionInfo } from "@/lib/types";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
+import { DirectoryPicker } from "./DirectoryPicker";
+import { RoomAvatar } from "./RoomUi";
 import styles from "./RoomSidebarSection.module.css";
 
-type RoomsResponse = { rooms?: CollaborationRoom[]; room?: CollaborationRoom; error?: string };
+type RoomWithSummary = CollaborationRoom & { summary?: { lastMessage?: { content: string; author: string; seq: number }; phase?: string; pending?: boolean } };
+type AgentDraft = { name: string; role: TeamAgentRole };
+const initialAgents: AgentDraft[] = [{ name: "阿策", role: "coordinator" }, { name: "小研", role: "worker" }, { name: "小审", role: "reviewer" }];
+const basename = (path: string) => path.replace(/[\\/]+$/u, "").split(/[\\/]/u).at(-1) ?? path;
+const creationKey = "piora-room-creation-draft";
+const pinKey = "piora-room-pins";
 
-function sessionLabel(session: SessionInfo): string {
-  return session.name?.trim() || session.firstMessage?.trim().slice(0, 56) || session.id.slice(0, 8);
-}
-
-function sessionProject(session: SessionInfo): string {
-  return session.projectRoot ?? session.cwd;
-}
-
-export function RoomSidebarSection({
-  sessions,
-  selectedSessionId,
-  selectedRoomId,
-  initialRoomId,
-  refreshKey,
-  onSelectRoom,
-  onInitialRestoreDone,
-}: {
-  sessions: SessionInfo[];
-  selectedSessionId: string | null;
-  selectedRoomId: string | null;
-  activeProjectRoot?: string | null;
-  initialRoomId?: string | null;
-  refreshKey?: number;
-  onSelectRoom: (room: CollaborationRoom, isRestore?: boolean) => void;
-  onInitialRestoreDone?: () => void;
+export function RoomSidebarSection({ sessions, selectedSessionId, selectedRoomId, activeProjectRoot, initialRoomId, refreshKey, onSelectRoom, onInitialRestoreDone }: {
+  sessions: SessionInfo[]; selectedSessionId: string | null; selectedRoomId: string | null; activeProjectRoot?: string | null;
+  initialRoomId?: string | null; refreshKey?: number; onSelectRoom: (room: CollaborationRoom, isRestore?: boolean) => void; onInitialRestoreDone?: () => void;
 }) {
-  const [rooms, setRooms] = useState<CollaborationRoom[]>([]);
-  const [createOpen, setCreateOpen] = useState(false);
+  const { t } = useI18n();
+  const [rooms, setRooms] = useState<RoomWithSummary[]>([]);
+  const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [cwd, setCwd] = useState("");
+  const [template, setTemplate] = useState<"project" | "custom">("project");
+  const [agents, setAgents] = useState<AgentDraft[]>(initialAgents);
+  const [reuse, setReuse] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [picker, setPicker] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const restoredRef = useRef(false);
+  const [pins, setPins] = useState<string[]>([]);
+  const [, setReadVersion] = useState(0);
+  const creationId = useRef("");
   const dialogRef = useRef<HTMLElement>(null);
-  const nameInputRef = useRef<HTMLInputElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const restored = useRef(false);
+  useFocusTrap(dialogRef, open && !picker, { initialFocus: nameRef, onEscape: busy ? undefined : () => setOpen(false) });
 
-  useFocusTrap(dialogRef, createOpen, {
-    initialFocus: nameInputRef,
-    onEscape: busy ? undefined : () => setCreateOpen(false),
-  });
-
-  const loadRooms = useCallback(async () => {
+  const load = useCallback(async () => {
     const response = await fetch("/api/rooms", { cache: "no-store" });
-    const data = await response.json() as RoomsResponse;
-    if (!response.ok) throw new Error(data.error ?? `HTTP ${response.status}`);
-    setRooms(data.rooms ?? []);
-    setLoaded(true);
-    return data.rooms ?? [];
+    const body = await response.json();
+    if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : body.error?.message ?? `HTTP ${response.status}`);
+    return body.rooms as RoomWithSummary[] ?? [];
   }, []);
-
   useEffect(() => {
-    let cancelled = false;
-    const refresh = () => void loadRooms().catch((reason) => {
-      if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
-    });
+    let disposed = false;
+    const refresh = () => void load().then((next) => {
+      if (disposed) return;
+      setRooms(next);
+      if (initialRoomId && !restored.current) {
+        restored.current = true;
+        const room = next.find((candidate) => candidate.id === initialRoomId);
+        if (room) onSelectRoom(room, true);
+        onInitialRestoreDone?.();
+      }
+    }).catch((reason) => { if (!disposed) setError(String(reason)); });
     refresh();
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") refresh();
-    }, 5_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [loadRooms, refreshKey]);
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 5_000);
+    const read = () => setReadVersion((version) => version + 1);
+    window.addEventListener("piora:room-read", read);
+    try { const saved = JSON.parse(localStorage.getItem(pinKey) ?? "[]"); if (Array.isArray(saved)) setPins(saved.filter((id) => typeof id === "string")); } catch { /* Empty pin preferences. */ }
+    return () => { disposed = true; clearInterval(timer); window.removeEventListener("piora:room-read", read); };
+    // Sidebar callbacks are owned by the parent; a refresh must not reset its restore lifecycle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, refreshKey, initialRoomId]);
 
-  useEffect(() => {
-    if (restoredRef.current || !initialRoomId) return;
-    const target = rooms.find((room) => room.id === initialRoomId);
-    if (target) {
-      restoredRef.current = true;
-      onSelectRoom(target, true);
-      onInitialRestoreDone?.();
-      return;
-    }
-    if (loaded) {
-      restoredRef.current = true;
-      onInitialRestoreDone?.();
-    }
-  }, [initialRoomId, loaded, onInitialRestoreDone, onSelectRoom, rooms]);
-
-  const groupedSessions = useMemo(() => {
-    const result = new Map<string, SessionInfo[]>();
-    for (const session of sessions) {
-      const root = sessionProject(session);
-      const current = result.get(root) ?? [];
-      current.push(session);
-      result.set(root, current);
-    }
-    return [...result.entries()];
-  }, [sessions]);
-
+  const ordered = useMemo(() => [...rooms].sort((a, b) => Number(pins.includes(b.id)) - Number(pins.includes(a.id)) || b.updatedAt - a.updatedAt), [rooms, pins]);
   const openCreate = () => {
-    const currentRoom = rooms.find((room) => room.id === selectedRoomId);
-    const fallbackMember = currentRoom?.members.find((member) => member.memberId === currentRoom.coordination.coordinatorMemberId)
-      ?? currentRoom?.members[0];
-    const selectedSession = sessions.find((session) => session.id === selectedSessionId)
-      ?? sessions.find((session) => session.id === (fallbackMember ? getRoomMemberSessionId(fallbackMember) : undefined))
-      ?? sessions[0];
-    const creatorId = selectedSession?.id ?? (fallbackMember ? getRoomMemberSessionId(fallbackMember) : undefined);
-    setSelectedIds(new Set(creatorId ? [creatorId] : []));
-    setName("");
-    setDescription("");
-    setError(null);
-    setCreateOpen(true);
+    const selected = sessions.find((session) => session.id === selectedSessionId);
+    const project = activeProjectRoot ?? selected?.projectRoot ?? selected?.cwd ?? "";
+    let saved: { clientCreationId?: string; name?: string; description?: string; cwd?: string; template?: "project" | "custom"; agents?: AgentDraft[] } | undefined;
+    try { saved = JSON.parse(localStorage.getItem(creationKey) ?? "null") ?? undefined; } catch { /* Start a fresh form. */ }
+    creationId.current = saved?.clientCreationId ?? crypto.randomUUID();
+    setCwd(saved?.cwd ?? project); setName(saved?.name ?? (project ? `${basename(project)} 协作群` : "")); setDescription(saved?.description ?? "");
+    setTemplate(saved?.template ?? "project"); setAgents(saved?.agents ?? initialAgents.map((agent) => ({ ...agent })));
+    setSelectedIds(selected ? [selected.id] : []); setReuse(false); setError(null); setOpen(true);
   };
-
-  const toggleSession = (sessionId: string) => {
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (next.has(sessionId)) next.delete(sessionId);
-      else next.add(sessionId);
-      return next;
-    });
-  };
-
-  const createRoom = async () => {
-    const selected = sessions.filter((session) => selectedIds.has(session.id));
-    const currentRoom = rooms.find((room) => room.id === selectedRoomId);
-    const fallbackMember = currentRoom?.members.find((member) => member.memberId === currentRoom.coordination.coordinatorMemberId)
-      ?? currentRoom?.members[0];
-    const preferredCreator = selected.find((session) => session.id === selectedSessionId) ?? selected[0];
-    const creator = preferredCreator ? {
-      sessionId: preferredCreator.id,
-      sessionName: sessionLabel(preferredCreator),
-      cwd: preferredCreator.cwd,
-      projectRoot: sessionProject(preferredCreator),
-    } : fallbackMember ? {
-      sessionId: getRoomMemberSessionId(fallbackMember),
-      sessionName: getRoomMemberName(fallbackMember),
-      cwd: fallbackMember.binding.cwd ?? currentRoom?.projectRoot,
-      projectRoot: fallbackMember.binding.projectRoot ?? currentRoom?.projectRoot,
-    } : null;
-    if (!name.trim() || !creator?.cwd) return;
-    setBusy(true);
-    setError(null);
+  const edit = () => { creationId.current = crypto.randomUUID(); setError(null); };
+  const create = async () => {
+    if (busy) return;
+    setBusy(true); setError(null);
     try {
-      const response = await fetch("/api/rooms", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          description: description.trim(),
-          sessionId: creator.sessionId,
-          sessionName: creator.sessionName,
-          cwd: creator.cwd,
-          projectRoot: creator.projectRoot,
-          members: selected.filter((session) => session.id !== creator.sessionId).map((session) => ({
-            sessionId: session.id,
-            sessionName: sessionLabel(session),
-            cwd: session.cwd,
-            projectRoot: sessionProject(session),
-            role: "participant",
-          })),
-        }),
-      });
-      const data = await response.json() as RoomsResponse;
-      if (!response.ok || !data.room) throw new Error(data.error ?? `HTTP ${response.status}`);
-      const nextRooms = await loadRooms();
-      const created = nextRooms.find((room) => room.id === data.room?.id) ?? data.room;
-      setCreateOpen(false);
-      onSelectRoom(created);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setBusy(false);
-    }
+      let project = cwd;
+      if (!project) {
+        const response = await fetch("/api/default-cwd", { method: "POST" });
+        const result = await response.json();
+        if (!response.ok || !result.cwd) throw new Error(result.error ?? t("roomUx.invalidProject"));
+        project = result.cwd; setCwd(project);
+      }
+      const title = name.trim() || `${basename(project)} 协作群`;
+      const managed = { clientCreationId: creationId.current, name: title, description, cwd: project, template, ...(template === "custom" ? { agents } : {}) };
+      // Save the same creation identity before provisioning; retry resumes partial progress.
+      try { localStorage.setItem(creationKey, JSON.stringify({ ...managed, agents })); } catch { /* Server receipt still provides idempotency. */ }
+      const selected = sessions.filter((session) => selectedIds.includes(session.id));
+      const creator = selected.find((session) => session.id === selectedSessionId) ?? selected[0];
+      const body = reuse && creator ? { name: title, description, cwd: project, sessionId: creator.id, sessionName: creator.name ?? creator.id.slice(0, 8),
+        members: selected.filter((session) => session.id !== creator.id).map((session) => ({ sessionId: session.id, sessionName: session.name ?? session.id.slice(0, 8), cwd: session.cwd, projectRoot: session.projectRoot, role: "participant" })) } : managed;
+      const response = await fetch("/api/rooms", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const result = await response.json();
+      if (!response.ok || !result.room) throw new Error(typeof result.error === "string" ? result.error : result.error?.message ?? `HTTP ${response.status}`);
+      try { localStorage.removeItem(creationKey); } catch { /* Form will still close. */ }
+      setOpen(false); setRooms((previous) => [result.room, ...previous.filter((room) => room.id !== result.room.id)]); onSelectRoom(result.room);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); void load().then(setRooms).catch(() => {}); }
+    finally { setBusy(false); }
+  };
+  const validAgents = agents.length > 0 && agents.length <= 12 && agents.every((agent) => agent.name.trim()) && agents.filter((agent) => agent.role === "coordinator").length === 1;
+  const roleLabel = (role: TeamAgentRole) => t(`roomUx.${role === "coordinator" ? "lead" : role}`);
+  const togglePin = (id: string) => {
+    const next = pins.includes(id) ? pins.filter((item) => item !== id) : [...pins, id];
+    setPins(next); try { localStorage.setItem(pinKey, JSON.stringify(next)); } catch { /* Session-only pinning. */ }
   };
 
-  return (
-    <section className={styles.section} aria-label="群聊">
-      <div className={styles.heading}>
-        <span>群聊</span>
-        <button type="button" className={styles.addButton} onClick={openCreate} aria-label="新建群聊" title="新建群聊">
-          <AliIcon name="plus" size={13} />
-        </button>
-      </div>
-      <div className={styles.list}>
-        {rooms.length === 0 ? <div className={styles.empty}>创建一个多会话群聊</div> : rooms.map((room) => (
-          <button
-            key={room.id}
-            type="button"
-            className={`${styles.roomRow}${room.id === selectedRoomId ? ` ${styles.selected}` : ""}`}
-            onClick={() => onSelectRoom(room)}
-          >
-              <span className={styles.roomIcon} aria-hidden="true"><AliIcon name="messages" size={14} /></span>
-            <span className={styles.roomCopy}>
-              <strong>{room.name}</strong>
-              <small>{room.members.length} 个智能体 · {room.workspace.label}</small>
-            </span>
+  return <section className={styles.section} aria-label={t("roomUx.groups")}>
+    <div className={styles.heading}><span>{t("roomUx.groups")}</span><button type="button" className={styles.addButton} onClick={openCreate} aria-label={t("roomUx.create")} title={t("roomUx.create")}><AliIcon name="plus" size={16} /></button></div>
+    <div className={styles.list}>
+      {!rooms.length ? <button type="button" className={styles.empty} onClick={openCreate}>{t("roomUx.noGroups")}<AliIcon name="plus" size={13} /></button> : ordered.map((room) => {
+        const summary = room.summary; const attention = ["waiting_user", "interrupted", "failed"].includes(summary?.phase ?? "");
+        let unread = false;
+        try { unread = room.id !== selectedRoomId && (summary?.lastMessage?.seq ?? 0) > Number(localStorage.getItem(`pi-room-read:${room.id}`) ?? 0); } catch { /* No persistent unread state. */ }
+        return <div key={room.id} className={`${styles.roomRow}${room.id === selectedRoomId ? ` ${styles.selected}` : ""}`}>
+          <button type="button" className={styles.roomMain} onClick={() => onSelectRoom(room)}>
+            <span className={styles.roomIcon}><AliIcon name="group-chat" size={19} />{unread ? <i className={styles.unreadDot} aria-label={t("roomUx.unread")} /> : null}</span>
+            <span className={styles.roomCopy}><strong>{room.name}</strong><small>{summary?.pending ? t("roomUx.preparing") : attention ? `${t("roomUx.attention")} · ${t(`roomUx.phase.${summary?.phase}`)}` : summary?.lastMessage ? `${summary.lastMessage.author}：${summary.lastMessage.content.replace(/\s+/gu, " ")}` : t("roomUx.noPreview")}</small></span>
+            {attention ? <i className={styles.attentionDot} /> : summary?.phase ? <span className={styles.workingDot} /> : null}
           </button>
-        ))}
-      </div>
-      {createOpen ? (
-        <div className={styles.backdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setCreateOpen(false); }}>
-          <section ref={dialogRef} className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="room-create-title">
-            <div className={styles.dialogHeader}>
-              <div>
-                <h2 id="room-create-title">新建群聊</h2>
-                <p>只需填写名称即可创建；其他成员和说明都可以稍后设置。</p>
-              </div>
-              <button type="button" className={styles.closeButton} onClick={() => setCreateOpen(false)} aria-label="关闭" disabled={busy}>
-                <AliIcon name="close" size={15} />
-              </button>
+          <button type="button" className={`${styles.pinButton}${pins.includes(room.id) ? ` ${styles.pinned}` : ""}`} aria-label={`${t(pins.includes(room.id) ? "roomUx.unpin" : "roomUx.pin")} ${room.name}`} onClick={() => togglePin(room.id)}><AliIcon name="bookmark" size={12} /></button>
+        </div>;
+      })}
+    </div>
+    {open ? <div className={styles.backdrop} onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setOpen(false); }}>
+      <section ref={dialogRef} className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="room-create-title">
+        <header className={styles.dialogHeader}><div><h2 id="room-create-title">{t("roomUx.create")}</h2><p>{t("roomUx.createHint")}</p></div><button type="button" className={styles.closeButton} aria-label={t("roomUx.close")} disabled={busy} onClick={() => setOpen(false)}><AliIcon name="close" size={20} /></button></header>
+        <div className={styles.dialogBody}>
+          <div className={styles.templates} role="group" aria-label={t("roomUx.projectTeam")}>{(["project", "custom"] as const).map((value) => <button key={value} type="button" aria-pressed={template === value} disabled={busy} onClick={() => { edit(); setTemplate(value); if (value === "project") setAgents(initialAgents.map((agent) => ({ ...agent }))); }}><span className={styles.templateIcon}><AliIcon name={value === "project" ? "messages" : "plus"} size={23} /></span><span><strong>{t(value === "project" ? "roomUx.projectTeam" : "roomUx.custom")}</strong><small>{t(value === "project" ? "roomUx.projectTeamHint" : "roomUx.customHint")}</small></span><i /></button>)}</div>
+          <div className={styles.createColumns}>
+            <div className={styles.createFields}>
+              <label className={styles.field}><span>{t("roomUx.name")}</span><input ref={nameRef} value={name} disabled={busy} maxLength={120} placeholder="Piora 协作群" onChange={(event) => { edit(); setName(event.target.value); }} /></label>
+              <div className={styles.field}><span>{t("roomUx.project")}</span><button type="button" className={styles.projectPicker} disabled={busy} onClick={() => setPicker(true)}><AliIcon name="folder-open" size={18} /><span>{cwd ? basename(cwd) : t("roomUx.project")}</span><AliIcon name="chevron-right" style={{ transform: "rotate(90deg)" }} size={15} /></button><small>{cwd || t("roomUx.autoSessions")}</small></div>
+              <label className={styles.field}><span>{t("roomUx.description")}</span><textarea value={description} disabled={busy} rows={4} maxLength={2000} placeholder={t("roomUx.descriptionHint")} onChange={(event) => { edit(); setDescription(event.target.value); }} /><small className={styles.counter}>{description.length}/2000</small></label>
+              <details className={styles.advancedCreate}><summary>{t("roomUx.advanced")}<AliIcon name="chevron-right" style={{ transform: "rotate(90deg)" }} size={14} /></summary><label className={styles.reuseOption}><input type="checkbox" checked={reuse} disabled={busy || !sessions.length} onChange={(event) => { edit(); setReuse(event.target.checked); }} />{t("roomUx.reuse")}</label>{reuse ? <div className={styles.existingSessions}>{sessions.map((session) => <label key={session.id}><input type="checkbox" checked={selectedIds.includes(session.id)} disabled={busy} onChange={() => { edit(); setSelectedIds((previous) => previous.includes(session.id) ? previous.filter((id) => id !== session.id) : [...previous, session.id]); }} /><span>{session.name || session.firstMessage?.slice(0, 40) || session.id.slice(0, 8)}<small>{session.cwd}</small></span></label>)}</div> : null}</details>
             </div>
-            <div className={styles.dialogBody}>
-              <label className={styles.field}>
-                <span>群名称</span>
-                <input ref={nameInputRef} value={name} onChange={(event) => setName(event.target.value)} placeholder={brandText("例如：Piora 重构讨论组")} maxLength={120} />
-              </label>
-              <details className={styles.advancedCreate}>
-                <summary>更多设置（可选）<small>当前 {selectedIds.size} 个智能体</small></summary>
-                <label className={styles.field}>
-                  <span>团队说明</span>
-                  <textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="团队要完成什么，以及最终交付标准" rows={3} maxLength={2_000} />
-                </label>
-                <div className={styles.memberHeader}>
-                  <span>初始智能体</span>
-                  <small>已选择 {selectedIds.size} 个会话</small>
-                </div>
-                <div className={styles.members}>
-                  {groupedSessions.map(([root, projectSessions]) => (
-                    <section key={root} className={styles.projectGroup}>
-                      <div className={styles.projectHeading}><AliIcon name="folder" size={13} /><span>{root}</span></div>
-                      {projectSessions.map((session) => (
-                        <label key={session.id} className={styles.memberRow}>
-                          <input type="checkbox" checked={selectedIds.has(session.id)} onChange={() => toggleSession(session.id)} />
-                          <span className={styles.avatar}>{sessionLabel(session).slice(0, 1).toLocaleUpperCase()}</span>
-                          <span className={styles.memberCopy}>
-                            <strong>{sessionLabel(session)}</strong>
-                            <small>{session.worktreeBranch ?? session.cwd}</small>
-                          </span>
-                        </label>
-                      ))}
-                    </section>
-                  ))}
-                </div>
-              </details>
-              {error ? <p className={styles.error} role="alert">{error}</p> : null}
-            </div>
-            <div className={styles.dialogActions}>
-              <button type="button" onClick={() => setCreateOpen(false)} disabled={busy}>取消</button>
-              <button type="button" className={styles.primary} onClick={() => { void createRoom(); }} disabled={busy || !name.trim() || selectedIds.size === 0}>
-                {busy ? "创建中…" : "创建群聊"}
-              </button>
-            </div>
-          </section>
+            <section className={styles.createMembers}><div className={styles.memberHeading}><h3>{t("roomUx.initialMembers")}</h3><span>{agents.length}</span></div>{agents.map((agent, index) => <div key={index} className={styles.agentRow}>
+              <RoomAvatar name={agent.name} role={agent.role} />
+              <div className={styles.agentCopy}>{template === "custom" ? <><input aria-label={`${t("roomUx.memberName")} ${index + 1}`} value={agent.name} maxLength={120} disabled={busy} onChange={(event) => { edit(); setAgents((previous) => previous.map((item, i) => i === index ? { ...item, name: event.target.value } : item)); }} /><select aria-label={`${t("roomUx.role")} ${index + 1}`} value={agent.role} disabled={busy} onChange={(event) => { edit(); const role = event.target.value as TeamAgentRole; setAgents((previous) => previous.map((item, i) => i === index ? { ...item, role } : role === "coordinator" && item.role === "coordinator" ? { ...item, role: "worker" } : item)); }}>{(["coordinator", "worker", "reviewer", "planner", "participant"] as const).map((role) => <option key={role} value={role}>{roleLabel(role)}</option>)}</select></> : <><div><strong>{agent.name}</strong><span className={styles.roleBadge}>{roleLabel(agent.role)}</span></div><small>{t(`roomUx.${agent.role === "coordinator" ? "leadHint" : agent.role === "reviewer" ? "reviewerHint" : "workerHint"}`)}</small></>}</div>
+              {template === "custom" ? <button type="button" className={styles.closeButton} disabled={busy || agent.role === "coordinator"} aria-label={`${t("roomUx.removeMember")} ${agent.name}`} onClick={() => { edit(); setAgents((previous) => previous.filter((_, i) => i !== index)); }}><AliIcon name="close" size={15} /></button> : null}
+            </div>)}<button type="button" className={styles.addMember} disabled={busy || agents.length >= 12} onClick={() => { edit(); setTemplate("custom"); setAgents((previous) => [...previous, { name: `${t("roomUx.participant")}${previous.length + 1}`, role: "worker" }]); }}><AliIcon name="plus" size={19} />{t("roomUx.addMember")}</button><p className={styles.memberHint}><AliIcon name="info" size={14} />{t("roomUx.autoSessions")}</p>{!validAgents ? <p className={styles.error}>{t("roomUx.coordinatorRequired")}</p> : null}</section>
+          </div>
+          {busy ? <p className={styles.creating} role="status"><span />{t("roomUx.creating")}</p> : null}{error ? <div className={styles.error} role="alert">{error}</div> : null}
         </div>
-      ) : null}
-      {error && !createOpen ? <div className={styles.inlineError}>{error}</div> : null}
-    </section>
-  );
+        <footer className={styles.dialogActions}><span><AliIcon name="setting" size={17} />{t("roomUx.inheritModel")}</span><button type="button" disabled={busy} onClick={() => setOpen(false)}>{t("roomUx.cancel")}</button><button type="button" className={styles.primary} disabled={busy || !validAgents || (reuse && !selectedIds.length)} onClick={() => void create()}>{t(busy ? "roomUx.creating" : error ? "roomUx.retryCreate" : "roomUx.createGroup")}</button></footer>
+      </section>
+    </div> : null}
+    {picker ? <DirectoryPicker onCancel={() => setPicker(false)} onSelect={(path) => { edit(); setCwd(path); if (!name.trim()) setName(`${basename(path)} 协作群`); setPicker(false); }} /> : null}
+    {error && !open ? <div className={styles.inlineError}>{error}</div> : null}
+  </section>;
 }

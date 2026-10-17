@@ -1,12 +1,14 @@
 import type { AgentMessage, AssistantMessage, AssistantContentBlock } from "./types";
 import { countToolCallBlocks, hasAssistantNotice, getDisplayableAssistantBlocks, hasFileMutationBlocks, splitFinalAssistantBlocks } from "./message-display";
 import { isCommandToolName } from "./command-execution";
+import type { ChatCommandView } from "./chat-command-types";
 
 export function isChatTurnAnchor(message: AgentMessage): boolean {
   return message.role === "user" || message.role === "custom" && message.customType === "compaction";
 }
 
 export interface ChatHistoryRow {
+  operation?: ChatCommandView;
   key: string;
   index: number;
   message?: AgentMessage;
@@ -84,6 +86,18 @@ export function buildChatHistoryRows(messages: AgentMessage[], entryIds: string[
     start = end;
   }
   return { rows, entryRows };
+}
+
+export function insertCommandHistoryRows(rows: ChatHistoryRow[], messages: AgentMessage[], entryIds: string[], operations: ChatCommandView[]): ChatHistoryRow[] {
+  const combined = [...rows];
+  for (const operation of operations.filter(record => record.operation || record.local || ["failed", "cancelled", "expired", "interrupted"].includes(record.status))) {
+    const anchor = operation.operation?.anchorEntryId;
+    const anchorIndex = anchor ? entryIds.indexOf(anchor) : -1;
+    const followingIndex = messages.findIndex(message => (message.timestamp ?? 0) > operation.acceptedAt);
+    const index = anchorIndex >= 0 ? anchorIndex + .5 : followingIndex < 0 ? messages.length + .5 : followingIndex - .5;
+    combined.push({ key: `operation:${operation.commandId}`, index, operation });
+  }
+  return combined.sort((left, right) => left.index - right.index || (left.operation?.acceptedAt ?? 0) - (right.operation?.acceptedAt ?? 0));
 }
 
 export function messageFingerprint(message: AgentMessage, entryId?: string): string {

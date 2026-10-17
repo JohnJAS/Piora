@@ -2,10 +2,11 @@ import type { UserMessage } from "./types";
 import { getMessageImageSource, type VisionRetryPayload } from "./message-images";
 
 /** Restore deferred text before resending, and keep both Pi and UI image formats. */
-export async function prepareMessageRetry(message: UserMessage, loadText: () => Promise<string>): Promise<VisionRetryPayload & { files?: import("./draft-store").ChatDraftFile[]; retryOfPromptIds?: string[] }> {
+export async function prepareMessageRetry(message: UserMessage, loadText: () => Promise<string>): Promise<VisionRetryPayload & { files?: import("./draft-store").ChatDraftFile[]; retryOfPromptIds?: string[]; commandInput?: import("./chat-command-types").ChatInputOptions }> {
   if (message.recoveryDraft) {
     const draft = message.recoveryDraft;
     return { message: draft.value, files: draft.files, images: draft.images.map((image) => ({ ...image, previewUrl: `data:${image.mimeType};base64,${image.data}` })),
+      ...(draft.commandInput ? { commandInput: draft.commandInput } : {}),
       ...(message.sendError && message.clientPromptId ? { retryOfPromptIds: [...new Set([message.clientPromptId, ...(draft.retryOfPromptIds ?? [])])] } : {}),
     };
   }
@@ -19,5 +20,5 @@ export async function prepareMessageRetry(message: UserMessage, loadText: () => 
     return { data: source.data, mimeType, previewUrl: `data:${mimeType};base64,${source.data}` };
   });
   if (!text.trim() && !images.length) throw new Error("原消息没有可重试的内容。");
-  return { message: text, ...(images.length ? { images } : {}) };
+  return { message: text, ...(images.length ? { images } : {}), ...(text.trimStart().startsWith("/") ? { commandInput: { inputMode: "text" as const } } : {}) };
 }

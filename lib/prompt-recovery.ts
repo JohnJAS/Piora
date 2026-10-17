@@ -1,5 +1,6 @@
 import type { ChatDraft } from "./draft-store";
 import type { AgentMessage, UserMessage } from "./types";
+export const PROMPT_RECOVERY_CONFIRMED_EVENT = "piora-prompt-recovery-confirmed";
 
 export interface PendingPrompt {
   id: string;
@@ -65,6 +66,7 @@ export async function confirmPendingPrompts(ids: string[]): Promise<void> {
     transaction.oncomplete = () => resolve();
     transaction.onabort = () => reject(transaction.error);
   });
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PROMPT_RECOVERY_CONFIRMED_EVENT, { detail: ids }));
 }
 
 /** A matching receipt ID, never matching text, is proof this exact send is durable. */
@@ -81,7 +83,7 @@ export function mergePendingPrompts(messages: AgentMessage[], entryIds: string[]
       receipts.push(id);
     }
   }
-  const missing = pending.filter((record) => !displayed.has(record.id) && !confirmed.has(record.id)).sort((a, b) => (a.message.timestamp ?? Infinity) - (b.message.timestamp ?? Infinity));
+  const missing = pending.filter((record) => !record.message.commandSubmission && !displayed.has(record.id) && !confirmed.has(record.id)).sort((a, b) => (a.message.timestamp ?? Infinity) - (b.message.timestamp ?? Infinity));
   const mergedMessages: AgentMessage[] = [];
   const mergedEntryIds: string[] = [];
   let next = 0;

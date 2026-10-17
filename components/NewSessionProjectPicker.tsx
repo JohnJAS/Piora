@@ -25,6 +25,9 @@ import { NewSessionLauncher } from "./NewSessionLauncher";
 import type { NewSessionLaunch } from "./new-session-types";
 import styles from "./NewSessionProjectPicker.module.css";
 import { SystemPromptSelector } from "./SystemPromptSelector";
+import { savePendingPrompt } from "@/lib/prompt-recovery";
+import type { ChatInputOptions } from "@/lib/chat-command-types";
+import { persistentChatInputOptions } from "@/lib/chat-command-input";
 
 interface ProjectChoice {
   root: string;
@@ -271,25 +274,39 @@ export function NewSessionProjectPicker({
     }
   }, [validateAndChooseProject]);
 
-  const handleLandingSend = useCallback((
+  const handleLandingSend = useCallback(async (
     message: string,
     images?: AttachedImage[],
     files?: AttachedFile[],
-  ): false | void => {
+    onDurable?: (clientPromptId?: string) => void,
+    retryOfPromptIds?: string[],
+    commandInput?: ChatInputOptions,
+  ): Promise<boolean> => {
     const cwd = selectedProject?.cwd ?? projectlessCwd;
-    if (!cwd || !selectedModel || !launchReady) return false;
+    const commandSubmission = commandInput?.inputMode !== "text" && message.trimStart().startsWith("/");
+    if (!cwd || !commandSubmission && (!selectedModel || !launchReady)) return false;
+    const id = createLaunchId();
+    const shell = !images?.length && !files?.length && message.trimStart().startsWith("!");
+    if (!shell) {
+      const draft = { value: message, images: (images ?? []).map(({ data, mimeType }) => ({ data, mimeType })), files: (files ?? []).map(file => ({ ...file })), commandInput: persistentChatInputOptions(commandInput), ...(retryOfPromptIds?.length ? { retryOfPromptIds } : {}) };
+      await savePendingPrompt({ id, scope: `new:${cwd}`, draft, message: { role: "user", content: message, timestamp: Date.now(), clientPromptId: id, ...(commandSubmission ? { commandSubmission: true } : {}), recoveryDraft: draft } });
+      onDurable?.(id);
+    }
     onLaunch({
       cwd,
       projectRoot: selectedProject?.root ?? null,
-      model: selectedModel,
+      model: selectedModel ?? undefined,
       prompt: {
-        id: createLaunchId(),
+        id,
         message,
         images,
         files,
         systemPromptSelection,
+        commandInput: { ...persistentChatInputOptions(commandInput), ...(!shell ? { submissionId: id } : {}) },
+        retryOfPromptIds,
       },
     });
+    return true;
   }, [launchReady, onLaunch, projectlessCwd, selectedModel, selectedProject, systemPromptSelection]);
 
   const modelsUnavailable = !modelsLoading && models.length === 0;

@@ -30,6 +30,7 @@ import { deviceFileListScript, deviceFileStatScript, parseDeviceFileListing, quo
 import { decodeDeviceText, encodeDeviceText, MAX_DEVICE_TEXT_BYTES, type DeviceTextEncoding, type DeviceTextReadEncoding, type WritableDeviceNewline } from "./device-text";
 import { MAX_DEVICE_TRANSFER_BYTES, deviceTransferTimeoutMs } from "./device-transfer-limits";
 import { assertUnredirectedPath } from "./runtime/path-safety";
+import { withHdcLocalPath } from "./runtime/hdc-local-path";
 import { validateTcpDeviceAddress } from "./tcp-device";
 import { openHosScrcpyVideo } from "./hos-scrcpy";
 import type {
@@ -438,6 +439,10 @@ export class HdcBackend implements HarmonyAutomationBackend {
   }
 
   private async run(args: readonly string[], operation: string, signal?: AbortSignal, timeoutMs?: number) {
+    return await withHdcLocalPath({ args, signal, execute: adapted => this.runDirect(adapted, operation, signal, timeoutMs) });
+  }
+
+  private async runDirect(args: readonly string[], operation: string, signal?: AbortSignal, timeoutMs?: number) {
     const result = await this.execute({
       executable: this.hdcPath,
       args: protectSandboxShell(args),
@@ -451,13 +456,15 @@ export class HdcBackend implements HarmonyAutomationBackend {
     // false success. An empty target list is the one expected bracketed status.
     const output = Buffer.concat([result.stdout, result.stderr]).toString("utf8").replace(/\0/g, "");
     const channelNotReady = args[0] === "-t" && isHdcChannelNotReadyResponse(output);
+    const localInput = args[2] === "install" || (args[2] === "file" && args[3] === "send");
+    const localFileUnavailable = localInput && /\[Fail\]\s*Error opening file:|open path:[^\r\n]*error:no such file or directory/i.test(output);
     if (channelNotReady) {
       this.deviceInfoBySerial.delete(args[1]); this.capabilitiesBySerial.delete(args[1]);
     }
     if (operation !== "list_devices" && operation !== "list_devices_legacy"
       && (channelNotReady || /(?:^|\r?\n)\s*\[(?:Fail|Error|E\d{3,})\]/i.test(output))) {
       throw new HarmonyError("COMMAND_FAILED", "HDC rejected the device command", {
-        details: { operation, ...(channelNotReady ? { reason: "hdc-channel-not-ready" } : {}) },
+        details: { operation, ...(channelNotReady ? { reason: "hdc-channel-not-ready" } : localFileUnavailable ? { reason: "local-file-unavailable" } : {}) },
         retryable: true,
       });
     }

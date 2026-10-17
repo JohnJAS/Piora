@@ -1,4 +1,6 @@
 import { brandText } from "../../branding";
+import { roomUxZh } from "./room-ux";
+import { chatCommandsZh } from "./chat-commands";
 import { nativeMcpZh } from "./native-mcp";
 import { modelSamplingZh } from "./model-sampling";
 import { skillSourcesZh } from "./skill-sources";
@@ -12,6 +14,8 @@ export const zhCNLocale: LocalePlugin = {
   id: "zh-CN",
   label: "简体中文",
   messages: {
+    ...roomUxZh,
+    ...chatCommandsZh,
     ...nativeMcpZh,
     ...modelSamplingZh,
     ...skillSourcesZh,

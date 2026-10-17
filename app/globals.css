@@ -3705,6 +3705,21 @@ select:focus-visible,
   text-align: center;
 }
 
+.chat-composer-footer { position: relative; }
+.chat-composer-footer .session-stats-control,
+.chat-composer-footer .context-usage-control { position: static; }
+.chat-composer-footer .session-stats-tooltip,
+.chat-composer-footer .context-usage-tooltip {
+  left: auto;
+  right: 0;
+  width: min(310px, 100%);
+  transform: translateY(4px);
+}
+.chat-composer-footer .session-stats-control:hover .session-stats-tooltip,
+.chat-composer-footer .session-stats-control:focus-within .session-stats-tooltip,
+.chat-composer-footer .context-usage-control:hover .context-usage-tooltip,
+.chat-composer-footer .context-usage-control:focus-within .context-usage-tooltip { transform: translateY(0); }
+
 .context-usage-control:hover .context-usage-tooltip,
 .context-usage-control:focus-within .context-usage-tooltip {
   opacity: 1;

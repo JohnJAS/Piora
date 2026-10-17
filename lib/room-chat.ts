@@ -13,11 +13,11 @@ const DEFAULT_ROOM_AUTO_ROUNDS = 6;
 const MAX_ROOM_AUTO_ROUNDS = 8;
 
 export interface RoomChatDispatchResult {
-  dispatched: Array<{ sessionId: string; behavior: "prompt" | "next_turn"; commandId: string; status: string }>;
+  dispatched: Array<{ sessionId: string; behavior: "prompt" | "next_turn" | "steer"; commandId: string; status: string }>;
   skipped: Array<{ sessionId: string; reason: string; code?: string }>;
 }
 
-function groupChatPrompt(room: CollaborationRoom, member: RoomMember, input: { messageId: string; content: string; authorName?: string; authorSessionId?: string; replyTo?: string; correlationId?: string; forwardDepth?: number; autoRound?: number; maxAutoRounds?: number }): string {
+function groupChatPrompt(room: CollaborationRoom, member: RoomMember, input: { messageId: string; content: string; authorName?: string; authorSessionId?: string; replyTo?: string; correlationId?: string; forwardDepth?: number; autoRound?: number; maxAutoRounds?: number; intake?: boolean }): string {
   const coordinator = room.members.find((candidate) => candidate.memberId === room.coordination.coordinatorMemberId);
   const coordinatorName = coordinator ? getRoomMemberName(coordinator) : "协调者";
   const isCoordinator = member.memberId === room.coordination.coordinatorMemberId;
@@ -38,7 +38,13 @@ function groupChatPrompt(room: CollaborationRoom, member: RoomMember, input: { m
     "Respond to the group, not only to your private session: use the piora_room tool with action send_shared, this exact room ID, and replyTo set to the Message ID above.",
     "Keep the shared reply concise, include replyTo/correlation context when replying, and do not repeat a reply for the same message ID.",
     "Do not automatically rebroadcast another Agent's shared reply; only respond when explicitly mentioned or routed by the Coordinator.",
-    ...(isCoordinator ? [
+    ...(input.intake ? [
+      "This is the unified group intake. Answer simple questions directly with send_shared. Read relevant context first; do not modify project files during intake.",
+      "When the request requires actual work, delegate through piora_room action start_run, with this roomId, replyTo set to the Message ID above, and content describing the user's exact objective and constraints. Do not use legacy @name messages to execute work outside TeamRun.",
+      "If the user asks for a plan or discussion only, preserve that boundary in the objective. Do not silently expand scope.",
+      "After start_run succeeds, acknowledge once and finish this intake turn; the Team runtime owns execution, reviews and the final delivery.",
+      "For a group-wide request for opinions, give at most one substantive answer without @mentioning other members or creating a reply chain.",
+    ] : isCoordinator ? [
       "You are the runtime scheduler for this group. Decide which Agent should act next and do not wake a dependent Agent before its prerequisite result arrives.",
       "To actually invoke an Agent, send a separate shared message beginning with that Agent's exact @name. Merely describing who should work does not dispatch anything.",
       "Each delegation message must contain exactly one @name anywhere in its content. Send another message for another Agent; refer to prerequisites without typing their @name.",
@@ -71,18 +77,17 @@ function relayRoomReply(
   commandId: string,
   initialStatus: SessionCommandStatus,
 ): void {
-  const startedAt = Date.now();
   let settled = false;
   let unsubscribe = () => {};
 
-  const finish = (status: "completed" | "error", detail?: string) => {
+  const finish = (status: "completed" | "error", detail?: string, promptRunId?: string) => {
     if (settled) return;
     settled = true;
     unsubscribe();
     if (status === "completed") {
       const alreadyShared = listRoomMessages(room.id).some((message) => (
         message.author.id === member.sessionId
-        && (message.replyTo === messageId || message.createdAt >= startedAt)
+        && message.replyTo === messageId
       ));
       if (!alreadyShared) {
         const content = getRpcSession(member.sessionId)?.inner.getLastAssistantText()?.trim();
@@ -93,6 +98,8 @@ function relayRoomReply(
             authorName: member.name,
             content,
             replyTo: messageId,
+            correlationId: `room-command:${commandId}:reply`,
+            promptRunId,
             ...deriveRoomReplyRoutingMetadata(room.id, messageId),
           });
           void dispatchExplicitRoomMentions(room.id, reply, router).catch((error) => {
@@ -106,12 +113,24 @@ function relayRoomReply(
         }
       }
     }
+    if (status === "error") {
+      // Presence disappears on refresh. Keep an actionable failure in the same
+      // durable conversation as the original request, including intake failures.
+      const correlationId = `room-command:${commandId}:error`;
+      if (!listRoomMessages(room.id).some((message) => message.correlationId === correlationId)) {
+        appendRoomMessage(room.id, {
+          authorKind: "system", authorId: "piora", authorName: "Piora",
+          content: `${member.name} 处理消息失败：${(detail || "Agent 处理失败").slice(0, 4000)}\n\n处理上述问题后，可重新发送原请求。`,
+          replyTo: messageId, correlationId,
+        });
+      }
+    }
     emitRoomPresence(room.id, { sessionId: member.sessionId, messageId, status, detail });
   };
 
   const handleEvent = (event: SessionCommandEvent) => {
     if (event.commandId !== commandId) return;
-    if (event.type === "command_completed") finish("completed");
+    if (event.type === "command_completed") finish("completed", undefined, event.runId);
     else if (["command_failed", "command_cancelled", "command_expired", "command_interrupted"].includes(event.type)) {
       finish("error", event.errorMessage || "Agent 处理失败");
     }
@@ -122,7 +141,7 @@ function relayRoomReply(
   else if (isTerminalStatus(initialStatus)) finish("error", "Agent 处理失败");
   else {
     void router.getCommand(commandId).then((command) => {
-      if (command.status === "completed") finish("completed");
+      if (command.status === "completed") finish("completed", undefined, command.runId);
       else if (isTerminalStatus(command.status)) finish("error", command.errorMessage || "Agent 处理失败");
     }).catch(() => {
       // The event subscription remains authoritative if the status snapshot races persistence.
@@ -132,7 +151,7 @@ function relayRoomReply(
 
 export async function dispatchRoomChat(
   roomId: string,
-  input: { messageId: string; content: string; authorName?: string; authorSessionId?: string; targetSessionIds?: string[]; attempt?: number; replyTo?: string; correlationId?: string; forwardDepth?: number; autoRound?: number; maxAutoRounds?: number; router?: SessionMessageRouter },
+  input: { messageId: string; content: string; authorName?: string; authorSessionId?: string; targetSessionIds?: string[]; attempt?: number; replyTo?: string; correlationId?: string; forwardDepth?: number; autoRound?: number; maxAutoRounds?: number; router?: SessionMessageRouter; intake?: boolean; delivery?: "next_turn" | "steer" },
 ): Promise<RoomChatDispatchResult> {
   const room = getRoom(roomId);
   const requested = new Set(input.targetSessionIds?.filter(Boolean));
@@ -155,7 +174,7 @@ export async function dispatchRoomChat(
   const maxConcurrency = Math.max(1, Math.min(16, room.coordination.maxConcurrency));
   // The legacy `{ type: behavior }` command shape is normalized by the Router;
   // new Room deliveries are always queued as next_turn commands.
-  const behavior = "next_turn" as const;
+  const behavior = input.delivery ?? "next_turn";
   for (let index = 0; index < targets.length; index += maxConcurrency) {
     const batch = targets.slice(index, index + maxConcurrency);
     batch.forEach(({ sessionId }) => {

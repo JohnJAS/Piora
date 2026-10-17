@@ -5,6 +5,7 @@ import { getRoom, publishRoomArtifact } from "./room-store";
 import { validateTeamPlan } from "./team-run-reducer";
 import { getTeamRunStore } from "./team-run-store";
 import { TeamError } from "./team-errors";
+import { getActivePromptRun } from "./prompt-run-registry";
 import type { AppendTeamEventInput, TeamPlan, TeamReviewDecision, TeamRunState, TeamTask } from "./team-types";
 
 export interface SubmitPlanInput {
@@ -207,7 +208,7 @@ export async function completeTeamRun(sessionId: string, toolCallId: string, inp
   await getTeamRunStore().appendTeamOutbox(state.roomId, state.id, {
     kind: "room_message",
     idempotencyKey: `team:${state.roomId}:${state.id}:final`,
-    payload: { summary: input.summary, authorMemberId: context.memberId },
+    payload: { summary: input.summary, authorMemberId: context.memberId, promptRunId: getActivePromptRun(sessionId)?.runId },
   });
   const completed = await appendLatestTeamEvents(state.roomId, state.id, () => [{
     event: { type: "run.completed", ...input }, actor: { kind: "member", memberId: context.memberId, sessionId },

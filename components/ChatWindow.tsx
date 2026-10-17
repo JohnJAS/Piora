@@ -15,13 +15,15 @@ import { ChatHistory, type ChatHistoryHandle } from "./ChatHistory";
 import { MessageView } from "./MessageView";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
+import { ChatCommandCard, ChatCommandQueue, type ChatCommandCardActions } from "./ChatCommandCard";
 import { NewSessionContextChip, NewSessionLauncher } from "./NewSessionLauncher";
 import { SystemPromptSelector } from "./SystemPromptSelector";
 import type { NewSessionInitialPrompt } from "./new-session-types";
+import { persistentChatInputOptions } from "@/lib/chat-command-input";
 import { ChatMinimap } from "./ChatMinimap";
 import { ChatScrollRail } from "./ChatScrollRail";
 import { useI18n } from "@/hooks/useI18n";
-import { useAgentSession, type AgentPhase, type BuiltinSlashCommandResult, type NoticeItem, type SlashCommandInfo } from "@/hooks/useAgentSession";
+import { useAgentSession, type AgentPhase, type NoticeItem, type SlashCommandInfo } from "@/hooks/useAgentSession";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -203,7 +205,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactionStartedAt, compactError, compactResult, displayModel: displayModelValue, sessionStats,
-    slashCommands, slashCommandsLoading, queuedMessages, capabilities,
+    slashCommands, slashCommandsLoading, slashCommandsError, commandCatalog, chatCommands, queuedMessages, capabilities,
     liveOutputFollowPaused,
     notices, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection,
@@ -215,7 +217,6 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     handleSend, handleAbort, handleFork, handleNavigate, handleModelChange, handleScrollToBottom, pauseHistoryFollow, handleDeleteMessage, deletingMessage,
     handleCompact, handleDismissCompactError, handleDismissCompactResult, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
-    handleBuiltinSlashCommand,
     handleThinkingLevelChange, handleSystemPromptSelection, loadSlashCommands,
   } = useAgentSession({
     session, newSessionCwd, newSessionInitialModel,
@@ -286,46 +287,44 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
         return data.content;
       });
       if (retrySession.current !== id) return;
-      await handleComposerSend(payload.message, payload.images, payload.files, undefined, payload.retryOfPromptIds);
+      await handleComposerSend(payload.message, payload.images, payload.files, undefined, payload.retryOfPromptIds, payload.commandInput);
     } finally { retryInFlight.current = false; setPreparingRetry(false); }
   }, [sessionBusy, session?.id, handleComposerSend, t]);
 
   useEffect(() => {
-    if (!isNew || !initialPrompt || sessionBusy || isAutoModelSelection) return;
+    if (!isNew || !initialPrompt || sessionBusy || isAutoModelSelection && !(initialPrompt.commandInput?.inputMode !== "text" && initialPrompt.message.trimStart().startsWith("/"))) return;
     if (locallyClaimedInitialPromptRef.current === initialPrompt.id) return;
     if (claimInitialPrompt && !claimInitialPrompt(initialPrompt.id)) return;
     locallyClaimedInitialPromptRef.current = initialPrompt.id;
+    const restoreInitial = () => chatInputRef?.current?.restoreCommandDraft({ value: initialPrompt.message, files: initialPrompt.files ?? [], images: (initialPrompt.images ?? []).map(({ data, mimeType }) => ({ data, mimeType })), commandInput: persistentChatInputOptions(initialPrompt.commandInput), retryOfPromptIds: [...new Set([initialPrompt.id, ...(initialPrompt.retryOfPromptIds ?? [])])] });
     void handleSend(
       initialPrompt.message,
       initialPrompt.images,
       initialPrompt.files,
-    ).then(() => onPromptSubmitted?.());
-  }, [claimInitialPrompt, handleSend, initialPrompt, isAutoModelSelection, isNew, onPromptSubmitted, sessionBusy]);
+      undefined,
+      initialPrompt.retryOfPromptIds,
+      initialPrompt.commandInput,
+    ).then(accepted => { if (accepted === false) restoreInitial(); else onPromptSubmitted?.(); }).catch(() => { restoreInitial(); });
+  }, [claimInitialPrompt, handleSend, initialPrompt, isAutoModelSelection, isNew, onPromptSubmitted, sessionBusy, chatInputRef]);
 
-  // Builtin slash-command results echo into the conversation area instead of
-  // only appearing as transient notices, so the user can see what a command
-  // did without opening panels or reading toasts.
-  const [commandEchoes, setCommandEchoes] = useState<Array<{ id: number; text: string; message?: string; error?: string }>>([]);
   const [commandExecutionDialog, setCommandExecutionDialog] = useState<CommandExecutionData | null>(null);
-  const commandEchoCounterRef = useRef(0);
-  useEffect(() => {
-    setCommandEchoes([]);
-    commandEchoCounterRef.current = 0;
-  }, [session?.id]);
-  const handleBuiltinCommandWithEcho = useCallback(async (message: string): Promise<BuiltinSlashCommandResult> => {
-    const result = await handleBuiltinSlashCommand(message);
-    if (result.handled) {
-      commandEchoCounterRef.current += 1;
-      const echo = {
-        id: commandEchoCounterRef.current,
-        text: message,
-        ...(result.error ? { error: result.error } : {}),
-        ...(result.message ? { message: result.message } : {}),
-      };
-      setCommandEchoes((current) => [...current.slice(-39), echo]);
-    }
-    return result;
-  }, [handleBuiltinSlashCommand]);
+  const commandActions = useMemo<ChatCommandCardActions>(() => ({
+    retry: async record => {
+      const draft = await chatCommands.restore(record);
+      const accepted = await handleComposerSend(draft.value, draft.images.map(image => ({ ...image, previewUrl: "" })), draft.files, undefined, [...new Set([...(draft.retryOfPromptIds ?? []), record.idempotencyKey])], draft.commandInput);
+      if (accepted === false) throw new Error(t("chatCommands.restoreFailed"));
+    },
+    restore: async (record, queryOnly) => {
+      const draft = await chatCommands.restore(record);
+      const restored = { ...draft, value: queryOnly ? record.operation?.afterPrompt ?? draft.value : draft.value,
+        ...(queryOnly ? { commandInput: { inputMode: "text" as const } } : {}), retryOfPromptIds: [...new Set([...(draft.retryOfPromptIds ?? []), record.idempotencyKey])] };
+      if (!chatInputRef?.current?.restoreCommandDraft(restored)) throw new Error(t("chatCommands.composerBusy"));
+      chatInputRef.current.focus();
+    },
+    cancel: chatCommands.cancel,
+    copy: chatCommands.copy,
+    openStats: onSessionStatsPanelOpen,
+  }), [chatCommands, handleComposerSend, chatInputRef, onSessionStatsPanelOpen, t]);
   const latestHistoricalBash = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       const message = messages[index];
@@ -588,7 +587,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
   const visionRetryPayload = useMemo(() => visionFailed ? getVisionRetryPayload(messages) : null, [messages, visionFailed]);
   const retryVisionAnalysis = useCallback(() => {
     if (sessionBusy || !visionRetryPayload) return;
-    void handleComposerSend(visionRetryPayload.message, visionRetryPayload.images);
+    void handleComposerSend(visionRetryPayload.message, visionRetryPayload.images, undefined, undefined, undefined, visionRetryPayload.message.trimStart().startsWith("/") ? { inputMode: "text" } : undefined);
   }, [handleComposerSend, sessionBusy, visionRetryPayload]);
 
   const replySource = useMemo(() => {
@@ -628,6 +627,9 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
   ), [isEmptyNew, newSessionProjectLabel, isProjectlessChat, messageCwd, systemPromptSelection, systemPromptBinding, sessionBusy, systemPromptSaving, handleSystemPromptSelection]);
 
   const chatInputElement = (
+    <>
+    {chatCommands.connectionError && <div role="status" style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)", padding: "6px 10px" }}>{chatCommands.connectionError}</div>}
+    <ChatCommandQueue records={chatCommands.records} onCancel={chatCommands.cancel} />
     <ChatInput
       ref={chatInputRef}
       replySource={replySource}
@@ -635,6 +637,9 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
       placeholder={isEmptyNew ? t("newSession.placeholder") : undefined}
       contextControl={composerContextControl}
       onSend={handleComposerSend}
+      onQueueInput={chatCommands.submit}
+      commandCatalog={commandCatalog}
+      slashCommandsError={slashCommandsError}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}
@@ -665,13 +670,13 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
       slashCommands={slashCommands}
       slashCommandsLoading={slashCommandsLoading}
       onLoadSlashCommands={loadSlashCommands}
-      onBuiltinCommand={handleBuiltinCommandWithEcho}
       draftKey={session?.id ?? newChatDraftKey}
       cwd={session?.cwd ?? newSessionCwd}
       contextUsage={contextUsage}
       sessionStats={sessionStats}
       extensionStatuses={visibleExtensionStatuses}
     />
+    </>
   );
 
   const aboveEditorWidgets = extensionWidgets.filter((widget) => widget.placement !== "belowEditor");
@@ -770,6 +775,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
         >
           <div>
             <NoticeShelf notices={notices} align="right" />
+            {chatCommands.records.map(record => <ChatCommandCard key={record.commandId} record={record} actions={commandActions} />)}
             {chatInputElement}
           </div>
         </NewSessionLauncher>
@@ -797,6 +803,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
               <ExtensionWidgets widgets={aboveEditorWidgets} />
 
             <ChatHistory
+              operations={chatCommands.records} commandActions={commandActions}
               messages={messages} compactProcess={compactProcess} streamingMessage={compactProcess && streamState.isStreaming ? streamState.streamingMessage as AgentMessage : null} entryIds={entryIds} busy={sessionBusy} streaming={streamState.isStreaming}
               isNew={isNew} forkingEntryId={forkingEntryId} highlightedEntryId={highlightedEntryId}
               lastUserMsgRef={lastUserMsgRef} pendingScrollToUserRef={pendingScrollToUserRef} scrollContainer={scrollContainerRef} handleRef={historyRef}
@@ -856,17 +863,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
               />
             )}
 
-            {commandEchoes.length > 0 && (
-              <div className="command-echo-list" role="log" aria-label={t("chat.commands")}>
-                {commandEchoes.map((echo) => (
-                  <div key={echo.id} className={`command-echo-row${echo.error ? " is-error" : ""}`}>
-                    <AliIcon name={echo.error ? "warning" : "check"} size={12} className="command-echo-icon" />
-                    <span className="command-echo-command">{echo.text}</span>
-                    <span className="command-echo-result">{echo.error ?? echo.message ?? t("chat.commandCompleted")}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+            {chatCommands.loadMore && <button type="button" onClick={() => void chatCommands.loadMore?.()} style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)" }}>{t("chatCommands.more")}</button>}
 
             <div ref={messagesEndRef} />
             </div>

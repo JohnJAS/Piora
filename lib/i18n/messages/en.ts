@@ -1,4 +1,6 @@
 import { brandText } from "../../branding";
+import { roomUxEn } from "./room-ux";
+import { chatCommandsEn } from "./chat-commands";
 import { replySuggestionsEn } from "./reply-suggestions";
 import type { LocalePlugin } from "../types";
 import { smartShellEn } from "./smart-shell";
@@ -12,6 +14,8 @@ export const enLocale: LocalePlugin = {
   id: "en",
   label: "English",
   messages: {
+    ...roomUxEn,
+    ...chatCommandsEn,
     ...nativeMcpEn,
     ...modelSamplingEn,
     ...skillSourcesEn,

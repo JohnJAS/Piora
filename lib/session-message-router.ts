@@ -6,6 +6,8 @@ import { getRpcSession, type AgentSessionWrapper } from "./rpc-manager";
 import { resolveSessionPath } from "./session-reader";
 import { resolveOrStartRpcSession, SessionRuntimeResolverError } from "./session-runtime-resolver";
 import { SessionControlStore } from "./session-control-store";
+import { executeChatCommandOperation, type ChatCommandExecutionContext } from "./chat-command-runtime";
+import type { ChatCommandOperation, ChatCommandPhase } from "./chat-command-types";
 import {
   deleteTeamExecutionSecret,
   persistTeamExecutionContext,
@@ -61,6 +63,7 @@ interface RouterOptions {
   resolver?: typeof resolveOrStartRpcSession;
   maxMessageBytes?: number;
   maxConcurrency?: number;
+  commandExecutor?: typeof executeChatCommandOperation;
 }
 
 const TERMINAL_STATUSES = new Set<SessionCommandStatus>(["completed", "failed", "cancelled", "expired", "interrupted"]);
@@ -86,7 +89,8 @@ function validateInput(input: SessionMessageInput, maxMessageBytes: number): voi
   if (typeof input.content !== "string" || (!input.content.trim() && !input.materials?.length && !input.images?.length)) {
     throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "Message content cannot be empty without prompt materials or images.");
   }
-  if (Buffer.byteLength(input.content, "utf8") > maxMessageBytes) {
+  if (input.promptSuffix !== undefined && typeof input.promptSuffix !== "string") throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "Prompt suffix must be text.");
+  if (Buffer.byteLength(input.content, "utf8") + Buffer.byteLength(input.promptSuffix ?? "", "utf8") + Buffer.byteLength(input.operation?.inputOptions?.afterPrompt ?? "", "utf8") > maxMessageBytes) {
     throw new SessionMessageRouterError(
       "SESSION_MESSAGE_TOO_LARGE",
       `Message content exceeds the ${Math.floor(maxMessageBytes / 1024)} KiB limit.`,
@@ -132,6 +136,9 @@ export class SessionMessageRouter {
   private readonly resolver: typeof resolveOrStartRpcSession;
   private readonly maxMessageBytes: number;
   private readonly maxConcurrency: number;
+  private readonly commandExecutor: typeof executeChatCommandOperation;
+  private readonly clientActions = new Map<string, { id: string; text: string; expiresAt: number; resolve: () => void; reject: (error: Error) => void }>();
+  private readonly operationExecutions = new Map<string, Promise<void>>();
   private readonly knownCommands = new Map<string, SessionCommandRecord>();
   private readonly activeCommands = new Map<string, SessionCommandRecord>();
   private readonly wakeSubscriptions = new Map<string, () => void>();
@@ -149,6 +156,7 @@ export class SessionMessageRouter {
     this.resolver = options.resolver ?? resolveOrStartRpcSession;
     this.maxMessageBytes = Math.max(1_024, Math.min(SESSION_MESSAGE_TEXT_MAX_BYTES, options.maxMessageBytes ?? SESSION_MESSAGE_TEXT_MAX_BYTES));
     this.maxConcurrency = Math.max(1, Math.min(32, options.maxConcurrency ?? 4));
+    this.commandExecutor = options.commandExecutor ?? executeChatCommandOperation;
   }
 
   private inbox(sessionId: string): SessionInboxState {
@@ -162,6 +170,11 @@ export class SessionMessageRouter {
     for (const command of this.store.loadCommands(sessionId)) {
       this.knownCommands.set(command.commandId, command);
       if (TERMINAL_STATUSES.has(command.status)) continue;
+      if (command.operation && ["dispatching", "delivered", "running"].includes(command.status)) {
+        command.operation = { ...command.operation, completedAt: Date.now(), steps: command.operation.steps.map(step => step.status === "running" ? { ...step, status: "failed", error: "RUN_INTERRUPTED" } : step.status === "pending" ? { ...step, status: "blocked" } : step) };
+        await this.transition(command, "interrupted", { operation: command.operation, errorCode: "RUN_INTERRUPTED", errorMessage: "The process stopped before this operation could be proven complete." });
+        continue;
+      }
       if (command.status === "running") {
         const live = getRpcSession(sessionId);
         if (live?.isAlive() && live.getActivePromptRunId() === command.runId) {
@@ -202,13 +215,16 @@ export class SessionMessageRouter {
       || (this.cancellationWork.has(command.commandId) && !TERMINAL_STATUSES.has(status))) return;
     command.status = status;
     Object.assign(command, patch);
+    command.revision = (command.revision ?? 0) + 1;
+    patch = { ...patch, revision: command.revision };
     this.knownCommands.set(command.commandId, command);
+    command = { ...command, ...(command.operation ? { operation: structuredClone(command.operation) } : {}) };
     await this.store.appendStatus(command, status, patch);
     const latest = this.knownCommands.get(command.commandId) ?? command;
     if (TERMINAL_STATUSES.has(latest.status) && latest.status !== status) {
       // A delayed persistence operation must not become the journal's last row
       // after cancellation has already settled the canonical record.
-      await this.store.appendStatus(latest, latest.status);
+      await this.store.appendStatus(latest, latest.status, { revision: latest.revision, ...(latest.operation ? { operation: structuredClone(latest.operation) } : {}), errorCode: latest.errorCode, errorMessage: latest.errorMessage, runId: latest.runId, attachedRunId: latest.attachedRunId });
       return;
     }
     await this.publish({
@@ -218,9 +234,15 @@ export class SessionMessageRouter {
       runId: command.runId,
       attachedRunId: command.attachedRunId,
       status,
+      revision: command.revision,
       timestamp: Date.now(),
       ...(command.errorCode ? { errorCode: command.errorCode } : {}),
       ...(command.errorMessage ? { errorMessage: command.errorMessage } : {}),
+      ...(command.operation ? { operation: command.operation } : {}),
+      idempotencyKey: command.idempotencyKey,
+      acceptedAt: command.acceptedAt,
+      source: command.source,
+      preview: command.content.slice(0, 180),
     });
     if (TERMINAL_STATUSES.has(status) && command.teamExecution) {
       try { deleteTeamExecutionSecret(command.teamExecution); }
@@ -232,6 +254,11 @@ export class SessionMessageRouter {
     const now = Date.now();
     return {
       commandId: `cmd_${randomUUID()}`,
+      revision: 0,
+      ...(input.inputMode ? { inputMode: input.inputMode } : {}),
+      ...(input.promptSuffix ? { promptSuffix: input.promptSuffix } : {}),
+      ...(input.localFiles?.length ? { localFiles: structuredClone(input.localFiles) } : {}),
+      ...(input.operation ? { operation: structuredClone(input.operation) } : {}),
       idempotencyKey: input.idempotencyKey,
       targetSessionId: input.targetSessionId,
       content: input.content,
@@ -261,6 +288,18 @@ export class SessionMessageRouter {
     this.pendingSubmissions.set(key, operation);
     try { return await operation; }
     finally { if (this.pendingSubmissions.get(key) === operation) this.pendingSubmissions.delete(key); }
+  }
+
+  async findSubmissionReceipt(sessionId: string, idempotencyKey: string): Promise<DispatchReceipt | undefined> {
+    const pending = this.pendingSubmissions.get(this.submissionKey(sessionId, idempotencyKey));
+    if (pending) return { ...await pending, idempotent: true };
+    await this.ensureLoaded(sessionId);
+    const command = this.submissionCommand(sessionId, idempotencyKey);
+    if (!command) return undefined;
+    await this.commandDurability.get(command.commandId);
+    if (!TERMINAL_STATUSES.has(command.status)) void this.drain(sessionId);
+    return { accepted: true, commandId: command.commandId, sessionId, status: command.status, idempotent: true,
+      ...(command.runId ? { runId: command.runId } : {}), ...(command.attachedRunId ? { attachedRunId: command.attachedRunId } : {}) };
   }
 
   private submissionKey(sessionId: string, idempotencyKey: string): string {
@@ -299,13 +338,15 @@ export class SessionMessageRouter {
     }
 
     try {
-      await this.resolver(input.targetSessionId);
+      if (input.operation?.command.busyBehavior !== "read") await this.resolver(input.targetSessionId);
+      else if (!getRpcSession(input.targetSessionId)?.isAlive() && !await resolveSessionPath(input.targetSessionId)) throw new SessionMessageRouterError("SESSION_NOT_FOUND", "Session not found.");
     } catch (error) {
       const code = errorCode(error);
       throw new SessionMessageRouterError(code, code === "SESSION_NOT_FOUND" ? "Session not found." : safeErrorMessage(error), { cause: error });
     }
     await this.ensureLoaded(input.targetSessionId);
     const command = this.makeRecord(input);
+    if (command.operation) command.operation.anchorEntryId = getRpcSession(input.targetSessionId)?.inner?.sessionManager.getLeafId() ?? undefined;
     this.knownCommands.set(command.commandId, command);
     let commandPersisted = false;
     try {
@@ -318,6 +359,14 @@ export class SessionMessageRouter {
       if (this.isCancelled(command)) {
         await this.cancelRecord(command);
         return { accepted: true, commandId: command.commandId, sessionId: command.targetSessionId, status: "cancelled" };
+      }
+      const immediateSession = getRpcSession(input.targetSessionId);
+      if (command.operation && (command.operation.command.busyBehavior === "read"
+        || (command.operation.command.busyBehavior === "immediate" && command.operation.inputOptions?.delivery !== "next_turn"
+          || ["prompt", "skill"].includes(command.operation.command.source) && ["steer", "followUp"].includes(command.operation.inputOptions?.delivery ?? ""))
+          && immediateSession?.isRunning() && immediateSession.getRuntime() !== "stopping")) {
+        void this.runChatOperation(command, immediateSession);
+        return { accepted: true, commandId: command.commandId, sessionId: command.targetSessionId, status: command.status };
       }
       const position = getSessionInboxRegistry().enqueue(command).position;
       await this.transition(command, "queued", { queuedAt: Date.now() }, "command_queued");
@@ -370,7 +419,7 @@ export class SessionMessageRouter {
     await this.store.appendCommand(command);
     await this.transition(command, "dispatching", { attachedRunId: command.attachedRunId }, "command_dispatching");
     try {
-      await session.send({ type: "steer", message: input.content, images: input.images, commandId: command.commandId });
+      await session.send({ type: "steer", message: input.content, images: input.images, commandId: command.commandId, ...(input.inputMode ? { inputMode: input.inputMode } : {}) });
       await this.transition(command, "delivered", { attachedRunId: command.attachedRunId }, "command_delivered");
       await this.transition(command, "completed", {}, "command_completed");
       return { accepted: true, commandId: command.commandId, sessionId: input.targetSessionId, status: "completed", attachedRunId: command.attachedRunId };
@@ -393,7 +442,7 @@ export class SessionMessageRouter {
     await this.store.appendCommand(command);
     await this.transition(command, "dispatching", { attachedRunId: command.attachedRunId }, "command_dispatching");
     try {
-      await session.send({ type: "follow_up", message: input.content, images: input.images, commandId: command.commandId });
+      await session.send({ type: "follow_up", message: input.content, images: input.images, commandId: command.commandId, ...(input.inputMode ? { inputMode: input.inputMode } : {}) });
       await this.transition(command, "delivered", {}, "command_delivered");
       return { accepted: true, commandId: command.commandId, sessionId: input.targetSessionId, status: "delivered", attachedRunId: command.attachedRunId };
     } catch (error) {
@@ -417,7 +466,7 @@ export class SessionMessageRouter {
   private watchForIdle(sessionId: string, session: AgentSessionWrapper): void {
     if (this.wakeSubscriptions.has(sessionId)) return;
     const unsubscribe = session.onEvent((event) => {
-      if (["prompt_done", "prompt_error", "agent_end", "session_idle"].includes(event.type)) {
+      if (["prompt_done", "prompt_error", "agent_end", "agent_settled", "session_idle"].includes(event.type)) {
         void this.drain(sessionId);
       }
     });
@@ -501,6 +550,10 @@ export class SessionMessageRouter {
           return;
         }
         getSessionInboxRegistry().removeCommand(sessionId, command.commandId);
+        if (command.operation) {
+          await this.runChatOperation(command, session);
+          continue;
+        }
         const admission: { session: AgentSessionWrapper; started: boolean; runId?: string; cancelTerminal?: () => void } = { session, started: false };
         this.admissions.set(command.commandId, admission);
         await this.transition(command, "dispatching", {}, "command_dispatching");
@@ -523,6 +576,8 @@ export class SessionMessageRouter {
             source: command.source,
             roomContext: command.roomContext,
             message: command.content,
+            ...(command.inputMode ? { inputMode: command.inputMode } : {}),
+            ...(command.promptSuffix ? { promptSuffix: command.promptSuffix } : {}),
             images: command.images,
             materials: command.materials,
             teamExecution,
@@ -611,6 +666,157 @@ export class SessionMessageRouter {
     return { ...receipt, status: receipt.status === "cancelled" || receipt.status === "interrupted" ? receipt.status : "idle" };
   }
 
+  private runChatOperation(command: SessionCommandRecord, session?: AgentSessionWrapper): Promise<void> {
+    const existing = this.operationExecutions.get(command.commandId);
+    if (existing) return existing;
+    const execution = this.executeChatOperation(command, session).finally(() => {
+      this.operationExecutions.delete(command.commandId);
+      void this.drain(command.targetSessionId);
+    });
+    this.operationExecutions.set(command.commandId, execution);
+    return execution;
+  }
+
+  private async executeChatOperation(command: SessionCommandRecord, session?: AgentSessionWrapper): Promise<void> {
+    const operation = command.operation!;
+    const commandStep = operation.steps[0];
+    const promptStep = operation.steps[1];
+    let progress = Promise.resolve();
+    const update = (phase?: ChatCommandPhase) => {
+      if (phase) operation.phase = phase;
+      const snapshot = structuredClone(operation);
+      progress = progress.then(() => this.transition(command, command.status, { operation: snapshot }, "command_progress"));
+      return progress;
+    };
+    const assertActive = () => {
+      if (this.isCancelled(command) || TERMINAL_STATUSES.has(command.status)) throw new Error("Command cancelled");
+      if (session && !session.isAlive()) throw new Error("Session runtime stopped");
+    };
+    const stopCommandTracking = session?.onEvent(event => {
+      if (event.type !== "prompt_started" || event.commandId !== command.commandId || typeof event.runId !== "string") return;
+      if (session?.getActivePromptRunId() !== event.runId) return;
+      command.runId = event.runId;
+      commandStep.runId = event.runId;
+      this.admissions.set(command.commandId, { session, started: true, runId: event.runId });
+      this.activeCommands.set(command.targetSessionId, command);
+      void update("model");
+    });
+    const prompt = async (message: string) => {
+      if (!session) session = (await this.resolver(command.targetSessionId)).session;
+      assertActive();
+      const runtimeCommand = { ...command, commandId: `cmd_${randomUUID()}`, runId: undefined };
+      const terminal = this.waitForTerminal(session, runtimeCommand);
+      const admission = { session, started: true, runId: undefined as string | undefined, cancelTerminal: terminal.cancel };
+      this.admissions.set(command.commandId, admission);
+      this.activeCommands.set(command.targetSessionId, command);
+      const trackRun = session.onEvent(event => {
+        if (event.type === "prompt_started" && event.commandId === runtimeCommand.commandId && typeof event.runId === "string") {
+          command.runId = event.runId;
+          admission.runId = event.runId;
+        }
+      });
+      try {
+        const started = await session.startTrackedPrompt({ commandId: runtimeCommand.commandId, source: command.source, message,
+          ...(!operation.afterPrompt || commandStep.status === "completed" ? { images: command.images, materials: command.materials, promptSuffix: command.promptSuffix } : {}),
+        });
+        command.runId = started.runId;
+        admission.runId = started.runId;
+        const step = commandStep.status === "completed" && promptStep ? promptStep : commandStep;
+        step.runId = started.runId;
+        await update("model");
+        const status = await terminal.promise;
+        if (status !== "completed") throw new Error(runtimeCommand.errorMessage ?? `Prompt ${status}`);
+        assertActive();
+      } finally {
+        terminal.cancel();
+        trackRun();
+        this.admissions.delete(command.commandId);
+        if (this.activeCommands.get(command.targetSessionId)?.commandId === command.commandId) this.activeCommands.delete(command.targetSessionId);
+      }
+    };
+    try {
+      assertActive();
+      operation.startedAt ??= Date.now();
+      await this.transition(command, "running", { operation });
+      if (commandStep.status !== "completed") {
+        commandStep.status = "running";
+        commandStep.startedAt = Date.now();
+        await update("executing");
+        const context: ChatCommandExecutionContext = { session, assertActive, phase: phase => { void update(phase); }, prompt, copy: text => this.requestClientCopy(command, operation, text, update) };
+        operation.result = await this.commandExecutor(command, context);
+        assertActive();
+        commandStep.status = "completed";
+        commandStep.completedAt = Date.now();
+        await update("settling");
+        if (promptStep) {
+          const inbox = this.inbox(command.targetSessionId);
+          getSessionInboxRegistry().enqueue(command);
+          inbox.queue.sort((left, right) => left.acceptedAt - right.acceptedAt);
+          operation.phase = "queued";
+          await this.transition(command, "queued", { operation: structuredClone(operation) });
+          return;
+        }
+      } else if (promptStep?.status === "pending") {
+        promptStep.status = "running";
+        promptStep.startedAt = Date.now();
+        await update("model");
+        await prompt(operation.afterPrompt!);
+        promptStep.status = "completed";
+        promptStep.completedAt = Date.now();
+      }
+      assertActive();
+      operation.completedAt = Date.now();
+      await progress;
+      await this.transition(command, "completed", { operation: structuredClone(operation) });
+    } catch (error) {
+      const cancelled = this.isCancelled(command);
+      for (const step of operation.steps) {
+        if (step.status === "running") { step.status = cancelled ? "cancelled" : "failed"; step.error = safeErrorMessage(error); step.completedAt = Date.now(); }
+        else if (step.status === "pending") step.status = cancelled ? "cancelled" : "blocked";
+      }
+      operation.completedAt = Date.now();
+      await progress.catch(() => {});
+      await this.transition(command, cancelled ? command.status : (error as { code?: string }).code === "CLIENT_ACTION_UNCONFIRMED" ? "interrupted" : "failed", { operation: structuredClone(operation), errorMessage: safeErrorMessage(error), errorCode: cancelled ? "COMMAND_CANCELLED" : "COMMAND_EXECUTION_FAILED" });
+    } finally {
+      stopCommandTracking?.();
+      this.admissions.delete(command.commandId);
+      if (this.activeCommands.get(command.targetSessionId)?.commandId === command.commandId) this.activeCommands.delete(command.targetSessionId);
+    }
+  }
+
+  private async requestClientCopy(command: SessionCommandRecord, operation: ChatCommandOperation, text: string, update: (phase?: ChatCommandPhase) => Promise<void>): Promise<void> {
+    const id = randomUUID();
+    const expiresAt = Date.now() + 60_000;
+    let timer: ReturnType<typeof setTimeout>;
+    const confirmation = new Promise<void>((resolve, reject) => {
+      this.clientActions.set(command.commandId, { id, text, expiresAt, resolve, reject });
+      timer = setTimeout(() => reject(Object.assign(new Error("Client action was not confirmed"), { code: "CLIENT_ACTION_UNCONFIRMED" })), 60_000);
+    });
+    void confirmation.catch(() => {});
+    operation.result = { title: "chatCommands.copyWaiting", clientAction: { id, kind: "copy", characters: text.length, expiresAt } };
+    try {
+      await update("waiting_client");
+      await confirmation;
+    } finally {
+      clearTimeout(timer!);
+      this.clientActions.delete(command.commandId);
+    }
+  }
+
+  getClientAction(sessionId: string, commandId: string, requestId: string): { text: string } {
+    const command = this.canonicalCommand(commandId);
+    const action = this.clientActions.get(commandId);
+    if (command.targetSessionId !== sessionId || !action || action.id !== requestId || action.expiresAt <= Date.now() || this.isCancelled(command) || TERMINAL_STATUSES.has(command.status)) throw new SessionMessageRouterError("COMMAND_NOT_FOUND", "Client action is no longer active.");
+    return { text: action.text };
+  }
+
+  confirmClientAction(sessionId: string, commandId: string, requestId: string, success: boolean, error?: string): void {
+    this.getClientAction(sessionId, commandId, requestId);
+    const action = this.clientActions.get(commandId)!;
+    if (success) action.resolve();
+    else action.reject(new Error(error?.slice(0, 500) || "Clipboard action failed"));
+  }
+
   async cancelPromptSubmission(input: { targetSessionId: string; idempotencyKey: string; promptCommandId?: string }, principal?: SessionRoutePrincipal): Promise<PromptCancellationReceipt> {
     if (typeof input.targetSessionId !== "string" || !input.targetSessionId.trim() || input.targetSessionId.length > 512
       || typeof input.idempotencyKey !== "string" || !input.idempotencyKey.trim() || input.idempotencyKey.length > 512
@@ -648,6 +854,10 @@ export class SessionMessageRouter {
       return Promise.resolve({ accepted: true, sessionId: command.targetSessionId, status: command.status, commandId: command.commandId, ...(command.runId ? { runId: command.runId } : {}) });
     }
     const priorStatus = command.status;
+    if (command.operation && priorStatus === "running" && command.operation.phase !== "waiting_client" && !command.runId) {
+      return Promise.reject(new SessionMessageRouterError("SESSION_BUSY", "This command cannot be interrupted while its handler is running."));
+    }
+    this.clientActions.get(command.commandId)?.reject(new Error("Command cancelled"));
     getSessionInboxRegistry().removeCommand(command.targetSessionId, command.commandId);
     // Canonical mutation happens synchronously, before journal waits or SDK calls.
     command.status = "cancelled";
@@ -712,6 +922,11 @@ export class SessionMessageRouter {
 
   async getCommand(commandId: string): Promise<SessionCommandRecord> {
     return { ...this.canonicalCommand(commandId) };
+  }
+
+  async listOperations(sessionId: string): Promise<SessionCommandRecord[]> {
+    await this.ensureLoaded(sessionId);
+    return this.store.loadCommands(sessionId).filter(command => command.source === "ui" && (command.operation || !TERMINAL_STATUSES.has(command.status)));
   }
 
   private canonicalCommand(commandId: string): SessionCommandRecord {

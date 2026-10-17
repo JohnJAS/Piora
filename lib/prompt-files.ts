@@ -5,8 +5,12 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { MAX_ATTACHED_FILE_BYTES, MAX_PROMPT_MATERIAL_BYTES, MAX_PROMPT_MATERIAL_COUNT } from "./prompt-input-policy";
 import type { AttachedFile } from "./file-attachments";
 
+export function getPromptFilesRoot(): string {
+  return resolve(getAgentDir(), "piora", "prompt-files");
+}
+
 /** Preserve arbitrary file bytes for browser clients that cannot expose a local path. */
-export async function savePromptFiles(files: File[], root = resolve(getAgentDir(), "piora", "prompt-files")): Promise<AttachedFile[]> {
+export async function savePromptFiles(files: File[], root = getPromptFilesRoot()): Promise<AttachedFile[]> {
   if (!files.length || files.length > MAX_PROMPT_MATERIAL_COUNT || files.some((file) => !(file instanceof File))) {
     throw new Error(`Provide between 1 and ${MAX_PROMPT_MATERIAL_COUNT} files.`);
   }

@@ -6,6 +6,7 @@ import { readSessionHeader, resolveSessionPath } from "./session-reader";
 import type { TeamAgentProfile } from "./team-types";
 import { isProjectlessChatCwd } from "./projectless-chat-path";
 import { getProjectlessChatWorkspace } from "./projectless-chat-server";
+import { configureTeamAgentTools } from "./team-agent-tools";
 
 export type SessionRuntimeResolverErrorCode =
   | "SESSION_NOT_FOUND"
@@ -136,9 +137,7 @@ export async function resolveOrStartRpcSession(
       });
       await started.session.send({ type: "set_thinking_level", level: managedMember.profile.modelPolicy.thinkingLevel });
     }
-    if (managedMember?.profile.toolPolicy.mode === "allowlist") {
-      await started.session.send({ type: "set_team_tools", toolNames: managedMember.profile.toolPolicy.toolNames });
-    }
+    if (managedMember) await configureTeamAgentTools(started.session, managedMember.profile);
     return { ...started, sessionFile, cwd: runtimeCwd };
   } catch (error) {
     if (error instanceof SessionRuntimeResolverError) throw error;
