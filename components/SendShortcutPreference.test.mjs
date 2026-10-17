@@ -45,7 +45,7 @@ test("conversation settings can opt into a default running-task send action", ()
 test("disabled keeps the chooser while enabled sends with the selected default", () => {
   assert.match(chatInput, /if \(streamingSendPreference\.enabled\) \{\s*sendQueued\(streamingSendPreference\.behavior\)/);
   assert.match(chatInput, /setStreamingActionMenuOpen\(true\)/);
-  assert.match(chatInput, /const primaryStreamingMode = streamingSendPreference\.enabled \? streamingSendPreference\.behavior : "steer"/);
+  assert.match(chatInput, /const primaryStreamingMode = streamingSendPreference\.enabled \? streamingSendPreference\.behavior : "followup"/);
   assert.match(chatInput, /onClick=\{\(\) => sendQueued\(primaryStreamingMode\)\}/);
   assert.match(streamingHook, /useSyncExternalStore/);
   assert.match(streamingHook, /STREAMING_SEND_PREFERENCE_STORAGE_KEY/);

@@ -26,8 +26,8 @@ test("room message navigation lists only user prompts and exposes clickable jump
 test("room workspace preserves history position and offers one-click latest navigation", async () => {
   const source = await readFile(new URL("./RoomWorkspace.tsx", import.meta.url), "utf8");
   assert.match(source, /shouldShowScrollToBottom/);
-  assert.match(source, /pinnedToBottomRef/);
-  assert.match(source, /forceScrollToBottomRef/);
-  assert.match(source, /aria-label="滚动到最新消息"/);
+  assert.match(source, /pinned\.current = !away; setShowLatest\(away\)/);
+  assert.match(source, /if \(pinned\.current\) \{ const frame = requestAnimationFrame\(scrollLatest\)/);
+  assert.match(source, /aria-label=\{t\("roomUx\.latest"\)\} onClick=\{scrollLatest\}/);
   assert.match(source, /<RoomMessageNavigator/);
 });

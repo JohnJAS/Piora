@@ -636,15 +636,20 @@ async function routerSubmissionHarness() {
   const store = new SessionControlStore({ root });
   const events = new SessionCommandEventHub(store);
   const router = new SessionMessageRouter({ store, events, resolver: async () => ({ session, realSessionId: sid, cwd: root }) });
+  const { dispatchChatInput } = await jiti.import("../lib/chat-input-dispatch.ts");
+  const previousRouter = globalThis.__pioraSessionMessageRouter;
+  globalThis.__pioraSessionMessageRouter = router;
   const h = promptSubmissionHarness({ session: { id: sid } });
   h.env.sessionIdRef.current = sid;
   h.env.sendAgentCommand = async (_sid, command) => {
     assert.equal(_sid, sid);
     if (command.type === "prompt") return router.dispatchSessionMessage({ targetSessionId: sid, content: command.message, source: "ui", idempotencyKey: command.idempotencyKey });
+    if (command.type === "submit_input") return dispatchChatInput(sid, command);
     assert.equal(command.type, "cancel_prompt_submission", "tracked cancellation must never fall through to generic abort");
     return router.cancelPromptSubmission({ targetSessionId: sid, idempotencyKey: command.idempotencyKey, ...(command.promptCommandId ? { promptCommandId: command.promptCommandId } : {}) });
   };
   return { ...h, sid, session, started, router, store, events, cleanup: async () => {
+    globalThis.__pioraSessionMessageRouter = previousRouter;
     globalThis.__piSessions.delete(sid); globalThis.__piSessionInboxes?.delete(sid);
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 30 });
   } };
@@ -657,7 +662,7 @@ test("actual Stop intent prevents a late prompt POST from entering the real rout
   const send = h.env.sendAgentCommand;
   let firstKey;
   h.env.sendAgentCommand = async (sid, command) => {
-    if (command.type === "prompt" && command.message === "first") { firstKey = command.idempotencyKey; await gate; }
+    if (["prompt", "submit_input"].includes(command.type) && command.message === "first") { firstKey = command.idempotencyKey; await gate; }
     return send(sid, command);
   };
   try {
