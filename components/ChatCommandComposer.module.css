@@ -13,4 +13,4 @@
 .validation p { margin: 0 0 5px; }
 .validation button { border: 0; padding: 2px 0; background: transparent; color: var(--accent); cursor: pointer; font: inherit; }
 .sendButton { white-space: nowrap; font-size: var(--text-sm); }
-@media(pointer: coarse) { .chip button, .context button, .sequence button, .validation button, .delivery select { min-height: 44px; } .afterPrompt textarea, .delivery select { font-size: 16px; } }
+@media(pointer: coarse) { .chip button, .context button, .sequence button, .validation button, .delivery select { min-height: 44px; } .afterPrompt textarea, .delivery select { font-size: var(--text-md); } }

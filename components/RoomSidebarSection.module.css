@@ -5,7 +5,7 @@
 .addButton:hover, .closeButton:hover, .pinButton:hover { background: var(--bg-hover); color: var(--text); }
 .section button:focus-visible, .dialog button:focus-visible, .dialog input:focus-visible, .dialog textarea:focus-visible, .dialog select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .list { display: flex; flex-direction: column; gap: 4px; }
-.empty { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 9px 7px; border: 0; background: transparent; color: var(--text-dim); text-align: left; font-size: 11px; cursor: pointer; }
+.empty { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 9px 7px; border: 0; background: transparent; color: var(--text-dim); text-align: left; font-size: var(--text-xs); cursor: pointer; }
 .roomRow { position: relative; display: flex; align-items: center; min-width: 0; border-radius: 7px; }
 .roomRow:hover { background: var(--bg-hover); }
 .selected { background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel)); }
@@ -15,7 +15,7 @@
 .roomCopy { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 5px; }
 .roomCopy strong, .roomCopy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .roomCopy strong { font-size: var(--text-sm, 13px); font-weight: 550; }
-.roomCopy small { color: var(--text-dim); font-size: 10px; line-height: 1.4; }
+.roomCopy small { color: var(--text-dim); font-size: var(--text-xs); line-height: 1.4; }
 .pinButton { position: absolute; right: 1px; top: 8px; width: 20px; height: 20px; opacity: 0; }
 .roomRow:hover .pinButton, .roomRow:focus-within .pinButton, .pinButton.pinned { opacity: 1; }
 .pinned { color: var(--accent); }
@@ -24,14 +24,14 @@
 .attentionDot { background: #c18228; }
 .workingDot { opacity: .65; }
 .backdrop { position: fixed; z-index: 180; inset: 0; display: flex; align-items: center; justify-content: center; padding: 25px; background: color-mix(in srgb, var(--text) 38%, transparent); backdrop-filter: blur(1px); }
-.dialog { display: flex; flex-direction: column; width: 780px; max-width: 100%; max-height: min(850px, calc(100dvh - 50px)); border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); box-shadow: 0 20px 70px color-mix(in srgb, var(--text) 15%, transparent); font-size: 13px; }
+.dialog { display: flex; flex-direction: column; width: 780px; max-width: 100%; max-height: min(850px, calc(100dvh - 50px)); border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); box-shadow: 0 20px 70px color-mix(in srgb, var(--text) 15%, transparent); font-size: var(--text-sm); }
 .dialog input, .dialog textarea, .dialog select, .dialog button { font: inherit; }
 .dialog button { cursor: pointer; }
 .dialog button:disabled, .dialog input:disabled, .dialog textarea:disabled, .dialog select:disabled { opacity: .5; cursor: default; }
 .dialogHeader { display: flex; align-items: flex-start; gap: 15px; padding: 25px 28px 22px; }
 .dialogHeader > div { flex: 1; }
-.dialogHeader h2 { margin: 0; font-size: 23px; font-weight: 650; letter-spacing: -.4px; }
-.dialogHeader p { margin: 8px 0 0; color: var(--text-muted); font-size: 13px; }
+.dialogHeader h2 { margin: 0; font-size: var(--text-xl); font-weight: 650; letter-spacing: -.4px; }
+.dialogHeader p { margin: 8px 0 0; color: var(--text-muted); font-size: var(--text-sm); }
 .dialogBody { padding: 0 28px 18px; overflow-y: auto; min-height: 0; }
 .templates { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 26px; }
 .templates > button { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 15px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text); text-align: left; }
@@ -40,67 +40,67 @@
 .templates > button[aria-pressed="true"] .templateIcon { background: color-mix(in srgb, var(--accent) 7%, var(--bg)); color: var(--accent); }
 .templates > button > span:nth-child(2) { flex: 1; min-width: 0; }
 .templates strong, .templates small { display: block; overflow-wrap: anywhere; }
-.templates strong { font-size: 14px; font-weight: 600; }
-.templates small { margin-top: 5px; color: var(--text-muted); font-size: 11px; }
+.templates strong { font-size: var(--text-base); font-weight: 600; }
+.templates small { margin-top: 5px; color: var(--text-muted); font-size: var(--text-xs); }
 .templates i { width: 15px; height: 15px; flex: 0 0 auto; border-radius: 50%; border: 1px solid var(--border); }
 .templates [aria-pressed="true"] i { border: 5px solid var(--accent); background: var(--bg); }
 .createColumns { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 26px; }
 .createFields { min-width: 0; }
 .field { position: relative; display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
-.field > span { font-size: 12px; font-weight: 550; }
-.field input, .field textarea, .projectPicker { width: 100%; min-width: 0; padding: 10px 11px; border: 1px solid var(--border); border-radius: 5px; outline: none; background: var(--bg); color: var(--text); font-size: 12px; }
+.field > span { font-size: var(--text-sm); font-weight: 550; }
+.field input, .field textarea, .projectPicker { width: 100%; min-width: 0; padding: 10px 11px; border: 1px solid var(--border); border-radius: 5px; outline: none; background: var(--bg); color: var(--text); font-size: var(--text-sm); }
 .field textarea { resize: vertical; min-height: 94px; max-height: 220px; padding-bottom: 25px; line-height: 1.6; }
 .field input::placeholder, .field textarea::placeholder { color: var(--text-dim); }
-.field small { margin-top: -2px; color: var(--text-dim); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.field small { margin-top: -2px; color: var(--text-dim); font-size: var(--text-xs); line-height: 1.5; overflow-wrap: anywhere; }
 .field .counter { position: absolute; right: 10px; bottom: 9px; }
 .projectPicker { display: flex; align-items: center; gap: 9px; text-align: left; }
 .projectPicker > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .projectPicker > svg:first-child { color: var(--accent); }
-.advancedCreate { padding-top: 15px; border-top: 1px solid var(--border); font-size: 12px; }
+.advancedCreate { padding-top: 15px; border-top: 1px solid var(--border); font-size: var(--text-sm); }
 .advancedCreate > summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; }
 .reuseOption { display: flex; align-items: center; gap: 7px; margin-top: 15px; color: var(--text-muted); }
 .existingSessions { max-height: 180px; overflow-y: auto; padding-top: 8px; }
 .existingSessions label { display: flex; align-items: center; gap: 8px; padding: 7px 0; }
-.existingSessions label > span { min-width: 0; overflow-wrap: anywhere; font-size: 11px; }
-.existingSessions small { display: block; color: var(--text-dim); margin-top: 3px; font-size: 10px; }
+.existingSessions label > span { min-width: 0; overflow-wrap: anywhere; font-size: var(--text-xs); }
+.existingSessions small { display: block; color: var(--text-dim); margin-top: 3px; font-size: var(--text-xs); }
 .createMembers { min-width: 0; padding-left: 24px; border-left: 1px solid var(--border); }
 .memberHeading { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
-.memberHeading h3 { flex: 1; margin: 0; font-size: 13px; font-weight: 550; }
-.memberHeading > span { color: var(--text-muted); font-size: 12px; }
+.memberHeading h3 { flex: 1; margin: 0; font-size: var(--text-sm); font-weight: 550; }
+.memberHeading > span { color: var(--text-muted); font-size: var(--text-sm); }
 .agentRow { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; min-width: 0; }
 .agentCopy { flex: 1; min-width: 0; }
 .agentCopy > div { display: flex; align-items: center; gap: 9px; }
-.agentCopy strong { font-size: 13px; font-weight: 550; }
-.roleBadge { display: inline-block; padding: 2px 6px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 7%, var(--bg)); color: var(--accent); font-size: 10px; }
-.agentCopy small { display: block; margin-top: 6px; font-size: 11px; color: var(--text-muted); line-height: 1.6; }
-.agentCopy input, .agentCopy select { display: block; width: 100%; max-width: 150px; padding: 5px 7px; margin-top: 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: 11px; }
-.addMember { display: inline-flex; align-items: center; gap: 10px; padding: 3px 0; border: 0; background: transparent; color: var(--accent); font-size: 12px !important; }
+.agentCopy strong { font-size: var(--text-sm); font-weight: 550; }
+.roleBadge { display: inline-block; padding: 2px 6px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 7%, var(--bg)); color: var(--accent); font-size: var(--text-xs); }
+.agentCopy small { display: block; margin-top: 6px; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.6; }
+.agentCopy input, .agentCopy select { display: block; width: 100%; max-width: 150px; padding: 5px 7px; margin-top: 5px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: var(--text-xs); }
+.addMember { display: inline-flex; align-items: center; gap: 10px; padding: 3px 0; border: 0; background: transparent; color: var(--accent); font-size: var(--text-sm) !important; }
 .addMember > svg { box-sizing: content-box; padding: 5px; border: 1px dashed var(--accent); border-radius: 50%; }
-.memberHint { display: flex; align-items: center; gap: 6px; margin: 22px 0 0; color: var(--text-muted); font-size: 11px; }
+.memberHint { display: flex; align-items: center; gap: 6px; margin: 22px 0 0; color: var(--text-muted); font-size: var(--text-xs); }
 .dialogActions { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; padding: 16px 28px; border-top: 1px solid var(--border); }
-.dialogActions > span { display: flex; align-items: center; gap: 8px; flex: 1; color: var(--text-muted); font-size: 11px; }
-.dialogActions > button { padding: 9px 16px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.dialogActions > span { display: flex; align-items: center; gap: 8px; flex: 1; color: var(--text-muted); font-size: var(--text-xs); }
+.dialogActions > button { padding: 9px 16px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text-muted); font-size: var(--text-sm); white-space: nowrap; }
 .dialogActions > .primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.error, .inlineError { margin: 13px 0 0; color: var(--status-error, #c44); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
-.creating { display: flex; align-items: center; gap: 7px; margin: 15px 0 0; color: var(--accent); font-size: 12px; }
+.error, .inlineError { margin: 13px 0 0; color: var(--status-error, #c44); font-size: var(--text-sm); line-height: 1.65; overflow-wrap: anywhere; }
+.creating { display: flex; align-items: center; gap: 7px; margin: 15px 0 0; color: var(--accent); font-size: var(--text-sm); }
 .creating > span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 @media (max-width: 600px) {
   .backdrop { padding: 12px; }
   .dialog { max-height: calc(100dvh - 24px); }
   .dialogHeader { padding: 20px 18px; }
-  .dialogHeader h2 { font-size: 20px; }
+  .dialogHeader h2 { font-size: var(--text-xl); }
   .dialogBody { padding: 0 18px 18px; }
   .templates { gap: 8px; margin-bottom: 20px; }
   .templates > button { padding: 10px; gap: 8px; }
   .templateIcon { width: 28px; height: 28px; }
-  .templates strong { font-size: 12px; }
-  .templates small { font-size: 10px; }
+  .templates strong { font-size: var(--text-sm); }
+  .templates small { font-size: var(--text-xs); }
   .templates i { display: none; }
   .createColumns { grid-template-columns: 1fr; gap: 20px; }
   .createMembers { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--border); }
   .agentRow { margin-bottom: 15px; }
   .memberHeading { margin-bottom: 16px; }
   .dialogActions { padding: 14px 18px; gap: 8px; }
-  .dialogActions > span { font-size: 9px; line-height: 1.5; }
+  .dialogActions > span { font-size: var(--text-xs); line-height: 1.5; }
   .dialogActions > button { padding: 8px 10px; }
 }
