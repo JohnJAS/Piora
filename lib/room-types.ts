@@ -186,9 +186,25 @@ export interface RoomSubmission {
   targetMemberIds: string[];
   commandIds: string[];
   teamRunId?: string;
+  memberSelection?: RoomMemberSelection;
   error?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface RoomMemberAssessment {
+  memberId: string;
+  fingerprint: string;
+  suitable: boolean;
+  confidence: number;
+  reason: string;
+  status: "completed" | "error";
+}
+
+export interface RoomMemberSelection {
+  assessments: RoomMemberAssessment[];
+  selectedMemberId?: string;
+  clarificationOnly?: boolean;
 }
 
 export interface RoomMessagePayloadMetadata {
@@ -203,6 +219,7 @@ export interface RoomPresence {
   sessionId: string;
   messageId: string;
   status: "processing" | "completed" | "error";
+  phase?: "selection";
   detail?: string;
   updatedAt: number;
 }

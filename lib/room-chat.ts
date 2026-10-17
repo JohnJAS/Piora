@@ -17,7 +17,7 @@ export interface RoomChatDispatchResult {
   skipped: Array<{ sessionId: string; reason: string; code?: string }>;
 }
 
-function groupChatPrompt(room: CollaborationRoom, member: RoomMember, input: { messageId: string; content: string; authorName?: string; authorSessionId?: string; replyTo?: string; correlationId?: string; forwardDepth?: number; autoRound?: number; maxAutoRounds?: number; intake?: boolean }): string {
+function groupChatPrompt(room: CollaborationRoom, member: RoomMember, input: { messageId: string; content: string; authorName?: string; authorSessionId?: string; replyTo?: string; correlationId?: string; forwardDepth?: number; autoRound?: number; maxAutoRounds?: number; intake?: boolean; clarificationOnly?: boolean }): string {
   const coordinator = room.members.find((candidate) => candidate.memberId === room.coordination.coordinatorMemberId);
   const coordinatorName = coordinator ? getRoomMemberName(coordinator) : "协调者";
   const isCoordinator = member.memberId === room.coordination.coordinatorMemberId;
@@ -38,7 +38,9 @@ function groupChatPrompt(room: CollaborationRoom, member: RoomMember, input: { m
     "Respond to the group, not only to your private session: use the piora_room tool with action send_shared, this exact room ID, and replyTo set to the Message ID above.",
     "Keep the shared reply concise, include replyTo/correlation context when replying, and do not repeat a reply for the same message ID.",
     "Do not automatically rebroadcast another Agent's shared reply; only respond when explicitly mentioned or routed by the Coordinator.",
-    ...(input.intake ? [
+    ...(input.clarificationOnly ? [
+      "All members declined ownership. You are the single clarification contact: briefly explain the missing expertise or context and ask a focused clarifying question. Do not execute work, delegate, or start_run.",
+    ] : input.intake ? [
       "This is the unified group intake. Answer simple questions directly with send_shared. Read relevant context first; do not modify project files during intake.",
       "When the request requires actual work, delegate through piora_room action start_run, with this roomId, replyTo set to the Message ID above, and content describing the user's exact objective and constraints. Do not use legacy @name messages to execute work outside TeamRun.",
       "If the user asks for a plan or discussion only, preserve that boundary in the objective. Do not silently expand scope.",
@@ -151,7 +153,7 @@ function relayRoomReply(
 
 export async function dispatchRoomChat(
   roomId: string,
-  input: { messageId: string; content: string; authorName?: string; authorSessionId?: string; targetSessionIds?: string[]; attempt?: number; replyTo?: string; correlationId?: string; forwardDepth?: number; autoRound?: number; maxAutoRounds?: number; router?: SessionMessageRouter; intake?: boolean; delivery?: "next_turn" | "steer" },
+  input: { messageId: string; content: string; authorName?: string; authorSessionId?: string; targetSessionIds?: string[]; attempt?: number; replyTo?: string; correlationId?: string; forwardDepth?: number; autoRound?: number; maxAutoRounds?: number; router?: SessionMessageRouter; intake?: boolean; clarificationOnly?: boolean; delivery?: "next_turn" | "steer" },
 ): Promise<RoomChatDispatchResult> {
   const room = getRoom(roomId);
   const requested = new Set(input.targetSessionIds?.filter(Boolean));

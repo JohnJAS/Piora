@@ -6,6 +6,7 @@ import { appendRoomMessage, findRoomMessage, getRoom, readRoomMessageFullContent
 import { isRoomBroadcast, resolveRoomMentions } from "./room-chat-routing";
 import { TeamError } from "./team-errors";
 import { isCurrentRoomQuestion } from "./room-question";
+import { publishRoomMemberSelection, selectRoomMessageHandler, type RoomSelectionServices } from "./room-member-selection";
 import type { RoomAttachment, RoomMention, RoomSubmission } from "./room-types";
 
 export interface RoomSubmissionInput {
@@ -19,6 +20,9 @@ export interface RoomSubmissionInput {
 }
 
 type SavedSubmission = RoomSubmission & { input: RoomSubmissionInput; requestHash: string };
+declare global {
+  var __pioraRoomSubmissionFlights: Map<string, Promise<SavedSubmission>> | undefined;
+}
 const terminal = new Set(["completed", "cancelled", "failed"]);
 
 function directory(roomId: string): string {
@@ -141,7 +145,9 @@ async function deliver(record: SavedSubmission): Promise<SavedSubmission> {
     }
     const broadcast = isRoomBroadcast(message.content);
     if (broadcast) targetIds = room.members.map((member) => member.memberId);
-    const requested = targetIds.length > 1 && room.coordination.mode === "team" && !broadcast ? [coordinator.memberId] : targetIds.length ? targetIds : [coordinator.memberId];
+    const requested = targetIds.length > 1 && room.coordination.mode === "team" && !broadcast ? [coordinator.memberId] : targetIds.length ? targetIds : [record.memberSelection?.selectedMemberId ?? coordinator.memberId];
+    if (requested.some(id => !room.members.some(member => member.memberId === id))) throw new Error("选定成员已离开群聊，请重试原消息。");
+    if (!targetIds.length && record.memberSelection?.selectedMemberId) publishRoomMemberSelection(room.id, message.id, record.memberSelection);
     const { dispatchRoomChat } = await import("./room-chat");
     const failedStatuses = new Set(["failed", "cancelled", "expired", "interrupted"]);
     const previousCommands = await Promise.all(record.commandIds.map((id) => router.getCommand(id)));
@@ -149,8 +155,8 @@ async function deliver(record: SavedSubmission): Promise<SavedSubmission> {
     const remaining = requested.map((id) => room.members.find((member) => member.memberId === id)!.binding.sessionId).filter((id) => !previouslyAccepted.has(id));
     if (!remaining.length) return confirmSubmission(record);
     const result = await dispatchRoomChat(room.id, { messageId: message.id, content: contentForAgent, authorName: "你",
-      authorSessionId: record.input.sessionId, targetSessionIds: remaining,
-      replyTo: message.replyTo, correlationId: message.id, attempt: record.commandIds.length + 1, intake: room.coordination.mode === "team", maxAutoRounds: broadcast ? 0 : 6,
+      authorSessionId: record.input.sessionId, targetSessionIds: remaining, clarificationOnly: record.memberSelection?.clarificationOnly,
+      replyTo: message.replyTo, correlationId: message.id, attempt: record.commandIds.length + 1, intake: room.coordination.mode === "team" || Boolean(record.memberSelection), maxAutoRounds: broadcast ? 0 : 6,
       delivery: "next_turn" });
     record.commandIds = [...new Set([...record.commandIds, ...result.dispatched.map((item) => item.commandId)])];
     if (result.dispatched.some((item) => ["failed", "cancelled", "expired", "interrupted"].includes(item.status))) throw new Error("成员未能处理这条消息，原文已保留。");
@@ -164,16 +170,58 @@ export async function startRoomIntakeTask(roomId: string, sessionId: string, mes
   const room = getRoom(roomId);
   const message = findRoomMessage(roomId, messageId);
   if (!message?.clientPromptId || message.author.kind !== "user" || !room.members.some((member) => member.binding.sessionId === sessionId)) throw new TeamError("TEAM_INVALID_CONTEXT", "只能从当前群聊用户消息建立任务。");
+  const record = readRecord(roomId, message.clientPromptId);
+  if (record?.memberSelection?.selectedMemberId && !room.members.some(member => member.memberId === record.memberSelection!.selectedMemberId && member.binding.sessionId === sessionId)) throw new TeamError("TEAM_INVALID_CONTEXT", "只有本条消息选定的处理人可以建立任务。");
+  if (record?.memberSelection?.clarificationOnly) throw new TeamError("TEAM_INVALID_CONTEXT", "成员均未认领时请先澄清需求，不能直接创建执行任务。");
   const { getTeamCoordinatorService } = await import("./team-coordinator-service");
   const run = await getTeamCoordinatorService().createRun({ roomId, objective, coordinatorMemberId: room.coordination.coordinatorMemberId,
     createdBy: { kind: "user", id: message.author.id }, correlationId: `room:${message.id}` });
-  const record = readRecord(roomId, message.clientPromptId);
   if (record) { record.teamRunId = run.id; writeRecord(record); }
   return run;
   });
 }
 
-export async function submitRoomMessage(roomId: string, input: RoomSubmissionInput) {
+async function processSubmission(roomId: string, id: string, services?: RoomSelectionServices): Promise<SavedSubmission> {
+  const flights = globalThis.__pioraRoomSubmissionFlights ??= new Map();
+  const key = recordPath(roomId, id);
+  const existing = flights.get(key);
+  if (existing) return existing;
+  const flight = (async () => {
+    const release = await lockfile.lock(recordPath(roomId, id), { realpath: false, stale: 120_000, update: 15_000,
+      retries: { retries: 1200, minTimeout: 50, maxTimeout: 250 } });
+    try {
+      const record = readRecord(roomId, id)!;
+      if (record.status === "delivered") return record;
+      if (record.status === "queued" && await activeRun(roomId)) return record;
+      if (record.status === "error") { record.status = "accepted"; delete record.error; writeRecord(record); }
+      try {
+        const room = getRoom(roomId);
+        const message = findRoomMessage(roomId, record.messageId)!;
+        const parent = message.replyTo ? findRoomMessage(roomId, message.replyTo) : undefined;
+        const replyOwner = parent?.author.kind === "session" && room.members.some(member => member.binding.sessionId === parent.author.id);
+        if (record.intent === "auto" && !record.targetMemberIds.length && !replyOwner && !isRoomBroadcast(message.content)
+          && (!await activeRun(roomId) || Boolean(message.replyTo))) {
+          record.memberSelection ??= { assessments: [] };
+          writeRecord(record);
+          const content = readRoomMessageFullContent(roomId, message) + (message.attachments?.length ? `\n附件：${message.attachments.map(file => file.name).join("、")}` : "");
+          await selectRoomMessageHandler(roomId, message.id, content, record.memberSelection, () => writeRecord(record), services);
+        }
+        return await withSubmissionLock(roomId, async () => {
+          const latest = readRecord(roomId, id)!;
+          try { return await deliver(latest); }
+          catch (error) { latest.status = "error"; latest.error = error instanceof Error ? error.message : String(error); writeRecord(latest); return latest; }
+        });
+      } catch (error) {
+        record.status = "error"; record.error = error instanceof Error ? error.message : String(error); writeRecord(record);
+        return record;
+      }
+    } finally { await release(); }
+  })();
+  flights.set(key, flight);
+  try { return await flight; } finally { if (flights.get(key) === flight) flights.delete(key); }
+}
+
+export async function submitRoomMessage(roomId: string, input: RoomSubmissionInput, services?: RoomSelectionServices) {
   if (!input || typeof input !== "object" || Array.isArray(input)
     || (input.mentions !== undefined && (!Array.isArray(input.mentions) || input.mentions.some((item) => !item || typeof item.memberId !== "string")))
     || (input.attachments !== undefined && (!Array.isArray(input.attachments) || input.attachments.some((item) => !item)))
@@ -194,7 +242,7 @@ export async function submitRoomMessage(roomId: string, input: RoomSubmissionInp
       if (typeof file.name !== "string" || typeof file.path !== "string" || !isExistingFilePathAllowed(file.path, roots)) throw new TeamError("TEAM_INVALID_INPUT", "附件不存在或不在允许的目录中。");
     }
   }
-  return withSubmissionLock(roomId, async () => {
+  const prepared = await withSubmissionLock(roomId, async () => {
     const requestHash = createHash("sha256").update(JSON.stringify({ sessionId: input.sessionId, clientPromptId: input.clientPromptId, content: input.content,
       intent: input.intent ?? "auto", mentions: (input.mentions ?? []).map(({ memberId, start, end }) => ({ memberId, start, end })),
       replyTo: input.replyTo ?? null, attachments: (input.attachments ?? []).map(({ name, path, mimeType }) => ({ name, path, mimeType: mimeType ?? null })) })).digest("hex");
@@ -213,23 +261,19 @@ export async function submitRoomMessage(roomId: string, input: RoomSubmissionInp
     });
     const record: SavedSubmission = saved ?? { clientPromptId: input.clientPromptId, roomId, messageId: message.id, status: "accepted",
       intent: input.intent ?? "auto", targetMemberIds, commandIds: [], createdAt: message.createdAt, updatedAt: Date.now(), input, requestHash };
-    writeRecord(record);
-    try { await deliver(record); }
-    catch (error) { record.status = "error"; record.error = error instanceof Error ? error.message : String(error); writeRecord(record); }
+    if (!saved) writeRecord(record);
     return { message, submission: record };
   });
+  if (prepared.submission.status === "delivered" || prepared.submission.status === "queued") return prepared;
+  return { message: prepared.message, submission: await processSubmission(roomId, input.clientPromptId, services) };
 }
 
 /** Safe to call on reconnect or startup: durable messages and Router keys make replay idempotent. */
 export async function drainRoomSubmissions(roomId: string): Promise<void> {
-  await withSubmissionLock(roomId, async () => {
-    for (const item of listRoomSubmissions(roomId)) {
-      if (item.status !== "accepted" && item.status !== "queued") continue;
-      if (item.status === "queued" && await activeRun(roomId)) break;
-      const record = readRecord(roomId, item.clientPromptId)!;
-      try { await deliver(record); }
-      catch (error) { record.status = "error"; record.error = error instanceof Error ? error.message : String(error); writeRecord(record); }
-      if (record.status === "queued") break;
-    }
-  });
+  for (const item of listRoomSubmissions(roomId)) {
+    if (item.status !== "accepted" && item.status !== "queued") continue;
+    if (item.status === "queued" && await activeRun(roomId)) break;
+    const record = await processSubmission(roomId, item.clientPromptId);
+    if (record.status === "queued") break;
+  }
 }

@@ -38,6 +38,7 @@ function emit(){for(const source of sources){if(source.closed)continue;if(source
 window.EventSource=class{constructor(url){this.url=url;this.listeners={};sources.push(this);setTimeout(()=>{if(this.closed)return;this.onopen?.();if(url.includes('/runs/'))this.fire('snapshot',{run:state.run});else{this.onmessage?.({data:JSON.stringify(snapshot())});this.onmessage?.({data:JSON.stringify({type:'activity',activities:[activity()]})});}},0)}addEventListener(name,fn){(this.listeners[name]??=[]).push(fn)}fire(name,value){for(const fn of this.listeners[name]??[])fn({data:JSON.stringify(value)})}close(){this.closed=true}};
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
 window.ux={state,submissions:[],failNext:false,holdNext:false,release:null,emit,
+ selecting(active){for(const source of sources){if(!source.closed&&!source.url.includes('/runs/'))source.onmessage?.({data:JSON.stringify({type:'presence',presence:{sessionId:'s1',messageId:'u1',status:active?'processing':'completed',phase:'selection',updatedAt:Date.now()}})});}},
  reset(){const revision=state.run.revision+1;Object.assign(state,structuredClone(initial));state.run.revision=revision;window.ux.remount?.();emit()},
  waiting(){state.run.phase='waiting_user';state.run.revision++;state.messages.push(msg('question',state.messages.length+1,'s2','需要你的回答\\n\\n需要保留现有导航结构吗？',{kind:'question',teamRunId:runId,correlationId:'team:'+runId+':question:0'}));emit()},
  complete(){state.run.phase='completed';state.run.revision++;for(const task of Object.values(state.run.tasks))task.status='completed';state.messages.push(msg('delivery',state.messages.length+1,'s0','方案已整理完成，包含主界面、建群与任务交互。',{kind:'delivery',teamRunId:runId}));emit()},
@@ -115,6 +116,11 @@ try {
   await page.goto(origin);
   await page.getByRole("heading", { name: "Piora 界面改版", exact: true }).waitFor();
   await page.getByText("正在检查 3 个交互场景", { exact: true }).waitFor();
+  await page.evaluate(() => window.ux.selecting(true));
+  await page.getByRole("status").filter({ hasText: "1 位成员正在判断接手人" }).waitFor();
+  check("成员评估阶段显示接手判断状态", await page.getByRole("status").filter({ hasText: "正在判断接手人" }).isVisible());
+  await page.evaluate(() => window.ux.selecting(false));
+  await page.getByRole("status").filter({ hasText: "正在判断接手人" }).waitFor({ state: "hidden" });
   await page.getByRole("button", { name: "任务", exact: true }).click();
   await page.getByRole("heading", { name: "任务详情" }).waitFor();
   check("主界面只有一个输入框与一张活跃任务卡", await page.locator("textarea").count() === 1 && await page.locator("[data-room-task-summary]").count() === 1);

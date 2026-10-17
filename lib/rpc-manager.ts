@@ -415,7 +415,9 @@ export class AgentSessionWrapper {
     this.refreshCapabilityCatalog();
     const permitted = resolveSessionCapabilityToolNames(this.capabilityCatalog, this.capabilityPolicy,
       this.inner.getAllTools().map(tool => tool.name), this.toolNameCeiling);
-    return permitted.includes(name) && (!this.projectAllowedToolNames || this.projectAllowedToolNames.has(name));
+    // Room coordination is enabled by internal Team admission, independently
+    // of project workspace tools. It still requires an active capability.
+    return permitted.includes(name) && (name === "piora_room" || !this.projectAllowedToolNames || this.projectAllowedToolNames.has(name));
   }
 
   isMcpResourceServerAllowed(server: string): boolean {
@@ -1694,7 +1696,10 @@ export class AgentSessionWrapper {
           : [];
         const exact = [...new Set([...requested, "piora_room"])];
         if (exact.some((name) => !available.has(name))) throw new Error("Team tool allowlist contains an unavailable tool.");
-        if (this.projectAllowedToolNames && exact.some((name) => !this.projectAllowedToolNames?.has(name))) {
+        // Every Team needs its coordination protocol, including projects whose
+        // coding/chat preset does not select it. Keep project restrictions on
+        // all actual workspace tools; do not expand the project's saved policy.
+        if (this.projectAllowedToolNames && exact.some((name) => name !== "piora_room" && !this.projectAllowedToolNames?.has(name))) {
           throw new Error("Team tool allowlist contains a tool disabled by project settings.");
         }
         const previousCeiling = this.toolNameCeiling;

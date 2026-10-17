@@ -12,7 +12,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const { id } = await params;
     const query = new URL(request.url).searchParams;
     requireRoomMemberBySession(id, query.get("sessionId"));
-    await drainRoomSubmissions(id);
+    // Classification can wait on several providers. Keep history/recovery
+    // readable while its durable submission is being processed.
+    void drainRoomSubmissions(id).catch(() => {});
     const messages = listRoomMessages(id, { afterSeq: Number(query.get("afterSeq")) || 0, beforeSeq: query.has("beforeSeq") ? Number(query.get("beforeSeq")) : undefined, limit: 500 });
     return Response.json({ messages, submissions: listRoomSubmissions(id) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) { return teamApiError(error); }

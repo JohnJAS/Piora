@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createHash, randomUUID } from "node:crypto";
 import {
   addRoomMember,
   appendPrivateNote,
@@ -23,7 +24,9 @@ import {
   updateRoomWorkspace,
 } from "@/lib/room-store";
 import { dispatchRoomChat } from "@/lib/room-chat";
-import { resolveRoomChatTargets } from "@/lib/room-chat-routing";
+import { resolveExplicitRoomChatTargets, resolveRoomChatTargets } from "@/lib/room-chat-routing";
+import { submitRoomMessage } from "@/lib/room-submissions";
+import { getSessionMessageRouter } from "@/lib/session-message-router";
 import { dispatchReadyRoomTasks } from "@/lib/room-coordinator";
 import { getTeamCoordinatorService } from "@/lib/team-coordinator-service";
 import { getTeamRunStore } from "@/lib/team-run-store";
@@ -266,6 +269,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const room = getRoom(id);
     const member = room.members.find((item) => item.sessionId === body.sessionId);
     if (!member) return NextResponse.json({ error: "Session is not a room member" }, { status: 403 });
+    if (body.action === "chat" && body.authorKind !== "session" && !body.replyTo && !resolveExplicitRoomChatTargets(room, body.content).length) {
+      // Older clients use this endpoint. Share the durable election path instead
+      // of silently retaining the old coordinator-only default.
+      const clientPromptId = body.correlationId ? `legacy-${createHash("sha256").update(body.correlationId).digest("hex")}` : randomUUID();
+      const { message, submission } = await submitRoomMessage(id, { sessionId: body.sessionId, clientPromptId, content: body.content });
+      const commands = await Promise.all(submission.commandIds.map(commandId => getSessionMessageRouter().getCommand(commandId)));
+      return NextResponse.json({ message, dispatch: {
+        dispatched: commands.map(command => ({ sessionId: command.targetSessionId, behavior: "next_turn", commandId: command.commandId, status: command.status })),
+        skipped: submission.status === "error" ? [{ sessionId: "*", reason: submission.error }] : [],
+      } });
+    }
     const message = appendRoomMessage(id, {
       authorKind: body.authorKind ?? "user",
       authorId: body.sessionId,

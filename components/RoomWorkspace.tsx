@@ -70,6 +70,9 @@ export function RoomWorkspace({ initialRoom, onRoomChange, onRoomDeleted, onOpen
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? activeRun ?? runs[0];
   const coordinator = room.members.find((member) => member.memberId === room.coordination.coordinatorMemberId);
   const working = activities.filter((activity) => activity.status === "working");
+  const selecting = [...data.presence.values()].filter(presence => presence.phase === "selection");
+  const pendingSelection = data.submissions.find(submission => submission.status === "accepted" && submission.memberSelection && !submission.memberSelection.selectedMemberId);
+  const selectingCount = selecting.length || (pendingSelection ? Math.max(1, room.members.length - pendingSelection.memberSelection!.assessments.length) : 0);
   const members = useMemo(() => new Map(room.members.map((member) => [member.binding.sessionId, member])), [room.members]);
   const allArtifacts = useMemo(() => {
     const result = new Map(data.artifacts.map((artifact) => [artifact.id, artifact]));
@@ -259,7 +262,7 @@ export function RoomWorkspace({ initialRoom, onRoomChange, onRoomDeleted, onOpen
             </>);
 
   const renderHeader = () => (<header className={`${styles.header} room-workspace-header`}>
-      <div className={styles.headerIdentity}><h1>{room.name}</h1><p>{t("roomUx.ownedBy", { name: coordinator?.profile.name ?? t("roomUx.lead") })}<span>·</span>{working.length ? t("roomUx.workingCount", { count: working.length }) : t("roomUx.memberCount", { count: room.members.length })}{data.connection !== "connected" ? <><span>·</span><span role="status">{t(`roomUx.${data.connection}`)}</span></> : null}</p></div>
+      <div className={styles.headerIdentity}><h1>{room.name}</h1><p>{t("roomUx.ownedBy", { name: coordinator?.profile.name ?? t("roomUx.lead") })}<span>·</span>{selectingCount ? <span role="status">{t("roomUx.selectingHandler", { count: selectingCount })}</span> : working.length ? t("roomUx.workingCount", { count: working.length }) : t("roomUx.memberCount", { count: room.members.length })}{data.connection !== "connected" ? <><span>·</span><span role="status">{t(`roomUx.${data.connection}`)}</span></> : null}</p></div>
       <nav className={styles.headerTabs} aria-label={t("roomUx.viewDetails")}>{(["members", "tasks", "artifacts"] as const).map((tab) => <button key={tab} type="button" aria-label={t(`roomUx.${tab}`)} aria-expanded={panel === tab} className={panel === tab ? styles.active : ""} onClick={() => openPanel(tab)}><AliIcon name={tab === "members" ? "user" : tab === "tasks" ? "activity" : "file"} size={17} /><span>{t(`roomUx.${tab}`)}</span>{tab === "tasks" && activeRun?.phase === "waiting_user" ? <i className={styles.attentionDot} /> : null}</button>)}</nav>
       <button type="button" className={styles.iconButton} title={t("roomUx.settings")} aria-label={t("roomUx.settings")} onClick={() => setSettingsOpen(true)}><AliIcon name="ellipsis" size={20} /></button>
     </header>);
