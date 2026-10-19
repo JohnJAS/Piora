@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 输入框布局
+
+- 修复缩窄聊天区域后模型选择器与发送按钮过早换行的问题：常见桌面宽度优先收缩项目、提示词和模型名称，窄栏将提示词优化收为图标；极窄面板保留换行以保证操作可用（#182）。
+
 ### 依赖升级与兼容性
 
 - 升级 Pi 运行时至 1.3.0，并重新核验官方 npm 安装包、源码与入口完整性；同步 Undici 8.12.2 的运行时审计和打包检查。
