@@ -18,5 +18,8 @@
 .validation p { margin: 0 0 4px; }
 .validation button { border: 0; padding: 3px 0; background: transparent; color: var(--accent); cursor: pointer; font: inherit; }
 .sendButton { white-space: nowrap; font-size: var(--text-sm, 13px); }
+.sequence { flex-basis: 100%; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 3px 0; color: var(--text-dim); font-size: var(--text-xs, 12px); }
+.sequence > span:first-of-type { flex-shrink: 0; }
+.sequence > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .options summary:focus-visible, .context button:focus-visible, .queryHeading button:focus-visible, .validation button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media(pointer: coarse) { .context button, .options summary, .queryHeading button, .validation button, .delivery select { min-height: 44px; } .afterPrompt textarea, .delivery select { font-size: var(--text-md, 16px); } }

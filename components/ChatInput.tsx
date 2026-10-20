@@ -2277,6 +2277,9 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
           />
 
           {/* Composer footer: attach + model selector (bottom-right of the input) */}
+          {parsedCommandInput.kind === "command" && parsedCommandInput.afterPrompt && commandInputOptions.afterPrompt === undefined && <div className={commandStyles.sequence}>
+            <AliIcon name="arrowright" size={12} /><span>{t("chatCommands.promptStep")}</span><span>{parsedCommandInput.afterPrompt}</span>
+          </div>}
           {isCommandInput && commandInputOptions.afterPrompt !== undefined && <label className={commandStyles.afterPrompt}>
             <span className={commandStyles.queryHeading}>{t("chatCommands.addQuery")}<button type="button" aria-label={t("chatCommands.cancelQuery")} onClick={() => setCommandInputOptions(current => ({ ...current, afterPrompt: undefined }))}><AliIcon name="close" size={12} /></button></span>
             <textarea ref={followUpTextareaRef} aria-label={t("chatCommands.query")} value={commandInputOptions.afterPrompt} placeholder={t("chatCommands.queryPlaceholder")} onChange={event => setCommandInputOptions(current => ({ ...current, afterPrompt: event.target.value }))} />

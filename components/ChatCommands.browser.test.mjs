@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const { webpack } = require("next/dist/compiled/webpack/webpack.js");
 const repo = path.resolve(import.meta.dirname, "..");
 
-test("command composer and result cards support keyboard, IME, sequence preview and narrow themes", { timeout: 180000 }, async () => {
+test("compact command results and optional composer actions support keyboard, IME, follow-ups and narrow themes", { timeout: 180000 }, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "piora-command-browser-"));
   let browser;
   try {
@@ -66,7 +66,12 @@ window.submissions=[];createRoot(document.getElementById("root")).render(<App/>)
     await composer.fill("/reload");
     await composer.press("Escape");
     await composer.press("Enter");
+    const result = page.locator('[data-command-id="fixture-command"]');
+    await result.waitFor();
+    assert.equal(await result.locator("pre").count(), 0);
+    await result.getByRole("button", { name: "查看详情", exact: true }).click();
     await page.getByText("会话资源已重载", { exact: true }).waitFor();
+    await result.getByRole("button", { name: "收起详情", exact: true }).click();
     assert.equal(await page.evaluate(() => window.submissions.length), 1);
     await composer.fill("/reload 检查当前项目");
     await composer.press("Escape");
@@ -77,6 +82,7 @@ window.submissions=[];createRoot(document.getElementById("root")).render(<App/>)
     assert.equal(await page.evaluate(() => window.restored), true);
     await composer.fill("/deploy staging");
     await composer.press("Escape");
+    await page.locator("summary").click();
     await page.getByRole("button", { name: "完成后再提问", exact: true }).click();
     await page.getByRole("textbox", { name: "后续提问" }).fill("检查部署结果");
     await composer.press("Enter");
@@ -89,12 +95,17 @@ window.submissions=[];createRoot(document.getElementById("root")).render(<App/>)
     assert.equal(await page.evaluate(() => window.submissions.length), 3);
     await composer.fill("/deploy staging");
     await composer.press("Escape");
+    await page.locator("summary").click();
     await page.getByRole("button", { name: "完成后再提问", exact: true }).click();
     await page.getByRole("textbox", { name: "后续提问" }).fill("保留独立问题");
-    await page.getByRole("button", { name: "移除命令，保留正文", exact: true }).click();
-    assert.equal(await composer.inputValue(), "staging\n\n保留独立问题");
+    await page.locator("summary").click();
+    await page.getByRole("button", { name: "作为普通消息发送", exact: true }).click();
+    assert.equal(await composer.inputValue(), "/deploy staging\n\n保留独立问题");
+    await composer.press("Enter");
+    assert.equal(await page.evaluate(() => window.submissions.at(-1).options.inputMode), "text");
     await composer.fill("/deploy staging");
     await composer.press("Escape");
+    await page.locator("summary").click();
     await page.getByRole("button", { name: "完成后再提问", exact: true }).click();
     await page.getByRole("textbox", { name: "后续提问" }).fill("改为文本仍保留");
     await composer.fill("普通问题");
@@ -102,11 +113,13 @@ window.submissions=[];createRoot(document.getElementById("root")).render(<App/>)
     await page.evaluate(() => window.setBusy(true));
     await composer.fill("/deploy staging");
     await composer.press("Escape");
+    await page.locator("summary").click();
     await page.getByRole("combobox", { name: "命令交付方式" }).selectOption("next_turn");
     await page.getByRole("button", { name: "执行", exact: true }).click();
     assert.equal(await page.evaluate(() => window.submissions.at(-1).options.delivery), "next_turn");
     await composer.fill("/review API");
     await composer.press("Escape");
+    await page.locator("summary").click();
     await page.getByRole("combobox", { name: "命令交付方式" }).selectOption("steer");
     await page.getByRole("button", { name: "执行", exact: true }).click();
     assert.equal(await page.evaluate(() => window.submissions.at(-1).options.delivery), "steer");
