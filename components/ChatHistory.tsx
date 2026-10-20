@@ -3,7 +3,7 @@ import { memo, useCallback, useImperativeHandle, useMemo, useRef, useState, type
 import { CompactProcessSummary } from "./CompactProcessSummary";
 import { buildCompactChatHistoryRows } from "@/lib/compact-chat-history";
 import { CompactProcessContext, RevealProcessCommandContext } from "./CompactProcessContext";
-import { buildChatHistoryRows, insertCommandHistoryRows, messageFingerprint } from "@/lib/chat-history";
+import { buildChatHistoryRows, insertCommandHistoryRows, layoutChatResponseRows, messageFingerprint } from "@/lib/chat-history";
 import type { AgentMessage, ToolResultMessage } from "@/lib/types";
 import { useI18n } from "@/hooks/useI18n";
 import { MessageView } from "./MessageView";
@@ -60,7 +60,7 @@ export const ChatHistory = memo(function ChatHistory({ messages: savedMessages, 
   const list = useRef<VirtualListHandle>(null);
   const { rows, entryRows } = useMemo(() => {
     const plan = compactProcess ? buildCompactChatHistoryRows(messages, entryIds, busy || streaming, expanded, streamingIndex) : buildChatHistoryRows(messages, entryIds, busy || streaming, expanded);
-    return { ...plan, rows: insertCommandHistoryRows(plan.rows, messages, entryIds, operations) };
+    return { ...plan, rows: layoutChatResponseRows(insertCommandHistoryRows(plan.rows, messages, entryIds, operations), messages, busy || streaming) };
   }, [messages, entryIds, busy, streaming, expanded, compactProcess, streamingIndex, operations]);
   const keys = useMemo(() => rows.map((row) => row.key), [rows]);
   const metadata = useMemo(() => {
@@ -120,7 +120,7 @@ export const ChatHistory = memo(function ChatHistory({ messages: savedMessages, 
     return <CompactProcessContext.Provider value={compactProcess}><RevealProcessCommandContext.Provider value={inspectCommand}><div className={`chat-message-shell${row.secondary ? " compact-process-detail" : ""}${highlightedEntryId === entryIds[index] ? " is-search-target" : ""}`} data-chat-entry-id={entryIds[index]} data-chat-user-index={metadata.userIndices.get(index)}
       ref={index === metadata.lastUser ? (element) => { lastUserMsgRef.current = element; if (element && pendingScrollToUserRef.current) list.current?.cancelNavigation(); } : undefined}>
       <RenderErrorBoundary resetKey={messageFingerprint(message, entryIds[index])} fallbackLabel={t("chat.messageRenderFailed")} errorTitle={t("chat.messageRenderError")}>
-        <MessageView {...messageProps} message={message} isStreaming={row.isStreaming} toolResults={metadata.toolResults} entryId={entryIds[index]}
+        <MessageView {...messageProps} message={message} intermediate={row.intermediate} isStreaming={row.isStreaming} toolResults={metadata.toolResults} entryId={entryIds[index]}
           messageActions={onDeleteMessage && (entryIds[index] || message.role === "user" && message.clientPromptId) ? <DeleteMessageAction message={messages[index]} entryId={entryIds[index]} onDelete={onDeleteMessage} disabled={deleteDisabled || busy || streaming} /> : null}
           onFork={busy || isNew || index === 0 && message.role === "user" ? undefined : messageProps.onFork}
           onNavigate={busy ? undefined : messageProps.onNavigate}

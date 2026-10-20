@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const { webpack } = require("next/dist/compiled/webpack/webpack.js");
 const repo = path.resolve(import.meta.dirname, "..");
 
-test("compact chat streams logs, preserves explicit expansion, and switches layouts durably", { timeout: 180000 }, async (t) => {
+test("chat hides intermediate footers and gaps, opens live logs only on request, and defaults compact display off", { timeout: 180000 }, async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), "piora-compact-process-"));
   let browser;
   try {
@@ -29,7 +29,10 @@ function App(){
   const user={role:"user",content:"修复 Shell 实时输出的问题",timestamp:Date.now()-15000};
   const assistant={role:"assistant",content:[{type:"thinking",thinking:"检查事件传递与输出更新。"},{type:"toolCall",toolCallId:"shell",toolName:"bash",input:{command:"npm run test"}}],timestamp:user.timestamp+1000};
   const result={role:"toolResult",toolCallId:"shell",isStreaming:!done,content:[{type:"text",text:output}],timestamp:user.timestamp+12000};
-  const messages=[user,assistant,result];
+  const messages=[user,assistant,result,{role:"assistant",content:[{type:"toolCall",toolCallId:"shell2",toolName:"powershell",input:{command:"echo second"}},
+    {type:"toolCall",toolCallId:"shell3",toolName:"bash",input:{command:"echo third"}}]},
+    {role:"toolResult",toolCallId:"shell2",isStreaming:!done,content:[{type:"text",text:"second command output"}]},
+    {role:"toolResult",toolCallId:"shell3",isStreaming:!done,content:[{type:"text",text:"third command output"}]}];
   if(attention) messages.push({role:"assistant",content:[{type:"toolCall",toolCallId:"wait",toolName:"browser",input:{action:"wait_for_user",reason:"请完成登录"}}]});
   if(done) messages.push({role:"assistant",content:[{type:"text",text:"## 已修复 Shell 实时输出\\n\\n执行日志现在会实时更新。\\n\\n- 运行时显示最新输出\\n- 支持展开查看完整日志"}],timestamp:user.timestamp+14000});
   window.advance=()=>setOutput("old line\\none\\ntwo\\nthree\\nfour\\nfive");
@@ -39,9 +42,9 @@ function App(){
   window.setCompact=setEnabled;
   return <I18nProvider><main><header>Piora <button role="switch" aria-label="轻量过程展示" aria-checked={enabled} onClick={()=>setEnabled(!enabled)}>轻量过程展示</button></header>
     <div id="scroll" className="overflow-y-auto" ref={scroll}><div className="chat-column">
-      <ChatHistory messages={messages} entryIds={["u","a","r",...(attention?["wait"]:[]),...(done?["answer"]:[])]} compactProcess={enabled}
+      <ChatHistory messages={messages} entryIds={["u","a","r","a2","r2","r3",...(attention?["wait"]:[]),...(done?["answer"]:[])]} compactProcess={enabled}
         streamingMessage={enabled?draft:null} busy={!done} streaming={Boolean(draft)} isNew={false} forkingEntryId={null} highlightedEntryId={null} lastUserMsgRef={lastUser}
-        pendingScrollToUserRef={pending} scrollContainer={scroll} handleRef={history} sessionId="fixture" />
+        pendingScrollToUserRef={pending} scrollContainer={scroll} handleRef={history} sessionId="fixture" onDeleteMessage={async()=>{}} />
     </div></div><footer>发送消息…</footer></main></I18nProvider>;
 }
 createRoot(document.getElementById("root")).render(<App/>);`);
@@ -76,20 +79,33 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto("http://compact.test/");
     const toggle = page.getByRole("switch", { name: "轻量过程展示" });
-    await page.locator(".compact-command-tail").waitFor();
-    assert.equal(await toggle.getAttribute("aria-checked"), "true");
-    assert.equal(await page.locator(".compact-command-tail").innerText(), "one\ntwo\nthree");
-    assert.equal(await page.locator(".command-execution-card").count(), 0);
+    await page.locator(".command-execution-card").first().waitFor();
+    assert.equal(await toggle.getAttribute("aria-checked"), "false");
+    assert.equal(await page.locator(".command-output-section").count(), 0);
+    assert.equal(await page.locator(".message-row-assistant .message-response-meta").count(), 0);
+    assert.equal(await page.locator(".message-row-assistant .message-delete-button").count(), 0);
+    const gaps = await page.locator(".command-execution-card").evaluateAll(cards => cards.slice(1).map((card, index) => card.getBoundingClientRect().top - cards[index].getBoundingClientRect().bottom));
+    assert.equal(gaps.length, 2);
+    for (const gap of gaps) assert.ok(Math.abs(gap) < 1, `consecutive shell gap: ${gap}`);
+    await page.locator(".command-execution-card .chat-disclosure-trigger").first().click();
+    await page.locator(".cm-content").waitFor();
     await screenshot("running");
     await page.evaluate(() => window.advance());
-    await page.waitForFunction(() => document.querySelector(".compact-command-tail")?.textContent === "three\nfour\nfive");
-    await page.locator(".compact-process-preview .compact-command-expand").click();
-    await page.locator(".cm-content").waitFor();
+    await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent.includes("five"));
     assert.match(await page.locator(".cm-content").innerText(), /four\nfive/);
     await page.evaluate(() => window.advanceAgain());
     await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent.includes("six"));
+    await page.locator(".command-execution-card .chat-disclosure-trigger").first().click();
+    await toggle.click();
+    await page.locator(".compact-process-group").waitFor();
+    assert.equal(await page.locator(".compact-command-tail, .command-output-section").count(), 0);
+    await page.locator(".compact-process-preview .compact-command-expand").first().click();
+    await page.locator(".cm-content").waitFor();
+    assert.match(await page.locator(".cm-content").innerText(), /six/);
+    assert.equal(await page.locator(".compact-process-detail .message-response-meta").count(), 0);
     await page.evaluate(() => window.finish());
     await page.locator(".markdown-assistant-message h2").waitFor();
+    assert.equal(await page.locator(".message-row-assistant .message-response-meta").count(), 1);
     assert.equal(await page.locator(".compact-process-toggle").getAttribute("aria-expanded"), "true");
     await screenshot("expanded");
     await page.locator(".compact-process-toggle").click();
@@ -97,7 +113,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     assert.match(await page.locator(".markdown-assistant-message").innerText(), /已修复 Shell/);
     await screenshot("completed");
     await toggle.click();
-    await page.locator(".command-execution-card").waitFor();
+    await page.locator(".command-execution-card").first().waitFor();
     assert.equal(await page.locator(".compact-process-group").count(), 0);
     assert.equal(await toggle.getAttribute("aria-checked"), "false");
     await page.reload();
@@ -128,7 +144,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await screenshot("mobile-attention");
     assert.deepEqual(errors, []);
-    t.diagnostic("Verified live log preview and viewer, completion, layout rollback, persistence, cross-window sync and user handoff.");
+    t.diagnostic("Verified default-off preferences, contiguous shell steps without intermediate actions, opt-in live output, completion, persistence, cross-window sync and user handoff.");
   } finally {
     await browser?.close();
     assert.equal(path.dirname(directory), path.resolve(tmpdir()));

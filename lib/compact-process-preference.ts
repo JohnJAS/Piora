@@ -1,6 +1,6 @@
 export const COMPACT_PROCESS_STORAGE_KEY = "piora-compact-process:v1";
-export const DEFAULT_COMPACT_PROCESS = true;
+export const DEFAULT_COMPACT_PROCESS = false;
 
 export function parseCompactProcessPreference(value: string | null): boolean {
-  return value !== "false";
+  return value === "true";
 }

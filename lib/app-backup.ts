@@ -53,7 +53,7 @@ export async function exportApplicationBackup(password: string, client: unknown,
   const desktopData = process.env.PIORA_DESKTOP_DATA_DIR;
   if (desktopData) add({ id: "desktop-runtime", source: desktopData, destination: "piora/migrated/desktop-runtime", files: ["speech-settings.json", "harmony.json"].filter((file) => existsSync(path.join(desktopData, file))) });
   const desktopHome = process.env.PIORA_DESKTOP_USER_DATA_DIR;
-  if (desktopHome) add({ id: "desktop", source: desktopHome, destination: "piora/migrated/desktop", files: ["desktop-state.json", "browser-login-hosts.json"].filter((file) => existsSync(path.join(desktopHome, file))) });
+  if (desktopHome) add({ id: "desktop", source: desktopHome, destination: "piora/migrated/desktop", files: ["desktop-state.json", "browser-login-hosts.json", "quick-access.json"].filter((file) => existsSync(path.join(desktopHome, file))) });
   if (desktopHome && existsSync(path.join(desktopHome, "clipboard", "clipboard.sqlite"))) {
     const snapshotId = await requestDesktopClipboardBackup();
     const source = path.join(desktopHome, "clipboard", "backup-exports", `${snapshotId}.piora-clipboard`);
@@ -196,6 +196,7 @@ export async function prepareApplicationRestore(id: string, requestedMappings: B
   if (existsSync(speechFile)) external.push({ source: speechFile, target: speechSettingsPath() });
   if (process.env.PIORA_DESKTOP_DATA_DIR && existsSync(path.join(staged, "piora/migrated/desktop-runtime/harmony.json"))) external.push({ source: path.join(staged, "piora/migrated/desktop-runtime/harmony.json"), target: path.join(process.env.PIORA_DESKTOP_DATA_DIR, "harmony.json") });
   if (process.env.PIORA_DESKTOP_USER_DATA_DIR && existsSync(path.join(staged, "piora/migrated/desktop/browser-login-hosts.json"))) external.push({ source: path.join(staged, "piora/migrated/desktop/browser-login-hosts.json"), target: path.join(process.env.PIORA_DESKTOP_USER_DATA_DIR, "browser-login-hosts.json") });
+  if (process.env.PIORA_DESKTOP_USER_DATA_DIR && existsSync(path.join(staged, "piora/migrated/desktop/quick-access.json"))) external.push({ source: path.join(staged, "piora/migrated/desktop/quick-access.json"), target: path.join(process.env.PIORA_DESKTOP_USER_DATA_DIR, "quick-access.json") });
   const desktopState = path.join(staged, "piora/migrated/desktop/desktop-state.json");
   if (process.env.PIORA_DESKTOP_USER_DATA_DIR && existsSync(desktopState)) {
     const destination = path.join(process.env.PIORA_DESKTOP_USER_DATA_DIR, "desktop-state.json");

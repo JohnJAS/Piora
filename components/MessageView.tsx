@@ -131,6 +131,7 @@ interface Props {
   messageActions?: ReactNode;
   message: AgentMessage;
   isStreaming?: boolean;
+  intermediate?: boolean;
   toolResults?: Map<string, ToolResultMessage>;
   modelNames?: Record<string, string>;
   cwd?: string;
@@ -213,12 +214,12 @@ export const MessageView = memo(function MessageView(props: Props) {
     onOpenAutomation={history ? undefined : props.onOpenAutomation} /></HistoryVersionContext.Provider></HistoryModeContext.Provider>;
 });
 
-const MessageContent = memo(function MessageContent({ mode, messageActions, message, isStreaming, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onRetry, retryDisabled, showTimestamp, prevTimestamp, responseStartedAt, sessionId, onOpenAutomation, onOpenCommandExecution }: Props) {
+const MessageContent = memo(function MessageContent({ mode, messageActions, message, isStreaming, intermediate, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onRetry, retryDisabled, showTimestamp, prevTimestamp, responseStartedAt, sessionId, onOpenAutomation, onOpenCommandExecution }: Props) {
   if (message.role === "user") {
     return <UserMessageView messageActions={messageActions} message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} onRetry={onRetry} retryDisabled={retryDisabled} sessionId={sessionId} />;
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView messageActions={messageActions} message={message as AssistantMessage} isStreaming={isStreaming} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} responseStartedAt={responseStartedAt} sessionId={sessionId} entryId={entryId} onOpenAutomation={onOpenAutomation} onOpenCommandExecution={onOpenCommandExecution} />;
+    return <AssistantMessageView messageActions={messageActions} message={message as AssistantMessage} isStreaming={isStreaming} intermediate={intermediate} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} responseStartedAt={responseStartedAt} sessionId={sessionId} entryId={entryId} onOpenAutomation={onOpenAutomation} onOpenCommandExecution={onOpenCommandExecution} />;
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -250,6 +251,7 @@ const MessageContent = memo(function MessageContent({ mode, messageActions, mess
     && prev.mode === next.mode
     && prev.messageActions === next.messageActions
     && prev.isStreaming === next.isStreaming
+    && prev.intermediate === next.intermediate
     && haveSameRelevantToolResults(prev.message, prev.toolResults, next.toolResults)
     && prev.modelNames === next.modelNames
     && prev.responseStartedAt === next.responseStartedAt
@@ -568,6 +570,7 @@ function AssistantMessageView({
   messageActions,
   message,
   isStreaming,
+  intermediate,
   toolResults,
   cwd,
   onOpenFile,
@@ -582,6 +585,7 @@ function AssistantMessageView({
   messageActions?: ReactNode;
   message: AssistantMessage;
   isStreaming?: boolean;
+  intermediate?: boolean;
   toolResults?: Map<string, ToolResultMessage>;
   modelNames?: Record<string, string>;
   cwd?: string;
@@ -602,6 +606,7 @@ function AssistantMessageView({
     .map((block, originalIndex) => ({ block, originalIndex }))
     .filter(({ block }) => !isEmptyThinkingBlock(block, { isStreaming }));
   const blocks = blockItems.map(({ block }) => block);
+  const hideFooter = intermediate || isStreaming || blocks.some((block) => block.type === "toolCall");
   const providerError = getAssistantErrorMessage(message, { isStreaming });
   const stopped = isAssistantAborted(message, { isStreaming });
   const [hovered, setHovered] = useState(false);
@@ -697,7 +702,8 @@ function AssistantMessageView({
     <div
       className="message-row message-row-assistant"
       data-streaming={isStreaming ? "true" : "false"}
-      style={{ marginBottom: 16 }}
+      data-intermediate={hideFooter ? "true" : undefined}
+      style={{ marginBottom: hideFooter ? 0 : 16 }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
@@ -728,7 +734,7 @@ function AssistantMessageView({
         </div>
       )}
 
-      <div className="message-response-meta" style={{
+      {!hideFooter && <div className="message-response-meta" style={{
         display: "flex", alignItems: "center", gap: 8, marginTop: 4,
       }}>
         {responseDuration && !isStreaming && (
@@ -768,7 +774,7 @@ function AssistantMessageView({
         {time && !isStreaming && (
           <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", marginLeft: "auto" }}>{time}</span>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

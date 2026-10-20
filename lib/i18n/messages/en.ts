@@ -8,6 +8,7 @@ import { sshEn } from "./ssh";
 import { nativeMcpEn } from "./native-mcp";
 import { modelSamplingEn } from "./model-sampling";
 import { skillSourcesEn } from "./skill-sources";
+import { quickAccessEn } from "./quick-access";
 
 /** Pi Web 内置英语语言包。 */
 export const enLocale: LocalePlugin = {
@@ -20,6 +21,7 @@ export const enLocale: LocalePlugin = {
     ...modelSamplingEn,
     ...skillSourcesEn,
     ...sshEn,
+    ...quickAccessEn,
     ...replySuggestionsEn,
     "input.imageContextHint": "Images are sent for this turn only. Attach them again to inspect them in a later turn.",
     "chat.deleteMessage": "Delete message",
@@ -2027,7 +2029,7 @@ export const enLocale: LocalePlugin = {
     "settings.streamingSendDefaultDescription": "When off, keep the current Steer/Queue chooser. When on, messages use the selected action immediately.",
     "settings.streamingSendDefaultBehavior": "Default send action",
     "settings.compactProcess": "Lightweight process display",
-    "settings.compactProcessDescription": "Group thinking and tool steps into a quieter process area, preview live logs, and fold when finished. Turn off to restore the previous layout.",
+    "settings.compactProcessDescription": "Off by default. Group thinking and tool steps into a quieter process area and fold when finished. Expand Shell commands to view live logs.",
     "chat.processStepDone": "Completed",
     "chat.processWorking": "Working",
     "chat.processFinished": "Finished",

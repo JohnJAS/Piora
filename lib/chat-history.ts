@@ -16,6 +16,7 @@ export interface ChatHistoryRow {
   attachRef?: boolean;
   showTimestamp?: boolean;
   secondary?: boolean;
+  intermediate?: boolean;
   isStreaming?: boolean;
   compactProcess?: import("./compact-chat-history").CompactProcessGroup;
 }
@@ -77,8 +78,8 @@ export function buildChatHistoryRows(messages: AgentMessage[], entryIds: string[
         if (!answer && entryIds[final]) entryRows.set(entryIds[final], key);
       }
       if (changes || expanded.has(key)) {
-        for (const i of process) addMessage(i, "process-message");
-        if (processMessage) addMessage(final, "process-final", processMessage, { attachRef: !answer, showTimestamp: false });
+        for (const i of process) addMessage(i, "process-message", undefined, { intermediate: true });
+        if (processMessage) addMessage(final, "process-final", processMessage, { attachRef: !answer, showTimestamp: false, intermediate: true });
       }
     }
     if (answer) addMessage(final, "message", answer);
@@ -86,6 +87,28 @@ export function buildChatHistoryRows(messages: AgentMessage[], entryIds: string[
     start = end;
   }
   return { rows, entryRows };
+}
+
+/** Only a settled turn's final reply gets a footer; tool steps share one continuous body. */
+export function layoutChatResponseRows(rows: ChatHistoryRow[], messages: AgentMessage[], busy: boolean): ChatHistoryRow[] {
+  const responseEnds = new Set<number>();
+  let laterAssistant = false;
+  let active = busy;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    // Compaction can happen inside one response; only a new user prompt ends it.
+    if (message.role === "user") { laterAssistant = false; active = false; }
+    else if (message.role === "assistant" && (getDisplayableAssistantBlocks(message).length || hasAssistantNotice(message))) {
+      if (!laterAssistant && !active) responseEnds.add(index);
+      laterAssistant = true;
+    }
+  }
+  return rows.map((row) => {
+    if (row.message?.role !== "assistant") return row;
+    const intermediate = Boolean(row.intermediate || row.secondary || !responseEnds.has(row.index)
+      || row.message.content?.some((block) => block.type === "toolCall"));
+    return { ...row, intermediate, ...(intermediate ? { showTimestamp: false } : {}) };
+  });
 }
 
 export function insertCommandHistoryRows(rows: ChatHistoryRow[], messages: AgentMessage[], entryIds: string[], operations: ChatCommandView[]): ChatHistoryRow[] {

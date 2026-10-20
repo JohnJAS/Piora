@@ -105,25 +105,41 @@ test("history rendering keeps disclosure and copy while suppressing conversation
   assert.doesNotMatch(command, /is-running/);
 });
 
-test("running shell cards expand live output while completed commands stay collapsed", () => {
+test("shell cards stay collapsed until explicitly expanded, including live local commands", () => {
   const message = { role: "assistant", content: [{ type: "toolCall", toolCallId: "shell", toolName: "bash", input: { command: "echo hello" } }] };
   for (const isStreaming of [true, false]) {
     const html = renderMessage(message, { toolResults: new Map([["shell", {
       role: "toolResult", toolCallId: "shell", isStreaming,
       content: [{ type: "text", text: "hello from shell" }],
     }]]) });
-    assert.match(html, new RegExp(`aria-expanded="${isStreaming}"`));
-    assert.equal(html.includes("command-output-section"), isStreaming);
+    assert.match(html, /aria-expanded="false"/);
+    assert.doesNotMatch(html, /command-output-section|message-response-meta/);
   }
   const local = renderMessage({ role: "bashExecution", command: "echo hello", output: "local live output", excludeFromContext: true });
-  assert.match(local, /aria-expanded="true"/);
-  assert.match(local, /command-output-section/);
+  assert.match(local, /aria-expanded="false"/);
+  assert.doesNotMatch(local, /command-output-section/);
   const rowState = createVirtualRowState();
   rowState.set("command:shell", false);
   const collapsed = renderToStaticMarkup(React.createElement(I18nProvider, null,
     React.createElement(VirtualRowStateContext.Provider, { value: rowState }, React.createElement(MessageView, { message }))));
   assert.match(collapsed, /aria-expanded="false"/);
   assert.doesNotMatch(collapsed, /command-output-section/);
+  rowState.set("command:shell", true);
+  const expanded = renderToStaticMarkup(React.createElement(I18nProvider, null,
+    React.createElement(VirtualRowStateContext.Provider, { value: rowState }, React.createElement(MessageView, { message }))));
+  assert.match(expanded, /aria-expanded="true"/);
+  assert.match(expanded, /command-output-section/);
+});
+
+test("intermediate assistant updates omit the footer and message spacing while final replies keep actions", () => {
+  const message = { role: "assistant", content: [{ type: "text", text: "checking the next command" }], timestamp: Date.now() };
+  const props = { messageActions: React.createElement("button", null, "delete fixture"), showTimestamp: true };
+  const intermediate = renderMessage(message, { ...props, intermediate: true });
+  assert.doesNotMatch(intermediate, /message-response-meta|delete fixture|复制/);
+  assert.match(intermediate, /margin-bottom:0/);
+  const final = renderMessage(message, props);
+  assert.match(final, /message-response-meta/);
+  assert.match(final, /delete fixture/);
 });
 
 test("assistant messages omit repeated model and usage metadata", () => {

@@ -8,6 +8,7 @@ import { replySuggestionsZh } from "./reply-suggestions";
 import type { LocalePlugin } from "../types";
 import { smartShellZh } from "./smart-shell";
 import { sshZh } from "./ssh";
+import { quickAccessZh } from "./quick-access";
 
 /** Pi Web 内置简体中文语言包。 */
 export const zhCNLocale: LocalePlugin = {
@@ -20,6 +21,7 @@ export const zhCNLocale: LocalePlugin = {
     ...modelSamplingZh,
     ...skillSourcesZh,
     ...sshZh,
+    ...quickAccessZh,
     "input.imageContextHint": "图片仅随本轮任务发送，原图保留在聊天中；后续需重新看图时请再次附加。",
     ...replySuggestionsZh,
     "chat.deleteMessage": "删除消息",
@@ -2027,7 +2029,7 @@ export const zhCNLocale: LocalePlugin = {
     "settings.streamingSendDefaultDescription": "关闭时沿用当前的引导/排队选择方式；开启后发消息会直接使用所选行为。",
     "settings.streamingSendDefaultBehavior": "默认发送行为",
     "settings.compactProcess": "轻量过程展示",
-    "settings.compactProcessDescription": "将思考与工具步骤合并为次要过程区，运行中预览最新日志，结束后收起。关闭可恢复原来的展示方式。",
+    "settings.compactProcessDescription": "默认关闭。开启后将思考与工具步骤合并为次要过程区，结束后收起；Shell 日志需手动展开查看。",
     "chat.processStepDone": "已完成",
     "chat.processWorking": "正在处理",
     "chat.processFinished": "处理结束",

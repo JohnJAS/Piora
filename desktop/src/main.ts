@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createSmokeSessionProbe } from "./smoke-session-probe.js";
 import { SystemLauncher } from "./system-launcher";
+import { registerQuickAccessHandlers } from "./quick-access-ipc.js";
 import { ClipboardController, ClipboardDraftFlushError } from "./clipboard-controller.js";
 import { copyHarmonyMedia } from "./harmony-media-clipboard.js";
 import { pathToFileURL } from "node:url";
@@ -202,6 +203,7 @@ let applicationMenuLocale: "en" | "zh-CN" | undefined;
 let keyboardShortcutBindings: DesktopShortcutBindings = { ...DEFAULT_DESKTOP_SHORTCUT_BINDINGS };
 let companionPanelShortcutAccelerator: string | undefined;
 let companionPanelKeepVisibleUntilClose = false;
+let companionPanelNativeDialogDepth = 0;
 let companionMoveTimer: NodeJS.Timeout | undefined;
 let companionMotionTimer: NodeJS.Timeout | undefined;
 let companionMotionRevision = 0;
@@ -1087,6 +1089,19 @@ function resolveExistingRendererPath(value: unknown): string | null {
 }
 
 function registerFileShellHandlers(): void {
+  registerQuickAccessHandlers({
+    owner: event => isTrustedMainWindowSender(event) ? mainWindow
+      : isTrustedCompanionSurfaceSender(event) && event.sender === companionPanelWindow?.webContents ? companionPanelWindow : null,
+    windows: () => [mainWindow, companionPanelWindow].filter((window): window is BrowserWindow => Boolean(window && !window.isDestroyed())),
+    nativeDialog: async (owner, task) => {
+      const isPanel = owner === companionPanelWindow;
+      if (isPanel) companionPanelNativeDialogDepth++;
+      try { return await task(); }
+      finally {
+        if (isPanel) companionPanelNativeDialogDepth--;
+      }
+    },
+  });
   const launcher = new SystemLauncher();
   for (const channel of ["pi:launcher-list", "pi:launcher-open"]) ipcMain.removeHandler(channel);
   ipcMain.handle("pi:launcher-list", (event, refresh: unknown) => {
@@ -1903,7 +1918,7 @@ function createCompanionPanelWindow(url: URL, log: Logger, initialTool?: "clipbo
     window.focus();
   });
   window.on("blur", () => {
-    if (!companionPanelKeepVisibleUntilClose && !window.isDestroyed() && window.isVisible()) window.hide();
+    if (!companionPanelKeepVisibleUntilClose && companionPanelNativeDialogDepth === 0 && !window.isDestroyed() && window.isVisible()) window.hide();
   });
   window.on("maximize", () => { companionPanelKeepVisibleUntilClose = true; });
   window.on("unmaximize", () => { companionPanelKeepVisibleUntilClose = false; });

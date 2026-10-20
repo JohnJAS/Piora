@@ -10,7 +10,6 @@ import { useVirtualRowToggle } from "./VirtualRowState";
 import { AliIcon } from "./AliIcon";
 import { ChatDisclosure } from "./ChatDisclosure";
 import { RevealProcessCommandContext, useCompactProcess } from "./CompactProcessContext";
-import { commandPreviewTail } from "@/lib/compact-chat-history";
 
 const CommandLogViewer = dynamic(
   () => import("./CommandLogViewer").then((module) => module.CommandLogViewer),
@@ -133,7 +132,7 @@ function CommandOutputPanel({ data, initialSearch = "" }: { data: CommandExecuti
 export function CommandExecutionCard({ data, onOpen, actions }: { data: CommandExecutionData; onOpen?: (data: CommandExecutionData) => void; actions?: ReactNode }) {
   const { t } = useI18n();
   const compact = useCompactProcess();
-  const [expanded, setExpanded] = useVirtualRowToggle(`command:${data.id}`, !compact && data.isStreaming && !data.historical);
+  const [expanded, setExpanded] = useVirtualRowToggle(`command:${data.id}`);
   const inspectCommand = useContext(RevealProcessCommandContext);
   useEffect(() => {
     if (inspectCommand === data.id) setExpanded(true);
@@ -186,10 +185,6 @@ export function CommandExecutionCard({ data, onOpen, actions }: { data: CommandE
         </ChatDisclosure> : null}
       </div>
     </ChatDisclosure>
-    {compact && !expanded && data.isStreaming && !data.historical ? <div className="compact-command-preview">
-      <pre className="compact-command-tail">{commandPreviewTail(data.output) || t("command.waitingForOutput")}</pre>
-      <button type="button" className="compact-command-expand" onClick={() => setExpanded(true)}>{t("chat.processExpandLog")}</button>
-    </div> : null}
     {compact && !expanded && errorExcerpt ? <div className="compact-command-error" role="status">{errorExcerpt}</div> : null}
     </div>
   );

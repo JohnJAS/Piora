@@ -7,6 +7,7 @@ declare global {
     piDesktop?: {
       files?: { getPathForFile: (file: File) => string };
       restartForDataImport?: () => Promise<boolean>;
+      quickAccess?: import("@/desktop/src/quick-access-types").QuickAccessBridge;
       launcher?: {
         list: (refresh?: boolean) => Promise<{ supported: boolean; warning: string; items: Array<{ id: string; name: string; kind: "app" | "setting"; keywords: string; description: string }> }>;
         open: (id: string) => Promise<void>;

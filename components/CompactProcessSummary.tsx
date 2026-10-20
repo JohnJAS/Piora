@@ -38,7 +38,6 @@ export function CompactProcessSummary({ group, onToggle, onInspectCommand }: { g
             <span className="compact-process-step-label" title={label}>{label}</span>
             {block.type === "toolCall" ? <span className="compact-process-step-status">{t(step.status === "running" ? "command.status.running" : step.status === "unknown" ? "chat.processUnknown" : step.status === "error" ? "command.status.failed" : "chat.processStepDone")}</span> : null}
           </div>
-          {step.output ? <pre className="compact-command-tail">{step.output}</pre> : null}
           {command && block.type === "toolCall" && step.status === "running" ? <button type="button" className="compact-command-expand" onClick={() => onInspectCommand(block.toolCallId)}>{t("chat.processExpandLog")}</button> : null}
         </div>;
       })}

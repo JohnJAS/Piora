@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { ClipboardBridge, ClipboardChange, ClipboardMutation, ClipboardOperation, ClipboardQuery } from "./clipboard-types.js";
+import type { QuickAccessBridge } from "./quick-access-types.js";
 declare const document: { documentElement: { inert: boolean } };
 
 const clipboardCloseHandlers = new Set<() => Promise<void>>();
@@ -119,6 +120,17 @@ const runtime = Object.freeze({
     list: (refresh = false) => ipcRenderer.invoke("pi:launcher-list", refresh),
     open: (id: string): Promise<void> => ipcRenderer.invoke("pi:launcher-open", id),
   }),
+  quickAccess: Object.freeze({
+    list: () => ipcRenderer.invoke("pi:quick-access-list"),
+    mutate: mutation => ipcRenderer.invoke("pi:quick-access-mutate", mutation),
+    pick: kind => ipcRenderer.invoke("pi:quick-access-pick", kind),
+    open: (id, action = "open") => ipcRenderer.invoke("pi:quick-access-open", id, action),
+    subscribe: listener => {
+      const handler = () => listener();
+      ipcRenderer.on("pi:quick-access-change", handler);
+      return () => ipcRenderer.removeListener("pi:quick-access-change", handler);
+    },
+  } satisfies QuickAccessBridge),
   selectDirectory(): Promise<string | null> {
     return ipcRenderer.invoke("pi:directory-picker") as Promise<string | null>;
   },

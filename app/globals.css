@@ -5581,6 +5581,7 @@ span.linenumber {
 .chat-process-disclosure { container-type: inline-size; margin-bottom: 20px; }
 .chat-process-toggle .chat-disclosure-description { font-family: inherit; }
 .message-assistant-blocks { display: flex; flex-direction: column; gap: 8px; min-width: 0; container-type: inline-size; }
+.message-row-assistant[data-intermediate="true"] .message-assistant-blocks { gap: 0; }
 .message-assistant-blocks > .chat-disclosure + .markdown-assistant-message,
 .message-assistant-blocks > .markdown-assistant-message + .chat-disclosure { margin-top: 12px; }
 
@@ -5910,8 +5911,8 @@ span.linenumber {
   color: var(--text-muted); font: var(--text-xs)/1.6 var(--font-mono);
   white-space: pre; overflow-x: auto; max-width: 100%;
 }
-.compact-process-detail { margin: 0 0 6px 16px; padding-left: 14px; border-left: 1px solid var(--border); }
-.compact-process-detail .message-row-assistant { margin-bottom: 6px !important; }
+.compact-process-detail { margin: 0 0 0 16px; padding-left: 14px; border-left: 1px solid var(--border); }
+.compact-process-detail .message-row-assistant { margin-bottom: 0 !important; }
 .compact-process-detail .message-response-meta { display: none !important; }
 .compact-process-detail .message-assistant-blocks { font-size: var(--text-sm); color: var(--text-muted); }
 .compact-process-detail .chat-disclosure--surface,

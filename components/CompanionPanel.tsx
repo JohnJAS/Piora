@@ -27,6 +27,9 @@ import {
   type CompanionInteractionModel,
 } from "@/lib/companion-store";
 import { CompanionToolLauncher } from "./CompanionToolLauncher";
+import { QuickAccess } from "./QuickAccess";
+import { useQuickAccess } from "@/hooks/useQuickAccess";
+import { useI18n } from "@/hooks/useI18n";
 import { CompanionTodoList } from "./CompanionTodoList";
 import { CompanionStorageSettings } from "./CompanionStorageSettings";
 import { AliIcon, type AliIconName } from "./AliIcon";
@@ -36,7 +39,7 @@ import { useTransferStation } from "@/hooks/useTransferStation";
 
 const JsonWorkbench = dynamic(() => import("./JsonWorkbench").then((module) => module.JsonWorkbench), { loading: () => <p role="status">正在打开 JSON 工具…</p> });
 const ClipboardWorkbench = dynamic(() => import("./ClipboardWorkbench").then((module) => module.ClipboardWorkbench), { loading: () => <p role="status">正在打开剪贴板…</p> });
-type Tab = "home" | "json" | "clipboard" | "now" | "tasks" | "focus" | "library" | "memory" | "mind";
+type Tab = "home" | "quick-access" | "json" | "clipboard" | "now" | "tasks" | "focus" | "library" | "memory" | "mind";
 const TOOLS: Array<{ id: Tab; icon: AliIconName; label: string; description: string; keywords: string }> = [
   { id: "clipboard", icon: "copy", label: "剪贴板", description: "查找复制历史，粘贴回原应用", keywords: "剪贴板 clipboard 历史 复制 粘贴 图片 收藏" },
   { id: "json", icon: "code", label: "JSON 工具", description: "格式化、校验与文本转换", keywords: "json 格式化 转换 base64 url unicode" },
@@ -111,6 +114,8 @@ function parseModelValue(value: string): CompanionInteractionModel | null {
 }
 
 export function CompanionPanel() {
+  const { t } = useI18n();
+  const quickAccess = useQuickAccess();
   const [tab, setTab] = useState<Tab>("home");
   const [jsonOpened, setJsonOpened] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -140,7 +145,7 @@ export function CompanionPanel() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.target instanceof Element && event.target.closest(".pocket-markdown-editor")) return;
+      if (event.defaultPrevented || event.target instanceof Element && event.target.closest(".pocket-markdown-editor, dialog[open]")) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault(); navigate("home");
         requestAnimationFrame(() => searchRef.current?.focus());
@@ -345,6 +350,7 @@ export function CompanionPanel() {
   const focusRemainingSeconds = getCompanionFocusRemainingSeconds(state.focusTimer, clock);
   const tabs: Array<{ id: Tab; icon: AliIconName; label: string }> = [
     { id: "home", icon: "home", label: "工具台" },
+    { id: "quick-access", icon: "folder-open", label: t("quickAccess.title") },
     { id: "json", icon: "code", label: "JSON" },
     { id: "clipboard", icon: "copy", label: "剪贴板" },
     { id: "tasks", icon: "check-circle", label: "待办" },
@@ -357,7 +363,7 @@ export function CompanionPanel() {
   const activeTabLabel = tabs.find((item) => item.id === tab)?.label;
 
   return (
-    <main className={`${styles.panel} companion-panel-root`} aria-busy={busy}>
+    <main className={`${styles.panel} companion-panel-root`} aria-busy={busy || quickAccess.busy}>
       <aside className={styles.sidebar}>
         <div className={styles.brand}><Image className={styles.brandMark} src="/icons/icon-192.png" width={34} height={34} alt={brandText("Piora")} unoptimized /><span>随身舱<small>{APP_DISPLAY_NAME.toUpperCase()} POCKET</small></span></div>
         <nav className={styles.tabs} role="tablist" aria-orientation="vertical" aria-label="随身舱功能" onKeyDown={(event) => {
@@ -377,9 +383,10 @@ export function CompanionPanel() {
       <section id="cabin-content" className={styles.content} data-tool={tab} role="tabpanel" aria-labelledby={`cabin-tab-${tab}`}>
         {tab === "home" ? <div className={styles.home}>
           <div className={styles.welcome}><h1>随身工具，顺手就好。</h1><p>找到工具，开始手边的小事。</p></div>
-          <CompanionToolLauncher tools={TOOLS} searchRef={searchRef} onOpen={(id) => navigate(id as Tab)} />
+          <CompanionToolLauncher tools={[{ id: "quick-access", icon: "folder-open", label: t("quickAccess.title"), description: t("quickAccess.description"), keywords: "快捷 访问 常用 收藏 文件 文件夹 快捷方式 路径 hosts quick access favorites files folders shortcuts lnk url" }, ...TOOLS]} searchRef={searchRef} onOpen={(id) => navigate(id as Tab)} quickAccess={quickAccess} />
           <button type="button" className={styles.todayStrip} onClick={() => navigate(state.focusTimer.status === "running" ? "focus" : "tasks")}><span className={styles.statusDot} /><span>{state.focusTimer.status === "running" ? `正在专注 · ${formatCountdown(focusRemainingSeconds)}` : activeTasks.length ? `今天还有 ${activeTasks.length} 件小事，慢慢来。` : "清单很轻，随时开始新的一件事。"}</span><AliIcon name="chevron-right" size={16} /></button>
         </div> : null}
+        {tab === "quick-access" ? <QuickAccess controller={quickAccess} /> : null}
         {jsonOpened ? <div className={styles.jsonPane} hidden={tab !== "json"}><JsonWorkbench busy={transfer.pending} library={transfer.items} onSaveResult={saveJsonResult} /></div> : null}
         {tab === "now" ? <>
           <div className={styles.pageHeading}><div><h1>陪伴</h1><p>听听你的想法，也记得留一点时间给自己。</p></div></div>

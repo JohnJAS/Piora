@@ -1,0 +1,59 @@
+.root { min-width: 0; width: 100%; }
+.heading, .sectionHeading, .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.heading { margin-bottom: 24px; }
+.heading h1 { margin: 0 0 6px; font-size: calc(var(--ui-font-size, 14px) * 23 / 14); font-weight: 550; }
+.heading p, .empty p { margin: 0; color: var(--text-muted); }
+.root button, .dialog button, .menu button { font: inherit; cursor: pointer; color: var(--text); background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-control, 6px); padding: 8px 11px; }
+.root button:disabled, .dialog button:disabled, .menu button:disabled { opacity: .45; cursor: not-allowed; }
+.root button:hover:not(:disabled), .dialog button:hover:not(:disabled), .menu button:hover:not(:disabled) { background: var(--bg-hover); }
+.root button:focus-visible, .dialog button:focus-visible, .menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.root .add, .dialog .save { display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: var(--btn-primary-fg, var(--bg)); background: var(--btn-primary-bg, var(--text)); border-color: transparent; }
+.toolbar { margin-bottom: 14px; flex-wrap: wrap; }
+.search { flex: 1; min-width: min(220px, 100%) !important; }
+.filters { display: flex; gap: 3px; padding: 3px; border-radius: var(--radius-control, 6px); background: var(--bg-hover); }
+.root .filters button { border: 0; background: transparent; padding: 6px 10px; color: var(--text-muted); }
+.root .filters button[aria-pressed="true"] { background: var(--bg-panel); color: var(--text); }
+.list { list-style: none; margin: 0; padding: 0; }
+.row { display: flex; align-items: center; gap: 6px; position: relative; padding: 7px 0; border-bottom: 1px solid var(--border); border-radius: var(--radius-control, 6px); }
+.row[data-drag-over="true"] { box-shadow: inset 0 2px var(--accent); background: var(--bg-selected); }
+.root .rowMain { display: flex; align-items: center; text-align: left; gap: 12px; flex: 1; min-width: 0; border: 0; background: transparent; padding: 10px 8px; }
+.icon { flex: 0 0 auto; color: var(--pocket-accent, var(--accent)); }
+.metadata { display: grid; min-width: 0; gap: 4px; }
+.name { display: flex; align-items: center; gap: 7px; min-width: 0; font-weight: 550; }
+.name > span, .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.path { color: var(--text-muted); font-size: var(--text-xs, 12px); }
+.warning { color: var(--text-muted); font-size: var(--text-xs, 12px); }
+.root .grip { display: grid; place-items: center; border: 0; background: transparent; color: var(--text-dim); padding: 8px 3px; cursor: grab; touch-action: pan-y; }
+.row:has(.grip:active) { opacity: .7; }
+.root .more { display: grid; place-items: center; padding: 9px; border: 0; background: transparent; flex: none; }
+.empty { display: grid; gap: 10px; justify-items: center; padding: 44px 16px; text-align: center; color: var(--text-muted); }
+.empty b { font-weight: 550; color: var(--text); }
+.defaults { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; padding-top: 20px; color: var(--text-muted); font-size: var(--text-xs, 12px); }
+.root .defaults button { padding: 5px 9px; background: transparent; }
+.home { margin: 6px 0 14px; }
+.sectionHeading { margin-bottom: 10px; font-size: var(--text-xs, 12px); color: var(--text-muted); }
+.root .sectionHeading button { padding: 3px 0; border: 0; background: transparent; color: var(--text-muted); display: flex; align-items: center; gap: 4px; }
+.pins { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.root .pin { display: flex; align-items: center; gap: 8px; padding: 10px; min-width: 0; background: var(--bg-panel); }
+.pin > span { display: grid; text-align: left; min-width: 0; gap: 3px; }
+.pin b { font-weight: 500; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.pin small { font-size: var(--text-xs, 12px); color: var(--text-muted); }
+.notice { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: var(--radius-control, 6px); background: var(--bg-panel); color: var(--text-muted); overflow-wrap: anywhere; }
+.notice[data-error="true"], .error { color: var(--error, #be5252); }
+.notice span { flex: 1; }
+.notice button { border: 0; background: transparent; padding: 3px; }
+.dialog { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; color: var(--text); background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-surface, 12px); font: var(--text-sm, 14px)/1.5 var(--ui-font-family, system-ui); box-shadow: var(--shadow-popover); }
+.dialog::backdrop { background: #0006; }
+.dialog h2 { margin: 0 0 18px; font-size: 18px; font-weight: 550; }
+.dialog form { display: grid; gap: 16px; }
+.dialog label { display: grid; gap: 6px; }
+.dialog input, .root input { min-width: 0; width: 100%; padding: 10px; font: inherit; color: var(--text); background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-control, 6px); }
+.dialog input:focus, .root input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dialogActions, .pickers { display: flex; gap: 8px; flex-wrap: wrap; }
+.dialogActions { justify-content: flex-end; padding-top: 5px; }
+.hint { margin: 0; color: var(--text-muted); font-size: var(--text-xs, 12px); }
+.menu { position: fixed; z-index: 10000; padding: 5px; overflow-y: auto; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-control, 6px); box-shadow: var(--shadow-popover); font: var(--text-sm, 13px)/1.4 var(--ui-font-family, system-ui); }
+.menu button { display: flex; width: 100%; align-items: center; gap: 9px; border: 0; background: transparent; padding: 9px 10px; text-align: left; }
+.menu .remove { color: var(--error, #be5252); border-top: 1px solid var(--border); border-radius: 0; margin-top: 4px; }
+@container companion-panel (max-width: 600px) { .pins { grid-template-columns: repeat(2, minmax(0, 1fr)); } .heading { flex-wrap: wrap; gap: 12px; } .heading h1 { font-size: 20px; } }
+@media (max-width: 420px) { .pins { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dialog { padding: 18px; } }
