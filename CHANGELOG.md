@@ -4,13 +4,13 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
-## [0.5.5-beta.29] - 2026-10-20
+## [0.5.5-beta.30] - 2026-10-20
 
 ### 发布准备
 
-- beta.28 候选未发布；补齐新版命令卡片展开、命令选项、后续提问与普通文本发送的浏览器回归验证，并使用新 beta.29 标签构建。
+- beta.28、beta.29 候选未发布；补齐新版命令交互浏览器回归，并让打包验收覆盖已安装扩展工具默认可用、项目中关闭及重新启用的完整流程；使用新 beta.30 标签构建。
 
-- 同步根包、桌面包、锁文件、README、用户手册与许可证清单至 `0.5.5-beta.29`；Windows 安装版与便携版由 GitHub Actions 构建、校验和发布，鸿蒙真机验收未覆盖本轮修改。
+- 同步根包、桌面包、锁文件、README、用户手册与许可证清单至 `0.5.5-beta.30`；Windows 安装版与便携版由 GitHub Actions 构建、校验和发布，鸿蒙真机验收未覆盖本轮修改。
 
 ### 对话展示
 

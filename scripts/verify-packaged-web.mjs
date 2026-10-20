@@ -1292,8 +1292,8 @@ async function main() {
       (entry) => entry.name === fixtureToolName,
       `extension tool ${fixtureToolName}`,
     );
-    if (initialFixtureTool.active) {
-      throw new Error(`Fixture extension tool must respect the default compact coding preset: ${JSON.stringify(initialFixtureTool)}`);
+    if (!initialFixtureTool.active) {
+      throw new Error(`Installed extension helpers must remain active in the default coding preset: ${JSON.stringify(initialFixtureTool)}`);
     }
 
     const coreExtensionTools = verifyPackagedCoreTools(initialTools);
@@ -1314,8 +1314,26 @@ async function main() {
       (entry) => entry.id === `tool:${fixtureToolName}`,
       `project tool ${fixtureToolName}`,
     );
-    if (fixtureCapability.enabled || fixtureCapability.activeToolNames?.length > 0) {
-      throw new Error(`Fixture extension project tool must start disabled: ${JSON.stringify(fixtureCapability)}`);
+    if (!fixtureCapability.enabled || !fixtureCapability.activeToolNames?.includes(fixtureToolName)) {
+      throw new Error(`Installed extension project tool must start enabled: ${JSON.stringify(fixtureCapability)}`);
+    }
+    const { body: disabledProjectTools } = await patchJson(origin, "/api/project-tools", {
+      cwd: isolatedProjectDir,
+      preset: "custom",
+      enabledCapabilityIds: capabilities.policy.enabledCapabilityIds.filter(id => id !== fixtureCapability.id),
+      expectedRevision: capabilities.policy.revision,
+    });
+    if (disabledProjectTools.managed !== true || disabledProjectTools.appliedSessions !== 1) {
+      throw new Error(`Project tool opt-out was not applied to the packaged Session: ${JSON.stringify(disabledProjectTools)}`);
+    }
+    const { body: disabledToolResult } = await postJson(origin, agentPath, { type: "get_tools" });
+    const disabledFixtureTool = requireArrayEntry(
+      Array.isArray(disabledToolResult.data) ? disabledToolResult.data : [],
+      entry => entry.name === fixtureToolName,
+      `disabled extension tool ${fixtureToolName}`,
+    );
+    if (disabledFixtureTool.active) {
+      throw new Error(`Fixture extension tool ignored the explicit project opt-out: ${JSON.stringify(disabledFixtureTool)}`);
     }
     const enabledCapabilityIds = [
       ...new Set([
@@ -1329,7 +1347,7 @@ async function main() {
       cwd: isolatedProjectDir,
       preset: "custom",
       enabledCapabilityIds,
-      expectedRevision: capabilities?.policy?.revision,
+      expectedRevision: disabledProjectTools.capabilities.policy.revision,
     });
     if (updatedProjectTools.managed !== true || updatedProjectTools.appliedSessions !== 1) {
       throw new Error(`Project tool selection was not applied to the packaged Session: ${JSON.stringify(updatedProjectTools)}`);
@@ -1380,7 +1398,8 @@ async function main() {
       piPackage: fixturePackageName,
       extensionCommand: fixtureCommandName,
       extensionTool: fixtureToolName,
-      extensionToolInitiallyActive: false,
+      extensionToolInitiallyActive: initialFixtureTool.active,
+      extensionToolDisabledByProjectSettings: !disabledFixtureTool.active,
       extensionToolActivatedByProjectSettings: true,
       coreExtensionTools,
       skill: fixtureSkillName,
