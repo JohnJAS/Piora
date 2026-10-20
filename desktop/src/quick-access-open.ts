@@ -8,7 +8,7 @@ export function hostsEditorCommand(systemRoot: string, elevated: boolean) {
   if (!elevated) return { executable: editor, args: [hosts] };
   const literal = (value: string) => `'${value.replace(/'/g, "''")}'`;
   // Only the main-process-owned Windows hosts path can enter this command.
-  const script = `try { Start-Process -FilePath ${literal(editor)} -ArgumentList ${literal(`"${hosts}"`)} -Verb RunAs -ErrorAction Stop; exit 0 } catch { $e = $_.Exception; while ($e) { if ($e.NativeErrorCode -eq 1223) { exit 1223 }; $e = $e.InnerException }; exit 1 }`;
+  const script = `try { Start-Process -FilePath ${literal(editor)} -ArgumentList ${literal(`"${hosts}"`)} -Verb RunAs -WindowStyle Normal -ErrorAction Stop; exit 0 } catch { $e = $_.Exception; while ($e) { if ($e.NativeErrorCode -eq 1223) { exit 1223 }; $e = $e.InnerException }; exit 1 }`;
   return { executable: path.win32.join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"), args: ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")] };
 }
 
@@ -22,7 +22,7 @@ export async function launchHostsEditor(systemRoot: string, elevated: boolean, p
     });
   });
   return new Promise((resolve, reject) => {
-    const child = processes.spawn(command.executable, command.args, { windowsHide: true, detached: true, stdio: "ignore" });
+    const child = processes.spawn(command.executable, command.args, { windowsHide: false, detached: true, stdio: "ignore" });
     child.once("error", () => reject(new QuickAccessError("openFailed")));
     child.once("spawn", () => { child.unref(); resolve("opened"); });
   });

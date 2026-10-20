@@ -215,6 +215,7 @@ export interface AgentSessionLike {
   getFollowUpMessages(): readonly string[];
   clearQueue(): { steering: string[]; followUp: string[] };
   getAllTools(): ToolInfo[];
+  getToolDefinition?(name: string): { defaultActive?: boolean } | undefined;
   getActiveToolNames(): string[];
   setActiveToolsByName(names: string[]): void;
   abortCompaction(): void;

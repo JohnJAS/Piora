@@ -55,6 +55,8 @@ export function useFocusTrap(
     if (previousTabIndex === null) container.tabIndex = -1;
 
     const focusFrame = window.requestAnimationFrame(() => {
+      // Keep a keyboard or pointer selection made before the first frame.
+      if (container.contains(document.activeElement)) return;
       const target = initialFocus?.current ?? getFocusableElements(container)[0] ?? container;
       target.focus({ preventScroll: true });
     });

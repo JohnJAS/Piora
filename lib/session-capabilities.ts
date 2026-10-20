@@ -23,6 +23,7 @@ export interface SessionCapabilityItem {
   kind: SessionCapabilityKind;
   toolNames: string[];
   available: boolean;
+  defaultEnabled?: boolean;
   unavailableReason?: "not_registered" | "profile_restricted";
   enabled: boolean;
   activeToolNames: string[];
@@ -51,6 +52,7 @@ export interface SessionCapabilityToolInfo {
   name: string;
   description: string;
   exposure?: string;
+  defaultActive?: boolean;
   sourceInfo?: {
     path: string;
     source: string;
@@ -165,6 +167,10 @@ export function buildSessionCapabilityCatalog(
         label: humanizeToolName(tool.name),
         description: tool.description?.trim() || `Allow the model to call ${tool.name}.`,
         kind: definition?.kind ?? "extension",
+        // Installed extensions opt their own tools in by default. Preserve the
+        // SDK's explicit opt-out (notably native MCP discovery helpers).
+        ...(!definition && tool.sourceInfo && !["builtin", "sdk", "piora"].includes(tool.sourceInfo.source)
+          ? { defaultEnabled: tool.defaultActive !== false } : {}),
         toolNames: [tool.name],
         available: profileAllowed && tool.exposure !== "hidden",
         ...(profileAllowed && tool.exposure === "hidden" ? { unavailableReason: "not_registered" as const } : {}),
@@ -224,7 +230,7 @@ function availableIds(catalog: readonly { id: string; available: boolean }[]): s
 
 export function createSessionCapabilityPolicy(
   selection: SessionCapabilitySelection | undefined,
-  catalog: readonly { id: string; available: boolean; toolNames: string[] }[],
+  catalog: readonly { id: string; available: boolean; toolNames: string[]; defaultEnabled?: boolean }[],
   profile: AgentRuntimeProfile,
   previousRevision = 0,
   previousPolicy?: SessionCapabilityPolicy | null,
@@ -235,7 +241,8 @@ export function createSessionCapabilityPolicy(
   const requestedIds = preset === "custom"
     ? selection?.enabledCapabilityIds ?? availableIds(catalog)
     : catalog
-        .filter((item) => item.toolNames.some((name) => PRESET_TOOL_NAMES[preset].has(name)))
+        .filter((item) => item.toolNames.some((name) => PRESET_TOOL_NAMES[preset].has(name))
+          || (profile === "normal" && preset === "coding" && item.defaultEnabled))
         .map((item) => item.id);
   const enabledCapabilityIds = uniqueStrings(requestedIds).filter((id) => catalogIds.has(id) || previouslyKnownIds.has(id));
   return {
@@ -250,12 +257,15 @@ export function createSessionCapabilityPolicy(
 
 export function restoreSessionCapabilityPolicy(
   entries: readonly SessionCapabilityEntryLike[],
-  catalog: readonly { id: string; available: boolean; kind: SessionCapabilityKind; toolNames: string[] }[],
+  catalog: readonly { id: string; available: boolean; kind: SessionCapabilityKind; toolNames: string[]; defaultEnabled?: boolean }[],
   profile: AgentRuntimeProfile = "normal",
 ): SessionCapabilityPolicy {
   const restored = readLatestSessionCapabilityPolicy(entries);
   if (restored) {
     const enabledIds = new Set(restored.enabledCapabilityIds);
+    if (profile === "normal" && restored.preset === "coding") {
+      for (const item of catalog) if (item.defaultEnabled) enabledIds.add(item.id);
+    }
     // Carry an existing enabled phone capability into the compact replacement.
     if (!restored.knownCapabilityIds.includes("tool:harmony_control") && restored.enabledCapabilityIds.some((id) => id.startsWith("tool:harmony_"))) {
       enabledIds.add("tool:harmony_control");
@@ -388,6 +398,7 @@ export function applySessionCapabilitySelectionToState(
     kind: item.kind,
     toolNames: [...item.toolNames],
     available: item.available,
+    ...(item.defaultEnabled !== undefined ? { defaultEnabled: item.defaultEnabled } : {}),
     ...(item.unavailableReason ? { unavailableReason: item.unavailableReason } : {}),
   }));
   const policy = createSessionCapabilityPolicy(

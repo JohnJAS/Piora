@@ -35,16 +35,46 @@ export function QuickAccessHome({ controller, onViewAll }: { controller: QuickAc
 function QuickAccessEditor({ item, controller, onClose }: { item: QuickAccessEntry | null; controller: QuickAccessController; onClose: () => void }) {
   const { t } = useI18n();
   const dialog = useRef<HTMLDialogElement>(null);
+  const drag = useRef<{ pointerId: number; x: number; y: number; left: number; top: number } | null>(null);
+  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const [target, setTarget] = useState(item?.path || "");
   const initialName = item ? quickAccessName(item, t) : "";
   const [name, setName] = useState(initialName);
   useEffect(() => { dialog.current?.showModal(); }, []);
+  useEffect(() => {
+    const element = dialog.current;
+    if (!element) return;
+    const keepVisible = () => setPosition(current => {
+      if (!current) return current;
+      const next = constrainEditorPosition(element, current);
+      return next.left === current.left && next.top === current.top ? current : next;
+    });
+    const observer = new ResizeObserver(keepVisible);
+    observer.observe(element);
+    window.addEventListener("resize", keepVisible);
+    return () => { observer.disconnect(); window.removeEventListener("resize", keepVisible); };
+  }, []);
   const pick = async (kind: QuickAccessKind) => {
     const value = await controller.pick(kind);
     if (value) setTarget(value);
   };
-  return <dialog ref={dialog} className={styles.dialog} aria-labelledby="quick-access-editor-title" onCancel={event => { event.preventDefault(); if (!controller.busy) onClose(); }}>
-    <h2 id="quick-access-editor-title">{t(item ? "quickAccess.editTitle" : "quickAccess.addTitle")}</h2>
+  return <dialog ref={dialog} className={styles.dialog} style={position ? { ...position, right: "auto", bottom: "auto", margin: 0 } : undefined} aria-labelledby="quick-access-editor-title" onCancel={event => { event.preventDefault(); if (!controller.busy) onClose(); }}>
+    <h2 id="quick-access-editor-title" className={styles.dialogHandle}
+      onPointerDown={event => {
+        if (event.button !== 0 || !dialog.current) return;
+        const bounds = dialog.current.getBoundingClientRect();
+        drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, left: bounds.left, top: bounds.top };
+        event.currentTarget.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      }}
+      onPointerMove={event => {
+        const start = drag.current;
+        if (!start || start.pointerId !== event.pointerId || !dialog.current) return;
+        setPosition(constrainEditorPosition(dialog.current, { left: start.left + event.clientX - start.x, top: start.top + event.clientY - start.y }));
+      }}
+      onPointerUp={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); drag.current = null; }}
+      onPointerCancel={() => { drag.current = null; }} onLostPointerCapture={() => { drag.current = null; }}
+    >{t(item ? "quickAccess.editTitle" : "quickAccess.addTitle")}</h2>
     <form onSubmit={async event => {
       event.preventDefault();
       if (controller.busy) return;
@@ -63,6 +93,14 @@ function QuickAccessEditor({ item, controller, onClose }: { item: QuickAccessEnt
       <div className={styles.dialogActions}><button type="button" disabled={controller.busy} onClick={onClose}>{t("quickAccess.cancel")}</button><button className={styles.save} type="submit" disabled={controller.busy || !target.trim()}>{t("quickAccess.save")}</button></div>
     </form>
   </dialog>;
+}
+
+function constrainEditorPosition(element: HTMLDialogElement, position: { left: number; top: number }) {
+  const bounds = element.getBoundingClientRect();
+  return {
+    left: Math.max(16, Math.min(position.left, window.innerWidth - bounds.width - 16)),
+    top: Math.max(16, Math.min(position.top, window.innerHeight - bounds.height - 16)),
+  };
 }
 
 function ItemMenu({ item, anchor, controller, canMoveUp, canMoveDown, onMove, onEdit, onClose }: {

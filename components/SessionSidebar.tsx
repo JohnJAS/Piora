@@ -134,7 +134,13 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   // Auto-select cwd and restore session from URL on first load. Explicitly
   // added empty projects participate even before their first session exists.
   useEffect(() => {
-    if (loading || skipInitialProjectSelection) return;
+    if (loading || skipInitialProjectSelection || restoredRef.current) return;
+    // A null cwd also represents an intentionally selected projectless chat.
+    // Automatic project fallback belongs only to initial navigation.
+    if (selectedSessionId || selectedRoomId || selectedCwd !== null) {
+      restoredRef.current = true;
+      return;
+    }
 
     if (selectedCwd === null) {
       // If restoring a session, set cwd to match that session
@@ -157,9 +163,12 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
       for (const projectRoot of rememberedProjectRoots) {
         if (!hiddenProjectRoots.has(projectRoot) && !projects.includes(projectRoot)) projects.push(projectRoot);
       }
-      if (projects.length > 0) setSelectedCwd(projects[0]);
+      if (projects.length > 0) {
+        restoredRef.current = true;
+        setSelectedCwd(projects[0]);
+      }
     }
-  }, [allSessions, hiddenProjectRoots, initialSessionId, loading, onInitialRestoreDone, onSelectSession, rememberedProjectRoots, selectedCwd, sessionFlags, skipInitialProjectSelection]);
+  }, [allSessions, hiddenProjectRoots, initialSessionId, loading, onInitialRestoreDone, onSelectSession, rememberedProjectRoots, selectedCwd, selectedRoomId, selectedSessionId, sessionFlags, skipInitialProjectSelection]);
 
   useImperativeHandle(ref, () => ({
     openProjectPicker: handleCustomPathClick,

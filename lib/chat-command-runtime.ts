@@ -21,8 +21,15 @@ export async function executeChatCommandOperation(record: SessionCommandRecord, 
   context.assertActive();
   if (descriptor.source === "extension") {
     if (!session) throw new Error("Session runtime is unavailable");
-    await session.executeChatCommand(record.commandId, `/${descriptor.name}${operation.arguments ? ` ${operation.arguments}` : ""}`, context.phase);
-    return { title: "chatCommands.extensionCompleted" };
+    const details: string[] = [], warnings: string[] = [];
+    const unsubscribe = session.onEvent(event => {
+      if (event.type !== "extension_ui_request" || event.method !== "notify" || event.commandId !== record.commandId || typeof event.message !== "string") return;
+      (event.notifyType === "warning" ? warnings : details).push(event.message);
+    });
+    try {
+      await session.executeChatCommand(record.commandId, `/${descriptor.name}${operation.arguments ? ` ${operation.arguments}` : ""}`, context.phase);
+      return { title: "chatCommands.extensionCompleted", ...(details.length ? { details } : {}), ...(warnings.length ? { warnings } : {}) };
+    } finally { unsubscribe(); }
   }
   if (descriptor.source === "prompt" || descriptor.source === "skill") {
     context.phase("model");

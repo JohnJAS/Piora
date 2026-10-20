@@ -761,6 +761,7 @@ export function AppShell() {
   const [initialSessionRestored, setInitialSessionRestored] = useState<boolean>(() => !initialSessionId && !initialRoomId);
   // Suppresses sessionKey bump in handleCwdChange during the initial URL restore
   const suppressCwdBumpRef = useRef(false);
+  const workspaceNavigationVersionRef = useRef(0);
 
   useEffect(() => {
     const requestedCwd = initialNavigation.requestedCwd;
@@ -800,6 +801,7 @@ export function AppShell() {
   }, [initialNavigation]);
 
   const handleCwdChange = useCallback(async (cwd: string | null, projectRoot?: string | null) => {
+    const navigationVersion = ++workspaceNavigationVersionRef.current;
     // Skip if cwd is null (initial mount).
     if (!cwd) { setActiveCwd(null); return; }
     const newProject = projectRoot ?? cwd;
@@ -825,6 +827,9 @@ export function AppShell() {
         tone: "danger",
       });
     }
+    // A file-discard question can outlive this transition. A later session,
+    // room or project choice owns the workspace, including its files and URL.
+    if (navigationVersion !== workspaceNavigationVersionRef.current) return;
     setActiveCwd(cwd);
     activeProjectRootRef.current = newProject;
     setActiveProjectRoot(newProject);
@@ -915,6 +920,7 @@ export function AppShell() {
   }, [activeFileTabId, activeProjectRoot, fileTabs]);
 
   const handleSelectSession = useCallback((session: SessionInfo, isRestore = false) => {
+    workspaceNavigationVersionRef.current++;
     setSettingsDialogOpen(false);
     if (!isRestore) { setHistoryDialogOpen(false); setHistoryLocation({ open: false, leafId: null, entryId: null }); }
     setSelectedRoom(null);
@@ -1013,6 +1019,7 @@ export function AppShell() {
     initialModel?: { provider: string; modelId: string },
     initialPrompt?: NewSessionInitialPrompt | null,
   ) => {
+    workspaceNavigationVersionRef.current++;
     setSettingsDialogOpen(false);
     setSelectedRoom(null);
     setSelectedSession(null);
@@ -1027,6 +1034,7 @@ export function AppShell() {
   }, [isMobile]);
 
   const handleRequestNewSession = useCallback(() => {
+    workspaceNavigationVersionRef.current++;
     setSettingsDialogOpen(false);
     setSelectedRoom(null);
     setSelectedSession(null);
@@ -1066,6 +1074,7 @@ export function AppShell() {
   }, []);
 
   const handleSelectRoom = useCallback((room: CollaborationRoom, isRestore = false) => {
+    workspaceNavigationVersionRef.current++;
     setSettingsDialogOpen(false);
     setSelectedSession(null);
     setNewSessionCwd(null);
@@ -1374,6 +1383,7 @@ export function AppShell() {
   }, []);
 
   const handleSessionForked = useCallback((newSessionId: string) => {
+    workspaceNavigationVersionRef.current++;
     setHistoryDialogOpen(false);
     setHistoryLocation({ open: false, leafId: null, entryId: null });
     setRefreshKey((k) => k + 1);
@@ -1396,6 +1406,7 @@ export function AppShell() {
   const handleSessionDeleted = useCallback((deleted: SessionInfo, sessionIds: string[] = [deleted.id]) => {
     setRefreshKey((k) => k + 1);
     if (selectedSession && sessionIds.includes(selectedSession.id)) {
+      workspaceNavigationVersionRef.current++;
       const cwd = selectedSession.cwd;
       setSelectedSession(null);
       setNewSessionCwd(cwd ?? null);

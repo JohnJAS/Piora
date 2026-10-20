@@ -1,5 +1,7 @@
 export const chatCommandsZh = {
   "chatCommands.title": "命令执行",
+  "chatCommands.options": "选项",
+  "chatCommands.cancelQuery": "移除后续问题",
   "chatCommands.delivery": "命令交付方式",
   "chatCommands.error.INVALID_SESSION_MESSAGE": "提交内容或附件信息无效，原文仍保留，请检查后重试。",
   "chatCommands.error.INVALID_INPUT_MODE": "输入模式无效，请重新选择命令或普通文本。",
@@ -87,6 +89,8 @@ export const chatCommandsZh = {
 
 export const chatCommandsEn: Record<keyof typeof chatCommandsZh, string> = {
   "chatCommands.title": "Command execution",
+  "chatCommands.options": "Options",
+  "chatCommands.cancelQuery": "Remove follow-up question",
   "chatCommands.delivery": "Command delivery",
   "chatCommands.error.INVALID_SESSION_MESSAGE": "The submission or attachment metadata is invalid. Your original input is retained.",
   "chatCommands.error.INVALID_INPUT_MODE": "Invalid input mode. Select a command or plain text again.",

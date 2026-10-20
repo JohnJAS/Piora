@@ -28,11 +28,17 @@ import {I18nProvider} from "@/hooks/useI18n";
 import {ChatInput} from "@/components/ChatInput";
 import {NewSessionProjectPicker} from "@/components/NewSessionProjectPicker";
 import {SystemPromptSelector} from "@/components/SystemPromptSelector";
+import {ChatCommandCard} from "@/components/ChatCommandCard";
+import {createChatCommandCatalog} from "@/lib/chat-command-input";
+const catalog=createChatCommandCatalog([{name:"workflow",source:"extension",description:"Start a workflow and continue until complete"}]);
+const record={commandId:"sample-command",idempotencyKey:"sample",targetSessionId:"sample",acceptedAt:1792483200000,status:"completed",operation:{version:1,rawText:"/name 项目检查",catalogRevision:catalog.revision,command:catalog.commands.find(c=>c.name==="name"),arguments:"项目检查",phase:"settling",steps:[{id:"command",kind:"command",status:"completed",startedAt:1792483200000,completedAt:1792483200200}],result:{title:"chatCommands.renameCompleted",rename:{before:"新会话",after:"项目检查"}}}};
 function App(){
   const [busy,setBusy]=useState(false);window.setBusy=setBusy;
   return <I18nProvider><main>
+    <section id="command-results"><ChatCommandCard record={record} actions={{retry:async()=>{},restore:async()=>{},cancel:async()=>{},copy:async()=>{}}}/></section>
     <section id="launcher"><NewSessionProjectPicker activeCwd="/workspace/a-very-long-project-name-for-layout-checks" onLaunch={()=>{window.launched=true}}/></section>
-    <section id="conversation"><ChatInput onSend={()=>{window.sent=true;return true}} onAbort={()=>{window.stopped=true;setBusy(false)}}
+    <section id="conversation"><ChatInput onSend={(text,...args)=>{window.sent=true;window.submission={text,args};return true}} onAbort={()=>{window.stopped=true;setBusy(false)}}
+      commandCatalog={catalog} onLoadSlashCommands={()=>{}} onQueueInput={async()=>true}
       onSteer={()=>true} onFollowUp={()=>true} isStreaming={busy} onModelChange={async()=>true} onThinkingLevelChange={()=>{}}
       model={{provider:"deepseek",modelId:"deepseek-v4.1-flash"}} modelList={[{provider:"deepseek",id:"deepseek-v4.1-flash",name:"DeepSeek V4.1 Flash Very Long Model Name"}]}
       thinkingLevel="high" extensionStatuses={[{key:"fixture",text:"Ready"}]}
@@ -110,6 +116,35 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await conversation.locator("textarea").fill("Check layout");
       await conversation.locator(".composer-submit-controls > button").click();
       assert.equal(await page.evaluate(() => window.sent), true);
+      // Commands use the same editor; optional controls stay out of the way.
+      const editor = conversation.locator("textarea").first();
+      await editor.fill("/work");
+      await page.getByRole("option").filter({ hasText: "/workflow" }).waitFor();
+      const listId = await editor.getAttribute("aria-controls");
+      assert.ok(listId);
+      await page.keyboard.press("Tab");
+      assert.equal(await editor.inputValue(), "/workflow ");
+      await page.keyboard.type("Check the workspace");
+      assert.equal(await conversation.locator("details[open]").count(), 0);
+      await conversation.locator("summary").click();
+      await conversation.getByRole("button", { name: locale === "zh-CN" ? "完成后再提问" : "Ask after completion" }).click();
+      const query = conversation.getByRole("textbox", { name: locale === "zh-CN" ? "后续提问" : "Follow-up question", exact: true });
+      await query.fill("Verify the result");
+      await conversation.locator(".composer-submit-controls > button").click();
+      const submission = await page.evaluate(() => window.submission);
+      assert.equal(submission.text, "/workflow Check the workspace");
+      assert.equal(submission.args[4].afterPrompt, "Verify the result");
+      await editor.fill("/workflow Keep this as literal text");
+      await conversation.locator("summary").click();
+      await conversation.getByRole("button", { name: locale === "zh-CN" ? "作为普通消息发送" : "Send as plain message" }).click();
+      assert.equal(await editor.inputValue(), "/workflow Keep this as literal text");
+      await conversation.locator(".composer-submit-controls > button").click();
+      assert.equal((await page.evaluate(() => window.submission)).args[4].inputMode, "text");
+      const result = page.locator("#command-results");
+      assert.equal(await result.locator("pre").count(), 0);
+      await result.getByRole("button", { name: locale === "zh-CN" ? "查看详情" : "View details" }).click();
+      assert.equal(await result.locator("pre").innerText(), "/name 项目检查");
+      await result.getByRole("button", { name: locale === "zh-CN" ? "收起详情" : "Hide details" }).click();
       await page.evaluate(() => window.setBusy(true));
       await conversation.locator(".streaming-stop-button").click();
       assert.equal(await page.evaluate(() => window.stopped), true);
@@ -125,6 +160,21 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         await page.keyboard.press("Escape");
         const commandOverflow = await conversation.locator(".chat-composer-footer").evaluate(footer => footer.scrollWidth - footer.clientWidth);
         assert.ok(commandOverflow <= 1, `${locale}/${width}: command action overflows by ${commandOverflow}px`);
+      }
+      if (process.env.PIORA_COMPOSER_SCREENSHOTS) {
+        const output = path.join(repo, "test-results", "composer-layout");
+        await page.addStyleTag({ content: "#launcher{display:none}#root>main{padding:28px;max-width:780px;margin:auto}#conversation,#command-results{width:100%!important}#conversation{padding-top:12px}body{min-height:500px}" });
+        await conversation.evaluate(section => { section.style.width = "100%"; });
+        // Switching away from the literal submission starts a new command draft.
+        await editor.fill("Hello");
+        await editor.fill("/workflow Check the workspace and verify the changes");
+        await page.keyboard.press("Escape");
+        await page.locator("#root>main").screenshot({ path: path.join(output, `${locale}-commands.png`) });
+        await conversation.locator("summary").click();
+        await page.locator("#root>main").screenshot({ path: path.join(output, `${locale}-command-options.png`) });
+        await conversation.locator("summary").click();
+        await page.evaluate(() => document.documentElement.classList.add("dark"));
+        await page.locator("#root>main").screenshot({ path: path.join(output, `${locale}-commands-dark.png`) });
       }
       assert.deepEqual(errors, []);
       await context.close();

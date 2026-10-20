@@ -52,6 +52,7 @@ function createSelectionHarness(selectedId, {
     isMobile,
     selectedSessionIdRef: { current: selectedId },
     suppressCwdBumpRef: { current: false },
+    workspaceNavigationVersionRef: { current: 0 },
     chatInputRef: { current: { focus: () => calls.set("focus", (calls.get("focus") ?? 0) + 1) } },
     window: { history, location, requestAnimationFrame: (callback) => frameCallbacks.push(callback) },
   };

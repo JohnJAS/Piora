@@ -13,6 +13,8 @@ const { chromium } = require("playwright-core");
 
 test("quick access integrates with the real cabin navigation, launcher, editing, menus and keyboard", { timeout: 180000 }, async t => {
   const root = await mkdtemp(path.join(tmpdir(), "piora-quick-access-browser-"));
+  const screenshots = path.join(repo, ".verification", "quick-access");
+  await mkdir(screenshots, { recursive: true });
   let browser;
   t.after(async () => { await browser?.close(); await rm(root, { recursive: true, force: true }); });
   await writeFile(path.join(root, "loader.cjs"), `const ts=require(${JSON.stringify(require.resolve("typescript"))});module.exports=s=>ts.transpileModule(s,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;`);
@@ -92,13 +94,14 @@ test("quick access integrates with the real cabin navigation, launcher, editing,
     focusTimer: { phase: "focus", status: "idle", durations: { focus: 1500, "short-break": 300, "long-break": 900 }, longBreakEvery: 4, autoStartNextPhase: false, petReminderEnabled: true, durationSeconds: 1500, remainingSeconds: 1500, startedAt: null, endsAt: null, linkedTodoId: null, completedFocusSessions: 0 },
     mind: { mood: "calm", lastDecision: null, decisionHistory: [], nextWakeAt: null },
   };
+  const preflight = await readFile(path.join(dependencies, "tailwindcss/preflight.css"), "utf8");
   await page.route("http://quick-access.test/**", async route => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/companion/state") return route.fulfill({ json: runtime });
     if (url.pathname.startsWith("/api/agent/")) return route.fulfill({ json: { sessionIds: [], sessions: [], snapshots: [] } });
     if (url.pathname.endsWith(".js")) return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: await readFile(path.join(root, path.basename(url.pathname))) });
     if (url.pathname.startsWith("/icons/")) return route.fulfill({ contentType: "image/png", body: await readFile(path.join(repo, "public", url.pathname.slice(1))) });
-    return route.fulfill({ contentType: "text/html", body: `<!doctype html><html lang="zh-CN"><style>:root{--text:#253029;--text-muted:#68746b;--text-dim:#849087;--bg:#f7f8f5;--bg-panel:#fff;--bg-hover:#edf0e9;--bg-selected:#e8efdf;--border:#dde2d8;--accent:#6b835b;--btn-primary-fg:#fff;--btn-primary-bg:#35462f;--ui-font-size:14px;--ui-font-family:system-ui;--text-xs:12px;--text-sm:13px;--text-base:14px;--radius-control:7px;--radius-surface:12px;--control-height-large:42px;--font-mono:Consolas,monospace;--shadow-popover:0 12px 36px #1a291b20}*{box-sizing:border-box}body{margin:0;font:14px system-ui}button,input{font:inherit}button{cursor:pointer}</style><div id="root"></div><script src="/bundle.js"></script></html>` });
+    return route.fulfill({ contentType: "text/html", body: `<!doctype html><html lang="zh-CN"><style>${preflight}:root{--text:#253029;--text-muted:#68746b;--text-dim:#849087;--bg:#f7f8f5;--bg-panel:#fff;--bg-hover:#edf0e9;--bg-selected:#e8efdf;--border:#dde2d8;--accent:#6b835b;--btn-primary-fg:#fff;--btn-primary-bg:#35462f;--ui-font-size:14px;--ui-font-family:system-ui;--text-xs:12px;--text-sm:13px;--text-base:14px;--radius-control:7px;--radius-surface:12px;--control-height-large:42px;--font-mono:Consolas,monospace;--shadow-popover:0 12px 36px #1a291b20}*{box-sizing:border-box}body{margin:0;font:14px system-ui}button,input{font:inherit}button{cursor:pointer}</style><div id="root"></div><script src="/bundle.js"></script></html>` });
   });
   await page.goto("http://quick-access.test/");
   const navigation = page.getByRole("tab", { name: "快捷访问", exact: true });
@@ -155,6 +158,24 @@ test("quick access integrates with the real cabin navigation, launcher, editing,
   await list.waitFor();
   await page.getByRole("button", { name: "添加", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "添加快捷访问" });
+  const centered = await dialog.boundingBox();
+  assert.ok(Math.abs(centered.x + centered.width / 2 - 520) < 1, JSON.stringify(centered));
+  assert.ok(Math.abs(centered.y + centered.height / 2 - 400) < 1, JSON.stringify(centered));
+  await page.screenshot({ path: path.join(screenshots, "editor-centered.png") });
+  const handle = await dialog.getByRole("heading").boundingBox();
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + 120, handle.y + handle.height / 2 - 80, { steps: 8 });
+  await page.mouse.up();
+  const dragged = await dialog.boundingBox();
+  assert.ok(Math.abs(dragged.x - centered.x - 120) < 1 && Math.abs(dragged.y - centered.y + 80) < 1, JSON.stringify(dragged));
+  await page.setViewportSize({ width: 390, height: 600 });
+  await page.waitForFunction(() => {
+    const bounds = document.querySelector("dialog").getBoundingClientRect();
+    return bounds.left >= 16 && bounds.top >= 16 && bounds.right <= innerWidth - 15 && bounds.bottom <= innerHeight - 15;
+  });
+  await page.screenshot({ path: path.join(screenshots, "editor-narrow.png") });
+  await page.setViewportSize({ width: 1040, height: 800 });
   await page.evaluate(() => { window.pickedPath = "D:\\工作资料\\中文 文件.txt"; });
   await dialog.getByRole("button", { name: "选择文件或快捷方式", exact: true }).click();
   assert.equal(await dialog.getByLabel("完整路径").inputValue(), "D:\\工作资料\\中文 文件.txt");
@@ -175,6 +196,8 @@ test("quick access integrates with the real cabin navigation, launcher, editing,
   const before = await list.getByRole("listitem").allTextContents();
   await config.getByRole("button", { name: "常用配置 的操作" }).click();
   await page.getByRole("menuitem", { name: "上移", exact: true }).focus();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  assert.equal(await page.getByRole("menuitem", { name: "上移", exact: true }).evaluate(element => element === document.activeElement), true);
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => window.calls.some(call => call.mutation?.type === "reorder"));
   assert.notDeepEqual(await list.getByRole("listitem").allTextContents(), before);
@@ -193,6 +216,8 @@ test("quick access integrates with the real cabin navigation, launcher, editing,
   await missing.getByRole("button", { name: "旧资料 的操作" }).click();
   await page.getByRole("menuitem", { name: "重命名或修改路径" }).click();
   const edit = page.getByRole("dialog", { name: "编辑快捷访问" });
+  const editBounds = await edit.boundingBox();
+  assert.ok(Math.abs(editBounds.x + editBounds.width / 2 - 520) < 1 && Math.abs(editBounds.y + editBounds.height / 2 - 400) < 1, JSON.stringify(editBounds));
   await edit.getByLabel("完整路径").fill("D:\\恢复后的资料");
   await edit.getByRole("button", { name: "保存", exact: true }).click();
   await edit.waitFor({ state: "detached" });
@@ -212,8 +237,6 @@ test("quick access integrates with the real cabin navigation, launcher, editing,
   await page.keyboard.press("Escape");
   assert.equal(await page.getByRole("menu").count(), 0);
   assert.equal(await config.getByRole("button", { name: "常用配置 的操作" }).evaluate(element => document.activeElement === element), true);
-  const screenshots = path.join(repo, ".verification", "quick-access");
-  await mkdir(screenshots, { recursive: true });
   await page.screenshot({ path: path.join(screenshots, "manager.png") });
   await page.setViewportSize({ width: 420, height: 780 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);

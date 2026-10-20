@@ -42,9 +42,11 @@
 .notice[data-error="true"], .error { color: var(--error, #be5252); }
 .notice span { flex: 1; }
 .notice button { border: 0; background: transparent; padding: 3px; }
-.dialog { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; color: var(--text); background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-surface, 12px); font: var(--text-sm, 14px)/1.5 var(--ui-font-family, system-ui); box-shadow: var(--shadow-popover); }
+.dialog { position: fixed; inset: 0; margin: auto; box-sizing: border-box; width: min(520px, calc(100vw - 32px)); height: fit-content; max-height: calc(100dvh - 32px); overflow: auto; padding: 24px; color: var(--text); background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-surface, 12px); font: var(--text-sm, 14px)/1.5 var(--ui-font-family, system-ui); box-shadow: var(--shadow-popover); }
 .dialog::backdrop { background: #0006; }
-.dialog h2 { margin: 0 0 18px; font-size: 18px; font-weight: 550; }
+.dialog h2 { margin: 0 0 18px; font-size: calc(var(--ui-font-size, 14px) * 18 / 14); font-weight: 550; }
+.dialogHandle { cursor: grab; touch-action: none; user-select: none; }
+.dialogHandle:active { cursor: grabbing; }
 .dialog form { display: grid; gap: 16px; }
 .dialog label { display: grid; gap: 6px; }
 .dialog input, .root input { min-width: 0; width: 100%; padding: 10px; font: inherit; color: var(--text); background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-control, 6px); }
@@ -55,5 +57,5 @@
 .menu { position: fixed; z-index: 10000; padding: 5px; overflow-y: auto; background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius-control, 6px); box-shadow: var(--shadow-popover); font: var(--text-sm, 13px)/1.4 var(--ui-font-family, system-ui); }
 .menu button { display: flex; width: 100%; align-items: center; gap: 9px; border: 0; background: transparent; padding: 9px 10px; text-align: left; }
 .menu .remove { color: var(--error, #be5252); border-top: 1px solid var(--border); border-radius: 0; margin-top: 4px; }
-@container companion-panel (max-width: 600px) { .pins { grid-template-columns: repeat(2, minmax(0, 1fr)); } .heading { flex-wrap: wrap; gap: 12px; } .heading h1 { font-size: 20px; } }
+@container companion-panel (max-width: 600px) { .pins { grid-template-columns: repeat(2, minmax(0, 1fr)); } .heading { flex-wrap: wrap; gap: 12px; } .heading h1 { font-size: calc(var(--ui-font-size, 14px) * 20 / 14); } }
 @media (max-width: 420px) { .pins { grid-template-columns: repeat(2, minmax(0, 1fr)); } .dialog { padding: 18px; } }

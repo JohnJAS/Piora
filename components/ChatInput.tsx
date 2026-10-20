@@ -409,10 +409,12 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   const [fileIndexLoading, setFileIndexLoading] = useState(false);
   const [atServerResult, setAtServerResult] = useState<{ cwd: string; query: string; matches: FileIndexEntry[] } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const followUpTextareaRef = useRef<HTMLTextAreaElement>(null);
   const inputAnchorRef = useRef<HTMLDivElement>(null);
   const atMenuRef = useRef<HTMLDivElement>(null);
   const atListRef = useRef<HTMLDivElement>(null);
   const atListId = React.useId();
+  const slashListId = React.useId();
   const atMenuPosition = useAnchoredMenuPosition(inputAnchorRef, atMenuOpen && atQuery !== null);
   const submitRef = useRef<() => void>(() => {});
   const sendingRef = useRef(false);
@@ -987,7 +989,8 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
 
   const filteredSlashCommands = (() => {
     if (slashQuery === null) return [];
-    return filterSlashCommandRegistry(buildSlashCommandRegistry(slashCommands ?? [], isStreaming, commandCatalog), slashQuery, t);
+    return filterSlashCommandRegistry(buildSlashCommandRegistry(slashCommands ?? [], isStreaming, commandCatalog)
+      .filter(command => command.supported !== false || slashQuery.trim().length > 0), slashQuery, t);
   })();
 
   const groupedSlashCommands = (() => {
@@ -1272,12 +1275,16 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     if (command.supported === false) { setAttachmentError(t("chatCommands.unsupported")); return; }
     setCommandInputOptions({ commandKey: command.key, catalogRevision: commandCatalog?.revision });
     const nextValue = `/${command.name} `;
+    const originDraftKey = draftKeyRef.current;
+    textareaRef.current?.focus();
     setValue(nextValue);
     setSlashMenuOpen(false);
     setSlashActiveIndex(0);
     requestAnimationFrame(() => {
       const ta = textareaRef.current;
-      if (!ta) return;
+      // A fast typist may already have entered arguments before this frame.
+      // Moving the caret back to the completed prefix would reorder that text.
+      if (!ta || ta.value !== nextValue || draftKeyRef.current !== originDraftKey) return;
       ta.focus();
       ta.setSelectionRange(nextValue.length, nextValue.length);
       ta.style.height = "auto";
@@ -1443,16 +1450,6 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
         if (e.key === "ArrowUp") {
           e.preventDefault();
           setSlashActiveIndex(getNextSlashIndex("up"));
-          return;
-        }
-        if (e.key === "ArrowRight") {
-          e.preventDefault();
-          setSlashActiveIndex(getNextSlashIndex("right"));
-          return;
-        }
-        if (e.key === "ArrowLeft") {
-          e.preventDefault();
-          setSlashActiveIndex(getNextSlashIndex("left"));
           return;
         }
         if (e.key === "Escape") {
@@ -2025,7 +2022,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
             </div>
           )}
           {slashMenuOpen && slashQuery !== null && (
-            <div className="slash-command-menu" role="listbox" aria-label={t("chat.slashCommands", { label: slashCommandCountLabel })}>
+            <div id={slashListId} className="slash-command-menu" role="listbox" aria-label={t("chat.slashCommands", { label: slashCommandCountLabel })}>
               <div className="slash-command-menu-header">
                 <span>{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.slashCommands", { label: slashCommandCountLabel })}</span>
                 <span className="slash-command-menu-hints" aria-hidden="true"><kbd>↑</kbd><kbd>↓</kbd> {t("chat.commandSwitch")} · <kbd>Tab</kbd> {t("chatCommands.selectHint")} · <kbd>esc</kbd> {t("chat.commandClose")}</span>
@@ -2051,18 +2048,19 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
                             }}
                             type="button"
                             role="option"
+                            id={`${slashListId}-${index}`}
                             aria-selected={active}
                             aria-disabled={command.supported === false}
                             className="slash-command-item"
                             data-active={active ? "true" : "false"}
                             onMouseDown={(e) => {
                               e.preventDefault();
-                              applySlashCommand(command);
                             }}
+                            onClick={() => applySlashCommand(command)}
                             onMouseEnter={() => setSlashActiveIndex(index)}
                           >
-                            <span className="slash-command-item-name">/{command.name}{command.argumentHint ? ` ${command.argumentHint}` : ""}</span>
-                            <span className="slash-command-item-desc">{isStreaming && command.source === "builtin" ? t("chat.commandWaitUntilIdle") : getSlashCommandDescription(command, t)}</span>
+                            <span className="slash-command-item-name">/{command.name}{command.argumentHint && <span className="slash-command-item-argument"> {command.argumentHint}</span>}</span>
+                            <span className="slash-command-item-desc">{command.supported === false ? t("chatCommands.unsupported") : isStreaming && command.source === "builtin" ? t("chat.commandWaitUntilIdle") : getSlashCommandDescription(command, t)}</span>
                             <span className="slash-command-item-source">{t(SLASH_SOURCE_GROUP_LABEL_KEYS[command.source])}</span>
                           </button>
                         );
@@ -2191,9 +2189,12 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
             } as React.CSSProperties}
           >
           {parsedCommandInput.kind === "command" && <div className={commandStyles.context}>
-            <span className={commandStyles.chip}><AliIcon name="code" size={12} /><code>/{parsedCommandInput.command.name}</code><button type="button" aria-label={t("chatCommands.remove")} onClick={() => { setValue([parsedCommandInput.arguments, parsedCommandInput.afterPrompt].filter(Boolean).join("\n\n")); setCommandInputOptions({}); }}><AliIcon name="close" size={11} /></button></span>
-            <span>{parsedCommandInput.command.source === "builtin" ? getSlashCommandDescription({ name: parsedCommandInput.command.name, source: "builtin", description: buildSlashCommandRegistry([], false).find(item => item.name === parsedCommandInput.command.name)?.description ?? "chatCommands.title" }, t) : parsedCommandInput.command.description}</span>
-            <span className={commandStyles.hint}>{t(parsedCommandInput.command.source === "extension" && isStreaming ? "chatCommands.extensionHint" : parsedCommandInput.command.argumentMode === "none" ? "chatCommands.noArguments" : "chatCommands.arguments")}{parsedCommandInput.command.argumentHint ? ` · ${parsedCommandInput.command.argumentHint}` : ""}</span>
+            <AliIcon name="code" size={13} />
+            <span className={commandStyles.description}>{parsedCommandInput.command.source === "builtin" ? getSlashCommandDescription({ name: parsedCommandInput.command.name, source: "builtin", description: buildSlashCommandRegistry([], false).find(item => item.name === parsedCommandInput.command.name)?.description ?? "chatCommands.title" }, t) : parsedCommandInput.command.description}</span>
+            <details className={commandStyles.options}>
+              <summary>{t("chatCommands.options")}<AliIcon name="arrowdown" size={10} /></summary>
+              <div className={commandStyles.optionsPanel}>
+                <p className={commandStyles.hint}>{t(parsedCommandInput.command.source === "extension" && isStreaming ? "chatCommands.extensionHint" : parsedCommandInput.command.argumentMode === "none" ? "chatCommands.noArguments" : "chatCommands.arguments")}{parsedCommandInput.command.argumentHint ? ` · ${parsedCommandInput.command.argumentHint}` : ""}</p>
             {isStreaming && parsedCommandInput.command.source !== "builtin" && <label className={commandStyles.delivery}>
               {t("chatCommands.delivery")}
               <select aria-label={t("chatCommands.delivery")} value={commandInputOptions.delivery ?? (parsedCommandInput.command.source === "extension" ? "immediate" : "next_turn")} onChange={event => setCommandInputOptions(current => ({ ...current, delivery: event.target.value === "immediate" ? undefined : event.target.value as ChatInputOptions["delivery"] }))}>
@@ -2201,13 +2202,20 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
                 <option value="next_turn">{t("chatCommands.afterTask")}</option>
               </select>
             </label>}
-            {parsedCommandInput.command.argumentMode !== "none" && commandInputOptions.afterPrompt === undefined && <button type="button" onClick={() => setCommandInputOptions(current => ({ ...current, afterPrompt: "" }))}>{t("chatCommands.addQuery")}</button>}
+            {parsedCommandInput.command.argumentMode !== "none" && commandInputOptions.afterPrompt === undefined && <button type="button" onClick={event => {
+              event.currentTarget.closest("details")?.removeAttribute("open");
+              setCommandInputOptions(current => ({ ...current, afterPrompt: "" }));
+              requestAnimationFrame(() => followUpTextareaRef.current?.focus());
+            }}>{t("chatCommands.addQuery")}</button>}
+                <button type="button" onClick={() => { setValue([value, parsedCommandInput.afterPrompt].filter(Boolean).join("\n\n")); setCommandInputOptions({ inputMode: "text" }); textareaRef.current?.focus(); }}>{t("chatCommands.asText")}</button>
+              </div>
+            </details>
           </div>}
           <textarea
             ref={textareaRef}
             aria-autocomplete="list"
-            aria-controls={atMenuPosition ? atListId : undefined}
-            aria-activedescendant={atMenuPosition && atMatches[atActiveIndex] ? `${atListId}-${atActiveIndex}` : undefined}
+            aria-controls={slashMenuOpen ? slashListId : atMenuPosition ? atListId : undefined}
+            aria-activedescendant={slashMenuOpen && filteredSlashCommands[slashActiveIndex] ? `${slashListId}-${slashActiveIndex}` : atMenuPosition && atMatches[atActiveIndex] ? `${atListId}-${atActiveIndex}` : undefined}
             value={value}
             onChange={(e) => {
               if (localVoiceRecording || voiceTranscribing) stopVoiceInput(true);
@@ -2269,12 +2277,9 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
           />
 
           {/* Composer footer: attach + model selector (bottom-right of the input) */}
-          {parsedCommandInput.kind === "command" && parsedCommandInput.afterPrompt && <div className={commandStyles.sequence}>
-            <span className={commandStyles.number}>1</span>{t("chatCommands.commandStep", { name: parsedCommandInput.command.name })}<AliIcon name="arrowright" size={12} /><span className={commandStyles.number}>2</span>{t("chatCommands.promptStep")}
-          </div>}
           {isCommandInput && commandInputOptions.afterPrompt !== undefined && <label className={commandStyles.afterPrompt}>
-            {t("chatCommands.query")}<textarea aria-label={t("chatCommands.query")} value={commandInputOptions.afterPrompt} placeholder={t("chatCommands.queryPlaceholder")} onChange={event => setCommandInputOptions(current => ({ ...current, afterPrompt: event.target.value }))} />
-            <button type="button" onClick={() => setCommandInputOptions(current => ({ ...current, afterPrompt: undefined }))}>{t("chatCommands.cancel")}</button>
+            <span className={commandStyles.queryHeading}>{t("chatCommands.addQuery")}<button type="button" aria-label={t("chatCommands.cancelQuery")} onClick={() => setCommandInputOptions(current => ({ ...current, afterPrompt: undefined }))}><AliIcon name="close" size={12} /></button></span>
+            <textarea ref={followUpTextareaRef} aria-label={t("chatCommands.query")} value={commandInputOptions.afterPrompt} placeholder={t("chatCommands.queryPlaceholder")} onChange={event => setCommandInputOptions(current => ({ ...current, afterPrompt: event.target.value }))} />
           </label>}
           {isCommandInput && parsedCommandInput.kind === "invalid" && !slashMenuOpen && value.trim() !== "/" && <div className={commandStyles.validation} role="status">
             <p>{t(`chatCommands.error.${parsedCommandInput.code}`, { name: parsedCommandInput.name })}</p><button type="button" onClick={() => { setValue([value, commandInputOptions.afterPrompt].filter(Boolean).join("\n\n")); setCommandInputOptions({ inputMode: "text" }); }}>{t("chatCommands.asText")}</button>

@@ -293,7 +293,9 @@ export class AgentSessionWrapper {
     };
     this.remotePolicy = readRemoteSessionPolicy(inner.sessionManager.getEntries());
     this.cachedSessionTitle = inner.sessionManager.getSessionName()?.trim() || null;
-    this.capabilityCatalog = [...buildSessionCapabilityCatalog(inner.getAllTools(), runtimeProfile), ...this.nativeMcp?.resourceCatalog() ?? []];
+    this.capabilityCatalog = [...buildSessionCapabilityCatalog(inner.getAllTools().map(tool => ({
+      ...tool, defaultActive: inner.getToolDefinition?.(tool.name)?.defaultActive,
+    })), runtimeProfile), ...this.nativeMcp?.resourceCatalog() ?? []];
     this.capabilityPolicy = capabilityOptions.policy
       ?? restoreSessionCapabilityPolicy(inner.sessionManager.getEntries(), this.capabilityCatalog, runtimeProfile);
     this.toolNameCeiling = this.remotePolicy === "notes" ? new Set<string>() : capabilityOptions.toolNameCeiling
@@ -416,7 +418,9 @@ export class AgentSessionWrapper {
   }
 
   private refreshCapabilityCatalog(): void {
-    this.capabilityCatalog = [...buildSessionCapabilityCatalog(this.inner.getAllTools(), this.runtimeProfile), ...this.nativeMcp?.resourceCatalog() ?? []];
+    this.capabilityCatalog = [...buildSessionCapabilityCatalog(this.inner.getAllTools().map(tool => ({
+      ...tool, defaultActive: this.inner.getToolDefinition?.(tool.name)?.defaultActive,
+    })), this.runtimeProfile), ...this.nativeMcp?.resourceCatalog() ?? []];
   }
 
   isToolAllowedByCapability(name: string): boolean {
@@ -482,6 +486,13 @@ export class AgentSessionWrapper {
 
   private applySessionCapabilities(options: { persistBudgetTrim?: boolean } = {}): void {
     this.refreshCapabilityCatalog();
+    if (this.runtimeProfile === "normal" && this.capabilityPolicy.preset === "coding") {
+      this.capabilityPolicy = {
+        ...this.capabilityPolicy,
+        enabledCapabilityIds: [...new Set([...this.capabilityPolicy.enabledCapabilityIds,
+          ...this.capabilityCatalog.filter(item => item.available && item.defaultEnabled).map(item => item.id)])].sort(),
+      };
+    }
     const resolved = this.resolveCapabilityToolBudget(this.capabilityPolicy, false);
     this.capabilityPolicy = resolved.policy;
     if (resolved.trimmed && options.persistBudgetTrim && !this.projectManaged) {
@@ -2134,9 +2145,11 @@ export class AgentSessionWrapper {
         opts?.signal,
       ),
       notify: (message, type) => {
+        if (type === "error") this.chatCommandActivities.fail(new Error(message));
         this.emit({
           type: "extension_ui_request",
           id: randomUUID(),
+          commandId: this.chatCommandActivities.commandId,
           method: "notify",
           message,
           notifyType: type,
@@ -2802,7 +2815,9 @@ export async function startRpcSession(
     }
 
     const nativeMcp = getNativeMcpController(services);
-    const capabilityCatalog = [...buildSessionCapabilityCatalog(inner.getAllTools(), runtimeProfile), ...nativeMcp?.resourceCatalog() ?? []];
+    const capabilityCatalog = [...buildSessionCapabilityCatalog(inner.getAllTools().map(tool => ({
+      ...tool, defaultActive: inner.getToolDefinition?.(tool.name)?.defaultActive,
+    })), runtimeProfile), ...nativeMcp?.resourceCatalog() ?? []];
     const restoredPolicy = projectToolRecord
       ? createSessionCapabilityPolicy(
           projectToolSelection(projectToolRecord),
