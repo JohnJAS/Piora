@@ -17,9 +17,9 @@ Piora 把 AI 对话、项目文件、代码编辑、Git 审阅、终端、浏览
 
 项目基于 [Pi](https://github.com/earendil-works/pi)，由 [pi-web](https://github.com/agegr/pi-web) 演进而来，保留 Pi 的会话、模型接入与扩展机制。Piora 由社区独立维护，不隶属于 Pi、pi-web、OpenAI 或 Codex。
 
-最新正式版为 `0.5.4`，当前源码版本为 `0.5.5-beta.30`。本轮重做命令卡片与输入框命令交互，修复已安装 Plan / Goal 扩展无法启动、项目会话需要点击两次、快捷访问弹窗偏移及 hosts 编辑器不可见的问题，并恢复 Shell 与正文之间的阅读间距。随身舱快捷访问、Shell 默认折叠、轻量过程默认关闭、依赖升级和窄聊天区域输入框布局修复继续保留。统一输入、成员交接、结构化任务、成果交付、聊天命令与数据目录切换继续保留。此前的右侧浏览器与 Agent 会话联动继续保留：桌面版里 Agent 直接操作右侧真实浏览器中当前会话的标签页，面板不必打开；遇到登录、验证码或支付等页面时停下来，等你在右侧完成后继续，登录状态保存在 Piora 自己的浏览器里，不与本机 Chrome 共用。此前 beta 的模型采样设置、鸿蒙华为系统录屏、Pi 1.0.2 会话费用统计、原生 MCP、鸿蒙设备工作台和网络代理等能力继续保留，完整变化见 [CHANGELOG.md](CHANGELOG.md)。
+最新正式版为 `0.5.4`，当前源码版本为 `0.5.5-beta.31`。本轮重做命令卡片与输入框命令交互，修复已安装 Plan / Goal 扩展无法启动、项目会话需要点击两次、快捷访问弹窗偏移及 hosts 编辑器不可见的问题，并恢复 Shell 与正文之间的阅读间距。随身舱快捷访问、Shell 默认折叠、轻量过程默认关闭、依赖升级和窄聊天区域输入框布局修复继续保留。统一输入、成员交接、结构化任务、成果交付、聊天命令与数据目录切换继续保留。此前的右侧浏览器与 Agent 会话联动继续保留：桌面版里 Agent 直接操作右侧真实浏览器中当前会话的标签页，面板不必打开；遇到登录、验证码或支付等页面时停下来，等你在右侧完成后继续，登录状态保存在 Piora 自己的浏览器里，不与本机 Chrome 共用。此前 beta 的模型采样设置、鸿蒙华为系统录屏、Pi 1.0.2 会话费用统计、原生 MCP、鸿蒙设备工作台和网络代理等能力继续保留，完整变化见 [CHANGELOG.md](CHANGELOG.md)。
 
-beta.30 由 tagged GitHub Actions 构建和校验 Windows 安装版与便携版，预发布下载提供在[所有发布](https://github.com/kexijiang/Piora/releases)。Windows 包携带仓库内审阅过的 unsigned 投屏 HAP，打包全程 GitHub 托管，不再重构建该组件，也不依赖专用 runner 或连接手机。只有用户明确初始化时，Piora 才调用本机已登录的 DevEco CLI 生成或更新设备调试 Profile，生成并验签设备绑定副本后安装。华为系统录屏和浏览器联动的窗口外渲染尚未经过真机验收。真机支持范围和待验项目见[鸿蒙设备验收矩阵](docs/harmony/atlas-acceptance.md)。
+beta.31 由 tagged GitHub Actions 构建和校验 Windows 安装版与便携版，预发布下载提供在[所有发布](https://github.com/kexijiang/Piora/releases)。Windows 包携带仓库内审阅过的 unsigned 投屏 HAP，打包全程 GitHub 托管，不再重构建该组件，也不依赖专用 runner 或连接手机。只有用户明确初始化时，Piora 才调用本机已登录的 DevEco CLI 生成或更新设备调试 Profile，生成并验签设备绑定副本后安装。华为系统录屏和浏览器联动的窗口外渲染尚未经过真机验收。真机支持范围和待验项目见[鸿蒙设备验收矩阵](docs/harmony/atlas-acceptance.md)。
 
 [下载与安装](#下载与安装) · [开始使用](#开始使用) · [完整用户手册](docs/user-manual.zh-CN.md) · [主要功能](#主要功能) · [鸿蒙设备工作台](#鸿蒙设备工作台) · [开发与贡献](#开发与贡献) · [文档索引](docs/README.md)
 

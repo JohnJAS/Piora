@@ -120,6 +120,8 @@ export async function loadProjectToolsContext(
         description: definition.description,
         parameters: definition.parameters,
         exposure: definition.exposure,
+        defaultActive: definition.defaultActive,
+        sourceInfo: extension.sourceInfo,
         ...(definition.promptGuidelines ? { promptGuidelines: definition.promptGuidelines } : {}),
       });
     }

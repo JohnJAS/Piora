@@ -37,6 +37,7 @@ export interface ToolInfo {
   name: string;
   description: string;
   exposure?: string;
+  defaultActive?: boolean;
   parameters?: unknown;
   inputSchema?: unknown;
   promptGuidelines?: readonly string[];
