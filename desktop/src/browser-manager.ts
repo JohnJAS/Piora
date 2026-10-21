@@ -116,6 +116,7 @@ export interface DesktopBrowserDownload {
 }
 
 type BrowserTab = {
+  initialLoad?: Promise<void>;
   authHost?: string;
   attached: boolean;
   discarding?: boolean;
@@ -517,14 +518,18 @@ export class DesktopBrowserManager {
     const contents = tab.view.webContents;
     if (contents.isDestroyed()) throw new Error("Browser tab is closed.");
     const waited = this.armNavigation(tab);
-    try {
-      await contents.loadURL(url);
-    } catch (error) {
-      if (!isNonFatalNavigationError(error)) {
-        this.settleNavigation(tab, error instanceof Error ? error : new Error(String(error)));
+    const loading = (async () => {
+      try {
+        await contents.loadURL(url);
+      } catch (error) {
+        if (!isNonFatalNavigationError(error)) {
+          this.settleNavigation(tab, error instanceof Error ? error : new Error(String(error)));
+        }
       }
-    }
-    await waited;
+    })();
+    // Navigation events and the timeout can reject before loadURL settles.
+    // Observe both promises immediately so that failure cannot terminate Node.
+    await Promise.all([waited, loading]);
   }
 
   private async waitForHistoryNavigation(tab: BrowserTab, start: () => void): Promise<void> {
@@ -945,6 +950,21 @@ export class DesktopBrowserManager {
     return tab;
   }
 
+  private async ensureTabReady(tabId: string): Promise<void> {
+    const tab = this.requireLiveTab(tabId);
+    if (tab.initialLoad) return tab.initialLoad;
+    if (tab.view.webContents.getURL()) return;
+    // A new WebContentsView has no committed document. Sending CDP emulation
+    // commands before its first load can crash the native Electron process.
+    const pending = this.loadTabUrl(tab, "about:blank");
+    tab.initialLoad = pending;
+    try {
+      await pending;
+    } finally {
+      if (tab.initialLoad === pending) delete tab.initialLoad;
+    }
+  }
+
   private tabState(tab: BrowserTab) {
     return {
       id: tab.id,
@@ -1007,6 +1027,7 @@ export class DesktopBrowserManager {
       platform: process.platform,
       log: this.log,
       listTabs: () => this.tabs.map((tab) => this.tabState(tab)),
+      ensureReady: (tabId: string) => this.ensureTabReady(tabId),
       createTab: (sessionId: string, url: string) => {
         rejectAgentCreateAtCapacity(this.tabs.length, MAX_TABS);
         return this.tabState(this.createTab(url, false, sessionId, undefined, true));

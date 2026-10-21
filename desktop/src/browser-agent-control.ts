@@ -69,6 +69,7 @@ export interface BrowserAgentHost {
     warn(message: string, details?: unknown): void;
   };
   listTabs(): BrowserAgentTabState[];
+  ensureReady(tabId: string): Promise<void>;
   createTab(sessionId: string, url: string): BrowserAgentTabState;
   closeTab(tabId: string): void;
   loadURL(tabId: string, url: string): Promise<void>;
@@ -908,6 +909,7 @@ export class BrowserAgentControl {
   }
 
   private async prepareSurface(tabId: string): Promise<void> {
+    await this.runTabOp(tabId, () => this.host.ensureReady(tabId), this.navigationTimeoutMs, "Browser tab initialization timed out.");
     if (this.host.isShowing(tabId)) await this.showNative(tabId);
     else await this.placeOffscreen(tabId);
   }
