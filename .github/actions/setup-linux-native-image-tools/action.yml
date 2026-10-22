@@ -1,0 +1,20 @@
+name: Set up Linux native image tools
+description: Install the pinned ELF editor used to isolate sharp's GLib symbols
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        test "$(uname -m)" = x86_64
+        sudo apt-get update
+        sudo apt-get install -y binutils
+        tool_dir="$RUNNER_TEMP/piora-patchelf-0.19.2"
+        mkdir -p "$tool_dir"
+        curl --fail --location --retry 3 --silent --show-error \
+          https://github.com/NixOS/patchelf/releases/download/0.19.2/patchelf-0.19.2-x86_64.tar.gz \
+          --output "$tool_dir/archive.tar.gz"
+        echo "2abdc34fbe949c995a1baa4ec310896a085588a45a99cd0d726851bdfac2a4bb  $tool_dir/archive.tar.gz" | sha256sum --check
+        tar -xzf "$tool_dir/archive.tar.gz" -C "$tool_dir"
+        "$tool_dir/bin/patchelf" --version
+        echo "$tool_dir/bin" >> "$GITHUB_PATH"
