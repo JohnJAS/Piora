@@ -38,6 +38,10 @@ try {
         const image = await sharp({create:{width:3,height:2,channels:4,background:'#123456'}}).png().toBuffer();
         const metadata = await sharp(image).metadata();
         const pixels = await sharp(image).ensureAlpha().raw().toBuffer();
+        for (let iteration = 0; iteration < 20; iteration++) {
+          const decoded = await sharp(image).ensureAlpha().raw().toBuffer();
+          if (!decoded.equals(pixels)) throw new Error('Image pixels changed during repeated decoding');
+        }
         console.log(JSON.stringify({width:metadata.width,height:metadata.height,pixels:[...pixels]}));
       })().catch(error => { console.error(error); process.exitCode = 1; });
     `);
@@ -48,7 +52,7 @@ try {
       });
       let valid = false;
       try { assert.deepEqual(JSON.parse(result.stdout), expected); valid = true; } catch { /* Report malformed/absent output below. */ }
-      const passed = result.status === 0 && !result.error && valid;
+      const passed = result.status === 0 && !result.error && valid && !/GLib(?:-GObject)?-(?:CRITICAL|WARNING)/.test(result.stderr);
       console.log(JSON.stringify({ patched, runtime, entry, passed, exit: result.status, signal: result.signal,
         error: result.error?.message, stdout: result.stdout, stderr: result.stderr }));
       if (patched && !passed) process.exitCode = 1;

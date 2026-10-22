@@ -14,21 +14,7 @@ jobs:
         with:
           node-version: 22.19.0
           cache: npm
-      - run: sudo apt-get update && sudo apt-get install -y binutils patchelf gdb
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          repository: NixOS/patchelf
-          ref: 3e996dbef1fa0658012f8dd290bddcf0302acade
-          path: .native-image-tools
-          persist-credentials: false
-      - name: Build pinned ELF editor with section preservation
-        run: |
-          cd .native-image-tools
-          ./bootstrap.sh
-          ./configure --prefix="$RUNNER_TEMP/piora-patchelf"
-          make -j2
-          make install
-          echo "$RUNNER_TEMP/piora-patchelf/bin" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/setup-linux-native-image-tools
       - run: npm ci --ignore-scripts
       - run: node node_modules/electron/install.js
       - name: Inspect original ELF initialization
@@ -40,7 +26,7 @@ jobs:
       - name: Inspect native initialization
         run: |
           readelf -Wl -Wd node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.7
-          gdb --batch -ex run -ex 'info sharedlibrary' -ex 'info proc mappings' -ex 'x/5i $pc' -ex 'bt 12' --args node -e "require('sharp')"
+          node -e "console.log(require('sharp').versions)"
       - name: Compare original and isolated symbols
         run: node scripts/diagnose-sharp-electron.mjs
       - name: Check packaged images

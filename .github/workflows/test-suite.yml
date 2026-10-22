@@ -37,7 +37,7 @@ jobs:
 
       - name: Install Linux native image patch tools
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y binutils patchelf
+        uses: ./.github/actions/setup-linux-native-image-tools
 
       - name: Install dependencies
         run: npm ci

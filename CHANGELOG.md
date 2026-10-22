@@ -6,7 +6,7 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ### Linux 原生图片兼容性
 
-- 为 Linux 的 sharp/libvips 原生依赖增加 GLib 符号隔离，保留 ELF 原有段内容，避免与 Electron 加载的系统 GLib 互相干扰；撤销实测会触发内存释放崩溃的深度绑定候选方案，保持默认动态加载与内存分配行为。Linux 开发安装需要 binutils 和 patchelf 0.18+，CI 与发布构建同步准备工具；此修复仍待 Linux 验收。
+- 为 Linux 的 sharp/libvips 原生依赖增加 GLib 符号隔离，保留默认动态加载与内存分配行为，避免与 Electron 的系统 GLib 互相干扰。Linux 开发安装需要 binutils 和 patchelf 0.19.2+，CI 与发布构建使用校验过 SHA-256 的固定版本工具，拒绝会损坏 ELF 初始化地址的旧版工具；此修复仍待 Linux 验收。
 - 图片原生依赖测试同时验证普通 Node、Electron 目录加载和 ASAR sidecar 加载，保留图片生成、解码及尺寸检查并增加逐像素校验；新增隔离的原始/修复后对比诊断脚本，记录运行时与 libvips 版本、退出信号和错误输出，并用固定版本 ELF 工具及独立 Linux 原生初始化诊断定位符号隔离兼容问题。
 
 ### 聊天工具权限

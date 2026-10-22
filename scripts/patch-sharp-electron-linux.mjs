@@ -21,7 +21,16 @@ export async function patchSharpElectronLinux(root, { restore = false } = {}) {
   const scope = join(root, "node_modules", "@img");
   const entries = await readdir(scope);
   const patched = [];
-  for (const name of entries.filter(name => /^sharp-linux-(?:arm|arm64|ppc64|riscv64|s390x|x64)$/.test(name))) {
+  const packages = entries.filter(name => /^sharp-linux-(?:arm|arm64|ppc64|riscv64|s390x|x64)$/.test(name));
+  if (packages.length) {
+    // Older patchelf can move .init without updating DT_INIT (upstream #639),
+    // producing an ELF that passes symbol checks but crashes during dlopen.
+    const version = execFileSync("patchelf", ["--version"], { encoding: "utf8" }).match(/(\d+)\.(\d+)\.(\d+)/);
+    if (!version || (Number(version[1]) === 0 && (Number(version[2]) < 19 || (Number(version[2]) === 19 && Number(version[3]) < 2)))) {
+      throw new Error("Linux sharp isolation requires patchelf >= 0.19.2; see README.md");
+    }
+  }
+  for (const name of packages) {
     const directory = join(scope, name);
     const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
     const platform = name.slice(6);
@@ -34,7 +43,7 @@ export async function patchSharpElectronLinux(root, { restore = false } = {}) {
     const vips = join(vipsDirectory, "lib", "libvips-cpp.so.8.18.7");
     let exports;
     try { exports = symbols(vips); } catch (error) {
-      throw new Error("Linux sharp isolation requires binutils and patchelf >= 0.18 (Ubuntu: sudo apt-get install binutils patchelf)", { cause: error });
+      throw new Error("Linux sharp isolation requires binutils and patchelf >= 0.19.2; see README.md", { cause: error });
     }
     const addonSymbols = symbols(addon);
     const imported = new Set(addonSymbols.filter(([, type]) => type === "U").map(([symbol]) => symbol));
@@ -59,7 +68,7 @@ export async function patchSharpElectronLinux(root, { restore = false } = {}) {
         const staged = join(temporary, `${index}.elf`);
         await cp(file, staged);
         try { execFileSync("patchelf", ["--no-clobber-old-sections", "--rename-dynamic-symbols", mapFile, staged], { encoding: "utf8" }); } catch (error) {
-          throw new Error("Linux sharp isolation requires patchelf >= 0.18 with --rename-dynamic-symbols support", { cause: error });
+          throw new Error("Linux sharp isolation requires patchelf >= 0.19.2 with --rename-dynamic-symbols support", { cause: error });
         }
         if (symbols(staged).some(([symbol]) => names.has(symbol))) throw new Error(`GLib symbol isolation failed for ${file}`);
       }

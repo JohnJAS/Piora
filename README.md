@@ -196,7 +196,7 @@ Piora/
 
 ### 检查与发布
 
-Linux 源码安装前需安装 `binutils` 和 `patchelf` 0.18+（Ubuntu：`sudo apt-get install binutils patchelf`）。安装脚本会隔离 sharp/libvips 的 GLib 动态符号，避免与 Electron 的系统 GLib 冲突；工具只用于开发和构建，发布包运行时不需要安装。Windows 不执行此补丁。
+Linux 源码安装前需安装 `binutils`（Ubuntu：`sudo apt-get install binutils`），并将 [patchelf 0.19.2 或更新版本](https://github.com/NixOS/patchelf/releases/tag/0.19.2)放入 `PATH`。Ubuntu 24.04 软件源中的 0.18 存在 ELF 初始化地址重写缺陷，不能使用。安装脚本会隔离 sharp/libvips 的 GLib 动态符号，避免与 Electron 的系统 GLib 冲突；工具只用于开发和构建，发布包运行时不需要安装。Windows 不执行此补丁。
 
 ```powershell
 npm run licenses:check
