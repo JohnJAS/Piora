@@ -151,16 +151,17 @@ test("assistant messages omit repeated model and usage metadata", () => {
   }
 });
 
-test("shell cards reveal commands and errors only after expanding", () => {
+test("shell rows preview commands while keeping full commands and errors behind expansion", () => {
   const command = "npm run check -- --project ./packages/a/tsconfig.json\nnode ./scripts/verify.mjs --all";
   const message = { role: "assistant", content: [{ type: "toolCall", toolCallId: "shell", toolName: "powershell", input: { command } }] };
   const result = { role: "toolResult", toolCallId: "shell", toolName: "powershell", isError: true,
     content: [{ type: "text", text: "src/a.ts(4): error TS2322: wrong type\nCommand exited with code 2" }],
     details: { truncation: { truncated: true }, fullOutputPath: "C:\\Temp\\pi-powershell-a.log" } };
   const collapsed = renderMessage(message, { sessionId: "550e8400-e29b-41d4-a716-446655440000", cwd: "F:\\Piora", toolResults: new Map([["shell", result]]) });
-  assert.match(collapsed, /PowerShell/);
+  assert.match(collapsed, /运行命令/);
+  assert.equal(collapsed.match(/class="command-summary-preview"[^>]*>([^<]*)<\/span>/)?.[1], command.replace(/\s+/g, " ").trim());
   assert.match(collapsed, /失败/);
-  assert.doesNotMatch(collapsed, /退出码 2|错误摘录|TS2322|npm run check|command-preview/);
+  assert.doesNotMatch(collapsed, /退出码 2|错误摘录|TS2322|command-source-section|诊断信息/);
   assert.match(collapsed, /复制完整命令/);
 
   const rowState = createVirtualRowState();
@@ -171,6 +172,8 @@ test("shell cards reveal commands and errors only after expanding", () => {
   assert.match(expanded, /错误摘录/);
   assert.match(expanded, /完整命令/);
   assert.match(expanded, /npm run check/);
+  assert.ok(expanded.includes(`<pre>${command}</pre>`), "expanded details preserve the original multiline command");
+  assert.match(expanded, /TS2322/);
   assert.match(expanded, /当前仅显示部分输出/);
   assert.match(expanded, /这条历史记录没有保存完整日志位置/);
   assert.match(expanded, /诊断信息/);
