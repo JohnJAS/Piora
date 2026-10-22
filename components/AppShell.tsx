@@ -2147,7 +2147,19 @@ export function AppShell() {
       <a className="skip-to-content" href="#piora-main-content">{translate("a11y.skipToContent")}</a>
       {desktopChrome ? (
         <header className="desktop-titlebar" aria-label={windowTitle}>
-          <div className="desktop-titlebar-mark" aria-hidden="true" />
+          <button
+            type="button"
+            className="desktop-titlebar-sidebar-toggle"
+            onClick={handleSidebarToggle}
+            title={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
+            aria-label={sidebarOpen ? translate("sidebar.hide") : translate("sidebar.show")}
+            aria-expanded={sidebarOpen}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="1" />
+              <path d="M9 3v18" />
+            </svg>
+          </button>
           <nav className="desktop-titlebar-menus" aria-label={locale === "zh-CN" ? "应用菜单" : "Application menu"}>
             {desktopMenus.map((menu) => (
               <button

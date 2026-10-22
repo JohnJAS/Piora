@@ -31,7 +31,7 @@ export function SidebarNavigation(props: Props) {
   return <>
       <div className={styles.brandRow}>
         <button type="button" className={styles.brandButton} aria-label={t("sidebar.appMenu")}>
-          {APP_BRAND.id === "piora" && <span className={styles.brandMark} aria-hidden="true">π</span>}
+          {APP_BRAND.id === "piora" && <span className={styles.brandMark} aria-hidden="true" />}
           <span>{APP_DISPLAY_NAME}</span>
         </button>
         <div className={styles.brandActions}>

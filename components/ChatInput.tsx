@@ -163,7 +163,7 @@ interface Props {
   /** Reuses the production composer in a spacious new-task launch surface. */
   variant?: "conversation" | "launcher";
   placeholder?: string;
-  /** Optional workspace/project control rendered beside the attachment button. */
+  /** Optional project and mode controls rendered above the input surface. */
   contextControl?: React.ReactNode;
   toolPermission?: ToolPermissionState | null;
   permissionSaving?: boolean;
@@ -2179,6 +2179,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
               </div>
             </div>
           )}
+          {contextControl && <div className="chat-composer-context">{contextControl}</div>}
           <div
             className="chat-composer-surface"
             style={{
@@ -2343,7 +2344,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
                 <AliIcon name="plus" size={15} />
               </button>
             </div>
-            {contextControl}
+            {onToolPermissionChange && <ToolPermissionControl state={toolPermission ?? null} saving={permissionSaving} onChange={onToolPermissionChange} />}
             {voiceInputSupported && (
               <>
                 <button
@@ -2470,7 +2471,6 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
               </div>
             </div> : null}
             <div className="composer-submit-controls">
-            {onToolPermissionChange && <ToolPermissionControl state={toolPermission ?? null} saving={permissionSaving} onChange={onToolPermissionChange} />}
             {/* Codex-style model settings: one compact summary chip with focused submenus. */}
             {(modelOptions.length > 0 || currentName || modelError) && onModelChange && (
               <div ref={dropdownRef} className="model-settings-control">
