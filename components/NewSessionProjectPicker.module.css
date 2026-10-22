@@ -1,6 +1,7 @@
 .projectControl {
   position: relative;
   min-width: 52px;
+  max-width: min(220px, 31vw, 100%);
 }
 
 .projectTrigger {

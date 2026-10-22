@@ -163,7 +163,7 @@ export function ProjectSessionGroup({
             title={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
             aria-label={t("sidebar.newSessionTitle", { path: group.preferredCwd })}
           >
-            <AliIcon name="chat-bubble" size={16} strokeWidth={1.62} />
+            <AliIcon name="chat-bubble-plus" size={16} strokeWidth={1.5} />
           </button>
         </div>
       </div>

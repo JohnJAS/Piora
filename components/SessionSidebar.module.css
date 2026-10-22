@@ -36,13 +36,7 @@
   width: 20px;
   height: 20px;
   margin-right: 2px;
-  border-radius: var(--radius-control);
-  background: linear-gradient(145deg, #fff3dc 8%, #cfadff 58%, #68e4ff 100%);
-  color: #10142a;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: var(--text-base);
-  font-weight: 700;
-  line-height: 1;
+  background: url("/icons/icon-192.png") center / contain no-repeat;
 }
 
 .brandActions {
