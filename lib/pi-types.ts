@@ -101,6 +101,8 @@ interface ResourceLoaderLike {
 }
 
 interface ExtensionRunnerLike {
+  hasHandlers?(eventType: string): boolean;
+  emitToolCall?(event: { type: "tool_call"; toolName: string; toolCallId: string; input: unknown }): Promise<{ block?: boolean; reason?: string } | undefined>;
   getRegisteredCommands(): Array<{
     invocationName: string;
     description?: string;

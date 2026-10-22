@@ -1,4 +1,5 @@
 import { APP_DISPLAY_NAME } from "../lib/branding.ts";
+import { readToolPermission } from "../lib/tool-permission-store.ts";
 import { existsSync } from "node:fs";
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -476,6 +477,7 @@ const browserTool = defineTool({
           const pageCheck = check;
           const outcome = await gateDesktopEvaluate({
             check: pageCheck,
+            authorized: !readToolPermission(sessionId, getAgentDir()).legacy,
             hasUI: ctx.hasUI === true,
             confirm: () => ctx.ui.confirm(
               "Run page script",

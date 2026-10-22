@@ -135,12 +135,15 @@ export interface DesktopEvaluateCheck {
  */
 export async function gateDesktopEvaluate(input: {
   check: DesktopEvaluateCheck;
+  /** Explicit chat policy is enforced by the runtime tool-call gate. */
+  authorized?: boolean;
   hasUI: boolean;
   confirm: () => boolean | Promise<boolean>;
 }): Promise<{ confirmed: true; navigationToken: string; url: string } | { error: string }> {
   if (input.check.allowed !== true) return { error: EVALUATE_SENSITIVE_REFUSAL };
   const navigationToken = input.check.navigationToken?.trim() ?? "";
   if (!navigationToken) return { error: EVALUATE_PAGE_CHANGED_ERROR };
+  if (input.authorized) return { confirmed: true, navigationToken, url: input.check.url || EVALUATE_UNKNOWN_PAGE };
   if (input.hasUI !== true) return { error: DESKTOP_EVALUATE_DISABLED };
   const userConfirmed = await input.confirm();
   const gate = desktopEvaluateRequest({

@@ -12,7 +12,7 @@ const { buildLocalFilePrompt } = await createJiti(import.meta.url).import("../li
 const { normalizeToolCalls } = await createJiti(import.meta.url).import("../lib/normalize.ts");
 const { persistentChatInputOptions } = await createJiti(import.meta.url).import("../lib/chat-command-input.ts");
 
-const source = await readFile(new URL("./useAgentSession.ts", import.meta.url), "utf8");
+const source = (await readFile(new URL("./useAgentSession.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 
 function historyHarness(overrides = {}) {
   const callbacks = source.slice(source.indexOf("  const switchHistoryBranch = useCallback"), source.indexOf("  const handleModelChange = useCallback"));
@@ -297,6 +297,7 @@ function promptSettlementHarness() {
     delay: ms => new Promise(resolve => delays.push({ ms, resolve })),
     closeEvents: () => calls.push(["close"]), loadSession: async sid => calls.push(["load", sid]),
     dispatch() {}, restoreStatusClock() {}, selectionFromSystemPromptBinding: () => null,
+    acceptToolPermission: permission => calls.push(["permission", permission]),
     normalizeQueuedMessages: queue => ({ steering: queue?.steering ?? [], followUp: queue?.followUp ?? [] }),
     onAgentEnd() {}, response: { running: true, state: { runtime: "running", isStreaming: false, isPromptRunning: false, isCompacting: false } },
   };
@@ -737,6 +738,7 @@ function sessionLoadHarness(overrides = {}) {
   const env = {
     nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 },
     useCallback: callback => callback, AbortController, URLSearchParams,
+    acceptToolPermission: value => { env.permission = value; },
     sessionLoadAbortRef: { current: null }, sessionIdRef: { current: "session" }, promptRunIdRef: { current: 0 },
     translateRef: { current: key => key }, invalidatePrefetchedSession() {},
     setTimeout: callback => { env.expire = callback; return 1; }, clearTimeout() {},

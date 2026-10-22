@@ -9,6 +9,7 @@ import {
   type RefObject,
 } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { isPermissionMode, type PermissionMode, type ToolPermissionState } from "@/lib/tool-permission-policy";
 import type { AttachedFile } from "@/hooks/useAgentSession";
 import { fetchModelCatalog, type ModelCatalogEntry } from "@/lib/model-catalog-client";
 import { buildSessionProjectGroups, getProjectLabel } from "@/lib/session-project-groups";
@@ -58,6 +59,21 @@ export function NewSessionProjectPicker({
   projectPickerRequestKey?: number;
 }) {
   const { t } = useI18n();
+  const [toolPermission, setToolPermission] = useState<ToolPermissionState | null>(null);
+  const permissionOverride = useRef<PermissionMode | undefined>(undefined);
+  useEffect(() => {
+    const controller = new AbortController();
+    const refresh = () => {
+      void fetch("/api/tool-permissions", { signal: controller.signal }).then(async res => {
+        if (!res.ok) return;
+        const value = await res.json();
+        if (!controller.signal.aborted && !permissionOverride.current && isPermissionMode(value.mode)) setToolPermission({ mode: value.mode, revision: 0 });
+      }).catch(() => {});
+    };
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => { controller.abort(); window.removeEventListener("focus", refresh); };
+  }, []);
   const localChatInputRef = useRef<ChatInputHandle>(null);
   const effectiveChatInputRef = chatInputRef ?? localChatInputRef;
   const draftKey = useRef(`new-task:${createLaunchId()}`).current;
@@ -302,6 +318,7 @@ export function NewSessionProjectPicker({
         images,
         files,
         systemPromptSelection,
+        permissionMode: permissionOverride.current,
         commandInput: { ...persistentChatInputOptions(commandInput), ...(!shell ? { submissionId: id } : {}) },
         retryOfPromptIds,
       },
@@ -404,6 +421,8 @@ export function NewSessionProjectPicker({
           onSend={handleLandingSend}
           onAbort={() => {}}
           isStreaming={false}
+          toolPermission={toolPermission}
+          onToolPermissionChange={mode => { permissionOverride.current = mode; setToolPermission({ mode, revision: 0 }); }}
           model={selectedModel}
           isAutoModelSelection={modelSelectionBlocked}
           modelList={models}
