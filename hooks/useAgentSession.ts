@@ -1,4 +1,5 @@
 "use client";
+import { isPermissionMode, type PermissionMode, type ToolPermissionState } from "@/lib/tool-permission-policy";
 import { NestedToolCallsStore } from "@/lib/nested-tool-calls";
 
 import { createAgentEventDecoder } from "@/lib/agent-event-transport";
@@ -125,6 +126,7 @@ type AgentStateResponse = {
   extensionWidgets?: ExtensionWidgetItem[];
   queuedMessages?: { steering?: string[]; followUp?: string[] } | null;
   capabilities?: SessionCapabilitiesState;
+  toolPermission?: ToolPermissionState;
 };
 
 export interface QueuedMessages {
@@ -198,6 +200,7 @@ export interface UseAgentSessionOptions {
   newSessionCwd: string | null;
   newSessionInitialModel?: { provider: string; modelId: string } | null;
   newSessionInitialSystemPromptSelection?: SystemPromptSelection | null;
+  newSessionInitialPermissionMode?: PermissionMode;
   onAgentEnd?: (sessionId: string) => void;
   onSessionCreated?: (session: SessionInfo) => void;
   onSessionForked?: (newSessionId: string) => void;
@@ -516,6 +519,38 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
+  const [toolPermission, setToolPermission] = useState<ToolPermissionState | null>(() => opts.newSessionInitialPermissionMode
+    ? { mode: opts.newSessionInitialPermissionMode, revision: 0 } : null);
+  const acceptToolPermission = useCallback((next: ToolPermissionState) => {
+    setToolPermission(current => !current || next.revision >= current.revision ? next : current);
+  }, []);
+  const [permissionSaving, setPermissionSaving] = useState(false);
+  const permissionOverrideRef = useRef<PermissionMode | undefined>(opts.newSessionInitialPermissionMode);
+  const permissionOwnerRef = useRef<string | null>(session?.id ?? null);
+  useEffect(() => {
+    let disposed = false;
+    if (session?.id && permissionOwnerRef.current !== session.id) {
+      permissionOwnerRef.current = session.id;
+      permissionOverrideRef.current = undefined;
+      setToolPermission(null);
+    }
+    const refresh = async () => {
+      const sid = session?.id ?? sessionIdRef.current;
+      try {
+        const res = await fetch(sid ? `/api/sessions/${encodeURIComponent(sid)}/permissions` : "/api/tool-permissions");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const value = await res.json();
+        if (!isPermissionMode(value.mode)) throw new Error("Invalid permission state");
+        if (!disposed && sid === sessionIdRef.current && (sid || !permissionOverrideRef.current)) {
+          acceptToolPermission({ ...value, revision: value.revision ?? 0 });
+        }
+      } catch { /* Keep the control disabled until authoritative state is available. */ }
+    };
+    void refresh();
+    window.addEventListener("focus", refresh);
+    return () => { disposed = true; window.removeEventListener("focus", refresh); };
+  }, [session?.id, newSessionCwd, acceptToolPermission]);
+
   const agentRunningRef = useRef(false);
   const reconciliationRef = useRef<{ sid: string; runId: number; controller: AbortController } | null>(null);
   useEffect(() => {
@@ -690,6 +725,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (liveState.extensionWidgets !== undefined) setExtensionWidgets(liveState.extensionWidgets ?? []);
           if (liveState.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(liveState.queuedMessages));
           if (liveState.capabilities !== undefined) setCapabilities(liveState.capabilities);
+          if (liveState.toolPermission !== undefined) acceptToolPermission(liveState.toolPermission);
         } else if (!agentState.running) {
           setQueuedMessages({ steering: [], followUp: [] });
         }
@@ -711,7 +747,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setLoading(false);
       }
     }
-  }, [nestedCallsStore]);
+  }, [nestedCallsStore, acceptToolPermission]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null) => {
     const runId = promptRunIdRef.current;
@@ -766,6 +802,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const result = await createAgentSessionRequest({
         cwd: newSessionCwd,
         type: "ensure_session",
+        ...(permissionOverrideRef.current ? { permissionMode: permissionOverrideRef.current } : {}),
         ...(capabilitySelectionDirtyRef.current ? {
           capabilitySelection: {
             preset: capabilitiesRef.current.policy.preset,
@@ -780,6 +817,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       });
       const realId = result.sessionId;
       sessionIdRef.current = realId;
+      permissionOwnerRef.current = realId;
+      if (permissionOverrideRef.current && result.toolPermission?.mode !== permissionOverrideRef.current) {
+        result.toolPermission = await sendAgentCommand<ToolPermissionState>(realId, { type: "set_tool_permission", mode: permissionOverrideRef.current });
+      }
+      if (result.toolPermission) acceptToolPermission(result.toolPermission);
       if (result.capabilities) setCapabilities(result.capabilities);
       if (result.model && newSessionModelOverrideRef.current === selectedModel) {
         setPendingModel(result.model);
@@ -800,7 +842,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       ensuringNewSessionRef.current = null;
     }
-  }, [isNew, newSessionCwd]);
+  }, [isNew, newSessionCwd, acceptToolPermission]);
 
   const loadSlashCommands = useCallback(async () => {
     const sequence = ++commandCatalogLoadRef.current;
@@ -982,6 +1024,24 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setSystemPromptSaving(false);
     }
   }, [addNotice]);
+
+  const handleToolPermission = useCallback(async (mode: PermissionMode) => {
+    if (permissionSaving) return;
+    const sid = sessionIdRef.current;
+    if (!sid && isNew) {
+      permissionOverrideRef.current = mode;
+      setToolPermission({ mode, revision: 0 });
+      return;
+    }
+    if (!sid) return;
+    setPermissionSaving(true);
+    try {
+      const next = await sendAgentCommand<ToolPermissionState>(sid, { type: "set_tool_permission", mode });
+      if (sessionIdRef.current === sid) acceptToolPermission(next);
+    } catch (error) {
+      addNotice({ type: "error", message: String(error) });
+    } finally { setPermissionSaving(false); }
+  }, [addNotice, isNew, permissionSaving, acceptToolPermission]);
 
   const handleCapabilitySelection = useCallback(async (selection: SessionCapabilitySelection): Promise<void> => {
     if (agentRunningRef.current || bashRunningRef.current) return;
@@ -1243,6 +1303,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       setQueuedMessages(normalizeQueuedMessages(state?.queuedMessages));
       if (state?.capabilities !== undefined) setCapabilities(state.capabilities);
+      if (state?.toolPermission !== undefined) acceptToolPermission(state.toolPermission);
       if (state?.model && phaseEventRevisionRef.current === phaseRevision) {
         setCurrentModelOverride({ provider: state.model.provider, modelId: state.model.id });
         if (state.thinkingLevel !== undefined) setThinkingLevel(state.thinkingLevel as ThinkingLevelOption);
@@ -1276,6 +1337,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (state.extensionStatuses !== undefined) setExtensionStatuses(state.extensionStatuses ?? []);
         if (state.extensionWidgets !== undefined) setExtensionWidgets(state.extensionWidgets ?? []);
         if (state.capabilities !== undefined) setCapabilities(state.capabilities);
+        if (state.toolPermission !== undefined) acceptToolPermission(state.toolPermission);
       }
       await finishPromptWithoutStream(sid, runId);
     } catch {
@@ -1283,7 +1345,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       if (reconciliationRef.current === request) reconciliationRef.current = null;
     }
-  }, [finishPromptWithoutStream, isPromptCommandSettled, restoreStatusClock]);
+  }, [finishPromptWithoutStream, isPromptCommandSettled, restoreStatusClock, acceptToolPermission]);
 
   // Recovery net for missed SSE events: while the agent is running, verify
   // against the server periodically and whenever the tab returns to the
@@ -1531,6 +1593,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           followUp: [...((event.followUp as string[] | undefined) ?? [])],
         });
         break;
+      case "tool_permission_changed":
+        if (event.permission) acceptToolPermission(event.permission as ToolPermissionState);
+        break;
       case "capabilities_changed":
         if (event.capabilities) setCapabilities(event.capabilities as SessionCapabilitiesState);
         break;
@@ -1579,7 +1644,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
     }
-  }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, nestedCallsStore, refreshContextUsage, setExtensionDialog, waitForPromptSettlement]);
+  }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, nestedCallsStore, refreshContextUsage, setExtensionDialog, waitForPromptSettlement, acceptToolPermission]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const chatCommands = useChatCommandOperations({
@@ -2515,6 +2580,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (agentState.state.extensionWidgets !== undefined) setExtensionWidgets(agentState.state.extensionWidgets ?? []);
           if (agentState.state.queuedMessages !== undefined) setQueuedMessages(normalizeQueuedMessages(agentState.state.queuedMessages));
           if (agentState.state.capabilities !== undefined) setCapabilities(agentState.state.capabilities);
+          if (agentState.state.toolPermission !== undefined) acceptToolPermission(agentState.state.toolPermission);
         }
       });
     } else if (newSessionCwd) {
@@ -2721,6 +2787,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   return {
     // State
+    toolPermission, permissionSaving, handleToolPermission,
     nestedCallsStore, data, loading, error, activeLeafId, messages, entryIds, streamState, replyHistorySettling,
     agentRunning, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
     retryInfo, contextUsage: effectiveContextUsage, systemPrompt, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,

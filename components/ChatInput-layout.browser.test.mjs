@@ -34,13 +34,15 @@ const catalog=createChatCommandCatalog([{name:"workflow",source:"extension",desc
 const record={commandId:"sample-command",idempotencyKey:"sample",targetSessionId:"sample",acceptedAt:1792483200000,status:"completed",operation:{version:1,rawText:"/name 项目检查",catalogRevision:catalog.revision,command:catalog.commands.find(c=>c.name==="name"),arguments:"项目检查",phase:"settling",steps:[{id:"command",kind:"command",status:"completed",startedAt:1792483200000,completedAt:1792483200200}],result:{title:"chatCommands.renameCompleted",rename:{before:"新会话",after:"项目检查"}}}};
 function App(){
   const [busy,setBusy]=useState(false);window.setBusy=setBusy;
+  const [permission,setPermission]=useState({mode:"auto",revision:1});
   return <I18nProvider><main>
     <section id="command-results"><ChatCommandCard record={record} actions={{retry:async()=>{},restore:async()=>{},cancel:async()=>{},copy:async()=>{}}}/></section>
-    <section id="launcher"><NewSessionProjectPicker activeCwd="/workspace/a-very-long-project-name-for-layout-checks" onLaunch={()=>{window.launched=true}}/></section>
+    <section id="launcher"><NewSessionProjectPicker activeCwd="/workspace/a-very-long-project-name-for-layout-checks" onLaunch={request=>{window.launched=true;window.launchRequest=request}}/></section>
     <section id="conversation"><ChatInput onSend={(text,...args)=>{window.sent=true;window.submission={text,args};return true}} onAbort={()=>{window.stopped=true;setBusy(false)}}
       commandCatalog={catalog} onLoadSlashCommands={()=>{}} onQueueInput={async()=>true}
       onSteer={()=>true} onFollowUp={()=>true} isStreaming={busy} onModelChange={async()=>true} onThinkingLevelChange={()=>{}}
       model={{provider:"deepseek",modelId:"deepseek-v4.1-flash"}} modelList={[{provider:"deepseek",id:"deepseek-v4.1-flash",name:"DeepSeek V4.1 Flash Very Long Model Name"}]}
+      toolPermission={permission} onToolPermissionChange={mode=>{setPermission({mode,revision:permission.revision+1});window.permission=mode}}
       thinkingLevel="high" extensionStatuses={[{key:"fixture",text:"Ready"}]}
       contextControl={<SystemPromptSelector selection={{mode:"default"}} onChange={()=>{}}/>}/></section>
   </main></I18nProvider>;
@@ -60,6 +62,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       const errors = [];
       await context.route("http://composer.test/**", async route => {
         const pathname = new URL(route.request().url()).pathname;
+        if (pathname === "/api/tool-permissions") return route.fulfill({ json: { mode: "auto" } });
         if (pathname === "/api/models") return route.fulfill({ json: { models: {}, modelList: [{ provider: "deepseek", id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash Very Long Model Name" }] } });
         if (pathname === "/api/system-prompt") return route.fulfill({ json: { selectorVisible: true, templates: [{ id: "long", name: "Very long system prompt template name", prompt: "Be helpful" }], defaultTemplateId: "long" } });
         if (pathname === "/api/chat-workspace" || pathname === "/api/cwd/validate") return route.fulfill({ json: { cwd: "/workspace/a-very-long-project-name-for-layout-checks", valid: true } });
@@ -73,7 +76,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       const page = await context.newPage();
       page.on("pageerror", error => errors.push(error.message));
       await page.goto("http://composer.test/");
-      await page.locator("#launcher .model-settings-trigger").waitFor();
+      await page.locator("#launcher .model-settings-trigger:not([data-permission-trigger])").waitFor();
       await page.waitForFunction(() => [...document.querySelectorAll('[aria-haspopup="listbox"]')].some(el => el.textContent.includes("Very long system")));
       // Select a real project so its production chip must also truncate.
       await page.locator('#launcher button[aria-haspopup="listbox"]').first().click();
@@ -107,14 +110,25 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       }
       await page.locator("#launcher, #conversation").evaluateAll(sections => sections.forEach(section => { section.style.width = "590px"; }));
       const conversation = page.locator("#conversation");
-      await conversation.locator(".model-settings-trigger").click();
+      const permission = conversation.locator("[data-permission-trigger]");
+      for (const mode of ["full", "ask", "auto"]) {
+        await permission.click();
+        assert.equal(await page.getByRole("menuitemradio").count(), 3);
+        if (process.env.PIORA_COMPOSER_SCREENSHOTS && mode === "full") {
+          await page.getByRole("menu").screenshot({ path: path.join(repo, "test-results/composer-layout", `${locale}-permissions.png`) });
+        }
+        await page.locator(`[role="menuitemradio"][data-mode="${mode}"]`).click();
+        assert.equal(await page.evaluate(() => window.permission), mode);
+        assert.equal(await permission.getAttribute("aria-expanded"), "false");
+      }
+      await conversation.locator(".model-settings-trigger:not([data-permission-trigger])").click();
       await page.locator(".model-settings-popover").waitFor();
       await page.keyboard.press("Escape");
       await conversation.locator('button[aria-haspopup="listbox"]').click();
       await page.getByRole("listbox").waitFor();
       await page.keyboard.press("Escape");
       await conversation.locator("textarea").fill("Check layout");
-      await conversation.locator(".composer-submit-controls > button").click();
+      await conversation.locator(".composer-submit-controls > button:not([data-permission-trigger])").click();
       assert.equal(await page.evaluate(() => window.sent), true);
       // Commands use the same editor; optional controls stay out of the way.
       const editor = conversation.locator("textarea").first();
@@ -130,7 +144,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await conversation.getByRole("button", { name: locale === "zh-CN" ? "完成后再提问" : "Ask after completion" }).click();
       const query = conversation.getByRole("textbox", { name: locale === "zh-CN" ? "后续提问" : "Follow-up question", exact: true });
       await query.fill("Verify the result");
-      await conversation.locator(".composer-submit-controls > button").click();
+      await conversation.locator(".composer-submit-controls > button:not([data-permission-trigger])").click();
       const submission = await page.evaluate(() => window.submission);
       assert.equal(submission.text, "/workflow Check the workspace");
       assert.equal(submission.args[4].afterPrompt, "Verify the result");
@@ -138,7 +152,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await conversation.locator("summary").click();
       await conversation.getByRole("button", { name: locale === "zh-CN" ? "作为普通消息发送" : "Send as plain message" }).click();
       assert.equal(await editor.inputValue(), "/workflow Keep this as literal text");
-      await conversation.locator(".composer-submit-controls > button").click();
+      await conversation.locator(".composer-submit-controls > button:not([data-permission-trigger])").click();
       assert.equal((await page.evaluate(() => window.submission)).args[4].inputMode, "text");
       const result = page.locator("#command-results");
       assert.equal(await result.locator("pre").count(), 0);
@@ -176,6 +190,13 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         await page.evaluate(() => document.documentElement.classList.add("dark"));
         await page.locator("#root>main").screenshot({ path: path.join(output, `${locale}-commands-dark.png`) });
       }
+      await page.locator("#launcher").evaluate(el => { el.style.display = "block"; });
+      await page.locator("#launcher [data-permission-trigger]").click();
+      await page.locator('[role="menuitemradio"][data-mode="full"]').click();
+      await page.locator("#launcher textarea").fill("Start with full access");
+      await page.locator("#launcher .composer-submit-controls > button:not([data-permission-trigger])").click();
+      await page.waitForFunction(() => window.launchRequest);
+      assert.equal((await page.evaluate(() => window.launchRequest)).prompt.permissionMode, "full");
       assert.deepEqual(errors, []);
       await context.close();
     }

@@ -202,6 +202,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
 
   const {
     nestedCallsStore, loading, error, messages, entryIds, streamState, replyHistorySettling, activeLeafId, switchHistoryBranch, forkHistoryQuestion,
+    toolPermission, permissionSaving, handleToolPermission,
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactionStartedAt, compactError, compactResult, displayModel: displayModelValue, sessionStats,
@@ -221,6 +222,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
   } = useAgentSession({
     session, newSessionCwd, newSessionInitialModel,
     newSessionInitialSystemPromptSelection: initialPrompt?.systemPromptSelection ?? null,
+    newSessionInitialPermissionMode: initialPrompt?.permissionMode,
     onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   });
@@ -660,6 +662,9 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
       compactResult={compactResult}
       onDismissCompactResult={handleDismissCompactResult}
       thinkingLevel={thinkingLevel}
+      toolPermission={toolPermission}
+      permissionSaving={permissionSaving}
+      onToolPermissionChange={handleToolPermission}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
       availableThinkingLevels={availableThinkingLevels}
       thinkingLevelMap={currentThinkingLevelMap}
@@ -1000,6 +1005,15 @@ function ExtensionDialog({
   const [value, setValue] = useState(request.method === "editor" ? request.prefill ?? "" : "");
 
   useEffect(() => {
+    if (request.method !== "confirm" || !request.toolApproval) return;
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onRespond(request, { cancelled: true }); }
+    };
+    window.addEventListener("keydown", cancel);
+    return () => window.removeEventListener("keydown", cancel);
+  }, [request, onRespond]);
+
+  useEffect(() => {
     setValue(request.method === "editor" ? request.prefill ?? "" : "");
   }, [request]);
 
@@ -1039,13 +1053,13 @@ function ExtensionDialog({
         }}
       >
         <div className="extension-prompt-header" style={{ padding: "12px 14px", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ color: "var(--text)", fontSize: "var(--text-base)", fontWeight: 650 }}>{request.title}</div>
+          <div style={{ color: "var(--text)", fontSize: "var(--text-base)", fontWeight: 650 }}>{request.method === "confirm" && request.toolApproval ? `${t("permission.approval")} · ${request.title}` : request.title}</div>
           <div style={{ marginTop: 3, color: "var(--text-dim)", fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>{t("chat.extensionRequest")}</div>
         </div>
 
         <div className="extension-prompt-body" style={{ padding: 14 }}>
           {request.method === "confirm" && (
-            <div style={{ color: "var(--text-muted)", fontSize: "var(--text-base)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{request.message}</div>
+            <div style={{ color: "var(--text-muted)", fontSize: "var(--text-base)", lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: "45vh", overflow: "auto", overflowWrap: "anywhere" }}>{request.message}</div>
           )}
           {request.method === "select" && (
             <div style={{ display: "grid", gap: 8 }}>
@@ -1123,6 +1137,8 @@ function ExtensionDialog({
         </div>
 
         <div className="extension-prompt-footer" style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid var(--border)", background: "var(--bg-panel)" }}>
+          {request.method === "confirm" && request.toolApproval && <button className="extension-prompt-button" type="button"
+            onClick={() => onRespond(request, { value: "full" })}>{t("permission.allowChat")}</button>}
           <button
             className="extension-prompt-button"
             onClick={() => onRespond(request, { cancelled: true })}
@@ -1135,7 +1151,7 @@ function ExtensionDialog({
               cursor: "pointer",
             }}
           >
-             {t("chat.cancel")}
+             {t(request.method === "confirm" && request.toolApproval ? "permission.deny" : "chat.cancel")}
           </button>
           {request.method === "confirm" ? (
             <button
@@ -1150,7 +1166,7 @@ function ExtensionDialog({
                 cursor: "pointer",
               }}
             >
-               {t("chat.confirm")}
+               {t(request.toolApproval ? "permission.allowOnce" : "chat.confirm")}
             </button>
           ) : request.method !== "select" ? (
             <button

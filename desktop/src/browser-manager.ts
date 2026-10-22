@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { hasFullToolAccess } from "./tool-permission.js";
 import {
   app,
   BrowserWindow,
@@ -1086,6 +1087,7 @@ export class DesktopBrowserManager {
       executeMain: (tabId: string, code: string) => (
         this.requireLiveTab(tabId).view.webContents.executeJavaScript(`globalThis.eval(${JSON.stringify(code)})`)
       ),
+      hasFullToolAccess: (sessionId: string) => hasFullToolAccess(this.startup.agentDirectory?.(), sessionId),
       navigationToken: (tabId: string) => {
         const tab = this.findTab(tabId);
         if (!tab) return formatNavigationToken(tabId, 0, "");

@@ -1,4 +1,6 @@
 "use client";
+import { ToolPermissionControl } from "./ToolPermissionControl";
+import type { PermissionMode, ToolPermissionState } from "@/lib/tool-permission-policy";
 
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
@@ -163,6 +165,9 @@ interface Props {
   placeholder?: string;
   /** Optional workspace/project control rendered beside the attachment button. */
   contextControl?: React.ReactNode;
+  toolPermission?: ToolPermissionState | null;
+  permissionSaving?: boolean;
+  onToolPermissionChange?: (mode: PermissionMode) => void;
 }
 
 export interface ChatInputHandle {
@@ -352,6 +357,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   variant = "conversation",
   placeholder,
   contextControl,
+  toolPermission, permissionSaving, onToolPermissionChange,
   replySource = null,
 }: Props, ref) {
   const { t, locale } = useI18n();
@@ -2464,6 +2470,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
               </div>
             </div> : null}
             <div className="composer-submit-controls">
+            {onToolPermissionChange && <ToolPermissionControl state={toolPermission ?? null} saving={permissionSaving} onChange={onToolPermissionChange} />}
             {/* Codex-style model settings: one compact summary chip with focused submenus. */}
             {(modelOptions.length > 0 || currentName || modelError) && onModelChange && (
               <div ref={dropdownRef} className="model-settings-control">

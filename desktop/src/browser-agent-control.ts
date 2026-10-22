@@ -87,6 +87,7 @@ export interface BrowserAgentHost {
   capturePage(tabId: string, options: { stayHidden: boolean; stayAwake: boolean }): Promise<{ byteLength: number; base64: string }>;
   executeIsolated(tabId: string, worldId: number, code: string): Promise<unknown>;
   executeMain?(tabId: string, code: string): Promise<unknown>;
+  hasFullToolAccess?(sessionId: string): boolean;
   /** Tab id, main-frame navigation epoch, and URL. Different for each tab, including same-URL navigations. */
   navigationToken(tabId: string): string;
   activateSessionTab?(sessionId: string, tabId: string): void;
@@ -624,10 +625,11 @@ export class BrowserAgentControl {
       const decision = await this.inspectEvaluateTarget(tab.id);
       this.throwIfAborted(signal);
       const navigationToken = this.host.navigationToken(tab.id);
+      const allowed = decision.allowed || this.host.hasFullToolAccess?.(request.sessionId) === true;
       return {
         action: "evaluate_check",
-        allowed: decision.allowed,
-        ...(decision.allowed ? {} : { reason: decision.reason ?? EVALUATE_SENSITIVE_REFUSAL }),
+        allowed,
+        ...(allowed ? {} : { reason: decision.reason ?? EVALUATE_SENSITIVE_REFUSAL }),
         url: decision.url,
         tabId: tab.id,
         navigationToken,
@@ -648,7 +650,7 @@ export class BrowserAgentControl {
       if (navigationTokenTabId(token) !== tab.id || this.host.navigationToken(tab.id) !== token) {
         throw new Error(EVALUATE_PAGE_CHANGED_ERROR);
       }
-      if (!decision.allowed) throw new Error(decision.reason ?? EVALUATE_SENSITIVE_REFUSAL);
+      if (!decision.allowed && !this.host.hasFullToolAccess?.(request.sessionId)) throw new Error(decision.reason ?? EVALUATE_SENSITIVE_REFUSAL);
       const value = await this.runTabOp(
         tab.id,
         () => this.host.executeMain!(tab.id, expression),

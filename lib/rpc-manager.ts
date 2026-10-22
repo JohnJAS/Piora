@@ -1,4 +1,7 @@
 import { recordAgentTerminalEvent } from "./agent-terminal-registry";
+import { authorizeTool } from "./tool-permission-gate";
+import { isPermissionMode } from "./tool-permission-policy";
+import { readToolPermission, writeToolPermission, readDefaultToolPermission } from "./tool-permission-store";
 import { StreamingMetricsTracker } from "./streaming-metrics";
 import { PromptInputEnrichment } from "./prompt-input-enrichment";
 import { reduceAgentPhase, type AgentPhase } from "./agent-phase";
@@ -183,6 +186,45 @@ const DEVICE_CONTROL_DENIED_RPC_COMMANDS = new Set(["bash", "abort_bash"]);
 // ============================================================================
 
 export class AgentSessionWrapper {
+  private permissionRunners = new WeakSet<object>();
+
+  private releaseToolApprovals(): void {
+    for (const [id, event] of this.pendingUiRequests) {
+      if (event.method === "confirm" && event.toolApproval === true) {
+        this.pendingUiResponses.get(id)?.resolve({ type: "extension_ui_response", id, confirmed: true });
+      }
+    }
+  }
+
+  private installToolPermissions(): void {
+    const runner = this.inner.extensionRunner;
+    if (this.permissionRunners.has(runner) || !runner.emitToolCall || !runner.hasHandlers) return;
+    this.permissionRunners.add(runner);
+    const hasHandlers = runner.hasHandlers.bind(runner);
+    const emitToolCall = runner.emitToolCall.bind(runner);
+    runner.hasHandlers = event => event === "tool_call" || hasHandlers(event);
+    runner.emitToolCall = async event => {
+      const generation = this.abortGeneration;
+      const active = () => this._alive && !this.stopping && generation === this.abortGeneration;
+      const result = await emitToolCall(event);
+      if (result?.block) return result;
+      const allowed = await authorizeTool({
+        name: event.toolName, args: event.input,
+        read: () => readToolPermission(this.sessionId, getAgentDir()), active,
+        ask: () => this.requestExtensionUi<"once" | "full" | "deny">({
+          method: "confirm", toolApproval: true, title: event.toolName,
+          message: JSON.stringify(event.input, null, 2),
+        }, "deny", response => "value" in response && response.value === "full" ? "full"
+          : "confirmed" in response && response.confirmed ? "once" : "deny", 10 * 60_000),
+        grantFull: () => {
+          const permission = writeToolPermission(this.sessionId, "full", getAgentDir());
+          this.emit({ type: "tool_permission_changed", permission });
+          this.releaseToolApprovals();
+        },
+      });
+      return allowed ? result : { block: true, reason: "Tool operation was declined or cancelled. Do not retry through another tool." };
+    };
+  }
   readonly remotePolicy: RemoteSessionPolicy;
   private remoteContent = new RemoteContentProjection();
   private listeners: EventListener[] = [];
@@ -256,6 +298,12 @@ export class AgentSessionWrapper {
       nativeMcp?: NativeMcpController;
     } = {},
   ) {
+    this.installToolPermissions();
+    const reload = inner.reload.bind(inner);
+    inner.reload = options => reload({ ...options, beforeSessionStart: async () => {
+      this.installToolPermissions();
+      await options?.beforeSessionStart?.();
+    } });
     // Fence late starts inside the SDK's agent.prompt try/finally, so its
     // active-run state and idle waiters also settle after preflight cancellation.
     const agentPrompt = inner.agent.prompt;
@@ -1419,6 +1467,7 @@ export class AgentSessionWrapper {
           extensionStatuses: this.getExtensionStatuses(),
           extensionWidgets: this.getExtensionWidgets(),
           capabilities: this.getSessionCapabilities(),
+          toolPermission: readToolPermission(this.sessionId, getAgentDir()),
         };
       }
 
@@ -1517,6 +1566,7 @@ export class AgentSessionWrapper {
         }
 
         const newSessionId = SessionManager.open(newSessionFile, sessionDir).getSessionId();
+        writeToolPermission(newSessionId, readDefaultToolPermission(getAgentDir()), getAgentDir());
         const forkedManager = SessionManager.open(newSessionFile, sessionDir);
         appendSessionCapabilityPolicy(forkedManager, copySessionCapabilityPolicy(this.capabilityPolicy));
         const sourceSystemPromptBinding = this.getSystemPromptBinding()
@@ -1785,6 +1835,15 @@ export class AgentSessionWrapper {
       case "extension_ui_response": {
         this.resolveExtensionUiResponse(command as ExtensionUiResponse);
         return null;
+      }
+
+      case "get_tool_permission": return readToolPermission(this.sessionId, getAgentDir());
+      case "set_tool_permission": {
+        if (!isPermissionMode(command.mode)) throw new Error("Invalid permission mode");
+        const permission = writeToolPermission(this.sessionId, command.mode, getAgentDir());
+        this.emit({ type: "tool_permission_changed", permission });
+        if (permission.mode === "full") this.releaseToolApprovals();
+        return permission;
       }
 
       case "extension_ui_input": {
@@ -2836,6 +2895,9 @@ export async function startRpcSession(
     if (!sessionFile && !projectToolRecord) appendSessionCapabilityPolicy(inner.sessionManager, restoredPolicy);
 
     const realSessionId = inner.sessionId as string;
+    // Existing chats retain their previous behavior until explicitly changed.
+    // Forks get a new id and never inherit their parent's grant.
+    if (!sessionFile) writeToolPermission(realSessionId, readDefaultToolPermission(getAgentDir()), getAgentDir());
     if (!sessionFile && initialModel && inner.model
       && (initialModel.provider !== inner.model.provider || initialModel.modelId !== inner.model.id)) {
       await inner.sendCustomMessage({
