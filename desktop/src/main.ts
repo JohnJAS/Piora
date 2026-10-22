@@ -2754,6 +2754,12 @@ async function startApplication(): Promise<void> {
   recordStartupStage("starting-local-service");
   applicationToken = token;
   if (desktopDevelopmentRuntime) {
+    if (!process.send || !process.connected) throw new Error("Desktop development requires the dev:desktop IPC launcher");
+    process.on("message", (message) => {
+      void handleStandaloneMessage(message).then((response) => {
+        if (response && process.connected) process.send?.(response, () => {});
+      }).catch((error) => logger?.warn("Development IPC request failed", error));
+    });
     serverUrl = desktopDevelopmentRuntime.url;
     await waitForDesktopDevelopmentServer(serverUrl, token);
     configureSession(electronSession.fromPartition(DESKTOP_PARTITION, { cache: true }), serverUrl.origin, token);

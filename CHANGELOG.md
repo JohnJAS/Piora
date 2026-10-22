@@ -4,6 +4,9 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 开发环境
+
+- 修复桌面开发模式的浏览器通信链路，使内置浏览器工具操作连接右侧真实页面；转发取消请求，并在 Electron 重启断连时明确结束未完成请求，保留 Next 热更新和独立后台浏览器模式。
 ## [0.5.5-beta.34] - 2026-10-22
 
 ### 发布准备
