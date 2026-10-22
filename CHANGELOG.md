@@ -4,6 +4,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.5.5-beta.34] - 2026-10-22
+
+### 发布准备
+
+- 同步根包、桌面包、锁文件、README、用户手册与许可证清单，使用 GitHub Actions 构建并验证 Windows 安装版与便携版；本版本安装及鸿蒙真机验收尚未完成。
+
 ### 聊天界面
 
 - 同步命令步骤的回归测试与新摘要设计，验证折叠时显示单行命令摘要、隐藏错误详情，展开后保留原始多行命令及诊断信息，修复 Windows 和 Linux CI 的过期断言失败。
