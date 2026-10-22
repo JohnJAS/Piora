@@ -22,6 +22,7 @@ export function CommandLogViewer({ output, wrap, streaming = false, searchText =
   const viewRef = useRef<EditorView | null>(null);
   const followingRef = useRef(streaming);
   const outputRef = useRef(output);
+  outputRef.current = output;
   const onFollowChangeRef = useRef(onFollowChange);
   const initialOptionsRef = useRef({ wrap, streaming });
   onFollowChangeRef.current = onFollowChange;
@@ -64,11 +65,13 @@ export function CommandLogViewer({ output, wrap, streaming = false, searchText =
 
   useEffect(() => {
     const view = viewRef.current;
-    if (!view || output === view.state.doc.toString()) return;
+    if (!view) return;
+    const document = view.state.toText(output);
+    if (document.eq(view.state.doc)) return;
     const follow = streaming && followingRef.current;
     view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: output },
-      ...(follow ? { selection: { anchor: output.length }, scrollIntoView: true } : {}),
+      changes: { from: 0, to: view.state.doc.length, insert: document },
+      ...(follow ? { selection: { anchor: document.length }, scrollIntoView: true } : {}),
     });
   }, [output, streaming]);
 

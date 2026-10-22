@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { CompactProcessGroup } from "@/lib/compact-chat-history";
-import { commandDisplayName, isCommandToolName } from "@/lib/command-execution";
+import { commandActionKey, isCommandToolName } from "@/lib/command-execution";
 import { summarizeToolDisclosure } from "@/lib/tool-summary";
 import { formatStatusDuration } from "@/lib/status-duration";
 import { useI18n } from "@/hooks/useI18n";
@@ -30,7 +30,7 @@ export function CompactProcessSummary({ group, onToggle, onInspectCommand }: { g
         const block = step.block;
         const command = block.type === "toolCall" && isCommandToolName(block.toolName);
         const label = block.type === "thinking" ? t("i18n.thinking")
-          : block.type === "toolCall" ? command ? commandDisplayName(block.toolName) : summarizeToolDisclosure(block.toolName, block.input, undefined, t).title
+          : block.type === "toolCall" ? command ? t(commandActionKey(typeof block.input.command === "string" ? block.input.command : "")) : summarizeToolDisclosure(block.toolName, block.input, undefined, t).title
             : t("chat.processUpdate");
         return <div key={step.key} className={`compact-process-step is-${step.status}`}>
           <div className="compact-process-step-line">

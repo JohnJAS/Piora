@@ -25,21 +25,24 @@ import {useCompactProcessPreference} from "@/hooks/useCompactProcessPreference";
 function App(){
   const {enabled,setEnabled}=useCompactProcessPreference();
   const [done,finish]=useState(false), [output,setOutput]=useState("old line\\none\\ntwo\\nthree"), [attention,setAttention]=useState(false), [draft,setDraft]=useState(null);
+  const [failed,setFailed]=useState(false);
   const scroll=useRef(null), lastUser=useRef(null), pending=useRef(false), history=useRef(null);
   const user={role:"user",content:"修复 Shell 实时输出的问题",timestamp:Date.now()-15000};
   const assistant={role:"assistant",content:[{type:"thinking",thinking:"检查事件传递与输出更新。"},{type:"toolCall",toolCallId:"shell",toolName:"bash",input:{command:"npm run test"}}],timestamp:user.timestamp+1000};
-  const result={role:"toolResult",toolCallId:"shell",isStreaming:!done,content:[{type:"text",text:output}],timestamp:user.timestamp+12000};
+  const result={role:"toolResult",toolCallId:"shell",isError:failed,isStreaming:!done,content:[{type:"text",text:output}],timestamp:user.timestamp+12000};
   const messages=[user,assistant,result,{role:"assistant",content:[{type:"toolCall",toolCallId:"shell2",toolName:"powershell",input:{command:"echo second"}},
-    {type:"toolCall",toolCallId:"shell3",toolName:"bash",input:{command:"echo third"}}]},
-    {role:"toolResult",toolCallId:"shell2",isStreaming:!done,content:[{type:"text",text:"second command output"}]},
-    {role:"toolResult",toolCallId:"shell3",isStreaming:!done,content:[{type:"text",text:"third command output"}]}];
+    {type:"toolCall",toolCallId:"shell3",toolName:"bash",input:{command:"echo third"}}],timestamp:user.timestamp+13000},
+    {role:"toolResult",toolCallId:"shell2",isStreaming:!done,content:[{type:"text",text:"second command output"}],timestamp:user.timestamp+15000},
+    {role:"toolResult",toolCallId:"shell3",isStreaming:!done,content:[{type:"text",text:"third command output"}],timestamp:user.timestamp+18000}];
   if(attention) messages.push({role:"assistant",content:[{type:"toolCall",toolCallId:"wait",toolName:"browser",input:{action:"wait_for_user",reason:"请完成登录"}}]});
-  if(done) messages.push({role:"assistant",content:[{type:"text",text:"## 已修复 Shell 实时输出\\n\\n执行日志现在会实时更新。\\n\\n- 运行时显示最新输出\\n- 支持展开查看完整日志"}],timestamp:user.timestamp+14000});
-  window.advance=()=>setOutput("old line\\none\\ntwo\\nthree\\nfour\\nfive");
+  if(done) messages.push({role:"assistant",content:[{type:"text",text:"## 已修复 Shell 实时输出\\n\\n执行日志现在会实时更新。\\n\\n- 运行时显示最新输出\\n- 支持展开查看完整日志"}],timestamp:user.timestamp+19000});
+  window.advance=()=>setOutput("old line\\r\\none\\r\\ntwo\\r\\nthree\\r\\nfour\\r\\nfive");
   window.advanceAgain=()=>setOutput("old line\\none\\ntwo\\nthree\\nfour\\nfive\\nsix");
   window.think=()=>setDraft({role:"assistant",content:[{type:"thinking",thinking:"正在验证新输出"},{type:"text",text:"正在流式生成的正式回复"}],timestamp:Date.now()});
   window.finish=()=>{setDraft(null);finish(true)}; window.waitForUser=()=>setAttention(true);
+  window.fail=()=>{setFailed(true);finish(true)};
   window.setCompact=setEnabled;
+  window.revealEntry=(id)=>history.current.revealEntry(id);
   return <I18nProvider><main><header>Piora <button role="switch" aria-label="轻量过程展示" aria-checked={enabled} onClick={()=>setEnabled(!enabled)}>轻量过程展示</button></header>
     <div id="scroll" className="overflow-y-auto" ref={scroll}><div className="chat-column">
       <ChatHistory messages={messages} entryIds={["u","a","r","a2","r2","r3",...(attention?["wait"]:[]),...(done?["answer"]:[])]} compactProcess={enabled}
@@ -86,7 +89,30 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     assert.equal(await page.locator(".message-row-assistant .message-delete-button").count(), 0);
     const gaps = await page.locator(".command-execution-card").evaluateAll(cards => cards.slice(1).map((card, index) => card.getBoundingClientRect().top - cards[index].getBoundingClientRect().bottom));
     assert.equal(gaps.length, 2);
-    for (const gap of gaps) assert.ok(Math.abs(gap) < 1, `consecutive shell gap: ${gap}`);
+    for (const gap of gaps) assert.ok(Math.abs(gap) < 0.5, `consecutive shell spacing: ${gap}`);
+    assert.ok(await page.locator(".chat-process-stack, .chat-process-stack .chat-disclosure--surface").evaluateAll(elements => elements.every(element => {
+      const style = getComputedStyle(element);
+      return style.borderTopWidth === "0px" && style.borderBottomWidth === "0px" && style.backgroundColor === "rgba(0, 0, 0, 0)";
+    })));
+    assert.equal(await page.locator('[data-process-join-after="true"]').count(), 1);
+    assert.equal(await page.locator('[data-process-join-before="true"]').count(), 1);
+    assert.equal(await page.locator(".command-execution-card .chat-disclosure-label").first().innerText(), "运行测试");
+    await screenshot("grouped");
+    const processHeading = page.locator(".chat-process-stack-heading").first();
+    assert.equal(await processHeading.getAttribute("aria-expanded"), "true");
+    await processHeading.click();
+    assert.equal(await processHeading.getAttribute("aria-expanded"), "false");
+    assert.equal(await page.locator(".command-execution-card, .thinking-block").count(), 0);
+    assert.equal(await page.locator('[data-process-join-after="true"]').count(), 0);
+    await page.evaluate(() => window.advance());
+    assert.equal(await processHeading.getAttribute("aria-expanded"), "false");
+    await screenshot("group-collapsed");
+    await processHeading.press("Enter");
+    assert.equal(await page.locator(".command-execution-card").count(), 3);
+    await processHeading.click();
+    await page.evaluate(() => window.revealEntry("a2"));
+    await page.waitForFunction(() => document.querySelectorAll(".command-execution-card").length === 3);
+    assert.equal(await processHeading.getAttribute("aria-expanded"), "true");
     await page.locator(".command-execution-card .chat-disclosure-trigger").first().click();
     await page.locator(".cm-content").waitFor();
     await screenshot("running");
@@ -143,6 +169,33 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     await page.setViewportSize({ width: 390, height: 844 });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await screenshot("mobile-attention");
+    // An untouched successful group folds; manual choices and unresolved work remain visible.
+    await page.evaluate(() => window.setCompact(false));
+    for (const scenario of ["success", "manual-open", "manual-closed", "log-open", "failed", "attention"]) {
+      const check = await context.newPage();
+      check.on("pageerror", error => errors.push(error.message));
+      await check.goto("http://compact.test/");
+      const heading = check.locator(".chat-process-stack-heading").first();
+      await heading.waitFor();
+      if (scenario.startsWith("manual")) {
+        await heading.click();
+        if (scenario === "manual-open") await heading.click();
+      }
+      if (scenario === "log-open") await check.locator(".command-execution-toggle").first().click();
+      await check.evaluate(scenario => {
+        if (scenario === "attention") window.waitForUser();
+        if (scenario === "failed") window.fail(); else window.finish();
+      }, scenario);
+      await check.locator(".markdown-assistant-message h2").waitFor();
+      const shouldExpand = !["success", "manual-closed"].includes(scenario);
+      assert.equal(await heading.getAttribute("aria-expanded"), String(shouldExpand), scenario);
+      assert.equal(await check.locator(".command-execution-card").count(), shouldExpand ? 3 : 0, scenario);
+      if (scenario === "success") {
+        assert.match(await heading.innerText(), /已完成.*用时 18 秒.*4 个步骤/s);
+        if (process.env.PIORA_COMPACT_SCREENSHOTS) await check.screenshot({ path: path.join(repo, "test-results", "compact-process", "auto-completed.png") });
+      }
+      await check.close();
+    }
     assert.deepEqual(errors, []);
     t.diagnostic("Verified default-off preferences, contiguous shell steps without intermediate actions, opt-in live output, completion, persistence, cross-window sync and user handoff.");
   } finally {

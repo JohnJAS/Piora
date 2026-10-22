@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
-import { commandDisplayName, commandErrorExcerpt, type CommandExecutionData } from "@/lib/command-execution";
+import { commandActionKey, commandDisplayName, commandErrorExcerpt, type CommandExecutionData } from "@/lib/command-execution";
 import { useVirtualRowToggle } from "./VirtualRowState";
 import { AliIcon } from "./AliIcon";
 import { ChatDisclosure } from "./ChatDisclosure";
@@ -152,11 +152,12 @@ export function CommandExecutionCard({ data, onOpen, actions }: { data: CommandE
   return (
     <div className={compact ? "compact-command-card" : undefined}>
     <ChatDisclosure className={`command-execution-card is-${data.historical && data.status === "running" ? "unknown" : data.status}`}
-      expanded={expanded} onExpandedChange={setExpanded} label={commandDisplayName(data.toolName)} icon="code"
+      expanded={expanded} onExpandedChange={setExpanded} label={t(commandActionKey(data.command))} icon="code"
+      description={<span className="command-summary-preview" title={data.command}>{data.command.replace(/\s+/g, " ").trim()}</span>}
       triggerClassName="command-execution-toggle"
-      metadata={<span className={`chat-disclosure-status is-${data.historical && data.status === "running" ? "unknown" : data.status}`}>
+      metadata={<span title={statusParts.join(" · ")} aria-label={statusParts.join(" · ")} className={`chat-disclosure-status is-${data.historical && data.status === "running" ? "unknown" : data.status}`}>
         <AliIcon name={data.status === "cancelled" ? "stop" : data.status === "timed_out" ? "timer" : data.status === "failed" ? "error" : data.status === "running" ? "timer" : "check"} size={14} aria-hidden="true" />
-        {statusParts.join(" · ")}
+        {data.status === "success" && !expanded ? null : statusParts.join(" · ")}
       </span>}
       actions={<>
         <CopyButton text={data.command} compact />
