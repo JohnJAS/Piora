@@ -1,6 +1,8 @@
 "use client";
 import { messageImageUrl } from "@/lib/message-images";
 import { NestedToolCalls, useNestedToolCalls } from "./NestedToolCalls";
+import { ProcessStack } from "./ProcessStack";
+import { processTimeRange } from "@/lib/process-duration";
 
 import { createContext, useContext, memo, useState, useRef, useEffect, useMemo, useCallback, type ReactNode } from "react";
 import { useVirtualRowToggle } from "./VirtualRowState";
@@ -606,6 +608,13 @@ function AssistantMessageView({
     .map((block, originalIndex) => ({ block, originalIndex }))
     .filter(({ block }) => !isEmptyThinkingBlock(block, { isStreaming }));
   const blocks = blockItems.map(({ block }) => block);
+  const blockGroups: { process: boolean; items: typeof blockItems }[] = [];
+  for (const item of blockItems) {
+    const process = item.block.type === "thinking" || item.block.type === "toolCall";
+    const previous = blockGroups.at(-1);
+    if (process && previous?.process) previous.items.push(item);
+    else blockGroups.push({ process, items: [item] });
+  }
   const hideFooter = intermediate || isStreaming || blocks.some((block) => block.type === "toolCall");
   const providerError = getAssistantErrorMessage(message, { isStreaming });
   const stopped = isAssistantAborted(message, { isStreaming });
@@ -708,9 +717,15 @@ function AssistantMessageView({
       onMouseLeave={() => setHovered(false)}
     >
       <div className="message-assistant-blocks">
-        {blockItems.map(({ block, originalIndex }) => (
+        {blockGroups.map((group) => {
+          const key = `${entryId ?? "stream"}-${group.items[0].originalIndex}`;
+          const content = group.items.map(({ block, originalIndex }) => (
           <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} toolResults={toolResults} isStreaming={isStreaming} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} onOpenAutomation={onOpenAutomation} onOpenCommandExecution={onOpenCommandExecution} />
-        ))}
+          ));
+          return group.process ? <ProcessStack key={key} stateKey={key} count={group.items.length}
+            timeRanges={[processTimeRange(group.items.map(({ block }) => block), message.timestamp, prevTimestamp, toolResults)]}>{content}</ProcessStack>
+            : <div key={key} className="message-answer-block">{content}</div>;
+        })}
       </div>
 
       {(providerError || stopped) && (
@@ -840,6 +855,7 @@ function ThinkingBlock({ block, duration, isStreaming, cwd, onOpenFile, sessionI
   return (
     <ChatDisclosure className="thinking-block" triggerClassName="thinking-block-trigger"
       expanded={expanded} onExpandedChange={setExpanded} icon="brain" label={t("i18n.thinking")}
+      description={!expanded && display.status === "content" ? display.content.replace(/\s+/g, " ").trim().slice(0, 160) : undefined}
       metadata={duration !== undefined ? `${duration}s` : undefined}>
       <div className={`thinking-block-content${display.status === "error" ? " is-error" : ""}`}>
         {display.status === "loading"

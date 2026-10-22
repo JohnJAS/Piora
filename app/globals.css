@@ -5584,9 +5584,78 @@ span.linenumber {
 
 .chat-process-disclosure { container-type: inline-size; margin-bottom: 20px; }
 .chat-process-toggle .chat-disclosure-description { font-family: inherit; }
-.message-assistant-blocks { display: flex; flex-direction: column; gap: 8px; min-width: 0; container-type: inline-size; }
-.message-row-assistant[data-intermediate="true"] .message-assistant-blocks { gap: 0; }
-.message-assistant-blocks > .markdown-assistant-message { padding-block: 8px; }
+.message-assistant-blocks { display: flex; flex-direction: column; gap: 4px; min-width: 0; container-type: inline-size; }
+.message-row-assistant[data-intermediate="true"] { padding-bottom: 4px; }
+.message-assistant-blocks > .markdown-assistant-message,
+.message-answer-block > .markdown-assistant-message { padding-block: 8px; }
+.message-answer-block { min-width: 0; }
+
+/* Process steps are secondary to the answer: quiet, borderless rows. */
+.chat-process-stack {
+  min-width: 0;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+}
+.chat-process-stack > .chat-disclosure--surface,
+.chat-process-stack > div > .chat-disclosure--surface,
+.chat-disclosure-trigger.chat-process-toggle {
+  border: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.chat-process-stack .chat-disclosure-trigger { min-height: 28px; padding: 5px 4px; }
+.chat-process-stack .chat-disclosure-label { color: var(--text-muted); font-size: var(--text-sm); font-weight: 400; }
+.chat-process-stack .chat-disclosure-description { font-family: inherit; }
+.chat-process-stack .chat-disclosure-actions { min-height: 28px; padding: 0 4px 0 0; }
+.chat-process-stack > .chat-disclosure--surface > .chat-disclosure-content,
+.chat-process-stack > div > .chat-disclosure--surface > .chat-disclosure-content { border-top: 0; padding: 8px 4px 12px 24px; }
+.chat-process-stack .command-execution-toggle {
+  grid-template-columns: 12px 14px auto minmax(0, 1fr) auto;
+}
+.chat-process-stack .command-summary-preview { max-width: 40ch; }
+.chat-process-stack .command-execution-toggle > .chat-disclosure-meta { grid-column: 5; }
+.chat-process-stack .command-execution-toggle > .chat-disclosure-label {
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+.chat-process-stack-heading {
+  display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; padding: 6px 4px;
+  border: 0; border-radius: inherit; background: transparent; color: var(--text-dim);
+  font: inherit; font-size: var(--text-sm); font-weight: 400; line-height: 1.5; text-align: left; cursor: pointer;
+}
+.chat-process-stack-heading > span { font: inherit; line-height: inherit; }
+.chat-process-stack-heading:hover { background: var(--bg-hover); }
+.chat-process-stack-heading:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.chat-process-stack-count { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-process-join-before] .chat-process-stack-heading { display: none; }
+.chat-process-stack .thinking-block-trigger { min-height: 28px; padding-block: 4px; }
+.chat-process-stack .thinking-block-trigger .chat-disclosure-label { color: var(--text-dim); font-weight: 400; }
+.chat-process-stack :is(.chat-disclosure-label, .chat-disclosure-description, .chat-disclosure-meta) {
+  font-family: inherit; font-size: var(--text-sm); font-weight: 400; line-height: 1.5;
+}
+[data-process-join-after] .message-row-assistant[data-intermediate="true"] { padding-bottom: 0; }
+.compact-process-detail .chat-process-stack { border: 0; background: transparent; }
+.compact-process-detail .chat-process-stack-heading { display: none; }
+@media (max-width: 640px) {
+  .chat-process-stack .command-execution-toggle { grid-template-columns: 12px 14px minmax(0, 1fr) auto; }
+  .chat-process-stack .command-execution-toggle > .chat-disclosure-description { display: none; }
+  .chat-process-stack .command-execution-toggle > .chat-disclosure-meta { grid-column: 4; }
+}
+@media (hover: hover) and (pointer: fine) {
+  .chat-process-stack .chat-disclosure-header > .chat-disclosure-actions {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+  .chat-process-stack .chat-disclosure-header:hover > .chat-disclosure-actions,
+  .chat-process-stack .chat-disclosure-header:focus-within > .chat-disclosure-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
 
 .message-row {
   position: relative;

@@ -99,3 +99,27 @@ export function commandDisplayName(toolName: string): string {
   if (/^bash\s*\(local\)$/i.test(toolName.trim())) return "Shell · local";
   return "Shell";
 }
+
+/** Conservative labels for common commands; unknown scripts retain a neutral title. */
+export function commandActionKey(command: string): string {
+  const tokens = command.match(/"(?:\\.|[^"\\])*"|'[^']*'|&&|\|\||[;|\n]|[^\s;|&]+|&/g) ?? [];
+  const segments: string[][] = [[]];
+  for (const token of tokens) {
+    if (/^(?:&&|\|\||[;|\n&])$/.test(token)) segments.push([]);
+    else segments.at(-1)!.push(token);
+  }
+  const actions: string[] = [];
+  for (const [raw, ...args] of segments) {
+    if (!raw) continue;
+    const executable = raw.toLowerCase();
+    if (["cd", "echo", "printf", "set-location", "write-output"].includes(executable)) continue;
+    if (["ls", "dir", "find", "tree", "get-childitem"].includes(executable)) actions.push("inspect");
+    else if (["cat", "head", "tail", "wc", "get-content"].includes(executable)) actions.push("read");
+    else if (["rg", "grep", "select-string"].includes(executable)) actions.push("search");
+    else if (executable === "git" && ["status", "log", "diff", "show"].includes(args[0])) actions.push("inspect");
+    else if (["npm", "pnpm", "yarn", "bun"].includes(executable) && (args[0] === "test" || args[0] === "run" && args[1] === "test")) actions.push("test");
+    else return "command.action.run";
+  }
+  const kinds = new Set(actions);
+  return `command.action.${kinds.size === 1 ? actions[0] : kinds.size > 1 && !kinds.has("test") ? "inspect" : "run"}`;
+}
