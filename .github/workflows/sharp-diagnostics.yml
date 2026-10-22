@@ -17,10 +17,16 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y binutils patchelf gdb
       - run: npm ci --ignore-scripts
       - run: node node_modules/electron/install.js
+      - name: Inspect original ELF initialization
+        run: |
+          readelf -Wl -Wd node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.7
+          node -e "console.log(require('sharp').versions)"
       - name: Isolate sharp GLib imports
         run: node --input-type=module -e "import { patchSharpElectronLinux } from './scripts/patch-sharp-electron-linux.mjs'; console.log(await patchSharpElectronLinux(process.cwd()));"
       - name: Inspect native initialization
-        run: gdb --batch -ex run -ex 'thread apply all bt' --args node -e "require('sharp')"
+        run: |
+          readelf -Wl -Wd node_modules/@img/sharp-libvips-linux-x64/lib/libvips-cpp.so.8.18.7
+          gdb --batch -ex run -ex 'info sharedlibrary' -ex 'info proc mappings' -ex 'x/5i $pc' -ex 'bt 12' --args node -e "require('sharp')"
       - name: Compare original and isolated symbols
         run: node scripts/diagnose-sharp-electron.mjs
       - name: Check packaged images

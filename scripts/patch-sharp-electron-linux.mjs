@@ -58,7 +58,7 @@ export async function patchSharpElectronLinux(root, { restore = false } = {}) {
       for (const [index, file] of files.entries()) {
         const staged = join(temporary, `${index}.elf`);
         await cp(file, staged);
-        try { execFileSync("patchelf", ["--rename-dynamic-symbols", mapFile, staged], { encoding: "utf8" }); } catch (error) {
+        try { execFileSync("patchelf", ["--no-clobber-old-sections", "--rename-dynamic-symbols", mapFile, staged], { encoding: "utf8" }); } catch (error) {
           throw new Error("Linux sharp isolation requires patchelf >= 0.18 with --rename-dynamic-symbols support", { cause: error });
         }
         if (symbols(staged).some(([symbol]) => names.has(symbol))) throw new Error(`GLib symbol isolation failed for ${file}`);
