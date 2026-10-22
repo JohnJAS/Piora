@@ -196,6 +196,8 @@ Piora/
 
 ### 检查与发布
 
+Linux 源码安装前需安装 `binutils` 和 `patchelf` 0.18+（Ubuntu：`sudo apt-get install binutils patchelf`）。安装脚本会隔离 sharp/libvips 的 GLib 动态符号，避免与 Electron 的系统 GLib 冲突；工具只用于开发和构建，发布包运行时不需要安装。Windows 不执行此补丁。
+
 ```powershell
 npm run licenses:check
 npm run verify:hygiene

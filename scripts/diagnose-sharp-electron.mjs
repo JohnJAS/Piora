@@ -2,13 +2,13 @@
 // Baseline failures are evidence; every patched probe must pass.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createWebRuntimeArchive } from "./archive-web-runtime.mjs";
 import { collectRuntimeDependencyAssets } from "./stage-standalone.mjs";
-import { patchSharpElectronLinux, sharpLinuxLoader } from "./patch-sharp-electron-linux.mjs";
+import { patchSharpElectronLinux } from "./patch-sharp-electron-linux.mjs";
 
 const require = createRequire(import.meta.url);
 const electron = require("electron");
@@ -29,14 +29,8 @@ try {
     for (const asset of assets) await cp(asset.source, asset.destination, {
       recursive: true, filter: path => !path.split(/[\\/]/).includes(".bin"),
     });
-    // Restore only the isolated fixture to the exact upstream loader. Never
-    // alter the developer's installation while collecting the A/B evidence.
-    for (const name of await readdir(join(source, "node_modules/@img"))) {
-      if (/^sharp-linux-(?:arm|arm64|ppc64|riscv64|s390x|x64)$/.test(name)) {
-        await writeFile(join(source, "node_modules/@img", name, "index.cjs"), sharpLinuxLoader(name.slice(6), "0.35.5", false));
-      }
-    }
-    if (patched) await patchSharpElectronLinux(source);
+    // Restore upstream symbol names only in the isolated baseline fixture.
+    await patchSharpElectronLinux(source, { restore: !patched });
     await writeFile(join(source, "probe.cjs"), `
       const sharp = require('sharp');
       console.error(JSON.stringify({runtime:process.versions,sharp:sharp.versions}));
