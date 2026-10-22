@@ -5,6 +5,7 @@ import { createServer } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { createDesktopDevRelay } from "./desktop-dev-relay.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const host = "127.0.0.1";
@@ -36,6 +37,9 @@ const sharedEnvironment = {
 let nextProcess;
 let typeScriptProcess;
 let electronProcess;
+const desktopRelay = createDesktopDevRelay((message) => {
+  if (nextProcess?.connected) nextProcess.send(message, () => {});
+});
 let stopping = false;
 let expectedElectronExit = false;
 let initialCompileResolved = false;
@@ -131,9 +135,10 @@ function launchElectron() {
       PIORA_DESKTOP_DEV_USER_DATA: devUserData,
       PI_DESKTOP_DEVTOOLS: "1",
     },
-    stdio: "inherit",
+    stdio: ["inherit", "inherit", "inherit", "ipc"],
     windowsHide: false,
   });
+  desktopRelay.attach(electronProcess);
   electronProcess.once("exit", (code, signal) => {
     electronProcess = undefined;
     if (stopping) return;
@@ -177,12 +182,13 @@ async function main() {
   log("next", `starting authenticated development server at ${applicationUrl.origin}`);
   // Shared desktop modules use .js specifiers for their TypeScript sources;
   // the repository's Webpack extensionAlias resolves those during development.
-  nextProcess = spawn(process.execPath, [join(root, "node_modules", "next", "dist", "bin", "next"), "dev", "--webpack", "-H", host, "-p", String(port)], {
+  nextProcess = spawn(process.execPath, [join(root, "scripts", "desktop-next-dev.cjs"), "dev", "--webpack", "-H", host, "-p", String(port)], {
     cwd: root,
     detached: process.platform !== "win32",
-    env: sharedEnvironment,
-    stdio: ["ignore", "pipe", "pipe"],
+    env: { ...sharedEnvironment, PIORA_DESKTOP_NETWORK_IPC: "1" },
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
   });
+  nextProcess.on("message", (message) => desktopRelay.receive(message));
   const handleNextLine = (line) => {
     if (/(?:^|\s)(?:✓\s*)?Ready in\s+\d/i.test(line)) resolveNextReady();
   };
