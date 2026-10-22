@@ -91,7 +91,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
             const children = [...footer.children].filter(el => el.getBoundingClientRect().width > 0);
             const bounds = children.map(el => { const box = el.getBoundingClientRect(); return { left: box.left, right: box.right, center: box.top + box.height / 2 }; });
             const send = footer.querySelector(".composer-submit-controls > :last-child").getBoundingClientRect();
-            const label = footer.querySelector(".model-settings-trigger-label");
+            const label = footer.querySelector(".model-settings-control .model-settings-trigger-label");
             return { width: rect.width, left: rect.left, right: rect.right, bounds, sendWidth: send.width, labelWidth: label.clientWidth, labelScroll: label.scrollWidth };
           });
           assert.ok(geometry.bounds.every(box => box.left >= geometry.left - 1 && box.right <= geometry.right + 1), `${locale}/${id}/${width}: controls overflow ${JSON.stringify(geometry)}`);
