@@ -1,0 +1,27 @@
+name: Native image diagnostics
+on:
+  push:
+    branches: [codex/fix-issue-190]
+permissions:
+  contents: read
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y binutils patchelf gdb
+      - run: npm ci --ignore-scripts
+      - run: node node_modules/electron/install.js
+      - name: Isolate sharp GLib imports
+        run: node --input-type=module -e "import { patchSharpElectronLinux } from './scripts/patch-sharp-electron-linux.mjs'; console.log(await patchSharpElectronLinux(process.cwd()));"
+      - name: Inspect native initialization
+        run: gdb --batch -ex run -ex 'thread apply all bt' --args node -e "require('sharp')"
+      - name: Compare original and isolated symbols
+        run: node scripts/diagnose-sharp-electron.mjs
+      - name: Check packaged images
+        run: node --test lib/image-packaging.test.mjs lib/sharp-electron-linux.test.mjs

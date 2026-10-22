@@ -36,7 +36,9 @@ export async function patchSharpElectronLinux(root, { restore = false } = {}) {
     try { exports = symbols(vips); } catch (error) {
       throw new Error("Linux sharp isolation requires binutils and patchelf >= 0.18 (Ubuntu: sudo apt-get install binutils patchelf)", { cause: error });
     }
-    const mapping = glibSymbolMap(exports, restore);
+    const addonSymbols = symbols(addon);
+    const imported = new Set(addonSymbols.filter(([, type]) => type === "U").map(([symbol]) => symbol));
+    const mapping = glibSymbolMap(exports, restore).filter(([symbol]) => imported.has(symbol));
     if (!mapping.length) {
       const opposite = glibSymbolMap(exports, !restore);
       if (!opposite.length) throw new Error(`Missing expected GLib symbols in ${vips}`);
