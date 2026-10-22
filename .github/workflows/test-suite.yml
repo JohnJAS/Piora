@@ -48,6 +48,10 @@ jobs:
       - name: Build desktop test fixtures
         run: npm run build:desktop
 
+      - name: Compare Node and Electron native image loaders
+        if: matrix.shard == 1
+        run: node scripts/diagnose-sharp-electron.mjs
+
       # Call the launcher directly so npm cannot consume the Node test flags.
       # Each shard remains serial so native/browser fixtures do not compete.
       - name: Run test shard

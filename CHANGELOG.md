@@ -4,6 +4,11 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Linux 原生图片兼容性
+
+- 为 Linux Electron 的 sharp 原生绑定增加独立符号解析，避免与 Electron 加载的系统 GLib 符号互相干扰；仅作用于 glibc 平台的 sharp，保留 Windows 和普通 Node 的加载方式。此修复仍待 Linux 环境复现与验收。
+- 图片原生依赖测试同时验证普通 Node、Electron 目录加载和 ASAR sidecar 加载，保留图片生成、解码及尺寸检查并增加逐像素校验；新增隔离的原始/修复后对比诊断脚本，记录运行时与 libvips 版本、退出信号和错误输出。
+
 ### 聊天工具权限
 
 - 浏览器可见性回归测试加载真实权限读取模块，覆盖新增依赖后的隐藏、恢复和导航行为。
