@@ -40,7 +40,7 @@ function App(){
     <section id="command-results"><ChatCommandCard record={record} actions={{retry:async()=>{},restore:async()=>{},cancel:async()=>{},copy:async()=>{}}}/></section>
     <section id="launcher"><NewSessionProjectPicker activeCwd="/workspace/a-very-long-project-name-for-layout-checks" onLaunch={request=>{window.launched=true;window.launchRequest=request}}/></section>
     <section id="conversation"><ChatInput onSend={(text,...args)=>{window.sent=true;window.submission={text,args};return true}} onAbort={()=>{window.stopped=true;setBusy(false)}}
-      commandCatalog={catalog} onLoadSlashCommands={()=>{}} onQueueInput={async()=>true}
+      commandCatalog={catalog} onLoadSlashCommands={()=>{}} onQueueInput={async(text,images,files,onDurable,options)=>{(window.queuedInputs??=[]).push({text,delivery:options?.delivery});return true}}
       onSteer={()=>true} onFollowUp={()=>true} isStreaming={busy} onModelChange={async()=>true} onThinkingLevelChange={()=>{}}
       model={{provider:"deepseek",modelId:"deepseek-v4.1-flash"}} modelList={[{provider:"deepseek",id:"deepseek-v4.1-flash",name:"DeepSeek V4.1 Flash Very Long Model Name"}]}
       toolPermission={permission} onToolPermissionChange={mode=>{setPermission({mode,revision:permission.revision+1});window.permission=mode}}
@@ -173,6 +173,65 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await page.evaluate(() => window.setBusy(true));
       await conversation.locator(".streaming-stop-button").click();
       assert.equal(await page.evaluate(() => window.stopped), true);
+      await page.evaluate(() => window.setBusy(true));
+      const primary = conversation.locator(".streaming-action-primary");
+      const streamingMenu = conversation.locator(".streaming-action-menu");
+      let queuedCount = 0;
+      // Mouse and keyboard must both ask before sending when no default is enabled.
+      for (const trigger of ["click", "Enter"]) {
+        for (const delivery of ["steer", "next_turn"]) {
+          const text = `${trigger} ${delivery}`;
+          await editor.fill(text);
+          assert.equal(await primary.innerText(), locale === "zh-CN" ? "发送" : "Send");
+          if (trigger === "click") await primary.click();
+          else await editor.press("Enter");
+          await streamingMenu.waitFor();
+          assert.equal(await streamingMenu.getByRole("menuitem").count(), 2);
+          assert.equal(await primary.getAttribute("aria-expanded"), "true");
+          assert.equal(await page.evaluate(() => window.queuedInputs?.length ?? 0), queuedCount);
+          assert.equal(await editor.inputValue(), text);
+          await streamingMenu.getByRole("menuitem").nth(delivery === "steer" ? 0 : 1).click();
+          await page.waitForFunction(count => window.queuedInputs?.length === count, ++queuedCount);
+          assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text, delivery });
+          assert.equal(await editor.inputValue(), "");
+          await streamingMenu.waitFor({ state: "hidden" });
+        }
+      }
+      // Escape dismisses the choice without sending or losing the draft.
+      await editor.fill("Keep this draft");
+      await primary.click();
+      await primary.press("Escape");
+      await streamingMenu.waitFor({ state: "hidden" });
+      assert.equal(await editor.inputValue(), "Keep this draft");
+      assert.equal(await page.evaluate(() => window.queuedInputs.length), queuedCount);
+      for (const behavior of ["steer", "followup"]) {
+        await page.evaluate(behavior => {
+          const key = "piora-streaming-send-preference:v1";
+          const newValue = JSON.stringify({ schemaVersion: 1, enabled: true, behavior });
+          localStorage.setItem(key, newValue);
+          window.dispatchEvent(new StorageEvent("storage", { key, newValue }));
+        }, behavior);
+        const delivery = behavior === "steer" ? "steer" : "next_turn";
+        for (const trigger of ["click", "Enter"]) {
+          const text = `Default ${behavior} ${trigger}`;
+          await editor.fill(text);
+          assert.equal(await primary.innerText(), behavior === "steer" ? (locale === "zh-CN" ? "引导" : "Steer") : (locale === "zh-CN" ? "排队" : "Queue"));
+          if (trigger === "click") await primary.click();
+          else await editor.press("Enter");
+          await page.waitForFunction(count => window.queuedInputs?.length === count, ++queuedCount);
+          assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text, delivery });
+          await streamingMenu.waitFor({ state: "hidden" });
+        }
+        await editor.fill("Override default");
+        const toggle = conversation.locator(".streaming-action-toggle");
+        await toggle.click();
+        await streamingMenu.waitFor();
+        if (behavior === "steer") await toggle.press("ArrowDown");
+        await toggle.press("Enter");
+        await page.waitForFunction(count => window.queuedInputs?.length === count, ++queuedCount);
+        assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text: "Override default", delivery: behavior === "steer" ? "next_turn" : "steer" });
+        assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem("piora-streaming-send-preference:v1"))).behavior, behavior);
+      }
       for (const width of [480, 420, 320]) {
         await conversation.evaluate((section, width) => { section.style.width = width + "px"; }, width);
         await page.evaluate(() => window.setBusy(true));

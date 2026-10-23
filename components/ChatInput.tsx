@@ -1017,7 +1017,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     : t(slashQuery ? "chat.matches" : "chat.commands", { count: filteredSlashCommands.length });
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = onQueueInput ? hasInputText || attachedImages.length > 0 || attachedFiles.length > 0 : hasInputText && attachedImages.length === 0 && attachedFiles.length === 0;
-  const primaryStreamingMode = streamingSendPreference.enabled ? streamingSendPreference.behavior : "followup";
+  const primaryStreamingMode = streamingSendPreference.enabled ? streamingSendPreference.behavior : null;
   const canSend = !permissionSaving && !isProcessingImages && !isProcessingFiles
     && (!isAutoModelSelection || isCommandInput)
     && (hasInputText || attachedImages.length > 0 || attachedFiles.length > 0);
@@ -2778,11 +2778,13 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
                   <button
                     type="button"
                     className="streaming-action-primary"
-                    onClick={() => sendQueued(primaryStreamingMode)}
-                    title={t(primaryStreamingMode === "steer" ? "chat.steerDescription" : "chat.sendDirectlyDescription")}
-                    aria-label={t(primaryStreamingMode === "steer" ? "chat.steer" : "chat.followUp")}
+                    onClick={submitStreamingMessage}
+                    title={t(primaryStreamingMode === null ? "chat.chooseStreamingAction" : primaryStreamingMode === "steer" ? "chat.steerDescription" : "chat.sendDirectlyDescription")}
+                    aria-label={t(primaryStreamingMode === null ? "chat.send" : primaryStreamingMode === "steer" ? "chat.steer" : "chat.followUp")}
+                    aria-haspopup={primaryStreamingMode === null ? "menu" : undefined}
+                    aria-expanded={primaryStreamingMode === null ? streamingActionMenuOpen : undefined}
                   >
-                    <AliIcon name="send" size={15} /><span>{t(primaryStreamingMode === "steer" ? "chat.steer" : "chat.followUp")}</span>
+                    <AliIcon name="send" size={15} /><span>{t(primaryStreamingMode === null ? "chat.send" : primaryStreamingMode === "steer" ? "chat.steer" : "chat.followUp")}</span>
                   </button>
                   <button
                     type="button"
