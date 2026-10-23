@@ -1107,3 +1107,23 @@ test("shell progress replaces cumulative snapshots and final result settles the 
   assert.equal(h.env.messages[0].content[0].text, "first line\nsecond line\ndone");
   assert.notEqual(h.env.messages[0].isStreaming, true);
 });
+
+
+test("queue submissions reuse only the matching open model event stream", async () => {
+  const callback = source.slice(source.indexOf("  const ensureEventsConnected = useCallback"), source.indexOf("  const respondToExtensionUi = useCallback"));
+  const calls = [];
+  const original = { readyState: 1, url: 'http://localhost/api/agent/session/events?transport=delta', close() { calls.push('closed-original'); } };
+  const env = { useCallback: callback => callback, EventSource: { OPEN: 1 }, eventSourceRef: { current: original },
+    connectEvents: async sid => { calls.push(sid); return { status: 'connected', source: { readyState: 1 } }; },
+    EventStreamConnectionError: Error,
+  };
+  const js = ts.transpileModule(callback, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
+  const ensure = new Function('env', 'with(env) { ' + js + '; return ensureEventsConnected; }')(env);
+  await ensure('session');
+  assert.deepEqual(calls, [], 'queuing must not close or replace the current model stream');
+  await ensure('other');
+  assert.deepEqual(calls, ['other'], 'an open stream from another session cannot be reused');
+  original.readyState = 0;
+  await ensure('session');
+  assert.deepEqual(calls, ['other', 'session'], 'a disconnected stream must be connected before sending');
+});

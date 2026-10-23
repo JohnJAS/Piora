@@ -22,8 +22,9 @@ export function ChatCommandCard({ record, actions }: { record: ChatCommandView; 
   const [actionError, setActionError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const operation = record.operation;
+  if (record.local && record.status === "accepted") return null;
   if (!operation) return record.local || ["failed", "cancelled", "expired", "interrupted"].includes(record.status) ? <section className={styles.card}>
-    <header className={styles.header}><span>{t(`chatCommands.${record.local && record.status === "accepted" ? "preparing" : record.status}`)}</span></header>
+    <header className={styles.header}><span>{t(`chatCommands.${record.status}`)}</span></header>
     <div className={styles.body}><pre>{record.preview}</pre>{record.errorMessage && <p role="alert">{record.errorMessage}</p>}</div>
     <footer className={styles.footer}><button type="button" disabled={pending} onClick={() => {
       setPending(true);
@@ -123,6 +124,7 @@ function QueuedCommandRow({ record, actions }: { record: ChatCommandView; action
   const trigger = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
+  const preparing = record.local === true;
   const draftKey = "queue-edit:" + record.commandId;
   const operation = record.operation;
   const preview = operation ? operation.steps[0]?.status === "completed" && operation.afterPrompt ? operation.afterPrompt : operation.rawText : record.preview ?? "";
@@ -154,10 +156,10 @@ function QueuedCommandRow({ record, actions }: { record: ChatCommandView; action
   return <div className={styles.queueItem}>
     <div className={styles.queueRow}>
       <span className={styles.queueIcon} aria-hidden="true"><AliIcon name="menu" size={13} /></span>
-      <button type="button" className={styles.queuePreview} title={preview} disabled={pending} onClick={() => void edit()}>{record.queuePaused ? t("chatCommands.editing") + " · " : ""}{preview}</button>
-      <button type="button" className={styles.queueMode} disabled={pending || !!operation || !!record.queuePaused || value !== null} onClick={() => void run(() => actions.steer(record))}><AliIcon name="arrowdown" size={12} />{t("chat.steer")}</button>
-      <button type="button" className={styles.queueAction} disabled={pending} title={t("chatCommands.cancel")} aria-label={t("chatCommands.cancel")} onClick={() => void run(() => actions.cancel(record))}><AliIcon name="delete" size={14} /></button>
-      <button ref={trigger} type="button" className={styles.queueAction} disabled={pending || value !== null} title={t("chatCommands.options")} aria-label={t("chatCommands.options")} aria-haspopup="menu" aria-expanded={!!menu} onClick={() => {
+      <button type="button" className={styles.queuePreview} title={preview} disabled={pending || preparing} onClick={() => void edit()}>{preparing ? t("chatCommands.preparing") + " · " : record.queuePaused ? t("chatCommands.editing") + " · " : ""}{preview}</button>
+      <button type="button" className={styles.queueMode} disabled={pending || preparing || !!operation || !!record.queuePaused || value !== null} onClick={() => void run(() => actions.steer(record))}><AliIcon name="arrowdown" size={12} />{t("chat.steer")}</button>
+      <button type="button" className={styles.queueAction} disabled={pending || preparing} title={t("chatCommands.cancel")} aria-label={t("chatCommands.cancel")} onClick={() => void run(() => actions.cancel(record))}><AliIcon name="delete" size={14} /></button>
+      <button ref={trigger} type="button" className={styles.queueAction} disabled={pending || preparing || value !== null} title={t("chatCommands.options")} aria-label={t("chatCommands.options")} aria-haspopup="menu" aria-expanded={!!menu} onClick={() => {
         const rect = trigger.current!.getBoundingClientRect();
         setMenu(menu ? null : { top: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - 140)), right: Math.max(8, window.innerWidth - rect.right) });
       }}><AliIcon name="ellipsis" size={15} /></button>
@@ -181,7 +183,7 @@ function QueuedCommandRow({ record, actions }: { record: ChatCommandView; action
 
 export function ChatCommandQueue({ records, actions }: { records: ChatCommandView[]; actions: ChatCommandQueueActions }) {
   const { t } = useI18n();
-  const waiting = records.filter(record => !record.local && (record.status === "queued" || record.status === "accepted"));
+  const waiting = records.filter(record => record.status === "queued" || record.status === "accepted");
   if (!waiting.length) return null;
   return <section className={styles.queue} aria-label={t("chatCommands.next")}>
     <div className={styles.queueList}>

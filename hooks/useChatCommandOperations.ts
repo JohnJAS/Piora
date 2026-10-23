@@ -36,6 +36,7 @@ export function useChatCommandOperations(options: Options) {
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const notified = useRef(new Set<string>());
   const generation = useRef(0);
+  const submitting = useRef(new Set<string>());
   const sessionId = options.sessionId ?? localSessionId;
   const sessionRef = useRef(sessionId);
   sessionRef.current = sessionId;
@@ -83,7 +84,7 @@ export function useChatCommandOperations(options: Options) {
     const scope = sessionId ?? options.scope;
     void readPendingPrompts(scope).then(pending => {
       if (disposed) return;
-      const recovered = recoverChatCommandViews(pending, latest.current.catalog, sessionId);
+      const recovered = recoverChatCommandViews(pending.filter(record => !submitting.current.has(record.id)), latest.current.catalog, sessionId);
       setRecords(current => mergeChatCommandViews(current, recovered));
     }).catch(() => { if (!disposed) setConnectionError(t("chatCommands.connectionRecovering")); });
     return () => { disposed = true; };
@@ -139,6 +140,7 @@ export function useChatCommandOperations(options: Options) {
     const draft = { value: message, files: files.map(file => ({ ...file })), images: images.map(({ data, mimeType }) => ({ data, mimeType })), ...(retryOfPromptIds?.length ? { retryOfPromptIds } : {}), commandInput: persistentChatInputOptions(inputOptions) };
     let recovery: PendingPrompt = { id, scope: initial.scope, draft, message: { role: "user", content: message, timestamp, clientPromptId: id, commandSubmission: true, recoveryDraft: draft } };
     const local: ChatCommandView = { commandId: `pending-${id}`, idempotencyKey: id, targetSessionId: initial.sessionId ?? "", acceptedAt: timestamp, status: "accepted", operation, preview: message, local: true };
+    submitting.current.add(id);
     setRecords(current => mergeChatCommandViews(current, [local]));
     try {
       await savePendingPrompt(recovery);
@@ -173,6 +175,8 @@ export function useChatCommandOperations(options: Options) {
         void refresh().catch(() => {});
       }
       throw error;
+    } finally {
+      submitting.current.delete(id);
     }
   }, [refresh, t]);
 
