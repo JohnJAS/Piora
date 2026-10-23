@@ -36,12 +36,13 @@ import { DefaultToolPermissionSetting } from "${path.join(repo, "components/Tool
 function App(){
   const [busy,setBusy]=useState(false);window.setBusy=setBusy;
   const [queued,setQueued]=useState([]);window.setQueued=setQueued;
+  const [runtimeQueue,setRuntimeQueue]=useState(null);window.setRuntimeQueue=setRuntimeQueue;
   const [permission,setPermission]=useState({mode:"auto",revision:1});
   return <I18nProvider><main>
     <section id="command-results"><ChatCommandCard record={record} actions={{retry:async()=>{},restore:async()=>{},cancel:async()=>{},copy:async()=>{}}}/></section>
     <section id="launcher"><NewSessionProjectPicker activeCwd="/workspace/a-very-long-project-name-for-layout-checks" onLaunch={request=>{window.launched=true;window.launchRequest=request}}/></section>
-    <section id="conversation"><ChatInput onSend={(text,...args)=>{window.sent=true;window.submission={text,args};return true}} onAbort={()=>{window.stopped=true;setBusy(false)}}
-      queueContent={<ChatCommandQueue records={queued} actions={{cancel:async record=>{window.cancelled=record.commandId;if(window.failQueueCancel)throw new Error("Queue cancellation failed");setQueued(current=>current.filter(item=>item.commandId!==record.commandId))},steer:async record=>{window.steered=record.commandId;setQueued(current=>current.filter(item=>item.commandId!==record.commandId))},edit:async record=>{window.editing=record.commandId;return record.preview},save:async(record,text)=>{if(window.failQueueEdit)throw new Error("Queue edit failed");window.edited={id:record.commandId,text};setQueued(current=>current.map(item=>item.commandId===record.commandId?{...item,preview:text}:item))},resume:async record=>{window.resumed=record.commandId},closeQueue:()=>{window.queueClosed=true}}}/>}
+    <section id="conversation"><ChatInput ref={value=>{window.composer=value}} onSend={(text,...args)=>{window.sent=true;window.submission={text,args};return true}} onAbort={()=>{window.stopped=true;setBusy(false)}}
+      queueContent={<ChatCommandQueue records={queued} pendingMessages={runtimeQueue} onRecall={()=>{window.recalled=true;setRuntimeQueue(null)}} actions={{recover:async record=>{window.recovered=record.commandId},cancel:async record=>{window.cancelled=record.commandId;if(window.failQueueCancel)throw new Error("Queue cancellation failed");setQueued(current=>current.filter(item=>item.commandId!==record.commandId))},steer:async record=>{window.steered=record.commandId;setQueued(current=>current.filter(item=>item.commandId!==record.commandId))},edit:async record=>{window.editing=record.commandId;return record.preview},save:async(record,text)=>{if(window.failQueueEdit)throw new Error("Queue edit failed");window.edited={id:record.commandId,text};setQueued(current=>current.map(item=>item.commandId===record.commandId?{...item,preview:text}:item))},resume:async record=>{window.resumed=record.commandId;setQueued(current=>current.map(item=>item.commandId===record.commandId?{...item,queuePaused:false}:item))}}}/>}
       commandCatalog={catalog} onLoadSlashCommands={()=>{}} onQueueInput={async(text,images,files,onDurable,options)=>{(window.queuedInputs??=[]).push({text,delivery:options?.delivery});return true}}
       onSteer={()=>true} onFollowUp={()=>true} isStreaming={busy} onModelChange={async()=>true} onThinkingLevelChange={()=>{}}
       model={{provider:"deepseek",modelId:"deepseek-v4.1-flash"}} modelList={[{provider:"deepseek",id:"deepseek-v4.1-flash",name:"DeepSeek V4.1 Flash Very Long Model Name"}]}
@@ -175,7 +176,19 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       // Queue strips tuck behind the input while keeping their controls exposed.
       const chatWindowSource = await readFile(path.join(repo, "components/ChatWindow.tsx"), "utf8");
       assert.match(chatWindowSource, /queueContent=\{composerQueueContent\}/);
-      assert.match(chatWindowSource, /const composerQueueContent = useMemo\(\(\) => \(\s*<ChatCommandQueue records=\{chatCommands\.records\} actions=\{queueActions\} \/>/);
+      assert.match(chatWindowSource, /const composerQueueContent = useMemo\(\(\) => \(\s*<ChatCommandQueue records=\{chatCommands\.records\} actions=\{queueActions\} pendingMessages=\{queuedMessages\} onRecall=\{handleRecallQueue\} \/>/);
+      await page.evaluate(() => window.setRuntimeQueue({steering:['Pending guidance <b>literal</b>'],followUp:['Runtime follow-up']}));
+      const runtimeRegion = conversation.getByRole('region', { name: locale === 'zh-CN' ? '接下来执行' : 'Up next' });
+      await runtimeRegion.getByRole('status').first().waitFor();
+      assert.equal(await runtimeRegion.getByRole('status').count(), 2);
+      assert.equal(await runtimeRegion.locator('b').count(), 0);
+      assert.equal(await conversation.locator('.composer-queue-tray').count(), 0);
+      const runtimeBox = await runtimeRegion.boundingBox();
+      const surfaceBox = await conversation.locator('.chat-composer-surface').boundingBox();
+      assert.ok(runtimeBox.y < surfaceBox.y && runtimeBox.y + runtimeBox.height > surfaceBox.y, 'guidance shares the attached composer strip');
+      await runtimeRegion.getByRole('button', {name: locale === 'zh-CN' ? '移回输入框' : 'Recall to input'}).click();
+      assert.equal(await page.evaluate(() => window.recalled), true);
+      await runtimeRegion.waitFor({state:'hidden'});
       const longPreview = "Long queued message ".repeat(20);
       await page.evaluate(longPreview => window.setQueued([
         { commandId: "queued-first", status: "queued", preview: "我想参考 chatgpt 的设计" },
@@ -200,10 +213,25 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         assert.equal(await cancelQueued.count(), 2);
         assert.ok(await pendingQueue.locator('[title]').filter({ hasText: longPreview }).evaluate(element => element.scrollWidth > element.clientWidth), "preview should stay on one line");
       }
-      await queueOptions().last().click();
+      await page.evaluate(()=>window.setQueued(current=>current.map((item,index)=>index===0?{...item,queuePaused:true}:item)));
+      const resumeQueue=pendingQueue.getByRole("button",{name:locale==="zh-CN"?"继续排队":"Resume queue",exact:true});
+      await resumeQueue.waitFor();
+      const resumeBox=await resumeQueue.boundingBox(), pausedBox=await pendingQueue.boundingBox();
+      assert.ok(resumeBox.x>=pausedBox.x && resumeBox.x+resumeBox.width<=pausedBox.x+pausedBox.width,"paused recovery controls stay inside the narrow composer");
+      await resumeQueue.click();
+      await resumeQueue.waitFor({state:"hidden"});
+      assert.equal(await page.evaluate(()=>window.resumed),"queued-first");
+      await page.evaluate(() => { window.editing = null; window.steered = null; window.cancelled = null; });
+      await queueOptions().last().dblclick();
+      assert.equal(await page.evaluate(() => window.editing), null, 'double-clicking options must not activate an overlapping menu item');
+      assert.equal(await page.evaluate(() => window.steered), null);
+      assert.equal(await page.evaluate(() => window.cancelled), null);
       const queueMenu = page.getByRole("menu", { name: locale === "zh-CN" ? "选项" : "Options", exact: true });
-      assert.equal(await queueMenu.getByRole("menuitem").count(), 2);
-      assert.equal(await queueMenu.innerText(), locale === "zh-CN" ? "编辑消息\n关闭排队" : "Edit message\nTurn off queueing");
+      assert.equal(await queueMenu.getByRole("menuitem").count(), 1);
+      const menuBox = await queueMenu.boundingBox();
+      const triggerBox = await queueOptions().last().boundingBox();
+      assert.ok(menuBox.y + menuBox.height < triggerBox.y, "menu must not cover its trigger or adjacent queue actions");
+      assert.equal(await queueMenu.innerText(), locale === "zh-CN" ? "编辑消息" : "Edit message");
       await queueMenu.getByRole("menuitem").first().click();
       const queueEditor = pendingQueue.getByRole("textbox", { name: locale === "zh-CN" ? "编辑消息" : "Edit message" });
       await queueEditor.waitFor();
@@ -219,10 +247,10 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await queueEditor.waitFor({ state: "hidden" });
       assert.deepEqual(await page.evaluate(() => window.edited), { id: "queued-second", text: "Edited queued query" });
       await queueOptions().last().click();
-      await queueMenu.getByRole("menuitem").first().press("ArrowDown");
-      await queueMenu.getByRole("menuitem").last().press("Enter");
-      assert.equal(await page.evaluate(() => window.queueClosed), true);
-      assert.equal(await cancelQueued.count(), 2, "turning off queueing keeps existing messages");
+      assert.equal(await queueMenu.getByRole('menuitem').count(), 1);
+      await queueMenu.getByRole('menuitem').first().press('ArrowDown');
+      await queueMenu.getByRole('menuitem').first().press('Escape');
+      assert.equal(await cancelQueued.count(), 2, 'closing the menu keeps the queue');
       await queueOptions().first().click();
       await queueMenu.getByRole("menuitem").first().press("Escape");
       await queueMenu.waitFor({ state: "hidden" });
@@ -266,26 +294,21 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       const primary = conversation.locator(".streaming-action-primary");
       const streamingMenu = conversation.locator(".streaming-action-menu");
       let queuedCount = 0;
+      await page.evaluate(() => localStorage.setItem("piora-send-shortcut:v1", "ctrl-enter"));
       // Fresh installs and legacy chooser preferences both default to queueing.
       for (const enabled of [true, false]) {
         await page.evaluate(enabled => { const key = "piora-streaming-send-preference:v1"; const newValue = JSON.stringify({ schemaVersion: 1, enabled, behavior: "followup" }); localStorage.setItem(key, newValue); window.dispatchEvent(new StorageEvent("storage", { key, newValue })); }, enabled);
         for (const trigger of ["click", "Enter"]) {
           const text = "Default queue " + trigger;
           await editor.fill(text);
-          assert.equal(await primary.innerText(), locale === "zh-CN" ? "排队" : "Queue");
+          assert.equal(await primary.getAttribute("aria-label"), locale === "zh-CN" ? "发送" : "Send");
+          assert.equal(await primary.innerText(), "");
           if (trigger === "click") await primary.click(); else await editor.press("Enter");
           await page.waitForFunction(count => window.queuedInputs?.length === count, ++queuedCount);
           assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text, delivery: "next_turn" });
           await streamingMenu.waitFor({ state: "hidden" });
         }
       }
-      // Escape dismisses the explicit alternate-action menu without sending.
-      await editor.fill("Keep this draft");
-      await conversation.locator(".streaming-action-toggle").click();
-      await conversation.locator(".streaming-action-toggle").press("Escape");
-      await streamingMenu.waitFor({ state: "hidden" });
-      assert.equal(await editor.inputValue(), "Keep this draft");
-      assert.equal(await page.evaluate(() => window.queuedInputs.length), queuedCount);
       for (const behavior of ["steer", "followup"]) {
         await page.evaluate(behavior => {
           const key = "piora-streaming-send-preference:v1";
@@ -293,32 +316,46 @@ createRoot(document.getElementById("root")).render(<App/>);`);
           localStorage.setItem(key, newValue);
           window.dispatchEvent(new StorageEvent("storage", { key, newValue }));
         }, behavior);
-        const delivery = behavior === "steer" ? "steer" : "next_turn";
+        const delivery = "next_turn";
         for (const trigger of ["click", "Enter"]) {
           const text = `Default ${behavior} ${trigger}`;
           await editor.fill(text);
-          assert.equal(await primary.innerText(), behavior === "steer" ? (locale === "zh-CN" ? "引导" : "Steer") : (locale === "zh-CN" ? "排队" : "Queue"));
+          assert.equal(await primary.getAttribute("aria-label"), locale === "zh-CN" ? "发送" : "Send");
+          assert.equal(await primary.innerText(), "");
           if (trigger === "click") await primary.click();
           else await editor.press("Enter");
           await page.waitForFunction(count => window.queuedInputs?.length === count, ++queuedCount);
           assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text, delivery });
           await streamingMenu.waitFor({ state: "hidden" });
         }
-        await editor.fill("Override default");
-        const toggle = conversation.locator(".streaming-action-toggle");
-        await toggle.click();
-        await streamingMenu.waitFor();
-        if (behavior === "steer") await toggle.press("ArrowDown");
-        await toggle.press("Enter");
-        await page.waitForFunction(count => window.queuedInputs?.length === count, ++queuedCount);
-        assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text: "Override default", delivery: behavior === "steer" ? "next_turn" : "steer" });
-        assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem("piora-streaming-send-preference:v1"))).behavior, behavior);
+        assert.equal(await conversation.locator('.streaming-action-toggle').count(), 0);
+
       }
+      await editor.fill('Explicit keyboard guidance');
+      await editor.press('Control+Enter');
+      await page.waitForFunction(count => window.queuedInputs.length === count, ++queuedCount);
+      assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text: 'Explicit keyboard guidance', delivery: 'steer' });
+      await editor.fill('Queue after guidance');
+      await editor.press('Enter');
+      await page.waitForFunction(count => window.queuedInputs.length === count, ++queuedCount);
+      assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text: 'Queue after guidance', delivery: 'next_turn' });
+      await editor.fill('Keep newline');
+      await editor.press('Shift+Enter');
+      assert.equal(await page.evaluate(() => window.queuedInputs.length), queuedCount);
+      assert.ok((await editor.inputValue()).includes('\n'));
+      // Recovered ordinary drafts cannot carry a stale steering delivery into idle sends.
+      await page.evaluate(() => window.setBusy(false));
+      await editor.fill('');
+      await page.evaluate(() => window.composer.restoreCommandDraft({value:'Recovered idle message',files:[],images:[],commandInput:{delivery:'steer'}}));
+      await page.waitForFunction(() => document.querySelector('#conversation textarea').value === 'Recovered idle message');
+      await editor.press('Enter');
+      await page.waitForFunction(() => window.submission?.text === 'Recovered idle message');
+      assert.equal((await page.evaluate(() => window.submission)).args[4].delivery, 'next_turn');
       for (const width of [480, 420, 320]) {
         await conversation.evaluate((section, width) => { section.style.width = width + "px"; }, width);
         await page.evaluate(() => window.setBusy(true));
         await conversation.locator("textarea").fill("Follow up");
-        await conversation.locator(".streaming-action-split").waitFor();
+        await conversation.locator(".streaming-action-primary").waitFor();
         const overflow = await conversation.locator(".chat-composer-footer").evaluate(footer => footer.scrollWidth - footer.clientWidth);
         assert.ok(overflow <= 1, `${locale}/${width}: streaming actions overflow by ${overflow}px`);
         await page.evaluate(() => window.setBusy(false));

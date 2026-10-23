@@ -1127,3 +1127,23 @@ test("queue submissions reuse only the matching open model event stream", async 
   await ensure('session');
   assert.deepEqual(calls, ['other', 'session'], 'a disconnected stream must be connected before sending');
 });
+
+
+test("queue receipts do not replace the live transcript before its run settles", () => {
+  const start = source.indexOf('    onFinished: record => {');
+  const body = source.slice(start + '    onFinished: '.length, source.indexOf('\n  });', start)).trim().replace(/,$/, '');
+  const calls = [];
+  const env = { sessionIdRef: {current:'session'}, agentRunningRef:{current:true}, promptRunIdRef:{current:1},
+    loadSession: (...args)=>calls.push(['load',...args]), waitForPromptSettlement: (...args)=>calls.push(['settle',...args]) };
+  const js = ts.transpileModule('const callback = '+body+';', {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText;
+  const callback = new Function('env','with(env){'+js+';return callback;}')(env);
+  callback({targetSessionId:'session',status:'completed'});
+  callback({targetSessionId:'session',status:'cancelled'});
+  assert.equal(calls.filter(call=>call[0]==='load').length,0,'ordinary queue acknowledgements cannot overwrite ongoing messages with a disk snapshot');
+  assert.equal(calls.filter(call=>call[0]==='settle').length,2);
+  env.agentRunningRef.current=false;
+  callback({targetSessionId:'session',status:'completed'});
+  assert.equal(calls.filter(call=>call[0]==='load').length,1,'idle receipts still refresh durable history');
+  callback({targetSessionId:'other',status:'completed'});
+  assert.equal(calls.filter(call=>call[0]==='load').length,1);
+});

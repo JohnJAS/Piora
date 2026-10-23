@@ -1,5 +1,4 @@
 "use client";
-import { useStreamingSendPreference } from "@/hooks/useStreamingSendPreference";
 import type { ChatCommandQueueActions } from "./ChatCommandCard";
 import { NestedToolCallsContext } from "./NestedToolCalls";
 import { latestReplySource } from "@/lib/reply-suggestions";
@@ -162,7 +161,6 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
   // drafts: two new chats in the same project must never restore each other.
   const [newChatDraftKey] = useState(() => `new:${crypto.randomUUID()}`);
   const { t } = useI18n();
-  const { setEnabled: setStreamingDefault, setBehavior: setStreamingBehavior } = useStreamingSendPreference();
   const { enabled: compactProcess } = useCompactProcessPreference();
   const isMobile = useIsMobile();
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
@@ -631,22 +629,18 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     </>
   ), [isEmptyNew, newSessionProjectLabel, isProjectlessChat, messageCwd, systemPromptSelection, systemPromptBinding, sessionBusy, systemPromptSaving, handleSystemPromptSelection]);
 
-  const { queueAction, restore: restoreQueuedDraft } = chatCommands;
+  const { queueAction, edit: editQueuedDraft } = chatCommands;
   const queueActions = useMemo<ChatCommandQueueActions>(() => ({
-    cancel: record => queueAction(record, "cancel"),
-    steer: record => queueAction(record, "steer"),
-    edit: async record => {
-      await queueAction(record, "pause");
-      return record.operation?.steps[0]?.status === "completed" && record.operation.afterPrompt
-        ? record.operation.afterPrompt : (await restoreQueuedDraft(record)).value;
-    },
-    save: (record, text) => queueAction(record, "edit", text),
-    resume: record => queueAction(record, "resume"),
-    closeQueue: () => { setStreamingBehavior("steer"); setStreamingDefault(true); },
-  }), [queueAction, restoreQueuedDraft, setStreamingBehavior, setStreamingDefault]);
+    recover: commandActions.restore,
+    cancel: async record => { await queueAction(record, "cancel"); },
+    steer: async record => { await queueAction(record, "steer"); },
+    edit: editQueuedDraft,
+    save: async (record, text) => { await queueAction(record, "edit", text); },
+    resume: async record => { await queueAction(record, "resume"); },
+  }), [queueAction, editQueuedDraft, commandActions.restore]);
   const composerQueueContent = useMemo(() => (
-    <ChatCommandQueue records={chatCommands.records} actions={queueActions} />
-  ), [chatCommands.records, queueActions]);
+    <ChatCommandQueue records={chatCommands.records} actions={queueActions} pendingMessages={queuedMessages} onRecall={handleRecallQueue} />
+  ), [chatCommands.records, queueActions, queuedMessages, handleRecallQueue]);
 
   const chatInputElement = (
     <>
@@ -689,9 +683,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
       availableThinkingLevels={availableThinkingLevels}
       thinkingLevelMap={currentThinkingLevelMap}
       retryInfo={retryInfo}
-      queuedMessages={queuedMessages}
       inputHistory={inputHistory}
-      onRecallQueue={handleRecallQueue}
       slashCommands={slashCommands}
       slashCommandsLoading={slashCommandsLoading}
       onLoadSlashCommands={loadSlashCommands}

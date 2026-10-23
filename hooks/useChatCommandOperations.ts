@@ -5,14 +5,17 @@ import { AgentCommandError, sendAgentCommand } from "@/lib/agent-client";
 import { createChatCommandOperation, parseChatInput, persistentChatInputOptions } from "@/lib/chat-command-input";
 import type { ChatCommandCatalog, ChatCommandView, ChatInputOptions } from "@/lib/chat-command-types";
 import type { DispatchReceipt, SessionCommandEvent } from "@/lib/session-message-types";
-import { confirmPendingPrompts, readPendingPrompts, savePendingPrompt, PROMPT_RECOVERY_CONFIRMED_EVENT, type PendingPrompt } from "@/lib/prompt-recovery";
+import { dismissPendingPrompt, confirmPendingPrompts, readPendingPrompts, savePendingPrompt, PROMPT_RECOVERY_CONFIRMED_EVENT, type PendingPrompt } from "@/lib/prompt-recovery";
 import { type AttachedFile } from "@/lib/file-attachments";
 import type { AttachedImage } from "./useAgentSession";
 import type { PromptMaterialReference } from "@/lib/prompt-material-format";
+import { hydrateDraft } from "@/lib/draft-store";
 import { useI18n } from "./useI18n";
 import { isTerminalCommandStatus as terminal, mergeChatCommandViews, recoverChatCommandViews } from "@/lib/chat-command-views";
 
 interface Options {
+  /** Stable for the lifetime of this chat, including new-session promotion. */
+  conversationKey: string;
   sessionId: string | null;
   scope: string;
   catalog: ChatCommandCatalog;
@@ -55,12 +58,14 @@ export function useChatCommandOperations(options: Options) {
     if (!sid) return;
     const query = new URLSearchParams({ view: "operations", offset: String(offset) });
     for (const record of recordsRef.current.filter(record => record.targetSessionId === sid && !record.operation && !record.local && !terminal(record.status)).slice(0, 100)) query.append("trackedCommandId", record.commandId);
+    for (const record of recordsRef.current.filter(record => record.targetSessionId === sid && record.local).slice(0, 100)) query.append("trackedPromptId", record.idempotencyKey);
     const response = await fetch(`/api/sessions/${encodeURIComponent(sid)}/submissions?${query}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const body = await response.json() as { items: ChatCommandView[]; nextOffset: number | null };
     if (sessionRef.current !== sid) return;
-    setRecords(current => mergeChatCommandViews(current.filter(record => record.targetSessionId === sid), body.items));
+    setRecords(current => mergeChatCommandViews(current.filter(record => record.targetSessionId === sid || record.local && submitting.current.has(record.idempotencyKey)), body.items));
     setNextOffset(body.nextOffset);
+    await Promise.all(body.items.filter(record => !record.operation && record.status === "cancelled").map(record => dismissPendingPrompt(record.idempotencyKey)));
     const completed = body.items.filter(record => record.status === "completed");
     await confirmPendingPrompts(completed.map(record => record.idempotencyKey));
     for (const record of body.items.filter(record => terminal(record.status))) {
@@ -71,13 +76,14 @@ export function useChatCommandOperations(options: Options) {
   }, []);
 
   useEffect(() => {
-    generation.current++;
+    const activeGeneration = ++generation.current;
     setLocalSessionId(null);
     setRecords([]);
     setNextOffset(null);
     setConnectionError(null);
     notified.current.clear();
-  }, [options.scope]);
+    return () => { generation.current = activeGeneration + 1; };
+  }, [options.conversationKey]);
 
   useEffect(() => {
     let disposed = false;
@@ -101,7 +107,7 @@ export function useChatCommandOperations(options: Options) {
       try {
         const data = JSON.parse(event.data) as Omit<SessionCommandEvent, "type"> & { operations?: ChatCommandView[]; type: string; hasMore?: boolean };
         if (data.type === "command_snapshot" && data.operations) {
-          setRecords(current => mergeChatCommandViews(current.filter(record => record.targetSessionId === sid), data.operations!));
+          setRecords(current => mergeChatCommandViews(current.filter(record => record.targetSessionId === sid || record.local && submitting.current.has(record.idempotencyKey)), data.operations!));
           setNextOffset(data.hasMore ? 50 : null);
           setConnectionError(null);
           recover();
@@ -196,12 +202,31 @@ export function useChatCommandOperations(options: Options) {
   const queueAction = useCallback(async (record: ChatCommandView, action: "pause" | "resume" | "edit" | "steer" | "cancel", text?: string) => {
     try {
       const updated = await sendAgentCommand<ChatCommandView>(record.targetSessionId, { type: "queued_input_action", commandId: record.commandId, expectedRevision: record.revision, action, ...(text !== undefined ? { text } : {}) });
+      if (action === "cancel" && updated.status === "cancelled") await dismissPendingPrompt(record.idempotencyKey);
       if (sessionRef.current === record.targetSessionId) setRecords(current => mergeChatCommandViews(current, [updated]));
+      return updated;
     } catch (error) {
       void refresh().catch(() => {});
       throw new Error(error instanceof AgentCommandError && error.code ? t(`chatCommands.error.${error.code}`) : error instanceof Error ? error.message : String(error));
     }
   }, [refresh, t]);
+
+  const edit = useCallback(async (record: ChatCommandView) => {
+    const paused = record.queuePaused ? record : await queueAction(record, "pause");
+    try {
+      const draft = await restore(paused);
+      const saved = await hydrateDraft("queue-edit:" + record.commandId);
+      return saved?.value ?? (paused.operation?.steps[0]?.status === "completed" && paused.operation.afterPrompt
+        ? paused.operation.afterPrompt : draft.value);
+    } catch (error) {
+      // Undo only the pause owned by this attempt. A restored paused item stays paused.
+      if (!record.queuePaused) {
+        try { await queueAction(paused, "resume"); }
+        catch (resumeError) { throw new Error(t("chatCommands.editRecoveryFailed", { error: String(error), resumeError: String(resumeError) })); }
+      }
+      throw error;
+    }
+  }, [queueAction, restore, t]);
 
   const copy = useCallback(async (record: ChatCommandView) => {
     const action = record.operation?.result?.clientAction;
@@ -212,5 +237,5 @@ export function useChatCommandOperations(options: Options) {
     await refresh();
   }, [refresh]);
 
-  return { records, connectionError, submit, cancel, restore, queueAction, copy, loadMore: nextOffset === null ? null : () => refresh(nextOffset) };
+  return { records, connectionError, submit, cancel, restore, queueAction, edit, copy, loadMore: nextOffset === null ? null : () => refresh(nextOffset) };
 }

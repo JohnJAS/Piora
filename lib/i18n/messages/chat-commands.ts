@@ -1,6 +1,9 @@
 export const chatCommandsZh = {
+  "chatCommands.unsent": "未发送",
+  "chatCommands.paused": "已暂停",
+  "chatCommands.resumeQueue": "继续排队",
+  "chatCommands.editRecoveryFailed": "打开编辑失败：{error}。恢复排队也失败：{resumeError}。请重试或点击继续排队。",
   "chatCommands.editMessage": "编辑消息",
-  "chatCommands.closeQueue": "关闭排队",
   "chatCommands.editing": "编辑中",
   "chatCommands.editingHint": "编辑时暂停此消息的排队发送",
   "chatCommands.cancelEdit": "放弃修改",
@@ -94,8 +97,11 @@ export const chatCommandsZh = {
 };
 
 export const chatCommandsEn: Record<keyof typeof chatCommandsZh, string> = {
+  "chatCommands.unsent": "Not sent",
+  "chatCommands.paused": "Paused",
+  "chatCommands.resumeQueue": "Resume queue",
+  "chatCommands.editRecoveryFailed": "Could not open the editor: {error}. Could not resume: {resumeError}. Retry or select Resume queue.",
   "chatCommands.editMessage": "Edit message",
-  "chatCommands.closeQueue": "Turn off queueing",
   "chatCommands.editing": "Editing",
   "chatCommands.editingHint": "This message is paused while editing",
   "chatCommands.cancelEdit": "Discard changes",

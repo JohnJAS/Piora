@@ -3,7 +3,7 @@ import { createChatCommandOperation, parseChatInput } from "./chat-command-input
 import { randomUUID } from "node:crypto";
 import { validateAgentImages } from "./image-attachments";
 import { getSessionCommandEventHub, SessionCommandEventHub } from "./session-command-events";
-import { getSessionInboxRegistry, SESSION_MESSAGE_TEXT_MAX_BYTES, SESSION_INBOX_MAX_BYTES, SESSION_COMMAND_MAX_BYTES, sessionCommandBytes, type SessionInboxState } from "./session-inbox";
+import { getSessionInboxRegistry, SESSION_MESSAGE_TEXT_MAX_BYTES, SESSION_INBOX_LIMIT, SESSION_INBOX_MAX_BYTES, SESSION_COMMAND_MAX_BYTES, sessionCommandBytes, type SessionInboxState } from "./session-inbox";
 import { getRpcSession, type AgentSessionWrapper } from "./rpc-manager";
 import { resolveSessionPath } from "./session-reader";
 import { resolveOrStartRpcSession, SessionRuntimeResolverError } from "./session-runtime-resolver";
@@ -442,6 +442,51 @@ export class SessionMessageRouter {
   private steeringText(input: Pick<SessionMessageInput, "content" | "promptSuffix" | "materials">): string {
     const message = input.promptSuffix ? input.content + "\n\n" + input.promptSuffix : input.content;
     return input.materials?.length ? buildPromptWithMaterials(message, resolvePromptMaterialReferences(input.materials)) : message;
+  }
+
+  /** Recall into separate durable, paused queue entries before removing SDK input. */
+  async recallQueuedInputs(sessionId: string): Promise<SessionCommandRecord[]> {
+    const inbox = await this.ensureLoaded(sessionId);
+    const session = await this.getLiveSession(sessionId);
+    const batch = session.prepareQueueRecall();
+    const archived = new Map(this.store.loadCommands(sessionId).map(command => [command.commandId, command]));
+    const commands = batch.messages.map(({ message, commandId }) => {
+      const original = commandId ? archived.get(commandId) : undefined;
+      if (commandId && !original) throw new Error("The original submission is unavailable; nothing was removed.");
+      let content: string;
+      let images: SessionMessageInput["images"];
+      if (original) {
+        content = original.content;
+        images = original.images;
+        // Resolve the complete attachments before committing any removal.
+        if (original.materials?.length) resolvePromptMaterialReferences(original.materials);
+      } else {
+        if (message.role !== "user") throw new Error("Unsupported queued message; nothing was removed.");
+        if (typeof message.content === "string") content = message.content;
+        else {
+          if (message.content.some(block => block.type !== "text" && block.type !== "image")) throw new Error("Unsupported queued attachment; nothing was removed.");
+          content = message.content.filter(block => block.type === "text").map(block => block.text).join("\n");
+          images = message.content.filter(block => block.type === "image");
+        }
+      }
+      const input: SessionMessageInput = { targetSessionId: sessionId, source: "ui", idempotencyKey: randomUUID(), delivery: "next_turn", inputMode: "text", content, images,
+        ...(original?.materials ? { materials: original.materials } : {}),
+        ...(original?.localFiles ? { localFiles: original.localFiles } : {}),
+        ...(original?.promptSuffix ? { promptSuffix: original.promptSuffix } : {}) };
+      validateInput(input, this.maxMessageBytes);
+      return { ...this.makeRecord(input), status: "queued" as const, queuePaused: true };
+    });
+    if (!commands.length) return [];
+    await this.store.appendRecalledCommands(commands, persist => batch.commit(() => {
+      if (inbox.queue.length + commands.length > SESSION_INBOX_LIMIT || inbox.queuedBytes + commands.reduce((sum, command) => sum + sessionCommandBytes(command), 0) > SESSION_INBOX_MAX_BYTES) throw new SessionMessageRouterError("SESSION_QUEUE_FULL", "The queue is full; nothing was removed.");
+      persist();
+      for (const command of commands) {
+        this.knownCommands.set(command.commandId, command);
+        getSessionInboxRegistry().enqueue(command);
+      }
+    }));
+    for (const command of commands) await this.transition(command, "queued");
+    return commands;
   }
 
   /** Mutate only waiting UI submissions. Never abort a run that won the dispatch race. */

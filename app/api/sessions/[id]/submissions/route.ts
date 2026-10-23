@@ -17,10 +17,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const operations = commands.filter(command => command.operation).reverse();
     const offset = Math.max(0, Number.parseInt(url.searchParams.get("offset") ?? "0", 10) || 0);
     const tracked = new Set(url.searchParams.getAll("trackedCommandId").slice(0, 100));
+    const recovered = new Set(url.searchParams.getAll("trackedPromptId").slice(0, 100));
     const items = new Map(operations.slice(offset, offset + 50).map(command => [command.commandId, command]));
     // Include all waiting input, plus terminal receipts for this renderer's tracked
     // inputs. Do not replay historical ordinary completions on every page mount.
-    for (const command of commands) if (!["completed", "failed", "cancelled", "expired", "interrupted"].includes(command.status) || tracked.has(command.commandId)) items.set(command.commandId, command);
+    for (const command of commands) if (!["completed", "failed", "cancelled", "expired", "interrupted"].includes(command.status) || tracked.has(command.commandId) || recovered.has(command.idempotencyKey)) items.set(command.commandId, command);
     return NextResponse.json({ items: [...items.values()].map(commandOperationView), nextOffset: offset + 50 < operations.length ? offset + 50 : null }, { headers: { "Cache-Control": "no-store" } });
   }
   const commandId = url.searchParams.get("commandId");
