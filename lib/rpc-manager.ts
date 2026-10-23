@@ -11,6 +11,8 @@ import { RemoteContentProjection } from "./remote-content";
 import { readPendingSessionModel, clearPendingSessionModel } from "./session-model-selection";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { snapshotQueuedInputs, sameQueuedInputs } from "./queued-input-recall";
 import { randomUUID } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import { assertSessionNotMutating, drainSessionFileOperations, runSessionFileOperation, trackSessionFileOperation } from "./session-mutation";
@@ -283,9 +285,24 @@ export class AgentSessionWrapper {
   private pendingProjectAllowedToolNames: Set<string> | null = null;
   private projectAllowedToolNames: Set<string> | undefined;
   private projectManaged: boolean;
+  private readonly queueSource = new AsyncLocalStorage<string | undefined>();
+  private readonly queueSources = new WeakMap<object, string>();
   private readonly _projectRoot: string;
   private _alive = true;
   readonly nativeMcp?: NativeMcpController;
+
+  prepareQueueRecall() {
+    const snapshot = snapshotQueuedInputs(this.inner);
+    return {
+      messages: snapshot.map(message => ({ message, commandId: this.queueSources.get(message) })),
+      commit: (persist: () => void) => {
+        if (!this._alive || !sameQueuedInputs(snapshot, snapshotQueuedInputs(this.inner))) throw new Error("The pending queue changed. Retry recalling the remaining messages.");
+        // No await between identity check, durable archive, and SDK dequeue.
+        persist();
+        this.inner.clearQueue();
+      },
+    };
+  }
 
   constructor(
     public readonly inner: AgentSessionLike,
@@ -318,6 +335,8 @@ export class AgentSessionWrapper {
       const enqueue = inner.agent[delivery]?.bind(inner.agent);
       if (enqueue) inner.agent[delivery] = message => {
         if (message.role === "user") this.promptInputEnrichment.apply(message as { content?: unknown });
+        const source = this.queueSource.getStore();
+        if (source) this.queueSources.set(message, source);
         enqueue(message);
       };
     }
@@ -1649,18 +1668,12 @@ export class AgentSessionWrapper {
         return null;
       }
 
-      case "clear_queue": {
-        // Full clear only: pi has no single-item dequeue, and clear+requeue
-        // races against the agent loop pulling messages mid-flight.
-        return this.inner.clearQueue();
-      }
-
       case "steer":
       case "follow_up": {
         const images = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         this.inputAdmissions++;
         notifyRunningChange();
-        const admission = Promise.resolve().then(async () => {
+        const admission = this.queueSource.run(typeof command.commandId === "string" ? command.commandId : undefined, () => Promise.resolve().then(async () => {
           const text = String(command.message ?? "").trimStart();
           const invocationName = text.match(/^\/([^\s]+)/)?.[1];
           const extensionCommand = invocationName && this.inner.extensionRunner.getRegisteredCommands().some(item => item.invocationName === invocationName);
@@ -1684,7 +1697,7 @@ export class AgentSessionWrapper {
             throw new Error("Prompt cancelled");
           }
           return { disposition };
-        }).finally(() => { this.inputAdmissions--; notifyRunningChange(); });
+        })).finally(() => { this.inputAdmissions--; notifyRunningChange(); });
         const writer = admission.then(() => undefined, () => undefined).finally(() => this.promptTasks.delete(writer));
         this.promptTasks.add(writer);
         return admission;

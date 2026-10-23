@@ -428,6 +428,7 @@ type SlashCommandsResponse = {
 };
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
+  const [commandConversationKey] = useState(() => crypto.randomUUID());
   const { t } = useI18n();
   const translateRef = useRef(t);
   translateRef.current = t;
@@ -936,6 +937,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [closeEvents]);
 
   const ensureEventsConnected = useCallback(async (sid: string) => {
+    const current = eventSourceRef.current;
+    if (current?.readyState === EventSource.OPEN && current.url.endsWith(`/api/agent/${encodeURIComponent(sid)}/events?transport=delta`)) return;
     const result = await connectEvents(sid);
     if (result.status === "connected" || result.source.readyState === EventSource.OPEN) return;
     if (eventSourceRef.current === result.source) eventSourceRef.current = null;
@@ -1660,6 +1663,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   handleAgentEventRef.current = handleAgentEvent;
 
   const chatCommands = useChatCommandOperations({
+    conversationKey: commandConversationKey,
     sessionId: session?.id ?? null,
     scope: session?.id ?? `new:${newSessionCwd}`,
     catalog: commandCatalog,
@@ -1681,8 +1685,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         void loadModels();
         void sendAgentCommand<SessionCapabilitiesState>(record.targetSessionId, { type: "get_capabilities" }).then(setCapabilities).catch(() => {});
       }
-      void loadSession(record.targetSessionId, false, true);
+      // Queue acknowledgement is not the end of the active model run.
+      // Its disk snapshot may lag behind messages already delivered over SSE.
       if (agentRunningRef.current) void waitForPromptSettlement(record.targetSessionId, promptRunIdRef.current);
+      else void loadSession(record.targetSessionId, false, true);
     },
   });
 
@@ -2386,19 +2392,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current;
     if (!sid) return;
     try {
-      const result = await sendAgentCommand<{ steering?: string[]; followUp?: string[] }>(sid, { type: "clear_queue" });
-      // clearQueue also emits an empty queue_update, but that only reaches us
-      // while SSE is connected — clear locally so idle recalls update the UI.
-      setQueuedMessages({ steering: [], followUp: [] });
-      const texts = [...(result?.steering ?? []), ...(result?.followUp ?? [])];
-      if (texts.length > 0) {
-        opts.chatInputRef?.current?.prependText(texts.join("\n\n"));
-      }
+      // The server persists each full message as a paused queue entry before
+      // clearing SDK input. Command SSE/polling restores even a lost HTTP reply.
+      await sendAgentCommand(sid, { type: "recall_queued_inputs" });
     } catch (e) {
       console.error("Failed to recall queued messages:", e);
       addNotice({ type: "error", message: "Failed to recall queued messages" });
     }
-  }, [opts.chatInputRef, addNotice]);
+  }, [addNotice]);
 
   const handleThinkingLevelChange = useCallback(async (level: ThinkingLevelOption) => {
     setThinkingLevel(level);
