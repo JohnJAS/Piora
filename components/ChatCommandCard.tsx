@@ -132,18 +132,23 @@ function QueuedCommandRow({ record, actions }: { record: ChatCommandView; action
   });
   const editing = value !== null;
   useEffect(() => { if (editing) editor.current?.focus(); }, [editing]);
+  const menuOpen = menu !== null;
   useEffect(() => {
-    if (!menu) return;
+    if (!menuOpen) return;
     menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
     const dismiss = (event: MouseEvent) => {
       if (!menuRef.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node)) setMenu(null);
     };
-    const reposition = () => setMenu(null);
+    const reposition = () => {
+      const rect = trigger.current?.getBoundingClientRect();
+      if (!rect) return;
+      setMenu({ bottom: window.innerHeight - rect.top + 6, right: Math.max(8, window.innerWidth - rect.right), maxHeight: Math.max(32, rect.top - 14) });
+    };
     document.addEventListener("mousedown", dismiss);
     window.addEventListener("resize", reposition);
     window.addEventListener("scroll", reposition, true);
     return () => { document.removeEventListener("mousedown", dismiss); window.removeEventListener("resize", reposition); window.removeEventListener("scroll", reposition, true); };
-  }, [menu]);
+  }, [menuOpen]);
   return <div className={styles.queueItem}>
     <div className={styles.queueRow}>
       <span className={styles.queueIcon} aria-hidden="true"><AliIcon name="menu" size={13} /></span>
@@ -169,6 +174,7 @@ function QueuedCommandRow({ record, actions }: { record: ChatCommandView; action
       if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus(); }
     }}>
       <button type="button" role="menuitem" onClick={() => void edit()}>{t("chatCommands.editMessage")}</button>
+      <button type="button" role="menuitem" onClick={() => void run(() => actions.cancel(record))}>{t("chatCommands.cancelQueue")}</button>
     </div>, document.body)}
     {error && <p role="alert" className={styles.queueError}>{error}</p>}
   </div>;
