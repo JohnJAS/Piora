@@ -1,7 +1,7 @@
 import { recordAgentTerminalEvent } from "./agent-terminal-registry";
 import { authorizeTool } from "./tool-permission-gate";
 import { isPermissionMode } from "./tool-permission-policy";
-import { readToolPermission, writeToolPermission, readDefaultToolPermission } from "./tool-permission-store";
+import { readToolPermission, writeToolPermission, selectToolPermission, readDefaultToolPermission } from "./tool-permission-store";
 import { StreamingMetricsTracker } from "./streaming-metrics";
 import { PromptInputEnrichment } from "./prompt-input-enrichment";
 import { reduceAgentPhase, type AgentPhase } from "./agent-phase";
@@ -217,7 +217,7 @@ export class AgentSessionWrapper {
         }, "deny", response => "value" in response && response.value === "full" ? "full"
           : "confirmed" in response && response.confirmed ? "once" : "deny", 10 * 60_000),
         grantFull: () => {
-          const permission = writeToolPermission(this.sessionId, "full", getAgentDir());
+          const permission = selectToolPermission(this.sessionId, "full", getAgentDir());
           this.emit({ type: "tool_permission_changed", permission });
           this.releaseToolApprovals();
         },
@@ -1840,7 +1840,9 @@ export class AgentSessionWrapper {
       case "get_tool_permission": return readToolPermission(this.sessionId, getAgentDir());
       case "set_tool_permission": {
         if (!isPermissionMode(command.mode)) throw new Error("Invalid permission mode");
-        const permission = writeToolPermission(this.sessionId, command.mode, getAgentDir());
+        const permission = command.rememberDefault === true
+          ? selectToolPermission(this.sessionId, command.mode, getAgentDir())
+          : writeToolPermission(this.sessionId, command.mode, getAgentDir());
         this.emit({ type: "tool_permission_changed", permission });
         if (permission.mode === "full") this.releaseToolApprovals();
         return permission;

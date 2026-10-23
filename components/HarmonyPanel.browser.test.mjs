@@ -828,8 +828,19 @@ test("Harmony workspace keeps the mirror view-only with a responsive drawer and 
     assert.equal(holder.owner.kind, "agent", "capture keeps the AI holder unchanged");
     await page.waitForTimeout(100);
     assert.equal(requests.filter(r => ["tap", "swipe", "long_press", "takeover"].includes(r.action)).length, actionsBeforeAgentMirrorClick);
-    holder = null;
+    // Keep the Agent lease until stop_device handles it. Clearing it before the
+    // click lets a device poll legitimately remove the button mid-action.
+    const refreshedHolder = page.waitForResponse(response => new URL(response.url()).pathname === "/api/harmony/devices");
+    await page.getByRole("button", { name: "刷新设备", exact: true }).click();
+    assert.equal((await (await refreshedHolder).json()).state.leases[0].owner.id, "agent:one");
+    const stoppedDevice = page.waitForResponse(response => new URL(response.url()).pathname === "/api/harmony/action"
+      && response.request().postDataJSON()?.action === "stop_device");
     await page.getByRole("button", { name: "停止当前设备操作", exact: true }).click();
+    const stopped = await stoppedDevice;
+    assert.equal(stopped.status(), 200);
+    assert.equal(stopped.request().postDataJSON().serial, "phone", "stop targets the selected Agent-owned phone");
+    assert.equal(holder, null, "the stop handler releases the Agent lease");
+    await page.getByRole("button", { name: "停止当前设备操作", exact: true }).waitFor({ state: "hidden" });
     await page.getByRole("button", { name: "刷新设备", exact: true }).click();
     await page.getByRole("combobox", { name: "选择设备", exact: true }).selectOption("phone2");
     assert.equal(requests.some(r => /unlock|wake/.test(r.action ?? "")), false, "passive viewing never wakes or unlocks the phone");

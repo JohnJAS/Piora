@@ -845,7 +845,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     const sentCommandOptions = { ...commandInputOptions, ...overrideOptions };
     const commandSubmission = sentCommandOptions.inputMode !== "text" && msg.startsWith("/");
     if (!msg && !attachedImages.length && !attachedFiles.length) return;
-    if ((isStreaming && !onQueueInput) || isProcessingImages || pendingFileCountRef.current > 0 || (isAutoModelSelection && !commandSubmission)) return;
+    if (permissionSaving || (isStreaming && !onQueueInput) || isProcessingImages || pendingFileCountRef.current > 0 || (isAutoModelSelection && !commandSubmission)) return;
     if (attachedFiles.some((file) => !file.path && file.text == null)) {
       setAttachmentError(t("chat.attachmentMissingPath"));
       return;
@@ -940,7 +940,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     } catch (error) {
       setAttachmentError(error instanceof Error ? error.message : String(error));
     } finally { sendingRef.current = false; }
-  }, [attachedImages, attachedFiles, isStreaming, isProcessingImages, isAutoModelSelection, onBuiltinCommand, onSend, onQueueInput, clearInput, contextUsage, t, replyDraftRef, resetReplyDraft, commandInputOptions]);
+  }, [attachedImages, attachedFiles, permissionSaving, isStreaming, isProcessingImages, isAutoModelSelection, onBuiltinCommand, onSend, onQueueInput, clearInput, contextUsage, t, replyDraftRef, resetReplyDraft, commandInputOptions]);
 
   useEffect(() => {
     submitRef.current = () => { void handleSend(); };
@@ -1018,7 +1018,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = onQueueInput ? hasInputText || attachedImages.length > 0 || attachedFiles.length > 0 : hasInputText && attachedImages.length === 0 && attachedFiles.length === 0;
   const primaryStreamingMode = streamingSendPreference.enabled ? streamingSendPreference.behavior : "followup";
-  const canSend = !isProcessingImages && !isProcessingFiles
+  const canSend = !permissionSaving && !isProcessingImages && !isProcessingFiles
     && (!isAutoModelSelection || isCommandInput)
     && (hasInputText || attachedImages.length > 0 || attachedFiles.length > 0);
   const canOptimizePrompt = hasInputText

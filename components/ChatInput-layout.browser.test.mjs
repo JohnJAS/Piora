@@ -32,6 +32,7 @@ import {ChatCommandCard} from "@/components/ChatCommandCard";
 import {createChatCommandCatalog} from "@/lib/chat-command-input";
 const catalog=createChatCommandCatalog([{name:"workflow",source:"extension",description:"Start a workflow and continue until complete"}]);
 const record={commandId:"sample-command",idempotencyKey:"sample",targetSessionId:"sample",acceptedAt:1792483200000,status:"completed",operation:{version:1,rawText:"/name 项目检查",catalogRevision:catalog.revision,command:catalog.commands.find(c=>c.name==="name"),arguments:"项目检查",phase:"settling",steps:[{id:"command",kind:"command",status:"completed",startedAt:1792483200000,completedAt:1792483200200}],result:{title:"chatCommands.renameCompleted",rename:{before:"新会话",after:"项目检查"}}}};
+import { DefaultToolPermissionSetting } from "${path.join(repo, "components/ToolPermissionControl.tsx").replaceAll("\\", "/")}";
 function App(){
   const [busy,setBusy]=useState(false);window.setBusy=setBusy;
   const [permission,setPermission]=useState({mode:"auto",revision:1});
@@ -45,6 +46,7 @@ function App(){
       toolPermission={permission} onToolPermissionChange={mode=>{setPermission({mode,revision:permission.revision+1});window.permission=mode}}
       thinkingLevel="high" extensionStatuses={[{key:"fixture",text:"Ready"}]}
       contextControl={<SystemPromptSelector selection={{mode:"default"}} onChange={()=>{}}/>}/></section>
+    <section id="permission-settings"><DefaultToolPermissionSetting/></section>
   </main></I18nProvider>;
 }
 createRoot(document.getElementById("root")).render(<App/>);`);
@@ -60,9 +62,18 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     for (const locale of ["zh-CN", "en"]) {
       const context = await browser.newContext({ locale, viewport: { width: 1440, height: 1100 } });
       const errors = [];
+      let defaultMode = "auto", failPermissionSave = false;
+      const savedModes = [];
       await context.route("http://composer.test/**", async route => {
         const pathname = new URL(route.request().url()).pathname;
-        if (pathname === "/api/tool-permissions") return route.fulfill({ json: { mode: "auto" } });
+        if (pathname === "/api/tool-permissions") {
+          if (route.request().method() === "PUT") {
+            if (failPermissionSave) return route.fulfill({ status: 500, json: { error: "save failed" } });
+            defaultMode = route.request().postDataJSON().mode;
+            savedModes.push(defaultMode);
+          }
+          return route.fulfill({ json: { mode: defaultMode } });
+        }
         if (pathname === "/api/models") return route.fulfill({ json: { models: {}, modelList: [{ provider: "deepseek", id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash Very Long Model Name" }] } });
         if (pathname === "/api/system-prompt") return route.fulfill({ json: { selectorVisible: true, templates: [{ id: "long", name: "Very long system prompt template name", prompt: "Be helpful" }], defaultTemplateId: "long" } });
         if (pathname === "/api/chat-workspace" || pathname === "/api/cwd/validate") return route.fulfill({ json: { cwd: "/workspace/a-very-long-project-name-for-layout-checks", valid: true } });
@@ -197,6 +208,32 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await page.locator("#launcher .composer-submit-controls > button:not([data-permission-trigger])").click();
       await page.waitForFunction(() => window.launchRequest);
       assert.equal((await page.evaluate(() => window.launchRequest)).prompt.permissionMode, "full");
+      assert.equal(defaultMode, "full");
+      assert.deepEqual(savedModes, ["full"]);
+      const settingsTrigger = page.locator("#permission-settings [data-permission-trigger]");
+      await page.waitForFunction(() => document.querySelector('#permission-settings [data-permission-trigger]').textContent.match(/Full access|完全访问/));
+      // A fresh page (new launcher) reads the persisted choice without writing it.
+      await page.reload();
+      const launcherTrigger = page.locator("#launcher [data-permission-trigger]");
+      await page.waitForFunction(() => document.querySelector('#launcher [data-permission-trigger]')?.textContent.match(/Full access|完全访问/));
+      assert.deepEqual(savedModes, ["full"]);
+      await settingsTrigger.click();
+      await page.locator('[role="menuitemradio"][data-mode="ask"]').click();
+      await page.waitForFunction(() => document.querySelector('#launcher [data-permission-trigger]').textContent.match(/Ask before actions|操作前询问/));
+      assert.equal(defaultMode, "ask");
+      // Failure keeps the last confirmed mode and is visible to the user.
+      failPermissionSave = true;
+      await launcherTrigger.click();
+      await page.locator('[role="menuitemradio"][data-mode="full"]').click();
+      await page.locator('#launcher [role="alert"]').filter({ hasText: "HTTP 500" }).waitFor();
+      assert.match(await launcherTrigger.innerText(), /Ask before actions|操作前询问/);
+      assert.equal(defaultMode, "ask");
+      failPermissionSave = false;
+      await launcherTrigger.click();
+      await page.locator('[role="menuitemradio"][data-mode="auto"]').click();
+      await page.waitForFunction(() => document.querySelector('#permission-settings [data-permission-trigger]').textContent.match(/Ask as needed|按需询问/));
+      assert.equal(defaultMode, "auto");
+
       assert.deepEqual(errors, []);
       await context.close();
     }
