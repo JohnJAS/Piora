@@ -1,4 +1,5 @@
 "use client";
+import { DEFAULT_TOOL_PERMISSION_CHANGED, notifyDefaultToolPermissionChanged, saveDefaultToolPermission } from "./useDefaultToolPermission";
 import { isPermissionMode, type PermissionMode, type ToolPermissionState } from "@/lib/tool-permission-policy";
 import { NestedToolCallsStore } from "@/lib/nested-tool-calls";
 
@@ -525,6 +526,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setToolPermission(current => !current || next.revision >= current.revision ? next : current);
   }, []);
   const [permissionSaving, setPermissionSaving] = useState(false);
+  const permissionSavingRef = useRef(false);
+  const permissionReadGeneration = useRef(0);
   const permissionOverrideRef = useRef<PermissionMode | undefined>(opts.newSessionInitialPermissionMode);
   const permissionOwnerRef = useRef<string | null>(session?.id ?? null);
   useEffect(() => {
@@ -536,19 +539,21 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     const refresh = async () => {
       const sid = session?.id ?? sessionIdRef.current;
+      const generation = ++permissionReadGeneration.current;
       try {
         const res = await fetch(sid ? `/api/sessions/${encodeURIComponent(sid)}/permissions` : "/api/tool-permissions");
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const value = await res.json();
         if (!isPermissionMode(value.mode)) throw new Error("Invalid permission state");
-        if (!disposed && sid === sessionIdRef.current && (sid || !permissionOverrideRef.current)) {
+        if (!disposed && generation === permissionReadGeneration.current && !permissionSavingRef.current && sid === sessionIdRef.current && (sid || !permissionOverrideRef.current)) {
           acceptToolPermission({ ...value, revision: value.revision ?? 0 });
         }
       } catch { /* Keep the control disabled until authoritative state is available. */ }
     };
     void refresh();
     window.addEventListener("focus", refresh);
-    return () => { disposed = true; window.removeEventListener("focus", refresh); };
+    window.addEventListener(DEFAULT_TOOL_PERMISSION_CHANGED, refresh);
+    return () => { disposed = true; window.removeEventListener("focus", refresh); window.removeEventListener(DEFAULT_TOOL_PERMISSION_CHANGED, refresh); };
   }, [session?.id, newSessionCwd, acceptToolPermission]);
 
   const agentRunningRef = useRef(false);
@@ -1026,22 +1031,28 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [addNotice]);
 
   const handleToolPermission = useCallback(async (mode: PermissionMode) => {
-    if (permissionSaving) return;
+    if (permissionSavingRef.current) return;
     const sid = sessionIdRef.current;
-    if (!sid && isNew) {
-      permissionOverrideRef.current = mode;
-      setToolPermission({ mode, revision: 0 });
-      return;
-    }
-    if (!sid) return;
+    if (!sid && !isNew) return;
+    permissionSavingRef.current = true;
+    ++permissionReadGeneration.current;
     setPermissionSaving(true);
     try {
-      const next = await sendAgentCommand<ToolPermissionState>(sid, { type: "set_tool_permission", mode });
-      if (sessionIdRef.current === sid) acceptToolPermission(next);
+      if (!sid) {
+        const next = await saveDefaultToolPermission(mode);
+        if (sessionIdRef.current === sid) {
+          permissionOverrideRef.current = next.mode;
+          setToolPermission(next);
+        }
+      } else {
+        const next = await sendAgentCommand<ToolPermissionState>(sid, { type: "set_tool_permission", mode, rememberDefault: true });
+        notifyDefaultToolPermissionChanged();
+        if (sessionIdRef.current === sid) acceptToolPermission(next);
+      }
     } catch (error) {
       addNotice({ type: "error", message: String(error) });
-    } finally { setPermissionSaving(false); }
-  }, [addNotice, isNew, permissionSaving, acceptToolPermission]);
+    } finally { permissionSavingRef.current = false; setPermissionSaving(false); }
+  }, [addNotice, isNew, acceptToolPermission]);
 
   const handleCapabilitySelection = useCallback(async (selection: SessionCapabilitySelection): Promise<void> => {
     if (agentRunningRef.current || bashRunningRef.current) return;
@@ -1594,6 +1605,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         });
         break;
       case "tool_permission_changed":
+        notifyDefaultToolPermissionChanged();
         if (event.permission) acceptToolPermission(event.permission as ToolPermissionState);
         break;
       case "capabilities_changed":
@@ -1684,6 +1696,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     inputOptions?: ChatInputOptions,
     resumedQueuePromptId?: string,
   ) => {
+    if (permissionSavingRef.current) return false;
     inputOptions = resumedQueuePromptId && message.trimStart().startsWith("/") ? { ...inputOptions, inputMode: "text" } : inputOptions;
     const trimmedMessage = message.trim();
     if (!trimmedMessage && !images?.length && !files?.length) return false;

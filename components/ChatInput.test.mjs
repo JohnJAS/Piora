@@ -454,13 +454,13 @@ test("renders compact errors above the input as a wrapping alert", () => {
 test("does not send text before an attached image finishes loading", () => {
   assert.match(chatInputSource, /const \[isProcessingImages, setIsProcessingImages\] = useState\(false\)/);
   assert.match(chatInputSource, /setIsProcessingImages\(true\)[\s\S]*?pendingImageCountRef\.current <= 0[\s\S]*?setIsProcessingImages\(false\)/);
-  assert.match(chatInputSource, /if \(\(isStreaming && !onQueueInput\) \|\| isProcessingImages \|\| pendingFileCountRef\.current > 0 \|\| \(isAutoModelSelection && !commandSubmission\)\) return/);
-  assert.match(chatInputSource, /const canSend = !isProcessingImages/);
+  assert.match(chatInputSource, /if \(permissionSaving \|\| \(isStreaming && !onQueueInput\) \|\| isProcessingImages \|\| pendingFileCountRef\.current > 0 \|\| \(isAutoModelSelection && !commandSubmission\)\) return/);
+  assert.match(chatInputSource, /const canSend = !permissionSaving && !isProcessingImages/);
 });
 
 test("new conversations wait only until a default or explicit model resolves", () => {
-  assert.match(chatInputSource, /if \(\(isStreaming && !onQueueInput\) \|\| isProcessingImages \|\| pendingFileCountRef\.current > 0 \|\| \(isAutoModelSelection && !commandSubmission\)\) return/);
-  assert.match(chatInputSource, /const canSend = !isProcessingImages[\s\S]*?&& !isAutoModelSelection/);
+  assert.match(chatInputSource, /if \(permissionSaving \|\| \(isStreaming && !onQueueInput\) \|\| isProcessingImages \|\| pendingFileCountRef\.current > 0 \|\| \(isAutoModelSelection && !commandSubmission\)\) return/);
+  assert.match(chatInputSource, /const canSend = !permissionSaving && !isProcessingImages[\s\S]*?&& !isAutoModelSelection/);
   assert.match(chatInputSource, /const displayModelName = model && !isAutoModelSelection/);
   assert.match(chatInputSource, /const canOptimizePrompt = hasInputText[\s\S]*?&& !isAutoModelSelection/);
   assert.match(chatInputSource, /onThinkingLevelChange && !isAutoModelSelection/);

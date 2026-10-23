@@ -6,6 +6,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ### 聊天界面
 
+- 手动切换聊天权限后自动记住选择，用于后续新建、分叉和复制聊天；支持未发送消息时保存，已有聊天保留自己的权限，单次批准不改变默认值。
+
 - 处理详情中的普通文字改用主题适配的灰色，与 Agent 正文区分；保留链接、语法高亮和错误状态的语义颜色。
 
 ### 开发环境

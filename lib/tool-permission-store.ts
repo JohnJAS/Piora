@@ -48,5 +48,32 @@ export function readDefaultToolPermission(root?: string): PermissionMode {
 export function writeDefaultToolPermission(mode: PermissionMode, root?: string) {
   if (!isPermissionMode(mode)) throw new Error("Invalid permission mode");
   mkdirSync(directory(root), { recursive: true, mode: 0o700 });
+  const release = lockDefault(root);
+  try { persistDefault(mode, root); } finally { release(); }
+}
+
+function lockDefault(root?: string) {
+  return lockfile.lockSync(join(directory(root), "default.json"), { realpath: false });
+}
+
+function persistDefault(mode: PermissionMode, root?: string) {
   writePrivateFileAtomicSync(join(directory(root), "default.json"), JSON.stringify({ mode }));
+}
+
+/** Explicit user choices only. Session creation/restoration uses writeToolPermission. */
+export function selectToolPermission(id: string, mode: PermissionMode, root?: string): ToolPermissionState {
+  if (!isPermissionMode(mode)) throw new Error("Invalid permission mode");
+  pathFor(id, root);
+  mkdirSync(directory(root), { recursive: true, mode: 0o700 });
+  const release = lockDefault(root);
+  try {
+    const previous = readDefaultToolPermission(root);
+    // Do not grant session access if saving the preference fails.
+    persistDefault(mode, root);
+    try { return writeToolPermission(id, mode, root); }
+    catch (error) {
+      persistDefault(previous, root);
+      throw error;
+    }
+  } finally { release(); }
 }
