@@ -5616,6 +5616,12 @@ span.linenumber {
 .message-answer-block { min-width: 0; }
 
 /* Process steps are secondary to the answer: quiet, borderless rows. */
+.chat-process-stack,
+.compact-process-detail {
+  --text: var(--text-muted);
+  color: var(--text-muted);
+}
+
 .chat-process-stack {
   min-width: 0;
   border: 0;
