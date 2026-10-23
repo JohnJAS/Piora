@@ -41,7 +41,7 @@ function App(){
     <section id="command-results"><ChatCommandCard record={record} actions={{retry:async()=>{},restore:async()=>{},cancel:async()=>{},copy:async()=>{}}}/></section>
     <section id="launcher"><NewSessionProjectPicker activeCwd="/workspace/a-very-long-project-name-for-layout-checks" onLaunch={request=>{window.launched=true;window.launchRequest=request}}/></section>
     <section id="conversation"><ChatInput onSend={(text,...args)=>{window.sent=true;window.submission={text,args};return true}} onAbort={()=>{window.stopped=true;setBusy(false)}}
-      queueContent={<ChatCommandQueue records={queued} onCancel={async record=>{window.cancelled=record.commandId;setQueued(current=>current.filter(item=>item.commandId!==record.commandId))}}/>}
+      queueContent={<ChatCommandQueue records={queued} onCancel={async record=>{window.cancelled=record.commandId;if(window.failQueueCancel)throw new Error("Queue cancellation failed");setQueued(current=>current.filter(item=>item.commandId!==record.commandId))}}/>}
       commandCatalog={catalog} onLoadSlashCommands={()=>{}} onQueueInput={async(text,images,files,onDurable,options)=>{(window.queuedInputs??=[]).push({text,delivery:options?.delivery});return true}}
       onSteer={()=>true} onFollowUp={()=>true} isStreaming={busy} onModelChange={async()=>true} onThinkingLevelChange={()=>{}}
       model={{provider:"deepseek",modelId:"deepseek-v4.1-flash"}} modelList={[{provider:"deepseek",id:"deepseek-v4.1-flash",name:"DeepSeek V4.1 Flash Very Long Model Name"}]}
@@ -172,15 +172,18 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await result.getByRole("button", { name: locale === "zh-CN" ? "查看详情" : "View details" }).click();
       assert.equal(await result.locator("pre").innerText(), "/name 项目检查");
       await result.getByRole("button", { name: locale === "zh-CN" ? "收起详情" : "Hide details" }).click();
-      // The pending list shares the composer's width and follows its context controls.
+      // Queue strips tuck behind the input while keeping their controls exposed.
       const chatWindowSource = await readFile(path.join(repo, "components/ChatWindow.tsx"), "utf8");
       assert.match(chatWindowSource, /queueContent=\{composerQueueContent\}/);
       assert.match(chatWindowSource, /const composerQueueContent = useMemo\(\(\) => \(\s*<ChatCommandQueue records=\{chatCommands\.records\} onCancel=\{chatCommands\.cancel\} \/>/);
-      await page.evaluate(() => window.setQueued([
-        { commandId: "queued-first", status: "queued", preview: "Check this after the current task" },
-        { commandId: "queued-second", status: "accepted", preview: "Long queued message ".repeat(20) },
-      ]));
+      const longPreview = "Long queued message ".repeat(20);
+      await page.evaluate(longPreview => window.setQueued([
+        { commandId: "queued-first", status: "queued", preview: "我想参考 chatgpt 的设计" },
+        { commandId: "queued-second", status: "accepted", preview: longPreview },
+      ]), longPreview);
       const pendingQueue = conversation.getByRole("region", { name: locale === "zh-CN" ? "接下来执行" : "Up next" });
+      const cancelQueued = pendingQueue.getByRole("button", { name: locale === "zh-CN" ? "取消" : "Cancel", exact: true });
+      const showQueuedDetails = () => pendingQueue.getByRole("button", { name: locale === "zh-CN" ? "查看详情" : "View details", exact: true });
       await pendingQueue.waitFor();
       await conversation.evaluate(section => section.style.setProperty("--chat-column-width", "520px"));
       for (const width of [900, 590, 320]) {
@@ -188,23 +191,51 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         const boxes = await conversation.evaluate(section => {
           const queue = section.querySelector('section[aria-label]');
           const rect = element => { const { left, right, top, bottom } = element.getBoundingClientRect(); return { left, right, top, bottom }; };
-          return { queue: rect(queue), surface: rect(section.querySelector(".chat-composer-surface")), context: rect(section.querySelector(".chat-composer-context")), overflow: queue.scrollWidth - queue.clientWidth };
+          return { queue: rect(queue), surface: rect(section.querySelector(".chat-composer-surface")), context: rect(section.querySelector(".chat-composer-context")), buttons: [...queue.querySelectorAll('button')].map(rect), overflow: queue.scrollWidth - queue.clientWidth };
         });
-        assert.ok(Math.abs(boxes.queue.left - boxes.surface.left) < 1 && Math.abs(boxes.queue.right - boxes.surface.right) < 1, `${locale}/${width}: queue must align with composer ${JSON.stringify(boxes)}`);
-        assert.ok(boxes.queue.top >= boxes.context.bottom && boxes.surface.top >= boxes.queue.bottom + 7, "queue belongs between context controls and input with a visible gap");
-        assert.ok(boxes.overflow <= 1, "long queued text must wrap without hiding Cancel");
-        assert.equal(await pendingQueue.getByRole("button").count(), 2);
+        assert.ok(Math.abs(boxes.queue.left - boxes.surface.left - 12) < 1 && Math.abs(boxes.surface.right - boxes.queue.right - 12) < 1, `${locale}/${width}: queue must be inset evenly ${JSON.stringify(boxes)}`);
+        assert.ok(boxes.queue.top >= boxes.context.bottom && Math.abs(boxes.queue.bottom - boxes.surface.top - 14) < 1, "queue bottom tucks behind the input");
+        assert.ok(boxes.buttons.every(button => button.bottom <= boxes.surface.top && button.left >= boxes.queue.left && button.right <= boxes.queue.right), "input must not cover queue actions");
+        assert.ok(boxes.overflow <= 1, "long queued text must truncate without pushing actions out");
+        assert.equal(await cancelQueued.count(), 2);
+        assert.ok(await pendingQueue.locator('[title]').filter({ hasText: longPreview }).evaluate(element => element.scrollWidth > element.clientWidth), "preview should stay on one line");
       }
+      await showQueuedDetails().last().click();
+      assert.equal(await pendingQueue.locator('[class*="queueDetails"]').innerText(), longPreview);
+      await pendingQueue.getByRole("button", { name: locale === "zh-CN" ? "收起详情" : "Hide details" }).click();
+      assert.equal(await pendingQueue.locator('[class*="queueDetails"]').count(), 0);
+      // A failed cancellation keeps the row and shows the failure locally.
+      await page.evaluate(() => { window.failQueueCancel = true; });
+      await cancelQueued.first().click();
+      await pendingQueue.getByRole("alert").waitFor();
+      assert.equal(await pendingQueue.getByRole("alert").innerText(), "Queue cancellation failed");
+      assert.equal(await cancelQueued.count(), 2);
+      await page.evaluate(() => { window.failQueueCancel = false; });
+      await cancelQueued.last().click();
+      assert.equal(await page.evaluate(() => window.cancelled), "queued-second");
+      assert.equal(await cancelQueued.count(), 1);
       await conversation.evaluate(section => { section.style.width = "590px"; section.style.removeProperty("--chat-column-width"); });
+      // Reset the remaining fixture to capture a clean single-row preview.
+      await page.evaluate(() => window.setQueued([{ commandId: "queue-preview", status: "queued", preview: "我想参考 chatgpt 的设计" }]));
       if (process.env.PIORA_COMPOSER_SCREENSHOTS) {
-        await conversation.locator(".composer-column").screenshot({ path: path.join(repo, "test-results/composer-layout", `${locale}-queue.png`) });
+        for (const dark of [false, true]) {
+          await page.evaluate(dark => document.documentElement.classList.toggle("dark", dark), dark);
+          await conversation.locator(".composer-column").screenshot({ path: path.join(repo, "test-results/composer-layout", `${locale}-queue-${dark ? "dark" : "light"}.png`) });
+        }
+        await page.evaluate(() => document.documentElement.classList.remove("dark"));
       }
-      await pendingQueue.getByRole("button").first().click();
-      assert.equal(await page.evaluate(() => window.cancelled), "queued-first");
-      assert.equal(await pendingQueue.getByRole("button").count(), 1);
-      await pendingQueue.getByRole("button").click();
+      await cancelQueued.click();
       await pendingQueue.waitFor({ state: "hidden" });
       assert.equal(await conversation.locator("textarea").count(), 1);
+      // Many waiting messages scroll within the strip instead of taking over the chat.
+      await page.evaluate(() => window.setQueued(Array.from({ length: 12 }, (_, index) => ({ commandId: "many-" + index, status: "queued", preview: "Pending message " + index }))));
+      const queueList = pendingQueue.locator('[class*="queueList"]');
+      assert.ok(await queueList.evaluate(element => element.scrollHeight > element.clientHeight && element.clientHeight <= 180));
+      await queueList.evaluate(element => { element.scrollTop = element.scrollHeight; });
+      await cancelQueued.last().click();
+      assert.equal(await page.evaluate(() => window.cancelled), "many-11");
+      await page.evaluate(() => window.setQueued([]));
+      await pendingQueue.waitFor({ state: "hidden" });
       await page.evaluate(() => window.setBusy(true));
       await conversation.locator(".streaming-stop-button").click();
       assert.equal(await page.evaluate(() => window.stopped), true);

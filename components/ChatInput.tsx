@@ -2186,6 +2186,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
           <div
             className="chat-composer-surface"
             style={{
+              position: "relative",
               display: "flex",
               flexWrap: "wrap",
               gap: 8,

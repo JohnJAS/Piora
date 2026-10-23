@@ -103,18 +103,39 @@ export function ChatCommandCard({ record, actions }: { record: ChatCommandView; 
   </section>;
 }
 
+function QueuedCommandRow({ record, onCancel }: { record: ChatCommandView; onCancel: (record: ChatCommandView) => Promise<void> }) {
+  const { t } = useI18n();
+  const [expanded, setExpanded] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const operation = record.operation;
+  const preview = operation
+    ? operation.steps[0]?.status === "completed" && operation.afterPrompt ? operation.afterPrompt : operation.rawText
+    : record.preview ?? "";
+  return <div className={styles.queueItem}>
+    <div className={styles.queueRow}>
+      <span className={styles.queueIcon} aria-hidden="true"><AliIcon name="menu" size={13} /></span>
+      <span className={styles.queuePreview} title={preview}>{preview}</span>
+      <span className={styles.queueMode} title={t("chatCommands.afterTask")}><AliIcon name="arrowdown" size={12} />{t("chat.followUp")}</span>
+      <button type="button" className={styles.queueAction} disabled={pending} title={t("chatCommands.cancel")} aria-label={t("chatCommands.cancel")} onClick={() => {
+        setPending(true);
+        setError(null);
+        void onCancel(record).catch(reason => setError(reason instanceof Error ? reason.message : String(reason))).finally(() => setPending(false));
+      }}><AliIcon name="delete" size={14} /></button>
+      <button type="button" className={styles.queueAction} title={t(expanded ? "chatCommands.collapse" : "chatCommands.details")} aria-label={t(expanded ? "chatCommands.collapse" : "chatCommands.details")} aria-expanded={expanded} onClick={() => setExpanded(value => !value)}><AliIcon name="ellipsis" size={15} /></button>
+    </div>
+    {expanded && <div className={styles.queueDetails}>{preview}</div>}
+    {error && <p role="alert" className={styles.queueError}>{error}</p>}
+  </div>;
+}
+
 export function ChatCommandQueue({ records, onCancel }: { records: ChatCommandView[]; onCancel: (record: ChatCommandView) => Promise<void> }) {
   const { t } = useI18n();
-  const [error, setError] = useState<string | null>(null);
   const waiting = records.filter(record => !record.local && (record.status === "queued" || record.status === "accepted"));
   if (!waiting.length) return null;
   return <section className={styles.queue} aria-label={t("chatCommands.next")}>
-    <div className={styles.queueTitle}><AliIcon name="menu" size={13} />{t("chatCommands.next")} · {waiting.length}</div>
-    {waiting.map(record => <div className={styles.queueRow} key={record.commandId}>
-      <span>{record.operation ? record.operation.steps[0].status === "completed" ? record.operation.afterPrompt : `/${record.operation.command.name}` : record.preview}</span>
-      <span className={styles.meta}>{t("chatCommands.afterTask")}</span>
-      <button type="button" onClick={() => { setError(null); void onCancel(record).catch(reason => setError(String(reason))); }}>{t("chatCommands.cancel")}</button>
-    </div>)}
-    {error && <p role="alert" className={styles.failure}>{error}</p>}
+    <div className={styles.queueList}>
+      {waiting.map(record => <QueuedCommandRow key={record.commandId} record={record} onCancel={onCancel} />)}
+    </div>
   </section>;
 }
