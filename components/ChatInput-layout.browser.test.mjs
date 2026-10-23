@@ -28,18 +28,20 @@ import {I18nProvider} from "@/hooks/useI18n";
 import {ChatInput} from "@/components/ChatInput";
 import {NewSessionProjectPicker} from "@/components/NewSessionProjectPicker";
 import {SystemPromptSelector} from "@/components/SystemPromptSelector";
-import {ChatCommandCard} from "@/components/ChatCommandCard";
+import {ChatCommandCard,ChatCommandQueue} from "@/components/ChatCommandCard";
 import {createChatCommandCatalog} from "@/lib/chat-command-input";
 const catalog=createChatCommandCatalog([{name:"workflow",source:"extension",description:"Start a workflow and continue until complete"}]);
 const record={commandId:"sample-command",idempotencyKey:"sample",targetSessionId:"sample",acceptedAt:1792483200000,status:"completed",operation:{version:1,rawText:"/name 项目检查",catalogRevision:catalog.revision,command:catalog.commands.find(c=>c.name==="name"),arguments:"项目检查",phase:"settling",steps:[{id:"command",kind:"command",status:"completed",startedAt:1792483200000,completedAt:1792483200200}],result:{title:"chatCommands.renameCompleted",rename:{before:"新会话",after:"项目检查"}}}};
 import { DefaultToolPermissionSetting } from "${path.join(repo, "components/ToolPermissionControl.tsx").replaceAll("\\", "/")}";
 function App(){
   const [busy,setBusy]=useState(false);window.setBusy=setBusy;
+  const [queued,setQueued]=useState([]);window.setQueued=setQueued;
   const [permission,setPermission]=useState({mode:"auto",revision:1});
   return <I18nProvider><main>
     <section id="command-results"><ChatCommandCard record={record} actions={{retry:async()=>{},restore:async()=>{},cancel:async()=>{},copy:async()=>{}}}/></section>
     <section id="launcher"><NewSessionProjectPicker activeCwd="/workspace/a-very-long-project-name-for-layout-checks" onLaunch={request=>{window.launched=true;window.launchRequest=request}}/></section>
     <section id="conversation"><ChatInput onSend={(text,...args)=>{window.sent=true;window.submission={text,args};return true}} onAbort={()=>{window.stopped=true;setBusy(false)}}
+      queueContent={<ChatCommandQueue records={queued} onCancel={async record=>{window.cancelled=record.commandId;setQueued(current=>current.filter(item=>item.commandId!==record.commandId))}}/>}
       commandCatalog={catalog} onLoadSlashCommands={()=>{}} onQueueInput={async(text,images,files,onDurable,options)=>{(window.queuedInputs??=[]).push({text,delivery:options?.delivery});return true}}
       onSteer={()=>true} onFollowUp={()=>true} isStreaming={busy} onModelChange={async()=>true} onThinkingLevelChange={()=>{}}
       model={{provider:"deepseek",modelId:"deepseek-v4.1-flash"}} modelList={[{provider:"deepseek",id:"deepseek-v4.1-flash",name:"DeepSeek V4.1 Flash Very Long Model Name"}]}
@@ -170,6 +172,39 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await result.getByRole("button", { name: locale === "zh-CN" ? "查看详情" : "View details" }).click();
       assert.equal(await result.locator("pre").innerText(), "/name 项目检查");
       await result.getByRole("button", { name: locale === "zh-CN" ? "收起详情" : "Hide details" }).click();
+      // The pending list shares the composer's width and follows its context controls.
+      const chatWindowSource = await readFile(path.join(repo, "components/ChatWindow.tsx"), "utf8");
+      assert.match(chatWindowSource, /queueContent=\{composerQueueContent\}/);
+      assert.match(chatWindowSource, /const composerQueueContent = useMemo\(\(\) => \(\s*<ChatCommandQueue records=\{chatCommands\.records\} onCancel=\{chatCommands\.cancel\} \/>/);
+      await page.evaluate(() => window.setQueued([
+        { commandId: "queued-first", status: "queued", preview: "Check this after the current task" },
+        { commandId: "queued-second", status: "accepted", preview: "Long queued message ".repeat(20) },
+      ]));
+      const pendingQueue = conversation.getByRole("region", { name: locale === "zh-CN" ? "接下来执行" : "Up next" });
+      await pendingQueue.waitFor();
+      await conversation.evaluate(section => section.style.setProperty("--chat-column-width", "520px"));
+      for (const width of [900, 590, 320]) {
+        await conversation.evaluate((section, width) => { section.style.width = width + "px"; }, width);
+        const boxes = await conversation.evaluate(section => {
+          const queue = section.querySelector('section[aria-label]');
+          const rect = element => { const { left, right, top, bottom } = element.getBoundingClientRect(); return { left, right, top, bottom }; };
+          return { queue: rect(queue), surface: rect(section.querySelector(".chat-composer-surface")), context: rect(section.querySelector(".chat-composer-context")), overflow: queue.scrollWidth - queue.clientWidth };
+        });
+        assert.ok(Math.abs(boxes.queue.left - boxes.surface.left) < 1 && Math.abs(boxes.queue.right - boxes.surface.right) < 1, `${locale}/${width}: queue must align with composer ${JSON.stringify(boxes)}`);
+        assert.ok(boxes.queue.top >= boxes.context.bottom && boxes.surface.top >= boxes.queue.bottom + 7, "queue belongs between context controls and input with a visible gap");
+        assert.ok(boxes.overflow <= 1, "long queued text must wrap without hiding Cancel");
+        assert.equal(await pendingQueue.getByRole("button").count(), 2);
+      }
+      await conversation.evaluate(section => { section.style.width = "590px"; section.style.removeProperty("--chat-column-width"); });
+      if (process.env.PIORA_COMPOSER_SCREENSHOTS) {
+        await conversation.locator(".composer-column").screenshot({ path: path.join(repo, "test-results/composer-layout", `${locale}-queue.png`) });
+      }
+      await pendingQueue.getByRole("button").first().click();
+      assert.equal(await page.evaluate(() => window.cancelled), "queued-first");
+      assert.equal(await pendingQueue.getByRole("button").count(), 1);
+      await pendingQueue.getByRole("button").click();
+      await pendingQueue.waitFor({ state: "hidden" });
+      assert.equal(await conversation.locator("textarea").count(), 1);
       await page.evaluate(() => window.setBusy(true));
       await conversation.locator(".streaming-stop-button").click();
       assert.equal(await page.evaluate(() => window.stopped), true);

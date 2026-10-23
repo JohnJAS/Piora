@@ -165,6 +165,8 @@ interface Props {
   placeholder?: string;
   /** Optional project and mode controls rendered above the input surface. */
   contextControl?: React.ReactNode;
+  /** Pending submissions aligned with the input surface below its context controls. */
+  queueContent?: React.ReactNode;
   toolPermission?: ToolPermissionState | null;
   permissionSaving?: boolean;
   onToolPermissionChange?: (mode: PermissionMode) => void;
@@ -356,7 +358,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   extensionStatuses = [],
   variant = "conversation",
   placeholder,
-  contextControl,
+  contextControl, queueContent,
   toolPermission, permissionSaving, onToolPermissionChange,
   replySource = null,
 }: Props, ref) {
@@ -2180,6 +2182,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
             </div>
           )}
           {contextControl && <div className="chat-composer-context">{contextControl}</div>}
+          {queueContent}
           <div
             className="chat-composer-surface"
             style={{

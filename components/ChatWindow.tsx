@@ -628,16 +628,20 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     </>
   ), [isEmptyNew, newSessionProjectLabel, isProjectlessChat, messageCwd, systemPromptSelection, systemPromptBinding, sessionBusy, systemPromptSaving, handleSystemPromptSelection]);
 
+  const composerQueueContent = useMemo(() => (
+    <ChatCommandQueue records={chatCommands.records} onCancel={chatCommands.cancel} />
+  ), [chatCommands.records, chatCommands.cancel]);
+
   const chatInputElement = (
     <>
     {chatCommands.connectionError && <div role="status" style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)", padding: "6px 10px" }}>{chatCommands.connectionError}</div>}
-    <ChatCommandQueue records={chatCommands.records} onCancel={chatCommands.cancel} />
     <ChatInput
       ref={chatInputRef}
       replySource={replySource}
       variant={isEmptyNew ? "launcher" : "conversation"}
       placeholder={isEmptyNew ? t("newSession.placeholder") : undefined}
       contextControl={composerContextControl}
+      queueContent={composerQueueContent}
       onSend={handleComposerSend}
       onQueueInput={chatCommands.submit}
       commandCatalog={commandCatalog}

@@ -39,7 +39,7 @@
 .query p { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .query button { padding: 4px 0; }
 .actionError { padding: 9px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.queue { margin: 0 8px; padding: 8px 12px; border: 1px solid var(--border); border-bottom: 0; border-radius: 9px 9px 0 0; background: var(--bg-panel); font-size: var(--text-sm, 13px); }
+.queue { margin: 0 0 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-panel); font-size: var(--text-sm, 13px); }
 .queueTitle { color: var(--text-muted); margin-bottom: 5px; }
 .queueRow { padding: 5px 0; }
 .queueRow > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
