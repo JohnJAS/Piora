@@ -41,7 +41,7 @@ export function readDefaultToolPermission(root?: string): PermissionMode {
     if (!isPermissionMode(value.mode)) throw new Error("Invalid default permission mode");
     return value.mode;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "auto";
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "full";
     throw error;
   }
 }
