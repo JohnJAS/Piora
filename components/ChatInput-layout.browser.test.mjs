@@ -41,7 +41,7 @@ function App(){
     <section id="command-results"><ChatCommandCard record={record} actions={{retry:async()=>{},restore:async()=>{},cancel:async()=>{},copy:async()=>{}}}/></section>
     <section id="launcher"><NewSessionProjectPicker activeCwd="/workspace/a-very-long-project-name-for-layout-checks" onLaunch={request=>{window.launched=true;window.launchRequest=request}}/></section>
     <section id="conversation"><ChatInput onSend={(text,...args)=>{window.sent=true;window.submission={text,args};return true}} onAbort={()=>{window.stopped=true;setBusy(false)}}
-      queueContent={<ChatCommandQueue records={queued} onCancel={async record=>{window.cancelled=record.commandId;if(window.failQueueCancel)throw new Error("Queue cancellation failed");setQueued(current=>current.filter(item=>item.commandId!==record.commandId))}}/>}
+      queueContent={<ChatCommandQueue records={queued} actions={{cancel:async record=>{window.cancelled=record.commandId;if(window.failQueueCancel)throw new Error("Queue cancellation failed");setQueued(current=>current.filter(item=>item.commandId!==record.commandId))},steer:async record=>{window.steered=record.commandId;setQueued(current=>current.filter(item=>item.commandId!==record.commandId))},edit:async record=>{window.editing=record.commandId;return record.preview},save:async(record,text)=>{if(window.failQueueEdit)throw new Error("Queue edit failed");window.edited={id:record.commandId,text};setQueued(current=>current.map(item=>item.commandId===record.commandId?{...item,preview:text}:item))},resume:async record=>{window.resumed=record.commandId},closeQueue:()=>{window.queueClosed=true}}}/>}
       commandCatalog={catalog} onLoadSlashCommands={()=>{}} onQueueInput={async(text,images,files,onDurable,options)=>{(window.queuedInputs??=[]).push({text,delivery:options?.delivery});return true}}
       onSteer={()=>true} onFollowUp={()=>true} isStreaming={busy} onModelChange={async()=>true} onThinkingLevelChange={()=>{}}
       model={{provider:"deepseek",modelId:"deepseek-v4.1-flash"}} modelList={[{provider:"deepseek",id:"deepseek-v4.1-flash",name:"DeepSeek V4.1 Flash Very Long Model Name"}]}
@@ -175,7 +175,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       // Queue strips tuck behind the input while keeping their controls exposed.
       const chatWindowSource = await readFile(path.join(repo, "components/ChatWindow.tsx"), "utf8");
       assert.match(chatWindowSource, /queueContent=\{composerQueueContent\}/);
-      assert.match(chatWindowSource, /const composerQueueContent = useMemo\(\(\) => \(\s*<ChatCommandQueue records=\{chatCommands\.records\} onCancel=\{chatCommands\.cancel\} \/>/);
+      assert.match(chatWindowSource, /const composerQueueContent = useMemo\(\(\) => \(\s*<ChatCommandQueue records=\{chatCommands\.records\} actions=\{queueActions\} \/>/);
       const longPreview = "Long queued message ".repeat(20);
       await page.evaluate(longPreview => window.setQueued([
         { commandId: "queued-first", status: "queued", preview: "我想参考 chatgpt 的设计" },
@@ -183,7 +183,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       ]), longPreview);
       const pendingQueue = conversation.getByRole("region", { name: locale === "zh-CN" ? "接下来执行" : "Up next" });
       const cancelQueued = pendingQueue.getByRole("button", { name: locale === "zh-CN" ? "取消" : "Cancel", exact: true });
-      const showQueuedDetails = () => pendingQueue.getByRole("button", { name: locale === "zh-CN" ? "查看详情" : "View details", exact: true });
+      const queueOptions = () => pendingQueue.getByRole("button", { name: locale === "zh-CN" ? "选项" : "Options", exact: true });
       await pendingQueue.waitFor();
       await conversation.evaluate(section => section.style.setProperty("--chat-column-width", "520px"));
       for (const width of [900, 590, 320]) {
@@ -200,10 +200,32 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         assert.equal(await cancelQueued.count(), 2);
         assert.ok(await pendingQueue.locator('[title]').filter({ hasText: longPreview }).evaluate(element => element.scrollWidth > element.clientWidth), "preview should stay on one line");
       }
-      await showQueuedDetails().last().click();
-      assert.equal(await pendingQueue.locator('[class*="queueDetails"]').innerText(), longPreview);
-      await pendingQueue.getByRole("button", { name: locale === "zh-CN" ? "收起详情" : "Hide details" }).click();
-      assert.equal(await pendingQueue.locator('[class*="queueDetails"]').count(), 0);
+      await queueOptions().last().click();
+      const queueMenu = page.getByRole("menu", { name: locale === "zh-CN" ? "选项" : "Options", exact: true });
+      assert.equal(await queueMenu.getByRole("menuitem").count(), 2);
+      assert.equal(await queueMenu.innerText(), locale === "zh-CN" ? "编辑消息\n关闭排队" : "Edit message\nTurn off queueing");
+      await queueMenu.getByRole("menuitem").first().click();
+      const queueEditor = pendingQueue.getByRole("textbox", { name: locale === "zh-CN" ? "编辑消息" : "Edit message" });
+      await queueEditor.waitFor();
+      assert.equal(await queueEditor.inputValue(), longPreview, "edit restores the entire query");
+      await queueEditor.fill("Edited queued query");
+      await page.evaluate(() => { window.failQueueEdit = true; });
+      const saveQueue = pendingQueue.getByRole("button", { name: locale === "zh-CN" ? "保存并排队" : "Save and queue" });
+      await saveQueue.click();
+      await pendingQueue.getByRole("alert").waitFor();
+      assert.equal(await queueEditor.inputValue(), "Edited queued query", "a failed edit keeps the typed query");
+      await page.evaluate(() => { window.failQueueEdit = false; });
+      await saveQueue.click();
+      await queueEditor.waitFor({ state: "hidden" });
+      assert.deepEqual(await page.evaluate(() => window.edited), { id: "queued-second", text: "Edited queued query" });
+      await queueOptions().last().click();
+      await queueMenu.getByRole("menuitem").first().press("ArrowDown");
+      await queueMenu.getByRole("menuitem").last().press("Enter");
+      assert.equal(await page.evaluate(() => window.queueClosed), true);
+      assert.equal(await cancelQueued.count(), 2, "turning off queueing keeps existing messages");
+      await queueOptions().first().click();
+      await queueMenu.getByRole("menuitem").first().press("Escape");
+      await queueMenu.waitFor({ state: "hidden" });
       // A failed cancellation keeps the row and shows the failure locally.
       await page.evaluate(() => { window.failQueueCancel = true; });
       await cancelQueued.first().click();
@@ -224,7 +246,8 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         }
         await page.evaluate(() => document.documentElement.classList.remove("dark"));
       }
-      await cancelQueued.click();
+      await pendingQueue.getByRole("button", { name: locale === "zh-CN" ? "引导" : "Steer", exact: true }).click();
+      assert.equal(await page.evaluate(() => window.steered), "queue-preview");
       await pendingQueue.waitFor({ state: "hidden" });
       assert.equal(await conversation.locator("textarea").count(), 1);
       // Many waiting messages scroll within the strip instead of taking over the chat.
@@ -243,30 +266,23 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       const primary = conversation.locator(".streaming-action-primary");
       const streamingMenu = conversation.locator(".streaming-action-menu");
       let queuedCount = 0;
-      // Mouse and keyboard must both ask before sending when no default is enabled.
-      for (const trigger of ["click", "Enter"]) {
-        for (const delivery of ["steer", "next_turn"]) {
-          const text = `${trigger} ${delivery}`;
+      // Fresh installs and legacy chooser preferences both default to queueing.
+      for (const enabled of [true, false]) {
+        await page.evaluate(enabled => { const key = "piora-streaming-send-preference:v1"; const newValue = JSON.stringify({ schemaVersion: 1, enabled, behavior: "followup" }); localStorage.setItem(key, newValue); window.dispatchEvent(new StorageEvent("storage", { key, newValue })); }, enabled);
+        for (const trigger of ["click", "Enter"]) {
+          const text = "Default queue " + trigger;
           await editor.fill(text);
-          assert.equal(await primary.innerText(), locale === "zh-CN" ? "发送" : "Send");
-          if (trigger === "click") await primary.click();
-          else await editor.press("Enter");
-          await streamingMenu.waitFor();
-          assert.equal(await streamingMenu.getByRole("menuitem").count(), 2);
-          assert.equal(await primary.getAttribute("aria-expanded"), "true");
-          assert.equal(await page.evaluate(() => window.queuedInputs?.length ?? 0), queuedCount);
-          assert.equal(await editor.inputValue(), text);
-          await streamingMenu.getByRole("menuitem").nth(delivery === "steer" ? 0 : 1).click();
+          assert.equal(await primary.innerText(), locale === "zh-CN" ? "排队" : "Queue");
+          if (trigger === "click") await primary.click(); else await editor.press("Enter");
           await page.waitForFunction(count => window.queuedInputs?.length === count, ++queuedCount);
-          assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text, delivery });
-          assert.equal(await editor.inputValue(), "");
+          assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text, delivery: "next_turn" });
           await streamingMenu.waitFor({ state: "hidden" });
         }
       }
-      // Escape dismisses the choice without sending or losing the draft.
+      // Escape dismisses the explicit alternate-action menu without sending.
       await editor.fill("Keep this draft");
-      await primary.click();
-      await primary.press("Escape");
+      await conversation.locator(".streaming-action-toggle").click();
+      await conversation.locator(".streaming-action-toggle").press("Escape");
       await streamingMenu.waitFor({ state: "hidden" });
       assert.equal(await editor.inputValue(), "Keep this draft");
       assert.equal(await page.evaluate(() => window.queuedInputs.length), queuedCount);

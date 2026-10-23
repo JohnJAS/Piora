@@ -42,10 +42,11 @@ test("conversation settings can opt into a default running-task send action", ()
   assert.match(settingsDialog, /setStreamingSendDefaultBehavior\("followup"\)/);
 });
 
-test("disabled keeps the chooser while enabled sends with the selected default", () => {
-  assert.match(chatInput, /if \(streamingSendPreference\.enabled\) \{\s*sendQueued\(streamingSendPreference\.behavior\)/);
-  assert.match(chatInput, /setStreamingActionMenuOpen\(true\)/);
-  assert.match(chatInput, /const primaryStreamingMode = streamingSendPreference\.enabled \? streamingSendPreference\.behavior : null/);
+test("ordinary sends queue by default and the dropdown keeps explicit alternatives", () => {
+  assert.match(chatInput, /sendQueued\(streamingSendPreference\.enabled \? streamingSendPreference\.behavior : "followup"\)/);
+  assert.match(chatInput, /className="streaming-action-toggle"/);
+  assert.match(chatInput, /setStreamingActionMenuOpen\(\(open\) => !open\)/);
+  assert.match(chatInput, /const primaryStreamingMode = streamingSendPreference\.enabled \? streamingSendPreference\.behavior : "followup"/);
   assert.match(chatInput, /onClick=\{submitStreamingMessage\}/);
   assert.match(chatInput, /aria-haspopup=\{primaryStreamingMode === null \? "menu" : undefined\}/);
   assert.match(streamingHook, /useSyncExternalStore/);

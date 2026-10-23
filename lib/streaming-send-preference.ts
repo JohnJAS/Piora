@@ -9,8 +9,8 @@ export interface StreamingSendPreference {
 export const STREAMING_SEND_PREFERENCE_STORAGE_KEY = "piora-streaming-send-preference:v1";
 export const DEFAULT_STREAMING_SEND_PREFERENCE: Readonly<StreamingSendPreference> = Object.freeze({
   schemaVersion: 1,
-  enabled: false,
-  behavior: "steer",
+  enabled: true,
+  behavior: "followup",
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -21,8 +21,8 @@ export function normalizeStreamingSendPreference(value: unknown): StreamingSendP
   if (!isRecord(value)) return { ...DEFAULT_STREAMING_SEND_PREFERENCE };
   return {
     schemaVersion: 1,
-    enabled: typeof value.enabled === "boolean" ? value.enabled : false,
-    behavior: value.behavior === "followup" || value.behavior === "steer" ? value.behavior : "steer",
+    enabled: typeof value.enabled === "boolean" ? value.enabled : true,
+    behavior: value.behavior === "followup" || value.behavior === "steer" ? value.behavior : "followup",
   };
 }
 

@@ -1,4 +1,10 @@
 export const chatCommandsZh = {
+  "chatCommands.editMessage": "编辑消息",
+  "chatCommands.closeQueue": "关闭排队",
+  "chatCommands.editing": "编辑中",
+  "chatCommands.editingHint": "编辑时暂停此消息的排队发送",
+  "chatCommands.cancelEdit": "放弃修改",
+  "chatCommands.saveQueue": "保存并排队",
   "chatCommands.title": "命令执行",
   "chatCommands.options": "选项",
   "chatCommands.cancelQuery": "移除后续问题",
@@ -88,6 +94,12 @@ export const chatCommandsZh = {
 };
 
 export const chatCommandsEn: Record<keyof typeof chatCommandsZh, string> = {
+  "chatCommands.editMessage": "Edit message",
+  "chatCommands.closeQueue": "Turn off queueing",
+  "chatCommands.editing": "Editing",
+  "chatCommands.editingHint": "This message is paused while editing",
+  "chatCommands.cancelEdit": "Discard changes",
+  "chatCommands.saveQueue": "Save and queue",
   "chatCommands.title": "Command execution",
   "chatCommands.options": "Options",
   "chatCommands.cancelQuery": "Remove follow-up question",

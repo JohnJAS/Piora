@@ -2049,7 +2049,7 @@ export const enLocale: LocalePlugin = {
     "settings.sendShortcutEnter": "Enter",
     "settings.sendShortcutCtrlEnter": "Ctrl + Enter",
     "settings.streamingSendDefault": "Use a default action while running",
-    "settings.streamingSendDefaultDescription": "When off, keep the current Steer/Queue chooser. When on, messages use the selected action immediately.",
+    "settings.streamingSendDefaultDescription": "Messages sent while running queue by default. Enable a custom default to use the selected action.",
     "settings.streamingSendDefaultBehavior": "Default send action",
     "settings.compactProcess": "Lightweight process display",
     "settings.compactProcessDescription": "Off by default. Group thinking and tool steps into a quieter process area and fold when finished. Expand Shell commands to view live logs.",

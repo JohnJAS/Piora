@@ -2049,7 +2049,7 @@ export const zhCNLocale: LocalePlugin = {
     "settings.sendShortcutEnter": "Enter",
     "settings.sendShortcutCtrlEnter": "Ctrl + Enter",
     "settings.streamingSendDefault": "运行中使用默认发送行为",
-    "settings.streamingSendDefaultDescription": "关闭时沿用当前的引导/排队选择方式；开启后发消息会直接使用所选行为。",
+    "settings.streamingSendDefaultDescription": "默认将运行中发送的消息排队；开启自定义后使用所选行为。",
     "settings.streamingSendDefaultBehavior": "默认发送行为",
     "settings.compactProcess": "轻量过程展示",
     "settings.compactProcessDescription": "默认关闭。开启后将思考与工具步骤合并为次要过程区，结束后收起；Shell 日志需手动展开查看。",

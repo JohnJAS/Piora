@@ -1019,7 +1019,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     : t(slashQuery ? "chat.matches" : "chat.commands", { count: filteredSlashCommands.length });
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = onQueueInput ? hasInputText || attachedImages.length > 0 || attachedFiles.length > 0 : hasInputText && attachedImages.length === 0 && attachedFiles.length === 0;
-  const primaryStreamingMode = streamingSendPreference.enabled ? streamingSendPreference.behavior : null;
+  const primaryStreamingMode = streamingSendPreference.enabled ? streamingSendPreference.behavior : "followup";
   const canSend = !permissionSaving && !isProcessingImages && !isProcessingFiles
     && (!isAutoModelSelection || isCommandInput)
     && (hasInputText || attachedImages.length > 0 || attachedFiles.length > 0);
@@ -1355,12 +1355,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
 
   const submitStreamingMessage = useCallback(() => {
     if (!canQueueStreamingMessage) return;
-    if (streamingSendPreference.enabled) {
-      sendQueued(streamingSendPreference.behavior);
-      return;
-    }
-    setStreamingActionIndex(0);
-    setStreamingActionMenuOpen(true);
+    sendQueued(streamingSendPreference.enabled ? streamingSendPreference.behavior : "followup");
   }, [canQueueStreamingMessage, sendQueued, streamingSendPreference]);
 
   const getNextSlashIndex = useCallback((direction: "up" | "down" | "left" | "right") => {
