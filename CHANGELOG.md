@@ -13,6 +13,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ### 开发环境
 
+- 修复 Harmony 浏览器回归测试提前清除设备占用造成的偶发点击超时，验证停止请求释放当前设备后再隐藏按钮。
+
 - 明确 AGENTS.md 提交前本地 CI 门禁：按影响范围完成相关检查，界面变更同步回归断言，无关检查可说明依据后跳过，相关失败不得自行绕过。
 
 ## [0.5.5-beta.35] - 2026-10-23
