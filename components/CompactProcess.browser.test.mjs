@@ -239,10 +239,39 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     await mixed.locator(".thinking-block-trigger").click();
     await mixed.getByText("历史完整思考内容", {exact:true}).waitFor();
     assert.equal(new URL(thinkingRequests.at(-1)).searchParams.get("blockIndex"), "3");
-    await mixed.evaluate(() => {document.querySelector("#scroll").scrollTop=20});
-    const headingTop = await mixedHeading.evaluate(element => element.getBoundingClientRect().top);
-    await mixedHeading.click();
-    await mixed.waitForFunction(top => Math.abs(document.querySelector(".compact-process-toggle").getBoundingClientRect().top-top)<1, headingTop);
+    const toggleAtReadingPosition = async (partiallyClipped) => {
+      await mixedHeading.evaluate((element, partiallyClipped) => {
+        const scroller = document.querySelector("#scroll");
+        scroller.scrollTop = partiallyClipped
+          ? scroller.scrollTop + element.getBoundingClientRect().top - scroller.getBoundingClientRect().top + 8
+          : 20;
+        window.disclosureAnchor = null;
+        // Playwright can scroll a partly clipped button into view before it
+        // clicks. Measure at the actual click, before React handles the event.
+        element.addEventListener("click", () => {
+          const anchor = window.disclosureAnchor = { top: element.getBoundingClientRect().top, samples: [] };
+          const sample = () => {
+            anchor.samples.push(element.getBoundingClientRect().top);
+            if (anchor.samples.length < 6) requestAnimationFrame(sample);
+          };
+          requestAnimationFrame(sample);
+        }, { capture: true, once: true });
+      }, partiallyClipped);
+      await mixedHeading.click();
+      await mixed.waitForFunction(() => window.disclosureAnchor?.samples.length === 6);
+      const anchor = await mixed.evaluate(() => window.disclosureAnchor);
+      for (const top of anchor.samples) assert.ok(Math.abs(top - anchor.top) < 1,
+        `disclosure moved after click: ${JSON.stringify({ partiallyClipped, ...anchor })}`);
+    };
+    // Exercise normal and auto-scrolled clicks, in both directions. Checking
+    // every frame also catches late virtual-row measurements moving the title.
+    for (const partiallyClipped of [false, true]) {
+      await toggleAtReadingPosition(partiallyClipped);
+      assert.equal(await mixedHeading.getAttribute("aria-expanded"), "false");
+      await toggleAtReadingPosition(partiallyClipped);
+      assert.equal(await mixedHeading.getAttribute("aria-expanded"), "true");
+    }
+    await toggleAtReadingPosition(false);
     assert.equal(await mixed.locator(".thinking-block-trigger, .command-execution-card").count(), 0);
     for (const text of ["先说明计划", "中途说明", "最后的说明"]) assert.equal(await mixed.getByText(text, {exact:true}).count(), 1);
     await mixed.evaluate(() => window.revealEntry("mixed"));
