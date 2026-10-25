@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `55ffc31d0a9978ba41f4a86897f9efc6caacbd406eb8a2d58cc5b81e222d9f16`
+Lockfile SHA-256: `f3a6f94e1cc171a96b488ac17d353cfca08b98b6bb51ce9b6e29dc12fc576c42`
 
-Unique locked packages: **1382**. Runtime packages: **902**. Build/development-only packages: **480**.
+Unique locked packages: **1380**. Runtime packages: **902**. Build/development-only packages: **478**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -43,7 +43,7 @@ Every locked package declares a license.
 | `@chevrotain/regexp-to-ast` | `13.2.0` | Apache-2.0 | No |
 | `@chevrotain/types` | `13.2.0` | Apache-2.0 | No |
 | `@chevrotain/utils` | `13.2.0` | Apache-2.0 | No |
-| `@codemirror/autocomplete` | `6.20.3` | MIT | No |
+| `@codemirror/autocomplete` | `6.20.4` | MIT | No |
 | `@codemirror/commands` | `6.11.1` | MIT | No |
 | `@codemirror/lang-angular` | `0.1.4` | MIT | No |
 | `@codemirror/lang-cpp` | `6.0.3` | MIT | No |
@@ -73,7 +73,7 @@ Every locked package declares a license.
 | `@codemirror/search` | `6.7.2` | MIT | No |
 | `@codemirror/state` | `6.7.6` | MIT | No |
 | `@codemirror/streamparser` | `6.0.0` | MIT | No |
-| `@codemirror/view` | `6.43.14` | MIT | No |
+| `@codemirror/view` | `6.43.15` | MIT | No |
 | `@deveco/deveco-cli` | `1.3.6` | MIT | No |
 | `@deveco/deveco-cli-common` | `1.3.6` | MIT | Yes |
 | `@deveco/deveco-cli-knowledgebase` | `1.3.6` | MIT | Yes |
@@ -728,7 +728,7 @@ Every locked package declares a license.
 | `points-on-path` | `0.2.1` | MIT | No |
 | `polished` | `4.3.1` | MIT | No |
 | `portfinder` | `1.0.38` | MIT | No |
-| `postcss` | `8.5.30` | MIT | No |
+| `postcss` | `8.5.31` | MIT | No |
 | `prebuild-install` | `7.1.3` | MIT | Yes |
 | `pretty-ms` | `9.3.1` | MIT | Yes |
 | `prismjs` | `1.30.0` | MIT | No |
@@ -865,7 +865,7 @@ Every locked package declares a license.
 | `ufo` | `1.6.4` | MIT | No |
 | `ui-verification-mcp` | `0.0.18` | MIT | Yes |
 | `underscore` | `1.13.8` | MIT | No |
-| `undici` | `8.12.2` | MIT | No |
+| `undici` | `8.12.3` | MIT | No |
 | `undici-types` | `5.26.5` | MIT | No |
 | `undici-types` | `8.9.0` | MIT | No |
 | `unicorn-magic` | `0.3.0` | MIT | Yes |
@@ -1385,8 +1385,6 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `typed-array-length` | `1.0.7` | MIT | No |
 | `typescript-eslint` | `8.57.1` | MIT | No |
 | `unbox-primitive` | `1.1.0` | MIT | No |
-| `undici` | `6.29.0` | MIT | No |
-| `undici` | `7.30.0` | MIT | Yes |
 | `undici-types` | `7.24.6` | MIT | No |
 | `universalify` | `0.1.2` | MIT | No |
 | `unrs-resolver` | `1.11.1` | MIT | No |

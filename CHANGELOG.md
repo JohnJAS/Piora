@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### Runtime dependency compatibility
+
+- Update Undici to 8.12.3 and CodeMirror/PostCSS patch versions using official npm artifacts. Keep the Pi source profile, legacy-copy patch, packaged verification, license provenance and runtime audit pinned to the reviewed effective version; preserve upstream SDK integrity commitments. Cover queued request context and HTTP/2 timeout recovery with real local-server regressions.
+
 ### Workspace validation
 
 - Compare canonical filesystem paths in the slow-checkout regression so Windows long/8.3 aliases identify the same directory. Keep the real checkout timing and dirty-worktree/data-preservation assertions intact.
