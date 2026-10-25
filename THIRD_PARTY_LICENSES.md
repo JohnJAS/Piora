@@ -2,7 +2,7 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `6a6b03c3f21afae031945f2745498033dbfbb1bda992e9275d02f86551fc3476`
+Lockfile SHA-256: `4aa9a692492f3e64d6a62b33034f2b247acd69c3f5c3bc4d999edc44842beb3a`
 
 Unique locked packages: **1382**. Runtime packages: **902**. Build/development-only packages: **480**.
 
@@ -322,7 +322,7 @@ Every locked package declares a license.
 | `bl` | `4.1.0` | MIT | Yes |
 | `bluebird` | `3.4.7` | MIT | No |
 | `bluebird` | `3.7.2` | MIT | No |
-| `body-parser` | `2.3.0` | MIT | No |
+| `body-parser` | `2.4.0` | MIT | No |
 | `bowser` | `2.14.1` | MIT | No |
 | `brace-expansion` | `2.1.7` | MIT | No |
 | `brace-expansion` | `5.0.12` | MIT | No |
@@ -475,7 +475,7 @@ Every locked package declares a license.
 | `fast-deep-equal` | `3.1.3` | MIT | No |
 | `fast-fifo` | `1.3.2` | MIT | No |
 | `fast-sha256` | `1.3.0` | Unlicense | No |
-| `fast-uri` | `3.1.8` | BSD-3-Clause | No |
+| `fast-uri` | `3.1.9` | BSD-3-Clause | No |
 | `fault` | `1.0.4` | MIT | No |
 | `fetch-blob` | `3.2.0` | MIT | No |
 | `figures` | `6.1.0` | MIT | Yes |
@@ -913,7 +913,7 @@ Every locked package declares a license.
 | `yocto-queue` | `1.2.2` | MIT | Yes |
 | `yoctocolors` | `2.2.0` | MIT | Yes |
 | `zip-stream` | `6.0.1` | MIT | No |
-| `zod` | `4.6.5` | MIT | No |
+| `zod` | `4.6.7` | MIT | No |
 | `zod-to-json-schema` | `3.25.2` | ISC | No |
 | `zwitch` | `2.0.4` | MIT | No |
 
