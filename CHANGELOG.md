@@ -19,6 +19,16 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 - 更新 body-parser 至 2.4.0、zod 至 4.6.7、fast-uri 至 3.1.9，修复请求解析、数据校验与 URI 处理相关的依赖漏洞，恢复生产依赖审计检查，并同步许可证清单。
 
+### Harmony mirroring
+
+- Default the Harmony workspace to automatic mirroring with zoom, screenshots and a single recording control. Move navigation and text input into an on-demand control area; leave the former workbench source intact while disabling its tool APIs and Agent registration by default.
+- Retry native video after screenshot fallback, fence stale device/configuration results and reclaim ended video registrations. Keep reconnect backoff within the phone session grace period.
+- Retain recoverable recording files after interrupted capture or save failures and surface durable recording outcomes without scanning media history. Keep the two-minute/256 MiB safety limits.
+- Fence delayed recording-state reads across start/stop completion. Let a new device capture a screenshot independently while keeping same-device screenshot busy state consistent across view-mode changes.
+- Verify the packaged service's default mirror mode without Harmony Agent tools, while retaining strict explicit-workbench registration checks and the existing runtime dependency/license checks.
+- Preserve ordered click/navigation intents while a previous input awaits its reply. Bound pending inputs, report overload, and cancel queued intents on stop or device/view changes instead of silently losing the next key.
+- Add source-side preview queue-age recovery and a separately acknowledged recording subscriber policy. These phone-component changes require a separately built and explicitly updated component plus real-device validation; this change does not install or update a phone.
+
 ## [0.5.5-beta.36] - 2026-10-24
 
 ### 发布准备
