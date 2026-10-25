@@ -4,6 +4,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.5.5-beta.37] - 2026-10-25
+
+### 发布准备
+
+- 同步根包、桌面包、锁文件、README、用户手册与许可证清单，由 GitHub Actions 构建及验证 Windows beta 安装版与便携版；人工安装及鸿蒙真机验收尚未完成。
+
 ### 工具权限
 
 - 新增“帮我批准”：使用本轮开始时选定的模型独立审核具体工具操作，展示审核状态和理由；审核失败或证据不足时转人工，禁止操作会停止本轮自动执行。
@@ -19,15 +25,15 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 - 更新 body-parser 至 2.4.0、zod 至 4.6.7、fast-uri 至 3.1.9，修复请求解析、数据校验与 URI 处理相关的依赖漏洞，恢复生产依赖审计检查，并同步许可证清单。
 
-### Harmony mirroring
+### 鸿蒙投屏
 
-- Default the Harmony workspace to automatic mirroring with zoom, screenshots and a single recording control. Move navigation and text input into an on-demand control area; leave the former workbench source intact while disabling its tool APIs and Agent registration by default.
-- Retry native video after screenshot fallback, fence stale device/configuration results and reclaim ended video registrations. Keep reconnect backoff within the phone session grace period.
-- Retain recoverable recording files after interrupted capture or save failures and surface durable recording outcomes without scanning media history. Keep the two-minute/256 MiB safety limits.
-- Fence delayed recording-state reads across start/stop completion. Let a new device capture a screenshot independently while keeping same-device screenshot busy state consistent across view-mode changes.
-- Verify the packaged service's default mirror mode without Harmony Agent tools, while retaining strict explicit-workbench registration checks and the existing runtime dependency/license checks.
-- Preserve ordered click/navigation intents while a previous input awaits its reply. Bound pending inputs, report overload, and cancel queued intents on stop or device/view changes instead of silently losing the next key.
-- Add source-side preview queue-age recovery and a separately acknowledged recording subscriber policy. These phone-component changes require a separately built and explicitly updated component plus real-device validation; this change does not install or update a phone.
+- 鸿蒙工作区默认使用自动投屏，提供缩放、截图和统一录制入口，导航与文字输入收纳到按需展开的控制区；旧工作台保留源码，默认关闭相关工具接口与 Agent 注册。
+- 截图回退后自动重试原生视频，隔离过期设备与配置结果，回收已结束的视频注册，并在手机会话宽限期内重连。
+- 录制中断或保存失败时保留可恢复文件，展示可靠的录制结果；继续保留两分钟、256 MiB 限制，避免扫描媒体历史。
+- 防止开始、停止录制后的延迟状态覆盖新结果；切换设备后可独立截图，同一设备切换视图时保持截图忙碌状态一致。
+- 验证桌面包默认投屏模式与显式启用旧工作台时的工具注册，并保留运行依赖与许可证检查。
+- 前次输入等待响应时继续按顺序处理点击和导航，限制等待数量并提示过载；停止、换设备或切换视图时取消等待操作，避免静默丢失下一次按键。
+- 手机组件增加预览队列超时恢复与独立确认的录制订阅策略。这些变化需要另行构建并明确更新手机组件及真机验证，本版本不会自动安装或更新手机组件。
 
 ## [0.5.5-beta.36] - 2026-10-24
 
