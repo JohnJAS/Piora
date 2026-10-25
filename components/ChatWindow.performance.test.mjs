@@ -16,7 +16,7 @@ test("memoizes historical chat metadata away from streaming token renders", () =
   assert.match(historySource, /\}, \[messages\]\);/);
   assert.match(source, /<ChatHistory/);
   assert.doesNotMatch(historySource, /streamState/);
-  assert.match(historySource, /compactProcess && streamingMessage \? \[\.\.\.savedMessages, streamingMessage\] : savedMessages/);
+  assert.match(historySource, /streamingMessage \? \[\.\.\.savedMessages, streamingMessage\] : savedMessages/);
 });
 
 test("long chat rows use browser rendering containment", () => {

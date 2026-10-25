@@ -1,4 +1,5 @@
 "use client";
+import { thinkingPreview } from "@/lib/thinking-preview";
 import { messageImageUrl } from "@/lib/message-images";
 import { NestedToolCalls, useNestedToolCalls } from "./NestedToolCalls";
 import { ProcessStack } from "./ProcessStack";
@@ -855,7 +856,7 @@ function ThinkingBlock({ block, duration, isStreaming, cwd, onOpenFile, sessionI
   return (
     <ChatDisclosure className="thinking-block" triggerClassName="thinking-block-trigger"
       expanded={expanded} onExpandedChange={setExpanded} icon="brain" label={t("i18n.thinking")}
-      description={!expanded && display.status === "content" ? display.content.replace(/\s+/g, " ").trim().slice(0, 160) : undefined}
+      description={!expanded && display.status === "content" ? thinkingPreview(display.content, isStreaming) : undefined}
       metadata={duration !== undefined ? `${duration}s` : undefined}>
       <div className={`thinking-block-content${display.status === "error" ? " is-error" : ""}`}>
         {display.status === "loading"
