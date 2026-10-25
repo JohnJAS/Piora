@@ -11,8 +11,10 @@ const [chatInput, settingsDialog, shortcutSettings, hook, autoScrollHook, roomCo
   readFile(new URL("./RoomComposer.tsx", import.meta.url), "utf8"),
 ]);
 
-test("conversation settings expose three independently recordable actions", () => {
-  assert.match(settingsDialog, /<ChatShortcutSettings \/>/);
+test("shortcut input settings expose three independently recordable actions", async () => {
+  assert.doesNotMatch(settingsDialog, /<ChatShortcutSettings/);
+  const applicationSettings = await readFile(new URL("./ShortcutSettings.tsx", import.meta.url), "utf8");
+  assert.match(applicationSettings, /group.id === "input" && <ChatShortcutSettings/);
   assert.match(shortcutSettings, /const actions = \["send", "steer", "newline"\]/);
   assert.match(shortcutSettings, /capture\(action, event\)/);
   assert.match(shortcutSettings, /save\(action, DEFAULT_CHAT_SHORTCUTS\[action\]\)/);

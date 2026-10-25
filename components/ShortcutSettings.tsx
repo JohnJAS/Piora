@@ -10,6 +10,10 @@ import {
   recordShortcutFromEvent,
   type ApplicationShortcutId,
 } from "@/lib/keyboard-shortcuts";
+import { ChatShortcutSettings } from "./ChatShortcutSettings";
+import { ShortcutKeycaps } from "./ShortcutKeycaps";
+import { useSendShortcut } from "@/hooks/useSendShortcut";
+import { DEFAULT_CHAT_SHORTCUTS, type ChatShortcutAction } from "@/lib/send-shortcut";
 import { AliIcon } from "./AliIcon";
 import styles from "./ShortcutSettings.module.css";
 
@@ -47,6 +51,7 @@ const SHORTCUT_GROUPS = [
 export function ShortcutSettings({ globalShortcutEnabled, onGlobalShortcutToggle }: { globalShortcutEnabled?: boolean; onGlobalShortcutToggle?: () => void | Promise<void> }) {
   const { t } = useI18n();
   const { bindings, overrides, setBinding, resetBinding, resetAll } = useApplicationShortcuts();
+  const { bindings: chatBindings, resetAll: resetChatBindings } = useSendShortcut();
   const [recording, setRecording] = useState<ApplicationShortcutId | null>(null);
   const [error, setError] = useState<{ type: "conflict"; conflict: ApplicationShortcutId } | { type: "reserved"; binding: string } | { type: "registration" } | null>(null);
   useEffect(() => {
@@ -84,7 +89,7 @@ export function ShortcutSettings({ globalShortcutEnabled, onGlobalShortcutToggle
   };
 
   const titleFor = (id: ApplicationShortcutId) => t(APPLICATION_SHORTCUTS.find((item) => item.id === id)?.titleKey ?? id);
-  const changedCount = Object.keys(overrides).length;
+  const changedCount = Object.keys(overrides).length + (Object.keys(DEFAULT_CHAT_SHORTCUTS) as ChatShortcutAction[]).filter(action => chatBindings[action] !== DEFAULT_CHAT_SHORTCUTS[action]).length;
 
   return (
     <div className={styles.surface} data-testid="shortcut-settings">
@@ -98,7 +103,7 @@ export function ShortcutSettings({ globalShortcutEnabled, onGlobalShortcutToggle
         </div>
         <div className={styles.headingActions}>
           <span className={styles.changedBadge} data-active={changedCount > 0 || undefined}>{t("shortcuts.changedCount", { count: changedCount })}</span>
-          <button type="button" className={styles.resetAll} disabled={changedCount === 0} onClick={() => { resetAll(); setError(null); setRecording(null); }}>
+          <button type="button" className={styles.resetAll} disabled={changedCount === 0} onClick={() => { resetAll(); resetChatBindings(); setError(null); setRecording(null); }}>
             <AliIcon name="reload" size={14} />{t("shortcuts.resetAll")}
           </button>
         </div>
@@ -118,14 +123,13 @@ export function ShortcutSettings({ globalShortcutEnabled, onGlobalShortcutToggle
                   <h3 id={`shortcut-group-${group.id}`}>{t(group.titleKey)}</h3>
                   <p>{t(group.descriptionKey)}</p>
                 </div>
-                <span className={styles.groupCount}>{items.length}</span>
+                <span className={styles.groupCount}>{items.length + (group.id === "input" ? 3 : 0)}</span>
               </div>
               <div className={styles.list}>
+                {group.id === "input" && <ChatShortcutSettings />}
                 {items.map((item) => {
                   const isRecording = recording === item.id;
                   const isChanged = Object.prototype.hasOwnProperty.call(overrides, item.id);
-                  const formatted = formatShortcutBinding(bindings[item.id], mac);
-                  const keys = formatted ? formatted.split("+") : [];
                   return (
                     <div data-settings-id={item.id === "harmony.screenshot" ? "shortcuts.deviceScreenshot" : item.titleKey === "shortcuts.commandPalette" ? "shortcuts.palette" : item.titleKey === "commands.searchChats" ? "shortcuts.search" : item.id === "composer.voiceInput" ? "shortcuts.voice" : undefined} className={styles.row} data-modified={isChanged || undefined} key={item.id}>
                       <div className={styles.copy}>
@@ -142,8 +146,8 @@ export function ShortcutSettings({ globalShortcutEnabled, onGlobalShortcutToggle
                         onBlur={() => setRecording((current) => current === item.id ? null : current)}
                         onKeyDown={(event) => isRecording && capture(item.id, event)}
                       >
-                        {isRecording ? <kbd className={styles.recordingKey}>{t("shortcuts.recording")}</kbd> : keys.length > 0 ? (
-                          <span className={styles.keycaps}>{keys.map((key) => <kbd key={key}>{key}</kbd>)}</span>
+                        {isRecording ? <kbd className={styles.recordingKey}>{t("shortcuts.recording")}</kbd> : bindings[item.id] ? (
+                          <ShortcutKeycaps binding={bindings[item.id]} mac={mac} />
                         ) : <span className={styles.unassigned}>{t("shortcuts.unassigned")}</span>}
                       </button>
                       <button

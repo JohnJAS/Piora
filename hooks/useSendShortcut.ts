@@ -63,5 +63,6 @@ export function useSendShortcut() {
     return null;
   }, []);
   const setShortcut = useCallback((value: SendShortcut) => setBinding("send", value), [setBinding]);
-  return { bindings, shortcut: bindings.send, steerShortcut: bindings.steer, newlineShortcut: bindings.newline, setShortcut, setBinding };
+  const resetAll = useCallback(() => commitBindings(DEFAULT_CHAT_SHORTCUTS, true), []);
+  return { resetAll, bindings, shortcut: bindings.send, steerShortcut: bindings.steer, newlineShortcut: bindings.newline, setShortcut, setBinding };
 }
