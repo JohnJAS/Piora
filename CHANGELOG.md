@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 快捷键设置
+
+- 将发送、引导和换行快捷键移至「快捷键 → 输入」，同步设置搜索跳转；统一使用键帽与特殊按键符号，保留文字提示及无障碍名称。自定义计数与全部重置同时覆盖这三项输入快捷键。
+
 ### Runtime dependency compatibility
 
 - Update Undici to 8.12.3 and CodeMirror/PostCSS patch versions using official npm artifacts. Keep the Pi source profile, legacy-copy patch, packaged verification, license provenance and runtime audit pinned to the reviewed effective version; preserve upstream SDK integrity commitments. Cover queued request context and HTTP/2 timeout recovery with real local-server regressions.

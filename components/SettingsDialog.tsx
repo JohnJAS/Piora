@@ -5,7 +5,6 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode 
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useI18n } from "@/hooks/useI18n";
-import { ChatShortcutSettings } from "./ChatShortcutSettings";
 import { useCompactProcessPreference } from "@/hooks/useCompactProcessPreference";
 import { useLiveOutputAutoScrollPreference } from "@/hooks/useLiveOutputAutoScrollPreference";
 import { AliIcon, type AliIconName } from "./AliIcon";
@@ -595,8 +594,6 @@ export function SettingsDialog({
                       <span />
                     </button>
                   </div>
-
-                  <ChatShortcutSettings />
 
                   <div className={styles.conversationRow}>
                     <div className={styles.conversationCopy}>

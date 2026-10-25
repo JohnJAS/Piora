@@ -26,7 +26,7 @@ import {useState} from "react";
 import {createRoot} from "react-dom/client";
 import {I18nProvider} from "@/hooks/useI18n";
 import {ChatInput} from "@/components/ChatInput";
-import {ChatShortcutSettings} from "@/components/ChatShortcutSettings";
+import {ShortcutSettings} from "@/components/ShortcutSettings";
 import {RoomComposer} from "@/components/RoomComposer";
 import {useSendShortcut} from "@/hooks/useSendShortcut";
 import {NewSessionProjectPicker} from "@/components/NewSessionProjectPicker";
@@ -57,7 +57,7 @@ function App(){
       thinkingLevel="high" extensionStatuses={[{key:"fixture",text:"Ready"}]}
       contextControl={<SystemPromptSelector selection={{mode:"default"}} onChange={()=>{}}/>}/></section>
     <section id="room" data-send-shortcut={shortcut}><RoomComposer room={{id:"shortcut-room",members:[],coordination:{mode:"manual"}}} actorSessionId="actor" submissions={[]} onSubmit={async input=>{(window.roomInputs??=[]).push(input);return {...input,status:"delivered"}}/></section>
-    <section id="shortcut-settings"><ChatShortcutSettings/></section>
+    <section id="shortcut-settings"><ShortcutSettings/></section>
     <section id="permission-settings"><DefaultToolPermissionSetting/></section>
   </main></I18nProvider>;
 }
@@ -93,7 +93,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         if (pathname.endsWith(".js")) return route.fulfill({ contentType: "text/javascript", body: await readFile(path.join(directory, path.basename(pathname))) });
         return route.fulfill({ contentType: "text/html", body: `<!doctype html><html><meta charset="utf-8"><style>${css}
           body{background:var(--bg);color:var(--text);font-family:var(--ui-font-family)}#root>main{padding:24px}#launcher,#conversation{width:900px;margin-bottom:32px}
-          #launcher{height:650px}#conversation{padding-top:32px}#conversation>[data-composer-variant]{padding:0!important}
+          #shortcut-settings{height:360px}#launcher{height:650px}#conversation{padding-top:32px}#conversation>[data-composer-variant]{padding:0!important}
           </style><div id="root"></div><script src="/bundle.js"></script></html>` });
       });
       const page = await context.newPage();
@@ -429,7 +429,8 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await otherPage.goto('http://localhost:43191/');
       const otherRecorder = otherPage.locator('#shortcut-settings [data-settings-id="conversation.sendShortcut"] button').first();
       await otherPage.waitForFunction(() => document.querySelector('#room').dataset.sendShortcut === JSON.parse(localStorage.getItem('piora-chat-shortcuts:v2')).bindings.send);
-      assert.match(await otherRecorder.innerText(), /Ctrl\+Shift\+S/);
+      assert.equal(await otherRecorder.locator('[role="img"]').getAttribute("aria-label"), "Ctrl+Shift+S");
+      assert.deepEqual(await otherRecorder.locator("kbd").allTextContents(), ["⌃", "⇧", "S"]);
       await otherRecorder.click();
       await otherRecorder.press('Enter');
       await page.waitForFunction(() => document.querySelector('#room').dataset.sendShortcut === 'Enter');
@@ -442,8 +443,19 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await editor.fill('Restored newline');
       await editor.press('Shift+Enter');
       assert.equal(await editor.inputValue(), 'Restored newline\n');
+      assert.equal(await shortcutSettings.locator('[aria-labelledby="shortcut-group-input"] [data-settings-id^="conversation."]').count(), 3);
+      await recorder('send').click();
+      await recorder('send').press('Control+Enter');
+      const resetAll = shortcutSettings.getByRole('button', { name: /Reset all|全部恢复默认/ });
+      assert.equal(await resetAll.isEnabled(), true);
+      await resetAll.click();
+      assert.deepEqual(await recorder('newline').locator('kbd').allTextContents(), ['⇧', '↵']);
+      assert.equal(await recorder('send').locator('[role="img"]').getAttribute('aria-label'), 'Enter');
+      assert.equal(await resetAll.isEnabled(), false);
       if (process.env.PIORA_COMPOSER_SCREENSHOTS) {
+        await shortcutSettings.evaluate(element => { element.style.height = 'auto'; });
         await shortcutSettings.screenshot({ path: path.join(repo, 'test-results/composer-layout', `${locale}-chat-shortcuts.png`) });
+        await shortcutSettings.evaluate(element => { element.style.height = ''; });
       }
       // Recovered ordinary drafts cannot carry a stale steering delivery into idle sends.
       await page.evaluate(() => window.setBusy(false));
