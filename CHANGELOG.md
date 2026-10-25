@@ -4,6 +4,16 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.5.5-beta.38] - 2026-10-26
+
+### 发布准备
+
+- 同步根包、桌面包、锁文件、README、用户手册与许可证清单，由 GitHub Actions 构建及验证 Windows beta 安装版与便携版；人工安装及鸿蒙真机验收尚未完成。
+
+### 群聊与工作区
+
+- 新建群聊默认自由讨论，修复成员会话可见性、工作树项目归组和快捷访问，改进成员选择与群聊设置。
+
 ### 聊天过程折叠
 
 - 统一普通与轻量模式的整轮过程入口，按读取、搜索、执行等活动显示摘要；正文保持原始顺序，展开后直接查看步骤。
@@ -14,17 +24,17 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 - 将发送、引导和换行快捷键移至「快捷键 → 输入」，同步设置搜索跳转；统一使用键帽与特殊按键符号，保留文字提示及无障碍名称。自定义计数与全部重置同时覆盖这三项输入快捷键。
 
-### Runtime dependency compatibility
+### 运行时依赖兼容性
 
-- Update Undici to 8.12.3 and CodeMirror/PostCSS patch versions using official npm artifacts. Keep the Pi source profile, legacy-copy patch, packaged verification, license provenance and runtime audit pinned to the reviewed effective version; preserve upstream SDK integrity commitments. Cover queued request context and HTTP/2 timeout recovery with real local-server regressions.
+- 使用官方 npm 包更新 Undici 至 8.12.3 及 CodeMirror、PostCSS 补丁版本，同步依赖补丁、打包验证、许可证来源和运行时审计；通过本地服务器回归测试覆盖排队请求上下文与 HTTP/2 超时恢复。
 
-### Workspace validation
+### 工作区验证
 
-- Compare canonical filesystem paths in the slow-checkout regression so Windows long/8.3 aliases identify the same directory. Keep the real checkout timing and dirty-worktree/data-preservation assertions intact.
+- 工作树回归测试使用规范化路径识别 Windows 长路径与短路径别名，保留真实检出耗时、未提交修改及数据保护断言。
 
-### Desktop dependencies
+### 桌面依赖
 
-- Update Electron to 44.9.1, keep the desktop workspace and root lockfile aligned, use the official npm registry, and refresh the third-party license inventory.
+- 更新 Electron 至 44.9.1，同步桌面包、根锁文件及第三方许可证清单，使用官方 npm 源。
 
 ## [0.5.5-beta.37] - 2026-10-25
 
