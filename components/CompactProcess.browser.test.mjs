@@ -25,7 +25,7 @@ import {useCompactProcessPreference} from "@/hooks/useCompactProcessPreference";
 function App(){
   const {enabled,setEnabled}=useCompactProcessPreference();
   const [done,finish]=useState(false), [output,setOutput]=useState("old line\\none\\ntwo\\nthree"), [attention,setAttention]=useState(false), [draft,setDraft]=useState(null);
-  const [failed,setFailed]=useState(false);
+  const [failed,setFailed]=useState(false), [next,setNext]=useState(false), [mixed,setMixed]=useState(false);
   const scroll=useRef(null), lastUser=useRef(null), pending=useRef(false), history=useRef(null);
   const user={role:"user",content:"修复 Shell 实时输出的问题",timestamp:Date.now()-15000};
   const assistant={role:"assistant",content:[{type:"thinking",thinking:"检查事件传递与输出更新。"},{type:"toolCall",toolCallId:"shell",toolName:"bash",input:{command:"npm run test"}}],timestamp:user.timestamp+1000};
@@ -36,6 +36,10 @@ function App(){
     {role:"toolResult",toolCallId:"shell3",isStreaming:!done,content:[{type:"text",text:"third command output"}],timestamp:user.timestamp+18000}];
   if(attention) messages.push({role:"assistant",content:[{type:"toolCall",toolCallId:"wait",toolName:"browser",input:{action:"wait_for_user",reason:"请完成登录"}}]});
   if(done) messages.push({role:"assistant",content:[{type:"text",text:"## 已修复 Shell 实时输出\\n\\n执行日志现在会实时更新。\\n\\n- 运行时显示最新输出\\n- 支持展开查看完整日志"}],timestamp:user.timestamp+19000});
+  if(next) messages.push({role:"user",content:"下一轮输入",timestamp:user.timestamp+20000});
+  if(mixed) messages.splice(0,messages.length,user,{...assistant,content:[{type:"text",text:"先说明计划"},{type:"toolCall",toolCallId:"shell",toolName:"bash",input:{command:"echo checked"}},{type:"text",text:"中途说明"},{type:"thinking",thinking:"",deferred:true},{type:"text",text:"最后的说明"}]},result,{role:"assistant",content:[{type:"text",text:Array.from({length:80},(_,i)=>"段落 "+i+"：用于验证阅读位置和历史加载。").join("\\n\\n")}],timestamp:user.timestamp+19000});
+  window.mix=()=>{setMixed(true);finish(true)};
+  window.next=()=>setNext(true);
   window.advance=()=>setOutput("old line\\r\\none\\r\\ntwo\\r\\nthree\\r\\nfour\\r\\nfive");
   window.advanceAgain=()=>setOutput("old line\\none\\ntwo\\nthree\\nfour\\nfive\\nsix");
   window.think=()=>setDraft({role:"assistant",content:[{type:"thinking",thinking:"正在验证新输出"},{type:"text",text:"正在流式生成的正式回复"}],timestamp:Date.now()});
@@ -45,8 +49,8 @@ function App(){
   window.revealEntry=(id)=>history.current.revealEntry(id);
   return <I18nProvider><main><header>Piora <button role="switch" aria-label="轻量过程展示" aria-checked={enabled} onClick={()=>setEnabled(!enabled)}>轻量过程展示</button></header>
     <div id="scroll" className="overflow-y-auto" ref={scroll}><div className="chat-column">
-      <ChatHistory messages={messages} entryIds={["u","a","r","a2","r2","r3",...(attention?["wait"]:[]),...(done?["answer"]:[])]} compactProcess={enabled}
-        streamingMessage={enabled?draft:null} busy={!done} streaming={Boolean(draft)} isNew={false} forkingEntryId={null} highlightedEntryId={null} lastUserMsgRef={lastUser}
+      <ChatHistory messages={messages} entryIds={mixed?["u","mixed","r","answer"]:["u","a","r","a2","r2","r3",...(attention?["wait"]:[]),...(done?["answer"]:[]),...(next?["next"]:[])]} compactProcess={enabled}
+        streamingMessage={draft} busy={!done} streaming={Boolean(draft)} isNew={false} forkingEntryId={null} highlightedEntryId={null} lastUserMsgRef={lastUser}
         pendingScrollToUserRef={pending} scrollContainer={scroll} handleRef={history} sessionId="fixture" onDeleteMessage={async()=>{}} />
     </div></div><footer>发送消息…</footer></main></I18nProvider>;
 }
@@ -62,8 +66,13 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : "chromium", headless: true });
     const context = await browser.newContext({ locale: "zh-CN", viewport: { width: 1200, height: 900 } });
     const errors = [];
+    const thinkingRequests = [];
     await context.route("http://compact.test/**", async (route) => {
       const pathname = new URL(route.request().url()).pathname;
+      if (pathname.endsWith("/thinking")) {
+        thinkingRequests.push(route.request().url());
+        return route.fulfill({json:{thinking:"历史完整思考内容"}});
+      }
       if (pathname.startsWith("/api/")) return route.fulfill({ json: { success: true, data: {} } });
       if (pathname.endsWith(".js")) return route.fulfill({ contentType: "text/javascript", body: await readFile(path.join(directory, path.basename(pathname))) });
       return route.fulfill({ contentType: "text/html", body: `<!doctype html><html><meta charset="utf-8"><style>${css}
@@ -94,11 +103,11 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       const style = getComputedStyle(element);
       return style.borderTopWidth === "0px" && style.borderBottomWidth === "0px" && style.backgroundColor === "rgba(0, 0, 0, 0)";
     })));
-    assert.equal(await page.locator('[data-process-join-after="true"]').count(), 1);
-    assert.equal(await page.locator('[data-process-join-before="true"]').count(), 1);
+    assert.equal(await page.locator(".compact-process-group").count(), 1);
+    assert.equal(await page.locator(".chat-process-stack-heading").count(), 0);
     assert.equal(await page.locator(".command-execution-card .chat-disclosure-label").first().innerText(), "运行测试");
     await screenshot("grouped");
-    const processHeading = page.locator(".chat-process-stack-heading").first();
+    const processHeading = page.locator(".compact-process-toggle").first();
     assert.equal(await processHeading.getAttribute("aria-expanded"), "true");
     await processHeading.click();
     assert.equal(await processHeading.getAttribute("aria-expanded"), "false");
@@ -131,7 +140,8 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent.includes("six"));
     await page.locator(".command-execution-card .chat-disclosure-trigger").first().click();
     await toggle.click();
-    await page.locator(".compact-process-group").waitFor();
+    await page.locator(".compact-process-toggle").click();
+    await page.locator(".compact-process-preview").waitFor();
     assert.equal(await page.locator(".compact-command-tail, .command-output-section").count(), 0);
     await page.locator(".compact-process-preview .compact-command-expand").first().click();
     await page.locator(".cm-content").waitFor();
@@ -155,12 +165,12 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     assert.match(await page.locator(".markdown-assistant-message").innerText(), /已修复 Shell/);
     await screenshot("completed");
     await toggle.click();
-    await page.locator(".command-execution-card").first().waitFor();
-    assert.equal(await page.locator(".compact-process-group").count(), 0);
+    assert.equal(await page.locator(".command-execution-card").count(), 0);
+    assert.equal(await page.locator(".compact-process-group").count(), 1);
     assert.equal(await toggle.getAttribute("aria-checked"), "false");
     await page.reload();
     await page.waitForFunction(() => document.querySelector('[role="switch"]')?.getAttribute("aria-checked") === "false");
-    assert.equal(await page.locator(".compact-process-group").count(), 0);
+    assert.equal(await page.locator(".compact-process-group").count(), 1);
     await toggle.click();
     await page.locator(".compact-process-group").waitFor();
     // Another same-origin window receives the preference without reload.
@@ -176,12 +186,15 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     assert.equal(await second.locator(".compact-process-group").count(), 1);
     await second.evaluate(() => window.finish());
     await second.locator(".markdown-assistant-message h2").waitFor();
+    assert.equal(await second.locator(".compact-process-toggle").getAttribute("aria-expanded"), "true");
+    await second.evaluate(() => window.next());
+    await second.getByText("下一轮输入", {exact:true}).waitFor();
     assert.equal(await second.locator(".compact-process-toggle").getAttribute("aria-expanded"), "false");
     assert.equal(await second.getByText("正在流式生成的正式回复", { exact: true }).count(), 0);
     await page.evaluate(() => window.waitForUser());
     await page.getByText("请完成登录", { exact: true }).waitFor();
     assert.equal(await page.getByRole("button", { name: "我已完成，继续" }).count(), 1);
-    assert.equal(await page.locator(".compact-process-toggle").getAttribute("aria-expanded"), "false");
+    assert.equal(await page.locator(".compact-process-toggle").getAttribute("aria-expanded"), "true");
     await page.setViewportSize({ width: 390, height: 844 });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await screenshot("mobile-attention");
@@ -191,7 +204,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       const check = await context.newPage();
       check.on("pageerror", error => errors.push(error.message));
       await check.goto("http://compact.test/");
-      const heading = check.locator(".chat-process-stack-heading").first();
+      const heading = check.locator(".compact-process-toggle").first();
       await heading.waitFor();
       if (scenario.startsWith("manual")) {
         await heading.click();
@@ -203,15 +216,39 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         if (scenario === "failed") window.fail(); else window.finish();
       }, scenario);
       await check.locator(".markdown-assistant-message h2").waitFor();
-      const shouldExpand = !["success", "manual-closed"].includes(scenario);
+      const shouldExpand = scenario !== "manual-closed";
       assert.equal(await heading.getAttribute("aria-expanded"), String(shouldExpand), scenario);
       assert.equal(await check.locator(".command-execution-card").count(), shouldExpand ? 3 : 0, scenario);
       if (scenario === "success") {
-        assert.match(await heading.innerText(), /已完成.*用时 18 秒.*4 个步骤/s);
+        assert.match(await heading.innerText(), /处理结束.*思考 1 段.*执行 3 条命令/s);
         if (process.env.PIORA_COMPACT_SCREENSHOTS) await check.screenshot({ path: path.join(repo, "test-results", "compact-process", "auto-completed.png") });
       }
+      await check.evaluate(() => window.next());
+      await check.getByText("下一轮输入", {exact:true}).waitFor();
+      const keepOpen = ["manual-open", "log-open", "failed", "attention"].includes(scenario);
+      assert.equal(await heading.getAttribute("aria-expanded"), String(keepOpen), scenario + " after next input");
+      assert.equal(await check.locator(".command-execution-card").count(), keepOpen ? 3 : 0);
       await check.close();
     }
+    const mixed = await context.newPage();
+    mixed.on("pageerror", error => errors.push(error.message));
+    await mixed.goto("http://compact.test/");
+    await mixed.evaluate(() => window.mix());
+    await mixed.getByText("先说明计划", {exact:true}).waitFor();
+    const mixedHeading = mixed.locator(".compact-process-toggle");
+    await mixed.locator(".thinking-block-trigger").click();
+    await mixed.getByText("历史完整思考内容", {exact:true}).waitFor();
+    assert.equal(new URL(thinkingRequests.at(-1)).searchParams.get("blockIndex"), "3");
+    await mixed.evaluate(() => {document.querySelector("#scroll").scrollTop=20});
+    const headingTop = await mixedHeading.evaluate(element => element.getBoundingClientRect().top);
+    await mixedHeading.click();
+    await mixed.waitForFunction(top => Math.abs(document.querySelector(".compact-process-toggle").getBoundingClientRect().top-top)<1, headingTop);
+    assert.equal(await mixed.locator(".thinking-block-trigger, .command-execution-card").count(), 0);
+    for (const text of ["先说明计划", "中途说明", "最后的说明"]) assert.equal(await mixed.getByText(text, {exact:true}).count(), 1);
+    await mixed.evaluate(() => window.revealEntry("mixed"));
+    await mixed.locator(".thinking-block-trigger").waitFor();
+    assert.equal(await mixedHeading.getAttribute("aria-expanded"), "true");
+    await mixed.close();
     assert.deepEqual(errors, []);
     t.diagnostic("Verified default-off preferences, contiguous shell steps without intermediate actions, opt-in live output, completion, persistence, cross-window sync and user handoff.");
   } finally {

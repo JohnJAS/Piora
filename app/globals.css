@@ -5400,7 +5400,6 @@ span.linenumber {
 /* Process steps are secondary to the answer: quiet, borderless rows. */
 .chat-process-stack,
 .compact-process-detail {
-  --text: var(--text-muted);
   color: var(--text-muted);
 }
 
@@ -5419,7 +5418,7 @@ span.linenumber {
   -webkit-backdrop-filter: none;
 }
 .chat-process-stack .chat-disclosure-trigger { min-height: 28px; padding: 5px 4px; }
-.chat-process-stack .chat-disclosure-label { color: var(--text-muted); font-size: var(--text-sm); font-weight: 400; }
+.chat-process-stack .chat-disclosure-label { color: var(--text); font-size: var(--text-sm); font-weight: 500; }
 .chat-process-stack .chat-disclosure-description { font-family: inherit; }
 .chat-process-stack .chat-disclosure-actions { min-height: 28px; padding: 0 4px 0 0; }
 .chat-process-stack > .chat-disclosure--surface > .chat-disclosure-content,
@@ -5445,7 +5444,7 @@ span.linenumber {
 .chat-process-stack-count { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 [data-process-join-before] .chat-process-stack-heading { display: none; }
 .chat-process-stack .thinking-block-trigger { min-height: 28px; padding-block: 4px; }
-.chat-process-stack .thinking-block-trigger .chat-disclosure-label { color: var(--text-dim); font-weight: 400; }
+.chat-process-stack .thinking-block-trigger .chat-disclosure-label { color: var(--text); font-weight: 500; }
 .chat-process-stack :is(.chat-disclosure-label, .chat-disclosure-description, .chat-disclosure-meta) {
   font-family: inherit; font-size: var(--text-sm); font-weight: 400; line-height: 1.5;
 }
@@ -5780,8 +5779,11 @@ span.linenumber {
   min-height: 30px; padding: 5px 4px; gap: 6px; font-size: var(--text-sm);
   border: 0; background: transparent; color: var(--text-muted);
 }
-.compact-process-toggle .chat-disclosure-label { color: var(--text-muted); font-weight: 400; }
-.compact-process-toggle .chat-disclosure-description { font-size: var(--text-xs); }
+.compact-process-toggle .chat-disclosure-label { color: var(--text); font-weight: 600; }
+.compact-process-toggle .chat-disclosure-description { font-size: var(--text-sm); color: var(--text-muted); white-space: normal; }
+.compact-process-toggle.chat-disclosure-trigger { grid-template-columns: 12px 14px auto minmax(0, 1fr) auto; min-height: 36px; }
+.compact-process-toggle .chat-disclosure-meta { grid-column: 5; }
+.compact-process-step-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); min-width: 0; flex: 1; }
 .compact-process-group.has-attention .chat-disclosure-label { color: var(--accent); }
 .compact-process-preview { margin: 4px 0 2px 16px; padding-left: 14px; border-left: 1px solid var(--border); }
 .compact-process-step { margin: 5px 0; min-width: 0; }
@@ -5795,7 +5797,7 @@ span.linenumber {
   color: var(--text-muted); font: var(--text-xs)/1.6 var(--font-mono);
   white-space: pre; overflow-x: auto; max-width: 100%;
 }
-.compact-process-detail { margin: 0 0 0 16px; padding-left: 14px; border-left: 1px solid var(--border); }
+.compact-process-detail { margin: 0 0 0 16px; padding-left: 14px; border-left: 1px solid var(--border); border-radius: 0; }
 .compact-process-detail .message-row-assistant { margin-bottom: 0 !important; }
 .compact-process-detail .message-response-meta { display: none !important; }
 .compact-process-detail .message-assistant-blocks { font-size: var(--text-sm); color: var(--text-muted); }
@@ -5814,6 +5816,7 @@ span.linenumber {
 .compact-command-error { margin: 4px 0 8px 24px; font: var(--text-sm)/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; color: #ef4444; }
 @media (max-width: 600px) {
   .compact-process-preview, .compact-process-detail { margin-left: 7px; padding-left: 9px; }
-  .compact-process-toggle.chat-disclosure-trigger { grid-template-columns: 12px 14px auto minmax(0, 1fr); }
+  .compact-process-toggle.chat-disclosure-trigger { grid-template-columns: 12px 14px minmax(0, 1fr) auto; }
+  .compact-process-toggle .chat-disclosure-meta { grid-column: 4; }
   .compact-process-toggle .chat-disclosure-description { white-space: normal; }
 }
