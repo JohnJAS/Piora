@@ -8,6 +8,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 - 统一普通对话与群聊的发送、换行快捷键，支持分别录制、清除和恢复默认；发送默认 Enter，换行默认 Shift+Enter。普通对话的引导快捷键独立设置且默认未绑定，运行中发送仍默认排队；禁止三项键位冲突，并保留已有发送偏好。
 
+### 依赖安全
+
+- 更新 body-parser 至 2.4.0、zod 至 4.6.7、fast-uri 至 3.1.9，修复请求解析、数据校验与 URI 处理相关的依赖漏洞，恢复生产依赖审计检查，并同步许可证清单。
+
 ## [0.5.5-beta.36] - 2026-10-24
 
 ### 发布准备
