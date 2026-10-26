@@ -4,6 +4,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.5.5-beta.39] - 2026-10-26
+
+### 发布准备
+
+- 同步根包、桌面包、锁文件、README、用户手册与许可证清单，由 GitHub Actions 构建并验证 Windows beta 安装版与便携版；本次未执行人工安装及鸿蒙真机验收。
+
 ### 项目工作树入口
 
 - 将工作树入口归到对应项目名称下；仅多个工作树时常驻显示，单工作树可从项目菜单的「工作树…」进入，保留创建、切换和移除操作。将「主分支」更正为「主工作树」。
