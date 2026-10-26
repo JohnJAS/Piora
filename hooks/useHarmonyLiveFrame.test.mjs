@@ -66,9 +66,10 @@ async function mountLiveFrame(videoResponse, decoderClass, geometryResponse, opt
       calls.push(url);
       if (url.includes("/video?")) return await videoResponse(requestOptions);
       if (url.includes("/geometry?")) return geometryResponse ? geometryResponse(requestOptions) : { ok: true, async json() { return { geometry: { geometryId: "geometry", frameWidth: 100, frameHeight: 200 } }; } };
+      if (options.frameResponse) return options.frameResponse(requestOptions);
       return { ok: true, headers: new Headers({ "X-Harmony-Generation": String(options.frameGeneration ?? 1), "X-Harmony-Revision": "1" }), async blob() { return new Blob(["frame"]); } };
     },
-    createImageBitmap: options.createImageBitmap ?? (async () => ({ width: 100, height: 200, close() {} })),
+    createImageBitmap: options.createImageBitmap ?? (async () => ({ width: 100, height: 200, close() {}, ...options.bitmap?.() })),
   });
   exports.useHarmonyLiveFrame({ active: true, enabled: true, serial: "phone", generation: 1, fallbackError: "failed",
     canvasRef: { current: canvas },
@@ -263,6 +264,59 @@ test("fallback displays pixels before calibration and ignores a probe finishing 
     resolveGeometry({ ok: true, json: async () => ({ geometry: { geometryId: "old-phone", frameWidth: 100, frameHeight: 200 } }) });
     await hook.flush();
     assert.equal(hook.states[4].geometryId, undefined);
+  } finally { hook.cleanup(); }
+});
+
+test("compatible frames continue while slow calibration is pending and ignore stale dimensions", async () => {
+  const clock = virtualClock();
+  const probes = [];
+  let width = 100;
+  const hook = await mountLiveFrame(async () => ({ ok: false, status: 503, json: async () => ({ error: "video unavailable" }) }),
+    undefined, () => new Promise(resolve => probes.push(resolve)), { clock, bitmap: () => ({ width }) });
+  try {
+    for (let i = 0; i < 10; i++) await clock.advance(120);
+    assert.equal(hook.calls.filter(url => url.includes("/frame?")).length, 11, "a stalled geometry request must not freeze passive frames");
+    assert.equal(probes.length, 1, "calibration requests must not accumulate");
+    width = 200;
+    await clock.advance(120);
+    probes[0]({ ok: true, json: async () => ({ geometry: { geometryId: "old-size", frameWidth: 100, frameHeight: 200 } }) });
+    await hook.flush();
+    assert.equal(hook.states[4].width, 200);
+    assert.equal(hook.states[4].geometryId, undefined);
+    await clock.advance(120);
+    assert.equal(probes.length, 2);
+    probes[1]({ ok: true, json: async () => ({ geometry: { geometryId: "new-size", frameWidth: 200, frameHeight: 200 } }) });
+    await hook.flush();
+    assert.equal(hook.states[4].geometryId, "new-size");
+  } finally { hook.cleanup(); }
+});
+
+test("slow compatible captures stay serial without paying an additional post-capture interval", async () => {
+  const clock = virtualClock();
+  let finishFrame;
+  const hook = await mountLiveFrame(async () => ({ ok: false, status: 503, json: async () => ({ error: "video unavailable" }) }),
+    undefined, undefined, { clock, frameResponse: () => new Promise(resolve => { finishFrame = resolve; }) });
+  try {
+    await clock.advance(900);
+    assert.equal(hook.calls.filter(url => url.includes("/frame?")).length, 1, "a slow capture must never overlap another");
+    finishFrame({ ok: true, headers: new Headers({ "X-Harmony-Generation": "1", "X-Harmony-Revision": "1" }), blob: async () => new Blob(["frame"]) });
+    await hook.flush();
+    await clock.advance(0);
+    assert.equal(hook.calls.filter(url => url.includes("/frame?")).length, 2, "the next frame starts immediately after a capture exceeding 120ms");
+    assert.equal(hook.painted.length, 1);
+  } finally { hook.cleanup(); }
+});
+
+test("failed compatible calibration retries at its own cadence without slowing or flooding frames", async () => {
+  const clock = virtualClock();
+  const hook = await mountLiveFrame(async () => ({ ok: false, status: 503, json: async () => ({ error: "video unavailable" }) }),
+    undefined, async () => ({ ok: false }), { clock });
+  try {
+    await clock.advance(1440);
+    assert.equal(hook.calls.filter(url => url.includes("/geometry?")).length, 1);
+    assert.equal(hook.calls.filter(url => url.includes("/frame?")).length, 13);
+    await clock.advance(120);
+    assert.equal(hook.calls.filter(url => url.includes("/geometry?")).length, 2);
   } finally { hook.cleanup(); }
 });
 

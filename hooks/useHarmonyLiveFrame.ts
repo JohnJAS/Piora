@@ -176,9 +176,11 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
   const [error, setError] = useState<string | null>(null);
   const [frame, setFrame] = useState<HarmonyLiveFrame | null>(null);
   const [fallbackReason, setFallbackReason] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<{ fps: number; drawMs: number } | null>(null);
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
 
   useEffect(() => {
+    setMetrics(null);
     if (!options.active || !options.enabled || !options.serial || options.generation === undefined) {
       setFrame(null);
       setStatus("idle");
@@ -201,6 +203,15 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     let activeAttempt: StreamAttempt | undefined;
     let fallback: { controller: AbortController; done: Promise<void> } | undefined;
     const fallbackActive = () => Boolean(fallback && !fallback.controller.signal.aborted);
+    let measuredFrames = 0, drawMilliseconds = 0, measuredAt = performance.now();
+    const measuredDraw = (draw: () => void) => {
+      const start = performance.now(); draw(); measuredFrames++; drawMilliseconds += performance.now() - start;
+      const now = performance.now();
+      if (now - measuredAt < 1000) return;
+      setMetrics({ fps: Math.round(measuredFrames * 10000 / Math.max(1, now - measuredAt)) / 10,
+        drawMs: Math.round(drawMilliseconds / measuredFrames * 10) / 10 });
+      measuredAt = now; measuredFrames = 0; drawMilliseconds = 0;
+    };
     const closeDecoder = () => {
       // A stream can change configuration without replacing its connection.
       // Invalidate callbacks before close, which may itself deliver an error.
@@ -286,7 +297,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           canvas.width = width;
           canvas.height = height;
         }
-        canvas.getContext("2d", { alpha: false })?.drawImage(videoFrame, 0, 0, width, height);
+        measuredDraw(() => { canvas.getContext("2d", { alpha: false })?.drawImage(videoFrame, 0, 0, width, height); });
         publishFrame(width, height, attempt);
       } finally {
         videoFrame.close();
@@ -336,7 +347,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           canvas.width = next.width;
           canvas.height = next.height;
         }
-        canvas.getContext("2d", { alpha: false })?.drawImage(bitmap, 0, 0, next.width, next.height);
+        measuredDraw(() => { canvas.getContext("2d", { alpha: false })?.drawImage(bitmap, 0, 0, next.width, next.height); });
         publishFrame(next.width, next.height, attempt);
       } finally {
         bitmap.close();
@@ -358,7 +369,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         canvas.height = height;
       }
       const pixels = new Uint8ClampedArray(bytes.slice(8).buffer as ArrayBuffer);
-      canvas.getContext("2d", { alpha: false })?.putImageData(new ImageData(pixels, width, height), 0, 0);
+      measuredDraw(() => { canvas.getContext("2d", { alpha: false })?.putImageData(new ImageData(pixels, width, height), 0, 0); });
       publishFrame(width, height, attempt);
     };
 
@@ -449,15 +460,47 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     };
 
     const pollFrames = async (signal: AbortSignal) => {
-      let fallbackGeometry: { width: number; height: number; geometryId: string } | undefined;
+      type FallbackGeometry = { width: number; height: number; geometryId: string };
+      let fallbackGeometry: FallbackGeometry | undefined;
       let fallbackGeometryCheckedAt = 0;
+      let geometryPending = false;
+      let frameShape: { width: number; height: number; generation: number } | undefined;
+      let geometryProbedShape: typeof frameShape;
       let fallbackFailures = 0;
+      const refreshFallbackGeometry = (expected: NonNullable<typeof frameShape>) => {
+        if (geometryPending) return;
+        geometryPending = true;
+        geometryProbedShape = expected;
+        fallbackGeometry = undefined;
+        fallbackGeometryCheckedAt = performance.now();
+        // Calibration can involve slow HDC commands. It gates input readiness,
+        // not observation: never stall the next screenshot behind this request.
+        void (async () => {
+          let next: FallbackGeometry | undefined;
+          try {
+            const response = await fetch(`/api/harmony/geometry?serial=${encodeURIComponent(options.serial)}&space=screenshot`, { cache: "no-store", signal });
+            if (response.ok) {
+              const { geometry } = await response.json();
+              if (geometry?.frameWidth === expected.width && geometry?.frameHeight === expected.height && typeof geometry.geometryId === "string") {
+                next = { width: expected.width, height: expected.height, geometryId: geometry.geometryId };
+              }
+            }
+          } catch { /* Keep observation available; retry calibration on later frames. */ }
+          finally { geometryPending = false; }
+          if (disposed || signal.aborted || frameShape !== expected) return;
+          fallbackGeometry = next;
+          setFrame(current => current && current.generation === expected.generation
+            && current.width === expected.width && current.height === expected.height
+            ? { ...current, geometryId: next?.geometryId } : current);
+        })();
+      };
       setMode("frames");
       while (!signal.aborted) {
         if (document.hidden) {
           await delay(1_000, signal);
           continue;
         }
+        const captureStartedAt = performance.now();
         try {
           const response = await fetch(`/api/harmony/frame?serial=${encodeURIComponent(options.serial)}&v=${Date.now()}`, {
             cache: "no-store",
@@ -478,20 +521,14 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
               canvas.width = bitmap.width;
               canvas.height = bitmap.height;
             }
-            canvas.getContext("2d", { alpha: false })?.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height);
+            measuredDraw(() => { canvas.getContext("2d", { alpha: false })?.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height); });
             hasFrame = true;
-            if (fallbackGeometry?.width !== bitmap.width || fallbackGeometry?.height !== bitmap.height || performance.now() - fallbackGeometryCheckedAt > 1500) {
-              fallbackGeometry = undefined; fallbackGeometryCheckedAt = performance.now();
-              setFrame({ serial: options.serial, generation, revision: frameRevision, width: bitmap.width, height: bitmap.height });
-              setStatus("live");
-              setError(null);
-              const response = await fetch(`/api/harmony/geometry?serial=${encodeURIComponent(options.serial)}&space=screenshot`, { cache: "no-store", signal }).catch(() => null);
-              if (response?.ok) {
-                const { geometry } = await response.json();
-                if (geometry?.frameWidth === bitmap.width && geometry?.frameHeight === bitmap.height) {
-                  fallbackGeometry = { width: bitmap.width, height: bitmap.height, geometryId: geometry.geometryId };
-                }
-              }
+            if (frameShape?.width !== bitmap.width || frameShape?.height !== bitmap.height || frameShape?.generation !== generation) {
+              frameShape = { width: bitmap.width, height: bitmap.height, generation };
+              fallbackGeometry = undefined;
+            }
+            if (geometryProbedShape !== frameShape || performance.now() - fallbackGeometryCheckedAt > 1500) {
+              refreshFallbackGeometry(frameShape);
             }
             if (disposed || signal.aborted) return;
             setFrame({
@@ -508,7 +545,9 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           } finally {
             bitmap.close();
           }
-          await delay(120, signal);
+          // Bound fast captures to ~8 fps without adding 120ms to an already
+          // slow capture. There remains exactly one screenshot request at a time.
+          await delay(Math.max(0, 120 - (performance.now() - captureStartedAt)), signal);
         } catch (frameError) {
           if (signal.aborted || disposed) return;
           fallbackFailures += 1;
@@ -522,6 +561,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
             setStatus("error");
             setFrame(previous => previous ? { ...previous, geometryId: undefined } : previous);
             fallbackGeometry = undefined;
+            frameShape = undefined;
             setError(frameError instanceof Error ? frameError.message : options.fallbackError);
           }
           await delay(Math.min(4_000, 250 * (2 ** Math.min(fallbackFailures - 1, 4))), signal);
@@ -622,5 +662,5 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     };
   }, [options.active, options.canvasRef, options.chinese, options.enabled, options.fallbackError, options.generation, options.paused, options.preferFrames, options.serial, refreshKey]);
 
-  return { frame, status, mode, error, fallbackReason, refresh };
+  return { frame, status, mode, error, fallbackReason, refresh, metrics };
 }

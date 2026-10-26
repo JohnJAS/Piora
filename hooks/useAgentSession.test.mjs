@@ -613,11 +613,15 @@ test("actual ambiguous prompt failures retain idle recovery and definite 4xx fai
   }
 });
 
+// Load the real router before the per-case admission/cancellation deadline.
+// Cold TypeScript/SDK compilation is fixture setup, not prompt dispatch latency.
+const routerJiti = createJiti(import.meta.url);
+const [{ SessionMessageRouter }, { SessionControlStore }, { SessionCommandEventHub }, { dispatchChatInput }] = await Promise.all([
+  routerJiti.import("../lib/session-message-router.ts"), routerJiti.import("../lib/session-control-store.ts"),
+  routerJiti.import("../lib/session-command-events.ts"), routerJiti.import("../lib/chat-input-dispatch.ts"),
+]);
+
 async function routerSubmissionHarness() {
-  const jiti = createJiti(import.meta.url);
-  const [{ SessionMessageRouter }, { SessionControlStore }, { SessionCommandEventHub }] = await Promise.all([
-    jiti.import("../lib/session-message-router.ts"), jiti.import("../lib/session-control-store.ts"), jiti.import("../lib/session-command-events.ts"),
-  ]);
   const root = await mkdtemp(join(tmpdir(), "piora-hook-prompt-cancel-"));
   const sid = randomUUID();
   const listeners = new Set();
@@ -652,7 +656,6 @@ async function routerSubmissionHarness() {
   const store = new SessionControlStore({ root });
   const events = new SessionCommandEventHub(store);
   const router = new SessionMessageRouter({ store, events, resolver: async () => ({ session, realSessionId: sid, cwd: root }) });
-  const { dispatchChatInput } = await jiti.import("../lib/chat-input-dispatch.ts");
   const previousRouter = globalThis.__pioraSessionMessageRouter;
   globalThis.__pioraSessionMessageRouter = router;
   const h = promptSubmissionHarness({ session: { id: sid } });

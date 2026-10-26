@@ -1,3 +1,4 @@
+import type { HarmonyRecordingContext } from "./types";
 import { existsSync } from "node:fs";
 import { link, lstat, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createConnection, createServer, type Socket } from "node:net";
@@ -1176,7 +1177,7 @@ export class HdcBackend implements HarmonyAutomationBackend {
    * this computer). Every other device, or any system-recorder start that is unavailable or
    * explicitly rejected, records this runtime's own mirror H.264 subscription instead.
    */
-  async startRecording(serial: string, remoteName: string, signal?: AbortSignal, onFailure?: (error: HarmonyError) => void): Promise<HarmonyRecordingStartResult> {
+  async startRecording(serial: string, remoteName: string, signal?: AbortSignal, onFailure?: (error: HarmonyError) => void, context?: HarmonyRecordingContext): Promise<HarmonyRecordingStartResult> {
     validateSerial(serial);
     if (!/^piora-recording-[0-9A-Za-z-]{8,96}\.mp4$/.test(remoteName)) throw new HarmonyError("INVALID_ARGUMENT", "Invalid Harmony recording name");
     if (this.ownedRecordings.has(serial) || this.recordingStarts.has(serial)) throw new HarmonyError("DEVICE_BUSY", "This runtime already owns a recording on the device");
@@ -1185,18 +1186,18 @@ export class HdcBackend implements HarmonyAutomationBackend {
       const fileName = await this.startSystemRecording(serial, remoteName, signal);
       if (fileName) {
         this.ownedRecordings.set(serial, { kind: "system", name: remoteName, fileName });
-        return { method: "system-recorder" };
+        return { method: "system-recorder", systemFileName: fileName };
       }
-      await this.startStreamRecording(serial, remoteName, signal, onFailure);
+      await this.startStreamRecording(serial, remoteName, signal, onFailure, context);
       return { method: "stream" };
     } finally { this.recordingStarts.delete(serial); }
   }
 
-  private async startStreamRecording(serial: string, remoteName: string, signal?: AbortSignal, onFailure?: (error: HarmonyError) => void): Promise<void> {
+  private async startStreamRecording(serial: string, remoteName: string, signal?: AbortSignal, onFailure?: (error: HarmonyError) => void, context?: HarmonyRecordingContext): Promise<void> {
     let connection: HarmonyVideoConnection | undefined;
     try {
       connection = await this.openVideoStream(serial, signal, true);
-      const recording = await startOwnedRecording(connection, signal, onFailure, true);
+      const recording = await startOwnedRecording(connection, signal, onFailure, true, context);
       this.ownedRecordings.set(serial, { kind: "stream", name: remoteName, recording });
     } catch (error) {
       try { await connection?.close(); }
@@ -1287,7 +1288,7 @@ export class HdcBackend implements HarmonyAutomationBackend {
     // the phone and retrieve the file; no further toggle is ever sent for this recording.
     this.ownedRecordings.set(serial, { kind: "system", name: remoteName, fileName, stateUnknown: true });
     throw new HarmonyError("OBSERVATION_UNAVAILABLE", "The system recorder start was sent but could not be confirmed; stop the recording on the phone, then retrieve it", {
-      details: { reason: "system-recording-start-unconfirmed", dispatchState: "sent", recordingStopped: false, systemRecorderStateUnknown: true, pendingRetrieval: true },
+      details: { reason: "system-recording-start-unconfirmed", dispatchState: "sent", recordingStopped: false, systemRecorderStateUnknown: true, pendingRetrieval: true, systemFileName: fileName },
     });
   }
 
@@ -1389,6 +1390,11 @@ export class HdcBackend implements HarmonyAutomationBackend {
     return size;
   }
 
+  async retrieveRetainedRecording(serial: string, fileName: string, destinationPath: string): Promise<number> {
+    validateSerial(serial); assertSystemRecordingName(fileName);
+    return this.transferSystemRecording(serial, fileName, destinationPath, false, true);
+  }
+
   /**
    * "放弃取回": forgets this runtime's unconfirmed system recording. Removes only Piora's
    * /data/local/tmp relay copy if one exists; never sends a recorder toggle and never touches
@@ -1411,12 +1417,19 @@ export class HdcBackend implements HarmonyAutomationBackend {
     const owned = this.ownedRecordings.get(serial);
     if (!owned || owned.name !== remoteName) throw new HarmonyError("INVALID_ARGUMENT", "No recording owned by this runtime matches the requested operation");
     try {
-      if (owned.kind === "stream") return await owned.recording.stop(destinationPath);
+      if (owned.kind === "stream") { const size = await owned.recording.stop(destinationPath); this.ownedRecordings.delete(serial); return size; }
       // An unconfirmed system recording is retrieval-only: sending the toggle could start a new one.
-      return owned.stateUnknown ? await this.transferSystemRecording(serial, owned.fileName, destinationPath) : await this.stopSystemRecording(serial, owned.fileName, destinationPath);
+      const size = owned.stateUnknown ? await this.transferSystemRecording(serial, owned.fileName, destinationPath) : await this.stopSystemRecording(serial, owned.fileName, destinationPath);
+      this.ownedRecordings.delete(serial); return size;
     }
-    catch (error) { throw new HarmonyError(isHarmonyError(error) ? error.code : "COMMAND_FAILED", error instanceof Error ? error.message : "Owned recording failed", { cause: error, details: { ...(isHarmonyError(error) ? error.details : {}), recordingStopped: true } }); }
-    finally { this.ownedRecordings.delete(serial); }
+    catch (error) {
+      // Once a stop was attempted, never toggle the system recorder again on a retry.
+      if (owned.kind === "system") owned.stateUnknown = true;
+      throw new HarmonyError(isHarmonyError(error) ? error.code : "COMMAND_FAILED", error instanceof Error ? error.message : "Owned recording failed", { cause: error, details: {
+        ...(isHarmonyError(error) ? error.details : {}), recordingStopped: owned.kind === "stream",
+        ...(owned.kind === "system" ? { recoverable: true, systemRecorderStateUnknown: true } : {}),
+      } });
+    }
   }
 
   private bundledMirrorServerPath(): string {
@@ -1694,7 +1707,7 @@ export class HdcBackend implements HarmonyAutomationBackend {
 
   async dispose(): Promise<void> {
     const cleanup = await Promise.allSettled([...this.videoClosers].map(close => close()));
-    await Promise.all([...this.ownedRecordings.entries()].map(([serial, owned]) => owned.kind === "system" ? this.discardSystemRecording(serial, owned) : owned.recording.discard()));
+    await Promise.all([...this.ownedRecordings.entries()].map(([serial, owned]) => owned.kind === "system" ? this.discardSystemRecording(serial, owned) : owned.recording.preserve()));
     this.ownedRecordings.clear();
     const entries = [...this.liveScreenshotPaths.entries()];
     this.liveScreenshotPaths.clear();

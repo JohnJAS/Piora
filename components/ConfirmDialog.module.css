@@ -48,6 +48,7 @@
 }
 
 .actions {
+  flex-wrap: wrap;
   display: flex;
   justify-content: flex-end;
   gap: 7px;
@@ -55,6 +56,10 @@
   border-top: 1px solid var(--border-soft);
   background: var(--floating-section);
 }
+
+.standalone { width: 100vw; height: 100dvh; display: flex; flex-direction: column; border-radius: 0; }
+.standalone .body { flex: 1; min-height: 0; overflow: auto; }
+.preview { display: block; max-height: 220px; max-width: 100%; object-fit: contain; margin: auto; }
 
 .actions button {
   min-height: var(--control-height);

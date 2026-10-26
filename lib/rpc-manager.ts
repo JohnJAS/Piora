@@ -34,6 +34,7 @@ import { applyConfiguredImageInput, modelSupportsImages } from "./model-capabili
 import { resolveDefaultModelPreference } from "./model-policy";
 import {
   applyExtensionLoadPlan,
+  installExtensionLoadPlanReload,
   resolveExtensionLoadPlan,
 } from "./extension-config";
 import { cacheSessionPath, invalidateSessionListCache } from "./session-reader";
@@ -2861,6 +2862,10 @@ export async function startRpcSession(
                 ),
               },
             }),
+      });
+      installExtensionLoadPlanReload(services.resourceLoader, extensionPlan, async () => {
+        await settingsManager.reload();
+        return resolveExtensionLoadPlan({ cwd, agentDir, settingsManager, profile: runtimeProfile, installMissing: true });
       });
       if (nativeMcp) setNativeMcpController(services, nativeMcp);
       if (runtimeProfile === "device-control") {

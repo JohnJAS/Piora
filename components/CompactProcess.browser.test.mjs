@@ -401,6 +401,22 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     await mixed.goto("http://compact.test/");
     await mixed.evaluate(() => window.mix());
     await mixed.getByText("先说明计划", {exact:true}).waitFor();
+    for (const width of [1200, 390]) {
+      await mixed.setViewportSize({ width, height: 900 });
+      const textBounds = await mixed.getByText("先说明计划", {exact:true}).boundingBox();
+      assert.ok(textBounds);
+      const alignment = await mixed.evaluate(edge => {
+        return [...document.querySelectorAll(".compact-process-detail")].map(element => ({
+          left: element.getBoundingClientRect().left, edge, border: getComputedStyle(element).borderLeftWidth,
+        }));
+      }, textBounds.x);
+      assert.ok(alignment.length > 0);
+      for (const row of alignment) {
+        assert.equal(row.border, "1px");
+        assert.ok(Math.abs(row.left - row.edge) <= 1, `process rail aligns with answer at ${width}px: ${JSON.stringify(row)}`);
+      }
+    }
+    await mixed.setViewportSize({ width: 1200, height: 900 });
     const mixedHeading = mixed.locator(".compact-process-toggle");
     await mixed.locator(".thinking-block-trigger").click();
     await mixed.getByText("历史完整思考内容", {exact:true}).waitFor();
