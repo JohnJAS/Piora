@@ -1,6 +1,7 @@
 "use client";
 import { memo, useCallback, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type Ref, type RefObject } from "react";
 import { CompactProcessSummary } from "./CompactProcessSummary";
+import { ToolActivitySummary } from "./ToolActivitySummary";
 import { buildCompactChatHistoryRows } from "@/lib/compact-chat-history";
 import { CompactProcessContext, RevealProcessCommandContext } from "./CompactProcessContext";
 import { insertCommandHistoryRows, layoutChatResponseRows, messageFingerprint } from "@/lib/chat-history";
@@ -57,7 +58,7 @@ export const ChatHistory = memo(function ChatHistory({ messages: savedMessages, 
   const [expanded, setExpanded] = useState<Map<string, boolean>>(() => new Map());
   const [inspectCommand, setInspectCommand] = useState<string | null>(null);
   const list = useRef<VirtualListHandle>(null);
-  const { rows, entryRows, entryGroups } = useMemo(() => {
+  const { rows, entryRows, entryGroups, entryActivities, commandActivities } = useMemo(() => {
     const plan = buildCompactChatHistoryRows(messages, entryIds, busy || streaming, expanded, streamingIndex, compactProcess);
     return { ...plan, rows: layoutChatResponseRows(insertCommandHistoryRows(plan.rows, messages, entryIds, operations), messages, busy || streaming) };
   }, [messages, entryIds, busy, streaming, expanded, compactProcess, streamingIndex, operations]);
@@ -66,7 +67,7 @@ export const ChatHistory = memo(function ChatHistory({ messages: savedMessages, 
   const pendingReveal = useRef<string | null>(null);
   useLayoutEffect(() => {
     const key = pendingReveal.current ? entryRows.get(pendingReveal.current) : undefined;
-    if (key && keys.includes(key) && !key.startsWith("compact-process:")) {
+    if (key && keys.includes(key) && !key.startsWith("compact-process:") && !key.startsWith("tool-activity:")) {
       list.current?.scrollToKey(key);
       pendingReveal.current = null;
     }
@@ -100,11 +101,15 @@ export const ChatHistory = memo(function ChatHistory({ messages: savedMessages, 
       const group = entryGroups.get(id);
       if (group) {
         pendingReveal.current = id;
-        setExpanded(previous => new Map(previous).set(group, true));
+        setExpanded(previous => {
+          const next = new Map(previous).set(group, true);
+          for (const activity of entryActivities.get(id) ?? []) next.set(activity, true);
+          return next;
+        });
       } else if (key) list.current?.scrollToKey(key);
     },
     cancelNavigation() { pendingReveal.current = null; list.current?.cancelNavigation(); },
-  }), [entryRows, entryGroups]);
+  }), [entryRows, entryGroups, entryActivities]);
   const toggle = useCallback((key: string, open: boolean) => setExpanded(previous => new Map(previous).set(key, open)), []);
 
   // Mount the newly sent prompt before the session hook's layout scroll runs.
@@ -114,11 +119,22 @@ export const ChatHistory = memo(function ChatHistory({ messages: savedMessages, 
     if (row.operation) return commandActions ? <ChatCommandCard record={row.operation} actions={commandActions} /> : null;
     if (row.compactProcess) return <CompactProcessSummary group={row.compactProcess}
       onToggle={() => { setInspectCommand(null); toggle(row.key, !row.compactProcess!.expanded); }}
-      onInspectCommand={(id) => { setInspectCommand(id); setExpanded((previous) => new Map(previous).set(row.key, true)); }} />;
+      onInspectCommand={(id) => {
+        setInspectCommand(id);
+        setExpanded(previous => {
+          const next = new Map(previous).set(row.key, true);
+          const activity = commandActivities.get(id);
+          if (activity) next.set(activity, true);
+          return next;
+        });
+      }} />;
+    if (row.toolActivity) return <ToolActivitySummary group={row.toolActivity} onToggle={() => {
+      setExpanded(previous => new Map(previous).set(row.processGroupKey!, true).set(row.key, !row.toolActivity!.expanded));
+    }} />;
     const index = row.index;
     const message = row.message!;
     const showTimestamp = row.showTimestamp ?? (metadata.showTimestamps.has(index) && !(streaming && index === messages.length - 1));
-    return <CompactProcessContext.Provider value={true}><RevealProcessCommandContext.Provider value={inspectCommand}><div className={`chat-message-shell${row.secondary ? " compact-process-detail" : ""}${highlightedEntryId === entryIds[index] ? " is-search-target" : ""}`} data-chat-entry-id={entryIds[index]} data-chat-user-index={metadata.userIndices.get(index)}
+    return <CompactProcessContext.Provider value={true}><RevealProcessCommandContext.Provider value={inspectCommand}><div className={`chat-message-shell${row.secondary ? " compact-process-detail" : ""}${row.toolActivityKey ? " tool-activity-detail" : ""}${highlightedEntryId === entryIds[index] ? " is-search-target" : ""}`} data-chat-entry-id={entryIds[index]} data-chat-user-index={metadata.userIndices.get(index)}
       data-process-join-before={Boolean(row.processGroupKey && visibleRows[rowIndex - 1]?.processGroupKey === row.processGroupKey) || undefined}
       data-process-join-after={Boolean(row.processGroupKey && visibleRows[rowIndex + 1]?.processGroupKey === row.processGroupKey) || undefined}
       onClickCapture={(event) => {
