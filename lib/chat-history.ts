@@ -20,6 +20,9 @@ export interface ChatHistoryRow {
   intermediate?: boolean;
   isStreaming?: boolean;
   compactProcess?: import("./compact-chat-history").CompactProcessGroup;
+  toolActivity?: import("./compact-chat-history").ToolActivityGroup;
+  toolActivityKind?: import("./tool-activity").ToolActivityKind;
+  toolActivityKey?: string;
 }
 
 function withBlocks(message: AssistantMessage, content: AssistantContentBlock[], omitUsage = false): AssistantMessage {
