@@ -16,6 +16,7 @@ export interface ChatHistoryRow {
   attachRef?: boolean;
   showTimestamp?: boolean;
   secondary?: boolean;
+  processGroupKey?: string;
   intermediate?: boolean;
   isStreaming?: boolean;
   compactProcess?: import("./compact-chat-history").CompactProcessGroup;

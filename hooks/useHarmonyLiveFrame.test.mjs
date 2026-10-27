@@ -39,7 +39,7 @@ async function mountLiveFrame(videoResponse, decoderClass, geometryResponse, opt
   const states = [];
   const calls = [];
   const painted = [];
-  const canvas = { width: 100, height: 200, getContext: () => ({ clearRect() {}, drawImage(frame) { painted.push(frame); } }) };
+  const canvas = options.canvas ?? { width: 100, height: 200, getContext: () => ({ clearRect() {}, drawImage(frame) { painted.push(frame); } }) };
   let nextTimer = 0;
   let effect;
   const window = {
@@ -49,6 +49,7 @@ async function mountLiveFrame(videoResponse, decoderClass, geometryResponse, opt
     },
     clearTimeout(id) { if (options.clock) options.clock.clearTimeout(id); else timers.delete(id); },
     ...(decoderClass ? { VideoDecoder: decoderClass } : {}),
+    ...(options.animationFrame ?? {}),
   };
   const exports = {};
   runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
@@ -62,16 +63,18 @@ async function mountLiveFrame(videoResponse, decoderClass, geometryResponse, opt
       useEffect: (fn) => { effect = fn; },
       useState(initial) { const index = states.length; states.push(initial); return [initial, (value) => { states[index] = typeof value === "function" ? value(states[index]) : value; }]; },
     }; },
-    async fetch(url, options) {
+    async fetch(url, requestOptions) {
       calls.push(url);
-      if (url.includes("/video?")) return await videoResponse(options);
-      if (url.includes("/geometry?")) return geometryResponse ? geometryResponse(options) : { ok: true, async json() { return { geometry: { geometryId: "geometry", frameWidth: 100, frameHeight: 200 } }; } };
-      return { ok: true, headers: new Headers({ "X-Harmony-Generation": "1", "X-Harmony-Revision": "1" }), async blob() { return new Blob(["frame"]); } };
+      if (url.includes("/video?")) return await videoResponse(requestOptions);
+      if (url.includes("/geometry?")) return geometryResponse ? geometryResponse(requestOptions) : { ok: true, async json() { return { geometry: { geometryId: "geometry", frameWidth: 100, frameHeight: 200 } }; } };
+      if (options.frameResponse) return options.frameResponse(requestOptions);
+      return { ok: true, headers: new Headers({ "X-Harmony-Generation": String(options.frameGeneration ?? 1), "X-Harmony-Revision": "1" }), async blob() { return new Blob(["frame"]); } };
     },
-    async createImageBitmap() { return { width: 100, height: 200, close() {} }; },
+    createImageBitmap: options.createImageBitmap ?? (async () => ({ width: 100, height: 200, close() {}, ...options.bitmap?.() })),
   });
   exports.useHarmonyLiveFrame({ active: true, enabled: true, serial: "phone", generation: 1, fallbackError: "failed",
     canvasRef: { current: canvas },
+    ...options.hookOptions,
   });
   const cleanup = effect();
   const flush = () => new Promise((resolve) => setImmediate(resolve));
@@ -89,6 +92,120 @@ function jpegFrame(width = 100, height = 200) {
   config[0] = 2; config.writeUInt32BE(width, 1); config.writeUInt32BE(height, 5); config.writeUInt32BE(30, 9);
   return Buffer.concat([packet(2, config), packet(3, Buffer.alloc(10))]);
 }
+
+test("frame fallback periodically retries native video without a manual refresh", async () => {
+  const clock = virtualClock();
+  let attempts = 0;
+  const mounted = await mountLiveFrame(async () => {
+    attempts++;
+    if (attempts === 1) return { ok: false, status: 503, async json() { return { error: "unavailable" }; } };
+    return { ok: true, body: new ReadableStream({ start(controller) { controller.enqueue(jpegFrame()); } }) };
+  }, undefined, undefined, { clock });
+  try {
+    assert.equal(mounted.states[2], "frames");
+    await clock.advance(2200);
+    await mounted.flush();
+    assert.ok(attempts >= 2);
+    assert.equal(mounted.states[2], "video");
+    assert.equal(mounted.states[1], "live");
+  } finally { mounted.cleanup(); }
+});
+
+test("bounded native probes leave fallback pixels refreshing through slow first frames and repeated failure", async () => {
+  const clock = virtualClock();
+  let attempts = 0, active = 0, maximum = 0;
+  const hook = await mountLiveFrame(async () => {
+    if (++attempts === 1) return { ok: false, status: 503, async json() { return { error: "unavailable" }; } };
+    active++; maximum = Math.max(maximum, active);
+    return { ok: true, body: new ReadableStream({ cancel() { active--; } }) };
+  }, undefined, undefined, { clock });
+  try {
+    await clock.advance(10000);
+    assert.equal(hook.states[2], "frames"); assert.equal(hook.states[1], "live");
+    assert.ok(hook.calls.filter(url => url.includes("/frame?")).length > 40, "a silent video probe cannot pause fallback for its first-frame budget");
+    await clock.advance(26000);
+    assert.ok(attempts >= 3, "timed-out probes are cleaned and retried");
+    assert.equal(maximum, 1, "only one native stream may be in flight");
+    assert.equal(hook.states[2], "frames"); assert.equal(hook.states[1], "live");
+  } finally { hook.cleanup(); await hook.flush(); }
+  assert.equal(active, 0);
+  assert.equal(clock.timers.size, 0);
+});
+
+test("mode teardown aborts its fallback and probe and rejects a late HTTP body", async () => {
+  const clock = virtualClock(); let attempts = 0, finishProbe, cancelled = 0, signal;
+  const old = await mountLiveFrame(async options => {
+    if (++attempts === 1) return { ok: false, status: 503, async json() { return { error: "unavailable" }; } };
+    signal = options.signal;
+    return new Promise(resolve => { finishProbe = resolve; });
+  }, undefined, undefined, { clock });
+  await clock.advance(600); assert.ok(finishProbe);
+  old.cleanup(); assert.equal(signal.aborted, true);
+  const standard = await mountLiveFrame(async () => { throw new Error("standard mode must not open a native probe"); }, undefined, undefined,
+    { clock, canvas: old.canvas, hookOptions: { preferFrames: true } });
+  try {
+    const before = old.painted.length;
+    finishProbe({ ok: true, body: new ReadableStream({ start(controller) { controller.enqueue(jpegFrame()); }, cancel() { cancelled++; } }) });
+    await old.flush(); await standard.flush();
+    assert.equal(old.painted.length, before, "the previous mode cannot repaint the shared canvas");
+    assert.equal(cancelled, 1); assert.equal(standard.states[2], "frames");
+    assert.equal(standard.calls.some(url => url.includes("/video?")), false);
+  } finally { standard.cleanup(); await standard.flush(); }
+  assert.equal(clock.timers.size, 0);
+});
+
+test("native handoff waits for a decoded IDR and then stops fallback polling", async () => {
+  const clock = virtualClock(); let attempts = 0, stream;
+  const Decoder = watchdogDecoder({ produceFrames: true });
+  const hook = await mountLiveFrame(async () => {
+    if (++attempts === 1) return { ok: false, status: 503, async json() { return { error: "unavailable" }; } };
+    return new Response(new ReadableStream({ start(controller) { stream = controller; } }));
+  }, Decoder, undefined, { clock });
+  try {
+    await clock.advance(600);
+    stream.enqueue(capacityPackets(['delta'])); await hook.flush();
+    assert.equal(hook.states[2], "frames", "configuration and a dependent delta cannot replace fallback");
+    assert.equal(Decoder.instances.at(-1).inputs.length, 0);
+    const before = hook.calls.filter(url => url.includes('/frame?')).length;
+    await clock.advance(600);
+    assert.ok(hook.calls.filter(url => url.includes('/frame?')).length > before);
+    // Send just the complete keyframe packet, preserving the existing config.
+    stream.enqueue(capacityPackets(['key']).subarray(capacityPackets([]).length)); await hook.flush();
+    assert.equal(hook.states[2], 'video'); assert.equal(hook.states[1], 'live');
+    assert.deepEqual(Decoder.instances.at(-1).inputs, ['key']);
+    const after = hook.calls.filter(url => url.includes('/frame?')).length;
+    await clock.advance(1000);
+    assert.equal(hook.calls.filter(url => url.includes('/frame?')).length, after, 'successful handoff stops fallback polling');
+  } finally { hook.cleanup(); await hook.flush(); }
+  assert.equal(clock.timers.size, 0);
+});
+
+test("a fallback bitmap completing after native handoff is closed without repainting", async () => {
+  const clock = virtualClock(); let attempts = 0, bitmaps = 0, finishBitmap, stream, closed = 0;
+  const hook = await mountLiveFrame(async () => {
+    if (++attempts === 1) return { ok: false, status: 503, async json() { return { error: 'unavailable' }; } };
+    return new Response(new ReadableStream({ start(controller) { stream = controller; } }));
+  }, watchdogDecoder({ produceFrames: true }), undefined, { clock,
+    createImageBitmap: async () => ++bitmaps === 1 ? { width: 100, height: 200, close() {} }
+      : new Promise(resolve => { finishBitmap = resolve; }),
+  });
+  try {
+    await clock.advance(600); assert.ok(finishBitmap);
+    stream.enqueue(capacityPackets(['key'])); await hook.flush();
+    assert.equal(hook.states[2], 'video');
+    const paints = hook.painted.length;
+    finishBitmap({ width: 600, height: 800, close() { closed++; } }); await hook.flush();
+    assert.equal(hook.painted.length, paints); assert.equal(hook.canvas.width, 100);
+    assert.equal(closed, 1); assert.equal(hook.states[2], 'video');
+  } finally { hook.cleanup(); await hook.flush(); }
+  assert.equal(clock.timers.size, 0);
+});
+
+test("a fallback screenshot from a different device generation is never painted", async () => {
+  const mounted = await mountLiveFrame(async () => ({ ok: false, status: 503, async json() { return { error: "unavailable" }; } }), undefined, undefined, { frameGeneration: 2 });
+  try { await mounted.flush(); assert.equal(mounted.painted.length, 0); assert.equal(mounted.states[1], "error"); }
+  finally { mounted.cleanup(); }
+});
 
 test("late geometry enables a static frame immediately and failed probes revoke it automatically", async () => {
   let resolveGeometry;
@@ -151,6 +268,59 @@ test("fallback displays pixels before calibration and ignores a probe finishing 
   } finally { hook.cleanup(); }
 });
 
+test("compatible frames continue while slow calibration is pending and ignore stale dimensions", async () => {
+  const clock = virtualClock();
+  const probes = [];
+  let width = 100;
+  const hook = await mountLiveFrame(async () => ({ ok: false, status: 503, json: async () => ({ error: "video unavailable" }) }),
+    undefined, () => new Promise(resolve => probes.push(resolve)), { clock, bitmap: () => ({ width }) });
+  try {
+    for (let i = 0; i < 10; i++) await clock.advance(120);
+    assert.equal(hook.calls.filter(url => url.includes("/frame?")).length, 11, "a stalled geometry request must not freeze passive frames");
+    assert.equal(probes.length, 1, "calibration requests must not accumulate");
+    width = 200;
+    await clock.advance(120);
+    probes[0]({ ok: true, json: async () => ({ geometry: { geometryId: "old-size", frameWidth: 100, frameHeight: 200 } }) });
+    await hook.flush();
+    assert.equal(hook.states[4].width, 200);
+    assert.equal(hook.states[4].geometryId, undefined);
+    await clock.advance(120);
+    assert.equal(probes.length, 2);
+    probes[1]({ ok: true, json: async () => ({ geometry: { geometryId: "new-size", frameWidth: 200, frameHeight: 200 } }) });
+    await hook.flush();
+    assert.equal(hook.states[4].geometryId, "new-size");
+  } finally { hook.cleanup(); }
+});
+
+test("slow compatible captures stay serial without paying an additional post-capture interval", async () => {
+  const clock = virtualClock();
+  let finishFrame;
+  const hook = await mountLiveFrame(async () => ({ ok: false, status: 503, json: async () => ({ error: "video unavailable" }) }),
+    undefined, undefined, { clock, frameResponse: () => new Promise(resolve => { finishFrame = resolve; }) });
+  try {
+    await clock.advance(900);
+    assert.equal(hook.calls.filter(url => url.includes("/frame?")).length, 1, "a slow capture must never overlap another");
+    finishFrame({ ok: true, headers: new Headers({ "X-Harmony-Generation": "1", "X-Harmony-Revision": "1" }), blob: async () => new Blob(["frame"]) });
+    await hook.flush();
+    await clock.advance(0);
+    assert.equal(hook.calls.filter(url => url.includes("/frame?")).length, 2, "the next frame starts immediately after a capture exceeding 120ms");
+    assert.equal(hook.painted.length, 1);
+  } finally { hook.cleanup(); }
+});
+
+test("failed compatible calibration retries at its own cadence without slowing or flooding frames", async () => {
+  const clock = virtualClock();
+  const hook = await mountLiveFrame(async () => ({ ok: false, status: 503, json: async () => ({ error: "video unavailable" }) }),
+    undefined, async () => ({ ok: false }), { clock });
+  try {
+    await clock.advance(1440);
+    assert.equal(hook.calls.filter(url => url.includes("/geometry?")).length, 1);
+    assert.equal(hook.calls.filter(url => url.includes("/frame?")).length, 13);
+    await clock.advance(120);
+    assert.equal(hook.calls.filter(url => url.includes("/geometry?")).length, 2);
+  } finally { hook.cleanup(); }
+});
+
 test("a connected but silent stream times out into working frame fallback", async () => {
   let cancelled = false;
   const hook = await mountLiveFrame(async () => new Response(new ReadableStream({ cancel() { cancelled = true; } })));
@@ -205,7 +375,7 @@ test("a stalled video HTTP request is aborted before falling back", async () => 
     signal.addEventListener("abort", () => { aborted = true; reject(new Error("aborted")); });
   }));
   try {
-    [...hook.timers.values()].find((timer) => timer.ms === 15_000).fn();
+    [...hook.timers.values()].find((timer) => timer.ms === 30_000).fn();
     await hook.flush();
     assert.ok(aborted);
     assert.equal(hook.states[1], "live", hook.states[3]);
@@ -316,7 +486,7 @@ test("an expired HTTP request cannot revive native video when an ignored abort r
     return new Promise(resolve => { resolveResponse = resolve; });
   }, Decoder, undefined, { clock });
   try {
-    await clock.advance(15_000);
+    await clock.advance(30_000);
     assert.equal(signal.aborted, true);
     resolveResponse(new Response(new ReadableStream({
       start(controller) { controller.enqueue(capacityPackets(['key'])); },
@@ -655,4 +825,69 @@ test('late decoder callbacks cannot repaint or cancel a newer configuration on t
     assert.equal(afterCleanup.closed, true);
     assert.equal(hook.painted.length, 2);
   } finally { hook.cleanup(); }
+});
+
+test("passive video viewing never starts the HDC geometry calibration loop", async () => {
+  const hook = await mountLiveFrame(async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(jpegFrame()); } })), undefined, undefined, { hookOptions: { calibrateGeometry: false } });
+  try {
+    await hook.flush(); assert.equal(hook.states[2], "video");
+    assert.equal(hook.calls.filter(url => url.includes("/geometry?")).length, 0);
+  } finally { hook.cleanup(); await hook.flush(); }
+});
+
+test("H264 preserves dependent decode inputs and presents only the newest frame per display tick", async () => {
+  const scheduled = new Map(); let closed = 0; let count = 0;
+  class Decoder {
+    static current;
+    static async isConfigSupported(config) { return { supported: true, config }; }
+    state = "unconfigured"; decodeQueueSize = 0; inputs = [];
+    constructor(callbacks) { this.callbacks = callbacks; Decoder.current = this; }
+    configure() { this.state = "configured"; }
+    decode(chunk) { this.inputs.push(chunk); this.callbacks.output({ id: ++count, displayWidth: 100, displayHeight: 200, close() { closed++; } }); }
+    close() { this.state = "closed"; }
+  }
+  const hook = await mountLiveFrame(async () => new Response(new ReadableStream({ start(controller) { controller.enqueue(capacityPackets(["key", ...Array(8).fill("delta")])); } })), Decoder, undefined, { animationFrame: {
+    requestAnimationFrame(callback) { scheduled.set(1, callback); return 1; }, cancelAnimationFrame(id) { scheduled.delete(id); },
+  } });
+  try {
+    assert.equal(Decoder.current.inputs.length, 9, "dependent H264 frames are all decoded");
+    assert.equal(closed, 8, "obsolete decoded images are released immediately");
+    assert.equal(scheduled.size, 1); assert.equal(hook.painted.length, 0);
+    const tick = scheduled.get(1); scheduled.clear(); tick();
+    assert.equal(hook.painted.length, 1); assert.equal(hook.painted[0].id, 9);
+    assert.equal(closed, 9); assert.equal(hook.states[1], "live");
+  } finally { hook.cleanup(); await hook.flush(); }
+});
+
+test("slow JPEG decoding has one replaceable pending image instead of a growing transport backlog", async () => {
+  let stream, finish; const decoded = [];
+  const hook = await mountLiveFrame(async () => new Response(new ReadableStream({ start(controller) { stream = controller; controller.enqueue(jpegFrame()); } })), undefined, undefined, {
+    createImageBitmap: async blob => {
+      const bytes = new Uint8Array(await blob.arrayBuffer()); const id = bytes[0]; decoded.push(id);
+      if (decoded.length === 1) await new Promise(resolve => { finish = resolve; });
+      return { id, width: 100, height: 200, close() {} };
+    },
+  });
+  try {
+    await hook.flush();
+    const packet = id => { const bytes = Buffer.alloc(18); bytes.writeUInt32BE(3, 0); bytes.writeUInt32BE(10, 4); bytes[17] = id; return bytes; };
+    for (let id = 1; id <= 30; id++) stream.enqueue(packet(id));
+    for (let index = 0; index < 4; index++) await hook.flush();
+    finish(); for (let index = 0; index < 4; index++) await hook.flush();
+    assert.deepEqual(decoded, [0, 30]);
+    assert.equal(hook.painted.at(-1).id, 30);
+  } finally { finish?.(); hook.cleanup(); await hook.flush(); }
+});
+
+test("SDK startup lasting twenty seconds survives the HTTP phase and keeps a short playback deadline", async () => {
+  const clock = virtualClock(); let signal;
+  const hook = await mountLiveFrame(options => { signal = options.signal; return new Promise(resolve => clock.setTimeout(() => resolve(new Response(new ReadableStream({ start(controller) { controller.enqueue(jpegFrame()); } }))), 20_000)); }, undefined, undefined, { clock });
+  try {
+    await clock.advance(19_999); assert.equal(signal.aborted, false);
+    await clock.advance(1); await hook.flush();
+    assert.equal(hook.states[2], "video"); assert.equal(hook.states[1], "live");
+    assert.equal(signal.aborted, false);
+    assert.ok([...hook.timers.values()].some(timer => timer.ms === 15_000), "playback still has a bounded short no-frame deadline");
+    assert.equal(hook.calls.filter(url => url.includes("/frame?")).length, 0);
+  } finally { hook.cleanup(); await hook.flush(); }
 });

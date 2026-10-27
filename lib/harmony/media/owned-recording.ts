@@ -1,12 +1,13 @@
-import { open, copyFile, mkdtemp, rm, rmdir, stat } from "node:fs/promises";
+import { open, copyFile, mkdtemp, rm, rmdir, stat, statfs, mkdir } from "node:fs/promises";
 import { constants } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { Output, Mp4OutputFormat, StreamTarget, EncodedVideoPacketSource, EncodedPacket } from "mediabunny";
 import { asHarmonyError, HarmonyError } from "../errors";
-import type { HarmonyVideoConnection } from "../types";
+import { RECORDING_POLICY, recordingLimitReason } from "./recording-policy";
+import type { HarmonyRecordingContext, HarmonyVideoConnection } from "../types";
 
-const MAX_BYTES = 256 * 1024 * 1024;
+const MAX_BYTES = RECORDING_POLICY.maxBytes;
 const MAX_PACKET = 16 * 1024 * 1024;
 function units(data: Buffer): Buffer[] {
   const starts: Array<{ start: number; size: number }> = [];
@@ -63,21 +64,25 @@ export function recordingStreamUnavailable(cause?: unknown): HarmonyError {
 }
 
 /** Records only this subscriber's encoded stream. No global recorder, process kill or device media deletion. */
-export async function startOwnedRecording(connection: HarmonyVideoConnection, signal?: AbortSignal, onFailure?: (error: HarmonyError) => void) {
-  const directory = await mkdtemp(join(tmpdir(), "piora-owned-recording-"));
-  const path = join(directory, "capture.mp4");
-  const handle = await open(path, "wx", 0o600).catch(async error => { await rmdir(directory); await connection.close(); throw error; });
+export async function startOwnedRecording(connection: HarmonyVideoConnection, signal?: AbortSignal, onFailure?: (error: HarmonyError) => void, requireIsolation = false, context?: HarmonyRecordingContext) {
+  const directory = context?.draftPath ? dirname(context.draftPath) : await mkdtemp(join(tmpdir(), "piora-owned-recording-"));
+  await mkdir(directory, { recursive: true });
+  const path = context?.draftPath ?? join(directory, "capture.mp4");
+  const removeDirectory = async () => { if (!context?.draftPath) await rmdir(directory).catch(() => undefined); };
+  let bytesWritten = 0, stopReason: string | undefined;
+  const handle = await open(path, "wx", 0o600).catch(async error => { await removeDirectory(); await connection.close(); throw error; });
   const source = new EncodedVideoPacketSource("avc");
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: false }), target: new StreamTarget(new WritableStream({
     async write(chunk) {
-      if (chunk.position + chunk.data.length > MAX_BYTES) throw new HarmonyError("COMMAND_OUTPUT_LIMIT", "Recording reached its 256 MiB limit");
+      bytesWritten = Math.max(bytesWritten, chunk.position + chunk.data.length);
+      if (chunk.position + chunk.data.length > MAX_BYTES) throw new HarmonyError("COMMAND_OUTPUT_LIMIT", "Recording reached its 2 GiB limit");
       let offset = 0;
       while (offset < chunk.data.length) { const result = await handle.write(chunk.data, offset, chunk.data.length - offset, chunk.position + offset); if (!result.bytesWritten) throw new Error("Recording write made no progress"); offset += result.bytesWritten; }
     },
   }), { chunked: true, chunkSize: 1024 * 1024 }) });
   let reader: ReadableStreamDefaultReader<Uint8Array>;
   try { output.addVideoTrack(source); await output.start(); reader = connection.stream.getReader(); }
-  catch (error) { await output.cancel().catch(() => undefined); await handle.close(); await rm(path, { force: true }); await rmdir(directory); await connection.close(); throw error; }
+  catch (error) { await output.cancel().catch(() => undefined); await handle.close(); await rm(path, { force: true }); await removeDirectory(); await connection.close(); throw error; }
   let stopping = false, failure: unknown, frames = 0, firstTimestamp: number | undefined, config: ReturnType<typeof configuration> | undefined;
   let accepted = false, ended = false, failureReported = false;
   const reportFailure = () => {
@@ -88,12 +93,15 @@ export async function startOwnedRecording(connection: HarmonyVideoConnection, si
     // uncertain, but no surviving media reader can be mistaken for phone input.
     queueMicrotask(() => {
       // The notification cannot revive the settled pump or bypass reader cleanup.
-      try { onFailure(new HarmonyError(error.code, error.message, { details: { ...error.details, recordingStopped: true } })); }
+      try { onFailure(new HarmonyError(error.code, error.message, { details: { ...error.details, recordingStopped: true, recoverable: frames > 0, stopReason: stopReason ?? "interrupted" } })); }
       catch { /* Observer errors do not change the recording's retained failure. */ }
     });
   };
   let resolveReady!: () => void, rejectReady!: (error: unknown) => void;
   const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+  let isolated = !requireIsolation;
+  const isolationError = () => new HarmonyError("CAPABILITY_UNAVAILABLE", "The phone capture component has not confirmed recording-isolation protocol v1. Manually prepare a compatible Piora component before stream recording. Preview and screenshots remain available", { details: { reason: "recording-isolation-unavailable", requiredProtocolVersion: 1, dispatchState: "not-sent" } });
+  const isolationTimer = requireIsolation ? setTimeout(() => { failure = isolationError(); rejectReady(failure); void close().catch(() => undefined); }, 1_000) : undefined;
   let closing: Promise<void> | undefined;
   // An already errored reader rejects cancel with its original stream error.
   // Await cancellation settlement; forward closure is the owned transport check.
@@ -107,6 +115,25 @@ export async function startOwnedRecording(connection: HarmonyVideoConnection, si
   signal?.addEventListener("abort", abort, { once: true });
   const startup = setTimeout(() => { failure = new HarmonyError("COMMAND_TIMEOUT", "No H.264 keyframe arrived for recording", { details: { dispatchState: "not-sent" } }); rejectReady(failure); void close().catch(() => undefined); }, 15000);
   let pending = Buffer.alloc(0), received = false;
+  let diskPending = false;
+  const diskTimer = setInterval(() => {
+    if (diskPending || stopping || ended) return;
+    diskPending = true;
+    void (async () => {
+      try {
+        context?.onProgress?.({ bytesWritten });
+        for (const directory of new Set([dirname(path), context?.destinationDirectory ?? dirname(path)])) {
+          const space = await statfs(directory);
+          if (space.bavail * space.bsize < RECORDING_POLICY.minimumFreeBytes) {
+            stopReason = "disk-space"; failure = new HarmonyError("COMMAND_OUTPUT_LIMIT", "Recording stopped because disk space is low", { details: { recoverable: true, stopReason } });
+            await close(); break;
+          }
+        }
+      } catch (error) { failure ??= error; await close().catch(() => undefined); }
+      finally { diskPending = false; }
+    })();
+  }, RECORDING_POLICY.diskCheckIntervalMs);
+  diskTimer.unref?.();
   const pump = (async () => {
     try {
       while (!stopping && !failure) {
@@ -124,17 +151,25 @@ export async function startOwnedRecording(connection: HarmonyVideoConnection, si
           if (length > MAX_PACKET) throw new HarmonyError("COMMAND_OUTPUT_LIMIT", "Recording packet exceeded limit");
           if (pending.length < length + 8) break;
           const payload = pending.subarray(8, length + 8); pending = pending.subarray(length + 8);
-          if (type === 2) {
+          if (type === 0x21 && payload.length === 1 && payload[0] === 1) {
+            isolated = true; clearTimeout(isolationTimer);
+          } else if (type === 2) {
             const next = configuration(payload);
-            if (config && (next.width !== config.width || next.height !== config.height || !next.description.equals(config.description))) throw new HarmonyError("STALE_SNAPSHOT", "Video geometry or codec changed; stop and start a new recording");
+            if (config && (next.width !== config.width || next.height !== config.height || !next.description.equals(config.description))) { stopReason = "format-changed"; throw new HarmonyError("STALE_SNAPSHOT", "Video geometry or codec changed; the completed segment will be saved", { details: { recoverable: true, stopReason } }); }
             config = next;
           } else if (type === 3 && config && payload.length > 9) {
+            if (!isolated) continue;
             const key = Boolean(payload[0] & 1), timestamp = Number(payload.readBigUInt64BE(1));
             if (!frames && !key) continue;
-            if (!Number.isSafeInteger(timestamp) || frames >= 14400) throw new HarmonyError("COMMAND_OUTPUT_LIMIT", "Recording timestamp or frame limit exceeded");
+            if (!Number.isSafeInteger(timestamp)) throw new HarmonyError("COMMAND_OUTPUT_LIMIT", "Recording timestamp limit exceeded");
             firstTimestamp ??= timestamp;
             const relative = (timestamp - firstTimestamp) / 1_000_000;
-            if (relative < 0 || relative > 120) throw new HarmonyError("COMMAND_OUTPUT_LIMIT", "Recording reached its two-minute limit");
+            if (relative < 0) throw new HarmonyError("INVALID_RESPONSE", "Recording timestamp moved backwards");
+            const limit = recordingLimitReason(relative, bytesWritten + payload.length, frames);
+            if (limit) {
+              stopReason = limit;
+              throw new HarmonyError("COMMAND_OUTPUT_LIMIT", "Recording limit reached; saving the completed segment", { details: { recoverable: true, stopReason } });
+            }
             await source.add(new EncodedPacket(lengthPrefixed(payload.subarray(9)), key ? "key" : "delta", relative, 1 / config.fps), frames ? undefined : { decoderConfig: { codec: config.codec, codedWidth: config.width, codedHeight: config.height, description: config.description } });
             frames++; resolveReady();
           }
@@ -151,36 +186,50 @@ export async function startOwnedRecording(connection: HarmonyVideoConnection, si
         failure = new HarmonyError(original.code, original.message, { cause: error,
           details: { ...original.details, cleanup: "uncertain", recordingStopped: true } });
       });
-      ended = true; reportFailure();
+      clearInterval(diskTimer); ended = true; reportFailure();
     }
   })();
   if (signal?.aborted) abort();
   let discardPromise: Promise<void> | undefined;
   let completion: Promise<number> | undefined;
+  let saveFailed = false;
   const discard = () => discardPromise ??= (async () => {
     if (completion) { await completion.catch(() => undefined); return; }
+    if (saveFailed) return; // Failed saves retain recovery bytes until explicit recovery disposal.
     stopping = true;
     try { await close(); }
-    finally { await pump; await output.cancel().catch(() => undefined); await handle.close(); await rm(path, { force: true }); await rmdir(directory); }
+    finally { await pump; await output.cancel().catch(() => undefined); await handle.close(); await rm(path, { force: true }); await removeDirectory(); }
   })();
   try { await ready; }
   catch (error) { await discard(); throw error; }
-  finally { clearTimeout(startup); signal?.removeEventListener("abort", abort); }
+  finally { clearTimeout(startup); clearTimeout(isolationTimer); signal?.removeEventListener("abort", abort); }
   accepted = true; reportFailure();
-  const stop = (destination: string) => completion ??= (async () => {
+  let finalization: Promise<void> | undefined;
+  const finalize = () => finalization ??= (async () => {
     stopping = true;
-    try {
-      await close(); await pump;
-      if (failure) throw failure;
-      source.close(); await output.finalize(); await handle.close();
-      await copyFile(path, destination, constants.COPYFILE_EXCL);
-      return (await stat(destination)).size;
-    } finally {
-      await pump;
-      if (output.state !== "finalized") await output.cancel().catch(() => undefined);
-      await handle.close().catch(() => undefined);
-      await rm(path, { force: true }); await rmdir(directory);
-    }
+    await close(); await pump;
+    if (!frames) throw failure ?? new HarmonyError("INVALID_RESPONSE", "No recording frames were received");
+    source.close(); await output.finalize(); await handle.sync(); await handle.close();
+    context?.onProgress?.({ bytesWritten, finalized: true, ...(stopReason ? { stopReason } : failure ? { stopReason: "interrupted" } : {}) });
   })();
-  return { stop, discard };
+  const stop = (destination: string): Promise<number> => {
+    if (completion) return completion;
+    completion = (async () => {
+      try {
+        await finalize();
+        await copyFile(path, destination, constants.COPYFILE_EXCL);
+        const size = (await stat(destination)).size;
+        await rm(path, { force: true }); await removeDirectory();
+        return size;
+      } catch (cause) {
+        saveFailed = true;
+        await handle.close().catch(() => undefined);
+        throw new HarmonyError("COMMAND_FAILED", "Recording could not be saved; the draft was retained for recovery", { cause, details: { ...asHarmonyError(cause).details, recordingStopped: true, recoverable: true, recoveryPath: path, finalized: output.state === "finalized", stopReason: stopReason ?? "save-failed" } });
+      }
+    })();
+    void completion.catch(() => { completion = undefined; });
+    return completion;
+  };
+  const preserve = async () => { await finalize().catch(() => undefined); };
+  return { stop, discard, preserve };
 }

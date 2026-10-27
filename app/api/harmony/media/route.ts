@@ -1,4 +1,5 @@
 import { InvalidJsonBodyError, JsonBodyTooLargeError, parseJsonWithinLimit } from "@/lib/bounded-json";
+import { join } from "node:path";
 import { getHarmonyDeviceManager } from "@/lib/harmony";
 import { resolveHarmonyStorage } from "@/lib/harmony/artifacts";
 import { HarmonyError } from "@/lib/harmony/errors";
@@ -31,16 +32,28 @@ export async function GET(request: Request) {
     const manager = getHarmonyDeviceManager();
     const serial = new URL(request.url).searchParams.get("serial")?.trim();
     const recording = serial ? manager.getRecordingState(serial) : undefined;
+    const outcome = serial ? manager.operationTasks.list(serial).find(task => task.kind === "recording") : undefined;
+    const storage = resolveHarmonyStorage(manager.getConfig());
     return noStoreJson({
+      recordingOutcome: outcome ? { id: outcome.id, status: outcome.status, phase: outcome.phase, error: outcome.error,
+        recoveryPath: outcome.recoveryPath, finalized: outcome.recoveryFinalized,
+        ...(outcome.status === "completed" && outcome.mediaFilename ? { path: join(storage.recordingDirectory, outcome.mediaFilename) } : {}) } : null,
+      completion: serial ? manager.getRecordingCompletion(serial, new URL(request.url).searchParams.get("recordingId") ?? "", new URL(request.url).searchParams.get("ownerId") ?? "") : null,
+      recoveries: serial ? manager.getRecordingRecoveries(serial).map(state => ({ serial: state.serial, recordingId: state.recordingId, startedAt: state.startedAt, ownerId: state.ownerId, phase: state.phase, recoveryAvailable: state.recoveryAvailable, systemRecorderStateUnknown: state.systemRecorderStateUnknown })) : [],
       recording: recording ? {
         serial: recording.serial,
         recordingId: recording.recordingId,
         startedAt: recording.startedAt,
         ownerId: recording.ownerId,
+        phase: recording.phase,
+        maxDurationMs: recording.maxDurationMs,
+        bytesWritten: recording.bytesWritten,
+        stopReason: recording.stopReason,
+        recoveryAvailable: recording.recoveryAvailable,
         method: recording.method ?? "stream",
         ...(recording.systemRecorderStateUnknown ? { systemRecorderStateUnknown: true } : {}),
       } : null,
-      storage: resolveHarmonyStorage(manager.getConfig()),
+      storage,
     });
   } catch (error) {
     return harmonyErrorResponse(error);
@@ -68,9 +81,22 @@ export async function POST(request: Request) {
         recordingId: recording.recordingId,
         startedAt: recording.startedAt,
         ownerId: recording.ownerId,
+        phase: recording.phase,
+        maxDurationMs: recording.maxDurationMs,
+        bytesWritten: recording.bytesWritten,
         method: recording.method ?? "stream",
         ...(recording.systemRecorderStateUnknown ? { systemRecorderStateUnknown: true } : {}),
       } });
+    }
+    if (body.action === "retry_recording_save") {
+      const recordingId = requiredString(body, "recordingId", 64);
+      const artifact = await manager.retryRecordingSave({ serial, recordingId, ownerId, signal: request.signal });
+      return noStoreJson({ artifact });
+    }
+    if (body.action === "discard_recording_draft") {
+      const recordingId = requiredString(body, "recordingId", 64);
+      await manager.discardRecordingDraft({ serial, recordingId, ownerId, signal: request.signal });
+      return noStoreJson({ discarded: true });
     }
     if (body.action === "stop_recording") {
       const recordingId = optionalString(body, "recordingId", 64);

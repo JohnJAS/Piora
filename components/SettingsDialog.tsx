@@ -5,8 +5,6 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode 
 import { createPortal } from "react-dom";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { useI18n } from "@/hooks/useI18n";
-import { useSendShortcut } from "@/hooks/useSendShortcut";
-import { useCompactProcessPreference } from "@/hooks/useCompactProcessPreference";
 import { useLiveOutputAutoScrollPreference } from "@/hooks/useLiveOutputAutoScrollPreference";
 import { AliIcon, type AliIconName } from "./AliIcon";
 import { DesktopAutoLaunchSetting } from "./DesktopAutoLaunchSetting";
@@ -106,12 +104,10 @@ export function SettingsDialog({
   desktop,
 }: Props) {
   const { t } = useI18n();
-  const { shortcut: sendShortcut, setShortcut: setSendShortcut } = useSendShortcut();
   const {
     enabled: liveOutputAutoScrollEnabled,
     setEnabled: setLiveOutputAutoScrollEnabled,
   } = useLiveOutputAutoScrollPreference();
-  const { enabled: compactProcessEnabled, setEnabled: setCompactProcessEnabled } = useCompactProcessPreference();
   const dialogRef = useRef<HTMLDivElement>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [targetItem, setTargetItem] = useState<{ id: string } | null>(null);
@@ -572,16 +568,6 @@ export function SettingsDialog({
                 <section className={styles.conversationSection}>
                   <div className={styles.conversationRow}>
                     <div className={styles.conversationCopy}>
-                      <div data-settings-id="conversation.compactProcess" className={styles.rowTitle}>{t("settings.compactProcess")}</div>
-                      <div className={styles.rowDescription}>{t("settings.compactProcessDescription")}</div>
-                    </div>
-                    <button className={styles.switch} type="button" role="switch"
-                      aria-checked={compactProcessEnabled} aria-label={t("settings.compactProcess")}
-                      onClick={() => setCompactProcessEnabled(!compactProcessEnabled)}><span /></button>
-                  </div>
-
-                  <div className={styles.conversationRow}>
-                    <div className={styles.conversationCopy}>
                       <div data-settings-id="conversation.autoScroll" className={styles.rowTitle}>{t("settings.liveOutputAutoScroll")}</div>
                       <div className={styles.rowDescription}>{t("settings.liveOutputAutoScrollDescription")}</div>
                     </div>
@@ -595,33 +581,6 @@ export function SettingsDialog({
                     >
                       <span />
                     </button>
-                  </div>
-
-                  <div className={`${styles.conversationRow} ${styles.sendShortcutRow}`}>
-                    <div className={styles.conversationCopy}>
-                      <div data-settings-id="conversation.sendShortcut" className={styles.rowTitle}>{t("settings.sendShortcut")}</div>
-                      <div className={styles.rowDescription}>{t("settings.sendShortcutDescription")}</div>
-                    </div>
-                    <div className={styles.shortcutOptionGroup} role="radiogroup" aria-label={t("settings.sendShortcut")}>
-                      <button
-                        className={styles.shortcutOption}
-                        type="button"
-                        role="radio"
-                        aria-checked={sendShortcut === "enter"}
-                        onClick={() => setSendShortcut("enter")}
-                      >
-                        <kbd>{t("settings.sendShortcutEnter")}</kbd>
-                      </button>
-                      <button
-                        className={styles.shortcutOption}
-                        type="button"
-                        role="radio"
-                        aria-checked={sendShortcut === "ctrl-enter"}
-                        onClick={() => setSendShortcut("ctrl-enter")}
-                      >
-                        <kbd>{t("settings.sendShortcutCtrlEnter")}</kbd>
-                      </button>
-                    </div>
                   </div>
 
                   <div className={styles.conversationRow}>

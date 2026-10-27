@@ -19,6 +19,9 @@ interface UseHarmonyLiveFrameOptions {
   active: boolean;
   enabled: boolean;
   paused?: boolean;
+  preferFrames?: boolean;
+  /** Passive viewers do not need the HDC input-coordinate calibration loop. */
+  calibrateGeometry?: boolean;
   serial: string;
   generation?: number;
   fallbackError: string;
@@ -57,6 +60,8 @@ type StreamAttempt = {
   startedAt: number;
   decodedFrames: number;
   jpegChain: Promise<void>;
+  jpegPending?: { bytes: Uint8Array; config: StreamConfig };
+  jpegBusy?: boolean;
 };
 
 async function responseError(response: Response, chinese: boolean): Promise<string> {
@@ -164,7 +169,8 @@ async function waitForDecoderCapacity(decoder: VideoDecoder, signal: AbortSignal
 }
 
 function reconnectDelay(failures: number): number {
-  return Math.min(8_000, 250 * (2 ** Math.min(Math.max(0, failures - 1), 5)));
+  // Stay inside the phone's five-second consented-session reconnect grace.
+  return Math.min(2_000, 250 * (2 ** Math.min(Math.max(0, failures - 1), 3)));
 }
 
 export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
@@ -174,9 +180,11 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
   const [error, setError] = useState<string | null>(null);
   const [frame, setFrame] = useState<HarmonyLiveFrame | null>(null);
   const [fallbackReason, setFallbackReason] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<{ fps: number; drawMs: number } | null>(null);
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
 
   useEffect(() => {
+    setMetrics(null);
     if (!options.active || !options.enabled || !options.serial || options.generation === undefined) {
       setFrame(null);
       setStatus("idle");
@@ -190,6 +198,8 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     const lifecycle = new AbortController();
     let disposed = false;
     let decoder: VideoDecoder | undefined;
+    let pendingPresentation: { frame: VideoFrame; attempt: StreamAttempt } | undefined;
+    let presentationTick: number | undefined;
     let decoderEpoch = 0;
     let config: StreamConfig | undefined;
     let revision = 0;
@@ -197,7 +207,22 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     let failures = 0;
     let hasFrame = false;
     let activeAttempt: StreamAttempt | undefined;
+    let fallback: { controller: AbortController; done: Promise<void> } | undefined;
+    const fallbackActive = () => Boolean(fallback && !fallback.controller.signal.aborted);
+    let measuredFrames = 0, drawMilliseconds = 0, measuredAt = performance.now();
+    const measuredDraw = (draw: () => void) => {
+      const start = performance.now(); draw(); measuredFrames++; drawMilliseconds += performance.now() - start;
+      const now = performance.now();
+      if (now - measuredAt < 1000) return;
+      setMetrics({ fps: Math.round(measuredFrames * 10000 / Math.max(1, now - measuredAt)) / 10,
+        drawMs: Math.round(drawMilliseconds / measuredFrames * 10) / 10 });
+      measuredAt = now; measuredFrames = 0; drawMilliseconds = 0;
+    };
     const closeDecoder = () => {
+      if (presentationTick !== undefined) window.cancelAnimationFrame?.(presentationTick);
+      presentationTick = undefined;
+      pendingPresentation?.frame.close();
+      pendingPresentation = undefined;
       // A stream can change configuration without replacing its connection.
       // Invalidate callbacks before close, which may itself deliver an error.
       decoderEpoch += 1;
@@ -205,14 +230,14 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       if (decoder && decoder.state !== "closed") decoder.close();
       decoder = undefined;
     };
-    const armWatchdog = (attempt: StreamAttempt) => {
+    const armWatchdog = (attempt: StreamAttempt, budgetMs = 15_000) => {
       window.clearTimeout(attempt.watchdog);
       attempt.watchdog = window.setTimeout(() => {
         if (disposed || activeAttempt !== attempt) return;
         attempt.failure = new Error("Harmony video stopped producing frames");
         attempt.controller.abort();
         void attempt.reader?.cancel(attempt.failure).catch(() => undefined);
-      }, 15_000);
+      }, budgetMs);
     };
     setFrame(null);
     setStatus("loading");
@@ -249,7 +274,11 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
 
     const publishFrame = (width: number, height: number, attempt: StreamAttempt) => {
       if (disposed || activeAttempt !== attempt || attempt.controller.signal.aborted) return;
-      if (attempt.geometryConfig && !attempt.geometryRefreshing && attempt.geometryTimer === undefined) void refreshGeometry(attempt, attempt.geometryConfig);
+      // Only decoded pixels complete the handoff. Configuration alone cannot
+      // replace the working fallback, and its outstanding bitmap is fenced.
+      fallback?.controller.abort();
+      setMode("video");
+      if (options.calibrateGeometry !== false && attempt.geometryConfig && !attempt.geometryRefreshing && attempt.geometryTimer === undefined) void refreshGeometry(attempt, attempt.geometryConfig);
       revision += 1;
       attempt.decodedFrames += 1;
       armWatchdog(attempt);
@@ -278,7 +307,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           canvas.width = width;
           canvas.height = height;
         }
-        canvas.getContext("2d", { alpha: false })?.drawImage(videoFrame, 0, 0, width, height);
+        measuredDraw(() => { canvas.getContext("2d", { alpha: false })?.drawImage(videoFrame, 0, 0, width, height); });
         publishFrame(width, height, attempt);
       } finally {
         videoFrame.close();
@@ -307,7 +336,16 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
             videoFrame.close();
             return;
           }
-          drawVideoFrame(videoFrame, attempt);
+          // Decode every dependent H.264 frame, but present only the newest
+          // decoded image per display refresh. Never queue obsolete paints.
+          if (!window.requestAnimationFrame) { drawVideoFrame(videoFrame, attempt); return; }
+          pendingPresentation?.frame.close();
+          pendingPresentation = { frame: videoFrame, attempt };
+          presentationTick ??= window.requestAnimationFrame(() => {
+            presentationTick = undefined;
+            const pending = pendingPresentation; pendingPresentation = undefined;
+            if (pending) drawVideoFrame(pending.frame, pending.attempt);
+          });
         },
         error: (decodeError) => {
           if (disposed || activeAttempt !== attempt || attempt.controller.signal.aborted || decoderEpoch !== configuredEpoch) return;
@@ -323,12 +361,12 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       const bitmap = await createImageBitmap(new Blob([bytes.slice().buffer as ArrayBuffer], { type: "image/jpeg" }));
       try {
         const canvas = options.canvasRef.current;
-        if (!canvas || disposed || activeAttempt !== attempt) return;
+        if (!canvas || disposed || activeAttempt !== attempt || attempt.controller.signal.aborted || attempt.geometryConfig !== next) return;
         if (canvas.width !== next.width || canvas.height !== next.height) {
           canvas.width = next.width;
           canvas.height = next.height;
         }
-        canvas.getContext("2d", { alpha: false })?.drawImage(bitmap, 0, 0, next.width, next.height);
+        measuredDraw(() => { canvas.getContext("2d", { alpha: false })?.drawImage(bitmap, 0, 0, next.width, next.height); });
         publishFrame(next.width, next.height, attempt);
       } finally {
         bitmap.close();
@@ -344,13 +382,13 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         throw new Error("Harmony RGBA frame dimensions are invalid");
       }
       const canvas = options.canvasRef.current;
-      if (!canvas || disposed || activeAttempt !== attempt) return;
+      if (!canvas || disposed || activeAttempt !== attempt || attempt.controller.signal.aborted) return;
       if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
       }
       const pixels = new Uint8ClampedArray(bytes.slice(8).buffer as ArrayBuffer);
-      canvas.getContext("2d", { alpha: false })?.putImageData(new ImageData(pixels, width, height), 0, 0);
+      measuredDraw(() => { canvas.getContext("2d", { alpha: false })?.putImageData(new ImageData(pixels, width, height), 0, 0); });
       publishFrame(width, height, attempt);
     };
 
@@ -362,7 +400,10 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         attempt.geometryConfig = config;
         attempt.geometryRefreshing = false;
         attempt.geometryId = undefined;
-        setFrame(previous => previous ? { ...previous, geometryId: undefined } : previous);
+        if (!fallbackActive()) {
+          setStatus("loading");
+          setFrame(previous => previous ? { ...previous, geometryId: undefined } : previous);
+        }
         await configureDecoder(config, attempt);
         return;
       }
@@ -392,8 +433,24 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         decoder.decode(new EncodedVideoChunk({ type: keyframe ? "key" : "delta", timestamp, data: chunkData }));
         if (keyframe) firstKeyframe = true;
       } else if (config.codec === JPEG) {
-        attempt.jpegChain = attempt.jpegChain.then(() => drawJpeg(data, config!, attempt));
-        await attempt.jpegChain;
+        // JPEG frames are independent. Keep reading the transport while one
+        // bitmap decodes and replace the single pending frame with the latest.
+        attempt.jpegPending = { bytes: data, config };
+        if (!attempt.jpegBusy) {
+          attempt.jpegBusy = true;
+          attempt.jpegChain = (async () => {
+            try {
+              while (attempt.jpegPending && !attempt.controller.signal.aborted) {
+                const next = attempt.jpegPending; attempt.jpegPending = undefined;
+                await drawJpeg(next.bytes, next.config, attempt);
+              }
+            } catch (error) {
+              attempt.failure = error instanceof Error ? error : new Error(String(error));
+              attempt.controller.abort();
+              void attempt.reader?.cancel(attempt.failure).catch(() => undefined);
+            } finally { attempt.jpegBusy = false; attempt.jpegPending = undefined; }
+          })();
+        }
       } else if (config.codec === RAW_RGBA) {
         drawRgba(data, config, attempt);
       } else {
@@ -437,23 +494,53 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       }
     };
 
-    const pollFrames = async () => {
-      let fallbackGeometry: { width: number; height: number; geometryId: string } | undefined;
+    const pollFrames = async (signal: AbortSignal) => {
+      type FallbackGeometry = { width: number; height: number; geometryId: string };
+      let fallbackGeometry: FallbackGeometry | undefined;
       let fallbackGeometryCheckedAt = 0;
+      let geometryPending = false;
+      let frameShape: { width: number; height: number; generation: number } | undefined;
+      let geometryProbedShape: typeof frameShape;
       let fallbackFailures = 0;
+      const refreshFallbackGeometry = (expected: NonNullable<typeof frameShape>) => {
+        if (options.calibrateGeometry === false) return;
+        if (geometryPending) return;
+        geometryPending = true;
+        geometryProbedShape = expected;
+        fallbackGeometry = undefined;
+        fallbackGeometryCheckedAt = performance.now();
+        // Calibration can involve slow HDC commands. It gates input readiness,
+        // not observation: never stall the next screenshot behind this request.
+        void (async () => {
+          let next: FallbackGeometry | undefined;
+          try {
+            const response = await fetch(`/api/harmony/geometry?serial=${encodeURIComponent(options.serial)}&space=screenshot`, { cache: "no-store", signal });
+            if (response.ok) {
+              const { geometry } = await response.json();
+              if (geometry?.frameWidth === expected.width && geometry?.frameHeight === expected.height && typeof geometry.geometryId === "string") {
+                next = { width: expected.width, height: expected.height, geometryId: geometry.geometryId };
+              }
+            }
+          } catch { /* Keep observation available; retry calibration on later frames. */ }
+          finally { geometryPending = false; }
+          if (disposed || signal.aborted || frameShape !== expected) return;
+          fallbackGeometry = next;
+          setFrame(current => current && current.generation === expected.generation
+            && current.width === expected.width && current.height === expected.height
+            ? { ...current, geometryId: next?.geometryId } : current);
+        })();
+      };
       setMode("frames");
-      closeDecoder();
-      config = undefined;
-      firstKeyframe = false;
-      while (!lifecycle.signal.aborted) {
+      while (!signal.aborted) {
         if (document.hidden) {
-          await delay(1_000, lifecycle.signal);
+          await delay(1_000, signal);
           continue;
         }
+        const captureStartedAt = performance.now();
         try {
           const response = await fetch(`/api/harmony/frame?serial=${encodeURIComponent(options.serial)}&v=${Date.now()}`, {
             cache: "no-store",
-            signal: lifecycle.signal,
+            signal,
           });
           if (!response.ok) throw new Error(await responseError(response, Boolean(options.chinese)));
           const generation = Number(response.headers.get("X-Harmony-Generation"));
@@ -461,30 +548,25 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           if (!Number.isSafeInteger(generation) || !Number.isSafeInteger(frameRevision)) {
             throw new Error("Device frame metadata is invalid");
           }
+          if (generation !== options.generation) throw new Error("Device frame belongs to an old generation");
           const bitmap = await createImageBitmap(await response.blob());
           try {
             const canvas = options.canvasRef.current;
-            if (!canvas || disposed) return;
+            if (!canvas || disposed || signal.aborted) return;
             if (canvas.width !== bitmap.width || canvas.height !== bitmap.height) {
               canvas.width = bitmap.width;
               canvas.height = bitmap.height;
             }
-            canvas.getContext("2d", { alpha: false })?.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height);
+            measuredDraw(() => { canvas.getContext("2d", { alpha: false })?.drawImage(bitmap, 0, 0, bitmap.width, bitmap.height); });
             hasFrame = true;
-            if (fallbackGeometry?.width !== bitmap.width || fallbackGeometry?.height !== bitmap.height || performance.now() - fallbackGeometryCheckedAt > 1500) {
-              fallbackGeometry = undefined; fallbackGeometryCheckedAt = performance.now();
-              setFrame({ serial: options.serial, generation, revision: frameRevision, width: bitmap.width, height: bitmap.height });
-              setStatus("live");
-              setError(null);
-              const response = await fetch(`/api/harmony/geometry?serial=${encodeURIComponent(options.serial)}&space=screenshot`, { cache: "no-store", signal: lifecycle.signal }).catch(() => null);
-              if (response?.ok) {
-                const { geometry } = await response.json();
-                if (geometry?.frameWidth === bitmap.width && geometry?.frameHeight === bitmap.height) {
-                  fallbackGeometry = { width: bitmap.width, height: bitmap.height, geometryId: geometry.geometryId };
-                }
-              }
+            if (frameShape?.width !== bitmap.width || frameShape?.height !== bitmap.height || frameShape?.generation !== generation) {
+              frameShape = { width: bitmap.width, height: bitmap.height, generation };
+              fallbackGeometry = undefined;
             }
-            if (disposed || lifecycle.signal.aborted) return;
+            if (geometryProbedShape !== frameShape || performance.now() - fallbackGeometryCheckedAt > 1500) {
+              refreshFallbackGeometry(frameShape);
+            }
+            if (disposed || signal.aborted) return;
             setFrame({
               geometryId: fallbackGeometry?.geometryId,
               serial: options.serial,
@@ -499,9 +581,11 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           } finally {
             bitmap.close();
           }
-          await delay(120, lifecycle.signal);
+          // Bound fast captures to ~8 fps without adding 120ms to an already
+          // slow capture. There remains exactly one screenshot request at a time.
+          await delay(Math.max(0, 120 - (performance.now() - captureStartedAt)), signal);
         } catch (frameError) {
-          if (lifecycle.signal.aborted || disposed) return;
+          if (signal.aborted || disposed) return;
           fallbackFailures += 1;
           // Agent device actions intentionally interrupt an in-flight passive
           // screenshot. Keep the last frame visible and retry instead of
@@ -513,14 +597,26 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
             setStatus("error");
             setFrame(previous => previous ? { ...previous, geometryId: undefined } : previous);
             fallbackGeometry = undefined;
+            frameShape = undefined;
             setError(frameError instanceof Error ? frameError.message : options.fallbackError);
           }
-          await delay(Math.min(4_000, 250 * (2 ** Math.min(fallbackFailures - 1, 4))), lifecycle.signal);
+          await delay(Math.min(4_000, 250 * (2 ** Math.min(fallbackFailures - 1, 4))), signal);
         }
       }
     };
 
+    const startFallback = async () => {
+      if (fallbackActive()) return;
+      // A cancelled pump must settle before a replacement starts; there is
+      // always at most one screenshot request and one bounded video probe.
+      await fallback?.done;
+      if (disposed || lifecycle.signal.aborted) return;
+      const controller = new AbortController();
+      fallback = { controller, done: pollFrames(controller.signal) };
+    };
+
     const connect = async () => {
+      if (options.preferFrames) { await pollFrames(lifecycle.signal); return; }
       while (!lifecycle.signal.aborted) {
         const attempt: StreamAttempt = {
           controller: new AbortController(),
@@ -529,9 +625,12 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           jpegChain: Promise.resolve(),
         };
         activeAttempt = attempt;
+        if (!fallbackActive()) setMode("video");
         const abortAttempt = () => attempt.controller.abort();
         lifecycle.signal.addEventListener("abort", abortAttempt, { once: true });
-        armWatchdog(attempt);
+        // The optional SDK has a 20s startup budget, followed by the server's
+        // bounded first-packet probe. Do not abort it before either can report.
+        armWatchdog(attempt, 30_000);
         if (!hasFrame) setStatus("loading");
         try {
           const response = await fetch(`/api/harmony/video?serial=${encodeURIComponent(options.serial)}`, {
@@ -545,6 +644,8 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           }
           if (!response.ok) throw new Error(await responseError(response, Boolean(options.chinese)));
           if (!response.body) throw new Error("Harmony video response has no stream body");
+          const responseGeneration = response.headers?.get("X-Harmony-Generation");
+          if (responseGeneration != null && Number(responseGeneration) !== options.generation) throw new Error("Video belongs to an old device generation");
           // Establishing the connection and decoding its first frame each have
           // a bounded budget. Configuration packets cannot renew the latter;
           // only an actual displayed frame renews it after this transition.
@@ -556,10 +657,12 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           attempt.controller.abort();
           if (lifecycle.signal.aborted || disposed) return;
           failures += 1;
-          setStatus("error");
-          setFrame(previous => previous ? { ...previous, geometryId: undefined } : previous);
+          if (!fallbackActive()) {
+            setStatus("error");
+            setFrame(previous => previous ? { ...previous, geometryId: undefined } : previous);
+          }
           const reason = attempt.failure?.message ?? (streamError instanceof Error ? streamError.message : options.fallbackError);
-          setError(reason);
+          if (!fallbackActive()) setError(reason);
           setFallbackReason(reason);
           closeDecoder();
           config = undefined;
@@ -571,8 +674,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
             // Agent holds the exclusive write lease.
             await attempt.jpegChain.catch(() => undefined);
             if (activeAttempt === attempt) activeAttempt = undefined;
-            await pollFrames();
-            return;
+            await startFallback();
           }
           await attempt.jpegChain.catch(() => undefined);
           await delay(reconnectDelay(failures), lifecycle.signal);
@@ -589,13 +691,14 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     return () => {
       disposed = true;
       lifecycle.abort();
+      fallback?.controller.abort();
       window.clearTimeout(activeAttempt?.watchdog);
       window.clearTimeout(activeAttempt?.geometryTimer);
       closeDecoder();
       void activeAttempt?.reader?.cancel().catch(() => undefined);
       void activeAttempt?.jpegChain.catch(() => undefined);
     };
-  }, [options.active, options.canvasRef, options.chinese, options.enabled, options.fallbackError, options.generation, options.paused, options.serial, refreshKey]);
+  }, [options.active, options.canvasRef, options.chinese, options.enabled, options.fallbackError, options.generation, options.paused, options.preferFrames, options.calibrateGeometry, options.serial, refreshKey]);
 
-  return { frame, status, mode, error, fallbackReason, refresh };
+  return { frame, status, mode, error, fallbackReason, refresh, metrics };
 }

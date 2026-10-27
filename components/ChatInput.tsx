@@ -81,7 +81,8 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
 import { useApplicationShortcuts } from "@/hooks/useApplicationShortcuts";
 import { useLocalDictation } from "@/hooks/useLocalDictation";
-import { isPlainEnter } from "@/lib/send-shortcut";
+import { isPlainEnter, matchesSendShortcut, matchesSteerShortcut } from "@/lib/send-shortcut";
+import { useSendShortcut } from "@/hooks/useSendShortcut";
 import { formatShortcutBinding, isMacPlatform, shortcutMatchesEvent, shouldPreserveApplicationShortcut } from "@/lib/keyboard-shortcuts";
 import { AliIcon } from "./AliIcon";
 import { ModelProviderIcon } from "./ModelProviderIcon";
@@ -344,6 +345,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   replySource = null,
 }: Props, ref) {
   const { t, locale } = useI18n();
+  const { shortcut: sendShortcut, steerShortcut, newlineShortcut } = useSendShortcut();
   const isMobile = useIsMobile();
   const { bindings: applicationShortcutBindings } = useApplicationShortcuts();
   const voiceInputBinding = applicationShortcutBindings["composer.voiceInput"];
@@ -1381,8 +1383,8 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
         nativeEvent.isComposing ||
         nativeEvent.keyCode === 229;
 
-      if (e.key === "Enter" && !e.shiftKey && (isComposing || recentlyComposed)) {
-        if (recentlyComposed) e.preventDefault();
+      if (isComposing || recentlyComposed) {
+        if (e.key === "Enter" && recentlyComposed) e.preventDefault();
         return;
       }
 
@@ -1434,7 +1436,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
         if ((e.key === "Tab" || isPlainEnter(e)) && filteredSlashCommands[slashActiveIndex]) {
           e.preventDefault();
           const selected = filteredSlashCommands[slashActiveIndex];
-          if (isPlainEnter(e) && selected.name === slashQuery && selected.argumentMode !== "required") {
+          if (matchesSendShortcut(e, sendShortcut) && selected.name === slashQuery && selected.argumentMode !== "required") {
             setSlashMenuOpen(false);
             void handleSend();
             return;
@@ -1497,22 +1499,39 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
         return;
       }
 
-      if (isStreaming && !isCommandInput && !isComposing && e.key === "Enter" && e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (onQueueInput || onSteer)) {
+      if (matchesSendShortcut(e, newlineShortcut)) {
         e.preventDefault();
-        if (canQueueStreamingMessage) void sendQueued("steer");
+        const textarea = e.currentTarget;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const nextValue = textarea.value.slice(0, start) + "\n" + textarea.value.slice(end);
+        setValue(nextValue);
+        setHistoryMenuOpen(false);
+        updateAtQuery(nextValue, start + 1);
+        requestAnimationFrame(() => textarea.setSelectionRange(start + 1, start + 1));
         return;
       }
 
-      if (isPlainEnter(e)) {
+      if (matchesSteerShortcut(e, steerShortcut)) {
         e.preventDefault();
+        if (!e.repeat && isStreaming && !isCommandInput && (onQueueInput || onSteer) && canQueueStreamingMessage) void sendQueued("steer");
+        return;
+      }
+
+      if (matchesSendShortcut(e, sendShortcut)) {
+        e.preventDefault();
+        if (e.repeat) return;
         if (isStreaming && !isCommandInput && (onQueueInput || onSteer || onFollowUp)) {
           submitStreamingMessage();
         } else {
           handleSend();
         }
+        return;
       }
+      // Only the configured newline binding inserts a line break.
+      if (e.key === "Enter") e.preventDefault();
     },
-    [isStreaming, isCommandInput, onQueueInput, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, canQueueStreamingMessage, stopVoiceInput, localVoiceRecording, attachmentMenuOpen, sendQueued, submitStreamingMessage, undoReplyDraft]
+    [isStreaming, isCommandInput, onQueueInput, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, canQueueStreamingMessage, stopVoiceInput, localVoiceRecording, attachmentMenuOpen, sendQueued, submitStreamingMessage, undoReplyDraft, sendShortcut, steerShortcut, newlineShortcut, setValue, updateAtQuery]
   );
 
   const handleInput = useCallback(() => {

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { createJiti } from "jiti";
 import { buildVirtualOffsets, virtualRange } from "../lib/virtual-window.ts";
 import { indexTaskTree, flattenTaskWindow } from "../lib/sidebar-tree-window.ts";
-const { buildChatHistoryRows } = await createJiti(import.meta.url).import("../lib/chat-history.ts");
+const { buildCompactChatHistoryRows } = await createJiti(import.meta.url).import("../lib/compact-chat-history.ts");
 import { getDiffRenderWindow, DIFF_RENDER_BATCH } from "../lib/diff-progressive.ts";
 import { buildEntriesFromFiles, filterFileEntries } from "../lib/file-fuzzy.ts";
 import { filterSessions } from "../lib/session-search.ts";
@@ -50,7 +50,7 @@ const history = Array.from({ length: 10_000 }, (_, index) => index % 2 === 0
   ? { role: "user", content: `Request ${index}` }
   : { role: "assistant", content: [{ type: "text", text: `Answer ${index}` }] });
 const historyIds = history.map((_, index) => `entry-${index}`);
-const historyRows = buildChatHistoryRows(history, historyIds, false, new Set()).rows;
+const historyRows = buildCompactChatHistoryRows(history, historyIds, false, new Map()).rows;
 const historyOffsets = buildVirtualOffsets(historyRows.map((row) => row.key), new Map(), 160);
 const taskTree = sessions.map((session) => ({ session, children: [] }));
 
@@ -70,7 +70,7 @@ const rootMarkdownConsumerSource = ["components/MessageView.tsx", "components/Co
 const checks = [
   measure("filter 500 tasks", 50, () => filterSessions(sessions, "", "task 49")),
   measure("search a 5,000-file index", 800, () => filterFileEntries(fileEntries, "file-4999", 1_000)),
-  measure("plan 10,000 actual chat rows", 100, () => buildChatHistoryRows(history, historyIds, false, new Set())),
+  measure("plan 10,000 actual chat rows", 100, () => buildCompactChatHistoryRows(history, historyIds, false, new Map())),
   measure("window old, middle and recent chat positions", 10, () => [0, 800_000, 1_590_000].map((top) => virtualRange(historyOffsets, top, 900))),
   verify("chat windows stay bounded when navigating both directions", [0, 800_000, 1_590_000, 800_000, 0].every((top) => { const range = virtualRange(historyOffsets, top, 900); return range.end - range.start <= 20; })),
   measure("index and flatten 500 sidebar tasks", 50, () => flattenTaskWindow(indexTaskTree(taskTree, {}, []), new Set())),

@@ -2,6 +2,7 @@
 import { DEFAULT_TOOL_PERMISSION_CHANGED, notifyDefaultToolPermissionChanged, saveDefaultToolPermission } from "./useDefaultToolPermission";
 import { isPermissionMode, type PermissionMode, type ToolPermissionState } from "@/lib/tool-permission-policy";
 import { NestedToolCallsStore } from "@/lib/nested-tool-calls";
+import type { ToolReviewRecord } from "@/lib/tool-review-types";
 
 import { createAgentEventDecoder } from "@/lib/agent-event-transport";
 import { savePendingPrompt, readPendingPrompts, mergePendingPrompts, confirmPendingPrompts, type PendingPrompt } from "@/lib/prompt-recovery";
@@ -19,7 +20,7 @@ import type {
 import { normalizeToolCalls } from "@/lib/normalize";
 import { AgentCommandError, createAgentSessionRequest, sendAgentCommand } from "@/lib/agent-client";
 import type { DispatchReceipt } from "@/lib/session-message-types";
-import { getDraft, setDraft, type ChatDraft } from "@/lib/draft-store";
+import { setDraft, type ChatDraft } from "@/lib/draft-store";
 import { reduceAgentPhase, type AgentPhase } from "@/lib/agent-phase";
 import { isRunProgressEvent, type RunStatusClock } from "@/lib/run-progress";
 import { useI18n } from "@/hooks/useI18n";
@@ -521,6 +522,29 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
+  const [toolReviews, setToolReviews] = useState<ToolReviewRecord[]>([]);
+  const acceptToolReviews = useCallback((incoming: ToolReviewRecord[]) => {
+    setToolReviews(current => {
+      const records = new Map(current.map(record => [record.id, record]));
+      for (const record of incoming) if (record.sessionId === sessionIdRef.current && (!records.has(record.id) || records.get(record.id)!.updatedAt <= record.updatedAt)) records.set(record.id, record);
+      return [...records.values()].sort((a, b) => a.startedAt - b.startedAt).slice(-100);
+    });
+  }, []);
+  useEffect(() => {
+    setToolReviews([]);
+    if (!session?.id) return;
+    const controller = new AbortController();
+    const refresh = () => {
+      void fetch(`/api/sessions/${encodeURIComponent(session.id)}/tool-reviews`, { signal: controller.signal }).then(response => response.ok ? response.json() : null).then(data => {
+        if (!controller.signal.aborted && Array.isArray(data?.reviews)) acceptToolReviews(data.reviews);
+      }).catch(() => undefined);
+    };
+    refresh();
+    const refreshVisible = () => { if (document.visibilityState !== "hidden") refresh(); };
+    const timer = window.setInterval(refreshVisible, 5000);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => { controller.abort(); window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshVisible); };
+  }, [session?.id, acceptToolReviews]);
   const [toolPermission, setToolPermission] = useState<ToolPermissionState | null>(() => opts.newSessionInitialPermissionMode
     ? { mode: opts.newSessionInitialPermissionMode, revision: 0 } : null);
   const acceptToolPermission = useCallback((next: ToolPermissionState) => {
@@ -596,7 +620,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const promptSubmissionRef = useRef<{ runId: number; sid: string; idempotencyKey: string; pending: boolean; commandId: string | null } | null>(null);
   const cancelPreparedPromptRef = useRef<(() => void) | null>(null);
   const abortRequestRunIdRef = useRef<number | null>(null);
-  const resumedAbortQueueIdRef = useRef<string | null>(null);
+
   const phaseEventRevisionRef = useRef(0);
   /** Last time the active run produced visible progress (stream, tool output, results). */
   const activityClockRef = useRef<number>(Date.now());
@@ -623,6 +647,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const displayModel = isNew ? (newSessionModel ?? newSessionDefaultModel) : currentModel;
   const estimatedContextUsage = useMemo(() => {
     if (!displayModel) return null;
+    // A missing window stays 0 and the estimate is skipped. Do not substitute a
+    // hidden size here; legacy resolution is documented in lib/model-limits.ts.
     const contextWindow = modelList.find((entry) => (
       entry.provider === displayModel.provider && entry.id === displayModel.modelId
     ))?.contextWindow ?? 0;
@@ -1440,6 +1466,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [agentRunning]);
 
   const handleAgentEvent = useCallback((event: AgentEvent) => {
+    if (event.type === "tool_review" && event.review) { acceptToolReviews([event.review as ToolReviewRecord]); return; }
     // Stop intent wins over buffered agent_start/tool/retry events, even
     // while the abort HTTP request or server cleanup is still pending.
     if (cancelledPromptRunIdRef.current === promptRunIdRef.current) return;
@@ -1659,7 +1686,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
     }
-  }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, nestedCallsStore, refreshContextUsage, setExtensionDialog, waitForPromptSettlement, acceptToolPermission]);
+  }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, nestedCallsStore, refreshContextUsage, setExtensionDialog, waitForPromptSettlement, acceptToolPermission, acceptToolReviews]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const chatCommands = useChatCommandOperations({
@@ -1960,47 +1987,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         ? { type: "cancel_prompt_submission", idempotencyKey: submission.idempotencyKey,
           ...(submission.commandId ? { promptCommandId: submission.commandId } : {}) }
         : { type: "abort" };
-      const result = await sendAgentCommand<{ queuedMessages?: QueuedMessages & { id: string } }>(sid, command, { timeoutMs: 10_000 });
-      // Only the SDK's cleared queue identifies messages it has not consumed.
-      // The optimistic tray may still contain an already-delivered message.
-      const queued = normalizeQueuedMessages(result?.queuedMessages);
-      const queuedPromptId = result?.queuedMessages?.id;
-      const resumeText = queuedPromptId && resumedAbortQueueIdRef.current === queuedPromptId
-        ? "" : [...queued.steering, ...queued.followUp].join("\n\n");
-      if (resumeText && queuedPromptId) resumedAbortQueueIdRef.current = queuedPromptId;
-      const restoreQueuedDraft = () => {
-        if (!resumeText) return;
-        if (sessionIdRef.current === sid) {
-          opts.chatInputRef?.current?.prependText(resumeText, queuedPromptId ? [queuedPromptId] : undefined);
-        } else {
-          const draft = getDraft(sid) ?? { value: "", images: [], files: [] };
-          setDraft(sid, {
-            ...draft,
-            value: [resumeText, draft.value].filter(Boolean).join("\n\n"),
-            ...(queuedPromptId ? { retryOfPromptIds: [...new Set([...(draft.retryOfPromptIds ?? []), queuedPromptId])] } : {}),
-          });
-        }
-      };
-      // The server acknowledges as soon as the SDK cancellation signal has
-      // been delivered. End the local stream now instead of waiting for slow
-      // model-transport or extension cleanup to emit prompt_done.
-      if (promptRunIdRef.current !== runId || sessionIdRef.current !== sid) {
-        restoreQueuedDraft();
-        return;
-      }
+      await sendAgentCommand(sid, command, { timeoutMs: 10_000 });
+      // Unconsumed inputs remain separate durable paused commands. Stopping
+      // neither starts another run nor changes the user's current draft.
+      if (promptRunIdRef.current !== runId || sessionIdRef.current !== sid) return;
       setQueuedMessages({ steering: [], followUp: [] });
       void finishPromptWithoutStream(sid, runId);
-      // Normal submission commits the recovered text to IndexedDB and the
-      // server inbox waits for stop cleanup before starting the next prompt.
-      // It never clears a newer composer draft and opens a fresh SSE generation.
-      if (resumeText && !await handleSend(resumeText, undefined, undefined, undefined, undefined, undefined, queuedPromptId ?? crypto.randomUUID())) restoreQueuedDraft();
     } catch (e) {
       if (promptRunIdRef.current !== runId) return;
       addNotice({ type: "error", message: t("chat.stopFailed", { reason: e instanceof Error ? e.message : String(e) }) });
     } finally {
       if (abortRequestRunIdRef.current === runId) abortRequestRunIdRef.current = null;
     }
-  }, [addNotice, finishPromptWithoutStream, handleSend, opts.chatInputRef, setExtensionDialog, t]);
+  }, [addNotice, finishPromptWithoutStream, setExtensionDialog, t]);
 
   const handleDeleteMessage = useCallback(async (message: AgentMessage, entryId?: string) => {
     if (messageMutationRef.current || agentRunningRef.current || bashRunningRef.current || isCompacting) throw new Error(t("chat.deleteMessageBusy"));
@@ -2801,7 +2800,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   return {
     // State
-    toolPermission, permissionSaving, handleToolPermission,
+    toolPermission, permissionSaving, handleToolPermission, toolReviews,
     nestedCallsStore, data, loading, error, activeLeafId, messages, entryIds, streamState, replyHistorySettling,
     agentRunning, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
     retryInfo, contextUsage: effectiveContextUsage, systemPrompt, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,

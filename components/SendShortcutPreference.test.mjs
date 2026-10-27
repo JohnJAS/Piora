@@ -2,27 +2,33 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const [chatInput, settingsDialog, settingsCss, hook, autoScrollHook] = await Promise.all([
+const [chatInput, settingsDialog, shortcutSettings, hook, autoScrollHook, roomComposer] = await Promise.all([
   readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8"),
   readFile(new URL("./SettingsDialog.tsx", import.meta.url), "utf8"),
-  readFile(new URL("./SettingsDialog.module.css", import.meta.url), "utf8"),
+  readFile(new URL("./ChatShortcutSettings.tsx", import.meta.url), "utf8"),
   readFile(new URL("../hooks/useSendShortcut.ts", import.meta.url), "utf8"),
   readFile(new URL("../hooks/useLiveOutputAutoScrollPreference.ts", import.meta.url), "utf8"),
+  readFile(new URL("./RoomComposer.tsx", import.meta.url), "utf8"),
 ]);
 
-test("conversation settings expose one mutually exclusive send shortcut choice", () => {
-  assert.match(settingsDialog, /role="radiogroup"/);
-  assert.match(settingsDialog, /aria-checked=\{sendShortcut === "enter"\}/);
-  assert.match(settingsDialog, /aria-checked=\{sendShortcut === "ctrl-enter"\}/);
-  assert.match(settingsDialog, /setSendShortcut\("enter"\)/);
-  assert.match(settingsDialog, /setSendShortcut\("ctrl-enter"\)/);
-  assert.match(settingsCss, /\.shortcutOption\[aria-checked="true"\]/);
+test("shortcut input settings expose three independently recordable actions", async () => {
+  assert.doesNotMatch(settingsDialog, /<ChatShortcutSettings/);
+  const applicationSettings = await readFile(new URL("./ShortcutSettings.tsx", import.meta.url), "utf8");
+  assert.match(applicationSettings, /group.id === "input" && <ChatShortcutSettings/);
+  assert.match(shortcutSettings, /const actions = \["send", "steer", "newline"\]/);
+  assert.match(shortcutSettings, /capture\(action, event\)/);
+  assert.match(shortcutSettings, /save\(action, DEFAULT_CHAT_SHORTCUTS\[action\]\)/);
+  assert.match(shortcutSettings, /save\(action, null\)/);
 });
 
-test("individual chat shortcuts are fixed and cannot inherit group chat preferences", () => {
-  assert.doesNotMatch(chatInput, /useSendShortcut|matchesSendShortcut|streamingSendPreference/);
-  assert.match(chatInput, /if \(isPlainEnter\(e\)\)/);
-  assert.match(chatInput, /e\.ctrlKey && !e\.metaKey && !e\.altKey && !e\.shiftKey/);
+test("individual and group chats share the send preference while steering stays explicit", () => {
+  for (const source of [chatInput, roomComposer]) {
+    assert.match(source, /useSendShortcut\(\)/);
+    assert.match(source, /matchesSendShortcut\(/);
+    assert.doesNotMatch(source, /streamingSendPreference/);
+  }
+  assert.match(chatInput, /if \(matchesSendShortcut\(e, sendShortcut\)\)/);
+  assert.match(chatInput, /matchesSteerShortcut\(e, steerShortcut\)/);
   assert.match(chatInput, /sendQueued\("steer"\)/);
   assert.match(chatInput, /sendQueued\("followup"\)/);
 });
@@ -30,7 +36,7 @@ test("individual chat shortcuts are fixed and cannot inherit group chat preferen
 test("the preference synchronizes all mounted consumers and browser tabs", () => {
   assert.match(hook, /useSyncExternalStore/);
   assert.match(hook, /listeners\.forEach/);
-  assert.match(hook, /window\.localStorage\.setItem\(SEND_SHORTCUT_STORAGE_KEY, shortcut\)/);
+  assert.match(hook, /window\.localStorage\.setItem\(CHAT_SHORTCUT_STORAGE_KEY,/);
   assert.match(hook, /window\.addEventListener\("storage"/);
 });
 

@@ -11,7 +11,6 @@ import { normalizeCustomPanelLines, parseAnsiLine } from "@/lib/ansi";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { messageFingerprint } from "@/lib/chat-history";
 import { CompactProcessContext } from "./CompactProcessContext";
-import { useCompactProcessPreference } from "@/hooks/useCompactProcessPreference";
 import { ChatHistory, type ChatHistoryHandle } from "./ChatHistory";
 import { MessageView } from "./MessageView";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
@@ -25,6 +24,7 @@ import { ChatMinimap } from "./ChatMinimap";
 import { ChatScrollRail } from "./ChatScrollRail";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type NoticeItem, type SlashCommandInfo } from "@/hooks/useAgentSession";
+import { ToolReviewStatus } from "./ToolReviewStatus";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
@@ -161,7 +161,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
   // drafts: two new chats in the same project must never restore each other.
   const [newChatDraftKey] = useState(() => `new:${crypto.randomUUID()}`);
   const { t } = useI18n();
-  const { enabled: compactProcess } = useCompactProcessPreference();
+  const compactProcess = false;
   const isMobile = useIsMobile();
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
   const chatColumnWidthRef = useRef(CHAT_COLUMN_DEFAULT_WIDTH);
@@ -203,7 +203,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
 
   const {
     nestedCallsStore, loading, error, messages, entryIds, streamState, replyHistorySettling, activeLeafId, switchHistoryBranch, forkHistoryQuestion,
-    toolPermission, permissionSaving, handleToolPermission,
+    toolPermission, permissionSaving, handleToolPermission, toolReviews,
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactionStartedAt, compactError, compactResult, displayModel: displayModelValue, sessionStats,
@@ -644,6 +644,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
 
   const chatInputElement = (
     <>
+    <ToolReviewStatus reviews={toolReviews} />
     {chatCommands.connectionError && <div role="status" style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)", padding: "6px 10px" }}>{chatCommands.connectionError}</div>}
     <ChatInput
       ref={chatInputRef}
@@ -820,8 +821,9 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
               <ExtensionWidgets widgets={aboveEditorWidgets} />
 
             <ChatHistory
+              key={session?.id ?? sessionIdRef.current ?? "new"}
               operations={chatCommands.records} commandActions={commandActions}
-              messages={messages} compactProcess={compactProcess} streamingMessage={compactProcess && streamState.isStreaming ? streamState.streamingMessage as AgentMessage : null} entryIds={entryIds} busy={sessionBusy} streaming={streamState.isStreaming}
+              messages={messages} directProcess compactProcess={compactProcess} streamingMessage={streamState.isStreaming ? streamState.streamingMessage as AgentMessage : null} entryIds={entryIds} busy={sessionBusy} streaming={streamState.isStreaming}
               isNew={isNew} forkingEntryId={forkingEntryId} highlightedEntryId={highlightedEntryId}
               lastUserMsgRef={lastUserMsgRef} pendingScrollToUserRef={pendingScrollToUserRef} scrollContainer={scrollContainerRef} handleRef={historyRef}
               modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile}
@@ -830,11 +832,6 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
               onDeleteMessage={handleDeleteMessage} deleteDisabled={sessionBusy || deletingMessage || isCompacting || preparingRetry}
               sessionId={session?.id ?? sessionIdRef.current ?? undefined} onOpenAutomation={onOpenAutomation} onOpenCommandExecution={setCommandExecutionDialog}
             />
-            {!compactProcess && streamState.isStreaming && streamState.streamingMessage && (
-              <RenderErrorBoundary resetKey={messageFingerprint(streamState.streamingMessage as AgentMessage)} fallbackLabel={t("chat.messageRenderFailed")}>
-                <MessageView message={streamState.streamingMessage as AgentMessage} isStreaming modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile} sessionId={session?.id ?? sessionIdRef.current ?? undefined} onOpenAutomation={onOpenAutomation} onOpenCommandExecution={setCommandExecutionDialog} />
-              </RenderErrorBoundary>
-            )}
 
             {agentRunning && (agentPhase?.kind === "stopping" || (!streamState.streamingMessage && visionStatus?.phase !== "failed")) && (
               visionStatus && agentPhase?.kind !== "stopping" ? (

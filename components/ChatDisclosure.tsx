@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { AliIcon, type AliIconName } from "./AliIcon";
 
 export function DisclosureChevron() {
@@ -10,10 +11,12 @@ export function DisclosureChevron() {
 /** Keep the existing reading position when a disclosure changes row height. */
 export function togglePreservingScroll(control: HTMLElement, toggle: () => void) {
   const scroller = control.closest(".overflow-y-auto") as HTMLElement | null;
-  const scrollTop = scroller?.scrollTop;
-  toggle();
-  if (!scroller || scrollTop === undefined) return;
-  requestAnimationFrame(() => { scroller.scrollTop = scrollTop; });
+  if (!scroller) { toggle(); return; }
+  const top = control.getBoundingClientRect().top;
+  // Restore the clicked content anchor synchronously, before virtual row
+  // measurements. Replaying an old scrollTop would fight their corrections.
+  flushSync(toggle);
+  if (control.isConnected) scroller.scrollTop += control.getBoundingClientRect().top - top;
 }
 
 interface TriggerProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children"> {

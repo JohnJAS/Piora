@@ -26,19 +26,26 @@ import {useState} from "react";
 import {createRoot} from "react-dom/client";
 import {I18nProvider} from "@/hooks/useI18n";
 import {ChatInput} from "@/components/ChatInput";
+import {ShortcutSettings} from "@/components/ShortcutSettings";
+import {RoomComposer} from "@/components/RoomComposer";
+import {useSendShortcut} from "@/hooks/useSendShortcut";
 import {NewSessionProjectPicker} from "@/components/NewSessionProjectPicker";
 import {SystemPromptSelector} from "@/components/SystemPromptSelector";
 import {ChatCommandCard,ChatCommandQueue} from "@/components/ChatCommandCard";
+import {ToolReviewStatus} from "@/components/ToolReviewStatus";
 import {createChatCommandCatalog} from "@/lib/chat-command-input";
 const catalog=createChatCommandCatalog([{name:"workflow",source:"extension",description:"Start a workflow and continue until complete"}]);
 const record={commandId:"sample-command",idempotencyKey:"sample",targetSessionId:"sample",acceptedAt:1792483200000,status:"completed",operation:{version:1,rawText:"/name 项目检查",catalogRevision:catalog.revision,command:catalog.commands.find(c=>c.name==="name"),arguments:"项目检查",phase:"settling",steps:[{id:"command",kind:"command",status:"completed",startedAt:1792483200000,completedAt:1792483200200}],result:{title:"chatCommands.renameCompleted",rename:{before:"新会话",after:"项目检查"}}}};
 import { DefaultToolPermissionSetting } from "${path.join(repo, "components/ToolPermissionControl.tsx").replaceAll("\\", "/")}";
 function App(){
+  const [reviews,setReviews]=useState([]);window.setReviews=setReviews;
+  const {shortcut,setShortcut}=useSendShortcut();window.setSendShortcut=setShortcut;
   const [busy,setBusy]=useState(false);window.setBusy=setBusy;
   const [queued,setQueued]=useState([]);window.setQueued=setQueued;
   const [runtimeQueue,setRuntimeQueue]=useState(null);window.setRuntimeQueue=setRuntimeQueue;
   const [permission,setPermission]=useState({mode:"auto",revision:1});
   return <I18nProvider><main>
+    <section id="reviews"><ToolReviewStatus reviews={reviews}/></section>
     <section id="command-results"><ChatCommandCard record={record} actions={{retry:async()=>{},restore:async()=>{},cancel:async()=>{},copy:async()=>{}}}/></section>
     <section id="launcher"><NewSessionProjectPicker activeCwd="/workspace/a-very-long-project-name-for-layout-checks" onLaunch={request=>{window.launched=true;window.launchRequest=request}}/></section>
     <section id="conversation"><ChatInput ref={value=>{window.composer=value}} onSend={(text,...args)=>{window.sent=true;window.submission={text,args};return true}} onAbort={()=>{window.stopped=true;setBusy(false)}}
@@ -49,6 +56,8 @@ function App(){
       toolPermission={permission} onToolPermissionChange={mode=>{setPermission({mode,revision:permission.revision+1});window.permission=mode}}
       thinkingLevel="high" extensionStatuses={[{key:"fixture",text:"Ready"}]}
       contextControl={<SystemPromptSelector selection={{mode:"default"}} onChange={()=>{}}/>}/></section>
+    <section id="room" data-send-shortcut={shortcut}><RoomComposer room={{id:"shortcut-room",members:[],coordination:{mode:"manual"}}} actorSessionId="actor" submissions={[]} onSubmit={async input=>{(window.roomInputs??=[]).push(input);return {...input,status:"delivered"}}/></section>
+    <section id="shortcut-settings"><ShortcutSettings/></section>
     <section id="permission-settings"><DefaultToolPermissionSetting/></section>
   </main></I18nProvider>;
 }
@@ -67,7 +76,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       const errors = [];
       let defaultMode = "auto", failPermissionSave = false;
       const savedModes = [];
-      await context.route("http://composer.test/**", async route => {
+      await context.route("http://localhost:43191/**", async route => {
         const pathname = new URL(route.request().url()).pathname;
         if (pathname === "/api/tool-permissions") {
           if (route.request().method() === "PUT") {
@@ -84,12 +93,12 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         if (pathname.endsWith(".js")) return route.fulfill({ contentType: "text/javascript", body: await readFile(path.join(directory, path.basename(pathname))) });
         return route.fulfill({ contentType: "text/html", body: `<!doctype html><html><meta charset="utf-8"><style>${css}
           body{background:var(--bg);color:var(--text);font-family:var(--ui-font-family)}#root>main{padding:24px}#launcher,#conversation{width:900px;margin-bottom:32px}
-          #launcher{height:650px}#conversation{padding-top:32px}#conversation>[data-composer-variant]{padding:0!important}
+          #shortcut-settings{height:360px}#launcher{height:650px}#conversation{padding-top:32px}#conversation>[data-composer-variant]{padding:0!important}
           </style><div id="root"></div><script src="/bundle.js"></script></html>` });
       });
       const page = await context.newPage();
       page.on("pageerror", error => errors.push(error.message));
-      await page.goto("http://composer.test/");
+      await page.goto("http://localhost:43191/");
       await page.locator("#launcher .model-settings-trigger:not([data-permission-trigger])").waitFor();
       await page.waitForFunction(() => [...document.querySelectorAll('[aria-haspopup="listbox"]')].some(el => el.textContent.includes("Very long system")));
       // Select a real project so its production chip must also truncate.
@@ -125,9 +134,9 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await page.locator("#launcher, #conversation").evaluateAll(sections => sections.forEach(section => { section.style.width = "590px"; }));
       const conversation = page.locator("#conversation");
       const permission = conversation.locator("[data-permission-trigger]");
-      for (const mode of ["full", "ask", "auto"]) {
+      for (const mode of ["full", "ask", "review", "auto"]) {
         await permission.click();
-        assert.equal(await page.getByRole("menuitemradio").count(), 3);
+        assert.equal(await page.getByRole("menuitemradio").count(), 4, "three primary modes plus strict compatibility");
         if (process.env.PIORA_COMPOSER_SCREENSHOTS && mode === "full") {
           await page.getByRole("menu").screenshot({ path: path.join(repo, "test-results/composer-layout", `${locale}-permissions.png`) });
         }
@@ -300,7 +309,6 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       const primary = conversation.locator(".streaming-action-primary");
       const streamingMenu = conversation.locator(".streaming-action-menu");
       let queuedCount = 0;
-      await page.evaluate(() => localStorage.setItem("piora-send-shortcut:v1", "ctrl-enter"));
       // Fresh installs and legacy chooser preferences both default to queueing.
       for (const enabled of [true, false]) {
         await page.evaluate(enabled => { const key = "piora-streaming-send-preference:v1"; const newValue = JSON.stringify({ schemaVersion: 1, enabled, behavior: "followup" }); localStorage.setItem(key, newValue); window.dispatchEvent(new StorageEvent("storage", { key, newValue })); }, enabled);
@@ -337,6 +345,14 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         assert.equal(await conversation.locator('.streaming-action-toggle').count(), 0);
 
       }
+      await editor.fill('No default guidance binding');
+      await editor.press('Control+Enter');
+      assert.equal(await page.evaluate(() => window.queuedInputs.length), queuedCount);
+      assert.equal(await editor.inputValue(), 'No default guidance binding');
+      const shortcutSettings = page.locator('#shortcut-settings');
+      const recorder = action => shortcutSettings.locator('[data-settings-id="conversation.' + action + 'Shortcut"] button').first();
+      await recorder('steer').click();
+      await recorder('steer').press('Control+Enter');
       await editor.fill('Explicit keyboard guidance');
       await editor.press('Control+Enter');
       await page.waitForFunction(count => window.queuedInputs.length === count, ++queuedCount);
@@ -349,6 +365,98 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await editor.press('Shift+Enter');
       assert.equal(await page.evaluate(() => window.queuedInputs.length), queuedCount);
       assert.ok((await editor.inputValue()).includes('\n'));
+      // Record all three actions through the production settings UI.
+      await recorder('send').click();
+      await recorder('send').press('Control+Enter');
+      await shortcutSettings.getByRole('alert').waitFor();
+      assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('piora-chat-shortcuts:v2')).bindings.send), 'Enter', 'a conflict must not overwrite the current binding');
+      await recorder('send').press('Escape');
+      await recorder('steer').click();
+      await recorder('steer').press('Control+Shift+Enter');
+      await recorder('send').click();
+      await recorder('send').press('Control+Enter');
+      await recorder('newline').click();
+      await recorder('newline').press('Alt+Enter');
+      await page.waitForFunction(() => document.querySelector('#room').dataset.sendShortcut !== 'Enter');
+      await editor.fill('Custom queued message');
+      await editor.press('Control+Enter');
+      await page.waitForFunction(count => window.queuedInputs.length === count, ++queuedCount);
+      assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text: 'Custom queued message', delivery: 'next_turn' });
+      await editor.fill('Custom guidance');
+      await editor.press('Control+Shift+Enter');
+      await page.waitForFunction(count => window.queuedInputs.length === count, ++queuedCount);
+      assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text: 'Custom guidance', delivery: 'steer' });
+      // Newlines replace the selection and leave the caret after the inserted break.
+      const roomEditor = page.locator('#room textarea');
+      for (const input of [editor, roomEditor]) {
+        await input.fill('before REPLACE after');
+        await input.evaluate(element => element.setSelectionRange(7, 14));
+        await input.press('Alt+Enter');
+        assert.equal(await input.inputValue(), 'before \n after');
+        await page.waitForFunction(selector => document.querySelector(selector).selectionStart === 8, input === editor ? '#conversation textarea' : '#room textarea');
+        await input.press('Shift+Enter');
+        await input.press('Enter');
+        assert.equal(await input.inputValue(), 'before \n after', 'old bindings must not remain active after customization');
+      }
+      assert.equal(await page.evaluate(() => window.queuedInputs.length), queuedCount);
+      await roomEditor.fill('Shared group shortcut');
+      await roomEditor.press('Control+Enter');
+      await page.waitForFunction(() => window.roomInputs?.at(-1)?.content === 'Shared group shortcut');
+      await page.waitForFunction(() => document.querySelector('#room textarea').value === '');
+      await page.evaluate(() => window.setBusy(false));
+      await editor.fill('Custom idle send');
+      await editor.press('Control+Enter');
+      await page.waitForFunction(() => window.submission?.text === 'Custom idle send');
+      // Completing an exact slash command must not bypass a customized send key.
+      await editor.fill('/workflow');
+      await editor.press('Enter');
+      assert.equal((await page.evaluate(() => window.submission)).text, 'Custom idle send');
+      await editor.press('Control+Enter');
+      await page.waitForFunction(() => window.submission?.text.trim() === '/workflow');
+      // Custom shortcuts stay inert during IME composition, including a non-Enter binding.
+      await recorder('send').click();
+      await recorder('send').press('Control+Shift+S');
+      await editor.fill('Composing message');
+      await editor.dispatchEvent('compositionstart');
+      await editor.press('Control+Shift+S');
+      assert.equal((await page.evaluate(() => window.submission)).text.trim(), '/workflow');
+      await editor.dispatchEvent('compositionend');
+      await page.waitForTimeout(100);
+      await editor.press('Control+Shift+S');
+      await page.waitForFunction(() => window.submission?.text === 'Composing message');
+      // A second tab loads all preferences and propagates edits back to both composers.
+      const otherPage = await context.newPage();
+      await otherPage.goto('http://localhost:43191/');
+      const otherRecorder = otherPage.locator('#shortcut-settings [data-settings-id="conversation.sendShortcut"] button').first();
+      await otherPage.waitForFunction(() => document.querySelector('#room').dataset.sendShortcut === JSON.parse(localStorage.getItem('piora-chat-shortcuts:v2')).bindings.send);
+      assert.equal(await otherRecorder.locator('[role="img"]').getAttribute("aria-label"), "Ctrl+Shift+S");
+      assert.deepEqual(await otherRecorder.locator("kbd").allTextContents(), ["⌃", "⇧", "S"]);
+      await otherRecorder.click();
+      await otherRecorder.press('Enter');
+      await page.waitForFunction(() => document.querySelector('#room').dataset.sendShortcut === 'Enter');
+      await otherPage.close();
+      // Clearing and resetting are independent; no send change reassigns steering.
+      await recorder('steer').click();
+      await recorder('steer').press('Delete');
+      assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('piora-chat-shortcuts:v2')).bindings.steer), null);
+      await shortcutSettings.locator('[data-settings-id="conversation.newlineShortcut"] button').last().click();
+      await editor.fill('Restored newline');
+      await editor.press('Shift+Enter');
+      assert.equal(await editor.inputValue(), 'Restored newline\n');
+      assert.equal(await shortcutSettings.locator('[aria-labelledby="shortcut-group-input"] [data-settings-id^="conversation."]').count(), 3);
+      await recorder('send').click();
+      await recorder('send').press('Control+Enter');
+      const resetAll = shortcutSettings.getByRole('button', { name: /Reset all|全部恢复默认/ });
+      assert.equal(await resetAll.isEnabled(), true);
+      await resetAll.click();
+      assert.deepEqual(await recorder('newline').locator('kbd').allTextContents(), ['⇧', '↵']);
+      assert.equal(await recorder('send').locator('[role="img"]').getAttribute('aria-label'), 'Enter');
+      assert.equal(await resetAll.isEnabled(), false);
+      if (process.env.PIORA_COMPOSER_SCREENSHOTS) {
+        await shortcutSettings.evaluate(element => { element.style.height = 'auto'; });
+        await shortcutSettings.screenshot({ path: path.join(repo, 'test-results/composer-layout', `${locale}-chat-shortcuts.png`) });
+        await shortcutSettings.evaluate(element => { element.style.height = ''; });
+      }
       // Recovered ordinary drafts cannot carry a stale steering delivery into idle sends.
       await page.evaluate(() => window.setBusy(false));
       await editor.fill('');
@@ -415,8 +523,30 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       failPermissionSave = false;
       await launcherTrigger.click();
       await page.locator('[role="menuitemradio"][data-mode="auto"]').click();
-      await page.waitForFunction(() => document.querySelector('#permission-settings [data-permission-trigger]').textContent.match(/Ask as needed|按需询问/));
+      await page.waitForFunction(() => document.querySelector('#permission-settings [data-permission-trigger]').textContent.match(/Request approval|请求批准/));
       assert.equal(defaultMode, "auto");
+
+      await launcherTrigger.click();
+      await page.locator('[role="menuitemradio"][data-mode="review"]').click();
+      await page.waitForFunction(() => document.querySelector('#permission-settings [data-permission-trigger]').textContent.match(/Approve for me|帮我批准/));
+      assert.equal(defaultMode, "review", "AI review is an explicit saved choice");
+      await page.evaluate(() => window.setReviews([{ id:"review-one",toolName:"bash",status:"reviewing",reason:"Checking the requested tests",model:"provider/model",startedAt:1,updatedAt:1 }]));
+      const reviewPanel = page.locator('#reviews [data-tool-reviews]');
+      await reviewPanel.waitFor();
+      assert.equal(await reviewPanel.getAttribute('open'), null, "automatic reviews do not open a dialog");
+      await reviewPanel.locator('summary').click();
+      await reviewPanel.getByText('Checking the requested tests').waitFor();
+      await page.evaluate(() => window.setReviews([{ id:"review-one",toolName:"bash",status:"denied",reason:"Target is outside the authorized deletion scope",model:"provider/model",durationMs:450,tokens:50,startedAt:1,updatedAt:2 }]));
+      await reviewPanel.locator('[data-review-status="denied"]').waitFor();
+      assert.match(await reviewPanel.innerText(), /run stopped|本轮已停止/);
+      assert.match(await reviewPanel.innerText(), /provider\/model/);
+      if (process.env.PIORA_COMPOSER_SCREENSHOTS) {
+        const output = path.join(repo, "test-results", "composer-layout");
+        await reviewPanel.screenshot({ path: path.join(output, `${locale}-tool-review.png`) });
+        await launcherTrigger.click();
+        await page.locator('[role="menu"]').screenshot({ path: path.join(output, `${locale}-permission-menu.png`) });
+        await page.keyboard.press("Escape");
+      }
 
       assert.deepEqual(errors, []);
       await context.close();
