@@ -140,6 +140,8 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     assert.equal(await processHeading.getAttribute("aria-expanded"), "false");
     await screenshot("group-collapsed");
     await processHeading.press("Enter");
+    await page.waitForFunction(() => document.querySelectorAll(".command-execution-card").length === 3);
+    assert.equal(await processHeading.getAttribute("aria-expanded"), "true");
     assert.equal(await page.locator(".command-execution-card").count(), 3);
     await processHeading.click();
     await page.evaluate(() => window.revealEntry("a2"));

@@ -65,6 +65,7 @@ npm run dist:win:preview  # beta
 # npm run dist:win       # stable Windows
 # npm run dist:linux     # stable Linux, on a Linux build machine
 npm run verify:package
+node scripts/verify-portable-runtime.mjs desktop/release/win-unpacked v0.4.41-beta.8
 npm run licenses:package:check
 node scripts/verify-windows-update-artifacts.mjs desktop/release v0.4.41-beta.8
 node scripts/smoke-test-portable.mjs desktop/release/win-unpacked/Piora.exe --expected-version v0.4.41-beta.8 --packaged-runtime
@@ -75,6 +76,8 @@ The staging script validates standalone output and matching static assets. Packa
 `verify:package` copies the packaged service to an isolated location and checks desktop authentication, authenticated root/health responses, Pi sessions, external package/extension/Skill discovery, packaged terminal support and license material. It uses packaged Electron as the Node runtime when required. The after-pack step generates an exact package-copy manifest, CycloneDX SBOM and content-addressed license texts under `resources/licenses/third-party/`; these are separate from the broader source lockfile inventory.
 
 The smoke script verifies the embedded application version, renderer and preload bridge in an isolated profile. Hosted Windows CI exercises the unpacked Electron payload because antivirus scanning can stall the portable wrapper. Final portable-wrapper behavior and actual upgrade/data retention should also be checked on a release machine.
+
+The portable manifest gate also runs its verifier with the packaged Electron binary in Node mode. The verifier uses Electron's `original-fs` to hash physical ASAR archives as complete files; ordinary Electron filesystem APIs mount them as virtual directories. This gate supplements the wrapper's PE/archive checks and preserves rejection of missing, extra, changed or linked payload entries. It does not replace testing the downloaded portable executable itself.
 
 ## Commit, push and trigger
 
