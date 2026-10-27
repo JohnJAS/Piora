@@ -4,6 +4,11 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 鸿蒙设备
+
+- 鸿蒙投屏检测到已有 DevEco 视频服务时尝试共享订阅，关闭 Piora 时保留外部服务；共享兼容性和流畅度仍需真机验证。
+- 打开鸿蒙设备工作台或在侧栏与悬浮投屏之间切换时，不再自动展开整个工作区；仍可手动展开和还原。
+
 ### 发布流程
 
 - 预发布不再要求鸿蒙手机实机验收；保留构建、安装包和更新元数据校验，实机测试结果按实际情况说明。
