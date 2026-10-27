@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 对话设置
+
+- 移除“轻量过程展示”开关及主对话中的过程汇总层；命令和文件操作直接逐条显示，旧开关偏好不再改变展示。
+
 ### 鸿蒙设备
 
 - 鸿蒙投屏检测到已有 DevEco 视频服务时尝试共享订阅，关闭 Piora 时保留外部服务；共享兼容性和流畅度仍需真机验证。
