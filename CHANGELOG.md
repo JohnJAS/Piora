@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 发布流程
+
+- 预发布不再要求鸿蒙手机实机验收；保留构建、安装包和更新元数据校验，实机测试结果按实际情况说明。
+
 ### 对话展示
 
 - 主对话展开进程组后直接逐条显示工具调用，移除重复的工具活动内层分组；保留外层进程摘要、命令日志展开和搜索定位。
