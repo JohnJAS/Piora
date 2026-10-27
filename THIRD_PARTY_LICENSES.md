@@ -2,7 +2,7 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `6c96ed78d7971cdfca2b5c243f638196523753c15aba02112e51b4abea87b2b8`
+Lockfile SHA-256: `7ba2aed8abf3a3616ed4e97c3abf9689066965b3c0a2ee6d73456d955a72e81d`
 
 Unique locked packages: **1381**. Runtime packages: **903**. Build/development-only packages: **478**.
 
@@ -886,7 +886,7 @@ Every locked package declares a license.
 | `vfile` | `6.0.3` | MIT | No |
 | `vfile-location` | `5.0.3` | MIT | No |
 | `vfile-message` | `4.0.3` | MIT | No |
-| `vscode-jsonrpc` | `9.0.3` | MIT | No |
+| `vscode-jsonrpc` | `10.0.0` | MIT | No |
 | `w3c-keyname` | `2.2.8` | MIT | No |
 | `web-namespaces` | `2.0.1` | MIT | No |
 | `web-streams-polyfill` | `3.3.3` | MIT | No |
