@@ -16,6 +16,9 @@ const nextConfig: NextConfig = {
   // Allow isolated dev benchmarks without replacing the interactive cache.
   distDir: process.env.NODE_ENV === "development" ? process.env.PIORA_DEV_DIST_DIR || ".next" : ".next",
   typescript: {
+    // Only the preview workflow sets this: its independent, mandatory quality
+    // job generates Next route types and runs both TypeScript compilers.
+    ignoreBuildErrors: process.env.PIORA_PREVIEW_PARALLEL_TYPECHECK === "1",
     tsconfigPath: process.env.NODE_ENV === "development" ? process.env.PIORA_DEV_TSCONFIG || "tsconfig.json" : "tsconfig.json",
   },
   // Proxy clones request bodies before the route reads them. Its 10 MiB
