@@ -2570,7 +2570,6 @@ export const enLocale: LocalePlugin = {
     "fileEditor.unsaved": "Unsaved",
     "fileEditor.cursorPosition": "Ln {line}, Col {column}",
     "fileEditor.arktsBasic": "ArkTS basic mode",
-    "fileEditor.arktsSemantic": "ArkTS semantic service",
     "fileEditor.tsIntelligence": "Code intelligence on",
     "fileEditor.saveMissingVersion": "Save succeeded without a file version. Reload the file before editing again.",
     "i18n.close": "Close",

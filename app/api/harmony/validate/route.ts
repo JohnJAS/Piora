@@ -4,7 +4,7 @@ import { DevelopmentReportStore } from "@/lib/harmony/development/report-store";
 import { getHarmonyDeviceManager } from "@/lib/harmony";
 import { parseJsonWithinLimit } from "@/lib/bounded-json";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
-import { sourceFingerprint } from "@/lib/harmony/check-runtime";
+import { sourceFingerprint } from "@/lib/harmony/project-source";
 import { validateDevelopmentOnDevice, type DevelopmentValidationOptions } from "@/lib/harmony/development/validation-chain";
 import { HarmonyError } from "@/lib/harmony/errors";
 import { hasJsonContentType } from "@/lib/request-security";

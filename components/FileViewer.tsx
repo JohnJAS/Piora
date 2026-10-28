@@ -1322,7 +1322,7 @@ function TextFileViewer({
               </span>
               <span>{t("fileEditor.cursorPosition", { line: cursorPosition.line, column: cursorPosition.column })}</span>
               {intelligence ? <span title={intelligence.message} aria-label={intelligence.message}>
-                {intelligence.mode === "arkts-basic" ? t("fileEditor.arktsBasic") : intelligence.mode === "arkts-lsp" ? t("fileEditor.arktsSemantic") : t("fileEditor.tsIntelligence")}
+                {intelligence.mode === "arkts-basic" ? t("fileEditor.arktsBasic") : t("fileEditor.tsIntelligence")}
               </span> : null}
               <span>UTF-8</span>
               <span>{formatSize(utf8ByteLength(draftContent))}</span>

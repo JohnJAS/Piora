@@ -148,7 +148,6 @@ jobs:
         run: npm run dist:win:preview
         env:
           PIORA_PREVIEW_PARALLEL_TYPECHECK: "1"
-          PIORA_PREVIEW_STAGED_DEVECO: "1"
           ELECTRON_BUILDER_COMPRESSION_LEVEL: "3"
 
       - name: Verify preview update metadata

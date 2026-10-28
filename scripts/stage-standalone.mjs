@@ -260,14 +260,6 @@ export async function collectRuntimeDependencyAssets(
   return collected.sort((left, right) => left.destination.localeCompare(right.destination));
 }
 
-// Keep the DevEco CLI's code and dependency graph, but omit its optional
-// offline documentation corpus and search index from packaged releases.
-export function shouldCopyRuntimeAsset(assetRoot, source, omitNodeModuleBins = false) {
-  if (omitNodeModuleBins && isNodeModulesBinPath(assetRoot, source)) return false;
-  return !/(?:^|\/)node_modules\/@deveco\/deveco-cli-knowledgebase\/(?:docs|index)\.zip$/i
-    .test(resolve(source).replaceAll("\\", "/"));
-}
-
 export async function findSymbolicLinks(root) {
   const rootEntry = await lstat(root).catch((error) => {
     if (error?.code === "ENOENT") return undefined;
@@ -378,7 +370,6 @@ async function main() {
   const piAiProviderRuntimeRoot = join(projectRoot, "node_modules", "@earendil-works", "pi-ai");
   const piCodingAgentJitiRuntimeRoot = dirname(createRequire(join(projectRoot, "node_modules", "@earendil-works", "pi-coding-agent", "package.json")).resolve("jiti/package.json"));
   const hypiumRuntimeRoot = join(projectRoot, "node_modules", "hypium-driver");
-  const devecoCliRuntimeRoot = join(projectRoot, "node_modules", "@deveco", "deveco-cli");
   const dependencyAssets = await collectRuntimeDependencyAssets([
     // Pi 1.0 loads built-in extensions, QuickJS WASM and workers through
     // computed paths even when the host keeps built-in extensions disabled.
@@ -392,13 +383,6 @@ async function main() {
     // Next traces the ESM entry while source-loaded extensions use Jiti's
     // CommonJS entry. Preserve both conditional exports and their dependencies.
     join(projectRoot, "node_modules", "mediabunny"),
-    // The Harmony checker is loaded from first-party extension source. Stage
-    // the complete DevEco CLI production closure because Next cannot trace
-    // its CLI entry point, MCP server, or dynamically loaded check engines.
-    devecoCliRuntimeRoot,
-    // The 1.3.9 launcher declares the desktop implementation as optional for
-    // platform selection, but Piora requires it even with optional deps omitted.
-    join(projectRoot, "node_modules", "@deveco", "deveco-cli-common"),
     // Device text editing is reached through the source-loaded Harmony
     // extension, so Next cannot trace its GB18030/UTF-16 codec dependency.
     join(projectRoot, "node_modules", "iconv-lite"),
@@ -453,7 +437,9 @@ async function main() {
       recursive: true,
       force: true,
       dereference: true,
-      filter: (source) => shouldCopyRuntimeAsset(asset.source, source, asset.omitNodeModuleBins),
+      ...(asset.omitNodeModuleBins
+        ? { filter: (source) => !isNodeModulesBinPath(asset.source, source) }
+        : {}),
     });
     const destinationType = await getPathType(asset.destination);
     if ((asset.sourceType === "directory" && !await isNonEmptyDirectory(asset.destination)) || (asset.sourceType === "file" && destinationType !== "file")) {

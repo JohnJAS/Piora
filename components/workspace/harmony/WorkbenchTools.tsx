@@ -39,7 +39,6 @@ export function WorkbenchTools({ serial, canControl, ensureControl, onControlHan
     "screen-unlocked": copy("手机解锁状态", "Phone unlock state"),
     "package-install-command": copy("应用安装命令", "Package installation command"),
     "bounded-uinput-protocol": copy("按键与触摸释放协议", "Bounded key and touch protocol"),
-    "deveco-cli": copy("鸿蒙开发工具", "Harmony development tools"),
     "hdc-selection": copy("当前 HDC 工具", "Selected HDC tool"),
     "acoustic-routes": copy("音频输出与校准", "Audio output and calibration"),
     "hypium-worker": copy("自动化执行器", "Automation worker"),

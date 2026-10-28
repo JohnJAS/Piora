@@ -55,19 +55,9 @@ const nextConfig: NextConfig = {
   // explicit root, monorepo/workspace detection can broaden the standalone
   // trace and make the packaged output less deterministic.
   outputFileTracingRoot: __dirname,
-  // The Harmony checker launches the pinned DevEco CLI as an owned child
-  // process. Its executable and resource archives are runtime data rather
-  // than modules imported into a Next route, so include the package explicitly.
+  // Runtime-only Harmony worker and signing helper are staged explicitly.
   outputFileTracingIncludes: {
     "/*": [
-      // The preview build always follows Next with stage-standalone, which
-      // copies these complete production closures exactly once. Ordinary
-      // standalone builds keep the explicit Next tracing includes.
-      ...(process.env.PIORA_PREVIEW_STAGED_DEVECO === "1" ? [] : [
-        "./node_modules/@deveco/deveco-cli/**/*",
-        "./node_modules/@deveco/deveco-cli-common/**/*",
-        "./node_modules/@deveco/deveco-cli-knowledgebase/**/*",
-      ]),
       "./.harmony-worker/**/*",
       "./lib/harmony/runtime/deveco-password.mjs",
     ],
@@ -81,6 +71,7 @@ const nextConfig: NextConfig = {
       "**/.pi/agent/piora/browser-profile/**",
       "**/piora/browser-profile/**",
       "**/.git/**",
+      "**/node_modules/@deveco/**",
       "**/.next/dev/**",
       "**/.next/dev-stale-*/**",
       "**/desktop/release/**",
@@ -88,7 +79,6 @@ const nextConfig: NextConfig = {
   },
   serverExternalPackages: [
     "@modelcontextprotocol/sdk",
-    "@deveco/deveco-cli",
     "node-pty",
     "undici",
     "@earendil-works/pi-coding-agent",
@@ -126,11 +116,10 @@ const nextConfig: NextConfig = {
         "@earendil-works/pi-ai",
         "@earendil-works/pi-tui",
         "@earendil-works/pi-mcp",
-        "@deveco/deveco-cli",
         "playwright-core",
         "hypium-driver",
         "@grpc/grpc-js",
-    "mediabunny",
+        "mediabunny",
         "ssh2",
       );
     }

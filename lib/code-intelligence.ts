@@ -1,11 +1,8 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import { Worker } from "node:worker_threads";
-import { createMessageConnection, type MessageConnection } from "vscode-jsonrpc/node";
-import { DEVECO_CLI_PATH, findHarmonyProjectRoot, inspectHarmonyCheckEnvironment } from "./harmony/check-runtime";
-import type { CodeDefinition, CodeIntelligenceMode, CodeIntelligenceResult, CodeSuggestion } from "./code-intelligence-types";
+import { findHarmonyProjectRoot } from "./harmony/project-source";
+import type { CodeDefinition, CodeIntelligenceMode, CodeIntelligenceResult } from "./code-intelligence-types";
 
 export type CodeAction = "sync" | "close" | "definition" | "completion" | "hover" | "status";
 export interface CodeQuery {
@@ -18,7 +15,6 @@ export interface CodeQuery {
 }
 
 interface Document { content: string; version: number }
-interface LspRuntime { process: ChildProcessWithoutNullStreams; connection: MessageConnection; opened: Set<string> }
 interface TsRuntime { worker: Worker; nextId: number; pending: Map<number, { resolve: (value: CodeIntelligenceResult) => void; reject: (error: Error) => void }> }
 interface SymbolEntry extends CodeDefinition { name: string; kind: string }
 interface ProjectSession {
@@ -27,9 +23,6 @@ interface ProjectSession {
   mode: CodeIntelligenceMode;
   message?: string;
   documents: Map<string, Document>;
-  lsp?: LspRuntime;
-  lspStart?: Promise<void>;
-  lspRetryAt?: number;
   tsRuntime?: TsRuntime;
   symbols?: { until: number; items: SymbolEntry[] };
   pending: Promise<unknown>;
@@ -62,8 +55,6 @@ export function codeProjectFor(filePath: string, cwd?: string): { root: string; 
 
 function dispose(session: ProjectSession) {
   if (session.idleTimer) clearTimeout(session.idleTimer);
-  session.lsp?.connection.dispose();
-  session.lsp?.process.kill();
   void session.tsRuntime?.worker.terminate();
   sessions.delete(session.key);
 }
@@ -88,127 +79,11 @@ function inOrder<T>(session: ProjectSession, task: () => Promise<T>): Promise<T>
   session.pending = next.catch(() => undefined);
   return next;
 }
-function lspPosition(content: string, offset: number) {
-  const before = content.slice(0, offset);
-  const lastBreak = before.lastIndexOf("\n");
-  return { line: (before.match(/\n/g) ?? []).length, character: before.length - lastBreak - 1 };
-}
-function location(value: unknown): CodeDefinition | null {
-  if (!value || typeof value !== "object") return null;
-  const item = value as Record<string, unknown>;
-  const uri = item.targetUri ?? item.uri;
-  const range = item.targetSelectionRange ?? item.targetRange ?? item.range;
-  if (typeof uri !== "string" || !uri.startsWith("file:") || !range || typeof range !== "object") return null;
-  const start = (range as { start?: { line?: number; character?: number } }).start;
-  if (!start || !Number.isInteger(start.line) || !Number.isInteger(start.character)) return null;
-  try { return { filePath: fileURLToPath(uri), line: start.line! + 1, column: start.character! + 1 }; } catch { return null; }
-}
-function lspLocations(value: unknown): CodeDefinition[] {
-  const list = Array.isArray(value) ? value : value ? [value] : [];
-  return list.flatMap((item) => location(item) ? [location(item)!] : []);
-}
-function lspHover(value: unknown): string | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const contents = (value as { contents?: unknown }).contents;
-  const parts = Array.isArray(contents) ? contents : [contents];
-  const text = parts.map((part) => typeof part === "string" ? part : part && typeof part === "object"
-    ? String((part as { value?: unknown }).value ?? "") : "").filter(Boolean).join("\n");
-  return text.slice(0, 4000) || undefined;
-}
-function lspSuggestions(value: unknown): CodeSuggestion[] {
-  const list = Array.isArray(value) ? value : value && typeof value === "object" ? (value as { items?: unknown }).items : null;
-  if (!Array.isArray(list)) return [];
-  return list.slice(0, 250).flatMap((raw) => {
-    if (!raw || typeof raw !== "object" || typeof (raw as { label?: unknown }).label !== "string") return [];
-    const item = raw as Record<string, unknown>;
-    const edit = item.textEdit && typeof item.textEdit === "object" ? item.textEdit as { newText?: unknown } : null;
-    const insertText = typeof edit?.newText === "string" ? edit.newText : typeof item.insertText === "string" ? item.insertText : undefined;
-    const detail = typeof item.detail === "string" ? item.detail : undefined;
-    const rawDocumentation = item.documentation;
-    const documentation = typeof rawDocumentation === "string" ? rawDocumentation
-      : rawDocumentation && typeof rawDocumentation === "object" && typeof (rawDocumentation as { value?: unknown }).value === "string"
-        ? (rawDocumentation as { value: string }).value : undefined;
-    return [{ label: item.label as string, ...(insertText ? { insertText } : {}), ...(detail ? { detail } : {}),
-      ...(documentation ? { documentation: documentation.slice(0, 2000) } : {}), kind: String(item.kind ?? "") }];
-  });
-}
 function timeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise((resolveTimeout, rejectTimeout) => {
     const timer = setTimeout(() => rejectTimeout(new Error("Language service timed out")), ms);
     promise.then((value) => { clearTimeout(timer); resolveTimeout(value); }, (error) => { clearTimeout(timer); rejectTimeout(error); });
   });
-}
-function lspEntry(): string | null {
-  const environment = inspectHarmonyCheckEnvironment();
-  if (!environment.studioPath) return null;
-  const candidates = [
-    join(environment.studioPath, "plugins", "openharmony", "ace-server", "out", "standardIndex", "index.js"),
-    join(environment.studioPath, "plugins", "openharmony", "out", "standardIndex", "index.js"),
-  ];
-  return candidates.some(existsSync) ? environment.studioPath : null;
-}
-async function startLsp(session: ProjectSession): Promise<void> {
-  if (session.lsp) return;
-  if (session.lspStart) return session.lspStart;
-  if (session.lspRetryAt && session.lspRetryAt > Date.now()) return;
-  const studioPath = lspEntry();
-  if (!studioPath) {
-    session.mode = "arkts-basic";
-    session.message = "当前 DevEco Studio 缺少 ArkTS 语义服务，正在使用基础模式";
-    session.lspRetryAt = Date.now() + 60_000;
-    return;
-  }
-  session.lspStart = (async () => {
-    const child = spawn(process.execPath, [DEVECO_CLI_PATH, "serve", "lsp", "--arkts", "--project-path", session.root], {
-      cwd: session.root, windowsHide: true, stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, DEVECO_CLI_STUDIO_PATH: studioPath, DEVECO_CLI_DISABLE_TELEMETRY: "1", DEVECO_CLI_DISABLE_UPDATE: "1" },
-    });
-    const connection = createMessageConnection(child.stdout, child.stdin);
-    connection.onRequest("workspace/configuration", (params: { items?: unknown[] }) => (params.items ?? []).map(() => null));
-    connection.onRequest("client/registerCapability", () => null);
-    connection.onRequest("client/unregisterCapability", () => null);
-    connection.onRequest("window/workDoneProgress/create", () => null);
-    connection.onRequest("workspace/applyEdit", () => ({ applied: false, failureReason: "Apply edits in the Piora editor" }));
-    connection.listen();
-    const runtime: LspRuntime = { process: child, connection, opened: new Set() };
-    child.on("exit", () => {
-      if (session.lsp === runtime) {
-        session.lsp = undefined;
-        session.mode = "arkts-basic";
-        session.message = "ArkTS 语义服务已退出，正在使用基础模式";
-      }
-      connection.dispose();
-    });
-    try {
-      await timeout(connection.sendRequest("initialize", {
-        processId: process.pid, rootUri: pathToFileURL(session.root).href, rootPath: session.root,
-        capabilities: { textDocument: { completion: { completionItem: { snippetSupport: false } }, definition: {}, hover: {}, synchronization: {} } },
-        workspaceFolders: [{ uri: pathToFileURL(session.root).href, name: session.root.split(/[\\/]/).pop() }],
-      }), 20_000);
-      await connection.sendNotification("initialized", {});
-      session.lsp = runtime;
-      session.lspRetryAt = undefined;
-      session.mode = "arkts-lsp";
-      session.message = undefined;
-      for (const [filePath, doc] of session.documents) await syncLsp(session, filePath, doc);
-    } catch (error) {
-      connection.dispose(); child.kill();
-      session.mode = "arkts-basic";
-      session.message = `ArkTS 语义服务未就绪，正在使用基础模式：${error instanceof Error ? error.message : String(error)}`;
-      session.lspRetryAt = Date.now() + 30_000;
-    }
-  })().finally(() => { session.lspStart = undefined; });
-  return session.lspStart;
-}
-async function syncLsp(session: ProjectSession, filePath: string, doc: Document) {
-  const lsp = session.lsp;
-  if (!lsp) return;
-  const uri = pathToFileURL(filePath).href;
-  if (lsp.opened.has(filePath)) await lsp.connection.sendNotification("textDocument/didChange", { textDocument: { uri, version: doc.version }, contentChanges: [{ text: doc.content }] });
-  else {
-    await lsp.connection.sendNotification("textDocument/didOpen", { textDocument: { uri, languageId: "arkts", version: doc.version, text: doc.content } });
-    lsp.opened.add(filePath);
-  }
 }
 async function updateDocument(session: ProjectSession, filePath: string, content: string | undefined, version: number | undefined) {
   if (content === undefined) return;
@@ -218,11 +93,6 @@ async function updateDocument(session: ProjectSession, filePath: string, content
   if (previous && previous.content === content) return;
   const doc = { content, version: nextVersion };
   session.documents.set(filePath, doc);
-  if (session.mode === "arkts-basic" || session.mode === "arkts-lsp") {
-    const alreadyOpen = session.lsp?.opened.has(filePath) ?? false;
-    await startLsp(session);
-    if (session.lsp && (alreadyOpen || !session.lsp.opened.has(filePath))) await syncLsp(session, filePath, doc);
-  }
 }
 
 const TS_WORKER_SOURCE = String.raw`
@@ -436,7 +306,6 @@ export async function runCodeQuery(query: CodeQuery): Promise<CodeIntelligenceRe
     if (query.action === "close") {
       session.documents.delete(filePath);
       session.symbols = undefined;
-      if (session.lsp?.opened.delete(filePath)) await session.lsp.connection.sendNotification("textDocument/didClose", { textDocument: { uri: pathToFileURL(filePath).href } });
       if (session.mode === "typescript" && session.tsRuntime) await tsResult(session, { action: "close", filePath });
       const result = { mode: session.mode, message: session.message };
       if (!session.documents.size) dispose(session);
@@ -444,26 +313,12 @@ export async function runCodeQuery(query: CodeQuery): Promise<CodeIntelligenceRe
     }
     await updateDocument(session, filePath, query.content, query.version);
     if (query.action === "sync" || query.action === "status") {
-      if (query.action === "status" && session.mode === "arkts-basic") await startLsp(session);
       if (session.mode === "typescript") await tsResult(session, { ...query, filePath });
       return { mode: session.mode, message: session.message };
     }
     const content = session.documents.get(filePath)?.content ?? readFileSync(filePath, "utf8");
     const offset = Math.max(0, Math.min(query.offset ?? 0, content.length));
     if (session.mode === "typescript") return tsResult(session, { ...query, filePath, content, version: session.documents.get(filePath)?.version ?? Date.now(), offset });
-    if (session.lsp) {
-      try {
-        const params = { textDocument: { uri: pathToFileURL(filePath).href }, position: lspPosition(content, offset) };
-        const method = query.action === "definition" ? "textDocument/definition" : query.action === "completion" ? "textDocument/completion" : "textDocument/hover";
-        const value: unknown = await timeout(session.lsp.connection.sendRequest(method, params), 8_000);
-        return { mode: "arkts-lsp", ...(query.action === "definition" ? { definitions: lspLocations(value) }
-          : query.action === "completion" ? { suggestions: lspSuggestions(value) } : { hover: lspHover(value) }) };
-      } catch (error) {
-        session.lsp.connection.dispose(); session.lsp.process.kill(); session.lsp = undefined;
-        session.mode = "arkts-basic";
-        session.message = `ArkTS 语义服务暂不可用，正在使用基础模式：${error instanceof Error ? error.message : String(error)}`;
-      }
-    }
     return basicResult(session, { ...query, filePath }, content, offset);
   });
 }

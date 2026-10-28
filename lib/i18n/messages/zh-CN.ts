@@ -2570,7 +2570,6 @@ export const zhCNLocale: LocalePlugin = {
     "fileEditor.unsaved": "未保存",
     "fileEditor.cursorPosition": "第 {line} 行，第 {column} 列",
     "fileEditor.arktsBasic": "ArkTS 基础模式",
-    "fileEditor.arktsSemantic": "ArkTS 语义服务",
     "fileEditor.tsIntelligence": "代码提示已启用",
     "fileEditor.saveMissingVersion": "文件已保存，但响应中缺少版本信息。请重新载入后再继续编辑。",
     "i18n.close": "关闭",

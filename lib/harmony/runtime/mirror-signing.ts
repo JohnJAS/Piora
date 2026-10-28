@@ -420,12 +420,7 @@ async function createSigningProject(templateRoot: string, cacheDirectory: string
 async function resolveDevEcoCli(environment: NodeJS.ProcessEnv, explicit?: string): Promise<string> {
   const configured = explicit?.trim() || environment.PIORA_DEVECO_CLI_PATH?.trim();
   if (configured) return await firstRegularFile([configured], 64 * 1024 * 1024);
-  const runtimeRoot = environment.PIORA_WEB_RUNTIME_ROOT?.trim();
-  return await firstRegularFile([
-    runtimeRoot && isAbsolute(runtimeRoot)
-      ? join(runtimeRoot, "node_modules", "@deveco", "deveco-cli", "cli.js") : undefined,
-    join(process.cwd(), "node_modules", "@deveco", "deveco-cli", "cli.js"),
-  ], 64 * 1024 * 1024);
+  throw new Error("Automatic signing requires an externally installed DevEco CLI specified by PIORA_DEVECO_CLI_PATH, or an existing signing descriptor");
 }
 
 async function markerIsCurrent(path: string): Promise<boolean> {
@@ -771,7 +766,7 @@ export async function prepareLocalMirrorHap(options: LocalSigningOptions): Promi
       });
     }
     throw new HarmonyError("CAPABILITY_UNAVAILABLE",
-      "Piora could not create the private Harmony video component. Run `devecocli auth login`, keep this phone connected and unlocked, then initialize again.",
+      "Piora could not create the private Harmony video component. Supply signing material or install DevEco CLI separately and set PIORA_DEVECO_CLI_PATH, then keep the phone connected and unlocked and retry.",
       { cause, details: { reason: "mirror-local-signing-unavailable", dispatchState: "not-sent" } });
   }).finally(() => signingJobs().delete(key));
   signingJobs().set(key, task);

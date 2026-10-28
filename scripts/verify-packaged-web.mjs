@@ -41,7 +41,6 @@ const expectedBackgroundCount = 37;
 const safeBackgroundAsset = /^\/themes\/dream-backgrounds\/[A-Za-z0-9][A-Za-z0-9._-]*\.webp$/;
 const bundledPetRelativeRoot = "companion-pets/bundled";
 const generatedBuiltinPetAsset = "companion-pets/piora-bot.webp";
-const nodeForgeRsaPatchedSha256 = "18ae286c1ef8e00fc6359ffe3280416946c1dfd6684c98c1c6af1590d7f7e9f4";
 const expectedBundledPetIds = Object.freeze([
   "azure",
   "corgi-scout",
@@ -131,11 +130,6 @@ const requiredPaths = [
   ".next/server/app/desktop-clipboard/page_client-reference-manifest.js",
   "node_modules/next/package.json",
   "node_modules/@modelcontextprotocol/sdk/package.json",
-  "node_modules/@deveco/deveco-cli/package.json",
-  "node_modules/@deveco/deveco-cli/cli.js",
-  "node_modules/@deveco/deveco-cli-common/package.json",
-  "node_modules/@deveco/deveco-cli-common/dist/cli.js",
-  "node_modules/@deveco/deveco-cli-knowledgebase/package.json",
   "node_modules/@earendil-works/pi-agent-core/package.json",
   "node_modules/@earendil-works/pi-ai/package.json",
   "node_modules/@earendil-works/pi-coding-agent/package.json",
@@ -852,70 +846,8 @@ export async function verifyPackagedBundledDependencies(runtimeWebRoot) {
       throw new Error(`Packaged Pi runtime must contain the reviewed ${expected.name}@${expected.version}.`);
     }
   }
-  const nodeForgeRoot = join(runtimeWebRoot, "node_modules", "node-forge");
-  const nodeForgeManifestPath = join(nodeForgeRoot, "package.json");
-  const nodeForgeRsaPath = join(nodeForgeRoot, "lib", "rsa.js");
-  await Promise.all([assertFile(nodeForgeManifestPath), assertFile(nodeForgeRsaPath)]);
-  const [nodeForgeManifest, nodeForgeRsa] = await Promise.all([
-    readFile(nodeForgeManifestPath, "utf8").then(JSON.parse),
-    readFile(nodeForgeRsaPath),
-  ]);
-  const nodeForgeRsaSha256 = createHash("sha256").update(nodeForgeRsa).digest("hex");
-  if (nodeForgeManifest?.name !== "node-forge" || nodeForgeManifest?.version !== "1.4.0"
-    || nodeForgeRsaSha256 !== nodeForgeRsaPatchedSha256) {
-    throw new Error("Packaged runtime must contain the reviewed node-forge DigestAlgorithm patch.");
-  }
   await verifyPiEmbeddedDependencies(runtimeWebRoot);
   return patchedBundledDependencies;
-}
-
-export async function verifyPackagedDevEcoCli(runtimeWebRoot) {
-  for (const name of ["docs.zip", "index.zip"]) {
-    const path = join(runtimeWebRoot, "node_modules", "@deveco", "deveco-cli-knowledgebase", name);
-    if (await lstat(path).catch(error => {
-      if (error?.code === "ENOENT") return null;
-      throw error;
-    })) throw new Error(`Optional DevEco documentation must not be included in the package: ${name}`);
-  }
-  // A fresh child resolves from the packaged wrapper, without source-tree or
-  // module-cache fallbacks that could conceal a stale nested dependency.
-  const { stdout } = await execFileAsync(process.execPath, ["--input-type=commonjs", "-e", `
-    const { createRequire } = require("node:module");
-    const { readFileSync } = require("node:fs");
-    const { createHash } = require("node:crypto");
-    const { join } = require("node:path");
-    const cliRoot = join(process.cwd(), "node_modules", "@deveco", "deveco-cli");
-    const cliPath = join(cliRoot, "cli.js");
-    const wrapper = JSON.parse(readFileSync(join(cliRoot, "package.json"), "utf8"));
-    const wrapperRequire = createRequire(cliPath);
-    const implementationRequire = createRequire(wrapperRequire.resolve("@deveco/deveco-cli-common/dist/cli.js"));
-    const implementation = implementationRequire("@deveco/deveco-cli-common/package.json");
-    const axios = implementationRequire("axios/package.json");
-    const forge = implementationRequire("node-forge/package.json");
-    const rsaSha256 = createHash("sha256")
-      .update(readFileSync(implementationRequire.resolve("node-forge/lib/rsa.js"))).digest("hex");
-    console.log(JSON.stringify({ wrapper, implementation, axiosVersion: axios.version, nodeForgeVersion: forge.version, rsaSha256 }));
-  `], {
-    cwd: runtimeWebRoot, timeout: 30000, maxBuffer: 1024 * 1024,
-    env: { ...process.env, NODE_PATH: "", DEVECO_CLI_DISABLE_TELEMETRY: "1", DEVECO_CLI_DISABLE_UPDATE: "1" },
-  });
-  const { wrapper, implementation, axiosVersion, nodeForgeVersion, rsaSha256 } = JSON.parse(stdout.trim());
-  if (wrapper.name !== "@deveco/deveco-cli" || wrapper.version !== "1.3.9"
-    || wrapper.optionalDependencies?.[implementation.name] !== "1.3.9"
-    || implementation.name !== "@deveco/deveco-cli-common" || implementation.version !== "1.3.9"
-    || axiosVersion !== "1.20.0" || nodeForgeVersion !== "1.4.0"
-    || rsaSha256 !== nodeForgeRsaPatchedSha256) {
-    throw new Error("Packaged DevEco CLI must resolve 1.3.9 common, Axios 1.20.0 and the reviewed node-forge patch.");
-  }
-  const { stdout: versionOutput } = await execFileAsync(process.execPath, [
-    join(runtimeWebRoot, "node_modules", "@deveco", "deveco-cli", "cli.js"), "--version",
-  ], {
-    cwd: runtimeWebRoot, timeout: 30000, maxBuffer: 1024 * 1024,
-    env: { ...process.env, NODE_PATH: "", DEVECO_CLI_DISABLE_TELEMETRY: "1", DEVECO_CLI_DISABLE_UPDATE: "1" },
-  });
-  const version = versionOutput.trim();
-  if (version !== "1.3.9") throw new Error(`Unexpected packaged DevEco CLI version: ${version}`);
-  return { version, axiosVersion, nodeForgeVersion, rsaSha256 };
 }
 
 export async function verifyPackagedNativePiRuntime(runtimeWebRoot) {
@@ -1053,7 +985,12 @@ async function main() {
   const packagedPiAiRuntime = await verifyPackagedPiAiRuntime(runtimeWebRoot);
   const packagedPiAiModules = await verifyPackagedPiAiModuleSurface(runtimeWebRoot);
   const patchedBundledDependencies = await verifyPackagedBundledDependencies(runtimeWebRoot);
-  const devecoCli = await verifyPackagedDevEcoCli(runtimeWebRoot);
+  for (const name of ["@deveco", "vscode-jsonrpc", "node-forge"]) {
+    if (await lstat(join(runtimeWebRoot, "node_modules", name)).catch(error => {
+      if (error?.code === "ENOENT") return null;
+      throw error;
+    })) throw new Error(`The packaged runtime must not contain the removed DevEco CLI or its exclusive dependencies: ${name}`);
+  }
   const nativePiRuntime = await verifyPackagedNativePiRuntime(runtimeWebRoot);
   const harmonyHapPreview = await verifyPackagedHarmonyHapPreview(runtimeWebRoot);
   const looseNodeModules = await stat(join(packagedWebRoot, "node_modules")).catch(() => undefined);
@@ -1406,7 +1343,6 @@ async function main() {
       packagedPiAiModules,
       nativePiRuntime,
       harmonyHapPreview,
-      devecoCli,
       patchedBundledDependencies: patchedBundledDependencies.map(({ name, version }) => `${name}@${version}`),
       forbiddenDependencyChecks: forbiddenPackagedDependencies.length,
       packagedBackgrounds: packagedBackgrounds.backgroundCount,

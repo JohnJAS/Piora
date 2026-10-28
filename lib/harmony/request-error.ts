@@ -83,8 +83,8 @@ export class HarmonyRequestError extends Error {
       ? "投屏组件缺少可用的前台入口。请重新安装有效的投屏组件。"
       : "The capture package has no supported foreground entry. Reinstall a valid capture component.";
     if (this.code === "CAPABILITY_UNAVAILABLE" && this.reason === "mirror-local-signing-unavailable") return chinese
-      ? "无法为当前手机生成私有投屏组件。请运行 devecocli auth login，保持手机已连接并解锁，然后重新初始化；Piora 会自动生成或更新设备调试 Profile。"
-      : "Piora could not create the private capture component. Run devecocli auth login, keep this phone connected and unlocked, then initialize again; Piora will generate or update its device debug profile.";
+      ? "无法为当前手机生成私有投屏组件。请提供已有签名配置，或自行安装 DevEco CLI、通过 PIORA_DEVECO_CLI_PATH 指定其 cli.js 并登录，然后保持手机连接和解锁后重试。"
+      : "Piora could not create the private capture component. Supply an existing signing descriptor, or install DevEco CLI separately, set PIORA_DEVECO_CLI_PATH to its cli.js, and sign in. Keep the phone connected and unlocked, then retry.";
     if (this.code === "CAPABILITY_UNAVAILABLE" && this.reason === "mirror-private-package-invalid") return chinese
       ? "本机签名后的投屏组件与随包版本不一致，未向手机发送安装命令。请重新安装 Piora 后重试。"
       : "The locally signed capture component differs from the bundled version. No install command was sent. Reinstall Piora and try again.";

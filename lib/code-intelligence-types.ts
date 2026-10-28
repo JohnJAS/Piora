@@ -1,4 +1,4 @@
-export type CodeIntelligenceMode = "arkts-lsp" | "arkts-basic" | "typescript";
+export type CodeIntelligenceMode = "arkts-basic" | "typescript";
 
 export interface CodeDefinition {
   filePath: string;

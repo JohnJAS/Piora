@@ -28,7 +28,7 @@ HAP job 只调度到带 `self-hosted`、`Windows`、`harmony-device`、`harmony-
 
 随桌面包分发的 HAP 刻意保持 unsigned，不能直接发给 HDC 安装。只有用户明确点击“初始化投屏服务”时，Piora 才核对随包 HAP 与 release receipt 并读取连接手机的 UDID。若没有显式 `PIORA_HARMONY_SIGNING_CONFIG_PATH`，桌面端会在私有缓存复制随包最小签名工程，调用 DevEco CLI 自动生成或更新标准 `build-profile.json5`；证书、profile、keystore 和受保护密码仍由 DevEco 保存在 `.ohos/config`，不会上传。
 
-Piora 为这台手机生成并官方验签私有缓存副本，确认 bundle、版本、证书、profile 和 device allow-list 均匹配。已装组件不匹配时先卸载并确认缺席，再执行普通 `hdc install`；初始化路径不使用 `-r`。DevEco 未登录、手机未连接或锁定、API 26 SDK 签名工具、有效 Profile 或目标手机绑定缺失时，操作在发送安装命令前失败，并提示运行 `devecocli auth login`、保持手机连接和解锁后重试。
+Piora 为这台手机生成并官方验签私有缓存副本，确认 bundle、版本、证书、profile 和 device allow-list 均匹配。已装组件不匹配时先卸载并确认缺席，再执行普通 `hdc install`；初始化路径不使用 `-r`。Piora 不再内置 DevEco CLI；如无现成签名配置，需自行安装 CLI、设置 `PIORA_DEVECO_CLI_PATH` 指向其 `cli.js` 并登录。手机未连接或锁定、API 26 SDK 签名工具、有效 Profile 或目标手机绑定缺失时，操作在发送安装命令前失败。
 
 被动预览不会触发签名、安装、启动、唤醒或解锁。运行时私有签名副本只保存在当前用户的 Piora 私有数据目录，不会替换安装包中的 unsigned 来源文件。
 
