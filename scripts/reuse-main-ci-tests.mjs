@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
 const expectedJobs = ["ubuntu-latest", "windows-latest"].flatMap(os =>
-  [1, 2, 3, 4].map(shard => `tests / Tests (${os}, shard ${shard}/4)`));
+  [1, 2, 3, 4, 5, 6].map(shard => `tests / Tests (${os}, shard ${shard}/6)`));
 
 export function selectMainPushRun(runs, sha) {
   return runs.find(run => run.head_sha === sha && run.head_branch === "main"
@@ -55,7 +55,7 @@ async function main() {
     getJobs: async id => (await api(`actions/runs/${id}/jobs?filter=latest&per_page=100`)).jobs,
   });
   await appendFile(output, `reuse=${result === "reuse"}\n`);
-  console.log(result === "reuse" ? `Reusing all eight successful main CI test shards for ${sha}.` : "No complete matching main CI result; run all test shards for the tag.");
+  console.log(result === "reuse" ? `Reusing all twelve successful main CI test shards for ${sha}.` : "No complete matching main CI result; run all test shards for the tag.");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

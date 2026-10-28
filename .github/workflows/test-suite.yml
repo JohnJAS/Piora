@@ -13,14 +13,14 @@ permissions:
 
 jobs:
   tests:
-    name: Tests (${{ matrix.os }}, shard ${{ matrix.shard }}/4)
+    name: Tests (${{ matrix.os }}, shard ${{ matrix.shard }}/6)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(inputs.platforms) }}
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
 
     steps:
       - name: Check out source
@@ -64,7 +64,7 @@ jobs:
       # Call the launcher directly so npm cannot consume the Node test flags.
       # Each shard remains serial so native/browser fixtures do not compete.
       - name: Run test shard
-        run: node scripts/run-tests.mjs --test-shard=${{ matrix.shard }}/4
+        run: node scripts/run-tests.mjs --test-shard=${{ matrix.shard }}/6
         env:
           PIORA_SKIP_RESOURCE_TESTS: ${{ runner.os == 'Windows' && '1' || '0' }}
           PSModulePath: ""

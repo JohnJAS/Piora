@@ -10,10 +10,11 @@ runs:
         $cachePath = npm config get cache
         if ($LASTEXITCODE -ne 0 -or -not $cachePath) { throw 'Unable to locate the npm download cache' }
         "path=$cachePath" >> $env:GITHUB_OUTPUT
+        "arch=$('${{ runner.arch }}'.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
     - name: Restore the latest compatible npm download cache
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
       with:
         path: ${{ steps.location.outputs.path }}
-        key: node-cache-${{ runner.os }}-${{ runner.arch }}-npm-${{ hashFiles('package-lock.json') }}
+        key: node-cache-${{ runner.os }}-${{ steps.location.outputs.arch }}-npm-${{ hashFiles('package-lock.json') }}
         restore-keys: |
-          node-cache-${{ runner.os }}-${{ runner.arch }}-npm-
+          node-cache-${{ runner.os }}-${{ steps.location.outputs.arch }}-npm-

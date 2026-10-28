@@ -82,15 +82,6 @@ jobs:
         if: steps.node-setup.outputs.cache-hit != 'true'
         uses: ./.github/actions/restore-npm-cache
 
-      - name: Restore Windows Next.js build cache
-        if: runner.os == 'Windows'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: .next/cache
-          key: piora-next-${{ runner.os }}-${{ runner.arch }}-node22-${{ github.sha }}
-          restore-keys: |
-            piora-next-${{ runner.os }}-${{ runner.arch }}-node22-
-
       - name: Install Linux native image patch tools
         if: runner.os == 'Linux'
         uses: ./.github/actions/setup-linux-native-image-tools
