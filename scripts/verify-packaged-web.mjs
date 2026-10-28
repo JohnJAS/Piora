@@ -870,6 +870,13 @@ export async function verifyPackagedBundledDependencies(runtimeWebRoot) {
 }
 
 export async function verifyPackagedDevEcoCli(runtimeWebRoot) {
+  for (const name of ["docs.zip", "index.zip"]) {
+    const path = join(runtimeWebRoot, "node_modules", "@deveco", "deveco-cli-knowledgebase", name);
+    if (await lstat(path).catch(error => {
+      if (error?.code === "ENOENT") return null;
+      throw error;
+    })) throw new Error(`Optional DevEco documentation must not be included in the package: ${name}`);
+  }
   // A fresh child resolves from the packaged wrapper, without source-tree or
   // module-cache fallbacks that could conceal a stale nested dependency.
   const { stdout } = await execFileAsync(process.execPath, ["--input-type=commonjs", "-e", `

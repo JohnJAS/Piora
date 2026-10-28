@@ -260,6 +260,14 @@ export async function collectRuntimeDependencyAssets(
   return collected.sort((left, right) => left.destination.localeCompare(right.destination));
 }
 
+// Keep the DevEco CLI's code and dependency graph, but omit its optional
+// offline documentation corpus and search index from packaged releases.
+export function shouldCopyRuntimeAsset(assetRoot, source, omitNodeModuleBins = false) {
+  if (omitNodeModuleBins && isNodeModulesBinPath(assetRoot, source)) return false;
+  return !/(?:^|\/)node_modules\/@deveco\/deveco-cli-knowledgebase\/(?:docs|index)\.zip$/i
+    .test(resolve(source).replaceAll("\\", "/"));
+}
+
 export async function findSymbolicLinks(root) {
   const rootEntry = await lstat(root).catch((error) => {
     if (error?.code === "ENOENT") return undefined;
@@ -445,9 +453,7 @@ async function main() {
       recursive: true,
       force: true,
       dereference: true,
-      ...(asset.omitNodeModuleBins
-        ? { filter: (source) => !isNodeModulesBinPath(asset.source, source) }
-        : {}),
+      filter: (source) => shouldCopyRuntimeAsset(asset.source, source, asset.omitNodeModuleBins),
     });
     const destinationType = await getPathType(asset.destination);
     if ((asset.sourceType === "directory" && !await isNonEmptyDirectory(asset.destination)) || (asset.sourceType === "file" && destinationType !== "file")) {
