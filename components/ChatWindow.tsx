@@ -216,7 +216,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     sessionIdRef, messagesEndRef, scrollContainerRef, activityClockRef, statusClock,
     lastUserMsgRef,
     pendingScrollToUserRef,
-    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange, handleScrollToBottom, pauseHistoryFollow, handleDeleteMessage, deletingMessage,
+    handleSend, handleAbort, handleFork, handleNavigate, handleRewindRecovery, handleModelChange, handleScrollToBottom, pauseHistoryFollow, handleDeleteMessage, deletingMessage,
     handleCompact, handleDismissCompactError, handleDismissCompactResult, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     handleRecallQueue,
     handleThinkingLevelChange, handleSystemPromptSelection, loadSlashCommands,
@@ -269,6 +269,14 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     if (accepted !== false) onPromptSubmitted?.();
     return accepted;
   }, [handleSend, onPromptSubmitted]);
+  const handleEditFailedMessage = useCallback(async (message: UserMessage) => {
+    if (!message.recoveryDraft) return;
+    const draft = message.recoveryDraft;
+    const retryOfPromptIds = [...new Set([...(message.clientPromptId ? [message.clientPromptId] : []), ...(draft.retryOfPromptIds ?? [])])];
+    if (!chatInputRef?.current?.restoreCommandDraft({ ...draft, retryOfPromptIds })) throw new Error(t("chatCommands.composerBusy"));
+    if (await handleRewindRecovery(message)) chatInputRef.current.focus();
+  }, [chatInputRef, handleRewindRecovery, t]);
+
   const retryInFlight = useRef(false);
   const [preparingRetry, setPreparingRetry] = useState(false);
   const retrySession = useRef(session?.id);
@@ -299,12 +307,13 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     if (locallyClaimedInitialPromptRef.current === initialPrompt.id) return;
     if (claimInitialPrompt && !claimInitialPrompt(initialPrompt.id)) return;
     locallyClaimedInitialPromptRef.current = initialPrompt.id;
-    const restoreInitial = () => chatInputRef?.current?.restoreCommandDraft({ value: initialPrompt.message, files: initialPrompt.files ?? [], images: (initialPrompt.images ?? []).map(({ data, mimeType }) => ({ data, mimeType })), commandInput: persistentChatInputOptions(initialPrompt.commandInput), retryOfPromptIds: [...new Set([initialPrompt.id, ...(initialPrompt.retryOfPromptIds ?? [])])] });
+    let initialDurable = false;
+    const restoreInitial = () => !initialDurable && chatInputRef?.current?.restoreCommandDraft({ value: initialPrompt.message, files: initialPrompt.files ?? [], images: (initialPrompt.images ?? []).map(({ data, mimeType }) => ({ data, mimeType })), commandInput: persistentChatInputOptions(initialPrompt.commandInput), retryOfPromptIds: [...new Set([initialPrompt.id, ...(initialPrompt.retryOfPromptIds ?? [])])] });
     void handleSend(
       initialPrompt.message,
       initialPrompt.images,
       initialPrompt.files,
-      undefined,
+      () => { initialDurable = true; },
       initialPrompt.retryOfPromptIds,
       initialPrompt.commandInput,
     ).then(accepted => { if (accepted === false) restoreInitial(); else onPromptSubmitted?.(); }).catch(() => { restoreInitial(); });
@@ -631,13 +640,12 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
 
   const { queueAction, edit: editQueuedDraft } = chatCommands;
   const queueActions = useMemo<ChatCommandQueueActions>(() => ({
-    recover: commandActions.restore,
     cancel: async record => { await queueAction(record, "cancel"); },
     steer: async record => { await queueAction(record, "steer"); },
     edit: editQueuedDraft,
     save: async (record, text) => { await queueAction(record, "edit", text); },
     resume: async record => { await queueAction(record, "resume"); },
-  }), [queueAction, editQueuedDraft, commandActions.restore]);
+  }), [queueAction, editQueuedDraft]);
   const composerQueueContent = useMemo(() => (
     <ChatCommandQueue records={chatCommands.records} actions={queueActions} pendingMessages={queuedMessages} onRecall={handleRecallQueue} />
   ), [chatCommands.records, queueActions, queuedMessages, handleRecallQueue]);
@@ -828,7 +836,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
               lastUserMsgRef={lastUserMsgRef} pendingScrollToUserRef={pendingScrollToUserRef} scrollContainer={scrollContainerRef} handleRef={historyRef}
               modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile}
               onFork={deletingMessage ? undefined : handleFork} onNavigate={deletingMessage ? undefined : handleNavigate} onEditContent={handleEditContent}
-              onRetry={handleRetryMessage} retryDisabled={sessionBusy || deletingMessage || preparingRetry}
+              onEditFailed={handleEditFailedMessage} onRetry={handleRetryMessage} retryDisabled={sessionBusy || deletingMessage || preparingRetry}
               onDeleteMessage={handleDeleteMessage} deleteDisabled={sessionBusy || deletingMessage || isCompacting || preparingRetry}
               sessionId={session?.id ?? sessionIdRef.current ?? undefined} onOpenAutomation={onOpenAutomation} onOpenCommandExecution={setCommandExecutionDialog}
             />

@@ -10,6 +10,7 @@ import { createJiti } from "jiti";
 const { NestedToolCallsStore } = await createJiti(import.meta.url).import("../lib/nested-tool-calls.ts");
 const { buildLocalFilePrompt } = await createJiti(import.meta.url).import("../lib/file-attachments.ts");
 const { normalizeToolCalls } = await createJiti(import.meta.url).import("../lib/normalize.ts");
+const { replaceFailedPromptMessage } = await createJiti(import.meta.url).import("../lib/prompt-recovery.ts");
 const { persistentChatInputOptions } = await createJiti(import.meta.url).import("../lib/chat-command-input.ts");
 
 const source = (await readFile(new URL("./useAgentSession.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
@@ -19,6 +20,7 @@ function historyHarness(overrides = {}) {
   const events = [];
   const env = {
     nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 },
+    editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [],
     useCallback: callback => callback, sessionIdRef: { current: "session" }, agentRunningRef: { current: false }, bashRunningRef: { current: false }, isCompacting: false,
     t: key => key, sendAgentCommand: async (_id, command) => { events.push(command.type); return command.type === "fork" ? { newSessionId: "new-session" } : {}; },
     loadContext: async () => { events.push("context"); return true; }, setActiveLeafId: id => events.push(`leaf:${id}`),
@@ -54,6 +56,7 @@ test("command catalog requests cannot overwrite a switched session or a newer ca
   const callbacks = source.slice(source.indexOf("  const loadSlashCommands = useCallback"), source.indexOf("  const closeEvents = useCallback"));
   const pending = [];
   const env = {
+    editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [],
     useCallback: callback => callback, ensureNewSession: async () => "old", sessionIdRef: { current: "old" },
     commandCatalogLoadRef: { current: 0 }, commandCatalogRef: { current: null }, commandCatalogErrorRef: { current: null },
     setSlashCommands(value) { env.commands = value; }, setCommandCatalog(value) { env.catalog = value; },
@@ -91,13 +94,14 @@ function sendHarness(overrides = {}) {
     uploadPromptMaterialFiles: async () => [], AgentCommandError: class extends Error {}, EventStreamConnectionError: class extends Error {},
     savePendingPrompt: async (record) => { env.saved = structuredClone(record); }, sendAgentCommand: async () => {},
     submitChatCommand: async () => { throw new Error("Unexpected command submission in ordinary prompt test"); },
-    persistentChatInputOptions,
+    persistentChatInputOptions, replaceFailedPromptMessage,
   };
   for (const name of new Set(send.match(/\b\w+Ref\b/g))) env[name] = { current: null };
   for (const name of new Set(send.match(/\bset[A-Z]\w+(?=\()/g))) env[name] = () => {};
   env.promptRunIdRef.current = 0;
   env.sessionIdRef.current = "session";
   env.promptSettlementByRunRef.current = new Map(); env.promptSettlementPollByRunRef.current = new Map();
+  env.entryIds = [];
   env.messages = [];
   env.setMessages = (update) => { env.messages = typeof update === "function" ? update(env.messages) : update; };
   Object.assign(env, overrides);
@@ -169,6 +173,7 @@ function abortHarness(overrides = {}) {
   const calls = [];
   const env = {
     nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 },
+    editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [],
     useCallback: callback => callback, t: key => key, addNotice: notice => calls.push(notice), crypto: { randomUUID },
     normalizeQueuedMessages: queue => ({ steering: queue?.steering ?? [], followUp: queue?.followUp ?? [] }),
     sendAgentCommand: async () => ({ queuedMessages: { id: "queue-handoff", steering: ["correct this", "correct this"], followUp: ["then verify"] } }),
@@ -276,6 +281,7 @@ function promptSettlementHarness() {
   let now = 0;
   const env = {
     nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 },
+    editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [],
     useCallback: callback => callback, AbortController, AbortSignal, Date: { now: () => now },
     PROMPT_SETTLE_INITIAL_DELAY_MS: 800, PROMPT_SETTLE_POLL_MS: 600, PROMPT_SETTLE_MAX_MS: 20000,
     delay: ms => new Promise(resolve => delays.push({ ms, resolve })),
@@ -739,6 +745,7 @@ function sessionLoadHarness(overrides = {}) {
   const load = source.slice(source.indexOf("  const loadSession = useCallback"), source.indexOf("  const loadContext = useCallback"));
   const env = {
     nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 },
+    editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [],
     useCallback: callback => callback, AbortController, URLSearchParams,
     acceptToolPermission: value => { env.permission = value; },
     sessionLoadAbortRef: { current: null }, sessionIdRef: { current: "session" }, promptRunIdRef: { current: 0 },
@@ -1077,7 +1084,7 @@ test("nested live events stay under their parent and cancellation rejects late c
 test("whole-session stats reject delayed responses across refreshes and run boundaries", async () => {
   const handler = source.slice(source.indexOf("  const refreshContextUsage = useCallback"), source.indexOf("  // Reconcile client streaming state"));
   const requests = [], snapshots = [];
-  const env = { useCallback: callback => callback, promptRunIdRef: { current: 1 }, sessionIdRef: { current: "session" }, statsRefreshSequence: { current: 0 },
+  const env = { editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [], useCallback: callback => callback, promptRunIdRef: { current: 1 }, sessionIdRef: { current: "session" }, statsRefreshSequence: { current: 0 },
     fetch: () => new Promise(resolve => requests.push(resolve)), setSessionStatsOverride: stats => snapshots.push(stats), setContextUsage() {} };
   const js = ts.transpileModule(handler, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText;
   const refresh = new Function("env", `with(env) { ${js}; return refreshContextUsage; }`)(env);
@@ -1115,7 +1122,7 @@ test("queue submissions reuse only the matching open model event stream", async 
   const callback = source.slice(source.indexOf("  const ensureEventsConnected = useCallback"), source.indexOf("  const respondToExtensionUi = useCallback"));
   const calls = [];
   const original = { readyState: 1, url: 'http://localhost/api/agent/session/events?transport=delta', close() { calls.push('closed-original'); } };
-  const env = { useCallback: callback => callback, EventSource: { OPEN: 1 }, eventSourceRef: { current: original },
+  const env = { editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [], useCallback: callback => callback, EventSource: { OPEN: 1 }, eventSourceRef: { current: original },
     connectEvents: async sid => { calls.push(sid); return { status: 'connected', source: { readyState: 1 } }; },
     EventStreamConnectionError: Error,
   };
@@ -1148,4 +1155,87 @@ test("queue receipts do not replace the live transcript before its run settles",
   assert.equal(calls.filter(call=>call[0]==='load').length,1,'idle receipts still refresh durable history');
   callback({targetSessionId:'other',status:'completed'});
   assert.equal(calls.filter(call=>call[0]==='load').length,1);
+});
+
+function editNavigationHarness(overrides = {}) {
+  const callback = source.slice(source.indexOf("  const handleNavigate = useCallback"), source.indexOf("  const handleRewindRecovery = useCallback"));
+  const events = [];
+  const env = { editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [], useCallback: fn => fn, sessionIdRef: { current: "session" }, agentRunningRef: { current: false }, bashRunningRef: { current: false }, isCompacting: false,
+    t: key => key, sendAgentCommand: async () => { events.push("navigate"); return {}; }, loadContext: async () => { events.push("context"); return true; }, setActiveLeafId: id => events.push(id), ...overrides };
+  const js = ts.transpileModule(callback, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  return { navigate: new Function("env", `with(env) { ${js}; return handleNavigate; }`)(env), events };
+}
+test("edit navigation waits for server success and context, and propagates failure without changing the leaf", async () => {
+  const ok = editNavigationHarness(); assert.equal(await ok.navigate("parent"), true); assert.deepEqual(ok.events, ["navigate", "context", "parent"]);
+  const rejected = editNavigationHarness({ sendAgentCommand: async () => { throw new Error("provider unavailable"); } });
+  await assert.rejects(rejected.navigate("parent"), /provider unavailable/); assert.deepEqual(rejected.events, []);
+  const cancelled = editNavigationHarness({ sendAgentCommand: async () => ({ cancelled: true }) });
+  assert.equal(await cancelled.navigate("parent"), false); assert.deepEqual(cancelled.events, []);
+  const failed = editNavigationHarness({ loadContext: async () => false });
+  await assert.rejects(failed.navigate("parent"), /history.loadError/); assert.deepEqual(failed.events, ["navigate"]);
+});
+test("historical context excludes unconfirmed recovery copies without deleting them", async () => {
+  const callback = source.slice(source.indexOf("  const loadContext = useCallback"), source.indexOf("  const promoteNewSession = useCallback"));
+  const js = ts.transpileModule(callback, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const pending = [{ id: "pending" }];
+  const env = { editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [], useCallback: fn => fn, promptRunIdRef: { current: 1 }, historyRevisionRef: { current: 0 }, sessionIdRef: { current: "session" }, URLSearchParams,
+    fetch: async () => ({ ok: true, json: async () => ({ context: { messages: ["ancestor"], entryIds: ["parent"] } }) }),
+    readPendingPrompts: async () => pending, mergePendingPrompts: () => ({ messages: ["ancestor", "later failure"], entryIds: ["parent", ""], confirmedIds: [] }),
+    setMessages: value => { env.messages = value; }, setEntryIds: value => { env.ids = value; }, confirmPendingPrompts: async ids => { assert.deepEqual(ids, []); } };
+  const load = new Function("env", `with(env) { ${js}; return loadContext; }`)(env);
+  assert.equal(await load("session", "parent"), true); assert.deepEqual(env.messages, ["ancestor"]); assert.deepEqual(env.ids, ["parent"]);
+  assert.equal(await load("session", null), true); assert.deepEqual(env.messages, ["ancestor", "later failure"]); assert.equal(pending.length, 1);
+});
+
+test("edit then failed send and repeated reload retain the new branch and only its recovery message", async () => {
+  const { mergePendingPrompts } = await createJiti(import.meta.url).import("../lib/prompt-recovery.ts");
+  const pending = [{ id: "old-failure", scope: "session", branchAnchorId: "old-leaf", message: { role: "user", content: "old failure", timestamp: 2 }, draft: { value: "old failure", images: [], files: [] } }];
+  const selection = { current: null };
+  const nav = editNavigationHarness({ activeLeafId: "old-leaf", data: { leafId: "old-leaf" }, editedBranchRef: selection,
+    readPendingPrompts: async () => pending, savePendingPrompt: async () => {} });
+  assert.equal(await nav.navigate("parent"), true);
+  const send = sendHarness({ entryIds: ["parent"], sendAgentCommand: async () => { throw new Error("provider unavailable"); } });
+  assert.equal(await send.run("edited message"), false);
+  assert.equal(send.env.saved.branchAnchorId, "parent");
+  pending.push(send.env.saved);
+  const ancestor = { role: "assistant", content: [], timestamp: 1 };
+  const oldDisk = { leafId: "old-leaf", context: { messages: [ancestor, { role: "user", content: "abandoned" }], entryIds: ["parent", "old-leaf"] } };
+  const h = sessionLoadHarness({ editedBranchRef: selection, mergePendingPrompts, readPendingPrompts: async () => pending,
+    fetch: async () => ({ ok: true, json: async () => ({ context: { messages: [ancestor], entryIds: ["parent"] } }) }) });
+  for (let i = 0; i < 3; i++) {
+    await h.run("session", false, false, Promise.resolve(oldDisk));
+    assert.equal(h.env.setErrorValue, null);
+    assert.equal(h.env.setActiveLeafIdValue, "parent");
+    assert.equal(h.env.setMessagesValue.length, 2);
+    assert.equal(h.env.setMessagesValue[1].clientPromptId, send.env.saved.id);
+  }
+  assert.equal(pending.length, 2, "branch changes do not delete recovery bytes");
+});
+
+test("editing a failed prompt replaces its visible row even when the replacement send fails", async () => {
+  const failed = { role: "user", clientPromptId: "original", content: "before", sendError: "error" };
+  const h = sendHarness({ messages: [failed, { role: "user", clientPromptId: "unrelated", content: "before", sendError: "error" }], entryIds: ["", ""], ensureEventsConnected: async () => { throw new Error("still unavailable"); } });
+  assert.equal(await h.run("after", undefined, undefined, undefined, ["original"]), false);
+  assert.equal(h.env.messages.length, 2);
+  assert.equal(h.env.messages[0].content, "after");
+  assert.equal(h.env.messages[0].sendError, "still unavailable");
+  assert.equal(h.env.messages[1].clientPromptId, "unrelated");
+  assert.deepEqual(h.env.saved.draft.retryOfPromptIds, ["original"]);
+});
+
+test("edit-from-here rewinds each failed position and archives only its suffix with full recovery bytes retained", async () => {
+  const callback = source.slice(source.indexOf("  const handleRewindRecovery = useCallback"), source.indexOf("  const handleLeafChange = useCallback"));
+  const js = ts.transpileModule(callback, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  for (const index of [0, 1, 2]) {
+    const messages = [0, 1, 2].map(i => ({ role: "user", clientPromptId: `test${i}`, content: `test${i}`, recoveryDraft: { value: `test${i}`, images: [{ data: "image", mimeType: "image/png" }], files: [] } }));
+    const archived = [];
+    const env = { useCallback: fn => fn, messages, entryIds: ["", "", ""], agentRunningRef: { current: false }, bashRunningRef: { current: false }, isCompacting: false,
+      t: key => key, sessionIdRef: { current: "session" }, historyRevisionRef: { current: 0 }, sessionLoadAbortRef: { current: null }, handleNavigate: async () => { throw new Error("local failures need no server navigation"); },
+      dismissPendingPrompt: async id => archived.push(id), setMessages: value => { env.visible = value; }, setEntryIds: value => { env.ids = value; } };
+    const rewind = new Function("env", `with(env) { ${js}; return handleRewindRecovery; }`)(env);
+    assert.equal(await rewind(messages[index]), true);
+    assert.deepEqual(env.visible, messages.slice(0, index));
+    assert.deepEqual(archived, messages.slice(index).map(message => message.clientPromptId));
+    assert.equal(messages[index].recoveryDraft.images[0].data, "image");
+  }
 });

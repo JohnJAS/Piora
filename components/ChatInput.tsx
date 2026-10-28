@@ -876,7 +876,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
       attachedFilesRef.current = [];
     };
     const restoreSubmittedDraft = () => {
-      if (!cleared) return;
+      if (!cleared || submittedPromptId) return;
       const retryOfPromptIds = [...new Set([...(submittedPromptId ? [submittedPromptId] : []), ...sentRetryOfPromptIds])];
       if (draftKeyRef.current !== sentDraftKey) {
         if (sentDraftKey && !getDraft(sentDraftKey)) setDraft(sentDraftKey, { ...sentDraft, retryOfPromptIds });

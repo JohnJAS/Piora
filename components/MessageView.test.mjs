@@ -424,3 +424,13 @@ test("derives a persistent scheduled-task card from a successful create tool res
   });
   assert.equal(getAutomationToolCardDetails({ toolName: "piora_automation", input: { action: "list" } }, undefined), null);
 });
+
+test("failed recovery messages offer edit alongside retry, while successful messages do not", () => {
+  const message = { role: "user", content: "你好", sendError: "unavailable", recoveryDraft: { value: "你好", images: [], files: [] } };
+  const props = { onRetry: async () => {}, onEditFailed: () => {} };
+  const html = renderMessage(message, props);
+  assert.match(html, /从此处编辑/);
+  assert.match(html, /重试/);
+  assert.match(html, /unavailable/);
+  assert.doesNotMatch(renderMessage({ ...message, sendError: undefined }, props), /从此处编辑/);
+});

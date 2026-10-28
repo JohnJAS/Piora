@@ -5,7 +5,7 @@ import { NestedToolCallsStore } from "@/lib/nested-tool-calls";
 import type { ToolReviewRecord } from "@/lib/tool-review-types";
 
 import { createAgentEventDecoder } from "@/lib/agent-event-transport";
-import { savePendingPrompt, readPendingPrompts, mergePendingPrompts, confirmPendingPrompts, type PendingPrompt } from "@/lib/prompt-recovery";
+import { savePendingPrompt, dismissPendingPrompt, readPendingPrompts, mergePendingPrompts, replaceFailedPromptMessage, confirmPendingPrompts, type PendingPrompt } from "@/lib/prompt-recovery";
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
 import { invalidatePrefetchedSession, peekPrefetchedSession, takePrefetchedSession } from "@/lib/session-prefetch";
@@ -456,6 +456,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [deletingMessage, setDeletingMessage] = useState(false);
   const messageMutationRef = useRef(false);
   const historyRevisionRef = useRef(0);
+  const editedBranchRef = useRef<{ sid: string; target: string; previousLeaf: string | null } | null>(null);
   const [entryIds, setEntryIds] = useState<string[]>(initialSessionData?.context.entryIds ?? []);
   const [streamState, dispatch] = useReducer(streamReducer, { isStreaming: false, streamingMessage: null });
   const [agentRunning, setAgentRunning] = useState(false);
@@ -710,6 +711,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         d = await wait(res.json()) as SessionData;
       }
       if (controller.signal.aborted || sessionIdRef.current !== sid || promptRunIdRef.current !== runId) return null;
+      const editedBranch = editedBranchRef.current;
+      if (editedBranch?.sid === sid && d.leafId === editedBranch.previousLeaf) {
+        const response = await wait(fetch(`/api/sessions/${encodeURIComponent(sid)}/context?${new URLSearchParams({ leafId: editedBranch.target, deferThinking: "1", deferMedia: "1" })}`, { signal: controller.signal }));
+        if (!response.ok) throw await sessionResponseError(response);
+        const branch = await wait(response.json());
+        d = { ...d, context: branch.context, leafId: editedBranch.target };
+      } else if (editedBranch?.sid === sid && editedBranchRef.current === editedBranch) {
+        editedBranchRef.current = null;
+      }
       const recovered = mergePendingPrompts(d.context.messages, d.context.entryIds ?? [], await wait(readPendingPrompts(sid)), d.persistedPromptIds);
       if (controller.signal.aborted || sessionIdRef.current !== sid || promptRunIdRef.current !== runId) return null;
       nestedCallsStore.reset();
@@ -783,7 +793,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   const loadContext = useCallback(async (sid: string, leafId: string | null) => {
     const runId = promptRunIdRef.current;
-    const revision = historyRevisionRef.current;
+    const revision = ++historyRevisionRef.current;
     try {
       const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1" });
       if (leafId) params.set("leafId", leafId);
@@ -793,8 +803,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       const d = await res.json() as { context: { messages: AgentMessage[]; entryIds: string[] }; persistedPromptIds?: string[] };
       const recovered = mergePendingPrompts(d.context.messages, d.context.entryIds ?? [], await readPendingPrompts(sid), d.persistedPromptIds);
       if (sessionIdRef.current !== sid || promptRunIdRef.current !== runId || historyRevisionRef.current !== revision) return;
-      setMessages(recovered.messages);
-      setEntryIds(recovered.entryIds);
+      // An explicit historical position contains only its persisted ancestry.
+      // Recovery copies stay stored and return in the normal conversation view.
+      setMessages(leafId ? d.context.messages : recovered.messages);
+      setEntryIds(leafId ? d.context.entryIds : recovered.entryIds);
       void confirmPendingPrompts(recovered.confirmedIds).catch(console.error);
       return true;
     } catch (e) {
@@ -1559,7 +1571,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (completed && completed.role === "user") {
           // Delivered steering/follow-up messages surface here as user
           // messages. The run's initial prompt also emits one, but handleSend
-          // already appended it optimistically. Consume only the still-adjacent
+          // already displayed it optimistically. Consume only its matching
           // optimistic bubble; later same-text queue deliveries must render.
           const delivered = normalizeToolCalls(completed);
           const materializedDelivery = userMessageHasPromptMaterialMarker(delivered);
@@ -1567,12 +1579,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           const optimisticKey = optimisticUserMessageKeyRef.current;
           optimisticUserMessageKeyRef.current = null;
           setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (optimisticKey && last?.role === "user" && userMessageKey(last) === optimisticKey) {
+            const optimisticIndex = prev.findIndex(message => message.role === "user"
+              && userMessageKey(message) === optimisticKey
+              && (!promptSubmissionRef.current?.idempotencyKey || message.clientPromptId === promptSubmissionRef.current.idempotencyKey));
+            if (optimisticKey && optimisticIndex >= 0) {
               if (materializedDelivery) return prev;
               return optimisticKey === deliveredKey
                 ? prev
-                : [...prev.slice(0, -1), delivered];
+                : prev.map((message, index) => index === optimisticIndex ? delivered : message);
             }
             if (materializedDelivery) return prev;
             return [...prev, delivered];
@@ -1790,7 +1804,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         : displayMessage,
       timestamp: Date.now(),
     };
-    setMessages((prev) => [...prev, userMsg]);
+    const replacement = replaceFailedPromptMessage(messages, entryIds, userMsg);
+    setMessages(replacement.messages);
+    setEntryIds(replacement.entryIds);
     optimisticUserMessageKeyRef.current = userMessageKey(userMsg);
     cancelPreparedPromptRef.current = () => {
       setMessages((current) => current.map((entry) => entry === userMsg ? { ...entry, sendError: t("chat.sendCancelled") } : entry));
@@ -1813,7 +1829,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
     let sentSessionId: string | null = null;
     let promptRequestStarted = false;
-    const recovery: PendingPrompt = { id: clientPromptId, scope: sessionIdRef.current ?? `new:${newSessionCwd}`, message: userMsg, draft: recoveryDraft };
+    const recovery: PendingPrompt = { branchAnchorId: entryIds.filter(Boolean).at(-1), id: clientPromptId, scope: sessionIdRef.current ?? `new:${newSessionCwd}`, message: userMsg, draft: recoveryDraft };
     const sendPrompt = async (sid: string, promptMaterials: PromptMaterialReference[]) => {
       // Preparation has ended, so Stop must reach the server. Admission is
       // still pending until the POST returns its exact queued command receipt.
@@ -1893,10 +1909,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         : e instanceof Error ? e.message : String(e);
       if (optimisticKey) {
         setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          return last?.role === "user" && userMessageKey(last) === optimisticKey
-            ? [...prev.slice(0, -1), { ...last, sendError }]
-            : prev;
+          return prev.map(entry => entry.role === "user" && entry.clientPromptId === clientPromptId
+            ? { ...entry, sendError } : entry);
         });
       }
       // Surface startup, session, and event-stream failures instead of leaving
@@ -1917,7 +1931,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         cancelPreparedPromptRef.current = null;
       }
     }
-  }, [isNew, newSessionCwd, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, closeEvents, t, submitChatCommand]);
+  }, [messages, entryIds, isNew, newSessionCwd, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, closeEvents, t, submitChatCommand]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
     if (agentRunningRef.current || bashRunningRef.current) return;
@@ -2020,7 +2034,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         deletedIds = result.deletedIds ?? [entryId];
       }
       // An explicit user deletion can retire a recovery copy without a receipt.
-      if (promptId) await confirmPendingPrompts([promptId]);
+      if (promptId) await confirmPendingPrompts([...new Set([promptId, ...(message.role === "user" ? message.recoveryDraft?.retryOfPromptIds ?? [] : [])])]);
       if (sessionIdRef.current !== sid) return;
       const remove = new Set(deletedIds);
       const keep = messages.map((entry, index) => !remove.has(entryIds[index]) && !(promptId && entry.role === "user" && entry.clientPromptId === promptId));
@@ -2055,17 +2069,50 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [onSessionForked]);
 
-  const handleNavigate = useCallback(async (entryId: string) => {
-    if (bashRunningRef.current) return;
+  const handleNavigate = useCallback(async (entryId: string): Promise<boolean> => {
     const sid = sessionIdRef.current;
-    if (!sid) return;
-    sendAgentCommand(sid, { type: "navigate_tree", targetId: entryId }).catch(() => {});
+    if (!sid || agentRunningRef.current || bashRunningRef.current || isCompacting) throw new Error(t("history.busy"));
+    // Older recovery records predate branch association; retain them on the
+    // branch being left rather than injecting them into every future branch.
+    if (activeLeafId) {
+      const pending = await readPendingPrompts(sid);
+      await Promise.all(pending.filter(record => !record.branchAnchorId).map(record => savePendingPrompt({ ...record, branchAnchorId: activeLeafId })));
+    }
+    const result = await sendAgentCommand<{ cancelled?: boolean }>(sid, { type: "navigate_tree", targetId: entryId });
+    if (result?.cancelled || sessionIdRef.current !== sid) return false;
+    editedBranchRef.current = { sid, target: entryId, previousLeaf: editedBranchRef.current?.sid === sid ? editedBranchRef.current.previousLeaf : data?.leafId ?? activeLeafId };
+    if (!await loadContext(sid, entryId)) throw new Error(t("history.loadError"));
     setActiveLeafId(entryId);
-    await loadContext(sid, entryId);
-  }, [loadContext]);
+    return true;
+  }, [activeLeafId, data?.leafId, isCompacting, loadContext, t]);
+
+  const handleRewindRecovery = useCallback(async (message: import("@/lib/types").UserMessage) => {
+    if (agentRunningRef.current || bashRunningRef.current || isCompacting) throw new Error(t("history.busy"));
+    const index = messages.findIndex(entry => entry.role === "user" && entry.clientPromptId === message.clientPromptId);
+    if (index < 0 || !message.clientPromptId || entryIds[index]) throw new Error(t("history.loadError"));
+    const sid = sessionIdRef.current;
+    const prefix = messages.slice(0, index);
+    const prefixIds = entryIds.slice(0, index);
+    const target = prefixIds.filter(Boolean).at(-1);
+    // A local failure has no tree entry. Navigate only if later persisted
+    // history exists; otherwise the runtime is already at its parent.
+    if (!target && entryIds.slice(index).some(Boolean)) throw new Error(t("history.loadError"));
+    if (target && entryIds.slice(index).some(Boolean) && !await handleNavigate(target)) return false;
+    if (sessionIdRef.current !== sid) return false;
+    const retired = messages.slice(index).flatMap((entry, offset) => entry.role === "user" && !entryIds[index + offset] && entry.clientPromptId
+      ? [entry.clientPromptId, ...(entry.recoveryDraft?.retryOfPromptIds ?? [])] : []);
+    await Promise.all([...new Set(retired)].map(dismissPendingPrompt));
+    if (sessionIdRef.current !== sid) return false;
+    historyRevisionRef.current++;
+    sessionLoadAbortRef.current?.abort();
+    setMessages(prefix);
+    setEntryIds(prefixIds);
+    return true;
+  }, [messages, entryIds, isCompacting, handleNavigate, t]);
 
   const handleLeafChange = useCallback(async (leafId: string | null) => {
     if (bashRunningRef.current) return;
+    editedBranchRef.current = null;
     setActiveLeafId(leafId);
     const sid = sessionIdRef.current;
     if (!sid) return;
@@ -2081,6 +2128,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const result = await sendAgentCommand<{ cancelled?: boolean }>(sid, { type: "navigate_tree", targetId: leafId });
     if (result?.cancelled || sessionIdRef.current !== sid) return false;
     if (!await loadContext(sid, leafId)) throw new Error(t("history.loadError"));
+    editedBranchRef.current = null;
     setActiveLeafId(leafId);
     return true;
   }, [isCompacting, loadContext, t]);
@@ -2815,7 +2863,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     sessionIdRef, eventSourceRef, messagesEndRef, scrollContainerRef, activityClockRef, statusClock,
     lastUserMsgRef, pendingScrollToUserRef, initialScrollDoneRef,
     // Actions
-    handleSend, handleAbort, handleFork, handleNavigate, handleModelChange, handleDeleteMessage, deletingMessage,
+    handleSend, handleAbort, handleFork, handleNavigate, handleRewindRecovery, handleModelChange, handleDeleteMessage, deletingMessage,
     handleScrollToBottom, pauseHistoryFollow,
     switchHistoryBranch, forkHistoryQuestion,
     handleCompact, handleDismissCompactError, handleDismissCompactResult, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
