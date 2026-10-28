@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 开发流程
+
+- 取消提交和推送前强制执行本地 CI 的门禁，开发时按需进行相关快速验证，完整 CI 校验交由 GitHub Actions 执行，并保留推送后的结果检查要求。
+
 ## [0.5.5-beta.47] - 2026-10-28
 
 ### 模型设置
