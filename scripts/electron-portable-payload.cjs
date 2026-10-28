@@ -33,8 +33,7 @@ async function prepareArtifactPayload(event) {
       const helper = targets[0]?.packageHelper?.elevateHelper;
       if (require("app-builder-lib/package.json").version !== "26.18.0" || !targets.length || targets.length !== context.targets.length
         || typeof helper?.resolve !== "function" || typeof helper?.addToArchive !== "function"
-        || targets.some(target => target.packageHelper?.elevateHelper !== helper || target.packager !== context.packager)
-        || targets.some(target => (target.options.signAndEditExecutable !== false) !== (targets[0].options.signAndEditExecutable !== false))) {
+        || targets.some(target => target.packageHelper?.elevateHelper !== helper || target.packager !== context.packager)) {
         throw new Error("Unsupported electron-builder NSIS payload lifecycle");
       }
       const paths = await Promise.all(targets.map(target => helper.resolve(target)));
@@ -44,7 +43,8 @@ async function prepareArtifactPayload(event) {
         await mkdir(resources, { recursive: true });
         const staged = join(resources, "elevate.exe");
         await copyFile(paths[0], staged);
-        if (targets[0].options.signAndEditExecutable !== false) await context.packager.signIf(staged);
+        const winOptions = context.packager.platformSpecificBuildOptions ?? {};
+        if (winOptions.signAndEditExecutable !== false && winOptions.signExecutable !== false) await context.packager.signIf(staged);
       }
       const addToArchive = helper.addToArchive.bind(helper);
       helper.addToArchive = async (archive, target, format, options, appOutDir) => {
