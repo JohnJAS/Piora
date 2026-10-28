@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 数据目录保护
+
+- 更换 Pi 数据目录时，禁止选择 Piora 安装目录及其子目录（包括通过目录链接指向的路径），在迁移或停止服务前提示升级、卸载可能清理数据的风险。
+
 ### 终端
 
 - 修复终端刷新或延迟启动时抢走标签栏控件的键盘焦点，导致 F2 重命名偶发失效的问题；保留标签和编辑框焦点，同时维持新建终端后的自动聚焦，并加入受控启动时序回归。

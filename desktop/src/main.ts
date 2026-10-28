@@ -1249,7 +1249,7 @@ type AgentDataDirectoryInfo = {
 
 type AgentDataDirectoryApplyResult = {
   ok: boolean;
-  code?: "busy" | "environment-override" | "invalid-path" | "same-path" | "overlapping-path" | "target-not-empty" | "migration-failed" | "persist-failed";
+  code?: "busy" | "environment-override" | "invalid-path" | "same-path" | "overlapping-path" | "installation-path" | "target-not-empty" | "migration-failed" | "persist-failed";
   error?: string;
   sourceDirectory?: string;
   currentDirectory?: string;
@@ -1377,6 +1377,7 @@ function registerAgentDataDirectoryHandlers(): void {
           candidate.directory,
           sourceDirectory,
           app.getPath("home"),
+          app.isPackaged ? dirname(process.execPath) : undefined,
         );
         await preflightAgentDataDirectoryChange({
           targetDirectory,
