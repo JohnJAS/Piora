@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ShellEvent, ShellInputMode, ShellReference, ShellSession, ShellSnapshot, ShellTimelinePage } from "@/lib/shell/types";
-import { shellRequest, applyShellEvent, mergeShellTimeline } from "@/lib/shell/client";
+import { shellRequest, applyShellEvent, mergeShellTimeline, acknowledgeShellTitle, preserveAcknowledgedShellTitle, type ShellTitleAcknowledgement } from "@/lib/shell/client";
 import { confirmShellSubmission, pendingShellSubmissions, saveShellSubmission, type ShellSubmission } from "@/lib/shell/recovery";
 
 export function useSmartShell(cwd: string, native = false) {
@@ -26,6 +26,7 @@ export function useSmartShell(cwd: string, native = false) {
   const confirmed = useRef(new Set<string>());
   const subscribers = useRef(new Set<(event: ShellEvent) => void>());
   const inventoryRequest = useRef(0);
+  const savedTitles = useRef(new Map<string, ShellTitleAcknowledgement>());
   const operations = useRef<AbortController | null>(null);
   useEffect(() => {
     const controller = new AbortController(); operations.current = controller;
@@ -44,11 +45,15 @@ export function useSmartShell(cwd: string, native = false) {
     previous?.controller.abort();
     const controller = new AbortController();
     const request = ++inventoryRequest.current;
+    const titlesAtStart = new Map(savedTitles.current);
     const promise = shellRequest<{ sessions: ShellSession[] }>(`sessions?cwd=${encodeURIComponent(cwd)}&native=${native}`, undefined, { signal: controller.signal, timeoutMs: 15_000 }).then(result => {
       // The store lists by updatedAt, which changes when a PTY emits output.
       // Keep tab positions stable so a numbered close button never targets a
       // different session after a background inventory refresh.
-      const sessions = [...result.sessions].sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
+      const sessions = result.sessions.map(session => {
+        const saved = savedTitles.current.get(session.id);
+        return saved && saved !== titlesAtStart.get(session.id) ? { ...session, title: saved.title } : session;
+      }).sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id));
       if (!controller.signal.aborted && scope.current === cwd && request === inventoryRequest.current) setInventory({ cwd, sessions });
       return sessions;
     }).finally(() => { if (inventoryFlight.current?.controller === controller) inventoryFlight.current = null; });
@@ -109,6 +114,9 @@ export function useSmartShell(cwd: string, native = false) {
     current.current = null;
     const publish = (event: ShellEvent) => {
       if (disposed) return;
+      const saved = acknowledgeShellTitle(savedTitles.current.get(event.terminalId), event);
+      if (saved) savedTitles.current.set(event.terminalId, saved);
+      event = preserveAcknowledgedShellTitle(event, saved);
       const updated = applyShellEvent(current.current, event);
       if (updated === current.current) return;
       if (event.type !== "output" && archived.current?.terminalId === activeId && current.current) {
@@ -240,6 +248,28 @@ export function useSmartShell(cwd: string, native = false) {
     }
     catch (cause) { if (!signal?.aborted) setError(String(cause)); }
   }, [cwd, refreshSessions, select]);
+  const rename = useCallback(async (id: string, title: string): Promise<boolean> => {
+    const signal = operations.current?.signal;
+    try {
+      setError("");
+      const renamed = await shellRequest<ShellSnapshot>(`sessions/${id}`, { title }, { method: "PATCH", signal });
+      if (signal?.aborted || scope.current !== cwd) return false;
+      // Update only metadata: replaying the PATCH snapshot would discard
+      // newer PTY output or reset the terminal's cursor and scroll position.
+      // Another window may have renamed this terminal after our save but
+      // before its response arrived. Compare title metadata, never output age.
+      const saved = acknowledgeShellTitle(savedTitles.current.get(id), { type: "session", terminalId: id, generation: renamed.session.generation, sequence: renamed.sequence, session: renamed.session })!;
+      savedTitles.current.set(id, saved);
+      const savedTitle = saved.title;
+      setInventory(previous => previous.cwd === cwd ? { cwd, sessions: previous.sessions.map(session => session.id === id ? { ...session, title: savedTitle } : session) } : previous);
+      if (current.current?.session.id === id) current.current = { ...current.current, session: { ...current.current.session, title: savedTitle } };
+      setSnapshot(previous => previous?.session.id === id ? { ...previous, session: { ...previous.session, title: savedTitle } } : previous);
+      return true;
+    } catch (cause) {
+      if (!signal?.aborted && scope.current === cwd) setError(String(cause));
+      return false;
+    }
+  }, [cwd]);
   const loadArchive = useCallback(async (initial = false) => {
     if (!activeId || native) return;
     const previous = !initial && archived.current?.terminalId === activeId ? archived.current : null;
@@ -258,5 +288,5 @@ export function useSmartShell(cwd: string, native = false) {
   }, [activeId, native]);
   useEffect(() => { void loadArchive(true); return () => archiveRequest.current?.abort(); }, [loadArchive]);
   const combined = useMemo(() => snapshot?.session.id === activeId ? archive?.terminalId === activeId ? mergeShellTimeline(snapshot, archive) : snapshot : null, [snapshot, archive, activeId]);
-  return { sessions, activeId, select, create, close, snapshot: combined, getSnapshot: () => current.current, subscribe, action, submit, pending, error, setError, connectionError, reconnect: () => setRetryKey(key => key + 1), connected, refreshSessions, loadOlder: () => loadArchive(), hasOlder: archive?.terminalId === activeId && Boolean(archive.nextCursor || archive.failed), loadingOlder: archive?.terminalId === activeId && archive.loading };
+  return { sessions, activeId, select, create, close, rename, snapshot: combined, getSnapshot: () => current.current, subscribe, action, submit, pending, error, setError, connectionError, reconnect: () => setRetryKey(key => key + 1), connected, refreshSessions, loadOlder: () => loadArchive(), hasOlder: archive?.terminalId === activeId && Boolean(archive.nextCursor || archive.failed), loadingOlder: archive?.terminalId === activeId && archive.loading };
 }

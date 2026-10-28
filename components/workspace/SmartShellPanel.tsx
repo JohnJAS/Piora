@@ -1,12 +1,54 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ShellSession } from "@/lib/shell/types";
 import { useI18n } from "@/hooks/useI18n";
 import { useSmartShell } from "@/hooks/useSmartShell";
 import { useNativeShellConfig } from "@/hooks/useNativeShellConfig";
 import { AliIcon } from "../AliIcon";
 import { TerminalSurface, type TerminalSurfaceHandle } from "./TerminalSurface";
 import styles from "./SmartShell.module.css";
+
+function TerminalTab({ session, index, active, onSelect, onClose, onRename }: {
+  session: ShellSession; index: number; active: boolean;
+  onSelect: () => void; onClose: () => void; onRename: (title: string) => Promise<boolean>;
+}) {
+  const { t } = useI18n();
+  const [editing, setEditing] = useState(false);
+  const [title, setTitle] = useState("");
+  const [saving, setSaving] = useState(false);
+  const pending = useRef(false);
+  const tab = useRef<HTMLButtonElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+  const label = session.title || session.profile.label;
+  const begin = () => { if (!pending.current) { setTitle(label); setEditing(true); } };
+  const cancel = (restoreFocus = true) => { setEditing(false); if (restoreFocus) requestAnimationFrame(() => tab.current?.focus()); };
+  const save = async () => {
+    const name = title.trim();
+    if (pending.current || !name || name.length > 100) return;
+    if (name === session.title) { cancel(); return; }
+    pending.current = true; setSaving(true);
+    try { if (await onRename(name)) cancel(document.activeElement === document.body || Boolean(form.current?.contains(document.activeElement))); }
+    finally { pending.current = false; setSaving(false); }
+  };
+  return <div className={styles.terminalTab} data-active={active}>
+    {editing ? <form ref={form} className={styles.tabRename} onSubmit={event => { event.preventDefault(); void save(); }}>
+      <input autoFocus aria-label={t("shell.tabName")} maxLength={100} value={title} disabled={saving}
+        onFocus={event => event.currentTarget.select()} onChange={event => setTitle(event.target.value)}
+        onKeyDown={event => {
+          if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) { if (event.key === "Enter") event.preventDefault(); return; }
+          if (event.key === "Escape" && !pending.current) { event.preventDefault(); cancel(); }
+        }} />
+      <button type="submit" title={t("shell.saveName")} aria-label={t("shell.saveName")} disabled={saving || !title.trim()}><AliIcon name="check" size={13} /></button>
+      <button type="button" title={t("shell.cancelRename")} aria-label={t("shell.cancelRename")} disabled={saving} onClick={() => cancel()}><AliIcon name="close" size={13} /></button>
+    </form> : <>
+      <button ref={tab} role="tab" aria-selected={active} title={`${label} · ${session.profile.label}\n${session.initialCwd}`} onClick={onSelect} onDoubleClick={begin}
+        onKeyDown={event => { if (event.key === "F2") { event.preventDefault(); begin(); } }}>{label} · {index + 1}</button>
+      <button className={styles.tabRenameButton} title={t("shell.rename")} aria-label={`${t("shell.rename")} ${index + 1}`} onClick={begin}><AliIcon name="edit" size={12} /></button>
+    </>}
+    <button title={t("shell.close")} aria-label={t("shell.close") + " " + (index + 1)} onClick={onClose}>×</button>
+  </div>;
+}
 
 export interface SmartShellPanelProps {
   cwd: string;
@@ -46,10 +88,8 @@ export function SmartShellPanel({ cwd, onClose, onSettings, searchTarget }: Smar
       {onClose ? <button title={t("workspace.closeTool")} aria-label={t("workspace.closeTool")} onClick={onClose}><AliIcon name="close" size={15} /></button> : null}
     </header>
     <div className={styles.tabs} role="tablist" aria-label={t("shell.title")}>{shell.sessions.map((session, index) =>
-      <div key={session.id} className={styles.terminalTab} data-active={session.id === shell.activeId}>
-        <button role="tab" aria-selected={session.id === shell.activeId} title={session.initialCwd} onClick={() => shell.select(session.id)}>{session.profile.label} · {index + 1}</button>
-        <button title={t("shell.close")} aria-label={t("shell.close") + " " + (index + 1)} onClick={() => void shell.close(session.id)}>×</button>
-      </div>
+      <TerminalTab key={`${cwd}:${session.id}`} session={session} index={index} active={session.id === shell.activeId}
+        onSelect={() => shell.select(session.id)} onClose={() => void shell.close(session.id)} onRename={title => shell.rename(session.id, title)} />
     )}</div>
     {shell.error ? <div className={styles.error} role="alert">{shell.error}<button aria-label={t("workspace.closeTool")} onClick={() => shell.setError("")}>×</button></div> : null}
     {profileError ? <div className={styles.error} role="alert">{profileError}</div> : null}
