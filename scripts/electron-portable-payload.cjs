@@ -17,6 +17,29 @@ function registerPayloadContext(context) {
   if (context.arch !== 1) throw new Error("Portable payload supports only the reviewed Windows x64 target");
   contexts.set(resolve(context.appOutDir), { context, generation: null });
 }
+
+function reuseInstallerArchive(targets) {
+  if (targets.length === 1) return;
+  const installer = targets.find(target => target.name === "nsis");
+  const portable = targets.find(target => target.name === "portable");
+  if (targets.length !== 2 || !installer || !portable || installer.packageHelper !== portable.packageHelper
+    || typeof installer.buildAppPackage !== "function" || typeof portable.buildAppPackage !== "function") {
+    throw new Error("Unsupported electron-builder shared archive lifecycle");
+  }
+  const installerKey = JSON.parse(installer.appPackageCacheKey);
+  const portableKey = JSON.parse(portable.appPackageCacheKey);
+  const comparable = ({ differentialAware, excluded, ...rest }) => JSON.stringify({ ...rest, excluded: excluded?.length ? excluded : null });
+  if (installerKey.format !== "7z" || installerKey.differentialAware !== true || portableKey.differentialAware !== false
+    || installerKey.storeAsar !== false || installerKey.blockmap !== false || comparable(installerKey) !== comparable(portableKey)) {
+    throw new Error("Installer and portable archive options require separate payloads");
+  }
+  // Portable extraction accepts the installer's differential-aware 7z. Use
+  // that exact archive regardless of which target asks for it first; retain
+  // each target's own metadata and installer blockmap behavior.
+  Object.defineProperty(portable, "appPackageCacheKey", { configurable: true, get: () => installer.appPackageCacheKey });
+  portable.buildAppPackage = installer.buildAppPackage.bind(installer);
+}
+
 async function prepareArtifactPayload(event) {
   if (!["nsis", "portable"].includes(event.targetPresentableName)) return;
   if (contexts.size !== 1) throw new Error("Expected exactly one finalized Windows payload before NSIS compression");
@@ -51,6 +74,7 @@ async function prepareArtifactPayload(event) {
         if (resolve(appOutDir) === resolve(context.appOutDir) && targets.includes(target)) return;
         return addToArchive(archive, target, format, options, appOutDir);
       };
+      reuseInstallerArchive(targets);
       await writePayloadManifest(context);
     })();
     await entry.generation;
@@ -73,3 +97,4 @@ async function afterAllArtifactBuild() {
 module.exports = prepareArtifactPayload;
 module.exports.registerPayloadContext = registerPayloadContext;
 module.exports.afterAllArtifactBuild = afterAllArtifactBuild;
+module.exports.reuseInstallerArchive = reuseInstallerArchive;

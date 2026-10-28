@@ -4,6 +4,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.5.5-beta.50] - 2026-10-28
+
+### 发布效率
+
+- 加快 Windows 发布构建：复用经过完整性校验的 npm 下载缓存和 Next.js 构建缓存，让安装版与便携版共享同一份兼容的压缩载荷，并去掉已由打包验收覆盖的重复许可证扫描；保留安装、便携启动、更新及许可证校验。
+
 ## [0.5.5-beta.49] - 2026-10-28
 
 ### 模型设置

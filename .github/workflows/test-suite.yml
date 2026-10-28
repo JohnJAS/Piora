@@ -30,10 +30,15 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node.js
+        id: node-setup
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22.19.0
           cache: npm
+
+      - name: Restore npm downloads from an earlier lockfile
+        if: steps.node-setup.outputs.cache-hit != 'true'
+        uses: ./.github/actions/restore-npm-cache
 
       - name: Install Linux native image patch tools
         if: runner.os == 'Linux'

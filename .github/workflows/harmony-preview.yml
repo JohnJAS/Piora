@@ -81,10 +81,23 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node.js
+        id: node-setup
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22.19.0
           cache: npm
+
+      - name: Restore npm downloads from an earlier lockfile
+        if: steps.node-setup.outputs.cache-hit != 'true'
+        uses: ./.github/actions/restore-npm-cache
+
+      - name: Restore Windows Next.js build cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .next/cache
+          key: piora-next-${{ runner.os }}-${{ runner.arch }}-node22-${{ github.sha }}
+          restore-keys: |
+            piora-next-${{ runner.os }}-${{ runner.arch }}-node22-
 
       - name: Verify preview tag and package metadata
         shell: pwsh
@@ -134,9 +147,6 @@ jobs:
         run: |
           $env:PIORA_TEST_7ZA = (Resolve-Path -LiteralPath 'desktop/build/portable-extractor/7za.exe').Path
           node --test lib/portable-payload.test.mjs
-
-      - name: Verify packaged license bundle
-        run: npm run licenses:package:check
 
       - name: Smoke-test packaged Electron runtime
         shell: pwsh
