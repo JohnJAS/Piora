@@ -1949,7 +1949,7 @@ export const zhCNLocale: LocalePlugin = {
     "speech.offlineBadge": "本机离线",
     "speech.toggle": "开启语音识别",
     "speech.toggleDescription": "默认关闭。开启后，录音只在当前运行电脑上处理。",
-    "speech.installBeforeEnable": "请先下载外置语音包，再开启此功能。",
+    "speech.installBeforeEnable": "首次开启会下载语音包，完成后即可使用；如果下载失败，可在下方重试或手动导入。",
     "speech.packTitle": "语音识别包",
     "speech.packDescription": "包含多语言 SenseVoice 模型，以及与当前操作系统匹配的本地运行时。",
     "speech.installed": "已安装",

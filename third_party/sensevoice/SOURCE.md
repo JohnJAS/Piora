@@ -1,4 +1,4 @@
-# Bundled offline speech
+# Optional offline speech
 
 SenseVoiceSmall INT8 by Alibaba / FunAudioLLM; ONNX conversion by Fangjun Kuang
 (csukuangfj). The model name and authorship remain unchanged.
@@ -23,5 +23,6 @@ SenseVoiceSmall INT8 by Alibaba / FunAudioLLM; ONNX conversion by Fangjun Kuang
   `48bc6bb4996ac924359e8e28b9ae88970e5ed3fc` and
   `fbd9f9a95f6013d8ecaef81e02b0033e5882a675`).
 
-The build downloads and verifies the resources; installed Windows applications
-load these local files without fetching models or executing package installers.
+The application downloads and verifies these pinned resources on first enable.
+They are stored outside the application; recognition then works offline without
+executing package installers. The license texts remain in the desktop package.

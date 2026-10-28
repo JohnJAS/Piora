@@ -1101,10 +1101,13 @@ async function main() {
       const shellRoot = join(temporaryDirectory, "powershell");
       await cp(join(dirname(packagedWebRoot), "powershell"), shellRoot, { recursive: true });
       await verifyStagedPowerShell(shellRoot);
-      const { verifyStagedSpeech } = await import("./stage-speech.mjs");
-      const speechRoot = join(temporaryDirectory, "speech");
-      await cp(join(dirname(packagedWebRoot), "speech"), speechRoot, { recursive: true });
-      await verifyStagedSpeech(speechRoot);
+      if (await lstat(join(dirname(packagedWebRoot), "speech")).catch(error => {
+        if (error?.code === "ENOENT") return null;
+        throw error;
+      })) throw new Error("The release unexpectedly contains a bundled speech pack");
+      for (const name of ["LICENSE", "MODEL_LICENSE", "SHERPA-LICENSE", "ONNXRUNTIME-LICENSE", "ONNXRUNTIME-NOTICES", "SOURCE.md"]) {
+        await assertFile(join(dirname(packagedWebRoot), "licenses", "sensevoice", name));
+      }
     }
     const isolatedAgentDir = join(temporaryDirectory, "agent");
     const isolatedHomeDir = join(temporaryDirectory, "home");
@@ -1199,11 +1202,24 @@ async function main() {
     if (process.platform === "win32") {
       const headers = { "X-Pi-Desktop-Token": token };
       const speech = await fetch(`${origin}/api/speech/settings`, { headers }).then(response => response.json());
-      if (!speech.installed || !speech.bundled) throw new Error("Packaged offline speech is not discoverable");
+      if (speech.installed || speech.bundled || speech.enabled) throw new Error("A fresh packaged app must not include or enable the speech pack");
       const enabled = await fetch(`${origin}/api/speech/settings`, {
         method: "PATCH", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ enabled: true }),
       });
-      if (!enabled.ok) throw new Error("Unable to enable bundled offline speech");
+      if (!enabled.ok) throw new Error("Unable to enable on-demand offline speech");
+      let installed = await enabled.json();
+      if (!installed.enabled || !["downloading", "installing", "complete"].includes(installed.install.phase)) {
+        throw new Error("Enabling speech did not start its on-demand installation");
+      }
+      const deadline = Date.now() + 8 * 60_000;
+      while (!installed.available && Date.now() < deadline) {
+        if (installed.install.phase === "error") throw new Error(`Speech pack download failed: ${installed.install.error}`);
+        await new Promise(resolveDelay => setTimeout(resolveDelay, 1000));
+        const response = await fetch(`${origin}/api/speech/settings`, { headers });
+        if (!response.ok) throw new Error(`Unable to read speech installation status: ${response.status}`);
+        installed = await response.json();
+      }
+      if (!installed.available || installed.bundled) throw new Error("On-demand speech pack did not become available");
       const { createJiti } = await import("jiti");
       const { encodePcm16Wav } = await createJiti(import.meta.url).import("../lib/voice-audio.ts");
       const samples = Float32Array.from({ length: 8_000 }, (_, index) => Math.sin(index * 0.1) * 0.05);

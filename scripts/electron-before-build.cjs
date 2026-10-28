@@ -25,8 +25,6 @@ module.exports = async function prepareDesktopBuild(context) {
   if (targetPlatform !== "win32") return true;
   const { stagePowerShell } = await import("./stage-powershell.mjs");
   await stagePowerShell(projectRoot);
-  const { stageSpeech } = await import("./stage-speech.mjs");
-  await stageSpeech(projectRoot);
   const { stagePortableExtractor } = await import("./stage-portable-extractor.mjs");
   await stagePortableExtractor(projectRoot);
   const customTemplatePath = join(projectRoot, "desktop", "build", "portable-cache.nsi");

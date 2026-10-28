@@ -1949,7 +1949,7 @@ export const enLocale: LocalePlugin = {
     "speech.offlineBadge": "Local and offline",
     "speech.toggle": "Enable speech recognition",
     "speech.toggleDescription": "Disabled by default. When enabled, recordings are processed only on this computer.",
-    "speech.installBeforeEnable": "Download the external speech pack before turning this on.",
+    "speech.installBeforeEnable": "Turning this on downloads the speech pack. If the download fails, retry below or import it manually.",
     "speech.packTitle": "Speech pack",
     "speech.packDescription": "A multilingual SenseVoice model and the native runtime for this operating system.",
     "speech.installed": "Installed",

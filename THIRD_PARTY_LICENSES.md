@@ -2,7 +2,7 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `c3ab4c15e1d482153165aeb90bb95dee90a18c19a5339b2bc4c59632e7f8d8bb`
+Lockfile SHA-256: `b7a05bdfa209f52876c389adcbcf2e2d57596a43f5ff6996e583ed3da631d05a`
 
 Unique locked packages: **1379**. Runtime packages: **902**. Build/development-only packages: **477**.
 
@@ -1405,9 +1405,9 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `yocto-queue` | `0.1.0` | MIT | No |
 | `zod-validation-error` | `4.0.2` | MIT | No |
 
-## Bundled Windows offline speech
+## Optional offline speech
 
-SenseVoiceSmall INT8 by Alibaba/FunAudioLLM, converted by Fangjun Kuang, with sherpa-onnx 1.13.6. Model weights use the FunASR Model Open Source License Agreement; the toolkit uses MIT and sherpa-onnx uses Apache-2.0. Exact model hashes, upstream attribution, and separate license texts are recorded in [speech provenance](third_party/sensevoice/SOURCE.md) and copied into resources/speech with the native runtime notices.
+SenseVoiceSmall INT8 by Alibaba/FunAudioLLM, converted by Fangjun Kuang, with sherpa-onnx 1.13.6. Model weights use the FunASR Model Open Source License Agreement; the toolkit uses MIT and sherpa-onnx uses Apache-2.0. Exact model hashes, upstream attribution, and separate license texts are recorded in [speech provenance](third_party/sensevoice/SOURCE.md) and copied into resources/licenses/sensevoice.
 
 ## Bundled portable archive extractor
 

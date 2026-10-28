@@ -31,8 +31,6 @@ module.exports = async function generatePackagedLicenses(context) {
     require("./electron-portable-payload.cjs").registerPayloadContext(context);
     const { verifyStagedPowerShell } = await import("./stage-powershell.mjs");
     await verifyStagedPowerShell(join(resourcesRoot, "powershell"));
-    const { verifyStagedSpeech } = await import("./stage-speech.mjs");
-    await verifyStagedSpeech(join(resourcesRoot, "speech"));
   }
   // electron-builder applies package-level `files` allowlists while traversing
   // nested node_modules, even for this extraResources tree. Hypium publishes
@@ -60,7 +58,7 @@ module.exports = async function generatePackagedLicenses(context) {
   const originalServerSource = await readFile(join(webRoot, "server.js"), "utf8");
   const launcherSource = originalServerSource.replace(
     "const dir = path.join(__dirname)",
-    "const dir = path.join(__dirname, 'runtime.asar');process.env.PIORA_WEB_RUNTIME_ROOT=process.env.PIORA_WEB_RUNTIME_ROOT||dir;if(process.platform==='win32'){require('../powershell/bootstrap.cjs');process.env.PIORA_BUNDLED_SPEECH_PACK=path.join(__dirname,'../speech/sensevoice-small-int8-1.13.6-sensevoice-2024-07-17')}",
+    "const dir = path.join(__dirname, 'runtime.asar');process.env.PIORA_WEB_RUNTIME_ROOT=process.env.PIORA_WEB_RUNTIME_ROOT||dir;if(process.platform==='win32'){require('../powershell/bootstrap.cjs')}",
   );
   if (launcherSource === originalServerSource) {
     throw new Error("Unable to create the packaged ASAR server launcher");

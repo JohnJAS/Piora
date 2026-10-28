@@ -54,6 +54,7 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
   const requestRef = useRef<AbortController | null>(null);
   const phaseRef = useRef<LocalDictationPhase>("idle");
   const mountedRef = useRef(true);
+  const pendingInstallRef = useRef(false);
   const onTranscriptRef = useRef(onTranscript);
   const languageRef = useRef(language);
   const stopRef = useRef<() => Promise<boolean>>(async () => false);
@@ -207,8 +208,9 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
   const refreshAvailability = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch("/api/speech/transcribe", { cache: "no-store", signal });
     if (!response.ok) return;
-    const payload = await response.json() as { available?: unknown };
+    const payload = await response.json() as { available?: unknown; enabled?: unknown; installed?: unknown; installPhase?: unknown };
     const nextAvailable = payload.available === true;
+    pendingInstallRef.current = payload.enabled === true && payload.installed !== true && payload.installPhase !== "error";
     setAvailable(nextAvailable);
     if (!nextAvailable && phaseRef.current !== "idle") cancel();
   }, [cancel]);
@@ -217,10 +219,12 @@ export function useLocalDictation({ language, onTranscript }: LocalDictationOpti
     const controller = new AbortController();
     const refresh = () => { void refreshAvailability(controller.signal).catch(() => {}); };
     refresh();
+    const timer = setInterval(() => { if (pendingInstallRef.current && !document.hidden) refresh(); }, 3000);
     window.addEventListener("piora:speech-settings-changed", refresh);
     window.addEventListener("focus", refresh);
     return () => {
       controller.abort();
+      clearInterval(timer);
       window.removeEventListener("piora:speech-settings-changed", refresh);
       window.removeEventListener("focus", refresh);
     };

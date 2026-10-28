@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { InvalidJsonBodyError, JsonBodyTooLargeError, parseJsonWithinLimit } from "@/lib/bounded-json";
-import { getSpeechStatus, updateSpeechSettings } from "@/lib/speech-pack-manager";
+import { ensureEnabledSpeechPack, getSpeechStatus, updateSpeechSettings, waitForSpeechPackInstall } from "@/lib/speech-pack-manager";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 
 export const runtime = "nodejs";
@@ -12,7 +12,12 @@ function json(body: unknown, status = 200) {
 
 export async function GET(request: Request) {
   if (!isApiRequestAllowed(request)) return json({ error: "Untrusted API request" }, 403);
-  return json(await getSpeechStatus());
+  let status = await getSpeechStatus();
+  if (ensureEnabledSpeechPack(status)) {
+    after(() => waitForSpeechPackInstall());
+    status = await getSpeechStatus();
+  }
+  return json(status);
 }
 
 export async function PATCH(request: Request) {
@@ -28,12 +33,16 @@ export async function PATCH(request: Request) {
     }
     const { resetLocalSpeechRuntime, warmLocalSpeechRuntime } = await import("@/lib/speech-runtime");
     resetLocalSpeechRuntime();
-    const status = await updateSpeechSettings({
+    let status = await updateSpeechSettings({
       ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
       ...(body.packDirectory === null || typeof body.packDirectory === "string"
         ? { packDirectory: body.packDirectory }
         : {}),
     });
+    if (ensureEnabledSpeechPack(status, body.enabled === true)) {
+      after(() => waitForSpeechPackInstall());
+      status = await getSpeechStatus();
+    }
     if (status.available) void warmLocalSpeechRuntime().catch(() => {});
     return json(status);
   } catch (error) {

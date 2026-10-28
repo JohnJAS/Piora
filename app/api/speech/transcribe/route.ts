@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { ByteBodyTooLargeError, readBytesWithinLimit } from "@/lib/bounded-bytes";
 import { isApiRequestAllowed } from "@/lib/request-security";
-import { getSpeechStatus } from "@/lib/speech-pack-manager";
+import { ensureEnabledSpeechPack, getSpeechStatus, waitForSpeechPackInstall } from "@/lib/speech-pack-manager";
 import { SpeechUnavailableError, transcribeLocalSpeechWav } from "@/lib/speech-runtime";
 
 export const runtime = "nodejs";
@@ -12,11 +12,16 @@ export async function GET(request: Request) {
   if (!isApiRequestAllowed(request)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
-  const status = await getSpeechStatus();
+  let status = await getSpeechStatus();
+  if (ensureEnabledSpeechPack(status)) {
+    after(() => waitForSpeechPackInstall());
+    status = await getSpeechStatus();
+  }
   return NextResponse.json({
     available: status.available,
     enabled: status.enabled,
     installed: status.installed,
+    installPhase: status.install.phase,
     engine: status.engine,
     model: status.model,
   }, { headers: { "cache-control": "no-store" } });

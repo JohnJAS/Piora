@@ -100,6 +100,10 @@ export function SpeechSettings() {
     return () => { controller.abort(); clearTimeout(timer); };
   }, [load, status?.install.phase]);
 
+  useEffect(() => {
+    if (status?.available) window.dispatchEvent(new Event(SPEECH_SETTINGS_CHANGED_EVENT));
+  }, [status?.available]);
+
   const patchSettings = useCallback(async (body: Record<string, unknown>) => {
     const response = await fetch("/api/speech/settings", {
       method: "PATCH",
@@ -237,7 +241,7 @@ export function SpeechSettings() {
             aria-checked={status?.enabled ?? false}
             className={styles.switch}
             data-enabled={status?.enabled || undefined}
-            disabled={busy || !status?.installed || !status.hardware.supported}
+            disabled={busy || !status || !status.hardware.supported}
             onClick={() => runAction(() => patchSettings({ enabled: !status?.enabled }))}
           >
             <span />

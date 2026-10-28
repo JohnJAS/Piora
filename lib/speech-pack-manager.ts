@@ -643,6 +643,16 @@ export function waitForSpeechPackInstall(): Promise<void> {
   return installGlobal().running ?? Promise.resolve();
 }
 
+// An enabled preference survives app restarts and upgrades from bundled packs.
+// Resume an interrupted install on the first status request, but do not retry
+// a failed download indefinitely without a new user action.
+export function ensureEnabledSpeechPack(status: SpeechStatus, retry = false): boolean {
+  if (!status.enabled || status.installed || !status.hardware.supported) return false;
+  if (!retry && status.install.phase === "error") return false;
+  startSpeechPackInstall();
+  return true;
+}
+
 export async function updateSpeechSettings(input: {
   enabled?: boolean;
   packDirectory?: string | null;
@@ -650,12 +660,11 @@ export async function updateSpeechSettings(input: {
   const current = await readSpeechSettings();
   const directoryChanged = input.packDirectory !== undefined
     && resolve(input.packDirectory?.trim() || current.packDirectory) !== resolve(current.packDirectory);
-  const nextEnabled = directoryChanged ? false : input.enabled ?? current.enabled;
-  if (nextEnabled) {
-    const packDirectory = input.packDirectory?.trim() || current.packDirectory;
-    const { manifest } = await resolveInstalledSpeechPack({ ...current, packDirectory });
-    if (!manifest) throw new Error("Download the local speech pack before enabling speech recognition");
+  if (directoryChanged && installGlobal().running) {
+    throw new Error("Wait for the speech pack installation to finish before changing its directory");
   }
+  const nextEnabled = directoryChanged ? false : input.enabled ?? current.enabled;
+  if (nextEnabled && !detectSpeechHardware().supported) throw new Error("Local speech is not supported on this platform");
   await writeSpeechSettings({
     enabled: nextEnabled,
     packDirectory: input.packDirectory === undefined
@@ -666,6 +675,7 @@ export async function updateSpeechSettings(input: {
 }
 
 export async function removeSpeechPack(): Promise<SpeechStatus> {
+  if (installGlobal().running) throw new Error("Wait for the speech pack installation to finish before removing it");
   const settings = await readSpeechSettings();
   if ((await resolveInstalledSpeechPack(settings)).bundled) throw new Error("The bundled speech pack is managed by application updates");
   const target = speechPackPath(settings);

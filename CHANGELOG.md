@@ -4,6 +4,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.5.5-beta.54] - 2026-10-29
+
+### 本地语音
+
+- 精简 Windows 安装版和便携版：不再内置本地语音模型与运行时；首次开启语音听写时自动下载并校验，完成后即可离线使用，失败时支持重试和手动导入。升级时保留已有设置和外置语音包；此前使用内置语音包的用户会自动下载外置资源。
+
 ## [0.5.5-beta.53] - 2026-10-28
 
 ### 发布效率
