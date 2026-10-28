@@ -4,6 +4,14 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.5.5-beta.53] - 2026-10-28
+
+### 发布效率
+
+- Windows 安装版与便携版共享压缩载荷并使用更快的压缩等级，修复跨版本 npm 下载缓存的架构键，减少发布等待。
+- 将质量检查、两套 TypeScript 类型检查和安装包验收并行执行；完整测试在每个平台拆为六个分片，仅在同一提交的十二个分片全部通过时复用。保留安装、便携启动、更新、许可证和完整性检查。
+- 发布打包通过独立的依赖归集步骤完整复制鸿蒙工具，避免 Next 对相同文件重复追踪；修正并行质量任务调用 TypeScript 6 的路径。beta.50、beta.51 和 beta.52 是未发布的验证候选。
+
 ## [0.5.5-beta.52] - 2026-10-28
 
 ### 发布效率

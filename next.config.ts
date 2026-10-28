@@ -60,9 +60,14 @@ const nextConfig: NextConfig = {
   // than modules imported into a Next route, so include the package explicitly.
   outputFileTracingIncludes: {
     "/*": [
-      "./node_modules/@deveco/deveco-cli/**/*",
-      "./node_modules/@deveco/deveco-cli-common/**/*",
-      "./node_modules/@deveco/deveco-cli-knowledgebase/**/*",
+      // The preview build always follows Next with stage-standalone, which
+      // copies these complete production closures exactly once. Ordinary
+      // standalone builds keep the explicit Next tracing includes.
+      ...(process.env.PIORA_PREVIEW_STAGED_DEVECO === "1" ? [] : [
+        "./node_modules/@deveco/deveco-cli/**/*",
+        "./node_modules/@deveco/deveco-cli-common/**/*",
+        "./node_modules/@deveco/deveco-cli-knowledgebase/**/*",
+      ]),
       "./.harmony-worker/**/*",
       "./lib/harmony/runtime/deveco-password.mjs",
     ],
