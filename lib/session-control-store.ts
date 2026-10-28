@@ -165,6 +165,11 @@ export class SessionControlStore {
     await appendLocked(this.commandsPath(commands[0].targetSessionId), commands.map(command => JSON.stringify({ kind: "command", command })).join("\n"), commit);
   }
 
+  async appendQueueMutation(commands: SessionCommandRecord[], commit: (persist: () => void) => void): Promise<void> {
+    if (commands.length !== 1) throw new Error("Expected one queue mutation");
+    await appendLocked(this.commandsPath(commands[0].targetSessionId), JSON.stringify({ kind: "command", command: commands[0] }), commit);
+  }
+
   async appendCommand(command: SessionCommandRecord): Promise<void> {
     await appendLocked(this.commandsPath(command.targetSessionId), JSON.stringify({ kind: "command", command } satisfies CommandJournalEntry));
   }

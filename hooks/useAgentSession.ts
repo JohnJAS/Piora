@@ -126,25 +126,27 @@ type AgentStateResponse = {
   activeTools?: { id: string; name: string }[];
   extensionStatuses?: ExtensionStatusItem[];
   extensionWidgets?: ExtensionWidgetItem[];
-  queuedMessages?: { steering?: string[]; followUp?: string[] } | null;
+  queuedMessages?: { steering?: string[]; followUp?: string[]; pendingInputs?: PendingInput[] } | null;
   capabilities?: SessionCapabilitiesState;
   toolPermission?: ToolPermissionState;
 };
 
+export interface PendingInput { id: string; commandId?: string; text: string; kind: "steer" | "followUp" }
 export interface QueuedMessages {
+  pendingInputs?: PendingInput[];
   steering: string[];
   followUp: string[];
 }
 
-function normalizeQueuedMessages(q?: { steering?: string[]; followUp?: string[] } | null): QueuedMessages {
-  return { steering: q?.steering ?? [], followUp: q?.followUp ?? [] };
+function normalizeQueuedMessages(q?: { steering?: string[]; followUp?: string[]; pendingInputs?: PendingInput[] } | null): QueuedMessages {
+  return { steering: q?.steering ?? [], followUp: q?.followUp ?? [], ...(q?.pendingInputs ? { pendingInputs: q.pendingInputs } : {}) };
 }
 
-function appendQueuedMessage(current: QueuedMessages, kind: keyof QueuedMessages, message: string): QueuedMessages {
+function appendQueuedMessage(current: QueuedMessages, kind: "steering" | "followUp", message: string): QueuedMessages {
   return { ...current, [kind]: [...current[kind], message] };
 }
 
-function removeLastQueuedMessage(current: QueuedMessages, kind: keyof QueuedMessages, message: string): QueuedMessages {
+function removeLastQueuedMessage(current: QueuedMessages, kind: "steering" | "followUp", message: string): QueuedMessages {
   const index = current[kind].lastIndexOf(message);
   if (index === -1) return current;
   return {
@@ -1644,6 +1646,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       case "queue_update":
         setQueuedMessages({
+          pendingInputs: event.pendingInputs as PendingInput[] | undefined,
           steering: [...((event.steering as string[] | undefined) ?? [])],
           followUp: [...((event.followUp as string[] | undefined) ?? [])],
         });
@@ -2435,6 +2438,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, []);
 
+  const handlePendingInputAction = useCallback(async (inputId: string, action: "queue" | "delete") => {
+    const sid = sessionIdRef.current;
+    if (!sid) throw new Error("Session unavailable");
+    await sendAgentCommand(sid, { type: "pending_input_action", inputId, action });
+  }, []);
+
   const handleRecallQueue = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (!sid) return;
@@ -2867,7 +2876,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     handleScrollToBottom, pauseHistoryFollow,
     switchHistoryBranch, forkHistoryQuestion,
     handleCompact, handleDismissCompactError, handleDismissCompactResult, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
-    handleRecallQueue,
+    handleRecallQueue, handlePendingInputAction,
     handleBuiltinSlashCommand,
     handleThinkingLevelChange, handleCapabilitySelection, handleSystemPromptSelection, loadSlashCommands, setActiveLeafId, setData, setMessages,
     dispatch, setAgentRunning, setForkingEntryId,

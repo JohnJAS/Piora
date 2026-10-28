@@ -1,4 +1,5 @@
 "use client";
+import { useRunningSendMode } from "@/hooks/useRunningSendMode";
 import { DefaultToolPermissionSetting } from "./ToolPermissionControl";
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -104,6 +105,7 @@ export function SettingsDialog({
   desktop,
 }: Props) {
   const { t } = useI18n();
+  const { mode: runningSendMode, setMode: setRunningSendMode } = useRunningSendMode();
   const {
     enabled: liveOutputAutoScrollEnabled,
     setEnabled: setLiveOutputAutoScrollEnabled,
@@ -605,6 +607,21 @@ export function SettingsDialog({
                     </button>
                   </div>
 
+                </section>
+                <section className={styles.conversationSection} data-settings-id="conversation.runningSendMode">
+                  <div className={styles.conversationRow}>
+                    <div className={styles.conversationCopy}>
+                      <div id="running-send-mode-label" className={styles.rowTitle}>{t("settings.runningSendMode")}</div>
+                      <div className={styles.rowDescription}>{t("settings.runningSendModeHelp")}</div>
+                    </div>
+                    <div className={styles.sendModeTabs} role="group" aria-labelledby="running-send-mode-label">
+                      {(["steer", "next_turn"] as const).map(mode => (
+                        <button key={mode} type="button" aria-pressed={runningSendMode === mode} onClick={() => setRunningSendMode(mode)}>
+                          {t(mode === "steer" ? "chat.steer" : "chat.queueSend")}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </section>
                 <ReplySuggestionsSettings cwd={modelCwd} />
               </>

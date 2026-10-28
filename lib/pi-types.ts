@@ -171,6 +171,7 @@ export interface AgentSessionLike {
     followUp?: Agent["followUp"];
     peekQueuedMessages?: Agent["peekQueuedMessages"];
     clearSteeringQueue?: Agent["clearSteeringQueue"];
+    clearFollowUpQueue?: Agent["clearFollowUpQueue"];
     steeringMode?: Agent["steeringMode"];
     followUpMode?: Agent["followUpMode"];
     transformContext?: Agent["transformContext"];

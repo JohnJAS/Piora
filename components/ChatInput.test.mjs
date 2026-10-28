@@ -453,3 +453,20 @@ test("composer queue excludes terminal submissions and retains actual waiting me
   assert.doesNotMatch(html, /terminal-|old failure/);
   assert.match(html, /取消/);
 });
+
+
+test("queue keeps a single row across submission and runtime handoff", () => {
+  const record = { commandId: "handoff", status: "dispatching", preview: "handoff-message" };
+  const render = (status, pendingMessages) => renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(ChatCommandQueue, { records: [{...record,status}], actions: {}, pendingMessages, onPendingAction: async()=>{} })));
+  for (const status of ["accepted", "dispatching"]) {
+    const before = render(status, {steering:[],followUp:[],pendingInputs:[]});
+    assert.match(before, /handoff-message/);
+    assert.doesNotMatch(before, /正在保存提交|Saving submission/);
+    const after = render(status, {steering:["handoff-message"],followUp:[],pendingInputs:[{id:"runtime-id",commandId:"handoff",text:"handoff-message",kind:"steer"}]});
+    assert.equal((after.match(/title="handoff-message"/g)??[]).length, 1, "runtime identity replaces rather than duplicates the placeholder");
+  }
+  assert.equal(render("delivered", {steering:[],followUp:[],pendingInputs:[]}), "", "delivered journal entries are no longer pending placeholders");
+  const legacy = render("delivered", {steering:["handoff-message"],followUp:[],pendingInputs:[{id:"legacy-runtime",text:"handoff-message",kind:"steer"}]});
+  assert.equal((legacy.match(/title="handoff-message"/g)??[]).length, 1, "runtime snapshots without source identities must not duplicate delivered records");
+  assert.equal(render("completed", {steering:[],followUp:[],pendingInputs:[]}), "");
+});

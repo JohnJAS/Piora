@@ -473,10 +473,12 @@ export class SessionMessageRouter {
   }
 
   /** Recall into separate durable, paused queue entries before removing SDK input. */
-  async recallQueuedInputs(sessionId: string): Promise<SessionCommandRecord[]> {
+  async recallQueuedInputs(sessionId: string, mutation?: { inputId: string; action: "queue" | "delete" }): Promise<SessionCommandRecord[]> {
+    const mutationKey = mutation ? "pending-input:" + mutation.inputId : undefined;
+    if (mutationKey) { const existing = this.store.findByIdempotencyKey(mutationKey, sessionId); if (existing) return [existing]; }
     const inbox = await this.ensureLoaded(sessionId);
     const session = await this.getLiveSession(sessionId);
-    const batch = session.prepareQueueRecall();
+    const batch = session.prepareQueueRecall(mutation?.inputId);
     const archived = new Map(this.store.loadCommands(sessionId).map(command => [command.commandId, command]));
     const commands = batch.messages.map(({ message, commandId }) => {
       const original = commandId ? archived.get(commandId) : undefined;
@@ -497,23 +499,24 @@ export class SessionMessageRouter {
           images = message.content.filter(block => block.type === "image");
         }
       }
-      const input: SessionMessageInput = { targetSessionId: sessionId, source: "ui", idempotencyKey: randomUUID(), delivery: "next_turn", inputMode: "text", content, images,
+      const input: SessionMessageInput = { targetSessionId: sessionId, source: "ui", idempotencyKey: mutationKey ?? randomUUID(), delivery: "next_turn", inputMode: "text", content, images,
         ...(original?.materials ? { materials: original.materials } : {}),
         ...(original?.localFiles ? { localFiles: original.localFiles } : {}),
         ...(original?.promptSuffix ? { promptSuffix: original.promptSuffix } : {}) };
       validateInput(input, this.maxMessageBytes);
-      return { ...this.makeRecord(input), status: "queued" as const, queuePaused: true };
+      return { ...this.makeRecord(input), status: mutation?.action === "delete" ? "cancelled" as const : "queued" as const, queuePaused: !mutation };
     });
     if (!commands.length) return [];
-    await this.store.appendRecalledCommands(commands, persist => batch.commit(() => {
-      if (inbox.queue.length + commands.length > SESSION_INBOX_LIMIT || inbox.queuedBytes + commands.reduce((sum, command) => sum + sessionCommandBytes(command), 0) > SESSION_INBOX_MAX_BYTES) throw new SessionMessageRouterError("SESSION_QUEUE_FULL", "The queue is full; nothing was removed.");
+    await (mutation ? this.store.appendQueueMutation.bind(this.store) : this.store.appendRecalledCommands.bind(this.store))(commands, persist => batch.commit(() => {
+      if (mutation?.action !== "delete" && (inbox.queue.length + commands.length > SESSION_INBOX_LIMIT || inbox.queuedBytes + commands.reduce((sum, command) => sum + sessionCommandBytes(command), 0) > SESSION_INBOX_MAX_BYTES)) throw new SessionMessageRouterError("SESSION_QUEUE_FULL", "The queue is full; nothing was removed.");
       persist();
       for (const command of commands) {
         this.knownCommands.set(command.commandId, command);
-        getSessionInboxRegistry().enqueue(command);
+        if (mutation?.action !== "delete") getSessionInboxRegistry().enqueue(command);
       }
     }));
-    for (const command of commands) await this.transition(command, "queued");
+    for (const command of commands) await this.transition(command, command.status);
+    if (mutation?.action === "queue") void this.drain(sessionId);
     return commands;
   }
 
