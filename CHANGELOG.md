@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 终端
+
+- 修复终端标签无法重命名、已有名称不显示的问题；可点击编辑按钮、双击标签或按 F2 修改名称，支持回车保存、Esc 取消及中文输入法。名称按终端独立保存，刷新和重启后保留；保存失败时保留原名和编辑内容，避免误报成功。
+
 ### 依赖与兼容性
 
 - 语言服务通信固定升级至 vscode-jsonrpc 10.0.0；新增真实双向流回归，验证 ArkTS 初始化、服务器配置请求、文档同步、悬停及错误与超时后的连接清理。

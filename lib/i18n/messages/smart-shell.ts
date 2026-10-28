@@ -1,5 +1,6 @@
 import { brandText } from "../../branding";
 export const smartShellEn: Record<string, string> = {
+  "shell.rename": "Rename terminal", "shell.tabName": "Terminal name", "shell.saveName": "Save terminal name", "shell.cancelRename": "Cancel rename",
   "shell.nativeHint": "→ Accept suggestion · ↑↓ History · Ctrl+R Search",
   "shell.nativeHintOther": "↑↓ History · Tab Complete · Ctrl+C Interrupt",
   "shell.nativeProfileHint": "Choose the shell for new terminal tabs. Automatic selection prefers PowerShell 7 on Windows and the system shell elsewhere. The panel's shell picker opens a new tab with another installed shell. Existing tabs retain their shell; WSL needs an installed Linux distribution.",
@@ -30,6 +31,7 @@ export const smartShellEn: Record<string, string> = {
   "shell.recovery": "Submission status needs checking. Retry uses the original request ID and will not execute it twice.", "shell.retry": "Check / retry", "shell.clear": "Clear terminal display", "shell.restart": "Restart terminal", "shell.outputTruncated": "Showing the latest output; earlier output was truncated.", "shell.integrationUnavailable": "Enhanced shell integration is unavailable. Use the Terminal view or select another shell.",
 };
 export const smartShellZh: Record<string, string> = {
+  "shell.rename": "重命名终端", "shell.tabName": "终端名称", "shell.saveName": "保存终端名称", "shell.cancelRename": "取消重命名",
   "shell.nativeHint": "→ 接受建议 · ↑↓ 历史 · Ctrl+R 搜索",
   "shell.nativeHintOther": "↑↓ 历史 · Tab 补全 · Ctrl+C 中断",
   "shell.nativeProfileHint": "选择新建终端标签使用的 Shell。自动选择时，Windows 优先使用 PowerShell 7，其他系统使用系统默认 Shell。终端顶部也可选择其他已安装的 Shell 新建标签；现有标签保留原 Shell。使用 WSL 需先安装 Linux 发行版。",

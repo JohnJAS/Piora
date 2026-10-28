@@ -1,6 +1,20 @@
 import type { ShellEvent, ShellSnapshot, ShellTimelinePage } from "./types";
 import { resolveWorkspaceFilePath } from "../file-links";
 
+export interface ShellTitleAcknowledgement { title: string; generation: number; sequence: number }
+export function acknowledgeShellTitle(saved: ShellTitleAcknowledgement | undefined, event: ShellEvent): ShellTitleAcknowledgement | undefined {
+  if (event.type !== "session" && event.type !== "snapshot") return saved;
+  if (saved && (saved.generation > event.generation || saved.generation === event.generation && saved.sequence > event.sequence)) return saved;
+  return { title: event.type === "session" ? event.session.title : event.snapshot.session.title, generation: event.generation, sequence: event.sequence };
+}
+/** Protect saved metadata without dropping older, still-needed output frames. */
+export function preserveAcknowledgedShellTitle(event: ShellEvent, saved?: ShellTitleAcknowledgement): ShellEvent {
+  if (!saved || event.generation > saved.generation || event.generation === saved.generation && event.sequence >= saved.sequence) return event;
+  if (event.type === "session") return { ...event, session: { ...event.session, title: saved.title } };
+  if (event.type === "snapshot") return { ...event, snapshot: { ...event.snapshot, session: { ...event.snapshot.session, title: saved.title } } };
+  return event;
+}
+
 /** Resolve output against the command's original cwd, even after the tab moved. */
 export function resolveShellOutputFile(file: string, cwd: string): string | null {
   const clean = file.trim().replace(/:\d+(?::\d+)?$/, "");

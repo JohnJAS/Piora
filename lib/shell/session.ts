@@ -66,7 +66,9 @@ export class ManagedShellSession {
   private changed(): void {
     this.state.updatedAt = Date.now();
     const session = { ...this.state };
-    this.persist(() => this.store.put("session", session.id, session));
+    // A lifecycle change may be queued while preferences are being saved.
+    // Its older snapshot must not restore the title/model from before that save.
+    this.persist(() => this.store.put("session", session.id, { ...session, title: this.state.title, model: this.state.model }));
     this.emit({ type: "session", session });
   }
   private exclusive<T>(action: () => Promise<T>): Promise<T> {
@@ -254,8 +256,31 @@ export class ManagedShellSession {
     this.emit({ type: "run", run: { ...run } });
   }
   async command(id: string): Promise<CommandBlock | null> { return this.commands.find(item => item.id === id) || this.store.get("command", id); }
-  async saveDraft(draft: string): Promise<void> { if (draft.length > 65536) throw new ShellError("Draft is too large"); this.state.draft = draft; await this.store.put("session", this.state.id, this.state); }
-  async savePreferences(values: Partial<Pick<ShellSession, "title" | "model">>): Promise<void> { Object.assign(this.state, values); this.changed(); await this.persistence; }
+  async saveDraft(draft: string): Promise<void> {
+    if (draft.length > 65536) throw new ShellError("Draft is too large");
+    this.state.draft = draft;
+    // Draft autosaves share the preference queue so a pending rename cannot
+    // be overwritten by a full-session write carrying its previous title.
+    const saved = this.persistence.then(() => this.store.put("session", this.state.id, { ...this.state }));
+    this.persistence = saved.catch(() => {});
+    await saved;
+  }
+  async savePreferences(values: Partial<Pick<ShellSession, "title" | "model">>): Promise<void> {
+    const preferences = { ...values };
+    const saved = this.persistence.then(async () => {
+      const session = { ...this.state, ...preferences, updatedAt: Date.now() };
+      await this.store.put("session", session.id, session);
+      // Publish only durable preferences, preserving live state/output that
+      // changed while storage was pending. A failed save leaves the old name.
+      Object.assign(this.state, preferences);
+      this.state.updatedAt = Math.max(this.state.updatedAt, session.updatedAt);
+      this.emit({ type: "session", session: { ...this.state } });
+    });
+    // Return the actual failure to the caller without poisoning later retries
+    // or changing the existing error handling for ordinary lifecycle writes.
+    this.persistence = saved.catch(() => {});
+    await saved;
+  }
   clear(): void { this.output = ""; this.emit({ type: "clear" }); }
   async stop(): Promise<void> {
     const child = this.child;
