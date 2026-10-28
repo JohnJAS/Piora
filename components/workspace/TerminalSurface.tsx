@@ -82,10 +82,12 @@ export const TerminalSurface = forwardRef<TerminalSurfaceHandle, Props>(function
       term.loadAddon(finder);
       term.open(host.current);
       // Loading xterm or starting a newly selected shell may finish after the
-      // user begins renaming its tab. Do not steal focus from their editor.
+      // user focuses a tab (including just before pressing F2) or its editor.
+      // Keep that focus, while preserving New terminal -> terminal autofocus.
       const focused = document.activeElement;
       const editing = focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement || focused instanceof HTMLElement && focused.isContentEditable;
-      if (autoFocus && !editing && host.current.clientWidth && host.current.clientHeight) term.focus();
+      const tabFocused = Boolean(focused?.closest('[role="tablist"]'));
+      if (autoFocus && !editing && !tabFocused && host.current.clientWidth && host.current.clientHeight) term.focus();
       terminal.current = term;
       search.current = finder;
       appliedSearch.current = null;
