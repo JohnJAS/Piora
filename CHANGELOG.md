@@ -4,6 +4,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.5.5-beta.44] - 2026-10-28
+
 - 运行中发送按钮支持悬停箭头展开，引导与排队面板平滑向上展开，保留键盘和触屏操作。
 
 - 修复运行中发送引导消息时待处理区域短暂消失、输入框收缩后再次展开的问题；发送记录与运行时队列按消息标识衔接，投递完成后仅显示运行时队列，避免重复行和误导的保存提示。
