@@ -2656,6 +2656,7 @@ export const enLocale: LocalePlugin = {
     "i18n.zoomIn": "Zoom in",
     "i18n.fitToWidth": "Fit to width",
     "i18n.fitToView": "Fit to view",
+    "models.savedScopeRefreshFailed": "The configuration was saved, but the model list could not be updated. Check provider authentication and model scope, then retry.",
     "models.discoveryFetching": "Detecting available models…",
     "models.discoveryFetch": "Auto-detect available models",
     "models.discoveryFilterPlaceholder": "Filter {count} models…",

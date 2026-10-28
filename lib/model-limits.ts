@@ -21,19 +21,15 @@
  * only for configs that were already on disk. Explicit non-positive values are
  * invalid; Piora does not rewrite them into a hidden default either.
  *
- * Decision (a): `automaticModelLimitSources` is the configured endpoint only.
- * models.dev stays the manual “填入模型信息” button.
- * Decision (b): `BLOCK_ALL_SAVES_UNTIL_MODEL_LIMITS_COMPLETE` rejects the whole
- * models.json save until every custom model has valid limits. Flip the
- * constant to stop blocking unrelated edits; field rules stay in
- * `assertCustomModelLimits`.
+ * The setup wizard checks the configured endpoint, then the model catalogue;
+ * catalogue values are applied only when the match is reliable. New or edited
+ * custom models need valid limits, while unchanged legacy models remain usable.
  */
 import { modelSamplingError } from "./model-sampling";
 
 export const LEGACY_MODEL_LIMIT_RUNTIME = "keep-sdk-resolution" as const;
 
-/** Decision (b). See the file comment. */
-export const BLOCK_ALL_SAVES_UNTIL_MODEL_LIMITS_COMPLETE = true;
+export const REQUIRE_CUSTOM_MODEL_LIMITS = true;
 
 export type AutomaticModelLimitSource = "endpoint" | "models.dev";
 
@@ -132,9 +128,61 @@ export function assertCustomModelLimits(config: unknown): void {
   }
 }
 
-export function validateCustomModelLimits(config: unknown): void {
-  if (!BLOCK_ALL_SAVES_UNTIL_MODEL_LIMITS_COMPLETE) return;
-  assertCustomModelLimits(config);
+function sameJsonValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, index) => sameJsonValue(value, b[index]));
+  if (!isRecord(a) || !isRecord(b)) return false;
+  const keys = Object.keys(a).sort();
+  const other = Object.keys(b).sort();
+  return keys.length === other.length && keys.every((key, index) => key === other[index] && sameJsonValue(a[key], b[key]));
+}
+
+export function isUnchangedIncompleteModel(model: Record<string, unknown>, oldModels: unknown[]): boolean {
+  const missing = (value: unknown) => value === undefined || value === null || value === "";
+  return (missing(model.contextWindow) || missing(model.maxTokens))
+    && (missing(model.contextWindow) || positiveTokenCount(model.contextWindow) !== undefined)
+    && (missing(model.maxTokens) || positiveTokenCount(model.maxTokens) !== undefined)
+    && oldModels.some(old => isRecord(old) && old.id === model.id && sameJsonValue(old, model));
+}
+
+export function previousProviderModels(config: unknown, previous: unknown, providerId: string): unknown[] {
+  const providers = isRecord(config) && isRecord(config.providers) ? config.providers : {};
+  const oldProviders = isRecord(previous) && isRecord(previous.providers) ? previous.providers : {};
+  const oldProvider = oldProviders[providerId];
+  const oldModels = isRecord(oldProvider) && Array.isArray(oldProvider.models) ? [...oldProvider.models] : [];
+  for (const [oldName, oldEntry] of Object.entries(oldProviders)) {
+    if (!Object.hasOwn(providers, oldName) && isRecord(oldEntry) && Array.isArray(oldEntry.models)) oldModels.push(...oldEntry.models);
+  }
+  return oldModels;
+}
+
+/** Remove only untouched incomplete legacy rows from unrelated validation. */
+export function omitUnchangedIncompleteModels<T>(config: T, previous: unknown): T {
+  if (!isRecord(config) || !isRecord(config.providers)) return config;
+  const providers = Object.fromEntries(Object.entries(config.providers).map(([id, provider]) => {
+    if (!isRecord(provider) || !Array.isArray(provider.models)) return [id, provider];
+    const oldModels = previousProviderModels(config, previous, id);
+    return [id, { ...provider, models: provider.models.filter(model => !isRecord(model) || !isUnchangedIncompleteModel(model, oldModels)) }];
+  }));
+  return { ...config, providers } as T;
+}
+
+export function validateCustomModelLimits(config: unknown, previous?: unknown): void {
+  if (!REQUIRE_CUSTOM_MODEL_LIMITS) return;
+  if (!isRecord(config) || !isRecord(config.providers)) return;
+  for (const [providerId, provider] of Object.entries(config.providers)) {
+    if (!isRecord(provider) || !Array.isArray(provider.models)) continue;
+    const oldModels = previousProviderModels(config, previous, providerId);
+    for (const [index, model] of provider.models.entries()) {
+      if (!isRecord(model)) throw new Error(`${providerId}/models[${index}]: model entry must be an object`);
+      const error = modelLimitsError(model, typeof model.id === "string" && model.id.trim() ? model.id.trim() : `models[${index}]`);
+      if (!error) continue;
+      // A legacy incomplete model may pass only if the exact same model was
+      // already on disk; new or edited incomplete models remain invalid.
+      if (isUnchangedIncompleteModel(model, oldModels)) continue;
+      throw new Error(`${providerId}/${error}`);
+    }
+  }
 }
 
 export function stripModelLimitUiMeta<T>(config: T): T {
@@ -174,7 +222,7 @@ export function firstCustomModelSaveBlocker(
   providers: Record<string, { models?: ModelLimitDraft[] }> | undefined,
   options?: { requireLimits?: boolean },
 ): CustomModelSaveBlocker | null {
-  const requireLimits = options?.requireLimits ?? BLOCK_ALL_SAVES_UNTIL_MODEL_LIMITS_COMPLETE;
+  const requireLimits = options?.requireLimits ?? REQUIRE_CUSTOM_MODEL_LIMITS;
   for (const [providerName, provider] of Object.entries(providers ?? {})) {
     const models = provider?.models ?? [];
     const samplingIndex = models.findIndex((model) => modelSamplingError(model));

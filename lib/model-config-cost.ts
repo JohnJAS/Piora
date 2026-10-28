@@ -1,3 +1,5 @@
+import { isUnchangedIncompleteModel, previousProviderModels } from "./model-limits";
+
 const COST_KEYS = ["input", "output", "cacheRead", "cacheWrite"] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -5,14 +7,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Custom definitions require complete rates; modelOverrides intentionally allow partial rates. */
-export function normalizeModelConfigCosts(config: Record<string, unknown>): Record<string, unknown> {
+export function normalizeModelConfigCosts(config: Record<string, unknown>, previous?: unknown): Record<string, unknown> {
   if (!isRecord(config)) throw new Error("模型配置必须是对象");
   const result = structuredClone(config);
   if (!isRecord(result.providers)) return result;
   for (const [providerId, provider] of Object.entries(result.providers)) {
     if (!isRecord(provider) || !Array.isArray(provider.models)) continue;
+    const oldModels = previousProviderModels(result, previous, providerId);
     for (const [index, model] of provider.models.entries()) {
       if (!isRecord(model) || model.cost === undefined) continue;
+      if (isUnchangedIncompleteModel(model, oldModels)) continue;
       const location = `providers.${providerId}.models.${index}.cost`;
       if (!isRecord(model.cost)) throw new Error(`${location}: 价格必须是对象`);
       for (const key of COST_KEYS) {

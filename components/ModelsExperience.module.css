@@ -1,0 +1,44 @@
+.root { height: 100%; min-height: 0; overflow: auto; color: var(--text); background: var(--bg); font-size: var(--text-base); }
+.page { max-width: 1220px; margin: auto; padding: 28px 32px 40px; }
+.header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.header h2 { margin: 0; font-size: calc(var(--ui-font-size) * 1.55); line-height: 1.25; }
+.header p, .hint { margin: 7px 0 0; color: var(--text-muted); line-height: 1.55; font-size: var(--text-sm); }
+.columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 300px); gap: 24px; align-items: start; }
+.stack { display: grid; gap: 16px; min-width: 0; }
+.card, .help { padding: 22px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-panel); min-width: 0; }
+.help { background: color-mix(in srgb, var(--accent) 6%, var(--bg)); }
+.card h3, .help h3 { margin: 0 0 8px; font-size: var(--text-md); }
+.help ol { padding-left: 22px; margin: 16px 0 0; color: var(--text-muted); line-height: 1.65; }
+.help li + li { margin-top: 12px; }
+.button, .primary, .quiet { min-height: 36px; padding: 7px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
+.primary { background: var(--accent); color: white; border-color: var(--accent); font-weight: 600; }
+.quiet { background: transparent; }
+.button:disabled, .primary:disabled, .quiet:disabled { opacity: .55; cursor: default; }
+.root :is(button,input,select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.root input:not([type=checkbox]), .root select { box-sizing: border-box; min-height: 40px; width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; color: var(--text); background: var(--bg); font: inherit; }
+.field { display: grid; gap: 6px; margin: 16px 0; }
+.field label { font-weight: 600; }
+.field small { color: var(--text-muted); line-height: 1.5; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.actionsEnd { justify-content: flex-end; margin-top: 22px; }
+.provider { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); }
+.providerTitle { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.providerTitle strong { flex: 1; min-width: 120px; overflow-wrap: anywhere; }
+.status { color: var(--text-muted); font-size: var(--text-sm); }
+.modelRow { display: flex; gap: 12px; align-items: center; min-width: 0; padding: 12px 0; border-top: 1px solid var(--border); }
+.modelName { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.badge { color: var(--accent); font-size: var(--text-xs); }
+.steps { display: flex; gap: 12px; flex-wrap: wrap; padding: 0; margin: 0 0 22px; list-style: none; color: var(--text-muted); }
+.steps li { display: flex; gap: 7px; align-items: center; }
+.steps span { display: inline-grid; place-items: center; width: 27px; height: 27px; border-radius: 50%; background: var(--bg-panel); border: 1px solid var(--border); }
+.steps [aria-current] { color: var(--accent); font-weight: 600; }
+.steps [aria-current] span { color: white; background: var(--accent); border-color: var(--accent); }
+.notice { padding: 12px; border-radius: 7px; background: color-mix(in srgb, var(--accent) 8%, var(--bg)); line-height: 1.5; }
+.error { padding: 12px; border-radius: 7px; color: var(--status-failed); background: color-mix(in srgb, #ef4444 9%, var(--bg)); overflow-wrap: anywhere; }
+.list { max-height: 360px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; margin: 14px 0; }
+.choice { display: flex; gap: 10px; align-items: center; padding: 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.choice:last-child { border-bottom: 0; }
+.choice span { min-width: 0; overflow-wrap: anywhere; }
+.empty { padding: 26px 12px; text-align: center; color: var(--text-muted); }
+.close { float: right; }
+@media (max-width: 760px) { .page { padding: 18px 16px 28px; } .columns { grid-template-columns: 1fr; } .header { flex-wrap: wrap; } .help { padding: 16px; } .card { padding: 16px; } .modelRow { flex-wrap: wrap; } }

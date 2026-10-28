@@ -35,7 +35,7 @@ import { ModelProviderIcon } from "./ModelProviderIcon";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface OAuthProvider {
+export interface OAuthProvider {
   id: string;
   name: string;
   usesCallbackServer: boolean;
@@ -44,7 +44,7 @@ interface OAuthProvider {
   supportsApiKey?: boolean;
 }
 
-interface ApiKeyProvider {
+export interface ApiKeyProvider {
   id: string;
   displayName: string;
   configured: boolean;
@@ -66,7 +66,7 @@ type OAuthLoginState =
   | { phase: "success" }
   | { phase: "error"; message: string };
 
-interface ModelEntry extends ModelSamplingConfig {
+export interface ModelEntry extends ModelSamplingConfig {
   id: string;
   name?: string;
   api?: string;
@@ -81,7 +81,7 @@ interface ModelEntry extends ModelSamplingConfig {
   compat?: Record<string, unknown>;
 }
 
-interface ProviderEntry {
+export interface ProviderEntry {
   baseUrl?: string;
   api?: string;
   apiKey?: string;
@@ -91,7 +91,7 @@ interface ProviderEntry {
   modelOverrides?: Record<string, unknown>;
 }
 
-interface ModelsJson {
+export interface ModelsJson {
   providers?: Record<string, ProviderEntry>;
 }
 
@@ -115,14 +115,14 @@ function configuredModelKey(model: ConfiguredModelRef): string {
   return `${model.provider}/${model.id}`;
 }
 
-interface ManagedModel {
+export interface ManagedModel {
   provider: string;
   id: string;
   name: string;
   enabled: boolean;
 }
 
-interface ModelScopeResponse {
+export interface ModelScopeResponse {
   models: ManagedModel[];
   enabledPatterns: string[] | null;
   projectOverride: boolean;
@@ -184,7 +184,7 @@ type Selection =
   | { type: "apikey"; providerId: string }
   | { type: "managed"; providerId: string };
 
-const API_OPTIONS = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"] as const;
+export const API_OPTIONS = ["openai-completions", "openai-responses", "anthropic-messages", "google-generative-ai"] as const;
 
 // ── Form field helpers ────────────────────────────────────────────────────────
 
@@ -319,7 +319,7 @@ function visualModelValue(model: Pick<VisionAgentModelOption, "provider" | "mode
   return JSON.stringify([model.provider, model.modelId]);
 }
 
-function VisionAgentDetail({ cwd }: { cwd?: string }) {
+export function VisionAgentDetail({ cwd }: { cwd?: string }) {
   const { t } = useI18n();
   const [config, setConfig] = useState<VisionAgentConfigState>({ enabled: false, provider: null, modelId: null });
   const [models, setModels] = useState<VisionAgentModelOption[]>([]);
@@ -1573,7 +1573,7 @@ function ModelDetail({
 
 // ── OAuth detail ──────────────────────────────────────────────────────────────
 
-function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefresh: () => void }) {
+export function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefresh: () => void }) {
   const [loginState, setLoginState] = useState<OAuthLoginState>({ phase: "idle" });
   const { t } = useI18n();
   const [inputValue, setInputValue] = useState("");
@@ -1836,7 +1836,7 @@ function OAuthDetail({ provider, onRefresh }: { provider: OAuthProvider; onRefre
 
 // ── API Key detail ────────────────────────────────────────────────────────────
 
-function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRefresh: () => void }) {
+export function ApiKeyDetail({ provider, onRefresh }: { provider: ApiKeyProvider; onRefresh: () => void }) {
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -2206,6 +2206,7 @@ export function ModelsConfig({
   const [modelImageInput, setModelImageInput] = useState<Record<string, boolean>>({});
   const [modelCapabilityBusyKey, setModelCapabilityBusyKey] = useState<string | null>(null);
   const modelScopeMutationRef = useRef(false);
+  const modelScopeRequestRef = useRef(0);
   const persistedConfiguredModelKeysRef = useRef<Set<string>>(new Set());
   const configMutationRef = useRef(false);
   const persistedProviderNamesRef = useRef(new Map<string, string>());
@@ -2244,19 +2245,22 @@ export function ModelsConfig({
   }, []);
 
   const loadModelScope = useCallback(async () => {
+    const request = ++modelScopeRequestRef.current;
     setModelScopeLoading(true);
     setModelScopeError(null);
     try {
       const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
-      const response = await fetch(`/api/models/scope${query}`);
+      const response = await fetch(`/api/models/scope${query}`, { cache: "no-store" });
       const body = await response.json() as ModelScopeResponse & { error?: string };
       if (!response.ok || body.error) throw new Error(body.error ?? `HTTP ${response.status}`);
-      setModelScope(body);
+      if (request === modelScopeRequestRef.current) setModelScope(body);
     } catch (error) {
-      setModelScope(null);
-      setModelScopeError(error instanceof Error ? error.message : String(error));
+      if (request === modelScopeRequestRef.current) {
+        setModelScope(null);
+        setModelScopeError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
-      setModelScopeLoading(false);
+      if (request === modelScopeRequestRef.current) setModelScopeLoading(false);
     }
   }, [cwd]);
 
@@ -2304,7 +2308,7 @@ export function ModelsConfig({
   useEffect(() => {
     setLoading(true);
     setLoadError(null);
-    fetch("/api/models-config")
+    fetch("/api/models-config", { cache: "no-store" })
       .then(async (r) => { const data = await r.json(); if (!r.ok || data.error) throw new Error(data.error ?? `HTTP ${r.status}`); return data; })
       .then((d: ModelsJson) => {
         const normalized = d.providers ? d : { ...d, providers: {} };
@@ -2448,6 +2452,8 @@ export function ModelsConfig({
   ): Promise<boolean> => {
     if (modelScopeMutationRef.current) return false;
     modelScopeMutationRef.current = true;
+    ++modelScopeRequestRef.current;
+    setModelScopeLoading(false);
     const busyKey = action === "restore-all"
       ? "restore-all"
       : `${action}:${target?.provider ?? ""}${"id" in (target ?? {}) ? `/${(target as Pick<ManagedModel, "id">).id}` : ""}`;
@@ -2542,7 +2548,8 @@ export function ModelsConfig({
     setManagedModelTests({});
     refreshAuthProviders();
     void loadModelScope();
-  }, [loadModelScope, refreshAuthProviders]);
+    onModelsChanged?.();
+  }, [loadModelScope, onModelsChanged, refreshAuthProviders]);
 
   const handleSave = useCallback(async () => {
     if (configMutationRef.current) return;
@@ -2591,6 +2598,9 @@ export function ModelsConfig({
       const d = await res.json() as { success?: boolean; error?: string };
       if (!res.ok || d.error) setSaveError(d.error ?? `HTTP ${res.status}`);
       else {
+        // Notify mounted chat selectors immediately after the durable write,
+        // even if the user leaves settings while scope synchronization runs.
+        onModelsChanged?.();
         rememberPersistedConfig(configToSave);
         setConfig((current) => ({ ...current, providers: Object.fromEntries(
           Object.entries(current.providers ?? {}).map(([name, provider]) => [names.get(name) ?? name, provider]),
@@ -2605,16 +2615,19 @@ export function ModelsConfig({
           if (current?.type === "model" && names.get(current.providerName) !== current.providerName) return { ...current, providerName: names.get(current.providerName) ?? current.providerName };
           return current;
         });
-        setSavedOk(true);
         setManagedModelTests({});
-        setTimeout(() => setSavedOk(false), 2000);
+        let scopeUpdated = true;
         for (const model of newlyConfiguredModels) {
-          await updateModelScope("restore", model);
+          if (!await updateModelScope("restore", model)) scopeUpdated = false;
         }
         if (newlyConfiguredModels.length === 0) await loadModelScope();
-        persistedConfiguredModelKeysRef.current = new Set(
-          configuredModels.map(configuredModelKey),
-        );
+        if (scopeUpdated) {
+          persistedConfiguredModelKeysRef.current = new Set(configuredModels.map(configuredModelKey));
+          setSavedOk(true);
+          setTimeout(() => setSavedOk(false), 2000);
+        } else {
+          setSaveError(t("models.savedScopeRefreshFailed"));
+        }
         refreshAuthProviders();
         onModelsChanged?.();
       }

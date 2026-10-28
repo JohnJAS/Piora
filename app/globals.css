@@ -93,7 +93,7 @@
   --scrollbar-size: 8px;
   --scrollbar-thumb: color-mix(in srgb, var(--text-dim) 48%, transparent);
   /* A thin tint preserves backdrop color; edge light supplies the glass shape. */
-  --interface-transparency: 80;
+  --interface-transparency: 0;
   --glass-edge-light: rgb(255 255 255 / 48%);
   --floating-background: linear-gradient(135deg, color-mix(in srgb, var(--bg) clamp(0%, calc(100% - var(--interface-transparency) * 0.9%), 100%), transparent), color-mix(in srgb, var(--bg) clamp(0%, calc(100% - var(--interface-transparency) * 1%), 100%), transparent));
   --floating-section: color-mix(in srgb, var(--bg-panel) 10%, transparent);
@@ -5556,7 +5556,7 @@ span.linenumber {
 .thinking-block-content { color: var(--text-muted); }
 .thinking-block-content.is-error { color: var(--status-failed); }
 .thinking-block-status { display: block; font-size: var(--text-sm); line-height: 1.6; }
-.markdown-thinking { color: var(--text-muted); font-size: var(--text-xs); line-height: 1.6; }
+.markdown-thinking { color: var(--text-muted); font-size: calc(var(--chat-font-size) * 0.893); line-height: 1.6; }
 
 .markdown-thinking :is(h1, h2, h3, h4, h5, h6, strong, b, em, a, mark, th, .markdown-inline-code),
 .markdown-thinking li::marker {

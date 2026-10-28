@@ -135,7 +135,7 @@ const RoomWorkspace = dynamic(() => import("./RoomWorkspace").then((module) => m
 const RightPanel = dynamic(() => import("./workspace/RightPanel").then((module) => module.RightPanel), { ssr: false, loading: SettingsSectionLoading });
 const SystemPromptEditor = dynamic(() => import("./SystemPromptEditor").then((module) => module.SystemPromptEditor), { ssr: false });
 const CompanionPet = dynamic(() => import("./CompanionPet").then((module) => module.CompanionPet), { ssr: false });
-const ModelsConfig = dynamic(() => import("./ModelsConfig").then((module) => module.ModelsConfig), { ssr: false });
+const ModelsConfig = dynamic(() => import("./ModelsExperience").then((module) => module.ModelsExperience), { ssr: false });
 const SmartShellSettings = dynamic(() => import("./SmartShellSettings").then((module) => module.SmartShellSettings), { ssr: false, loading: SettingsSectionLoading });
 const SkillsConfig = dynamic(() => import("./SkillsConfig").then((module) => module.SkillsConfig), { ssr: false, loading: SettingsSectionLoading });
 const PluginsConfig = dynamic(() => import("./PluginsConfig").then((module) => module.PluginsConfig), { ssr: false, loading: SettingsSectionLoading });

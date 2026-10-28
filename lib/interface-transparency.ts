@@ -1,5 +1,5 @@
 export const INTERFACE_TRANSPARENCY_STORAGE_KEY = "pi-interface-transparency:v1";
-export const DEFAULT_INTERFACE_TRANSPARENCY = 80;
+export const DEFAULT_INTERFACE_TRANSPARENCY = 0;
 
 export function normalizeInterfaceTransparency(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value)

@@ -2656,6 +2656,7 @@ export const zhCNLocale: LocalePlugin = {
     "i18n.zoomIn": "放大",
     "i18n.fitToWidth": "适应宽度",
     "i18n.fitToView": "适应视图",
+    "models.savedScopeRefreshFailed": "配置已保存，但模型列表更新失败。请检查渠道认证和模型范围后重试。",
     "models.discoveryFetching": "正在识别可用模型…",
     "models.discoveryFetch": "自动识别可用模型",
     "models.discoveryFilterPlaceholder": "筛选 {count} 个模型…",

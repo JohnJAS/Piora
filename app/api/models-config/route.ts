@@ -6,7 +6,7 @@ import { writePrivateFileAtomicSync } from "@/lib/atomic-file";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { invalidateServicesCache } from "@/lib/rpc-manager";
 import { normalizeModelConfigCosts } from "@/lib/model-config-cost";
-import { stripModelLimitUiMeta, validateCustomModelLimits } from "@/lib/model-limits";
+import { omitUnchangedIncompleteModels, stripModelLimitUiMeta, validateCustomModelLimits } from "@/lib/model-limits";
 import { validateModelSamplingConfig } from "@/lib/model-sampling";
 import { stripJsonComments } from "@/lib/mcp-capabilities";
 
@@ -56,11 +56,14 @@ export async function GET() {
 
 export async function PUT(req: Request) {
   let body: Record<string, unknown>;
+  let previous: Record<string, unknown>;
+  try { previous = readModelsJson(); }
+  catch (error) { return NextResponse.json({ error: (error as Error).message }, { status: 422 }); }
   try {
-    body = normalizeModelConfigCosts(await req.json());
-    validateModelSamplingConfig(body);
+    body = normalizeModelConfigCosts(await req.json(), previous);
+    validateModelSamplingConfig(omitUnchangedIncompleteModels(stripModelLimitUiMeta(body), previous));
     // Custom models only. Legacy files stay readable; see lib/model-limits.ts.
-    validateCustomModelLimits(body);
+    validateCustomModelLimits(stripModelLimitUiMeta(body), previous);
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 400 });
   }

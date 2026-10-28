@@ -64,8 +64,8 @@ test("offers a real availability test for draft and already-loaded models", () =
 test("saving a new custom model refreshes and restores it into the visible provider scope", () => {
   assert.match(source, /persistedConfiguredModelKeysRef/);
   assert.match(source, /const newlyConfiguredModels = configuredModels\.filter/);
-  assert.match(source, /for \(const model of newlyConfiguredModels\) \{\s*await updateModelScope\("restore", model\);\s*\}/);
-  assert.match(source, /persistedConfiguredModelKeysRef\.current = new Set\(\s*configuredModels\.map\(configuredModelKey\)/);
+  assert.match(source, /for \(const model of newlyConfiguredModels\) \{\s*if \(!await updateModelScope\("restore", model\)\) scopeUpdated = false;/);
+  assert.match(source, /persistedConfiguredModelKeysRef\.current = new Set\(configuredModels\.map\(configuredModelKey\)/);
   assert.match(source, /onModelsChanged\?\.\(\)/);
 });
 

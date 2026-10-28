@@ -13,8 +13,22 @@ function bind(callback, scope) {
   return new Function(...Object.keys(scope), js)(...Object.values(scope));
 }
 const loadCallback = findNode(node => ts.isVariableDeclaration(node) && node.name.getText(source) === "loadModels").initializer.arguments[0];
+const catalogEffect = findNode(node => ts.isCallExpression(node) && node.expression.getText(source) === "useEffect" && node.arguments[0]?.getText(source).includes("loadModels(controller.signal, (modelsRefreshKey ?? 0) > 0)")).arguments[0];
 const recoveryCallback = findNode(node => ts.isCallExpression(node) && node.expression.getText(source) === "useEffect" && node.arguments[0]?.getText(source).includes("if (!modelError) return;")).arguments[0];
 const dismissalCallback = findNode(node => ts.isCallExpression(node) && node.expression.getText(source) === "useEffect" && node.arguments[0]?.getText(source).includes("MODEL_ERROR_VISIBLE_MS")).arguments[0];
+
+test("a settings change forces the chat catalog to refresh and cancels obsolete requests", () => {
+  for (const [key, expected] of [[0, false], [1, true]]) {
+    let request;
+    const cleanup = bind(catalogEffect, {
+      AbortController, DOMException, modelsRefreshKey: key,
+      loadModels: (signal, force) => { request = { signal, force }; return Promise.resolve(); },
+    })();
+    assert.equal(request.force, expected);
+    cleanup();
+    assert.equal(request.signal.aborted, true);
+  }
+});
 
 test("a repaired catalog clears the error and stale or cancelled responses cannot restore it", async () => {
   const requests = [];

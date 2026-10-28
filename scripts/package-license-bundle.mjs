@@ -69,6 +69,28 @@ const REVIEWED_RUNTIME_REPLACEMENT_BY_PATH = new Map(
 
 const REVIEWED_LICENSE_FALLBACKS = Object.freeze([
   Object.freeze({
+    name: "buildcheck",
+    version: "0.0.7",
+    declaredLicense: "MIT",
+    upstreamCommit: "98d046cecfa784ac5522f8491d9f46a907da6743",
+    upstreamLicenseUrl: "https://github.com/mscdex/buildcheck/blob/98d046cecfa784ac5522f8491d9f46a907da6743/LICENSE",
+    licensePath: "third_party/buildcheck/LICENSE",
+    provenancePath: "third_party/buildcheck/SOURCE.md",
+    licenseSha256: "d06b5d27bbbbe22c36b1fd88406b1208876e2d37d795f5b8eaed951a459a3111",
+    provenanceSha256: "0a5d62ce4ccda92915af8f41ab23b5df117a1ecf8b71fc88a2f83f7a367acdb2",
+  }),
+  Object.freeze({
+    name: "cpu-features",
+    version: "0.0.10",
+    declaredLicense: "MIT",
+    upstreamCommit: "3fc76509be992e460878aad775ffbde5cfe1da36",
+    upstreamLicenseUrl: "https://github.com/mscdex/cpu-features/blob/3fc76509be992e460878aad775ffbde5cfe1da36/LICENSE",
+    licensePath: "third_party/cpu-features/LICENSE",
+    provenancePath: "third_party/cpu-features/SOURCE.md",
+    licenseSha256: "d06b5d27bbbbe22c36b1fd88406b1208876e2d37d795f5b8eaed951a459a3111",
+    provenanceSha256: "6ee5b1004b1c866e2f3fda0d8f688ed3cb7978fd2f426dfa11ffa70d8908d16c",
+  }),
+  Object.freeze({
     name: "rehype-katex",
     version: "7.0.1",
     declaredLicense: "MIT",
@@ -118,6 +140,8 @@ const REVIEWED_LICENSE_FALLBACKS = Object.freeze([
   }),
 ]);
 const LICENSE_TEXT_REQUIRED_PACKAGE_NAMES = new Set([
+  "buildcheck",
+  "cpu-features",
   "format",
   "khroma",
   "rehype-katex",
