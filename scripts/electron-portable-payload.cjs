@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports -- electron-builder hooks are CommonJS. */
-const { writeFile } = require("node:fs/promises");
+const { copyFile, mkdir, writeFile } = require("node:fs/promises");
 const { join, resolve } = require("node:path");
 const { createPayloadManifest } = require("./portable-payload.cjs");
 const contexts = new Map();
@@ -25,11 +25,32 @@ async function prepareArtifactPayload(event) {
     // artifactBuildStarted is emitted by NsisTarget before packArch; this runs
     // after platformPackager's fuses/resource editing/signing, even unsigned.
     entry.generation ??= (async () => {
-      // AppPackageHelper normally copies/signs elevate.exe immediately after
-      // this event. Run that same idempotent helper first so it is covered too.
+      // electron-builder 26.18 injects the signed helper after archiving and
+      // copies it into win-unpacked only after all targets finish. Stage the
+      // same bytes before hashing so both installer and portable payloads are
+      // covered by the manifest, then suppress its duplicate archive injection.
       const targets = context.targets.filter(target => ["nsis", "portable"].includes(target.name));
-      if (!targets.length || targets.some(target => typeof target.packageHelper?.elevateHelper?.copy !== "function")) throw new Error("Unsupported electron-builder NSIS payload lifecycle");
-      for (const target of targets) await target.packageHelper.elevateHelper.copy(context.appOutDir, target);
+      const helper = targets[0]?.packageHelper?.elevateHelper;
+      if (require("app-builder-lib/package.json").version !== "26.18.0" || !targets.length || targets.length !== context.targets.length
+        || typeof helper?.resolve !== "function" || typeof helper?.addToArchive !== "function"
+        || targets.some(target => target.packageHelper?.elevateHelper !== helper || target.packager !== context.packager)
+        || targets.some(target => (target.options.signAndEditExecutable !== false) !== (targets[0].options.signAndEditExecutable !== false))) {
+        throw new Error("Unsupported electron-builder NSIS payload lifecycle");
+      }
+      const paths = await Promise.all(targets.map(target => helper.resolve(target)));
+      if (paths.some(path => path !== paths[0])) throw new Error("NSIS targets require different elevation helpers");
+      if (paths[0]) {
+        const resources = join(context.appOutDir, "resources");
+        await mkdir(resources, { recursive: true });
+        const staged = join(resources, "elevate.exe");
+        await copyFile(paths[0], staged);
+        if (targets[0].options.signAndEditExecutable !== false) await context.packager.signIf(staged);
+      }
+      const addToArchive = helper.addToArchive.bind(helper);
+      helper.addToArchive = async (archive, target, format, options, appOutDir) => {
+        if (resolve(appOutDir) === resolve(context.appOutDir) && targets.includes(target)) return;
+        return addToArchive(archive, target, format, options, appOutDir);
+      };
       await writePayloadManifest(context);
     })();
     await entry.generation;
