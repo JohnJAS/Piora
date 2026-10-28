@@ -27,6 +27,9 @@ import { installImageContextPolicy } from "./image-context";
 import { installModelStallGuard } from "./model-stall-guard";
 import { reloadModelRetrySettings } from "./retry-settings";
 import { invalidateModelsCache } from "./models-cache";
+import { readBetaFeatures } from "./beta-features";
+import { betaFeatureSignature, loadedBetaFeatureSignature } from "./beta-feature-types";
+import { copyAnswerOutputState } from "./answer-output-server";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import { runPromptWithModelFallback } from "./model-fallback";
 import { readModelFallbackConfig } from "./model-fallback-config";
@@ -256,6 +259,7 @@ export class AgentSessionWrapper {
   private extensionStatuses = new Map<string, string>();
   private extensionWidgets = new Map<string, ExtensionWidgetItem>();
   private promptRunning = false;
+  private betaSignature: string;
   // Synchronous admission guard shared by UI and routed prompts. The guard is
   // set before the async SDK call so two callers cannot both observe idle.
   private promptAdmissionBusy = false;
@@ -366,6 +370,7 @@ export class AgentSessionWrapper {
       reviewInvoker?: ToolReviewModel;
     } = {},
   ) {
+    this.betaSignature = loadedBetaFeatureSignature(inner.getAllTools());
     this.reviewInvoker = capabilityOptions.reviewInvoker ?? runToolReviewModel;
     this.installToolPermissions();
     const reload = inner.reload.bind(inner);
@@ -465,6 +470,7 @@ export class AgentSessionWrapper {
     assertRemotePolicyCommand(this.remotePolicy, { type: "prompt", message });
     await this.waitForExtensionsBound();
     if (!this._alive || this.stopping) throw new Error("Command cancelled");
+    const startsNewRun = this.getRuntime() === "idle";
     const abortGeneration = this.abortGeneration;
     this.reviews().admit({ id: commandId, source: activity?.source ?? "unknown", text: message, timestamp: Date.now() }, !this.activePromptRun);
     if (!this.activePromptRun) this.reviewModel = this.inner.model ? { provider: this.inner.model.provider, id: this.inner.model.id } : undefined;
@@ -473,7 +479,14 @@ export class AgentSessionWrapper {
     let failed = false;
     this.inputAdmissions++;
     notifyRunningChange();
-    const execution = this.chatCommandActivities.run(commandId, activity?.execute ?? (() => this.inner.prompt(message, { source: "rpc", streamingBehavior: "steer" })), {
+    const assertActive = () => {
+      if (!this._alive || this.stopping || abortGeneration !== this.abortGeneration) throw new Error("Command cancelled");
+    };
+    const execution = this.chatCommandActivities.run(commandId, async () => {
+      if (startsNewRun) await this.refreshBetaCapabilities(assertActive);
+      assertActive();
+      return activity?.execute ? activity.execute() : this.inner.prompt(message, { source: "rpc", streamingBehavior: "steer" });
+    }, {
       onPhase: phase => {
         if (phase === "model" && !this.activePromptRun) {
           this.beginRun("prompt", compactTaskActivityText(message) || "Extension request", "waiting_model");
@@ -487,9 +500,7 @@ export class AgentSessionWrapper {
         }
         onPhase(phase);
       },
-      assertActive: () => {
-        if (!this._alive || this.stopping || abortGeneration !== this.abortGeneration) throw new Error("Command cancelled");
-      },
+      assertActive,
       waitForIdle: async () => {
         if (!this.chatCommandActivities.hasModelWork) return;
         await this.inner.waitForIdle?.();
@@ -608,6 +619,17 @@ export class AgentSessionWrapper {
 
   initializeSessionCapabilities(): void {
     this.applySessionCapabilities();
+  }
+
+  /** All idle model-admission paths share the same optional capability refresh. */
+  private async refreshBetaCapabilities(assertActive: () => void): Promise<void> {
+    const nextBetaSignature = betaFeatureSignature(readBetaFeatures());
+    if (nextBetaSignature === this.betaSignature) return;
+    assertActive();
+    await this.inner.reload();
+    this.applySessionCapabilities();
+    this.betaSignature = loadedBetaFeatureSignature(this.inner.getAllTools());
+    assertActive();
   }
 
   applyProjectCapabilitySettings(record: ProjectToolSettingsRecord): "applied" | "deferred" {
@@ -1239,6 +1261,7 @@ export class AgentSessionWrapper {
         const promptImages = command.images as Array<{ type: "image"; data: string; mimeType: string }> | undefined;
         const promptMaterials = command.materials as PromptMaterialReference[] | undefined;
         const streamingBehavior = command.streamingBehavior as "steer" | "followUp" | undefined;
+        const startsNewRun = this.getRuntime() === "idle";
         if (!streamingBehavior) {
           this.assertSessionIdle("send a prompt");
           if (this.promptAdmissionBusy) throw new Error("Cannot send a prompt while the session is starting another prompt");
@@ -1310,6 +1333,7 @@ export class AgentSessionWrapper {
         };
         const promptTask = Promise.resolve().then(async () => {
           if (fileChangeCapture) await fileChangeCapture.initial.catch(() => {});
+          if (startsNewRun) await this.refreshBetaCapabilities(assertNotAborted);
           if (!streamingBehavior) {
             const pendingModel = readPendingSessionModel(this.sessionId);
             if (pendingModel) {
@@ -1658,6 +1682,12 @@ export class AgentSessionWrapper {
         const newSessionId = SessionManager.open(newSessionFile, sessionDir).getSessionId();
         writeToolPermission(newSessionId, readDefaultToolPermission(getAgentDir()), getAgentDir());
         const forkedManager = SessionManager.open(newSessionFile, sessionDir);
+        try {
+          await copyAnswerOutputState(this.sessionId, newSessionId, forkedManager.getBranch().map(entry => entry.id));
+        } catch (error) {
+          quarantineUnboundSessionFile(newSessionFile);
+          throw error;
+        }
         appendSessionCapabilityPolicy(forkedManager, copySessionCapabilityPolicy(this.capabilityPolicy));
         const sourceSystemPromptBinding = this.getSystemPromptBinding()
           ?? createSessionSystemPromptBinding({ mode: "default" });
@@ -1741,6 +1771,7 @@ export class AgentSessionWrapper {
 
       case "steer":
       case "follow_up": {
+        const startsNewRun = this.getRuntime() === "idle";
         if (typeof command.expectedRunId === "string" && command.expectedRunId !== this.getActivePromptRunId()) throw new Error("Prompt cancelled");
         const queuedCommandId = typeof command.commandId === "string" ? command.commandId : undefined;
         if (queuedCommandId && typeof command.onQueueConsumed === "function" && typeof command.onQueueCancelled === "function") {
@@ -1756,6 +1787,9 @@ export class AgentSessionWrapper {
         this.inputAdmissions++;
         notifyRunningChange();
         const admission = this.queueSource.run(typeof command.commandId === "string" ? command.commandId : undefined, () => Promise.resolve().then(async () => {
+          if (startsNewRun) await this.refreshBetaCapabilities(() => {
+            if (!this._alive || this.stopping || abortGeneration !== this.abortGeneration) throw new Error("Prompt cancelled");
+          });
           const text = String(command.message ?? "").trimStart();
           const invocationName = text.match(/^\/([^\s]+)/)?.[1];
           const extensionCommand = invocationName && this.inner.extensionRunner.getRegisteredCommands().some(item => item.invocationName === invocationName);
