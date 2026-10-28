@@ -15,7 +15,7 @@ function composer(onSend) {
     value: " original\nmessage ",
     attachedImages: [{ data: "YWJj", mimeType: "image/png", previewUrl: "blob:preview" }],
     attachedFiles: [{ name: "notes.txt", text: "full attachment", size: 15 }],
-    permissionSaving: false, isStreaming: false, isProcessingImages: false, isAutoModelSelection: false,
+    permissionSaving: false, isStreaming: false, isProcessingImages: false, isAutoModelSelection: false, runningSendMode: "steer",
     pendingFileCountRef: { current: 0 },
     onBuiltinCommand: undefined, onQueueInput: undefined, contextUsage: null,
     commandInputOptions: {},

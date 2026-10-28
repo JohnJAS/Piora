@@ -7,11 +7,11 @@ import {
 } from "./keyboard-shortcuts";
 
 export type SendShortcut = string | null;
-export type ChatShortcutAction = "send" | "steer" | "newline";
-export interface ChatShortcutBindings { send: SendShortcut; steer: SendShortcut; newline: SendShortcut }
+export type ChatShortcutAction = "send" | "newline";
+export interface ChatShortcutBindings { send: SendShortcut; newline: SendShortcut }
 export type ChatShortcutError = "invalid" | "reserved" | "conflict";
 export const DEFAULT_SEND_SHORTCUT = "Enter";
-export const DEFAULT_CHAT_SHORTCUTS: ChatShortcutBindings = { send: DEFAULT_SEND_SHORTCUT, steer: null, newline: "Shift+Enter" };
+export const DEFAULT_CHAT_SHORTCUTS: ChatShortcutBindings = { send: DEFAULT_SEND_SHORTCUT, newline: "Shift+Enter" };
 export const SEND_SHORTCUT_STORAGE_KEY = "piora-send-shortcut:v1";
 export const CHAT_SHORTCUT_STORAGE_KEY = "piora-chat-shortcuts:v2";
 
@@ -58,8 +58,8 @@ export function parseChatShortcuts(raw: string | null, legacy: string | null = n
   try {
     const parsed = JSON.parse(raw);
     if (parsed?.version !== 2 || !parsed.bindings || typeof parsed.bindings !== "object") return fallback;
-    const result: ChatShortcutBindings = { send: null, steer: null, newline: null };
-    for (const action of ["send", "steer", "newline"] as const) {
+    const result: ChatShortcutBindings = { send: null, newline: null };
+    for (const action of ["send", "newline"] as const) {
       const value = parsed.bindings[action] === undefined ? DEFAULT_CHAT_SHORTCUTS[action] : parsed.bindings[action];
       if (!validateChatShortcut(result, action, value)) result[action] = value === null ? null : normalizeChatShortcut(value);
       else if (!validateChatShortcut(result, action, DEFAULT_CHAT_SHORTCUTS[action])) result[action] = DEFAULT_CHAT_SHORTCUTS[action];
@@ -75,9 +75,5 @@ export function recordChatShortcut(event: SendShortcutKeyEvent): string | null {
 }
 
 export function matchesSendShortcut(event: SendShortcutKeyEvent, shortcut: SendShortcut): boolean {
-  return shortcutMatchesEvent(event, shortcut);
-}
-
-export function matchesSteerShortcut(event: SendShortcutKeyEvent, shortcut: SendShortcut): boolean {
   return shortcutMatchesEvent(event, shortcut);
 }

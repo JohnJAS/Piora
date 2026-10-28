@@ -11,26 +11,26 @@ const [chatInput, settingsDialog, shortcutSettings, hook, autoScrollHook, roomCo
   readFile(new URL("./RoomComposer.tsx", import.meta.url), "utf8"),
 ]);
 
-test("shortcut input settings expose three independently recordable actions", async () => {
+test("shortcut input settings expose send and newline actions", async () => {
   assert.doesNotMatch(settingsDialog, /<ChatShortcutSettings/);
   const applicationSettings = await readFile(new URL("./ShortcutSettings.tsx", import.meta.url), "utf8");
   assert.match(applicationSettings, /group.id === "input" && <ChatShortcutSettings/);
-  assert.match(shortcutSettings, /const actions = \["send", "steer", "newline"\]/);
+  assert.match(shortcutSettings, /const actions = \["send", "newline"\]/);
   assert.match(shortcutSettings, /capture\(action, event\)/);
   assert.match(shortcutSettings, /save\(action, DEFAULT_CHAT_SHORTCUTS\[action\]\)/);
   assert.match(shortcutSettings, /save\(action, null\)/);
 });
 
-test("individual and group chats share the send preference while steering stays explicit", () => {
+test("individual and group chats share the send preference using the selected send mode", () => {
   for (const source of [chatInput, roomComposer]) {
     assert.match(source, /useSendShortcut\(\)/);
     assert.match(source, /matchesSendShortcut\(/);
     assert.doesNotMatch(source, /streamingSendPreference/);
   }
   assert.match(chatInput, /if \(matchesSendShortcut\(e, sendShortcut\)\)/);
-  assert.match(chatInput, /matchesSteerShortcut\(e, steerShortcut\)/);
-  assert.match(chatInput, /sendQueued\("steer"\)/);
-  assert.match(chatInput, /sendQueued\("followup"\)/);
+  assert.doesNotMatch(chatInput, /matchesSteerShortcut|steerShortcut/);
+  assert.doesNotMatch(shortcutSettings, /"steer"/);
+  assert.match(chatInput, /sendQueued\(runningSendMode === "steer" \? "steer" : "followup"\)/);
 });
 
 test("the preference synchronizes all mounted consumers and browser tabs", () => {

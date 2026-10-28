@@ -56,6 +56,11 @@ export async function POST(
   try {
     const runtimeProfile = getAgentRuntimeProfile();
     const body = await req.json() as { type: string; [key: string]: unknown };
+    if (body.type === "pending_input_action") {
+      if (typeof body.inputId !== "string" || !/^[0-9a-f-]{36}$/i.test(body.inputId) || !["queue", "delete"].includes(String(body.action))) return NextResponse.json({ error: "Invalid pending input action" }, { status: 400 });
+      const records = await getSessionMessageRouter().recallQueuedInputs(id, { inputId: body.inputId, action: body.action as "queue" | "delete" });
+      return NextResponse.json({ success: true, data: records.map(commandOperationView) });
+    }
     if (body.type === "recall_queued_inputs") {
       const records = await getSessionMessageRouter().recallQueuedInputs(id);
       return NextResponse.json({ success: true, data: records.map(commandOperationView) });

@@ -2,7 +2,7 @@
 import { ToolPermissionControl } from "./ToolPermissionControl";
 import type { PermissionMode, ToolPermissionState } from "@/lib/tool-permission-policy";
 
-import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
+import React, { useId, useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useReplyDraft } from "@/hooks/useReplyDraft";
 import { useReplySuggestions } from "@/hooks/useReplySuggestions";
@@ -81,7 +81,8 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
 import { useApplicationShortcuts } from "@/hooks/useApplicationShortcuts";
 import { useLocalDictation } from "@/hooks/useLocalDictation";
-import { isPlainEnter, matchesSendShortcut, matchesSteerShortcut } from "@/lib/send-shortcut";
+import { isPlainEnter, matchesSendShortcut } from "@/lib/send-shortcut";
+import { useRunningSendMode } from "@/hooks/useRunningSendMode";
 import { useSendShortcut } from "@/hooks/useSendShortcut";
 import { formatShortcutBinding, isMacPlatform, shortcutMatchesEvent, shouldPreserveApplicationShortcut } from "@/lib/keyboard-shortcuts";
 import { AliIcon } from "./AliIcon";
@@ -345,7 +346,44 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   replySource = null,
 }: Props, ref) {
   const { t, locale } = useI18n();
-  const { shortcut: sendShortcut, steerShortcut, newlineShortcut } = useSendShortcut();
+  const { mode: defaultSendMode } = useRunningSendMode();
+  const runningSendMode = defaultSendMode;
+  const sendModeMenuId = useId();
+  const sendModeMenuRef = useRef<HTMLDivElement>(null);
+  const sendModeButtonRef = useRef<HTMLDivElement>(null);
+  const sendModeHoverDismissed = useRef(false);
+  const sendModeCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const keepSendModeOpen = useCallback(() => {
+    if (sendModeCloseTimer.current) clearTimeout(sendModeCloseTimer.current);
+    sendModeCloseTimer.current = null;
+  }, []);
+  const closeSendModeMenu = useCallback(() => {
+    keepSendModeOpen();
+    // The revealed trigger remains under the pointer; wait for it to leave
+    // before accepting another hover, including after an Escape dismissal.
+    sendModeHoverDismissed.current = true;
+    sendModeMenuRef.current?.hidePopover();
+  }, [keepSendModeOpen]);
+  const scheduleSendModeClose = useCallback(() => {
+    keepSendModeOpen();
+    sendModeCloseTimer.current = setTimeout(() => {
+      const menu = sendModeMenuRef.current;
+      if (!menu?.matches(":hover") && !sendModeButtonRef.current?.matches(":hover") && !menu?.contains(document.activeElement)) menu?.hidePopover();
+    }, 180);
+  }, [keepSendModeOpen]);
+  const openSendModeMenu = useCallback((focus = false) => {
+    keepSendModeOpen();
+    const rect = sendModeButtonRef.current?.getBoundingClientRect();
+    const menu = sendModeMenuRef.current;
+    if (!rect || !menu) return;
+    menu.style.width = rect.width + "px";
+    menu.style.right = Math.max(8, window.innerWidth - rect.right) + "px";
+    menu.style.bottom = Math.max(8, window.innerHeight - rect.bottom) + "px";
+    if (!menu.matches(":popover-open")) menu.showPopover();
+    if (focus) menu.querySelector<HTMLButtonElement>("button[data-mode]")?.focus();
+  }, [keepSendModeOpen]);
+  useEffect(() => keepSendModeOpen, [keepSendModeOpen]);
+  const { shortcut: sendShortcut, newlineShortcut } = useSendShortcut();
   const isMobile = useIsMobile();
   const { bindings: applicationShortcutBindings } = useApplicationShortcuts();
   const voiceInputBinding = applicationShortcutBindings["composer.voiceInput"];
@@ -824,7 +862,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     const sentCommandOptions = { ...commandInputOptions, ...overrideOptions };
     const commandSubmission = sentCommandOptions.inputMode !== "text" && msg.startsWith("/");
     // Delivery from a recovered draft must never turn an ordinary send into steering.
-    if (!commandSubmission) sentCommandOptions.delivery = overrideOptions?.delivery ?? "next_turn";
+    if (!commandSubmission) sentCommandOptions.delivery = overrideOptions?.delivery ?? (isStreaming ? runningSendMode : "next_turn");
     if (!msg && !attachedImages.length && !attachedFiles.length) return;
     if (permissionSaving || (isStreaming && !onQueueInput) || isProcessingImages || pendingFileCountRef.current > 0 || (isAutoModelSelection && !commandSubmission)) return;
     if (attachedFiles.some((file) => !file.path && file.text == null)) {
@@ -921,7 +959,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     } catch (error) {
       setAttachmentError(error instanceof Error ? error.message : String(error));
     } finally { sendingRef.current = false; }
-  }, [attachedImages, attachedFiles, permissionSaving, isStreaming, isProcessingImages, isAutoModelSelection, onBuiltinCommand, onSend, onQueueInput, clearInput, contextUsage, t, replyDraftRef, resetReplyDraft, commandInputOptions]);
+  }, [attachedImages, attachedFiles, permissionSaving, isStreaming, isProcessingImages, isAutoModelSelection, onBuiltinCommand, onSend, onQueueInput, clearInput, contextUsage, t, replyDraftRef, resetReplyDraft, commandInputOptions, runningSendMode]);
 
   useEffect(() => {
     submitRef.current = () => { void handleSend(); };
@@ -998,6 +1036,9 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     : t(slashQuery ? "chat.matches" : "chat.commands", { count: filteredSlashCommands.length });
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = onQueueInput ? hasInputText || attachedImages.length > 0 || attachedFiles.length > 0 : hasInputText && attachedImages.length === 0 && attachedFiles.length === 0;
+  useEffect(() => {
+    if (!canQueueStreamingMessage) sendModeHoverDismissed.current = false;
+  }, [canQueueStreamingMessage]);
   const canSend = !permissionSaving && !isProcessingImages && !isProcessingFiles
     && (!isAutoModelSelection || isCommandInput)
     && (hasInputText || attachedImages.length > 0 || attachedFiles.length > 0);
@@ -1328,8 +1369,8 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
 
   const submitStreamingMessage = useCallback(() => {
     if (!canQueueStreamingMessage) return;
-    sendQueued("followup");
-  }, [canQueueStreamingMessage, sendQueued]);
+    sendQueued(runningSendMode === "steer" ? "steer" : "followup");
+  }, [canQueueStreamingMessage, sendQueued, runningSendMode]);
 
   const getNextSlashIndex = useCallback((direction: "up" | "down" | "left" | "right") => {
     const lastIndex = filteredSlashCommands.length - 1;
@@ -1385,6 +1426,15 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
 
       if (isComposing || recentlyComposed) {
         if (e.key === "Enter" && recentlyComposed) e.preventDefault();
+        return;
+      }
+
+      // Hover opens the popover without moving focus out of the composer.
+      // Escape must dismiss that popover before it can stop the current run.
+      if (e.key === "Escape" && sendModeMenuRef.current?.matches(":popover-open")) {
+        e.preventDefault();
+        e.stopPropagation();
+        closeSendModeMenu();
         return;
       }
 
@@ -1512,12 +1562,6 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
         return;
       }
 
-      if (matchesSteerShortcut(e, steerShortcut)) {
-        e.preventDefault();
-        if (!e.repeat && isStreaming && !isCommandInput && (onQueueInput || onSteer) && canQueueStreamingMessage) void sendQueued("steer");
-        return;
-      }
-
       if (matchesSendShortcut(e, sendShortcut)) {
         e.preventDefault();
         if (e.repeat) return;
@@ -1531,7 +1575,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
       // Only the configured newline binding inserts a line break.
       if (e.key === "Enter") e.preventDefault();
     },
-    [isStreaming, isCommandInput, onQueueInput, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, canQueueStreamingMessage, stopVoiceInput, localVoiceRecording, attachmentMenuOpen, sendQueued, submitStreamingMessage, undoReplyDraft, sendShortcut, steerShortcut, newlineShortcut, setValue, updateAtQuery]
+    [isStreaming, isCommandInput, onQueueInput, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, stopVoiceInput, localVoiceRecording, attachmentMenuOpen, submitStreamingMessage, undoReplyDraft, sendShortcut, newlineShortcut, setValue, updateAtQuery, closeSendModeMenu]
   );
 
   const handleInput = useCallback(() => {
@@ -2657,7 +2701,40 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
             )}
             {isStreaming && !isCommandInput ? (
               <div className="streaming-action-control">
-                {canQueueStreamingMessage ? <button type="button" className="streaming-action-primary" onClick={submitStreamingMessage} title={t("chat.send")} aria-label={t("chat.send")}><AliIcon name="send" size={15} /></button> : <button
+                {canQueueStreamingMessage ? <div ref={sendModeButtonRef} className="streaming-send-button" onPointerEnter={keepSendModeOpen} onPointerLeave={() => { sendModeHoverDismissed.current = false; scheduleSendModeClose(); }}><button type="button" className="streaming-action-primary" onClick={submitStreamingMessage} title={t(runningSendMode === "steer" ? "chat.steer" : "chat.queueSend")} aria-label={t(runningSendMode === "steer" ? "chat.steer" : "chat.queueSend")}><span>{t(runningSendMode === "steer" ? "chat.steer" : "chat.queueSend")}</span><AliIcon name="send" size={15} /></button>
+                  <button type="button" className="streaming-mode-picker" aria-controls={sendModeMenuId} aria-label={t("settings.runningSendMode")} aria-haspopup="menu"
+                    onPointerEnter={event => { if (event.pointerType === "mouse" && !sendModeHoverDismissed.current) openSendModeMenu(); }}
+                    onClick={event => openSendModeMenu(event.detail === 0)}
+                    onKeyDown={event => { if (event.key === "ArrowUp" || event.key === "ArrowDown") { event.preventDefault(); openSendModeMenu(true); } }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 15 6-6 6 6" /></svg>
+                  </button>
+                  <div id={sendModeMenuId} ref={sendModeMenuRef} popover="auto" role="menu" aria-label={t("settings.runningSendMode")} className="streaming-mode-menu" onPointerEnter={keepSendModeOpen} onPointerLeave={scheduleSendModeClose} onKeyDown={event => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      closeSendModeMenu();
+                      sendModeButtonRef.current?.querySelector<HTMLButtonElement>(".streaming-mode-picker")?.focus();
+                      return;
+                    }
+                    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+                    event.preventDefault();
+                    const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button[data-mode]"));
+                    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+                    items[event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + items.length) % items.length]?.focus();
+                  }}>
+                    <div className="streaming-mode-actions">
+                    {([runningSendMode === "steer" ? "next_turn" : "steer", runningSendMode] as const).map(mode => <button key={mode} type="button" role="menuitem" data-mode={mode} onClick={() => {
+                      closeSendModeMenu();
+                      void sendQueued(mode === "steer" ? "steer" : "followup");
+                    }}>
+                      <span>{t(mode === "steer" ? "chat.steer" : "chat.queueSend")}</span>
+                      <AliIcon name="send" size={15} />
+
+                    </button>)}
+                    </div>
+                    <button type="button" className="streaming-mode-collapse" aria-label={t("settings.runningSendMode")} onClick={closeSendModeMenu}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button>
+                  </div>
+                </div> : <button
                   type="button"
                   onClick={onAbort}
                   title={t("chat.stopAgent")}

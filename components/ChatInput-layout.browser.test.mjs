@@ -49,7 +49,7 @@ function App(){
     <section id="command-results"><ChatCommandCard record={record} actions={{retry:async()=>{},restore:async()=>{},cancel:async()=>{},copy:async()=>{}}}/></section>
     <section id="launcher"><NewSessionProjectPicker activeCwd="/workspace/a-very-long-project-name-for-layout-checks" onLaunch={request=>{window.launched=true;window.launchRequest=request}}/></section>
     <section id="conversation"><ChatInput ref={value=>{window.composer=value}} onSend={(text,...args)=>{window.sent=true;window.submission={text,args};return true}} onAbort={()=>{window.stopped=true;setBusy(false)}}
-      queueContent={<ChatCommandQueue records={queued} pendingMessages={runtimeQueue} onRecall={()=>{window.recalled=true;setRuntimeQueue(null)}} actions={{cancel:async record=>{window.cancelled=record.commandId;if(window.failQueueCancel)throw new Error("Queue cancellation failed");setQueued(current=>current.filter(item=>item.commandId!==record.commandId))},steer:async record=>{window.steered=record.commandId;setQueued(current=>current.filter(item=>item.commandId!==record.commandId))},edit:async record=>{window.editing=record.commandId;return record.preview},save:async(record,text)=>{if(window.failQueueEdit)throw new Error("Queue edit failed");window.edited={id:record.commandId,text};setQueued(current=>current.map(item=>item.commandId===record.commandId?{...item,preview:text}:item))},resume:async record=>{window.resumed=record.commandId;setQueued(current=>current.map(item=>item.commandId===record.commandId?{...item,queuePaused:false}:item))}}}/>}
+      queueContent={<ChatCommandQueue records={queued} pendingMessages={runtimeQueue} onPendingAction={async(id,action)=>{window.pendingAction={id,action};if(window.failPendingAction)throw new Error("Pending action failed");setRuntimeQueue(current=>{const pendingInputs=current.pendingInputs.filter(item=>item.id!==id);return {pendingInputs,steering:pendingInputs.filter(item=>item.kind==="steer").map(item=>item.text),followUp:pendingInputs.filter(item=>item.kind==="followUp").map(item=>item.text)}})}} actions={{cancel:async record=>{window.cancelled=record.commandId;if(window.failQueueCancel)throw new Error("Queue cancellation failed");setQueued(current=>current.filter(item=>item.commandId!==record.commandId))},steer:async record=>{window.steered=record.commandId;setQueued(current=>current.filter(item=>item.commandId!==record.commandId))},edit:async record=>{window.editing=record.commandId;return record.preview},save:async(record,text)=>{if(window.failQueueEdit)throw new Error("Queue edit failed");window.edited={id:record.commandId,text};setQueued(current=>current.map(item=>item.commandId===record.commandId?{...item,preview:text}:item))},resume:async record=>{window.resumed=record.commandId;setQueued(current=>current.map(item=>item.commandId===record.commandId?{...item,queuePaused:false}:item))}}}/>}
       commandCatalog={catalog} onLoadSlashCommands={()=>{}} onQueueInput={async(text,images,files,onDurable,options)=>{(window.queuedInputs??=[]).push({text,delivery:options?.delivery});return true}}
       onSteer={()=>true} onFollowUp={()=>true} isStreaming={busy} onModelChange={async()=>true} onThinkingLevelChange={()=>{}}
       model={{provider:"deepseek",modelId:"deepseek-v4.1-flash"}} modelList={[{provider:"deepseek",id:"deepseek-v4.1-flash",name:"DeepSeek V4.1 Flash Very Long Model Name"}]}
@@ -185,18 +185,30 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       // Queue strips tuck behind the input while keeping their controls exposed.
       const chatWindowSource = await readFile(path.join(repo, "components/ChatWindow.tsx"), "utf8");
       assert.match(chatWindowSource, /queueContent=\{composerQueueContent\}/);
-      assert.match(chatWindowSource, /const composerQueueContent = useMemo\(\(\) => \(\s*<ChatCommandQueue records=\{chatCommands\.records\} actions=\{queueActions\} pendingMessages=\{queuedMessages\} onRecall=\{handleRecallQueue\} \/>/);
-      await page.evaluate(() => window.setRuntimeQueue({steering:['Pending guidance <b>literal</b>'],followUp:['Runtime follow-up']}));
+      assert.match(chatWindowSource, /const composerQueueContent = useMemo\(\(\) => \(\s*<ChatCommandQueue records=\{chatCommands\.records\} actions=\{queueActions\} pendingMessages=\{queuedMessages\} onPendingAction=\{handlePendingInputAction\} \/>/);
+      await page.evaluate(() => window.setRuntimeQueue({steering:['same <b>literal</b>','same <b>literal</b>'],followUp:[],pendingInputs:[{id:'first',text:'same <b>literal</b>',kind:'steer'},{id:'second',text:'same <b>literal</b>',kind:'steer'}]}));
       const runtimeRegion = conversation.getByRole('region', { name: locale === 'zh-CN' ? '接下来执行' : 'Up next' });
-      await runtimeRegion.getByRole('status').first().waitFor();
-      assert.equal(await runtimeRegion.getByRole('status').count(), 2);
+      const restorePending = runtimeRegion.getByRole('button', { name: locale === 'zh-CN' ? '排队' : 'Queue', exact: true });
+      await restorePending.first().waitFor();
+      assert.equal(await restorePending.count(), 2);
+      await page.evaluate(() => window.setQueued([{commandId:'old-first',status:'delivered',preview:'same <b>literal</b>'},{commandId:'old-second',status:'delivered',preview:'same <b>literal</b>'}]));
+      assert.equal(await runtimeRegion.locator('[class*="queueItem"]').count(), 2, 'delivered placeholders must not double the runtime rows');
+      assert.doesNotMatch(await runtimeRegion.innerText(), /正在保存提交|Saving submission/);
       assert.equal(await runtimeRegion.locator('b').count(), 0);
-      assert.equal(await conversation.locator('.composer-queue-tray').count(), 0);
+      assert.equal(await runtimeRegion.getByRole('button', {name: locale === 'zh-CN' ? '移回输入框' : 'Recall to input'}).count(), 0);
       const runtimeBox = await runtimeRegion.boundingBox();
       const surfaceBox = await conversation.locator('.chat-composer-surface').boundingBox();
       assert.ok(runtimeBox.y < surfaceBox.y && runtimeBox.y + runtimeBox.height > surfaceBox.y, 'guidance shares the attached composer strip');
-      await runtimeRegion.getByRole('button', {name: locale === 'zh-CN' ? '移回输入框' : 'Recall to input'}).click();
-      assert.equal(await page.evaluate(() => window.recalled), true);
+      await page.evaluate(() => window.failPendingAction=true);
+      await restorePending.first().click();
+      await runtimeRegion.getByRole('alert').waitFor();
+      assert.equal(await restorePending.count(), 2, 'failed action preserves both messages');
+      await page.evaluate(() => window.failPendingAction=false);
+      await restorePending.first().click();
+      assert.deepEqual(await page.evaluate(() => window.pendingAction), {id:'first',action:'queue'});
+      await page.waitForFunction(() => window.pendingAction.id==='first');
+      await runtimeRegion.locator('button').last().click();
+      assert.deepEqual(await page.evaluate(() => window.pendingAction), {id:'second',action:'delete'});
       await runtimeRegion.waitFor({state:'hidden'});
       const longPreview = "Long queued message ".repeat(20);
       await page.evaluate(longPreview => window.setQueued([
@@ -205,7 +217,6 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       ]), longPreview);
       const pendingQueue = conversation.getByRole("region", { name: locale === "zh-CN" ? "接下来执行" : "Up next" });
       const cancelQueued = pendingQueue.getByRole("button", { name: locale === "zh-CN" ? "取消" : "Cancel", exact: true });
-      const queueOptions = () => pendingQueue.getByRole("button", { name: locale === "zh-CN" ? "选项" : "Options", exact: true });
       await pendingQueue.waitFor();
       await conversation.evaluate(section => section.style.setProperty("--chat-column-width", "520px"));
       for (const width of [900, 590, 320]) {
@@ -231,22 +242,8 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await resumeQueue.waitFor({state:"hidden"});
       assert.equal(await page.evaluate(()=>window.resumed),"queued-first");
       await page.evaluate(() => { window.editing = null; window.steered = null; window.cancelled = null; });
-      await queueOptions().last().dblclick();
-      assert.equal(await page.evaluate(() => window.editing), null, 'double-clicking options must not activate an overlapping menu item');
-      assert.equal(await page.evaluate(() => window.steered), null);
-      assert.equal(await page.evaluate(() => window.cancelled), null);
-      const queueMenu = page.getByRole("menu", { name: locale === "zh-CN" ? "选项" : "Options", exact: true });
-      assert.equal(await queueMenu.getByRole("menuitem").count(), 2);
-      const menuBox = await queueMenu.boundingBox();
-      const triggerBox = await queueOptions().last().boundingBox();
-      assert.ok(menuBox.y + menuBox.height < triggerBox.y, "menu must not cover its trigger or adjacent queue actions");
-      assert.equal(await queueMenu.innerText(), locale === "zh-CN" ? "编辑消息\n取消排队" : "Edit message\nCancel queued message");
-      await page.evaluate(() => {
-        document.querySelector('#conversation').dispatchEvent(new Event('scroll'));
-        window.dispatchEvent(new Event('resize'));
-      });
-      assert.equal(await queueMenu.isVisible(), true, 'streaming scroll and resize keep the queue menu open');
-      await queueMenu.getByRole("menuitem").first().click();
+      assert.equal(await pendingQueue.getByRole('button', { name: locale === 'zh-CN' ? '选项' : 'Options', exact: true }).count(), 0);
+      await pendingQueue.getByRole('button', { name: longPreview, exact: true }).click();
       const queueEditor = pendingQueue.getByRole("textbox", { name: locale === "zh-CN" ? "编辑消息" : "Edit message" });
       await queueEditor.waitFor();
       assert.equal(await queueEditor.inputValue(), longPreview, "edit restores the entire query");
@@ -260,18 +257,9 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await saveQueue.click();
       await queueEditor.waitFor({ state: "hidden" });
       assert.deepEqual(await page.evaluate(() => window.edited), { id: "queued-second", text: "Edited queued query" });
-      await queueOptions().last().click();
-      assert.equal(await queueMenu.getByRole('menuitem').count(), 2);
-      await queueMenu.getByRole('menuitem').first().press('ArrowDown');
-      await queueMenu.getByRole('menuitem').first().press('Escape');
-      assert.equal(await cancelQueued.count(), 2, 'closing the menu keeps the queue');
-      await queueOptions().first().click();
-      await queueMenu.getByRole("menuitem").first().press("Escape");
-      await queueMenu.waitFor({ state: "hidden" });
       // A failed cancellation keeps the row and shows the failure locally.
       await page.evaluate(() => { window.failQueueCancel = true; });
-      await pendingQueue.getByRole("button", { name: locale === "zh-CN" ? "选项" : "Options", exact: true }).first().click();
-      await queueMenu.getByRole("menuitem").nth(1).click();
+      await cancelQueued.first().click();
       await pendingQueue.getByRole("alert").waitFor();
       assert.equal(await pendingQueue.getByRole("alert").innerText(), "Queue cancellation failed");
       assert.equal(await cancelQueued.count(), 2);
@@ -307,43 +295,77 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       assert.equal(await page.evaluate(() => window.stopped), true);
       await page.evaluate(() => window.setBusy(true));
       const primary = conversation.locator(".streaming-action-primary");
-      const streamingMenu = conversation.locator(".streaming-action-menu");
+      const hoverSendMode = async () => {
+        await conversation.locator('.streaming-mode-picker').scrollIntoViewIfNeeded();
+        await editor.hover();
+        const rect = await conversation.locator('.streaming-mode-picker').boundingBox();
+        assert.ok(rect);
+        await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        await conversation.locator('.streaming-mode-menu').waitFor({state:'visible'});
+      };
       let queuedCount = 0;
-      // Fresh installs and legacy chooser preferences both default to queueing.
-      for (const enabled of [true, false]) {
-        await page.evaluate(enabled => { const key = "piora-streaming-send-preference:v1"; const newValue = JSON.stringify({ schemaVersion: 1, enabled, behavior: "followup" }); localStorage.setItem(key, newValue); window.dispatchEvent(new StorageEvent("storage", { key, newValue })); }, enabled);
+      await editor.fill("Check default");
+      await hoverSendMode();
+      assert.equal(await conversation.locator('[data-mode="steer"]').count(), 1);
+      assert.equal(await conversation.locator('[data-mode="next_turn"]').count(), 1);
+      const hoverMenu = conversation.locator('.streaming-mode-menu');
+      await hoverMenu.waitFor({state:'visible'});
+      await conversation.locator('[data-mode="next_turn"]').hover();
+      await page.waitForTimeout(230);
+      assert.equal(await hoverMenu.isVisible(), true, 'moving into the options keeps the hover panel open');
+      assert.equal(await page.evaluate(() => window.queuedInputs?.length ?? 0), 0, 'hover never sends a message');
+      await editor.hover();
+      await hoverMenu.waitFor({state:'hidden'});
+      await conversation.locator('.streaming-mode-picker').focus();
+      await page.keyboard.press('ArrowUp');
+      await hoverMenu.waitFor({state:'visible'});
+      assert.equal(await conversation.locator('[data-mode="next_turn"]').evaluate(element => element === document.activeElement), true);
+      await page.keyboard.press('Escape');
+      await hoverMenu.waitFor({state:'hidden'});
+
+      await editor.click();
+      assert.equal(await conversation.locator(".streaming-send-button > .streaming-action-primary").count(), 1);
+      for (const behavior of ["steer", "next_turn"]) {
+        await page.evaluate(behavior => {
+          const key = "piora-running-send-mode:v1";
+          localStorage.setItem(key, behavior);
+          window.dispatchEvent(new StorageEvent("storage", { key, newValue: behavior }));
+        }, behavior);
         for (const trigger of ["click", "Enter"]) {
-          const text = "Default queue " + trigger;
+          const text = "Default " + behavior + trigger;
           await editor.fill(text);
-          assert.equal(await primary.getAttribute("aria-label"), locale === "zh-CN" ? "发送" : "Send");
-          assert.equal(await primary.innerText(), "");
+          const label = behavior === "steer" ? (locale === "zh-CN" ? "引导" : "Steer") : (locale === "zh-CN" ? "排队" : "Queue");
+          assert.equal(await primary.getAttribute("aria-label"), label);
+          assert.ok((await primary.innerText()).includes(label));
           if (trigger === "click") await primary.click(); else await editor.press("Enter");
           await page.waitForFunction(count => window.queuedInputs?.length === count, ++queuedCount);
-          assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text, delivery: "next_turn" });
-          await streamingMenu.waitFor({ state: "hidden" });
+          assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text, delivery: behavior });
         }
-      }
-      for (const behavior of ["steer", "followup"]) {
-        await page.evaluate(behavior => {
-          const key = "piora-streaming-send-preference:v1";
-          const newValue = JSON.stringify({ schemaVersion: 1, enabled: true, behavior });
-          localStorage.setItem(key, newValue);
-          window.dispatchEvent(new StorageEvent("storage", { key, newValue }));
-        }, behavior);
-        const delivery = "next_turn";
-        for (const trigger of ["click", "Enter"]) {
-          const text = `Default ${behavior} ${trigger}`;
-          await editor.fill(text);
-          assert.equal(await primary.getAttribute("aria-label"), locale === "zh-CN" ? "发送" : "Send");
-          assert.equal(await primary.innerText(), "");
-          if (trigger === "click") await primary.click();
-          else await editor.press("Enter");
-          await page.waitForFunction(count => window.queuedInputs?.length === count, ++queuedCount);
-          assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text, delivery });
-          await streamingMenu.waitFor({ state: "hidden" });
-        }
-        assert.equal(await conversation.locator('.streaming-action-toggle').count(), 0);
-
+        const override = behavior === "steer" ? "next_turn" : "steer";
+        await editor.fill("Temporary override");
+        await hoverSendMode();
+        await conversation.locator('.streaming-mode-menu').waitFor({ state: 'visible' });
+        await conversation.locator('.streaming-mode-menu').evaluate(async element => { await Promise.all(element.getAnimations().map(animation => animation.finished)); });
+        const menuBounds = await conversation.locator('.streaming-mode-menu').boundingBox();
+        const triggerBounds = await conversation.locator('.streaming-mode-picker').boundingBox();
+        assert.ok(menuBounds && triggerBounds && menuBounds.y < triggerBounds.y && Math.abs(menuBounds.y + menuBounds.height - triggerBounds.y - triggerBounds.height) < 1, 'connected panel grows upward from the main button');
+        const mainBounds = await conversation.locator('.streaming-send-button').boundingBox();
+        assert.ok(Math.abs(menuBounds.width - mainBounds.width) < 1, 'alternative matches the send button width');
+        assert.ok(Math.abs(menuBounds.x - mainBounds.x) < 1, 'alternative aligns with the send button');
+        assert.equal(await conversation.locator('.streaming-mode-actions > button').count(), 2);
+        await conversation.locator('[data-mode="' + override + '"]').click();
+        await conversation.locator('.streaming-mode-menu').waitFor({ state: 'hidden' });
+        await page.waitForFunction(count => window.queuedInputs?.length === count, ++queuedCount);
+        assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text: "Temporary override", delivery: override });
+        await editor.fill('Check restored default');
+        await hoverSendMode();
+        assert.equal(await conversation.locator('[data-mode="' + behavior + '"]').count(), 1);
+        assert.equal(await conversation.locator('[data-mode="' + override + '"]').count(), 1);
+        await page.keyboard.press('Escape');
+        await conversation.locator('.streaming-mode-menu').waitFor({ state: 'hidden' });
+        await page.waitForTimeout(230);
+        assert.equal(await conversation.locator('.streaming-mode-menu').isVisible(), false, 'Escape stays dismissed while the pointer remains over the arrow');
+        assert.equal(await page.evaluate(() => localStorage.getItem('piora-running-send-mode:v1')), behavior);
       }
       await editor.fill('No default guidance binding');
       await editor.press('Control+Enter');
@@ -351,12 +373,17 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       assert.equal(await editor.inputValue(), 'No default guidance binding');
       const shortcutSettings = page.locator('#shortcut-settings');
       const recorder = action => shortcutSettings.locator('[data-settings-id="conversation.' + action + 'Shortcut"] button').first();
-      await recorder('steer').click();
-      await recorder('steer').press('Control+Enter');
-      await editor.fill('Explicit keyboard guidance');
+      assert.equal(await shortcutSettings.locator('[data-settings-id="conversation.steerShortcut"]').count(), 0);
+      // A saved steering binding must no longer intercept a normal send or cause conflicts.
+      await page.evaluate(() => {
+        const key = 'piora-chat-shortcuts:v2';
+        const newValue = JSON.stringify({ version: 2, bindings: { send: 'Enter', steer: 'Control+Enter', newline: 'Shift+Enter' } });
+        localStorage.setItem(key, newValue);
+        window.dispatchEvent(new StorageEvent('storage', { key, newValue }));
+      });
+      await editor.fill('Retired guidance shortcut');
       await editor.press('Control+Enter');
-      await page.waitForFunction(count => window.queuedInputs.length === count, ++queuedCount);
-      assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text: 'Explicit keyboard guidance', delivery: 'steer' });
+      assert.equal(await page.evaluate(() => window.queuedInputs.length), queuedCount);
       await editor.fill('Queue after guidance');
       await editor.press('Enter');
       await page.waitForFunction(count => window.queuedInputs.length === count, ++queuedCount);
@@ -365,14 +392,12 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await editor.press('Shift+Enter');
       assert.equal(await page.evaluate(() => window.queuedInputs.length), queuedCount);
       assert.ok((await editor.inputValue()).includes('\n'));
-      // Record all three actions through the production settings UI.
+      // Sending and newline remain independently configurable and reject conflicts.
       await recorder('send').click();
-      await recorder('send').press('Control+Enter');
+      await recorder('send').press('Shift+Enter');
       await shortcutSettings.getByRole('alert').waitFor();
-      assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('piora-chat-shortcuts:v2')).bindings.send), 'Enter', 'a conflict must not overwrite the current binding');
+      assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('piora-chat-shortcuts:v2')).bindings.send), 'Enter');
       await recorder('send').press('Escape');
-      await recorder('steer').click();
-      await recorder('steer').press('Control+Shift+Enter');
       await recorder('send').click();
       await recorder('send').press('Control+Enter');
       await recorder('newline').click();
@@ -383,7 +408,8 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await page.waitForFunction(count => window.queuedInputs.length === count, ++queuedCount);
       assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text: 'Custom queued message', delivery: 'next_turn' });
       await editor.fill('Custom guidance');
-      await editor.press('Control+Shift+Enter');
+      await hoverSendMode();
+      await conversation.locator('[data-mode="steer"]').click();
       await page.waitForFunction(count => window.queuedInputs.length === count, ++queuedCount);
       assert.deepEqual(await page.evaluate(() => window.queuedInputs.at(-1)), { text: 'Custom guidance', delivery: 'steer' });
       // Newlines replace the selection and leave the caret after the inserted break.
@@ -435,15 +461,12 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await otherRecorder.press('Enter');
       await page.waitForFunction(() => document.querySelector('#room').dataset.sendShortcut === 'Enter');
       await otherPage.close();
-      // Clearing and resetting are independent; no send change reassigns steering.
-      await recorder('steer').click();
-      await recorder('steer').press('Delete');
-      assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('piora-chat-shortcuts:v2')).bindings.steer), null);
+      // Resetting newline does not change the send shortcut.
       await shortcutSettings.locator('[data-settings-id="conversation.newlineShortcut"] button').last().click();
       await editor.fill('Restored newline');
       await editor.press('Shift+Enter');
       assert.equal(await editor.inputValue(), 'Restored newline\n');
-      assert.equal(await shortcutSettings.locator('[aria-labelledby="shortcut-group-input"] [data-settings-id^="conversation."]').count(), 3);
+      assert.equal(await shortcutSettings.locator('[aria-labelledby="shortcut-group-input"] [data-settings-id^="conversation."]').count(), 2);
       await recorder('send').click();
       await recorder('send').press('Control+Enter');
       const resetAll = shortcutSettings.getByRole('button', { name: /Reset all|全部恢复默认/ });
@@ -455,6 +478,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       if (process.env.PIORA_COMPOSER_SCREENSHOTS) {
         await shortcutSettings.evaluate(element => { element.style.height = 'auto'; });
         await shortcutSettings.screenshot({ path: path.join(repo, 'test-results/composer-layout', `${locale}-chat-shortcuts.png`) });
+        await shortcutSettings.locator('section').filter({ has: page.locator('[data-settings-id="conversation.sendShortcut"]') }).screenshot({ path: path.join(repo, 'test-results/composer-layout', `${locale}-input-shortcuts.png`) });
         await shortcutSettings.evaluate(element => { element.style.height = ''; });
       }
       // Recovered ordinary drafts cannot carry a stale steering delivery into idle sends.
@@ -548,6 +572,16 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         await page.keyboard.press("Escape");
       }
 
+      // Reload restores the saved running-send choice, including keyboard sends.
+      assert.equal(await page.evaluate(() => localStorage.getItem('piora-running-send-mode:v1')), 'next_turn');
+      await page.reload();
+      await conversation.locator('textarea').waitFor();
+      await page.evaluate(() => window.setBusy(true));
+      await editor.fill('Persisted queue preference');
+      assert.equal(await primary.getAttribute('aria-label'), locale === 'zh-CN' ? '排队' : 'Queue');
+      await editor.press('Enter');
+      await page.waitForFunction(() => window.queuedInputs?.length === 1);
+      assert.deepEqual(await page.evaluate(() => window.queuedInputs[0]), { text: 'Persisted queue preference', delivery: 'next_turn' });
       assert.deepEqual(errors, []);
       await context.close();
     }

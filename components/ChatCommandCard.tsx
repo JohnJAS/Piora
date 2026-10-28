@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { clearDraft, setDraft } from "@/lib/draft-store";
 import { useI18n } from "@/hooks/useI18n";
 import type { ChatCommandView } from "@/lib/chat-command-types";
@@ -108,20 +107,17 @@ export interface ChatCommandQueueActions {
 
 function QueuedCommandRow({ record, actions }: { record: ChatCommandView; actions: ChatCommandQueueActions }) {
   const { t } = useI18n();
-  const [menu, setMenu] = useState<{ bottom: number; right: number; maxHeight: number } | null>(null);
   const [value, setValue] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const editor = useRef<HTMLTextAreaElement>(null);
-  const preparing = record.local === true;
+  const preparing = record.local === true || record.status === "dispatching";
   const draftKey = "queue-edit:" + record.commandId;
   const operation = record.operation;
   const preview = operation ? operation.steps[0]?.status === "completed" && operation.afterPrompt ? operation.afterPrompt : operation.rawText : record.preview ?? "";
   const run = async (action: () => Promise<void>) => {
     if (pending) return;
-    setMenu(null); setPending(true); setError(null);
+    setPending(true); setError(null);
     try { await action(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setPending(false); }
   };
@@ -131,63 +127,55 @@ function QueuedCommandRow({ record, actions }: { record: ChatCommandView; action
   });
   const editing = value !== null;
   useEffect(() => { if (editing) editor.current?.focus(); }, [editing]);
-  const menuOpen = menu !== null;
-  useEffect(() => {
-    if (!menuOpen) return;
-    menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
-    const dismiss = (event: MouseEvent) => {
-      if (!menuRef.current?.contains(event.target as Node) && !trigger.current?.contains(event.target as Node)) setMenu(null);
-    };
-    const reposition = () => {
-      const rect = trigger.current?.getBoundingClientRect();
-      if (!rect) return;
-      setMenu({ bottom: window.innerHeight - rect.top + 6, right: Math.max(8, window.innerWidth - rect.right), maxHeight: Math.max(32, rect.top - 14) });
-    };
-    document.addEventListener("mousedown", dismiss);
-    window.addEventListener("resize", reposition);
-    window.addEventListener("scroll", reposition, true);
-    return () => { document.removeEventListener("mousedown", dismiss); window.removeEventListener("resize", reposition); window.removeEventListener("scroll", reposition, true); };
-  }, [menuOpen]);
   return <div className={styles.queueItem}>
     <div className={styles.queueRow}>
       <span className={styles.queueIcon} aria-hidden="true"><AliIcon name="menu" size={13} /></span>
-      <button type="button" className={styles.queuePreview} title={preview} disabled={pending || preparing} onClick={() => void edit()}>{preparing ? t("chatCommands.preparing") + " · " : record.queuePaused ? t(editing ? "chatCommands.editing" : "chatCommands.paused") + " · " : ""}{preview}</button>
+      <button type="button" className={styles.queuePreview} title={preview} disabled={pending || preparing} onClick={() => void edit()}>{record.queuePaused ? t(editing ? "chatCommands.editing" : "chatCommands.paused") + " · " : ""}{preview}</button>
       {record.queuePaused && value === null && <button type="button" className={styles.queueMode} disabled={pending || preparing} onClick={() => void run(() => actions.resume(record))}>{t("chatCommands.resumeQueue")}</button>}
-      <button type="button" className={styles.queueMode} disabled={pending || preparing || !!operation || !!record.queuePaused || value !== null} onClick={() => void run(() => actions.steer(record))}><AliIcon name="arrowdown" size={12} />{t("chat.steer")}</button>
+      <button type="button" className={styles.queueMode} disabled={pending || preparing || !!operation || !!record.queuePaused || value !== null} onClick={() => void run(() => actions.steer(record))}><AliIcon name="arrowup" size={12} />{t("chat.steer")}</button>
       <button type="button" className={styles.queueAction} disabled={pending || preparing} title={t("chatCommands.cancel")} aria-label={t("chatCommands.cancel")} onClick={() => void run(() => actions.cancel(record))}><AliIcon name="delete" size={14} /></button>
-      <button ref={trigger} type="button" className={styles.queueAction} disabled={pending || preparing || value !== null} title={t("chatCommands.options")} aria-label={t("chatCommands.options")} aria-haspopup="menu" aria-expanded={!!menu} onClick={event => {
-        event.stopPropagation();
-        if (event.detail > 1) return;
-        const rect = trigger.current!.getBoundingClientRect();
-        setMenu(menu ? null : { bottom: window.innerHeight - rect.top + 6, right: Math.max(8, window.innerWidth - rect.right), maxHeight: Math.max(32, rect.top - 14) });
-      }}><AliIcon name="ellipsis" size={15} /></button>
+
     </div>
     {value !== null && <div className={styles.queueEditor}>
       <textarea ref={editor} aria-label={t("chatCommands.editMessage")} value={value} disabled={pending} onChange={event => { setValue(event.target.value); setDraft(draftKey, { value: event.target.value, images: [], files: [] }); }} />
       <div><span>{t("chatCommands.editingHint")}</span><button type="button" disabled={pending} onClick={() => void run(async () => { await actions.resume(record); clearDraft(draftKey); setValue(null); })}>{t("chatCommands.cancelEdit")}</button><button type="button" disabled={pending} onClick={() => void run(async () => { await actions.save(record, value); clearDraft(draftKey); setValue(null); })}>{t("chatCommands.saveQueue")}</button></div>
     </div>}
-    {menu && createPortal(<div ref={menuRef} role="menu" aria-label={t("chatCommands.options")} className={styles.queueMenu} style={menu} onKeyDown={event => {
-      const items = Array.from(menuRef.current!.querySelectorAll<HTMLButtonElement>("button"));
-      const index = items.indexOf(document.activeElement as HTMLButtonElement);
-      if (event.key === "Escape" || event.key === "Tab") { setMenu(null); if (event.key === "Escape") { event.preventDefault(); trigger.current?.focus(); } }
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") { event.preventDefault(); items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus(); }
-    }}>
-      <button type="button" role="menuitem" onClick={() => void edit()}>{t("chatCommands.editMessage")}</button>
-      <button type="button" role="menuitem" onClick={() => void run(() => actions.cancel(record))}>{t("chatCommands.cancelQueue")}</button>
-    </div>, document.body)}
     {error && <p role="alert" className={styles.queueError}>{error}</p>}
   </div>;
 }
 
-export function ChatCommandQueue({ records, actions, pendingMessages, onRecall }: { records: ChatCommandView[]; actions: ChatCommandQueueActions; pendingMessages?: { steering: string[]; followUp: string[] } | null; onRecall?: () => void | Promise<void> }) {
+function PendingInputRow({ item, onAction }: { item: { id: string; commandId?: string; text: string; kind: "steer" | "followUp" }; onAction: (id: string, action: "queue" | "delete") => Promise<void> }) {
+  const { t } = useI18n();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (action: "queue" | "delete") => {
+    if (pending) return;
+    setPending(true); setError(null);
+    try { await onAction(item.id, action); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { setPending(false); }
+  };
+  return <div className={styles.queueItem}>
+    <div className={styles.queueRow}>
+      <span className={styles.queueIcon} aria-hidden="true"><AliIcon name="arrowright" size={13} /></span>
+      <span className={styles.queuePreview} title={item.text}>{item.text}</span>
+      <button type="button" className={styles.queueMode} disabled={pending} title={t("chat.restoreQueue")} onClick={() => void run("queue")}><AliIcon name="arrowdown" size={12} />{t("chat.queueSend")}</button>
+      <button type="button" className={styles.queueAction} disabled={pending} aria-label={t("chatCommands.cancel")} title={t("chatCommands.cancel")} onClick={() => void run("delete")}><AliIcon name="delete" size={14} /></button>
+    </div>
+    {error && <p role="alert" className={styles.queueError}>{error}</p>}
+  </div>;
+}
+
+export function ChatCommandQueue({ records, actions, pendingMessages, onRecall, onPendingAction }: { records: ChatCommandView[]; actions: ChatCommandQueueActions; pendingMessages?: { steering: string[]; followUp: string[]; pendingInputs?: { id: string; commandId?: string; text: string; kind: "steer" | "followUp" }[] } | null; onRecall?: () => void | Promise<void>; onPendingAction?: (id: string, action: "queue" | "delete") => Promise<void> }) {
   const { t } = useI18n();
   const [recalling, setRecalling] = useState(false);
-  const waiting = records.filter(record => record.status === "queued" || record.status === "accepted");
+  const runtimeIds = new Set(pendingMessages?.pendingInputs?.map(item => item.commandId).filter(Boolean));
+  const waiting = records.filter(record => !runtimeIds.has(record.commandId) && (record.status === "queued" || record.status === "accepted" || !record.operation && record.status === "dispatching"));
   const delivered = [...(pendingMessages?.steering ?? []).map(text => ({ text, label: t("chat.steer") })), ...(pendingMessages?.followUp ?? []).map(text => ({ text, label: t("chat.followUp") }))];
   if (!waiting.length && !delivered.length) return null;
   return <section className={styles.queue} aria-label={t("chatCommands.next")}>
     <div className={styles.queueList}>
-      {delivered.map(({ text, label }, index) => <div key={`delivered-${index}`} className={styles.queueItem} role="status">
+      {pendingMessages?.pendingInputs && onPendingAction ? pendingMessages.pendingInputs.map(item => <PendingInputRow key={item.id} item={item} onAction={onPendingAction} />) : delivered.map(({ text, label }, index) => <div key={`delivered-${index}`} className={styles.queueItem} role="status">
         <div className={styles.queueRow}>
           <span className={styles.queueIcon} aria-hidden="true"><AliIcon name="arrowright" size={13} /></span>
           <span className={styles.queuePreview} title={text}>{text}</span>

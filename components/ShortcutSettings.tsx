@@ -123,7 +123,7 @@ export function ShortcutSettings({ globalShortcutEnabled, onGlobalShortcutToggle
                   <h3 id={`shortcut-group-${group.id}`}>{t(group.titleKey)}</h3>
                   <p>{t(group.descriptionKey)}</p>
                 </div>
-                <span className={styles.groupCount}>{items.length + (group.id === "input" ? 3 : 0)}</span>
+                <span className={styles.groupCount}>{items.length + (group.id === "input" ? 2 : 0)}</span>
               </div>
               <div className={styles.list}>
                 {group.id === "input" && <ChatShortcutSettings />}

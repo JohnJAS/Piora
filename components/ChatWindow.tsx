@@ -218,7 +218,7 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     pendingScrollToUserRef,
     handleSend, handleAbort, handleFork, handleNavigate, handleRewindRecovery, handleModelChange, handleScrollToBottom, pauseHistoryFollow, handleDeleteMessage, deletingMessage,
     handleCompact, handleDismissCompactError, handleDismissCompactResult, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
-    handleRecallQueue,
+    handlePendingInputAction,
     handleThinkingLevelChange, handleSystemPromptSelection, loadSlashCommands,
   } = useAgentSession({
     session, newSessionCwd, newSessionInitialModel,
@@ -647,8 +647,8 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
     resume: async record => { await queueAction(record, "resume"); },
   }), [queueAction, editQueuedDraft]);
   const composerQueueContent = useMemo(() => (
-    <ChatCommandQueue records={chatCommands.records} actions={queueActions} pendingMessages={queuedMessages} onRecall={handleRecallQueue} />
-  ), [chatCommands.records, queueActions, queuedMessages, handleRecallQueue]);
+    <ChatCommandQueue records={chatCommands.records} actions={queueActions} pendingMessages={queuedMessages} onPendingAction={handlePendingInputAction} />
+  ), [chatCommands.records, queueActions, queuedMessages, handlePendingInputAction]);
 
   const chatInputElement = (
     <>

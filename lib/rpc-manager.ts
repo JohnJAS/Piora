@@ -16,7 +16,7 @@ import { readPendingSessionModel, clearPendingSessionModel } from "./session-mod
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, type AgentSessionServices } from "@earendil-works/pi-coding-agent";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { snapshotQueuedInputs, sameQueuedInputs } from "./queued-input-recall";
+import { snapshotQueuedInputs, sameQueuedInputs, prepareQueuedInputRemoval } from "./queued-input-recall";
 import { randomUUID } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import { assertSessionNotMutating, drainSessionFileOperations, runSessionFileOperation, trackSessionFileOperation } from "./session-mutation";
@@ -307,21 +307,39 @@ export class AgentSessionWrapper {
   private projectManaged: boolean;
   private readonly queueSource = new AsyncLocalStorage<string | undefined>();
   private readonly queueSources = new WeakMap<object, string>();
+  private readonly seenQueuedInputs = new WeakSet<object>();
   private readonly queuedInputReceipts = new Map<string, { consumed: () => Promise<void>; cancelled: () => Promise<void> }>();
   private stoppedInputRecovery: Promise<void> = Promise.resolve();
   private readonly _projectRoot: string;
   private _alive = true;
   readonly nativeMcp?: NativeMcpController;
 
-  prepareQueueRecall() {
+  private readonly pendingInputIds = new WeakMap<object, string>();
+  private pendingInputId(message: object): string {
+    let id = this.pendingInputIds.get(message);
+    if (!id) { id = randomUUID(); this.pendingInputIds.set(message, id); }
+    return id;
+  }
+  getPendingInputs() {
+    try {
+      const labels = [...this.inner.getSteeringMessages(), ...this.inner.getFollowUpMessages()];
+      const count = this.inner.getSteeringMessages().length;
+      return snapshotQueuedInputs(this.inner).map((message, index) => ({ id: this.pendingInputId(message), commandId: this.queueSources.get(message), text: labels[index], kind: index < count ? "steer" as const : "followUp" as const }));
+    } catch { return []; }
+  }
+
+  prepareQueueRecall(inputId?: string) {
     const snapshot = snapshotQueuedInputs(this.inner);
+    const selected = inputId ? snapshot.filter(message => this.pendingInputId(message) === inputId) : snapshot;
+    if (inputId && selected.length !== 1) throw new Error("This message is no longer waiting.");
+    const remove = inputId ? prepareQueuedInputRemoval(this.inner, selected[0]) : undefined;
     return {
-      messages: snapshot.map(message => ({ message, commandId: this.queueSources.get(message) })),
+      messages: selected.map(message => ({ message, commandId: this.queueSources.get(message) })),
       commit: (persist: () => void) => {
         if (!this._alive || !sameQueuedInputs(snapshot, snapshotQueuedInputs(this.inner))) throw new Error("The pending queue changed. Retry recalling the remaining messages.");
         // No await between identity check, durable archive, and SDK dequeue.
-        persist();
-        for (const message of snapshot) {
+        if (remove) remove(persist); else persist();
+        for (const message of selected) {
           const source = this.queueSources.get(message);
           const receipt = source ? this.queuedInputReceipts.get(source) : undefined;
           if (source && receipt) {
@@ -329,7 +347,8 @@ export class AgentSessionWrapper {
             void receipt.consumed().catch(error => console.error("[pi-web] recalled input receipt failed", error));
           }
         }
-        this.inner.clearQueue();
+        if (!remove) this.inner.clearQueue();
+        else this.emit({ type: "queue_update", steering: [...this.inner.getSteeringMessages()], followUp: [...this.inner.getFollowUpMessages()] });
       },
     };
   }
@@ -369,7 +388,10 @@ export class AgentSessionWrapper {
       if (enqueue) inner.agent[delivery] = message => {
         if (message.role === "user") this.promptInputEnrichment.apply(message as { content?: unknown });
         const source = this.queueSource.getStore();
-        if (source) this.queueSources.set(message, source);
+        if (!this.seenQueuedInputs.has(message)) {
+          if (source) this.queueSources.set(message, source);
+          this.seenQueuedInputs.add(message);
+        }
         enqueue(message);
       };
     }
@@ -1104,6 +1126,16 @@ export class AgentSessionWrapper {
   }
 
   private emit(event: AgentEvent): void {
+    if (event.type === "queue_update") {
+      // SDK emits its labels before enqueueing the actual message. Read both
+      // together after that synchronous operation, never publish a partial list.
+      queueMicrotask(() => {
+        if (!this._alive) return;
+        const update = { type: "queue_update", steering: [...this.inner.getSteeringMessages()], followUp: [...this.inner.getFollowUpMessages()], pendingInputs: this.getPendingInputs() };
+        for (const listener of this.listeners) listener(update);
+      });
+      return;
+    }
     if (isRunProgressEvent(event.type)) this.lastProgressAt = Date.now();
     if (event.type === "compaction_start" || event.type === "auto_compaction_start") {
       event = { ...event, compactionStartedAt: this.compactionStartedAt };
@@ -1500,6 +1532,7 @@ export class AgentSessionWrapper {
           messageCount: 0,
           pendingMessageCount: this.inner.pendingMessageCount,
           queuedMessages: {
+            pendingInputs: this.getPendingInputs(),
             steering: [...this.inner.getSteeringMessages()],
             followUp: [...this.inner.getFollowUpMessages()],
           },

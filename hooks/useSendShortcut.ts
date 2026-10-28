@@ -25,7 +25,7 @@ function commitBindings(bindings: ChatShortcutBindings, persist: boolean): void 
       // Keep the preference active for this renderer when storage is unavailable.
     }
   }
-  if (bindings.send === currentBindings.send && bindings.steer === currentBindings.steer && bindings.newline === currentBindings.newline) return;
+  if (bindings.send === currentBindings.send && bindings.newline === currentBindings.newline) return;
   currentBindings = bindings;
   listeners.forEach((listener) => listener());
 }
@@ -64,5 +64,5 @@ export function useSendShortcut() {
   }, []);
   const setShortcut = useCallback((value: SendShortcut) => setBinding("send", value), [setBinding]);
   const resetAll = useCallback(() => commitBindings(DEFAULT_CHAT_SHORTCUTS, true), []);
-  return { resetAll, bindings, shortcut: bindings.send, steerShortcut: bindings.steer, newlineShortcut: bindings.newline, setShortcut, setBinding };
+  return { resetAll, bindings, shortcut: bindings.send, newlineShortcut: bindings.newline, setShortcut, setBinding };
 }

@@ -3160,7 +3160,21 @@ select:focus-visible,
   color: var(--bg);
   cursor: pointer;
 }
-.streaming-action-primary { width: 32px; padding: 0; border-radius: 50%; }
+.streaming-send-button { display: inline-flex; align-items: stretch; background: var(--text); color: var(--bg); border-radius: var(--radius-control); }
+.streaming-action-primary { width: auto; padding: 0 8px 0 10px; gap: 6px; border-radius: var(--radius-control) 0 0 var(--radius-control); }
+.streaming-mode-picker { display: inline-flex; width: 26px; align-items: center; justify-content: center; border: 0; border-radius: 0 var(--radius-control) var(--radius-control) 0; background: transparent; color: inherit; cursor: pointer; }
+.streaming-mode-picker:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.streaming-send-button:hover { filter: brightness(.94); }
+.streaming-mode-picker:hover { color: color-mix(in srgb, var(--bg) 75%, transparent); }
+.streaming-mode-menu { position: fixed; inset: auto; margin: 0; max-width: calc(100vw - 16px); padding: 0; border: 0; border-radius: var(--radius-control); background: var(--text); color: var(--bg); box-shadow: 0 3px 10px #0002; }
+.streaming-mode-menu:popover-open { display: flex; animation: streaming-send-expand 160ms cubic-bezier(.2,.8,.2,1); }
+@keyframes streaming-send-expand { from { clip-path: inset(50% 0 0 0 round var(--radius-control)); } to { clip-path: inset(0 round var(--radius-control)); } }
+@media (prefers-reduced-motion: reduce) { .streaming-mode-menu:popover-open { animation: none; } }
+.streaming-mode-actions { flex: 1; min-width: 0; }
+.streaming-mode-actions > button { display: flex; align-items: center; width: 100%; height: 32px; gap: 6px; padding: 0 8px 0 10px; border: 0; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.streaming-mode-collapse { display: flex; align-items: center; justify-content: center; width: 26px; padding: 0; border: 0; color: inherit; background: transparent; cursor: pointer; }
+.streaming-mode-actions > button:hover, .streaming-mode-collapse:hover { opacity: .78; }
+.streaming-mode-actions > button:focus-visible, .streaming-mode-collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .streaming-action-primary:hover { opacity: .84; }
 .streaming-stop-button { width: 32px; padding: 0; border-radius: 50%; }
 

@@ -8,7 +8,7 @@ import { DEFAULT_CHAT_SHORTCUTS, recordChatShortcut, type ChatShortcutAction, ty
 import { AliIcon } from "./AliIcon";
 import shortcuts from "./ShortcutSettings.module.css";
 
-const actions = ["send", "steer", "newline"] as const;
+const actions = ["send", "newline"] as const;
 
 export function ChatShortcutSettings() {
   const { t } = useI18n();
