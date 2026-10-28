@@ -99,7 +99,6 @@ export function ChatCommandCard({ record, actions }: { record: ChatCommandView; 
 }
 
 export interface ChatCommandQueueActions {
-  recover(record: ChatCommandView): Promise<void>;
   cancel(record: ChatCommandView): Promise<void>;
   steer(record: ChatCommandView): Promise<void>;
   edit(record: ChatCommandView): Promise<string>;
@@ -180,35 +179,12 @@ function QueuedCommandRow({ record, actions }: { record: ChatCommandView; action
   </div>;
 }
 
-function UnsentCommandRow({ record, actions }: { record: ChatCommandView; actions: ChatCommandQueueActions }) {
-  const { t } = useI18n();
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const recover = async () => {
-    if (pending) return;
-    setPending(true); setError(null);
-    try { await actions.recover(record); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-    finally { setPending(false); }
-  };
-  return <div className={styles.queueItem}>
-    <div className={styles.queueRow}>
-      <span className={styles.queueIcon} aria-hidden="true"><AliIcon name="menu" size={13} /></span>
-      <button type="button" className={styles.queuePreview} title={record.preview} disabled={pending} onClick={() => void recover()}>{record.preview}</button>
-      <span className={styles.queueMode}>{t("chatCommands.unsent")}</span>
-      <button type="button" className={styles.queueMode} disabled={pending} onClick={() => void recover()}>{t("chatCommands.editMessage")}</button>
-    </div>
-    {(error || record.errorMessage) && <p role="alert" className={styles.queueError}>{error || record.errorMessage}</p>}
-  </div>;
-}
-
 export function ChatCommandQueue({ records, actions, pendingMessages, onRecall }: { records: ChatCommandView[]; actions: ChatCommandQueueActions; pendingMessages?: { steering: string[]; followUp: string[] } | null; onRecall?: () => void | Promise<void> }) {
   const { t } = useI18n();
   const [recalling, setRecalling] = useState(false);
   const waiting = records.filter(record => record.status === "queued" || record.status === "accepted");
   const delivered = [...(pendingMessages?.steering ?? []).map(text => ({ text, label: t("chat.steer") })), ...(pendingMessages?.followUp ?? []).map(text => ({ text, label: t("chat.followUp") }))];
-  const unsent = records.filter(record => !record.operation && ["failed", "interrupted", "expired"].includes(record.status));
-  if (!waiting.length && !delivered.length && !unsent.length) return null;
+  if (!waiting.length && !delivered.length) return null;
   return <section className={styles.queue} aria-label={t("chatCommands.next")}>
     <div className={styles.queueList}>
       {delivered.map(({ text, label }, index) => <div key={`delivered-${index}`} className={styles.queueItem} role="status">
@@ -219,7 +195,6 @@ export function ChatCommandQueue({ records, actions, pendingMessages, onRecall }
           {index === 0 && onRecall && <button type="button" className={styles.queueAction} disabled={recalling} onClick={() => { setRecalling(true); void Promise.resolve().then(onRecall).finally(() => setRecalling(false)); }} title={t("chat.recallTitle")} aria-label={t("chat.recall")}><AliIcon name="history" size={14} /></button>}
         </div>
       </div>)}
-      {unsent.map(record => <UnsentCommandRow key={record.commandId} record={record} actions={actions} />)}
       {waiting.map(record => <QueuedCommandRow key={record.commandId} record={record} actions={actions} />)}
     </div>
   </section>;

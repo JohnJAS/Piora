@@ -144,9 +144,10 @@ interface Props {
   entryId?: string;
   onFork?: (entryId: string) => void;
   forking?: boolean;
-  onNavigate?: (entryId: string) => void;
+  onNavigate?: (entryId: string) => Promise<boolean>;
   prevAssistantEntryId?: string;
   onEditContent?: (content: string) => void;
+  onEditFailed?: (message: UserMessage) => Promise<void>;
   onRetry?: (message: UserMessage, entryId?: string) => Promise<void>;
   retryDisabled?: boolean;
   showTimestamp?: boolean;
@@ -215,13 +216,13 @@ export const MessageView = memo(function MessageView(props: Props) {
   const history = props.mode === "history";
   return <HistoryModeContext.Provider value={history}><HistoryVersionContext.Provider value={props.historyVersion}><MessageContent {...props}
     onFork={history ? undefined : props.onFork} onNavigate={history ? undefined : props.onNavigate}
-    onRetry={history ? undefined : props.onRetry} onEditContent={history ? undefined : props.onEditContent}
+    onEditFailed={history ? undefined : props.onEditFailed} onRetry={history ? undefined : props.onRetry} onEditContent={history ? undefined : props.onEditContent}
     onOpenAutomation={history ? undefined : props.onOpenAutomation} /></HistoryVersionContext.Provider></HistoryModeContext.Provider>;
 });
 
-const MessageContent = memo(function MessageContent({ mode, messageActions, message, isStreaming, intermediate, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onRetry, retryDisabled, showTimestamp, prevTimestamp, responseStartedAt, sessionId, onOpenAutomation, onOpenCommandExecution }: Props) {
+const MessageContent = memo(function MessageContent({ mode, messageActions, message, isStreaming, intermediate, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onEditFailed, onRetry, retryDisabled, showTimestamp, prevTimestamp, responseStartedAt, sessionId, onOpenAutomation, onOpenCommandExecution }: Props) {
   if (message.role === "user") {
-    return <UserMessageView messageActions={messageActions} message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} onRetry={onRetry} retryDisabled={retryDisabled} sessionId={sessionId} />;
+    return <UserMessageView messageActions={messageActions} message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} onEditFailed={onEditFailed} onRetry={onRetry} retryDisabled={retryDisabled} sessionId={sessionId} />;
   }
   if (message.role === "assistant") {
     return <AssistantMessageView messageActions={messageActions} message={message as AssistantMessage} isStreaming={isStreaming} intermediate={intermediate} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} responseStartedAt={responseStartedAt} sessionId={sessionId} entryId={entryId} onOpenAutomation={onOpenAutomation} onOpenCommandExecution={onOpenCommandExecution} />;
@@ -268,6 +269,7 @@ const MessageContent = memo(function MessageContent({ mode, messageActions, mess
     && prev.onNavigate === next.onNavigate
     && prev.prevAssistantEntryId === next.prevAssistantEntryId
     && prev.onEditContent === next.onEditContent
+    && prev.onEditFailed === next.onEditFailed
     && prev.onRetry === next.onRetry
     && prev.retryDisabled === next.retryDisabled
     && prev.showTimestamp === next.showTimestamp
@@ -277,7 +279,7 @@ const MessageContent = memo(function MessageContent({ mode, messageActions, mess
     && prev.onOpenCommandExecution === next.onOpenCommandExecution;
 });
 
-function UserMessageView({ messageActions, message, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onRetry, retryDisabled, sessionId }: {
+function UserMessageView({ messageActions, message, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onEditFailed, onRetry, retryDisabled, sessionId }: {
   messageActions?: ReactNode;
   message: UserMessage;
   cwd?: string;
@@ -285,9 +287,10 @@ function UserMessageView({ messageActions, message, cwd, onOpenFile, entryId, on
   entryId?: string;
   onFork?: (entryId: string) => void;
   forking?: boolean;
-  onNavigate?: (entryId: string) => void;
+  onNavigate?: (entryId: string) => Promise<boolean>;
   prevAssistantEntryId?: string;
   onEditContent?: (content: string) => void;
+  onEditFailed?: (message: UserMessage) => Promise<void>;
   onRetry?: (message: UserMessage, entryId?: string) => Promise<void>;
   retryDisabled?: boolean;
   sessionId?: string;
@@ -325,7 +328,7 @@ function UserMessageView({ messageActions, message, cwd, onOpenFile, entryId, on
   const time = formatTime(message.timestamp);
   const sendError = message.sendError;
   const canFork = !!entryId && !!onFork;
-  const canNavigate = !!prevAssistantEntryId && !!onNavigate;
+  const canNavigate = !!entryId && !!prevAssistantEntryId && !!onNavigate;
   const contentPreview = useMemo(() => {
     const preview = getUserMessagePreview(content);
     return hasDeferredContent
@@ -503,6 +506,11 @@ function UserMessageView({ messageActions, message, cwd, onOpenFile, entryId, on
               )}
                {copied ? t("i18n.copied") : t("i18n.copy")}
             </button>
+            {message.sendError && message.recoveryDraft && onEditFailed && <button type="button" disabled={retryDisabled || retrying}
+              onClick={() => { if (retrying || retryDisabled) return; setRetryError(null); setRetrying(true); void onEditFailed(message).catch(reason => setRetryError(reason instanceof Error ? reason.message : String(reason))).finally(() => setRetrying(false)); }}
+              style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: "var(--text-xs)" }}>
+              <AliIcon name="history" size={11} />{t("i18n.editFromHere")}
+            </button>}
             {messageActions}
           </div>
           {(canFork || canNavigate) && (
@@ -514,11 +522,14 @@ function UserMessageView({ messageActions, message, cwd, onOpenFile, entryId, on
             }}>
               {canNavigate && (
                 <button
+                  disabled={retrying || retryDisabled}
                   onClick={() => {
-                    void loadFullContent().then((fullContent) => {
-                      onNavigate!(prevAssistantEntryId!);
-                      onEditContent?.(fullContent);
-                    }).catch(() => {});
+                    if (retrying || retryDisabled) return;
+                    setRetrying(true); setRetryError(null);
+                    void loadFullContent().then(async (fullContent) => {
+                      if (await onNavigate!(prevAssistantEntryId!)) onEditContent?.(fullContent);
+                    }).catch(reason => setRetryError(reason instanceof Error ? reason.message : String(reason)))
+                      .finally(() => setRetrying(false));
                   }}
                    title={t("i18n.editFromHereTitle")}
                   style={{

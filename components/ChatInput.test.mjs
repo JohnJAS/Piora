@@ -442,3 +442,14 @@ test("compaction uses a quiet progress row and closes the model menu when starte
   assert.match(chatInputSource, /setModelDropdownOpen\(false\);[\s\S]*?onCompact\(\)/);
   assert.doesNotMatch(chatInputSource, /model-settings-row\$\{isCompacting \? " is-danger"/);
 });
+
+test("composer queue excludes terminal submissions and retains actual waiting messages and controls", () => {
+  const terminal = ["failed", "interrupted", "expired", "completed", "cancelled"].map(status => ({ commandId: status, status, preview: `terminal-${status}`, errorMessage: "old failure" }));
+  const renderQueue = records => renderToStaticMarkup(React.createElement(I18nProvider, null, React.createElement(ChatCommandQueue, { records, actions: {} })));
+  assert.equal(renderQueue(terminal), "");
+  const html = renderQueue([...terminal, { commandId: "waiting", status: "queued", preview: "still waiting" }, { commandId: "accepted", status: "accepted", preview: "just accepted" }]);
+  assert.match(html, /still waiting/);
+  assert.match(html, /just accepted/);
+  assert.doesNotMatch(html, /terminal-|old failure/);
+  assert.match(html, /取消/);
+});

@@ -152,27 +152,23 @@ test("sending waits for the final dictation and preserves the draft when decodin
   await send(); assert.deepEqual(sent, ["完整的最后一句。"]);
 });
 
-test("sending an automatically restored failed draft links retries and resets after success", async () => {
+test("durably saved failed sends leave the composer empty and preserve independent new sends", async () => {
   const submissions = [];
   const { env, send } = composer(async (...args) => {
     submissions.push(args);
-    args[3](`send-${submissions.length}`);
-    return submissions.length >= 3;
+    args[3]("send-1");
+    return false;
   });
   await send();
-  assert.equal(env.value, " original\nmessage ");
-  assert.equal(env.attachedImages[0].data, "YWJj");
-  assert.equal(env.attachedFiles[0].text, "full attachment");
-  assert.deepEqual(env.retryOfPromptIdsRef.current, ["send-1"]);
-  await send();
-  assert.deepEqual(submissions[1][4], ["send-1"]);
-  await send();
-  assert.deepEqual(submissions[2][4], ["send-2", "send-1"]);
   assert.equal(env.value, "");
+  assert.deepEqual(env.attachedImages, []);
+  assert.deepEqual(env.attachedFiles, []);
   assert.deepEqual(env.retryOfPromptIdsRef.current, []);
-  env.setValue(" original\nmessage ");
+  assert.equal(env.drafts.has("session"), false);
+  env.setValue("new message");
   await send();
-  assert.equal(submissions[3][4], undefined, "a fresh same-text send must be independent");
+  assert.equal(submissions[1][0], "new message");
+  assert.equal(submissions[1][4], undefined);
 });
 
 for (const change of ["new input", "different session"]) {
@@ -190,3 +186,19 @@ for (const change of ["new input", "different session"]) {
     assert.deepEqual(env.attachedFiles, []);
   });
 }
+
+const windowSource = readFileSync(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
+const editStart = windowSource.indexOf("  const handleEditFailedMessage = useCallback");
+const editJs = ts.transpileModule(windowSource.slice(editStart, windowSource.indexOf("  const retryInFlight", editStart)), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+test("explicit edit restores all failed message materials and retry identity without overwriting a busy composer", async () => {
+  const draft = { value: "hello", images: [{ data: "abc", mimeType: "image/png" }], files: [{ name: "note", text: "body" }], replySpans: [], commandInput: { inputMode: "text" }, retryOfPromptIds: ["older"] };
+  let restored, focused = false, busy = false;
+  const ref = { current: { restoreCommandDraft: value => { if (busy) return false; restored = value; return true; }, focus: () => { focused = true; } } };
+  const edit = new Function("useCallback", "chatInputRef", "t", "handleRewindRecovery", `${editJs}; return handleEditFailedMessage;`)(fn => fn, ref, key => key, async () => true);
+  await edit({ recoveryDraft: draft, clientPromptId: "failed" });
+  assert.deepEqual(restored, { ...draft, retryOfPromptIds: ["failed", "older"] });
+  assert.equal(focused, true);
+  busy = true; focused = false;
+  await assert.rejects(edit({ recoveryDraft: draft }), /composerBusy/);
+  assert.equal(focused, false);
+});

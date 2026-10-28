@@ -4,6 +4,7 @@ export const PROMPT_RECOVERY_CONFIRMED_EVENT = "piora-prompt-recovery-confirmed"
 
 export interface PendingPrompt {
   dismissed?: boolean;
+  branchAnchorId?: string;
   id: string;
   scope: string;
   message: UserMessage;
@@ -84,6 +85,21 @@ export async function confirmPendingPrompts(ids: string[]): Promise<void> {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(PROMPT_RECOVERY_CONFIRMED_EVENT, { detail: ids }));
 }
 
+/** Replace only explicitly linked failed recovery rows, preserving history entry alignment. */
+export function replaceFailedPromptMessage(messages: AgentMessage[], entryIds: string[], next: UserMessage) {
+  const replacedIds = new Set(next.recoveryDraft?.retryOfPromptIds ?? []);
+  const result: AgentMessage[] = [];
+  const ids: string[] = [];
+  let inserted = false;
+  messages.forEach((message, index) => {
+    if (message.role === "user" && message.clientPromptId && replacedIds.has(message.clientPromptId) && (message.sendError || message.sendUnconfirmed) && !entryIds[index]) {
+      if (!inserted) { result.push(next); ids.push(""); inserted = true; }
+    } else { result.push(message); ids.push(entryIds[index] ?? ""); }
+  });
+  if (!inserted) { result.push(next); ids.push(""); }
+  return { messages: result, entryIds: ids };
+}
+
 /** A matching receipt ID, never matching text, is proof this exact send is durable. */
 export function mergePendingPrompts(messages: AgentMessage[], entryIds: string[], pending: PendingPrompt[], persistedIds: string[] = []) {
   const displayed = new Set(messages.flatMap((message) => message.role === "user" && message.clientPromptId ? [message.clientPromptId] : []));
@@ -98,7 +114,13 @@ export function mergePendingPrompts(messages: AgentMessage[], entryIds: string[]
       receipts.push(id);
     }
   }
-  const missing = pending.filter((record) => !record.message.commandSubmission && !displayed.has(record.id) && !confirmed.has(record.id)).sort((a, b) => (a.message.timestamp ?? Infinity) - (b.message.timestamp ?? Infinity));
+  const visiblePending = pending.filter(record => !record.branchAnchorId || entryIds.includes(record.branchAnchorId));
+  // A durable replacement hides its linked failures without deleting their backup.
+  // Confirmation still depends exclusively on disk receipts.
+  const superseded = new Set(visiblePending.flatMap(record => record.draft.retryOfPromptIds ?? []));
+  const position = (record: PendingPrompt) => Math.min(record.message.timestamp ?? Infinity,
+    ...(record.draft.retryOfPromptIds ?? []).map(id => byId.get(id)?.message.timestamp ?? Infinity));
+  const missing = visiblePending.filter(record => !superseded.has(record.id) && !record.message.commandSubmission && !displayed.has(record.id) && !confirmed.has(record.id)).sort((a, b) => position(a) - position(b));
   const mergedMessages: AgentMessage[] = [];
   const mergedEntryIds: string[] = [];
   let next = 0;
@@ -110,7 +132,7 @@ export function mergePendingPrompts(messages: AgentMessage[], entryIds: string[]
   // Keep disk history in its original order, inserting local recovery copies
   // beside their send time instead of pinning every old failure to the bottom.
   messages.forEach((message, index) => {
-    while (next < missing.length && (missing[next].message.timestamp ?? Infinity) < (message.timestamp ?? -Infinity)) appendRecovered();
+    while (next < missing.length && position(missing[next]) < (message.timestamp ?? -Infinity)) appendRecovered();
     mergedMessages.push(message);
     mergedEntryIds.push(entryIds[index] ?? "");
   });
