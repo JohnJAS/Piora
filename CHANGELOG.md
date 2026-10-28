@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 数据目录保护
+
+- 更换 Pi 数据目录时，禁止选择 Piora 安装目录及其子目录（包括通过目录链接指向的路径），在迁移或停止服务前提示升级、卸载可能清理数据的风险。
+
 ### 依赖与兼容性
 
 - 语言服务通信固定升级至 vscode-jsonrpc 10.0.0；新增真实双向流回归，验证 ArkTS 初始化、服务器配置请求、文档同步、悬停及错误与超时后的连接清理。

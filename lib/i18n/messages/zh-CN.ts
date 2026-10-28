@@ -709,6 +709,7 @@ export const zhCNLocale: LocalePlugin = {
     "settings.agentDataDirectoryError.invalid-path": "请选择专用文件夹，不能使用磁盘根目录或用户主目录。",
     "settings.agentDataDirectoryError.same-path": "选择的文件夹就是当前数据目录。",
     "settings.agentDataDirectoryError.overlapping-path": "新旧目录不能互相包含，请选择另一处文件夹。",
+    "settings.agentDataDirectoryError.installation-path": "不能将 Pi 数据目录放在 Piora 安装目录或其子目录中，升级或卸载可能清理这些文件。请选择安装目录之外的独立文件夹。",
     "settings.agentDataDirectoryError.target-not-empty": "迁移目标文件夹必须为空，不会覆盖其中已有的数据。",
     "settings.agentDataDirectoryError.migration-failed": "无法准备新的数据目录，请检查路径、权限和剩余空间。",
     "settings.agentDataDirectoryError.persist-failed": brandText("数据已准备好，但无法保存新路径；Piora 未切换目录。"),

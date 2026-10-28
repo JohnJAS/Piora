@@ -709,6 +709,7 @@ export const enLocale: LocalePlugin = {
     "settings.agentDataDirectoryError.invalid-path": "Choose a dedicated folder rather than a drive root or your home directory.",
     "settings.agentDataDirectoryError.same-path": "The selected folder is already the active data folder.",
     "settings.agentDataDirectoryError.overlapping-path": "The old and new folders cannot contain one another. Choose a different folder.",
+    "settings.agentDataDirectoryError.installation-path": "The Pi data directory cannot be inside the Piora installation folder. Updates or uninstalling may remove these files. Choose a separate folder outside the installation.",
     "settings.agentDataDirectoryError.target-not-empty": "The migration destination must be empty; existing data is never overwritten.",
     "settings.agentDataDirectoryError.migration-failed": "The new data folder could not be prepared. Check the path, permissions, and available space.",
     "settings.agentDataDirectoryError.persist-failed": brandText("The data was prepared, but the new path could not be saved. Piora did not switch folders."),

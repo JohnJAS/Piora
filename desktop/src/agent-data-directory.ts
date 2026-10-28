@@ -1,12 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createReadStream, constants as fsConstants } from "node:fs";
+import { createReadStream, realpathSync, constants as fsConstants } from "node:fs";
 import { access, cp, lstat, mkdir, readlink, readdir, rename, rm } from "node:fs/promises";
-import { dirname, join, parse, relative, resolve } from "node:path";
+import { basename, dirname, join, parse, relative, resolve } from "node:path";
 
 export type AgentDataDirectoryErrorCode =
   | "invalid-path"
   | "same-path"
   | "overlapping-path"
+  | "installation-path"
   | "target-not-empty"
   | "migration-failed";
 
@@ -30,10 +31,23 @@ function isPathWithin(parent: string, child: string): boolean {
     && !parse(pathFromParent).root;
 }
 
+// Resolve the nearest existing ancestor so new folders below junctions are checked too.
+function physicalPath(directory: string): string {
+  try {
+    return realpathSync.native(directory);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    const parent = dirname(directory);
+    if (parent === directory) throw error;
+    return join(physicalPath(parent), basename(directory));
+  }
+}
+
 export function validateAgentDataDirectory(
   requestedDirectory: string,
   currentDirectory: string,
   homeDirectory: string,
+  installationDirectory?: string,
 ): string {
   const trimmed = requestedDirectory.trim();
   if (!trimmed) throw new AgentDataDirectoryError("invalid-path", "The Pi data directory is required.");
@@ -41,6 +55,18 @@ export function validateAgentDataDirectory(
   const target = resolve(trimmed);
   const targetComparable = comparablePath(target);
   const currentComparable = comparablePath(currentDirectory);
+  if (installationDirectory) {
+    const installation = comparablePath(resolve(installationDirectory));
+    const physicalInstallation = comparablePath(physicalPath(resolve(installationDirectory)));
+    const physicalTarget = comparablePath(physicalPath(target));
+    if (targetComparable === installation || isPathWithin(installation, targetComparable)
+      || physicalTarget === physicalInstallation || isPathWithin(physicalInstallation, physicalTarget)) {
+      throw new AgentDataDirectoryError(
+        "installation-path",
+        "The Pi data directory cannot be inside the Piora installation folder. Updates or uninstalling may remove these files. Choose a separate folder outside the installation.",
+      );
+    }
+  }
   if (targetComparable === comparablePath(parse(target).root) || targetComparable === comparablePath(homeDirectory)) {
     throw new AgentDataDirectoryError("invalid-path", "Choose a dedicated folder instead of a drive root or home directory.");
   }
