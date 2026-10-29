@@ -4,6 +4,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+- 模型供应商目录统一图标与名称对齐；模型行的启用开关移到最右侧，上下文改为 K/M 标签，连接测试提供悬浮说明和底部绿色成功提示。自定义模型支持长按拖动和 Alt + 方向键排序，并自动保存。
+
 ### 模型配置
 
 - 未配置的内置模型不再自动生成供应商；修复内置供应商密钥输入框挤压控件、模型弹窗输入框越界以及大量识别结果无法滚动的问题。

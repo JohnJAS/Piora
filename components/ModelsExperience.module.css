@@ -20,8 +20,10 @@
 .catalog { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .catalogItem { display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 16px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
 .catalogItem:hover { background: var(--bg-hover); }
-.catalogItem span:first-of-type { flex: 1; }
-.catalogItem span:last-child { color: var(--text-dim); }
+.catalogItem { display: grid; grid-template-columns: 28px minmax(0, 1fr) 12px; }
+.catalogItem > :first-child { justify-self: center; }
+.catalogItem > span:nth-last-child(2) { min-width: 0; overflow-wrap: anywhere; }
+.catalogItem > span:last-child { color: var(--text-dim); }
 .providerHeader { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; min-height: 28px; }
 .providerHeader h3 { font-size: var(--text-md); margin: 0; flex: 1; }
 .root .providerName { border: 0; font-weight: 600; background: transparent; font-size: var(--text-md); flex: 1; min-width: 0; padding: 3px 0; }
@@ -50,8 +52,13 @@
 .modelRow + .modelRow { border-top: 1px solid var(--border); }
 .modelRow { padding: 9px; }
 .modelLine { display: flex; gap: 5px; align-items: center; }
-.modelIdentity { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; font-family: var(--font-mono); }
-.modelIdentity > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.modelIdentity { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1; padding: 3px; font-family: var(--font-mono); }
+.modelIdentity > span { min-width: 0; overflow-wrap: anywhere; }
+.modelIdentity[role=button] { cursor: grab; touch-action: none; user-select: none; }
+.modelRow[data-dragging=true] { opacity: .55; }
+.modelRow[data-drop-target=true] { box-shadow: inset 0 2px var(--accent); background: var(--bg-hover); }
+.modelIdentity .contextBadge { flex-shrink: 0; padding: 1px 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); font-size: var(--text-xs); color: var(--text-muted); }
+.testToast { position: fixed; z-index: 250; bottom: 24px; left: 50%; transform: translateX(-50%); max-width: min(520px, calc(100vw - 32px)); padding: 12px 18px; border: 1px solid #86c99c; border-radius: 9px; background: #ecfdf3; color: #166534; box-shadow: 0 6px 24px #0002; }
 .modelIdentity small { font-family: inherit; color: var(--text-muted); font-size: var(--text-xs); white-space: nowrap; }
 .empty { margin: 0; padding: 16px; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.65; }
 .hint, .footnote { color: var(--text-muted); font-size: var(--text-xs); line-height: 1.6; }

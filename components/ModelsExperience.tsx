@@ -183,8 +183,8 @@ function Glyph({ name }: { name: GlyphName }) {
   const paths = { plus: "M12 5v14M5 12h14", edit: "m16 3 5 5-12 12-6 1 1-6Z M14 5l5 5", trash: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7", test: "m8 3 4 4-5 5-4-4Zm8 18-4-4 5-5 4 4ZM10 10l4 4M2 2l3 3m14 14 3 3", refresh: "M20 7a9 9 0 1 0 1 8M20 2v6h-6", star: "m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z", close: "m6 6 12 12M6 18 18 6", eye: "M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6" };
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
 }
-function IconButton({ label, icon, onClick, disabled }: { label: string; icon: GlyphName; onClick: () => void; disabled?: boolean }) {
-  return <button type="button" className={styles.iconButton} aria-label={label} title={label} onClick={onClick} disabled={disabled}><Glyph name={icon} /></button>;
+function IconButton({ label, tooltip = label, icon, onClick, disabled }: { label: string; tooltip?: string; icon: GlyphName; onClick: () => void; disabled?: boolean }) {
+  return <button type="button" className={styles.iconButton} aria-label={label} title={tooltip} onClick={onClick} disabled={disabled}><Glyph name={icon} /></button>;
 }
 function Toggle({ checked, label, disabled, onChange }: { checked: boolean; label: string; disabled?: boolean; onChange: () => void }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} title={label} className={styles.toggle} disabled={disabled} onClick={onChange}><span /></button>;
@@ -206,6 +206,14 @@ function ProviderPanel({ c, initialName, initial, scope, busy, saveProvider, onD
   const discoveryRef = useRef<ReturnType<typeof createDiscoveryAbort> | null>(null);
   const [testStatus, setTestStatus] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const drag = useRef<{ id: string; target: string; active: boolean; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const { locale } = useI18n();
+  const dragLabel = locale === "zh-CN" ? "长按拖动调整模型顺序，也可用 Alt + 上下方向键" : "Hold to reorder; Alt + arrow keys also move models";
+  useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(null), 4000); return () => clearTimeout(timer); }, [toast]);
+  useEffect(() => () => { if (drag.current) clearTimeout(drag.current.timer); }, []);
   const models = provider.models ?? [];
   const managed = (scope?.models ?? []).filter(m => m.provider === initialName);
   const ids = [...new Set([...models.map(m => m.id), ...managed.map(m => m.id)])];
@@ -236,13 +244,28 @@ function ProviderPanel({ c, initialName, initial, scope, busy, saveProvider, onD
   const testModel = async (model: ModelEntry) => {
     if (!valid()) return;
     setTesting(model.id);
+    setToast(null);
     try {
       const result = await jsonRequest<{ ok: boolean }>("/api/models-config/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerName: name.trim(), provider, model }) });
       setTestStatus(current => ({ ...current, [model.id]: result.ok ? c.testOk : c.testFailed }));
+      if (result.ok) { setToast(`${model.name || model.id} · ${c.testOk}`); setTestStatus(current => { const next = { ...current }; delete next[model.id]; return next; }); }
     } catch (cause) { setTestStatus(current => ({ ...current, [model.id]: `${c.testFailed}: ${cause instanceof Error ? cause.message : String(cause)}` })); }
     finally { setTesting(null); }
   };
   const locked = busy || discovering;
+  const reorder = async (from: string, to: string) => {
+    if (locked || changed || from === to) return;
+    const next = [...models], start = next.findIndex(m => m.id === from), end = next.findIndex(m => m.id === to);
+    if (start < 0 || end < 0) return;
+    next.splice(end, 0, ...next.splice(start, 1));
+    await save({ ...provider, models: next });
+  };
+  const finishDrag = (cancelled = false) => {
+    const current = drag.current;
+    if (!current) return;
+    clearTimeout(current.timer); drag.current = null; setDragging(null); setDropTarget(null);
+    if (current.active && !cancelled) void reorder(current.id, current.target);
+  };
   return <>
     <div className={styles.providerHeader}><ModelProviderIcon provider={name} size={20} /><input className={styles.providerName} aria-label={c.name} value={name} disabled={locked} onChange={e => { setName(e.target.value); setChanged(true); onDirty(true); }} />
       {initialName && <><Toggle checked={enabled} label={enabled ? c.disableProvider : c.enableProvider} disabled={locked || changed || scope?.projectOverride || !managed.length} onChange={() => onScope(enabled ? "hide-provider" : "restore-provider")} /><IconButton label={c.deleteProvider} icon="trash" onClick={() => onRemove()} disabled={locked || changed} /></>}
@@ -258,16 +281,22 @@ function ProviderPanel({ c, initialName, initial, scope, busy, saveProvider, onD
       {ids.map(id => {
         const model = models.find(m => m.id === id), row = managed.find(m => m.id === id);
         const isDefault = scope?.effectiveDefault?.provider === initialName && scope?.effectiveDefault?.modelId === id;
-        return <div className={styles.modelRow} key={id}><div className={styles.modelLine}>
-          <div className={styles.modelIdentity}><span>{model?.name || row?.name || id}</span>{model?.contextWindow && <small>{Intl.NumberFormat().format(model.contextWindow)}</small>}{isDefault && <small title={c.defaultModel}>★</small>}</div>
-          {model && <IconButton label={`${c.test} ${id}`} icon="test" disabled={locked || testing !== null} onClick={() => void testModel(model)} />}
-          {row && <Toggle checked={row.enabled} label={`${row.enabled ? c.hideModel : c.enable} ${id}`} disabled={locked || changed || scope?.projectOverride} onChange={() => onScope(row.enabled ? "hide" : "restore", id)} />}
+        return <div className={styles.modelRow} key={id} data-model-id={id} data-dragging={dragging === id} data-drop-target={dropTarget === id && dragging !== id}><div className={styles.modelLine}>
+          <div className={styles.modelIdentity} role={model ? "button" : undefined} tabIndex={model ? 0 : undefined} aria-label={model ? `${dragLabel}: ${id}` : undefined} title={model ? dragLabel : undefined}
+            onPointerDown={e => { if (!model || locked || changed || e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); const current = { id, target: id, active: false, timer: setTimeout(() => { current.active = true; setDragging(id); }, 250) }; drag.current = current; }}
+            onPointerMove={e => { const current = drag.current; if (!current?.active) return; const target = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-model-id]")?.dataset.modelId; if (target && models.some(m => m.id === target)) { current.target = target; setDropTarget(target); } }}
+            onPointerUp={() => finishDrag()} onPointerCancel={() => finishDrag(true)} onLostPointerCapture={() => finishDrag(true)}
+            onKeyDown={e => { if (e.key === "Escape") finishDrag(true); if (!e.altKey || !["ArrowUp", "ArrowDown"].includes(e.key)) return; e.preventDefault(); const index = models.findIndex(m => m.id === id), target = models[index + (e.key === "ArrowUp" ? -1 : 1)]; if (target) void reorder(id, target.id); }}>
+            <span>{model?.name || row?.name || id}</span>{model?.contextWindow && <small className={styles.contextBadge} title={`${c.context}: ${Intl.NumberFormat().format(model.contextWindow)}`}>{model.contextWindow >= 1000000 ? `${Number((model.contextWindow / 1000000).toFixed(1))}M` : model.contextWindow >= 1000 ? `${Number((model.contextWindow / 1000).toFixed(1))}K` : model.contextWindow}</small>}{model?.input?.includes("image") && <small className={styles.contextBadge}>{locale === "zh-CN" ? "视觉" : "Vision"}</small>}{isDefault && <small title={c.defaultModel}>★</small>}</div>
+          {model && <IconButton label={`${c.test} ${id}`} tooltip={locale === "zh-CN" ? "测试连接" : "Test connection"} icon="test" disabled={locked || testing !== null} onClick={() => void testModel(model)} />}
           {row?.enabled && !isDefault && <IconButton label={`${c.setDefault} ${id}`} icon="star" disabled={locked || changed} onClick={() => onScope("set-default", id)} />}
           {model && <><IconButton label={`${c.edit} ${id}`} icon="edit" disabled={locked} onClick={() => setEditing(model)} /><IconButton label={`${c.remove} ${id}`} icon="trash" disabled={locked || changed} onClick={() => onRemove(id)} /></>}
+          {row && <Toggle checked={row.enabled} label={`${row.enabled ? c.hideModel : c.enable} ${id}`} disabled={locked || changed || scope?.projectOverride} onChange={() => onScope(row.enabled ? "hide" : "restore", id)} />}
         </div>{(testStatus[id] || testing === id) && <div className={styles.testResult} role="status"><ModelErrorText value={testing === id ? c.testing : testStatus[id]} /></div>}</div>;
       })}
     </div>
     {!!ids.length && <p className={styles.footnote}>{c.testHint}</p>}
+    {toast && <div className={styles.testToast} role="status">✓ {toast}</div>}
     {scope?.projectOverride && <p className={styles.hint}>{c.syncedWarning}</p>}
     {editing && <ModelDialog c={c} model={editing} provider={provider} providerName={name.trim()} existingIds={models.map(m => m.id)} busy={busy} saveError={saveError} onClose={() => setEditing(null)} onSave={async model => {
       const exists = !!editing.id;
