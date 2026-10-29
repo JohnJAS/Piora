@@ -7,6 +7,7 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 ### 模型配置
 
 - 未配置的内置模型不再自动生成供应商；修复内置供应商密钥输入框挤压控件、模型弹窗输入框越界以及大量识别结果无法滚动的问题。
+- 修复识别弹窗在浏览器中实际无法滚动的边界情况，确保列表末尾的模型可操作。
 
 ## [0.5.5-beta.60] - 2026-10-29
 

@@ -25,7 +25,7 @@
 .providerHeader { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; min-height: 28px; }
 .providerHeader h3 { font-size: var(--text-md); margin: 0; flex: 1; }
 .root .providerName { border: 0; font-weight: 600; background: transparent; font-size: var(--text-md); flex: 1; min-width: 0; padding: 3px 0; }
-.field > input:not([type=checkbox]), .field > select, .field > textarea, .secret input, .dialogBody > input { min-width: 0; width: 100%; min-height: 34px; padding: 6px 11px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: var(--bg-panel); font: inherit; box-sizing: border-box; }
+.field > input:not([type=checkbox]), .field > select, .field > textarea, .secret input, .dialogFields > input { min-width: 0; width: 100%; min-height: 34px; padding: 6px 11px; border: 1px solid var(--border); border-radius: 6px; color: var(--text); background: var(--bg-panel); font: inherit; box-sizing: border-box; }
 .root .providerName { border-color: transparent; background: transparent; }
 .root input::placeholder { color: var(--text-dim); }
 .field { display: flex; flex-direction: column; gap: 7px; margin: 0 0 16px; color: var(--text-muted); font-size: var(--text-sm); }
@@ -68,7 +68,8 @@
 .dialogTitle h3 { font-size: var(--text-sm); font-weight: 600; margin: 0; }
 .smart { display: flex; gap: 14px; align-items: center; margin-bottom: 24px; }
 .dialogBody { display: block; flex: 0 1 auto; box-sizing: border-box; width: 100%; border: 0; padding: 0 6px 0 2px; margin: 0; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; }
-.dialogBody > .field { margin-bottom: 20px; }
+.dialogFields { display: block; box-sizing: border-box; min-width: 0; width: 100%; border: 0; padding: 0; margin: 0; }
+.dialogFields > .field { margin-bottom: 20px; }
 .dialogFooter { display: flex; align-items: center; justify-content: flex-end; gap: 9px; padding-top: 22px; }
 .dialogFooter > :first-child { margin-right: auto; }
 .advanced { margin: 20px 0 10px; }

@@ -354,14 +354,14 @@ function ModelDialog({ c, model, provider, providerName, existingIds, busy, onCl
   };
   return <Modal title={model.id ? c.edit : c.addModel} onClose={() => void close()} busy={busy} c={c}>
     <div className={styles.smart}><span>{c.smart} ⓘ</span><Toggle checked={smart} label={c.smart} onChange={() => { setSmart(!smart); setFetching(false); }} disabled={busy} /></div>
-    <fieldset className={styles.dialogBody} disabled={busy}>
+    <div className={styles.dialogBody}><fieldset className={styles.dialogFields} disabled={busy}>
       <label className={styles.field}><span>{c.manualId}</span><input value={draft.id} placeholder={c.manualId} readOnly={!!model.id} onChange={e => changeId(e.target.value)} /></label>
       <LimitInputs model={draft} c={c} onChange={change} />
       {fetching && <p className={styles.hint} role="status">{c.fetching}</p>}
       {discovered && !fetching && modelLimitProblem(draft) && <p className={styles.hint}>{c.limitsHint}</p>}
       <details className={styles.advanced}><summary>{c.advanced}</summary><label className={styles.field}><span>{c.nameLabel}</span><input value={draft.name ?? ""} onChange={e => change({ name: e.target.value || undefined })} /></label><label className={styles.check}><input type="checkbox" checked={draft.input?.includes("image") ?? false} onChange={e => change({ input: e.target.checked ? ["text", "image"] : ["text"] })} />{c.image}</label><label className={styles.check}><input type="checkbox" checked={draft.reasoning ?? false} onChange={e => change({ reasoning: e.target.checked })} />{c.reasoning}</label><ModelSamplingEditor providerName={providerName} provider={provider} model={draft} onChange={change} /></details>
       {(error || saveError) && <div className={styles.error} role="alert"><ModelErrorText value={error || saveError || ""} /></div>}
-    </fieldset>
+    </fieldset></div>
     <div className={styles.dialogFooter}><button className={styles.link} disabled={busy} onClick={() => { touched.current.clear(); setDraft({ ...model }); setError(null); dirty.current = false; }}>{c.reset}</button><button className={styles.quiet} disabled={busy} onClick={() => void close()}>{c.cancel}</button><button className={styles.primary} disabled={busy || fetching} onClick={() => void save()}>{busy ? c.saving : c.save}</button></div>
   </Modal>;
 }
@@ -381,7 +381,7 @@ function ImportDialog({ c, incoming, existingIds, busy, onClose, onSave, saveErr
   };
   return <Modal title={c.importTitle} c={c} busy={busy} onClose={onClose}>
     <p className={styles.hint}>{c.endpointOnly}</p>
-    <fieldset disabled={busy} className={styles.dialogBody}>
+    <div className={styles.dialogBody}><fieldset disabled={busy} className={styles.dialogFields}>
       <input aria-label={c.search} placeholder={c.search} value={search} onChange={e => setSearch(e.target.value)} />
       {models.length === 0 && <p className={styles.empty}>{incoming.length ? c.duplicate : c.noResults}</p>}
       {models.filter(m => `${m.name ?? ""} ${m.id}`.toLowerCase().includes(search.toLowerCase())).map(model => <div className={styles.importRow} key={model.id}>
@@ -389,7 +389,7 @@ function ImportDialog({ c, incoming, existingIds, busy, onClose, onSave, saveErr
         {selected.has(model.id) && modelLimitProblem(model) ? <><p className={styles.hint}>{c.limitsHint}</p><LimitInputs model={model} c={c} onChange={patch => setModels(current => current.map(m => m.id === model.id ? { ...m, ...patch } : m))} /></> : <p className={styles.hint}>{c.context}: {model.contextWindow ?? "—"} · {c.output}: {model.maxTokens ?? "—"}</p>}
       </div>)}
       {(error || saveError) && <div className={styles.error} role="alert"><ModelErrorText value={error || saveError || ""} /></div>}
-    </fieldset>
+    </fieldset></div>
     <div className={styles.dialogFooter}><span className={styles.hint}>{c.selected} {selected.size}</span><button className={styles.quiet} disabled={busy} onClick={onClose}>{c.cancel}</button><button className={styles.primary} disabled={busy || !selected.size} onClick={() => void save()}>{busy ? c.saving : c.importModels}</button></div>
   </Modal>;
 }
