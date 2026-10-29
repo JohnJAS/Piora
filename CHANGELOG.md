@@ -4,6 +4,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+- 模型设置卡片按实际可用宽高伸展，取消固定宽度和最小高度；窄设置面板自动切换横向供应商导航，目录卡片按空间排列，较矮窗口保留可滚动内容。
+
 - 模型供应商目录统一图标与名称对齐；模型行的启用开关移到最右侧，上下文改为 K/M 标签，连接测试提供悬浮说明和底部绿色成功提示。自定义模型支持长按拖动和 Alt + 方向键排序，并自动保存。
 
 ### 模型配置
