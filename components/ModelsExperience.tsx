@@ -227,7 +227,7 @@ function ProviderPanel({ c, initialName, initial, scope, busy, saveProvider, onD
     try {
       const result = await requestDiscoveredModels({ providerName: name.trim(), provider, signal: controller.signal });
       if (!controller.signal.aborted) setImporting(result.models);
-    } catch (cause) { if (!controller.signal.aborted) setError(`${c.failed} ${cause instanceof Error ? cause.message : ""}`); }
+    } catch (cause) { if (!controller.signal.aborted || controller.timedOut()) setError(`${c.failed} ${cause instanceof Error ? cause.message : ""}`); }
     finally { controller.dispose(); if (discoveryRef.current === controller) { discoveryRef.current = null; setDiscovering(false); } }
   };
   const testModel = async (model: ModelEntry) => {

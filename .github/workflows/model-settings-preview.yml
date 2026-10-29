@@ -18,6 +18,7 @@ jobs:
         with:
           node-version: 22.19.0
       - uses: ./.github/actions/restore-npm-cache
+      - uses: ./.github/actions/setup-linux-native-image-tools
       - run: npm ci
       - run: npx --no-install playwright-core install --with-deps chromium
       - name: Exercise and capture actual model settings components

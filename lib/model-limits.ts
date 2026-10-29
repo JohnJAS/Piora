@@ -21,9 +21,9 @@
  * only for configs that were already on disk. Explicit non-positive values are
  * invalid; Piora does not rewrite them into a hidden default either.
  *
- * The setup wizard checks the configured endpoint, then the model catalogue;
- * catalogue values are applied only when the match is reliable. New or edited
- * custom models need valid limits, while unchanged legacy models remain usable.
+ * Model settings read limits only from the configured endpoint. When the
+ * endpoint omits them, the user enters the values in the same dialog. New or
+ * edited custom models need valid limits; unchanged legacy models remain usable.
  */
 import { modelSamplingError } from "./model-sampling";
 
