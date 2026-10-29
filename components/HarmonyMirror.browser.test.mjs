@@ -23,6 +23,9 @@ test("mirror is read-only, resizes through the desktop bridge, and shows common 
     await new Promise((resolve,reject)=>compiler.run((error,stats)=>compiler.close(()=>error||stats.hasErrors()?reject(error||Error(stats.toString({all:false,errors:true}))):resolve())));
     browser=await chromium.launch({channel:process.platform==="win32"?"msedge":"chromium",headless:true});
     const page=await browser.newPage({viewport:{width:362,height:758}});const requests=[],errors=[];
+    // Pixel assertions target the settled theme, not the compositor's temporary
+    // old/new snapshots. Reduced motion also removes the transition-ready race.
+    await page.emulateMedia({reducedMotion:"reduce"});
     page.on("pageerror",e=>errors.push(e.message));
     await page.addInitScript(()=>{let state={serial:"phone",ownerId:"desktop-media",scale:75,open:true,minimized:false,alwaysOnTop:false},listeners=[];window.calls=[];window.updateMirror=patch=>{state={...state,...patch};listeners.forEach(f=>f(state));};window.piDesktop={harmonyMirror:{getState:async()=>state,onStateChange:f=>{listeners.push(f);return()=>listeners=listeners.filter(x=>x!==f);},onCommand:f=>{window.command=f;return()=>{};},reportFrame:async f=>window.geometry=f,setScale:async scale=>{window.calls.push(scale);window.updateMirror({scale});return state;},setPresentation:async presentation=>{window.updateMirror({presentation});return state;},showMenu:async()=>window.menu=true,close:async()=>{window.closed=true;return true;}},clipboard:{copyHarmonyMedia:async f=>{window.copy=f;}}};window.EventSource=class{close(){}};});
     const globals=(await readFile(path.join(repo,"app/globals.css"),"utf8")).replace(/^@import.*$/gm,"");
