@@ -16,6 +16,7 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 - beta 校验复用同一提交已成功的测试分片，仅补跑失败、取消、缺失或等待超时的分片；完整覆盖 Linux 与 Windows 共 12 个分片仍是发布前提，无法确认来源时回退全量检查。
 - beta 构建只恢复 npm 下载缓存，取消标签范围内无法供后续主分支复用的缓存保存；保留所有安装版、便携版及语音下载验收。
+- 界面截图改为本地开发预览，移除临时截图工作流和测试分片中的截图上传，避免额外消耗远端检查时间。
 
 ## [0.5.5-beta.57] - 2026-10-29
 

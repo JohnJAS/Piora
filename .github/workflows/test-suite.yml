@@ -65,18 +65,7 @@ jobs:
         run: node scripts/run-tests.mjs --test-shard=${{ matrix.shard }}/6
         env:
           PIORA_SKIP_RESOURCE_TESTS: ${{ runner.os == 'Windows' && '1' || '0' }}
-          PIORA_EXPERIENCE_SCREENSHOTS: "1"
           PSModulePath: ""
-
-      - name: Upload model settings screenshots
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: model-settings-${{ matrix.os }}-${{ matrix.shard }}
-          path: .verification/model-experience-*.png
-          include-hidden-files: true
-          if-no-files-found: ignore
-          retention-days: 7
 
       # These cases are skipped in the Windows shards and run exactly once here.
       - name: Resource-intensive Shell tests
