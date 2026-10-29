@@ -4,6 +4,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.5.5-beta.64] - 2026-10-29
+
 ### 设置背景
 
 - 统一宠物、定时任务、插件、技能页面底层及快捷键、语音、终端、项目工具、能力包、扩展和远程控制的大面板背景，启用背景图时透出壁纸，独立弹窗和输入控件保持原有底色。
