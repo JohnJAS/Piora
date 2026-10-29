@@ -389,6 +389,9 @@ async function main() {
     // Source-loaded HAP preview resolves JSZip's Node entry and its production
     // dependencies even when Next bundles the separate browser entry.
     join(projectRoot, "node_modules", "jszip"),
+    // The source-loaded Harmony extension parses signing project metadata.
+    // This is a shared Piora runtime dependency, independent of DevEco CLI.
+    join(projectRoot, "node_modules", "json5"),
     // sharp resolves its versioned native bindings and optional platform
     // packages dynamically; the static trace can omit those binaries.
     join(projectRoot, "node_modules", "sharp"),
