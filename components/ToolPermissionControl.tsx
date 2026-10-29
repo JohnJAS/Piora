@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { useDefaultToolPermission } from "@/hooks/useDefaultToolPermission";
 import { useI18n } from "@/hooks/useI18n";
-import { PERMISSION_MODES, type PermissionMode, type ToolPermissionState } from "@/lib/tool-permission-policy";
+import type { PermissionMode, ToolPermissionState } from "@/lib/tool-permission-policy";
 import styles from "./ToolPermissionControl.module.css";
+
+// Keep legacy ask records readable without offering the compatibility mode for new selections.
+const SELECTABLE_MODES = ["auto", "review", "full"] as const satisfies readonly PermissionMode[];
 
 export function ToolPermissionControl({ state, saving, onChange }: {
   state: ToolPermissionState | null; saving?: boolean; onChange: (mode: PermissionMode) => void;
@@ -33,7 +35,7 @@ export function ToolPermissionControl({ state, saving, onChange }: {
   }, [open]);
   useEffect(() => {
     if (!open) return;
-    panel.current?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus();
+    (panel.current?.querySelector<HTMLElement>('[aria-checked="true"]') ?? panel.current?.querySelector<HTMLElement>('button'))?.focus();
     const close = (event: PointerEvent) => {
       if (!trigger.current?.contains(event.target as Node) && !panel.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -66,25 +68,13 @@ export function ToolPermissionControl({ state, saving, onChange }: {
     }}>
     <p className={styles.legacy}>{t("permission.rememberHelp")}</p>
     {state?.legacy && <p className={styles.legacy}>{t("permission.legacyHelp")}</p>}
-    {PERMISSION_MODES.map(mode => <button key={mode} type="button" role="menuitemradio" data-mode={mode}
+    {SELECTABLE_MODES.map(mode => <button key={mode} type="button" role="menuitemradio" data-mode={mode}
       aria-checked={!state?.legacy && state?.mode === mode}
       className={`model-settings-row ${styles.option}${mode === "full" ? ` ${styles.full}` : ""}`}
       onClick={() => { setOpen(false); trigger.current?.focus(); onChange(mode); }}>
-      <span className={styles.copy}><span>{t(`permission.${mode}`)}{mode === "ask" && ` · ${t("permission.compatibility")}`}</span><small>{t(`permission.${mode}Help`)}</small></span>
+      <span className={styles.copy}><span>{t(`permission.${mode}`)}</span><small>{t(`permission.${mode}Help`)}</small></span>
       <span className={styles.check} aria-hidden="true">{!state?.legacy && state?.mode === mode ? "✓" : ""}</span>
     </button>)}
   </div>, document.body)}
   </>;
-}
-
-export function DefaultToolPermissionSetting() {
-  const { t } = useI18n();
-  const { state, saving, error, save } = useDefaultToolPermission();
-  return <section className={styles.setting}>
-    <strong>{t("permission.default")}</strong>
-    <p>{t("permission.defaultHelp")}</p>
-    <ToolPermissionControl state={state} saving={saving} onChange={save} />
-    {state && <p>{t(`permission.${state.mode}Help`)}</p>}
-    {error && <p role="alert">{error}</p>}
-  </section>;
 }

@@ -4,6 +4,11 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 权限界面
+
+- 输入框权限菜单仅展示“请求批准”“帮我批准”“完全访问”，移除旧版严格兼容选项；已有严格权限记录继续生效。
+- 移除“应用行为”中重复的新聊天默认权限设置，输入框的手动选择仍保存为后续新建、分叉和复制聊天的默认权限。
+
 ## [0.5.5-beta.60] - 2026-10-29
 
 ### 鸿蒙投屏

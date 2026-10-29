@@ -1,6 +1,5 @@
 "use client";
 import { useRunningSendMode } from "@/hooks/useRunningSendMode";
-import { DefaultToolPermissionSetting } from "./ToolPermissionControl";
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -458,7 +457,6 @@ export function SettingsDialog({
                   <h2>{t("settings.general")}</h2>
                   <p>{t("settings.generalDescription")}</p>
                 </div>
-                <DefaultToolPermissionSetting />
                 {onOpenOnboarding ? <section className={styles.conversationSection}>
                   <div className={styles.conversationRow}>
                     <span className={styles.featureIcon}><AliIcon name="rocket" size={19} /></span>
