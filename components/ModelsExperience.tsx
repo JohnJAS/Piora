@@ -254,7 +254,7 @@ function ProviderPanel({ c, initialName, initial, scope, busy, saveProvider, onD
       {!ids.length && <p className={styles.empty}>ⓘ &nbsp;{c.modelEmpty}</p>}
       {ids.map(id => {
         const model = models.find(m => m.id === id), row = managed.find(m => m.id === id);
-        const isDefault = scope?.effectiveDefault?.provider === initialName && scope.effectiveDefault.modelId === id;
+        const isDefault = scope?.effectiveDefault?.provider === initialName && scope?.effectiveDefault?.modelId === id;
         return <div className={styles.modelRow} key={id}><div className={styles.modelLine}>
           <div className={styles.modelIdentity}><span>{model?.name || row?.name || id}</span>{model?.contextWindow && <small>{Intl.NumberFormat().format(model.contextWindow)}</small>}{isDefault && <small title={c.defaultModel}>★</small>}</div>
           {model && <IconButton label={`${c.test} ${id}`} icon="test" disabled={locked || testing !== null} onClick={() => void testModel(model)} />}
@@ -346,6 +346,7 @@ function ModelDialog({ c, model, provider, providerName, existingIds, busy, onCl
     if (modelLimitProblem(draft)) { setError(c.invalidLimits); return; }
     const samplingError = modelSamplingError(draft);
     if (samplingError) { setError(samplingError); return; }
+    setError(null);
     await onSave({ ...draft, id });
   };
   return <Modal title={model.id ? c.edit : c.addModel} onClose={() => void close()} busy={busy} c={c}>
@@ -372,6 +373,7 @@ function ImportDialog({ c, incoming, existingIds, busy, onClose, onSave, saveErr
   const save = async () => {
     if (!chosen.length) { setError(c.chooseOne); return; }
     if (chosen.some(modelLimitProblem)) { setError(c.invalidLimits); return; }
+    setError(null);
     await onSave(chosen);
   };
   return <Modal title={c.importTitle} c={c} busy={busy} onClose={onClose}>

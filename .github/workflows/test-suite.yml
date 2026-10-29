@@ -74,6 +74,7 @@ jobs:
         with:
           name: model-settings-${{ matrix.os }}-${{ matrix.shard }}
           path: .verification/model-experience-*.png
+          include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7
 
