@@ -29,6 +29,8 @@ import {ChatInput} from "@/components/ChatInput";
 import {ShortcutSettings} from "@/components/ShortcutSettings";
 import {RoomComposer} from "@/components/RoomComposer";
 import {useSendShortcut} from "@/hooks/useSendShortcut";
+import {useDefaultToolPermission} from "@/hooks/useDefaultToolPermission";
+function DefaultPermissionObserver(){const {state}=useDefaultToolPermission();return <output id="default-permission">{state?.mode}</output>}
 import {NewSessionProjectPicker} from "@/components/NewSessionProjectPicker";
 import {SystemPromptSelector} from "@/components/SystemPromptSelector";
 import {ChatCommandCard,ChatCommandQueue} from "@/components/ChatCommandCard";
@@ -36,7 +38,6 @@ import {ToolReviewStatus} from "@/components/ToolReviewStatus";
 import {createChatCommandCatalog} from "@/lib/chat-command-input";
 const catalog=createChatCommandCatalog([{name:"workflow",source:"extension",description:"Start a workflow and continue until complete"}]);
 const record={commandId:"sample-command",idempotencyKey:"sample",targetSessionId:"sample",acceptedAt:1792483200000,status:"completed",operation:{version:1,rawText:"/name 项目检查",catalogRevision:catalog.revision,command:catalog.commands.find(c=>c.name==="name"),arguments:"项目检查",phase:"settling",steps:[{id:"command",kind:"command",status:"completed",startedAt:1792483200000,completedAt:1792483200200}],result:{title:"chatCommands.renameCompleted",rename:{before:"新会话",after:"项目检查"}}}};
-import { DefaultToolPermissionSetting } from "${path.join(repo, "components/ToolPermissionControl.tsx").replaceAll("\\", "/")}";
 function App(){
   const [reviews,setReviews]=useState([]);window.setReviews=setReviews;
   const {shortcut,setShortcut}=useSendShortcut();window.setSendShortcut=setShortcut;
@@ -58,7 +59,7 @@ function App(){
       contextControl={<SystemPromptSelector selection={{mode:"default"}} onChange={()=>{}}/>}/></section>
     <section id="room" data-send-shortcut={shortcut}><RoomComposer room={{id:"shortcut-room",members:[],coordination:{mode:"manual"}}} actorSessionId="actor" submissions={[]} onSubmit={async input=>{(window.roomInputs??=[]).push(input);return {...input,status:"delivered"}}/></section>
     <section id="shortcut-settings"><ShortcutSettings/></section>
-    <section id="permission-settings"><DefaultToolPermissionSetting/></section>
+    <DefaultPermissionObserver/>
   </main></I18nProvider>;
 }
 createRoot(document.getElementById("root")).render(<App/>);`);
@@ -134,9 +135,9 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await page.locator("#launcher, #conversation").evaluateAll(sections => sections.forEach(section => { section.style.width = "590px"; }));
       const conversation = page.locator("#conversation");
       const permission = conversation.locator("[data-permission-trigger]");
-      for (const mode of ["full", "ask", "review", "auto"]) {
+      for (const mode of ["full", "review", "auto"]) {
         await permission.click();
-        assert.equal(await page.getByRole("menuitemradio").count(), 4, "three primary modes plus strict compatibility");
+        assert.equal(await page.getByRole("menuitemradio").count(), 3, "only the three supported selection modes");
         if (process.env.PIORA_COMPOSER_SCREENSHOTS && mode === "full") {
           await page.getByRole("menu").screenshot({ path: path.join(repo, "test-results/composer-layout", `${locale}-permissions.png`) });
         }
@@ -526,17 +527,21 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       assert.equal((await page.evaluate(() => window.launchRequest)).prompt.permissionMode, "full");
       assert.equal(defaultMode, "full");
       assert.deepEqual(savedModes, ["full"]);
-      const settingsTrigger = page.locator("#permission-settings [data-permission-trigger]");
-      await page.waitForFunction(() => document.querySelector('#permission-settings [data-permission-trigger]').textContent.match(/Full access|完全访问/));
+      await page.waitForFunction(() => document.querySelector('#default-permission').textContent === 'full');
       // A fresh page (new launcher) reads the persisted choice without writing it.
       await page.reload();
       const launcherTrigger = page.locator("#launcher [data-permission-trigger]");
       await page.waitForFunction(() => document.querySelector('#launcher [data-permission-trigger]')?.textContent.match(/Full access|完全访问/));
       assert.deepEqual(savedModes, ["full"]);
-      await settingsTrigger.click();
-      await page.locator('[role="menuitemradio"][data-mode="ask"]').click();
+      // Previously saved strict preferences remain strict after reload.
+      defaultMode = "ask";
+      await page.reload();
       await page.waitForFunction(() => document.querySelector('#launcher [data-permission-trigger]').textContent.match(/Ask before actions|操作前询问/));
       assert.equal(defaultMode, "ask");
+      await launcherTrigger.click();
+      assert.deepEqual(await page.getByRole("menuitemradio").evaluateAll(items => items.map(item => item.dataset.mode)), ["auto", "review", "full"]);
+      assert.equal(await page.locator('[role="menuitemradio"][data-mode="auto"]').evaluate(element => element === document.activeElement), true);
+      await page.keyboard.press("Escape");
       // Failure keeps the last confirmed mode and is visible to the user.
       failPermissionSave = true;
       await launcherTrigger.click();
@@ -547,12 +552,12 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       failPermissionSave = false;
       await launcherTrigger.click();
       await page.locator('[role="menuitemradio"][data-mode="auto"]').click();
-      await page.waitForFunction(() => document.querySelector('#permission-settings [data-permission-trigger]').textContent.match(/Request approval|请求批准/));
+      await page.waitForFunction(() => document.querySelector('#default-permission').textContent === 'auto');
       assert.equal(defaultMode, "auto");
 
       await launcherTrigger.click();
       await page.locator('[role="menuitemradio"][data-mode="review"]').click();
-      await page.waitForFunction(() => document.querySelector('#permission-settings [data-permission-trigger]').textContent.match(/Approve for me|帮我批准/));
+      await page.waitForFunction(() => document.querySelector('#default-permission').textContent === 'review');
       assert.equal(defaultMode, "review", "AI review is an explicit saved choice");
       await page.evaluate(() => window.setReviews([{ id:"review-one",toolName:"bash",status:"reviewing",reason:"Checking the requested tests",model:"provider/model",startedAt:1,updatedAt:1 }]));
       const reviewPanel = page.locator('#reviews [data-tool-reviews]');
