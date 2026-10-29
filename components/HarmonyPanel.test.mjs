@@ -16,7 +16,7 @@ test("only the independent mirror consumes frames and has no input handlers or b
   assert.match(mirror, /!state.minimized/);
   assert.match(mirror, /<canvas/);
   assert.doesNotMatch(mirror, /onPointer|onMouse|<footer|action: "(?:tap|swipe|input_text|press_key)"/);
-  assert.match(mirror, /setScale/);
+  assert.doesNotMatch(mirror, /setScale|画面缩放/);
   assert.match(mirror, /allowFrameFallback: false/);
   assert.doesNotMatch(mirror, /initialize_mirror|onEnableVideo/);
 });

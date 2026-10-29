@@ -124,7 +124,7 @@ export function ModelsExperience({ cwd, onClose, onModelsChanged, embedded = fal
     await mutate(async () => { await jsonRequest("/api/models-config", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, ...(id ? { id } : {}) }) }); onModelsChanged?.(); if (!id) setView({ kind: "home" }); });
   };
 
-  const providerIds = [...new Set([...Object.keys(config.providers ?? {}), ...(scope?.models ?? []).map(model => model.provider), ...apiKeys.filter(item => item.configured).map(item => item.id), ...oauth.filter(item => item.loggedIn).map(item => item.id)])];
+  const providerIds = [...new Set([...Object.keys(config.providers ?? {}), ...apiKeys.filter(item => item.configured).map(item => item.id), ...oauth.filter(item => item.loggedIn).map(item => item.id)])];
   const authRefresh = () => { onModelsChanged?.(); void reload(); };
   const leaveView = async () => {
     if (dirty && !await requestConfirmation({ title: locale === "zh-CN" ? "放弃未保存的修改？" : "Discard unsaved changes?", message: locale === "zh-CN" ? "返回后，本次填写的内容不会保存。" : "Your changes will be lost when you leave.", confirmLabel: locale === "zh-CN" ? "放弃修改" : "Discard", tone: "danger" })) return false;
@@ -166,7 +166,10 @@ export function ModelsExperience({ cwd, onClose, onModelsChanged, embedded = fal
             initialName={custom ? selectedProvider : undefined} initial={custom} scope={scope} busy={busy} onDirty={setDirty} onModal={setModalOpen} saveError={error}
             onScope={switchScope} onRemove={id => void remove(selectedProvider, id)}
             saveProvider={async (name, provider, additions, original) => { const saved = await saveProvider(name, provider, additions, original); if (saved) setView({ kind: "manage", id: name }); return saved; }} />}
-          {["home", "manage"].includes(view.kind) && selectedProvider && !custom && <BuiltinPanel key={selectedProvider} c={c} id={selectedProvider} name={displayName(selectedProvider)} api={apiKeys.find(p => p.id === selectedProvider)} oauth={oauth.find(p => p.id === selectedProvider)} scope={scope} busy={busy} onRefresh={authRefresh} onScope={switchScope} />}
+          {["home", "manage"].includes(view.kind) && selectedProvider && !custom && <BuiltinPanel key={selectedProvider} c={c} id={selectedProvider} name={displayName(selectedProvider)} api={apiKeys.find(p => p.id === selectedProvider)} oauth={oauth.find(p => p.id === selectedProvider)} scope={scope} busy={busy} onRefresh={authRefresh} onScope={switchScope} onRemove={async (kind) => {
+            if (!await requestConfirmation({ title: c.remove, message: c.removeQuestion, confirmLabel: c.remove, tone: "danger" })) return;
+            await mutate(async () => { await jsonRequest(kind === "oauth" ? `/api/auth/logout/${encodeURIComponent(selectedProvider)}` : `/api/auth/api-key/${encodeURIComponent(selectedProvider)}`, { method: kind === "oauth" ? "POST" : "DELETE" }); onModelsChanged?.(); setView({ kind: "home" }); });
+          }} />}
         </main>
       </div>
     </div>
@@ -180,8 +183,8 @@ function Glyph({ name }: { name: GlyphName }) {
   const paths = { plus: "M12 5v14M5 12h14", edit: "m16 3 5 5-12 12-6 1 1-6Z M14 5l5 5", trash: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7", test: "m8 3 4 4-5 5-4-4Zm8 18-4-4 5-5 4 4ZM10 10l4 4M2 2l3 3m14 14 3 3", refresh: "M20 7a9 9 0 1 0 1 8M20 2v6h-6", star: "m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z", close: "m6 6 12 12M6 18 18 6", eye: "M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6" };
   return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
 }
-function IconButton({ label, icon, onClick, disabled }: { label: string; icon: GlyphName; onClick: () => void; disabled?: boolean }) {
-  return <button type="button" className={styles.iconButton} aria-label={label} title={label} onClick={onClick} disabled={disabled}><Glyph name={icon} /></button>;
+function IconButton({ label, tooltip = label, icon, onClick, disabled }: { label: string; tooltip?: string; icon: GlyphName; onClick: () => void; disabled?: boolean }) {
+  return <button type="button" className={styles.iconButton} aria-label={label} title={tooltip} onClick={onClick} disabled={disabled}><Glyph name={icon} /></button>;
 }
 function Toggle({ checked, label, disabled, onChange }: { checked: boolean; label: string; disabled?: boolean; onChange: () => void }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} title={label} className={styles.toggle} disabled={disabled} onClick={onChange}><span /></button>;
@@ -203,6 +206,14 @@ function ProviderPanel({ c, initialName, initial, scope, busy, saveProvider, onD
   const discoveryRef = useRef<ReturnType<typeof createDiscoveryAbort> | null>(null);
   const [testStatus, setTestStatus] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const drag = useRef<{ id: string; target: string; active: boolean; timer: ReturnType<typeof setTimeout> } | null>(null);
+  const { locale } = useI18n();
+  const dragLabel = locale === "zh-CN" ? "长按拖动调整模型顺序，也可用 Alt + 上下方向键" : "Hold to reorder; Alt + arrow keys also move models";
+  useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(null), 4000); return () => clearTimeout(timer); }, [toast]);
+  useEffect(() => () => { if (drag.current) clearTimeout(drag.current.timer); }, []);
   const models = provider.models ?? [];
   const managed = (scope?.models ?? []).filter(m => m.provider === initialName);
   const ids = [...new Set([...models.map(m => m.id), ...managed.map(m => m.id)])];
@@ -233,13 +244,28 @@ function ProviderPanel({ c, initialName, initial, scope, busy, saveProvider, onD
   const testModel = async (model: ModelEntry) => {
     if (!valid()) return;
     setTesting(model.id);
+    setToast(null);
     try {
       const result = await jsonRequest<{ ok: boolean }>("/api/models-config/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerName: name.trim(), provider, model }) });
       setTestStatus(current => ({ ...current, [model.id]: result.ok ? c.testOk : c.testFailed }));
+      if (result.ok) { setToast(`${model.name || model.id} · ${c.testOk}`); setTestStatus(current => { const next = { ...current }; delete next[model.id]; return next; }); }
     } catch (cause) { setTestStatus(current => ({ ...current, [model.id]: `${c.testFailed}: ${cause instanceof Error ? cause.message : String(cause)}` })); }
     finally { setTesting(null); }
   };
   const locked = busy || discovering;
+  const reorder = async (from: string, to: string) => {
+    if (locked || changed || from === to) return;
+    const next = [...models], start = next.findIndex(m => m.id === from), end = next.findIndex(m => m.id === to);
+    if (start < 0 || end < 0) return;
+    next.splice(end, 0, ...next.splice(start, 1));
+    await save({ ...provider, models: next });
+  };
+  const finishDrag = (cancelled = false) => {
+    const current = drag.current;
+    if (!current) return;
+    clearTimeout(current.timer); drag.current = null; setDragging(null); setDropTarget(null);
+    if (current.active && !cancelled) void reorder(current.id, current.target);
+  };
   return <>
     <div className={styles.providerHeader}><ModelProviderIcon provider={name} size={20} /><input className={styles.providerName} aria-label={c.name} value={name} disabled={locked} onChange={e => { setName(e.target.value); setChanged(true); onDirty(true); }} />
       {initialName && <><Toggle checked={enabled} label={enabled ? c.disableProvider : c.enableProvider} disabled={locked || changed || scope?.projectOverride || !managed.length} onChange={() => onScope(enabled ? "hide-provider" : "restore-provider")} /><IconButton label={c.deleteProvider} icon="trash" onClick={() => onRemove()} disabled={locked || changed} /></>}
@@ -255,16 +281,22 @@ function ProviderPanel({ c, initialName, initial, scope, busy, saveProvider, onD
       {ids.map(id => {
         const model = models.find(m => m.id === id), row = managed.find(m => m.id === id);
         const isDefault = scope?.effectiveDefault?.provider === initialName && scope?.effectiveDefault?.modelId === id;
-        return <div className={styles.modelRow} key={id}><div className={styles.modelLine}>
-          <div className={styles.modelIdentity}><span>{model?.name || row?.name || id}</span>{model?.contextWindow && <small>{Intl.NumberFormat().format(model.contextWindow)}</small>}{isDefault && <small title={c.defaultModel}>★</small>}</div>
-          {model && <IconButton label={`${c.test} ${id}`} icon="test" disabled={locked || testing !== null} onClick={() => void testModel(model)} />}
-          {row && <Toggle checked={row.enabled} label={`${row.enabled ? c.hideModel : c.enable} ${id}`} disabled={locked || changed || scope?.projectOverride} onChange={() => onScope(row.enabled ? "hide" : "restore", id)} />}
+        return <div className={styles.modelRow} key={id} data-model-id={id} data-dragging={dragging === id} data-drop-target={dropTarget === id && dragging !== id}><div className={styles.modelLine}>
+          <div className={styles.modelIdentity} role={model ? "button" : undefined} tabIndex={model ? 0 : undefined} aria-label={model ? `${dragLabel}: ${id}` : undefined} title={model ? dragLabel : undefined}
+            onPointerDown={e => { if (!model || locked || changed || e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); const current = { id, target: id, active: false, timer: setTimeout(() => { current.active = true; setDragging(id); }, 250) }; drag.current = current; }}
+            onPointerMove={e => { const current = drag.current; if (!current?.active) return; const target = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-model-id]")?.dataset.modelId; if (target && models.some(m => m.id === target)) { current.target = target; setDropTarget(target); } }}
+            onPointerUp={() => finishDrag()} onPointerCancel={() => finishDrag(true)} onLostPointerCapture={() => finishDrag(true)}
+            onKeyDown={e => { if (e.key === "Escape") finishDrag(true); if (!e.altKey || !["ArrowUp", "ArrowDown"].includes(e.key)) return; e.preventDefault(); const index = models.findIndex(m => m.id === id), target = models[index + (e.key === "ArrowUp" ? -1 : 1)]; if (target) void reorder(id, target.id); }}>
+            <span>{model?.name || row?.name || id}</span>{model?.contextWindow && <small className={styles.contextBadge} title={`${c.context}: ${Intl.NumberFormat().format(model.contextWindow)}`}>{model.contextWindow >= 1000000 ? `${Number((model.contextWindow / 1000000).toFixed(1))}M` : model.contextWindow >= 1000 ? `${Number((model.contextWindow / 1000).toFixed(1))}K` : model.contextWindow}</small>}{model?.input?.includes("image") && <small className={styles.contextBadge}>{locale === "zh-CN" ? "视觉" : "Vision"}</small>}{isDefault && <small title={c.defaultModel}>★</small>}</div>
+          {model && <IconButton label={`${c.test} ${id}`} tooltip={locale === "zh-CN" ? "测试连接" : "Test connection"} icon="test" disabled={locked || testing !== null} onClick={() => void testModel(model)} />}
           {row?.enabled && !isDefault && <IconButton label={`${c.setDefault} ${id}`} icon="star" disabled={locked || changed} onClick={() => onScope("set-default", id)} />}
           {model && <><IconButton label={`${c.edit} ${id}`} icon="edit" disabled={locked} onClick={() => setEditing(model)} /><IconButton label={`${c.remove} ${id}`} icon="trash" disabled={locked || changed} onClick={() => onRemove(id)} /></>}
+          {row && <Toggle checked={row.enabled} label={`${row.enabled ? c.hideModel : c.enable} ${id}`} disabled={locked || changed || scope?.projectOverride} onChange={() => onScope(row.enabled ? "hide" : "restore", id)} />}
         </div>{(testStatus[id] || testing === id) && <div className={styles.testResult} role="status"><ModelErrorText value={testing === id ? c.testing : testStatus[id]} /></div>}</div>;
       })}
     </div>
     {!!ids.length && <p className={styles.footnote}>{c.testHint}</p>}
+    {toast && <div className={styles.testToast} role="status">✓ {toast}</div>}
     {scope?.projectOverride && <p className={styles.hint}>{c.syncedWarning}</p>}
     {editing && <ModelDialog c={c} model={editing} provider={provider} providerName={name.trim()} existingIds={models.map(m => m.id)} busy={busy} saveError={saveError} onClose={() => setEditing(null)} onSave={async model => {
       const exists = !!editing.id;
@@ -274,13 +306,13 @@ function ProviderPanel({ c, initialName, initial, scope, busy, saveProvider, onD
   </>;
 }
 
-function BuiltinPanel({ c, id, name, api, oauth, scope, busy, onRefresh, onScope }: {
+function BuiltinPanel({ c, id, name, api, oauth, scope, busy, onRefresh, onScope, onRemove }: {
   c: Text; id: string; name: string; api?: ApiKeyProvider; oauth?: OAuthProvider; scope: ModelScopeResponse | null; busy: boolean;
-  onRefresh: () => void; onScope: (action: string, id?: string) => void;
+  onRefresh: () => void; onScope: (action: string, id?: string) => void; onRemove: (kind: "api" | "oauth") => Promise<void>;
 }) {
   const [mode, setMode] = useState(oauth?.loggedIn || !api ? "oauth" : "api");
   const models = (scope?.models ?? []).filter(m => m.provider === id), enabled = models.some(m => m.enabled);
-  return <><div className={styles.providerHeader}><ModelProviderIcon provider={id} size={20} /><h3>{name}</h3>{api && oauth && <select aria-label={c.settings} value={mode} onChange={e => setMode(e.target.value)}><option value="api">API Key</option><option value="oauth">OAuth</option></select>}<Toggle checked={enabled} label={enabled ? c.disableProvider : c.enableProvider} disabled={busy || !models.length || scope?.projectOverride} onChange={() => onScope(enabled ? "hide-provider" : "restore-provider")} /></div>
+  return <><div className={styles.providerHeader}><ModelProviderIcon provider={id} size={20} /><h3>{name}</h3>{api && oauth && <select aria-label={c.settings} value={mode} onChange={e => setMode(e.target.value)}><option value="api">API Key</option><option value="oauth">OAuth</option></select>}<Toggle checked={enabled} label={enabled ? c.disableProvider : c.enableProvider} disabled={busy || !models.length || scope?.projectOverride} onChange={() => onScope(enabled ? "hide-provider" : "restore-provider")} />{(api?.canRemoveStoredCredential || oauth?.loggedIn) && <IconButton label={c.remove} icon="trash" disabled={busy} onClick={() => void onRemove(oauth?.loggedIn ? "oauth" : "api")} />}</div>
     <div className={styles.auth}>{mode === "api" && api ? <ApiKeyDetail provider={api} onRefresh={onRefresh} /> : oauth ? <OAuthDetail provider={oauth} onRefresh={onRefresh} /> : null}</div>
     <div className={styles.listHeading}>{c.models}</div><div className={styles.modelList}>{models.length ? models.map(model => <div className={styles.modelRow} key={model.id}><div className={styles.modelLine}><div className={styles.modelIdentity}>{model.name || model.id}</div>{scope?.effectiveDefault?.provider === id && scope.effectiveDefault.modelId === model.id ? <span title={c.defaultModel}>★</span> : model.enabled && <IconButton label={`${c.setDefault} ${model.id}`} icon="star" disabled={busy} onClick={() => onScope("set-default", model.id)} />}<Toggle checked={model.enabled} label={`${model.enabled ? c.hideModel : c.enable} ${model.id}`} disabled={busy || scope?.projectOverride} onChange={() => onScope(model.enabled ? "hide" : "restore", model.id)} /></div></div>) : <p className={styles.empty}>{c.modelEmpty}</p>}</div></>;
 }
@@ -351,14 +383,14 @@ function ModelDialog({ c, model, provider, providerName, existingIds, busy, onCl
   };
   return <Modal title={model.id ? c.edit : c.addModel} onClose={() => void close()} busy={busy} c={c}>
     <div className={styles.smart}><span>{c.smart} ⓘ</span><Toggle checked={smart} label={c.smart} onChange={() => { setSmart(!smart); setFetching(false); }} disabled={busy} /></div>
-    <fieldset className={styles.dialogBody} disabled={busy}>
+    <div className={styles.dialogBody}><fieldset className={styles.dialogFields} disabled={busy}>
       <label className={styles.field}><span>{c.manualId}</span><input value={draft.id} placeholder={c.manualId} readOnly={!!model.id} onChange={e => changeId(e.target.value)} /></label>
       <LimitInputs model={draft} c={c} onChange={change} />
       {fetching && <p className={styles.hint} role="status">{c.fetching}</p>}
       {discovered && !fetching && modelLimitProblem(draft) && <p className={styles.hint}>{c.limitsHint}</p>}
       <details className={styles.advanced}><summary>{c.advanced}</summary><label className={styles.field}><span>{c.nameLabel}</span><input value={draft.name ?? ""} onChange={e => change({ name: e.target.value || undefined })} /></label><label className={styles.check}><input type="checkbox" checked={draft.input?.includes("image") ?? false} onChange={e => change({ input: e.target.checked ? ["text", "image"] : ["text"] })} />{c.image}</label><label className={styles.check}><input type="checkbox" checked={draft.reasoning ?? false} onChange={e => change({ reasoning: e.target.checked })} />{c.reasoning}</label><ModelSamplingEditor providerName={providerName} provider={provider} model={draft} onChange={change} /></details>
       {(error || saveError) && <div className={styles.error} role="alert"><ModelErrorText value={error || saveError || ""} /></div>}
-    </fieldset>
+    </fieldset></div>
     <div className={styles.dialogFooter}><button className={styles.link} disabled={busy} onClick={() => { touched.current.clear(); setDraft({ ...model }); setError(null); dirty.current = false; }}>{c.reset}</button><button className={styles.quiet} disabled={busy} onClick={() => void close()}>{c.cancel}</button><button className={styles.primary} disabled={busy || fetching} onClick={() => void save()}>{busy ? c.saving : c.save}</button></div>
   </Modal>;
 }
@@ -378,7 +410,7 @@ function ImportDialog({ c, incoming, existingIds, busy, onClose, onSave, saveErr
   };
   return <Modal title={c.importTitle} c={c} busy={busy} onClose={onClose}>
     <p className={styles.hint}>{c.endpointOnly}</p>
-    <fieldset disabled={busy} className={styles.dialogBody}>
+    <div className={styles.dialogBody}><fieldset disabled={busy} className={styles.dialogFields}>
       <input aria-label={c.search} placeholder={c.search} value={search} onChange={e => setSearch(e.target.value)} />
       {models.length === 0 && <p className={styles.empty}>{incoming.length ? c.duplicate : c.noResults}</p>}
       {models.filter(m => `${m.name ?? ""} ${m.id}`.toLowerCase().includes(search.toLowerCase())).map(model => <div className={styles.importRow} key={model.id}>
@@ -386,7 +418,7 @@ function ImportDialog({ c, incoming, existingIds, busy, onClose, onSave, saveErr
         {selected.has(model.id) && modelLimitProblem(model) ? <><p className={styles.hint}>{c.limitsHint}</p><LimitInputs model={model} c={c} onChange={patch => setModels(current => current.map(m => m.id === model.id ? { ...m, ...patch } : m))} /></> : <p className={styles.hint}>{c.context}: {model.contextWindow ?? "—"} · {c.output}: {model.maxTokens ?? "—"}</p>}
       </div>)}
       {(error || saveError) && <div className={styles.error} role="alert"><ModelErrorText value={error || saveError || ""} /></div>}
-    </fieldset>
+    </fieldset></div>
     <div className={styles.dialogFooter}><span className={styles.hint}>{c.selected} {selected.size}</span><button className={styles.quiet} disabled={busy} onClick={onClose}>{c.cancel}</button><button className={styles.primary} disabled={busy || !selected.size} onClick={() => void save()}>{busy ? c.saving : c.importModels}</button></div>
   </Modal>;
 }

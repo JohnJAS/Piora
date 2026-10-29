@@ -31,7 +31,7 @@ test("mirror is read-only, resizes through the desktop bridge, and shows common 
     const globals=(await readFile(path.join(repo,"app/globals.css"),"utf8")).replace(/^@import.*$/gm,"");
     const css=globals+await readFile(path.join(repo,"app/theme-backgrounds.css"),"utf8")+await readFile(path.join(repo,"components/workspace/harmony/MirrorWindow.module.css"),"utf8")+await readFile(path.join(repo,"components/ConfirmDialog.module.css"),"utf8");
     await page.route("https://mirror.test/**",async route=>{const r=route.request(),u=new URL(r.url());if(u.pathname==="/themes/codex-dream-skin/skin.css")return route.fulfill({contentType:"text/css",body:await readFile(path.join(repo,"public/themes/codex-dream-skin/skin.css"),"utf8")});if(u.pathname==="/bundle.js")return route.fulfill({contentType:"text/javascript",body:await readFile(path.join(root,"bundle.js"))});if(u.pathname==="/api/harmony/devices")return route.fulfill({json:{devices:[{serial:"phone",name:"BRA-AL00",model:"BRA-AL00",product:"HUAWEI Mate 60 ",state:"online",generation:1,capabilities:{screenshot:true}}]}});if(u.pathname==="/api/harmony/media"){if(r.method()==="POST"){requests.push(r.postDataJSON());return route.fulfill({json:{artifact:{kind:"screenshot",serial:"phone",path:"C:/media/screen.png",filename:"screen.png"}}});}return route.fulfill({json:{recording,completion}});}if(u.pathname.startsWith('/api/'))return route.fulfill({json:{}});return route.fulfill({contentType:"text/html",body:`<meta charset="utf-8"><style>:root{--bg:#fff;--bg-panel:#fafafa;--bg-hover:#eee;--border:#ddd;--text:#222;--text-muted:#666;--text-dim:#888;--accent:#3478f6;--btn-primary-bg:#3478f6;--btn-primary-fg:#fff;--radius-surface:12px;--radius-control:6px;--font-ui:system-ui;--text-base:14px;--text-sm:13px}body{margin:0;font:14px system-ui}${css}</style><div id="root"></div><script src="/bundle.js"></script>`});});
-    await page.goto("https://mirror.test/");await page.waitForFunction(()=>window.geometry?.width===360);
+    await page.goto("https://mirror.test/");await page.addStyleTag({content:"*, *::before, *::after { transition: none !important; animation: none !important; }"});await page.waitForFunction(()=>window.geometry?.width===360);
     await page.locator("canvas").click();await page.locator("canvas").press("a");assert.equal(requests.length,0);
     assert.equal(await page.locator("footer").count(),0);
     assert.equal(await page.locator(".device").innerText(), "HUAWEI Mate 60");
@@ -87,8 +87,8 @@ test("mirror is read-only, resizes through the desktop bridge, and shows common 
           assert.ok(visiblePixels>=3,`${theme.id}: each titlebar label/icon must remain painted (${wallpaper}): ${JSON.stringify(control)}`);
         }
       }
-      await page.getByRole('combobox',{name:'画面缩放'}).focus();
-      assert.notEqual(await page.getByRole('combobox',{name:'画面缩放'}).evaluate(el=>getComputedStyle(el).outlineStyle),'none');
+      await page.getByRole('button',{name:'关闭投屏'}).focus();
+      assert.notEqual(await page.getByRole('button',{name:'关闭投屏'}).evaluate(el=>getComputedStyle(el).outlineStyle),'none');
       if(process.env.PIORA_HARMONY_SCREENSHOT_DIR&&['light','anime-neon','dream'].includes(theme.id)){
         await mkdir(process.env.PIORA_HARMONY_SCREENSHOT_DIR,{recursive:true});
         await page.screenshot({path:path.join(process.env.PIORA_HARMONY_SCREENSHOT_DIR,'toolbar-'+theme.id+'.png')});
@@ -115,7 +115,7 @@ test("mirror is read-only, resizes through the desktop bridge, and shows common 
     assert.equal(await page.getByRole("dialog").count(),0);
     if(process.env.PIORA_HARMONY_SCREENSHOT_DIR){await mkdir(process.env.PIORA_HARMONY_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.PIORA_HARMONY_SCREENSHOT_DIR,"media-notice.png")});}
     await page.getByRole("status").getByRole("button",{name:"关闭",exact:true}).click();completion=null;
-    await page.getByRole("combobox",{name:"画面缩放"}).selectOption("25");assert.deepEqual(await page.evaluate(()=>window.calls),[25]);
+    assert.equal(await page.getByRole("combobox",{name:"画面缩放"}).count(),0);
     await page.setViewportSize({width:122,height:278});await page.getByRole("button",{name:"投屏菜单"}).click();assert.equal(await page.evaluate(()=>window.menu),true);
     assert.equal(await page.getByRole("button",{name:"关闭投屏"}).isVisible(),true);
     assert.equal(await page.getByRole("button",{name:"截图",exact:true}).isVisible(),false);
