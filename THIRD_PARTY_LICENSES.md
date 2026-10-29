@@ -2,7 +2,7 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `270ce68052c84148f04d246e985d3f062493ae0a36629853136227ef20f70253`
+Lockfile SHA-256: `36667ec03deb19c24e1074a8ab89603670e08424bb903dcb9321dd56efed49b3`
 
 Unique locked packages: **1267**. Runtime packages: **767**. Build/development-only packages: **500**.
 

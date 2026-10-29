@@ -26,7 +26,7 @@ export class HarmonyWindows {
   private pendingPlace = false;
   private pendingPosition: SavedWindow | undefined;
   private notified = new Set<string>();
-  private appliedBounds?: { x: number; y: number; width: number; height: number };
+  private appliedBounds: { x: number; y: number; width: number; height: number } | undefined;
   private forceClose = false;
   private prefs = new Map<string, SavedWindow>();
   private state: HarmonyWindowState = { serial: "", scale: 75, alwaysOnTop: false, open: false, minimized: false, ownerId: `desktop-media-${randomUUID()}` };
