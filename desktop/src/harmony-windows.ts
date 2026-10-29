@@ -11,7 +11,7 @@ type Dependencies = {
   request: <T>(path: string, body?: unknown) => Promise<T>;
   workbench: () => void;
 };
-type SavedWindow = { scale: MirrorScale; x: number; y: number };
+type SavedWindow = { scale: MirrorScale; x: number; y: number; width?: number; height?: number };
 type Recording = { recordingId: string; ownerId: string; startedAt: string; systemRecorderStateUnknown?: boolean };
 export class HarmonyWindows {
   private mirror: BrowserWindow | null = null;
@@ -60,7 +60,7 @@ export class HarmonyWindows {
       const frame = value as { serial?: unknown; width?: unknown; height?: unknown };
       if (frame.serial !== this.state.serial || typeof frame.width !== "number" || typeof frame.height !== "number" || !Number.isInteger(frame.width) || !Number.isInteger(frame.height) || frame.width < 1 || frame.height < 1 || frame.width > 8192 || frame.height > 8192) return;
       const ratio = frame.width / frame.height;
-      if (Math.abs(this.ratio - ratio) > .0001) { this.ratio = ratio; this.place(); }
+      if (Math.abs(this.ratio - ratio) > .0001) { this.ratio = ratio; this.mirror?.setAspectRatio(ratio, { width: 2, height: 38 }); this.place(); }
     });
     call("workbench", () => deps.workbench());
     call("menu", () => this.menu());
@@ -94,8 +94,8 @@ export class HarmonyWindows {
   private emit() { for (const window of [this.deps.main(), this.mirror]) if (window && !window.isDestroyed()) window.webContents.send("pi:harmony-window-state", this.snapshot()); }
   private save() {
     if (!this.mirror || !this.state.serial) return;
-    const { x, y } = this.mirror.getBounds();
-    this.prefs.set(this.state.serial, { scale: this.state.scale, x, y });
+    const { x, y, width, height } = this.mirror.getBounds();
+    this.prefs.set(this.state.serial, { scale: this.state.scale, x, y, width, height });
     try { const path = this.preferencePath(); writeFileSync(`${path}.tmp`, JSON.stringify([...this.prefs].slice(-100))); renameSync(`${path}.tmp`, path); } catch { /* Window placement remains usable if persistence is unavailable. */ }
   }
   private async place(saved?: SavedWindow) {
@@ -105,7 +105,16 @@ export class HarmonyWindows {
     try {
       const position = saved ?? this.mirror.getBounds();
       const display = screen.getDisplayNearestPoint({ x: position.x, y: position.y });
-      this.appliedBounds = await applyMirrorBounds(this.mirror, mirrorBounds(display.workArea, this.ratio, this.state.scale, position));
+      const base = mirrorBounds(display.workArea, this.ratio, this.state.scale, position);
+      const height = saved?.height ?? this.mirror.getBounds().height;
+      if (Number.isFinite(height) && height >= 120) {
+        base.height = Math.min(height, display.workArea.height);
+        base.width = Math.min(Math.round((base.height - 38) * this.ratio) + 2, display.workArea.width);
+        if (base.width === display.workArea.width) base.height = Math.round((base.width - 2) / this.ratio) + 38;
+        base.x = Math.max(display.workArea.x, Math.min(base.x, display.workArea.x + display.workArea.width - base.width));
+        base.y = Math.max(display.workArea.y, Math.min(base.y, display.workArea.y + display.workArea.height - base.height));
+      }
+      this.appliedBounds = await applyMirrorBounds(this.mirror, base);
     } catch { /* The window can close while Win32 settles its final bounds. */ }
     finally { this.placing = false; if (this.pendingPlace) { this.pendingPlace = false; const position = this.pendingPosition; this.pendingPosition = undefined; void this.place(position); } else this.save(); }
   }
@@ -137,16 +146,17 @@ export class HarmonyWindows {
     if (this.mirror && !this.mirror.isDestroyed()) return;
     const saved = this.prefs.get(this.state.serial);
     const area = saved ? screen.getDisplayNearestPoint(saved).workArea : screen.getPrimaryDisplay().workArea;
-    const window = this.createSurface("/desktop-harmony", { ...mirrorBounds(area, this.ratio, this.state.scale, saved), title: "Piora · 鸿蒙投屏", frame: false, resizable: false, maximizable: false, fullscreenable: false, alwaysOnTop: this.state.alwaysOnTop });
-    this.mirror = window; this.state.open = true; this.state.minimized = false;
+    const window = this.createSurface("/desktop-harmony", { ...mirrorBounds(area, this.ratio, this.state.scale, saved), title: "Piora · 鸿蒙投屏", frame: false, resizable: true, minWidth: 180, minHeight: 120, maximizable: false, fullscreenable: false, alwaysOnTop: this.state.alwaysOnTop });
+    this.mirror = window; window.setAspectRatio(this.ratio, { width: 2, height: 38 }); this.state.open = true; this.state.minimized = false;
     window.on("close", event => { if (this.forceClose) return; event.preventDefault(); void this.requestClose(); });
     window.on("closed", () => { this.mirror = null; this.state.open = false; this.state.minimized = false; this.emit(); });
     window.on("moved", () => {
       if (this.placing) return;
       const bounds = window.getBounds();
       if (this.appliedBounds && (["x", "y", "width", "height"] as const).every(key => bounds[key] === this.appliedBounds![key])) return;
-      this.place(); this.save();
+      this.save();
     });
+    window.on("resized", () => { if (!this.placing) { this.appliedBounds = undefined; this.save(); } });
     window.on("minimize", () => { this.state.minimized = true; this.emit(); });
     window.on("restore", () => { this.state.minimized = false; this.emit(); });
     window.webContents.on("did-finish-load", () => { this.place(saved); this.emit(); });
@@ -189,7 +199,6 @@ export class HarmonyWindows {
     const command = (value: string) => this.mirror?.webContents.send("pi:harmony-window-command", value);
     Menu.buildFromTemplate([
       { label: "截图", click: () => command("screenshot") }, { label: "录屏 / 停止录屏", click: () => command("record") },
-      { type: "separator" }, ...([25, 50, 75, 100] as const).map(scale => ({ label: `${scale}%`, type: "radio" as const, checked: this.state.scale === scale, click: () => { this.state.scale = scale; this.place(); this.save(); this.emit(); } })),
       { type: "separator" }, { label: "置顶", type: "checkbox", checked: this.state.alwaysOnTop, click: item => { this.state.alwaysOnTop = item.checked; this.mirror?.setAlwaysOnTop(item.checked); this.emit(); } },
       { label: "重连", click: () => command("reconnect") }, { label: "连接详情", click: () => command("details") },
       { label: "返回工作台", click: () => this.deps.workbench() }, { label: "最小化", click: () => this.mirror?.minimize() },

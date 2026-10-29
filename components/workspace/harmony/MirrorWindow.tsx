@@ -10,7 +10,6 @@ import { useTheme } from "@/hooks/useTheme";
 import { useFontPreferences } from "@/hooks/useFontPreferences";
 import { showPioraMessage } from "@/components/PioraMessage";
 import { AliIcon } from "@/components/AliIcon";
-import type { MirrorScale } from "@/desktop/src/harmony-window-types";
 import { formatHarmonyDeviceTitle, formatHarmonyDeviceLabel } from "@/lib/harmony/device-label";
 import styles from "./MirrorWindow.module.css";
 
@@ -72,7 +71,6 @@ export function MirrorWindow({ embedded = false, serial: embeddedSerial, active 
     <header className={styles.titlebar} data-dark={isDark}>
       <span className={styles.device} title={device ? formatHarmonyDeviceLabel(device) : serial}>{device ? formatHarmonyDeviceTitle(device, copy("鸿蒙设备", "Harmony device")) : copy("鸿蒙投屏", "Harmony mirror")}</span>
       {media.recording ? <span className={styles.recording} title={copy(`录屏 ${clock} · 最长30分钟`, `Recording ${clock} · 30 minute limit`)}>●<span className={styles.clock}>{clock}</span></span> : null}
-      <select className={styles.scale} aria-label={copy("画面缩放", "Screen zoom")} value={state?.scale ?? 75} onChange={event => { void window.piDesktop?.harmonyMirror?.setScale(Number(event.target.value) as MirrorScale); }}>{[25, 50, 75, 100].map(value => <option key={value} value={value}>{value}%</option>)}</select>
       <button className={styles.capture} disabled={!canScreenshot || Boolean(media.busy)} title={copy("截图", "Screenshot")} aria-label={copy("截图", "Screenshot")} onClick={() => { void media.action("capture_screenshot"); }}><AliIcon name="save" size={15} /></button>
       <button className={styles.record} disabled={media.transitioning || device?.state !== "online" || Boolean(media.recording && !media.ownsRecording)} title={media.recording ? copy("停止并保存", "Stop and save") : copy("录屏 · 最长30分钟", "Record · 30 minute limit")} aria-label={media.recording ? copy("停止录屏", "Stop recording") : copy("开始录屏", "Start recording")} onClick={record}><AliIcon name={media.recording ? "stop" : "play"} size={15} /></button>
       <button title={embedded ? copy("切换到悬浮投屏", "Float mirror") : copy("在侧栏显示", "Dock mirror")} aria-label={embedded ? copy("切换到悬浮投屏", "Float mirror") : copy("在侧栏显示", "Dock mirror")} onClick={() => { void window.piDesktop?.harmonyMirror?.setPresentation(embedded ? "floating" : "sidebar"); }}><AliIcon name="layout" size={14} /></button>

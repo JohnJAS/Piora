@@ -207,10 +207,7 @@ test("Harmony workspace keeps device tools, drafts and fenced control in a full 
     try { await page.getByRole("region", {name:"侧栏投屏"}).locator("canvas").waitFor(); } catch (error) { console.error("Sidebar diagnosis", errors, await page.locator("#root").innerText(), await page.locator(".embeddedMirror").count()); throw error; }
     if (process.env.PIORA_HARMONY_SCREENSHOT_DIR) await page.screenshot({path:path.join(process.env.PIORA_HARMONY_SCREENSHOT_DIR,"sidebar-mirror.png")});
     assert.deepEqual(await page.evaluate(()=>window.mirrorCalls), ["phone"], "docking reuses the viewer state without opening another floating window");
-    const fullHeight = (await page.locator(".embeddedMirror").boundingBox()).height;
-    await page.getByRole("region",{name:"侧栏投屏"}).getByRole("combobox",{name:"画面缩放"}).selectOption("25");
-    await page.waitForFunction(() => document.querySelector('.embeddedMirror').getBoundingClientRect().height < 250);
-    assert.ok((await page.locator(".embeddedMirror").boundingBox()).height < fullHeight / 2, "sidebar zoom releases workspace space");
+    assert.equal(await page.getByRole("region",{name:"侧栏投屏"}).getByRole("combobox",{name:"画面缩放"}).count(),0);
     await page.getByRole("combobox", {name:"投屏位置"}).selectOption("floating");
     await page.waitForFunction(()=>!document.querySelector('.embeddedMirror canvas'));
     assert.equal(await page.evaluate(() => window.maximized), false, "switching between sidebar and floating mirror does not expand the workspace");
