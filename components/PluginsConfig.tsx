@@ -725,7 +725,7 @@ export function PluginsConfig({
         width: "100%",
         height: "100%",
         minHeight: 0,
-        background: embedded ? "var(--bg)" : "rgba(0,0,0,0.35)",
+        background: embedded ? "var(--settings-page-background, var(--bg))" : "rgba(0,0,0,0.35)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -745,7 +745,7 @@ export function PluginsConfig({
           maxWidth: embedded ? "none" : "calc(100vw - 16px)",
           height: embedded ? "100%" : isMobile ? "calc(100dvh - 16px)" : "76vh",
           maxHeight: embedded ? "none" : "calc(100dvh - 16px)",
-          background: "var(--bg)",
+          background: embedded ? "var(--settings-page-background, var(--bg))" : "var(--bg)",
           border: embedded ? "none" : "1px solid var(--border)",
           borderRadius: embedded ? 0 : 8,
           display: "flex",
@@ -813,7 +813,7 @@ export function PluginsConfig({
               display: "flex",
               flexDirection: "column",
               flexShrink: 0,
-              background: embedded ? "color-mix(in srgb, var(--bg-panel) 60%, var(--bg))" : "var(--bg-panel)",
+              background: embedded ? "var(--settings-panel-background, color-mix(in srgb, var(--bg-panel) 60%, var(--bg)))" : "var(--bg-panel)",
             }}
           >
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 6px" }}>

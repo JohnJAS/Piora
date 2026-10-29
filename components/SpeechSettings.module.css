@@ -3,7 +3,7 @@
 .header h2 { margin: 0; font-size: calc(var(--text-lg) * 1.22); font-weight: 680; }
 .header p, .card p { margin: 7px 0 0; color: var(--text-muted); font-size: var(--text-sm); line-height: 1.55; }
 .privacyBadge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); border-radius: 999px; color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg-panel)); font-size: var(--text-xs); white-space: nowrap; }
-.card { margin-top: 12px; padding: 17px; border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--bg-panel); }
+.card { margin-top: 12px; padding: 17px; border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--settings-panel-background, var(--bg-panel)); }
 .cardHeader, .toggleRow { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .card h3 { margin: 0; font-size: var(--text-sm); font-weight: 650; }
 .switch { width: 42px; height: 24px; padding: 2px; border: 0; border-radius: 999px; background: var(--border); cursor: pointer; transition: background .15s ease; }

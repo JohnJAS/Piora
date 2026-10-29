@@ -114,7 +114,7 @@ export function ExtensionsConfig({ cwd, sessionId, onReloaded }: Props) {
             {group.items.map((extension) => {
               const busy = busyId === extension.id;
               return (
-                <div key={extension.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 14px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg-panel)" }}>
+                <div key={extension.id} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 14px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--settings-panel-background, var(--bg-panel))" }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <strong style={{ fontSize: "var(--text-sm)", color: "var(--text)" }}>{extension.name}</strong>

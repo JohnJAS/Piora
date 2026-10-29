@@ -493,7 +493,7 @@ a.primaryButton {
   .petChoice:hover { transform: none; }
 }
 
-.embedded { background: var(--bg); backdrop-filter: none; }
+.embedded { background: var(--settings-page-background, var(--bg)); backdrop-filter: none; }
 .embedded .header { padding: 28px 32px 18px; border-bottom: 0; }
 .embedded .title { font-size: calc(var(--text-lg) * 1.28); font-weight: 650; letter-spacing: -0.02em; }
 .embedded .subtitle { margin-top: 8px; font-size: var(--text-sm); }
@@ -507,7 +507,7 @@ a.primaryButton {
 .embedded .petChoice,
 .embedded .petDropZone {
   border-color: color-mix(in srgb, var(--border) 65%, transparent);
-  background: var(--surface-muted);
+  background: var(--settings-panel-background, var(--surface-muted));
   box-shadow: none;
 }
 

@@ -165,7 +165,7 @@ export function CompanionSettingsDialog({
         position: embedded ? "relative" : "fixed", inset: embedded ? undefined : 0, zIndex: embedded ? undefined : 1200,
         width: "100%", height: "100%", minHeight: 0,
         display: "flex", alignItems: "center", justifyContent: "center",
-        background: embedded ? "var(--bg)" : "rgba(0,0,0,0.35)",
+        background: embedded ? "var(--settings-page-background, var(--bg))" : "rgba(0,0,0,0.35)",
       }}
     >
       <div ref={dialogRef} className={`${styles.dialog}${embedded ? ` ${styles.embedded}` : ""}`} style={embedded ? { width: "100%", maxWidth: "none", height: "100%", maxHeight: "none", border: 0, borderRadius: 0, boxShadow: "none" } : undefined}>

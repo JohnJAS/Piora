@@ -31,7 +31,7 @@
 .addressRow code { flex: 1; min-width: 0; overflow-wrap: anywhere; user-select: all; font-size: var(--text-sm); }
 .hint { color: var(--text-muted); font-size: var(--text-xs); line-height: 1.65; }
 
-.card { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-surface); background: var(--bg); }
+.card { min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-surface); background: var(--settings-panel-background, var(--bg)); }
 .cardHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 19px 20px; border-bottom: 1px solid var(--border); }
 .cardHeading > svg { margin-top: 3px; color: var(--text-muted); }
 .cardHeading p { margin-top: 4px; color: var(--text-muted); font-size: var(--text-xs); }

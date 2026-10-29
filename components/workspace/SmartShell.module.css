@@ -112,7 +112,7 @@
 .source .sectionHeading { grid-column: 1 / -1; flex-wrap: wrap; min-width: 0; }
 .source code { grid-column: 1 / -1; min-width: 0; font-size: calc(var(--ui-font-size) * 11 / 14); overflow-wrap: anywhere; }
 .source small { color: var(--text-muted); grid-column: 1 / -1; font-size: calc(var(--ui-font-size) * 11 / 14); }
-.settingsSection { display: grid; gap: 16px; padding: 18px; border: 1px solid var(--border); background: var(--bg-panel); border-radius: 10px; min-width: 0; }
+.settingsSection { display: grid; gap: 16px; padding: 18px; border: 1px solid var(--border); background: var(--settings-panel-background, var(--bg-panel)); border-radius: 10px; min-width: 0; }
 .settingsSection h3 { font-size: calc(var(--ui-font-size) * 14 / 14); font-weight: 600; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
 .settingsSection .field { grid-template-columns: 150px minmax(0, 1fr); align-items: center; }
 .settings .timeoutField { display: grid; align-items: center; gap: 8px; grid-template-columns: 150px minmax(0, 180px); }

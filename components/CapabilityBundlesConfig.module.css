@@ -49,7 +49,7 @@
 .securityNote {
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
-  background: var(--bg-panel);
+  background: var(--settings-panel-background, var(--bg-panel));
 }
 
 .card {

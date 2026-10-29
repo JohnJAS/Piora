@@ -148,6 +148,8 @@ html[data-app-background-active="true"] .settings-embedded-section {
 }
 
 html[data-app-background-active="true"] .settings-embedded-section {
+  --settings-page-background: transparent;
+  --settings-panel-background: color-mix(in srgb, var(--bg-panel) 48%, transparent);
   box-shadow: none !important;
 }
 
