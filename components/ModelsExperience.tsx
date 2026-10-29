@@ -124,7 +124,7 @@ export function ModelsExperience({ cwd, onClose, onModelsChanged, embedded = fal
     await mutate(async () => { await jsonRequest("/api/models-config", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, ...(id ? { id } : {}) }) }); onModelsChanged?.(); if (!id) setView({ kind: "home" }); });
   };
 
-  const providerIds = [...new Set([...Object.keys(config.providers ?? {}), ...(scope?.models ?? []).map(model => model.provider), ...apiKeys.filter(item => item.configured).map(item => item.id), ...oauth.filter(item => item.loggedIn).map(item => item.id)])];
+  const providerIds = [...new Set([...Object.keys(config.providers ?? {}), ...apiKeys.filter(item => item.configured).map(item => item.id), ...oauth.filter(item => item.loggedIn).map(item => item.id)])];
   const authRefresh = () => { onModelsChanged?.(); void reload(); };
   const leaveView = async () => {
     if (dirty && !await requestConfirmation({ title: locale === "zh-CN" ? "放弃未保存的修改？" : "Discard unsaved changes?", message: locale === "zh-CN" ? "返回后，本次填写的内容不会保存。" : "Your changes will be lost when you leave.", confirmLabel: locale === "zh-CN" ? "放弃修改" : "Discard", tone: "danger" })) return false;
@@ -166,7 +166,10 @@ export function ModelsExperience({ cwd, onClose, onModelsChanged, embedded = fal
             initialName={custom ? selectedProvider : undefined} initial={custom} scope={scope} busy={busy} onDirty={setDirty} onModal={setModalOpen} saveError={error}
             onScope={switchScope} onRemove={id => void remove(selectedProvider, id)}
             saveProvider={async (name, provider, additions, original) => { const saved = await saveProvider(name, provider, additions, original); if (saved) setView({ kind: "manage", id: name }); return saved; }} />}
-          {["home", "manage"].includes(view.kind) && selectedProvider && !custom && <BuiltinPanel key={selectedProvider} c={c} id={selectedProvider} name={displayName(selectedProvider)} api={apiKeys.find(p => p.id === selectedProvider)} oauth={oauth.find(p => p.id === selectedProvider)} scope={scope} busy={busy} onRefresh={authRefresh} onScope={switchScope} />}
+          {["home", "manage"].includes(view.kind) && selectedProvider && !custom && <BuiltinPanel key={selectedProvider} c={c} id={selectedProvider} name={displayName(selectedProvider)} api={apiKeys.find(p => p.id === selectedProvider)} oauth={oauth.find(p => p.id === selectedProvider)} scope={scope} busy={busy} onRefresh={authRefresh} onScope={switchScope} onRemove={async (kind) => {
+            if (!await requestConfirmation({ title: c.remove, message: c.removeQuestion, confirmLabel: c.remove, tone: "danger" })) return;
+            await mutate(async () => { await jsonRequest(kind === "oauth" ? `/api/auth/logout/${encodeURIComponent(selectedProvider)}` : `/api/auth/api-key/${encodeURIComponent(selectedProvider)}`, { method: kind === "oauth" ? "POST" : "DELETE" }); onModelsChanged?.(); setView({ kind: "home" }); });
+          }} />}
         </main>
       </div>
     </div>
@@ -274,13 +277,13 @@ function ProviderPanel({ c, initialName, initial, scope, busy, saveProvider, onD
   </>;
 }
 
-function BuiltinPanel({ c, id, name, api, oauth, scope, busy, onRefresh, onScope }: {
+function BuiltinPanel({ c, id, name, api, oauth, scope, busy, onRefresh, onScope, onRemove }: {
   c: Text; id: string; name: string; api?: ApiKeyProvider; oauth?: OAuthProvider; scope: ModelScopeResponse | null; busy: boolean;
-  onRefresh: () => void; onScope: (action: string, id?: string) => void;
+  onRefresh: () => void; onScope: (action: string, id?: string) => void; onRemove: (kind: "api" | "oauth") => Promise<void>;
 }) {
   const [mode, setMode] = useState(oauth?.loggedIn || !api ? "oauth" : "api");
   const models = (scope?.models ?? []).filter(m => m.provider === id), enabled = models.some(m => m.enabled);
-  return <><div className={styles.providerHeader}><ModelProviderIcon provider={id} size={20} /><h3>{name}</h3>{api && oauth && <select aria-label={c.settings} value={mode} onChange={e => setMode(e.target.value)}><option value="api">API Key</option><option value="oauth">OAuth</option></select>}<Toggle checked={enabled} label={enabled ? c.disableProvider : c.enableProvider} disabled={busy || !models.length || scope?.projectOverride} onChange={() => onScope(enabled ? "hide-provider" : "restore-provider")} /></div>
+  return <><div className={styles.providerHeader}><ModelProviderIcon provider={id} size={20} /><h3>{name}</h3>{api && oauth && <select aria-label={c.settings} value={mode} onChange={e => setMode(e.target.value)}><option value="api">API Key</option><option value="oauth">OAuth</option></select>}<Toggle checked={enabled} label={enabled ? c.disableProvider : c.enableProvider} disabled={busy || !models.length || scope?.projectOverride} onChange={() => onScope(enabled ? "hide-provider" : "restore-provider")} />{(api?.canRemoveStoredCredential || oauth?.loggedIn) && <IconButton label={c.remove} icon="trash" disabled={busy} onClick={() => void onRemove(oauth?.loggedIn ? "oauth" : "api")} />}</div>
     <div className={styles.auth}>{mode === "api" && api ? <ApiKeyDetail provider={api} onRefresh={onRefresh} /> : oauth ? <OAuthDetail provider={oauth} onRefresh={onRefresh} /> : null}</div>
     <div className={styles.listHeading}>{c.models}</div><div className={styles.modelList}>{models.length ? models.map(model => <div className={styles.modelRow} key={model.id}><div className={styles.modelLine}><div className={styles.modelIdentity}>{model.name || model.id}</div>{scope?.effectiveDefault?.provider === id && scope.effectiveDefault.modelId === model.id ? <span title={c.defaultModel}>★</span> : model.enabled && <IconButton label={`${c.setDefault} ${model.id}`} icon="star" disabled={busy} onClick={() => onScope("set-default", model.id)} />}<Toggle checked={model.enabled} label={`${model.enabled ? c.hideModel : c.enable} ${model.id}`} disabled={busy || scope?.projectOverride} onChange={() => onScope(model.enabled ? "hide" : "restore", model.id)} /></div></div>) : <p className={styles.empty}>{c.modelEmpty}</p>}</div></>;
 }

@@ -4,6 +4,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+### 模型配置
+
+- 未配置的内置模型不再自动生成供应商；修复内置供应商密钥输入框挤压控件、模型弹窗输入框越界以及大量识别结果无法滚动的问题。
+
 ## [0.5.5-beta.60] - 2026-10-29
 
 ### 鸿蒙投屏
