@@ -13,7 +13,7 @@
 .titlebar button:hover, .titlebar select:hover { background: var(--mirror-bar-hover); background-image: none; }
 .titlebar button:disabled { opacity: .4; cursor: default; }
 .titlebar button:focus-visible, .titlebar select:focus-visible { outline: 2px solid var(--mirror-bar-focus); outline-offset: -2px; }
-.device { font-size: calc(var(--text-base) * 11 / 14); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.device { color: var(--mirror-bar-fg); font-size: calc(var(--text-base) * 11 / 14); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex: 1; min-width: 0; }
 .scale { font-size: calc(var(--text-base) * 11 / 14) !important; width: 53px; }
 .recording { color: var(--mirror-bar-record); font-size: calc(var(--text-base) * 10 / 14); white-space: nowrap; display: flex; gap: 4px; }
 .clock { font-variant-numeric: tabular-nums; }
