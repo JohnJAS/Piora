@@ -15,7 +15,7 @@ import { formatHarmonyDeviceTitle, formatHarmonyDeviceLabel } from "@/lib/harmon
 import styles from "./MirrorWindow.module.css";
 
 type Device = { serial: string; name?: string; model?: string; product?: string; state: string; generation: number; capabilities: Record<string, boolean> };
-export function MirrorWindow({ embedded = false, serial: embeddedSerial, active = true, onEnableVideo }: { embedded?: boolean; serial?: string; active?: boolean; onEnableVideo?: () => void } = {}) {
+export function MirrorWindow({ embedded = false, serial: embeddedSerial, active = true }: { embedded?: boolean; serial?: string; active?: boolean } = {}) {
   const { isDark } = useTheme();
   useFontPreferences();
   const { locale } = useI18n(); const chinese = locale === "zh-CN";
@@ -23,8 +23,6 @@ export function MirrorWindow({ embedded = false, serial: embeddedSerial, active 
   const state = useHarmonyWindow(); const serial = embedded ? embeddedSerial ?? "" : state?.serial ?? "";
   const [device, setDevice] = useState<Device | null>(null);
   const [deviceError, setDeviceError] = useState("");
-  const [enablingVideo, setEnablingVideo] = useState(false);
-  const enabling = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { bindings } = useApplicationShortcuts();
   useEffect(() => {
@@ -41,26 +39,8 @@ export function MirrorWindow({ embedded = false, serial: embeddedSerial, active 
     return () => { controller.abort(); clearInterval(timer); };
   }, [serial]);
   const live = useHarmonyLiveFrame({ active: active && Boolean(state?.open && (embedded ? state.presentation === "sidebar" : state.presentation !== "sidebar" && !state.minimized)), enabled: device?.state === "online", serial, calibrateGeometry: false,
-    generation: device?.generation, canvasRef, chinese, fallbackError: copy("画面连接失败", "Could not connect to the device") });
+    generation: device?.generation, canvasRef, chinese, allowFrameFallback: false, fallbackError: copy("画面连接失败", "Could not connect to the device") });
   const media = useHarmonyMedia(serial, state?.ownerId ?? "", Boolean(serial), chinese);
-  const enableVideo = async () => {
-    if (enabling.current || !serial) return;
-    if (onEnableVideo) { onEnableVideo(); return; }
-    enabling.current = true; setEnablingVideo(true);
-    let token: string | undefined;
-    try {
-      const { lease } = await harmonyJson<{ lease: { token: string } }>("/api/harmony/manual", { action: "acquire", serial, ownerId: `manual:mirror-init:${crypto.randomUUID()}` });
-      token = lease.token;
-      await harmonyJson("/api/harmony/action", { action: "initialize_mirror", serial, leaseToken: token });
-      await showPioraMessage({ title: copy("在手机上确认屏幕共享", "Confirm screen sharing on the phone"), message: copy("请在手机上的 Piora 投屏页面开始共享并允许授权，然后点击“重新连接”。", "Start screen sharing in the Piora phone component and allow capture, then reconnect."), actions: [{ id: "connect", label: copy("重新连接", "Reconnect"), primary: true }] });
-      live.refresh();
-    } catch (error) {
-      await showPioraMessage({ title: copy("实时视频未建立", "Live video could not start"), message: error instanceof Error ? error.message : String(error), tone: "error", actions: [{ id: "done", label: copy("确定", "OK"), primary: true }] });
-    } finally {
-      if (token) await harmonyJson("/api/harmony/manual", { action: "release", leaseToken: token }).catch(() => undefined);
-      enabling.current = false; setEnablingVideo(false);
-    }
-  };
   const canScreenshot = device?.state === "online" && device.capabilities?.screenshot;
   const width = live.frame?.width, height = live.frame?.height;
   useEffect(() => {
@@ -99,7 +79,7 @@ export function MirrorWindow({ embedded = false, serial: embeddedSerial, active 
       <button aria-label={copy("投屏菜单", "Mirror menu")} onClick={() => { if (embedded) details(); else void window.piDesktop?.harmonyMirror?.showMenu(); }}>⋯</button>
       <button aria-label={copy("关闭投屏", "Close mirror")} onClick={() => { void window.piDesktop?.harmonyMirror?.close(); }}><AliIcon name="close" size={14} /></button>
     </header>
-    {live.mode === "frames" ? <div className={styles.compatibility} role="status" title={live.fallbackReason ?? live.error ?? ""}><span>{copy("兼容截图", "Screenshot fallback")}{live.metrics ? ` · ${live.metrics.fps} FPS` : ""}</span><button disabled={enablingVideo} onClick={() => { void enableVideo(); }}>{enablingVideo ? copy("正在启用…", "Enabling…") : copy("启用实时投屏", "Enable live video")}</button></div> : null}
+    {live.status === "error" ? <div className={styles.compatibility} role="status"><span>{live.error || copy("实时视频连接中断", "Live video disconnected")}</span><button onClick={live.refresh}>{copy("重新连接", "Reconnect")}</button></div> : null}
     <main className={styles.screen}><canvas ref={canvasRef} role="img" aria-label={copy("手机画面", "Device screen")} />
       {device?.state !== "online" || live.status !== "live" ? <div className={styles.placeholder} role="status">{deviceError || (device?.state !== "online" ? copy("等待设备连接", "Waiting for device") : live.status === "error" ? copy("正在重新连接…", "Reconnecting…") : copy("正在连接画面…", "Connecting…"))}</div> : null}
     </main>

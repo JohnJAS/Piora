@@ -14,6 +14,9 @@ import type { HarmonyVideoConnection } from "./types";
 
 const SOCKET = "localabstract:scrcpy_grpc_socket";
 const MAX_QUEUE = 8 * 1024 * 1024;
+const MAX_VIEWER_PACKETS = 8;
+// Bound both bytes and frame count: an 8 MiB queue alone can hide seconds of lag.
+const viewerPacketSize = (packet: Uint8Array) => Math.max(packet.byteLength / MAX_QUEUE, 1 / MAX_VIEWER_PACKETS);
 type Run = (args: readonly string[], operation: string, signal?: AbortSignal, timeout?: number) => Promise<CommandResult>;
 type Reply = { getPayloadMap(): { get(key: string): { getValBytes_asU8(): Uint8Array } | undefined } };
 const decode = ScrcpyServiceService.onStart.responseDeserialize as unknown as (bytes: Buffer) => Reply;
@@ -29,7 +32,7 @@ async function freePort(): Promise<number> {
   });
 }
 
-interface Viewer { controller: ReadableStreamDefaultController<Uint8Array>; ready: boolean; finish(error?: Error): Promise<void> }
+interface Viewer { controller: ReadableStreamDefaultController<Uint8Array>; ready: boolean; size(packet: Uint8Array): number; finish(error?: Error): Promise<void> }
 
 /** One owned HDC encoder per device. Recording and visible viewers have independent lifetimes. */
 export class DevEcoVideoSession {
@@ -53,7 +56,7 @@ export class DevEcoVideoSession {
 
   get whenClosing(): Promise<void> | undefined { return this.closing; }
 
-  static async start(serial: string, jar: string, run: Run, onClose: () => void, ownershipDirectory?: string): Promise<DevEcoVideoSession> {
+  static async start(serial: string, jar: string | undefined, run: Run, onClose: () => void, ownershipDirectory?: string): Promise<DevEcoVideoSession> {
     const session = new DevEcoVideoSession(serial, run, await freePort(), `piora_video_${randomUUID().replaceAll("-", "")}.so`, onClose);
     try {
       session.ownership = new VideoOwnership(serial, session.name, session.port, run, ownershipDirectory);
@@ -81,7 +84,7 @@ export class DevEcoVideoSession {
     return true;
   }
 
-  private async initialize(jar: string) {
+  private async initialize(jar: string | undefined) {
     const sockets = await this.shell("cat /proc/net/unix", "debug_video_socket_check");
     if (sockets.includes("@scrcpy_grpc_socket")) {
       // Subscribe to the existing service without taking ownership of its daemon.
@@ -92,6 +95,7 @@ export class DevEcoVideoSession {
       await this.openForward();
       return;
     }
+    if (!jar) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Install a compatible DevEco Studio or open its device mirror, then reconnect.", { details: { reason: "debug-video-sdk-missing" }, retryable: true });
     const version = await this.shell("uitest --version", "debug_video_version");
     const library = await readDevEcoVideoLibrary(jar, version).catch(() => {
       throw fail("This DevEco SDK has no usable debug video library for this phone. Update DevEco Studio and reconnect.");
@@ -140,9 +144,9 @@ export class DevEcoVideoSession {
           if (config) this.configuration = packet;
           else { clearTimeout(this.firstFrameTimer); }
           for (const viewer of this.viewers) {
-            if (config) { viewer.ready = false; viewer.controller.enqueue(packet); continue; }
-            if (!viewer.ready) { if (!packet[8]) continue; viewer.ready = true; }
-            if ((viewer.controller.desiredSize ?? 0) < packet.length) {
+            if (config) viewer.ready = false;
+            else if (!viewer.ready) { if (!packet[8]) continue; viewer.ready = true; }
+            if ((viewer.controller.desiredSize ?? 0) < viewer.size(packet)) {
               void viewer.finish(fail("The video consumer is too slow; reconnect to resume live frames.")).catch(() => undefined);
             } else viewer.controller.enqueue(packet);
           }
@@ -165,13 +169,13 @@ export class DevEcoVideoSession {
     const abort = () => { void finish().catch(() => undefined); };
     const stream = new ReadableStream<Uint8Array>({
       start: controller => {
-        viewer = { controller, ready: false, finish }; this.viewers.add(viewer);
+        viewer = { controller, ready: false, size: recording ? packet => packet.byteLength : viewerPacketSize, finish }; this.viewers.add(viewer);
         // The host owns the encoder and implements the same isolation contract:
         // closing a viewer cannot stop an independent recording subscriber.
         if (recording) controller.enqueue(Uint8Array.from([0, 0, 0, 0x21, 0, 0, 0, 1, 1]));
         if (this.configuration) controller.enqueue(this.configuration);
       }, cancel: () => finish(),
-    }, { highWaterMark: MAX_QUEUE, size: chunk => chunk.byteLength });
+    }, recording ? { highWaterMark: MAX_QUEUE, size: chunk => chunk.byteLength } : { highWaterMark: 1, size: viewerPacketSize });
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) abort();
     else {

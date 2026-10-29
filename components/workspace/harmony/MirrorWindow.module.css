@@ -1,4 +1,5 @@
-.root { width: 100vw; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); box-sizing: border-box; color: var(--text); background: var(--bg); container-type: inline-size; }
+/* Standalone mirrors have no AppShell to lift them above body wallpaper layers. */
+.root { position: relative; z-index: 1; width: 100vw; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); box-sizing: border-box; color: var(--text); background: var(--bg); container-type: inline-size; }
 .embedded { width: 100%; height: 100%; min-height: 0; border: 0; }
 .embedded .titlebar { -webkit-app-region: no-drag; }
 .compatibility { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 6px; font-size: var(--text-xs); background: var(--bg-panel); color: var(--text-muted); }

@@ -73,7 +73,7 @@ async function mountLiveFrame(videoResponse, decoderClass, geometryResponse, opt
     createImageBitmap: options.createImageBitmap ?? (async () => ({ width: 100, height: 200, close() {}, ...options.bitmap?.() })),
   });
   exports.useHarmonyLiveFrame({ active: true, enabled: true, serial: "phone", generation: 1, fallbackError: "failed",
-    canvasRef: { current: canvas },
+    canvasRef: { current: canvas }, allowFrameFallback: true,
     ...options.hookOptions,
   });
   const cleanup = effect();
@@ -108,6 +108,25 @@ test("frame fallback periodically retries native video without a manual refresh"
     assert.ok(attempts >= 2);
     assert.equal(mounted.states[2], "video");
     assert.equal(mounted.states[1], "live");
+  } finally { mounted.cleanup(); }
+});
+
+test("default live viewing retries video through failures without polling screenshots", async () => {
+  const clock = virtualClock();
+  let attempts = 0;
+  const mounted = await mountLiveFrame(async () => {
+    attempts++;
+    if (attempts < 5) return { ok: false, status: 503, async json() { return { error: "video interrupted" }; } };
+    return { ok: true, body: new ReadableStream({ start(controller) { controller.enqueue(jpegFrame()); } }) };
+  }, undefined, undefined, { clock, hookOptions: { allowFrameFallback: undefined } });
+  try {
+    assert.equal(mounted.states[2], "video");
+    assert.equal(mounted.states[1], "error");
+    await clock.advance(4000);
+    assert.equal(attempts, 5);
+    assert.equal(mounted.states[1], "live");
+    assert.equal(mounted.states[2], "video");
+    assert.equal(mounted.calls.some(url => url.includes("/frame?")), false);
   } finally { mounted.cleanup(); }
 });
 

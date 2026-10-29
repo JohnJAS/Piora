@@ -246,7 +246,7 @@ export function readHarmonyConfig(path = defaultHarmonyConfigPath()): HarmonyCon
     if (typeof record.hdcPath === "string" && record.hdcPath.trim()) config.hdcPath = normalizeCandidate(record.hdcPath);
     if (record.video && typeof record.video === "object" && !Array.isArray(record.video)) {
       const video = record.video as Record<string, unknown>;
-      if (video.provider === "bundled" || video.provider === "hos-scrcpy") config.video = {
+      if (video.provider === "deveco" || video.provider === "bundled" || video.provider === "hos-scrcpy") config.video = {
         provider: video.provider,
         ...(typeof video.packageDirectory === "string" && video.packageDirectory.trim() ? { packageDirectory: video.packageDirectory.trim() } : {}),
         ...(typeof video.javaPath === "string" && video.javaPath.trim() ? { javaPath: video.javaPath.trim() } : {}),
@@ -303,7 +303,7 @@ export function writeHarmonyConfig(config: HarmonyConfig, path = defaultHarmonyC
     normalized.hdcPath = absolute;
   }
   if (config.video) {
-    if (config.video.provider !== "bundled" && config.video.provider !== "hos-scrcpy") throw new HarmonyError("INVALID_ARGUMENT", "Unknown video provider");
+    if (config.video.provider !== "deveco" && config.video.provider !== "bundled" && config.video.provider !== "hos-scrcpy") throw new HarmonyError("INVALID_ARGUMENT", "Unknown video provider");
     const packageDirectory = config.video.packageDirectory?.trim();
     const javaPath = config.video.javaPath?.trim();
     if (config.video.provider === "hos-scrcpy" && (!packageDirectory || !pathApi(inferredPlatform(packageDirectory)).isAbsolute(packageDirectory))) {

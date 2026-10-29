@@ -208,7 +208,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, cwd
   const [managerState, setManagerState] = useState<HarmonyState | null>(null);
   const [selectedSerial, setSelectedSerial] = useState("");
   const [sdkPath, setSdkPath] = useState("");
-  const [videoProvider, setVideoProvider] = useState<"bundled" | "hos-scrcpy">("bundled");
+  const [videoProvider, setVideoProvider] = useState<"deveco" | "bundled" | "hos-scrcpy">("deveco");
   const [hosPackageDirectory, setHosPackageDirectory] = useState("");
   const [javaPath, setJavaPath] = useState("");
   const [runtimeCandidates, setRuntimeCandidates] = useState<RuntimeCandidate[]>([]);
@@ -373,7 +373,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, cwd
       setRuntimeCandidates(candidates);
       setSdkPath(optionalString(config?.hdcPath) ?? diagnostics.runtime.hdcPath ?? candidates[0]?.hdcPath ?? "");
       const video = recordOf(config?.video);
-      setVideoProvider(video?.provider === "hos-scrcpy" ? "hos-scrcpy" : "bundled");
+      setVideoProvider(video?.provider === "hos-scrcpy" ? "hos-scrcpy" : video?.provider === "bundled" ? "bundled" : "deveco");
       setHosPackageDirectory(optionalString(video?.packageDirectory) ?? "");
       setJavaPath(optionalString(video?.javaPath) ?? "");
       setVisionModels(normalizeVisionModels(modelPayload?.models));
@@ -634,9 +634,9 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, cwd
       </div>
 
       <div className={styles.settingGroup}>
-        <div className={styles.settingCopy}><strong>{copy("投屏来源", "Video provider")}</strong><small>{copy("优先使用本机 DevEco 实时视频，无需打开手机共享页面；没有可用 SDK 时保留组件回退", "Prefer the installed DevEco live video service without opening the phone sharing app; retain the component fallback when no SDK is available")}</small></div>
-        <select aria-label={copy("投屏来源", "Video provider")} value={videoProvider} onChange={event => setVideoProvider(event.target.value as "bundled" | "hos-scrcpy")}>
-          <option value="bundled">{copy("自动（HDC 实时视频优先）", "Automatic (prefer HDC live video)")}</option><option value="hos-scrcpy">HOScrcpy</option>
+        <div className={styles.settingCopy}><strong>{copy("投屏来源", "Video provider")}</strong><small>{copy("默认复用 DevEco 实时视频；锁屏与解锁使用同一通道，侧栏与悬浮窗保持一致。需要兼容的 DevEco 服务与已授权的 HDC 连接。", "Use DevEco live video by default, with the same stream while locked or unlocked in both docked and floating views. Requires a compatible DevEco service and authorized HDC connection.")}</small></div>
+        <select aria-label={copy("投屏来源", "Video provider")} value={videoProvider} onChange={event => setVideoProvider(event.target.value as "deveco" | "bundled" | "hos-scrcpy")}>
+          <option value="deveco">{copy("DevEco 实时视频（默认）", "DevEco live video (default)")}</option><option value="bundled">{copy("旧版自动兼容（可回退手机组件）", "Legacy automatic (allow phone component fallback)")}</option><option value="hos-scrcpy">HOScrcpy</option>
         </select>
         {videoProvider === "hos-scrcpy" ? <>
           <label>{copy("本地 dsh-hos-scrcpy 包目录", "Local dsh-hos-scrcpy package directory")}<input value={hosPackageDirectory} onChange={event => setHosPackageDirectory(event.target.value)} /></label>
@@ -695,7 +695,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, cwd
       <button type="button" className={styles.tasksButton} onClick={() => changeToolTab("history")}>{copy("任务", "Tasks")}{tasksCount ? ` ${tasksCount}` : ""}</button>
       {lease || holder ? <button type="button" className={styles.stopButton} onClick={stopDevice} aria-label={copy("停止设备任务", "Stop device task")}>{copy("停止", "Stop")}</button> : null}
     </nav>
-    {mirror?.open && mirror.presentation === "sidebar" ? <section className={styles.embeddedMirror} style={{ height: `calc(36px + ${65 * mirror.scale / 100}dvh)` }} aria-label={copy("侧栏投屏", "Sidebar mirror")}><MirrorWindow embedded serial={selectedSerial} active={active} onEnableVideo={() => void initializeMirror()} /></section> : null}
+    {mirror?.open && mirror.presentation === "sidebar" ? <section className={styles.embeddedMirror} style={{ height: `calc(36px + ${65 * mirror.scale / 100}dvh)` }} aria-label={copy("侧栏投屏", "Sidebar mirror")}><MirrorWindow embedded serial={selectedSerial} active={active} /></section> : null}
     <main className={styles.workbenchContent} data-tab={toolTab}>
       <div ref={drawerBodyRef} id={drawerId} role="tabpanel" aria-labelledby={`${drawerId}-${toolTab}`} className={styles.workbenchBody} aria-label={copy("工具内容", "Tool content")}>
         {toolTab === "overview" ? <section className={styles.overview}>

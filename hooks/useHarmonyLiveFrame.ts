@@ -20,6 +20,8 @@ interface UseHarmonyLiveFrameOptions {
   enabled: boolean;
   paused?: boolean;
   preferFrames?: boolean;
+  /** Explicit compatibility viewers may opt into screenshots after video failure. */
+  allowFrameFallback?: boolean;
   /** Passive viewers do not need the HDC input-coordinate calibration loop. */
   calibrateGeometry?: boolean;
   serial: string;
@@ -667,7 +669,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           closeDecoder();
           config = undefined;
           firstKeyframe = false;
-          if ((!hasFrame && failures >= 1) || failures >= 3) {
+          if (options.allowFrameFallback && ((!hasFrame && failures >= 1) || failures >= 3)) {
             // The packaged low-latency video service is not available on every
             // device/decoder combination. Fall back to the existing bounded
             // screenshot endpoint so observation remains available while the
@@ -698,7 +700,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       void activeAttempt?.reader?.cancel().catch(() => undefined);
       void activeAttempt?.jpegChain.catch(() => undefined);
     };
-  }, [options.active, options.canvasRef, options.chinese, options.enabled, options.fallbackError, options.generation, options.paused, options.preferFrames, options.calibrateGeometry, options.serial, refreshKey]);
+  }, [options.active, options.canvasRef, options.chinese, options.enabled, options.fallbackError, options.generation, options.paused, options.preferFrames, options.allowFrameFallback, options.calibrateGeometry, options.serial, refreshKey]);
 
   return { frame, status, mode, error, fallbackReason, refresh, metrics };
 }

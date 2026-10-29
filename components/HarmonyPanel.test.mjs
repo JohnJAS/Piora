@@ -17,6 +17,8 @@ test("only the independent mirror consumes frames and has no input handlers or b
   assert.match(mirror, /<canvas/);
   assert.doesNotMatch(mirror, /onPointer|onMouse|<footer|action: "(?:tap|swipe|input_text|press_key)"/);
   assert.match(mirror, /setScale/);
+  assert.match(mirror, /allowFrameFallback: false/);
+  assert.doesNotMatch(mirror, /initialize_mirror|onEnableVideo/);
 });
 test("media results use shared dialogs and stable recording identities independently of input leases", () => {
   assert.match(media, /showPioraMessage/);

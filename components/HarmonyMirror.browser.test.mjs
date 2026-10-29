@@ -5,6 +5,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import test from "node:test";
 import { chromium } from "playwright-core";
+import sharp from "sharp";
 
 const require = createRequire(import.meta.url);
 const { webpack } = require("next/dist/compiled/webpack/webpack.js");
@@ -15,8 +16,8 @@ test("mirror is read-only, resizes through the desktop bridge, and shows common 
   try {
     await writeFile(path.join(root,"loader.cjs"),`const ts=require(${JSON.stringify(require.resolve("typescript"))});module.exports=s=>ts.transpileModule(s,{compilerOptions:{jsx:ts.JsxEmit.ReactJSX,module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText`);
     await writeFile(path.join(root,"css.cjs"),'module.exports=s=>"export default "+JSON.stringify(Object.fromEntries([...s.matchAll(/\\.([a-zA-Z][\\w-]*)/g)].map(m=>[m[1],m[1]])))');
-    await writeFile(path.join(root,"stub.tsx"),`import {useEffect} from "react";export const useI18n=()=>({locale:"zh-CN"});export const AliIcon=({name})=><span>{name==="save"?"▣":name==="close"?"×":"●"}</span>;export const useHarmonyLiveFrame=o=>{window.frameOptions={active:o.active,serial:o.serial};useEffect(()=>{const c=o.canvasRef.current;c.width=360;c.height=720;const g=c.getContext("2d");g.fillStyle="#eef3fa";g.fillRect(0,0,360,720);g.fillStyle="#243047";g.font="24px sans-serif";g.fillText("设置 · 示例画面",24,80);g.font="16px sans-serif";["无线网络","蓝牙","显示与亮度","声音和振动","通知","应用管理"].forEach((t,i)=>{g.fillStyle="#fff";g.fillRect(18,120+i*80,324,64);g.fillStyle="#333";g.fillText(t,34,160+i*80);});},[o.canvasRef]);return {status:"live",mode:"video",frame:{width:360,height:720},refresh:()=>{window.reconnected=true;}};};`);
-    await writeFile(path.join(root,"entry.tsx"),`import React from "react";import {createRoot} from "react-dom/client";import {MirrorWindow} from "@/components/workspace/harmony/MirrorWindow";import {PioraMessageHost,showPioraMessage} from "@/components/PioraMessage";import {useTheme} from "@/hooks/useTheme";window.showMessage=showPioraMessage;function Fixture(){const {setTheme,themes}=useTheme();window.setMirrorTheme=setTheme;window.mirrorThemes=themes;return <><MirrorWindow/><PioraMessageHost/></>;}createRoot(document.getElementById("root")).render(<Fixture/>);`);
+    await writeFile(path.join(root,"stub.tsx"),`import {useEffect} from "react";export const useI18n=()=>({locale:"zh-CN"});export const AliIcon=({name})=><span>{name==="save"?"▣":name==="close"?"×":"●"}</span>;export const useHarmonyLiveFrame=o=>{window.frameOptions={active:o.active,serial:o.serial,allowFrameFallback:o.allowFrameFallback};useEffect(()=>{const c=o.canvasRef.current;c.width=360;c.height=720;const g=c.getContext("2d");g.fillStyle="#eef3fa";g.fillRect(0,0,360,720);g.fillStyle="#243047";g.font="24px sans-serif";g.fillText("设置 · 示例画面",24,80);g.font="16px sans-serif";["无线网络","蓝牙","显示与亮度","声音和振动","通知","应用管理"].forEach((t,i)=>{g.fillStyle="#fff";g.fillRect(18,120+i*80,324,64);g.fillStyle="#333";g.fillText(t,34,160+i*80);});},[o.canvasRef]);return {status:"live",mode:"video",frame:{width:360,height:720},refresh:()=>{window.reconnected=true;}};};`);
+    await writeFile(path.join(root,"entry.tsx"),`import React,{useState} from "react";import {createRoot} from "react-dom/client";import {MirrorWindow} from "@/components/workspace/harmony/MirrorWindow";import {PioraMessageHost,showPioraMessage} from "@/components/PioraMessage";import {useTheme} from "@/hooks/useTheme";window.showMessage=showPioraMessage;function Fixture(){const[embedded,setEmbedded]=useState(false);window.setEmbedded=setEmbedded;const {setTheme,themes}=useTheme();window.setMirrorTheme=setTheme;window.mirrorThemes=themes;return <><MirrorWindow embedded={embedded} serial={embedded?"phone":undefined}/><PioraMessageHost/></>;}createRoot(document.getElementById("root")).render(<Fixture/>);`);
     const aliases=Object.fromEntries(["@/hooks/useI18n","@/hooks/useHarmonyLiveFrame"].map(k=>[k,path.join(root,"stub.tsx")]));
     const compiler=webpack({mode:"development",target:"web",devtool:false,entry:path.join(root,"entry.tsx"),output:{path:root,filename:"bundle.js"},resolve:{extensions:[".tsx",".ts",".js"],modules:[path.join(repo,"node_modules")],alias:{...aliases,"@":repo}},module:{rules:[{test:/\.tsx?$/,exclude:/node_modules/,use:path.join(root,"loader.cjs")},{test:/\.css$/,use:path.join(root,"css.cjs")}]}});
     await new Promise((resolve,reject)=>compiler.run((error,stats)=>compiler.close(()=>error||stats.hasErrors()?reject(error||Error(stats.toString({all:false,errors:true}))):resolve())));
@@ -25,7 +26,7 @@ test("mirror is read-only, resizes through the desktop bridge, and shows common 
     page.on("pageerror",e=>errors.push(e.message));
     await page.addInitScript(()=>{let state={serial:"phone",ownerId:"desktop-media",scale:75,open:true,minimized:false,alwaysOnTop:false},listeners=[];window.calls=[];window.updateMirror=patch=>{state={...state,...patch};listeners.forEach(f=>f(state));};window.piDesktop={harmonyMirror:{getState:async()=>state,onStateChange:f=>{listeners.push(f);return()=>listeners=listeners.filter(x=>x!==f);},onCommand:f=>{window.command=f;return()=>{};},reportFrame:async f=>window.geometry=f,setScale:async scale=>{window.calls.push(scale);window.updateMirror({scale});return state;},setPresentation:async presentation=>{window.updateMirror({presentation});return state;},showMenu:async()=>window.menu=true,close:async()=>{window.closed=true;return true;}},clipboard:{copyHarmonyMedia:async f=>{window.copy=f;}}};window.EventSource=class{close(){}};});
     const globals=(await readFile(path.join(repo,"app/globals.css"),"utf8")).replace(/^@import.*$/gm,"");
-    const css=globals+await readFile(path.join(repo,"components/workspace/harmony/MirrorWindow.module.css"),"utf8")+await readFile(path.join(repo,"components/ConfirmDialog.module.css"),"utf8");
+    const css=globals+await readFile(path.join(repo,"app/theme-backgrounds.css"),"utf8")+await readFile(path.join(repo,"components/workspace/harmony/MirrorWindow.module.css"),"utf8")+await readFile(path.join(repo,"components/ConfirmDialog.module.css"),"utf8");
     await page.route("https://mirror.test/**",async route=>{const r=route.request(),u=new URL(r.url());if(u.pathname==="/themes/codex-dream-skin/skin.css")return route.fulfill({contentType:"text/css",body:await readFile(path.join(repo,"public/themes/codex-dream-skin/skin.css"),"utf8")});if(u.pathname==="/bundle.js")return route.fulfill({contentType:"text/javascript",body:await readFile(path.join(root,"bundle.js"))});if(u.pathname==="/api/harmony/devices")return route.fulfill({json:{devices:[{serial:"phone",name:"BRA-AL00",model:"BRA-AL00",product:"HUAWEI Mate 60 ",state:"online",generation:1,capabilities:{screenshot:true}}]}});if(u.pathname==="/api/harmony/media"){if(r.method()==="POST"){requests.push(r.postDataJSON());return route.fulfill({json:{artifact:{kind:"screenshot",serial:"phone",path:"C:/media/screen.png",filename:"screen.png"}}});}return route.fulfill({json:{recording,completion}});}if(u.pathname.startsWith('/api/'))return route.fulfill({json:{}});return route.fulfill({contentType:"text/html",body:`<meta charset="utf-8"><style>:root{--bg:#fff;--bg-panel:#fafafa;--bg-hover:#eee;--border:#ddd;--text:#222;--text-muted:#666;--text-dim:#888;--accent:#3478f6;--btn-primary-bg:#3478f6;--btn-primary-fg:#fff;--radius-surface:12px;--radius-control:6px;--font-ui:system-ui;--text-base:14px;--text-sm:13px}body{margin:0;font:14px system-ui}${css}</style><div id="root"></div><script src="/bundle.js"></script>`});});
     await page.goto("https://mirror.test/");await page.waitForFunction(()=>window.geometry?.width===360);
     await page.locator("canvas").click();await page.locator("canvas").press("a");assert.equal(requests.length,0);
@@ -36,6 +37,8 @@ test("mirror is read-only, resizes through the desktop bridge, and shows common 
       await page.evaluate(id=>window.setMirrorTheme(id),theme.id);
       await page.waitForFunction(dark=>document.querySelector('header').dataset.dark===String(dark),theme.isDark);
       if(theme.id==="dream")await page.waitForFunction(()=>document.querySelector('link[data-theme-pack]')?.sheet);
+      // The theme state commits before its view-transition snapshot disappears.
+      await page.evaluate(async()=>{await Promise.all(document.getAnimations().filter(animation=>animation.effect?.getTiming().iterations!==Infinity).map(animation=>animation.finished.catch(()=>{})));});
       const colors=await page.locator('header').evaluate(header=>{
         const rgb=value=>value.match(/[\d.]+/g).slice(0,3).map(Number);
         const luminance=value=>rgb(value).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
@@ -46,6 +49,41 @@ test("mirror is read-only, resizes through the desktop bridge, and shows common 
       assert.ok(!colors.surface.includes('rgba'),theme.id+' toolbar is opaque');
       assert.ok(colors.ratios.every(r=>r>=4.5),theme.id+' text contrast '+JSON.stringify(colors));
       assert.ok(colors.icons.length>=4&&colors.icons.every(r=>r>=4.5),theme.id+' real icon contrast');
+      // Computed colors alone cannot detect wallpaper pseudo-elements painting
+      // over an otherwise correctly styled titlebar. Inspect composited pixels.
+      for (const wallpaper of [false, true]) {
+        await page.evaluate(enabled => {
+          document.documentElement.dataset.appBackgroundActive=String(enabled);
+          document.documentElement.style.setProperty('--app-background-image','linear-gradient(#ff00ff,#ff00ff)');
+          document.documentElement.style.setProperty('--app-background-overlay','0%');
+        },wallpaper);
+        const {data,info}=await sharp(await page.locator('header').screenshot()).ensureAlpha().raw().toBuffer({resolveWithObject:true});
+        if(process.env.PIORA_HARMONY_SCREENSHOT_DIR){await mkdir(process.env.PIORA_HARMONY_SCREENSHOT_DIR,{recursive:true});await page.locator('header').screenshot({path:path.join(process.env.PIORA_HARMONY_SCREENSHOT_DIR,`titlebar-${theme.id}-${wallpaper?'wallpaper':'plain'}.png`)});}
+        const expected=colors.surface.match(/[\d.]+/g).slice(0,3).map(Number);
+        const offset=(info.width+1)*4;
+        assert.deepEqual([...data.subarray(offset,offset+3)],expected,`${theme.id}: titlebar must paint above wallpaper (${wallpaper})`);
+        const controls=await page.locator('header').evaluate(header=>{
+          const origin=header.getBoundingClientRect();
+          return [...header.querySelectorAll('button:not(:disabled),select,.device')].map(el=>{
+            const rect=el.getBoundingClientRect();
+            return {x:rect.left-origin.left,y:rect.top-origin.top,width:rect.width,height:rect.height,color:getComputedStyle(el).color};
+          });
+        });
+        const luminance=channels=>channels.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i],0);
+        const backgroundLuminance=luminance(expected);
+        for(const control of controls){
+          let visiblePixels=0;
+          for(let y=Math.max(0,Math.ceil(control.y));y<Math.min(info.height,Math.floor(control.y+control.height));y++){
+            for(let x=Math.max(0,Math.ceil(control.x));x<Math.min(info.width,Math.floor(control.x+control.width));x++){
+              const pixel=(y*info.width+x)*4;
+              // Windows subpixel text edges need not equal the CSS RGB value.
+              const ink=luminance([...data.subarray(pixel,pixel+3)]);
+              if((Math.max(ink,backgroundLuminance)+.05)/(Math.min(ink,backgroundLuminance)+.05)>=3)visiblePixels++;
+            }
+          }
+          assert.ok(visiblePixels>=3,`${theme.id}: each titlebar label/icon must remain painted (${wallpaper}): ${JSON.stringify(control)}`);
+        }
+      }
       await page.getByRole('combobox',{name:'画面缩放'}).focus();
       assert.notEqual(await page.getByRole('combobox',{name:'画面缩放'}).evaluate(el=>getComputedStyle(el).outlineStyle),'none');
       if(process.env.PIORA_HARMONY_SCREENSHOT_DIR&&['light','anime-neon','dream'].includes(theme.id)){
@@ -57,8 +95,15 @@ test("mirror is read-only, resizes through the desktop bridge, and shows common 
     await page.waitForFunction(()=>document.querySelector('header').dataset.dark==='false');
     await page.getByRole("button", {name:"在侧栏显示"}).click();
     await page.waitForFunction(()=>window.frameOptions.active===false);
+    await page.evaluate(()=>window.setEmbedded(true));
+    await page.waitForFunction(()=>window.frameOptions.active===true);
+    assert.equal(await page.evaluate(()=>window.frameOptions.allowFrameFallback),false,"sidebar uses video without screenshot fallback");
+    await page.getByRole("button",{name:"切换到悬浮投屏"}).click();
+    await page.waitForFunction(()=>window.frameOptions.active===false);
+    await page.evaluate(()=>window.setEmbedded(false));
     await page.evaluate(()=>window.updateMirror({presentation:"floating"}));
     await page.waitForFunction(()=>window.frameOptions.active===true);
+    assert.equal(await page.evaluate(()=>window.frameOptions.allowFrameFallback),false,"floating view uses the same video policy");
     const screen=await page.locator("canvas").boundingBox();assert.ok(screen.y<=38&&screen.y+screen.height>=757);
     recording={serial:"phone",ownerId:"desktop-media",recordingId:"recording-limit",startedAt:new Date().toISOString(),phase:"recording"};
     await page.getByRole("button",{name:"停止录屏",exact:true}).waitFor();

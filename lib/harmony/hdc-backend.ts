@@ -1626,8 +1626,10 @@ export class HdcBackend implements HarmonyAutomationBackend {
     }
     // Reconnect must discover a newly installed or updated SDK without restarting Piora.
     const jar = await this.findDebugVideoJar(this.hdcPath);
-    if (jar) {
-      await this.requireUnlockedScreen(serial, signal);
+    if (jar || !this.videoPreference || this.videoPreference.provider === "deveco") {
+      // Debug capture works independently of the phone's app/lock state.
+      // Reuse an existing DevEco service even if its local SDK cannot be found.
+      // Only the legacy HAP and system recorder paths require an unlocked phone.
       let opening = this.debugVideos.get(serial);
       if (!opening) {
         opening = DevEcoVideoSession.start(serial, jar, (args, operation, abort, timeout) => this.run(args, operation, abort, timeout), () => {

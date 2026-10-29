@@ -22,6 +22,9 @@ export class HarmonyRequestError extends Error {
   }
 
   messageFor(chinese: boolean): string {
+    if (this.reason === "debug-video-sdk-missing") return chinese
+      ? "未找到可用的 DevEco 实时视频服务。请安装兼容手机系统的 DevEco Studio，或打开 DevEco 设备投屏后重新连接。"
+      : "No DevEco live video service is available. Install a compatible DevEco Studio or open its device mirror, then reconnect.";
     if (this.reason === "debug-video-busy") return chinese
       ? "其他开发工具正在使用这台手机的视频通道。请关闭其投屏后重新连接，Piora 不会强行停止其他工具。"
       : "Another development tool is using this phone's video channel. Close its mirror and reconnect.";

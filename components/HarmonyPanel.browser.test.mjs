@@ -181,7 +181,8 @@ test("Harmony workspace keeps device tools, drafts and fenced control in a full 
     await page.locator(".toolbarActions").getByRole("button", { name: "设备设置", exact: true }).click();
     const deviceSettings = page.getByRole("dialog", { name: "设备设置", exact: true });
     await deviceSettings.getByRole("button", { name: "保存", exact: true }).waitFor();
-    assert.equal(await deviceSettings.getByRole("option", { name: "自动（HDC 实时视频优先）", exact: true }).count(), 1);
+    assert.equal(await deviceSettings.getByRole("option", { name: "DevEco 实时视频（默认）", exact: true }).count(), 1);
+    assert.equal(await deviceSettings.getByRole("combobox", { name: "投屏来源", exact: true }).inputValue(), "deveco");
     assert.ok(await deviceSettings.locator(".settingsPanel").evaluate(panel => {
       const outer = panel.closest('[role="dialog"]').getBoundingClientRect(); const inner = panel.getBoundingClientRect();
       return inner.height > 100 && inner.width > 300 && inner.left >= outer.left - 1 && inner.right <= outer.right + 1;

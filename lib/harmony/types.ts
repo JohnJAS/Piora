@@ -141,7 +141,7 @@ export interface HarmonyManagerState {
 
 export interface HarmonyConfig {
   hdcPath?: string;
-  video?: { provider: "bundled" | "hos-scrcpy"; packageDirectory?: string; javaPath?: string };
+  video?: { provider: "deveco" | "bundled" | "hos-scrcpy"; packageDirectory?: string; javaPath?: string };
   storage?: {
     screenshotDirectory?: string;
     recordingDirectory?: string;
