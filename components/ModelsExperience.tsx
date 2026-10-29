@@ -4,8 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { createDiscoveryAbort, requestDiscoveredModels, type DiscoveredModel } from "@/lib/model-discovery";
-import { clearLimitMetaField, modelLimitProblem, parseModelLimitDraft, stripModelLimitUiMeta, validateCustomModelLimits } from "@/lib/model-limits";
-import type { ModelCatalogRecommendation } from "@/lib/model-catalog";
+import { modelLimitProblem, parseModelLimitDraft, stripModelLimitUiMeta, validateCustomModelLimits } from "@/lib/model-limits";
+import { ModelProviderIcon } from "./ModelProviderIcon";
+import { ModelSamplingEditor } from "./ModelSamplingEditor";
+import { modelSamplingError } from "@/lib/model-sampling";
 import { requestConfirmation } from "./ConfirmDialog";
 import { ModelErrorText } from "./ModelErrorText";
 import { ModelFallbackSetting } from "./ModelFallbackSetting";
@@ -22,8 +24,7 @@ const copy = {
 } as const;
 
 type View = { kind: "home" } | { kind: "picker" } | { kind: "auth"; mode: "api" | "oauth"; id: string } | { kind: "vision" } | { kind: "manage"; id: string } | { kind: "wizard"; id?: string } | { kind: "edit"; provider: string; index: number };
-type WizardStep = "connect" | "choose" | "limits" | "finish" | "done";
-type CatalogModel = ModelEntry;
+
 
 async function jsonRequest<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options);
@@ -33,8 +34,14 @@ async function jsonRequest<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export function ModelsExperience({ cwd, onClose, onModelsChanged, embedded = false }: { cwd?: string; onClose: () => void; onModelsChanged?: () => void; embedded?: boolean }) {
-  const { locale, t } = useI18n();
-  const c = locale === "zh-CN" ? copy.zh : copy.en;
+  const { locale } = useI18n();
+  const c = { ...(locale === "zh-CN" ? copy.zh : copy.en), ...(locale === "zh-CN" ? {
+    title: "模型设置", subtitle: "管理模型供应商，配置后可在聊天时选择使用。", add: "添加供应商", custom: "创建自定义供应商", name: "供应商名称", address: "Base URL", key: "API Key", protocol: "API 格式", context: "上下文窗口", output: "最大输出 Token", edit: "编辑模型配置", save: "保存", fetch: "一键识别可用模型", fetching: "正在识别…", limitsHint: "接口未提供完整参数，请按服务商文档补全以下字段。", endpointOnly: "以下模型来自当前接口。识别模型列表不会发送对话测试请求。",
+    providers: "服务商", customGroup: "自定义供应商", other: "其他", models: "模型列表", newName: "新供应商", smart: "智能配置", advanced: "高级配置", reset: "重置表单", disableProvider: "禁用供应商", enableProvider: "启用供应商", refresh: "刷新", modelEmpty: "当前没有配置模型，添加模型后可在聊天中使用。", importTitle: "识别可用模型", importModels: "添加所选模型", chooseModel: "选择模型", reasoning: "支持深度思考", unsaved: "未保存", discardTitle: "放弃未保存的修改？", discardMessage: "切换后，本次填写的内容不会保存。", discardConfirm: "放弃修改", headers: "请求头 (JSON)", compat: "兼容配置 (JSON)", invalidJson: "请输入有效的 JSON 对象。"
+  } : {
+    subtitle: "Manage model providers and choose their models in chat.", add: "Add provider", custom: "Create custom provider", name: "Provider name", address: "Base URL", key: "API Key", protocol: "API format", context: "Context window", output: "Max output tokens", edit: "Edit model configuration", save: "Save", fetch: "Detect available models", fetching: "Detecting…", limitsHint: "The endpoint did not provide all parameters. Complete the missing fields using your provider's documentation.", endpointOnly: "These models come from the current endpoint. Discovery does not send a chat test request.",
+    providers: "Providers", customGroup: "Custom providers", other: "Other", models: "Models", newName: "New provider", smart: "Smart configuration", advanced: "Advanced configuration", reset: "Reset form", disableProvider: "Disable provider", enableProvider: "Enable provider", refresh: "Refresh", modelEmpty: "No models configured. Add a model to use it in chat.", importTitle: "Available models", importModels: "Add selected models", chooseModel: "Choose a model", reasoning: "Reasoning", unsaved: "Unsaved", discardTitle: "Discard unsaved changes?", discardMessage: "Your changes will be lost when you switch.", discardConfirm: "Discard", headers: "Request headers (JSON)", compat: "Compatibility (JSON)", invalidJson: "Enter a valid JSON object."
+  }) };
   const rootRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ kind: "home" });
   const [config, setConfig] = useState<ModelsJson>({ providers: {} });
@@ -46,9 +53,10 @@ export function ModelsExperience({ cwd, onClose, onModelsChanged, embedded = fal
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const requestRef = useRef(0);
   const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
-  useFocusTrap(rootRef, !embedded, { onEscape: busy ? undefined : onClose });
+  useFocusTrap(rootRef, !embedded && !modalOpen, { onEscape: busy ? undefined : () => { void closeSettings(); } });
 
   const reload = useCallback(async () => {
     const request = ++requestRef.current;
@@ -119,187 +127,264 @@ export function ModelsExperience({ cwd, onClose, onModelsChanged, embedded = fal
   const providerIds = [...new Set([...Object.keys(config.providers ?? {}), ...(scope?.models ?? []).map(model => model.provider), ...apiKeys.filter(item => item.configured).map(item => item.id), ...oauth.filter(item => item.loggedIn).map(item => item.id)])];
   const authRefresh = () => { onModelsChanged?.(); void reload(); };
   const leaveView = async () => {
-    if (dirty && !await requestConfirmation({ title: locale === "zh-CN" ? "放弃未保存的修改？" : "Discard unsaved changes?", message: locale === "zh-CN" ? "返回后，本次填写的内容不会保存。" : "Your changes will be lost when you leave.", confirmLabel: locale === "zh-CN" ? "放弃修改" : "Discard", tone: "danger" })) return;
+    if (dirty && !await requestConfirmation({ title: locale === "zh-CN" ? "放弃未保存的修改？" : "Discard unsaved changes?", message: locale === "zh-CN" ? "返回后，本次填写的内容不会保存。" : "Your changes will be lost when you leave.", confirmLabel: locale === "zh-CN" ? "放弃修改" : "Discard", tone: "danger" })) return false;
     setDirty(false); setView({ kind: "home" }); setError(null);
+    return true;
   };
-  const selectedProvider = view.kind === "manage" ? view.id : "";
-  const managedModels = (scope?.models ?? []).filter(model => model.provider === selectedProvider);
-  const configuredModels = config.providers?.[selectedProvider]?.models ?? [];
-  const allModelIds = [...new Set([...managedModels.map(model => model.id), ...configuredModels.map(model => model.id)])];
+  const closeSettings = async () => { if (!busy && await leaveView()) onClose(); };
+  const selectedProvider = view.kind === "manage" || view.kind === "wizard" ? view.id ?? "" : view.kind === "home" ? providerIds[0] ?? "" : "";
+  const selectProvider = async (id: string) => {
+    if (dirty && !await requestConfirmation({ title: c.discardTitle, message: c.discardMessage, confirmLabel: c.discardConfirm, tone: "danger" })) return;
+    setDirty(false); setError(null); setView({ kind: "manage", id });
+  };
 
+  const catalogIds = [...new Set([...apiKeys.map(p => p.id), ...oauth.map(p => p.id)])];
+  const displayName = (id: string) => apiKeys.find(p => p.id === id)?.displayName ?? oauth.find(p => p.id === id)?.name ?? id;
+  const openCatalog = async () => { if (await leaveView()) setView({ kind: "picker" }); };
+  const custom = config.providers?.[selectedProvider];
+  const navItem = (id: string) => <button className={styles.navItem} key={id} aria-current={selectedProvider === id ? "page" : undefined} disabled={busy} onClick={() => void selectProvider(id)}><ModelProviderIcon provider={id} size={18} /><span>{displayName(id)}</span><i className={(scope?.models ?? []).some(m => m.provider === id && m.enabled) ? styles.readyDot : styles.pendingDot} /></button>;
+  const switchScope = (action: string, id?: string) => void mutate(async () => { await scopeAction(action, selectedProvider, id); });
   return <div ref={rootRef} className={styles.root} role={embedded ? "region" : "dialog"} aria-modal={embedded ? undefined : true} aria-label={c.title}>
     <div className={styles.page}>
-      {!embedded && <button className={`${styles.quiet} ${styles.close}`} onClick={onClose} aria-label={c.close}>{c.close}</button>}
-      {view.kind !== "home" && <button className={styles.quiet} onClick={() => void leaveView()} disabled={busy}>← {c.back}</button>}
-      {error && <div className={styles.error} role="alert"><ModelErrorText value={error} /> {loading ? null : <button className={styles.quiet} onClick={() => void reload()}>{c.retry}</button>}</div>}
+      <header className={styles.header}><h2>{c.title}</h2>{!embedded && <IconButton label={c.close} icon="close" onClick={() => void closeSettings()} disabled={busy} />}</header>
+      <div className={styles.toolbar}><p>{c.subtitle}</p><IconButton label={c.refresh} icon="refresh" disabled={busy || loading || dirty} onClick={() => void reload()} /><button className={styles.primary} disabled={busy} onClick={() => void openCatalog()}><Glyph name="plus" />{c.add}</button></div>
+      {error && <div className={styles.error} role="alert"><ModelErrorText value={error} /></div>}
       {warning && <div className={styles.notice} role="status">{warning}</div>}
-      {loading && view.kind === "home" ? <p>{c.loading}</p> : null}
-      {view.kind === "home" && !loading && <>
-        <header className={styles.header}><div><h2>{c.title}</h2><p>{c.subtitle}</p></div><button className={styles.primary} onClick={() => setView({ kind: "picker" })}>+ {c.add}</button></header>
-        <div className={styles.columns}><div className={styles.stack}>
-          <section className={styles.card}><h3>{c.default}</h3><p className={styles.hint}>{scope?.effectiveDefault ? `${scope.effectiveDefault.provider} · ${scope.effectiveDefault.modelId}` : c.none}</p></section>
-          {providerIds.length === 0 ? <section className={styles.card}><h3>{c.none}</h3><p className={styles.hint}>{c.noneHint}</p><div className={styles.actionsEnd}><button className={styles.primary} onClick={() => setView({ kind: "wizard" })}>+ {c.custom}</button></div></section> : providerIds.map(id => {
-            const models = (scope?.models ?? []).filter(model => model.provider === id && model.enabled);
-            const custom = config.providers?.[id];
-            return <section className={styles.provider} key={id}><div className={styles.providerTitle}><strong>{id}</strong><span className={styles.status}>{custom ? c.unverified : c.configured}</span><button className={styles.button} onClick={() => setView({ kind: "manage", id })}>{c.manage}</button>{custom && <button className={styles.button} onClick={() => setView({ kind: "wizard", id })}>{c.settings}</button>}</div>
-              {models.length ? models.slice(0, 4).map(model => <div className={styles.modelRow} key={model.id}><span className={styles.modelName}>{model.name || model.id}</span>{scope?.effectiveDefault?.provider === id && scope.effectiveDefault.modelId === model.id && <span className={styles.badge}>{c.defaultBadge}</span>}</div>) : <span className={styles.status}>{c.noModels}</span>}
-            </section>;
-          })}
-          <button className={styles.card} style={{ textAlign: "left", cursor: "pointer", color: "inherit" }} onClick={() => setView({ kind: "vision" })}><h3>{c.vision} →</h3><span className={styles.hint}>{c.visionHint}</span></button>
-        </div><aside className={styles.help}><h3>{c.first}</h3><ol><li>{c.tip1}</li><li>{c.tip2}</li><li>{c.tip3}</li></ol></aside></div>
-      </>}
-      {view.kind === "picker" && <><header className={styles.header}><div><h2>{c.providerList}</h2><p>{c.authHint}</p></div></header><div className={styles.stack}><button className={styles.card} style={{ textAlign: "left", cursor: "pointer", color: "inherit" }} onClick={() => setView({ kind: "wizard" })}><h3>+ {c.custom}</h3><span className={styles.hint}>{c.tip1} · {c.tip2}</span></button><section className={styles.card}><h3>{c.account}</h3><div className={styles.actions}>{apiKeys.filter(p => !p.configured).map(p => <button className={styles.button} key={`api-${p.id}`} onClick={() => setView({ kind: "auth", mode: "api", id: p.id })}>{p.displayName}</button>)}{oauth.filter(p => !p.loggedIn).map(p => <button className={styles.button} key={`oauth-${p.id}`} onClick={() => setView({ kind: "auth", mode: "oauth", id: p.id })}>{p.name} · {t("models.login.oauth")}</button>)}</div></section></div></>}
-      {view.kind === "auth" && <section className={styles.card}><h3>{c.auth}</h3>{view.mode === "api" ? (() => { const p = apiKeys.find(item => item.id === view.id); return p ? <ApiKeyDetail provider={p} onRefresh={authRefresh} /> : null; })() : (() => { const p = oauth.find(item => item.id === view.id); return p ? <OAuthDetail provider={p} onRefresh={authRefresh} /> : null; })()}</section>}
-      {view.kind === "vision" && <div className={styles.stack}><section className={styles.card}><ModelFallbackSetting /></section><section className={styles.card}><VisionAgentDetail cwd={cwd} /></section></div>}
-      {view.kind === "manage" && <><header className={styles.header}><div><h2>{selectedProvider}</h2><p>{c.manageTitle}</p></div><div className={styles.actions}>{config.providers?.[selectedProvider] ? <><button className={styles.button} onClick={() => setView({ kind: "wizard", id: selectedProvider })}>+ {c.addModel}</button><button className={styles.quiet} onClick={() => void remove(selectedProvider)} disabled={busy}>{c.deleteProvider}</button></> : <>{apiKeys.some(p => p.id === selectedProvider && p.configured) && <button className={styles.button} onClick={() => setView({ kind: "auth", mode: "api", id: selectedProvider })}>{c.settings}</button>}{oauth.some(p => p.id === selectedProvider && p.loggedIn) && <button className={styles.button} onClick={() => setView({ kind: "auth", mode: "oauth", id: selectedProvider })}>{c.settings}</button>}</>}</div></header><section className={styles.card}>
-        {allModelIds.length === 0 && <p className={styles.hint}>{c.noModels}</p>}
-        {allModelIds.map(id => { const managed = managedModels.find(item => item.id === id); const index = configuredModels.findIndex(item => item.id === id); const custom = index >= 0; const isDefault = scope?.effectiveDefault?.provider === selectedProvider && scope.effectiveDefault.modelId === id; return <div className={styles.modelRow} key={id}><div className={styles.modelName}><strong>{managed?.name || configuredModels[index]?.name || id}</strong><div className={styles.status}>{id} · {managed ? (managed.enabled ? c.enabled : c.hidden) : c.unverified}{custom && modelLimitProblem(configuredModels[index]) ? ` · ${c.completeMissing}` : ""}</div></div>{isDefault ? <span className={styles.badge}>{c.defaultBadge}</span> : managed?.enabled && <button className={styles.button} disabled={busy} onClick={() => void mutate(async () => { await scopeAction("set-default", selectedProvider, id); })}>{c.setDefault}</button>}{managed && <button className={styles.quiet} disabled={busy || scope?.projectOverride} onClick={() => void mutate(async () => { await scopeAction(managed.enabled ? "hide" : "restore", selectedProvider, id); })}>{managed.enabled ? c.hideModel : c.enable}</button>}{custom && <><button className={styles.button} onClick={() => setView({ kind: "edit", provider: selectedProvider, index })}>{c.edit}</button><button className={styles.quiet} disabled={busy} onClick={() => void remove(selectedProvider, id)}>{c.remove}</button></>}</div>; })}
-        {scope?.projectOverride && <p className={styles.hint}>{t("models.projectScopeOverride")}</p>}
-      </section><p className={styles.hint}>{c.costNotice}</p></>}
-      {view.kind === "wizard" && <div onChangeCapture={() => setDirty(true)}><ProviderWizard key={view.id ?? "new"} initialName={view.id} initialProvider={view.id ? config.providers?.[view.id] : undefined} busy={busy} error={error} setError={setError} saveProvider={saveProvider} onCancel={() => void leaveView()} c={c} /></div>}
-      {view.kind === "edit" && (() => { const provider = config.providers?.[view.provider]; const model = provider?.models?.[view.index]; return provider && model ? <div onChangeCapture={() => setDirty(true)}><ModelEdit key={`${view.provider}/${view.index}`} model={model} busy={busy} c={c} onSave={async next => { const models = [...(provider.models ?? [])]; models[view.index] = next; if (await saveProvider(view.provider, { ...provider, models }, [], view.provider)) setView({ kind: "manage", id: view.provider }); }} /></div> : null; })()}
+      <div className={styles.workspace}>
+        <nav className={styles.sidebar} aria-label={c.providers}>
+          {providerIds.some(id => !config.providers?.[id]) && <><h3>{c.providers}</h3>{providerIds.filter(id => !config.providers?.[id]).map(navItem)}</>}
+          <h3>{c.customGroup}</h3>{Object.keys(config.providers ?? {}).map(navItem)}
+          {view.kind === "wizard" && !view.id && <button className={styles.navItem} aria-current="page"><ModelProviderIcon provider="custom" size={18} /><span>{c.newName}</span><i className={styles.pendingDot} /></button>}
+          <button className={styles.navItem} disabled={busy} onClick={() => void openCatalog()}><Glyph name="plus" /><span>{c.add}</span></button>
+          <button className={`${styles.navItem} ${styles.secondaryNav}`} disabled={busy || dirty} aria-current={view.kind === "vision" ? "page" : undefined} onClick={() => setView({ kind: "vision" })}>{c.vision}</button>
+        </nav>
+        <main className={styles.detail}>
+          {loading && !providerIds.length && <p className={styles.hint}>{c.loading}</p>}
+          {(view.kind === "picker" || (view.kind === "home" && !selectedProvider && !loading)) && <><h3 className={styles.panelTitle}>{c.add}</h3><p className={styles.groupLabel}>{c.other}</p><div className={styles.catalog}><button className={styles.catalogItem} onClick={() => setView({ kind: "wizard" })}><Glyph name="plus" /><span>{c.custom}</span><span>›</span></button>{catalogIds.map(id => <button className={styles.catalogItem} key={id} onClick={() => void selectProvider(id)}><ModelProviderIcon provider={id} size={28} /><span>{displayName(id)}</span><span>›</span></button>)}</div></>}
+          {view.kind === "vision" && <div className={styles.extras}><h3>{c.vision}</h3><ModelFallbackSetting /><VisionAgentDetail cwd={cwd} /></div>}
+          {((["home", "manage"].includes(view.kind) && custom) || view.kind === "wizard") && <ProviderPanel key={custom ? `${selectedProvider}:${JSON.stringify(custom)}` : "new"} c={c}
+            initialName={custom ? selectedProvider : undefined} initial={custom} scope={scope} busy={busy} onDirty={setDirty} onModal={setModalOpen} saveError={error}
+            onScope={switchScope} onRemove={id => void remove(selectedProvider, id)}
+            saveProvider={async (name, provider, additions, original) => { const saved = await saveProvider(name, provider, additions, original); if (saved) setView({ kind: "manage", id: name }); return saved; }} />}
+          {["home", "manage"].includes(view.kind) && selectedProvider && !custom && <BuiltinPanel key={selectedProvider} c={c} id={selectedProvider} name={displayName(selectedProvider)} api={apiKeys.find(p => p.id === selectedProvider)} oauth={oauth.find(p => p.id === selectedProvider)} scope={scope} busy={busy} onRefresh={authRefresh} onScope={switchScope} />}
+        </main>
+      </div>
     </div>
   </div>;
 }
 
-type Text = typeof copy.zh | typeof copy.en;
-
-function ProviderWizard({ initialName, initialProvider, busy, error, setError, saveProvider, onCancel, c }: {
-  initialName?: string; initialProvider?: ProviderEntry; busy: boolean; error: string | null; setError: (message: string | null) => void;
-  saveProvider: (name: string, provider: ProviderEntry, newModels: ModelEntry[], originalName?: string) => Promise<boolean>;
-  onCancel: () => void; c: Text;
+type Text = { [K in keyof typeof copy.zh]: string } & Record<"providers" | "customGroup" | "other" | "models" | "newName" | "smart" | "advanced" | "reset" | "disableProvider" | "enableProvider" | "refresh" | "modelEmpty" | "importTitle" | "importModels" | "chooseModel" | "reasoning" | "unsaved" | "headers" | "compat" | "invalidJson" | "discardTitle" | "discardMessage" | "discardConfirm", string>;
+type SaveProvider = (name: string, provider: ProviderEntry, additions: ModelEntry[], original?: string) => Promise<boolean>;
+type GlyphName = "plus" | "edit" | "trash" | "test" | "refresh" | "star" | "close" | "eye";
+function Glyph({ name }: { name: GlyphName }) {
+  const paths = { plus: "M12 5v14M5 12h14", edit: "m16 3 5 5-12 12-6 1 1-6Z M14 5l5 5", trash: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7", test: "m8 3 4 4-5 5-4-4Zm8 18-4-4 5-5 4 4ZM10 10l4 4M2 2l3 3m14 14 3 3", refresh: "M20 7a9 9 0 1 0 1 8M20 2v6h-6", star: "m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z", close: "m6 6 12 12M6 18 18 6", eye: "M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6" };
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg>;
+}
+function IconButton({ label, icon, onClick, disabled }: { label: string; icon: GlyphName; onClick: () => void; disabled?: boolean }) {
+  return <button type="button" className={styles.iconButton} aria-label={label} title={label} onClick={onClick} disabled={disabled}><Glyph name={icon} /></button>;
+}
+function Toggle({ checked, label, disabled, onChange }: { checked: boolean; label: string; disabled?: boolean; onChange: () => void }) {
+  return <button type="button" role="switch" aria-checked={checked} aria-label={label} title={label} className={styles.toggle} disabled={disabled} onClick={onChange}><span /></button>;
+}
+function ProviderPanel({ c, initialName, initial, scope, busy, saveProvider, onDirty, onScope, onRemove, onModal, saveError }: {
+  c: Text; initialName?: string; initial?: ProviderEntry; scope: ModelScopeResponse | null; busy: boolean; saveProvider: SaveProvider;
+  onDirty: (dirty: boolean) => void; onScope: (action: string, id?: string) => void; onRemove: (id?: string) => void;
+  onModal: (open: boolean) => void; saveError: string | null;
 }) {
-  const [step, setStep] = useState<WizardStep>("connect");
-  const [name, setName] = useState(initialName ?? "");
-  const [provider, setProvider] = useState<ProviderEntry>(initialProvider ?? { api: "openai-completions" });
+  const [name, setName] = useState(initialName ?? c.newName);
+  const [provider, setProvider] = useState<ProviderEntry>(initial ?? { api: "openai-completions", models: [] });
   const [showKey, setShowKey] = useState(false);
-  const [discovered, setDiscovered] = useState<DiscoveredModel[]>([]);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [models, setModels] = useState<CatalogModel[]>([]);
-  const [hadMissingLimits, setHadMissingLimits] = useState(false);
-  const [manual, setManual] = useState("");
-  const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [testStatus, setTestStatus] = useState<string | null>(null);
+  const [changed, setChanged] = useState(!initialName);
+  const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<ModelEntry | null>(null);
+  const [importing, setImporting] = useState<DiscoveredModel[] | null>(null);
+  const [discovering, setDiscovering] = useState(false);
+  useEffect(() => { onModal(!!editing || !!importing); return () => onModal(false); }, [editing, importing, onModal]);
   const discoveryRef = useRef<ReturnType<typeof createDiscoveryAbort> | null>(null);
-  const operationRef = useRef(0);
-  useEffect(() => () => { ++operationRef.current; discoveryRef.current?.cancel(); discoveryRef.current?.dispose(); }, []);
-  const existingIds = new Set((initialProvider?.models ?? []).map(model => model.id));
-  const validConnection = () => {
+  const [testStatus, setTestStatus] = useState<Record<string, string>>({});
+  const [testing, setTesting] = useState<string | null>(null);
+  const models = provider.models ?? [];
+  const managed = (scope?.models ?? []).filter(m => m.provider === initialName);
+  const ids = [...new Set([...models.map(m => m.id), ...managed.map(m => m.id)])];
+  const enabled = managed.some(m => m.enabled);
+  useEffect(() => () => { discoveryRef.current?.cancel(); discoveryRef.current?.dispose(); }, []);
+  const update = (patch: Partial<ProviderEntry>) => { setProvider(current => ({ ...current, ...patch })); setChanged(true); onDirty(true); };
+  const valid = () => {
     if (!name.trim()) { setError(c.invalidName); return false; }
-    try { const url = new URL(provider.baseUrl?.trim() ?? ""); if (!/^https?:$/.test(url.protocol)) throw new Error(); }
+    try { if (!/^https?:$/.test(new URL(provider.baseUrl?.trim() ?? "").protocol)) throw new Error(); }
     catch { setError(c.invalidUrl); return false; }
-    return true;
+    setError(null); return true;
+  };
+  const save = async (next = provider, additions: ModelEntry[] = []) => {
+    if (!valid()) return false;
+    const result = await saveProvider(name.trim(), { ...next, baseUrl: next.baseUrl?.trim() }, additions, initialName);
+    if (result) { setChanged(false); onDirty(false); }
+    return result;
   };
   const discover = async () => {
-    if (!validConnection()) return;
-    const operation = ++operationRef.current;
-    discoveryRef.current?.cancel(); discoveryRef.current?.dispose();
-    const controller = createDiscoveryAbort(); discoveryRef.current = controller;
-    setLoading(true); setError(null);
+    if (!valid()) return;
+    const controller = createDiscoveryAbort(); discoveryRef.current = controller; setDiscovering(true);
     try {
       const result = await requestDiscoveredModels({ providerName: name.trim(), provider, signal: controller.signal });
-      if (operation !== operationRef.current) return;
-      setDiscovered(result.models); setSelected(new Set()); setStep("choose");
-    } catch (cause) {
-      if (operation === operationRef.current) setError(`${c.failed} ${cause instanceof Error ? cause.message : ""}`);
-    } finally {
-      controller.dispose(); if (discoveryRef.current === controller) discoveryRef.current = null;
-      if (operation === operationRef.current) setLoading(false);
-    }
+      if (!controller.signal.aborted) setImporting(result.models);
+    } catch (cause) { if (!controller.signal.aborted) setError(`${c.failed} ${cause instanceof Error ? cause.message : ""}`); }
+    finally { controller.dispose(); if (discoveryRef.current === controller) { discoveryRef.current = null; setDiscovering(false); } }
   };
-  const chooseManual = () => { if (!validConnection()) return; ++operationRef.current; discoveryRef.current?.cancel(); setError(null); setLoading(false); setStep("choose"); };
-  const addManual = () => {
-    const id = manual.trim(); if (!id) return;
-    if (existingIds.has(id)) { setError(c.duplicate); return; }
-    setDiscovered(current => current.some(model => model.id === id) ? current : [...current, { id }]);
-    setSelected(current => new Set([...current, id])); setManual(""); setError(null);
-  };
-  const complete = async () => {
-    const chosen = discovered.filter(model => selected.has(model.id) && !existingIds.has(model.id));
-    if (!chosen.length) { setError(c.chooseOne); return; }
-    const operation = ++operationRef.current;
-    setLoading(true); setError(null);
-    const completed: CatalogModel[] = [];
-    // Keep lookup traffic bounded even when a provider returns a large catalogue.
-    for (let start = 0; start < chosen.length; start += 6) {
-      const batch = await Promise.all(chosen.slice(start, start + 6).map(async item => {
-        let next: CatalogModel = { ...item, limitsMeta: { ...(item.contextWindow !== undefined ? { contextWindow: "endpoint" } : {}), ...(item.maxTokens !== undefined ? { maxTokens: "endpoint" } : {}) } };
-        try {
-            const params = new URLSearchParams({ q: item.id, provider: name.trim(), baseUrl: provider.baseUrl ?? "" });
-            const response = await jsonRequest<{ recommendation?: ModelCatalogRecommendation }>(`/api/models-config/catalog?${params}`, { cache: "no-store", signal: AbortSignal.timeout(16000) });
-            const recommendation = response.recommendation;
-            const reliable = recommendation && (recommendation.metadataMethod === "provider" || recommendation.metadataMethod === "base-url" || (recommendation.metadataMethod === "consensus" && recommendation.exactMatches >= 2));
-            if (reliable) {
-              const preset = recommendation.preset;
-              const contextFromCatalog = next.contextWindow === undefined && preset.contextWindow !== undefined;
-              const outputFromCatalog = next.maxTokens === undefined && preset.maxTokens !== undefined;
-              next = { ...next, ...(contextFromCatalog ? { contextWindow: preset.contextWindow } : {}), ...(outputFromCatalog ? { maxTokens: preset.maxTokens } : {}), ...(preset.reasoning === true ? { reasoning: true } : {}), ...(preset.input?.length ? { input: preset.input } : {}), limitsMeta: { ...next.limitsMeta, ...(contextFromCatalog ? { contextWindow: "models.dev" } : {}), ...(outputFromCatalog ? { maxTokens: "models.dev" } : {}) } };
-            }
-        } catch { /* Missing catalog data is handled by the manual step. */ }
-        return next;
-      }));
-      completed.push(...batch);
-      if (operation !== operationRef.current) return;
-    }
-    const missing = completed.some(modelLimitProblem);
-    setModels(completed); setHadMissingLimits(missing); setLoading(false); setStep(missing ? "limits" : "finish");
-  };
-  const updateModel = (index: number, update: Partial<CatalogModel>) => setModels(current => current.map((model, i) => {
-    if (i !== index) return model;
-    let meta = model.limitsMeta;
-    if (Object.hasOwn(update, "contextWindow")) meta = clearLimitMetaField(meta, "contextWindow");
-    if (Object.hasOwn(update, "maxTokens")) meta = clearLimitMetaField(meta, "maxTokens");
-    return { ...model, ...update, limitsMeta: meta };
-  }));
-  const validateLimits = () => { if (models.some(modelLimitProblem)) { setError(c.invalidLimits); return false; } setError(null); return true; };
-  const save = async () => {
-    if (!validateLimits()) return;
-    const additions = models;
-    const next = { ...provider, baseUrl: provider.baseUrl?.trim(), models: [...(initialProvider?.models ?? []), ...additions] };
-    if (await saveProvider(name.trim(), next, additions, initialName)) setStep("done");
-  };
-  const saveConnection = async () => {
-    if (!validConnection() || !initialName) return;
-    if (await saveProvider(name.trim(), { ...provider, baseUrl: provider.baseUrl?.trim() }, [], initialName)) setStep("done");
-  };
-  const testModel = async (model: CatalogModel) => {
-    setLoading(true); setTestStatus(null);
+  const testModel = async (model: ModelEntry) => {
+    if (!valid()) return;
+    setTesting(model.id);
     try {
-      const data = await jsonRequest<{ ok?: boolean; error?: string }>("/api/models-config/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerName: name.trim(), provider, model }) });
-      setTestStatus(data.ok ? c.testOk : `${c.testFailed}: ${data.error ?? ""}`);
-    } catch (cause) { setTestStatus(`${c.testFailed}: ${cause instanceof Error ? cause.message : String(cause)}`); }
-    finally { setLoading(false); }
+      const result = await jsonRequest<{ ok: boolean }>("/api/models-config/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerName: name.trim(), provider, model }) });
+      setTestStatus(current => ({ ...current, [model.id]: result.ok ? c.testOk : c.testFailed }));
+    } catch (cause) { setTestStatus(current => ({ ...current, [model.id]: `${c.testFailed}: ${cause instanceof Error ? cause.message : String(cause)}` })); }
+    finally { setTesting(null); }
   };
-  const visible = discovered.filter(model => `${model.name ?? ""} ${model.id}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
-  const stepNumber = step === "connect" ? 1 : step === "choose" ? 2 : 3;
-  return <><header className={styles.header}><div><h2>{c.custom}</h2><p>{initialName ? c.editConnectionHint : c.subtitle}</p></div></header>
-    <ol className={styles.steps}>{[c.connect, c.choose, c.finish].map((label, index) => <li key={label} aria-current={stepNumber === index + 1 ? "step" : undefined}><span>{index + 1}</span>{label}</li>)}</ol>
-    {step === "connect" && <div className={styles.columns}><section className={styles.card}>
-      <div className={styles.field}><label htmlFor="model-provider-name">{c.name}</label><input id="model-provider-name" disabled={busy || loading} value={name} onChange={event => setName(event.currentTarget.value)} placeholder={c.nameHint} /><small>{c.nameHint}</small></div>
-      <div className={styles.field}><label htmlFor="model-provider-url">{c.address}</label><input id="model-provider-url" disabled={busy || loading} value={provider.baseUrl ?? ""} onChange={event => setProvider({ ...provider, baseUrl: event.currentTarget.value })} placeholder="https://api.example.com/v1" /><small>{c.addressHint}</small></div>
-      <div className={styles.field}><label htmlFor="model-provider-key">{c.key}</label><div className={styles.actions}><input id="model-provider-key" disabled={busy || loading} style={{ flex: 1 }} type={showKey ? "text" : "password"} value={provider.apiKey ?? ""} onChange={event => setProvider({ ...provider, apiKey: event.currentTarget.value })} autoComplete="off" /><button type="button" className={styles.quiet} onClick={() => setShowKey(value => !value)}>{showKey ? c.hide : c.show}</button></div><small>{c.keyHint}</small></div>
-      <div className={styles.field}><label htmlFor="model-provider-api">{c.protocol}</label><select id="model-provider-api" disabled={busy || loading} value={provider.api ?? "openai-completions"} onChange={event => setProvider({ ...provider, api: event.currentTarget.value })}>{API_OPTIONS.map(api => <option key={api} value={api}>{api === "openai-completions" ? "OpenAI compatible" : api}</option>)}</select></div>
-      <div className={`${styles.actions} ${styles.actionsEnd}`}><button className={styles.quiet} onClick={onCancel} disabled={busy || loading}>{c.cancel}</button>{initialName && <button className={styles.button} onClick={() => void saveConnection()} disabled={busy || loading}>{c.saveConnection}</button>}<button className={styles.button} onClick={chooseManual} disabled={busy || loading}>{c.skipDiscovery}</button><button className={styles.primary} onClick={() => void discover()} disabled={busy || loading}>{loading ? c.fetching : c.fetch} →</button></div>
-    </section><aside className={styles.help}><h3>{c.where}</h3><ol><li>{c.where1}</li><li>{c.where2}</li><li>{c.where3}</li></ol></aside></div>}
-    {step === "choose" && <div className={styles.columns}><section className={styles.card}><h3>{c.select}</h3><p className={styles.hint}>{c.endpointOnly}</p><div className={styles.field}><label htmlFor="model-search">{c.search}</label><input id="model-search" value={search} onChange={event => setSearch(event.currentTarget.value)} placeholder={c.search} /></div>
-      <div className={styles.list}>{visible.length === 0 ? <p className={styles.empty}>{c.noSelection}</p> : visible.map(model => <label className={styles.choice} key={model.id}><input type="checkbox" checked={selected.has(model.id)} disabled={loading || existingIds.has(model.id)} onChange={event => { const checked = event.currentTarget.checked; setSelected(current => { const next = new Set(current); if (checked) next.add(model.id); else next.delete(model.id); return next; }); }} /><span>{model.name || model.id} {existingIds.has(model.id) ? `(${c.configured})` : ""}<br /><small className={styles.status}>{model.id}</small></span></label>)}</div>
-      <div className={styles.field}><label htmlFor="model-manual">{c.manual}</label><div className={styles.actions}><input id="model-manual" disabled={loading} style={{ flex: 1 }} value={manual} onChange={event => setManual(event.currentTarget.value)} placeholder={c.manualId} /><button className={styles.button} disabled={loading} onClick={addManual}>{c.manualAdd}</button></div></div>
-      <div className={`${styles.actions} ${styles.actionsEnd}`}><button className={styles.quiet} onClick={() => { setStep("connect"); setError(null); }} disabled={loading}>{c.previous}</button><button className={styles.primary} onClick={() => void complete()} disabled={loading || selected.size === 0}>{loading ? c.completing : c.next}</button></div>
-    </section><aside className={styles.help}><h3>{c.selected} {selected.size} {c.selectedUnit}</h3><p className={styles.hint}>{c.limitsHint}</p></aside></div>}
-    {step === "limits" && <section className={styles.card}><h3>{c.limits}</h3><p className={styles.hint}>{c.limitsHint}</p>{models.map((model, index) => modelLimitProblem(model) && <div key={model.id}><h3>{model.name || model.id}</h3><LimitInputs c={c} model={model} onChange={update => updateModel(index, update)} /></div>)}<div className={`${styles.actions} ${styles.actionsEnd}`}><button className={styles.quiet} onClick={() => { setStep("choose"); setError(null); }}>{c.previous}</button><button className={styles.primary} onClick={() => { if (validateLimits()) setStep("finish"); }}>{c.next}</button></div></section>}
-    {step === "finish" && <section className={styles.card}><h3>{c.finishStep}</h3><p className={styles.hint}>{c.ready}</p>{models.map(model => { const source = (field: "contextWindow" | "maxTokens") => model.limitsMeta?.[field] === "models.dev" ? c.sourceCatalog : model.limitsMeta?.[field] === "endpoint" ? c.sourceEndpoint : c.sourceManual; return <div className={styles.modelRow} key={model.id}><div className={styles.modelName}><strong>{model.name || model.id}</strong><div className={styles.status}>{c.context}: {source("contextWindow")} · {c.output}: {source("maxTokens")}</div></div><button className={styles.button} onClick={() => void testModel(model)} disabled={loading || busy}>{loading ? c.testing : c.test}</button></div>; })}<p className={styles.hint}>{c.testHint}</p>{testStatus && <p role="status">{testStatus}</p>}<div className={`${styles.actions} ${styles.actionsEnd}`}><button className={styles.quiet} onClick={() => { setStep(hadMissingLimits ? "limits" : "choose"); setError(null); }} disabled={busy || loading}>{c.previous}</button><button className={styles.primary} onClick={() => void save()} disabled={busy || loading}>{busy ? c.saving : c.save}</button></div></section>}
-    {step === "done" && <section className={styles.card}><h3>✓ {c.saved}</h3><p className={styles.hint}>{c.savedHint}</p><div className={styles.actionsEnd}><button className={styles.primary} onClick={onCancel}>{c.return}</button></div></section>}
-    {error && <span className="sr-only">{error}</span>}
+  const locked = busy || discovering;
+  return <>
+    <div className={styles.providerHeader}><ModelProviderIcon provider={name} size={20} /><input className={styles.providerName} aria-label={c.name} value={name} disabled={locked} onChange={e => { setName(e.target.value); setChanged(true); onDirty(true); }} />
+      {initialName && <><Toggle checked={enabled} label={enabled ? c.disableProvider : c.enableProvider} disabled={locked || changed || scope?.projectOverride || !managed.length} onChange={() => onScope(enabled ? "hide-provider" : "restore-provider")} /><IconButton label={c.deleteProvider} icon="trash" onClick={() => onRemove()} disabled={locked || changed} /></>}
+    </div>
+    <label className={styles.field}><span>{c.address}</span><input value={provider.baseUrl ?? ""} placeholder="https://api.example.com/v1" disabled={locked} onChange={e => update({ baseUrl: e.target.value })} /></label>
+    <label className={styles.field}><span>{c.protocol}</span><select value={provider.api ?? "openai-completions"} disabled={locked} onChange={e => update({ api: e.target.value })}>{API_OPTIONS.map(api => <option value={api} key={api}>{({ "openai-completions": "Chat Completions (/chat/completions)", "openai-responses": "Responses (/responses)", "anthropic-messages": "Anthropic Messages (/v1/messages)", "google-generative-ai": "Google Generative AI" })[api]}</option>)}</select></label>
+    <div className={styles.field}><label htmlFor="provider-secret">{c.key}</label><div className={styles.secret}><input id="provider-secret" type={showKey ? "text" : "password"} value={provider.apiKey ?? ""} autoComplete="off" placeholder="API Key" disabled={locked} onChange={e => update({ apiKey: e.target.value })} /><IconButton label={showKey ? c.hide : c.show} icon="eye" onClick={() => setShowKey(!showKey)} /></div></div>
+    {error && <p role="alert" className={styles.error}>{error}</p>}
+    {changed && <div className={styles.saveBar}><span className={styles.hint}>{c.unsaved}</span><button className={styles.primary} disabled={locked} onClick={() => void save()}>{busy ? c.saving : c.saveConnection}</button></div>}
+    <div className={styles.listHeading}><span>{c.models}</span><div className={styles.actions}><button className={styles.button} disabled={locked} onClick={() => void discover()}><Glyph name="refresh" />{discovering ? c.fetching : c.fetch}</button><button className={styles.button} disabled={locked} onClick={() => { if (valid()) setEditing({ id: "" }); }}><Glyph name="plus" />{c.addModel}</button></div></div>
+    <div className={styles.modelList}>
+      {!ids.length && <p className={styles.empty}>ⓘ &nbsp;{c.modelEmpty}</p>}
+      {ids.map(id => {
+        const model = models.find(m => m.id === id), row = managed.find(m => m.id === id);
+        const isDefault = scope?.effectiveDefault?.provider === initialName && scope.effectiveDefault.modelId === id;
+        return <div className={styles.modelRow} key={id}><div className={styles.modelLine}>
+          <div className={styles.modelIdentity}><span>{model?.name || row?.name || id}</span>{model?.contextWindow && <small>{Intl.NumberFormat().format(model.contextWindow)}</small>}{isDefault && <small title={c.defaultModel}>★</small>}</div>
+          {model && <IconButton label={`${c.test} ${id}`} icon="test" disabled={locked || testing !== null} onClick={() => void testModel(model)} />}
+          {row && <Toggle checked={row.enabled} label={`${row.enabled ? c.hideModel : c.enable} ${id}`} disabled={locked || changed || scope?.projectOverride} onChange={() => onScope(row.enabled ? "hide" : "restore", id)} />}
+          {row?.enabled && !isDefault && <IconButton label={`${c.setDefault} ${id}`} icon="star" disabled={locked || changed} onClick={() => onScope("set-default", id)} />}
+          {model && <><IconButton label={`${c.edit} ${id}`} icon="edit" disabled={locked} onClick={() => setEditing(model)} /><IconButton label={`${c.remove} ${id}`} icon="trash" disabled={locked || changed} onClick={() => onRemove(id)} /></>}
+        </div>{(testStatus[id] || testing === id) && <div className={styles.testResult} role="status"><ModelErrorText value={testing === id ? c.testing : testStatus[id]} /></div>}</div>;
+      })}
+    </div>
+    {!!ids.length && <p className={styles.footnote}>{c.testHint}</p>}
+    {scope?.projectOverride && <p className={styles.hint}>{c.syncedWarning}</p>}
+    {editing && <ModelDialog c={c} model={editing} provider={provider} providerName={name.trim()} existingIds={models.map(m => m.id)} busy={busy} saveError={saveError} onClose={() => setEditing(null)} onSave={async model => {
+      const exists = !!editing.id;
+      if (await save({ ...provider, models: exists ? models.map(m => m.id === editing.id ? model : m) : [...models, model] }, exists ? [] : [model])) setEditing(null);
+    }} />}
+    {importing && <ImportDialog c={c} incoming={importing} existingIds={models.map(m => m.id)} busy={busy} saveError={saveError} onClose={() => setImporting(null)} onSave={async additions => { if (await save({ ...provider, models: [...models, ...additions] }, additions)) setImporting(null); }} />}
   </>;
 }
 
-function LimitInputs({ model, onChange, c }: { model: ModelEntry; onChange: (update: Partial<ModelEntry>) => void; c: Text }) {
-  return <div className={styles.actions}><label className={styles.field} style={{ flex: 1 }}><span>{c.context}</span><input type="number" min="1" value={model.contextWindow ?? ""} onChange={event => onChange({ contextWindow: parseModelLimitDraft(event.currentTarget.value) })} /></label><label className={styles.field} style={{ flex: 1 }}><span>{c.output}</span><input type="number" min="1" value={model.maxTokens ?? ""} onChange={event => onChange({ maxTokens: parseModelLimitDraft(event.currentTarget.value) })} /></label><small className={styles.hint}>{c.limitHint}</small></div>;
+function BuiltinPanel({ c, id, name, api, oauth, scope, busy, onRefresh, onScope }: {
+  c: Text; id: string; name: string; api?: ApiKeyProvider; oauth?: OAuthProvider; scope: ModelScopeResponse | null; busy: boolean;
+  onRefresh: () => void; onScope: (action: string, id?: string) => void;
+}) {
+  const [mode, setMode] = useState(oauth?.loggedIn || !api ? "oauth" : "api");
+  const models = (scope?.models ?? []).filter(m => m.provider === id), enabled = models.some(m => m.enabled);
+  return <><div className={styles.providerHeader}><ModelProviderIcon provider={id} size={20} /><h3>{name}</h3>{api && oauth && <select aria-label={c.settings} value={mode} onChange={e => setMode(e.target.value)}><option value="api">API Key</option><option value="oauth">OAuth</option></select>}<Toggle checked={enabled} label={enabled ? c.disableProvider : c.enableProvider} disabled={busy || !models.length || scope?.projectOverride} onChange={() => onScope(enabled ? "hide-provider" : "restore-provider")} /></div>
+    <div className={styles.auth}>{mode === "api" && api ? <ApiKeyDetail provider={api} onRefresh={onRefresh} /> : oauth ? <OAuthDetail provider={oauth} onRefresh={onRefresh} /> : null}</div>
+    <div className={styles.listHeading}>{c.models}</div><div className={styles.modelList}>{models.length ? models.map(model => <div className={styles.modelRow} key={model.id}><div className={styles.modelLine}><div className={styles.modelIdentity}>{model.name || model.id}</div>{scope?.effectiveDefault?.provider === id && scope.effectiveDefault.modelId === model.id ? <span title={c.defaultModel}>★</span> : model.enabled && <IconButton label={`${c.setDefault} ${model.id}`} icon="star" disabled={busy} onClick={() => onScope("set-default", model.id)} />}<Toggle checked={model.enabled} label={`${model.enabled ? c.hideModel : c.enable} ${model.id}`} disabled={busy || scope?.projectOverride} onChange={() => onScope(model.enabled ? "hide" : "restore", model.id)} /></div></div>) : <p className={styles.empty}>{c.modelEmpty}</p>}</div></>;
 }
 
-function ModelEdit({ model, busy, c, onSave }: { model: ModelEntry; busy: boolean; c: Text; onSave: (next: ModelEntry) => Promise<void> }) {
-  const [draft, setDraft] = useState(model);
-  const [invalid, setInvalid] = useState(false);
-  return <section className={styles.card}><h3>{c.edit}</h3><div className={styles.field}><label htmlFor="model-display-name">{c.nameLabel}</label><input id="model-display-name" value={draft.name ?? ""} onChange={event => setDraft({ ...draft, name: event.currentTarget.value || undefined })} /></div><p className={styles.hint}>{model.id}</p><LimitInputs model={draft} c={c} onChange={update => setDraft(current => ({ ...current, ...update }))} /><label><input type="checkbox" checked={draft.input?.includes("image") ?? false} onChange={event => setDraft({ ...draft, input: event.currentTarget.checked ? ["text", "image"] : ["text"] })} /> {c.image}</label>{invalid && <p className={styles.error} role="alert">{c.invalidLimits}</p>}<p className={styles.hint}>{c.costNotice}</p><div className={styles.actionsEnd}><button className={styles.primary} disabled={busy} onClick={() => { if (modelLimitProblem(draft)) { setInvalid(true); return; } setInvalid(false); void onSave(draft); }}>{busy ? c.saving : c.saveChanges}</button></div></section>;
+function Modal({ title, children, onClose, busy, c }: { title: string; children: React.ReactNode; onClose: () => void; busy: boolean; c: Text }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useFocusTrap(ref, true, { onEscape: busy ? undefined : onClose });
+  return <div className={styles.backdrop}><div className={styles.dialog} ref={ref} role="dialog" aria-modal="true" aria-label={title}><div className={styles.dialogTitle}><h3>{title}</h3><IconButton label={c.close} icon="close" disabled={busy} onClick={onClose} /></div>{children}</div></div>;
+}
+function LimitInputs({ model, c, onChange }: { model: ModelEntry; c: Text; onChange: (patch: Partial<ModelEntry>) => void }) {
+  return <><label className={styles.field}><span>{c.context}</span><input type="number" min="1" value={model.contextWindow ?? ""} onChange={e => onChange({ contextWindow: parseModelLimitDraft(e.target.value) })} /></label><label className={styles.field}><span>{c.output}</span><input type="number" min="1" value={model.maxTokens ?? ""} onChange={e => onChange({ maxTokens: parseModelLimitDraft(e.target.value) })} /></label></>;
+}
+function ModelDialog({ c, model, provider, providerName, existingIds, busy, onClose, onSave, saveError }: {
+  c: Text; model: ModelEntry; provider: ProviderEntry; providerName: string; existingIds: string[]; busy: boolean; onClose: () => void; onSave: (next: ModelEntry) => Promise<void>;
+  saveError: string | null;
+}) {
+  const [draft, setDraft] = useState<ModelEntry>({ ...model });
+  const [smart, setSmart] = useState(true);
+  const [fetching, setFetching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [discovered, setDiscovered] = useState<DiscoveredModel[] | null>(null);
+  const touched = useRef(new Set<string>());
+  const dirty = useRef(false);
+  const id = draft.id.trim();
+  useEffect(() => {
+    if (!smart || !id || discovered) { setFetching(false); return; }
+    const controller = createDiscoveryAbort();
+    const timer = setTimeout(async () => {
+      setFetching(true);
+      try {
+        const result = await requestDiscoveredModels({ providerName, provider, signal: controller.signal });
+        if (!controller.signal.aborted) setDiscovered(result.models);
+      } catch { if (!controller.signal.aborted || controller.timedOut()) setDiscovered([]); }
+      finally { controller.dispose(); if (!controller.signal.aborted || controller.timedOut()) setFetching(false); }
+    }, 350);
+    return () => { clearTimeout(timer); controller.cancel(); controller.dispose(); };
+  }, [smart, id, discovered, provider, providerName]);
+  useEffect(() => {
+    if (!smart) return;
+    const endpoint = discovered?.find(item => item.id === id);
+    if (!endpoint) return;
+    setDraft(current => {
+      const next = { ...current };
+      for (const field of ["contextWindow", "maxTokens"] as const) {
+        if (!touched.current.has(field) && current[field] === undefined) next[field] = endpoint[field];
+      }
+      return next;
+    });
+  }, [id, discovered, smart]);
+  const change = (patch: Partial<ModelEntry>) => {
+    dirty.current = true; Object.keys(patch).forEach(key => touched.current.add(key));
+    setDraft(current => ({ ...current, ...patch })); setError(null);
+  };
+  const changeId = (value: string) => { touched.current.clear(); dirty.current = true; setDraft({ id: value }); setError(null); };
+  const close = async () => {
+    if (busy) return;
+    if (dirty.current && !await requestConfirmation({ title: c.discardTitle, message: c.discardMessage, confirmLabel: c.discardConfirm, tone: "danger" })) return;
+    onClose();
+  };
+  const save = async () => {
+    if (!id) { setError(c.manualId); return; }
+    if (!model.id && existingIds.includes(id)) { setError(c.duplicate); return; }
+    if (modelLimitProblem(draft)) { setError(c.invalidLimits); return; }
+    const samplingError = modelSamplingError(draft);
+    if (samplingError) { setError(samplingError); return; }
+    await onSave({ ...draft, id });
+  };
+  return <Modal title={model.id ? c.edit : c.addModel} onClose={() => void close()} busy={busy} c={c}>
+    <div className={styles.smart}><span>{c.smart} ⓘ</span><Toggle checked={smart} label={c.smart} onChange={() => { setSmart(!smart); setFetching(false); }} disabled={busy} /></div>
+    <fieldset className={styles.dialogBody} disabled={busy}>
+      <label className={styles.field}><span>{c.manualId}</span><input value={draft.id} placeholder={c.manualId} readOnly={!!model.id} onChange={e => changeId(e.target.value)} /></label>
+      <LimitInputs model={draft} c={c} onChange={change} />
+      {fetching && <p className={styles.hint} role="status">{c.fetching}</p>}
+      {discovered && !fetching && modelLimitProblem(draft) && <p className={styles.hint}>{c.limitsHint}</p>}
+      <details className={styles.advanced}><summary>{c.advanced}</summary><label className={styles.field}><span>{c.nameLabel}</span><input value={draft.name ?? ""} onChange={e => change({ name: e.target.value || undefined })} /></label><label className={styles.check}><input type="checkbox" checked={draft.input?.includes("image") ?? false} onChange={e => change({ input: e.target.checked ? ["text", "image"] : ["text"] })} />{c.image}</label><label className={styles.check}><input type="checkbox" checked={draft.reasoning ?? false} onChange={e => change({ reasoning: e.target.checked })} />{c.reasoning}</label><ModelSamplingEditor providerName={providerName} provider={provider} model={draft} onChange={change} /></details>
+      {(error || saveError) && <div className={styles.error} role="alert"><ModelErrorText value={error || saveError || ""} /></div>}
+    </fieldset>
+    <div className={styles.dialogFooter}><button className={styles.link} disabled={busy} onClick={() => { touched.current.clear(); setDraft({ ...model }); setError(null); dirty.current = false; }}>{c.reset}</button><button className={styles.quiet} disabled={busy} onClick={() => void close()}>{c.cancel}</button><button className={styles.primary} disabled={busy || fetching} onClick={() => void save()}>{busy ? c.saving : c.save}</button></div>
+  </Modal>;
+}
+function ImportDialog({ c, incoming, existingIds, busy, onClose, onSave, saveError }: {
+  c: Text; incoming: DiscoveredModel[]; existingIds: string[]; busy: boolean; saveError: string | null; onClose: () => void; onSave: (models: ModelEntry[]) => Promise<void>;
+}) {
+  const [models, setModels] = useState<ModelEntry[]>(() => incoming.filter(m => !existingIds.includes(m.id)));
+  const [selected, setSelected] = useState(() => new Set(models.map(m => m.id)));
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const chosen = models.filter(m => selected.has(m.id));
+  const save = async () => {
+    if (!chosen.length) { setError(c.chooseOne); return; }
+    if (chosen.some(modelLimitProblem)) { setError(c.invalidLimits); return; }
+    await onSave(chosen);
+  };
+  return <Modal title={c.importTitle} c={c} busy={busy} onClose={onClose}>
+    <p className={styles.hint}>{c.endpointOnly}</p>
+    <fieldset disabled={busy} className={styles.dialogBody}>
+      <input aria-label={c.search} placeholder={c.search} value={search} onChange={e => setSearch(e.target.value)} />
+      {models.length === 0 && <p className={styles.empty}>{incoming.length ? c.duplicate : c.noResults}</p>}
+      {models.filter(m => `${m.name ?? ""} ${m.id}`.toLowerCase().includes(search.toLowerCase())).map(model => <div className={styles.importRow} key={model.id}>
+        <label className={styles.choice}><input type="checkbox" checked={selected.has(model.id)} onChange={e => { const checked = e.target.checked; setSelected(current => { const next = new Set(current); if (checked) next.add(model.id); else next.delete(model.id); return next; }); }} /><strong>{model.name || model.id}</strong><small>{model.id}</small></label>
+        {selected.has(model.id) && modelLimitProblem(model) ? <><p className={styles.hint}>{c.limitsHint}</p><LimitInputs model={model} c={c} onChange={patch => setModels(current => current.map(m => m.id === model.id ? { ...m, ...patch } : m))} /></> : <p className={styles.hint}>{c.context}: {model.contextWindow ?? "—"} · {c.output}: {model.maxTokens ?? "—"}</p>}
+      </div>)}
+      {(error || saveError) && <div className={styles.error} role="alert"><ModelErrorText value={error || saveError || ""} /></div>}
+    </fieldset>
+    <div className={styles.dialogFooter}><span className={styles.hint}>{c.selected} {selected.size}</span><button className={styles.quiet} disabled={busy} onClick={onClose}>{c.cancel}</button><button className={styles.primary} disabled={busy || !selected.size} onClick={() => void save()}>{busy ? c.saving : c.importModels}</button></div>
+  </Modal>;
 }

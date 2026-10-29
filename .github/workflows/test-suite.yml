@@ -3,10 +3,10 @@ name: Complete test suite
 on:
   workflow_call:
     inputs:
-      platforms:
-        description: JSON array of runner labels
+      matrix:
+        description: Exact platform/shard matrix (omitted on main to run the full suite)
         type: string
-        default: '["ubuntu-latest", "windows-latest"]'
+        default: '{"os":["ubuntu-latest","windows-latest"],"shard":[1,2,3,4,5,6]}'
 
 permissions:
   contents: read
@@ -18,9 +18,7 @@ jobs:
     timeout-minutes: 60
     strategy:
       fail-fast: false
-      matrix:
-        os: ${{ fromJSON(inputs.platforms) }}
-        shard: [1, 2, 3, 4, 5, 6]
+      matrix: ${{ fromJSON(inputs.matrix) }}
 
     steps:
       - name: Check out source
@@ -34,7 +32,7 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22.19.0
-          cache: npm
+          cache: ${{ startsWith(github.ref, 'refs/tags/') && '' || 'npm' }}
 
       - name: Restore npm downloads from an earlier lockfile
         if: steps.node-setup.outputs.cache-hit != 'true'
@@ -67,7 +65,17 @@ jobs:
         run: node scripts/run-tests.mjs --test-shard=${{ matrix.shard }}/6
         env:
           PIORA_SKIP_RESOURCE_TESTS: ${{ runner.os == 'Windows' && '1' || '0' }}
+          PIORA_EXPERIENCE_SCREENSHOTS: "1"
           PSModulePath: ""
+
+      - name: Upload model settings screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: model-settings-${{ matrix.os }}-${{ matrix.shard }}
+          path: .verification/model-experience-*.png
+          if-no-files-found: ignore
+          retention-days: 7
 
       # These cases are skipped in the Windows shards and run exactly once here.
       - name: Resource-intensive Shell tests
