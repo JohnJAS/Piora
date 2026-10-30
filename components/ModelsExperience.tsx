@@ -55,7 +55,7 @@ export function ModelsExperience({ cwd, onClose, onModelsChanged, embedded = fal
   const [dirty, setDirty] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const requestRef = useRef(0);
-  const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
+  const query = "?scope=global";
   useFocusTrap(rootRef, !embedded && !modalOpen, { onEscape: busy ? undefined : () => { void closeSettings(); } });
 
   const reload = useCallback(async () => {
@@ -76,7 +76,7 @@ export function ModelsExperience({ cwd, onClose, onModelsChanged, embedded = fal
   useEffect(() => { const requests = requestRef; void reload(); return () => { ++requests.current; }; }, [reload]);
 
   const scopeAction = async (action: string, provider: string, id?: string) => {
-    const result = await jsonRequest<ModelScopeResponse>("/api/models/scope", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, provider, ...(id ? { id } : {}), ...(cwd ? { cwd } : {}) }) });
+    const result = await jsonRequest<ModelScopeResponse>("/api/models/scope", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, provider, ...(id ? { id } : {}), scope: "global" }) });
     setScope(result); onModelsChanged?.(); return result;
   };
 
