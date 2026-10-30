@@ -60,6 +60,11 @@ loopback Chromium debugging endpoint with full renderer control; leave it unset
 for normal development. See [startup and hot-reload verification](../docs/development-startup-and-hmr.md)
 for isolated timing measurements and the Harmony tab regression procedure.
 
+For repeatable UI checks, see [desktop automated testing](../docs/desktop-automated-testing.md).
+`npm run test:desktop:e2e` starts its own isolated development instance and runs the
+credential-free theme persistence scenario. Use a dedicated checkout without an
+interactive dev launcher; this is a development-window check, not packaged-app validation.
+
 For a one-off Electron-only compile:
 
 Install this directory's pinned toolchain, then compile it:

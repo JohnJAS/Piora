@@ -79,6 +79,7 @@
     "brand:icons": "node scripts/build-brand-icon.mjs",
     "dev": "next dev -H 127.0.0.1 -p 30141 --turbopack",
     "dev:desktop": "node scripts/dev-desktop.mjs",
+    "test:desktop:e2e": "node scripts/run-desktop-e2e.mjs",
     "dev:reset-cache": "node scripts/reset-development-cache.mjs",
     "dev:lan": "next dev -H 0.0.0.0 -p 30141 --turbopack",
     "build": "next build --webpack",

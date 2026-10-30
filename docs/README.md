@@ -3,6 +3,7 @@
 - [完整中文用户手册](user-manual.zh-CN.md)：从首次安装、模型配置到日常操作、备份迁移和故障排查；包含当前源码及未发布功能的适用范围说明
 - [项目介绍与使用](../README.md)
 - [桌面开发与启动](../desktop/README.md)
+- [桌面自动化测试](desktop-automated-testing.md)：隔离的真实 Electron 场景、结果报告、失败诊断与新增场景方式（#247 首批能力）
 - [发布与构建](release.md)
 - [Harmony 设备指南](HARMONYOS_DEVICE_AUTOMATION.md)：连接、控制、语音、诊断、场景及验证
 - [SSH 工作台](SSH_WORKBENCH.md)
