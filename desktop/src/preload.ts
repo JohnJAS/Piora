@@ -48,6 +48,11 @@ const clipboardHistory = Object.freeze({
 } satisfies ClipboardBridge);
 
 const runtime = Object.freeze({
+  dshPet: Object.freeze({
+    status: () => ipcRenderer.invoke("pi:dsh-pet-status"),
+    action: (action: import("./dsh-pet-types.js").DshPetAction) => ipcRenderer.invoke("pi:dsh-pet-action", action),
+    preferences: (value: { autoStart?: boolean; syncTasks?: boolean }) => ipcRenderer.invoke("pi:dsh-pet-preferences", value),
+  }),
   harmonyMirror: Object.freeze({
     open: serial => ipcRenderer.invoke("pi:harmony-window-open", serial),
     focus: () => ipcRenderer.invoke("pi:harmony-window-focus"),

@@ -139,6 +139,7 @@ const ModelsConfig = dynamic(() => import("./ModelsExperience").then((module) =>
 const SmartShellSettings = dynamic(() => import("./SmartShellSettings").then((module) => module.SmartShellSettings), { ssr: false, loading: SettingsSectionLoading });
 const SkillsConfig = dynamic(() => import("./SkillsConfig").then((module) => module.SkillsConfig), { ssr: false, loading: SettingsSectionLoading });
 const PluginsConfig = dynamic(() => import("./PluginsConfig").then((module) => module.PluginsConfig), { ssr: false, loading: SettingsSectionLoading });
+const DesktopExtensionsSettings = dynamic(() => import("./DesktopExtensionsSettings").then((module) => module.DesktopExtensionsSettings), { ssr: false, loading: SettingsSectionLoading });
 const ExtensionsConfig = dynamic(() => import("./ExtensionsConfig").then((module) => module.ExtensionsConfig), { ssr: false, loading: SettingsSectionLoading });
 const CapabilityBundlesConfig = dynamic(() => import("./CapabilityBundlesConfig").then((module) => module.CapabilityBundlesConfig), { ssr: false, loading: SettingsSectionLoading });
 const ProjectToolsConfig = dynamic(() => import("./ProjectToolsConfig").then((module) => module.ProjectToolsConfig), { ssr: false, loading: SettingsSectionLoading });
@@ -1945,6 +1946,7 @@ export function AppShell() {
       }}
       modelCwd={projectCwd ?? activeCwd ?? undefined}
       sections={{
+        desktopExtensions: <DesktopExtensionsSettings />,
         shell: <SmartShellSettings cwd={projectCwd ?? activeCwd ?? undefined} />,
         tools: (currentProjectPath ?? settingsProjectCwd) ? (
           <ProjectToolsConfig cwd={(currentProjectPath ?? settingsProjectCwd)!} onChanged={setSessionCapabilities} mcpFocus={mcpToolsFocus} onClearMcpFocus={() => setMcpToolsFocus(null)} />

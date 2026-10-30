@@ -1,4 +1,5 @@
 import { characterThemesZh } from "./character-themes";
+import { desktopExtensionsZh } from "./desktop-extensions";
 import { brandText } from "../../branding";
 import { roomUxZh } from "./room-ux";
 import { chatCommandsZh } from "./chat-commands";
@@ -17,6 +18,7 @@ export const zhCNLocale: LocalePlugin = {
   label: "简体中文",
   messages: {
     ...characterThemesZh,
+    ...desktopExtensionsZh,
     "permission.label": "工具操作权限",
     "permission.loading": "正在读取权限…",
     "permission.ask": "操作前询问",

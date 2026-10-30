@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { DshPetManager } from "./dsh-pet-manager.js";
 import { createSmokeSessionProbe } from "./smoke-session-probe.js";
 import { SystemLauncher } from "./system-launcher";
 import { registerQuickAccessHandlers } from "./quick-access-ipc.js";
@@ -175,6 +176,8 @@ if (desktopDevelopmentRuntime) {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let dshPet: DshPetManager | undefined;
+let dshPetSettings: BrowserWindow | undefined;
 let harmonyWindows: HarmonyWindows | undefined;
 let companionWindow: BrowserWindow | null = null;
 let companionBubbleWindow: BrowserWindow | null = null;
@@ -1064,6 +1067,52 @@ function isTrustedMainWindowSender(event: IpcMainInvokeEvent): boolean {
     && event.senderFrame === event.sender.mainFrame
     && isAllowedAppUrl(event.senderFrame.url, serverUrl.origin),
   );
+}
+
+function initializeDshPet(): void {
+  dshPet = new DshPetManager({
+    root: join(app.getPath("userData"), "desktop-extensions", "dsh-pet"),
+    tasks: async () => {
+      if (!serverUrl || !applicationToken) throw new Error("Piora is restarting");
+      const response = await fetch(new URL("/api/desktop/dsh-pet/tasks", serverUrl), {
+        headers: { [DESKTOP_TOKEN_HEADER]: applicationToken }, signal: AbortSignal.timeout(3000),
+      });
+      if (!response.ok) throw new Error(`Task status unavailable: ${response.status}`);
+      const payload = await response.json() as { tasks?: import("./dsh-pet-types.js").PetTaskSnapshot[] };
+      if (!Array.isArray(payload.tasks)) throw new Error("Invalid task snapshot");
+      return payload.tasks;
+    },
+    openSettings: async url => {
+      if (dshPetSettings && !dshPetSettings.isDestroyed()) { dshPetSettings.focus(); return; }
+      const window = new BrowserWindow({ width: 920, height: 760, title: "DSH Pet", show: false,
+        webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, partition: "dsh-pet-settings" } });
+      dshPetSettings = window;
+      const origin = new URL(url).origin;
+      window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+      window.webContents.on("will-navigate", (event, destination) => {
+        try { if (new URL(destination).origin === origin) return; } catch { /* Reject malformed URLs. */ }
+        event.preventDefault();
+      });
+      window.on("closed", () => { if (dshPetSettings === window) dshPetSettings = undefined; });
+      try { await window.loadURL(url); window.show(); } catch (error) { window.destroy(); throw error; }
+    },
+    openFolder: async path => { const error = await shell.openPath(path); if (error) throw new Error(error); },
+    closeSettings: () => { if (dshPetSettings && !dshPetSettings.isDestroyed()) dshPetSettings.destroy(); dshPetSettings = undefined; },
+  });
+  for (const channel of ["pi:dsh-pet-status", "pi:dsh-pet-action", "pi:dsh-pet-preferences"]) ipcMain.removeHandler(channel);
+  ipcMain.handle("pi:dsh-pet-status", event => {
+    if (!isTrustedMainWindowSender(event)) throw new Error("Untrusted desktop extension request");
+    return dshPet!.status();
+  });
+  ipcMain.handle("pi:dsh-pet-action", (event, action: unknown) => {
+    if (!isTrustedMainWindowSender(event) || typeof action !== "string" || !["install", "start", "stop", "uninstall", "settings", "folder", "cancel"].includes(action)) throw new Error("Invalid desktop extension action");
+    return dshPet!.action(action as import("./dsh-pet-types.js").DshPetAction);
+  });
+  ipcMain.handle("pi:dsh-pet-preferences", (event, value: unknown) => {
+    if (!isTrustedMainWindowSender(event)) throw new Error("Untrusted desktop extension request");
+    return dshPet!.setPreferences(value);
+  });
+  dshPet.restore();
 }
 
 function isTrustedCompanionWindowSender(event: IpcMainInvokeEvent): boolean {
@@ -2922,10 +2971,12 @@ async function startApplication(): Promise<void> {
   writeLastLaunchedVersion(app.getPath("userData"), app.getVersion(), logger);
   logger.info("Application window is ready", { elapsedMs: Date.now() - startupStartedAt });
   recordStartupStage("ready");
+  try { initializeDshPet(); } catch (error) { logger.warn("DSH Pet initialization failed", error); }
 }
 
 async function stopApplication(): Promise<void> {
   await clipboardController?.stop().catch(error => { if (error instanceof ClipboardDraftFlushError) throw error; logger?.warn("Clipboard shutdown failed", error); });
+  await dshPet?.dispose().catch(error => logger?.warn("DSH Pet shutdown failed", error));
   if (scheduledUpdateTimer) clearInterval(scheduledUpdateTimer);
   scheduledUpdateTimer = undefined;
   logger?.info("Stopping Piora");

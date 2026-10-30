@@ -2593,7 +2593,7 @@ export function getRunningRpcSessionIds(): string[] {
     .map((session) => session.id);
 }
 
-export function getRunningRpcSessionStatuses(): TaskRuntimeSnapshot[] {
+export function getRunningRpcSessionStatuses(includeIdle = false): TaskRuntimeSnapshot[] {
   const statuses: TaskRuntimeSnapshot[] = [];
   for (const session of getRegistry().values()) {
     if (!session.isAlive()) continue;
@@ -2611,7 +2611,7 @@ export function getRunningRpcSessionStatuses(): TaskRuntimeSnapshot[] {
     const hasOpenTaskRun = snapshot.taskRun
       && snapshot.taskRun.phase !== "completed"
       && snapshot.taskRun.phase !== "cancelled";
-    if (snapshot.runtime !== "idle" || snapshot.pendingApproval || snapshot.lastPromptFailed || hasOpenTaskRun) {
+    if (includeIdle || snapshot.runtime !== "idle" || snapshot.pendingApproval || snapshot.lastPromptFailed || hasOpenTaskRun) {
       statuses.push(snapshot);
     }
   }

@@ -61,6 +61,10 @@ npm run test:desktop:e2e -- --fail-at theme-dark
 
 ## 增加场景
 
+### DSH Pet 桌面扩展
+
+`node scripts/run-desktop-e2e.mjs --scenario desktop-extensions` 验证独立设置入口、无项目时的安装入口、默认开关、受限 IPC 和桌面认证的任务快照接口，不下载插件、不调用模型。原版插件安装和原生窗口 smoke 使用 `node scripts/verify-dsh-pet.mjs`，详见 [DSH Pet](dsh-pet.md)。
+
 ### Shell 停止回归（Windows）
 
 ```powershell
