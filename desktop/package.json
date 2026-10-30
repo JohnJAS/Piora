@@ -41,6 +41,7 @@
     "@typescript/native": "npm:typescript@7.0.2"
   },
   "dependencies": {
+    "tar": "7.5.22",
     "electron-updater": "6.8.11",
     "koffi": "3.3.3"
   }

@@ -1,0 +1,15 @@
+.root { display: grid; align-content: start; gap: 20px; padding: 26px 30px 34px; overflow-y: auto; color: var(--text); font-size: var(--text-sm); }
+.root h2 { margin: 0; font-size: calc(var(--text-lg) * 1.22); font-weight: 680; }
+.root > p { margin: 0; }
+.card { border: 1px solid var(--border); border-radius: 14px; background: var(--settings-panel-background, var(--bg-panel)); padding: 20px; display: grid; align-content: start; gap: 16px; }
+.card p, .card h3 { margin: 0; }
+.header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.header p, .description, .header > span { color: var(--text-muted); line-height: 1.6; }
+.header h3 { margin-bottom: 4px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.actions button { font: inherit; padding: 8px 14px; background: var(--bg-hover); color: var(--text); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.actions button:disabled { opacity: 0.5; cursor: default; }
+.actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.option { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.card a { color: var(--accent); }
+.error { color: var(--text); border-left: 3px solid var(--accent); padding-left: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }

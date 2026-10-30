@@ -1,6 +1,6 @@
 import { filterFileEntries } from "./file-fuzzy.ts";
 
-export type SettingsKey = "general" | "data" | "network" | "conversation" | "prompts" | "shortcuts" | "speech" | "automations" | "models" | "modelRuntime" | "shell" | "tools" | "capabilityBundles" | "extensions" | "skills" | "plugins" | "harmony" | "appearance" | "companion" | "remote" | "usage" | "archived" | "trash";
+export type SettingsKey = "desktopExtensions" | "general" | "data" | "network" | "conversation" | "prompts" | "shortcuts" | "speech" | "automations" | "models" | "modelRuntime" | "shell" | "tools" | "capabilityBundles" | "extensions" | "skills" | "plugins" | "harmony" | "appearance" | "companion" | "remote" | "usage" | "archived" | "trash";
 
 export interface SettingsPage {
   key: SettingsKey;
@@ -28,6 +28,7 @@ export const SETTINGS_GROUPS: readonly { labelKey: string; pages: readonly Setti
     { key: "tools", labelKey: "projectTools.title", descriptionKey: "projectTools.description", icon: "build" },
     { key: "capabilityBundles", labelKey: "capabilityBundles.title", descriptionKey: "capabilityBundles.description", icon: "package" },
     { key: "extensions", labelKey: "settings.extensions", descriptionKey: "settings.manageExtensionsDescription", icon: "package" },
+    { key: "desktopExtensions", labelKey: "desktopExtensions.title", descriptionKey: "desktopExtensions.description", icon: "robot" },
     { key: "plugins", labelKey: "common.plugins", descriptionKey: "settings.pluginsDescription", icon: "package" },
     { key: "skills", labelKey: "common.skills", descriptionKey: "settings.skillsDescription", icon: "solution" },
   ] },
@@ -61,6 +62,7 @@ export interface SettingsSearchItem {
 }
 
 export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
+  { id: "desktopExtensions", section: "desktopExtensions", labelKey: "desktopExtensions.title", descriptionKey: "desktopExtensions.description", keywords: ["dsh-pet", "desktop", "桌宠", "桌面扩展"] },
   { id: "shell", section: "shell", labelKey: "shell.title", descriptionKey: "shell.description", keywords: ["terminal", "shell", "PowerShell", "终端", "命令"] },
   { id: "shell.history", section: "shell", labelKey: "shell.history", descriptionKey: "shell.nativeHistoryHint", keywords: ["history", "PowerShell", "PSReadLine", "历史", "提示", "补全"] },
   { id: "shell.defaultShell", section: "shell", labelKey: "shell.defaultShell", descriptionKey: "shell.nativeProfileHint", keywords: ["bash", "powershell", "cmd", "wsl", "zsh", "shell", "终端", "切换", "默认"] },

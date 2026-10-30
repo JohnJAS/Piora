@@ -1,4 +1,5 @@
 import { characterThemesEn } from "./character-themes";
+import { desktopExtensionsEn } from "./desktop-extensions";
 import { brandText } from "../../branding";
 import { roomUxEn } from "./room-ux";
 import { chatCommandsEn } from "./chat-commands";
@@ -17,6 +18,7 @@ export const enLocale: LocalePlugin = {
   label: "English",
   messages: {
     ...characterThemesEn,
+    ...desktopExtensionsEn,
     "permission.label": "Tool permissions",
     "permission.loading": "Loading permissions…",
     "permission.ask": "Ask before actions",

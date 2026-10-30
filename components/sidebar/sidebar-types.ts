@@ -5,6 +5,7 @@ import type { SettingsKey } from "@/lib/settings-search";
 declare global {
   interface Window {
     piDesktop?: {
+      dshPet?: import("@/desktop/src/dsh-pet-types").DshPetBridge;
       harmonyMirror?: import("@/desktop/src/harmony-window-types").HarmonyWindowBridge;
       messages?: import("@/desktop/src/harmony-window-types").PioraMessageBridge;
       files?: { getPathForFile: (file: File) => string };
