@@ -1,3 +1,4 @@
+import { createGlobalModelServices } from "@/lib/global-model-services";
 import type { SettingsManager } from "@earendil-works/pi-coding-agent";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import {
@@ -21,6 +22,7 @@ import {
 export const dynamic = "force-dynamic";
 
 interface PatchBody {
+  scope?: "global";
   cwd?: unknown;
   action?: unknown;
   provider?: unknown;
@@ -80,8 +82,8 @@ function readMutation(body: PatchBody): SettingsMutation {
   };
 }
 
-async function loadState(cwd: string) {
-  const services = await createTrustedModelServices(cwd);
+async function loadState(cwd: string | null) {
+  const services = cwd === null ? await createGlobalModelServices() : await createTrustedModelServices(cwd);
   const settings: SettingsManager = services.settingsManager;
   assertModelScopeSettingsReadable(settings);
   const projectOverride = hasProjectEnabledModelsOverride(settings.getProjectSettings());
@@ -119,7 +121,8 @@ function handleKnownError(error: unknown): Response | undefined {
 
 export async function GET(req: Request) {
   try {
-    const cwd = await resolveModelRequestCwd(new URL(req.url).searchParams.get("cwd"));
+    const params = new URL(req.url).searchParams;
+    const cwd = params.get("scope") === "global" ? null : await resolveModelRequestCwd(params.get("cwd"));
     const { state, projectOverride } = await loadState(cwd);
     return Response.json(publicState(state, projectOverride));
   } catch (error) {
@@ -156,7 +159,7 @@ export async function PATCH(req: Request) {
   }
 
   try {
-    const cwd = await resolveModelRequestCwd(body.cwd);
+    const cwd = body.scope === "global" ? null : await resolveModelRequestCwd(body.cwd);
     const { services, settings, state, projectOverride } = await loadState(cwd);
     if (projectOverride && mutation.action !== "set-default") {
       return jsonError(
