@@ -4,6 +4,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+- 新增可复用的真实桌面自动化测试入口，使用隔离数据、端口和开发缓存运行场景，保留步骤、失败截图和清理结果；首个无需模型凭据的场景通过设置界面切换深浅主题并验证刷新恢复，便于开发者和编码 Agent 重复自测。
+
 ## [0.5.5-beta.67] - 2026-10-30
 
 - 系统录屏回归测试明确模拟无原生采集运行时的兼容环境，避免内置库发现改变测试路径；保留全部录屏恢复断言。beta.65、beta.66 为未发布候选。
