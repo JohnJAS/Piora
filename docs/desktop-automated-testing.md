@@ -2,7 +2,7 @@
 
 本入口是 [#247](https://github.com/kexijiang/Piora/issues/247) 的首批基础设施：复用 Piora Dev 启动器，以 Playwright/CDP 操作真实 Electron 主窗口，并记录断言、截图和清理结果。它独立于 Intelligent UI。
 
-当前只有 `settings-theme` 场景：通过设置按钮打开外观界面，点击深色主题，核对实际页面主题与持久设置，刷新后再次核对，再切换浅色并重复验证。没有模型调用，不需要供应商凭据；它没有模拟主题接口，也不直接写入主题状态。
+默认 `settings-theme` 场景通过设置按钮打开外观界面，点击深色主题，核对实际页面主题与持久设置，刷新后再次核对，再切换浅色并重复验证。它没有模型调用，不需要供应商凭据，也不直接写入主题状态。另有 Windows 专用的 `stop-shell` / `stop-bash` 停止场景，使用本地模型响应夹具和真实 shell 进程，见下文。
 
 ## 运行
 
@@ -60,6 +60,19 @@ npm run test:desktop:e2e -- --fail-at theme-dark
 此命令应非零退出，报告包含 `Intentional failure` 和失败截图；它是失败机制检查，不能作为功能通过记录。不存在的步骤名称也会失败。
 
 ## 增加场景
+
+### Shell 停止回归（Windows）
+
+```powershell
+npm run test:desktop:e2e -- --scenario stop-shell
+npm run test:desktop:e2e -- --scenario stop-bash
+```
+
+`stop-shell` 使用 PowerShell `Start-Sleep -Seconds 30`，`stop-bash` 使用 Git Bash 的 `sleep 30`。两者在隔离目录配置仅监听 loopback 的模型响应夹具，不复制用户凭据；模型响应固定生成工具调用。聊天发送、真实 SDK shell 工具、Stop 点击、取消接口及进程终止均不 mock。报告明确标注 `local-model-fixture`，不代表真实模型服务验收。
+
+测试等待 PID 标记后才点击 Stop，并在运行器清理之前观察实际进程。Bash 使用 Windows 原生 PID，另取发送前后的 `sleep.exe` 差集；必须恰好出现一个新 sleep 进程，否则失败而不猜测归属。因此运行该场景时不要并行启动其他 sleep 命令。测试不主动结束这些 PID，以免清理掩盖取消失败；命令自身限制为 30 秒。
+
+`stop-evidence.json` 记录取消请求/回执、进程存活、按钮状态与服务端状态。如果发送按钮恢复后进程仍存活超过 3 秒，会额外保存 `false-idle.png` 和同期服务端快照。3 秒内未退出是失败，即使 30 秒后自然退出也不能算通过。Windows Bash 修复前后的结果见 [停止验证记录](verification/desktop-stop-243-2026-10-30.md)。
 
 场景文件位于 `scripts/desktop-e2e/scenarios/`，通过 `scripts/run-desktop-e2e.mjs` 显式登记；不从外部路径加载任意脚本。参考 `settings-theme.mjs`：
 

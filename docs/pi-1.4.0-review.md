@@ -24,10 +24,19 @@
 安装失败的原因，不能通过放松校验修复。
 
 官方包仍声明 Undici 8.10.2；Piora 继续使用已审核的 8.12.3，并从 Pi 的实际
-解析位置核验该版本。官方未捆绑 SDK 源码保持原样，三个 bundle 入口继续由
+解析位置核验该版本。升级时官方未捆绑 SDK 源码保持原样，三个 bundle 入口继续由
 精确启动器导向这些源码，以免旧的内嵌依赖绕开锁文件覆盖。此项是
 `docs/undici-8.12.3-review.md` 所记录的 1.3.0 基线之后独立审核的 SDK 升级，
 不是将未审核 bundle 重新标记为安全。
+
+后续 #243 增加一个明确限定的本地补丁：`scripts/pi-windows-bash-patch.mjs`
+修改 `dist/core/tools/bash.js` 的取消/超时清理，并附加
+`scripts/patches/pi-windows-bash.js`。仅 Windows MSYS/Cygwin Bash 启用该路径；
+PowerShell、WSL 和非 Windows 保持原执行路径。Git Bash 已在 Windows 实测，
+Cygwin、WSL、其他系统与发布包未做本次实机验证。
+验证器先严格匹配完整补丁、逆向恢复原始字节，再核验原 Bash 文件 SHA-256
+及上述官方源码树承诺；其他文件没有例外，最终产物还必须包含完整补丁。
+缺失补丁、修改 helper、修改原始 SDK 或升级版本均不会被默默接受。
 
 七个 Pi 包、新增的 `marked-cjk-friendly@0.1.2` 和原有 `quickjs-wasi@3.6.2`
 均与官方 registry 元数据逐项核对完整性；这九项制品地址统一为

@@ -11,7 +11,7 @@ function gitIdentity(root) {
   catch { return { unavailable: true }; }
 }
 
-async function launchDesktop({ root, directory, signal, registerCleanup, report, stepTimeoutMs, port, debugPort }) {
+async function launchDesktop({ root, directory, signal, registerCleanup, report, stepTimeoutMs, port, debugPort, scenario }) {
   const appPort = await reservePort(port);
   let debugLease;
   try { debugLease = await reservePort(debugPort); }
@@ -30,6 +30,7 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
   report.origin = origin;
   report.debugging = debugging;
   report.credentials = 'not-copied-or-injected';
+  if (scenario?.prepare) await scenario.prepare({ paths, directory, signal, registerCleanup, report });
   const log = createWriteStream(join(directory, 'desktop.log'), { flags: 'wx' });
   let logError;
   log.on('error', error => { logError = error; });
@@ -85,6 +86,13 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
       checkAlive();
       const skip = page.getByRole('button', { name: /^(Skip guide|跳过引导)$/ });
       if (await skip.isVisible()) { await skip.click(); return false; }
+      // The onboarding panel loads asynchronously after the shell/settings button.
+      // Wait for its persisted decision so a late modal cannot cover the scenario.
+      const onboarded = await page.evaluate(() => {
+        const value = localStorage.getItem('piora-first-run-onboarding:v1');
+        return value && ['dismissed', 'completed'].includes(JSON.parse(value).status);
+      });
+      if (!onboarded) return false;
       return await page.getByRole('button', { name: /^(Settings|设置)$/ }).isVisible();
     }, { signal, timeoutMs: stepTimeoutMs, label: 'settings entry after onboarding' });
   };
@@ -110,7 +118,7 @@ export async function runDesktopScenario({ root, scenario, timeoutMs = 600_000, 
   const timeout = setTimeout(() => controller.abort(new Error(`Desktop scenario exceeded ${timeoutMs} ms`)), timeoutMs);
   const signal = externalSignal ? AbortSignal.any([externalSignal, controller.signal]) : controller.signal;
   const started = Date.now();
-  const report = { version: 1, scenario: scenario.id, scope: scenario.scope, mode: 'no-model',
+  const report = { version: 1, scenario: scenario.id, scope: scenario.scope, mode: scenario.mode ?? 'no-model',
     platform: process.platform, node: process.version, git: gitIdentity(root), startedAt: new Date(started).toISOString(),
     status: 'running', steps: [], cleanupErrors: [], pageErrors: [], failAt: failAt ?? null,
     coverage: scenario.coverage, limits: scenario.limits };
@@ -138,7 +146,7 @@ export async function runDesktopScenario({ root, scenario, timeoutMs = 600_000, 
     } catch (error) { if (!finishing) { row.status = 'failed'; row.durationMs = Date.now() - began; } throw error; }
   }
   try {
-    driver = await step('launch', () => launch({ root, directory, signal, report, stepTimeoutMs, port, debugPort,
+    driver = await step('launch', () => launch({ root, directory, signal, report, stepTimeoutMs, port, debugPort, scenario,
       registerCleanup: fn => cleanup.push(fn) }));
     await abortable(() => scenario.run({ ...driver, directory, signal, step,
       waitUntil: (predicate, label) => waitUntil(predicate, { signal, timeoutMs: stepTimeoutMs, label }) }), signal);
