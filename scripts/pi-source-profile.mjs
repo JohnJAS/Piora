@@ -3,6 +3,7 @@ import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { bashFile, originalBashSource, patchWindowsBash } from "./pi-windows-bash-patch.mjs";
 
 const certificate = JSON.parse(await readFile(new URL("./pi-source-profile-1.4.0.json", import.meta.url), "utf8"));
 export const piSourceLaunchers = Object.freeze({
@@ -26,7 +27,12 @@ export async function piTreeCommitment(root, omitBundle = false) {
         if (omitBundle && !relative && name === "bundle") continue;
         await visit(join(path, name), relative ? `${relative}/${name}` : name);
       }
-    } else if (entry.isFile()) rows.push(`${relative}\0${sha256(await readFile(path))}\n`);
+    } else if (entry.isFile()) {
+      const bytes = await readFile(path);
+      // Only the exact reversible #243 patch is accepted. Every original byte
+      // remains covered by the official distribution commitment.
+      rows.push(`${relative}\0${sha256(omitBundle && relative === bashFile ? originalBashSource(bytes.toString('utf8')) : bytes)}\n`);
+    }
     else throw new Error(`Pi source profile refuses a special entry: ${path}`);
   }
   await visit(root);
@@ -77,6 +83,9 @@ async function verifyLaunchers(sdk) {
 export async function verifyPiSourceProfile(root) {
   const sdk = await verifyOfficialSource(root);
   await verifyLaunchers(sdk);
+  if (!(await readFile(join(sdk, 'dist', bashFile), 'utf8')).includes('// Piora #243: Windows ancestry')) {
+    throw new Error('Missing reviewed Pi Windows Bash cancellation patch');
+  }
   return { version: certificate.version, effectiveUndici: certificate.effectiveUndici, sourceFiles: certificate.unbundledDist.files };
 }
 
@@ -86,11 +95,12 @@ export async function patchPiSourceProfile(root) {
   const commitment = await piTreeCommitment(bundle);
   if (commitment.files !== certificate.originalBundle.files || commitment.sha256 !== certificate.originalBundle.sha256) {
     await verifyLaunchers(sdk); // only the exact reviewed post-state is idempotent
+    if (await patchWindowsBash(sdk)) return { patched: true, ...await verifyPiSourceProfile(root) };
     return { patched: false, reason: "already-patched", ...await verifyPiSourceProfile(root) };
   }
   // Keep bin/export paths and the official package manifest intact. The
   // official build:unbundled inputs already ship alongside the duplicate bundle.
-  // No compiled dependency code is transplanted or relabeled.
+  // The reviewed Bash patch is the only change to official unbundled code.
   const temporary = join(sdk, "dist/.piora-source-launchers");
   await mkdir(temporary); // an unexpected prior directory is rejected
   try {
@@ -103,6 +113,7 @@ export async function patchPiSourceProfile(root) {
     await rm(temporary, { recursive: true, force: true });
     throw error;
   }
+  await patchWindowsBash(sdk);
   return { patched: true, ...await verifyPiSourceProfile(root) };
 }
 

@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runDesktopScenario } from './desktop-e2e/harness.mjs';
+import { stopShell, stopBash } from './desktop-e2e/scenarios/stop-shell.mjs';
 import { settingsTheme } from './desktop-e2e/scenarios/settings-theme.mjs';
 
 export function parseOptions(args) {
@@ -19,21 +20,21 @@ export function parseOptions(args) {
     } else options[key] = value;
   }
   if (options.port && options.port === options.debugPort) throw new Error('Application and CDP ports must differ');
-  if (options.scenario !== settingsTheme.id) throw new Error(`Unknown scenario: ${options.scenario}`);
+  if (![settingsTheme.id, stopShell.id, stopBash.id].includes(options.scenario)) throw new Error(`Unknown scenario: ${options.scenario}`);
   return options;
 }
 
 async function main() {
   const options = parseOptions(process.argv.slice(2));
   if (options.help || options.list) {
-    console.log('Usage: npm run test:desktop:e2e -- [--scenario settings-theme] [--timeout-ms 600000] [--step-timeout-ms 30000] [--port N] [--debug-port N] [--fail-at STEP]\nScenario: settings-theme (real desktop; no model credentials)');
+    console.log('Usage: npm run test:desktop:e2e -- [--scenario settings-theme|stop-shell|stop-bash] [--timeout-ms 600000] [--step-timeout-ms 30000] [--port N] [--debug-port N] [--fail-at STEP]\nScenarios: settings-theme (no model), stop-shell (local model fixture, real PowerShell), stop-bash (local model fixture, real Git Bash)');
     return;
   }
   const controller = new AbortController();
   const stop = () => controller.abort(new Error('Desktop test interrupted'));
   for (const name of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.once(name, stop);
   try {
-    const result = await runDesktopScenario({ ...options, root: resolve(import.meta.dirname, '..'), scenario: settingsTheme, signal: controller.signal });
+    const result = await runDesktopScenario({ ...options, root: resolve(import.meta.dirname, '..'), scenario: options.scenario === stopShell.id ? stopShell : options.scenario === stopBash.id ? stopBash : settingsTheme, signal: controller.signal });
     console.log(JSON.stringify({ status: result.report.status, directory: result.directory, failedStep: result.report.failedStep }));
     process.exitCode = result.report.status === 'passed' ? 0 : result.report.status === 'cancelled' ? 130 : 1;
   } finally {

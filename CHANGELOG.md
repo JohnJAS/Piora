@@ -4,6 +4,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+- 修复 Windows Git Bash 命令点击停止后，界面显示已取消但 `sleep` 等子进程仍继续执行的问题（#243）：结合 MSYS 进程关系清理当前命令及其子进程，取消和超时等待清理结束；保留 SDK 的 shell 配置与工具语义，并严格校验依赖补丁。
+- 增加真实 Desktop 的 PowerShell/Bash 停止回归场景：通过本地模型夹具触发真实命令、点击停止并独立核对进程退出，保留修复前后的证据；修正运行器对异步首次引导的等待。
 - 新增可复用的真实桌面自动化测试入口，使用隔离数据、端口和开发缓存运行场景，保留步骤、失败截图和清理结果；首个无需模型凭据的场景通过设置界面切换深浅主题并验证刷新恢复，便于开发者和编码 Agent 重复自测。
 
 ## [0.5.5-beta.67] - 2026-10-30
