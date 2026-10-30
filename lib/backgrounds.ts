@@ -1,3 +1,4 @@
+import characterManifestJson from "../public/themes/character-backgrounds/manifest.json";
 import manifestJson from "../public/themes/dream-backgrounds/manifest.json";
 
 export type BackgroundAppearance = "light" | "dark";
@@ -117,7 +118,7 @@ export function parseBackgroundManifest(value: unknown): BackgroundManifest {
     || typeof value.description !== "string"
     || (value.artworkStatus !== "pending-generation" && value.artworkStatus !== "complete")
     || typeof value.assetRoot !== "string"
-    || !value.assetRoot.startsWith("/themes/dream-backgrounds/")
+    || !["/themes/dream-backgrounds/", "/themes/character-backgrounds/"].includes(value.assetRoot)
     || !Array.isArray(value.presets)
     || !isRecord(value.security)
     || value.security.remoteUrls !== false
@@ -170,7 +171,8 @@ export function parseBackgroundManifest(value: unknown): BackgroundManifest {
 }
 
 export const BACKGROUND_MANIFEST = parseBackgroundManifest(manifestJson);
-export const BACKGROUND_PRESETS = BACKGROUND_MANIFEST.presets;
+export const CHARACTER_BACKGROUND_MANIFEST = parseBackgroundManifest(characterManifestJson);
+export const BACKGROUND_PRESETS = Object.freeze([...BACKGROUND_MANIFEST.presets, ...CHARACTER_BACKGROUND_MANIFEST.presets]);
 
 const BACKGROUND_PREPAINT_PRESETS = JSON.stringify(Object.fromEntries(
   BACKGROUND_PRESETS.map((preset) => [preset.id, {

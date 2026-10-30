@@ -21,8 +21,8 @@
  * only for configs that were already on disk. Explicit non-positive values are
  * invalid; Piora does not rewrite them into a hidden default either.
  *
- * Model settings read limits only from the configured endpoint. When the
- * endpoint omits them, the user enters the values in the same dialog. New or
+ * Explicit discovery fills absent endpoint limits with visible, editable
+ * defaults (512000 context / 65536 output). Loading saved models does not. New or
  * edited custom models need valid limits; unchanged legacy models remain usable.
  */
 import { modelSamplingError } from "./model-sampling";
@@ -31,6 +31,8 @@ export const LEGACY_MODEL_LIMIT_RUNTIME = "keep-sdk-resolution" as const;
 
 export const REQUIRE_CUSTOM_MODEL_LIMITS = true;
 
+export const DISCOVERED_MODEL_LIMIT_DEFAULTS = { contextWindow: 512_000, maxTokens: 65_536 } as const;
+
 export type AutomaticModelLimitSource = "endpoint" | "models.dev";
 
 /** Decision (a). See the file comment. */
@@ -38,7 +40,7 @@ export function automaticModelLimitSources(): readonly AutomaticModelLimitSource
   return ["endpoint"];
 }
 
-export type ModelLimitSource = "endpoint" | "models.dev";
+export type ModelLimitSource = "endpoint" | "models.dev" | "default";
 export type ModelLimitField = "contextWindow" | "maxTokens";
 
 export interface ModelLimitsMeta {
@@ -306,16 +308,11 @@ export function applyEndpointLimits<T extends ModelLimitDraft>(
   if (model.limitsMeta?.contextWindow) meta.contextWindow = model.limitsMeta.contextWindow;
   if (model.limitsMeta?.maxTokens) meta.maxTokens = model.limitsMeta.maxTokens;
   for (const field of ["contextWindow", "maxTokens"] as const) {
-    const incoming = discovered?.[field];
-    if (model[field] === undefined && incoming !== undefined) {
-      next[field] = incoming;
-      meta[field] = "endpoint";
+    const incoming = positiveTokenCount(discovered?.[field]);
+    if (model[field] === undefined) {
+      next[field] = incoming ?? DISCOVERED_MODEL_LIMIT_DEFAULTS[field];
+      meta[field] = incoming === undefined ? "default" : "endpoint";
       delete unavailable[field];
-      changed = true;
-      continue;
-    }
-    if (model[field] === undefined && !unavailable[field]) {
-      unavailable[field] = true;
       changed = true;
     }
   }

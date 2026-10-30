@@ -2189,6 +2189,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           }
           setCurrentModelOverride({ provider, modelId });
           if (result?.compacted) await loadSession(sid, true).catch(() => undefined);
+          await refreshContextUsage(sid);
         } finally {
           if (!agentRunningRef.current && !bashRunningRef.current) closeEvents();
         }
@@ -2198,7 +2199,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         addNotice({ type: "error", message: t("modelCompaction.switchFailed", { error: e instanceof Error ? e.message : String(e) }) });
       },
     );
-  }, [addNotice, closeEvents, ensureEventsConnected, isNew, loadSession, newSessionDefaultModel, setNewSessionModel, t]);
+  }, [addNotice, closeEvents, ensureEventsConnected, isNew, loadSession, newSessionDefaultModel, refreshContextUsage, setNewSessionModel, t]);
 
   const handleCompact = useCallback(async () => {
     const sid = sessionIdRef.current;

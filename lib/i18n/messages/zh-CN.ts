@@ -1,3 +1,4 @@
+import { characterThemesZh } from "./character-themes";
 import { brandText } from "../../branding";
 import { roomUxZh } from "./room-ux";
 import { chatCommandsZh } from "./chat-commands";
@@ -15,6 +16,7 @@ export const zhCNLocale: LocalePlugin = {
   id: "zh-CN",
   label: "简体中文",
   messages: {
+    ...characterThemesZh,
     "permission.label": "工具操作权限",
     "permission.loading": "正在读取权限…",
     "permission.ask": "操作前询问",
@@ -115,12 +117,13 @@ export const zhCNLocale: LocalePlugin = {
     "models.limits.fetch": "从接口获取",
     "models.limits.fetching": "正在获取…",
     "models.limits.sourceEndpoint": "来自接口",
+    "models.limits.sourceDefault": "接口未提供，已填入默认值（可修改）",
     "models.limits.sourceCatalog": "来自 models.dev",
     "models.limits.endpointMissing": "接口未提供，请手动填写",
     "models.limits.required": "请填写正整数",
     "models.limits.notInteger": "必须是正整数",
     "models.limits.outputTooLarge": "最大输出不能大于上下文窗口",
-    "models.limits.help": "上下文窗口：这个模型一次最多能“看到”的 tokens 总数（对话历史、工具结果和本轮回复都算在内）。最大输出：模型单次回复最多能生成的 tokens。\n这两个值会优先从接口地址自动获取；接口没提供时请按服务商文档填写真实值。\n为什么要准：每轮回复的实际上限 = min(最大输出，上下文 − 当前已用 − 4096)，自动压缩也按上下文窗口决定何时触发。填得比实际大，回复可能被服务端截断或报错；填得太小，会过早、频繁地压缩历史。",
+    "models.limits.help": "上下文窗口：这个模型一次最多能“看到”的 tokens 总数（对话历史、工具结果和本轮回复都算在内）。最大输出：模型单次回复最多能生成的 tokens。\n获取参数时优先使用接口返回值；缺失的上下文默认填入 512K（512000），最大输出默认填入 65536，均可修改。\n为什么要准：每轮回复的实际上限 = min(最大输出，上下文 − 当前已用 − 4096)，自动压缩也按上下文窗口决定何时触发。填得比实际大，回复可能被服务端截断或报错；填得太小，会过早、频繁地压缩历史。",
     "models.limits.missingBanner": "{count} 个模型缺少上下文 / 最大输出。这两项补全之前不能保存，其它设置也会一起被拦住。",
     "models.limits.saveError": "请先补全模型“{model}”的上下文窗口和最大输出。",
     "models.limits.fetchTimeout": "获取模型列表超时，请手动填写。",

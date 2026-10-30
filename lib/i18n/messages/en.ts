@@ -1,3 +1,4 @@
+import { characterThemesEn } from "./character-themes";
 import { brandText } from "../../branding";
 import { roomUxEn } from "./room-ux";
 import { chatCommandsEn } from "./chat-commands";
@@ -15,6 +16,7 @@ export const enLocale: LocalePlugin = {
   id: "en",
   label: "English",
   messages: {
+    ...characterThemesEn,
     "permission.label": "Tool permissions",
     "permission.loading": "Loading permissions…",
     "permission.ask": "Ask before actions",
@@ -115,12 +117,13 @@ export const enLocale: LocalePlugin = {
     "models.limits.fetch": "Fetch from endpoint",
     "models.limits.fetching": "Fetching…",
     "models.limits.sourceEndpoint": "From the endpoint",
+    "models.limits.sourceDefault": "Not provided by the endpoint; using an editable default",
     "models.limits.sourceCatalog": "From models.dev",
     "models.limits.endpointMissing": "The endpoint did not provide this. Enter it manually.",
     "models.limits.required": "Enter a positive integer",
     "models.limits.notInteger": "Must be a positive integer",
     "models.limits.outputTooLarge": "Max output must be less than or equal to the context window",
-    "models.limits.help": "Context window: the most tokens this model can take in at once (history, tool results and the reply). Max output: the most tokens it can generate in one reply.\nPiora fills these from the endpoint's model list when it provides them; otherwise enter the real values from your provider's docs.\nWhy it matters: each reply is capped at min(max output, context − used − 4096), and auto-compaction triggers based on the context window. Too high and replies may be cut off or rejected; too low and history gets compacted early and often.",
+    "models.limits.help": "Context window: the most tokens this model can take in at once (history, tool results and the reply). Max output: the most tokens it can generate in one reply.\nFetching parameters uses endpoint values first. Missing context defaults to 512K (512000) and missing max output to 65536; both remain editable.\nWhy it matters: each reply is capped at min(max output, context − used − 4096), and auto-compaction triggers based on the context window. Too high and replies may be cut off or rejected; too low and history gets compacted early and often.",
     "models.limits.missingBanner": "{count} models are missing a context window or max output. Nothing on this page can be saved until those values are filled in.",
     "models.limits.saveError": "Fill in the context window and max output for “{model}” before saving.",
     "models.limits.fetchTimeout": "The model list request timed out. Enter the values manually.",

@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "id": "piora-character-backgrounds",
+  "name": "Character themes",
+  "description": "Local generated character artwork; see NOTICE.md for individual attribution and rights.",
+  "artworkStatus": "complete",
+  "assetRoot": "/themes/character-backgrounds/",
+  "security": {
+    "remoteUrls": false,
+    "scripts": false,
+    "html": false,
+    "runtimeStyleInjection": false
+  },
+  "presets": [
+    {
+      "id": "character-glm-ink",
+      "nameKey": "background.preset.character-glm-ink",
+      "asset": "/themes/character-backgrounds/glm-ink.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "linear-gradient(135deg, #171D29, #232D3B)"
+    },
+    {
+      "id": "character-gpt-ivory",
+      "nameKey": "background.preset.character-gpt-ivory",
+      "asset": "/themes/character-backgrounds/gpt-ivory.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "linear-gradient(135deg, #F5F3FC, #FFFFFF)"
+    },
+    {
+      "id": "character-whale-tide",
+      "nameKey": "background.preset.character-whale-tide",
+      "asset": "/themes/character-backgrounds/whale-tide.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "linear-gradient(135deg, #F1FAFF, #FFFFFF)"
+    },
+    {
+      "id": "character-ernie-garden",
+      "nameKey": "background.preset.character-ernie-garden",
+      "asset": "/themes/character-backgrounds/ernie-garden.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "linear-gradient(135deg, #F1F6FF, #FFFFFF)"
+    },
+    {
+      "id": "character-qwen-porcelain",
+      "nameKey": "background.preset.character-qwen-porcelain",
+      "asset": "/themes/character-backgrounds/qwen-porcelain.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "linear-gradient(135deg, #F3F2FB, #FFFDFC)"
+    },
+    {
+      "id": "character-kimi-moon",
+      "nameKey": "background.preset.character-kimi-moon",
+      "asset": "/themes/character-backgrounds/kimi-moon.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "linear-gradient(135deg, #13192F, #202B44)"
+    },
+    {
+      "id": "character-seed-soda",
+      "nameKey": "background.preset.character-seed-soda",
+      "asset": "/themes/character-backgrounds/seed-soda.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "linear-gradient(135deg, #F2F3FF, #FFFFFF)"
+    },
+    {
+      "id": "character-minimax-coral",
+      "nameKey": "background.preset.character-minimax-coral",
+      "asset": "/themes/character-backgrounds/minimax-coral.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "linear-gradient(135deg, #FFF4ED, #FFFCF8)"
+    },
+    {
+      "id": "character-grok-eclipse",
+      "nameKey": "background.preset.character-grok-eclipse",
+      "asset": "/themes/character-backgrounds/grok-eclipse.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "linear-gradient(135deg, #1B1820, #2A232D)"
+    },
+    {
+      "id": "character-gemini-prism",
+      "nameKey": "background.preset.character-gemini-prism",
+      "asset": "/themes/character-backgrounds/gemini-prism.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "linear-gradient(135deg, #1B1B39, #2A2C50)"
+    },
+    {
+      "id": "character-claude-paper",
+      "nameKey": "background.preset.character-claude-paper",
+      "asset": "/themes/character-backgrounds/claude-paper.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "linear-gradient(135deg, #FAF4E9, #FFFCF6)"
+    },
+    {
+      "id": "character-gpt-orbit",
+      "nameKey": "background.preset.character-gpt-orbit",
+      "asset": "/themes/character-backgrounds/gpt-orbit.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "linear-gradient(135deg, #171C2D, #242D43)"
+    },
+    {
+      "id": "character-gpt-cloud",
+      "nameKey": "background.preset.character-gpt-cloud",
+      "asset": "/themes/character-backgrounds/gpt-cloud.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "linear-gradient(135deg, #F1F7F5, #FFFFFF)"
+    },
+    {
+      "id": "character-whale-abyss",
+      "nameKey": "background.preset.character-whale-abyss",
+      "asset": "/themes/character-backgrounds/whale-abyss.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "linear-gradient(135deg, #091A2C, #10273D)"
+    },
+    {
+      "id": "character-whale-rice",
+      "nameKey": "background.preset.character-whale-rice",
+      "asset": "/themes/character-backgrounds/whale-rice.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "linear-gradient(135deg, #FFF8ED, #FFFCF6)"
+    },
+    {
+      "id": "character-claude-lamp",
+      "nameKey": "background.preset.character-claude-lamp",
+      "asset": "/themes/character-backgrounds/claude-lamp.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "linear-gradient(135deg, #231D1B, #302722)"
+    },
+    {
+      "id": "character-claude-autumn",
+      "nameKey": "background.preset.character-claude-autumn",
+      "asset": "/themes/character-backgrounds/claude-autumn.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "linear-gradient(135deg, #F7F3EA, #FFFDF7)"
+    },
+    {
+      "id": "character-kitty-ribbon",
+      "nameKey": "background.preset.character-kitty-ribbon",
+      "asset": "/themes/character-backgrounds/kitty-ribbon.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "linear-gradient(135deg, #FFF8F3, #FFFFFF)"
+    },
+    {
+      "id": "character-kitty-strawberry",
+      "nameKey": "background.preset.character-kitty-strawberry",
+      "asset": "/themes/character-backgrounds/kitty-strawberry.webp",
+      "artworkStatus": "available",
+      "appearance": "light",
+      "fallback": "linear-gradient(135deg, #FFF2F5, #FFFBFC)"
+    },
+    {
+      "id": "character-kitty-moon",
+      "nameKey": "background.preset.character-kitty-moon",
+      "asset": "/themes/character-backgrounds/kitty-moon.webp",
+      "artworkStatus": "available",
+      "appearance": "dark",
+      "fallback": "linear-gradient(135deg, #211C35, #302943)"
+    }
+  ]
+}

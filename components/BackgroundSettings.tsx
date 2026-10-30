@@ -90,7 +90,7 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
             data-background-choice="none"
             className={styles.presetButton}
             disabled={!hydrated || busy}
-            onClick={setNone}
+            onClick={() => setNone()}
           >
             <span className={`${styles.presetArtwork} ${styles.noneArtwork}`} aria-hidden="true" />
             <span className={styles.presetLabel}>{t("background.none")}</span>

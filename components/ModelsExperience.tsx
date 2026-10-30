@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { createDiscoveryAbort, requestDiscoveredModels, type DiscoveredModel } from "@/lib/model-discovery";
-import { modelLimitProblem, parseModelLimitDraft, stripModelLimitUiMeta, validateCustomModelLimits } from "@/lib/model-limits";
+import { applyEndpointLimits, modelLimitProblem, parseModelLimitDraft, stripModelLimitUiMeta, validateCustomModelLimits } from "@/lib/model-limits";
 import { ModelProviderIcon } from "./ModelProviderIcon";
 import { ModelSamplingEditor } from "./ModelSamplingEditor";
 import { modelSamplingError } from "@/lib/model-sampling";
@@ -36,11 +36,11 @@ async function jsonRequest<T>(url: string, options?: RequestInit): Promise<T> {
 export function ModelsExperience({ cwd, onClose, onModelsChanged, embedded = false }: { cwd?: string; onClose: () => void; onModelsChanged?: () => void; embedded?: boolean }) {
   const { locale } = useI18n();
   const c = { ...(locale === "zh-CN" ? copy.zh : copy.en), ...(locale === "zh-CN" ? {
-    importHint: "选择要添加的模型，可直接补全缺失参数。", selectShown: "全选当前结果", pendingLimits: "待补全", importCount: "个模型",
+    importHint: "选择要添加的模型。接口缺失的参数已默认填入上下文 512K、最大输出 65536，可直接修改。", selectShown: "全选当前结果", pendingLimits: "待补全", importCount: "个模型",
     title: "模型设置", subtitle: "管理模型供应商，配置后可在聊天时选择使用。", add: "添加供应商", custom: "创建自定义供应商", name: "供应商名称", address: "Base URL", key: "API Key", protocol: "API 格式", context: "上下文窗口", output: "最大输出 Token", edit: "编辑模型配置", save: "保存", fetch: "一键识别可用模型", fetching: "正在识别…", limitsHint: "接口未提供完整参数，请按服务商文档补全以下字段。", endpointOnly: "以下模型来自当前接口。识别模型列表不会发送对话测试请求。",
     providers: "服务商", customGroup: "自定义供应商", other: "其他", models: "模型列表", newName: "新供应商", smart: "智能配置", advanced: "高级配置", reset: "重置表单", disableProvider: "禁用供应商", enableProvider: "启用供应商", refresh: "刷新", modelEmpty: "当前没有配置模型，添加模型后可在聊天中使用。", importTitle: "识别可用模型", importModels: "添加所选模型", chooseModel: "选择模型", reasoning: "支持深度思考", unsaved: "未保存", discardTitle: "放弃未保存的修改？", discardMessage: "切换后，本次填写的内容不会保存。", discardConfirm: "放弃修改", headers: "请求头 (JSON)", compat: "兼容配置 (JSON)", invalidJson: "请输入有效的 JSON 对象。"
   } : {
-    importHint: "Choose models to add and complete any missing parameters.", selectShown: "Select all results", pendingLimits: "Incomplete", importCount: "models",
+    importHint: "Choose models to add. Missing limits default to 512K context and 65536 output tokens; you can edit them below.", selectShown: "Select all results", pendingLimits: "Incomplete", importCount: "models",
     subtitle: "Manage model providers and choose their models in chat.", add: "Add provider", custom: "Create custom provider", name: "Provider name", address: "Base URL", key: "API Key", protocol: "API format", context: "Context window", output: "Max output tokens", edit: "Edit model configuration", save: "Save", fetch: "Detect available models", fetching: "Detecting…", limitsHint: "The endpoint did not provide all parameters. Complete the missing fields using your provider's documentation.", endpointOnly: "These models come from the current endpoint. Discovery does not send a chat test request.",
     providers: "Providers", customGroup: "Custom providers", other: "Other", models: "Models", newName: "New provider", smart: "Smart configuration", advanced: "Advanced configuration", reset: "Reset form", disableProvider: "Disable provider", enableProvider: "Enable provider", refresh: "Refresh", modelEmpty: "No models configured. Add a model to use it in chat.", importTitle: "Available models", importModels: "Add selected models", chooseModel: "Choose a model", reasoning: "Reasoning", unsaved: "Unsaved", discardTitle: "Discard unsaved changes?", discardMessage: "Your changes will be lost when you switch.", discardConfirm: "Discard", headers: "Request headers (JSON)", compat: "Compatibility (JSON)", invalidJson: "Enter a valid JSON object."
   }) };
@@ -399,10 +399,11 @@ function ModelDialog({ c, model, provider, providerName, existingIds, busy, onCl
 function ImportDialog({ c, incoming, existingIds, busy, onClose, onSave, saveError }: {
   c: Text; incoming: DiscoveredModel[]; existingIds: string[]; busy: boolean; saveError: string | null; onClose: () => void; onSave: (models: ModelEntry[]) => Promise<void>;
 }) {
-  const [models, setModels] = useState<ModelEntry[]>(() => incoming.filter(m => !existingIds.includes(m.id)));
+  const [models, setModels] = useState<ModelEntry[]>(() => incoming.filter(m => !existingIds.includes(m.id))
+    .map(m => applyEndpointLimits({ id: m.id, name: m.name }, m).model));
   // Keep fields mounted after the last missing value is entered so focus and
   // edits survive validation, selection changes and search round trips.
-  const [editableIds] = useState(() => new Set(models.filter(modelLimitProblem).map(m => m.id)));
+  const [editableIds] = useState(() => new Set(incoming.filter(modelLimitProblem).map(m => m.id)));
   const [selected, setSelected] = useState(() => new Set(models.map(m => m.id)));
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);

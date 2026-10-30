@@ -57,13 +57,13 @@ test("MermaidBlock can explicitly start in source view", () => {
   assert.doesNotMatch(html, /mermaid-block-loading/);
 });
 
-test("MermaidBlock with isStreaming falls back to source view", () => {
+test("MermaidBlock previews during streaming instead of forcing source view", () => {
   const html = renderMermaid({ code: mermaidSrc, isStreaming: true, defaultPreview: true });
 
   assert.match(html, /disabled/);
-  assert.match(html, />预览</);
-  assert.match(html, /Alice/);
-  assert.match(html, /-&gt;&gt;/);
+  assert.match(html, />源代码</);
+  assert.match(html, /mermaid-block-loading/);
+  assert.doesNotMatch(html, /Alice/);
 });
 
 test("MermaidBlock renders empty graph without error", () => {

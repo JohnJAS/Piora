@@ -713,6 +713,9 @@ function registerDesktopUpdateStateHandler(): void {
 async function installDownloadedDesktopUpdate(confirmInstallation = true, silent = false): Promise<boolean> {
   if (!desktopUpdateController || desktopUpdateState.status !== "downloaded") return false;
   if (silent && (quitRequested || updateBlockers.size > 0 || powerMonitor.getSystemIdleTime() < 60)) return false;
+  // Scheduled installs prepare before acquiring the server's update lease.
+  // Manual installs refresh here, while the app and its running tasks stay alive.
+  if (!silent && !await desktopUpdateController.prepareForInstall()) return false;
   const chinese = app.getLocale().toLowerCase().startsWith("zh");
   if (runningTaskCount > 0) {
     if (silent) return false;
@@ -824,6 +827,7 @@ function initializeDesktopUpdater(log: Logger): void {
               autoUpdater,
               currentVersion,
               (url) => net.fetch(url, {
+                cache: "no-store",
                 headers: { Accept: "application/atom+xml, application/xml;q=0.9, */*;q=0.8" },
               }),
               log,

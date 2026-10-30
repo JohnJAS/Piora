@@ -221,9 +221,9 @@ export function useBackground() {
     void hydrateBackground();
   }, []);
 
-  const setNone = useCallback(() => {
+  const setNone = useCallback((options: Partial<Pick<BackgroundPreference, "overlay" | "blur" | "sidebarOverlay" | "filePanelOverlay">> = {}) => {
     replaceCustomObjectUrl(null);
-    commitPreference({ ...snapshot.preference, source: "none", presetId: null });
+    commitPreference({ ...snapshot.preference, ...options, source: "none", presetId: null });
   }, [snapshot.preference]);
 
   const setBuiltin = useCallback((presetId: string) => {

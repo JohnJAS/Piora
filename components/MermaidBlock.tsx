@@ -18,6 +18,7 @@ import solarizedDarkAtom from "react-syntax-highlighter/dist/esm/styles/prism/so
 import solarizedlight from "react-syntax-highlighter/dist/esm/styles/prism/solarizedlight";
 import synthwave84 from "react-syntax-highlighter/dist/esm/styles/prism/synthwave84";
 import { useTheme, type Theme } from "@/hooks/useTheme";
+import { CHARACTER_THEMES, type CharacterThemeId } from "@/lib/character-themes";
 import { useI18n } from "@/hooks/useI18n";
 import { copyText } from "@/lib/clipboard";
 import { AliIcon } from "./AliIcon";
@@ -36,6 +37,7 @@ const LIGHT_CODE_THEME = codeThemeWithoutBackground(vs);
 const DARK_CODE_THEME = codeThemeWithoutBackground(vscDarkPlus);
 
 const THEME_CODE_LIGHT: Record<Theme, Record<string, CSSProperties>> = {
+  ...Object.fromEntries(CHARACTER_THEMES.map(({ id }) => [id, LIGHT_CODE_THEME])) as Record<CharacterThemeId, Record<string, CSSProperties>>,
   light: LIGHT_CODE_THEME,
   starlight: codeThemeWithoutBackground(oneLight),
   ivory: codeThemeWithoutBackground(a11yOneLight),
@@ -59,6 +61,7 @@ const THEME_CODE_LIGHT: Record<Theme, Record<string, CSSProperties>> = {
 };
 
 const THEME_CODE_DARK: Record<Theme, Record<string, CSSProperties>> = {
+  ...Object.fromEntries(CHARACTER_THEMES.map(({ id }) => [id, DARK_CODE_THEME])) as Record<CharacterThemeId, Record<string, CSSProperties>>,
   light: DARK_CODE_THEME,
   starlight: DARK_CODE_THEME,
   ivory: DARK_CODE_THEME,
@@ -311,11 +314,15 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = true }: Merma
   const { t } = useI18n();
   const [showPreview, setShowPreview] = useState(defaultPreview);
   const [renderState, setRenderState] = useState<RenderState | null>(null);
+  const lastRenderAt = useRef(0);
+  const renderInFlight = useRef<Promise<Diagram> | null>(null);
   const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const currentKey = `${isDark ? "dark" : "light"}\n${code}`;
-  const previewVisible = showPreview && !isStreaming;
+  const previewVisible = showPreview;
   // Read a completed result during render, before virtual rows measure height.
-  const diagram = renderState?.key === currentKey && renderState.status === "ready" ? renderState.diagram : diagramCache.peek(currentKey);
+  const diagram = diagramCache.peek(currentKey) ?? (renderState?.status === "ready"
+    && (renderState.key === currentKey || (isStreaming && renderState.key.startsWith(`${isDark ? "dark" : "light"}\n`)))
+    ? renderState.diagram : undefined);
   const readySvg = useMemo(() => diagram ? scopeDiagramSvg(diagram.svg, `inline-${instanceId}`) : undefined, [diagram, instanceId]);
   const knownSize = diagram ?? diagramCache.peek(`${isDark ? "light" : "dark"}\n${code}`);
 
@@ -323,23 +330,39 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = true }: Merma
     if (!previewVisible) return;
 
     let cancelled = false;
-    diagramCache.load(currentKey).then(diagram => {
-      if (!cancelled) setRenderState({ key: currentKey, status: "ready", diagram });
-    }).catch(() => {
-      if (!cancelled) setRenderState({ key: currentKey, status: "error" });
-    });
+    // Coalesce token bursts, but render while the rest of the reply is still
+    // streaming. Incomplete syntax keeps the last successful preview visible.
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        // Coalesce changes arriving during slow layout instead of queuing every
+        // intermediate graph behind Mermaid's global rendering lock.
+        await renderInFlight.current?.catch(() => {});
+        if (cancelled) return;
+        lastRenderAt.current = Date.now();
+        const request = diagramCache.load(currentKey);
+        renderInFlight.current = request;
+        try {
+          const diagram = await request;
+          if (!cancelled) setRenderState({ key: currentKey, status: "ready", diagram });
+        } catch {
+          if (!cancelled && !isStreaming) setRenderState({ key: currentKey, status: "error" });
+        } finally {
+          if (renderInFlight.current === request) renderInFlight.current = null;
+        }
+      })();
+    }, isStreaming ? Math.max(0, 150 - (Date.now() - lastRenderAt.current)) : 0);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [code, currentKey, isDark, previewVisible]);
+  }, [currentKey, isStreaming, previewVisible]);
 
   const previewButton = (
     <button
       type="button"
       onClick={() => setShowPreview((v) => !v)}
-      disabled={isStreaming}
-      title={isStreaming ? t("i18n.previewAfterStreaming") : (previewVisible ? t("i18n.showMermaidSource") : t("i18n.previewMermaid"))}
+      title={previewVisible ? t("i18n.showMermaidSource") : t("i18n.previewMermaid")}
       className={["markdown-code-action", previewVisible ? "is-active" : ""].filter(Boolean).join(" ")}
     >
       {previewVisible ? t("i18n.source") : t("i18n.preview")}
@@ -350,14 +373,14 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = true }: Merma
     return <CodeBlock code={code} lang="mermaid" headerAction={previewButton} />;
   }
 
-  const body = renderState?.key === currentKey && renderState.status === "error" ? (
+  const body = !isStreaming && renderState?.key === currentKey && renderState.status === "error" ? (
       <div className="mermaid-block mermaid-block-error">{t("i18n.invalidMermaid")}</div>
     ) : !diagram || !readySvg ? (
       <div className="mermaid-block mermaid-block-loading" aria-label={t("i18n.renderingMermaid")}>
         {knownSize && <div style={{ width: `min(100%, ${knownSize.width}px)`, aspectRatio: `${knownSize.width} / ${knownSize.height}` }} />}
       </div>
     ) : (
-      <MermaidPreview key={currentKey} diagram={diagram} svg={readySvg} />
+      <MermaidPreview key={diagram.svg} diagram={diagram} svg={readySvg} />
     );
 
   return (
@@ -375,7 +398,7 @@ export function MermaidBlock({ code, isStreaming, defaultPreview = true }: Merma
 }
 
 // The key and conditional mount tie viewer state to this exact preview. Returning
-// to old code/theme or ending streaming must never resurrect a previously open dialog.
+// to old code/theme must never resurrect a previously open dialog.
 function MermaidPreview({ diagram, svg }: { diagram: Diagram; svg: string }) {
   const { t } = useI18n();
   const [zoomOpen, setZoomOpen] = useState(false);
@@ -403,6 +426,8 @@ function MermaidZoomDialog({ diagram, onClose }: { diagram: Diagram; onClose: ()
   const svg = useMemo(() => scopeDiagramSvg(diagram.svg, `dialog-${instanceId}`), [diagram, instanceId]);
   const [fit, setFit] = useState(1);
   const [maximized, setMaximized] = useState(false);
+  const [manualSize, setManualSize] = useState<{ width: number; height: number } | null>(null);
+  const resizeDrag = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   // null follows the viewport; a user zoom is an absolute SVG scale, so a
   // resize cannot multiply it beyond the limit or unexpectedly enlarge it.
   const [manualZoom, setManualZoom] = useState<number | null>(null);
@@ -481,7 +506,11 @@ function MermaidZoomDialog({ diagram, onClose }: { diagram: Diagram; onClose: ()
     <dialog
       ref={dialogRef}
       className="mermaid-zoom-dialog"
-      style={{ "--diagram-width": `${Math.max(360, diagram.width + 48)}px`, "--diagram-height": `${Math.max(220, diagram.height + 104)}px` } as CSSProperties}
+      style={{
+        "--diagram-width": `${Math.max(360, diagram.width + 48)}px`,
+        "--diagram-height": `${Math.max(220, diagram.height + 104)}px`,
+        ...(!maximized && manualSize ? { width: manualSize.width, height: manualSize.height } : {}),
+      } as CSSProperties}
       data-desktop-chrome={hasDesktopChrome ? "true" : undefined}
       data-maximized={maximized ? "true" : undefined}
       aria-label={t("i18n.mermaidViewer")}
@@ -495,6 +524,36 @@ function MermaidZoomDialog({ diagram, onClose }: { diagram: Diagram; onClose: ()
         onClose();
       }}
     >
+      {!maximized && ["n", "e", "s", "w", "ne", "se", "sw", "nw"].map(direction => (
+        <div
+          key={direction}
+          className="mermaid-resize-handle"
+          data-direction={direction}
+          aria-hidden="true"
+          onPointerDown={event => {
+            if (event.button !== 0 || !dialogRef.current) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const rect = dialogRef.current.getBoundingClientRect();
+            resizeDrag.current = { x: event.clientX, y: event.clientY, width: rect.width, height: rect.height };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={event => {
+            const start = resizeDrag.current;
+            if (!start) return;
+            // The modal stays centered; each dragged edge follows the pointer.
+            const dx = (event.clientX - start.x) * 2;
+            const dy = (event.clientY - start.y) * 2;
+            setManualSize({
+              width: Math.min(window.innerWidth - 32, Math.max(320, start.width + (direction.includes("e") ? dx : direction.includes("w") ? -dx : 0))),
+              height: Math.min(window.innerHeight - (hasDesktopChrome ? 84 : 48), Math.max(220, start.height + (direction.includes("s") ? dy : direction.includes("n") ? -dy : 0))),
+            });
+          }}
+          onPointerUp={event => { resizeDrag.current = null; event.currentTarget.releasePointerCapture(event.pointerId); }}
+          onPointerCancel={() => { resizeDrag.current = null; }}
+          onLostPointerCapture={() => { resizeDrag.current = null; }}
+        />
+      ))}
       <div className="mermaid-zoom-layout">
         <div className="mermaid-zoom-toolbar">
           <span className="mermaid-zoom-title">{t("i18n.mermaidDiagram")}</span>

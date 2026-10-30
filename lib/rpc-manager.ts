@@ -1558,18 +1558,22 @@ export class AgentSessionWrapper {
       case "set_model": {
         this.assertSessionIdle("change model");
         const { provider, modelId } = command as { provider: string; modelId: string };
-        let model = this.inner.modelRuntime.getModel(provider, modelId);
-        if (!model) {
-          await this.inner.modelRuntime.refresh({ allowNetwork: false });
-          model = this.inner.modelRuntime.getModel(provider, modelId);
-        }
+        // Live sessions retain a private runtime after settings caches are
+        // invalidated. Existing IDs must be refreshed too, not just new models.
+        await this.inner.modelRuntime.refresh({ allowNetwork: false });
+        this.assertSessionIdle("change model");
+        if (!this._alive) throw new Error("Session has been closed");
+        const configError = this.inner.modelRuntime.getError?.();
+        if (configError) throw new Error(configError);
+        const model = this.inner.modelRuntime.getModel(provider, modelId);
         if (!model) throw new Error(`Model not found: ${provider}/${modelId}`);
         // Missing or non-positive windows skip this compact. Do not invent a
         // size; legacy resolution is documented in lib/model-limits.ts.
         const targetWindow = model.contextWindow;
         let compacted = false;
         if (Number.isFinite(targetWindow) && targetWindow > 0
-          && (this.inner.model?.provider !== provider || this.inner.model?.id !== modelId)) {
+          && (this.inner.model?.provider !== provider || this.inner.model?.id !== modelId
+            || this.inner.model?.contextWindow !== targetWindow)) {
           const state = this.inner.agent.state;
           const estimate = estimateContextUsageBreakdown({
             messages: state?.messages ?? [],

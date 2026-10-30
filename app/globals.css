@@ -1781,6 +1781,7 @@ select:focus-visible,
 .model-settings-control {
   position: relative;
   min-width: 36px;
+  max-width: 250px;
   flex: 0 1 auto;
 }
 
@@ -2286,6 +2287,7 @@ select:focus-visible,
 @media (max-width: 700px) {
   .model-settings-control {
     flex: 1 1 auto;
+    max-width: none;
   }
 
   .model-settings-trigger {
@@ -4654,6 +4656,23 @@ pre, code {
   grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
 }
+.mermaid-resize-handle {
+  position: absolute;
+  z-index: 2;
+  touch-action: none;
+  user-select: none;
+}
+.mermaid-resize-handle[data-direction="n"], .mermaid-resize-handle[data-direction="s"] { left: 12px; right: 12px; height: 6px; cursor: ns-resize; }
+.mermaid-resize-handle[data-direction="n"] { top: 0; }
+.mermaid-resize-handle[data-direction="s"] { bottom: 0; }
+.mermaid-resize-handle[data-direction="e"], .mermaid-resize-handle[data-direction="w"] { top: 12px; bottom: 12px; width: 6px; cursor: ew-resize; }
+.mermaid-resize-handle[data-direction="e"] { right: 0; }
+.mermaid-resize-handle[data-direction="w"] { left: 0; }
+.mermaid-resize-handle[data-direction="ne"], .mermaid-resize-handle[data-direction="se"], .mermaid-resize-handle[data-direction="sw"], .mermaid-resize-handle[data-direction="nw"] { width: 12px; height: 12px; }
+.mermaid-resize-handle[data-direction="ne"] { top: 0; right: 0; cursor: nesw-resize; }
+.mermaid-resize-handle[data-direction="se"] { bottom: 0; right: 0; cursor: nwse-resize; }
+.mermaid-resize-handle[data-direction="sw"] { bottom: 0; left: 0; cursor: nesw-resize; }
+.mermaid-resize-handle[data-direction="nw"] { top: 0; left: 0; cursor: nwse-resize; }
 .mermaid-zoom-toolbar {
   display: flex;
   min-width: 0;

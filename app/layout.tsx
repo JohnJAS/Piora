@@ -11,6 +11,7 @@ import { INTERFACE_TRANSPARENCY_INITIALIZATION_SCRIPT } from "@/lib/interface-tr
 import "katex/dist/katex.min.css";
 import "./globals.css";
 import "./theme-backgrounds.css";
+import "./character-themes.css";
 // Keep the lazy file workspace's styles in the route stylesheet. Its Webpack
 // chunk can otherwise lose its CSS during a long desktop hot-reload session.
 import "@/components/workspace/WorkspacePanel.module.css";

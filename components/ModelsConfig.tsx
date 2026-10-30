@@ -1135,6 +1135,7 @@ function ModelLimitFields({
     if (problem?.code === "not-positive-integer") return { text: t("models.limits.notInteger"), tone: "error" };
     const source = model.limitsMeta?.[field];
     if (source === "endpoint") return { text: t("models.limits.sourceEndpoint"), tone: "source", source };
+    if (source === "default") return { text: t("models.limits.sourceDefault"), tone: "source", source };
     if (source === "models.dev") return { text: t("models.limits.sourceCatalog"), tone: "source", source };
     return null;
   };

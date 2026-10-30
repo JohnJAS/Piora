@@ -1,5 +1,17 @@
 # Third-party notices
 
+## Character theme artwork
+
+The 20 bundled character wallpapers have separate asset rights and are not covered
+by the application's MIT code license. AI character designs originate with ZipZipPipe;
+reference sheet completion is by lmy414, via JohnJAS/ai-chan-sheets (CC BY-NC-SA 4.0
+for the completion work, excluding original illustrations). The generated AI character
+adaptations retain attribution, noncommercial and share-alike conditions for the new
+adaptation contribution; original character rights remain with their owners. The three
+Hello Kitty humanizations are separate unofficial fan artwork and assert no underlying
+character or trademark license. See the [bundled asset notice](public/themes/character-backgrounds/NOTICE.md)
+and [per-image provenance](public/themes/character-backgrounds/provenance.json).
+
 ## Harmony capture component
 
 Piora's ordinary-permission capture component derives native code from

@@ -161,6 +161,10 @@ export class DesktopUpdateController {
 
   async checkForUpdates(): Promise<void> {
     if (!this.updater || this.downloadPromise) return;
+    return this.checkLatestVersion();
+  }
+
+  private async checkLatestVersion(): Promise<void> {
     if (this.checkPromise) return this.checkPromise;
 
     this.publish({ status: "checking" });
@@ -180,17 +184,31 @@ export class DesktopUpdateController {
   }
 
   async downloadUpdate(): Promise<void> {
-    if (!this.updater || this.state.status !== "available") return;
     if (this.downloadPromise) return this.downloadPromise;
+    if (!this.updater || !["available", "downloaded"].includes(this.state.status)) return;
 
-    this.publish({ status: "downloading", progressPercent: 0 });
-    this.downloadPromise = this.updater.downloadUpdate()
-      .then(() => undefined)
+    // The startup notification (or a downloaded installer) may be hours old.
+    // Resolve the channel again before using electron-updater's download target.
+    this.downloadPromise = Promise.resolve()
+      .then(async () => {
+        await this.checkLatestVersion();
+        if (this.state.status !== "available") return;
+        this.publish({ status: "downloading", progressPercent: 0 });
+        // Reusing the SDK's download path also validates a cached installer when
+        // the version is unchanged; a newer target replaces the old cache.
+        await this.updater?.downloadUpdate();
+      })
       .catch((error: unknown) => this.fail(error))
       .finally(() => {
         this.downloadPromise = undefined;
       });
     return this.downloadPromise;
+  }
+
+  async prepareForInstall(): Promise<boolean> {
+    if (this.state.status !== "downloaded") return false;
+    await this.downloadUpdate();
+    return this.getState().status === "downloaded";
   }
 
   quitAndInstall(silent = false): boolean {

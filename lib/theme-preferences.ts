@@ -1,6 +1,9 @@
 import type { UiThemePackId } from "./ui-theme-packs.ts";
 
+import { CHARACTER_THEMES, type CharacterThemeId } from "./character-themes.ts";
+
 export type Theme =
+  | CharacterThemeId
   | "light"
   | "dark"
   | "starlight"
@@ -53,6 +56,7 @@ export const THEME_PRESETS: readonly ThemePreset[] = [
   { id: "cyber", isDark: true, preview: { background: "#07191c", accent: "#4fd1c5" } },
   { id: "ember", isDark: true, preview: { background: "#1b1110", accent: "#ff9a62" } },
   { id: "dream", isDark: true, packId: "codex-dream-skin", preview: { background: "#111318", accent: "#8da397" } },
+  ...CHARACTER_THEMES.map(({ id, isDark, colors }) => ({ id, isDark, preview: { background: colors.bg, accent: colors.accent } })),
 ] as const;
 
 export const THEME_STORAGE_KEY = "pi-theme:v1";

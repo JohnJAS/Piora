@@ -30,6 +30,7 @@ export interface ContextUsageBreakdown {
 export interface ModelLike {
   id: string;
   provider: string;
+  contextWindow?: number;
   input?: readonly ("text" | "image")[];
 }
 

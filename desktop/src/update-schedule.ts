@@ -63,6 +63,13 @@ export class ScheduledDesktopUpdater {
       if (status === "error") throw new Error(controller.getState().error ?? "Update failed");
       if (status === "downloaded") {
         if (!await this.options.canInstall() || !stillEnabled()) return;
+        // A busy task can postpone installation for hours. Refresh before the
+        // installation callback acquires its short-lived server update lease.
+        if (!await controller.prepareForInstall()) {
+          if (controller.getState().status === "error") throw new Error(controller.getState().error ?? "Update failed");
+          return;
+        }
+        if (!await this.options.canInstall() || !stillEnabled()) return;
         if (!await this.options.install()) return;
       } else if (status !== "up-to-date") return;
       this.options.complete(day);

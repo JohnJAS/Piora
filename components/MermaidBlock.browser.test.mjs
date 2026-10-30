@@ -33,12 +33,13 @@ test("Mermaid retains geometry across remounts and opens a viewport-fitted, stab
         return result;
       }};`);
     await writeFile(path.join(root, "entry.tsx"), `import React,{useState,useRef} from "react";import{createRoot}from"react-dom/client";import{flushSync}from"react-dom";
-      import {MermaidBlock} from "@/components/MermaidBlock";import{I18nProvider}from"@/hooks/useI18n";import{useTheme,THEME_PRESETS}from"@/hooks/useTheme";
+      import {MermaidBlock} from "@/components/MermaidBlock";import{MarkdownBody}from"@/components/MarkdownBody";import{I18nProvider}from"@/hooks/useI18n";import{useTheme,THEME_PRESETS}from"@/hooks/useTheme";
       import{VirtualList}from"@/components/VirtualList";
       const sources=${JSON.stringify(sources)};
       const rows=Array.from({length:100},(_,i)=>String(i));
       function VirtualChat({session}){const scroll=useRef(null);return <div id="virtual-scroll" ref={scroll} style={{height:"100vh",overflow:"auto"}}><VirtualList key={session} keys={rows} estimate={160} scrollContainer={scroll} renderItem={(_,index)=>index===0?<MermaidBlock code={sources.normal}/>:<div style={{height:160}}>Message {index}</div>}/></div>}
-      function App(){const[state,setState]=useState({name:"normal",key:0,visible:true,duplicate:false});const[virtual,setVirtual]=useState(null);const{setTheme}=useTheme();
+      function App(){const[state,setState]=useState({name:"normal",key:0,visible:true,duplicate:false});const[virtual,setVirtual]=useState(null);const[markdown,setMarkdown]=useState(null);const{setTheme}=useTheme();
+        window.streamMarkdown=(text,streaming=true)=>flushSync(()=>{setMarkdown(text);setState(s=>({...s,streaming,duplicate:false}));});
         window.virtualSession=session=>flushSync(()=>setVirtual(session));
         window.selectDiagram=(name,remount=true)=>flushSync(()=>setState(s=>({...s,name,key:s.key+Number(remount),visible:true})));
         window.showDiagram=visible=>flushSync(()=>setState(s=>({...s,visible})));
@@ -46,7 +47,7 @@ test("Mermaid retains geometry across remounts and opens a viewport-fitted, stab
         window.duplicateDiagram=()=>flushSync(()=>setState(s=>({...s,duplicate:true})));
         window.changeTheme=setTheme;window.themes=THEME_PRESETS.map(p=>p.id);
         return <I18nProvider>{virtual!==null?<VirtualChat session={virtual}/>:<div id="scroll" style={{height:"100vh",overflow:"auto"}}><div style={{height:300}}/><main style={{width:"min(760px,100%)",margin:"auto"}}>
-          {state.visible&&<MermaidBlock key={state.key} code={sources[state.name]} isStreaming={state.streaming}/>}<div id="after">Following message</div>
+          {markdown!==null?<MarkdownBody isStreaming={state.streaming}>{markdown}</MarkdownBody>:state.visible&&<MermaidBlock key={state.key} code={sources[state.name]} isStreaming={state.streaming}/>}<div id="after">Following message</div>
           {state.duplicate&&<MermaidBlock code={sources[state.name]}/>}</main><div style={{height:1000}}/></div>}</I18nProvider>}
       createRoot(document.getElementById("root")).render(<App/>);`);
     const compiler = webpack({ mode: "development", target: "web", devtool: false,
@@ -105,6 +106,32 @@ test("Mermaid retains geometry across remounts and opens a viewport-fitted, stab
       }), "actual graph content must fit inside the SVG viewBox, not just its outer frame");
     };
     await assertFit();
+    const dragEdge = async (direction, dx, dy) => {
+      const start = await page.locator("dialog").evaluate(el => ({ width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height }));
+      const handle = await page.locator(`.mermaid-resize-handle[data-direction="${direction}"]`).boundingBox();
+      await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(handle.x + handle.width / 2 + dx, handle.y + handle.height / 2 + dy, { steps: 5 });
+      await page.mouse.up();
+      const expected = { width: start.width + (direction.includes("e") ? dx * 2 : direction.includes("w") ? -dx * 2 : 0), height: start.height + (direction.includes("s") ? dy * 2 : direction.includes("n") ? -dy * 2 : 0) };
+      await page.waitForFunction(expected => {
+        const rect = document.querySelector("dialog").getBoundingClientRect();
+        return Math.abs(rect.width - expected.width) < 2 && Math.abs(rect.height - expected.height) < 2;
+      }, expected);
+    };
+    for (const [direction, dx, dy] of [["e", 30, 0], ["w", -30, 0], ["n", 0, -20], ["s", 0, 20], ["ne", 20, -15], ["se", 20, 15], ["sw", -20, 15], ["nw", -20, -15]]) {
+      const beforeResize = await page.locator("dialog").boundingBox();
+      await dragEdge(direction, dx, dy);
+      const enlarged = await page.locator("dialog").boundingBox();
+      if (dx) assert.ok(enlarged.width > beforeResize.width + 20, `${direction} enlarges width`);
+      if (dy) assert.ok(enlarged.height > beforeResize.height + 10, `${direction} enlarges height`);
+      await assertFit();
+      await dragEdge(direction, -dx, -dy);
+      const restored = await page.locator("dialog").boundingBox();
+      assert.ok(Math.abs(restored.width - beforeResize.width) < 2, `${direction} shrinks width back: ${JSON.stringify({ beforeResize, enlarged, restored })}`);
+      assert.ok(Math.abs(restored.height - beforeResize.height) < 2, `${direction} shrinks height back: ${JSON.stringify({ beforeResize, enlarged, restored })}`);
+    }
+    await dragEdge("se", 45, 30);
     const originalDialog = await page.locator("dialog").boundingBox();
     await page.getByRole("button", { name: "Maximize diagram viewer", exact: true }).click();
     await page.waitForFunction(() => {
@@ -112,6 +139,7 @@ test("Mermaid retains geometry across remounts and opens a viewport-fitted, stab
       return box.x === 0 && box.y === 0 && box.width === innerWidth && box.height === innerHeight;
     });
     await assertFit();
+    assert.equal(await page.locator(".mermaid-resize-handle").count(), 0, "maximized viewer has no active resize handles");
     const zoomValue = () => page.locator(".mermaid-zoom-value").textContent();
     const initialZoom = await zoomValue();
     await page.locator(".mermaid-zoom-viewport").hover();
@@ -154,7 +182,7 @@ test("Mermaid retains geometry across remounts and opens a viewport-fitted, stab
     await preview.waitFor();
     assert.equal(await page.locator(".mermaid-block-loading").count(),0);
     assert.equal(await page.evaluate(() => window.renderCalls),calls);
-    for(const roundTrip of ["code","theme","streaming"]) {
+    for(const roundTrip of ["code","theme"]) {
       await preview.click();
       await page.locator("dialog[open]").waitFor();
       await page.evaluate(kind=>{
@@ -171,6 +199,15 @@ test("Mermaid retains geometry across remounts and opens a viewport-fitted, stab
       await preview.waitFor();
       assert.equal(await page.locator("dialog[open]").count(),0,`${roundTrip} round trips cannot resurrect an old viewer`);
     }
+    await page.evaluate(() => window.streamDiagram(true));
+    await preview.waitFor();
+    await preview.click();
+    await page.locator("dialog[open]").waitFor();
+    const callsBeforeEnd = await page.evaluate(() => window.renderCalls);
+    await page.evaluate(() => window.streamDiagram(false));
+    assert.equal(await page.locator("dialog[open]").count(), 1, "ending the stream keeps the unchanged preview and viewer mounted");
+    assert.equal(await page.evaluate(() => window.renderCalls), callsBeforeEnd);
+    await page.keyboard.press("Escape");
     for (const name of ["wide", "tall", "small", "normal", "sequence", "pie"]) {
       await page.evaluate(name => window.selectDiagram(name), name);
       await preview.waitFor();
@@ -287,6 +324,26 @@ test("Mermaid retains geometry across remounts and opens a viewport-fitted, stab
       assert.equal(await page.evaluate(session=>{window.virtualSession(session);return !!document.querySelector(".mermaid-block-loading");},session),false);
       assert.equal(await preview.evaluate(el=>el.closest("[data-virtual-key]").getBoundingClientRect().height),rowHeight);
     }
+    // Exercise the actual Markdown path: render valid partial syntax before the
+    // fence closes, retain it for an incomplete token, then update before end.
+    await page.evaluate(() => { window.virtualSession(null); window.streamMarkdown("```mermaid\nflowchart LR\nLive[Streaming] --> First[First]"); });
+    await preview.waitFor();
+    assert.match(await preview.textContent(), /Streaming/);
+    const partial = await preview.innerHTML();
+    await page.evaluate(() => window.streamMarkdown("```mermaid\nflowchart LR\nLive[Streaming] --> First[First]\nFirst --> Second[\""));
+    await page.waitForTimeout(250);
+    assert.equal(await preview.innerHTML(), partial, "incomplete syntax retains the previous valid diagram");
+    assert.equal(await page.locator(".mermaid-block-error").count(), 0);
+    const completed = "```mermaid\nflowchart LR\nLive[Streaming] --> First[First]\nFirst --> Second[Second]\n```";
+    await page.evaluate(text => window.streamMarkdown(text), completed);
+    await page.waitForFunction(() => document.querySelector(".mermaid-preview-button")?.textContent.includes("Second"));
+    const completedCalls = await page.evaluate(() => window.renderCalls);
+    await preview.evaluate(el => { window.completedPreview = el; });
+    for (let i = 1; i <= 4; i++) await page.evaluate(text => window.streamMarkdown(text), completed + "\n\nFollowing output ".repeat(i));
+    assert.equal(await preview.evaluate(el => el === window.completedPreview), true);
+    assert.equal(await page.evaluate(() => window.renderCalls), completedCalls, "following text does not render the finished diagram again");
+    await page.evaluate(() => window.streamMarkdown("```mermaid\ninvalid final diagram\n```", false));
+    await page.locator(".mermaid-block-error").first().waitFor();
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

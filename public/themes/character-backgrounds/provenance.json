@@ -1,0 +1,288 @@
+{
+  "method": "Codex built-in image_gen with character references; WebP encoding only",
+  "date": "2026-10-30",
+  "artwork": [
+    {
+      "id": "character-glm-ink",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/01_智谱GLM娘_阔耳狐娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/01_%E6%99%BA%E8%B0%B1GLM%E5%A8%98_%E9%98%94%E8%80%B3%E7%8B%90%E5%A8%98/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "3fdbbd09d3e1b453eb9862b8f5896d800ba6f5d019fa133e024a7287b607344e",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. GLM fennec fox woman: very long straight black hair with subtle blue highlights, huge black fox ears with white inner fur, giant fluffy black tail with white tip, monochrome white and black layered long dress, tiny blue accents, decorative sleeping-mask headpiece lifted above forehead, small square Z insignia charms and bells. Scene and theme: A quiet moonlit reading alcove, the fox woman seated at far right with huge fluffy tail wrapped beside her, holding a closed silver-gray book, sparse cool moonbeam, dark graphite blue left reading area; silver and ice blue highlights."
+    },
+    {
+      "id": "character-gpt-ivory",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/02_GPT娘_白龙娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/02_GPT%E5%A8%98_%E7%99%BD%E9%BE%99%E5%A8%98/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "061eba060b17ad1e6d338400088da9da2ddc178568957afdb8f2699bf6700c32",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. GPT white dragon woman: very long snowy white hair, pale lavender eyes, two swept white dragon horns, pointed ears, pale lavender membranous dragon wings and long scaled white tail, silver interwoven knot hair ornament and delicate earrings, elegant layered white and pale lilac long gown with silver details. Do NOT turn her into a generic green-haired assistant; dragon horns, wings and tail are essential. Keep neckline and skirt modest. Scene and theme: White dragon woman standing at far right on a pearl-white cloud terrace, gently holding a small translucent crystal, folded wings clearly visible behind shoulders, tail curling at right edge. Pale lavender sky dissolves into soft ivory left reading area; elegant airy silver light."
+    },
+    {
+      "id": "character-whale-tide",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/03_DeepSeek娘_鲸鱼娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/03_DeepSeek%E5%A8%98_%E9%B2%B8%E9%B1%BC%E5%A8%98/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "400aac5e53182ed60edb1e4643507c434c5dd3e25e57db6a2e91710317f48fbd",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. DeepSeek whale-girl: long wavy blue hair with pale blue tips, curled ahoge, side whale fins, blue eyes, large blue whale tail with broad flukes, layered navy/blue and white maid dress with gold trim, white apron and ruffled headband, blue gemstone neck ribbon. Scene and theme: Ocean-view cafe in morning, whale woman stands at right holding small white teacup naturally, friendly smile, tail curved near her. Pearl white and pale sky blue, sparse ocean light reflections at lower right, nearly uniform pale ice-blue left reading area."
+    },
+    {
+      "id": "character-ernie-garden",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/04_文心一言娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/04_%E6%96%87%E5%BF%83%E4%B8%80%E8%A8%80%E5%A8%98/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "c6d8cd73e720933b25ec49a0e6dbef2d5eb3846a32cecf692c557d15fae4a96e",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. Wenxin/ERNIE woman: extremely long cobalt blue hair with thin red streak, blue eyes, blue cube hairpin, white and blue ruffled long dress with geometric details; seated in her clearly recognizable blue and silver wheelchair with large side wheels and footrests. Preserve wheelchair accurately and respectfully as integral to her silhouette. Scene and theme: Accessible sunlit conservatory with the woman comfortably seated in her reference wheelchair at far right, a closed notebook resting on lap, hands naturally placed on it, small flowers near window only. Show wheelchair wheel and footrest clearly; calm equal-height camera angle. Pale hydrangea blue and soft white, left reading area luminous quiet mist."
+    },
+    {
+      "id": "character-qwen-porcelain",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/05_通义千问娘_Qwen/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/05_%E9%80%9A%E4%B9%89%E5%8D%83%E9%97%AE%E5%A8%98_Qwen/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "99ef4808f9e54602a1782c84eec063f2918a2939e18ab758b8d5d3a5bff56ef3",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. Qwen woman: flowing periwinkle blue hair with long thick braid draped over chest, purple eyes, small tilted navy hat with floral knot badge and tassel, cream high-collar Chinese-inspired long dress with frog closures, deep indigo draped sleeves/robe, fine gold geometric embroidery and ornaments. Scene and theme: Serene Chinese-inspired pavilion, woman at far right holding closed folding fan with both hands, a pale porcelain tea cup on narrow table and one faint lattice window at outer right. Porcelain ivory, periwinkle and indigo with tiny gold accents; left two thirds calm pale porcelain lavender atmosphere."
+    },
+    {
+      "id": "character-kimi-moon",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/06_Kimi娘_Moonshot/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/06_Kimi%E5%A8%98_Moonshot/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "d9d9bd53117016e3c3636a11bcc30a58222751eda58bc9de243c790cdb32aa6a",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. Kimi woman: long flowing silver-white hair with ice-blue ends, light blue eyes, frilled white headband and small triangular prism ornament with tiny rainbow accent, navy and white layered maid-inspired long dress, constellation embroidery, crescent moons, music-note charms, silver flute. Scene and theme: Moonlit music observatory, woman at far right cradles a silver transverse flute diagonally at chest in a resting position, not playing, looking toward viewer. One crescent moon through distant window at top right, navy velvet constellation cloth, restrained prismatic highlight only near her ornament. Left two thirds deep quiet blue."
+    },
+    {
+      "id": "character-seed-soda",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/07_豆包Seed娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/07_%E8%B1%86%E5%8C%85Seed%E5%A8%98/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "d4fbe9b6418f939c03985551ae31960c566471fe3cbb988c9d53e7d20ae57e6e",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. Doubao Seed woman: bright violet high side ponytail fading to turquoise, purple eyes, cyan/purple ring hair tie, white violet turquoise futuristic streetwear with long split jacket tails and pleated skirt, asymmetrical sleeves, circular gradient emblems, cheerful energetic face; keep clothing tasteful and opaque. Scene and theme: Playful futuristic creative lounge in daylight, energetic woman at far right hugs a small rounded white mascot cushion, ponytail curls behind her, very sparse translucent aqua bubbles around right edge. Lavender white and clear turquoise accents, huge low-detail pastel lavender-white left reading area. Crisp cheerful anime, not overly busy."
+    },
+    {
+      "id": "character-minimax-coral",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/08_MiniMax娘_海螺AI/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/08_MiniMax%E5%A8%98_%E6%B5%B7%E8%9E%BAAI/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "ea36b966059f6e777d2a12cc36da031df35f4ba791239801693d17cff16b4ee4",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. MiniMax woman: short tousled peach-orange hair fading to pink tips, reddish eyes, white newsboy cap with salmon band and small pink bow, white reporter coat with salmon trim, blouse and tan plaid midi skirt, lanyard badge with geometric waveform motif, shell-themed accessory. Bright approachable reporter personality. Scene and theme: Warm seaside radio studio in morning, reporter woman at far right holds small shell-shaped microphone near chest, friendly smile, one vintage radio and a tiny conch on desk at outer right. Coral pink, peach cream and warm sand. Left two thirds smooth warm shell-white ambient light with minimal detail."
+    },
+    {
+      "id": "character-grok-eclipse",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/09_Grok娘_xAI/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/09_Grok%E5%A8%98_xAI/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "2f2f8ee20031c274bdaba88b2fafbe9f802a4579d8da70101ca00d4390fcd2f4",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. Grok vampire woman: long blonde twin-tails with black bows, clear blue eyes, pointed ears, little bat-wing hair ornaments and tiny dark gold crown, elegant black gothic long gown with burgundy lining, gold orbital ring motifs and chain details. Friendly mischievous expression with subtle tiny fang. Modest opaque dress and dignified pose. Scene and theme: Gothic observatory at twilight, friendly vampire woman at right holding a small brass celestial globe, flowing twin-tails and bat ornaments distinct. A very faint golden eclipsed moon visible through far-right arched window; no weapon needed. Charcoal black, burgundy shadow and restrained antique gold highlights, left two thirds deep quiet charcoal."
+    },
+    {
+      "id": "character-gemini-prism",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/10_Gemini娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/10_Gemini%E5%A8%98/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "c3a183776574fcaed3adee91d74751fe09c86fbd01d91f9608b6f891a853abc6",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. Gemini cat woman: long blue-purple gradient hair fading pink, cat ears, two small hair buns, heterochromia one pink eye and one gold eye, large four-point star hair ornament, fluffy blue-purple cat tail, layered violet indigo white and gold astral outfit with hanging four-point star charms; tasteful nonsexual pose and opaque costume. Scene and theme: Starlit prism garden, cat woman at far right gently holds a floating translucent four-point crystal star between hands, clearly visible heterochromatic eyes, cat ears and fluffy tail. Restrained blue-purple-pink spectral light around right edge only, dreamy deep periwinkle night. Left two thirds nearly uniform deep blue-violet for reading; no rainbow saturation across whole image."
+    },
+    {
+      "id": "character-claude-paper",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/11_Claude娘_Anthropic/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/11_Claude%E5%A8%98_Anthropic/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "1e0700305cf1050edb7f55251bf10c1deee1af8854b3c760a5695266bff9adb9",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. Claude woman: extremely long flowing copper orange hair with braided crown section, amber eyes, orange chrysanthemum hair brooch with black bow and tassels, matching chrysanthemum collar brooch, layered ivory/orange/black long dress, white capelet with orange sunburst embroidery, black waist panel and ribbons. Preserve LONG hair and costume from reference, no bob hairstyle. Scene and theme: Quiet book-lined room, woman at far right holds an open old book at waist, long orange hair flowing along right edge, warm paper and terracotta palette, soft linen-filtered daylight, chrysanthemum vase at far right. Left two thirds extremely calm pale parchment glow, fine paper texture."
+    },
+    {
+      "id": "character-gpt-orbit",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/02_GPT娘_白龙娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/02_GPT%E5%A8%98_%E7%99%BD%E9%BE%99%E5%A8%98/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "e3ca0e953211baa184b45d3722e3d8a7eba59d9eaf213fafe9eb2fee937beabd",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. GPT white dragon woman: very long snowy white hair, pale lavender eyes, two swept white dragon horns, pointed ears, pale lavender membranous dragon wings and long scaled white tail, silver interwoven knot hair ornament and delicate earrings, elegant layered white and pale lilac long gown with silver details. Do NOT turn her into a generic green-haired assistant; dragon horns, wings and tail are essential. Keep neckline and skirt modest. Scene and theme: Night observatory, white dragon woman at far right delicately holds a thin luminous silver orbital ring, her horns, folded pale dragon wings and scaled tail clearly identifiable, cool silver-blue rim light, dim stars only at outer right. Left two thirds quiet deep blue graphite, restrained lavender highlights."
+    },
+    {
+      "id": "character-gpt-cloud",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/02_GPT娘_白龙娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/02_GPT%E5%A8%98_%E7%99%BD%E9%BE%99%E5%A8%98/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "5513f2005e85e764c09daf07e55764688d633fc6ce7b26eecb1b710dbb5df2ce",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. GPT white dragon woman: very long snowy white hair, pale lavender eyes, two swept white dragon horns, pointed ears, pale lavender membranous dragon wings and long scaled white tail, silver interwoven knot hair ornament and delicate earrings, elegant layered white and pale lilac long gown with silver details. Do NOT turn her into a generic green-haired assistant; dragon horns, wings and tail are essential. Keep neckline and skirt modest. Scene and theme: White dragon woman at far right seated on a pearl-white terrace sketching into a small blank notebook, horns and folded pale wings visible, scaled tail gently wrapped by her side, soft mint sky and airy clouds. White and pale sage-mint palette with lilac character details, left two thirds diffuse quiet mint-white."
+    },
+    {
+      "id": "character-whale-abyss",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/03_DeepSeek娘_鲸鱼娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/03_DeepSeek%E5%A8%98_%E9%B2%B8%E9%B1%BC%E5%A8%98/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "07f220e2f7e2cbb9e065135b45fd5edf4ed3cd6f3274f77f14e79f64ee778529",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. DeepSeek whale-girl: long wavy blue hair with pale blue tips, curled ahoge, side whale fins, blue eyes, large blue whale tail with broad flukes, layered navy/blue and white maid dress with gold trim, white apron and ruffled headband, blue gemstone neck ribbon. Scene and theme: Tranquil deep-sea observation lounge at night, whale woman at far right seated holding a small luminous ocean-blue orb in both hands, large blue whale tail curled beside her, faint distant whale silhouette only through far-right window, left two thirds smooth deep navy, soft cyan rim lighting."
+    },
+    {
+      "id": "character-whale-rice",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/03_DeepSeek娘_鲸鱼娘/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/03_DeepSeek%E5%A8%98_%E9%B2%B8%E9%B1%BC%E5%A8%98/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "d16a61fce23ace8de754ef47b53a02a411f68517ae6c4d25adb66137eef8c2e8",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. DeepSeek whale-girl: long wavy blue hair with pale blue tips, curled ahoge, side whale fins, blue eyes, large blue whale tail with broad flukes, layered navy/blue and white maid dress with gold trim, white apron and ruffled headband, blue gemstone neck ribbon. Scene and theme: Wholesome chibi adaptation of referenced whale-girl, rounded small mascot proportions while preserving hair, side fins, curled ahoge, whale tail and maid dress motifs. At bottom right sitting on a little cushion holding rice bowl and spoon, one rice grain on cheek, sleepy satisfied expression. Cozy cream cafe afternoon, pale blue accents, left two thirds quiet warm cream."
+    },
+    {
+      "id": "character-claude-lamp",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/11_Claude娘_Anthropic/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/11_Claude%E5%A8%98_Anthropic/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "b801c1ea46a9a913252f3b05d32e0015305171175044e1e18d85ef35f95ae418",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. Claude woman: extremely long flowing copper orange hair with braided crown section, amber eyes, orange chrysanthemum hair brooch with black bow and tassels, matching chrysanthemum collar brooch, layered ivory/orange/black long dress, white capelet with orange sunburst embroidery, black waist panel and ribbons. Preserve LONG hair and costume from reference, no bob hairstyle. Scene and theme: Woman at far right seated at walnut writing desk, very long orange hair and chrysanthemum hair brooch visible, reading a book under small amber-shaded lamp at far right. Reference ivory orange black long dress retained. Quiet espresso-brown left two thirds with barely visible paper grain; warm honey face light and dark rust accents."
+    },
+    {
+      "id": "character-claude-autumn",
+      "source": {
+        "repository": "https://github.com/JohnJAS/ai-chan-sheets",
+        "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
+        "path": "设定图/11_Claude娘_Anthropic/便于查看/横版完整设定图_01_三视图_查看用.jpg",
+        "url": "https://raw.githubusercontent.com/JohnJAS/ai-chan-sheets/51c15559ac7ebc6bbfb22e1769ba46716f976d5d/%E8%AE%BE%E5%AE%9A%E5%9B%BE/11_Claude%E5%A8%98_Anthropic/%E4%BE%BF%E4%BA%8E%E6%9F%A5%E7%9C%8B/%E6%A8%AA%E7%89%88%E5%AE%8C%E6%95%B4%E8%AE%BE%E5%AE%9A%E5%9B%BE_01_%E4%B8%89%E8%A7%86%E5%9B%BE_%E6%9F%A5%E7%9C%8B%E7%94%A8.jpg",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "completionLicense": "CC-BY-NC-SA-4.0",
+        "note": "Original character rights retained by original creator; repository license excludes original illustrations."
+      },
+      "originalSha256": "7a4696db0b467a776ab3f21357a626b6ced2023a9dafe11a1578f8148497cc8b",
+      "prompt": "Use case: stylized-concept. Create ONE finished 16:9 landscape illustrated wallpaper for a desktop chat application's one-click theme. Attached reference is CHARACTER IDENTITY ONLY, a sheet showing the SAME character in three views; depict exactly ONE character in the final image, no triptych, no sheet labels. Preserve reference face, hairstyle and color, species traits, signature accessories, clothing silhouette and ornamental motifs. Beautiful cohesive premium 2D anime illustration, fine linework, painterly atmospheric lighting, clear adult character proportions, wholesome nonsexual composition. Place the character in right third, face near x=80%, y=32%, preserve head and signature features fully inside canvas. Keep left 62 percent calm and very low-detail for long readable chat text; subtle seamless atmosphere, no harsh dividing line. Details and bright highlights concentrated at far right. No text, captions, logos added to background, no UI, no watermark. Claude woman: extremely long flowing copper orange hair with braided crown section, amber eyes, orange chrysanthemum hair brooch with black bow and tassels, matching chrysanthemum collar brooch, layered ivory/orange/black long dress, white capelet with orange sunburst embroidery, black waist panel and ribbons. Preserve LONG hair and costume from reference, no bob hairstyle. Scene and theme: Woman in her ornate reference long dress seated on a park bench at far right, long copper hair and chrysanthemum hair brooch, writing in notebook on lap, cream shawl draped over shoulders without obscuring costume motifs. A few golden ginkgo leaves and soft sage foliage at far right, broad pale ivory haze on left, literary calm autumn mood."
+    },
+    {
+      "id": "character-kitty-ribbon",
+      "source": {
+        "character": "Hello Kitty",
+        "note": "Unofficial humanized design study; not included in ai-chan-sheets. No franchise permission asserted."
+      },
+      "originalSha256": "85f369c65e900e4a323d28d68d7b6e0a3c4bed69c523ee7e326288704509e367",
+      "prompt": "Use case: stylized-concept. Generate ONE finished wide landscape wallpaper (16:9) for Piora desktop chat application's one-click character theme. Premium polished 2D anime illustration, delicate clean linework, layered painterly light, coherent hands and anatomy. The left 62 percent must be calm low-detail negative space for sidebar and long chat text, seamless atmosphere rather than a blank cutout. Keep the character entirely in the right third, face around 78% x and 35% y, character recognisable at thumbnail size, background details at outer edges only. Full-bleed artwork, no UI mockup, no panels, no collage, no captions, no letters, no watermarks. Wholesome fully clothed adult female character. Hello Kitty humanized fan-art as a wholesome adult anime woman. Consistent identity: silky ivory-white bob with gently rounded ends, soft dark brown eyes, small white cat-ear headband and an iconic large cherry-red bow above her LEFT ear (on viewer right when facing front), friendly gentle smile. Fully clothed classic cream Peter Pan collar blouse with cherry-red pinafore dress, modest sleeves and skirt. She stands at far right holding a small cream handbag with bow clasp. Scene charming minimal white boutique lounge, single red ribbon detail and soft blush flowers at outer right. Cream white and restrained cherry red accents, no all-over red. Left two thirds calm warm cream atmosphere. No words or branding."
+    },
+    {
+      "id": "character-kitty-strawberry",
+      "source": {
+        "character": "Hello Kitty",
+        "note": "Unofficial humanized design study; not included in ai-chan-sheets. No franchise permission asserted."
+      },
+      "originalSha256": "61a2832837165d51068d9866ef655a376e4edb1b6680b9420119cc713fddd800",
+      "prompt": "Use case: stylized-concept. Generate ONE finished wide landscape wallpaper (16:9) for Piora desktop chat application's one-click character theme. Premium polished 2D anime illustration, delicate clean linework, layered painterly light, coherent hands and anatomy. The left 62 percent must be calm low-detail negative space for sidebar and long chat text, seamless atmosphere rather than a blank cutout. Keep the character entirely in the right third, face around 78% x and 35% y, character recognisable at thumbnail size, background details at outer edges only. Full-bleed artwork, no UI mockup, no panels, no collage, no captions, no letters, no watermarks. Wholesome fully clothed adult female character. Hello Kitty humanized fan-art as the same adult woman: silky ivory-white rounded bob, dark brown eyes, small white cat-ear headband, large cherry-red bow above her left ear. Modest dusty pink long-sleeved dress with ivory apron and lace collar, friendly smile. At far right, seated in a soft pink patisserie holding a tiny strawberry tart on a saucer, small matching teacup on table. Sophisticated rose cream and strawberry pink, one strawberry plant at far right, delightful without visual clutter. Left two thirds nearly plain pale rose-white ambient light. Beautiful polished pastel anime illustration, fully clothed, no lettering."
+    },
+    {
+      "id": "character-kitty-moon",
+      "source": {
+        "character": "Hello Kitty",
+        "note": "Unofficial humanized design study; not included in ai-chan-sheets. No franchise permission asserted."
+      },
+      "originalSha256": "40b4a99e69c5e8639624c37774da84e3da65f02c15322565123bc61470de56d5",
+      "prompt": "Use case: stylized-concept. Generate ONE finished wide landscape wallpaper (16:9) for Piora desktop chat application's one-click character theme. Premium polished 2D anime illustration, delicate clean linework, layered painterly light, coherent hands and anatomy. The left 62 percent must be calm low-detail negative space for sidebar and long chat text, seamless atmosphere rather than a blank cutout. Keep the character entirely in the right third, face around 78% x and 35% y, character recognisable at thumbnail size, background details at outer edges only. Full-bleed artwork, no UI mockup, no panels, no collage, no captions, no letters, no watermarks. Wholesome fully clothed adult female character. Hello Kitty humanized fan-art as the same adult woman: silky ivory-white rounded bob, dark brown eyes, white cat-ear headband, recognizable cherry-red bow above her left ear. Fully clothed oversized lavender cardigan over a high-neck ankle-length ivory dress. She sits at far right in a moonlit window nook, both hands curled naturally around a warm mug, serene sleepy smile. Soft velvet plum and dusty lilac room, crescent moon through far-right window, subtle rosy ribbon accent, one cream cushion. Left two thirds nearly uniform deep muted aubergine to charcoal purple for calm nighttime reading. Tasteful soft anime glow, no lettering, no clutter."
+    }
+  ]
+}
