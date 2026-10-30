@@ -10,7 +10,22 @@ export interface HarmonyDeviceLabelSource {
 
 function cleanPart(value: string | undefined): string | undefined {
   const cleaned = value?.replace(/\s+/g, " ").trim();
-  return cleaned || undefined;
+  return cleaned && !/^(unknown(?:\.{3})?|null|undefined)$/i.test(cleaned) ? cleaned : undefined;
+}
+
+/** Retain display identity only. Connection state and capabilities always come from a fresh probe. */
+export function rememberHarmonyDeviceIdentity<T extends HarmonyDeviceLabelSource>(cache: Map<string, HarmonyDeviceLabelSource>, device: T): T {
+  const previous = cache.get(device.serial);
+  const identity = {
+    serial: device.serial,
+    model: cleanPart(device.model) ?? previous?.model,
+    product: cleanPart(device.product) ?? previous?.product,
+    name: cleanPart(device.name) ?? previous?.name,
+  };
+  cache.delete(device.serial);
+  cache.set(device.serial, identity);
+  if (cache.size > 100) cache.delete(cache.keys().next().value!);
+  return { ...device, ...identity };
 }
 
 function sameIdentity(left: string | undefined, right: string | undefined): boolean {

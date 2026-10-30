@@ -119,7 +119,7 @@ test("mirror is read-only, resizes through the desktop bridge, and shows common 
     await page.setViewportSize({width:122,height:278});await page.getByRole("button",{name:"投屏菜单"}).click();assert.equal(await page.evaluate(()=>window.menu),true);
     assert.equal(await page.getByRole("button",{name:"关闭投屏"}).isVisible(),true);
     assert.equal(await page.getByRole("button",{name:"截图",exact:true}).isVisible(),false);
-    await page.evaluate(()=>window.updateMirror({minimized:true}));await page.waitForFunction(()=>window.frameOptions.active===false);
+    await page.evaluate(()=>window.updateMirror({minimized:true}));await page.waitForFunction(()=>window.frameOptions.active===true);
     await page.evaluate(()=>window.updateMirror({minimized:false}));await page.waitForFunction(()=>window.frameOptions.active===true);
     const out=process.env.PIORA_HARMONY_SCREENSHOT_DIR;
     if(out){await mkdir(out,{recursive:true});await page.screenshot({path:path.join(out,"mirror-25.png")});await page.setViewportSize({width:362,height:758});await page.evaluate(()=>window.updateMirror({scale:75}));await page.screenshot({path:path.join(out,"mirror-75.png")});}

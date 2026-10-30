@@ -105,6 +105,42 @@ test("Mermaid retains geometry across remounts and opens a viewport-fitted, stab
       }), "actual graph content must fit inside the SVG viewBox, not just its outer frame");
     };
     await assertFit();
+    const originalDialog = await page.locator("dialog").boundingBox();
+    await page.getByRole("button", { name: "Maximize diagram viewer", exact: true }).click();
+    await page.waitForFunction(() => {
+      const box = document.querySelector("dialog").getBoundingClientRect();
+      return box.x === 0 && box.y === 0 && box.width === innerWidth && box.height === innerHeight;
+    });
+    await assertFit();
+    const zoomValue = () => page.locator(".mermaid-zoom-value").textContent();
+    const initialZoom = await zoomValue();
+    await page.locator(".mermaid-zoom-viewport").hover();
+    await page.mouse.wheel(0, -100);
+    await page.waitForFunction(previous => parseInt(document.querySelector(".mermaid-zoom-value").textContent) > parseInt(previous), initialZoom);
+    const enlargedZoom = await zoomValue();
+    await page.mouse.wheel(0, 100);
+    await page.waitForFunction(previous => parseInt(document.querySelector(".mermaid-zoom-value").textContent) < parseInt(previous), enlargedZoom);
+    assert.deepEqual(await geometry(), before, "wheel zoom must not scroll the underlying chat");
+    // Check repeated trackpad/wheel events respect both zoom boundaries and
+    // cancel native scrolling, including when already at a boundary.
+    for (const [deltaY, expected] of [[-100, "300%"], [100, "10%"]]) {
+      assert.equal(await page.locator(".mermaid-zoom-viewport").evaluate((el, deltaY) => {
+        const rect = el.getBoundingClientRect();
+        return Array.from({ length: 40 }, () => !el.dispatchEvent(new WheelEvent("wheel", {
+          deltaY, bubbles: true, cancelable: true, clientX: rect.x + rect.width / 2, clientY: rect.y + rect.height / 2,
+        }))).every(Boolean);
+      }, deltaY), true);
+      await page.waitForFunction(expected => document.querySelector(".mermaid-zoom-value").textContent === expected, expected);
+    }
+    await page.getByRole("button", { name: "Restore diagram viewer", exact: true }).click();
+    await page.waitForFunction(expected => {
+      const box = document.querySelector("dialog").getBoundingClientRect();
+      return box.x === expected.x && box.y === expected.y && box.width === expected.width && box.height === expected.height;
+    }, originalDialog);
+    assert.deepEqual(await page.locator("dialog").boundingBox(), originalDialog);
+    assert.equal(await zoomValue(), "10%", "restoring the window preserves manual zoom");
+    await page.getByRole("button", { name: "Fit to view", exact: true }).click();
+    await assertFit();
     await page.keyboard.press("Escape");
     assert.deepEqual(await geometry(), before);
     assert.equal(await preview.evaluate(el => document.activeElement === el), true, "restore opener focus");
@@ -225,6 +261,15 @@ test("Mermaid retains geometry across remounts and opens a viewport-fitted, stab
     await preview.click();
     assert.ok((await page.locator("dialog").boundingBox()).y>=36, "desktop chrome remains available");
     await assertFit();
+    await page.getByRole("button", { name: "Maximize diagram viewer", exact: true }).click();
+    for (const viewport of [{ width: 360, height: 600 }, { width: 1100, height: 800 }]) {
+      await page.setViewportSize(viewport);
+      await page.waitForFunction(() => {
+        const box = document.querySelector("dialog").getBoundingClientRect();
+        return box.x === 0 && box.y === 36 && box.width === innerWidth && box.bottom === innerHeight;
+      });
+      await assertFit();
+    }
     await page.keyboard.press("Escape");
     await page.evaluate(() => window.selectDiagram("error"));
     await page.locator(".mermaid-block-error").first().waitFor();

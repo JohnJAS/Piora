@@ -18,7 +18,7 @@ import { SidebarChatArea } from "./sidebar/SidebarChatArea";
 import { SidebarFooter } from "./sidebar/SidebarFooter";
 import { useSessionCatalog } from "./sidebar/useSessionCatalog";
 import { useProjectPicker } from "./sidebar/useProjectPicker";
-import { applyProjectOrder, applySessionOrder, getRecentProjects, moveProjectRoot, moveSessionId } from "./sidebar/sidebar-utils";
+import { applyProjectOrder, applySessionOrder, getRecentProjects, moveProjectRoot, moveSessionId, reconcileProjectOrder } from "./sidebar/sidebar-utils";
 import { useSidebarState } from "./sidebar/useSidebarState";
 import { SidebarShell } from "./sidebar/SidebarShell";
 import { RoomSidebarSection } from "./RoomSidebarSection";
@@ -390,8 +390,9 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     return ids;
   }, [runningSessionIds, unreadSessionIds, selectedSessionId]);
 
-  // Drop stale persisted keys when projects disappear. This keeps storage
-  // bounded without changing the default state of newly discovered projects.
+  // Persist the first displayed order, including newly discovered projects.
+  // Later session activity must not move projects that have never been dragged.
+  // Drop stale keys only after a successful catalog load.
   useEffect(() => {
     if (loading || error) return;
     const validKeys = new Set(projectGroups.map((group) => group.key));
@@ -401,10 +402,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     };
     setCollapsedProjectKeys(prune);
     setExpandedProjectSessionKeys(prune);
-    setProjectOrder((previous) => {
-      const next = previous.filter((root) => validKeys.has(root));
-      return next.length === previous.length ? previous : next;
-    });
+    setProjectOrder((previous) => reconcileProjectOrder(previous, projectGroups.map((group) => group.projectRoot)));
   }, [projectGroups, loading, error, setCollapsedProjectKeys, setExpandedProjectSessionKeys, setProjectOrder]);
 
   useEffect(() => {

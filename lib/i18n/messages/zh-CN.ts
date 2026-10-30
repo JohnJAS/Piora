@@ -2650,6 +2650,8 @@ export const zhCNLocale: LocalePlugin = {
     "i18n.mermaidImageActionFailed": "图片操作失败，请重试",
     "i18n.zoomOut": "缩小",
     "i18n.zoomIn": "放大",
+    "i18n.maximizeMermaidViewer": "最大化图表窗口",
+    "i18n.restoreMermaidViewer": "还原图表窗口",
     "i18n.fitToWidth": "适应宽度",
     "i18n.fitToView": "适应视图",
     "models.savedScopeRefreshFailed": "配置已保存，但模型列表更新失败。请检查渠道认证和模型范围后重试。",

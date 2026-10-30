@@ -13,7 +13,7 @@ test("workbench preserves fenced tool actions without a hidden viewer", () => {
 });
 test("only the independent mirror consumes frames and has no input handlers or bottom controls", () => {
   assert.match(mirror, /useHarmonyLiveFrame/);
-  assert.match(mirror, /!state.minimized/);
+  assert.doesNotMatch(mirror, /!state.minimized/);
   assert.match(mirror, /<canvas/);
   assert.doesNotMatch(mirror, /onPointer|onMouse|<footer|action: "(?:tap|swipe|input_text|press_key)"/);
   assert.doesNotMatch(mirror, /setScale|画面缩放/);

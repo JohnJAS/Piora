@@ -202,6 +202,8 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     let decoder: VideoDecoder | undefined;
     let pendingPresentation: { frame: VideoFrame; attempt: StreamAttempt } | undefined;
     let presentationTick: number | undefined;
+    let presentationTimer: number | undefined;
+    let presentationEpoch = 0;
     let decoderEpoch = 0;
     let config: StreamConfig | undefined;
     let revision = 0;
@@ -220,11 +222,16 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         drawMs: Math.round(drawMilliseconds / measuredFrames * 10) / 10 });
       measuredAt = now; measuredFrames = 0; drawMilliseconds = 0;
     };
-    const closeDecoder = () => {
+    const cancelPresentation = () => {
+      presentationEpoch++;
+      window.clearTimeout(presentationTimer); presentationTimer = undefined;
       if (presentationTick !== undefined) window.cancelAnimationFrame?.(presentationTick);
       presentationTick = undefined;
       pendingPresentation?.frame.close();
       pendingPresentation = undefined;
+    };
+    const closeDecoder = () => {
+      cancelPresentation();
       // A stream can change configuration without replacing its connection.
       // Invalidate callbacks before close, which may itself deliver an error.
       decoderEpoch += 1;
@@ -334,20 +341,36 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       if (!support.supported) throw new Error(`H.264 decoder ${decoderConfig.codec} is unavailable`);
       decoder = new VideoDecoder({
         output: (videoFrame) => {
-          if (decoderEpoch !== configuredEpoch) {
+          if (disposed || activeAttempt !== attempt || attempt.controller.signal.aborted || decoderEpoch !== configuredEpoch) {
             videoFrame.close();
             return;
           }
+          // Stream health follows decoded input, never compositor visibility.
+          armWatchdog(attempt);
           // Decode every dependent H.264 frame, but present only the newest
           // decoded image per display refresh. Never queue obsolete paints.
-          if (!window.requestAnimationFrame) { drawVideoFrame(videoFrame, attempt); return; }
+          // Minimized Chromium windows may suspend animation frames even while
+          // background timers and transport remain active. Keep the canvas and
+          // frame watchdog current, and discard any pre-minimize queued paint.
+          if (document.hidden || !window.requestAnimationFrame) {
+            cancelPresentation();
+            drawVideoFrame(videoFrame, attempt); return;
+          }
           pendingPresentation?.frame.close();
           pendingPresentation = { frame: videoFrame, attempt };
-          presentationTick ??= window.requestAnimationFrame(() => {
-            presentationTick = undefined;
-            const pending = pendingPresentation; pendingPresentation = undefined;
-            if (pending) drawVideoFrame(pending.frame, pending.attempt);
-          });
+          if (presentationTick === undefined) {
+            const epoch = ++presentationEpoch;
+            const present = () => {
+              if (epoch !== presentationEpoch) return;
+              const pending = pendingPresentation; pendingPresentation = undefined;
+              cancelPresentation();
+              if (pending) drawVideoFrame(pending.frame, pending.attempt);
+            };
+            presentationTick = window.requestAnimationFrame(present);
+            // Occlusion can suspend rAF without changing document.hidden.
+            // A bounded timer keeps the latest canvas current in that case.
+            presentationTimer = window.setTimeout(present, 1000 / 30);
+          }
         },
         error: (decodeError) => {
           if (disposed || activeAttempt !== attempt || attempt.controller.signal.aborted || decoderEpoch !== configuredEpoch) return;

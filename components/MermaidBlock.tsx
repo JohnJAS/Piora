@@ -396,10 +396,13 @@ function MermaidZoomDialog({ diagram, onClose }: { diagram: Diagram; onClose: ()
   const { t } = useI18n();
   const dialogRef = useRef<HTMLDialogElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const wheelAnchor = useRef<{ x: number; y: number; clientX: number; clientY: number } | null>(null);
   const drag = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const svg = useMemo(() => scopeDiagramSvg(diagram.svg, `dialog-${instanceId}`), [diagram, instanceId]);
   const [fit, setFit] = useState(1);
+  const [maximized, setMaximized] = useState(false);
   // null follows the viewport; a user zoom is an absolute SVG scale, so a
   // resize cannot multiply it beyond the limit or unexpectedly enlarge it.
   const [manualZoom, setManualZoom] = useState<number | null>(null);
@@ -432,7 +435,44 @@ function MermaidZoomDialog({ diagram, onClose }: { diagram: Diagram; onClose: ()
     };
   }, [diagram]);
 
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!event.deltaY) return;
+      event.preventDefault();
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const bounds = canvas.getBoundingClientRect();
+      wheelAnchor.current = {
+        x: (event.clientX - bounds.left) / bounds.width,
+        y: (event.clientY - bounds.top) / bounds.height,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      };
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? viewport.clientHeight : 1;
+      const delta = Math.max(-100, Math.min(100, event.deltaY * unit));
+      setManualZoom(value => Math.max(minimumZoom, Math.min(ZOOM_MAX, (value ?? fit) * Math.exp(-delta * 0.002))));
+    };
+    // React's delegated wheel listener is passive; a native listener prevents
+    // scrolling the canvas/page (or browser zoom) while zooming the diagram.
+    viewport.addEventListener("wheel", onWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", onWheel);
+  }, [fit, minimumZoom]);
+
+  useLayoutEffect(() => {
+    const anchor = wheelAnchor.current;
+    wheelAnchor.current = null;
+    const viewport = viewportRef.current;
+    const canvas = canvasRef.current;
+    if (!anchor || !viewport || !canvas) return;
+    const bounds = canvas.getBoundingClientRect();
+    viewport.scrollLeft += bounds.left + anchor.x * bounds.width - anchor.clientX;
+    viewport.scrollTop += bounds.top + anchor.y * bounds.height - anchor.clientY;
+  }, [zoom]);
+
   const resetZoom = () => {
+    wheelAnchor.current = null;
     setManualZoom(null);
     viewportRef.current?.scrollTo(0, 0);
   };
@@ -443,6 +483,7 @@ function MermaidZoomDialog({ diagram, onClose }: { diagram: Diagram; onClose: ()
       className="mermaid-zoom-dialog"
       style={{ "--diagram-width": `${Math.max(360, diagram.width + 48)}px`, "--diagram-height": `${Math.max(220, diagram.height + 104)}px` } as CSSProperties}
       data-desktop-chrome={hasDesktopChrome ? "true" : undefined}
+      data-maximized={maximized ? "true" : undefined}
       aria-label={t("i18n.mermaidViewer")}
       onCancel={(event) => {
         event.preventDefault();
@@ -492,6 +533,16 @@ function MermaidZoomDialog({ diagram, onClose }: { diagram: Diagram; onClose: ()
             <button
               type="button"
               className="mermaid-zoom-icon-button"
+              onClick={() => setMaximized(value => !value)}
+              title={t(maximized ? "i18n.restoreMermaidViewer" : "i18n.maximizeMermaidViewer")}
+              aria-label={t(maximized ? "i18n.restoreMermaidViewer" : "i18n.maximizeMermaidViewer")}
+              aria-pressed={maximized}
+            >
+              <AliIcon name={maximized ? "collapse" : "expand"} size={13} />
+            </button>
+            <button
+              type="button"
+              className="mermaid-zoom-icon-button"
               onClick={onClose}
               title={t("i18n.close")}
               aria-label={t("i18n.close")}
@@ -518,6 +569,7 @@ function MermaidZoomDialog({ diagram, onClose }: { diagram: Diagram; onClose: ()
           onLostPointerCapture={() => { drag.current = null; }}
         >
           <div
+            ref={canvasRef}
             className="mermaid-zoom-canvas"
             style={{ width: diagram.width * zoom, height: diagram.height * zoom }}
             dangerouslySetInnerHTML={{ __html: svg }}

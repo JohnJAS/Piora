@@ -8,7 +8,7 @@ import { ScrcpyServiceService } from "hypium-driver/build/lib/generated/scrcpy/s
 import type { CommandResult } from "./command-runner";
 import { HarmonyError } from "./errors";
 import { HosVideoPacketizer } from "./media/hos-packets";
-import { readDevEcoVideoLibrary } from "./runtime/deveco-video-library";
+import { readDebugVideoLibrary } from "./runtime/deveco-video-library";
 import { VideoOwnership } from "./runtime/video-ownership";
 import type { HarmonyVideoConnection } from "./types";
 
@@ -56,12 +56,12 @@ export class DevEcoVideoSession {
 
   get whenClosing(): Promise<void> | undefined { return this.closing; }
 
-  static async start(serial: string, jar: string | undefined, run: Run, onClose: () => void, ownershipDirectory?: string): Promise<DevEcoVideoSession> {
+  static async start(serial: string, source: string | undefined, run: Run, onClose: () => void, ownershipDirectory?: string): Promise<DevEcoVideoSession> {
     const session = new DevEcoVideoSession(serial, run, await freePort(), `piora_video_${randomUUID().replaceAll("-", "")}.so`, onClose);
     try {
       session.ownership = new VideoOwnership(serial, session.name, session.port, run, ownershipDirectory);
       await session.ownership.prepare(); session.journaled = true;
-      await session.initialize(jar); return session;
+      await session.initialize(source); return session;
     }
     catch (error) { await session.close(); throw error; }
   }
@@ -84,7 +84,7 @@ export class DevEcoVideoSession {
     return true;
   }
 
-  private async initialize(jar: string | undefined) {
+  private async initialize(source: string | undefined) {
     const sockets = await this.shell("cat /proc/net/unix", "debug_video_socket_check");
     if (sockets.includes("@scrcpy_grpc_socket")) {
       // Subscribe to the existing service without taking ownership of its daemon.
@@ -95,17 +95,17 @@ export class DevEcoVideoSession {
       await this.openForward();
       return;
     }
-    if (!jar) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "Install a compatible DevEco Studio or open its device mirror, then reconnect.", { details: { reason: "debug-video-sdk-missing" }, retryable: true });
+    if (!source) throw new HarmonyError("CAPABILITY_UNAVAILABLE", "The native video runtime is missing. Repair or update Piora and reconnect.", { details: { reason: "debug-video-sdk-missing" }, retryable: true });
     const version = await this.shell("uitest --version", "debug_video_version");
-    const library = await readDevEcoVideoLibrary(jar, version).catch(() => {
-      throw fail("This DevEco SDK has no usable debug video library for this phone. Update DevEco Studio and reconnect.");
+    const library = await readDebugVideoLibrary(source, version).catch(() => {
+      throw fail("No compatible native video library is available for this device. Update Piora or use a compatible installed DevEco SDK and reconnect.");
     });
     const directory = await mkdtemp(join(tmpdir(), "piora-video-"));
     try {
       const path = join(directory, this.name); await writeFile(path, library, { flag: "wx", mode: 0o600 });
       await this.run(["-t", this.serial, "file", "send", path, `/data/local/tmp/${this.name}`], "debug_video_upload", undefined, 8000);
     } finally { await rm(directory, { recursive: true, force: true }); }
-    // This is the SDK's development capture service, not an app or an input-control session.
+    // Both the bundled Hypium library and the optional SDK expose this capture service.
     const pid = await this.shell(`uitest start-daemon singleness --extension-name ${this.name} -scale 1 -frameRate 30 -bitRate 6291456 -p 5000 -iFrameInterval 2000 -repeatInterval 33 > /data/local/tmp/${this.name}.log 2>&1 & echo $!`, "debug_video_start");
     const match = /^\s*(\d+)\s*$/.exec(pid);
     if (!match) throw fail("The phone did not identify the debug video service");
@@ -115,7 +115,7 @@ export class DevEcoVideoSession {
       if ((await this.shell("cat /proc/net/unix", "debug_video_ready")).includes("@scrcpy_grpc_socket")) { ready = true; break; }
       await new Promise(resolve => setTimeout(resolve, 100));
     }
-    if (!ready || !await this.ownsProcess()) throw fail("The DevEco debug video service could not start on this system. Update DevEco Studio and reconnect.");
+    if (!ready || !await this.ownsProcess()) throw fail("The native debug video service could not start on this system. Update Piora and reconnect.");
     await this.openForward();
   }
 
@@ -133,7 +133,7 @@ export class DevEcoVideoSession {
     if (this.source || !this.rpc) return;
     this.startedAt = Date.now();
     this.source = this.rpc.makeServerStreamRequest("/ScrcpyService/onStart", () => Buffer.alloc(0), decode, Buffer.alloc(0));
-    this.firstFrameTimer = setTimeout(() => this.end(fail("The DevEco debug video channel produced no frames. Update DevEco Studio and reconnect.")), 8000);
+    this.firstFrameTimer = setTimeout(() => this.end(fail("The native debug video channel produced no frames. Reconnect the device and update Piora.")), 8000);
     this.source.on("data", (reply: Reply) => {
       if (this.closing) return;
       try {

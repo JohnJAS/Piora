@@ -70,6 +70,16 @@ export function applyProjectOrder<T>(items: readonly T[], order: readonly string
     .map(({ item }) => item);
 }
 
+/** Remember every displayed project, so activity updates cannot reshuffle unranked rows. */
+export function reconcileProjectOrder(previous: string[], visibleRoots: readonly string[]): string[] {
+  const remaining = new Set(visibleRoots);
+  const next = previous.filter((root) => remaining.delete(root));
+  next.push(...remaining);
+  return next.length === previous.length && next.every((root, index) => root === previous[index])
+    ? previous
+    : next;
+}
+
 export function moveProjectRoot(
   roots: readonly string[],
   sourceRoot: string,

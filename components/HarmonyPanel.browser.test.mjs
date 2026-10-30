@@ -49,6 +49,7 @@ test("Harmony workspace keeps device tools, drafts and fenced control in a full 
     let largeFileParent = false, delayedTextPreview = null, releaseTextPreview, databaseReadDelay = null;
     let controls = [], rejectedControlStatus = null;
     let phoneName = "HUAWEI Mate 70 Pro";
+    let phonePresent = true;
     let connectionSample = { durationMs: 17.4, sampledAt: new Date().toISOString() }, phoneTransport = "usb", phoneState = "online", phoneIssue;
     const templates = await Promise.all(["launch-and-verify", "chinese-input", "push-to-talk", "long-list", "orientation", "safe-recovery"].map(async id => JSON.parse(await readFile(path.join(repo, "lib/harmony/scenario/templates", `${id}.json`), "utf8"))));
     const screenshot = { kind: "screenshot", path: "C:\\保存目录\\phone-20260929-094112.png", filename: "phone-20260929-094112.png", size: 123, width: 1080, height: 2400 };
@@ -102,7 +103,7 @@ test("Harmony workspace keeps device tools, drafts and fenced control in a full 
         json: { error: { code: "COMMAND_FAILED", message: "Signature rejected", details: { reason: "signature-rejected", deviceErrorCode: "9568257" } } } });
       if (url.pathname === "/api/harmony/packages") data = { preview: { filename: "test.hap", size: 123, sha256: "a".repeat(64), bundleName: "dev.piora.audio.fixture", versionName: "1.0", abilities: [], deviceTypes: ["phone"], permissions: [], signature: "unverified" } };
       if (url.pathname.endsWith("/profile")) data = { profile: "normal" };
-      if (url.pathname.endsWith("/devices")) data = { devices: ["phone", "phone2"].map(serial => ({ serial, name: serial === "phone" ? phoneName : "Second phone", state: serial === "phone" ? phoneState : "online", connectionIssue: serial === "phone" ? phoneIssue : undefined, transport: serial === "phone" ? phoneTransport : "tcp", transportEvidence: "hdc", responseSample: serial === "phone" ? connectionSample : undefined, generation: 1, capabilities: { screenshot: true, tap: true, swipe: true, keys: true, inputText: true, launchApp: true } })), state: { runtime: { status: "ready" }, leases: holder ? [holder] : [], controls } };
+      if (url.pathname.endsWith("/devices")) data = { devices: (phonePresent ? ["phone", "phone2"] : ["phone2"]).map(serial => ({ serial, name: serial === "phone" ? phoneName : "Second phone", state: serial === "phone" ? phoneState : "online", connectionIssue: serial === "phone" ? phoneIssue : undefined, transport: serial === "phone" ? phoneTransport : "tcp", transportEvidence: "hdc", responseSample: serial === "phone" ? connectionSample : undefined, generation: 1, capabilities: { screenshot: true, tap: true, swipe: true, keys: true, inputText: true, launchApp: true } })), state: { runtime: { status: "ready" }, leases: holder ? [holder] : [], controls } };
       if (url.pathname.endsWith("/geometry")) data = { geometry: { geometryId: "geometry", deviceEpoch: 1, frameWidth: 1080, frameHeight: 2400 } };
       if (url.pathname.endsWith("/templates") && input && delayTemplate) await delayTemplate;
       if (url.pathname.endsWith("/templates")) data = input ? { steps: [{ action: "launch_app", bundleName: input.parameters.bundleName, abilityName: "EntryAbility" }, { action: "checkpoint", name: "launched" }] } : { templates };
@@ -181,7 +182,7 @@ test("Harmony workspace keeps device tools, drafts and fenced control in a full 
     await page.locator(".toolbarActions").getByRole("button", { name: "设备设置", exact: true }).click();
     const deviceSettings = page.getByRole("dialog", { name: "设备设置", exact: true });
     await deviceSettings.getByRole("button", { name: "保存", exact: true }).waitFor();
-    assert.equal(await deviceSettings.getByRole("option", { name: "DevEco 实时视频（默认）", exact: true }).count(), 1);
+    assert.equal(await deviceSettings.getByRole("option", { name: "原生实时视频（内置，无需 DevEco）", exact: true }).count(), 1);
     assert.equal(await deviceSettings.getByRole("combobox", { name: "投屏来源", exact: true }).inputValue(), "deveco");
     assert.ok(await deviceSettings.locator(".settingsPanel").evaluate(panel => {
       const outer = panel.closest('[role="dialog"]').getBoundingClientRect(); const inner = panel.getBoundingClientRect();
@@ -217,9 +218,15 @@ test("Harmony workspace keeps device tools, drafts and fenced control in a full 
     await page.getByRole("button", { name: "刷新设备", exact: true }).click();
     await page.waitForFunction(() => document.querySelector('.toolbarActions button[title^="截图"]')?.disabled);
     assert.equal(await page.getByRole("combobox", { name: "选择设备", exact: true }).inputValue(), "phone", "disconnect preserves device identity");
+    phonePresent = false;
+    await page.getByRole("button", { name: "刷新设备", exact: true }).click();
+    await page.getByRole("option", { name: "HUAWEI Mate 70 Pro · 已断连", exact: true }).waitFor({ state: "attached" });
+    phonePresent = true; phoneName = undefined;
     phoneState = "online";
     await page.getByRole("button", { name: "刷新设备", exact: true }).click();
     await page.waitForFunction(() => !document.querySelector('.toolbarActions button[title^="截图"]')?.disabled);
+    assert.match(await page.locator('[aria-label="选择设备"] option:checked').textContent(), /HUAWEI Mate 70 Pro/, "partial reconnect retains the model label");
+    phoneName = "HUAWEI Mate 70 Pro";
     screenshotPreview = await page.evaluate(() => { const c=document.createElement('canvas');c.width=200;c.height=400;const g=c.getContext('2d');g.fillStyle='#eee';g.fillRect(0,0,200,400);g.fillStyle='#333';g.font='20px sans-serif';g.fillText('Fixture',30,70);return c.toDataURL().split(',')[1]; }).then(value => Buffer.from(value,'base64'));
     if (process.env.PIORA_HARMONY_SCREENSHOT_DIR) { await mkdir(process.env.PIORA_HARMONY_SCREENSHOT_DIR, { recursive: true }); await page.locator("#root").screenshot({ path: path.join(process.env.PIORA_HARMONY_SCREENSHOT_DIR,"workbench.png") }); }
     const captureCount = () => requests.filter(r => r.action === "capture_screenshot").length;

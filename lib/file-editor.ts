@@ -76,7 +76,7 @@ function assertEditableText(bytes: Buffer): void {
 function assertWithinSizeLimit(size: number): void {
   if (size > TEXT_EDIT_MAX_BYTES) {
     throw new TextFileEditError(
-      "File is too large to edit (>256KB)",
+      "File is too large to edit (>1MB)",
       413,
       "FILE_TOO_LARGE",
     );

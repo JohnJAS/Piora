@@ -3,6 +3,46 @@ import { dirname, isAbsolute, join } from "node:path";
 import { homedir } from "node:os";
 import JSZip from "jszip";
 import { readBoundedRegularFile } from "./bounded-file";
+import { harmonyRuntimeAsset } from "./asset-path";
+
+const bundledDirectory = () => harmonyRuntimeAsset("node_modules", "hypium-driver", "build", "lib", "resource");
+const bundledName = /^libscrcpy_server-(\d+\.\d+(?:\.\d+)?)-\d+\.so$/;
+
+/** Only versioned Unix-socket libraries; legacy numbered libraries use another transport. */
+export function selectBundledVideoLibrary(names: string[], deviceVersion: string): string | undefined {
+  const candidates = names.filter(name => bundledName.test(name));
+  const selected = selectVideoLibrary(candidates.map(name => name.replace("libscrcpy_server-", "libscrcpy/libscrcpy_server_unix_").replace(/\.so$/, ".z.so")), deviceVersion);
+  return selected?.replace("libscrcpy/libscrcpy_server_unix_", "libscrcpy_server-").replace(/\.z\.so$/, ".so");
+}
+
+/** An installed IDE is optional: the existing Hypium dependency carries the same capture protocol. */
+export async function findDebugVideoSource(hdcPath: string, findInstalled = findDevEcoVideoJar, resources = bundledDirectory()): Promise<string | undefined> {
+  const jar = await findInstalled(hdcPath).catch(() => undefined);
+  if (jar) return jar;
+  const names = await readdir(resources).catch(() => []);
+  return names.some(name => bundledName.test(name)) ? resources : undefined;
+}
+
+function validateVideoLibrary(bytes: Buffer): Buffer {
+  if (bytes.length < 64 || bytes.subarray(0, 4).toString("hex") !== "7f454c46" || bytes[4] !== 2 || bytes[5] !== 1 || bytes.readUInt16LE(18) !== 183) {
+    throw new Error("Debug video library is not a little-endian ARM64 ELF file");
+  }
+  return bytes;
+}
+
+async function readBundledVideoLibrary(resources: string, deviceVersion: string): Promise<Buffer> {
+  const name = selectBundledVideoLibrary(await readdir(resources), deviceVersion);
+  if (!name) throw new Error("The bundled runtime has no compatible debug video library");
+  return validateVideoLibrary(await readBoundedRegularFile(join(resources, name), 4 * 1024 * 1024));
+}
+
+export async function readDebugVideoLibrary(source: string, deviceVersion: string): Promise<Buffer> {
+  const info = await lstat(source).catch(() => undefined);
+  if (info?.isDirectory() && !info.isSymbolicLink()) return readBundledVideoLibrary(source, deviceVersion);
+  // A stale/older IDE installation must not hide a usable bundled runtime.
+  try { return await readDevEcoVideoLibrary(source, deviceVersion); }
+  catch { return readBundledVideoLibrary(bundledDirectory(), deviceVersion); }
+}
 
 const version = (name: string) => /(?:unix_|server-)(\d+\.\d+(?:\.\d+)?)-/.exec(name)?.[1];
 export function selectVideoLibrary(names: string[], deviceVersion: string): string | undefined {
@@ -50,8 +90,5 @@ export async function readDevEcoVideoLibrary(jar: string, deviceVersion: string)
     });
     stream.on("error", reject); stream.on("end", () => { if (!failed) resolve(Buffer.concat(chunks)); }); stream.resume();
   });
-  if (bytes.length < 64 || bytes.subarray(0, 4).toString("hex") !== "7f454c46" || bytes[4] !== 2 || bytes.readUInt16LE(18) !== 183) {
-    throw new Error("SDK video library is not an ARM64 ELF file");
-  }
-  return bytes;
+  return validateVideoLibrary(bytes);
 }

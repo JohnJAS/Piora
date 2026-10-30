@@ -568,7 +568,7 @@ export async function GET(
         return streamFile(filePath, stat, documentMime, request.headers.get("range"));
       }
       if (stat.size > TEXT_PREVIEW_MAX_BYTES) {
-        return NextResponse.json({ error: "File too large for preview (>256KB)" }, { status: 413 });
+        return NextResponse.json({ error: "File too large for preview (>1MB)" }, { status: 413 });
       }
       const snapshot = readTextFileSnapshot(filePath);
       const language = getLanguage(filePath);

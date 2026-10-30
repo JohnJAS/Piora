@@ -13,7 +13,7 @@ import { PioraMessageHost, showPioraMessage } from "../PioraMessage";
 import { HarmonySettingsSurface } from "./harmony/HarmonySettingsSurface";
 import { HarmonyStorageSettings } from "../HarmonyStorageSettings";
 import dynamic from "next/dynamic";
-import { formatHarmonyDeviceLabel } from "@/lib/harmony/device-label";
+import { formatHarmonyDeviceLabel, rememberHarmonyDeviceIdentity, type HarmonyDeviceLabelSource } from "@/lib/harmony/device-label";
 import { currentHarmonyResponseSample, normalizeHarmonyResponseSample, type HarmonyResponseSample } from "@/lib/harmony/device-connection";
 import { HarmonyRequestError } from "@/lib/harmony/request-error";
 import { AliIcon } from "../AliIcon";
@@ -200,8 +200,9 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, cwd
   const [profile, setProfile] = useState<RuntimeProfile | "web">("web");
   const [devices, setDevices] = useState<HarmonyDevice[]>([]);
   const deviceOrder = useRef(new Map<string, number>());
+  const deviceIdentities = useRef(new Map<string, HarmonyDeviceLabelSource>());
   const orderedDevices = useCallback((value: unknown) => {
-    const next = normalizeDevices(value);
+    const next = normalizeDevices(value).map(device => rememberHarmonyDeviceIdentity(deviceIdentities.current, device));
     for (const device of next) if (!deviceOrder.current.has(device.serial)) deviceOrder.current.set(device.serial, deviceOrder.current.size);
     return next.sort((a, b) => Number(b.state === "online") - Number(a.state === "online") || deviceOrder.current.get(a.serial)! - deviceOrder.current.get(b.serial)!);
   }, []);
@@ -267,6 +268,9 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, cwd
     online: Boolean(selectedOnline), holder, chinese, controlStatus,
   });
   const mirror = useHarmonyWindow();
+  useEffect(() => {
+    if (mirror?.open && mirror.presentation === "sidebar" && mirror.serial) setSelectedSerial(mirror.serial);
+  }, [mirror?.open, mirror?.presentation, mirror?.serial]);
   const [mirrorPresentation, setMirrorPresentation] = useState<"floating" | "sidebar">("floating");
   useEffect(() => { if (mirror?.presentation) setMirrorPresentation(mirror.presentation); }, [mirror?.presentation]);
   const openSelectedMirror = async () => {
@@ -564,7 +568,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, cwd
           if (window.piDesktop?.harmonyMirror) void window.piDesktop.harmonyMirror.selectDevice(nextSerial).catch(failure => setError(String(failure)));
           else { clearControl(); setSelectedSerial(nextSerial); setTree(null); }
         }}>
-          {selectedSerial && !devices.some(device => device.serial === selectedSerial) ? <option value={selectedSerial}>{selectedSerial} · {copy("已断连", "Disconnected")}</option> : null}
+          {selectedSerial && !devices.some(device => device.serial === selectedSerial) ? <option value={selectedSerial}>{formatHarmonyDeviceLabel(deviceIdentities.current.get(selectedSerial) ?? { serial: selectedSerial })} · {copy("已断连", "Disconnected")}</option> : null}
           {!devices.length && !selectedSerial ? <option value="">{copy("没有设备", "No device")}</option> : null}
           {devices.map((device) => {
             const label = formatHarmonyDeviceLabel(device);
@@ -636,7 +640,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, cwd
       <div className={styles.settingGroup}>
         <div className={styles.settingCopy}><strong>{copy("投屏来源", "Video provider")}</strong><small>{copy("默认复用 DevEco 实时视频；锁屏与解锁使用同一通道，侧栏与悬浮窗保持一致。需要兼容的 DevEco 服务与已授权的 HDC 连接。", "Use DevEco live video by default, with the same stream while locked or unlocked in both docked and floating views. Requires a compatible DevEco service and authorized HDC connection.")}</small></div>
         <select aria-label={copy("投屏来源", "Video provider")} value={videoProvider} onChange={event => setVideoProvider(event.target.value as "deveco" | "bundled" | "hos-scrcpy")}>
-          <option value="deveco">{copy("DevEco 实时视频（默认）", "DevEco live video (default)")}</option><option value="bundled">{copy("旧版自动兼容（可回退手机组件）", "Legacy automatic (allow phone component fallback)")}</option><option value="hos-scrcpy">HOScrcpy</option>
+          <option value="deveco">{copy("原生实时视频（内置，无需 DevEco）", "Native live video (built in, no DevEco required)")}</option><option value="bundled">{copy("旧版自动兼容（可回退手机组件）", "Legacy automatic (allow phone component fallback)")}</option><option value="hos-scrcpy">HOScrcpy</option>
         </select>
         {videoProvider === "hos-scrcpy" ? <>
           <label>{copy("本地 dsh-hos-scrcpy 包目录", "Local dsh-hos-scrcpy package directory")}<input value={hosPackageDirectory} onChange={event => setHosPackageDirectory(event.target.value)} /></label>

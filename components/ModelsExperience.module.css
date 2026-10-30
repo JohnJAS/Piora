@@ -82,10 +82,37 @@
 .advanced { margin: 20px 0 10px; }
 .advanced summary { cursor: pointer; margin-bottom: 16px; }
 .check { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
-.importRow { border-bottom: 1px solid var(--border); padding: 16px 0; }
-.choice { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
-.choice small { color: var(--text-muted); overflow-wrap: anywhere; }
-.choice strong { overflow-wrap: anywhere; }
+.importDialog { width: min(640px, 100%); max-height: min(600px, calc(100dvh - 64px)); padding: 20px; border-radius: 13px; background: var(--bg); }
+.importDialog > :not(.importBody) { flex-shrink: 0; min-width: 0; }
+.importDialog .dialogTitle { margin-bottom: 4px; }
+.importDialog .dialogTitle h3 { font-size: var(--text-md); }
+.importHint { margin: 0 0 18px; color: var(--text-muted); font-size: var(--text-xs); line-height: 1.6; }
+.importToolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.importSearch { box-sizing: border-box; width: 100%; min-width: 0; height: 34px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-panel); color: var(--text); font: inherit; }
+.importCount { flex-shrink: 0; color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.importColumns, .importRow { display: grid; grid-template-columns: minmax(0, 1fr) 108px 108px; align-items: center; gap: 12px; padding: 10px 12px; }
+.importColumns { border: 1px solid var(--border); border-radius: 8px 8px 0 0; background: var(--bg-panel); color: var(--text-muted); font-size: var(--text-xs); }
+.importColumns > span { text-align: right; padding-right: 10px; }
+.importSelectAll, .importChoice { display: flex; align-items: center; gap: 10px; min-width: 0; cursor: pointer; }
+.importSelectAll input, .importChoice input { width: 14px; height: 14px; flex-shrink: 0; margin: 0; accent-color: var(--text); }
+.importSelectAll span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.importBody { max-height: 360px; padding: 0; border: 1px solid var(--border); border-top: 0; border-radius: 0 0 8px 8px; overscroll-behavior: contain; scrollbar-width: thin; }
+.importRow { min-width: 0; min-height: 58px; background: var(--bg); }
+.importRow + .importRow { border-top: 1px solid var(--border); }
+.importRow:hover { background: var(--bg-hover); }
+.importIdentity { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.importIdentity strong, .importIdentity small { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.importIdentity strong { font-size: var(--text-sm); font-weight: 500; }
+.importIdentity small { color: var(--text-muted); font-size: var(--text-xs); font-family: var(--font-mono); }
+.importLimit { display: flex; justify-content: flex-end; align-items: center; min-width: 0; margin: 0; }
+.importLimitLabel { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.importLimit input { box-sizing: border-box; width: 100%; min-width: 0; height: 32px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-panel); color: var(--text); font: inherit; font-variant-numeric: tabular-nums; text-align: right; }
+.importLimit input[aria-invalid=true] { border-color: var(--status-failed, #dc2626); }
+.importLimit input:disabled { opacity: .45; }
+.importValue { margin-right: 10px; padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); font-size: var(--text-xs); font-family: var(--font-mono); }
+.importFooter { padding-top: 16px; }
+.importSummary { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; color: var(--text-muted); font-size: var(--text-xs); }
+.importError { margin: 10px 0 0; max-height: 64px; overflow-y: auto; }
 @container model-page (max-width: 680px) {
   .header { margin-bottom: 20px; }
   .header h2 { font-size: calc(var(--ui-font-size) * 1.714); }
@@ -104,4 +131,18 @@
 @media (max-width: 760px) {
   .backdrop { padding: 12px; }
   .dialog { max-height: calc(100dvh - 24px); padding: 16px; }
+  .importDialog { max-height: min(600px, calc(100dvh - 48px)); }
+}
+@media (max-width: 520px) {
+  .importToolbar { gap: 8px; }
+  .importColumns { grid-template-columns: minmax(0, 1fr); }
+  .importColumns > span { display: none; }
+  .importRow { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+  .importChoice { grid-column: 1 / -1; }
+  .importLimit { flex-direction: column; align-items: stretch; gap: 5px; }
+  .importLimitLabel { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-size: var(--text-xs); color: var(--text-muted); }
+  .importLimit input { text-align: left; }
+  .importValue { align-self: flex-start; margin: 0; }
+  .importFooter { flex-wrap: wrap; }
+  .importFooter > .importSummary { flex-basis: 100%; margin-bottom: 3px; }
 }

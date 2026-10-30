@@ -1,4 +1,4 @@
-export const TEXT_PREVIEW_MAX_BYTES = 256 * 1024;
+export const TEXT_PREVIEW_MAX_BYTES = 1024 * 1024;
 export const IMAGE_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 export const DOCX_PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
 
@@ -75,7 +75,7 @@ export function isDocumentPreviewPath(filePath: string): boolean {
 
 /**
  * Select the UI used to open a file. The text viewer still validates the
- * actual bytes as UTF-8 and enforces the 256 KiB limit before it enables the
+ * actual bytes as UTF-8 and enforces the 1 MiB limit before it enables the
  * editor; this extension-level routing does not weaken those server checks.
  */
 export function getFileViewerKind(filePath: string): FileViewerKind {

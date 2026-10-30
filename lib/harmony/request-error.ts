@@ -23,14 +23,14 @@ export class HarmonyRequestError extends Error {
 
   messageFor(chinese: boolean): string {
     if (this.reason === "debug-video-sdk-missing") return chinese
-      ? "未找到可用的 DevEco 实时视频服务。请安装兼容手机系统的 DevEco Studio，或打开 DevEco 设备投屏后重新连接。"
-      : "No DevEco live video service is available. Install a compatible DevEco Studio or open its device mirror, then reconnect.";
+      ? "未找到原生投屏运行时。请修复或更新 Piora 后重新连接；正常安装无需额外安装 DevEco Studio。"
+      : "The native video runtime is missing. Repair or update Piora and reconnect; a normal installation does not require DevEco Studio.";
     if (this.reason === "debug-video-busy") return chinese
       ? "其他开发工具正在使用这台手机的视频通道。请关闭其投屏后重新连接，Piora 不会强行停止其他工具。"
       : "Another development tool is using this phone's video channel. Close its mirror and reconnect.";
     if (this.reason === "debug-video-unavailable") return chinese
-      ? "HDC 实时视频通道连接失败。请确认本机 DevEco Studio 为兼容手机系统的新版，然后重新连接；此通道无需在手机上打开 Piora 共享屏幕。"
-      : "The HDC video channel failed. Update DevEco Studio to a version compatible with the phone and reconnect. This channel does not need the phone's Piora sharing app.";
+      ? "HDC 实时视频通道连接失败。请重新连接设备并更新 Piora；若设备系统较新，也可使用兼容版本的 DevEco Studio 扩展支持。此通道无需在手机上打开 Piora 共享屏幕。"
+      : "The HDC video channel failed. Reconnect the device and update Piora. A compatible DevEco Studio can extend support for newer device systems. This channel does not need the phone's Piora sharing app.";
     if (this.code === "CAPABILITY_UNAVAILABLE" && ["mirror-awaiting-video", "mirror-stream-closed", "mirror-component-missing"].includes(this.reason ?? "")) return chinese
       ? "实时视频尚未建立。请点击“启用实时投屏”，在手机上确认屏幕共享后重新连接。"
       : "Live video has not started. Enable live video, confirm screen sharing on the phone, then reconnect.";

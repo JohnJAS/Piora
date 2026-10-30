@@ -53,7 +53,7 @@ async function mountLiveFrame(videoResponse, decoderClass, geometryResponse, opt
   };
   const exports = {};
   runInNewContext(ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, {
-    exports, window, document: { hidden: false }, AbortController,
+    exports, window, document: options.document ?? { hidden: false }, AbortController,
     performance: options.clock ? { now: options.clock.now } : performance,
     Uint8Array, Uint8ClampedArray, DataView, Blob,
     VideoDecoder: decoderClass,
@@ -908,5 +908,76 @@ test("SDK startup lasting twenty seconds survives the HTTP phase and keeps a sho
     assert.equal(signal.aborted, false);
     assert.ok([...hook.timers.values()].some(timer => timer.ms === 15_000), "playback still has a bounded short no-frame deadline");
     assert.equal(hook.calls.filter(url => url.includes("/frame?")).length, 0);
+  } finally { hook.cleanup(); await hook.flush(); }
+});
+
+
+test("minimized H264 viewing survives suspended display ticks and restores fresh pixels without reconnect", async () => {
+  const document = { hidden: false }, scheduled = new Map(), clock = virtualClock();
+  let decoder, connections = 0, closed = 0;
+  class Decoder {
+    static async isConfigSupported(config) { return { supported: true, config }; }
+    state = "unconfigured"; decodeQueueSize = 0;
+    constructor(callbacks) { this.callbacks = callbacks; decoder = this; }
+    configure() { this.state = "configured"; }
+    decode() { this.frame(0); }
+    frame(id) { this.callbacks.output({ id, displayWidth: 100, displayHeight: 200, close() { closed++; } }); }
+    close() { this.state = "closed"; }
+  }
+  const hook = await mountLiveFrame(async () => {
+    connections++;
+    return new Response(new ReadableStream({ start(controller) { controller.enqueue(capacityPackets(["key"])); } }));
+  }, Decoder, undefined, { document, clock, hookOptions: { allowFrameFallback: false, calibrateGeometry: false }, animationFrame: {
+    requestAnimationFrame(callback) { scheduled.set(1, callback); return 1; }, cancelAnimationFrame(id) { scheduled.delete(id); },
+  } });
+  try {
+    assert.equal(scheduled.size, 1);
+    document.hidden = true;
+    for (let i = 1; i <= 5; i++) { await clock.advance(5000); decoder.frame(i); }
+    assert.equal(connections, 1); assert.equal(scheduled.size, 0);
+    assert.equal(hook.painted.at(-1).id, 5); assert.equal(closed, 6);
+    document.hidden = false; decoder.frame(6);
+    const tick = scheduled.get(1); scheduled.clear(); tick();
+    assert.equal(hook.painted.at(-1).id, 6); assert.equal(connections, 1);
+    assert.equal(hook.states[1], "live");
+  } finally { hook.cleanup(); await hook.flush(); }
+});
+
+
+test("occluded visible windows keep the newest frame without rAF and reject late compositor callbacks", async () => {
+  const scheduled = new Map(), callbacks = [], clock = virtualClock();
+  let decoder, connections = 0, closed = 0, nextTick = 0;
+  class Decoder {
+    static async isConfigSupported(config) { return { supported: true, config }; }
+    state = "unconfigured"; decodeQueueSize = 0;
+    constructor(value) { this.callbacks = value; decoder = this; }
+    configure() { this.state = "configured"; }
+    decode() { this.frame(0); }
+    frame(id) { this.callbacks.output({ id, displayWidth: 100, displayHeight: 200, close() { closed++; } }); }
+    close() { this.state = "closed"; }
+  }
+  const hook = await mountLiveFrame(async () => {
+    connections++;
+    return new Response(new ReadableStream({ start(controller) { controller.enqueue(capacityPackets(["key"])); } }));
+  }, Decoder, undefined, { document: { hidden: false }, clock,
+    hookOptions: { allowFrameFallback: false, calibrateGeometry: false }, animationFrame: {
+      requestAnimationFrame(callback) { callbacks.push(callback); scheduled.set(++nextTick, callback); return nextTick; },
+      cancelAnimationFrame(id) { scheduled.delete(id); },
+    },
+  });
+  try {
+    // No animation callback is delivered for twenty seconds, while video arrives.
+    for (let i = 1; i <= 200; i++) { await clock.advance(100); decoder.frame(i); }
+    await clock.advance(34);
+    assert.equal(connections, 1); assert.equal(hook.painted.at(-1).id, 200);
+    assert.equal(closed, 201); assert.equal(scheduled.size, 0);
+    const paints = hook.painted.length;
+    for (const callback of callbacks) callback();
+    assert.equal(hook.painted.length, paints, "late display callbacks cannot repaint obsolete frames");
+    decoder.frame(201); const latest = [...scheduled.values()][0]; latest();
+    assert.equal(hook.painted.at(-1).id, 201); assert.equal(connections, 1);
+    decoder.frame(202); hook.cleanup(); await clock.advance(20000);
+    assert.equal(hook.painted.at(-1).id, 201, "teardown cancels the fallback paint timer");
+    assert.equal(closed, 203);
   } finally { hook.cleanup(); await hook.flush(); }
 });

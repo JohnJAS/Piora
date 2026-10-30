@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
 import styles from "./ModelRetrySettings.module.css";
+import settingsStyles from "./SettingsDialog.module.css";
 
 interface LoadedSettings {
   enabled: boolean;
@@ -124,15 +125,20 @@ export function ModelRetrySettings() {
 
       {draft ? (
         <div className={styles.fields}>
-          <label className={styles.toggle}>
-            <input
-              type="checkbox"
-              checked={draft.enabled}
+          <div className={styles.toggle}>
+            <span id="model-retry-enabled-label">{t("modelRetry.enabled")}</span>
+            <button
+              type="button"
+              className={settingsStyles.switch}
+              role="switch"
+              aria-checked={draft.enabled}
+              aria-labelledby="model-retry-enabled-label"
               disabled={busy}
-              onChange={(event) => update({ enabled: event.target.checked })}
-            />
-            {t("modelRetry.enabled")}
-          </label>
+              onClick={() => update({ enabled: !draft.enabled })}
+            >
+              <span />
+            </button>
+          </div>
           <label>
             <span>{t("modelRetry.maxRetries")}</span>
             <input type="number" min={0} max={10} value={draft.maxRetries} disabled={busy} onChange={(event) => update({ maxRetries: event.target.value })} />

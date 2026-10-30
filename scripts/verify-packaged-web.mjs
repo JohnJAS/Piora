@@ -155,6 +155,8 @@ const requiredPaths = [
   "node_modules/json5/package.json",
   "node_modules/@sqlite.org/sqlite-wasm/package.json",
   "node_modules/hypium-driver/build/lib/resource/uitest_agent_v1.2.2.so",
+  "node_modules/hypium-driver/build/lib/resource/libscrcpy_server-6.3.1-20260113.so",
+  "node_modules/hypium-driver/build/lib/resource/libscrcpy_server-6.4-20260113.so",
   "node_modules/xmldom/package.json",
 ];
 

@@ -36,9 +36,11 @@ async function jsonRequest<T>(url: string, options?: RequestInit): Promise<T> {
 export function ModelsExperience({ cwd, onClose, onModelsChanged, embedded = false }: { cwd?: string; onClose: () => void; onModelsChanged?: () => void; embedded?: boolean }) {
   const { locale } = useI18n();
   const c = { ...(locale === "zh-CN" ? copy.zh : copy.en), ...(locale === "zh-CN" ? {
+    importHint: "选择要添加的模型，可直接补全缺失参数。", selectShown: "全选当前结果", pendingLimits: "待补全", importCount: "个模型",
     title: "模型设置", subtitle: "管理模型供应商，配置后可在聊天时选择使用。", add: "添加供应商", custom: "创建自定义供应商", name: "供应商名称", address: "Base URL", key: "API Key", protocol: "API 格式", context: "上下文窗口", output: "最大输出 Token", edit: "编辑模型配置", save: "保存", fetch: "一键识别可用模型", fetching: "正在识别…", limitsHint: "接口未提供完整参数，请按服务商文档补全以下字段。", endpointOnly: "以下模型来自当前接口。识别模型列表不会发送对话测试请求。",
     providers: "服务商", customGroup: "自定义供应商", other: "其他", models: "模型列表", newName: "新供应商", smart: "智能配置", advanced: "高级配置", reset: "重置表单", disableProvider: "禁用供应商", enableProvider: "启用供应商", refresh: "刷新", modelEmpty: "当前没有配置模型，添加模型后可在聊天中使用。", importTitle: "识别可用模型", importModels: "添加所选模型", chooseModel: "选择模型", reasoning: "支持深度思考", unsaved: "未保存", discardTitle: "放弃未保存的修改？", discardMessage: "切换后，本次填写的内容不会保存。", discardConfirm: "放弃修改", headers: "请求头 (JSON)", compat: "兼容配置 (JSON)", invalidJson: "请输入有效的 JSON 对象。"
   } : {
+    importHint: "Choose models to add and complete any missing parameters.", selectShown: "Select all results", pendingLimits: "Incomplete", importCount: "models",
     subtitle: "Manage model providers and choose their models in chat.", add: "Add provider", custom: "Create custom provider", name: "Provider name", address: "Base URL", key: "API Key", protocol: "API format", context: "Context window", output: "Max output tokens", edit: "Edit model configuration", save: "Save", fetch: "Detect available models", fetching: "Detecting…", limitsHint: "The endpoint did not provide all parameters. Complete the missing fields using your provider's documentation.", endpointOnly: "These models come from the current endpoint. Discovery does not send a chat test request.",
     providers: "Providers", customGroup: "Custom providers", other: "Other", models: "Models", newName: "New provider", smart: "Smart configuration", advanced: "Advanced configuration", reset: "Reset form", disableProvider: "Disable provider", enableProvider: "Enable provider", refresh: "Refresh", modelEmpty: "No models configured. Add a model to use it in chat.", importTitle: "Available models", importModels: "Add selected models", chooseModel: "Choose a model", reasoning: "Reasoning", unsaved: "Unsaved", discardTitle: "Discard unsaved changes?", discardMessage: "Your changes will be lost when you switch.", discardConfirm: "Discard", headers: "Request headers (JSON)", compat: "Compatibility (JSON)", invalidJson: "Enter a valid JSON object."
   }) };
@@ -176,7 +178,7 @@ export function ModelsExperience({ cwd, onClose, onModelsChanged, embedded = fal
   </div>;
 }
 
-type Text = { [K in keyof typeof copy.zh]: string } & Record<"providers" | "customGroup" | "other" | "models" | "newName" | "smart" | "advanced" | "reset" | "disableProvider" | "enableProvider" | "refresh" | "modelEmpty" | "importTitle" | "importModels" | "chooseModel" | "reasoning" | "unsaved" | "headers" | "compat" | "invalidJson" | "discardTitle" | "discardMessage" | "discardConfirm", string>;
+type Text = { [K in keyof typeof copy.zh]: string } & Record<"providers" | "customGroup" | "other" | "models" | "newName" | "smart" | "advanced" | "reset" | "disableProvider" | "enableProvider" | "refresh" | "modelEmpty" | "importTitle" | "importModels" | "chooseModel" | "reasoning" | "unsaved" | "headers" | "compat" | "invalidJson" | "discardTitle" | "discardMessage" | "discardConfirm" | "importHint" | "selectShown" | "pendingLimits" | "importCount", string>;
 type SaveProvider = (name: string, provider: ProviderEntry, additions: ModelEntry[], original?: string) => Promise<boolean>;
 type GlyphName = "plus" | "edit" | "trash" | "test" | "refresh" | "star" | "close" | "eye";
 function Glyph({ name }: { name: GlyphName }) {
@@ -317,10 +319,10 @@ function BuiltinPanel({ c, id, name, api, oauth, scope, busy, onRefresh, onScope
     <div className={styles.listHeading}>{c.models}</div><div className={styles.modelList}>{models.length ? models.map(model => <div className={styles.modelRow} key={model.id}><div className={styles.modelLine}><div className={styles.modelIdentity}>{model.name || model.id}</div>{scope?.effectiveDefault?.provider === id && scope.effectiveDefault.modelId === model.id ? <span title={c.defaultModel}>★</span> : model.enabled && <IconButton label={`${c.setDefault} ${model.id}`} icon="star" disabled={busy} onClick={() => onScope("set-default", model.id)} />}<Toggle checked={model.enabled} label={`${model.enabled ? c.hideModel : c.enable} ${model.id}`} disabled={busy || scope?.projectOverride} onChange={() => onScope(model.enabled ? "hide" : "restore", model.id)} /></div></div>) : <p className={styles.empty}>{c.modelEmpty}</p>}</div></>;
 }
 
-function Modal({ title, children, onClose, busy, c }: { title: string; children: React.ReactNode; onClose: () => void; busy: boolean; c: Text }) {
+function Modal({ title, children, onClose, busy, c, className = "" }: { title: string; children: React.ReactNode; onClose: () => void; busy: boolean; c: Text; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   useFocusTrap(ref, true, { onEscape: busy ? undefined : onClose });
-  return <div className={styles.backdrop}><div className={styles.dialog} ref={ref} role="dialog" aria-modal="true" aria-label={title}><div className={styles.dialogTitle}><h3>{title}</h3><IconButton label={c.close} icon="close" disabled={busy} onClick={onClose} /></div>{children}</div></div>;
+  return <div className={styles.backdrop}><div className={`${styles.dialog} ${className}`} ref={ref} role="dialog" aria-modal="true" aria-label={title}><div className={styles.dialogTitle}><h3>{title}</h3><IconButton label={c.close} icon="close" disabled={busy} onClick={onClose} /></div>{children}</div></div>;
 }
 function LimitInputs({ model, c, onChange }: { model: ModelEntry; c: Text; onChange: (patch: Partial<ModelEntry>) => void }) {
   return <><label className={styles.field}><span>{c.context}</span><input type="number" min="1" value={model.contextWindow ?? ""} onChange={e => onChange({ contextWindow: parseModelLimitDraft(e.target.value) })} /></label><label className={styles.field}><span>{c.output}</span><input type="number" min="1" value={model.maxTokens ?? ""} onChange={e => onChange({ maxTokens: parseModelLimitDraft(e.target.value) })} /></label></>;
@@ -398,27 +400,83 @@ function ImportDialog({ c, incoming, existingIds, busy, onClose, onSave, saveErr
   c: Text; incoming: DiscoveredModel[]; existingIds: string[]; busy: boolean; saveError: string | null; onClose: () => void; onSave: (models: ModelEntry[]) => Promise<void>;
 }) {
   const [models, setModels] = useState<ModelEntry[]>(() => incoming.filter(m => !existingIds.includes(m.id)));
+  // Keep fields mounted after the last missing value is entered so focus and
+  // edits survive validation, selection changes and search round trips.
+  const [editableIds] = useState(() => new Set(models.filter(modelLimitProblem).map(m => m.id)));
   const [selected, setSelected] = useState(() => new Set(models.map(m => m.id)));
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const selectAllRef = useRef<HTMLInputElement>(null);
   const chosen = models.filter(m => selected.has(m.id));
+  const pendingCount = chosen.filter(modelLimitProblem).length;
+  const filtered = models.filter(m => `${m.name ?? ""} ${m.id}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const selectedShown = filtered.filter(m => selected.has(m.id)).length;
+  const allShownSelected = filtered.length > 0 && selectedShown === filtered.length;
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = selectedShown > 0 && !allShownSelected;
+  }, [selectedShown, allShownSelected]);
+  useEffect(() => {
+    if (error) bodyRef.current?.querySelector<HTMLInputElement>('input[aria-invalid="true"]')?.focus();
+  }, [error]);
+  const select = (ids: string[], checked: boolean) => {
+    setSelected(current => {
+      const next = new Set(current);
+      for (const id of ids) { if (checked) next.add(id); else next.delete(id); }
+      return next;
+    });
+    setError(null);
+  };
   const save = async () => {
     if (!chosen.length) { setError(c.chooseOne); return; }
-    if (chosen.some(modelLimitProblem)) { setError(c.invalidLimits); return; }
+    if (pendingCount) { setSearch(""); setError(c.invalidLimits); return; }
     setError(null);
     await onSave(chosen);
   };
-  return <Modal title={c.importTitle} c={c} busy={busy} onClose={onClose}>
-    <p className={styles.hint}>{c.endpointOnly}</p>
-    <div className={styles.dialogBody}><fieldset disabled={busy} className={styles.dialogFields}>
-      <input aria-label={c.search} placeholder={c.search} value={search} onChange={e => setSearch(e.target.value)} />
-      {models.length === 0 && <p className={styles.empty}>{incoming.length ? c.duplicate : c.noResults}</p>}
-      {models.filter(m => `${m.name ?? ""} ${m.id}`.toLowerCase().includes(search.toLowerCase())).map(model => <div className={styles.importRow} key={model.id}>
-        <label className={styles.choice}><input type="checkbox" checked={selected.has(model.id)} onChange={e => { const checked = e.target.checked; setSelected(current => { const next = new Set(current); if (checked) next.add(model.id); else next.delete(model.id); return next; }); }} /><strong>{model.name || model.id}</strong><small>{model.id}</small></label>
-        {selected.has(model.id) && modelLimitProblem(model) ? <><p className={styles.hint}>{c.limitsHint}</p><LimitInputs model={model} c={c} onChange={patch => setModels(current => current.map(m => m.id === model.id ? { ...m, ...patch } : m))} /></> : <p className={styles.hint}>{c.context}: {model.contextWindow ?? "—"} · {c.output}: {model.maxTokens ?? "—"}</p>}
-      </div>)}
-      {(error || saveError) && <div className={styles.error} role="alert"><ModelErrorText value={error || saveError || ""} /></div>}
-    </fieldset></div>
-    <div className={styles.dialogFooter}><span className={styles.hint}>{c.selected} {selected.size}</span><button className={styles.quiet} disabled={busy} onClick={onClose}>{c.cancel}</button><button className={styles.primary} disabled={busy || !selected.size} onClick={() => void save()}>{busy ? c.saving : c.importModels}</button></div>
+  return <Modal title={c.importTitle} c={c} busy={busy} onClose={onClose} className={styles.importDialog}>
+    <p className={styles.importHint}>{c.importHint}</p>
+    <div className={styles.importToolbar}>
+      <input className={styles.importSearch} type="search" aria-label={c.search} placeholder={c.search} value={search} disabled={busy} onChange={e => setSearch(e.target.value)} />
+      <span className={styles.importCount}>{filtered.length} / {models.length} {c.importCount}</span>
+    </div>
+    <div className={styles.importColumns}>
+      <label className={styles.importSelectAll}><input ref={selectAllRef} type="checkbox" aria-label={c.selectShown} checked={allShownSelected} disabled={busy || !filtered.length} onChange={e => select(filtered.map(m => m.id), e.target.checked)} /><span>{c.selectShown}</span></label>
+      <span>{c.context}</span><span>{c.output}</span>
+    </div>
+    <div className={`${styles.dialogBody} ${styles.importBody}`} ref={bodyRef}>
+      <fieldset disabled={busy} className={styles.dialogFields}>
+        {!filtered.length && <p className={styles.empty}>{models.length ? c.noSelection : incoming.length ? c.duplicate : c.noResults}</p>}
+        {filtered.map(model => {
+          const checked = selected.has(model.id);
+          const problem = modelLimitProblem(model);
+          return <div className={styles.importRow} key={model.id} data-selected={checked}>
+            <label className={styles.importChoice}>
+              <input type="checkbox" checked={checked} onChange={e => select([model.id], e.target.checked)} />
+              <span className={styles.importIdentity} title={model.name ? `${model.name}\n${model.id}` : model.id}>
+                <strong>{model.name || model.id}</strong>
+                {model.name && model.name !== model.id && <small>{model.id}</small>}
+              </span>
+            </label>
+            {(["contextWindow", "maxTokens"] as const).map(field => {
+              const label = field === "contextWindow" ? c.context : c.output;
+              const value = model[field];
+              return <label className={styles.importLimit} key={field}>
+                <span className={styles.importLimitLabel}>{label}</span>
+                {editableIds.has(model.id) ? <input type="number" min="1" step="1" placeholder="—" disabled={!checked} value={value ?? ""}
+                  aria-invalid={!!error && checked && !!problem && ("field" in problem ? problem.field === field : field === "maxTokens")}
+                  onChange={e => { const next = parseModelLimitDraft(e.target.value); setModels(current => current.map(m => m.id === model.id ? { ...m, [field]: next } : m)); setError(null); }} />
+                  : <span className={styles.importValue} title={`${label}: ${value ?? "—"}`}>{value === undefined ? "—" : value >= 1000000 ? `${Number((value / 1000000).toFixed(1))}M` : value >= 1000 ? `${Number((value / 1000).toFixed(1))}K` : value}</span>}
+              </label>;
+            })}
+          </div>;
+        })}
+      </fieldset>
+    </div>
+    {(error || saveError) && <div className={`${styles.error} ${styles.importError}`} role="alert"><ModelErrorText value={error || saveError || ""} /></div>}
+    <div className={`${styles.dialogFooter} ${styles.importFooter}`}>
+      <div className={styles.importSummary}><span>{c.selected} {selected.size}</span>{pendingCount > 0 && <span>{c.pendingLimits} {pendingCount}</span>}</div>
+      <button className={styles.quiet} disabled={busy} onClick={onClose}>{c.cancel}</button>
+      <button className={styles.primary} disabled={busy || !selected.size} onClick={() => void save()}>{busy ? c.saving : c.importModels}</button>
+    </div>
   </Modal>;
 }

@@ -37,7 +37,7 @@ export function MirrorWindow({ embedded = false, serial: embeddedSerial, active 
     void load(); const timer = setInterval(() => { void load(); }, 2500);
     return () => { controller.abort(); clearInterval(timer); };
   }, [serial]);
-  const live = useHarmonyLiveFrame({ active: active && Boolean(state?.open && (embedded ? state.presentation === "sidebar" : state.presentation !== "sidebar" && !state.minimized)), enabled: device?.state === "online", serial, calibrateGeometry: false,
+  const live = useHarmonyLiveFrame({ active: active && Boolean(state?.open && (embedded ? state.presentation === "sidebar" : state.presentation !== "sidebar")), enabled: device?.state === "online", serial, calibrateGeometry: false,
     generation: device?.generation, canvasRef, chinese, allowFrameFallback: false, fallbackError: copy("画面连接失败", "Could not connect to the device") });
   const media = useHarmonyMedia(serial, state?.ownerId ?? "", Boolean(serial), chinese);
   const canScreenshot = device?.state === "online" && device.capabilities?.screenshot;

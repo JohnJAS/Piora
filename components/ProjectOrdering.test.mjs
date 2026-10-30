@@ -4,7 +4,8 @@ import test from "node:test";
 import { createJiti } from "jiti";
 
 const jiti = createJiti(import.meta.url);
-const { applyProjectOrder, moveProjectRoot } = await jiti.import("./sidebar/sidebar-utils.ts");
+const { applyProjectOrder, moveProjectRoot, reconcileProjectOrder, saveStoredStringList, loadStoredStringList, PROJECT_ORDER_STORAGE_KEY } = await jiti.import("./sidebar/sidebar-utils.ts");
+const { buildSessionProjectGroups } = await jiti.import("../lib/session-project-groups.ts");
 const [sidebar, area, projectList, styles] = await Promise.all([
   readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8"),
   readFile(new URL("./sidebar/SidebarProjectArea.tsx", import.meta.url), "utf8"),
@@ -24,6 +25,51 @@ test("moves a project before or after the hovered project", () => {
   assert.deepEqual(moveProjectRoot(["a", "b", "c"], "a", "c", "before"), ["b", "a", "c"]);
   assert.deepEqual(moveProjectRoot(["a", "b", "c"], "a", "c", "after"), ["b", "c", "a"]);
   assert.deepEqual(moveProjectRoot(["a", "b"], "missing", "b", "after"), ["a", "b"]);
+});
+
+test("keeps first-seen project positions while multiple sessions update", () => {
+  const sessions = [
+    { id: "a1", cwd: "/a", modified: "2026-10-30T01:00:00Z" },
+    { id: "a2", cwd: "/a", modified: "2026-10-30T02:00:00Z" },
+    { id: "b1", cwd: "/b", modified: "2026-10-30T03:00:00Z" },
+    { id: "b2", cwd: "/b", modified: "2026-10-30T04:00:00Z" },
+  ];
+  const getRoot = (group) => group.projectRoot;
+  const order = reconcileProjectOrder([], buildSessionProjectGroups(sessions).map(getRoot));
+  assert.deepEqual(order, ["/b", "/a"]);
+  for (const [index, id] of ["a1", "b1", "a2", "b2"].entries()) {
+    sessions.find((session) => session.id === id).modified = `2026-10-30T0${index + 5}:00:00Z`;
+    const groups = buildSessionProjectGroups(sessions);
+    assert.deepEqual(applyProjectOrder(groups, order, getRoot).map(getRoot), ["/b", "/a"]);
+    assert.equal(reconcileProjectOrder(order, groups.map(getRoot)), order);
+  }
+  assert.match(sidebar, /setProjectOrder\(\(previous\) => reconcileProjectOrder\(previous, projectGroups\.map/);
+});
+
+test("appends new projects once and prunes removed projects without moving remaining rows", () => {
+  const order = reconcileProjectOrder(["b", "a", "removed"], ["new", "a", "b"]);
+  assert.deepEqual(order, ["b", "a", "new"]);
+  assert.equal(reconcileProjectOrder(order, ["new", "b", "a"]), order);
+  assert.deepEqual(reconcileProjectOrder(order, []), []);
+});
+
+test("restores manual project order after reload despite newer activity elsewhere", (t) => {
+  const storage = new Map();
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  t.after(() => {
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+    else delete globalThis.window;
+  });
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { localStorage: {
+    setItem: (key, value) => storage.set(key, value),
+    getItem: (key) => storage.get(key) ?? null,
+    removeItem: (key) => storage.delete(key),
+  } } });
+  const order = reconcileProjectOrder([], ["a", "b", "c"]);
+  const dragged = moveProjectRoot(order, "c", "a", "before");
+  saveStoredStringList(PROJECT_ORDER_STORAGE_KEY, dragged);
+  const restored = loadStoredStringList(PROJECT_ORDER_STORAGE_KEY);
+  assert.deepEqual(reconcileProjectOrder(restored, ["b", "a", "c", "new"]), ["c", "a", "b", "new"]);
 });
 
 test("long-presses project rows to reorder without adding a drag button", () => {

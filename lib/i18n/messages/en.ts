@@ -2650,6 +2650,8 @@ export const enLocale: LocalePlugin = {
     "i18n.mermaidImageActionFailed": "Image action failed. Try again.",
     "i18n.zoomOut": "Zoom out",
     "i18n.zoomIn": "Zoom in",
+    "i18n.maximizeMermaidViewer": "Maximize diagram viewer",
+    "i18n.restoreMermaidViewer": "Restore diagram viewer",
     "i18n.fitToWidth": "Fit to width",
     "i18n.fitToView": "Fit to view",
     "models.savedScopeRefreshFailed": "The configuration was saved, but the model list could not be updated. Check provider authentication and model scope, then retry.",

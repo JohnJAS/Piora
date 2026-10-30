@@ -13,7 +13,7 @@ type Dependencies = {
 };
 type SavedWindow = { scale: MirrorScale; x: number; y: number; width?: number; height?: number };
 type Recording = { recordingId: string; ownerId: string; startedAt: string; systemRecorderStateUnknown?: boolean };
-export class HarmonyWindows {
+class HarmonyDeviceWindow {
   private mirror: BrowserWindow | null = null;
   private messageWindow: BrowserWindow | null = null;
   private message: PioraMessage | null = null;
@@ -30,14 +30,15 @@ export class HarmonyWindows {
   private forceClose = false;
   private prefs = new Map<string, SavedWindow>();
   private state: HarmonyWindowState = { serial: "", scale: 75, alwaysOnTop: false, open: false, minimized: false, ownerId: `desktop-media-${randomUUID()}` };
-  constructor(private deps: Dependencies) {
+  constructor(private deps: Dependencies & { register: (name: string, handler: Handler) => void; selected: () => boolean; prefs: Map<string, SavedWindow> }) {
+    this.prefs = deps.prefs;
     try {
       const items: unknown = JSON.parse(readFileSync(this.preferencePath(), "utf8"));
       if (Array.isArray(items)) for (const item of items.slice(-100)) {
         if (Array.isArray(item) && typeof item[0] === "string" && this.validScale(item[1]?.scale) && Number.isFinite(item[1]?.x) && Number.isFinite(item[1]?.y)) this.prefs.set(item[0], item[1]);
       }
     } catch { /* First launch or invalid preference file. */ }
-    const call = (name: string, run: (event: IpcMainInvokeEvent, value: unknown) => unknown) => ipcMain.handle(`pi:harmony-window-${name}`, (event, value) => {
+    const call = (name: string, run: (event: IpcMainInvokeEvent, value: unknown) => unknown) => deps.register(`pi:harmony-window-${name}`, (event, value) => {
       if (!deps.trustedMain(event) && !this.trustedMirror(event)) throw new Error("Untrusted Harmony window request");
       return run(event, value);
     });
@@ -64,17 +65,16 @@ export class HarmonyWindows {
     });
     call("workbench", () => deps.workbench());
     call("menu", () => this.menu());
-    ipcMain.handle("pi:message-show", (event, value) => {
+    deps.register("pi:message-show", (event, value) => {
       if (!deps.trustedMain(event) && !this.trustedMirror(event)) throw new Error("Untrusted message request");
       return this.showMessage(this.validateMessage(value), this.trustedMirror(event) ? this.mirror : deps.main());
     });
-    ipcMain.handle("pi:message-get", event => this.trustedMessage(event) ? this.message : null);
-    ipcMain.handle("pi:message-finish", (event, id) => {
+    deps.register("pi:message-get", event => this.trustedMessage(event) ? this.message : null);
+    deps.register("pi:message-finish", (event, id) => {
       if (!this.trustedMessage(event)) throw new Error("Untrusted message response");
-      if (id === null || this.message?.actions.some(action => action.id === id)) this.finishMessage?.(id);
+      if (id === null || (typeof id === "string" && this.message?.actions.some(action => action.id === id))) this.finishMessage?.(id);
     });
-    screen.on("display-metrics-changed", () => this.place());
-    screen.on("display-removed", () => this.place());
+
   }
   private preferencePath() { return join(app.getPath("userData"), "harmony-mirror-windows.json"); }
   private validScale(value: unknown): value is MirrorScale { return value === 25 || value === 50 || value === 75 || value === 100; }
@@ -89,16 +89,16 @@ export class HarmonyWindows {
     const result = await this.deps.request<{ artifacts: Array<{ path: string }> }>(`/api/harmony/media/history?serial=${encodeURIComponent(this.state.serial)}`);
     return result.artifacts.some(artifact => artifact.path === path);
   }
-  private trustedMessage(event: IpcMainInvokeEvent) { return this.trusted(event, this.messageWindow, "/desktop-message"); }
+  trustedMessage(event: IpcMainInvokeEvent) { return this.trusted(event, this.messageWindow, "/desktop-message"); }
   private serialized<T>(action: () => Promise<T>): Promise<T> { const next = this.transition.then(action, action); this.transition = next.catch(() => undefined); return next; }
-  private emit() { for (const window of [this.deps.main(), this.mirror]) if (window && !window.isDestroyed()) window.webContents.send("pi:harmony-window-state", this.snapshot()); }
+  emit() { for (const window of [this.deps.selected() ? this.deps.main() : null, this.mirror]) if (window && !window.isDestroyed()) window.webContents.send("pi:harmony-window-state", this.snapshot()); }
   private save() {
     if (!this.mirror || !this.state.serial) return;
     const { x, y, width, height } = this.mirror.getBounds();
     this.prefs.set(this.state.serial, { scale: this.state.scale, x, y, width, height });
     try { const path = this.preferencePath(); writeFileSync(`${path}.tmp`, JSON.stringify([...this.prefs].slice(-100))); renameSync(`${path}.tmp`, path); } catch { /* Window placement remains usable if persistence is unavailable. */ }
   }
-  private async place(saved?: SavedWindow) {
+  async place(saved?: SavedWindow) {
     if (!this.mirror || this.mirror.isDestroyed()) return;
     if (this.placing) { this.pendingPlace = true; if (saved) this.pendingPosition = saved; return; }
     this.placing = true;
@@ -241,4 +241,72 @@ export class HarmonyWindows {
     });
     const result = this.messages.then(show, show); this.messages = result.catch(() => undefined); return result;
   }
+}
+
+type Handler = (event: IpcMainInvokeEvent, value: unknown) => unknown;
+type DeviceEntry = { window: HarmonyDeviceWindow; handlers: Map<string, Handler> };
+/** Route renderer IPC to its own device; workbench IPC uses the selected device. */
+export class HarmonyWindows {
+  private devices = new Map<string, DeviceEntry>();
+  private selected: DeviceEntry;
+  private prefs = new Map<string, SavedWindow>();
+  private channels = new Set<string>();
+  constructor(private deps: Dependencies) {
+    this.selected = this.createEntry("");
+    screen.on("display-metrics-changed", () => { for (const entry of this.devices.values()) void entry.window.place(); });
+    screen.on("display-removed", () => { for (const entry of this.devices.values()) void entry.window.place(); });
+  }
+  private createEntry(serial: string) {
+    const handlers = new Map<string, Handler>();
+    const entry = { handlers } as DeviceEntry;
+    entry.window = new HarmonyDeviceWindow({ ...this.deps, prefs: this.prefs, selected: () => this.selected === entry,
+      register: (name, handler) => {
+        handlers.set(name, handler);
+        if (this.channels.has(name)) return;
+        this.channels.add(name);
+        ipcMain.handle(name, (event, value) => this.dispatch(name, event, value));
+      },
+    });
+    this.devices.set(serial, entry);
+    return entry;
+  }
+  private dispatch(name: string, event: IpcMainInvokeEvent, value: unknown) {
+    const main = this.deps.trustedMain(event);
+    let entry = main ? this.selected : [...this.devices.values()].find(item => item.window.trustedMirror(event) || item.window.trustedMessage(event));
+    if (!entry) throw new Error("Untrusted Harmony window request");
+    const previous = main && name === "pi:harmony-window-select"
+      ? entry.handlers.get("pi:harmony-window-state")!(event, undefined) as HarmonyWindowState : undefined;
+    if (name === "pi:harmony-window-open" || name === "pi:harmony-window-select") {
+      if (!main) throw new Error("Only the workbench can select a Harmony device");
+      if (typeof value !== "string" || !value || value.length > 256 || /[\x00-\x1f]/.test(value)) throw new Error("Invalid Harmony device");
+      entry = this.devices.get(value) ?? this.createEntry(value);
+      this.selected = entry;
+    } else if (name === "pi:harmony-window-presentation" && !main) {
+      this.selected = entry;
+    }
+    const result = entry.handlers.get(name)!(event, value);
+    // Re-selecting an already-open device must still update the workbench.
+    if (name === "pi:harmony-window-select" || name === "pi:harmony-window-open") {
+      const target = entry;
+      return Promise.resolve(result).then(async state => {
+        if (this.selected !== target) return state;
+        // Selecting a new device creates a closed entry. Keep an active mirror
+        // visible when moving from a phone to a tablet (or back), while each
+        // floating window and recording retains its own device owner.
+        if (previous?.open && previous.serial !== value) {
+          state = await target.handlers.get("pi:harmony-window-presentation")!(event, previous.presentation ?? "floating");
+        }
+        if (this.selected === target) target.window.emit();
+        return state;
+      });
+    }
+    return result;
+  }
+  trustedMirror(event: IpcMainInvokeEvent) { return [...this.devices.values()].some(entry => entry.window.trustedMirror(event)); }
+  async trustedMediaFile(event: IpcMainInvokeEvent, path: unknown) {
+    const entry = [...this.devices.values()].find(item => item.window.trustedMirror(event));
+    return entry ? entry.window.trustedMediaFile(event, path) : false;
+  }
+  async prepareQuit() { for (const entry of this.devices.values()) if (!await entry.window.prepareQuit()) return false; return true; }
+  destroy() { for (const entry of this.devices.values()) entry.window.destroy(); }
 }
