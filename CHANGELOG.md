@@ -4,7 +4,9 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
-## [0.5.5-beta.66] - 2026-10-30
+## [0.5.5-beta.67] - 2026-10-30
+
+- 系统录屏回归测试明确模拟无原生采集运行时的兼容环境，避免内置库发现改变测试路径；保留全部录屏恢复断言。beta.65、beta.66 为未发布候选。
 
 - 修正后台投屏回归测试夹具的 lint 错误，保留最小化与遮挡状态下的全部画面更新断言。beta.65 为未发布候选。
 

@@ -17,7 +17,7 @@ Piora 把 AI 对话、项目文件、代码编辑、Git 审阅、终端、浏览
 
 项目基于 [Pi](https://github.com/earendil-works/pi)，由 [pi-web](https://github.com/agegr/pi-web) 演进而来，保留 Pi 的会话、模型接入与扩展机制。Piora 由社区独立维护，不隶属于 Pi、pi-web、OpenAI 或 Codex。
 
-最新正式版为 `0.5.4`，当前源码版本为 `0.5.5-beta.66`。本轮接入内置鸿蒙原生投屏库，电脑无需安装 DevEco Studio 即可在兼容设备上使用 H.264 投屏与录屏；修复手机／平板切换、断线机型名称丢失及后台投屏中断，并支持多设备独立悬浮窗。同步改进模型识别弹窗、全局模型配置与重试开关，稳定项目列表顺序，增加 Mermaid 最大化与滚轮缩放，将文本编辑上限提高到 1 MB。鸿蒙画质、延迟和平板实机效果尚待硬件验收。完整变化见 [CHANGELOG.md](CHANGELOG.md)。
+最新正式版为 `0.5.4`，当前源码版本为 `0.5.5-beta.67`。本轮接入内置鸿蒙原生投屏库，电脑无需安装 DevEco Studio 即可在兼容设备上使用 H.264 投屏与录屏；修复手机／平板切换、断线机型名称丢失及后台投屏中断，并支持多设备独立悬浮窗。同步改进模型识别弹窗、全局模型配置与重试开关，稳定项目列表顺序，增加 Mermaid 最大化与滚轮缩放，将文本编辑上限提高到 1 MB。鸿蒙画质、延迟和平板实机效果尚待硬件验收。完整变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 beta 候选由 tagged GitHub Actions 构建和校验 Windows 安装版与便携版，预发布下载提供在[所有发布](https://github.com/kexijiang/Piora/releases)。Windows 包携带仓库内审阅过的 unsigned 投屏 HAP，打包全程 GitHub 托管，不再重构建该组件，也不依赖专用 runner 或连接手机。只有用户明确初始化时，Piora 才调用本机已登录的 DevEco CLI 生成或更新设备调试 Profile，生成并验签设备绑定副本后安装。华为系统录屏和浏览器联动的窗口外渲染尚未经过真机验收。真机支持范围和待验项目见[鸿蒙设备验收矩阵](docs/harmony/atlas-acceptance.md)。
 
