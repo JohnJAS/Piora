@@ -4,7 +4,9 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
-## [0.5.5-beta.65] - 2026-10-30
+## [0.5.5-beta.66] - 2026-10-30
+
+- 修正后台投屏回归测试夹具的 lint 错误，保留最小化与遮挡状态下的全部画面更新断言。beta.65 为未发布候选。
 
 - 修复全局模型设置依赖当前项目目录的问题：供应商、默认模型和启用范围独立读取与保存全局配置，项目目录不可访问或项目扩展失败不再阻断设置。
 
