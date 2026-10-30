@@ -20,8 +20,8 @@ html[data-theme="character-glm-ink"] {
   --assistant-bg: #232D3B;
   --tool-bg: #232D3B;
   --bg-subtle: #2a3544;
-  --surface-glass: #232D3B;
-  --surface-highlight: #2b3543;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -50,8 +50,8 @@ html[data-theme="character-gpt-ivory"] {
   --assistant-bg: #FFFFFF;
   --tool-bg: #FFFFFF;
   --bg-subtle: #f6f6f9;
-  --surface-glass: #FFFFFF;
-  --surface-highlight: #f7f7f8;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -80,8 +80,8 @@ html[data-theme="character-whale-tide"] {
   --assistant-bg: #FFFFFF;
   --tool-bg: #FFFFFF;
   --bg-subtle: #f2f6fa;
-  --surface-glass: #FFFFFF;
-  --surface-highlight: #f6f7f8;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -110,8 +110,8 @@ html[data-theme="character-ernie-garden"] {
   --assistant-bg: #FFFFFF;
   --tool-bg: #FFFFFF;
   --bg-subtle: #f4f6fb;
-  --surface-glass: #FFFFFF;
-  --surface-highlight: #f7f7f9;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -140,8 +140,8 @@ html[data-theme="character-qwen-porcelain"] {
   --assistant-bg: #FFFDFC;
   --tool-bg: #FFFDFC;
   --bg-subtle: #f6f4f7;
-  --surface-glass: #FFFDFC;
-  --surface-highlight: #f7f5f6;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -170,8 +170,8 @@ html[data-theme="character-kimi-moon"] {
   --assistant-bg: #202B44;
   --tool-bg: #202B44;
   --bg-subtle: #29344e;
-  --surface-glass: #202B44;
-  --surface-highlight: #28334b;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -200,8 +200,8 @@ html[data-theme="character-seed-soda"] {
   --assistant-bg: #FFFFFF;
   --tool-bg: #FFFFFF;
   --bg-subtle: #f6f6fb;
-  --surface-glass: #FFFFFF;
-  --surface-highlight: #f7f7f9;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -230,8 +230,8 @@ html[data-theme="character-minimax-coral"] {
   --assistant-bg: #FFFCF8;
   --tool-bg: #FFFCF8;
   --bg-subtle: #f9f3ee;
-  --surface-glass: #FFFCF8;
-  --surface-highlight: #f8f5f1;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -260,8 +260,8 @@ html[data-theme="character-grok-eclipse"] {
   --assistant-bg: #2A232D;
   --tool-bg: #2A232D;
   --bg-subtle: #342b31;
-  --surface-glass: #2A232D;
-  --surface-highlight: #322b34;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -290,8 +290,8 @@ html[data-theme="character-gemini-prism"] {
   --assistant-bg: #2A2C50;
   --tool-bg: #2A2C50;
   --bg-subtle: #32335a;
-  --surface-glass: #2A2C50;
-  --surface-highlight: #323457;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -320,8 +320,8 @@ html[data-theme="character-claude-paper"] {
   --assistant-bg: #FFFCF6;
   --tool-bg: #FFFCF6;
   --bg-subtle: #f9f3eb;
-  --surface-glass: #FFFCF6;
-  --surface-highlight: #f8f4ee;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -350,8 +350,8 @@ html[data-theme="character-gpt-orbit"] {
   --assistant-bg: #242D43;
   --tool-bg: #242D43;
   --bg-subtle: #2c364d;
-  --surface-glass: #242D43;
-  --surface-highlight: #2c354b;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -380,8 +380,8 @@ html[data-theme="character-gpt-cloud"] {
   --assistant-bg: #FFFFFF;
   --tool-bg: #FFFFFF;
   --bg-subtle: #f5f7f6;
-  --surface-glass: #FFFFFF;
-  --surface-highlight: #f7f8f8;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -410,8 +410,8 @@ html[data-theme="character-whale-abyss"] {
   --assistant-bg: #10273D;
   --tool-bg: #10273D;
   --bg-subtle: #143147;
-  --surface-glass: #10273D;
-  --surface-highlight: #182f45;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -440,8 +440,8 @@ html[data-theme="character-whale-rice"] {
   --assistant-bg: #FFFCF6;
   --tool-bg: #FFFCF6;
   --bg-subtle: #f4f4f1;
-  --surface-glass: #FFFCF6;
-  --surface-highlight: #f8f5ef;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -470,8 +470,8 @@ html[data-theme="character-claude-lamp"] {
   --assistant-bg: #302722;
   --tool-bg: #302722;
   --bg-subtle: #3a2e27;
-  --surface-glass: #302722;
-  --surface-highlight: #382f29;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -500,8 +500,8 @@ html[data-theme="character-claude-autumn"] {
   --assistant-bg: #FFFDF7;
   --tool-bg: #FFFDF7;
   --bg-subtle: #f8f4ec;
-  --surface-glass: #FFFDF7;
-  --surface-highlight: #f8f6ef;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -530,8 +530,8 @@ html[data-theme="character-kitty-ribbon"] {
   --assistant-bg: #FFFFFF;
   --tool-bg: #FFFFFF;
   --bg-subtle: #fbf4f5;
-  --surface-glass: #FFFFFF;
-  --surface-highlight: #f8f7f7;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -560,8 +560,8 @@ html[data-theme="character-kitty-strawberry"] {
   --assistant-bg: #FFFBFC;
   --tool-bg: #FFFBFC;
   --bg-subtle: #faf1f4;
-  --surface-glass: #FFFBFC;
-  --surface-highlight: #f9f3f5;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -590,8 +590,8 @@ html[data-theme="character-kitty-moon"] {
   --assistant-bg: #302943;
   --tool-bg: #302943;
   --bg-subtle: #39304b;
-  --surface-glass: #302943;
-  --surface-highlight: #38314a;
+  --surface-glass: color-mix(in srgb, var(--bg) 86%, transparent);
+  --surface-highlight: color-mix(in srgb, var(--bg-panel) 72%, transparent);
   --ambient-primary: transparent;
   --ambient-secondary: transparent;
   --radius-control: 10px;
@@ -605,11 +605,4 @@ html[data-app-background-preset^="character-"] .settings-backdrop::before {
   background-position: 80% center;
 }
 
-/* Wallpaper may have detail behind long answers; keep their reading surface solid. */
-html[data-theme^="character-"][data-app-background-active="true"] .message-answer-block > .markdown-assistant-message,
-html[data-theme^="character-"][data-app-background-active="true"] .message-assistant-blocks > .markdown-assistant-message {
-  background: var(--bg-panel);
-  border-radius: var(--radius-surface);
-  padding: 12px 16px;
-  min-width: 0;
-}
+/* Content surfaces use the same shared wallpaper rules as every other theme. */

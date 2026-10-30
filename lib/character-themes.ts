@@ -77,8 +77,8 @@ export const CHARACTER_THEMES = [
       "text": "#ECF1FA"
     },
     "overlay": 62,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -95,8 +95,8 @@ export const CHARACTER_THEMES = [
       "text": "#37344C"
     },
     "overlay": 64,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -113,8 +113,8 @@ export const CHARACTER_THEMES = [
       "text": "#243C55"
     },
     "overlay": 64,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -131,8 +131,8 @@ export const CHARACTER_THEMES = [
       "text": "#35435F"
     },
     "overlay": 64,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -149,8 +149,8 @@ export const CHARACTER_THEMES = [
       "text": "#42405B"
     },
     "overlay": 64,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -167,8 +167,8 @@ export const CHARACTER_THEMES = [
       "text": "#EBEFFF"
     },
     "overlay": 62,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -185,8 +185,8 @@ export const CHARACTER_THEMES = [
       "text": "#3D3E60"
     },
     "overlay": 64,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -203,8 +203,8 @@ export const CHARACTER_THEMES = [
       "text": "#59423D"
     },
     "overlay": 64,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -221,8 +221,8 @@ export const CHARACTER_THEMES = [
       "text": "#F4EADD"
     },
     "overlay": 62,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -239,8 +239,8 @@ export const CHARACTER_THEMES = [
       "text": "#F0EDFF"
     },
     "overlay": 62,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -257,8 +257,8 @@ export const CHARACTER_THEMES = [
       "text": "#443930"
     },
     "overlay": 64,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -275,8 +275,8 @@ export const CHARACTER_THEMES = [
       "text": "#EBF1FF"
     },
     "overlay": 62,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -293,8 +293,8 @@ export const CHARACTER_THEMES = [
       "text": "#344B48"
     },
     "overlay": 64,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -311,8 +311,8 @@ export const CHARACTER_THEMES = [
       "text": "#E3F4FF"
     },
     "overlay": 62,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -329,8 +329,8 @@ export const CHARACTER_THEMES = [
       "text": "#4C4951"
     },
     "overlay": 64,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -347,8 +347,8 @@ export const CHARACTER_THEMES = [
       "text": "#F4E7D6"
     },
     "overlay": 62,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -365,8 +365,8 @@ export const CHARACTER_THEMES = [
       "text": "#464339"
     },
     "overlay": 64,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -383,8 +383,8 @@ export const CHARACTER_THEMES = [
       "text": "#553C42"
     },
     "overlay": 64,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -401,8 +401,8 @@ export const CHARACTER_THEMES = [
       "text": "#633E50"
     },
     "overlay": 64,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   },
   {
@@ -419,8 +419,8 @@ export const CHARACTER_THEMES = [
       "text": "#F7ECFA"
     },
     "overlay": 62,
-    "sidebarOverlay": 82,
-    "filePanelOverlay": 86,
+    "sidebarOverlay": 36,
+    "filePanelOverlay": 42,
     "blur": 0
   }
 ] as const;

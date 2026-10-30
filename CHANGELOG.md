@@ -4,6 +4,8 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+- 修复角色主题聊天正文和玻璃面板被实色底色遮挡背景的问题，恢复与原有主题一致的正文布局和半透明面板；降低角色主题默认侧栏、文件区遮罩，重新选择角色主题即可应用，手动透明度调节继续有效。
+
 ## [0.5.5-beta.69] - 2026-10-30
 
 - 角色主题卡片字号随用户字体设置缩放，修复完整 CI 发现的固定字号问题。beta.68 为未发布候选。
