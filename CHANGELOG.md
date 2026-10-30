@@ -4,7 +4,9 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
-## [0.5.5-beta.68] - 2026-10-30
+## [0.5.5-beta.69] - 2026-10-30
+
+- 角色主题卡片字号随用户字体设置缩放，修复完整 CI 发现的固定字号问题。beta.68 为未发布候选。
 
 - 修复 Windows Git Bash 命令点击停止后，界面显示已取消但 `sleep` 等子进程仍继续执行的问题（#243）：结合 MSYS 进程关系清理当前命令及其子进程，取消和超时等待清理结束；保留 SDK 的 shell 配置与工具语义，并严格校验依赖补丁。
 - 增加真实 Desktop 的 PowerShell/Bash 停止回归场景：通过本地模型夹具触发真实命令、点击停止并独立核对进程退出，保留修复前后的证据；修正运行器对异步首次引导的等待。

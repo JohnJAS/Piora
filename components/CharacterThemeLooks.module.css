@@ -13,10 +13,10 @@
 .card:disabled, .restore:disabled { cursor: not-allowed; opacity: .6; }
 .artwork { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; }
 .artwork img { width: 100%; height: 100%; object-fit: cover; }
-.check { position: absolute; right: 7px; top: 7px; background: var(--btn-primary-bg); color: var(--btn-primary-fg); border-radius: 50%; width: 20px; height: 20px; display: grid; place-items: center; font-size: 12px; }
+.check { position: absolute; right: 7px; top: 7px; background: var(--btn-primary-bg); color: var(--btn-primary-fg); border-radius: 50%; width: 20px; height: 20px; display: grid; place-items: center; font-size: var(--text-xs); }
 .caption { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; padding: 0 3px; font-size: var(--text-xs); }
 .caption>span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.caption small { flex-shrink: 0; color: var(--text-muted); font-size: 10px; }
+.caption small { flex-shrink: 0; color: var(--text-muted); font-size: var(--text-xs); }
 .colors { display: flex; gap: 3px; padding: 0 3px 3px; }
 .colors i { width: 20px; height: 4px; border-radius: 3px; border: 1px solid color-mix(in srgb, var(--text) 8%, transparent); }
 .credits { display: inline-block; margin-top: 9px; font-size: var(--text-xs); color: var(--text-muted); text-underline-offset: 3px; }
