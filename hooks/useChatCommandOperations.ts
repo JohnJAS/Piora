@@ -1,5 +1,6 @@
 "use client";
 
+import { latestTaskTiming, mergeTaskTiming, type TaskTiming } from "@/lib/task-timing";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentCommandError, sendAgentCommand } from "@/lib/agent-client";
 import { createChatCommandOperation, parseChatInput, persistentChatInputOptions } from "@/lib/chat-command-input";
@@ -32,6 +33,7 @@ export function useChatCommandOperations(options: Options) {
   const latest = useRef(options);
   latest.current = options;
   const [localSessionId, setLocalSessionId] = useState<string | null>(null);
+  const [taskTiming, setTaskTiming] = useState<TaskTiming | null>(null);
   const [records, setRecords] = useState<ChatCommandView[]>([]);
   const recordsRef = useRef(records);
   recordsRef.current = records;
@@ -61,9 +63,10 @@ export function useChatCommandOperations(options: Options) {
     for (const record of recordsRef.current.filter(record => record.targetSessionId === sid && record.local).slice(0, 100)) query.append("trackedPromptId", record.idempotencyKey);
     const response = await fetch(`/api/sessions/${encodeURIComponent(sid)}/submissions?${query}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const body = await response.json() as { items: ChatCommandView[]; nextOffset: number | null };
+    const body = await response.json() as { items: ChatCommandView[]; nextOffset: number | null; taskTiming?: TaskTiming | null };
     if (sessionRef.current !== sid) return;
     setRecords(current => mergeChatCommandViews(current.filter(record => record.targetSessionId === sid || record.local && submitting.current.has(record.idempotencyKey)), body.items));
+    setTaskTiming(current => mergeTaskTiming(current, body.taskTiming ?? null));
     setNextOffset(body.nextOffset);
     await Promise.all(body.items.filter(record => !record.operation && record.status === "cancelled").map(record => dismissPendingPrompt(record.idempotencyKey)));
     const completed = body.items.filter(record => record.status === "completed");
@@ -79,6 +82,7 @@ export function useChatCommandOperations(options: Options) {
     const activeGeneration = ++generation.current;
     setLocalSessionId(null);
     setRecords([]);
+    setTaskTiming(null);
     setNextOffset(null);
     setConnectionError(null);
     notified.current.clear();
@@ -108,12 +112,15 @@ export function useChatCommandOperations(options: Options) {
         const data = JSON.parse(event.data) as Omit<SessionCommandEvent, "type"> & { operations?: ChatCommandView[]; type: string; hasMore?: boolean };
         if (data.type === "command_snapshot" && data.operations) {
           setRecords(current => mergeChatCommandViews(current.filter(record => record.targetSessionId === sid || record.local && submitting.current.has(record.idempotencyKey)), data.operations!));
+          setTaskTiming(current => mergeTaskTiming(current, latestTaskTiming(data.operations!)));
           setNextOffset(data.hasMore ? 50 : null);
           setConnectionError(null);
           recover();
         } else if (data.commandId && data.idempotencyKey && data.status) {
           const record: ChatCommandView = { commandId: data.commandId, idempotencyKey: data.idempotencyKey, targetSessionId: sid,
-            acceptedAt: data.acceptedAt ?? data.timestamp, status: data.status, revision: data.revision, queuePaused: data.queuePaused, operation: data.operation, errorCode: data.errorCode, errorMessage: data.errorMessage, preview: data.preview };
+            acceptedAt: data.acceptedAt ?? data.timestamp, taskTiming: data.taskTiming, status: data.status, revision: data.revision, queuePaused: data.queuePaused, operation: data.operation, errorCode: data.errorCode, errorMessage: data.errorMessage, preview: data.preview };
+          setTaskTiming(current => data.taskTiming === null && current?.commandId === data.commandId
+            ? null : mergeTaskTiming(current, data.taskTiming ?? null));
           setRecords(current => mergeChatCommandViews(current, [record]));
           if (terminal(data.status)) {
             if (!record.operation && !notified.current.has(record.commandId)) { notified.current.add(record.commandId); latest.current.onFinished(record); }
@@ -237,5 +244,5 @@ export function useChatCommandOperations(options: Options) {
     await refresh();
   }, [refresh]);
 
-  return { records, connectionError, submit, cancel, restore, queueAction, edit, copy, loadMore: nextOffset === null ? null : () => refresh(nextOffset) };
+  return { records, taskTiming: taskTiming?.sessionId === sessionId ? taskTiming : null, connectionError, submit, cancel, restore, queueAction, edit, copy, loadMore: nextOffset === null ? null : () => refresh(nextOffset) };
 }

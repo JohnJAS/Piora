@@ -1,3 +1,4 @@
+import { transitionTaskTiming } from "./task-timing";
 import { buildPromptWithMaterials, resolvePromptMaterialReferences } from "./prompt-materials";
 import { createChatCommandOperation, parseChatInput } from "./chat-command-input";
 import { randomUUID } from "node:crypto";
@@ -185,14 +186,10 @@ export class SessionMessageRouter {
           continue;
         }
         // After a process restart, an old in-memory run has no authority.
-        command.status = "interrupted";
-        command.errorCode = "RUN_INTERRUPTED";
-        command.errorMessage = "The process stopped before this run could be proven complete.";
-        await this.store.appendStatus(command, "interrupted", {
-          errorCode: command.errorCode,
-          errorMessage: command.errorMessage,
+        await this.transition(command, "interrupted", {
+          errorCode: "RUN_INTERRUPTED",
+          errorMessage: "The process stopped before this run could be proven complete.",
         });
-        await this.publish({ type: "command_interrupted", sessionId, commandId: command.commandId, runId: command.runId, status: "interrupted", timestamp: Date.now(), errorCode: "RUN_INTERRUPTED" });
         continue;
       }
       if (command.delivery === "steer") {
@@ -201,7 +198,8 @@ export class SessionMessageRouter {
       }
       if (command.status === "dispatching") {
         command.status = "queued";
-        await this.store.appendStatus(command, "queued", { queuedAt: Date.now() });
+        command.taskTiming = null;
+        await this.store.appendStatus(command, "queued", { queuedAt: Date.now(), taskTiming: null });
       }
       if (command.status === "accepted" || command.status === "queued") {
         try { getSessionInboxRegistry().enqueue(command); } catch { /* a later receipt will report a full inbox */ }
@@ -220,6 +218,7 @@ export class SessionMessageRouter {
     command = this.knownCommands.get(command.commandId) ?? command;
     if ((TERMINAL_STATUSES.has(command.status) && command.status !== status)
       || (this.cancellationWork.has(command.commandId) && !TERMINAL_STATUSES.has(status))) return;
+    patch = { ...patch, taskTiming: transitionTaskTiming(command, status, Date.now()) ?? null };
     command.status = status;
     Object.assign(command, patch);
     command.revision = (command.revision ?? 0) + 1;
@@ -231,7 +230,7 @@ export class SessionMessageRouter {
     if (TERMINAL_STATUSES.has(latest.status) && latest.status !== status) {
       // A delayed persistence operation must not become the journal's last row
       // after cancellation has already settled the canonical record.
-      await this.store.appendStatus(latest, latest.status, { revision: latest.revision, ...(latest.operation ? { operation: structuredClone(latest.operation) } : {}), errorCode: latest.errorCode, errorMessage: latest.errorMessage, runId: latest.runId, attachedRunId: latest.attachedRunId });
+      await this.store.appendStatus(latest, latest.status, { revision: latest.revision, taskTiming: latest.taskTiming, ...(latest.operation ? { operation: structuredClone(latest.operation) } : {}), errorCode: latest.errorCode, errorMessage: latest.errorMessage, runId: latest.runId, attachedRunId: latest.attachedRunId });
       return;
     }
     await this.publish({
@@ -248,6 +247,7 @@ export class SessionMessageRouter {
       ...(command.operation ? { operation: command.operation } : {}),
       idempotencyKey: command.idempotencyKey,
       acceptedAt: command.acceptedAt,
+      taskTiming: command.taskTiming,
       source: command.source,
       preview: command.content.slice(0, 180),
       queuePaused: command.queuePaused ?? false,

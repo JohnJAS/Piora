@@ -75,6 +75,7 @@ export interface ChatInputOptions {
 }
 
 export interface ChatCommandView {
+  taskTiming?: import("./task-timing").TaskTiming | null;
   revision?: number;
   queuePaused?: boolean;
   commandId: string;

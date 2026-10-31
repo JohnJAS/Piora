@@ -16,6 +16,7 @@ import { GitPushDialog } from "./GitPushDialog";
 import styles from "./WorkspacePanel.module.css";
 
 interface Props {
+  commitRequest?: number;
   cwd: string | null;
   refreshKey: number;
   onRefresh: () => void;
@@ -45,7 +46,7 @@ export function ReviewPanel(props: Props) {
   return <ProjectReviewPanel key={props.cwd ?? "empty"} {...props} />;
 }
 
-function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
+function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile, commitRequest }: Props) {
   const { t } = useI18n();
   const [status, setStatus] = useState<GitStatusResponse>(EMPTY_STATUS);
   const [diffs, setDiffs] = useState<Record<string, GitFileDiffResponse>>({});
@@ -74,6 +75,7 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
   const [identityName, setIdentityName] = useState("");
   const [identityEmail, setIdentityEmail] = useState("");
   const commitMessageRef = useRef<HTMLTextAreaElement>(null);
+  const focusedCommitRequest = useRef<number | undefined>(undefined);
   const diffsRef = useRef(diffs);
   const loadingDiffsRef = useRef(loadingDiffs);
   const diffGenerationRef = useRef(0);
@@ -124,6 +126,16 @@ function ProjectReviewPanel({ cwd, refreshKey, onRefresh, onOpenFile }: Props) {
       window.removeEventListener("piora:focus-review-commit", focusCommit);
     };
   }, [cwd]);
+
+  useEffect(() => {
+    if (commitRequest === undefined || focusedCommitRequest.current === commitRequest || loading || !status.isGitRepository) return;
+    setShowCommit(true);
+    const frame = requestAnimationFrame(() => {
+      commitMessageRef.current?.focus({ preventScroll: true });
+      focusedCommitRequest.current = commitRequest;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [commitRequest, loading, status.isGitRepository]);
 
   const loadStatus = useCallback(async () => {
     statusRequestRef.current?.abort();

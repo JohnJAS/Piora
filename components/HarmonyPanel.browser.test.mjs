@@ -37,6 +37,7 @@ test("Harmony workspace keeps device tools, drafts and fenced control in a full 
       window.piDesktop = { messages: { show: async message => { window.messages.push(message); return "done"; } }, harmonyMirror: {
         getState: async () => state, onCommand: () => () => {}, setScale: async scale => { state={...state,scale}; return update(state.serial); }, close: async () => { state={...state,open:false}; update(state.serial); return true; }, onStateChange: fn => { listeners.push(fn); return () => { listeners = listeners.filter(item => item !== fn); }; },
         setPresentation: async presentation => { state = { ...state, presentation, open: true }; return update(state.serial); },
+        reportFrame: async frame => { window.mirrorFrame = frame; },
         selectDevice: async serial => update(serial), open: async serial => { window.mirrorCalls.push(serial); return update(serial); },
       }, files: { getPathForFile: file => file.name === "dragged.txt" ? "C:\\workspace\\dragged.txt" : "" }, clipboard: {
         copyHarmonyMedia: async media => { if (window.failMedia) throw Error("clipboard busy"); window.copies.push(media); },

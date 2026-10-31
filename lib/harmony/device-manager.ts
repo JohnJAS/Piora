@@ -237,6 +237,7 @@ export class HarmonyDeviceManager {
   private disposed = false;
   private lastDeviceRefreshAt = Number.NEGATIVE_INFINITY;
   private deviceRefreshPromise?: Promise<HarmonyDevice[]>;
+  private deviceListPromise?: Promise<HarmonyDevice[]>;
   private deviceRefreshController?: AbortController;
 
   constructor(options: HarmonyDeviceManagerOptions = {}) {
@@ -602,7 +603,17 @@ export class HarmonyDeviceManager {
   }
 
   async listDevices(signal?: AbortSignal): Promise<HarmonyDevice[]> {
-    return await this.enqueue("list_devices", async (queuedSignal) => await this.refreshDevices(queuedSignal), signal);
+    if (signal?.aborted) throw new HarmonyError("COMMAND_ABORTED", "Device discovery was cancelled");
+    // Coalesce before queue admission: otherwise every window's simultaneous
+    // poll becomes a separate refresh and consumes the disconnect grace at once.
+    if (!this.deviceListPromise) {
+      const pending = this.enqueue("list_devices", async queuedSignal => await this.refreshDevices(queuedSignal));
+      this.deviceListPromise = pending;
+      void pending.finally(() => {
+        if (this.deviceListPromise === pending) this.deviceListPromise = undefined;
+      }).catch(() => undefined);
+    }
+    return await awaitSharedOperation(this.deviceListPromise, signal);
   }
 
   async connectTcpDevice(address: string, remove: boolean, signal?: AbortSignal): Promise<HarmonyDevice[]> {

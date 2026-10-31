@@ -10,8 +10,7 @@ import {
 } from "@/lib/session-project-groups";
 import { DirectoryPicker } from "./DirectoryPicker";
 import type { SessionSidebarHandle, SessionSidebarProps as Props } from "./sidebar/sidebar-types";
-import { WorktreeSection } from "./sidebar/WorktreeSection";
-import { useWorktreeState } from "./sidebar/useWorktreeState";
+import { useWorktrees } from "@/hooks/useWorktrees";
 import { SidebarNavigation } from "./sidebar/SidebarNavigation";
 import { SidebarProjectArea } from "./sidebar/SidebarProjectArea";
 import { SidebarChatArea } from "./sidebar/SidebarChatArea";
@@ -66,12 +65,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     customPathValidating, commitCustomPath, handleCustomPathClick, handleDefaultCwd,
   } = useProjectPicker({ setSelectedCwd, setRememberedProjectRoots, setHiddenProjectRoots, onProjectSelected: handlePickedProject });
   const { allSessions, loading, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions, markSessionUnread } = useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectRoots });
-  const {
-    worktreeState, wtFilter, setWtFilter, wtDropdownOpen, setWtDropdownOpen,
-    wtNewOpen, setWtNewOpen, wtNewBranch, setWtNewBranch, wtError, setWtError,
-    wtBusy, wtConfirmRemove, setWtConfirmRemove, wtDropdownRef, wtNewInputRef,
-    handleCreateWorktree, handleRemoveWorktree,
-  } = useWorktreeState({ selectedCwd, setSelectedCwd, refreshKey });
+  const { state: worktreeState, error: worktreeError } = useWorktrees(selectedCwd, true, refreshKey);
 
   useEffect(() => {
     let cancelled = false;
@@ -115,9 +109,11 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   const lastNotifiedCwdRef = useRef<string | null>(null);
   useEffect(() => {
     if (lastNotifiedCwdRef.current === selectedCwd) return;
+    // A checkout without sessions needs its real project root before navigation.
+    if (selectedCwd && !worktreeState && !worktreeError && !allSessions.some(session => session.cwd === selectedCwd)) return;
     lastNotifiedCwdRef.current = selectedCwd;
     onCwdChange?.(selectedCwd, projectRootFor(selectedCwd));
-  }, [selectedCwd, onCwdChange, projectRootFor]);
+  }, [selectedCwd, onCwdChange, projectRootFor, worktreeState, worktreeError, allSessions]);
 
   // Sync the worktree switcher to the selected session's cwd. Sessions of all
   // worktrees in a project share one list, so clicking a session from another
@@ -414,20 +410,6 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     });
   }, [activeSessions, error, loading, setSessionOrder]);
 
-  const showWorktreeSwitcher = Boolean(
-    worktreeState?.isGit
-    && worktreeState.isTopLevel
-    && selectedCwd
-    && selectedProject === worktreeState.projectRoot
-  );
-  const worktreeSection = <WorktreeSection
-    showWorktreeSwitcher={showWorktreeSwitcher} worktreeState={worktreeState} selectedCwd={selectedCwd} homeDir={homeDir}
-    wtFilter={wtFilter} setWtFilter={setWtFilter} wtDropdownOpen={wtDropdownOpen} setWtDropdownOpen={setWtDropdownOpen}
-    wtNewOpen={wtNewOpen} setWtNewOpen={setWtNewOpen} wtNewBranch={wtNewBranch} setWtNewBranch={setWtNewBranch}
-    wtError={wtError} setWtError={setWtError} wtBusy={wtBusy} wtConfirmRemove={wtConfirmRemove} setWtConfirmRemove={setWtConfirmRemove}
-    wtDropdownRef={wtDropdownRef} wtNewInputRef={wtNewInputRef} setSelectedCwd={setSelectedCwd}
-    handleCreateWorktree={handleCreateWorktree} handleRemoveWorktree={handleRemoveWorktree}
-  />;
   return (
     <>
     <SidebarShell>
@@ -478,14 +460,6 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         />
       ) : null}
       <SidebarProjectArea
-        worktreeSection={worktreeSection}
-        onOpenWorktrees={(group) => {
-          if (selectedProject !== group.projectRoot) setSelectedCwd(group.preferredCwd);
-          setCollapsedProjectKeys((previous) => {
-            const next = new Set(previous); next.delete(group.key); return next;
-          });
-          setWtDropdownOpen(true);
-        }}
         loading={loading} error={error}
         handleDefaultCwd={handleDefaultCwd} handleCustomPathClick={handleCustomPathClick}
         projectGroups={projectGroups} selectedProject={selectedProject}

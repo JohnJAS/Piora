@@ -138,7 +138,7 @@ test("project browsing is selection-only and cancellation preserves projectless 
 
 test("new chat keeps the right workspace toggle available before project selection", () => {
   assert.match(shell, /!settingsDialogOpen && \(\s*<div className="conversation-toolbar-actions">/);
-  assert.match(shell, /\{showChat \? \([\s\S]*topbar-changes-button[\s\S]*\) : null\}[\s\S]*right-panel-toggle/);
+  assert.match(shell, /\{showChat \? \([\s\S]*<GitToolsPopover[\s\S]*\) : null\}[\s\S]*right-panel-toggle/);
 });
 
 test("conversation chrome and rooms share the configured background", () => {
