@@ -57,8 +57,10 @@ html[data-app-background-active="true"] body > .companion-panel-root {
   z-index: 1;
 }
 
-/* AppShell currently returns a scoped style followed by its full-height root. */
-html[data-app-background-active="true"] body > style + div {
+/* Scoped styles can be hoisted into head. Target the actual canvas rather than
+ * its preceding sibling, or its opaque base hides the wallpaper behind every
+ * translucent sidebar and workspace surface. */
+html[data-app-background-active="true"] .app-shell {
   background: transparent !important;
 }
 
