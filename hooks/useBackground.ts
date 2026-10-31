@@ -6,7 +6,7 @@ import {
   BACKGROUND_PRESETS,
   DEFAULT_BACKGROUND_PREFERENCE,
   getBackgroundPreset,
-  parseStoredBackgroundPreference,
+  readStoredBackgroundPreference,
   serializeBackgroundPreference,
   type BackgroundPreference,
 } from "@/lib/backgrounds";
@@ -108,7 +108,7 @@ function applyBackgroundToDocument(preference: BackgroundPreference): void {
 
 function readPreference(): BackgroundPreference {
   try {
-    return parseStoredBackgroundPreference(localStorage.getItem(BACKGROUND_PREFERENCE_STORAGE_KEY));
+    return readStoredBackgroundPreference(localStorage);
   } catch {
     return { ...DEFAULT_BACKGROUND_PREFERENCE };
   }

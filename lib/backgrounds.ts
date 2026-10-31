@@ -1,5 +1,6 @@
 import characterManifestJson from "../public/themes/character-backgrounds/manifest.json";
 import manifestJson from "../public/themes/dream-backgrounds/manifest.json";
+import { CHARACTER_THEMES } from "./character-themes";
 
 export type BackgroundAppearance = "light" | "dark";
 export type BackgroundArtworkStatus = "planned" | "available";
@@ -30,6 +31,7 @@ export interface BackgroundManifest {
 }
 
 export const BACKGROUND_PREFERENCE_STORAGE_KEY = "pi-background:v1";
+export const CHARACTER_OVERLAY_MIGRATION_KEY = "pi-background:character-overlay-v2";
 export const CUSTOM_BACKGROUND_FALLBACK_STORAGE_KEY = "pi-background:custom-data-url:v1";
 export const CUSTOM_BACKGROUND_MAX_BYTES = 12 * 1024 * 1024;
 export const CUSTOM_BACKGROUND_DATA_URL_FALLBACK_MAX_BYTES = 1536 * 1024;
@@ -178,11 +180,12 @@ const BACKGROUND_PREPAINT_PRESETS = JSON.stringify(Object.fromEntries(
   BACKGROUND_PRESETS.map((preset) => [preset.id, {
     asset: preset.artworkStatus === "available" ? preset.asset : null,
     fallback: preset.fallback,
+    legacyCharacterOverlay: CHARACTER_THEMES.find((look) => look.id === preset.id)?.overlay,
   }]),
 )).replace(/</g, "\\u003c");
 
 /** Restores a validated built-in background before React/IndexedDB hydration. */
-export const BACKGROUND_INITIALIZATION_SCRIPT = `(function(){try{var p=${BACKGROUND_PREPAINT_PRESETS},v=localStorage.getItem("${BACKGROUND_PREFERENCE_STORAGE_KEY}");if(!v)return;var s=JSON.parse(v),b=s&&s.source==="builtin"&&typeof s.presetId==="string"?p[s.presetId]:null;if(!b)return;var n=function(x,d,a,z){return typeof x==="number"&&isFinite(x)?Math.min(z,Math.max(a,Math.round(x))):d},o=n(s.overlay,58,0,90),l=n(s.blur,0,0,24),u=n(s.sidebarOverlay,36,0,90),f=n(s.filePanelOverlay,42,0,90),r=document.documentElement;r.dataset.appBackgroundActive="true";r.dataset.appBackgroundSource="builtin";r.dataset.appBackgroundPreset=s.presetId;r.style.setProperty("--app-background-image",b.asset?'url("'+b.asset+'")':"none");r.style.setProperty("--app-background-fallback",b.fallback);r.style.setProperty("--app-background-overlay",o+"%");r.style.setProperty("--app-background-blur",l+"px");r.style.setProperty("--app-background-sidebar-overlay",u+"%");r.style.setProperty("--app-background-file-panel-overlay",f+"%")}catch(_){}})();`;
+export const BACKGROUND_INITIALIZATION_SCRIPT = `(function(){try{var p=${BACKGROUND_PREPAINT_PRESETS},v=localStorage.getItem("${BACKGROUND_PREFERENCE_STORAGE_KEY}");if(!v)return;var s=JSON.parse(v),b=s&&s.source==="builtin"&&typeof s.presetId==="string"?p[s.presetId]:null;if(!b)return;var n=function(x,d,a,z){return typeof x==="number"&&isFinite(x)?Math.min(z,Math.max(a,Math.round(x))):d},o=n(s.overlay,58,0,90),l=n(s.blur,0,0,24),u=n(s.sidebarOverlay,36,0,90),f=n(s.filePanelOverlay,42,0,90),r=document.documentElement;if(localStorage.getItem("${CHARACTER_OVERLAY_MIGRATION_KEY}")!=="1"){var m=b.legacyCharacterOverlay===o&&u===82&&f===86&&l===0;if(m){u=36;f=42;s.sidebarOverlay=u;s.filePanelOverlay=f}try{if(m)localStorage.setItem("${BACKGROUND_PREFERENCE_STORAGE_KEY}",JSON.stringify(s));localStorage.setItem("${CHARACTER_OVERLAY_MIGRATION_KEY}","1")}catch(_){}}r.dataset.appBackgroundActive="true";r.dataset.appBackgroundSource="builtin";r.dataset.appBackgroundPreset=s.presetId;r.style.setProperty("--app-background-image",b.asset?'url("'+b.asset+'")':"none");r.style.setProperty("--app-background-fallback",b.fallback);r.style.setProperty("--app-background-overlay",o+"%");r.style.setProperty("--app-background-blur",l+"px");r.style.setProperty("--app-background-sidebar-overlay",u+"%");r.style.setProperty("--app-background-file-panel-overlay",f+"%")}catch(_){}})();`;
 
 const PRESETS_BY_ID = new Map(BACKGROUND_PRESETS.map((preset) => [preset.id, preset]));
 
@@ -223,6 +226,28 @@ export function parseStoredBackgroundPreference(value: string | null): Backgroun
 
 export function serializeBackgroundPreference(preference: BackgroundPreference): string {
   return JSON.stringify(normalizeBackgroundPreference(preference));
+}
+
+/** Upgrade only the complete shipped character defaults, once per profile.
+ * A separate marker lets later explicit choices of 82/86 remain unchanged. */
+export function readStoredBackgroundPreference(storage: Pick<Storage, "getItem" | "setItem">): BackgroundPreference {
+  const preference = parseStoredBackgroundPreference(storage.getItem(BACKGROUND_PREFERENCE_STORAGE_KEY));
+  if (storage.getItem(CHARACTER_OVERLAY_MIGRATION_KEY) === "1") return preference;
+  const look = preference.source === "builtin"
+    ? CHARACTER_THEMES.find((candidate) => candidate.id === preference.presetId)
+    : undefined;
+  const legacyDefaults = look && preference.overlay === look.overlay && preference.blur === 0
+    && preference.sidebarOverlay === 82 && preference.filePanelOverlay === 86;
+  const next = legacyDefaults
+    ? { ...preference, sidebarOverlay: look.sidebarOverlay, filePanelOverlay: look.filePanelOverlay }
+    : preference;
+  try {
+    if (legacyDefaults) storage.setItem(BACKGROUND_PREFERENCE_STORAGE_KEY, serializeBackgroundPreference(next));
+    storage.setItem(CHARACTER_OVERLAY_MIGRATION_KEY, "1");
+  } catch {
+    // Still render the migrated defaults when persistence is unavailable.
+  }
+  return next;
 }
 
 function ascii(bytes: Uint8Array, start: number, length: number): string {
