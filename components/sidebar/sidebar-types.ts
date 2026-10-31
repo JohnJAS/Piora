@@ -221,17 +221,3 @@ export interface SessionSidebarHandle {
   openConversationSearch: () => void;
   focusPrimaryNavigation: () => void;
 }
-
-export interface WorktreeEntry {
-  path: string;
-  branch: string | null;
-  isMain: boolean;
-}
-
-export interface WorktreeState {
-  forCwd: string;
-  projectRoot: string;
-  isGit: boolean;
-  isTopLevel: boolean;
-  worktrees: WorktreeEntry[];
-}

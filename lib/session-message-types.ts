@@ -44,6 +44,7 @@ export interface SessionMessageInput {
 }
 
 export interface SessionCommandRecord {
+  taskTiming?: import("./task-timing").TaskTiming | null;
   revision?: number;
   queuePaused?: boolean;
   localFiles?: Array<{ name: string; size: number; path: string }>;
@@ -112,6 +113,7 @@ export interface SessionControlState {
 }
 
 export interface SessionCommandEvent {
+  taskTiming?: import("./task-timing").TaskTiming | null;
   revision?: number;
   queuePaused?: boolean;
   cursor: number;

@@ -15,6 +15,7 @@ import type { HarmonyVideoConnection } from "./types";
 const SOCKET = "localabstract:scrcpy_grpc_socket";
 const MAX_QUEUE = 8 * 1024 * 1024;
 const MAX_VIEWER_PACKETS = 8;
+const VIEWER_RECONNECT_GRACE_MS = 5_000;
 // Bound both bytes and frame count: an 8 MiB queue alone can hide seconds of lag.
 const viewerPacketSize = (packet: Uint8Array) => Math.max(packet.byteLength / MAX_QUEUE, 1 / MAX_VIEWER_PACKETS);
 type Run = (args: readonly string[], operation: string, signal?: AbortSignal, timeout?: number) => Promise<CommandResult>;
@@ -49,6 +50,7 @@ export class DevEcoVideoSession {
   private failed?: Error;
   private startedAt = Date.now();
   private firstFrameTimer?: ReturnType<typeof setTimeout>;
+  private idleTimer?: ReturnType<typeof setTimeout>;
   private ownership?: VideoOwnership;
   private journaled = false;
   private constructor(private readonly serial: string, private readonly run: Run, private readonly port: number,
@@ -159,12 +161,21 @@ export class DevEcoVideoSession {
 
   subscribe(signal?: AbortSignal, recording = false): HarmonyVideoConnection {
     if (this.closing || this.failed) throw this.failed ?? fail("The debug video session is closing");
+    clearTimeout(this.idleTimer); this.idleTimer = undefined;
     let viewer: Viewer, finished = false;
     const finish = async (error?: Error) => {
       if (finished) return this.closing;
       finished = true; signal?.removeEventListener("abort", abort); this.viewers.delete(viewer);
       try { if (error) viewer.controller.error(error); else viewer.controller.close(); } catch { /* cancelled reader */ }
-      if (!this.viewers.size) await this.close();
+      if (!this.viewers.size) {
+        if (this.failed) await this.close();
+        else {
+          // A renderer handoff or short network retry must not restart uitest.
+          clearTimeout(this.idleTimer);
+          this.idleTimer = setTimeout(() => { void this.close().catch(() => undefined); }, VIEWER_RECONNECT_GRACE_MS);
+          this.idleTimer.unref?.();
+        }
+      }
     };
     const abort = () => { void finish().catch(() => undefined); };
     const stream = new ReadableStream<Uint8Array>({
@@ -195,6 +206,7 @@ export class DevEcoVideoSession {
 
   close(): Promise<void> {
     return this.closing ??= (async () => {
+      clearTimeout(this.idleTimer); this.idleTimer = undefined;
       clearTimeout(this.firstFrameTimer);
       this.source?.cancel(); this.rpc?.close();
       // Never terminate another IDE's global uitest service or remove its forwarding rules.

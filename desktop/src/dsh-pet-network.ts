@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { EnvHttpProxyAgent } from "undici";
 
 export interface PetProxySettings { mode: "system" | "manual" | "direct"; proxyUrl: string; bypass: string }
-export interface PetNetwork { registry: string; environment: NodeJS.ProcessEnv }
+export interface PetNetwork { registry: string; environment: Partial<NodeJS.ProcessEnv> }
 
 /** Read only network settings: never copy npm credentials, scripts or arbitrary runtime options. */
 export function petNetwork(environment: NodeJS.ProcessEnv = process.env, proxy?: PetProxySettings): PetNetwork {
@@ -28,7 +28,7 @@ export function petNetwork(environment: NodeJS.ProcessEnv = process.env, proxy?:
   for (const value of [http, https]) {
     if (value && !["http:", "https:"].includes(new URL(value).protocol)) throw new Error("DSH Pet requires an HTTP or HTTPS proxy");
   }
-  const network: NodeJS.ProcessEnv = {
+  const network: Partial<NodeJS.ProcessEnv> = {
     HTTP_PROXY: http, HTTPS_PROXY: https, NO_PROXY: ["localhost", "127.0.0.1", "::1", bypass].filter(Boolean).join(","),
     NPM_CONFIG_REGISTRY: registry.href, NODE_USE_ENV_PROXY: "1",
   };

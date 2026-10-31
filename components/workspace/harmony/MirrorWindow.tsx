@@ -25,7 +25,7 @@ export function MirrorWindow({ embedded = false, serial: embeddedSerial, active 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { bindings } = useApplicationShortcuts();
   useEffect(() => {
-    setDevice(null); if (!serial) return;
+    setDevice(null); setDeviceError(""); if (!serial) return;
     const controller = new AbortController(); let pending = false;
     const load = async () => {
       if (pending) return; pending = true;
@@ -37,14 +37,17 @@ export function MirrorWindow({ embedded = false, serial: embeddedSerial, active 
     void load(); const timer = setInterval(() => { void load(); }, 2500);
     return () => { controller.abort(); clearInterval(timer); };
   }, [serial]);
-  const live = useHarmonyLiveFrame({ active: active && Boolean(state?.open && (embedded ? state.presentation === "sidebar" : state.presentation !== "sidebar")), enabled: device?.state === "online", serial, calibrateGeometry: false,
-    generation: device?.generation, canvasRef, chinese, allowFrameFallback: false, fallbackError: copy("画面连接失败", "Could not connect to the device") });
+  const presentation = embedded ? "sidebar" : "floating";
+  const presenting = active && state?.serial === serial && Boolean(state?.open && ((state.presentation ?? "floating") === presentation || state.pendingPresentation === presentation));
+  const currentDevice = device?.serial === serial ? device : null;
+  const live = useHarmonyLiveFrame({ active: presenting, enabled: currentDevice?.state === "online", serial, calibrateGeometry: false,
+    generation: currentDevice?.generation, canvasRef, chinese, allowFrameFallback: false, fallbackError: copy("画面连接失败", "Could not connect to the device") });
   const media = useHarmonyMedia(serial, state?.ownerId ?? "", Boolean(serial), chinese);
   const canScreenshot = device?.state === "online" && device.capabilities?.screenshot;
   const width = live.frame?.width, height = live.frame?.height;
   useEffect(() => {
-    if (!embedded && width && height) void window.piDesktop?.harmonyMirror?.reportFrame({ serial, width, height });
-  }, [serial, width, height, embedded]);
+    if (presenting && live.status === "live" && live.frame?.serial === serial && width && height) void window.piDesktop?.harmonyMirror?.reportFrame({ serial, width, height, presentation, transition: state?.presentationTransition });
+  }, [serial, width, height, presenting, presentation, live.status, live.frame?.serial, state?.presentationTransition]);
   const record = useCallback(() => {
     if (media.recording && !media.ownsRecording) return;
     void media.action(media.recording?.systemRecorderStateUnknown ? "retrieve_recording" : media.recording ? "stop_recording" : "start_recording");
@@ -77,6 +80,7 @@ export function MirrorWindow({ embedded = false, serial: embeddedSerial, active 
       <button aria-label={copy("投屏菜单", "Mirror menu")} onClick={() => { if (embedded) details(); else void window.piDesktop?.harmonyMirror?.showMenu(); }}>⋯</button>
       <button aria-label={copy("关闭投屏", "Close mirror")} onClick={() => { void window.piDesktop?.harmonyMirror?.close(); }}><AliIcon name="close" size={14} /></button>
     </header>
+    {state?.presentationFailed ? <div className={styles.compatibility} role="status">{copy("切换未完成，已保留原画面，请重试。", "The view could not be moved. Your original view is still active; please retry.")}</div> : null}
     {live.status === "error" ? <div className={styles.compatibility} role="status"><span>{live.error || copy("实时视频连接中断", "Live video disconnected")}</span><button onClick={live.refresh}>{copy("重新连接", "Reconnect")}</button></div> : null}
     <main className={styles.screen}><canvas ref={canvasRef} role="img" aria-label={copy("手机画面", "Device screen")} />
       {device?.state !== "online" || live.status !== "live" ? <div className={styles.placeholder} role="status">{deviceError || (device?.state !== "online" ? copy("等待设备连接", "Waiting for device") : live.status === "error" ? copy("正在重新连接…", "Reconnecting…") : copy("正在连接画面…", "Connecting…"))}</div> : null}

@@ -272,7 +272,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, cwd
     if (mirror?.open && mirror.presentation === "sidebar" && mirror.serial) setSelectedSerial(mirror.serial);
   }, [mirror?.open, mirror?.presentation, mirror?.serial]);
   const [mirrorPresentation, setMirrorPresentation] = useState<"floating" | "sidebar">("floating");
-  useEffect(() => { if (mirror?.presentation) setMirrorPresentation(mirror.presentation); }, [mirror?.presentation]);
+  useEffect(() => { if (mirror?.presentation) setMirrorPresentation(mirror.pendingPresentation ?? mirror.presentation); }, [mirror?.presentation, mirror?.pendingPresentation]);
   const openSelectedMirror = async () => {
     const bridge = window.piDesktop?.harmonyMirror; if (!bridge || !selectedSerial) return;
     try { if (mirrorPresentation === "sidebar") { await bridge.selectDevice(selectedSerial); await bridge.setPresentation("sidebar"); } else await bridge.open(selectedSerial); }
@@ -584,7 +584,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, cwd
         </div></div>
       </div>
       <div className={styles.toolbarActions}>
-        <select aria-label={copy("投屏位置", "Mirror position")} value={mirror?.open ? mirror.presentation ?? mirrorPresentation : mirrorPresentation} onChange={event => {
+        <select aria-label={copy("投屏位置", "Mirror position")} value={mirror?.open ? mirror.pendingPresentation ?? mirror.presentation ?? mirrorPresentation : mirrorPresentation} onChange={event => {
           const value = event.target.value as "floating" | "sidebar"; setMirrorPresentation(value);
           if (mirror?.open) void window.piDesktop?.harmonyMirror?.setPresentation(value).catch(failure => setError(String(failure)));
         }}><option value="floating">{copy("独立悬浮窗", "Floating window")}</option><option value="sidebar">{copy("侧栏内显示", "Inside sidebar")}</option></select>
@@ -699,7 +699,7 @@ export function HarmonyPanel({ active, maximized = false, onMaximizedChange, cwd
       <button type="button" className={styles.tasksButton} onClick={() => changeToolTab("history")}>{copy("任务", "Tasks")}{tasksCount ? ` ${tasksCount}` : ""}</button>
       {lease || holder ? <button type="button" className={styles.stopButton} onClick={stopDevice} aria-label={copy("停止设备任务", "Stop device task")}>{copy("停止", "Stop")}</button> : null}
     </nav>
-    {mirror?.open && mirror.presentation === "sidebar" ? <section className={styles.embeddedMirror} style={{ height: `calc(36px + ${65 * mirror.scale / 100}dvh)` }} aria-label={copy("侧栏投屏", "Sidebar mirror")}><MirrorWindow embedded serial={selectedSerial} active={active} /></section> : null}
+    {mirror?.open && (mirror.presentation === "sidebar" || mirror.pendingPresentation === "sidebar") ? <section className={styles.embeddedMirror} style={{ height: `calc(36px + ${65 * mirror.scale / 100}dvh)`, ...(mirror.presentation !== "sidebar" ? { position: "absolute", visibility: "hidden", pointerEvents: "none" } as const : {}) }} aria-hidden={mirror.presentation !== "sidebar"} aria-label={copy("侧栏投屏", "Sidebar mirror")}><MirrorWindow key={mirror.serial} embedded serial={mirror.serial} active={active} /></section> : null}
     <main className={styles.workbenchContent} data-tab={toolTab}>
       <div ref={drawerBodyRef} id={drawerId} role="tabpanel" aria-labelledby={`${drawerId}-${toolTab}`} className={styles.workbenchBody} aria-label={copy("工具内容", "Tool content")}>
         {toolTab === "overview" ? <section className={styles.overview}>

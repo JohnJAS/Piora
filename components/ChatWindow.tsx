@@ -24,6 +24,7 @@ import { ChatMinimap } from "./ChatMinimap";
 import { ChatScrollRail } from "./ChatScrollRail";
 import { useI18n } from "@/hooks/useI18n";
 import { useAgentSession, type AgentPhase, type NoticeItem, type SlashCommandInfo } from "@/hooks/useAgentSession";
+import { TaskDuration } from "./TaskDuration";
 import { ToolReviewStatus } from "./ToolReviewStatus";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -942,6 +943,14 @@ export function ChatWindow({ historyVisible = false, onHistoryControlsChange, se
           }}
         >
           <div className="chat-column">
+            <TaskDuration
+              key={session?.id ?? sessionIdRef.current ?? "new"}
+              timing={chatCommands.taskTiming}
+              busy={sessionBusy}
+              startedAt={statusClock?.runStartedAt ?? busySinceRef.current}
+              phase={isCompacting ? t("chat.compacting") : extensionDialog ? t("chat.taskDuration.waitingInput") : retryInfo ? t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts }) : phaseLabel(agentPhase, t)}
+              t={t}
+            />
             <ExtensionWidgets widgets={belowEditorWidgets} />
           </div>
         </div>

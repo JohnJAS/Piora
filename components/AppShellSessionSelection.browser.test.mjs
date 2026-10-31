@@ -44,6 +44,7 @@ test("one project-session click keeps the chosen chat through cwd effects and de
   await writeFile(path.join(directory, "stub.tsx"), "export const DirectoryPicker=()=>null;export const RoomSidebarSection=()=>null;export const ConversationSearchDialog=()=>null;");
   await writeFile(path.join(directory, "entry.tsx"), `
 import React from 'react'; import {createRoot} from 'react-dom/client';
+import {GitToolsPopover} from "@/components/workspace/GitToolsPopover";
 import {SessionSidebar} from '@/components/SessionSidebar'; import {I18nProvider} from '@/hooks/useI18n';
 import {parseWorkspaceContinuity,workspaceContinuityStorageKey} from '@/lib/workspace-continuity';
 ${["getSelectionHistoryState", "replaceUrlWithoutNextNavigation"].map(name => helpers.get(name)).join("\n")}
@@ -75,10 +76,12 @@ function App(){
   window.makeDirty=()=>setFileTabs([{id:'dirty',filePath:'F:\\\\Alpha\\\\edited.ts',isDirty:true}]);
   window.makeClean=()=>setFileTabs([]);
   React.useLayoutEffect(()=>{window.states.push(window.navigation())},[selectedSession,sessionKey,newSessionCwd]);
+  const checkout=selectedSession?.cwd??newSessionCwd??activeCwd;
+  const gitStatus={isGitRepository:true,repositoryRoot:checkout,files:[],additions:3,deletions:1,branch:checkout?.includes('layout-check')?'layout-check':checkout?.includes('feature')?'feature':'main'};
   return <I18nProvider><aside style={{width:320,height:800}}><SessionSidebar selectedSessionId={selectedSession?.id??null}
     selectedCwd={selectedSession?.projectless?null:selectedSession?.cwd??newSessionCwd??null} activeProjectRoot={activeProjectRoot} onSelectSession={handleSelectSession}
     onNewSession={handleNewSession} onCwdChange={handleCwdChange} /></aside>
-    <main><output>{selectedSession?selectedSession.name:'New session'}</output><textarea key={sessionKey} aria-label="composer" defaultValue={selectedSession?.id??'new'}/></main></I18nProvider>
+    <main>{checkout&&!checkout.includes('Notes')&&!selectedSession?.projectless&&<GitToolsPopover key={checkout} cwd={checkout} status={gitStatus} onOpenChanges={()=>{window.openedChanges=true}} onOpenCommit={()=>{window.openedCommit=true}} onSelectWorktree={path=>handleNewSession('worktree-fixture',path)}/>}<output>{selectedSession?selectedSession.name:'New session'}</output><textarea key={sessionKey} aria-label="composer" defaultValue={selectedSession?.id??'new'}/></main></I18nProvider>
 }
 createRoot(document.getElementById('root')).render(<App/>);`);
   const compiler = webpack({ mode: "development", target: "web", devtool: false,
@@ -150,65 +153,53 @@ createRoot(document.getElementById('root')).render(<App/>);`);
   // The dirty-tab confirmation scenario above deliberately leaves its draft.
   // Finish that scenario before testing ordinary worktree navigation.
   await page.evaluate(()=>window.makeClean());
-  // Worktree controls belong to their project, never to global navigation.
-  const alpha = page.getByRole('region',{name:'Alpha',exact:true});
-  const beta = page.getByRole('region',{name:'Beta',exact:true});
-  const openProjectMenu = async (name) => {
-    const project = page.getByRole('region',{name,exact:true});
-    await project.getByRole('button',{name,exact:true}).hover();
-    await project.getByRole('button',{name:`Project menu for ${name}`,exact:true}).click();
-  };
-  assert.equal(await page.locator('.sidebar-header').count(), 0);
-  assert.equal(await page.locator('.project-worktree-section').count(), 0, 'single checkout is hidden');
-  await openProjectMenu('Beta');
-  await page.getByRole('menuitem',{name:'Worktrees…',exact:true}).click();
-  await beta.getByRole('button',{name:'Switch worktree',exact:true}).waitFor();
-  await beta.getByText('Main worktree',{exact:true}).waitFor();
+  // The sidebar remains a task list; Git tools follow the selected conversation.
+  assert.equal(await page.locator('.project-worktree-section').count(),0);
+  const open = async () => { await page.getByRole('button',{name:'Git tools',exact:true}).click(); };
+  const dialog = page.getByRole('dialog',{name:'Git tools',exact:true});
+  const expand = async (branch='main') => { await dialog.getByRole('button',{name:branch,exact:true}).click(); };
+  await open(); await expand();
+  await dialog.getByText('Main worktree',{exact:true}).waitFor();
+  assert.equal(await dialog.getByText('feature',{exact:true}).count(),0,'Beta does not expose Alpha worktrees');
   await page.keyboard.press('Escape');
-  await page.waitForFunction(()=>document.querySelectorAll('.project-worktree-section').length===0);
-  assert.equal(await beta.getByRole('button',{name:'Project menu for Beta',exact:true}).evaluate(el=>el===document.activeElement),true);
-  // Open an unselected, collapsed project from its menu without using Beta's data.
-  await alpha.getByRole('button',{name:'Alpha',exact:true}).click();
-  await beta.getByRole('treeitem',{name:'Beta existing chat',exact:true}).click();
-  await openProjectMenu('Alpha');
-  await page.getByRole('menuitem',{name:'Worktrees…',exact:true}).click();
-  await alpha.getByRole('button',{name:'feature',exact:true}).click();
-  await page.waitForFunction(()=>window.navigation().cwd==='F:\\Alpha-worktrees\\feature');
-  assert.equal(await alpha.locator('.project-worktree-section').count(),1);
-  assert.equal(await beta.locator('.project-worktree-section').count(),0);
-  const switcher=alpha.getByRole('button',{name:'Switch worktree',exact:true});
-  assert.match(await switcher.innerText(),/feature/);
-  assert.equal(await switcher.getAttribute('aria-expanded'),'false');
-  await switcher.click();
-  await alpha.getByRole('button',{name:'main Main worktree',exact:true}).click();
-  await page.waitForFunction(()=>window.navigation().cwd==='F:\\Alpha');
-  await alpha.getByRole('button',{name:'New worktree…',exact:true}).waitFor({state:'hidden'});
-  if(process.env.PIORA_WORKTREE_SCREENSHOTS) {
-    await mkdir(path.join(repo,'test-results','worktree-sidebar'),{recursive:true});
-    await page.screenshot({path:path.join(repo,'test-results','worktree-sidebar','multiple.png')});
-  }
-  await openProjectMenu('Beta');
-  await page.getByRole('menuitem',{name:'Worktrees…',exact:true}).click();
-  await beta.getByRole('button',{name:'New worktree…',exact:true}).click();
-  await beta.getByPlaceholder('branch name').fill('layout-check');
-  await beta.getByRole('button',{name:'Create',exact:true}).click();
-  await page.waitForFunction(()=>window.navigation().cwd==='F:\\Beta-worktrees\\layout-check');
-  await beta.getByRole('button',{name:'Switch worktree',exact:true}).click();
-  await beta.getByRole('button',{name:'Remove worktree checkout F:\\Beta-worktrees\\layout-check; the branch is kept',exact:true}).click();
-  await beta.getByRole('button',{name:'Force',exact:true}).click();
-  await page.waitForFunction(()=>window.navigation().cwd==='F:\\Beta');
+  assert.equal(await page.getByRole('button',{name:'Git tools',exact:true}).evaluate(el=>el===document.activeElement),true);
+  await page.getByRole('treeitem',{name:'Alpha existing chat',exact:true}).click();
+  await open(); await expand();
+  await dialog.getByRole('button',{name:/^feature F:/}).click();
+  await page.waitForFunction(()=>window.navigation().newSessionCwd==='F:\\Alpha-worktrees\\feature');
+  assert.equal(await page.evaluate(()=>window.navigation().id),null,'worktree selection starts a new chat');
+  assert.equal(await page.getByRole('treeitem',{name:'Alpha existing chat',exact:true}).count(),1,'original chat remains');
+  await open(); await expand('feature');
+  assert.equal(await dialog.getByRole('button',{name:'Remove worktree checkout F:\\Alpha-worktrees\\feature; the branch is kept',exact:true}).isDisabled(),true);
+  await dialog.getByRole('button',{name:'main Main worktree F:\\Alpha',exact:true}).click();
+  await page.waitForFunction(()=>window.navigation().newSessionCwd==='F:\\Alpha');
+  await page.getByRole('treeitem',{name:'Beta existing chat',exact:true}).click();
+  await open(); await expand();
+  await dialog.getByRole('button',{name:'New worktree…',exact:true}).click();
+  await dialog.getByRole('textbox',{name:'Branch name',exact:true}).fill('layout-check');
+  await dialog.getByRole('button',{name:'Create and open',exact:true}).click();
+  await page.waitForFunction(()=>window.navigation().newSessionCwd==='F:\\Beta-worktrees\\layout-check');
+  await open(); await expand('layout-check');
+  assert.equal(await dialog.getByRole('button',{name:'Remove worktree checkout F:\\Beta-worktrees\\layout-check; the branch is kept',exact:true}).isDisabled(),true);
+  await dialog.getByRole('button',{name:'main Main worktree F:\\Beta',exact:true}).click();
+  await open(); await expand();
+  await dialog.getByRole('button',{name:'Remove worktree checkout F:\\Beta-worktrees\\layout-check; the branch is kept',exact:true}).click();
+  await dialog.getByRole('button',{name:'Remove worktree',exact:true}).click();
+  await dialog.getByText(/permanently discards/).waitFor();
+  await dialog.getByRole('button',{name:'Discard changes and remove',exact:true}).click();
+  // The confirmation and checkout row both contain the branch name until the
+  // DELETE settles. Wait for each surface without an ambiguous text locator.
+  await dialog.getByRole('alert').waitFor({state:'hidden'});
+  await dialog.getByRole('button',{name:/^layout-check F:/}).waitFor({state:'hidden'});
+  assert.equal(await dialog.getByText('layout-check',{exact:true}).count(),0);
   assert.deepEqual(mutations,[
     {method:'POST',cwd:'F:\\Beta',branch:'layout-check'},
     {method:'DELETE',cwd:'F:\\Beta',path:'F:\\Beta-worktrees\\layout-check',force:false},
     {method:'DELETE',cwd:'F:\\Beta',path:'F:\\Beta-worktrees\\layout-check',force:true},
   ]);
   await page.keyboard.press('Escape');
-  const notesLoaded = page.waitForResponse(response=>{
-    const url = new URL(response.url());
-    return url.pathname === '/api/worktrees' && url.searchParams.get('cwd') === 'F:\\Notes';
-  });
-  await openProjectMenu('Notes');
-  await notesLoaded;
-  assert.equal(await page.getByRole('menuitem',{name:'Worktrees…',exact:true}).count(),0,'non-Git project has no worktree action');
+  await page.getByRole('treeitem',{name:'Non-Git chat',exact:true}).click();
+  assert.equal(await page.getByRole('button',{name:'Git tools',exact:true}).count(),0);
+  assert.equal(await page.locator('.project-worktree-section').count(),0);
   assert.deepEqual(errors,[]);
 });

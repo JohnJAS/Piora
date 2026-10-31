@@ -28,6 +28,7 @@ class HarmonyDeviceWindow {
   private notified = new Set<string>();
   private appliedBounds: { x: number; y: number; width: number; height: number } | undefined;
   private forceClose = false;
+  private presentationTimer: ReturnType<typeof setTimeout> | undefined;
   private prefs = new Map<string, SavedWindow>();
   private state: HarmonyWindowState = { serial: "", scale: 75, alwaysOnTop: false, open: false, minimized: false, ownerId: `desktop-media-${randomUUID()}` };
   constructor(private deps: Dependencies & { register: (name: string, handler: Handler) => void; selected: () => boolean; prefs: Map<string, SavedWindow> }) {
@@ -43,13 +44,10 @@ class HarmonyDeviceWindow {
       return run(event, value);
     });
     call("state", () => this.snapshot());
-    call("open", (_event, value) => this.serialized(async () => { await this.select(value); this.state.presentation = "floating"; this.state.open = true; this.create(); this.focus(); this.emit(); return this.snapshot(); }));
+    call("open", (_event, value) => this.serialized(async () => { await this.select(value); return this.present("floating"); }));
     call("presentation", (_event, value) => this.serialized(async () => {
       if (value !== "floating" && value !== "sidebar") throw new Error("Invalid mirror presentation");
-      this.state.presentation = value; this.state.open = true;
-      if (value === "sidebar") { this.mirror?.hide(); this.deps.workbench(); }
-      else { this.create(); this.focus(); }
-      this.emit(); return this.snapshot();
+      return this.present(value);
     }));
     call("select", (_event, value) => this.serialized(async () => { await this.select(value); return this.snapshot(); }));
     call("close", () => this.requestClose());
@@ -57,11 +55,18 @@ class HarmonyDeviceWindow {
     call("scale", (_event, value) => { if (!this.validScale(value)) throw new Error("Invalid mirror scale"); this.state.scale = value; this.place(); this.save(); this.emit(); return this.snapshot(); });
     call("top", (_event, value) => { if (typeof value !== "boolean") throw new Error("Invalid window preference"); this.state.alwaysOnTop = value; this.mirror?.setAlwaysOnTop(value); this.emit(); return this.snapshot(); });
     call("frame", (event, value) => {
-      if (!this.trustedMirror(event) || !value || typeof value !== "object") return;
-      const frame = value as { serial?: unknown; width?: unknown; height?: unknown };
+      if (!value || typeof value !== "object") return;
+      const frame = value as { serial?: unknown; width?: unknown; height?: unknown; presentation?: unknown; transition?: unknown };
+      const presentation = this.trustedMirror(event) ? "floating" : "sidebar";
+      if (frame.presentation !== undefined && frame.presentation !== presentation) return;
       if (frame.serial !== this.state.serial || typeof frame.width !== "number" || typeof frame.height !== "number" || !Number.isInteger(frame.width) || !Number.isInteger(frame.height) || frame.width < 1 || frame.height < 1 || frame.width > 8192 || frame.height > 8192) return;
       const ratio = frame.width / frame.height;
       if (Math.abs(this.ratio - ratio) > .0001) { this.ratio = ratio; this.mirror?.setAspectRatio(ratio, { width: 2, height: 38 }); this.place(); }
+      if (this.state.pendingPresentation === presentation && frame.transition === this.state.presentationTransition) {
+        this.cancelPresentation(); this.state.presentation = presentation;
+        if (presentation === "sidebar") this.mirror?.hide(); else this.focus();
+        this.emit();
+      }
     });
     call("workbench", () => deps.workbench());
     call("menu", () => this.menu());
@@ -77,6 +82,32 @@ class HarmonyDeviceWindow {
 
   }
   private preferencePath() { return join(app.getPath("userData"), "harmony-mirror-windows.json"); }
+  private cancelPresentation() {
+    clearTimeout(this.presentationTimer); this.presentationTimer = undefined;
+    delete this.state.pendingPresentation; delete this.state.presentationTransition;
+  }
+  private present(value: "floating" | "sidebar") {
+    this.cancelPresentation(); delete this.state.presentationFailed;
+    if (this.state.open && this.state.presentation && this.state.presentation !== value) {
+      // Keep the current renderer subscribed until the destination paints a frame.
+      this.state.pendingPresentation = value;
+      this.state.presentationTransition = randomUUID();
+      this.presentationTimer = setTimeout(() => {
+        this.cancelPresentation(); this.state.presentationFailed = true; this.emit();
+      }, 30_000);
+      if (value === "floating") this.create(); else this.deps.workbench();
+    } else {
+      this.state.presentation = value; this.state.open = true;
+      if (value === "sidebar") { this.mirror?.hide(); this.deps.workbench(); }
+      else { this.create(); this.focus(); }
+    }
+    this.emit(); return this.snapshot();
+  }
+  suspendSidebar() {
+    this.cancelPresentation();
+    if (this.state.presentation === "sidebar") { this.state.open = false; this.mirror?.hide(); }
+    this.emit();
+  }
   private validScale(value: unknown): value is MirrorScale { return value === 25 || value === 50 || value === 75 || value === 100; }
   private snapshot() { return { ...this.state }; }
   private trusted(event: IpcMainInvokeEvent, window: BrowserWindow | null, pathname: string) {
@@ -138,7 +169,7 @@ class HarmonyDeviceWindow {
     window.webContents.on("will-attach-webview", event => event.preventDefault());
     window.webContents.setZoomFactor(1);
     void window.webContents.setVisualZoomLevelLimits(1, 1);
-    window.once("ready-to-show", () => { if (!window.isDestroyed()) { if (options.focusable === false) window.showInactive(); else window.show(); } });
+    window.once("ready-to-show", () => { if (!window.isDestroyed() && (pathname !== "/desktop-harmony" || this.state.presentation === "floating")) { if (options.focusable === false) window.showInactive(); else window.show(); } });
     void window.loadURL(target.href).catch(() => { if (!window.isDestroyed()) window.destroy(); });
     return window;
   }
@@ -149,7 +180,13 @@ class HarmonyDeviceWindow {
     const window = this.createSurface("/desktop-harmony", { ...mirrorBounds(area, this.ratio, this.state.scale, saved), title: "Piora · 鸿蒙投屏", frame: false, resizable: true, minWidth: 180, minHeight: 120, maximizable: false, fullscreenable: false, alwaysOnTop: this.state.alwaysOnTop });
     this.mirror = window; window.setAspectRatio(this.ratio, { width: 2, height: 38 }); this.state.open = true; this.state.minimized = false;
     window.on("close", event => { if (this.forceClose) return; event.preventDefault(); void this.requestClose(); });
-    window.on("closed", () => { this.mirror = null; this.state.open = false; this.state.minimized = false; this.emit(); });
+    window.on("closed", () => {
+      this.mirror = null; this.state.minimized = false;
+      if (!this.forceClose && this.state.presentation === "sidebar") {
+        this.cancelPresentation(); this.state.presentationFailed = true;
+      } else this.state.open = false;
+      this.emit();
+    });
     window.on("moved", () => {
       if (this.placing) return;
       const bounds = window.getBounds();
@@ -183,7 +220,7 @@ class HarmonyDeviceWindow {
   async close() {
     if (!this.mirror && !this.state.open) return true;
     if (!await this.confirmRecording("关闭投屏")) return false;
-    this.save(); this.forceClose = true; this.mirror?.close(); this.forceClose = false;
+    this.cancelPresentation(); this.save(); this.forceClose = true; this.mirror?.close(); this.forceClose = false;
     this.state.open = false; this.emit(); return true;
   }
   private requestClose(): Promise<boolean> {
@@ -193,7 +230,7 @@ class HarmonyDeviceWindow {
     return pending;
   }
   async prepareQuit() { return this.serialized(() => this.state.serial ? this.confirmRecording("退出 Piora") : Promise.resolve(true)); }
-  destroy() { this.forceClose = true; this.finishMessage?.(null); this.mirror?.destroy(); }
+  destroy() { this.cancelPresentation(); this.forceClose = true; this.finishMessage?.(null); this.mirror?.destroy(); }
   private menu() {
     if (!this.mirror) return;
     const command = (value: string) => this.mirror?.webContents.send("pi:harmony-window-command", value);
@@ -251,6 +288,7 @@ export class HarmonyWindows {
   private selected: DeviceEntry;
   private prefs = new Map<string, SavedWindow>();
   private channels = new Set<string>();
+  private selectionTransition: Promise<unknown> = Promise.resolve();
   constructor(private deps: Dependencies) {
     this.selected = this.createEntry("");
     screen.on("display-metrics-changed", () => { for (const entry of this.devices.values()) void entry.window.place(); });
@@ -271,6 +309,14 @@ export class HarmonyWindows {
     return entry;
   }
   private dispatch(name: string, event: IpcMainInvokeEvent, value: unknown) {
+    if (["pi:harmony-window-open", "pi:harmony-window-select", "pi:harmony-window-presentation"].includes(name)) {
+      const next = this.selectionTransition.then(() => this.dispatchNow(name, event, value));
+      this.selectionTransition = next.catch(() => undefined);
+      return next;
+    }
+    return this.dispatchNow(name, event, value);
+  }
+  private dispatchNow(name: string, event: IpcMainInvokeEvent, value: unknown) {
     const main = this.deps.trustedMain(event);
     let entry = main ? this.selected : [...this.devices.values()].find(item => item.window.trustedMirror(event) || item.window.trustedMessage(event));
     if (!entry) throw new Error("Untrusted Harmony window request");
@@ -280,9 +326,13 @@ export class HarmonyWindows {
       if (!main) throw new Error("Only the workbench can select a Harmony device");
       if (typeof value !== "string" || !value || value.length > 256 || /[\x00-\x1f]/.test(value)) throw new Error("Invalid Harmony device");
       entry = this.devices.get(value) ?? this.createEntry(value);
+      const previousEntry = this.selected;
       this.selected = entry;
+      if (previousEntry !== entry) previousEntry.window.suspendSidebar();
     } else if (name === "pi:harmony-window-presentation" && !main) {
+      const previousEntry = this.selected;
       this.selected = entry;
+      if (previousEntry !== entry) previousEntry.window.suspendSidebar();
     }
     const result = entry.handlers.get(name)!(event, value);
     // Re-selecting an already-open device must still update the workbench.

@@ -61,6 +61,7 @@ type StreamAttempt = {
   failure?: Error;
   startedAt: number;
   decodedFrames: number;
+  decoderSubmitted?: boolean;
   jpegChain: Promise<void>;
   jpegPending?: { bytes: Uint8Array; config: StreamConfig };
   jpegBusy?: boolean;
@@ -209,6 +210,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
     let revision = 0;
     let firstKeyframe = false;
     let failures = 0;
+    let preferSoftwareDecoder = false;
     let hasFrame = false;
     let activeAttempt: StreamAttempt | undefined;
     let fallback: { controller: AbortController; done: Promise<void> } | undefined;
@@ -243,6 +245,7 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
       window.clearTimeout(attempt.watchdog);
       attempt.watchdog = window.setTimeout(() => {
         if (disposed || activeAttempt !== attempt) return;
+        if (!attempt.decodedFrames && attempt.decoderSubmitted) preferSoftwareDecoder = true;
         attempt.failure = new Error("Harmony video stopped producing frames");
         attempt.controller.abort();
         void attempt.reader?.cancel(attempt.failure).catch(() => undefined);
@@ -336,9 +339,16 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         optimizeForLatency: true,
         hardwareAcceleration: "prefer-hardware",
       };
-      const support = await VideoDecoder.isConfigSupported(decoderConfig);
-      if (disposed || activeAttempt !== attempt || attempt.controller.signal.aborted || decoderEpoch !== configuredEpoch) return;
-      if (!support.supported) throw new Error(`H.264 decoder ${decoderConfig.codec} is unavailable`);
+      let supportedConfig: VideoDecoderConfig | undefined;
+      const accelerations: HardwareAcceleration[] = preferSoftwareDecoder
+        ? ["prefer-software", "no-preference"] : ["prefer-hardware", "no-preference", "prefer-software"];
+      for (const hardwareAcceleration of accelerations) {
+        const candidate = { ...decoderConfig, hardwareAcceleration };
+        const support = await VideoDecoder.isConfigSupported(candidate).catch(() => undefined);
+        if (disposed || activeAttempt !== attempt || attempt.controller.signal.aborted || decoderEpoch !== configuredEpoch) return;
+        if (support?.supported) { supportedConfig = support.config ?? candidate; break; }
+      }
+      if (!supportedConfig) throw new Error(`H.264 decoder ${decoderConfig.codec} is unavailable`);
       decoder = new VideoDecoder({
         output: (videoFrame) => {
           if (disposed || activeAttempt !== attempt || attempt.controller.signal.aborted || decoderEpoch !== configuredEpoch) {
@@ -375,11 +385,13 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
         error: (decodeError) => {
           if (disposed || activeAttempt !== attempt || attempt.controller.signal.aborted || decoderEpoch !== configuredEpoch) return;
           const failure = new Error(decodeError.message || options.fallbackError);
+          preferSoftwareDecoder = true;
           attempt.failure = failure;
           void attempt.reader?.cancel(failure).catch(() => undefined);
         },
       });
-      decoder.configure(support.config ?? decoderConfig);
+      try { decoder.configure(supportedConfig); }
+      catch (error) { preferSoftwareDecoder = true; throw error; }
     };
 
     const drawJpeg = async (bytes: Uint8Array, next: StreamConfig, attempt: StreamAttempt) => {
@@ -455,7 +467,8 @@ export function useHarmonyLiveFrame(options: UseHarmonyLiveFrameOptions) {
           }
         }
         const chunkData = keyframe ? keyframeData(config, data) : startCodedUnit(data);
-        decoder.decode(new EncodedVideoChunk({ type: keyframe ? "key" : "delta", timestamp, data: chunkData }));
+        try { attempt.decoderSubmitted = true; decoder.decode(new EncodedVideoChunk({ type: keyframe ? "key" : "delta", timestamp, data: chunkData })); }
+        catch (error) { preferSoftwareDecoder = true; throw error; }
         if (keyframe) firstKeyframe = true;
       } else if (config.codec === JPEG) {
         // JPEG frames are independent. Keep reading the transport while one

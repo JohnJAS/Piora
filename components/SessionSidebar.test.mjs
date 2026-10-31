@@ -10,7 +10,7 @@ const sidebarStyles = await readFile(new URL("./SessionSidebar.module.css", impo
 const splitSources = await Promise.all([
   "ProjectList.tsx", "SidebarNavigation.tsx", "SidebarProjectArea.tsx", "SidebarFileArea.tsx",
   "SidebarChatArea.tsx",
-  "useSessionCatalog.ts", "sidebar-utils.ts", "sidebar-types.ts", "useProjectPicker.ts", "WorktreeSection.tsx",
+  "useSessionCatalog.ts", "sidebar-utils.ts", "sidebar-types.ts", "useProjectPicker.ts",
 ].map((file) => readFile(new URL(`./sidebar/${file}`, import.meta.url), "utf8")));
 const source = [mainSource, taskRowSource, ...splitSources].join("\n");
 const sessionItemSource = taskRowSource.slice(taskRowSource.indexOf("export const TaskRow = memo(function TaskRow("));
@@ -194,20 +194,20 @@ test("exposes the existing validated project picker to shell-level project actio
   assert.match(source, /commitCustomPath[\s\S]*?fetch\("\/api\/cwd\/validate"/);
 });
 
-test("keeps the real worktree switcher without an inactive repo-root hint", () => {
-  assert.match(source, /showWorktreeSwitcher/);
-  assert.match(source, /sidebar\.switchWorktreeTitle/);
-  assert.doesNotMatch(source, /inactiveWorktreeSelector/);
-  assert.doesNotMatch(source, /sidebar\.openRepoRoot/);
+test("worktree management lives in the conversation Git tools, not the project list", async () => {
+  const shell = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
+  const tools = await readFile(new URL("./workspace/GitToolsPopover.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /WorktreeSection|worktreeSection|onOpenWorktrees|project-worktree-section/);
+  assert.match(shell, /<GitToolsPopover/);
+  assert.match(tools, /onSelectWorktree/);
+  assert.match(tools, /method: "POST" \| "DELETE"/);
 });
 
 test("uses a compact Codex-style Piora brand row without the old animated title", () => {
   assert.doesNotMatch(source, /PiWebTitle|useScramble|sidebar-title-row/);
   assert.match(source, /sidebar\.appMenu/);
   assert.doesNotMatch(source, /className="sidebar-header"/);
-  assert.match(source, /className="project-worktree-section"/);
-  assert.match(source, /worktreeSection=\{selectedProject === group\.projectRoot \? props\.worktreeSection : null\}/);
-  assert.match(source, /<div className=\{styles\.sessionList\}>\s*\{worktreeSection\}/);
+  assert.match(source, /<div className=\{styles\.sessionList\}>/);
   assert.doesNotMatch(source, /<span>Piora<\/span>[\s\S]{0,120}rotate\(90deg\)/);
 });
 

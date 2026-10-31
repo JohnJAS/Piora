@@ -24,6 +24,7 @@ export type RightPanelTab = "home" | "automation" | "review" | "files" | "comman
 export interface RightPanelHandle { focusActiveTab: () => void; focusFileSearch: () => void; }
 
 interface Props {
+  commitRequest?: { cwd: string; id: number } | null;
   contextHeader?: ReactNode;
   activeTab: RightPanelTab;
   onActiveTabChange: (tab: RightPanelTab) => void;
@@ -343,7 +344,7 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
       </button>)}
     </div> : null}
     <section id="workspace-review" role="tabpanel" aria-labelledby="workspace-review-tab" hidden={activeTab !== "review"} className={styles.panel}>
-      {activeTab === "review" ? <RenderErrorBoundary resetKey={`review:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><ReviewPanel cwd={cwd} refreshKey={refreshKey} onRefresh={props.onRefresh} onOpenFile={(path) => { props.onOpenFile(path, path.replace(/\\/g, "/").split("/").pop() ?? path); onActiveTabChange("files"); }} /></RenderErrorBoundary> : null}
+      {activeTab === "review" ? <RenderErrorBoundary resetKey={`review:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><ReviewPanel cwd={cwd} commitRequest={props.commitRequest?.cwd === cwd ? props.commitRequest.id : undefined} refreshKey={refreshKey} onRefresh={props.onRefresh} onOpenFile={(path) => { props.onOpenFile(path, path.replace(/\\/g, "/").split("/").pop() ?? path); onActiveTabChange("files"); }} /></RenderErrorBoundary> : null}
     </section>
     <section id="workspace-files" role="tabpanel" aria-labelledby="workspace-files-tab" hidden={activeTab !== "files"} className={styles.panel} style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
       {filesHasOpened ? <RenderErrorBoundary resetKey={`files:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}>

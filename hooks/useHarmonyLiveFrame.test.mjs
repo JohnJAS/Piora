@@ -668,6 +668,67 @@ function watchdogDecoder({ produceFrames = false } = {}) {
   };
 }
 
+test("tablet H264 falls back from an unsupported hardware configuration without abandoning video", async () => {
+  const probed = [];
+  const Base = watchdogDecoder({ produceFrames: true });
+  class Decoder extends Base {
+    static async isConfigSupported(config) {
+      probed.push(config);
+      return { supported: config.hardwareAcceleration !== "prefer-hardware", config };
+    }
+  }
+  const hook = await mountLiveFrame(async () => new Response(new ReadableStream({ start(controller) {
+    controller.enqueue(capacityPackets(["key"], 2880, 1920));
+  } })), Decoder, undefined, { hookOptions: { allowFrameFallback: false } });
+  try {
+    assert.deepEqual(probed.map(config => config.hardwareAcceleration), ["prefer-hardware", "no-preference"]);
+    assert.ok(probed.every(config => config.codedWidth === 2880 && config.codedHeight === 1920));
+    assert.equal(hook.states[1], "live"); assert.equal(hook.states[2], "video");
+    assert.equal(hook.calls.some(url => url.includes("/frame?")), false);
+  } finally { hook.cleanup(); }
+});
+
+test("a fatal hardware decode failure retries with software instead of looping the same broken decoder", async () => {
+  const clock = virtualClock(), configurations = [];
+  const Base = watchdogDecoder({ produceFrames: true });
+  class Decoder extends Base {
+    configure(config) { super.configure(config); this.hardware = config.hardwareAcceleration; configurations.push(this.hardware); }
+    decode(chunk) {
+      if (this.hardware === "prefer-hardware") { this.state = "closed"; this.callbacks.error(new Error("GPU decode failed")); }
+      else super.decode(chunk);
+    }
+  }
+  const hook = await mountLiveFrame(async () => new Response(new ReadableStream({ start(controller) {
+    controller.enqueue(capacityPackets(["key"], 2880, 1920));
+  } })), Decoder, undefined, { clock, hookOptions: { allowFrameFallback: false } });
+  try {
+    await clock.advance(300);
+    assert.deepEqual(configurations, ["prefer-hardware", "prefer-software"]);
+    assert.equal(hook.states[1], "live"); assert.equal(hook.states[2], "video");
+    assert.equal(hook.calls.filter(url => url.includes("/video?")).length, 2);
+    assert.equal(hook.calls.some(url => url.includes("/frame?")), false);
+  } finally { hook.cleanup(); }
+});
+
+test("a hardware decoder that accepts a tablet keyframe but never outputs pixels retries in software", async () => {
+  const clock=virtualClock(), configured=[];
+  const Base=watchdogDecoder({produceFrames:true});
+  class Decoder extends Base {
+    configure(config){super.configure(config);configured.push(config.hardwareAcceleration);}
+    decode(chunk){if(this.config.hardwareAcceleration!=="prefer-hardware")super.decode(chunk);}
+  }
+  const hook=await mountLiveFrame(async()=>new Response(new ReadableStream({start(controller){
+    controller.enqueue(capacityPackets(["key"],2880,1920));
+  }})),Decoder,undefined,{clock,hookOptions:{allowFrameFallback:false}});
+  try{
+    assert.equal(hook.states[1],"loading");
+    await clock.advance(15_300);
+    assert.deepEqual(configured,["prefer-hardware","prefer-software"]);
+    assert.equal(hook.states[1],"live");assert.equal(hook.states[4].width,2880);
+    assert.equal(hook.calls.some(url=>url.includes("/frame?")),false);
+  }finally{hook.cleanup();}
+});
+
 function capacityDecoder({ produceFrames = false } = {}) {
   return class extends EventTarget {
     static current;

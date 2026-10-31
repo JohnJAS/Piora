@@ -17,7 +17,7 @@ Piora 把 AI 对话、项目文件、代码编辑、Git 审阅、终端、浏览
 
 项目基于 [Pi](https://github.com/earendil-works/pi)，由 [pi-web](https://github.com/agegr/pi-web) 演进而来，保留 Pi 的会话、模型接入与扩展机制。Piora 由社区独立维护，不隶属于 Pi、pi-web、OpenAI 或 Codex。
 
-最新正式版为 `0.5.6`，当前源码版本为 `0.5.7-beta.2`。本次 beta 修复左侧边栏无法透出主题背景的问题，刷新或重启即可应用已保存的背景设置，并自动迁移旧角色主题的默认遮罩，保留侧栏遮罩调节和原有文字清晰度。正式版的角色主题、DSH Pet、模型配置及鸿蒙等更新见 [CHANGELOG.md](CHANGELOG.md)。
+最新正式版为 `0.5.6`，当前源码版本为 `0.5.7-beta.4`。本次 beta 改进鸿蒙多设备投屏与侧栏/悬浮首帧交接，新增任务总用时，并将工作树管理整合到对话右上角 Git 工具。具体平板及长期投屏稳定性仍待真机验收。详细更新见 [CHANGELOG.md](CHANGELOG.md)。
 
 正式版由 GitHub Actions 构建和校验 Windows 与 Linux 包；beta 候选构建完成后由独立工作流发布，下载见[所有发布](https://github.com/kexijiang/Piora/releases)。Windows 原生投屏使用随包 Hypium 采集库，兼容设备无需在电脑安装 DevEco Studio。需要手机端 HAP 的兼容路径仍要求用户明确初始化并准备对应签名工具。华为系统录屏、原生投屏画质与延迟、平板兼容性和浏览器窗口外渲染仍待硬件验收，见[鸿蒙设备验收矩阵](docs/harmony/atlas-acceptance.md)。
 

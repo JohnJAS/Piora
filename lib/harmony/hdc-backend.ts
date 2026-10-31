@@ -1617,6 +1617,7 @@ export class HdcBackend implements HarmonyAutomationBackend {
 
   async openVideoStream(serial: string, signal?: AbortSignal, recording = false): Promise<HarmonyVideoConnection> {
     validateSerial(serial);
+    signal?.throwIfAborted();
     if (!recording && this.videoPreference?.provider === "hos-scrcpy" && this.videoPreference.packageDirectory && Date.now() >= this.hosRetryAt) {
       try {
         await this.requireUnlockedScreen(serial, signal);
@@ -1632,6 +1633,7 @@ export class HdcBackend implements HarmonyAutomationBackend {
     }
     // An installed SDK is optional; use the bundled native runtime on a clean PC.
     const source = await this.findDebugVideoSource(this.hdcPath);
+    signal?.throwIfAborted();
     if (source || !this.videoPreference || this.videoPreference.provider === "deveco") {
       // Debug capture works independently of the phone's app/lock state.
       // Reuse an existing DevEco service even if its local SDK cannot be found.
@@ -1752,6 +1754,9 @@ export class HdcBackend implements HarmonyAutomationBackend {
 
   async dispose(): Promise<void> {
     const cleanup = await Promise.allSettled([...this.videoClosers].map(close => close()));
+    // Idle sessions still own their encoder during the renderer reconnect grace.
+    // Shutdown must settle them now instead of leaving a delayed cleanup behind.
+    const videoCleanup = await Promise.allSettled([...this.debugVideos.values()].map(async opening => (await opening).close()));
     await Promise.all([...this.ownedRecordings.entries()].map(([serial, owned]) => owned.kind === "system" ? this.discardSystemRecording(serial, owned) : owned.recording.preserve()));
     this.ownedRecordings.clear();
     const entries = [...this.liveScreenshotPaths.entries()];
@@ -1760,7 +1765,7 @@ export class HdcBackend implements HarmonyAutomationBackend {
       this.shell(serial, ["rm", paths.remotePath], "screenshot_cleanup").catch(() => undefined),
       rm(paths.directory, { recursive: true, force: true }).catch(() => undefined),
     ]));
-    if (cleanup.some(result => result.status === "rejected")) throw new HarmonyError("DEVICE_BUSY", "Video forward cleanup remains uncertain", { details: { cleanup: "uncertain" } });
+    if ([...cleanup, ...videoCleanup].some(result => result.status === "rejected")) throw new HarmonyError("DEVICE_BUSY", "Video forward cleanup remains uncertain", { details: { cleanup: "uncertain" } });
   }
 
   async snapshot(

@@ -55,7 +55,7 @@ import type { SessionInfo } from "@/lib/types";
 import type { CollaborationRoom } from "@/lib/room-types";
 import type { DesktopUpdateState } from "./sidebar/sidebar-types";
 import type { GitStatusResponse } from "@/lib/git-types";
-import { getTrackedGitLineStats } from "@/lib/git-line-stats";
+import { GitToolsPopover } from "./workspace/GitToolsPopover";
 import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
@@ -1660,6 +1660,7 @@ export function AppShell() {
       return;
     }
     let disposed = false;
+    let consecutiveGitFailures = 0;
     let timer: number | undefined;
     let controller: AbortController | undefined;
     const load = async () => {
@@ -1669,12 +1670,17 @@ export function AppShell() {
       controller = requestController;
       try {
         const status = await requestGitStatus(currentProjectCwd, { signal: requestController.signal, summary: true });
+        consecutiveGitFailures = 0;
         if (!disposed) {
           setTopbarGitStatus((previous) => previous && previous.branch === status.branch && previous.repositoryRoot === status.repositoryRoot && previous.additions === status.additions && previous.deletions === status.deletions && previous.isGitRepository === status.isGitRepository ? previous : status);
           setCurrentIsGitRepository(status.isGitRepository);
         }
-      } catch { /* The button remains available without counts. */ }
-      if (!disposed && !requestController.signal.aborted && taskControls?.disabled && document.visibilityState === "visible") {
+      } catch {
+        if (!requestController.signal.aborted) consecutiveGitFailures += 1;
+      }
+      // Recover the entry after a transient startup failure, including idle chats.
+      const retryStartup = consecutiveGitFailures > 0 && consecutiveGitFailures <= 2;
+      if (!disposed && !requestController.signal.aborted && (taskControls?.disabled || retryStartup) && document.visibilityState === "visible") {
         timer = window.setTimeout(() => { void load(); }, 2_500);
       }
     };
@@ -1694,7 +1700,7 @@ export function AppShell() {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [currentProjectCwd, selectedRoom, taskControls?.disabled, explorerRefreshKey]);
-  const topbarLineStats = useMemo(() => topbarGitStatus ? getTrackedGitLineStats(topbarGitStatus) : { additions: 0, deletions: 0 }, [topbarGitStatus]);
+  const [commitRequest, setCommitRequest] = useState<{ cwd: string; id: number } | null>(null);
   // While restoring initial session from URL, don't show the placeholder
   const showPlaceholder = initialSessionRestored && !showConversation;
   const onboardingProjectPath = onboardingProjectCwd ?? currentProjectCwd;
@@ -2302,17 +2308,17 @@ export function AppShell() {
             <div className="conversation-toolbar-actions">
               {showChat ? (
                 <>
-                  <button
-                    className="topbar-control topbar-changes-button"
-                    type="button"
-                    onClick={handleOpenTaskChanges}
-                    disabled={!topbarGitStatus?.isGitRepository}
-                    title={translate("review.changesTree")}
-                    aria-label={translate("review.changesTree")}
-                  >
-                    <AliIcon name="code" size={14} />
-                    {topbarGitStatus?.isGitRepository ? <span className="topbar-changes-lines"><b>+{topbarLineStats.additions}</b><i>−{topbarLineStats.deletions}</i></span> : null}
-                  </button>
+                  {currentProjectCwd && topbarGitStatus?.isGitRepository && <GitToolsPopover
+                    key={currentProjectCwd}
+                    cwd={currentProjectCwd}
+                    status={topbarGitStatus}
+                    onOpenChanges={handleOpenTaskChanges}
+                    onOpenCommit={() => { handleOpenTaskChanges(); setCommitRequest({ cwd: currentProjectCwd, id: Date.now() }); }}
+                    onSelectWorktree={(path) => {
+                      handleNewSession(`worktree-${Date.now()}`, path);
+                      replaceUrlWithoutNextNavigation(`?cwd=${encodeURIComponent(path)}`);
+                    }}
+                  />}
                   <button
                     className="topbar-control topbar-history-button"
                     type="button"
@@ -2932,6 +2938,7 @@ export function AppShell() {
           onClosePanel={() => setRightPanelOpen(false)}
           cwd={selectedRoom?.workspace.path ?? activeCwd}
           refreshKey={explorerRefreshKey}
+          commitRequest={commitRequest}
           active={effectiveRightPanelOpen}
           fileTabs={fileTabs}
           activeFileTabId={activeFileTabId}

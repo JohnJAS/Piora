@@ -3,6 +3,9 @@ export interface HarmonyWindowState {
   serial: string; scale: MirrorScale; alwaysOnTop: boolean; open: boolean;
   minimized: boolean; ownerId: string;
   presentation?: "floating" | "sidebar";
+  pendingPresentation?: "floating" | "sidebar";
+  presentationTransition?: string;
+  presentationFailed?: boolean;
 }
 export interface PioraMessage {
   title: string; message: string; tone?: "info" | "success" | "error" | "confirm";
@@ -21,7 +24,7 @@ export interface HarmonyWindowBridge {
   setScale(scale: MirrorScale): Promise<HarmonyWindowState>;
   setAlwaysOnTop(value: boolean): Promise<HarmonyWindowState>;
   getState(): Promise<HarmonyWindowState>;
-  reportFrame(input: { serial: string; width: number; height: number }): Promise<void>;
+  reportFrame(input: { serial: string; width: number; height: number; presentation?: "floating" | "sidebar"; transition?: string }): Promise<void>;
   showMenu(): Promise<void>;
   openWorkbench(): Promise<void>;
   onStateChange(listener: (state: HarmonyWindowState) => void): () => void;
