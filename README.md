@@ -17,7 +17,7 @@ Piora 把 AI 对话、项目文件、代码编辑、Git 审阅、终端、浏览
 
 项目基于 [Pi](https://github.com/earendil-works/pi)，由 [pi-web](https://github.com/agegr/pi-web) 演进而来，保留 Pi 的会话、模型接入与扩展机制。Piora 由社区独立维护，不隶属于 Pi、pi-web、OpenAI 或 Codex。
 
-最新正式版为 `0.5.4`，当前源码版本为 `0.5.5-beta.69`。本轮新增 12 位角色、20 款一键主题，支持角色筛选、配色背景联动及恢复切换前外观；改进 Mermaid 流式预览与弹窗缩放，修复旧会话模型参数刷新、模型选择框间距及旧更新包问题。模型识别缺失参数时提供可编辑默认值，并合入 Windows Git Bash 停止修复与真实桌面自动化测试入口。角色素材的署名和许可独立记录；鸿蒙画质、延迟和平板实机效果仍待硬件验收。完整变化见 [CHANGELOG.md](CHANGELOG.md)。
+最新正式版为 `0.5.4`，当前源码版本为 `0.5.5-beta.70`。新增独立的 DSH Pet 桌面扩展，支持按需安装、启停与任务状态联动；修复角色主题背景透出。本轮新增 12 位角色、20 款一键主题，支持角色筛选、配色背景联动及恢复切换前外观；改进 Mermaid 流式预览与弹窗缩放，修复旧会话模型参数刷新、模型选择框间距及旧更新包问题。模型识别缺失参数时提供可编辑默认值，并合入 Windows Git Bash 停止修复与真实桌面自动化测试入口。角色素材的署名和许可独立记录；鸿蒙画质、延迟和平板实机效果仍待硬件验收。完整变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 beta 候选由 tagged GitHub Actions 构建和校验 Windows 安装版与便携版，预发布下载提供在[所有发布](https://github.com/kexijiang/Piora/releases)。Windows 包携带仓库内审阅过的 unsigned 投屏 HAP，打包全程 GitHub 托管，不再重构建该组件，也不依赖专用 runner 或连接手机。只有用户明确初始化时，Piora 才调用本机已登录的 DevEco CLI 生成或更新设备调试 Profile，生成并验签设备绑定副本后安装。华为系统录屏和浏览器联动的窗口外渲染尚未经过真机验收。真机支持范围和待验项目见[鸿蒙设备验收矩阵](docs/harmony/atlas-acceptance.md)。
 
