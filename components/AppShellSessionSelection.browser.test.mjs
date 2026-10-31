@@ -187,7 +187,11 @@ createRoot(document.getElementById('root')).render(<App/>);`);
   await dialog.getByRole('button',{name:'Remove worktree',exact:true}).click();
   await dialog.getByText(/permanently discards/).waitFor();
   await dialog.getByRole('button',{name:'Discard changes and remove',exact:true}).click();
-  await dialog.getByText('layout-check',{exact:true}).waitFor({state:'hidden'});
+  // The confirmation and checkout row both contain the branch name until the
+  // DELETE settles. Wait for each surface without an ambiguous text locator.
+  await dialog.getByRole('alert').waitFor({state:'hidden'});
+  await dialog.getByRole('button',{name:/^layout-check F:/}).waitFor({state:'hidden'});
+  assert.equal(await dialog.getByText('layout-check',{exact:true}).count(),0);
   assert.deepEqual(mutations,[
     {method:'POST',cwd:'F:\\Beta',branch:'layout-check'},
     {method:'DELETE',cwd:'F:\\Beta',path:'F:\\Beta-worktrees\\layout-check',force:false},
