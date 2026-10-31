@@ -4,7 +4,12 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
-## [0.5.5] - 2026-10-31
+## [0.5.6] - 2026-10-31
+
+### 依赖安全与发行检查
+
+- 升级 follow-redirects 至 1.16.2，修复跨 JavaScript 上下文的敏感请求头配置可能在跨域重定向中失效的问题（GHSA-mrwp-f3q8-3g9p）。
+- 正式发布流程增加生产依赖审计，高危问题会阻止构建与发布，保持与主分支 CI 相同的审计要求。
 
 ### 外观与桌面扩展
 
@@ -43,6 +48,10 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 ### 发行说明
 
 - 本版汇总 0.5.5 beta 阶段的用户可见更新，提供 Windows x64 安装版、单文件便携版、ZIP 和 Linux x64 AppImage。发布包由 GitHub Actions 构建并验证，Release 与应用内更新说明从本节统一生成；软件测试不替代真实设备、外部模型及各平台硬件验收。
+
+## [0.5.5] - 2026-10-31
+
+- 未发布候选：主分支 CI 的生产依赖审计发现 follow-redirects 高危问题，已取消尚未发布的构建；保留原标签，更新内容与修复一并纳入 0.5.6。
 
 ## [0.5.5-beta.70] - 2026-10-31
 

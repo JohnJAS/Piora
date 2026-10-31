@@ -2,7 +2,7 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `57c5035719fe781688d8306f62dcd626a11d25e25c1ca06ca563b580f7969b42`
+Lockfile SHA-256: `dd796a340cbfd1da537592a882490876f0abdbba371578820a5b24e07c233c01`
 
 Unique locked packages: **1267**. Runtime packages: **767**. Build/development-only packages: **500**.
 
@@ -422,7 +422,7 @@ Every locked package declares a license.
 | `fault` | `1.0.4` | MIT | No |
 | `fetch-blob` | `3.2.0` | MIT | No |
 | `finalhandler` | `2.1.1` | MIT | No |
-| `follow-redirects` | `1.16.1` | MIT | No |
+| `follow-redirects` | `1.16.2` | MIT | No |
 | `foreground-child` | `3.3.1` | ISC | No |
 | `form-data` | `4.0.6` | MIT | No |
 | `format` | `0.2.2` | MIT | No |
