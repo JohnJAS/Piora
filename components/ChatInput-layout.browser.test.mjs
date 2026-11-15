@@ -570,6 +570,12 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       const finishModeAnimation = () => launcher.getByTestId("workflow-mode-select").evaluate(async element => {
         await Promise.all(element.parentElement.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
       });
+      const assertContextRightAligned = async () => {
+        const row = await topbar.boundingBox();
+        const prompt = await templateTrigger.boundingBox();
+        assert.ok(Math.abs(row.x + row.width - 2 - prompt.x - prompt.width) < 1,
+          `${locale}: the actual system prompt trigger stays against the topbar's right padding`);
+      };
       for (const dark of [false, true]) {
         await page.evaluate(dark => document.documentElement.classList.toggle("dark", dark), dark);
         for (const [width, fontSize] of [[900, 14], [590, 14], [420, 14], [320, 14], [420, 20], [320, 20]]) {
@@ -579,15 +585,18 @@ createRoot(document.getElementById("root")).render(<App/>);`);
           }, width);
           await page.evaluate(fontSize => { document.documentElement.style.fontSize = fontSize + "px"; }, fontSize);
           await settleLayout();
+          await finishModeAnimation();
           assert.equal(await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize)), fontSize, "font-size coverage changes the real root font size");
           assert.ok(Math.abs(await modeToggle.evaluate(element => parseFloat(getComputedStyle(element).fontSize)) - fontSize * 0.821) < 0.1,
             "mode controls inherit the scaled text size");
           const before = await topbar.locator(".chat-composer-context").boundingBox();
+          await assertContextRightAligned();
           await modeToggle.click();
           await finishModeAnimation();
           const after = await topbar.locator(".chat-composer-context").boundingBox();
-          assert.ok(Math.abs(before.x - after.x) < 1 && Math.abs(before.y - after.y) < 1,
-            `${locale}/${dark}/${width}/${fontSize}: expanding modes must not move the project or template controls`);
+          await assertContextRightAligned();
+          if (width === 900) assert.ok(Math.abs(before.x - after.x) < 1 && Math.abs(before.y - after.y) < 1,
+            `${locale}/${dark}/${width}/${fontSize}: wide layouts keep context controls stationary during expansion`);
           const geometry = await launcher.evaluate(section => {
             const rect = element => { const { left, right, top, bottom, width, height } = element.getBoundingClientRect(); return { left, right, top, bottom, width, height }; };
             const topbar = section.querySelector(".chat-composer-topbar");
@@ -611,6 +620,10 @@ createRoot(document.getElementById("root")).render(<App/>);`);
           assert.ok(geometry.overflow <= 1, `${locale}/${width}/${fontSize}: topbar overflow ${JSON.stringify(geometry)}`);
           assert.ok([...geometry.options, ...geometry.contextButtons].every(box => box.left >= geometry.topbar.left - 1 && box.right <= geometry.topbar.right + 1),
             `${locale}/${width}/${fontSize}: topbar buttons must fit ${JSON.stringify(geometry)}`);
+          assert.ok(geometry.options.every(option => geometry.contextButtons.every(button =>
+            option.right <= button.left + 1 || button.right <= option.left + 1
+            || option.bottom <= button.top + 1 || button.bottom <= option.top + 1)),
+          "narrow layouts wrap context controls without overlapping the expanded modes");
           assert.ok(geometry.options.every(box => box.height >= 28 && box.width >= 40), "mode targets remain usable at all tested font and panel sizes");
           assert.ok(geometry.modeLabels.every(label => label.width > 0 && label.scrollWidth <= label.width + 1 && !["hidden", "clip"].includes(label.overflow)),
             `${locale}/${width}/${fontSize}: expanded mode names must stay readable without clipping ${JSON.stringify(geometry.modeLabels)}`);
@@ -689,6 +702,56 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await launcher.evaluate(section => { section.style.width = "900px"; });
       await modeToggle.click();
       await launcher.getByTestId("workflow-mode-goal").click();
+      await page.waitForFunction(() => document.querySelector('#launcher [data-testid="workflow-mode-toggle"]').getAttribute("aria-expanded") === "false");
+      await finishModeAnimation();
+      const goalGeometry = () => launcher.getByTestId("workflow-mode-select").evaluate(slot => {
+        const mode = slot.getBoundingClientRect();
+        const toggle = slot.querySelector('[data-testid="workflow-mode-toggle"]').getBoundingClientRect();
+        const budget = slot.parentElement.querySelector("label").getBoundingClientRect();
+        return { width: mode.width, toggleWidth: toggle.width, gap: budget.left - mode.right };
+      });
+      const compactGoal = await goalGeometry();
+      assert.ok(Math.abs(compactGoal.width - compactGoal.toggleWidth) <= 1, "collapsed Goal occupies only its visible trigger width");
+      assert.ok(Math.abs(compactGoal.gap - 12) < 1, "Goal budget follows the collapsed trigger without reserved option space");
+      await assertContextRightAligned();
+      if (capture) await launcher.screenshot({ path: path.join(capture, `${locale}-goal-follow-collapsed.png`) });
+      await modeToggle.click();
+      await finishModeAnimation();
+      const expandedGoal = await goalGeometry();
+      assert.ok(expandedGoal.width > compactGoal.width + 50);
+      await page.keyboard.press("Escape");
+      const frames = await launcher.getByTestId("workflow-mode-select").evaluate(slot => new Promise(resolve => {
+        const samples = [], start = performance.now();
+        const sample = now => {
+          const mode = slot.getBoundingClientRect();
+          const budget = slot.parentElement.querySelector("label").getBoundingClientRect();
+          const animation = slot.getAnimations().find(item => item.transitionProperty === "width");
+          samples.push({ width: mode.width, gap: budget.left - mode.right,
+            time: animation?.currentTime ?? null, easing: animation?.effect.getTiming().easing });
+          if (now - start < 250) requestAnimationFrame(sample); else resolve(samples);
+        };
+        requestAnimationFrame(sample);
+      }));
+      assert.ok(frames.every(frame => Math.abs(frame.gap - 12) < 1), "Goal budget follows the occupied mode width throughout collapse");
+      assert.ok(frames.every((frame, index) => index === 0 || frame.width <= frames[index - 1].width + 0.5), "collapse moves continuously toward its compact width");
+      const movingFrames = frames.filter(frame => frame.time > 0 && frame.time < 200);
+      assert.ok(movingFrames.length >= 2, "capture intermediate geometry rather than only animation endpoints");
+      for (const frame of movingFrames) {
+        assert.equal(frame.easing, "linear");
+        const expected = expandedGoal.width + (compactGoal.width - expandedGoal.width) * frame.time / 200;
+        assert.ok(Math.abs(frame.width - expected) < 2, "occupied width follows linear time rather than a separate clipping animation");
+      }
+      assert.ok(Math.abs(frames.at(-1).width - compactGoal.width) < 1);
+      await launcher.evaluate(section => { section.style.width = "320px"; });
+      await settleLayout();
+      await projectTrigger.click();
+      await projectPopup.waitFor();
+      const narrowPopup = await projectPopup.boundingBox();
+      const narrowTopbar = await topbar.boundingBox();
+      assert.ok(narrowPopup.x >= narrowTopbar.x - 1 && narrowPopup.x + narrowPopup.width <= narrowTopbar.x + narrowTopbar.width + 1,
+        "right-aligned project menu stays inside a narrow composer in a wide desktop window");
+      await page.keyboard.press("Escape");
+      await launcher.evaluate(section => { section.style.width = "900px"; });
       await launcher.getByTestId("workflow-budget-input").fill("7");
       await launcher.locator("textarea").fill("Implement the approved launcher UX");
       await launcher.locator(".composer-submit-controls > button").click();

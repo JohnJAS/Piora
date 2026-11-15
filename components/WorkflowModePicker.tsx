@@ -19,6 +19,8 @@ export function WorkflowModePicker({ value, onChange, disabled }: {
   const helpId = useId();
   const [expanded, setExpanded] = useState(false);
   const [focusedMode, setFocusedMode] = useState<WorkflowMode>(value.mode);
+  const [dimensions, setDimensions] = useState<{ compactWidth: number; compactHeight: number; expandedWidth: number; expandedHeight: number } | null>(null);
+  const pickerRef = useRef<HTMLDivElement>(null);
   const slotRef = useRef<HTMLDivElement>(null);
   const choicesRef = useRef<HTMLDivElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -27,6 +29,37 @@ export function WorkflowModePicker({ value, onChange, disabled }: {
   const openFocusRef = useRef<WorkflowMode>(value.mode);
   const returnFocusRef = useRef(false);
   const isExpanded = expanded && !disabled;
+
+  useLayoutEffect(() => {
+    const picker = pickerRef.current;
+    const toggle = toggleRef.current;
+    const choices = choicesRef.current;
+    if (!picker || !toggle || !choices) return;
+    // Measure against the containing row, never the animated picker itself:
+    // using the latter would feed its shrinking width back into our target.
+    const container = picker.closest<HTMLElement>(".chat-composer-topbar") ?? picker.parentElement;
+    if (!container) return;
+    const measure = () => {
+      const style = getComputedStyle(container);
+      const available = container.clientWidth - parseFloat(style.paddingLeft || "0") - parseFloat(style.paddingRight || "0");
+      choices.style.maxWidth = `${Math.max(1, available)}px`;
+      const compact = toggle.getBoundingClientRect();
+      const full = choices.getBoundingClientRect();
+      const next = {
+        compactWidth: Math.ceil(compact.width), compactHeight: Math.ceil(compact.height),
+        expandedWidth: Math.ceil(full.width), expandedHeight: Math.ceil(full.height),
+      };
+      setDimensions(previous => previous
+        && previous.compactWidth === next.compactWidth && previous.compactHeight === next.compactHeight
+        && previous.expandedWidth === next.expandedWidth && previous.expandedHeight === next.expandedHeight ? previous : next);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    observer.observe(toggle);
+    observer.observe(choices);
+    return () => observer.disconnect();
+  }, []);
 
   const clearCloseTimer = useCallback(() => {
     if (closeTimerRef.current !== null) clearTimeout(closeTimerRef.current);
@@ -78,9 +111,13 @@ export function WorkflowModePicker({ value, onChange, disabled }: {
     closeTimerRef.current = setTimeout(() => close(true), SELECTION_FEEDBACK_MS);
   };
 
-  return <div className={styles.picker}>
+  return <div ref={pickerRef} className={styles.picker}>
     <div ref={slotRef} className={styles.modeSlot} role="group" aria-label={t("workflow.mode")}
       data-testid="workflow-mode-select" data-expanded={isExpanded ? "true" : "false"}
+      style={dimensions ? {
+        width: isExpanded ? dimensions.expandedWidth : dimensions.compactWidth,
+        height: isExpanded ? dimensions.expandedHeight : dimensions.compactHeight,
+      } : undefined}
       onBlur={event => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) close();
       }}

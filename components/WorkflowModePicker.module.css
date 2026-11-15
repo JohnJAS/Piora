@@ -10,21 +10,19 @@
   font-size: var(--text-xs);
 }
 
-/* Both states share a grid cell. The complete set reserves its intrinsic width,
-   so opening the picker never pushes the project or prompt controls sideways. */
+/* Animate the occupied width itself so the Goal budget follows every frame.
+   A reversed transition starts at the current width without another timer. */
 .modeSlot {
-  display: inline-grid;
-  grid-template-columns: minmax(0, 1fr);
+  position: relative;
+  flex: 0 0 auto;
   width: max-content;
   max-width: 100%;
   min-width: 0;
-  align-items: stretch;
-}
-
-.toggle,
-.modes {
-  grid-area: 1 / 1;
-  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--radius-control, 8px);
+  background: var(--bg-selected);
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: width 200ms linear, height 200ms linear;
 }
 
 .toggle,
@@ -44,25 +42,19 @@
 }
 
 .toggle {
-  justify-self: start;
-  max-width: 100%;
-  background: var(--bg-selected);
-  border-color: var(--border);
+  width: max-content;
+  background: transparent;
   color: var(--text);
-  opacity: 1;
-  transition: opacity 120ms ease;
 }
 
 .toggle > svg,
 .mode > svg { flex-shrink: 0; }
 
-.toggle > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
 .modes {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
   display: inline-flex;
   align-items: stretch;
   flex-wrap: wrap;
@@ -70,22 +62,16 @@
   padding: 2px;
   border-radius: var(--radius-control, 8px);
   background: var(--bg-panel);
-  opacity: 0;
   visibility: hidden;
-  clip-path: inset(0 66.667% 0 0 round var(--radius-control, 8px));
-  transition: clip-path 200ms ease, opacity 200ms ease, visibility 0ms linear 200ms;
 }
 
 .modeSlot[data-expanded="true"] .toggle {
-  opacity: 0;
+  visibility: hidden;
   pointer-events: none;
 }
 
 .modeSlot[data-expanded="true"] .modes {
-  opacity: 1;
   visibility: visible;
-  clip-path: inset(0 0 0 0 round var(--radius-control, 8px));
-  transition: clip-path 200ms ease, opacity 200ms ease, visibility 0ms;
 }
 
 .mode {
@@ -94,7 +80,6 @@
   gap: .33em;
   padding-inline: .33em;
   background: transparent;
-  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
 }
 
 .toggle:hover:not(:disabled),
@@ -116,5 +101,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .toggle, .mode, .modes, .modeSlot[data-expanded="true"] .modes { transition: none; }
+  .modeSlot { transition: none; }
 }

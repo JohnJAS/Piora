@@ -314,6 +314,48 @@ createRoot(document.getElementById('root')).render(<I18nProvider><App/></I18nPro
     await page.clock.runFor(520);
     assert.equal(await page.getByTestId("workflow-budget-input").evaluate(element => element === document.activeElement), true, "a cancelled collapse timer cannot steal focus back");
 
+    // Reverse a closing control immediately: neither an animation lock nor the
+    // previous selection's timer may consume the next interaction or its focus.
+    await modeToggle.focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Enter");
+    assert.equal(await modeToggle.getAttribute("aria-expanded"), "true");
+    assert.equal(await modeButton("goal").evaluate(element => element === document.activeElement), true, "reopening during collapse focuses the current choice immediately");
+    await assertChoice("goal", 7);
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Enter");
+    await assertChoice("plan", 7);
+    await page.clock.runFor(120);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Enter");
+    await page.clock.runFor(400);
+    assert.equal(await modeToggle.getAttribute("aria-expanded"), "true", "the cancelled selection deadline cannot close a reopened control");
+    assert.equal(await modeButton("plan").evaluate(element => element === document.activeElement), true, "reversal preserves focus after the old deadline");
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await assertChoice("goal", 7);
+    await page.clock.runFor(519);
+    assert.equal(await modeToggle.getAttribute("aria-expanded"), "true", "a choice made during reversal still receives its full feedback interval");
+    await page.clock.runFor(1);
+    await assertModeCollapsed("Goal");
+
+    // A real pointer can choose the exposed first option without waiting for
+    // the expanding control to become geometrically stable.
+    await modeToggle.click();
+    const exposedAgent = await modeButton("agent").boundingBox();
+    assert.ok(exposedAgent);
+    await page.mouse.click(exposedAgent.x + exposedAgent.width / 2, exposedAgent.y + exposedAgent.height / 2);
+    await assertChoice("agent", 7);
+    assert.equal(await modeToggle.getAttribute("aria-expanded"), "true");
+    assert.equal(await modeButton("agent").evaluate(element => element === document.activeElement), true);
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await assertChoice("goal", 7);
+    await page.clock.runFor(520);
+    await assertModeCollapsed("Goal");
+    assert.equal(await page.getByTestId("workflow-budget-input").inputValue(), "7", "rapid choices preserve the Goal budget");
+
     await modeToggle.click();
     await page.locator("#composer").click();
     await assertModeCollapsed("Goal");
