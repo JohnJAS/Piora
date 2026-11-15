@@ -675,6 +675,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
       <div className="chat-column">
         <WorkflowPanel snapshot={workflow.snapshot} busy={workflow.busy} running={sessionBusy} enabled={laboratory.planGoalEnabled} settingsReady={laboratory.ready}
           error={!laboratory.ready && laboratory.error ? t("laboratory.error") : workflow.error}
+          onRequestRevision={() => chatInputRef?.current?.focus()}
           onAction={workflow.act} onRefresh={laboratory.ready ? workflow.refresh : laboratory.refresh} cwd={session?.cwd ?? newSessionCwd ?? undefined} />
       </div>
     </div>

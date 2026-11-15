@@ -25,27 +25,38 @@
 .history[open] { max-height: min(28vh, 300px); overflow: auto; }
 .history summary { cursor: pointer; padding: 5px 0; }
 .history .panel { margin: 6px 0; }
-.error { color: var(--text-muted); font-size: var(--text-xs); padding: 6px 2px; display: flex; align-items: center; gap: 8px; }
+.error { color: var(--text-muted); font-size: var(--text-xs); padding: 6px 2px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.error > span { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.error .retry { flex-shrink: 0; }
+.peekSurface > .error { padding: 8px 12px; border-top: 1px solid var(--border); }
 
-/* Reserve only the summary row. The preview grows upward over the transcript,
-   so inspecting a plan never resizes the conversation or moves the composer. */
-.dock { position: relative; height: 38px; flex-shrink: 0; min-width: 0; margin-bottom: 8px; z-index: 5; }
+/* Only the summary/actions occupy layout. Details overlay the transcript above
+   them, while narrow action rows can wrap without hiding any choices. */
+.dock { position: relative; flex-shrink: 0; min-width: 0; margin-bottom: 8px; z-index: 5; }
 .dock[data-expanded="true"] { z-index: 20; }
-.peekSurface { display: flex; flex-direction: column-reverse; position: absolute; inset-inline: 0; bottom: 0; border: 1px solid var(--border); border-radius: 12px; color: var(--text); background: var(--bg-panel); overflow: hidden; transition: box-shadow 160ms ease, border-color 160ms ease; }
-.dock[data-expanded="true"] .peekSurface { box-shadow: 0 12px 36px rgb(0 0 0 / .16); border-color: var(--text-dim); }
-.peekTrigger { display: flex; align-items: center; gap: 8px; width: 100%; height: 36px; min-width: 0; padding: 0 12px; border: 0; background: transparent; color: var(--text-muted); font: inherit; font-size: var(--text-xs); text-align: start; cursor: pointer; }
-.peekTrigger:hover { background: var(--bg-hover); }
-.peekTrigger:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: 10px; }
-.peekTrigger > svg { flex-shrink: 0; }
+.peekSurface { position: relative; z-index: 0; border: 1px solid var(--composer-border); border-radius: var(--radius-panel); color: var(--text); background: transparent; box-shadow: var(--shadow-composer); transition: box-shadow 160ms ease, border-color 160ms ease; }
+/* Match the composer glass without making the summary a backdrop root for the
+   details that extend above it. The dock and summary must remain unclipped. */
+.peekSurface::before { content: ""; position: absolute; z-index: -1; inset: 0; border-radius: inherit; pointer-events: none; background: var(--composer-background); -webkit-backdrop-filter: var(--composer-filter); backdrop-filter: var(--composer-filter); }
+.dock[data-expanded="true"] .peekSurface { border-top-left-radius: 0; border-top-right-radius: 0; }
+.peekSummary { display: flex; align-items: center; flex-wrap: wrap; min-width: 0; border-radius: inherit; }
+.peekTrigger { display: flex; align-items: center; flex-wrap: wrap; flex: 1 1 280px; gap: 6px 8px; min-height: 36px; min-width: 0; max-width: 100%; box-sizing: border-box; padding: 7px 12px; border: 0; border-radius: inherit; background: transparent; color: var(--text-muted); font: inherit; font-size: var(--text-xs); text-align: start; cursor: pointer; }
+.peekTrigger:hover { background: color-mix(in srgb, var(--bg-hover) 35%, transparent); }
+.peekTrigger:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.peekIdentity { display: inline-flex; align-items: center; gap: 8px; flex: 1 1 140px; min-width: 0; }
+.peekIdentity > svg { flex-shrink: 0; }
 .peekMode { flex-shrink: 0; color: var(--text); font-weight: 500; }
 .peekTitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: start; }
 .peekStatus { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; white-space: nowrap; }
 .statusDot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-dim); }
 .peekStatus:is([data-status="running"], [data-status="planning"], [data-status="awaiting_approval"]) .statusDot { background: var(--accent); }
 .peekBudget { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.peekDetailsLabel { display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; margin-left: auto; white-space: nowrap; }
+.peekActions { flex: 0 1 auto; max-width: 100%; box-sizing: border-box; gap: 6px; margin: 0; padding: 4px 8px; font-size: var(--text-xs); }
+.peekActions button { white-space: nowrap; min-height: 30px; }
 .peekChevron { transition: transform 160ms ease; }
 .dock[data-expanded="true"] .peekChevron { transform: rotate(180deg); }
-.peekContent { box-sizing: border-box; max-height: min(52vh, 480px, var(--workflow-preview-space, 480px)); overflow: auto; overscroll-behavior: contain; padding: 14px; border-bottom: 1px solid var(--border); animation: peekIn 140ms ease-out; }
+.peekContent { position: absolute; inset-inline: -1px; bottom: calc(100% - 1px); box-sizing: border-box; max-height: min(52vh, 480px, var(--workflow-preview-space, 480px)); overflow: auto; overscroll-behavior: contain; padding: 14px; border: 1px solid var(--composer-border); border-radius: var(--radius-panel) var(--radius-panel) 0 0; background: var(--composer-background); -webkit-backdrop-filter: var(--composer-filter); backdrop-filter: var(--composer-filter); box-shadow: var(--shadow-composer); animation: peekIn 140ms ease-out; }
 .peekContent[hidden] { display: none; }
 .peekContent > .panel { padding: 0; margin: 0; border: 0; border-radius: 0; }
 .peekContent > .help { margin: 0 0 10px; }
@@ -55,8 +66,7 @@
 @keyframes peekIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 @media (max-width: 480px) {
   .peekTrigger { gap: 6px; padding-inline: 9px; }
-  .peekMode { max-width: 90px; overflow: hidden; white-space: nowrap; }
-  .peekStatus { max-width: 105px; overflow: hidden; text-overflow: ellipsis; }
+  .peekIdentity { gap: 6px; }
   .peekContent { padding: 12px; max-height: min(45vh, var(--workflow-preview-space, 480px)); }
 }
 @media (prefers-reduced-motion: reduce) {

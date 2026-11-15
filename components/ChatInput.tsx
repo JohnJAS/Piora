@@ -167,7 +167,7 @@ interface Props {
   /** Reuses the production composer in a spacious new-task launch surface. */
   variant?: "conversation" | "launcher";
   placeholder?: string;
-  /** Optional project and mode controls rendered above the input surface. */
+  /** Optional project and prompt controls rendered above the input surface. */
   contextControl?: React.ReactNode;
   /** Compact session options inside the input toolbar. */
   toolbarControl?: React.ReactNode;
@@ -2215,12 +2215,8 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
               </div>
             </div>
           )}
-          {(contextControl || (workflowEnabled && workflow)) && <div className="chat-composer-topbar" data-has-workflow={workflowEnabled && workflow ? true : undefined}>
-            {workflowEnabled && workflow && <div className="chat-composer-workflow">
-              <WorkflowModePicker value={commandInputOptions.workflow ?? workflow} disabled={isStreaming || workflowBusy}
-                onChange={next => setCommandInputOptions(current => ({ ...current, workflow: next }))} />
-            </div>}
-            {contextControl && <div className="chat-composer-context">{contextControl}</div>}
+          {contextControl && <div className="chat-composer-topbar">
+            <div className="chat-composer-context">{contextControl}</div>
           </div>}
           {queueContent}
           <div
@@ -2338,7 +2334,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
           {isCommandInput && parsedCommandInput.kind === "invalid" && !slashMenuOpen && value.trim() !== "/" && <div className={commandStyles.validation} role="status">
             <p>{t(`chatCommands.error.${parsedCommandInput.code}`, { name: parsedCommandInput.name })}</p><button type="button" onClick={() => { setValue([value, commandInputOptions.afterPrompt].filter(Boolean).join("\n\n")); setCommandInputOptions(current => ({ workflow: current.workflow, inputMode: "text" })); }}>{t("chatCommands.asText")}</button>
           </div>}
-          <div className="chat-composer-footer">
+          <div className="chat-composer-footer" data-has-workflow={workflowEnabled && workflow ? true : undefined}>
             <div ref={attachmentMenuRef} className="composer-add-control">
               {attachmentMenuOpen && (
                 <div className="composer-add-menu" role="menu" aria-label={t("chat.addMenu")}>
@@ -2389,6 +2385,10 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
               </button>
             </div>
             {onToolPermissionChange && <ToolPermissionControl state={toolPermission ?? null} saving={permissionSaving} onChange={onToolPermissionChange} />}
+            {workflowEnabled && workflow && <div className="chat-composer-workflow">
+              <WorkflowModePicker value={commandInputOptions.workflow ?? workflow} disabled={isStreaming || workflowBusy}
+                onChange={next => setCommandInputOptions(current => ({ ...current, workflow: next }))} />
+            </div>}
             {toolbarControl}
             {voiceInputSupported && (
               <>

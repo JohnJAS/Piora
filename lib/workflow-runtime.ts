@@ -122,13 +122,16 @@ export class WorkflowRuntime {
           break;
         case "exit":
           if (run.status === "running") throw new WorkflowError("Stop the active execution before exiting");
-          if (!terminal.has(run.status)) { run.status = "cancelled"; run.reason = "user_exited"; }
+          // Failure remains recoverable until the user explicitly exits Plan.
+          // Preserve the result of already completed or cancelled runs.
+          if (!terminal.has(run.status) || run.kind === "plan" && run.status === "failed") { run.status = "cancelled"; run.reason = "user_exited"; }
           snapshot.mode = "agent"; break;
         case "pause":
           if (terminal.has(run.status) || run.status === "awaiting_approval") throw new WorkflowError("This workflow cannot be paused");
           run.status = "paused"; run.reason = "user_paused"; this.turnRunId = null; break;
         case "cancel":
-          if (terminal.has(run.status)) throw new WorkflowError("This workflow has already ended");
+          // A failed Goal still offers recovery or explicit cancellation in UI.
+          if (terminal.has(run.status) && !(run.kind === "goal" && run.status === "failed")) throw new WorkflowError("This workflow has already ended");
           run.status = "cancelled"; run.reason = "user_cancelled"; snapshot.mode = "agent"; this.turnRunId = null; break;
         case "resume":
           if (!["paused", "waiting", "budget_exhausted", "failed"].includes(run.status)) throw new WorkflowError("This workflow cannot be resumed");

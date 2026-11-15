@@ -1759,11 +1759,6 @@ select:focus-visible,
   padding: 2px 0;
 }
 
-.chat-composer-topbar[data-has-workflow] .chat-composer-context {
-  justify-content: flex-end;
-  margin-left: auto;
-}
-
 .chat-composer-context > * {
   min-width: 0;
   max-width: 100%;
@@ -1778,6 +1773,8 @@ select:focus-visible,
   gap: 6px;
   margin-top: 6px;
 }
+
+.chat-composer-footer[data-has-workflow] { flex-wrap: wrap; }
 
 .composer-submit-controls {
   display: flex;
