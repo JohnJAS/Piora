@@ -1752,12 +1752,16 @@ select:focus-visible,
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 6px;
   min-width: 0;
   max-width: 100%;
-  margin-left: auto;
   padding: 2px 0;
+}
+
+.chat-composer-topbar[data-has-workflow] .chat-composer-context {
+  justify-content: flex-end;
+  margin-left: auto;
 }
 
 .chat-composer-context > * {

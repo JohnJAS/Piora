@@ -547,6 +547,27 @@ createRoot(document.getElementById("root")).render(<App/>);`);
 
       // Exercise the approved launcher layout with the real production components.
       // Only API data is synthetic; all mode, project, template and send actions use UI.
+      const disabledLauncher = page.locator("#launcher");
+      for (const width of [900, 320]) {
+        await disabledLauncher.evaluate((section, width) => {
+          section.style.width = width + "px";
+          section.style.setProperty("--chat-column-width", "100%");
+        }, width);
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        const disabledContext = await disabledLauncher.locator(".chat-composer-topbar").evaluate(topbar => {
+          const rect = topbar.getBoundingClientRect();
+          const rowStarts = new Map();
+          for (const control of topbar.querySelector(".chat-composer-context").children) {
+            const box = control.getBoundingClientRect();
+            const row = Math.round(box.top + box.height / 2);
+            rowStarts.set(row, Math.min(rowStarts.get(row) ?? Infinity, box.left));
+          }
+          return { hasWorkflow: topbar.hasAttribute("data-has-workflow"), left: rect.left + 2, rowStarts: [...rowStarts.values()] };
+        });
+        assert.equal(disabledContext.hasWorkflow, false, "disabled laboratory features hide the mode controls");
+        assert.ok(disabledContext.rowStarts.length > 0 && disabledContext.rowStarts.every(left => Math.abs(left - disabledContext.left) < 1),
+          `${locale}/${width}: project and prompt rows align left when laboratory modes are disabled`);
+      }
       laboratoryEnabled = true;
       approvalEnabled = true;
       await page.reload();
