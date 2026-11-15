@@ -2,7 +2,7 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `dc023315d5dfa25b510975438ba0830073d3648a7032bc1155cd3838e69a44d3`
+Lockfile SHA-256: `e85f8bd55494c6067f964f17ceffed418084165e98792f9a46d90873b46983f0`
 
 Unique locked packages: **1271**. Runtime packages: **771**. Build/development-only packages: **500**.
 
@@ -75,14 +75,14 @@ Every locked package declares a license.
 | `@codemirror/state` | `6.7.6` | MIT | No |
 | `@codemirror/streamparser` | `6.0.0` | MIT | No |
 | `@codemirror/view` | `6.43.15` | MIT | No |
-| `@earendil-works/pi-agent-core` | `1.5.0` | MIT | No |
-| `@earendil-works/pi-ai` | `1.5.0` | MIT | No |
-| `@earendil-works/pi-codemode` | `1.5.0` | MIT | No |
-| `@earendil-works/pi-coding-agent` | `1.5.0` | MIT | No |
-| `@earendil-works/pi-mcp` | `1.5.0` | MIT | No |
-| `@earendil-works/pi-schema` | `1.5.0` | MIT | No |
-| `@earendil-works/pi-telemetry` | `1.5.0` | MIT | No |
-| `@earendil-works/pi-tui` | `1.5.0` | MIT | No |
+| `@earendil-works/pi-agent-core` | `1.5.2` | MIT | No |
+| `@earendil-works/pi-ai` | `1.5.2` | MIT | No |
+| `@earendil-works/pi-codemode` | `1.5.2` | MIT | No |
+| `@earendil-works/pi-coding-agent` | `1.5.2` | MIT | No |
+| `@earendil-works/pi-mcp` | `1.5.2` | MIT | No |
+| `@earendil-works/pi-schema` | `1.5.2` | MIT | No |
+| `@earendil-works/pi-telemetry` | `1.5.2` | MIT | No |
+| `@earendil-works/pi-tui` | `1.5.2` | MIT | No |
 | `@emnapi/runtime` | `1.11.3` | MIT | Yes |
 | `@google/genai` | `2.21.0` | Apache-2.0 | No |
 | `@grpc/grpc-js` | `1.14.7` | Apache-2.0 | No |
@@ -446,7 +446,6 @@ Every locked package declares a license.
 | `google-protobuf` | `3.21.4` | (BSD-3-Clause AND Apache-2.0) | No |
 | `gopd` | `1.2.0` | MIT | No |
 | `graceful-fs` | `4.2.11` | ISC | No |
-| `grok-mermaid` | `0.2.3` | Apache-2.0 | No |
 | `hachure-fill` | `0.5.2` | MIT | No |
 | `has-symbols` | `1.1.0` | MIT | No |
 | `has-tostringtag` | `1.0.2` | MIT | No |
@@ -468,7 +467,7 @@ Every locked package declares a license.
 | `hastscript` | `9.0.1` | MIT | No |
 | `highlight.js` | `10.7.3` | BSD-3-Clause | No |
 | `highlightjs-vue` | `1.0.0` | CC0-1.0 | No |
-| `hono` | `4.13.13` | MIT | No |
+| `hono` | `4.13.18` | MIT | No |
 | `hosted-git-info` | `9.0.3` | ISC | No |
 | `html-url-attributes` | `3.0.1` | MIT | No |
 | `html-void-elements` | `3.0.0` | MIT | No |
@@ -528,6 +527,7 @@ Every locked package declares a license.
 | `long` | `5.3.2` | Apache-2.0 | No |
 | `longest-streak` | `3.1.0` | MIT | No |
 | `lop` | `0.4.2` | BSD-2-Clause | No |
+| `lovely-mermaid` | `0.3.3` | Apache-2.0 | No |
 | `lowlight` | `1.20.0` | MIT | No |
 | `lru-cache` | `10.4.3` | ISC | No |
 | `lru-cache` | `11.4.0` | BlueOak-1.0.0 | No |
