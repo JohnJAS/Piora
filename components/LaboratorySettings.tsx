@@ -20,12 +20,12 @@ export function LaboratorySettings() {
           <strong className={styles.rowTitle}>{t("laboratory.planGoal")}</strong>
           <span id={descriptionId} className={styles.rowDescription}>{t("laboratory.planGoalDescription")}</span>
         </span>
-        <button type="button" className={`${styles.optionButton} ${styles.laboratoryToggle}`}
-          data-testid="laboratory-plan-goal-toggle" aria-pressed={settings.planGoalEnabled}
+        <button type="button" role="switch" className={styles.switch}
+          data-testid="laboratory-plan-goal-toggle" aria-checked={settings.planGoalEnabled}
           aria-label={t("laboratory.planGoal")} aria-describedby={descriptionId} aria-busy={settings.saving}
-          title={t(settings.planGoalEnabled ? "laboratory.disable" : "laboratory.enable")}
+          title={t(settings.saving ? "laboratory.saving" : settings.planGoalEnabled ? "laboratory.disable" : "laboratory.enable")}
           disabled={settings.loading || settings.saving} onClick={() => { void settings.setPlanGoalEnabled(!settings.planGoalEnabled); }}>
-          {t(settings.saving ? "laboratory.saving" : settings.planGoalEnabled ? "laboratory.enabled" : "laboratory.enable")}
+          <span aria-hidden="true" />
         </button>
       </div>
     </section>
