@@ -67,9 +67,9 @@ export const planGoal = {
       await dialog.getByTestId('settings-laboratory').click();
       const toggle = dialog.getByTestId('laboratory-plan-goal-toggle');
       await toggle.waitFor();
-      if (await toggle.isChecked() !== enabled) await toggle.click();
+      if ((await toggle.getAttribute('aria-pressed') === 'true') !== enabled) await toggle.click();
       await waitUntil(async () => (await readLaboratory()).planGoalEnabled === enabled, `laboratory setting ${enabled}`);
-      assert.equal(await toggle.isChecked(), enabled);
+      assert.equal(await toggle.getAttribute('aria-pressed'), String(enabled));
       await waitUntil(() => toggle.isEnabled(), 'laboratory setting save to settle');
       if (imageName) await screenshot(imageName);
       await page.keyboard.press('Escape');

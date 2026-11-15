@@ -760,6 +760,17 @@
   font-weight: 650;
 }
 
+.laboratoryToggle {
+  flex: 0 0 auto;
+  min-width: 7em;
+  white-space: nowrap;
+}
+
+.laboratoryToggle:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .switch {
   position: relative;
   width: 38px;
