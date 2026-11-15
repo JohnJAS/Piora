@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -67,6 +68,7 @@ export function NewSessionProjectPicker({
   const effectiveChatInputRef = chatInputRef ?? localChatInputRef;
   const draftKey = useRef(`new-task:${createLaunchId()}`).current;
   const projectControlRef = useRef<HTMLDivElement>(null);
+  const projectPopoverRef = useRef<HTMLDivElement>(null);
   const projectSearchRef = useRef<HTMLInputElement>(null);
 
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -206,6 +208,39 @@ export function NewSessionProjectPicker({
     setProjectMenuOpen(true);
   }, [projectPickerRequestKey]);
 
+  useLayoutEffect(() => {
+    if (!projectMenuOpen) return;
+    const control = projectControlRef.current;
+    const popover = projectPopoverRef.current;
+    if (!control || !popover) return;
+    const topbar = control.closest(".chat-composer-topbar");
+    const context = control.closest(".chat-composer-context");
+    const positionPopover = () => {
+      // Keep the existing upward menu anchored to its trigger, shifting it
+      // only as needed to fit the composer after the controls align right.
+      const boundary = topbar?.getBoundingClientRect();
+      const left = Math.max(15, boundary?.left ?? 15);
+      const right = Math.min(window.innerWidth - 15, boundary?.right ?? window.innerWidth - 15);
+      const width = Math.min(390, Math.max(0, right - left));
+      const anchorLeft = control.getBoundingClientRect().left;
+      const menuLeft = Math.max(left, Math.min(anchorLeft, right - width));
+      popover.style.setProperty("--project-popover-width", `${width}px`);
+      popover.style.setProperty("--project-popover-offset", `${menuLeft - anchorLeft}px`);
+    };
+    positionPopover();
+    const observer = new ResizeObserver(positionPopover);
+    observer.observe(control);
+    if (topbar) observer.observe(topbar);
+    if (context) observer.observe(context);
+    window.addEventListener("resize", positionPopover);
+    window.addEventListener("scroll", positionPopover, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", positionPopover);
+      window.removeEventListener("scroll", positionPopover, true);
+    };
+  }, [projectMenuOpen]);
+
   useEffect(() => {
     if (!projectMenuOpen) return;
     const frame = window.requestAnimationFrame(() => projectSearchRef.current?.focus());
@@ -344,7 +379,7 @@ export function NewSessionProjectPicker({
             tabIndex={-1}
             onClick={closeProjectMenu}
           />
-          <div className={styles.projectPopover}>
+          <div ref={projectPopoverRef} className={styles.projectPopover}>
             <label className={styles.projectSearch}>
               <AliIcon name="search" size={14} />
               <input
