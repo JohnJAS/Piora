@@ -39,7 +39,9 @@
 
 @container chat-composer (max-width: 420px) {
   .control {
-    max-width: 30cqw;
+    /* Let the toolbar wrap before squeezing the fixed label and caret. */
+    max-width: min(200px, 100%);
+    flex-shrink: 0;
   }
 }
 

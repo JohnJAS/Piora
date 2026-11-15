@@ -23,6 +23,7 @@ interface TooltipContent {
   element: Element;
   text: string;
   anchor: DOMRect;
+  layer: number;
 }
 
 interface TooltipPosition {
@@ -40,6 +41,19 @@ function findTitleTarget(target: EventTarget | null): Element | null {
   if (!(target instanceof Element)) return null;
   // iframe titles are accessibility names, not hover hints.
   return target.closest("[title]:not(iframe)");
+}
+
+function getTooltipAnchor(element: Element): DOMRect {
+  // A compact menu's help belongs outside the whole popup, where it cannot
+  // obscure another choice or sit behind the menu's own surface.
+  const boundary = element.closest("[data-tooltip-boundary]");
+  return boundary ? boundary.getBoundingClientRect() : element.getBoundingClientRect();
+}
+
+function getTooltipLayer(element: Element): number {
+  const boundary = element.closest("[data-tooltip-boundary]");
+  const layer = boundary ? Number.parseInt(getComputedStyle(boundary).zIndex, 10) : 0;
+  return Math.max(1600, (Number.isFinite(layer) ? layer : 0) + 1);
 }
 
 function hasVisibleLabel(element: Element): boolean {
@@ -113,7 +127,8 @@ export function AppTooltip() {
         setContent({
           element: active.element,
           text: active.title,
-          anchor: active.element.getBoundingClientRect(),
+          anchor: getTooltipAnchor(active.element),
+          layer: getTooltipLayer(active.element),
         });
       };
       if (delay === 0) show();
@@ -264,7 +279,7 @@ export function AppTooltip() {
           return;
         }
         setContent((previous) => previous && previous.element === active.element
-          ? { ...previous, anchor: active.element.getBoundingClientRect() }
+          ? { ...previous, anchor: getTooltipAnchor(active.element) }
           : previous);
       });
     };
@@ -306,17 +321,19 @@ export function AppTooltip() {
     }
 
     const bounds = tooltip.getBoundingClientRect();
-    const anchorCenter = content.anchor.left + content.anchor.width / 2;
+    // A portal may receive its final position in the same layout pass as focus.
+    const anchor = getTooltipAnchor(content.element);
+    const anchorCenter = anchor.left + anchor.width / 2;
     const maxLeft = Math.max(VIEWPORT_GAP, window.innerWidth - bounds.width - VIEWPORT_GAP);
     const left = Math.min(Math.max(anchorCenter - bounds.width / 2, VIEWPORT_GAP), maxLeft);
-    const roomAbove = content.anchor.top - VIEWPORT_GAP;
-    const roomBelow = window.innerHeight - content.anchor.bottom - VIEWPORT_GAP;
+    const roomAbove = anchor.top - VIEWPORT_GAP;
+    const roomBelow = window.innerHeight - anchor.bottom - VIEWPORT_GAP;
     const placement: TooltipPlacement = roomAbove >= bounds.height + ANCHOR_GAP || roomAbove >= roomBelow
       ? "top"
       : "bottom";
     const preferredTop = placement === "top"
-      ? content.anchor.top - bounds.height - ANCHOR_GAP
-      : content.anchor.bottom + ANCHOR_GAP;
+      ? anchor.top - bounds.height - ANCHOR_GAP
+      : anchor.bottom + ANCHOR_GAP;
     const maxTop = Math.max(VIEWPORT_GAP, window.innerHeight - bounds.height - VIEWPORT_GAP);
     const top = Math.min(Math.max(preferredTop, VIEWPORT_GAP), maxTop);
     const arrowX = Math.min(Math.max(anchorCenter - left, 8), Math.max(8, bounds.width - 8));
@@ -330,7 +347,7 @@ export function AppTooltip() {
     // this markup; relying on `.app-tooltip { position: fixed }` alone lets a
     // hovered title briefly become a flex item and shrink the application.
     position: "fixed",
-    zIndex: 1600,
+    zIndex: content?.layer ?? 1600,
     pointerEvents: "none",
     left: position?.left ?? 0,
     top: position?.top ?? 0,

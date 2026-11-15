@@ -89,7 +89,8 @@ test("new tasks start from one production composer with progressive context cont
   assert.match(picker, /<NewSessionLauncher/);
   assert.match(picker, /<ChatInput/);
   assert.match(picker, /variant="launcher"/);
-  assert.match(picker, /contextControl=\{\([\s\S]*?\{projectControl\}[\s\S]*?<SystemPromptSelector/);
+  assert.match(picker, /contextControl=\{projectControl\}/);
+  assert.match(picker, /toolbarControl=\{\(\s*<SystemPromptSelector[\s\S]*?selection=\{systemPromptSelection\}[\s\S]*?onChange=\{setSystemPromptSelection\}/);
   assert.doesNotMatch(picker, /<textarea|<select|stepNumber|会话准备|准备好模型和项目/);
   assert.match(launcher, /t\("newSession\.title"\)/);
   assert.doesNotMatch(launcher, /StarterCards|newSession\.description|newSession\.projectDescription/);

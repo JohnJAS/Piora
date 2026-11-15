@@ -217,7 +217,7 @@ export function NewSessionProjectPicker({
     const context = control.closest(".chat-composer-context");
     const positionPopover = () => {
       // Keep the existing upward menu anchored to its trigger, shifting it
-      // only as needed to fit the composer after the controls align right.
+      // only as needed to fit the composer and viewport.
       const boundary = topbar?.getBoundingClientRect();
       const left = Math.max(15, boundary?.left ?? 15);
       const right = Math.min(window.innerWidth - 15, boundary?.right ?? window.innerWidth - 15);
@@ -463,14 +463,12 @@ export function NewSessionProjectPicker({
           draftKey={draftKey}
           cwd={selectedProject?.cwd ?? null}
           placeholder={selectedProject ? t("newSession.placeholder") : t("newSession.placeholderWithoutProject")}
-          contextControl={(
-            <>
-              {projectControl}
-              <SystemPromptSelector
-                selection={systemPromptSelection}
-                onChange={setSystemPromptSelection}
-              />
-            </>
+          contextControl={projectControl}
+          toolbarControl={(
+            <SystemPromptSelector
+              selection={systemPromptSelection}
+              onChange={setSystemPromptSelection}
+            />
           )}
         />
         {(projectError || (!selectedProject && projectlessError) || modelsUnavailable) ? (
