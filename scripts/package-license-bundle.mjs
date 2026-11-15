@@ -52,9 +52,9 @@ const REVIEWED_RUNTIME_REPLACEMENTS = Object.freeze([
   Object.freeze({
     lockPath: "node_modules/@earendil-works/pi-coding-agent/node_modules/brace-expansion",
     lockedName: "brace-expansion",
-    lockedVersion: "5.0.9",
+    lockedVersion: "5.0.12",
     installedName: "brace-expansion",
-    installedVersion: "5.0.12",
+    installedVersion: "5.0.13",
     mechanism: "scripts/patch-bundled-dependencies.mjs",
   }),
   Object.freeze({

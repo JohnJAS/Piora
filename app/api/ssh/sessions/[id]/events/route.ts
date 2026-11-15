@@ -22,5 +22,5 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     },
     cancel: cleanup,
   });
-  return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" } });
 }

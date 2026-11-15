@@ -62,7 +62,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       },
       cancel() { cleanup(); },
     });
-    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" } });
   } catch (error) {
     return Response.json({ error: String(error) }, { status: 404 });
   }

@@ -156,7 +156,7 @@ export function renderLicenseInventory(records, lockfileSha256) {
     "",
     "## Harmony log workbench",
     "",
-    "The offline log workbench is adapted from Alentaoker/dsh-harmoneydev-tools at 8b178a755d33cee9899160a7be283af2b23eb85d under Apache-2.0; live log components use that project's MIT code. Exact provenance, modifications and complete licenses are retained in [source notices](third_party/harmony-log-workbench/SOURCE.md). ZIP uses yauzl (MIT); RAR uses the unmodified 7-Zip 26.04 runtime from 7z-bin, preserving its LGPL/BSD/unRAR notices. No Harmony SDK, dictionary or vendor video binary is included in this adaptation.",
+    "The offline log workbench is adapted from Alentaoker/dsh-harmoneydev-tools at 8b178a755d33cee9899160a7be283af2b23eb85d under Apache-2.0; live log components use that project's MIT code. Exact provenance, modifications and complete licenses are retained in [source notices](third_party/harmony-log-workbench/SOURCE.md). ZIP uses yauzl (MIT); RAR uses the unmodified 7-Zip 26.06 runtime from 7z-bin, preserving its LGPL/BSD/unRAR notices. No Harmony SDK, dictionary or vendor video binary is included in this adaptation.",
     "",
   ].join("\n");
 }

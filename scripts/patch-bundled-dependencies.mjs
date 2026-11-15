@@ -128,8 +128,8 @@ export async function patchBundledBraceExpansion(root = projectRoot, sourceRoot 
     sourceRoot,
     packageName: "brace-expansion",
     // Retain strict guards for legacy/staged copies; Pi >=1.0.1 can hoist it.
-    patchedVersion: "5.0.12",
-    acceptedBundledVersions: new Set(["5.0.7", "5.0.9", "5.0.12"]),
+    patchedVersion: "5.0.13",
+    acceptedBundledVersions: new Set(["5.0.7", "5.0.9", "5.0.12", "5.0.13"]),
   });
 }
 

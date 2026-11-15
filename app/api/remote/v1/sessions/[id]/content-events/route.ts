@@ -20,6 +20,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       },
       snapshot: () => session.getRemoteContentSnapshot(),
     });
-    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-store", "X-Accel-Buffering": "no", Connection: "keep-alive" } });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no", Connection: "keep-alive" } });
   } catch (error) { return remoteErrorResponse(error); }
 }

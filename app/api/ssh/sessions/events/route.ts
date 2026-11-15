@@ -16,5 +16,5 @@ export async function GET(request: Request) {
     },
     cancel() { stop?.(); if (heartbeat) clearInterval(heartbeat); },
   });
-  return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" } });
+  return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-store, no-transform", Connection: "keep-alive" } });
 }

@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `155f597435e8f434a2f8bd330f641a4994d96c3a86448b0b58b5d0e83b5b3826`
+Lockfile SHA-256: `2e466593d4b4208e677bf1ec82e841e40f10788c7f80f1ec478ef8869795feb9`
 
-Unique locked packages: **1271**. Runtime packages: **771**. Build/development-only packages: **500**.
+Unique locked packages: **1272**. Runtime packages: **772**. Build/development-only packages: **500**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -14,7 +14,7 @@ Every locked package declares a license.
 
 | Package | Version | Declared license | Optional |
 | --- | --- | --- | --- |
-| `7z-bin` | `26.4.0` | MIT | No |
+| `7z-bin` | `26.6.0` | MIT | No |
 | `@antfu/install-pkg` | `1.1.0` | MIT | No |
 | `@anthropic-ai/sdk` | `0.129.0` | MIT | No |
 | `@aws-sdk/client-bedrock-runtime` | `3.1127.0` | Apache-2.0 | No |
@@ -161,18 +161,18 @@ Every locked package declares a license.
 | `@lobehub/icons` | `6.15.0` | MIT | No |
 | `@marijn/find-cluster-break` | `1.0.4` | MIT | No |
 | `@mermaid-js/parser` | `2.0.1` | MIT | No |
-| `@microsoft/winappcli` | `0.7.1` | MIT | Yes |
+| `@microsoft/winappcli` | `0.8.0` | MIT | Yes |
 | `@mixmark-io/domino` | `2.2.0` | BSD-2-Clause | No |
 | `@modelcontextprotocol/sdk` | `1.32.2` | MIT | No |
-| `@next/env` | `16.4.5` | MIT | No |
-| `@next/swc-darwin-arm64` | `16.4.5` | MIT | Yes |
-| `@next/swc-darwin-x64` | `16.4.5` | MIT | Yes |
-| `@next/swc-linux-arm64-gnu` | `16.4.5` | MIT | Yes |
-| `@next/swc-linux-arm64-musl` | `16.4.5` | MIT | Yes |
-| `@next/swc-linux-x64-gnu` | `16.4.5` | MIT | Yes |
-| `@next/swc-linux-x64-musl` | `16.4.5` | MIT | Yes |
-| `@next/swc-win32-arm64-msvc` | `16.4.5` | MIT | Yes |
-| `@next/swc-win32-x64-msvc` | `16.4.5` | MIT | Yes |
+| `@next/env` | `16.4.6` | MIT | No |
+| `@next/swc-darwin-arm64` | `16.4.6` | MIT | Yes |
+| `@next/swc-darwin-x64` | `16.4.6` | MIT | Yes |
+| `@next/swc-linux-arm64-gnu` | `16.4.6` | MIT | Yes |
+| `@next/swc-linux-arm64-musl` | `16.4.6` | MIT | Yes |
+| `@next/swc-linux-x64-gnu` | `16.4.6` | MIT | Yes |
+| `@next/swc-linux-x64-musl` | `16.4.6` | MIT | Yes |
+| `@next/swc-win32-arm64-msvc` | `16.4.6` | MIT | Yes |
+| `@next/swc-win32-x64-msvc` | `16.4.6` | MIT | Yes |
 | `@oozcitak/dom` | `1.15.10` | MIT | No |
 | `@oozcitak/infra` | `1.0.8` | MIT | No |
 | `@oozcitak/url` | `1.0.4` | MIT | No |
@@ -292,6 +292,7 @@ Every locked package declares a license.
 | `bowser` | `2.14.1` | MIT | No |
 | `brace-expansion` | `2.1.7` | MIT | No |
 | `brace-expansion` | `5.0.12` | MIT | No |
+| `brace-expansion` | `5.0.13` | MIT | No |
 | `buffer` | `6.0.3` | MIT | No |
 | `buffer-crc32` | `1.0.0` | MIT | No |
 | `buffer-equal-constant-time` | `1.0.1` | BSD-3-Clause | No |
@@ -601,7 +602,7 @@ Every locked package declares a license.
 | `nan` | `2.28.0` | MIT | Yes |
 | `nanoid` | `3.3.18` | MIT | No |
 | `negotiator` | `1.1.0` | MIT | No |
-| `next` | `16.4.5` | MIT | No |
+| `next` | `16.4.6` | MIT | No |
 | `node-addon-api` | `7.1.1` | MIT | No |
 | `node-domexception` | `1.0.0` | MIT | No |
 | `node-fetch` | `3.3.2` | MIT | No |
@@ -721,7 +722,7 @@ Every locked package declares a license.
 | `style-to-object` | `1.0.14` | MIT | No |
 | `styled-jsx` | `5.1.6` | MIT | No |
 | `stylis` | `4.4.0` | MIT | No |
-| `tar` | `7.5.22` | BlueOak-1.0.0 | No |
+| `tar` | `7.5.23` | BlueOak-1.0.0 | No |
 | `tar-stream` | `3.2.1` | MIT | No |
 | `teen_process` | `2.3.3` | Apache-2.0 | No |
 | `teex` | `1.0.1` | MIT | No |
@@ -740,7 +741,7 @@ Every locked package declares a license.
 | `tweetnacl` | `0.14.5` | Unlicense | No |
 | `type-is` | `2.1.0` | MIT | No |
 | `typebox` | `1.3.27` | MIT | No |
-| `typebox` | `1.4.5` | MIT | No |
+| `typebox` | `1.4.6` | MIT | No |
 | `typescript` | `6.0.2` | Apache-2.0 | No |
 | `ufo` | `1.6.4` | MIT | No |
 | `underscore` | `1.13.8` | MIT | No |
@@ -770,7 +771,7 @@ Every locked package declares a license.
 | `wrap-ansi` | `8.1.0` | MIT | No |
 | `wrap-ansi-cjs` | `7.0.0` | MIT | No |
 | `wrappy` | `1.0.2` | ISC | No |
-| `ws` | `8.22.1` | MIT | No |
+| `ws` | `8.22.2` | MIT | No |
 | `xmlbuilder` | `10.1.1` | MIT | No |
 | `xmlbuilder2` | `3.1.1` | MIT | No |
 | `xmldom` | `0.9.12` | MIT | No |
@@ -853,7 +854,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `@malept/flatpak-bundler` | `0.4.0` | MIT | No |
 | `@napi-rs/wasm-runtime` | `0.2.12` | MIT | Yes |
 | `@napi-rs/wasm-runtime` | `1.2.2` | MIT | Yes |
-| `@next/eslint-plugin-next` | `16.4.5` | MIT | No |
+| `@next/eslint-plugin-next` | `16.4.6` | MIT | No |
 | `@noble/hashes` | `1.4.0` | MIT | No |
 | `@noble/hashes` | `1.8.0` | MIT | No |
 | `@nodelib/fs.scandir` | `2.1.5` | MIT | No |
@@ -1013,7 +1014,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `dotenv-expand` | `11.0.7` | BSD-2-Clause | No |
 | `duplexer2` | `0.1.4` | BSD-3-Clause | No |
 | `ejs` | `3.1.10` | Apache-2.0 | No |
-| `electron` | `45.2.3` | MIT | No |
+| `electron` | `45.3.1` | MIT | No |
 | `electron-builder` | `26.18.0` | MIT | No |
 | `electron-publish` | `26.18.0` | MIT | No |
 | `electron-to-chromium` | `1.5.399` | ISC | No |
@@ -1029,7 +1030,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `es6-error` | `4.1.1` | MIT | Yes |
 | `escape-string-regexp` | `4.0.0` | MIT | No |
 | `eslint` | `10.14.0` | MIT | No |
-| `eslint-config-next` | `16.4.5` | MIT | No |
+| `eslint-config-next` | `16.4.6` | MIT | No |
 | `eslint-import-resolver-node` | `0.3.9` | MIT | No |
 | `eslint-import-resolver-typescript` | `3.10.1` | ISC | No |
 | `eslint-module-utils` | `2.12.1` | MIT | No |
@@ -1316,4 +1317,4 @@ Bundled HDC uses Apache-2.0 and libusb uses LGPL-2.1-or-later; see [tool provena
 
 ## Harmony log workbench
 
-The offline log workbench is adapted from Alentaoker/dsh-harmoneydev-tools at 8b178a755d33cee9899160a7be283af2b23eb85d under Apache-2.0; live log components use that project's MIT code. Exact provenance, modifications and complete licenses are retained in [source notices](third_party/harmony-log-workbench/SOURCE.md). ZIP uses yauzl (MIT); RAR uses the unmodified 7-Zip 26.04 runtime from 7z-bin, preserving its LGPL/BSD/unRAR notices. No Harmony SDK, dictionary or vendor video binary is included in this adaptation.
+The offline log workbench is adapted from Alentaoker/dsh-harmoneydev-tools at 8b178a755d33cee9899160a7be283af2b23eb85d under Apache-2.0; live log components use that project's MIT code. Exact provenance, modifications and complete licenses are retained in [source notices](third_party/harmony-log-workbench/SOURCE.md). ZIP uses yauzl (MIT); RAR uses the unmodified 7-Zip 26.06 runtime from 7z-bin, preserving its LGPL/BSD/unRAR notices. No Harmony SDK, dictionary or vendor video binary is included in this adaptation.

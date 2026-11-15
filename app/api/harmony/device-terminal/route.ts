@@ -68,6 +68,6 @@ export async function GET(request: Request) {
     },
     cancel() { unsubscribe(); if (heartbeat) clearInterval(heartbeat); },
   });
-  return new Response(stream, { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "private, no-cache, no-store",
+  return new Response(stream, { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "private, no-cache, no-store, no-transform",
     Connection: "keep-alive", "X-Accel-Buffering": "no" } });
 }

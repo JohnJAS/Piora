@@ -1,6 +1,9 @@
 import { stat, readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+
+const rarManifest = JSON.parse(await readFile(new URL("../third_party/harmony-log-workbench/7zip-runtime.json", import.meta.url), "utf8"));
 
 export const HARMONY_LOG_RUNTIME_FILES = [
   ...["log-library", "log-storage", "log-worker", "log-archive", "log-encoding", "log-package", "log-parser", "log-query", "log-rar", "log-management", "session-search", "session-search-storage", "logs", "log-limits"].map(name => `lib/harmony/log-library/vendor/${name}.mjs`),
@@ -19,9 +22,15 @@ export async function verifyPackagedHarmonyLogAssets(webRoot, sidecarRoot = webR
     }
     const zip = JSON.parse(await readFile(join(root, "node_modules/yauzl/package.json"), "utf8"));
     const rar = JSON.parse(await readFile(join(root, "node_modules/7z-bin/package.json"), "utf8"));
-    if (zip.version !== "3.4.0" || rar.version !== "26.4.0") throw new Error("Packaged log archive dependencies do not match the reviewed versions");
+    if (zip.version !== "3.4.0" || rar.version !== rarManifest.packageVersion) throw new Error("Packaged log archive dependencies do not match the reviewed versions");
+    for (const [file, expected] of Object.entries(rarManifest.files)) {
+      const bytes = await readFile(join(root, "node_modules/7z-bin/bin/win/x64", file));
+      if (createHash("sha256").update(bytes).digest("hex") !== expected) {
+        throw new Error(`Packaged RAR runtime differs from the reviewed upstream 7-Zip ${rarManifest.version}: ${file}`);
+      }
+    }
   }
-  return { runtimeFiles: HARMONY_LOG_RUNTIME_FILES.length, zip: "yauzl@3.4.0", rar: "7z-bin@26.4.0", realSidecar: true };
+  return { runtimeFiles: HARMONY_LOG_RUNTIME_FILES.length, zip: "yauzl@3.4.0", rar: `7z-bin@${rarManifest.packageVersion}`, realSidecar: true };
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {

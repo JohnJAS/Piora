@@ -13,7 +13,7 @@ import { patchNodeForgeDigestAlgorithm } from "./patch-bundled-dependencies.mjs"
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const reviewedReplacements = [
-  { name: "brace-expansion", lockedVersion: "5.0.9", installedVersion: "5.0.12" },
+  { name: "brace-expansion", lockedVersion: "5.0.12", installedVersion: "5.0.13" },
   { name: "undici", lockedVersion: "8.10.2", installedVersion: "8.12.4" },
 ];
 

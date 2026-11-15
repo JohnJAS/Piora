@@ -42,7 +42,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       },
       cancel() { unsubscribe(); if (heartbeat) clearInterval(heartbeat); },
     });
-    return new Response(stream, { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "private, no-cache, no-store", Connection: "keep-alive", "X-Accel-Buffering": "no" } });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "private, no-cache, no-store, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" } });
   } catch (error) {
     return designErrorResponse(error);
   }
