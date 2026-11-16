@@ -33,6 +33,7 @@ export function parseOptions(args) {
     } else options[key] = value;
   }
   if (options.port && options.port === options.debugPort) throw new Error('Application and CDP ports must differ');
+  if (options.executable && options.port && options.port < 20000) throw new Error('Packaged desktop application port must be 20000–65535');
   if (!scenarios.some(scenario => scenario.id === options.scenario)) throw new Error(`Unknown scenario: ${options.scenario}`);
   return options;
 }
