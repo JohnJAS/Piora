@@ -61,6 +61,7 @@ function emptyRuntimeState(): CompanionRuntimeState {
       personality: "温暖、聪明、克制；关注事实，不打断专注。",
       quietHours: { enabled: false, start: "22:30", end: "08:00" },
       allowMovement: true,
+      movementArea: "screen",
       allowProactiveSpeech: true,
       autoCaptureSessions: true,
     },
@@ -527,6 +528,8 @@ export function CompanionPanel() {
           <label className={styles.toggle}><input type="checkbox" checked={state.settings.allowProactiveSpeech} onChange={() => void mutate((current) => ({ ...current, settings: { ...current.settings, allowProactiveSpeech: !current.settings.allowProactiveSpeech } }))} />允许任务变化或定时观察时主动说话</label>
           <label className={styles.toggle}><input type="checkbox" checked={state.settings.allowMovement} onChange={() => void mutate((current) => ({ ...current, settings: { ...current.settings, allowMovement: !current.settings.allowMovement } }))} />允许宠物自主随机移动</label>
           <p className={styles.hint}>关闭后会立即停止自主闲逛和任务联动移动，但仍可手动拖动宠物位置。</p>
+          <label>自主活动区域<select aria-label="自主活动区域" value={state.settings.movementArea} onChange={(event) => void mutate((current) => ({ ...current, settings: { ...current.settings, movementArea: event.target.value === "bottom-right" ? "bottom-right" : "screen" } }))}><option value="screen">整个屏幕</option><option value="bottom-right">右下四分之一屏幕</option></select></label>
+          <p className={styles.hint}>按当前屏幕可用工作区自动取右下四分之一，不含任务栏。切换后宠物移入该区域；手动拖出并松开后自动切回整个屏幕。</p>
           <label className={styles.toggle}><input type="checkbox" checked={state.settings.quietHours.enabled} onChange={() => void mutate((current) => ({ ...current, settings: { ...current.settings, quietHours: { ...current.settings.quietHours, enabled: !current.settings.quietHours.enabled } } }))} />启用安静时段</label>
           {state.settings.quietHours.enabled ? <div className={styles.quietHours}><label>开始<input type="time" value={state.settings.quietHours.start} onChange={(event) => void mutate((current) => ({ ...current, settings: { ...current.settings, quietHours: { ...current.settings.quietHours, start: event.target.value } } }))} /></label><span>至</span><label>结束<input type="time" value={state.settings.quietHours.end} onChange={(event) => void mutate((current) => ({ ...current, settings: { ...current.settings, quietHours: { ...current.settings.quietHours, end: event.target.value } } }))} /></label></div> : null}
           <article className={styles.card}><b>隐私说明</b><p>只发送任务标题、进度、工作时长和 Token 等汇总字段；不会把代码正文、文件内容或密钥自动发给互动模型。</p></article>

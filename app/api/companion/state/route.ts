@@ -41,3 +41,21 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
+
+/** Update just the movement preference, preserving concurrently refreshed task/mind data. */
+export async function PATCH(request: Request) {
+  if (!isApiRequestAllowed(request)) return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
+  if (!hasJsonContentType(request)) return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
+  try {
+    const body = await parseJsonWithinLimit(request, MAX_REQUEST_BYTES) as { movementArea?: unknown } | null;
+    if (!body || (body.movementArea !== "screen" && body.movementArea !== "bottom-right")) {
+      return NextResponse.json({ error: "Invalid movement area" }, { status: 400 });
+    }
+    const current = readCompanionRuntimeState();
+    return NextResponse.json(writeCompanionRuntimeState({ ...current, settings: { ...current.settings, movementArea: body.movementArea } }));
+  } catch (error) {
+    if (error instanceof JsonBodyTooLargeError) return NextResponse.json({ error: "Request body is too large" }, { status: 413 });
+    if (error instanceof InvalidJsonBodyError) return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+  }
+}

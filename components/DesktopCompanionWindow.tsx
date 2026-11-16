@@ -122,9 +122,13 @@ export function DesktopCompanionWindow() {
   const [runtimeReady, setRuntimeReady] = useState(false);
   const [movementSettings, setMovementSettings] = useState<{
     allowMovement: boolean;
+    movementArea: "screen" | "bottom-right";
     autonomyPaused: boolean;
     autonomyLevel: CompanionAutonomyLevel;
-  }>({ allowMovement: true, autonomyPaused: false, autonomyLevel: "balanced" });
+  }>({ movementArea: "screen", allowMovement: true, autonomyPaused: false, autonomyLevel: "balanced" });
+  useEffect(() => {
+    if (runtimeReady) void window.piDesktop?.setCompanionMovementArea?.(movementSettings.movementArea);
+  }, [runtimeReady, movementSettings.movementArea]);
   const movementAllowedRef = useRef(true);
   const pointerOverPetRef = useRef(false);
   const lastTimerCompletionRequestRef = useRef<number | null>(null);
@@ -199,12 +203,14 @@ export function DesktopCompanionWindow() {
       if (runtime?.settings) {
         const nextMovementSettings = {
           allowMovement: runtime.settings.allowMovement,
+          movementArea: runtime.settings.movementArea,
           autonomyPaused: runtime.settings.autonomyPaused,
           autonomyLevel: runtime.settings.autonomyLevel,
         };
         movementAllowedRef.current = nextMovementSettings.allowMovement;
         setMovementSettings((current) => (
-          current.allowMovement === nextMovementSettings.allowMovement
+          current.movementArea === nextMovementSettings.movementArea
+          && current.allowMovement === nextMovementSettings.allowMovement
           && current.autonomyPaused === nextMovementSettings.autonomyPaused
           && current.autonomyLevel === nextMovementSettings.autonomyLevel
             ? current
