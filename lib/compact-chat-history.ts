@@ -4,6 +4,7 @@ import { isEmptyThinkingBlock, hasAssistantNotice } from "./message-display";
 import { isCommandToolName, toolResultText } from "./command-execution";
 import { toolActivityKind, type ToolActivityKind } from "./tool-activity";
 import { browserWaitPurpose } from "./browser-wait-policy";
+import { isSubagentTool } from "./subagent-types";
 
 export interface ProcessStep {
   key: string;
@@ -88,7 +89,7 @@ export function buildCompactChatHistoryRows(
         if (Boolean(isEmptyThinkingBlock(original, { isStreaming: i === streamingIndex }))) continue;
         // Splitting rows must not change deferred lookup or disclosure identities.
         const block = original.type === "thinking" ? { ...original, deferredBlockIndex: original.deferredBlockIndex ?? b } : original;
-        const process = block.type === "thinking" || block.type === "toolCall" || (progressText && block.type === "text");
+        const process = block.type === "thinking" || block.type === "toolCall" && !isSubagentTool(block.toolName) || (progressText && block.type === "text");
         const activity = block.type === "toolCall" ? toolActivityKind(block.toolName) : undefined;
         const previous = segments.at(-1);
         if (previous?.process === process && previous.activity === activity) previous.blocks.push(block);

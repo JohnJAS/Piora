@@ -2,12 +2,17 @@ import { NextResponse } from "next/server";
 import { readSubagentSettings, writeSubagentSettings, listSubagentProfiles } from "@/lib/subagent-settings";
 import { stopAllSubagents } from "@/lib/subagent-runtime";
 import { InvalidJsonBodyError, JsonBodyTooLargeError, parseJsonWithinLimit } from "@/lib/bounded-json";
+import { ModelRequestCwdError, resolveModelRequestCwd } from "@/lib/model-runtime-context";
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "no-store" };
-export async function GET() {
-  try { return NextResponse.json({ settings: readSubagentSettings(), profiles: listSubagentProfiles(process.cwd()).filter(profile => profile.source !== "project") }, { headers }); }
-  catch (error) { return NextResponse.json({ error: String(error) }, { status: 500, headers }); }
+export async function GET(request?: Request) {
+  try {
+    const requested = request ? new URL(request.url).searchParams.get("cwd") : null;
+    const cwd = requested ? await resolveModelRequestCwd(requested) : undefined;
+    const profiles = listSubagentProfiles(cwd ?? process.cwd()).filter(profile => cwd || profile.source !== "project");
+    return NextResponse.json({ settings: readSubagentSettings(), profiles }, { headers });
+  } catch (error) { return NextResponse.json({ error: String(error) }, { status: error instanceof ModelRequestCwdError ? error.status : 500, headers }); }
 }
 export async function PUT(request: Request) {
   try {

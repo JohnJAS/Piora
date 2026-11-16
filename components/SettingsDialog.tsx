@@ -496,7 +496,7 @@ export function SettingsDialog({
                   <span>{t("settings.localNote")}</span>
                 </div>
               </>
-              ) : activeKey === "laboratory" ? <LaboratorySettings /> : activeKey === "data" ? (
+              ) : activeKey === "laboratory" ? <LaboratorySettings cwd={modelCwd} /> : activeKey === "data" ? (
               <>
                 <div className={styles.contentHeading}><h2>{t("settings.page.data")}</h2><p>{t("settings.page.dataDescription")}</p></div>
                 {desktop.available && window.piDesktop?.getAgentDataDirectory ? <section className={styles.conversationSection}>

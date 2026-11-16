@@ -7,7 +7,7 @@ let fixture;
 export const subagents = {
   id: 'subagents', mode: 'local-model-fixture',
   scope: 'Real Electron UI, SDK child sessions, independent tool execution, cancellation and disk recovery with a deterministic loopback model.',
-  coverage: ['default-off toggle and reload', 'isolated parallel child contexts', 'read-only Explore', 'transcript and usage', 'background notification', 'SendMessage continuation', 'Stop cancellation', 'disable cancellation', 'restart interruption'],
+  coverage: ['default-off toggle and reload', 'isolated parallel child contexts', 'read-only Explore', 'transcript and usage', 'background notification', 'SendMessage continuation', 'provider failure and timeout', 'parallel Stop and Escape cancellation', 'disable cancellation', 'restart interruption and saved continuation'],
   limits: ['Model responses are scripted; not real-provider semantic acceptance.', 'Parent runtime creation is fixture preparation; task submissions and feature changes use the UI.', 'No other platforms or external accounts are exercised.'],
   async prepare(context) { fixture = await prepareSubagentModel(context); },
   async run(context) {
@@ -34,6 +34,17 @@ export const subagents = {
       await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
     };
     const send = async message => { await page.locator('textarea').first().fill(message); await page.getByRole('button', { name: /^(Send|发送)$/ }).click(); };
+    const timeoutSeconds = async seconds => {
+      await page.getByRole('button', { name: /^(Settings|设置)$/ }).click();
+      const dialog = page.getByRole('dialog', { name: /^(Settings|设置)$/ });
+      await dialog.getByTestId('settings-laboratory').click();
+      await waitUntil(() => dialog.getByTestId('subagent-toggle').isEnabled(), 'subagent settings loaded');
+      await dialog.locator('[data-settings-id="laboratory.subagents"] summary').click();
+      const input = dialog.getByRole('spinbutton', { name: /timeout|超时/i });
+      await input.fill(String(seconds)); await input.press('Tab');
+      await waitUntil(async () => (await page.evaluate(async () => (await fetch('/api/settings/subagents')).json())).settings.timeoutSeconds === seconds, 'timeout setting saved');
+      await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+    };
     const idle = () => waitUntil(async () => {
       if (!sessionId) return false;
       const result = await page.evaluate(async id => (await fetch(`/api/agent/${id}`)).json(), sessionId);
@@ -86,12 +97,35 @@ export const subagents = {
         assert.ok(fixture.requests.some(request => request.task.includes('CHILD_BACKGROUND')));
         await page.getByText('BACKGROUND_TASK_FINISHED', { exact: false }).first().waitFor();
       });
+      await step('provider-failure-retains-real-error', async () => {
+        await send('SUBAGENT_E2E_ERROR');
+        await waitUntil(async () => (await read()).some(record => record.description === 'Failing subagent' && record.status === 'failed'), 'failed provider record'); await idle();
+        const failed = (await read()).find(record => record.description === 'Failing subagent');
+        assert.match(failed.error, /Intentional subagent provider failure/);
+        const card = page.locator(`[data-subagent-id="${failed.agentId}"]`).first();
+        await card.locator('[aria-expanded]').click();
+        await card.getByRole('alert').filter({ hasText: 'Intentional subagent provider failure' }).waitFor();
+      });
+      await step('timeout-cancels-provider-and-allows-recovery', async () => {
+        await timeoutSeconds(1); const count = fixture.holds.length;
+        await send('SUBAGENT_E2E_TIMEOUT');
+        await waitUntil(async () => (await read()).some(record => record.status === 'failed' && /timed out/.test(record.error)), 'failed timeout record'); await idle();
+        assert.equal(fixture.holds.length, count + 1);
+        await waitUntil(() => fixture.holds[count].closed, 'timed-out child provider connection closed');
+        await timeoutSeconds(300);
+      });
       await step('stop-cancels-active-child-provider', async () => {
         const count = fixture.holds.length; await send('SUBAGENT_E2E_STOP');
-        await waitUntil(() => fixture.holds.length > count, 'held child model request');
-        await page.getByRole('button', { name: /^(Stop|停止|Stop agent|停止智能体)$/ }).click();
-        await waitUntil(() => fixture.holds[count].closed, 'child provider connection closed');
-        await waitUntil(async () => (await read()).some(record => record.description === 'Held subagent' && record.status === 'cancelled'), 'cancelled durable child state'); await idle();
+        await waitUntil(() => fixture.holds.length === count + 2, 'two concurrent held child model requests');
+        await page.getByRole('button', { name: /^(Stop agent|停止智能体)$/ }).click();
+        await waitUntil(() => fixture.holds.slice(count).every(hold => hold.closed), 'both child provider connections closed');
+        await waitUntil(async () => (await read()).filter(record => record.description.startsWith('Held subagent') && record.status === 'cancelled').length >= 2, 'cancelled durable child state'); await idle();
+      });
+      await step('escape-cancels-active-child', async () => {
+        const count = fixture.holds.length; await send('SUBAGENT_E2E_ESCAPE');
+        await waitUntil(() => fixture.holds.length > count, 'child request before Escape');
+        await page.keyboard.press('Escape');
+        await waitUntil(() => fixture.holds[count].closed, 'Escape closes child provider connection'); await idle();
       });
       await step('disable-cancels-active-child', async () => {
         const count = fixture.holds.length; await send('SUBAGENT_E2E_DISABLE');
@@ -106,6 +140,13 @@ export const subagents = {
         await waitUntil(async () => (await read()).some(record => record.status === 'interrupted'), 'interrupted record after restart');
         assert.equal(fixture.holds.length, count + 1, 'restart must not automatically repeat the child request');
         await page.screenshot({ path: join(directory, 'subagent-restarted.png'), animations: 'disabled' });
+      });
+      await step('continue-saved-child-after-application-restart', async () => {
+        const id = (await read()).find(record => record.description === 'Explore A').agentId;
+        const tokens = (await read()).find(record => record.agentId === id).totalTokens;
+        await send(`SUBAGENT_E2E_FOLLOWUP ${id}`);
+        await waitUntil(async () => (await read()).some(record => record.agentId === id && record.status === 'completed' && record.totalTokens > tokens), 'saved child context continuation'); await idle();
+        assert.equal((await read()).find(record => record.agentId === id).result, 'FOLLOWUP_CONTEXT_RETAINED');
       });
       assert.deepEqual(fixture.failures, []);
     } finally { await writeFile(join(directory, 'subagent-evidence.json'), JSON.stringify({ observed, fixture }, null, 2)); }

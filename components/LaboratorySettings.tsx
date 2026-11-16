@@ -6,7 +6,7 @@ import { useLaboratorySettings } from "@/hooks/useLaboratorySettings";
 import styles from "./SettingsDialog.module.css";
 import { SubagentSettings } from "./SubagentSettings";
 
-export function LaboratorySettings() {
+export function LaboratorySettings({ cwd }: { cwd?: string }) {
   const { t } = useI18n();
   const settings = useLaboratorySettings();
   const descriptionId = useId();
@@ -31,7 +31,7 @@ export function LaboratorySettings() {
       </div>
     </section>
     <p className={styles.localNote}>{t("laboratory.disableHelp")}</p>
-    <SubagentSettings />
+    <SubagentSettings cwd={cwd} />
     {settings.error && <div role="alert"><p>{t("laboratory.error")} {settings.error}</p><button type="button" className={styles.primaryButton} onClick={() => { void settings.refresh(); }}>{t("workflow.refresh")}</button></div>}
   </>;
 }

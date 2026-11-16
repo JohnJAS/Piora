@@ -633,7 +633,7 @@ function AssistantMessageView({
   const blocks = blockItems.map(({ block }) => block);
   const blockGroups: { process: boolean; items: typeof blockItems }[] = [];
   for (const item of blockItems) {
-    const process = item.block.type === "thinking" || item.block.type === "toolCall";
+    const process = item.block.type === "thinking" || item.block.type === "toolCall" && !isSubagentTool(item.block.toolName);
     const previous = blockGroups.at(-1);
     if (process && previous?.process) previous.items.push(item);
     else blockGroups.push({ process, items: [item] });

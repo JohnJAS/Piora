@@ -6,18 +6,19 @@ import type { SubagentProfile, SubagentSettings as Settings } from "@/lib/subage
 import styles from "./SettingsDialog.module.css";
 import css from "./SubagentSettings.module.css";
 
-export function SubagentSettings() {
+export function SubagentSettings({ cwd }: { cwd?: string }) {
   const { t } = useI18n(), descriptionId = useId();
   const [settings, setSettings] = useState<Settings | null>(null), [profiles, setProfiles] = useState<SubagentProfile[]>([]);
   const [error, setError] = useState(""), [saving, setSaving] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
-    void fetch("/api/settings/subagents", { cache: "no-store", signal: controller.signal }).then(async response => {
+    const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
+    void fetch(`/api/settings/subagents${query}`, { cache: "no-store", signal: controller.signal }).then(async response => {
       const data = await response.json(); if (!response.ok) throw new Error(data.error);
       setSettings(data.settings); setProfiles(data.profiles);
     }).catch(error => { if (!controller.signal.aborted) setError(String(error)); });
     return () => controller.abort();
-  }, []);
+  }, [cwd]);
   async function save(next: Settings) {
     if (saving) return;
     setSaving(true); setError("");

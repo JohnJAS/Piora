@@ -20,13 +20,17 @@ export async function prepareSubagentModel({ paths, registerCleanup, report }) {
       const body = JSON.parse(Buffer.concat(chunks)), messages = body.messages ?? [];
       const user = [...messages].reverse().find(message => message.role === 'user'), task = text(user);
       const tools = (body.tools ?? []).map(tool => tool.function?.name);
-      const isChild = /CHILD_(A|B|HOLD|FOLLOWUP|BACKGROUND)/.test(task);
+      const isChild = /CHILD_(A|B|HOLD|FOLLOWUP|BACKGROUND|FAIL)/.test(task);
       const last = messages.at(-1), toolReply = last?.role === 'tool';
       const observation = { task, isChild, tools, at: Date.now(), model: body.model, parentSecretLeaked: isChild && JSON.stringify(messages).includes('PARENT_PRIVATE_CONTEXT') };
       fixture.requests.push(observation);
       if (isChild) {
         if (tools.some(name => ['Agent', 'SendMessage', 'TaskOutput', 'TaskStop'].includes(name))) throw new Error('Nested subagent tools leaked');
         if (observation.parentSecretLeaked) throw new Error('Parent conversation leaked to child');
+        if (/CHILD_FAIL/.test(task)) {
+          res.writeHead(503, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: { message: 'Intentional subagent provider failure' } })); return;
+        }
         if (/CHILD_HOLD/.test(task)) {
           const hold = { at: Date.now(), closed: false }; fixture.holds.push(hold);
           const timer = setTimeout(() => { fixture.failures.push('Held child request outlived cancellation'); res.writeHead(504); res.end(); }, 60_000);
@@ -57,8 +61,12 @@ export async function prepareSubagentModel({ paths, registerCleanup, report }) {
         if (!afterAgent) return respond(res, [{ name: 'SendMessage', args: { to: task.split(' ').at(-1), message: 'CHILD_FOLLOWUP: Continue the earlier exploration.' } }]);
         return respond(res, null, 'FOLLOWUP_SUMMARIZED');
       }
-      if (/SUBAGENT_E2E_(STOP|DISABLE|RESTART)/.test(task)) {
-        if (!afterAgent) return respond(res, [{ name: 'Agent', args: { description: 'Held subagent', prompt: 'CHILD_HOLD: Wait for cancellation.', subagent_type: 'Explore' } }]);
+      if (/SUBAGENT_E2E_ERROR/.test(task)) {
+        if (!afterAgent) return respond(res, [{ name: 'Agent', args: { description: 'Failing subagent', prompt: 'CHILD_FAIL: Return the actual provider failure.', subagent_type: 'Explore' } }]);
+        return respond(res, null, 'CHILD_FAILURE_REPORTED');
+      }
+      if (/SUBAGENT_E2E_(STOP|DISABLE|RESTART|TIMEOUT|ESCAPE)/.test(task)) {
+        if (!afterAgent) return respond(res, (/SUBAGENT_E2E_STOP/.test(task) ? ['A', 'B'] : ['A']).map(key => ({ name: 'Agent', args: { description: `Held subagent ${key}`, prompt: 'CHILD_HOLD: Wait for cancellation.', subagent_type: 'Explore' } })));
         return respond(res, null, 'HELD_TASK_SETTLED');
       }
       throw new Error('Unhandled subagent fixture task');

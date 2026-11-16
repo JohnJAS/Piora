@@ -2,6 +2,7 @@ import type { AgentMessage, AssistantMessage, AssistantContentBlock } from "./ty
 import { countToolCallBlocks, hasAssistantNotice, getDisplayableAssistantBlocks, hasFileMutationBlocks, splitFinalAssistantBlocks } from "./message-display";
 import { isCommandToolName } from "./command-execution";
 import type { ChatCommandView } from "./chat-command-types";
+import { isSubagentTool } from "./subagent-types";
 
 export function isChatTurnAnchor(message: AgentMessage): boolean {
   return message.role === "user" || message.role === "custom" && message.customType === "compaction";
@@ -33,7 +34,7 @@ function hasAnswer(message: AgentMessage): boolean {
 }
 
 function hasVisibleToolOutput(blocks: AssistantContentBlock[]): boolean {
-  return hasFileMutationBlocks(blocks) || blocks.some((block) => block.type === "toolCall" && isCommandToolName(block.toolName));
+  return hasFileMutationBlocks(blocks) || blocks.some((block) => block.type === "toolCall" && (isCommandToolName(block.toolName) || isSubagentTool(block.toolName)));
 }
 
 /** A render plan, not React elements. Collapsed and offscreen messages stay unmounted. */
