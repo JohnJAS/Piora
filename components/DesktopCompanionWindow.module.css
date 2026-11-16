@@ -134,8 +134,8 @@
 .petStage {
   position: absolute;
   left: 50%;
-  bottom: 7px;
-  width: 132px;
+  bottom: calc(100vw * 7 / 156);
+  width: calc(100vw * 132 / 156);
   aspect-ratio: 192 / 208;
   transform: translateX(-50%);
   -webkit-app-region: no-drag;
@@ -251,4 +251,13 @@
   .activityBubble { transition: none; }
   .bubbleToggle { transition: none; }
   .petVisual { transition: none; animation: none !important; }
+}
+
+.selection { position: absolute; inset: -5px; width: calc(100% + 10px); height: calc(100% + 10px); pointer-events: none; z-index: 2; overflow: visible; }
+.resizeOutline { fill: none; stroke: #78aaff; stroke-width: 1.5; }
+.resizeBorder { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: nwse-resize; touch-action: none; }
+
+/* The selection border already indicates focus; do not draw a second outline. */
+.petStage[data-selected="true"] .pet:focus-visible {
+  outline: none;
 }

@@ -1,3 +1,4 @@
+import { readCompanionScale, writeCompanionScale } from "./desktop-state.js";
 import { DshMemeManager } from "./dsh-meme-manager.js";
 import type { DesktopAnalytics } from "./analytics-desktop.mjs" with { "resolution-mode": "import" };
 let desktopAnalytics: DesktopAnalytics | undefined;
@@ -191,6 +192,8 @@ let dshMeme: DshMemeManager | undefined;
 let dshMemePanel: BrowserWindow | undefined;
 let dshPetSettings: BrowserWindow | undefined;
 let harmonyWindows: HarmonyWindows | undefined;
+let companionScale = 1;
+let companionResize: { corner: string; point: Electron.Point; bounds: Electron.Rectangle } | undefined;
 let companionWindow: BrowserWindow | null = null;
 let companionBubbleWindow: BrowserWindow | null = null;
 let companionPanelWindow: BrowserWindow | null = null;
@@ -1944,16 +1947,20 @@ function setCompanionWindowAlwaysOnTop(alwaysOnTop: boolean): boolean {
   return true;
 }
 
+function resizeCompanion(scale: number, point?: Electron.Point): void {
+  if (!companionWindow || companionWindow.isDestroyed()) return;
+  companionScale = Math.max(0.5, Math.min(3, scale));
+  companionWindowGuard?.setSize({ width: Math.round(156 * companionScale), height: Math.round(184 * companionScale) }, point);
+  positionCompanionBubble();
+}
+
 function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
+  companionScale = readCompanionScale(app.getPath("userData"), log);
   const position = getCompanionWindowPosition();
   const window = new BrowserWindow({
     ...position,
-    width: COMPANION_COMPACT_WIDTH,
-    height: COMPANION_COMPACT_HEIGHT,
-    minWidth: COMPANION_COMPACT_WIDTH,
-    minHeight: COMPANION_COMPACT_HEIGHT,
-    maxWidth: COMPANION_COMPACT_WIDTH,
-    maxHeight: COMPANION_COMPACT_HEIGHT,
+    width: Math.round(COMPANION_COMPACT_WIDTH * companionScale),
+    height: Math.round(COMPANION_COMPACT_HEIGHT * companionScale),
     show: false,
     frame: false,
     transparent: true,
@@ -1985,7 +1992,7 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
 
   installRendererDiagnostics(window, "Companion", log);
   protectTransparentCompanion(window);
-  companionWindowGuard = guardCompanionWindow(window, screen, { width: COMPANION_COMPACT_WIDTH, height: COMPANION_COMPACT_HEIGHT }, Date.now,
+  companionWindowGuard = guardCompanionWindow(window, screen, { width: Math.round(156 * companionScale), height: Math.round(184 * companionScale) }, Date.now,
     error => logger?.warn("Skipped companion window update", error));
   window.webContents.setZoomFactor(1);
   void window.webContents.setVisualZoomLevelLimits(1, 1);
@@ -2004,6 +2011,7 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
     Menu.buildFromTemplate([
       { label: brandText("打开 Piora"), click: () => { focusMainWindow(undefined, "menu"); } },
       { label: "打开随身舱", click: () => { showCompanionPanel(); } },
+      { label: "恢复默认大小", click: () => { resizeCompanion(1); if (logger) writeCompanionScale(app.getPath("userData"), 1, logger); } },
       { label: "桌宠设置", click: () => { focusMainWindow("companion-settings"); } },
       { type: "separator" },
       {
@@ -2052,6 +2060,7 @@ function createCompanionWindow(url: URL, log: Logger): BrowserWindow {
     if (companionMoveTimer) clearTimeout(companionMoveTimer);
     companionMoveTimer = undefined;
     if (companionWindow === window) {
+      companionResize = undefined;
       companionWindowGuard = undefined;
       stopCompanionWindowMotion();
       companionDragState = undefined;
@@ -2588,7 +2597,7 @@ function registerCompanionWindowHandlers(): void {
           : updateCompanionWindowDrag(),
       };
     }
-    if (request.kind !== "walk") return { ok: false };
+    if (request.kind !== "walk" || companionResize) return { ok: false };
     if (Date.now() - companionLastAutonomousMotionAt < 1_500) return { ok: false };
     companionLastAutonomousMotionAt = Date.now();
     const direction = request.direction === "left" || request.direction === "right"
@@ -2618,6 +2627,33 @@ function registerCompanionWindowHandlers(): void {
     return companionWindowGuard?.updateHitRegion(region) ?? false;
   });
 
+  ipcMain.removeHandler("pi:companion-resize");
+  ipcMain.handle("pi:companion-resize", (event, kind: unknown, corner: unknown) => {
+    if (!isTrustedCompanionWindowSender(event) || !companionWindow) return false;
+    if (kind === "start" && typeof corner === "string" && ["n", "e", "s", "w", "nw", "ne", "sw", "se"].includes(corner)) {
+      stopCompanionWindowMotion(); finishCompanionWindowDrag();
+      companionResize = { corner, point: screen.getCursorScreenPoint(), bounds: companionWindow.getBounds() };
+      companionWindowGuard?.setDragging(true);
+      return true;
+    }
+    if (kind === "end") {
+      companionResize = undefined;
+      companionWindowGuard?.setDragging(false);
+      if (logger) writeCompanionScale(app.getPath("userData"), companionScale, logger);
+      return true;
+    }
+    if (kind !== "move" || !companionResize) return false;
+    const { point, bounds, corner: handle } = companionResize;
+    const cursor = screen.getCursorScreenPoint();
+    const sx = handle.includes("w") ? -1 : handle.includes("e") ? 1 : 0;
+    const sy = handle.includes("n") ? -1 : handle.includes("s") ? 1 : 0;
+    // The visible stage is 132 x 143 DIP inside the 156 x 184 window.
+    const delta = ((cursor.x - point.x) * sx * 132 + (cursor.y - point.y) * sy * 143) / ((sx * 132) ** 2 + (sy * 143) ** 2);
+    const scale = Math.max(0.5, Math.min(3, bounds.width / 156 + delta));
+    resizeCompanion(scale, { x: Math.round(bounds.x + (sx < 0 ? 144 : sx > 0 ? 12 : 78) * (bounds.width / 156 - scale)), y: Math.round(bounds.y + (sy < 0 ? 177 : sy > 0 ? 34 : 105.5) * (bounds.width / 156 - scale)) });
+    companionWindowGuard?.setDragging(true);
+    return true;
+  });
   ipcMain.removeHandler(COMPANION_ACTION_CHANNEL);
   ipcMain.handle(COMPANION_ACTION_CHANNEL, (event, action: unknown): boolean => {
     if (!isTrustedCompletionNotificationSender(event) && !isTrustedCompanionSurfaceSender(event) || typeof action !== "string") return false;

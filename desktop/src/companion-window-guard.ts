@@ -53,6 +53,7 @@ export function guardCompanionWindow(window: BrowserWindow, screen: Screen, size
   const sync = () => protect(() => {
     if (window.isDestroyed()) return;
     const bounds = place(window.getBounds());
+    if (bounds && window.isVisible() && dragAt !== null && now() - dragAt < 1500) { setIgnoring(false); return; }
     if (!bounds || !window.isVisible() || !region || now() - regionAt > 1500) { setIgnoring(true); return; }
     const pointer = screen.getCursorScreenPoint();
     const x = pointer.x - bounds.x, y = pointer.y - bounds.y;
@@ -70,6 +71,12 @@ export function guardCompanionWindow(window: BrowserWindow, screen: Screen, size
   window.on("closed", () => clearInterval(timer));
   return {
     place, sync, reset,
+    setSize(next: { width: number; height: number }, point: { x: number; y: number } = window.getBounds()) {
+      if (!validCompanionRectangle({ x: 0, y: 0, ...next })) return;
+      size = { ...next };
+      reset();
+      return place(point);
+    },
     setDragging(active: boolean) { dragAt = active ? now() : null; sync(); },
     updateHitRegion(input: unknown) {
       region = sanitizeCompanionHitRegion(input, size); regionAt = now(); sync(); return region !== null;

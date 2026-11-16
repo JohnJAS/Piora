@@ -218,6 +218,9 @@ const runtime = Object.freeze({
     ipcRenderer.on("pi:companion-motion-state", handler);
     return () => ipcRenderer.removeListener("pi:companion-motion-state", handler);
   },
+  resizeCompanion(kind: "start" | "move" | "end", corner?: string): Promise<boolean> {
+    return ipcRenderer.invoke("pi:companion-resize", kind, corner) as Promise<boolean>;
+  },
   setCompanionHitTest(region: { x: number; y: number; width: number; height: number } | null): Promise<boolean> {
     return ipcRenderer.invoke("pi:companion-hit-test", region) as Promise<boolean>;
   },

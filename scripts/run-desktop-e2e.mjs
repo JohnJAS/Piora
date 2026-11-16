@@ -1,3 +1,4 @@
+import { companionScaling } from "./desktop-e2e/scenarios/companion-scaling.mjs";
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runDesktopScenario } from './desktop-e2e/harness.mjs';
@@ -12,7 +13,7 @@ import { harmonyLogs } from './desktop-e2e/scenarios/harmony-logs.mjs';
 import { planGoal } from './desktop-e2e/scenarios/plan-goal.mjs';
 import { usageDashboard } from './desktop-e2e/scenarios/usage-dashboard.mjs';
 
-const scenarios = [settingsTheme, stopShell, stopBash, desktopExtensions, browserPersistence, browserLogin, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard];
+const scenarios = [companionScaling, settingsTheme, stopShell, stopBash, desktopExtensions, browserPersistence, browserLogin, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard];
 
 export function parseOptions(args) {
   const options = { scenario: 'settings-theme' };
