@@ -10,6 +10,7 @@ import { DshPetManager } from "./dsh-pet-manager.js";
 import { createSmokeSessionProbe } from "./smoke-session-probe.js";
 import { SystemLauncher } from "./system-launcher";
 import { registerQuickAccessHandlers } from "./quick-access-ipc.js";
+import { recoverBackgroundLogin, cancelBackgroundLogin } from "./background-login.js";
 import { registerVaultHandlers } from "./credential-vault-ipc.js";
 import { ClipboardController, ClipboardDraftFlushError } from "./clipboard-controller.js";
 import { copyHarmonyMedia } from "./harmony-media-clipboard.js";
@@ -279,6 +280,7 @@ async function handleStandaloneMessage(message: unknown): Promise<unknown> {
     requestId?: unknown;
     sessionId?: unknown;
     params?: unknown;
+    tabId?: unknown;
     action?: unknown;
     value?: unknown;
   };
@@ -329,7 +331,7 @@ async function handleStandaloneMessage(message: unknown): Promise<unknown> {
     }
   }
   if (candidate.type === "pi-desktop:browser-agent-cancel") {
-    if (typeof candidate.requestId === "string") desktopBrowserManager?.cancelAgentRequest(candidate.requestId);
+    if (typeof candidate.requestId === "string") { cancelBackgroundLogin(candidate.requestId); desktopBrowserManager?.cancelAgentRequest(candidate.requestId); }
     return undefined;
   }
   if (candidate.type === "pi-desktop:browser-agent-backend") {
@@ -339,6 +341,10 @@ async function handleStandaloneMessage(message: unknown): Promise<unknown> {
   }
   if (candidate.type === "pi-desktop:browser-agent-request") {
     const requestId = typeof candidate.requestId === "string" ? candidate.requestId : "";
+    if (candidate.action === "recover_background_login" && typeof candidate.tabId === "string" && piAgentDirectoryPath) {
+      try { return { type: "pi-desktop:browser-agent-response", requestId, ok: true, value: await recoverBackgroundLogin(piAgentDirectoryPath, requestId, candidate.tabId) }; }
+      catch { return { type: "pi-desktop:browser-agent-response", requestId, ok: false, error: "Background login could not be restored" }; }
+    }
     if (!desktopBrowserManager) return { type: "pi-desktop:browser-agent-response", requestId, ok: false, error: BRIDGE_UNAVAILABLE_ERROR };
     return desktopBrowserManager.handleAgentRequest(message);
   }

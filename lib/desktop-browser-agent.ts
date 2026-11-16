@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 export const DESKTOP_AGENT_BRIDGE_UNAVAILABLE = "Desktop browser bridge unavailable.";
-export const EVALUATE_SENSITIVE_REFUSAL = "evaluate is refused on pages with password fields, login, payment, or account-security content. Use snapshot/click/type, or call wait_for_user.";
+export const EVALUATE_DOCUMENT_UNAVAILABLE = "The browser document could not be inspected. Take a new snapshot and try again.";
 export const EVALUATE_PAGE_CHANGED_ERROR = "The page changed after inspection. evaluate was not run; take a new snapshot and try again.";
 export const EVALUATE_UNKNOWN_PAGE = "unknown page";
 const SERVER_TIMEOUT_MS = 45_000;
@@ -117,13 +117,13 @@ export interface DesktopEvaluateCheck {
 }
 
 /**
- * Sensitive pages refuse. The internal authorization token binds execution to
+ * The internal authorization token binds execution to
  * the inspected tab and document; no user approval dialog is involved.
  */
 export async function gateDesktopEvaluate(input: {
   check: DesktopEvaluateCheck;
 }): Promise<{ confirmed: true; navigationToken: string; url: string } | { error: string }> {
-  if (input.check.allowed !== true) return { error: EVALUATE_SENSITIVE_REFUSAL };
+  if (input.check.allowed !== true) return { error: EVALUATE_DOCUMENT_UNAVAILABLE };
   const navigationToken = input.check.navigationToken?.trim() ?? "";
   if (!navigationToken) return { error: EVALUATE_PAGE_CHANGED_ERROR };
   const url = input.check.url?.trim() ? input.check.url.trim() : EVALUATE_UNKNOWN_PAGE;
@@ -188,7 +188,7 @@ export function callDesktopAgentBrowser(input: DesktopAgentCall): Promise<unknow
     const timer = setTimeout(() => {
       try { process.send?.({ type: "pi-desktop:browser-agent-cancel", requestId }); } catch { /* The bridge is already gone. */ }
       finish(new Error("Desktop browser agent request timed out"));
-    }, SERVER_TIMEOUT_MS);
+    }, input.action === "recover_login" || input.action === "recover_background_login" ? 80_000 : SERVER_TIMEOUT_MS);
     timer.unref?.();
     input.signal?.addEventListener("abort", onAbort, { once: true });
     pendingRequests.set(requestId, { resolve: (value) => finish(undefined, value), reject: (error) => finish(error), timer, abort: onAbort });

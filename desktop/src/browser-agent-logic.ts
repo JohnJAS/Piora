@@ -12,7 +12,6 @@ export const CDP_TIMEOUT_MS = 10_000;
 export const REQUEST_TIMEOUT_MS = 40_000;
 
 export const EVALUATE_DISABLED_ERROR = "evaluate requires a matching inspected document token.";
-export const EVALUATE_SENSITIVE_REFUSAL = "evaluate is refused on pages with password fields, login, payment, or account-security content. Use snapshot/click/type, or call wait_for_user.";
 export const EVALUATE_PAGE_CHANGED_ERROR = "The page changed after inspection. evaluate was not run; take a new snapshot and try again.";
 export const MAX_AGENT_TABS_ERROR = "This session already has 5 agent browser tabs. Close unused tabs before opening another.";
 export const REFS_INVALID_ERROR = "Element refs are invalid after the tab was reloaded. Take a new snapshot before interacting.";
@@ -54,14 +53,6 @@ export function sensitivePageNotice(input: { url?: string; title?: string; visib
   return SENSITIVE_PAGE_PATTERN.test(haystack) ? SENSITIVE_PAGE_HINT : undefined;
 }
 
-/** Refuse evaluate when the snapshot saw a password field or a sensitive page. */
-export function evaluateAllowance(input: { url?: string; title?: string; visibleText?: string; passwordField?: boolean }): { allowed: true } | { allowed: false; reason: string } {
-  if (input.passwordField === true || sensitivePageNotice(input)) {
-    return { allowed: false, reason: EVALUATE_SENSITIVE_REFUSAL };
-  }
-  return { allowed: true };
-}
-
 /** Binds one tab to one main-frame document. The epoch changes even when the URL stays the same. */
 export function formatNavigationToken(tabId: string, epoch: number, url: string): string {
   const count = Number.isFinite(epoch) ? Math.max(0, Math.floor(epoch)) : 0;
@@ -93,7 +84,7 @@ export class InFlightCounter {
 }
 
 export interface PendingRequestTable {
-  track(id: string, controller: AbortController): void;
+  track(id: string, controller: AbortController, timeoutMs?: number): void;
   cancel(id: string, error?: Error): boolean;
   failAll(error: Error): void;
   finish(id: string): void;
@@ -114,7 +105,7 @@ export function createPendingRequestTable(options: {
   const timeoutError = options.timeoutError ?? (() => new Error("Browser agent request timed out"));
 
   return {
-    track(id, controller) {
+    track(id, controller, overrideTimeoutMs) {
       const existing = entries.get(id);
       if (existing) clearTimer(existing.timer);
       const timer = setTimer(() => {
@@ -122,7 +113,7 @@ export function createPendingRequestTable(options: {
         if (!current) return;
         entries.delete(id);
         if (!controller.signal.aborted) controller.abort(timeoutError());
-      }, timeoutMs);
+      }, overrideTimeoutMs ?? timeoutMs);
       entries.set(id, { controller, timer });
     },
     cancel(id, error = new Error("Browser action aborted")) {

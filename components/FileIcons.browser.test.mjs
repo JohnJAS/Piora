@@ -47,15 +47,21 @@ test("Material icons render distinct file/folder silhouettes in both app themes;
     await page.screenshot({ path: path.join(output, "dark.png") });
     assert.deepEqual(errors, []);
 
-    await page.setContent('<form><input autocomplete="username"><input type="password"><button>Sign in</button></form><div hidden><button>Log out</button><input type="password"><div>安全验证 captcha</div></div>');
+    await page.setContent('<form><input autocomplete="username"><input type="password"><button>Sign in</button></form><div hidden><button>Log out</button><input type="password"><input autocomplete="one-time-code"><div role="alert">Invalid password</div><div>安全验证 captcha</div></div>');
     let probe = await page.evaluate(BROWSER_LOGIN_STATE_SCRIPT);
     assert.equal(probe.loginVisible, true); assert.equal(probe.authenticated, false);
+    assert.equal(probe.loginStage, "credentials");
+    assert.equal(probe.challenge, false, "hidden verification inputs cannot require a challenge");
+    assert.equal(probe.failed, false, "hidden legacy alerts cannot assert login failure");
     await page.locator('form').evaluate(form => form.remove());
     probe = await page.evaluate(BROWSER_LOGIN_STATE_SCRIPT);
     assert.equal(probe.loginVisible, false); assert.equal(probe.authenticated, false, "hidden legacy controls cannot assert sign-in");
     await page.evaluate(() => { const button = document.createElement('button'); button.textContent = 'Log out'; document.body.append(button); });
     probe = await page.evaluate(BROWSER_LOGIN_STATE_SCRIPT);
     assert.equal(probe.authenticated, true);
-    assert.deepEqual(Object.keys(probe).sort(), ["authenticated", "loginVisible", "ready", "url"]);
+    assert.deepEqual(probe, {
+      authenticated: true, challenge: false, failed: false, loginStage: undefined,
+      loginVisible: false, ready: true, url: "http://icons.test/",
+    });
   } finally { await browser?.close(); await rm(directory, { recursive: true, force: true }); }
 });

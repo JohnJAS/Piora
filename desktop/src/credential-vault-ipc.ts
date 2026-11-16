@@ -21,6 +21,9 @@ export function registerVaultHandlers(options: {
       const store = getCredentialVault();
       switch (input.action) {
         case "status": break;
+        case "remember-configure": store.configureRemembered(input.enabled === true); break;
+        case "remember-remove": store.removeRemembered(input.id ?? ""); break;
+        case "remember-toggle": store.toggleRemembered(input.id ?? "", input.enabled === true); break;
         case "initialize": store.initialize(input.password ?? ""); break;
         case "unlock": store.unlock(input.password ?? ""); break;
         case "lock": store.lock(); break;

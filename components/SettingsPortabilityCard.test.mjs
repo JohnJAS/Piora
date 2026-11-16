@@ -6,9 +6,10 @@ const card = fs.readFileSync(new URL("./SettingsPortabilityCard.tsx", import.met
 const settings = fs.readFileSync(new URL("./SettingsDialog.tsx", import.meta.url), "utf8");
 const shell = fs.readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8");
 
-test("Data & Diagnostics exposes data location and logs without the removed cards", () => {
+test("Data & Diagnostics exposes website accounts, data location and logs without legacy cards", () => {
   assert.match(settings, /activeKey === "data"/);
-  assert.doesNotMatch(settings, /SettingsPortabilityCard|ApplicationBackupCard|CredentialVaultSettings|OrganizationAnalyticsSettings|general\.portability/);
+  assert.doesNotMatch(settings, /SettingsPortabilityCard|ApplicationBackupCard|OrganizationAnalyticsSettings|general\.portability/);
+  assert.match(settings, /<CredentialVaultSettings rememberedOnly\s*\/>/);
   assert.match(settings, /getAgentDataDirectory/);
   assert.match(settings, /<RuntimeLogSettings\s*\/>/);
 });

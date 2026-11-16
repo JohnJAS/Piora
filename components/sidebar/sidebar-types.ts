@@ -140,6 +140,7 @@ export interface DesktopBrowserState {
   idleTabCount?: number;
   vaultProtected?: boolean;
   vaultMatches?: number;
+  loginNotice?: string;
   sessionId: string;
   activeTabId: string;
   canGoBack: boolean;

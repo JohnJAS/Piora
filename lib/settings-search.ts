@@ -84,6 +84,7 @@ export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   { id: "models.compaction", section: "conversation", labelKey: "modelCompaction.title", descriptionKey: "modelCompaction.description", keywords: ["context", "compaction", "compression", "threshold", "reserve tokens", "上下文", "压缩", "阈值", "预留"] },
   { id: "general.autoLaunch", section: "general", requiresDesktop: true, labelKey: "settings.autoLaunch", descriptionKey: "settings.autoLaunchDescription", keywords: ["startup", "boot", "login", "开机", "启动"] },
   { id: "general.runtimeLog", section: "data", requiresDesktop: true, labelKey: "settings.runtimeLog.title", descriptionKey: "settings.runtimeLog.description", keywords: ["log", "logs", "diagnostics", "path", "日志", "诊断", "路径", "文件夹"] },
+  { id: "data.websiteAccounts", section: "data", requiresDesktop: true, labelKey: "settings.websiteAccounts", descriptionKey: "settings.websiteAccountsDescription", keywords: ["browser", "login", "password", "accounts", "网页登录", "自动登录", "账户", "密码"] },
   { id: "general.globalShortcut", section: "shortcuts", requiresDesktop: true, labelKey: "settings.globalShortcut", descriptionKey: "settings.globalShortcutDescription", keywords: ["hotkey", "keyboard", "快捷键"] },
 
   { id: "conversation", section: "conversation", labelKey: "settings.conversation", descriptionKey: "settings.conversationDescription", keywords: ["chat", "session", "聊天", "会话"] },
