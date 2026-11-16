@@ -5,27 +5,42 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 let workspace;
-const readerModel = 'new-provider/qwen3.8-max';
+const parentModel = process.env.PIORA_SUBAGENT_REAL_PARENT_MODEL ?? 'deepseek/deepseek-flash';
+const readerModel = process.env.PIORA_SUBAGENT_REAL_READER_MODEL ?? 'new-provider/qwen3.8-max';
+function selection(value) {
+  const separator = value.indexOf('/');
+  assert.ok(separator > 0 && separator < value.length - 1 && !/\s/.test(value), 'Models must use provider/modelId');
+  return { provider: value.slice(0, separator), modelId: value.slice(separator + 1) };
+}
+const parentSelection = selection(parentModel), readerSelection = selection(readerModel);
 export const subagentsReal = {
   id: 'subagents-real', mode: 'real-provider',
-  scope: 'Real configured DeepSeek and Qwen providers, Electron UI delegation, independent read/write/verification and retained child context.',
+  scope: 'Real configured providers, Electron UI delegation, independent read/write/verification and retained child context.',
   coverage: ['real parent and child model requests', 'two independent delegated tasks', 'read-only child with a different model', 'child write and command verification', 'continuation with saved context', 'full child transcript and usage'],
-  limits: ['Requires the local DeepSeek and configured Qwen credentials.', 'Provider responses are nondeterministic; failure is recorded without substituting scripted responses.', 'Parent runtime creation is test preparation; all task submissions and settings changes use the UI.'],
+  limits: ['Requires local credentials; PIORA_SUBAGENT_REAL_AGENT_DIR selects their directory, PIORA_SUBAGENT_REAL_PARENT_MODEL and PIORA_SUBAGENT_REAL_READER_MODEL select provider/modelId.', 'Provider responses are nondeterministic; failure is recorded without substituting scripted responses.', 'Parent runtime creation is test preparation; all task submissions and settings changes use the UI.'],
   async prepare({ paths, registerCleanup, report }) {
-    const source = join(homedir(), '.pi', 'agent');
+    const source = process.env.PIORA_SUBAGENT_REAL_AGENT_DIR ?? join(homedir(), '.pi', 'agent');
     const auth = JSON.parse(await readFile(join(source, 'auth.json'), 'utf8'));
     const config = JSON.parse(await readFile(join(source, 'models.json'), 'utf8'));
-    assert.ok(auth.deepseek, 'DeepSeek credential is required');
-    assert.ok(config.providers?.['new-provider']?.models?.some(model => model.id === 'qwen3.8-max'), 'Configured Qwen model is required');
+    const selectedAuth = {}, providers = {};
+    for (const { provider, modelId } of [parentSelection, readerSelection]) {
+      if (auth[provider]) selectedAuth[provider] = auth[provider];
+      const configured = config.providers?.[provider];
+      assert.ok(auth[provider] || configured?.apiKey, `Credential for ${provider} is required`);
+      if (configured) {
+        assert.ok(configured.models?.some(model => model.id === modelId), `Configured model ${provider}/${modelId} is required`);
+        providers[provider] = configured;
+      }
+    }
     for (const name of ['auth.json', 'models.json']) registerCleanup(() => unlink(join(paths.agent, name)).catch(error => { if (error.code !== 'ENOENT') throw error; }));
-    await writeFile(join(paths.agent, 'auth.json'), JSON.stringify({ deepseek: auth.deepseek }), { mode: 0o600 });
-    await writeFile(join(paths.agent, 'models.json'), JSON.stringify({ providers: { 'new-provider': config.providers['new-provider'] } }), { mode: 0o600 });
+    await writeFile(join(paths.agent, 'auth.json'), JSON.stringify(selectedAuth), { mode: 0o600 });
+    await writeFile(join(paths.agent, 'models.json'), JSON.stringify({ providers }), { mode: 0o600 });
     const settingsPath = join(paths.agent, 'settings.json'), settings = JSON.parse(await readFile(settingsPath, 'utf8'));
-    await writeFile(settingsPath, JSON.stringify({ ...settings, enabledModels: ['deepseek/deepseek-flash', readerModel], defaultProvider: 'deepseek', defaultModel: 'deepseek-flash', defaultThinkingLevel: 'off' }));
+    await writeFile(settingsPath, JSON.stringify({ ...settings, enabledModels: [...new Set([parentModel, readerModel])], defaultProvider: parentSelection.provider, defaultModel: parentSelection.modelId, defaultThinkingLevel: 'off' }));
     workspace = await mkdtemp(join(tmpdir(), 'piora-subagent-real-'));
     await writeFile(join(workspace, 'source.json'), JSON.stringify({ alpha: [3, 5, 8], beta: [13, 21] }));
     report.credentials = 'selected existing credentials copied to isolated runtime and removed during cleanup';
-    report.models = { parent: 'deepseek/deepseek-flash', reader: readerModel };
+    report.models = { parent: parentModel, reader: readerModel };
   },
   async run({ page, origin, directory, step, waitUntil }) {
     let sessionId;
@@ -37,18 +52,22 @@ export const subagentsReal = {
       }, sessionId);
       assert.equal(data.status, 200); observations.push(data.body.records); return data.body.records;
     };
+    const assertParentHealthy = async () => {
+      const state = await page.evaluate(async id => (await fetch(`/api/agent/${id}`)).json(), sessionId);
+      assert.ok(!state.state?.lastPromptFailed, state.state?.lastPromptErrorSummary || 'Real parent model failed');
+      return state.state;
+    };
     const send = async text => { await page.locator('textarea').first().fill(text); await page.getByRole('button', { name: /^(Send|发送)$/ }).click(); };
     const idle = () => waitUntil(async () => {
-      const state = await page.evaluate(async id => (await fetch(`/api/agent/${id}`)).json(), sessionId);
-      return state.state?.runtime === 'idle';
+      return (await assertParentHealthy())?.runtime === 'idle';
     }, 'real parent and child models to settle');
     try {
       await step('prepare-real-parent-runtime', async () => {
-        const prepared = await page.evaluate(async cwd => {
+        const prepared = await page.evaluate(async ({ cwd, provider, modelId }) => {
           const response = await fetch('/api/agent/new', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'ensure_session', cwd, provider: 'deepseek', modelId: 'deepseek-flash', thinkingLevel: 'off' }) });
+            body: JSON.stringify({ type: 'ensure_session', cwd, provider, modelId, thinkingLevel: 'off' }) });
           return { status: response.status, body: await response.json() };
-        }, workspace);
+        }, { cwd: workspace, ...parentSelection });
         assert.equal(prepared.status, 200); sessionId = prepared.body.sessionId;
         await page.evaluate(async id => {
           await fetch(`/api/agent/${id}`); const events = await fetch(`/api/agent/${id}/events`);
@@ -73,7 +92,7 @@ export const subagentsReal = {
       });
       await step('real-model-delegation-read-write-and-verification', async () => {
         await send(`这是 Subagent 安装验收。父上下文私密标记 PARENT_ONLY_REAL_9461，不要向子代理传递这个标记。\n请在同一轮并行调用两次 Agent，父代理不要自己读写文件或执行命令。任务A使用 general-purpose：在 ${workspace} 新建 sum.cjs，使用 module.exports 导出一个对数字数组求和的函数，并通过终端运行 node 验证 [3,5,8] 得 16，报告真实结果。任务B使用 Explore：读取 ${join(workspace, 'source.json')}，计算 alpha 和 beta 各自的总和，返回文件证据。两个子任务的 prompt 应独立完整，A 只写 sum.cjs，B 只读 source.json。完成后汇总两个实际结果，不要代替子任务执行，不要再创建额外代理。`);
-        await waitUntil(async () => { const list = await records(); return list.length === 2 && list.every(record => record.status !== 'running'); }, 'two real child results');
+        await waitUntil(async () => { await assertParentHealthy(); const list = await records(); return list.length === 2 && list.every(record => record.status !== 'running'); }, 'two real child results');
         await idle();
         const list = await records(); assert.ok(list.every(record => record.status === 'completed'), JSON.stringify(list.map(record => ({ status: record.status, error: record.error }))));
         const reader = list.find(record => record.agentType === 'Explore'), writer = list.find(record => record.agentType === 'general-purpose');
@@ -95,7 +114,7 @@ export const subagentsReal = {
       await step('real-model-continues-owned-child-context', async () => {
         const reader = (await records()).find(record => record.agentType === 'Explore');
         await send(`请使用 SendMessage 继续子代理 ${reader.agentId}，问它：结合你刚才读到的两个数组，全部数字的总和是多少？父代理不要自行计算，不要重新创建 Agent。汇总其回答。`);
-        await waitUntil(async () => { const current = (await records()).find(record => record.agentId === reader.agentId); return current.totalTokens > reader.totalTokens && current.status !== 'running'; }, 'continued real child response');
+        await waitUntil(async () => { await assertParentHealthy(); const current = (await records()).find(record => record.agentId === reader.agentId); return current.totalTokens > reader.totalTokens && current.status !== 'running'; }, 'continued real child response');
         await idle();
         const current = (await records()).find(record => record.agentId === reader.agentId);
         assert.equal(current.status, 'completed'); assert.match(current.result, /50/);
