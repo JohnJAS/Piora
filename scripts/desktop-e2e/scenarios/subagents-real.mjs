@@ -83,13 +83,21 @@ export const subagentsReal = {
           const reader = events.body.getReader(); await reader.read(); await reader.cancel();
         }, sessionId);
         await page.goto(`${origin}/?session=${sessionId}`, { waitUntil: 'domcontentloaded' });
+        await page.locator('textarea').first().waitFor({ state: 'visible' });
         const dialog = page.getByRole('dialog', { name: /^(Settings|设置)$/ });
         // A visible server-rendered button can precede hydration after navigation.
         // Opening settings is idempotent; never retry toggles or task submissions.
         await waitUntil(async () => {
           if (await dialog.isVisible()) return true;
-          await page.getByRole('button', { name: /^(Settings|设置)$/ }).click();
-          return dialog.isVisible();
+          try {
+            await page.getByRole('button', { name: /^(Settings|设置)$/ }).click({ timeout: 2000 });
+            await dialog.waitFor({ state: 'visible', timeout: 2000 });
+            return true;
+          } catch (error) {
+            if (error.name !== 'TimeoutError') throw error;
+            // A late-opened dialog may cover the original settings button.
+            return dialog.isVisible();
+          }
         }, 'settings dialog after session navigation');
         await dialog.getByTestId('settings-laboratory').click();
         const toggle = dialog.getByTestId('subagent-toggle'); await waitUntil(() => toggle.isEnabled(), 'subagent switch');
@@ -104,6 +112,10 @@ export const subagentsReal = {
           return data.settings.modelOverrides.Explore === readerModel;
         }, 'reader model override saved');
         await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+        // The parent was provisioned through the API and has no message yet.
+        // Explicitly reopen that prepared chat before submitting its first turn.
+        await page.goto(`${origin}/?session=${sessionId}`, { waitUntil: 'domcontentloaded' });
+        await page.locator('textarea').first().waitFor({ state: 'visible' });
       });
       await step('real-model-delegation-read-write-and-verification', async () => {
         await send(`这是 Subagent 安装验收。父上下文私密标记 PARENT_ONLY_REAL_9461，不要向子代理传递这个标记。\n请在同一轮并行调用两次 Agent，父代理不要自己读写文件或执行命令。任务A使用 general-purpose：在 ${workspace} 新建 sum.cjs，定义 sum 数字数组求和函数，最后必须使用 module.exports = sum 直接导出函数，严禁导出 { sum } 对象；验收会检查 typeof require(文件路径) === 'function'。通过终端运行 node 验证 [3,5,8] 得 16、[13,21] 得 34，报告真实结果。任务B使用 Explore：只允许读取 ${join(workspace, 'source.json')} 这一份文件，不得读取 sum.cjs 或其他文件，计算 alpha 和 beta 各自的总和，返回文件证据。两个子任务的 prompt 应独立完整，必须完整传递文件范围、函数导出形状和执行验证要求。完成后汇总两个实际结果，不要代替子任务执行，不要再创建额外代理。`);
