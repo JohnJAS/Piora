@@ -746,7 +746,7 @@ export class SessionMessageRouter {
         if (this.isCancelled(command)) continue;
         if (command.queuePaused || this.queueActions.has(command.commandId)) return;
         if (command.status !== "accepted" && command.status !== "queued") continue;
-        if (session.isRunning()) {
+        if (session.isForegroundRunning?.() ?? session.isRunning()) {
           this.watchForIdle(sessionId, session);
           return;
         }

@@ -4,6 +4,10 @@ import { findWorkflowRuntime, getWorkflowRuntime, readWorkflowSnapshot, Workflow
 import { parseWorkflowAction, parseWorkflowPromptOptions, parseWorkflowRevision } from "./workflow-input";
 import type { WorkflowAction, WorkflowPromptOptions } from "./workflow-types";
 import { readLaboratorySettings } from "./laboratory-settings";
+import { SubagentRuntime, bindSubagentRuntime } from "./subagent-runtime";
+import { createSubagentDriver } from "./subagent-driver";
+import { readSubagentSettings } from "./subagent-settings";
+import { isSubagentTool } from "./subagent-types";
 import { isWorkflowTool } from "./workflow-tools";
 import { recordAgentTerminalEvent } from "./agent-terminal-registry";
 import { ToolReviewController } from "./tool-permission-gate";
@@ -180,6 +184,10 @@ type ExtensionBindingOptions = {
 };
 
 export interface RpcSessionStartOptions {
+  /** Host-only child runtime controls. Never populated from model/API input. */
+  subagentParent?: AgentSessionWrapper;
+  subagentSystemPrompt?: string;
+  subagentDirectory?: string;
   preparedSessionFile?: string;
   remotePolicy?: RemoteSessionPolicy;
   /** Pinned Team profiles prohibit startup model fallback. */
@@ -200,6 +208,9 @@ const DEVICE_CONTROL_DENIED_RPC_COMMANDS = new Set(["bash", "abort_bash"]);
 // ============================================================================
 
 export class AgentSessionWrapper {
+  private permissionParent?: AgentSessionWrapper;
+  private subagentUiController = new AbortController();
+  private subagents?: SubagentRuntime;
   private permissionRunners = new WeakSet<object>();
   private toolReviews: ToolReviewController | undefined;
   private reviewModel: { provider: string; id: string } | undefined;
@@ -234,32 +245,37 @@ export class AgentSessionWrapper {
     const emitToolCall = runner.emitToolCall.bind(runner);
     runner.hasHandlers = event => event === "tool_call" || hasHandlers(event);
     runner.emitToolCall = async event => {
+      const owner = this.permissionParent ?? this;
       const generation = this.abortGeneration;
       const runId = this.activePromptRun?.runId;
       const active = () => this._alive && !this.stopping && generation === this.abortGeneration
-        && this.activePromptRun?.runId === runId;
+        && this.activePromptRun?.runId === runId && (!this.permissionParent || this.permissionParent.isAlive());
       const result = await emitToolCall(event);
       if (result?.block) return result;
+      if (this.permissionParent && !this.isToolAllowedByCapability(event.toolName)) return { block: true, reason: "The parent no longer permits this tool." };
+      // Delegation itself has no external effect; every actual child tool still
+      // passes through the parent's ordinary permission controller below.
+      if (isSubagentTool(event.toolName)) return active() && this.isToolAllowedByCapability(event.toolName) ? result : { block: true, reason: "Subagents are disabled." };
       if (!readToolApprovalSettings().enabled) return active() ? result : { block: true, reason: "Operation cancelled." };
-      const reviews = this.reviews();
+      const reviews = owner.reviews();
       const allowed = await reviews.authorize({
         name: event.toolName, args: event.input, toolCallId: event.toolCallId,
         runId: runId ?? `runtime-${generation}`,
-        model: this.reviewModel,
-        read: () => readEffectiveToolPermission(this.sessionId, getAgentDir()), active,
+        model: owner.reviewModel,
+        read: () => readEffectiveToolPermission(owner.sessionId, getAgentDir()), active,
         evidence: async signal => collectReviewEvidence({ name: event.toolName, args: event.input, cwd: this.cwd,
           tool: this.inner.getAllTools().find(tool => tool.name === event.toolName),
           browser: event.toolName === "browser" ? await readBrowserReviewTarget(this.sessionId, event.input, signal) : undefined,
         }),
-        ask: (message, signal) => this.requestExtensionUi<"once" | "full" | "deny">({
+        ask: (message, signal) => owner.requestExtensionUi<"once" | "full" | "deny">({
           method: "confirm", toolApproval: true, title: event.toolName,
           message,
         }, "deny", response => "value" in response && response.value === "full" ? "full"
           : "confirmed" in response && response.confirmed ? "once" : "deny", 10 * 60_000, signal),
         grantFull: () => {
-          const permission = selectToolPermission(this.sessionId, "full", getAgentDir());
-          this.emit({ type: "tool_permission_changed", permission });
-          this.releaseToolApprovals();
+          const permission = selectToolPermission(owner.sessionId, "full", getAgentDir());
+          owner.emit({ type: "tool_permission_changed", permission });
+          owner.releaseToolApprovals();
         },
       });
       return allowed ? result : { block: true, ...(reviews.stopped ? { terminate: true } : {}), reason: "Tool operation was declined, invalidated or cancelled. Do not retry through another tool." };
@@ -384,8 +400,10 @@ export class AgentSessionWrapper {
       nativeMcp?: NativeMcpController;
       /** Host-only dependency injection for deterministic integration tests. Never a model/API option. */
       reviewInvoker?: ToolReviewModel;
+      subagentParent?: AgentSessionWrapper;
     } = {},
   ) {
+    this.permissionParent = capabilityOptions.subagentParent;
     this.reviewInvoker = capabilityOptions.reviewInvoker ?? runToolReviewModel;
     this.installToolPermissions();
     const reload = inner.reload.bind(inner);
@@ -476,6 +494,13 @@ export class AgentSessionWrapper {
 
   isAlive(): boolean {
     return this._alive;
+  }
+
+  isSubagentSession(): boolean { return Boolean(this.permissionParent); }
+
+  notifySubagentChanged(record: { background: boolean; status: string }): void {
+    this.emit({ type: "subagent_update", background: record.background, status: record.status });
+    scheduleRunningChange();
   }
 
   isRunning(): boolean {
@@ -574,6 +599,8 @@ export class AgentSessionWrapper {
 
   isToolAllowedByCapability(name: string): boolean {
     if (!this._alive || this.remotePolicy === "notes") return false;
+    if (this.permissionParent && !this.permissionParent.isToolAllowedByCapability(name)) return false;
+    if (isSubagentTool(name)) return this.automaticWorkflowToolNames().includes(name);
     if (isWorkflowTool(name)) return this.automaticWorkflowToolNames().includes(name);
     this.refreshCapabilityCatalog();
     const permitted = resolveSessionCapabilityToolNames(this.capabilityCatalog, this.capabilityPolicy,
@@ -606,11 +633,13 @@ export class AgentSessionWrapper {
 
   private automaticWorkflowToolNames(): string[] {
     if (this.runtimeProfile !== "normal" || this.remotePolicy === "notes") return [];
+    if (this.permissionParent) return [];
     // Corrupt Laboratory settings must not break ordinary Agent chats. Workflow
     // admission still reports the settings error through its existing guard.
-    try { if (!readLaboratorySettings().planGoalEnabled) return []; }
-    catch { return []; }
-    return this.inner.getAllTools().filter(tool => isWorkflowTool(tool.name)
+    let workflows = false, subagents = false;
+    try { workflows = readLaboratorySettings().planGoalEnabled; } catch { /* Invalid configuration fails closed. */ }
+    try { subagents = readSubagentSettings().enabled; } catch { /* Invalid configuration fails closed. */ }
+    return this.inner.getAllTools().filter(tool => ((workflows && isWorkflowTool(tool.name)) || (subagents && isSubagentTool(tool.name)))
       && tool.exposure !== "hidden" && (!this.toolNameCeiling || this.toolNameCeiling.has(tool.name)))
       .map(tool => tool.name);
   }
@@ -802,12 +831,20 @@ export class AgentSessionWrapper {
     }
   }
 
-  getRuntime(): Runtime {
+  private getForegroundRuntime(): Runtime {
     if (!this._alive) return "idle";
     if (this.stopping) return "stopping";
     if (this.inner.isCompacting) return "compacting";
     if (this.inputAdmissions || this.promptAdmissionBusy || this.promptRunning || this.inner.isStreaming || this.inner.isBashRunning) return "running";
     return "idle";
+  }
+
+  isForegroundRunning(): boolean { return this.getForegroundRuntime() !== "idle"; }
+
+  getRuntime(): Runtime {
+    if (!this._alive) return "idle";
+    const foreground = this.getForegroundRuntime();
+    return foreground === "idle" && this.subagents?.running ? "running" : foreground;
   }
 
   getTaskRuntimeSnapshot(): TaskRuntimeSnapshot {
@@ -928,8 +965,12 @@ export class AgentSessionWrapper {
   }
 
   start(): void {
+    if (!this.permissionParent && this.runtimeProfile === "normal" && this.remotePolicy !== "notes") {
+      this.subagents = new SubagentRuntime(this.sessionId, this.cwd, createSubagentDriver(this, startRpcSession));
+      this.onDestroy(bindSubagentRuntime(this.subagents));
+    }
     this.unsubscribe = this.inner.subscribe((event: AgentEvent) => {
-      if (event.type === "tool_execution_end" && typeof event.toolCallId === "string") this.toolReviews?.finish(event.toolCallId, event.isError === true);
+      if (event.type === "tool_execution_end" && typeof event.toolCallId === "string") (this.permissionParent ?? this).toolReviews?.finish(event.toolCallId, event.isError === true);
       // Pi 1.0 emits structured system/loadout messages as transcript events.
       // They remain canonical SDK/provider history but are not chat rows or
       // streaming assistant content, matching session-reader's projection.
@@ -1456,6 +1497,7 @@ export class AgentSessionWrapper {
           // All fallible synchronous admission checks run before changing workflow
           // state. From here every error settles the admitted workflow and queue.
           assertNotAborted();
+          if (!streamingBehavior) this.reapplySessionCapabilities();
           prepareWorkflow();
           if (fileChangeCapture) await fileChangeCapture.initial.catch(() => {});
           if (!streamingBehavior) {
@@ -1586,6 +1628,9 @@ export class AgentSessionWrapper {
       }
 
       case "abort": {
+        const subagentCleanup = this.subagents?.stopAll();
+        if (this.permissionParent) this.subagentUiController.abort();
+        this.permissionParent?.toolReviews?.invalidate();
         findWorkflowRuntime(this.sessionId)?.onAbort();
         this.toolReviews?.cancel();
         const receipt = () => ({
@@ -1631,7 +1676,7 @@ export class AgentSessionWrapper {
         const cleanupTask = finishPromptRun(promptRun, "abort");
         if (this.activePromptRun?.runId === promptRun?.runId) this.activePromptRun = undefined;
 
-        this.abortCleanupTask = Promise.allSettled([abortTask, compactionTask, bashTask, queueTask, cleanupTask, ...uiTasks, ...this.promptTasks]).then((results) => {
+        this.abortCleanupTask = Promise.allSettled([abortTask, compactionTask, bashTask, queueTask, cleanupTask, subagentCleanup, ...uiTasks, ...this.promptTasks]).then((results) => {
           for (const result of results) {
             if (result.status === "rejected") {
               console.error("[pi-web] active run abort cleanup failed:", result.reason instanceof Error ? result.reason.message : result.reason);
@@ -1655,7 +1700,9 @@ export class AgentSessionWrapper {
 
       case "get_state": {
         const model = this.inner.model;
-        const runtime = this.getRuntime();
+        // Background children remain visible to task status/idle cleanup, but
+        // must not pin the parent's composer or queue new foreground prompts.
+        const runtime = this.getForegroundRuntime();
         const contextUsage = this.inner.getContextUsage();
         const agentState = this.inner.agent.state;
         const contextBreakdown = contextUsage ? estimateContextUsageBreakdown({
@@ -1666,6 +1713,8 @@ export class AgentSessionWrapper {
         }) : undefined;
         return {
           sessionId: this.inner.sessionId,
+          subagents: this.subagents?.list() ?? [],
+          subagentsRunning: this.subagents?.running ?? false,
           ...(this.runtimeProfile === "normal" ? { workflow: readWorkflowSnapshot(this.sessionId) } : {}),
           stats: summarizeSessionStats(this.inner.sessionManager),
           runtimeProfile: this.runtimeProfile,
@@ -2164,10 +2213,12 @@ export class AgentSessionWrapper {
   destroy(): void {
     if (!this._alive) return;
     this._alive = false;
+    this.subagentUiController.abort();
     findWorkflowRuntime(this.sessionId)?.dispose();
     this.unsubscribeWorkflow?.();
     this.toolReviews?.cancel();
     const writers: Promise<unknown>[] = [this.abortCleanupTask, ...this.promptTasks];
+    if (this.subagents) writers.push(this.subagents.dispose());
     if (this.promptRunning || this.inner.isStreaming) {
       writers.push(this.inner.abort());
     }
@@ -2369,6 +2420,8 @@ export class AgentSessionWrapper {
     signal?: AbortSignal,
     timeoutValue: T = defaultValue,
   ): Promise<T> {
+    if (this.permissionParent) return this.permissionParent.requestExtensionUi(request, defaultValue, parseResponse, timeout,
+      signal ? AbortSignal.any([signal, this.subagentUiController.signal]) : this.subagentUiController.signal, timeoutValue);
     if (signal?.aborted || this.stopping || !this._alive) return Promise.resolve(defaultValue);
 
     const id = randomUUID();
@@ -2750,7 +2803,7 @@ export function getRunningRpcSessionIds(): string[] {
 export function getRunningRpcSessionStatuses(includeIdle = false): TaskRuntimeSnapshot[] {
   const statuses: TaskRuntimeSnapshot[] = [];
   for (const session of getRegistry().values()) {
-    if (!session.isAlive()) continue;
+    if (!session.isAlive() || session.isSubagentSession?.()) continue;
     // globalThis deliberately retains wrappers across Next.js hot reloads.
     // A wrapper created by the previous module version does not yet have the
     // three-axis accessor, so adapt it until that live session is recreated.
@@ -2798,7 +2851,7 @@ export interface UnpersistedSessionInfo {
 export function getUnpersistedSessionInfos(excludeIds?: ReadonlySet<string>): UnpersistedSessionInfo[] {
   const infos: UnpersistedSessionInfo[] = [];
   for (const session of getRegistry().values()) {
-    if (!session.isAlive()) continue;
+    if (!session.isAlive() || session.isSubagentSession?.()) continue;
     if (excludeIds?.has(session.sessionId)) continue;
     const sessionFile = session.sessionFile;
     if (!sessionFile) continue;
@@ -2978,7 +3031,7 @@ export async function startRpcSession(
       ? SessionManager.open(sessionFile, undefined)
       : options.preparedSessionFile
         ? SessionManager.open(options.preparedSessionFile, undefined)
-        : SessionManager.create(cwd, undefined);
+        : SessionManager.create(cwd, options.subagentDirectory);
 
     if (options.preparedSessionFile && (sessionManager.getSessionId() !== sessionId
       || resolve(sessionManager.getCwd()) !== resolve(cwd)
@@ -3064,7 +3117,7 @@ export async function startRpcSession(
                   sessionManager.getEntries(),
                   base,
                   readSystemPromptConfig(),
-                ),
+                ) + (options.subagentSystemPrompt ? `\n\n<subagent_role>\n${options.subagentSystemPrompt}\n</subagent_role>` : ""),
               },
             }),
       });
@@ -3170,7 +3223,8 @@ export async function startRpcSession(
     const realSessionId = inner.sessionId as string;
     // Existing chats retain their previous behavior until explicitly changed.
     // Forks get a new id and never inherit their parent's grant.
-    if (!sessionFile) writeToolPermission(realSessionId, readDefaultToolPermission(getAgentDir()), getAgentDir());
+    if (!sessionFile) writeToolPermission(realSessionId,
+      options.subagentParent ? readEffectiveToolPermission(options.subagentParent.sessionId, getAgentDir()).mode : readDefaultToolPermission(getAgentDir()), getAgentDir());
     if (!sessionFile && initialModel && inner.model
       && (initialModel.provider !== inner.model.provider || initialModel.modelId !== inner.model.id)) {
       await inner.sendCustomMessage({
@@ -3193,6 +3247,7 @@ export async function startRpcSession(
       projectRoot,
       projectManaged: Boolean(projectToolRecord),
       nativeMcp,
+      subagentParent: options.subagentParent,
       ...(notesOnly ? { toolNameCeiling: [] } : toolNames !== undefined ? { toolNameCeiling: toolNames } : {}),
     });
     startupWrapper = wrapper;

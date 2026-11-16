@@ -1,5 +1,6 @@
 import { memesZh } from "./memes";
 import { workflowsZh } from "./workflows";
+import { subagentsZh } from "./subagents";
 import { characterThemesZh } from "./character-themes";
 import { desktopExtensionsZh } from "./desktop-extensions";
 import { brandText } from "../../branding";
@@ -20,6 +21,7 @@ export const zhCNLocale: LocalePlugin = {
   label: "简体中文",
   messages: {
     ...workflowsZh,
+    ...subagentsZh,
     ...characterThemesZh,
     ...desktopExtensionsZh,
     ...memesZh,

@@ -122,6 +122,7 @@ type AgentStateResponse = {
   thinkingLevel?: string;
   isStreaming?: boolean;
   isPromptRunning?: boolean;
+  subagentsRunning?: boolean;
   isBashRunning?: boolean;
   isCompacting?: boolean;
   compactionStartedAt?: number | null;
@@ -602,6 +603,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [session?.id, newSessionCwd, acceptToolPermission]);
 
   const agentRunningRef = useRef(initiallyRunning);
+  const [backgroundSubagents, setBackgroundSubagents] = useState(Boolean(initialRuntime?.subagentsRunning));
+  const backgroundSubagentsRef = useRef(backgroundSubagents);
   const reconciliationRef = useRef<{ sid: string; runId: number; controller: AbortController } | null>(null);
   useEffect(() => {
     const receive = (event: Event) => {
@@ -795,6 +798,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
         const liveState = agentState.state;
         if (liveState) {
+          if (liveState.subagentsRunning) {
+            backgroundSubagentsRef.current = true;
+            setBackgroundSubagents(true);
+          }
           if (liveState.stats && statsSequence === statsRefreshSequence.current) setSessionStatsOverride(liveState.stats);
           if (liveState.contextUsage !== undefined) setContextUsage(liveState.contextUsage ?? null);
           if (liveState.systemPrompt !== undefined) setSystemPrompt(liveState.systemPrompt ?? null);
@@ -963,7 +970,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [ensureNewSession]);
 
-  const closeEvents = useCallback(() => {
+  const closeEvents = useCallback((force = false) => {
+    if (!force && backgroundSubagentsRef.current) return;
     eventSourceRef.current?.close();
     eventSourceRef.current = null;
   }, []);
@@ -971,7 +979,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const connectEvents = useCallback(function connectEvents(
     sid: string,
   ): Promise<EventStreamConnectionResult> {
-    closeEvents();
+    closeEvents(true);
     const es = new EventSource(`/api/agent/${encodeURIComponent(sid)}/events?transport=delta`);
     eventSourceRef.current = es;
     const decodeEvent = createAgentEventDecoder();
@@ -1535,6 +1543,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setStatusClock(null);
     }
     switch (event.type) {
+      case "subagent_update":
+        if (event.background && event.status === "running") {
+          backgroundSubagentsRef.current = true;
+          setBackgroundSubagents(true);
+        }
+        break;
       case "agent_start":
         liveOutputFollowRef.current = true;
         setLiveOutputFollowPaused(false);
@@ -1757,6 +1771,51 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [addNotice, closeEvents, handleExtensionUiRequest, loadSession, nestedCallsStore, refreshContextUsage, setExtensionDialog, waitForPromptSettlement, acceptToolPermission, acceptToolReviews]);
   handleAgentEventRef.current = handleAgentEvent;
+
+  // A background child outlives the foreground prompt. Keep its parent's
+  // stream subscribed without keeping the composer busy, and hydrate the
+  // completed notification after reconnects or a missed agent_start.
+  useEffect(() => {
+    if (!backgroundSubagents) return;
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    const controller = new AbortController();
+    let pending = false;
+    const reconcile = async () => {
+      if (pending || controller.signal.aborted || sessionIdRef.current !== sid) return;
+      pending = true;
+      try {
+        await ensureEventsConnected(sid);
+        const runId = promptRunIdRef.current;
+        const revision = phaseEventRevisionRef.current;
+        const response = await fetch(`/api/agent/${encodeURIComponent(sid)}`, {
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]), cache: "no-store",
+        });
+        if (!response.ok) return;
+        const result = await response.json() as { state?: AgentStateResponse };
+        if (controller.signal.aborted || sessionIdRef.current !== sid || promptRunIdRef.current !== runId
+          || phaseEventRevisionRef.current !== revision || preparingPromptRunIdRef.current === runId
+          || promptSubmissionRef.current?.pending) return;
+        const state = result.state;
+        if (state?.subagentsRunning || state?.isStreaming || state?.isPromptRunning || state?.isCompacting) return;
+        backgroundSubagentsRef.current = false;
+        setBackgroundSubagents(false);
+        if (agentRunningRef.current) await finishPromptWithoutStream(sid, runId);
+        else { closeEvents(); await loadSession(sid); }
+      } catch { /* The next visible poll recovers the durable notification. */ }
+      finally { pending = false; }
+    };
+    const onVisible = () => { if (document.visibilityState === "visible") void reconcile(); };
+    void reconcile();
+    const timer = window.setInterval(onVisible, AGENT_STATE_RECONCILE_MS);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onVisible);
+    return () => {
+      controller.abort(); window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onVisible);
+    };
+  }, [backgroundSubagents, closeEvents, ensureEventsConnected, finishPromptWithoutStream, loadSession]);
 
   const resumeQueuedInput = useCallback(async (record: ChatCommandView, restore: () => Promise<ChatDraft>, send: () => Promise<ChatCommandView>) => {
     const sid = record.targetSessionId;
@@ -2895,7 +2954,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       sessionLoadAbortRef.current?.abort();
       sessionLoadAbortRef.current = null;
       if (session) invalidatePrefetchedSession(session.id);
-      closeEvents();
+      closeEvents(true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

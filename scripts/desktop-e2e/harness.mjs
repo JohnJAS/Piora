@@ -11,7 +11,7 @@ function gitIdentity(root) {
   catch { return { unavailable: true }; }
 }
 
-async function launchDesktop({ root, directory, signal, registerCleanup, report, stepTimeoutMs, port, debugPort, scenario }) {
+async function launchDesktop({ root, directory, signal, registerCleanup, report, stepTimeoutMs, port, debugPort, scenario, electronDist, executable }) {
   const appPort = await reservePort(port);
   let debugLease;
   try { debugLease = await reservePort(debugPort); }
@@ -20,12 +20,20 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
   registerCleanup(async () => { if (leased) { leased = false; await Promise.all([appPort.release(), debugLease.release()]); } });
   const paths = { profile: join(directory, 'profile'), agent: join(directory, 'agent'),
     dist: relative(root, join(directory, 'next')).replaceAll('\\', '/'),
-    tsconfig: relative(root, join(directory, 'tsconfig.json')).replaceAll('\\', '/'), port: appPort.port, debugPort: debugLease.port };
+    tsconfig: relative(root, join(directory, 'tsconfig.json')).replaceAll('\\', '/'), port: appPort.port, debugPort: debugLease.port, electronDist };
   await mkdir(paths.agent);
   await writeFile(join(paths.agent, 'settings.json'), JSON.stringify({ packages: [], extensions: [], skills: [], retry: { enabled: false } }));
   await writeFile(join(directory, 'tsconfig.json'), JSON.stringify({ extends: '../../tsconfig.json',
     compilerOptions: { tsBuildInfoFile: './web.tsbuildinfo' }, include: ['../../**/*.ts', '../../**/*.tsx'] }));
   const env = isolatedEnvironment(process.env, paths);
+  if (executable) {
+    await mkdir(paths.profile, { recursive: true });
+    await writeFile(join(paths.profile, 'desktop-state.json'), JSON.stringify({ serverPort: paths.port }));
+    env.PIORA_COMPANION_UI_TEST = '1';
+    env.PIORA_COMPANION_UI_TEST_USER_DATA = paths.profile;
+    report.executable = executable;
+    report.application = 'installed-package';
+  } else report.application = 'development';
   const origin = `http://127.0.0.1:${appPort.port}`, debugging = `http://127.0.0.1:${debugLease.port}`;
   report.origin = origin;
   report.debugging = debugging;
@@ -38,16 +46,19 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
     if (logError) return reject(logError);
     log.end(() => logError ? reject(logError) : resolve());
   }));
-  const start = script => {
+  const start = (script, packaged = false) => {
     signal.throwIfAborted();
-    const handle = startProcess(process.execPath, [join(root, script)], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const handle = startProcess(packaged ? executable : process.execPath,
+      packaged ? [`--remote-debugging-port=${paths.debugPort}`] : [join(root, script)], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
     handle.child.stdout.pipe(log, { end: false }); handle.child.stderr.pipe(log, { end: false });
     registerCleanup(() => stopProcess(handle));
     return handle;
   };
-  const preparation = start('scripts/prepare-development.mjs');
-  const prepared = await abortable(() => preparation.exited, signal);
-  if (prepared.code !== 0) throw new Error(`Development preparation failed: ${JSON.stringify(prepared)}; see desktop.log`);
+  if (!executable) {
+    const preparation = start('scripts/prepare-development.mjs');
+    const prepared = await abortable(() => preparation.exited, signal);
+    if (prepared.code !== 0) throw new Error(`Development preparation failed: ${JSON.stringify(prepared)}; see desktop.log`);
+  }
   await Promise.all([appPort.release(), debugLease.release()]); leased = false;
   // This runs after stopProcess (reverse cleanup order), even when startup failed.
   const checkPorts = async () => {
@@ -55,7 +66,7 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
   };
   // start() registers termination after this check, so reverse cleanup stops first.
   registerCleanup(checkPorts);
-  let desktop = start('scripts/dev-desktop.mjs');
+  let desktop = start('scripts/dev-desktop.mjs', Boolean(executable));
   report.launchPid = desktop.child.pid;
   const checkAlive = () => {
     signal.throwIfAborted();
@@ -120,7 +131,7 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
     // Restart only this run's owned process tree, retaining its isolated profile.
     restart: async () => {
       await browser.close(); await stopProcess(desktop); await checkPorts();
-      desktop = start('scripts/dev-desktop.mjs');
+      desktop = start('scripts/dev-desktop.mjs', Boolean(executable));
       (report.restartPids ??= []).push(desktop.child.pid);
       await connect();
       return page;
@@ -132,7 +143,7 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
 
 /** launch is injectable for lifecycle tests; the CLI always uses the real Electron adapter. */
 export async function runDesktopScenario({ root, scenario, timeoutMs = 600_000, stepTimeoutMs = 30_000,
-  signal: externalSignal, failAt, port, debugPort, launch = launchDesktop, cleanupTimeoutMs = 15_000 }) {
+  signal: externalSignal, failAt, port, debugPort, electronDist, executable, launch = launchDesktop, cleanupTimeoutMs = 15_000 }) {
   const parent = join(root, '.verification');
   await mkdir(parent, { recursive: true });
   const releaseLock = await acquireRunLock(join(parent, 'desktop-e2e.lock'));
@@ -172,7 +183,7 @@ export async function runDesktopScenario({ root, scenario, timeoutMs = 600_000, 
     } catch (error) { if (!finishing) { row.status = 'failed'; row.durationMs = Date.now() - began; } throw error; }
   }
   try {
-    driver = await step('launch', () => launch({ root, directory, signal, report, stepTimeoutMs, port, debugPort, scenario,
+    driver = await step('launch', () => launch({ root, directory, signal, report, stepTimeoutMs, port, debugPort, scenario, electronDist, executable,
       registerCleanup: fn => cleanup.push(fn) }));
     await abortable(() => scenario.run({ ...driver, directory, signal, step,
       waitUntil: (predicate, label) => waitUntil(predicate, { signal, timeoutMs: stepTimeoutMs, label }) }), signal);

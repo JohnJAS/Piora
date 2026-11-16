@@ -1285,6 +1285,57 @@ test("refreshes context usage during streaming and after assistant messages", ()
   assert.match(messageEndSource, /completed\?\.role === "assistant"[\s\S]*refreshContextUsage/);
 });
 
+test("background child subscription stays open after the foreground finishes and closes on unmount", () => {
+  let closed = 0;
+  const env = { useCallback: callback => callback, backgroundSubagentsRef: { current: true }, eventSourceRef: { current: { close() { closed++; } } } };
+  const callback = source.slice(source.indexOf("  const closeEvents = useCallback"), source.indexOf("  const connectEvents = useCallback"));
+  const js = ts.transpileModule(callback, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const close = new Function("env", `with(env) { ${js}; return closeEvents; }`)(env);
+  close(); assert.equal(closed, 0);
+  close(true); assert.equal(closed, 1); assert.equal(env.eventSourceRef.current, null);
+});
+
+test("background completion hydrates durable history but stale polls cannot settle a new foreground run", async () => {
+  for (const boundary of ["run", "event", "preparing", "session", "unmount"]) {
+    let poll, cleanup;
+    const calls = [], listeners = new Map();
+    const env = {
+      backgroundSubagents: true, backgroundSubagentsRef: { current: true }, sessionIdRef: { current: "parent" },
+      promptRunIdRef: { current: 1 }, phaseEventRevisionRef: { current: 0 }, preparingPromptRunIdRef: { current: null },
+      promptSubmissionRef: { current: null }, agentRunningRef: { current: false },
+      ensureEventsConnected: async () => {}, closeEvents: () => calls.push("close"),
+      finishPromptWithoutStream: async () => calls.push("finish"), loadSession: async () => calls.push("load"),
+      setBackgroundSubagents: active => calls.push(active), AGENT_STATE_RECONCILE_MS: 2500, AbortSignal,
+      fetch: async () => ({ ok: true, json: async () => ({ state: { subagentsRunning: true } }) }),
+      useEffect: callback => { cleanup = callback(); },
+      window: { setInterval: callback => { poll = callback; return 1; }, clearInterval() {}, addEventListener: (key, value) => listeners.set(key, value), removeEventListener: key => listeners.delete(key) },
+      document: { visibilityState: "visible", addEventListener: (key, value) => listeners.set(key, value), removeEventListener: key => listeners.delete(key) },
+    };
+    const effect = source.slice(source.indexOf("  // A background child outlives"), source.indexOf("  const resumeQueuedInput = useCallback"));
+    const js = ts.transpileModule(effect, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+    new Function("env", `with(env) { ${js} }`)(env);
+    await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(calls, []);
+    let release;
+    env.fetch = () => new Promise(resolve => { release = resolve; }); poll();
+    await new Promise(resolve => setImmediate(resolve));
+    if (boundary === "run") env.promptRunIdRef.current++;
+    if (boundary === "event") env.phaseEventRevisionRef.current++;
+    if (boundary === "preparing") env.preparingPromptRunIdRef.current = 1;
+    if (boundary === "session") env.sessionIdRef.current = "other";
+    if (boundary === "unmount") cleanup();
+    release({ ok: true, json: async () => ({ state: { subagentsRunning: false } }) });
+    await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(calls, [], boundary);
+    if (boundary !== "unmount") {
+      env.sessionIdRef.current = "parent"; env.preparingPromptRunIdRef.current = null;
+      env.fetch = async () => ({ ok: true, json: async () => ({ state: { subagentsRunning: false } }) }); poll();
+      await new Promise(resolve => setImmediate(resolve)); assert.deepEqual(calls, [false, "close", "load"]);
+      assert.equal(env.backgroundSubagentsRef.current, false);
+      cleanup();
+    }
+    assert.equal(listeners.size, 0);
+  }
+});
+
 function compactionRecoveryHarness() {
   const end = "  }, [agentRunning, closeEvents, isCompacting, loadSession]);";
   const effect = source.slice(source.indexOf("  // A manual compaction"), source.indexOf(end) + end.length);
