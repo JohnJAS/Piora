@@ -94,6 +94,11 @@ export const subagents = {
       await step('background-completion-notification', async () => {
         await send('SUBAGENT_E2E_BACKGROUND');
         await waitUntil(async () => (await read()).some(record => record.background && record.status === 'running'), 'background task while parent continues');
+        await waitUntil(() => fixture.requests.some(request => request.task.includes('CHILD_BACKGROUND')), 'background provider started');
+        const childIds = (await read()).map(record => record.childSessionId).filter(Boolean);
+        const listing = await page.evaluate(async () => (await fetch('/api/sessions')).json());
+        assert.ok(!listing.sessions.some(session => childIds.includes(session.id)), 'child sessions stay out of the sidebar');
+        await reload();
         await send('SUBAGENT_E2E_INDEPENDENT');
         await waitUntil(() => fixture.requests.some(request => request.task.includes('SUBAGENT_E2E_INDEPENDENT')), 'independent parent prompt while child runs');
         assert.ok((await read()).some(record => record.background && record.status === 'running'));

@@ -496,6 +496,13 @@ export class AgentSessionWrapper {
     return this._alive;
   }
 
+  isSubagentSession(): boolean { return Boolean(this.permissionParent); }
+
+  notifySubagentChanged(record: { background: boolean; status: string }): void {
+    this.emit({ type: "subagent_update", background: record.background, status: record.status });
+    scheduleRunningChange();
+  }
+
   isRunning(): boolean {
     return this._alive && this.getRuntime() !== "idle";
   }
@@ -835,6 +842,7 @@ export class AgentSessionWrapper {
   isForegroundRunning(): boolean { return this.getForegroundRuntime() !== "idle"; }
 
   getRuntime(): Runtime {
+    if (!this._alive) return "idle";
     const foreground = this.getForegroundRuntime();
     return foreground === "idle" && this.subagents?.running ? "running" : foreground;
   }
@@ -1706,6 +1714,7 @@ export class AgentSessionWrapper {
         return {
           sessionId: this.inner.sessionId,
           subagents: this.subagents?.list() ?? [],
+          subagentsRunning: this.subagents?.running ?? false,
           ...(this.runtimeProfile === "normal" ? { workflow: readWorkflowSnapshot(this.sessionId) } : {}),
           stats: summarizeSessionStats(this.inner.sessionManager),
           runtimeProfile: this.runtimeProfile,
@@ -2794,7 +2803,7 @@ export function getRunningRpcSessionIds(): string[] {
 export function getRunningRpcSessionStatuses(includeIdle = false): TaskRuntimeSnapshot[] {
   const statuses: TaskRuntimeSnapshot[] = [];
   for (const session of getRegistry().values()) {
-    if (!session.isAlive()) continue;
+    if (!session.isAlive() || session.isSubagentSession?.()) continue;
     // globalThis deliberately retains wrappers across Next.js hot reloads.
     // A wrapper created by the previous module version does not yet have the
     // three-axis accessor, so adapt it until that live session is recreated.
@@ -2842,7 +2851,7 @@ export interface UnpersistedSessionInfo {
 export function getUnpersistedSessionInfos(excludeIds?: ReadonlySet<string>): UnpersistedSessionInfo[] {
   const infos: UnpersistedSessionInfo[] = [];
   for (const session of getRegistry().values()) {
-    if (!session.isAlive()) continue;
+    if (!session.isAlive() || session.isSubagentSession?.()) continue;
     if (excludeIds?.has(session.sessionId)) continue;
     const sessionFile = session.sessionFile;
     if (!sessionFile) continue;

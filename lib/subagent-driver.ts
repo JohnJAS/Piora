@@ -14,6 +14,7 @@ export function childToolNames(parentTools: string[], profile: { tools?: string[
 }
 export function createSubagentDriver(parent: AgentSessionWrapper, start: typeof startRpcSession): SubagentDriver {
   return {
+    changed(record) { parent.notifySubagentChanged(record); },
     async run(record, profile, signal, progress) {
       signal.throwIfAborted();
       const tools = childToolNames(parent.inner.getActiveToolNames().filter(name => parent.isToolAllowedByCapability(name)), profile);

@@ -13,6 +13,7 @@ export class SubagentRuntime {
   private records = new Map<string, SubagentRecord>();
   private active = new Map<string, { controller: AbortController; task: Promise<SubagentRecord> }>();
   private disposed = false;
+  private notifications = 0;
   constructor(readonly parentSessionId: string, readonly cwd: string, private driver: SubagentDriver,
     private settings: () => SubagentSettings = readSubagentSettings) {
     for (const record of listSubagentRecords(parentSessionId)) {
@@ -21,7 +22,7 @@ export class SubagentRuntime {
     }
   }
   list(): SubagentRecord[] { return [...this.records.values()].map(record => ({ ...record })); }
-  get running(): boolean { return this.active.size > 0; }
+  get running(): boolean { return this.active.size > 0 || this.notifications > 0; }
   get(id: string): SubagentRecord {
     const record = this.records.get(id);
     if (!record) throw new Error("Subagent does not belong to this conversation");
@@ -69,6 +70,7 @@ export class SubagentRuntime {
     this.persist(record);
     // Register synchronously before invoking the driver, including drivers that settle immediately.
     const task = Promise.resolve().then(async () => {
+      let notify = false;
       try {
         controller.signal.throwIfAborted();
         const result = await this.driver.run(record, profile, controller.signal, (tokens, tools) => {
@@ -88,10 +90,13 @@ export class SubagentRuntime {
         record.status = controller.signal.aborted && !/timed out|budget|turn limit/i.test(record.error) ? "cancelled" : "failed";
       } finally {
         clearTimeout(timer); parentSignal?.removeEventListener("abort", cancel);
+        notify = record.background && !this.disposed && record.status !== "cancelled" && this.settings().enabled;
+        if (notify) this.notifications++;
         record.endedAt = Date.now(); this.active.delete(record.agentId); this.persist(record);
       }
-      if (record.background && !this.disposed && record.status !== "cancelled" && this.settings().enabled) {
+      if (notify) {
         try { await this.driver.notify({ ...record }); } catch { /* The durable result remains readable via TaskOutput/UI. Never repeat child effects to retry a notification. */ }
+        finally { this.notifications--; }
       }
       return { ...record };
     });
