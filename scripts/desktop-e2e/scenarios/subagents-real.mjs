@@ -83,8 +83,14 @@ export const subagentsReal = {
           const reader = events.body.getReader(); await reader.read(); await reader.cancel();
         }, sessionId);
         await page.goto(`${origin}/?session=${sessionId}`, { waitUntil: 'domcontentloaded' });
-        await page.getByRole('button', { name: /^(Settings|设置)$/ }).click();
         const dialog = page.getByRole('dialog', { name: /^(Settings|设置)$/ });
+        // A visible server-rendered button can precede hydration after navigation.
+        // Opening settings is idempotent; never retry toggles or task submissions.
+        await waitUntil(async () => {
+          if (await dialog.isVisible()) return true;
+          await page.getByRole('button', { name: /^(Settings|设置)$/ }).click();
+          return dialog.isVisible();
+        }, 'settings dialog after session navigation');
         await dialog.getByTestId('settings-laboratory').click();
         const toggle = dialog.getByTestId('subagent-toggle'); await waitUntil(() => toggle.isEnabled(), 'subagent switch');
         if (!await toggle.isChecked()) await toggle.click();
