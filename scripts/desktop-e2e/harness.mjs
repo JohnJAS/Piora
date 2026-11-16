@@ -12,7 +12,9 @@ function gitIdentity(root) {
 }
 
 async function launchDesktop({ root, directory, signal, registerCleanup, report, stepTimeoutMs, port, debugPort, scenario, electronDist, executable }) {
-  const appPort = await reservePort(port);
+  // Packaged desktop rejects lower ports and would silently choose a different
+  // origin. Some Windows hosts also allocate low OS ephemeral ports.
+  const appPort = await reservePort(port, executable ? 20000 : 0);
   let debugLease;
   try { debugLease = await reservePort(debugPort); }
   catch (error) { await appPort.release(); throw error; }

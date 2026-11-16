@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile, rmdir, unlink, writeFile } from 'node:fs/promises';
 import { createServer, createConnection } from 'node:net';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
 export function abortable(work, signal) {
@@ -66,13 +66,21 @@ export async function acquireRunLock(directory) {
   };
 }
 
-export async function reservePort(port = 0) {
-  const server = createServer();
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen({ host: '127.0.0.1', port, exclusive: true }, resolve);
-  });
-  return { port: server.address().port, release: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())) };
+export async function reservePort(port = 0, minimumPort = 0) {
+  if (!Number.isInteger(minimumPort) || minimumPort < 0 || minimumPort > 65535) throw new RangeError('Invalid minimum port');
+  if (port !== 0 && port < minimumPort) throw new RangeError(`Application port must be ${minimumPort}–65535`);
+  for (let attempt = 0; ; attempt++) {
+    const server = createServer();
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen({ host: '127.0.0.1', port: port || (minimumPort ? randomInt(minimumPort, 65536) : 0), exclusive: true }, resolve);
+      });
+      return { port: server.address().port, release: () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve())) };
+    } catch (error) {
+      if (port || attempt >= 63 || !['EADDRINUSE', 'EACCES'].includes(error.code)) throw error;
+    }
+  }
 }
 
 export function portOpen(port) {
