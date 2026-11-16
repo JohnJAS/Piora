@@ -91,7 +91,7 @@ export const subagentsReal = {
         await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
       });
       await step('real-model-delegation-read-write-and-verification', async () => {
-        await send(`这是 Subagent 安装验收。父上下文私密标记 PARENT_ONLY_REAL_9461，不要向子代理传递这个标记。\n请在同一轮并行调用两次 Agent，父代理不要自己读写文件或执行命令。任务A使用 general-purpose：在 ${workspace} 新建 sum.cjs，使用 module.exports 导出一个对数字数组求和的函数，并通过终端运行 node 验证 [3,5,8] 得 16，报告真实结果。任务B使用 Explore：读取 ${join(workspace, 'source.json')}，计算 alpha 和 beta 各自的总和，返回文件证据。两个子任务的 prompt 应独立完整，A 只写 sum.cjs，B 只读 source.json。完成后汇总两个实际结果，不要代替子任务执行，不要再创建额外代理。`);
+        await send(`这是 Subagent 安装验收。父上下文私密标记 PARENT_ONLY_REAL_9461，不要向子代理传递这个标记。\n请在同一轮并行调用两次 Agent，父代理不要自己读写文件或执行命令。任务A使用 general-purpose：在 ${workspace} 新建 sum.cjs，定义 sum 数字数组求和函数，最后必须使用 module.exports = sum 直接导出函数，严禁导出 { sum } 对象；验收会检查 typeof require(文件路径) === 'function'。通过终端运行 node 验证 [3,5,8] 得 16、[13,21] 得 34，报告真实结果。任务B使用 Explore：只允许读取 ${join(workspace, 'source.json')} 这一份文件，不得读取 sum.cjs 或其他文件，计算 alpha 和 beta 各自的总和，返回文件证据。两个子任务的 prompt 应独立完整，必须完整传递文件范围、函数导出形状和执行验证要求。完成后汇总两个实际结果，不要代替子任务执行，不要再创建额外代理。`);
         await waitUntil(async () => { await assertParentHealthy(); const list = await records(); return list.length === 2 && list.every(record => record.status !== 'running'); }, 'two real child results');
         await idle();
         const list = await records(); assert.ok(list.every(record => record.status === 'completed'), JSON.stringify(list.map(record => ({ status: record.status, error: record.error }))));
@@ -100,6 +100,11 @@ export const subagentsReal = {
         assert.ok(reader.totalToolUseCount > 0 && writer.totalToolUseCount >= 2);
         assert.ok(list.every(record => record.totalTokens > 0 && !record.prompt.includes('PARENT_ONLY_REAL_9461')));
         assert.match(reader.result, /16/); assert.match(reader.result, /34/);
+        const history = await page.evaluate(async id => (await fetch(`/api/sessions/${id}`)).json(), sessionId);
+        const parentTools = history.context.messages.filter(message => message.role === 'assistant')
+          .flatMap(message => message.content.filter(block => block.type === 'toolCall').map(block => block.toolName));
+        assert.equal(parentTools.filter(name => name === 'Agent').length, 2);
+        assert.ok(parentTools.every(name => ['Agent', 'SendMessage', 'TaskOutput', 'TaskStop'].includes(name)), 'parent must delegate instead of executing child work itself');
         const probe = execFileSync(process.execPath, ['-e', 'const sum=require(process.argv[1]);if(sum([3,5,8])!==16||sum([13,21])!==34)process.exit(1);console.log("16,34")', join(workspace, 'sum.cjs')], { encoding: 'utf8', windowsHide: true, timeout: 10_000 });
         assert.equal(probe.trim(), '16,34');
         for (const record of list) {

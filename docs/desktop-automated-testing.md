@@ -12,6 +12,23 @@
 
 同一场景使用额外合成会话，通过 UI 置顶、拖拽排序并验证新发现会话紧跟置顶行，以及“显示更多 → 收起会话 → 前 5 条 → 显示更多”的往返流程；当前会话位于前 5 条之外时也核对手动收起不会被列表刷新自动展开。新会话发现通过测试目录写入与刷新准备，不等同于发送新聊天提示词验收。
 
+## 子代理委派
+
+`node scripts/run-desktop-e2e.mjs --scenario subagents --timeout-ms 1200000 --step-timeout-ms 180000` 使用真实 Electron、SDK 和工具，以及本地脚本模型，覆盖总开关、并行隔离、只读 Explore、轨迹/用量、SendMessage、后台运行中刷新与新输入、完成通知、失败/超时、停止/Esc/禁用和重启后的继续。它不复制用户凭据，也不代表真实服务商语义验收。
+
+使用 GitHub 构建的应用时加 `--executable 'C:\实际目录\Piora.exe'`，不启动开发服务器或本地打包。发布流水线先运行 NSIS 安装器，再对安装后的应用执行这一场景。报告的 `application: packaged` 表示运行发布程序；是否执行过安装器须由调用方安装日志证明，从安装包提取负载运行时必须如实注明。
+
+`subagents-real` 通过真实服务商验证两路委派、读写与命令验证、独立模型和继续上下文。先在 Piora 配置可用模型，再显式选择凭据来源与模型；只复制所选服务商的配置到独立 Agent 目录，结束清理复制的认证与模型配置，不复制个人聊天：
+
+```powershell
+$env:PIORA_SUBAGENT_REAL_AGENT_DIR = 'C:\实际 Agent 数据目录'
+$env:PIORA_SUBAGENT_REAL_PARENT_MODEL = '主服务商/模型ID'
+$env:PIORA_SUBAGENT_REAL_READER_MODEL = '读取服务商/模型ID'
+node scripts/run-desktop-e2e.mjs --scenario subagents-real --executable 'C:\实际目录\Piora.exe' --timeout-ms 1800000 --step-timeout-ms 420000
+```
+
+未指定时默认读取 `~/.pi/agent`，主模型为 `deepseek/deepseek-flash`，读取模型为 `new-provider/qwen3.8-max`。桌面设置过自定义 Agent 目录时应使用该目录；HTTP 200 仅证明请求到达，完整验收仍核对实际子工具、程序结果、轨迹隔离、用量与继续上下文。认证失败、模型执行不符或中断均保留为失败，不使用脚本模型替代。
+
 ## 运行
 
 在专用 worktree 安装锁文件依赖，使用 Node.js 22.19.0 或仓库支持的更新版本：
@@ -30,13 +47,13 @@ npm run test:desktop:e2e -- --scenario settings-theme --timeout-ms 600000 --step
 
 默认从操作系统分配空闲应用与 CDP 端口。需要固定端口时使用 `--port 30241 --debug-port 9322`，占用时失败，不接管已有服务。`--timeout-ms` 覆盖准备、启动和场景；`--step-timeout-ms` 控制常规定位、导航和条件等待。超时后还会执行有界清理，因此进程总耗时可能略超期限。
 
-当前支持中英文界面；原生系统对话框、其他语言、真实模型及发布包不在本场景范围内。Windows 实机结果和尚未执行的平台范围应在提交/PR 中如实记录。
+当前支持中英文界面；原生系统对话框、其他语言、真实模型及发布包不在默认主题场景范围内。子代理真实模型及发布程序须使用上述对应入口单独记录。Windows 实机结果和尚未执行的平台范围应在提交/PR 中如实记录。
 
 每轮执行结果、失败及复测边界记录在该轮 `.verification/desktop-e2e-*` 报告中；历史验证记录可从 Git 历史查阅。
 
 ## 隔离与退出
 
-每次运行创建 `.verification/desktop-e2e-<随机编号>/`，其中包含独立的 Electron profile、Pi agent 目录、Next 输出和临时 tsconfig。不会复制本机模型配置、认证文件或个人会话；子进程环境只继承运行所需的系统变量，不继承供应商密钥、Node 注入选项及外部 Pi 路径覆盖。没有联网模型模式，也不宣称应用所有后台网络均被拦截。
+每次运行创建 `.verification/desktop-e2e-<随机编号>/`，其中包含独立的 Electron profile、Pi agent 目录、Next 输出和临时 tsconfig。默认场景不会复制本机模型配置、认证文件或个人会话；仅显式选择 `subagents-real` 时按上文复制所选服务商配置并在结束时清理。子进程环境只继承运行所需的系统变量，不继承供应商密钥、Node 注入选项及外部 Pi 路径覆盖；不宣称应用所有后台网络均被拦截。
 
 同一 checkout 的测试运行器使用独占锁，拒绝并行运行。桌面 TypeScript 输出及开发预处理仍由原启动器管理，因此**不要在同一 checkout 同时运行普通 `dev:desktop`**；多个开发任务分别使用 worktree。这一首版不承诺同一 checkout 内任意开发进程的并发隔离。
 

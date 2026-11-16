@@ -32,7 +32,9 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
     env.PIORA_COMPANION_UI_TEST = '1';
     env.PIORA_COMPANION_UI_TEST_USER_DATA = paths.profile;
     report.executable = executable;
-    report.application = 'installed-package';
+    // The executable may be installed or extracted from a published installer.
+    // Installation provenance is supplied by the caller's artifact verification.
+    report.application = 'packaged';
   } else report.application = 'development';
   const origin = `http://127.0.0.1:${appPort.port}`, debugging = `http://127.0.0.1:${debugLease.port}`;
   report.origin = origin;
