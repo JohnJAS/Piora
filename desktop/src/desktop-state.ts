@@ -7,6 +7,7 @@ interface DesktopState {
   lastLaunchedVersion?: string;
   updateSchedule?: UpdateSchedule;
   serverPort?: number;
+  companionScale?: number;
   companionWindowPosition?: CompanionWindowPosition;
   mainWindowState?: MainWindowState;
   piAgentDirectory?: string | null;
@@ -195,4 +196,13 @@ export function readMainWindowState(userDataDirectory: string, logger: Logger): 
 export function writeMainWindowState(userDataDirectory: string, state: MainWindowState, logger: Logger): void {
   if (!isValidMainWindowState(state)) return;
   writeDesktopState(userDataDirectory, { mainWindowState: state }, logger);
+}
+
+export function readCompanionScale(directory: string, logger: Logger): number {
+  const value = readDesktopState(directory, logger).companionScale;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0.5 && value <= 3 ? value : 1;
+}
+export function writeCompanionScale(directory: string, value: number, logger: Logger): boolean {
+  if (!Number.isFinite(value) || value < 0.5 || value > 3) return false;
+  return writeDesktopState(directory, { companionScale: value }, logger);
 }

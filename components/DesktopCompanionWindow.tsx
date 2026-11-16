@@ -111,6 +111,8 @@ export function DesktopCompanionWindow() {
   const [overlayEvent, setOverlayEvent] = useState<CompanionActivityEvent | null>(null);
   const overlaySequenceRef = useRef(0);
   const speechRequestRef = useRef(0);
+  const [selected, setSelected] = useState(false);
+  const resizePointer = useRef<number | null>(null);
   const clickTimerRef = useRef<number | null>(null);
   const startupDecisionRef = useRef(false);
   const [motionDirection, setMotionDirection] = useState<"left" | "right" | null>(null);
@@ -329,7 +331,8 @@ export function DesktopCompanionWindow() {
 
   useEffect(() => {
     const update = () => {
-      const pet = document.querySelector<HTMLElement>("[data-testid='companion-pet-viewport']");
+      if (resizePointer.current !== null) void window.piDesktop?.resizeCompanion?.("move");
+      const pet = document.querySelector<Element>(selected ? "[data-testid='companion-selection']" : "[data-testid='companion-pet-viewport']");
       const rect = pet?.getBoundingClientRect();
       const region = rect && rect.width > 0 && rect.height > 0 && document.visibilityState === "visible"
         ? { x: rect.x, y: rect.y, width: rect.width, height: rect.height } : null;
@@ -347,7 +350,7 @@ export function DesktopCompanionWindow() {
       document.removeEventListener("visibilitychange", update);
       void window.piDesktop?.setCompanionHitTest?.(null).catch(() => {});
     };
-  }, []);
+  }, [selected]);
 
   useEffect(() => window.piDesktop?.onCompanionMotion?.((state) => {
     setMotionDirection(state.moving ? state.direction : null);
@@ -491,7 +494,7 @@ export function DesktopCompanionWindow() {
 
   useEffect(() => {
     const bridge = window.piDesktop?.moveCompanionWindow;
-    if (!bridge || !runtimeEventKey) return;
+    if (!bridge || !runtimeEventKey || selected) return;
     if (!movementSettings.allowMovement) {
       void bridge({ kind: "stop" });
       return;
@@ -514,12 +517,12 @@ export function DesktopCompanionWindow() {
     } else if (runtimeEventKind === "failed") {
       void bridge({ kind: "stop" });
     }
-  }, [movementSettings.allowMovement, movementSettings.autonomyLevel, runtimeEventKey, runtimeEventKind]);
+  }, [movementSettings.allowMovement, movementSettings.autonomyLevel, runtimeEventKey, runtimeEventKind, selected]);
 
   useEffect(() => {
     const bridge = window.piDesktop?.moveCompanionWindow;
     if (!bridge) return;
-    const movementBlocked = !runtimeReady
+    const movementBlocked = selected || !runtimeReady
       || !movementSettings.allowMovement
       || movementSettings.autonomyPaused
       || displayActivity.status === "review"
@@ -566,6 +569,7 @@ export function DesktopCompanionWindow() {
     movementSettings.autonomyPaused,
     runningTasks.length,
     runtimeReady,
+    selected,
   ]);
 
   useEffect(() => {
@@ -584,6 +588,7 @@ export function DesktopCompanionWindow() {
     }
     void window.piDesktop?.moveCompanionWindow?.({ kind: "drag-end" });
     if (!cancelled && !drag.moved) {
+      setSelected(true);
       if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current);
       clickTimerRef.current = window.setTimeout(() => {
         clickTimerRef.current = null;
@@ -623,8 +628,15 @@ export function DesktopCompanionWindow() {
     void window.piDesktop?.moveCompanionWindow?.({ kind: "drag-move" });
   }, []);
 
+  useEffect(() => {
+    const dismiss = () => { setSelected(false); resizePointer.current = null; void window.piDesktop?.resizeCompanion?.("end"); };
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape") dismiss(); };
+    window.addEventListener("blur", dismiss); window.addEventListener("keydown", key);
+    return () => { window.removeEventListener("blur", dismiss); window.removeEventListener("keydown", key); };
+  }, []);
+
   return (
-    <main className={styles.window} aria-label={t("companion.desktopMode")} data-testid="desktop-companion-window">
+    <main onPointerDown={(event) => { if (event.target === event.currentTarget) setSelected(false); }} className={styles.window} aria-label={t("companion.desktopMode")} data-testid="desktop-companion-window">
       <div
         className={styles.dragSurface}
       >
@@ -656,6 +668,7 @@ export function DesktopCompanionWindow() {
         </div>
         <div
           className={styles.petStage}
+          data-selected={selected ? "true" : undefined}
           data-moving={motionDirection ?? undefined}
           data-dragging={dragging ? "true" : undefined}
         >
@@ -674,6 +687,28 @@ export function DesktopCompanionWindow() {
                 />
               : <BuiltinPet status={motionDirection ? "running" : displayActivity.status} />}
           </div>
+          {selected && <svg className={styles.selection} data-testid="companion-selection" aria-label="拖动边框缩放宠物">
+            <rect className={styles.resizeOutline} x="1" y="1" width="calc(100% - 2px)" height="calc(100% - 2px)" rx="16" />
+            <rect className={styles.resizeBorder} data-testid="companion-resize-border" x="1" y="1" width="calc(100% - 2px)" height="calc(100% - 2px)" rx="16"
+              onPointerDown={event => {
+                if (event.button !== 0) return;
+                event.stopPropagation();
+                const bounds = event.currentTarget.getBoundingClientRect();
+                const x = (event.clientX - bounds.left) / bounds.width;
+                const y = (event.clientY - bounds.top) / bounds.height;
+                const horizontal = x < 0.25 ? "w" : x > 0.75 ? "e" : "";
+                const vertical = y < 0.25 ? "n" : y > 0.75 ? "s" : "";
+                const edge = vertical + horizontal;
+                resizePointer.current = event.pointerId;
+                event.currentTarget.setPointerCapture(event.pointerId);
+                void window.piDesktop?.resizeCompanion?.("start", edge);
+              }}
+              onPointerMove={event => { if (resizePointer.current === event.pointerId) void window.piDesktop?.resizeCompanion?.("move"); }}
+              onPointerUp={event => { resizePointer.current = null; event.currentTarget.releasePointerCapture(event.pointerId); void window.piDesktop?.resizeCompanion?.("end"); }}
+              onLostPointerCapture={() => { resizePointer.current = null; void window.piDesktop?.resizeCompanion?.("end"); }}
+              onPointerCancel={() => { resizePointer.current = null; void window.piDesktop?.resizeCompanion?.("end"); }}
+            />
+          </svg>}
           <button
             className={styles.pet}
             style={hitRegionStyle}
