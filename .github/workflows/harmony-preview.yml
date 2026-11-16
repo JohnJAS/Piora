@@ -232,5 +232,6 @@ jobs:
             .verification/desktop-e2e-*/desktop.log
             .verification/desktop-e2e-*/*.png
             .verification/desktop-e2e-*/subagent-evidence.json
-          if-no-files-found: warn
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 7
