@@ -185,7 +185,7 @@
     "three": "^0.187.0",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2",
-    "typebox": "1.4.6",
+    "typebox": "1.4.7",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "undici": "8.12.4",
     "unified": "^11.0.5",
@@ -193,7 +193,7 @@
     "yauzl": "3.4.0"
   },
   "devDependencies": {
-    "@electron/asar": "4.3.1",
+    "@electron/asar": "4.3.2",
     "node-forge": "1.4.3",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.6.5",

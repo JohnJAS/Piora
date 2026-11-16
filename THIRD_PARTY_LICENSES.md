@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `2e466593d4b4208e677bf1ec82e841e40f10788c7f80f1ec478ef8869795feb9`
+Lockfile SHA-256: `311af0876b96ed8689c9202938420ff48bc98011e22f40ca5cd3c350e1b98575`
 
-Unique locked packages: **1272**. Runtime packages: **772**. Build/development-only packages: **500**.
+Unique locked packages: **1273**. Runtime packages: **772**. Build/development-only packages: **501**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -119,7 +119,7 @@ Every locked package declares a license.
 | `@img/sharp-win32-x64` | `0.35.5` | Apache-2.0 AND LGPL-3.0-or-later | Yes |
 | `@isaacs/cliui` | `8.0.2` | ISC | No |
 | `@isaacs/fs-minipass` | `4.0.1` | ISC | No |
-| `@isaacs/nonrecursive-glob-match` | `1.0.3` | BlueOak-1.0.0 | No |
+| `@isaacs/nonrecursive-glob-match` | `1.1.0` | BlueOak-1.0.0 | No |
 | `@js-sdsl/ordered-map` | `4.4.2` | MIT | No |
 | `@koromix/koffi-android-arm64` | `3.3.7` | MIT | Yes |
 | `@koromix/koffi-android-x64` | `3.3.7` | MIT | Yes |
@@ -158,7 +158,7 @@ Every locked package declares a license.
 | `@lezer/sass` | `1.1.0` | MIT | No |
 | `@lezer/xml` | `1.0.6` | MIT | No |
 | `@lezer/yaml` | `1.0.4` | MIT | No |
-| `@lobehub/icons` | `6.15.0` | MIT | No |
+| `@lobehub/icons` | `6.15.1` | MIT | No |
 | `@marijn/find-cluster-break` | `1.0.4` | MIT | No |
 | `@mermaid-js/parser` | `2.0.1` | MIT | No |
 | `@microsoft/winappcli` | `0.8.0` | MIT | Yes |
@@ -741,7 +741,7 @@ Every locked package declares a license.
 | `tweetnacl` | `0.14.5` | Unlicense | No |
 | `type-is` | `2.1.0` | MIT | No |
 | `typebox` | `1.3.27` | MIT | No |
-| `typebox` | `1.4.6` | MIT | No |
+| `typebox` | `1.4.7` | MIT | No |
 | `typescript` | `6.0.2` | Apache-2.0 | No |
 | `ufo` | `1.6.4` | MIT | No |
 | `underscore` | `1.13.8` | MIT | No |
@@ -771,7 +771,7 @@ Every locked package declares a license.
 | `wrap-ansi` | `8.1.0` | MIT | No |
 | `wrap-ansi-cjs` | `7.0.0` | MIT | No |
 | `wrappy` | `1.0.2` | ISC | No |
-| `ws` | `8.22.2` | MIT | No |
+| `ws` | `8.23.0` | MIT | No |
 | `xmlbuilder` | `10.1.1` | MIT | No |
 | `xmlbuilder2` | `3.1.1` | MIT | No |
 | `xmldom` | `0.9.12` | MIT | No |
@@ -819,7 +819,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `@dimforge/rapier3d-compat` | `0.12.0` | Apache-2.0 | No |
 | `@electron-internal/extract-zip` | `1.0.5` | BSD-2-Clause | No |
 | `@electron/asar` | `3.4.1` | MIT | No |
-| `@electron/asar` | `4.3.1` | MIT | No |
+| `@electron/asar` | `4.3.2` | MIT | No |
 | `@electron/fuses` | `1.8.0` | MIT | No |
 | `@electron/get` | `3.1.0` | MIT | No |
 | `@electron/get` | `5.1.0` | MIT | No |
@@ -1072,7 +1072,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `get-stream` | `5.2.0` | MIT | No |
 | `get-symbol-description` | `1.1.0` | MIT | No |
 | `get-tsconfig` | `4.13.7` | MIT | No |
-| `glob` | `13.0.6` | BlueOak-1.0.0 | No |
+| `glob` | `14.0.6` | BlueOak-1.0.0 | No |
 | `glob` | `7.2.3` | ISC | No |
 | `glob-parent` | `5.1.2` | ISC | No |
 | `glob-parent` | `6.0.2` | ISC | No |
@@ -1173,6 +1173,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `mimic-response` | `3.1.0` | MIT | No |
 | `minimatch` | `10.2.5` | BlueOak-1.0.0 | No |
 | `minimatch` | `10.2.6` | BlueOak-1.0.0 | No |
+| `minimatch` | `11.0.8` | BlueOak-1.0.0 | No |
 | `minimatch` | `3.1.5` | ISC | No |
 | `minimist` | `1.2.8` | MIT | No |
 | `napi-postinstall` | `0.3.4` | MIT | No |
@@ -1200,7 +1201,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `path-exists` | `4.0.0` | MIT | No |
 | `path-is-absolute` | `1.0.1` | MIT | No |
 | `path-parse` | `1.0.7` | MIT | No |
-| `path-scurry` | `2.0.2` | BlueOak-1.0.0 | No |
+| `path-scurry` | `3.0.0` | BlueOak-1.0.0 | No |
 | `pe-library` | `0.4.1` | MIT | No |
 | `picomatch` | `2.3.2` | MIT | No |
 | `picomatch` | `4.0.4` | MIT | No |
