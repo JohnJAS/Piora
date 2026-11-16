@@ -45,15 +45,24 @@ export const subagentsReal = {
   async run({ page, origin, directory, step, waitUntil }) {
     let sessionId;
     const observations = [];
+    const readJson = async path => {
+      for (let attempt = 0; ; attempt++) {
+        try { return await page.evaluate(async path => { const response = await fetch(path); return { status: response.status, body: await response.json() }; }, path); }
+        catch (error) {
+          // Cold dev-route compilation can replace the page while a read-only
+          // assertion is pending. Never replay submissions or settings writes.
+          if (attempt >= 2 || !/Execution context was destroyed|Cannot find context with specified id/.test(error.message)) throw error;
+          await page.waitForLoadState('domcontentloaded'); await page.locator('.app-shell').waitFor();
+        }
+      }
+    };
     const records = async () => {
-      const data = await page.evaluate(async id => {
-        const response = await fetch(`/api/agent/${id}/subagents?transcript=true`);
-        return { status: response.status, body: await response.json() };
-      }, sessionId);
+      const data = await readJson(`/api/agent/${sessionId}/subagents?transcript=true`);
       assert.equal(data.status, 200); observations.push(data.body.records); return data.body.records;
     };
     const assertParentHealthy = async () => {
-      const state = await page.evaluate(async id => (await fetch(`/api/agent/${id}`)).json(), sessionId);
+      const response = await readJson(`/api/agent/${sessionId}`);
+      assert.equal(response.status, 200); const state = response.body;
       assert.ok(!state.state?.lastPromptFailed, state.state?.lastPromptErrorSummary || 'Real parent model failed');
       return state.state;
     };
@@ -100,7 +109,8 @@ export const subagentsReal = {
         assert.ok(reader.totalToolUseCount > 0 && writer.totalToolUseCount >= 2);
         assert.ok(list.every(record => record.totalTokens > 0 && !record.prompt.includes('PARENT_ONLY_REAL_9461')));
         assert.match(reader.result, /16/); assert.match(reader.result, /34/);
-        const history = await page.evaluate(async id => (await fetch(`/api/sessions/${id}`)).json(), sessionId);
+        const response = await readJson(`/api/sessions/${sessionId}`);
+        assert.equal(response.status, 200); const history = response.body;
         const parentTools = history.context.messages.filter(message => message.role === 'assistant')
           .flatMap(message => message.content.filter(block => block.type === 'toolCall').map(block => block.toolName));
         assert.equal(parentTools.filter(name => name === 'Agent').length, 2);
@@ -112,7 +122,7 @@ export const subagentsReal = {
           assert.ok(!transcript.includes('PARENT_ONLY_REAL_9461'), 'parent private history must remain isolated');
           const card = page.locator(`[data-subagent-id="${record.agentId}"]`).first();
           await card.locator('[aria-expanded]').click();
-          await card.locator('[data-subagent-role="toolResult"]').waitFor();
+          await card.locator('[data-subagent-role="toolResult"]').first().waitFor();
         }
         await page.screenshot({ path: join(directory, 'real-subagents.png'), animations: 'disabled' });
       });
