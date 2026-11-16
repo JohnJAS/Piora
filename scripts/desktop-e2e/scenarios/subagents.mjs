@@ -1,0 +1,93 @@
+import assert from 'node:assert/strict';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { prepareSubagentModel } from '../subagent-model-fixture.mjs';
+
+let fixture;
+export const subagents = {
+  id: 'subagents', mode: 'local-model-fixture',
+  scope: 'Real Electron UI, SDK child sessions, independent tool execution, cancellation and disk recovery with a deterministic loopback model.',
+  coverage: ['default-off toggle and reload', 'isolated parallel child contexts', 'read-only Explore', 'transcript and usage', 'background notification', 'SendMessage continuation', 'Stop cancellation', 'disable cancellation', 'restart interruption'],
+  limits: ['Model responses are scripted; not real-provider semantic acceptance.', 'No other platforms or external accounts are exercised.'],
+  async prepare(context) { fixture = await prepareSubagentModel(context); },
+  async run(context) {
+    let { page } = context;
+    const { step, waitUntil, reload, restart, directory } = context;
+    let sessionId; const observed = [];
+    const observe = page => page.on('request', request => {
+      const path = new URL(request.url()).pathname;
+      if (request.method() === 'POST' && /^\/api\/agent\/[^/]+$/.test(path)) { const body = request.postDataJSON(); if (['submit_input', 'prompt'].includes(body?.type)) sessionId = path.split('/').at(-1); }
+    }); observe(page);
+    const read = async () => {
+      assert.ok(sessionId);
+      const result = await page.evaluate(async id => { const response = await fetch(`/api/agent/${id}/subagents`); return { status: response.status, data: await response.json() }; }, sessionId);
+      assert.equal(result.status, 200); observed.push(result.data.records); return result.data.records;
+    };
+    const toggle = async enabled => {
+      await page.getByRole('button', { name: /^(Settings|设置)$/ }).click();
+      const dialog = page.getByRole('dialog', { name: /^(Settings|设置)$/ });
+      await dialog.getByTestId('settings-laboratory').click();
+      const control = dialog.getByTestId('subagent-toggle');
+      await waitUntil(() => control.isEnabled(), 'subagent settings loaded');
+      if (await control.isChecked() !== enabled) await control.click();
+      await waitUntil(async () => await control.isEnabled() && await control.isChecked() === enabled, 'subagent setting saved');
+      await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+    };
+    const send = async message => { await page.locator('textarea').first().fill(message); await page.getByRole('button', { name: /^(Send|发送)$/ }).click(); };
+    const idle = () => waitUntil(async () => {
+      if (!sessionId) return false;
+      const result = await page.evaluate(async id => (await fetch(`/api/agent/${id}`)).json(), sessionId);
+      return result.state?.runtime === 'idle';
+    }, 'parent and child SDKs to become idle');
+    try {
+      await step('default-off-and-opt-in', async () => {
+        await send('SUBAGENT_E2E_OFF: PARENT_PRIVATE_CONTEXT'); await idle();
+        assert.ok(fixture.requests.some(request => request.task.includes('SUBAGENT_E2E_OFF') && !request.tools.includes('Agent')));
+        await toggle(true); await reload();
+      });
+      await step('parallel-isolated-read-only-subagents', async () => {
+        await send('SUBAGENT_E2E_PARALLEL: PARENT_PRIVATE_CONTEXT must remain in the parent.');
+        await waitUntil(async () => (await read()).filter(record => record.status === 'completed').length === 2, 'both child results'); await idle();
+        const records = await read(); assert.deepEqual(records.map(record => record.result).sort(), ['ALPHA_ISOLATED_RESULT', 'BETA_ISOLATED_RESULT']);
+        assert.ok(records.every(record => record.totalToolUseCount === 1 && record.totalTokens > 0));
+        assert.ok(fixture.requests.filter(request => request.isChild).every(request => !request.parentSecretLeaked && !request.tools.some(name => ['write', 'edit', 'bash', 'powershell', 'Agent'].includes(name))));
+        const card = page.locator(`[data-subagent-id="${records[0].agentId}"]`).first();
+        await card.getByRole('button').first().click(); await card.locator('[data-subagent-role="toolResult"]').waitFor();
+        await page.screenshot({ path: join(directory, 'subagent-transcript.png'), animations: 'disabled' });
+      });
+      await step('continue-child-context', async () => {
+        const id = (await read())[0].agentId; await send(`SUBAGENT_E2E_FOLLOWUP ${id}`);
+        await waitUntil(async () => (await read()).some(record => record.agentId === id && record.result === 'FOLLOWUP_CONTEXT_RETAINED'), 'SendMessage result'); await idle();
+        assert.ok(fixture.requests.some(request => request.task.includes('CHILD_FOLLOWUP')));
+      });
+      await step('background-completion-notification', async () => {
+        await send('SUBAGENT_E2E_BACKGROUND');
+        await waitUntil(async () => (await read()).some(record => record.background && record.status === 'completed'), 'background task completion'); await idle();
+        assert.ok(fixture.requests.some(request => request.task.includes('CHILD_BACKGROUND')));
+        await page.getByText('BACKGROUND_TASK_FINISHED', { exact: false }).first().waitFor();
+      });
+      await step('stop-cancels-active-child-provider', async () => {
+        const count = fixture.holds.length; await send('SUBAGENT_E2E_STOP');
+        await waitUntil(() => fixture.holds.length > count, 'held child model request');
+        await page.getByRole('button', { name: /^(Stop|停止)$/ }).click();
+        await waitUntil(() => fixture.holds[count].closed, 'child provider connection closed');
+        await waitUntil(async () => (await read()).some(record => record.description === 'Held subagent' && record.status === 'cancelled'), 'cancelled durable child state'); await idle();
+      });
+      await step('disable-cancels-active-child', async () => {
+        const count = fixture.holds.length; await send('SUBAGENT_E2E_DISABLE');
+        await waitUntil(() => fixture.holds.length > count, 'second child request'); await toggle(false);
+        await waitUntil(() => fixture.holds[count].closed, 'disabled child provider connection closed'); await idle();
+        await toggle(true);
+      });
+      await step('restart-records-interruption-without-replay', async () => {
+        const count = fixture.holds.length; await send('SUBAGENT_E2E_RESTART');
+        await waitUntil(() => fixture.holds.length > count, 'child request before restart');
+        page = await restart(); observe(page);
+        await waitUntil(async () => (await read()).some(record => record.status === 'interrupted'), 'interrupted record after restart');
+        assert.equal(fixture.holds.length, count + 1, 'restart must not automatically repeat the child request');
+        await page.screenshot({ path: join(directory, 'subagent-restarted.png'), animations: 'disabled' });
+      });
+      assert.deepEqual(fixture.failures, []);
+    } finally { await writeFile(join(directory, 'subagent-evidence.json'), JSON.stringify({ observed, fixture }, null, 2)); }
+  },
+};

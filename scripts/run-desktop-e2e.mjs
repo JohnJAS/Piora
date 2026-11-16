@@ -12,13 +12,14 @@ import { companionPanel } from './desktop-e2e/scenarios/companion-panel.mjs';
 import { harmonyLogs } from './desktop-e2e/scenarios/harmony-logs.mjs';
 import { planGoal } from './desktop-e2e/scenarios/plan-goal.mjs';
 import { usageDashboard } from './desktop-e2e/scenarios/usage-dashboard.mjs';
+import { subagents } from './desktop-e2e/scenarios/subagents.mjs';
 
-const scenarios = [companionScaling, settingsTheme, stopShell, stopBash, desktopExtensions, browserPersistence, browserLogin, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard];
+const scenarios = [companionScaling, settingsTheme, stopShell, stopBash, desktopExtensions, browserPersistence, browserLogin, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard, subagents];
 
 export function parseOptions(args) {
   const options = { scenario: 'settings-theme' };
   const names = { '--scenario': 'scenario', '--timeout-ms': 'timeoutMs', '--step-timeout-ms': 'stepTimeoutMs',
-    '--port': 'port', '--debug-port': 'debugPort', '--fail-at': 'failAt' };
+    '--port': 'port', '--debug-port': 'debugPort', '--fail-at': 'failAt', '--electron-dist': 'electronDist', '--executable': 'executable' };
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--help' || arg === '--list') { options[arg.slice(2)] = true; continue; }

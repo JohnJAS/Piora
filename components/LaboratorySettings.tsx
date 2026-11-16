@@ -4,6 +4,7 @@ import { useId } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useLaboratorySettings } from "@/hooks/useLaboratorySettings";
 import styles from "./SettingsDialog.module.css";
+import { SubagentSettings } from "./SubagentSettings";
 
 export function LaboratorySettings() {
   const { t } = useI18n();
@@ -30,6 +31,7 @@ export function LaboratorySettings() {
       </div>
     </section>
     <p className={styles.localNote}>{t("laboratory.disableHelp")}</p>
+    <SubagentSettings />
     {settings.error && <div role="alert"><p>{t("laboratory.error")} {settings.error}</p><button type="button" className={styles.primaryButton} onClick={() => { void settings.refresh(); }}>{t("workflow.refresh")}</button></div>}
   </>;
 }

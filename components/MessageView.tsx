@@ -7,6 +7,8 @@ import { formatStatusDuration } from "@/lib/status-duration";
 import { thinkingPreview } from "@/lib/thinking-preview";
 import { messageImageUrl } from "@/lib/message-images";
 import { NestedToolCalls, useNestedToolCalls } from "./NestedToolCalls";
+import { SubagentTaskCard } from "./SubagentTaskCard";
+import { isSubagentTool, type SubagentRecord } from "@/lib/subagent-types";
 import { ProcessStack } from "./ProcessStack";
 import { processTimeRange } from "@/lib/process-duration";
 
@@ -849,6 +851,7 @@ function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCal
     const tc = block as ToolCallContent;
     const result = toolResults?.get(tc.toolCallId);
     const duration = toolCallDurations?.get(tc.toolCallId);
+    if (isSubagentTool(tc.toolName)) return <SubagentTaskCard sessionId={sessionId} toolCallId={tc.toolCallId} input={tc.input} seed={(result?.details as { subagent?: SubagentRecord } | undefined)?.subagent} />;
     return <ToolCallBlock block={tc} preparing={isStreaming} result={result} duration={duration} cwd={cwd} sessionId={sessionId} onOpenFile={onOpenFile} onOpenAutomation={onOpenAutomation} onOpenCommandExecution={onOpenCommandExecution} />;
   }
   return null;

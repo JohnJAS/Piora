@@ -16,6 +16,11 @@ export interface FirstPartyExtensionDescriptor {
 
 export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = [
   {
+    id: "piora:subagent", fileName: "piora-subagent.ts", name: `${APP_DISPLAY_NAME} Subagents`,
+    description: "Independent delegated tasks, parallel execution, background results and follow-up messages. Controlled by the Subagents switch in Laboratory settings.",
+    profiles: ["normal"], required: true,
+  },
+  {
     id: "piora:workflows", fileName: "piora-workflows.ts", name: `${APP_DISPLAY_NAME} Plan and Goal`,
     description: "Explicit planning and goal workflows with durable review, progress and bounded continuation.",
     profiles: ["normal"], required: true,

@@ -44,6 +44,7 @@ export function isolatedEnvironment(source, paths) {
     PIORA_DESKTOP_DEV_PORT: String(paths.port),
     PIORA_DESKTOP_DEV_DEBUG_PORT: String(paths.debugPort),
     NEXT_TELEMETRY_DISABLED: '1',
+    ...(paths.electronDist ? { ELECTRON_OVERRIDE_DIST_PATH: paths.electronDist } : {}),
   };
 }
 

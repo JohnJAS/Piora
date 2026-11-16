@@ -1,0 +1,6 @@
+.card { margin: 6px 0; min-width: 0; }
+.usage { margin-bottom: 10px; color: var(--text-muted); font-size: var(--text-xs); overflow-wrap: anywhere; }
+.transcript { max-height: 480px; overflow: auto; margin-top: 14px; }
+.message { border-top: 1px solid var(--border); padding: 8px 0; }
+.message > span { color: var(--text-dim); font-size: var(--text-xs); }
+.message pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 var(--font-mono); margin: 6px 0; }
