@@ -824,12 +824,19 @@ export class AgentSessionWrapper {
     }
   }
 
-  getRuntime(): Runtime {
+  private getForegroundRuntime(): Runtime {
     if (!this._alive) return "idle";
     if (this.stopping) return "stopping";
     if (this.inner.isCompacting) return "compacting";
-    if (this.inputAdmissions || this.promptAdmissionBusy || this.promptRunning || this.inner.isStreaming || this.inner.isBashRunning || this.subagents?.running) return "running";
+    if (this.inputAdmissions || this.promptAdmissionBusy || this.promptRunning || this.inner.isStreaming || this.inner.isBashRunning) return "running";
     return "idle";
+  }
+
+  isForegroundRunning(): boolean { return this.getForegroundRuntime() !== "idle"; }
+
+  getRuntime(): Runtime {
+    const foreground = this.getForegroundRuntime();
+    return foreground === "idle" && this.subagents?.running ? "running" : foreground;
   }
 
   getTaskRuntimeSnapshot(): TaskRuntimeSnapshot {
@@ -1685,7 +1692,9 @@ export class AgentSessionWrapper {
 
       case "get_state": {
         const model = this.inner.model;
-        const runtime = this.getRuntime();
+        // Background children remain visible to task status/idle cleanup, but
+        // must not pin the parent's composer or queue new foreground prompts.
+        const runtime = this.getForegroundRuntime();
         const contextUsage = this.inner.getContextUsage();
         const agentState = this.inner.agent.state;
         const contextBreakdown = contextUsage ? estimateContextUsageBreakdown({

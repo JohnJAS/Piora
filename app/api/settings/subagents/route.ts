@@ -6,9 +6,9 @@ import { ModelRequestCwdError, resolveModelRequestCwd } from "@/lib/model-runtim
 
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "no-store" };
-export async function GET(request?: Request) {
+export async function GET(request: Request) {
   try {
-    const requested = request ? new URL(request.url).searchParams.get("cwd") : null;
+    const requested = new URL(request.url).searchParams.get("cwd");
     const cwd = requested ? await resolveModelRequestCwd(requested) : undefined;
     const profiles = listSubagentProfiles(cwd ?? process.cwd()).filter(profile => cwd || profile.source !== "project");
     return NextResponse.json({ settings: readSubagentSettings(), profiles }, { headers });

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 
 export async function prepareSubagentModel({ paths, registerCleanup, report }) {
   const workspace = await mkdtemp(join(tmpdir(), 'piora-subagent-workspace-'));
-  const fixture = { workspace, requests: [], holds: [], failures: [], files: { A: join(workspace, 'child-a.txt'), B: join(workspace, 'child-b.txt') } };
+  const fixture = { workspace, backgroundDelayMs: 1500, requests: [], holds: [], failures: [], files: { A: join(workspace, 'child-a.txt'), B: join(workspace, 'child-b.txt') } };
   await writeFile(fixture.files.A, 'ALPHA_ISOLATED_RESULT'); await writeFile(fixture.files.B, 'BETA_ISOLATED_RESULT');
   function respond(res, calls, content) {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
@@ -38,7 +38,7 @@ export async function prepareSubagentModel({ paths, registerCleanup, report }) {
         }
         if (/CHILD_FOLLOWUP/.test(task)) return respond(res, null, 'FOLLOWUP_CONTEXT_RETAINED');
         if (/CHILD_BACKGROUND/.test(task)) {
-          const timer = setTimeout(() => respond(res, null, 'BACKGROUND_TASK_FINISHED'), 1500);
+          const timer = setTimeout(() => respond(res, null, 'BACKGROUND_TASK_FINISHED'), fixture.backgroundDelayMs);
           res.once('close', () => clearTimeout(timer)); return;
         }
         const key = /CHILD_A/.test(task) ? 'A' : 'B';
@@ -49,6 +49,7 @@ export async function prepareSubagentModel({ paths, registerCleanup, report }) {
       if (!/SUBAGENT_E2E_/.test(task)) return respond(res, null, 'Subagent fixture');
       const afterAgent = messages.slice(messages.indexOf(user) + 1).some(message => message.role === 'tool');
       if (/SUBAGENT_E2E_OFF/.test(task)) return respond(res, null, tools.includes('Agent') ? 'OFF_TOOLS_LEAKED' : 'SUBAGENTS_OFF_OK');
+      if (/SUBAGENT_E2E_INDEPENDENT/.test(task)) return respond(res, null, 'PARENT_CONTINUES_WITH_BACKGROUND');
       if (/SUBAGENT_E2E_PARALLEL/.test(task)) {
         if (!afterAgent) return respond(res, ['A', 'B'].map(key => ({ name: 'Agent', args: { description: `Explore ${key}`, prompt: `CHILD_${key}: Read the assigned fixture and return its evidence.`, subagent_type: 'Explore' } })));
         return respond(res, null, 'PARALLEL_TASKS_SUMMARIZED');

@@ -46,7 +46,7 @@ export function createSubagentDriver(parent: AgentSessionWrapper, start: typeof 
                 tokens += usage?.totalTokens ?? ((usage?.input ?? 0) + (usage?.output ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0));
                 output = message.content?.filter(block => block.type === "text").map(block => block.text ?? "").join("\n") ?? "";
                 progress(tokens, toolCount);
-                if (message.stopReason === "error") reject(new Error(message.errorMessage || "Subagent model failed"));
+                if (message.stopReason === "error" || message.stopReason === "aborted") reject(new Error(message.errorMessage || "Subagent model did not complete"));
               }
             }
             if (event.type === "turn_end" && ++turns >= profile.maxTurns) {

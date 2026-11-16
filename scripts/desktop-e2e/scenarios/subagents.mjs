@@ -9,7 +9,7 @@ export const subagents = {
   scope: 'Real Electron UI, SDK child sessions, independent tool execution, cancellation and disk recovery with a deterministic loopback model.',
   coverage: ['default-off toggle and reload', 'isolated parallel child contexts', 'read-only Explore', 'transcript and usage', 'background notification', 'SendMessage continuation', 'provider failure and timeout', 'parallel Stop and Escape cancellation', 'disable cancellation', 'restart interruption and saved continuation'],
   limits: ['Model responses are scripted; not real-provider semantic acceptance.', 'Parent runtime creation is fixture preparation; task submissions and feature changes use the UI.', 'No other platforms or external accounts are exercised.'],
-  async prepare(context) { fixture = await prepareSubagentModel(context); },
+  async prepare(context) { fixture = await prepareSubagentModel(context); fixture.backgroundDelayMs = 15_000; },
   async run(context) {
     let { page } = context;
     const { step, waitUntil, reload, restart, directory } = context;
@@ -93,6 +93,10 @@ export const subagents = {
       });
       await step('background-completion-notification', async () => {
         await send('SUBAGENT_E2E_BACKGROUND');
+        await waitUntil(async () => (await read()).some(record => record.background && record.status === 'running'), 'background task while parent continues');
+        await send('SUBAGENT_E2E_INDEPENDENT');
+        await waitUntil(() => fixture.requests.some(request => request.task.includes('SUBAGENT_E2E_INDEPENDENT')), 'independent parent prompt while child runs');
+        assert.ok((await read()).some(record => record.background && record.status === 'running'));
         await waitUntil(async () => (await read()).some(record => record.background && record.status === 'completed'), 'background task completion'); await idle();
         assert.ok(fixture.requests.some(request => request.task.includes('CHILD_BACKGROUND')));
         await page.getByText('BACKGROUND_TASK_FINISHED', { exact: false }).first().waitFor();
@@ -137,6 +141,8 @@ export const subagents = {
         const count = fixture.holds.length; await send('SUBAGENT_E2E_RESTART');
         await waitUntil(() => fixture.holds.length > count, 'child request before restart');
         page = await restart(); observe(page);
+        await page.goto(`${context.origin}/?session=${sessionId}`, { waitUntil: 'domcontentloaded' });
+        await page.locator('textarea').first().waitFor();
         await waitUntil(async () => (await read()).some(record => record.status === 'interrupted'), 'interrupted record after restart');
         assert.equal(fixture.holds.length, count + 1, 'restart must not automatically repeat the child request');
         await page.screenshot({ path: join(directory, 'subagent-restarted.png'), animations: 'disabled' });

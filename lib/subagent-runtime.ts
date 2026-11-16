@@ -36,7 +36,7 @@ export class SubagentRuntime {
     const matches = exact ? [exact] : available.filter(profile => profile.name.toLowerCase() === name.toLowerCase());
     if (matches.length !== 1) throw new Error(`Unknown or ambiguous subagent type '${name}'. Available: ${available.map(profile => profile.name).join(", ")}`);
     const profile = { ...matches[0] };
-    profile.model = settings.modelOverrides[profile.name] || profile.model;
+    profile.model = Object.hasOwn(settings.modelOverrides, profile.name) && settings.modelOverrides[profile.name] || profile.model;
     return profile;
   }
   async launch(input: SubagentLaunch, toolCallId: string, signal?: AbortSignal): Promise<SubagentRecord> {
@@ -44,7 +44,7 @@ export class SubagentRuntime {
     if (!input.description?.trim() || input.description.length > 500 || !input.prompt?.trim() || input.prompt.length > 100_000) throw new TypeError("Provide a description and a bounded task prompt");
     const record: SubagentRecord = { version: 1, agentId: `agent_${randomUUID()}`, parentSessionId: this.parentSessionId, parentToolCallId: toolCallId,
       agentType: profile.name, description: input.description, prompt: input.prompt, status: "running",
-      background: input.run_in_background === true || profile.background === true, startedAt: Date.now(), result: "", totalTokens: 0, totalToolUseCount: 0 };
+      background: (input.run_in_background ?? profile.background) === true, startedAt: Date.now(), result: "", totalTokens: 0, totalToolUseCount: 0 };
     return this.execute(record, profile, signal);
   }
   async continue(id: string, prompt: string, signal?: AbortSignal): Promise<SubagentRecord> {
