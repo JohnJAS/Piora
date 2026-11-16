@@ -1,9 +1,11 @@
 import { createServer } from 'node:http';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
-export async function prepareSubagentModel({ paths, directory, registerCleanup, report }) {
-  const fixture = { requests: [], holds: [], failures: [], files: { A: join(directory, 'child-a.txt'), B: join(directory, 'child-b.txt') } };
+export async function prepareSubagentModel({ paths, registerCleanup, report }) {
+  const workspace = await mkdtemp(join(tmpdir(), 'piora-subagent-workspace-'));
+  const fixture = { workspace, requests: [], holds: [], failures: [], files: { A: join(workspace, 'child-a.txt'), B: join(workspace, 'child-b.txt') } };
   await writeFile(fixture.files.A, 'ALPHA_ISOLATED_RESULT'); await writeFile(fixture.files.B, 'BETA_ISOLATED_RESULT');
   function respond(res, calls, content) {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });

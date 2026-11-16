@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -8,6 +9,7 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
+  alias: { "./SubagentTaskCard.module.css": fileURLToPath(new URL("../lib/css-module-test-stub.mjs", import.meta.url)) },
 });
 const { MessageView, getAutomationToolCardDetails, getUserMessagePreview } = await jiti.import("./MessageView.tsx");
 // Import through the same tsconfig alias used by the component so Jiti reuses
@@ -31,6 +33,18 @@ function renderMessage(message, props = {}) {
     ),
   );
 }
+
+test("delegation tools render an owned task card with its real completion status", () => {
+  const message = { role: "assistant", content: [{ type: "toolCall", toolCallId: "delegate-1", toolName: "Agent", input: { description: "Read the client" } }] };
+  const html = renderMessage(message, { sessionId: "parent", toolResults: new Map([["delegate-1", {
+    role: "toolResult", toolCallId: "delegate-1", content: [{ type: "text", text: "A bounded finding" }],
+    details: { subagent: { agentId: "agent_owned", agentType: "Explore", description: "Read the client", status: "completed", startedAt: 1000, endedAt: 4000, totalTokens: 123, totalToolUseCount: 2 } },
+  }]]) });
+  assert.match(html, /data-subagent-id="agent_owned"/);
+  assert.match(html, /data-subagent-status="completed"/);
+  assert.match(html, /Read the client/); assert.match(html, /Explore/); assert.match(html, /3s/);
+  assert.match(html, /aria-expanded="false"/);
+});
 
 test("command cards expose exit-code conflicts, warnings and unknown receipts without guessing from output zero", () => {
   const message = { role: "assistant", content: [{ type: "toolCall", toolCallId: "build", toolName: "bash", input: { command: "build; follow-up" } }] };

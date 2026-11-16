@@ -1482,6 +1482,7 @@ export class AgentSessionWrapper {
           // All fallible synchronous admission checks run before changing workflow
           // state. From here every error settles the admitted workflow and queue.
           assertNotAborted();
+          if (!streamingBehavior) this.reapplySessionCapabilities();
           prepareWorkflow();
           if (fileChangeCapture) await fileChangeCapture.initial.catch(() => {});
           if (!streamingBehavior) {

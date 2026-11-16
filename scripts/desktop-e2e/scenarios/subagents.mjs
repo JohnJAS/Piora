@@ -8,7 +8,7 @@ export const subagents = {
   id: 'subagents', mode: 'local-model-fixture',
   scope: 'Real Electron UI, SDK child sessions, independent tool execution, cancellation and disk recovery with a deterministic loopback model.',
   coverage: ['default-off toggle and reload', 'isolated parallel child contexts', 'read-only Explore', 'transcript and usage', 'background notification', 'SendMessage continuation', 'Stop cancellation', 'disable cancellation', 'restart interruption'],
-  limits: ['Model responses are scripted; not real-provider semantic acceptance.', 'No other platforms or external accounts are exercised.'],
+  limits: ['Model responses are scripted; not real-provider semantic acceptance.', 'Parent runtime creation is fixture preparation; task submissions and feature changes use the UI.', 'No other platforms or external accounts are exercised.'],
   async prepare(context) { fixture = await prepareSubagentModel(context); },
   async run(context) {
     let { page } = context;
@@ -40,8 +40,28 @@ export const subagents = {
       return result.state?.runtime === 'idle';
     }, 'parent and child SDKs to become idle');
     try {
+      await step('prepare-isolated-parent-runtime', async () => {
+        // Fixture preparation only: cold development route compilation must
+        // finish before the UI's bounded SSE connection handshake is exercised.
+        const prepared = await page.evaluate(async cwd => {
+          const response = await fetch('/api/agent/new', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'ensure_session', cwd, provider: 'desktop-subagent-fixture', modelId: 'subagent' }) });
+          return { status: response.status, data: await response.json() };
+        }, fixture.workspace);
+        assert.equal(prepared.status, 200); sessionId = prepared.data.sessionId;
+        await page.evaluate(async id => {
+          await fetch(`/api/agent/${id}`);
+          const response = await fetch(`/api/agent/${id}/events`);
+          const reader = response.body.getReader();
+          await reader.read(); await reader.cancel();
+        }, sessionId);
+        await page.goto(`${context.origin}/?session=${sessionId}`, { waitUntil: 'domcontentloaded' });
+        await page.locator('textarea').first().waitFor();
+      });
       await step('default-off-and-opt-in', async () => {
-        await send('SUBAGENT_E2E_OFF: PARENT_PRIVATE_CONTEXT'); await idle();
+        await send('SUBAGENT_E2E_OFF: PARENT_PRIVATE_CONTEXT');
+        await waitUntil(() => fixture.requests.some(request => request.task.includes('SUBAGENT_E2E_OFF')), 'first UI prompt to reach the model');
+        await idle();
         assert.ok(fixture.requests.some(request => request.task.includes('SUBAGENT_E2E_OFF') && !request.tools.includes('Agent')));
         await toggle(true); await reload();
       });
@@ -69,7 +89,7 @@ export const subagents = {
       await step('stop-cancels-active-child-provider', async () => {
         const count = fixture.holds.length; await send('SUBAGENT_E2E_STOP');
         await waitUntil(() => fixture.holds.length > count, 'held child model request');
-        await page.getByRole('button', { name: /^(Stop|停止)$/ }).click();
+        await page.getByRole('button', { name: /^(Stop|停止|Stop agent|停止智能体)$/ }).click();
         await waitUntil(() => fixture.holds[count].closed, 'child provider connection closed');
         await waitUntil(async () => (await read()).some(record => record.description === 'Held subagent' && record.status === 'cancelled'), 'cancelled durable child state'); await idle();
       });

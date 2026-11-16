@@ -39,7 +39,7 @@ const lab=useLaboratorySettings();window.lab=lab;
 React.useEffect(()=>{(window.laboratoryTrace??=[]).push({ready:lab.ready,error:lab.error,saving:lab.saving})},[lab.ready,lab.error,lab.saving]);
 const execute=React.useCallback(async action=>{const res=await fetch('/api/agent/'+sid+'/workflow',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(action)});const data=await res.json();if(!res.ok)throw new Error(data.error);return data.snapshot},[sid]);
 const state=useWorkflow(sid,true,false,execute);window.state=state;
-return <><AppTooltip/><LaboratorySettings/><output id="lab-state">{String(lab.planGoalEnabled)}</output><button id="switch" onClick={()=>setSid(sid==='one'?'two':'one')}>Switch chat</button><button id="refresh" onClick={()=>state.refresh()}>Refresh</button>
+return <><AppTooltip/><div style={{maxHeight:180,overflow:'auto'}}><LaboratorySettings/></div><output id="lab-state">{String(lab.planGoalEnabled)}</output><button id="switch" onClick={()=>setSid(sid==='one'?'two':'one')}>Switch chat</button><button id="refresh" onClick={()=>state.refresh()}>Refresh</button>
 <div id="mode-fixture" style={{marginTop:120}}>{lab.planGoalEnabled&&<WorkflowModePicker value={choice} onChange={setChoice} disabled={modeDisabled}/>}</div><output id="choice">{JSON.stringify(choice)}</output>
 <label><input id="disable-mode-picker" type="checkbox" checked={modeDisabled} onChange={event=>setModeDisabled(event.target.checked)}/>Disable mode picker</label>
 <div id="workflow-area" style={{position:'fixed',bottom:60,left:16,right:16}}><WorkflowPanel snapshot={state.snapshot} busy={state.busy} running={false} enabled={lab.planGoalEnabled} error={state.error} onAction={state.act} onRefresh={state.refresh} onRequestRevision={()=>document.getElementById('composer')?.focus()}/><textarea aria-label="Message" id="composer" style={{width:'100%',height:40,boxSizing:'border-box'}}/></div></>}
@@ -110,6 +110,9 @@ createRoot(document.getElementById('root')).render(<I18nProvider><App/></I18nPro
       // for them remounts React and resets the shared laboratory state.
       if (url.pathname.endsWith(".js")) return route.fulfill({ contentType: "text/javascript", body: await readFile(path.join(directory, path.basename(url.pathname))) });
       if (!url.pathname.startsWith("/api/")) return route.fulfill({ contentType: "text/html", body: '<!doctype html><meta charset="utf-8"><style>:root{--bg:#fff;--bg-panel:#fafafa;--bg-hover:#f1f1f1;--bg-selected:#eee;--border:#dedede;--border-soft:#dedede;--surface-raised:#fff;--floating-background:#fff;--floating-border:#dedede;--floating-filter:none;--floating-shadow:0 5px 18px #0002;--radius-control:8px;--ui-font-family:Arial,sans-serif;--text:#262626;--text-muted:#666;--text-dim:#a3a3a3;--accent:#2563eb;--text-xs:12px;--text-sm:14px}body{font-family:Arial,sans-serif;color:var(--text);line-height:1.5}' + tooltipCss + composerThemeCss + '</style><div id="root"></div><script src="/bundle.js"></script>' });
+      if (url.pathname === "/api/settings/subagents") return route.fulfill({ json: {
+        settings: { enabled: false, maxConcurrency: 4, timeoutSeconds: 300, maxTokens: 200000, maxResultChars: 8000, disabledProfiles: [], modelOverrides: {} }, profiles: [],
+      } });
       if (url.pathname === "/api/settings/laboratory") {
         if (route.request().method() === "PUT") {
           if (failLaboratoryWrite) { failLaboratoryWrite = false; laboratoryWriteFailed = true; return route.fulfill({ status: 500, json: { error: "fixture save failed" } }); }

@@ -13,8 +13,9 @@ import { harmonyLogs } from './desktop-e2e/scenarios/harmony-logs.mjs';
 import { planGoal } from './desktop-e2e/scenarios/plan-goal.mjs';
 import { usageDashboard } from './desktop-e2e/scenarios/usage-dashboard.mjs';
 import { subagents } from './desktop-e2e/scenarios/subagents.mjs';
+import { subagentsReal } from './desktop-e2e/scenarios/subagents-real.mjs';
 
-const scenarios = [companionScaling, settingsTheme, stopShell, stopBash, desktopExtensions, browserPersistence, browserLogin, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard, subagents];
+const scenarios = [companionScaling, settingsTheme, stopShell, stopBash, desktopExtensions, browserPersistence, browserLogin, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard, subagents, subagentsReal];
 
 export function parseOptions(args) {
   const options = { scenario: 'settings-theme' };
