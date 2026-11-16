@@ -372,3 +372,20 @@ export function dragCompanionBounds(
     y: startingBounds.y + pointerCurrent.y - pointerStart.y,
   }, workArea);
 }
+
+/** Work-area coordinates are DIP; exclude taskbars and allow negative monitor origins. */
+export function companionMovementArea(workArea: CompanionMotionRectangle, pet: CompanionMotionRectangle, mode: "screen" | "bottom-right"): CompanionMotionRectangle {
+  if (mode === "screen") return { ...workArea };
+  const width = Math.min(workArea.width, Math.max(Math.round(workArea.width / 2), pet.width));
+  const height = Math.min(workArea.height, Math.max(Math.round(workArea.height / 2), pet.height));
+  return { x: workArea.x + workArea.width - width, y: workArea.y + workArea.height - height, width, height };
+}
+
+export function isCompanionInsideArea(pet: CompanionMotionRectangle, area: CompanionMotionRectangle): boolean {
+  return pet.x >= area.x && pet.y >= area.y && pet.x + pet.width <= area.x + area.width && pet.y + pet.height <= area.y + area.height;
+}
+
+export function companionDragLeavesArea(start: CompanionMotionRectangle, end: CompanionMotionRectangle, workArea: CompanionMotionRectangle): boolean {
+  if (start.x === end.x && start.y === end.y) return false;
+  return !isCompanionInsideArea(end, companionMovementArea(workArea, end, "bottom-right"));
+}

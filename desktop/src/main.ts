@@ -85,7 +85,7 @@ import { StandaloneServer, type ServerExit } from "./server-supervisor.js";
 import { fitBoundsToVisibleDisplays } from "./window-bounds.js";
 import { protectTransparentCompanion } from "./transparent-companion.js";
 import { guardCompanionWindow } from "./companion-window-guard.js";
-import { nativeCompanionPoint, validCompanionRectangle } from "./companion-motion.js";
+import { companionDragLeavesArea, companionMovementArea, isCompanionInsideArea, nativeCompanionPoint, validCompanionRectangle } from "./companion-motion.js";
 import {
   DesktopUpdateController,
   type DesktopUpdateState,
@@ -194,6 +194,7 @@ let dshMemePanel: BrowserWindow | undefined;
 let dshPetSettings: BrowserWindow | undefined;
 let harmonyWindows: HarmonyWindows | undefined;
 let companionScale = 1;
+let companionMovementAreaMode: "screen" | "bottom-right" = "screen";
 let companionResize: { corner: string; point: Electron.Point; bounds: Electron.Rectangle } | undefined;
 let companionWindow: BrowserWindow | null = null;
 let companionBubbleWindow: BrowserWindow | null = null;
@@ -237,6 +238,7 @@ let companionLastAutonomousMotionAt = 0;
 let companionDragState: {
   pointerStart: { x: number; y: number };
   startingBounds: Electron.Rectangle;
+  workArea: Electron.Rectangle;
 } | undefined;
 let companionShouldBeVisible = false;
 let companionAlwaysOnTop = true;
@@ -1828,9 +1830,12 @@ function startCompanionWindowMotion(input: {
     if (!center) return { ok: false };
     const display = screen.getDisplayNearestPoint(center);
     if (!validCompanionRectangle(display.workArea)) return { ok: false };
+    const movementArea = companionMovementArea(display.workArea, bounds, companionMovementAreaMode);
+    // Manual placement outside the area is respected: never teleport back on an idle tick.
+    if (companionMovementAreaMode !== "screen" && !isCompanionInsideArea(bounds, movementArea)) return { ok: false };
     const plan = planCompanionMotion(
       bounds,
-      display.workArea,
+      movementArea,
       input,
     );
     if (!plan) return { ok: false };
@@ -1887,6 +1892,7 @@ function startCompanionWindowDrag(): boolean {
   companionDragState = {
     pointerStart: screen.getCursorScreenPoint(),
     startingBounds: companionWindow.getBounds(),
+    workArea: screen.getDisplayMatching(companionWindow.getBounds()).workArea,
   };
   return true;
 }
@@ -1907,8 +1913,24 @@ function updateCompanionWindowDrag(): boolean {
   return Boolean(placed);
 }
 
+async function saveCompanionMovementArea(): Promise<void> {
+  if (!serverUrl || !applicationToken) return;
+  try {
+    const response = await fetch(new URL("/api/companion/state", serverUrl), {
+      method: "PATCH", headers: { [DESKTOP_TOKEN_HEADER]: applicationToken, "Content-Type": "application/json" },
+      body: JSON.stringify({ movementArea: "screen" }), signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  } catch (error) { logger?.warn("Unable to save companion movement area after drag", error); }
+}
+
 function finishCompanionWindowDrag(): boolean {
   const hadDrag = Boolean(companionDragState);
+  if (companionDragState && companionMovementAreaMode === "bottom-right" && companionWindow && !companionWindow.isDestroyed()
+    && companionDragLeavesArea(companionDragState.startingBounds, companionWindow.getBounds(), companionDragState.workArea)) {
+    companionMovementAreaMode = "screen";
+    void saveCompanionMovementArea();
+  }
   companionDragState = undefined;
   companionWindowGuard?.setDragging(false);
   return hadDrag;
@@ -2633,6 +2655,21 @@ function registerCompanionWindowHandlers(): void {
     return companionWindowGuard?.updateHitRegion(region) ?? false;
   });
 
+  ipcMain.removeHandler("pi:companion-movement-area");
+  ipcMain.handle("pi:companion-movement-area", (event, mode: unknown) => {
+    if (!isTrustedCompanionWindowSender(event) || (mode !== "screen" && mode !== "bottom-right")) return false;
+    if (mode === companionMovementAreaMode) return true;
+    companionMovementAreaMode = mode;
+    stopCompanionWindowMotion();
+    if (mode === "bottom-right" && companionWindow && !companionWindow.isDestroyed()) {
+      const bounds = companionWindow.getBounds();
+      const display = screen.getDisplayMatching(bounds);
+      const area = companionMovementArea(display.workArea, bounds, mode);
+      companionWindowGuard?.place({ x: Math.round(area.x + (area.width - bounds.width) / 2), y: Math.round(area.y + (area.height - bounds.height) / 2) });
+      positionCompanionBubble();
+    }
+    return true;
+  });
   ipcMain.removeHandler("pi:companion-resize");
   ipcMain.handle("pi:companion-resize", (event, kind: unknown, corner: unknown) => {
     if (!isTrustedCompanionWindowSender(event) || !companionWindow) return false;
