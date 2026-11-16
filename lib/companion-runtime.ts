@@ -87,6 +87,7 @@ export interface CompanionRuntimeSettings {
   personality: string;
   quietHours: { enabled: boolean; start: string; end: string };
   allowMovement: boolean;
+  movementArea: "screen" | "bottom-right";
   allowProactiveSpeech: boolean;
   autoCaptureSessions: boolean;
 }
@@ -137,6 +138,7 @@ function defaultSettings(preferences = createDefaultCompanionPreferences()): Com
     personality: "温暖、聪明、克制；关注事实，不打断专注。",
     quietHours: { enabled: false, start: "22:30", end: "08:00" },
     allowMovement: true,
+    movementArea: "screen",
     allowProactiveSpeech: true,
     autoCaptureSessions: true,
   };
@@ -368,6 +370,7 @@ export function normalizeCompanionRuntimeState(value: unknown): CompanionRuntime
         end: /^\d{2}:\d{2}$/.test(String(quiet.end)) ? String(quiet.end) : "08:00",
       },
       allowMovement: settings.allowMovement !== false,
+      movementArea: settings.movementArea === "bottom-right" ? "bottom-right" : "screen",
       allowProactiveSpeech: settings.allowProactiveSpeech !== false,
       autoCaptureSessions: settings.autoCaptureSessions !== false,
     },
