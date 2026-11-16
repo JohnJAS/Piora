@@ -12,6 +12,7 @@ import { useLiveOutputAutoScrollPreference } from "@/hooks/useLiveOutputAutoScro
 import { AliIcon, type AliIconName } from "./AliIcon";
 import { DesktopAutoLaunchSetting } from "./DesktopAutoLaunchSetting";
 import { RuntimeLogSettings } from "./RuntimeLogSettings";
+import { CredentialVaultSettings } from "./CredentialVaultSettings";
 import { DesktopUpdateSourceSetting } from "./DesktopUpdateSourceSetting";
 import { DesktopUpdateScheduleSetting } from "./DesktopUpdateScheduleSetting";
 import { NetworkProxySettings } from "./NetworkProxySettings";
@@ -559,6 +560,7 @@ export function SettingsDialog({
                     </div> : null}
                   </div>
                 </section> : null}
+                {desktop.available ? <div data-settings-id="data.websiteAccounts"><CredentialVaultSettings rememberedOnly /></div> : null}
                 {desktop.available ? <RuntimeLogSettings /> : null}
               </>
               ) : activeKey === "network" ? (

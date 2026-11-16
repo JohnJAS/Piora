@@ -82,7 +82,16 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     await page.evaluate(() => window.openPage('data'));
     await page.getByRole('heading', { name: '应用行为', exact: true }).waitFor();
     await page.evaluate(() => {
+      const remembered = { enabled: true, entries: [{ id: 'remembered-1', url: 'https://login.example/signin', enabled: true }] };
+      window.vaultCalls = [];
       window.piDesktop = {
+        vault: { request: async input => {
+          window.vaultCalls.push(input);
+          if (input.action === 'remember-configure') remembered.enabled = input.enabled;
+          if (input.action === 'remember-toggle') remembered.entries[0].enabled = input.enabled;
+          if (input.action === 'remember-remove') remembered.entries = [];
+          return structuredClone({ available: true, initialized: false, unlocked: false, autofill: false, entries: [], audit: [], remembered });
+        } },
         getAgentDataDirectory: async () => ({ currentDirectory: 'F:/fixture/agent', defaultDirectory: 'F:/fixture/agent', configuredBy: 'default', environmentOverride: false }),
         getRuntimeLog: async () => ({ filePath: 'F:/fixture/logs/runtime.log', defaultDirectory: 'F:/fixture/logs', fileLoggingAvailable: true, settings: { directory: 'F:/fixture/logs', level: 'info', maxSizeMiB: 5, backups: 1 } }),
       };
@@ -95,6 +104,16 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     await page.getByRole('textbox', { name: '目标数据目录', exact: true }).waitFor();
     assert.equal(await page.getByRole('textbox', { name: '目标数据目录', exact: true }).inputValue(), 'F:/fixture/agent');
     await page.locator('[data-settings-id="general.runtimeLog"]').getByText('F:/fixture/logs/runtime.log', { exact: true }).waitFor();
+    await page.getByRole('heading', { name: '网页登录账户', exact: true }).waitFor();
+    assert.equal(await page.getByLabel('自动保存网页登录账户并自动登录', { exact: true }).isChecked(), true);
+    await page.getByText('https://login.example/signin', { exact: true }).waitFor();
+    await page.getByLabel('允许自动登录', { exact: true }).uncheck();
+    assert.equal(await page.getByLabel('允许自动登录', { exact: true }).isChecked(), false);
+    await page.getByRole('button', { name: '删除已记住账户', exact: true }).click();
+    await page.getByText('还没有记住的网站账户。成功登录支持的网站后会自动保存。', { exact: true }).waitFor();
+    await page.getByLabel('自动保存网页登录账户并自动登录', { exact: true }).uncheck();
+    assert.ok(await page.evaluate(() => window.vaultCalls.some(input => input.action === 'remember-configure' && input.enabled === false)));
+    assert.equal(await page.getByRole('button', { name: '创建凭据库', exact: true }).count(), 0, 'automatic account management does not restore the removed manual vault editor');
     for (const text of ['完整备份与迁移', '界面偏好（兼容旧版 JSON）', '本地凭据库', '组织使用统计']) {
       assert.equal(await page.getByText(text, { exact: true }).count(), 0, `${text} is removed from Data & Diagnostics`);
     }
@@ -105,6 +124,10 @@ test('one chat settings page preserves controls, legacy entries and searchable t
       await page.getByPlaceholder('搜索设置…').fill(query);
       await page.getByRole('main').getByText('没有匹配的设置项', { exact: true }).waitFor();
     }
+    await page.getByPlaceholder('搜索设置…').fill('自动登录');
+    await page.getByRole('button', { name: /网页登录账户/ }).click();
+    await page.locator('[data-settings-id="data.websiteAccounts"][data-settings-highlighted="true"]').waitFor();
+    assert.equal(await page.getByLabel('自动保存网页登录账户并自动登录', { exact: true }).isChecked(), false, 'the saved disabled preference survives remounting the settings page');
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

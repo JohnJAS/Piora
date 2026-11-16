@@ -50,6 +50,13 @@ type BrowserAction = {
 const BROWSER_ONBOARDING_KEY = "piora-desktop-browser-onboarding-v1";
 const BROWSER_BOOKMARKS_KEY = "piora-desktop-browser-bookmarks-v2";
 const BROWSER_FOLLOW_AGENT_KEY = "piora-browser-follow-agent-v1";
+const LOGIN_NOTICES = {
+  recovering: "browser.loginRecovering", saved: "browser.loginSaved", restored: "browser.loginRestored",
+  challenge: "browser.loginChallenge", "no-account": "browser.loginNoAccount", "unsupported-form": "browser.loginUnsupported",
+  failed: "browser.loginFailed", timeout: "browser.loginTimeout", cooldown: "browser.loginCooldown",
+  unverified: "browser.loginUnverified", unavailable: "browser.loginUnavailable", "save-failed": "browser.loginSaveFailed",
+  "save-pending": "browser.loginSavePending", disabled: "browser.loginSaveDisabled",
+} as const;
 
 type DesktopBrowserBridge = NonNullable<NonNullable<Window["piDesktop"]>["browser"]>;
 
@@ -554,6 +561,9 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
     }
   };
   return <div className={styles.browserRoot} data-native-browser="true">
+    {state?.loginNotice ? <div className={styles.browserAgentOperating} role="status" data-browser-login-notice={state.loginNotice}>
+      <span>{t(LOGIN_NOTICES[state.loginNotice as keyof typeof LOGIN_NOTICES] ?? "browser.loginUnverified")}</span>
+    </div> : null}
     {state?.vaultProtected ? <div className={styles.browserAgentOperating} role="status">
       <span>{t("browser.vaultProtected")}</span>
       <button type="button" onClick={() => { void window.piDesktop?.vault?.request({ action: "release" }).catch(() => setError(t("browser.actionFailed"))); }}>{t("browser.vaultRelease")}</button>

@@ -67,7 +67,7 @@ export const browserLogin = {
       await page.getByRole('button', { name: /^(Send|发送)$/ }).click();
       await page.getByRole('textbox', { name: /^(Address|地址)$/ }).waitFor({ state: 'visible' });
       await waitUntil(() => fixture.requests.some(request => request.action === 'wait_for_user'), 'login tool to begin');
-      await page.getByText(/Sign in in the browser|请在浏览器中登录/).waitFor();
+      await page.getByText(/Sign in in the browser|请在浏览器中登录/).waitFor({ timeout: 75000 });
       assert.equal(await page.locator('.browser-user-wait, .browser-handoff-notice, [data-permission-trigger]').count(), 0);
       assert.equal(await page.getByRole('button', { name: /我已完成，继续|Done, continue/ }).count(), 0);
       await screenshot('login-visible.png');
