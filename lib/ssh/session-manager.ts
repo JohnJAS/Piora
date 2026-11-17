@@ -166,7 +166,14 @@ export class SSHSession {
     this.ownerSessionId = agentSessionId; this.mode = "agent-controlled"; this.agentSessionId = agentSessionId; this.emit({ type: "snapshot", snapshot: this.snapshot() });
     if (oldOwner !== agentSessionId) emitSSHRegistryChange(oldOwner);
   }
-  unbindAgent(): void { this.mode = "independent"; delete this.agentSessionId; this.emit({ type: "snapshot", snapshot: this.snapshot() }); }
+  unbindAgent(): void {
+    const oldOwner = this.ownerSessionId;
+    this.mode = "independent";
+    delete this.agentSessionId;
+    delete this.ownerSessionId;
+    this.emit({ type: "snapshot", snapshot: this.snapshot() });
+    if (oldOwner) emitSSHRegistryChange(oldOwner);
+  }
   clearOutput(): void { this.output = ""; this.emit({ type: "clear" }); }
   stopExecution(): void {
     if (!this.execution) throw new Error("No SSH command is running");

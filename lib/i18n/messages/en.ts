@@ -1418,8 +1418,6 @@ export const enLocale: LocalePlugin = {
     "workspace.restorePanel": "Restore right workspace",
     "workspace.search": "Search",
     "browser.tabs": "Browser tabs",
-    "browser.followAgent": "Follow Agent browser",
-    "browser.followAgentDescription": "On: view this task's Agent browser · Off: browse independently",
     "browser.agentOperating": "Agent is working",
     "browser.loginWaiting": "Sign in in the browser. The assistant will continue automatically.",
     "browser.waitTitle": "The browser needs you",

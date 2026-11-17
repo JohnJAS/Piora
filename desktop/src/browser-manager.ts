@@ -565,8 +565,8 @@ export class DesktopBrowserManager {
     const id = `tab-${this.nextTabId++}`;
     const view = this.createBrowserView(popupOptions);
     const tab: BrowserTab = { attached: false, id, loading: false, sessionId, title: "", view };
-    this.tabs.push(tab);
     this.installTabEvents(tab);
+    this.tabs.push(tab);
     if (activate || !this.activeTabIds.has(sessionId)) this.activeTabIds.set(sessionId, id);
     const targetUrl = normalizeAddress(rawUrl);
     tab.loginEntryUrl = targetUrl;
@@ -610,7 +610,7 @@ export class DesktopBrowserManager {
     if (url !== "about:blank") tab.loginEntryUrl = url;
     await this.storageReady;
     const contents = tab.view.webContents;
-    if (contents.isDestroyed()) throw new Error("Browser tab is closed.");
+    if (!contents || contents.isDestroyed()) throw new Error("Browser tab is closed.");
     const waited = this.armNavigation(tab);
     const loading = (async () => {
       try {
@@ -633,7 +633,9 @@ export class DesktopBrowserManager {
   }
 
   private installTabEvents(tab: BrowserTab): void {
-    const contents = tab.view.webContents;
+    const view = tab.view;
+    const contents = view.webContents;
+    if (!contents || contents.isDestroyed()) throw new Error("Browser tab is closed.");
     contents.on("ipc-message-sync", (event, channel, value: unknown) => {
       if (channel !== "piora:credential-policy") return;
       event.returnValue = { allowed: false };
@@ -718,17 +720,17 @@ export class DesktopBrowserManager {
       return { action: "deny" };
     });
     contents.on("destroyed", () => {
-      if (tab.view.webContents !== contents) return;
+      if (tab.view !== view) return;
       this.loginControllers.get(tab.id)?.abort();
       const candidate = this.rememberedCandidates.get(tab.id);
       const opener = tab.loginParentTabId ? this.findTab(tab.loginParentTabId) : undefined;
-      if (!opener || opener.sessionId !== tab.sessionId || opener.view.webContents.isDestroyed()) {
+      if (!opener || opener.sessionId !== tab.sessionId || !this.liveContents(opener)) {
         if (candidate) clearInterval(candidate.timer);
         this.rememberedCandidates.delete(tab.id);
       }
       this.stopProtectedWatch(tab.id);
-      if (tab.view.webContents === contents) this.settleNavigation(tab, new Error("Browser tab is closed."));
-      if (this.destroyed || tab.view.webContents !== contents || tab.discarding) return;
+      if (tab.view === view) this.settleNavigation(tab, new Error("Browser tab is closed."));
+      if (this.destroyed || tab.view !== view || tab.discarding) return;
       if (!this.tabs.includes(tab)) return;
       if (tab.attached && !this.window.isDestroyed()) this.window.contentView.removeChildView(tab.view);
       this.tabs.splice(this.tabs.indexOf(tab), 1);
@@ -1065,7 +1067,7 @@ export class DesktopBrowserManager {
     if (index < 0) return;
     if (sessionTabs.length === 1 && !force) {
       const tab = sessionTabs[0]!;
-      if (tab.unloaded || tab.view.webContents.isDestroyed()) return;
+      if (!this.liveContents(tab)) return;
       tab.title = "";
       tab.savedUrl = "about:blank";
       tab.view.webContents.navigationHistory.clear();
@@ -1076,7 +1078,7 @@ export class DesktopBrowserManager {
     if (!tab) return;
     if (tab.attached && !this.window.isDestroyed()) this.window.contentView.removeChildView(tab.view);
     tab.attached = false;
-    if (!tab.unloaded && !tab.view.webContents.isDestroyed()) tab.view.webContents.close();
+    if (this.liveContents(tab)) tab.view.webContents.close();
     if (this.activeTabIds.get(sessionId) === tabId) {
       const remaining = this.tabs.filter((candidate) => candidate.sessionId === sessionId);
       const next = remaining[Math.min(Math.max(sessionTabs.indexOf(tab), 0), Math.max(0, remaining.length - 1))];
@@ -1162,7 +1164,7 @@ export class DesktopBrowserManager {
 
   private requireLiveTab(tabId: string): BrowserTab {
     const tab = this.findTab(tabId);
-    if (!tab || tab.unloaded || tab.view.webContents.isDestroyed()) throw new Error("Browser tab is closed.");
+    if (!tab || !this.liveContents(tab)) throw new Error("Browser tab is closed.");
     if (this.loginRecoveries.has(tabId)) throw new Error("Browser login recovery is in progress");
     if (tab.vaultProtected) throw new Error("Credential entry is private. Ask the user to finish login and close the protected tab.");
     return tab;
@@ -1343,7 +1345,7 @@ export class DesktopBrowserManager {
       return pending.finally(() => signal.removeEventListener("abort", abort));
     }
     const tab = this.findTab(tabId);
-    if (!tab || tab.unloaded || tab.view.webContents.isDestroyed()) return Promise.resolve({ status: "needs-user", tabId });
+    if (!tab || !this.liveContents(tab)) return Promise.resolve({ status: "needs-user", tabId });
     const controller = new AbortController();
     const abort = () => controller.abort();
     if (signal.aborted) abort(); else signal.addEventListener("abort", abort, { once: true });
@@ -1399,7 +1401,7 @@ export class DesktopBrowserManager {
     return { status: result.status, tabId };
   }
   private async autoFillCredential(tab: BrowserTab): Promise<void> {
-    if (tab.vaultProtected || tab.unloaded || tab.view.webContents.isDestroyed() || this.loginRecoveries.has(tab.id)) return;
+    if (tab.vaultProtected || !this.liveContents(tab) || this.loginRecoveries.has(tab.id)) return;
     const contents = tab.view.webContents;
     const state = readBrowserLoginState(await contents.executeJavaScriptInIsolatedWorld(7332, [{ code: BROWSER_LOGIN_STATE_SCRIPT }]).catch(() => null));
     if (!state?.ready || !state.loginVisible || tab.vaultProtected || this.loginRecoveries.has(tab.id)) return;
@@ -1491,7 +1493,7 @@ export class DesktopBrowserManager {
     const tab = this.findTab(tabId);
     if (!tab || tab.unloaded) return;
     const contents = tab.view.webContents;
-    if (!contents.isDestroyed()) {
+    if (contents && !contents.isDestroyed()) {
       tab.savedUrl = browserUrl(contents.getURL());
       tab.savedTitle = tab.title;
     }
@@ -1499,7 +1501,7 @@ export class DesktopBrowserManager {
     tab.discarding = true;
     if (tab.attached && !this.window.isDestroyed()) this.window.contentView.removeChildView(tab.view);
     tab.attached = false;
-    if (!contents.isDestroyed()) contents.close();
+    if (contents && !contents.isDestroyed()) contents.close();
   }
 
   private async restoreTab(tabId: string): Promise<void> {
@@ -1625,7 +1627,7 @@ export class DesktopBrowserManager {
       },
       debuggerIsAttached: (tabId: string) => {
         const tab = this.findTab(tabId);
-        if (!tab || tab.unloaded || tab.view.webContents.isDestroyed()) return false;
+        if (!tab || !this.liveContents(tab)) return false;
         return tab.view.webContents.debugger.isAttached();
       },
       debuggerSend: (tabId: string, method: string, params?: Record<string, unknown>) => (
