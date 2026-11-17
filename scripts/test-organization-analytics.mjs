@@ -53,6 +53,7 @@ async function native() {
   for (const name of [
     "analytics-store",
     "analytics-uploader",
+    "analytics-windows-identity",
     "analytics-desktop",
   ]) {
     const source = readFileSync(

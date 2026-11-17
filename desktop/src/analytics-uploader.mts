@@ -9,6 +9,11 @@ import {
   type AnalyticsConfig,
   type AnalyticsPolicy,
 } from "./analytics-store.mjs";
+import {
+  collectWindowsIdentity,
+  type WindowsIdentity,
+  type IdentityObservation,
+} from "./analytics-windows-identity.mjs";
 interface Credential {
   credential_id: string;
   secret: string;
@@ -19,6 +24,7 @@ interface Vault {
   current: Credential;
   pending?: Credential;
   rotation_id?: string;
+  identity_pending?: { id: string; identity: WindowsIdentity };
 }
 interface SecureStorage {
   isAsyncEncryptionAvailable(): Promise<boolean>;
@@ -54,19 +60,30 @@ export class AnalyticsUploader {
   private stopped = false;
   private vault!: Vault;
   private failures = 0;
+  private identitySupported = false;
+  private capabilityCheckedAt = 0;
   private constructor(
     readonly store: AnalyticsStore,
     private readonly config: AnalyticsConfig,
     private readonly secure: SecureStorage,
     private readonly fetcher: Fetcher = fetch,
+    private readonly identityReader: () => Promise<IdentityObservation> = () =>
+      collectWindowsIdentity(config.enabled),
   ) {}
   static async create(
     store: AnalyticsStore,
     config: AnalyticsConfig,
     secure: SecureStorage,
     fetcher: Fetcher = fetch,
+    identityReader?: () => Promise<IdentityObservation>,
   ): Promise<AnalyticsUploader> {
-    const uploader = new AnalyticsUploader(store, config, secure, fetcher);
+    const uploader = new AnalyticsUploader(
+      store,
+      config,
+      secure,
+      fetcher,
+      identityReader,
+    );
     await uploader.initialize();
     return uploader;
   }
@@ -150,10 +167,13 @@ export class AnalyticsUploader {
       if (this.stopped) return;
       // Node timers overflow above ~24.8 days. Keep the persisted deadline and
       // wait in bounded chunks instead of turning a long interval into a 1ms loop.
-      this.timer = setTimeout(() => {
-        if (Date.now() < due) arm();
-        else void this.flush();
-      }, Math.min(2_147_483_647, Math.max(0, due - Date.now())));
+      this.timer = setTimeout(
+        () => {
+          if (Date.now() < due) arm();
+          else void this.flush();
+        },
+        Math.min(2_147_483_647, Math.max(0, due - Date.now())),
+      );
       this.timer.unref();
     };
     arm();
@@ -223,6 +243,68 @@ export class AnalyticsUploader {
     this.store.set("registered", true);
     this.store.set("organization_name", result.organization_name);
   }
+  /** Identity is optional: no failure here may pause ordinary telemetry. */
+  private async syncIdentity(): Promise<void> {
+    if (!this.config.enabled || this.stopped) return;
+    try {
+      if (Date.now() - this.capabilityCheckedAt > 3600000) {
+        this.capabilityCheckedAt = Date.now();
+        this.identitySupported = false;
+        const response = await this.fetcher(
+          this.config.backend_url + "/v1/capabilities",
+          {
+            method: "GET",
+            signal: AbortSignal.timeout(5000),
+            redirect: "error",
+          },
+        );
+        if (response.ok) {
+          const envelope = (await response.json()) as {
+            data?: { capabilities?: unknown };
+          };
+          this.identitySupported =
+            Array.isArray(envelope.data?.capabilities) &&
+            envelope.data.capabilities.includes("windows-domain-identity-v1");
+        }
+      }
+      if (!this.identitySupported) {
+        this.store.set("identity_status", "unsupported_backend");
+        return;
+      }
+      const last = this.store.get<number>("identity_synced_at") ?? 0;
+      if (!this.vault.identity_pending && Date.now() - last < 86400000) return;
+      if (!this.vault.identity_pending) {
+        const observation = await this.identityReader();
+        this.store.set("identity_collection_status", observation.status);
+        // Do not send the local diagnostic status: the server schema is strict.
+        const { account_type, domain, account_name, source } = observation;
+        this.vault.identity_pending = {
+          id: randomUUID(),
+          identity: { account_type, domain, account_name, source },
+        };
+      }
+      // Persist the exact id/body before every attempt, including after a failed save.
+      await this.saveVault();
+      const pending = this.vault.identity_pending;
+      const result = await this.request(
+        "/v1/installations/identity",
+        { identity: pending.identity },
+        this.bearer(),
+        pending.id,
+      );
+      delete this.vault.identity_pending;
+      await this.saveVault();
+      this.store.set(
+        "identity_status",
+        typeof result.state === "string" ? result.state : "reported",
+      );
+      // Refresh daily so policy changes are eventually applied.
+      if (pending.identity.account_type !== "unknown")
+        this.store.set("identity_synced_at", Date.now());
+    } catch {
+      this.store.set("identity_status", "retry_pending");
+    }
+  }
   private async rotate(): Promise<void> {
     if (!this.vault.pending) {
       this.vault.pending = {
@@ -272,6 +354,7 @@ export class AnalyticsUploader {
           Date.parse(this.vault.current.expires_at) - Date.now() < 7 * 86400000)
       )
         await this.rotate();
+      await this.syncIdentity();
       let policy = this.policy();
       this.store.prune(policy);
       const health = this.store.health(),
