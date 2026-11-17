@@ -1,6 +1,6 @@
 import { filterFileEntries } from "./file-fuzzy.ts";
 
-export type SettingsKey = "laboratory" | "desktopExtensions" | "general" | "data" | "network" | "conversation" | "prompts" | "shortcuts" | "speech" | "automations" | "models" | "modelRuntime" | "shell" | "tools" | "extensions" | "skills" | "plugins" | "appearance" | "companion" | "usage" | "archived" | "trash";
+export type SettingsKey = "browser" | "laboratory" | "desktopExtensions" | "general" | "data" | "network" | "conversation" | "prompts" | "shortcuts" | "speech" | "automations" | "models" | "modelRuntime" | "shell" | "tools" | "extensions" | "skills" | "plugins" | "appearance" | "companion" | "usage" | "archived" | "trash";
 
 export interface SettingsPage {
   key: SettingsKey;
@@ -30,6 +30,7 @@ export const SETTINGS_GROUPS: readonly { labelKey: string; pages: readonly Setti
     { key: "skills", labelKey: "common.skills", descriptionKey: "settings.skillsDescription", icon: "solution" },
   ] },
   { labelKey: "settings.group.connections", pages: [
+    { key: "browser", labelKey: "browserPreferences.title", descriptionKey: "browserPreferences.description", icon: "earth" },
     { key: "network", labelKey: "networkProxy.title", descriptionKey: "networkProxy.description", icon: "link" },
   ] },
   { labelKey: "settings.group.appData", pages: [
@@ -75,6 +76,7 @@ export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   { id: "general.updateSource", section: "general", requiresDesktop: true, labelKey: "settings.updateSource", descriptionKey: "settings.updateSourceDescription", keywords: ["update", "source", "github", "internal", "更新", "来源", "内源", "渠道"] },
   { id: "general.updateSchedule", section: "general", requiresDesktop: true, labelKey: "settings.updateSchedule", descriptionKey: "settings.updateScheduleDescription", keywords: ["update", "schedule", "silent", "更新", "静默", "安装", "定时"] },
   { id: "general", section: "general", labelKey: "settings.general", descriptionKey: "settings.generalDescription", keywords: ["preferences", "偏好"] },
+  { id: "browser.downloads", section: "browser", requiresDesktop: true, labelKey: "browserPreferences.directory", descriptionKey: "browserPreferences.description", keywords: ["browser", "download", "zoom", "浏览器", "下载", "目录", "缩放"] },
   { id: "data", section: "data", requiresDesktop: true, labelKey: "settings.page.data", descriptionKey: "settings.page.dataDescription", keywords: ["storage", "data", "logs", "存储", "数据", "日志"] },
   { id: "conversation.runningSendMode", section: "conversation", labelKey: "settings.runningSendMode", descriptionKey: "settings.runningSendModeHelp", keywords: ["steer", "queue", "引导", "排队"] },
   { id: "general.onboarding", section: "general", labelKey: "settings.firstRunGuideTitle", descriptionKey: "settings.firstRunGuideDescription", keywords: ["welcome", "guide", "新手", "引导"] },

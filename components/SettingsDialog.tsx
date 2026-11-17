@@ -1,6 +1,7 @@
 "use client";
 import { RunningStatusSettings } from "./RunningStatusSettings";
 import { AnswerLinkSettings } from "./AnswerLinkSettings";
+import { BrowserSettings } from "./BrowserSettings";
 import { LaboratorySettings } from "./LaboratorySettings";
 import { useRunningSendMode } from "@/hooks/useRunningSendMode";
 
@@ -186,7 +187,7 @@ export function SettingsDialog({
     icon: <AliIcon name={page.icon as AliIconName} size={16} />,
   }))), []);
 
-  const availableEntries = useMemo(() => detailEntries.filter((entry) => entry.key === "data" ? desktop.available : (
+  const availableEntries = useMemo(() => detailEntries.filter((entry) => entry.key === "data" || entry.key === "browser" ? desktop.available : (
     ["general", "network", "conversation", "laboratory"].includes(entry.key)
     || sections[entry.key] !== undefined
   )), [desktop.available, detailEntries, sections]);
@@ -467,6 +468,7 @@ export function SettingsDialog({
                 </section> : <div className={styles.searchEmpty} role="status">{t("settings.searchEmpty")}</div>}
               </>
             ) : <>
+              {activeEntry.key === "browser" ? <BrowserSettings /> : null}
               {activeEntry.key === "general" ? (
               <>
                 <div className={styles.contentHeading}>

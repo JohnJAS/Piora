@@ -4,12 +4,12 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { createPortal } from "react-dom";
 import { copyText } from "@/lib/clipboard";
 import { resolveLocalFileHref } from "@/lib/file-links";
-import { FILE_REFERENCE_HREF, parseFileReference, resolveFileReferenceTarget } from "@/lib/file-references";
+import { FILE_REFERENCE_HREF, formatFileReference, parseFileReference, resolveFileReferenceTarget } from "@/lib/file-references";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
 import styles from "./ChatContentContextMenu.module.css";
 
-type Target = { text: string; path?: string; filePath?: string; href?: string };
+type Target = { text: string; path?: string; filePath?: string; openPath?: string; href?: string };
 type MenuState = { x: number; y: number; target: Target; selection: string; source: HTMLElement };
 
 function contextTarget(element: Element, cwd?: string): Target {
@@ -29,13 +29,15 @@ function contextTarget(element: Element, cwd?: string): Target {
   }
   if (path) {
     const resolved = /[\x00-\x1f\x7f]/.test(path) ? null : resolveFileReferenceTarget(path, cwd);
-    return { text, path: resolved?.filePath ?? parseFileReference(path)?.path ?? path, filePath: resolved?.filePath };
+    const reference = parseFileReference(path);
+    const target = resolved ? formatFileReference({ path: resolved.filePath, line: resolved.line, column: resolved.column }) : path;
+    return { text, path: target, filePath: resolved?.filePath, openPath: resolved && reference ? target : undefined };
   }
   return { text, ...(href && !href.startsWith(FILE_REFERENCE_HREF) ? { href: control instanceof HTMLAnchorElement ? control.href : href } : {}) };
 }
 
 /** One delegated menu per message, including links nested in tool result cards. */
-export function ChatContentContextMenu({ children, cwd }: { children: ReactNode; cwd?: string }) {
+export function ChatContentContextMenu({ children, cwd, onOpenFile }: { children: ReactNode; cwd?: string; onOpenFile?: (path: string) => void }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
   const close = useCallback(() => setMenu(null), []);
   const show = (element: Element, container: HTMLElement, x: number, y: number) => {
@@ -64,11 +66,11 @@ export function ChatContentContextMenu({ children, cwd }: { children: ReactNode;
       }
     }}>
     {children}
-    {menu ? <ContentMenu key={`${menu.x}:${menu.y}:${menu.target.path ?? menu.target.href ?? menu.target.text}`} menu={menu} onClose={close} /> : null}
+    {menu ? <ContentMenu key={`${menu.x}:${menu.y}:${menu.target.path ?? menu.target.href ?? menu.target.text}`} menu={menu} onClose={close} onOpenFile={onOpenFile} /> : null}
   </div>;
 }
 
-function ContentMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }) {
+function ContentMenu({ menu, onClose, onOpenFile }: { menu: MenuState; onClose: () => void; onOpenFile?: (path: string) => void }) {
   const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const [error, setError] = useState("");
@@ -135,9 +137,11 @@ function ContentMenu({ menu, onClose }: { menu: MenuState; onClose: () => void }
     {selection ? <button type="button" role="menuitem" aria-disabled={busy} onClick={() => copy(selection)}><AliIcon name="copy" size={15} />{t("chatContext.copySelection")}</button> : null}
     {target.path ? <>
       <button type="button" role="menuitem" aria-disabled={busy} onClick={() => copy(target.path!)}><AliIcon name="copy" size={15} />{t("files.copyPath")}</button>
+      {target.filePath && target.filePath !== target.path ? <button type="button" role="menuitem" aria-disabled={busy} onClick={() => copy(target.filePath!)}><AliIcon name="copy" size={15} />{t("chatContext.copyFilePath")}</button> : null}
       <button type="button" role="menuitem" aria-disabled={busy || !target.filePath || !desktop?.revealPath} disabled={!target.filePath || !desktop?.revealPath}
         title={!desktop?.revealPath ? t("chatContext.desktopOnly") : undefined}
         onClick={() => { void run(() => target.filePath && desktop?.revealPath ? desktop.revealPath(target.filePath) : Promise.resolve(false), "chatContext.revealFailed"); }}><AliIcon name="folder-open" size={15} />{t("chatContext.reveal")}</button>
+      {target.openPath && onOpenFile ? <button type="button" role="menuitem" aria-disabled={busy} onClick={() => { if (busy) return; closeAndRestoreFocus(); onOpenFile(target.openPath!); }}><AliIcon name="file" size={15} />{t("files.openInPiora")}</button> : null}
     </> : target.href ? <button type="button" role="menuitem" aria-disabled={busy} onClick={() => copy(target.href!)}><AliIcon name="link" size={15} />{t("chatContext.copyLink")}</button> : null}
     {target.text && target.text !== selection && target.text !== (target.path ?? target.href) ? <button type="button" role="menuitem" aria-disabled={busy} onClick={() => copy(target.text)}><AliIcon name="copy" size={15} />{t("chatContext.copyText")}</button> : null}
     {error ? <p className={styles.error} role="alert">{error}</p> : null}

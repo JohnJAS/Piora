@@ -80,6 +80,7 @@ async function listWithGit(cwd: string): Promise<FileListing | null> {
 
 async function listWithWalk(cwd: string): Promise<FileListing> {
   const files: string[] = [];
+  let hardTruncated = false;
   // BFS so shallow files win when the cap truncates the listing.
   const queue: Array<{ abs: string; rel: string; depth: number }> = [{ abs: cwd, rel: "", depth: 0 }];
   for (let cursor = 0; cursor < queue.length; cursor++) {
@@ -96,7 +97,7 @@ async function listWithWalk(cwd: string): Promise<FileListing> {
       if (d.isDirectory()) {
         if (depth + 1 <= MAX_WALK_DEPTH) {
           queue.push({ abs: path.join(abs, d.name), rel: childRel, depth: depth + 1 });
-        }
+        } else hardTruncated = true;
       } else if (d.isFile()) {
         if (files.length >= WALK_HARD_CAP) {
           return { files, hardTruncated: true };
@@ -105,7 +106,7 @@ async function listWithWalk(cwd: string): Promise<FileListing> {
       }
     }
   }
-  return { files, hardTruncated: false };
+  return { files, hardTruncated };
 }
 
 // GET /api/file-index?cwd=/abs/path[&q=query]
@@ -122,6 +123,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "cwd must be an absolute path" }, { status: 400 });
     }
     const query = req.nextUrl.searchParams.get("q")?.slice(0, MAX_QUERY_LENGTH) ?? "";
+    const exactName = req.nextUrl.searchParams.get("name");
+    if (exactName !== null && (!exactName || exactName.length > MAX_QUERY_LENGTH || /[\\/\x00-\x1f]/.test(exactName))) {
+      return NextResponse.json({ error: "name must be a file name" }, { status: 400 });
+    }
 
     const allowedRoots = await getAllowedFileRoots();
     if (!isFilePathAllowed(cwd, allowedRoots)) {
@@ -139,6 +144,21 @@ export async function GET(req: NextRequest) {
     }
     if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
+    }
+
+    if (exactName) {
+      // Generated documents may be gitignored, or the cwd itself may be under
+      // an ignored directory. Filename recovery searches the actual workspace.
+      const listing = await listWithWalk(cwd);
+      const compare = (value: string) => process.platform === "win32" ? value.toLowerCase() : value;
+      const matches = listing.files.filter(file => {
+        if (compare(path.posix.basename(file)) !== compare(exactName)) return false;
+        const target = path.resolve(cwd, file);
+        try { return isExistingFilePathAllowed(target, new Set([cwd])) && fs.statSync(target).isFile(); }
+        catch { return false; }
+      });
+      return NextResponse.json({ matches: matches.slice(0, 100).map(file => ({ path: file, isDir: false })),
+        truncated: listing.hardTruncated || matches.length > 100 });
     }
 
     const cache = getIndexCache();

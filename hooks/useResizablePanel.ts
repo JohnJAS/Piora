@@ -1,4 +1,5 @@
 "use client";
+import { PANEL_RESIZE_EVENT } from "@/lib/panel-resize-events";
 
 import {
   useCallback,
@@ -159,6 +160,7 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     restoreBodyState(drag);
     setIsResizing(false);
     commitWidth(widthRef.current, { forcePersist: true });
+    window.dispatchEvent(new CustomEvent(PANEL_RESIZE_EVENT, { detail: { resizing: false } }));
 
     try {
       if (drag.target.hasPointerCapture(pointerId)) {
@@ -194,6 +196,7 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     };
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
+    window.dispatchEvent(new CustomEvent(PANEL_RESIZE_EVENT, { detail: { resizing: true } }));
     setIsResizing(true);
   }, [clampWidth, finishResize, getCurrentWidth, growthDirection, widthRef]);
 
@@ -354,6 +357,7 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
       if (!drag) return;
       dragRef.current = null;
       restoreBodyState(drag);
+      window.dispatchEvent(new CustomEvent(PANEL_RESIZE_EVENT, { detail: { resizing: false } }));
     };
   }, [restoreBodyState]);
 

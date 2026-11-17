@@ -9,6 +9,8 @@ export interface WorkspaceFileTab {
   filePath: string;
   cwd?: string;
   initialDisplayMode?: "source" | "preview" | "diff" | "edit";
+  revealLine?: number;
+  revealColumn?: number;
 }
 
 export interface WorkspaceContinuity {
@@ -56,7 +58,11 @@ function sanitizeTab(value: unknown, workspaceRoot: string): WorkspaceFileTab | 
   if (record.id !== undefined && record.id !== id) return null;
   const mode = record.initialDisplayMode;
   const initialDisplayMode = mode === "source" || mode === "preview" || mode === "diff" || mode === "edit" ? mode : undefined;
-  return { id, label, filePath, cwd, ...(initialDisplayMode ? { initialDisplayMode } : {}) };
+  const location = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= 2147483647;
+  return {
+    id, label, filePath, cwd, ...(initialDisplayMode ? { initialDisplayMode } : {}),
+    ...(location(record.revealLine) ? { revealLine: record.revealLine, ...(location(record.revealColumn) ? { revealColumn: record.revealColumn } : {}) } : {}),
+  };
 }
 
 function emptyContinuity(workspaceRoot: string): WorkspaceContinuity {

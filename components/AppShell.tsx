@@ -921,6 +921,8 @@ export function AppShell() {
         filePath: tab.filePath,
         cwd: tab.cwd ?? activeProjectRoot,
         initialDisplayMode: tab.initialDisplayMode,
+        revealLine: tab.revealLine,
+        revealColumn: tab.revealColumn,
       }));
       const persistedActiveId = activeFileTabId && persistedTabs.some((tab) => tab.id === activeFileTabId)
         ? activeFileTabId

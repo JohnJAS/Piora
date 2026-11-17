@@ -216,7 +216,7 @@ const HistoryVersionContext = createContext<string | undefined>(undefined);
 const ToolRunActiveContext = createContext(false);
 export const MessageView = memo(function MessageView(props: Props) {
   const history = props.mode === "history";
-  return <HistoryModeContext.Provider value={history}><ToolRunActiveContext.Provider value={!history && (props.toolRunActive ?? props.isStreaming ?? false)}><HistoryVersionContext.Provider value={props.historyVersion}><ChatContentContextMenu cwd={props.cwd}><MessageContent {...props}
+  return <HistoryModeContext.Provider value={history}><ToolRunActiveContext.Provider value={!history && (props.toolRunActive ?? props.isStreaming ?? false)}><HistoryVersionContext.Provider value={props.historyVersion}><ChatContentContextMenu cwd={props.cwd} onOpenFile={props.onOpenFile}><MessageContent {...props}
     onFork={history ? undefined : props.onFork} onNavigate={history ? undefined : props.onNavigate}
     onEditFailed={history ? undefined : props.onEditFailed} onRetry={history ? undefined : props.onRetry} onEditContent={history ? undefined : props.onEditContent}
     onOpenAutomation={history ? undefined : props.onOpenAutomation} /></ChatContentContextMenu></HistoryVersionContext.Provider></ToolRunActiveContext.Provider></HistoryModeContext.Provider>;

@@ -255,6 +255,8 @@ const runtime = Object.freeze({
     setViewport(bounds: { x: number; y: number; width: number; height: number }, visible: boolean) {
       return ipcRenderer.invoke("pi:browser-viewport", bounds, visible) as Promise<boolean>;
     },
+    getPreferences() { return ipcRenderer.invoke("pi:browser-preferences"); },
+    setPreferences(input: { directory: string; askEachTime: boolean }) { return ipcRenderer.invoke("pi:browser-preferences", input); },
     importChromeBookmarks() {
       return ipcRenderer.invoke("pi:browser-import-chrome-bookmarks");
     },

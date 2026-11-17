@@ -1,4 +1,5 @@
 import { readEffectiveToolPermission, readToolApprovalSettings } from "./tool-approval-settings";
+import { FILE_REFERENCE_INSTRUCTIONS } from "./file-references";
 import { createConversationFork } from "./session-fork";
 import { findWorkflowRuntime, getWorkflowRuntime, readWorkflowSnapshot, WorkflowError } from "./workflow-runtime";
 import { parseWorkflowAction, parseWorkflowPromptOptions, parseWorkflowRevision } from "./workflow-input";
@@ -3117,7 +3118,7 @@ export async function startRpcSession(
                   sessionManager.getEntries(),
                   base,
                   readSystemPromptConfig(),
-                ) + (options.subagentSystemPrompt ? `\n\n<subagent_role>\n${options.subagentSystemPrompt}\n</subagent_role>` : ""),
+                ) + `\n\n<file_references>\n${FILE_REFERENCE_INSTRUCTIONS}\n</file_references>` + (options.subagentSystemPrompt ? `\n\n<subagent_role>\n${options.subagentSystemPrompt}\n</subagent_role>` : ""),
               },
             }),
       });

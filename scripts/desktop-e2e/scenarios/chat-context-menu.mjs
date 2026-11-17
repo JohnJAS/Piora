@@ -11,7 +11,7 @@ const normalize = value => value.replaceAll("\\", "/");
 
 async function explorerWindows() {
   const script = `$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $shell=New-Object -ComObject Shell.Application; $items=@($shell.Windows() | ForEach-Object { try { [pscustomobject]@{handle=[string]$_.HWND; path=[string]$_.Document.Folder.Self.Path; selected=@($_.Document.SelectedItems() | ForEach-Object { [string]$_.Path })} } catch {} }); ConvertTo-Json -InputObject $items -Compress -Depth 4`;
-  const { stdout } = await execute("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, timeout: 10000, encoding: "utf8" });
+  const { stdout } = await execute("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, timeout: 30000, encoding: "utf8" });
   return JSON.parse(stdout.trim() || "[]");
 }
 
@@ -40,7 +40,8 @@ export const chatContextMenu = {
     ].map(JSON.stringify).join("\n") + "\n");
     report.fixture = { ...fixture, source: "synthetic on-disk history; production rendering and desktop bridges" };
   },
-  async run({ page, step, screenshot, reload, waitUntil, directory }) {
+  async run({ page, step, reload, waitUntil, directory }) {
+    const screenshot = name => page.screenshot({ path: join(directory, name), animations: "disabled", timeout: 30000 });
     const menu = page.getByRole("menu", { name: /^(Chat content menu|对话内容菜单)$/ });
     const file = () => page.getByRole("link", { name: "测试报告", exact: true });
     const reveal = () => menu.getByRole("menuitem", { name: /^(Show in File Explorer|在文件资源管理器中打开)$/ });
@@ -71,7 +72,7 @@ export const chatContextMenu = {
         await copyPath().click();
         await menu.waitFor({ state: "hidden" });
         evidence.copiedPath = await page.evaluate(() => window.piDesktop.clipboard.readText());
-        assert.equal(evidence.copiedPath, normalize(fixture.file));
+        assert.equal(evidence.copiedPath, `${normalize(fixture.file)}:12:2`);
       });
       await step("copy-web-address", async () => {
         await page.getByRole("link", { name: "测试网页", exact: true }).click({ button: "right" });
@@ -98,14 +99,16 @@ export const chatContextMenu = {
         await file().click({ button: "right" });
         await copyPath().click();
         await menu.waitFor({ state: "hidden" });
-        assert.equal(await page.evaluate(() => window.piDesktop.clipboard.readText()), normalize(fixture.file));
+        assert.equal(await page.evaluate(() => window.piDesktop.clipboard.readText()), `${normalize(fixture.file)}:12:2`);
       });
       if (process.platform === "win32") {
         await step("reveal-real-file-in-windows-explorer", async () => {
           await file().click({ button: "right" });
           await reveal().click();
           await waitUntil(async () => {
-            const windows = await explorerWindows();
+            let windows;
+            try { windows = await explorerWindows(); }
+            catch (error) { evidence.explorerObservationError = error.message; return false; }
             const match = windows.find(window => normalize(window.path).toLowerCase() === normalize(fixture.folder).toLowerCase()
               && window.selected.some(path => normalize(path).toLowerCase() === normalize(fixture.file).toLowerCase()));
             if (match) evidence.nativeExplorer = match;
@@ -116,7 +119,10 @@ export const chatContextMenu = {
           await page.bringToFront();
           await page.getByText(fixture.folder, { exact: true }).click({ button: "right" });
           await reveal().click();
-          await waitUntil(async () => (await explorerWindows()).some(window => normalize(window.path).toLowerCase() === normalize(fixture.folder).toLowerCase()), "Explorer showing the fixture directory");
+          await waitUntil(async () => {
+            try { return (await explorerWindows()).some(window => normalize(window.path).toLowerCase() === normalize(fixture.folder).toLowerCase()); }
+            catch (error) { evidence.explorerObservationError = error.message; return false; }
+          }, "Explorer showing the fixture directory");
         });
       }
     } finally {
@@ -125,7 +131,7 @@ export const chatContextMenu = {
       if (process.platform === "win32") {
         // Close only new Explorer windows still displaying this run's unique fixture directory.
         const script = `$shell=New-Object -ComObject Shell.Application; $existing=@($env:PIORA_TEST_EXPLORER_HANDLES -split ','); $shell.Windows() | ForEach-Object { try { if ([string]$_.HWND -notin $existing -and [string]$_.Document.Folder.Self.Path -eq $env:PIORA_TEST_EXPLORER_FOLDER) { $_.Quit() } } catch {} }`;
-        await execute("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, timeout: 10000,
+        await execute("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, timeout: 30000,
           env: { ...process.env, PIORA_TEST_EXPLORER_HANDLES: previousExplorerHandles.join(","), PIORA_TEST_EXPLORER_FOLDER: fixture.folder } });
       }
     }

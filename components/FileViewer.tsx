@@ -37,6 +37,7 @@ import type { CodeIntelligenceMode } from "@/lib/code-intelligence-types";
 import { getDraftFileLineChanges, getFileLineSeparator, getGitFileLineChanges, normalizeFileLineEndings, preserveFileLineEndings } from "@/lib/file-editor-line-changes";
 import { getAdjacentChangeIndex, getCurrentChangeIndex, getDiffChangeRanges, getEditorChangeRanges } from "@/lib/file-change-navigation";
 import { LazySyntaxHighlighter as SyntaxHighlighter } from "./LazySyntaxHighlighter";
+import { FileReferenceRecovery } from "./FileReferenceRecovery";
 
 interface Props {
   filePath: string;
@@ -661,7 +662,18 @@ function DocumentViewer({ filePath, cwd, sourceSessionId, active = true }: Props
   );
 }
 
-export function FileViewer({
+export function FileViewer(props: Props) {
+  const { filePath: originalPath, onOpenFile, revealLine, revealColumn } = props;
+  const [recovered, setRecovered] = useState<{ original: string; path: string } | null>(null);
+  const filePath = recovered?.original === props.filePath ? recovered.path : props.filePath;
+  const locate = useCallback((path: string) => {
+    if (onOpenFile) onOpenFile(path, { line: revealLine, column: revealColumn });
+    else setRecovered({ original: originalPath, path });
+  }, [originalPath, onOpenFile, revealLine, revealColumn]);
+  return <FileViewerContent {...props} filePath={filePath} onLocateFile={locate} />;
+}
+
+function FileViewerContent({
   filePath,
   cwd,
   sourceSessionId,
@@ -675,7 +687,8 @@ export function FileViewer({
   active = true,
   onDirtyChange,
   onSaved,
-}: Props) {
+  onLocateFile,
+}: Props & { onLocateFile: (path: string) => void }) {
   const viewerKind = getFileViewerKind(filePath);
   if (viewerKind === "image") {
     return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
@@ -701,6 +714,7 @@ export function FileViewer({
       active={active}
       onDirtyChange={onDirtyChange}
       onSaved={onSaved}
+      onLocateFile={onLocateFile}
     />
   );
 }
@@ -719,7 +733,8 @@ function TextFileViewer({
   active = true,
   onDirtyChange,
   onSaved,
-}: Props) {
+  onLocateFile,
+}: Props & { onLocateFile: (path: string) => void }) {
   const updateBlockerId = useId();
   const { isDark } = useTheme();
   const { t } = useI18n();
@@ -728,6 +743,7 @@ function TextFileViewer({
   const [gitDiffLoading, setGitDiffLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => isMarkdownPath(filePath) ? "preview" : "edit");
   const [viewerWidth, setViewerWidth] = useState(0);
   const [compactSplitSide, setCompactSplitSide] = useState<"edit" | "preview">("edit");
@@ -813,12 +829,14 @@ function TextFileViewer({
       .then(async (response) => {
         const next = await response.json() as FileData & { error?: string };
         if (!response.ok || next.error) {
+          if (replaceDraft) setMissing(response.status === 404);
           throw new Error(next.error ?? `HTTP ${response.status}`);
         }
         return next;
       })
       .then((next) => {
         setError(null);
+        setMissing(false);
         setData(next);
         loadedRef.current = true;
         if (replaceDraft) {
@@ -1252,9 +1270,10 @@ function TextFileViewer({
   }
 
   if (error && !isDeletedDiff) {
+    if (missing) return <FileReferenceRecovery key={filePath} filePath={filePath} cwd={cwd} active={active} onFound={onLocateFile} />;
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#f87171", fontSize: "var(--text-base)" }}>
-        {error}
+        {t("fileReference.readFailed", { error })}
       </div>
     );
   }

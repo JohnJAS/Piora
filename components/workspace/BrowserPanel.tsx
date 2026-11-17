@@ -17,6 +17,7 @@ import type {
 import { useI18n } from "@/hooks/useI18n";
 import { nextFollowState } from "@/lib/browser-follow";
 import { createBrowserViewportSync } from "@/lib/browser-viewport-sync";
+import { PANEL_RESIZE_EVENT } from "@/lib/panel-resize-events";
 import { pollVisibleDocument } from "@/lib/visible-poller";
 import { normalizeAnswerLink, type BrowserNavigationRequest } from "@/lib/answer-links";
 import { AliIcon } from "../AliIcon";
@@ -301,6 +302,7 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
   const [followingAgent, setFollowingAgent] = useState(true);
   const [agentActivity, setAgentActivity] = useState<DesktopBrowserAgentActivity | null>(null);
   const followingRef = useRef(true);
+  const resizingRef = useRef(false);
   followingRef.current = followingAgent;
   const viewportRef = useRef<HTMLDivElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
@@ -367,12 +369,17 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
     const element = viewportRef.current;
     if (!element) return;
     const rect = element.getBoundingClientRect();
+    const panelRect = element.closest("#file-panel")?.getBoundingClientRect();
+    const left = Math.max(0, rect.left, panelRect?.left ?? rect.left);
+    const top = Math.max(0, rect.top, panelRect?.top ?? rect.top);
+    const right = Math.min(window.innerWidth, rect.right, panelRect?.right ?? rect.right);
+    const bottom = Math.min(window.innerHeight, rect.bottom, panelRect?.bottom ?? rect.bottom);
     viewportSyncRef.current?.sync({
-      x: Math.round(rect.left),
-      y: Math.round(rect.top),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
-    }, panelActiveRef.current && visible && rect.width > 0 && rect.height > 0);
+      x: Math.ceil(left),
+      y: Math.ceil(top),
+      width: Math.max(0, Math.floor(right) - Math.ceil(left)),
+      height: Math.max(0, Math.floor(bottom) - Math.ceil(top)),
+    }, panelActiveRef.current && !resizingRef.current && visible && right > left && bottom > top);
   }, [state?.url]);
 
   useLayoutEffect(() => {
@@ -393,6 +400,14 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
     const observer = new ResizeObserver(scheduleSync);
     const panel = element.closest("#file-panel");
     observer.observe(element);
+    if (panel) observer.observe(panel);
+    const resizeChange = (event: Event) => {
+      resizingRef.current = (event as CustomEvent<{ resizing: boolean }>).detail?.resizing === true;
+      // Hide is sent immediately, including while a prior viewport IPC is in flight.
+      // On release measure the committed DOM bounds on the next frame.
+      if (resizingRef.current) syncViewport(false); else scheduleSync();
+    };
+    window.addEventListener(PANEL_RESIZE_EVENT, resizeChange);
     window.addEventListener("resize", scheduleSync);
     window.addEventListener("scroll", scheduleSync, true);
     panel?.addEventListener("transitionend", scheduleSync);
@@ -411,6 +426,7 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
       window.clearInterval(positionCheck);
       window.cancelAnimationFrame(frame);
       observer.disconnect();
+      window.removeEventListener(PANEL_RESIZE_EVENT, resizeChange);
       window.removeEventListener("resize", scheduleSync);
       window.removeEventListener("scroll", scheduleSync, true);
       panel?.removeEventListener("transitionend", scheduleSync);
@@ -627,6 +643,11 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
       <button type="button" aria-label={t("browser.siteLogin")} title={t("browser.siteLogin")} disabled={!state || blank} onClick={() => void act({ action: "configure_login" })}><AliIcon name="lock" size={14} /></button>
     </div>
     <div className={styles.browserBookmarkBar} aria-label={t("browser.bookmarkBar")}>
+      <div className={styles.browserZoom} role="group" aria-label={t("browserPreferences.zoom")}>
+        <button type="button" disabled={!state || blank} aria-label={t("browserPreferences.zoomOut")} onClick={() => void act({ action: "zoom_out" })}>−</button>
+        <button type="button" disabled={!state || blank} title={t("browserPreferences.zoomReset")} aria-label={t("browserPreferences.zoomReset")} onClick={() => void act({ action: "zoom_reset" })}>{Math.round((state?.zoomFactor ?? 1) * 100)}%</button>
+        <button type="button" disabled={!state || blank} aria-label={t("browserPreferences.zoomIn")} onClick={() => void act({ action: "zoom_in" })}>+</button>
+      </div>
       <div className={styles.browserBookmarkBarItems}>
         {barNodes.length ? barNodes.map((node) => node.type === "bookmark" ? (
           <button key={node.id} type="button" title={`${node.title}\n${node.url}`} onClick={() => void act({ action: "navigate", url: node.url })}>
@@ -657,7 +678,7 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
       </button>
     </div>
     {error ? <div className={styles.browserError} role="alert">{error}</div> : null}
-    <div ref={viewportRef} className={styles.browserViewport} data-busy={state?.loading ? "true" : undefined}>
+    <div ref={viewportRef} className={styles.browserViewport} data-browser-viewport="" data-busy={state?.loading ? "true" : undefined}>
       {blank ? <div className={styles.browserStart} data-onboarding={showOnboarding ? "true" : undefined}>
         <AliIcon name="earth" size={28} />
         <strong>{showOnboarding ? t("browser.welcomeTitle") : t("browser.startTitle")}</strong>

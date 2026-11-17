@@ -37,6 +37,8 @@ node scripts/run-desktop-e2e.mjs --scenario subagents-real --executable 'C:\实�
 
 ## 运行
 
+`node scripts/run-desktop-e2e.mjs --scenario workspace-issue-fixes --step-timeout-ms 180000 --timeout-ms 1200000` 复用右键菜单场景，再验证文件名引用的唯一定位/多候选选择、浏览器设置中的下载位置、实际下载文件与同名避让、立即切换目录、原生网页等宽字体、快捷键和站点缩放、面板拖拽及进程重启后的配置。使用合成历史和两个 loopback 站点；只读 API、磁盘文件和 CDP 字体信息用于核对，功能操作通过 UI 完成。系统“另存为”对话框的手动选择、报告者的 JupyterLab/CodeHub、真实模型和安装包均不计入此场景。
+
 在专用 worktree 安装锁文件依赖，使用 Node.js 22.19.0 或仓库支持的更新版本：
 
 ```powershell
