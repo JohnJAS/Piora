@@ -595,7 +595,7 @@ export const zhCNLocale: LocalePlugin = {
     "settings.conversation.promptSection": "5. 系统提示词与优化",
     "settings.conversation.titleSection": "6. 自动标题",
     "settings.answerLinks": "回答链接打开方式",
-    "settings.answerLinksHelp": "网页链接默认在内置浏览器的新标签页打开。按住 Ctrl、Command 或 Shift 点击可临时使用另一种方式；网页模式下，系统浏览器选项会打开普通浏览器标签页。",
+    "settings.answerLinksHelp": "网页链接默认使用系统浏览器打开，也可选择内置浏览器。按住 Ctrl、Command 或 Shift 点击可临时使用另一种方式；网页模式下，系统浏览器选项会打开普通浏览器标签页。",
     "settings.answerLinksBuiltin": "内置浏览器",
     "settings.answerLinksSystem": "系统浏览器",
     "settings.conversationDescription": "按使用顺序管理消息输入、回复辅助、任务运行、提示词和自动标题。",
