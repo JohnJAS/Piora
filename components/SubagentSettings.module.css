@@ -28,16 +28,18 @@
 .checkbox:checked::before { transform: scale(1); }
 .modelField { display: grid; gap: 7px; min-width: 0; }
 .modelLabel { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 8px; color: var(--text-muted); font-size: var(--text-xs); }
-.modelFormat { color: var(--text-dim); font: 400 10px/1.5 var(--font-mono); }
-.modelInput, .field input { box-sizing: border-box; min-width: 0; min-height: 34px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg); color: var(--text); font: 400 var(--text-xs)/1.5 var(--font-mono); }
-.modelInput { width: 100%; }
-.modelInput::placeholder { color: var(--text-dim); font-family: inherit; }
+.modelSelect, .field input { box-sizing: border-box; min-width: 0; min-height: 34px; padding: 7px 9px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg); color: var(--text); font: 400 var(--text-xs)/1.5 var(--font-mono); }
+.modelSelect { width: 100%; max-width: 100%; font-family: inherit; text-overflow: ellipsis; }
+.modelWarning, .catalogStatus { color: var(--text-muted); font-size: var(--text-xs); line-height: 1.6; overflow-wrap: anywhere; }
+.catalogStatus { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; margin: -4px 0 14px; }
+.retry { color: var(--accent); cursor: pointer; }
+.retry:hover { text-decoration: underline; }
 .fields { display: grid; }
 .field { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 49px; padding: 7px 0; color: var(--text-muted); font-size: var(--text-xs); line-height: 1.5; }
 .field + .field { border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent); }
 .field input { width: 116px; flex: 0 0 116px; text-align: right; font-variant-numeric: tabular-nums; }
-.summary:focus-visible, .modelInput:focus-visible, .field input:focus-visible, .checkbox:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
-.modelInput:disabled, .field input:disabled, .checkbox:disabled { opacity: 0.5; cursor: not-allowed; }
+.summary:focus-visible, .modelSelect:focus-visible, .retry:focus-visible, .field input:focus-visible, .checkbox:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.modelSelect:disabled, .field input:disabled, .checkbox:disabled { opacity: 0.5; cursor: not-allowed; }
 .error { margin: 0; padding: 12px 20px; border-top: 1px solid var(--border); color: var(--status-failed); font-size: var(--text-xs); overflow-wrap: anywhere; }
 @container (max-width: 1040px) {
   .body { grid-template-columns: 1fr; gap: 24px; }

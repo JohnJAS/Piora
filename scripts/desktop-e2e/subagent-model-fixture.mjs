@@ -77,9 +77,9 @@ export async function prepareSubagentModel({ paths, registerCleanup, report }) {
   registerCleanup(() => new Promise((resolve, reject) => { server.close(error => error ? reject(error) : resolve()); server.closeAllConnections(); }));
   const provider = 'desktop-subagent-fixture';
   await writeFile(join(paths.agent, 'models.json'), JSON.stringify({ providers: { [provider]: { api: 'openai-completions', baseUrl: `http://127.0.0.1:${server.address().port}/v1`, apiKey: 'local-test-only',
-    models: [{ id: 'subagent', name: 'Subagent Fixture', reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 4096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] } } }));
+    models: ['subagent', 'subagent-reader'].map(id => ({ id, name: id === 'subagent' ? 'Subagent Fixture' : 'Subagent Reader Fixture', reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 4096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } })) } } }));
   const settingsPath = join(paths.agent, 'settings.json'), settings = JSON.parse(await readFile(settingsPath, 'utf8'));
-  await writeFile(settingsPath, JSON.stringify({ ...settings, enabledModels: [`${provider}/subagent`] }));
+  await writeFile(settingsPath, JSON.stringify({ ...settings, enabledModels: [`${provider}/subagent`, `${provider}/subagent-reader`] }));
   report.fixture = { ...fixture, provider, credentials: 'synthetic-local-only' };
   return fixture;
 }

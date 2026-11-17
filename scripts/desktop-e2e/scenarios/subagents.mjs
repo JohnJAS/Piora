@@ -7,7 +7,7 @@ let fixture;
 export const subagents = {
   id: 'subagents', mode: 'local-model-fixture',
   scope: 'Real Electron UI, SDK child sessions, independent tool execution, cancellation and disk recovery with a deterministic loopback model.',
-  coverage: ['default-off toggle and reload', 'isolated parallel child contexts', 'read-only Explore', 'transcript and usage', 'background notification', 'SendMessage continuation', 'provider failure and timeout', 'parallel Stop and Escape cancellation', 'disable cancellation', 'restart interruption and saved continuation'],
+  coverage: ['default-off toggle and reload', 'profile model selection and inherited model restoration', 'isolated parallel child contexts', 'read-only Explore', 'transcript and usage', 'background notification', 'SendMessage continuation', 'provider failure and timeout', 'parallel Stop and Escape cancellation', 'disable cancellation', 'restart interruption and saved continuation'],
   limits: ['Model responses are scripted; not real-provider semantic acceptance.', 'Parent runtime creation is fixture preparation; task submissions and feature changes use the UI.', 'No other platforms or external accounts are exercised.'],
   async prepare(context) { fixture = await prepareSubagentModel(context); fixture.backgroundDelayMs = 15_000; },
   async run(context) {
@@ -76,11 +76,44 @@ export const subagents = {
         assert.ok(fixture.requests.some(request => request.task.includes('SUBAGENT_E2E_OFF') && !request.tools.includes('Agent')));
         await toggle(true); await reload();
       });
+      const readerModel = 'desktop-subagent-fixture/subagent-reader';
+      const modelPicker = async () => {
+        await page.getByRole('button', { name: /^(Settings|设置)$/ }).click();
+        const dialog = page.getByRole('dialog', { name: /^(Settings|设置)$/ });
+        await dialog.getByTestId('settings-laboratory').click();
+        const card = dialog.locator('[data-settings-id="laboratory.subagents"]');
+        await waitUntil(() => card.getByRole('switch').isEnabled(), 'subagent settings loaded');
+        if (await card.locator('details').getAttribute('open') === null) await card.locator('summary').click();
+        const picker = card.getByRole('combobox', { name: /Explore/ });
+        await waitUntil(async () => await picker.getAttribute('aria-busy') === 'false' && await picker.isEnabled(), 'subagent model catalog');
+        return picker;
+      };
+      const chooseModel = async value => {
+        const picker = await modelPicker();
+        await picker.selectOption(value);
+        await waitUntil(async () => {
+          const data = await page.evaluate(async () => (await fetch('/api/settings/subagents')).json());
+          return data.settings.modelOverrides.Explore === value;
+        }, 'subagent model selection saved');
+        await page.keyboard.press('Escape');
+        await page.getByRole('dialog', { name: /^(Settings|设置)$/ }).waitFor({ state: 'hidden' });
+      };
+      await step('select-profile-model-and-persist-after-reload', async () => {
+        await chooseModel(readerModel); await reload();
+        const picker = await modelPicker();
+        assert.equal(await picker.inputValue(), readerModel);
+        await page.screenshot({ path: join(directory, 'subagent-model-selected.png'), animations: 'disabled' });
+        await page.keyboard.press('Escape');
+        await page.getByRole('dialog', { name: /^(Settings|设置)$/ }).waitFor({ state: 'hidden' });
+      });
       await step('parallel-isolated-read-only-subagents', async () => {
         await send('SUBAGENT_E2E_PARALLEL: PARENT_PRIVATE_CONTEXT must remain in the parent.');
         await waitUntil(async () => (await read()).filter(record => record.status === 'completed').length === 2, 'both child results'); await idle();
         const records = await read(); assert.deepEqual(records.map(record => record.result).sort(), ['ALPHA_ISOLATED_RESULT', 'BETA_ISOLATED_RESULT']);
         assert.ok(records.every(record => record.totalToolUseCount === 1 && record.totalTokens > 0));
+        assert.ok(records.every(record => record.model === readerModel), 'Both Explore sessions use the selected model');
+        assert.ok(fixture.requests.filter(request => request.isChild).every(request => request.model === 'subagent-reader'), 'Selected model reaches the provider request');
+        assert.ok(fixture.requests.filter(request => !request.isChild).every(request => request.model === 'subagent'), 'Primary model remains independent');
         assert.ok(fixture.requests.filter(request => request.isChild).every(request => !request.parentSecretLeaked && !request.tools.some(name => ['write', 'edit', 'bash', 'powershell', 'Agent'].includes(name))));
         const card = page.locator(`[data-subagent-id="${records[0].agentId}"]`).first();
         await card.getByRole('button').first().click(); await card.locator('[data-subagent-role="toolResult"]').waitFor();
@@ -103,6 +136,7 @@ export const subagents = {
         await waitUntil(() => fixture.requests.some(request => request.task.includes('SUBAGENT_E2E_INDEPENDENT')), 'independent parent prompt while child runs');
         assert.ok((await read()).some(record => record.background && record.status === 'running'));
         await waitUntil(async () => (await read()).some(record => record.background && record.status === 'completed'), 'background task completion'); await idle();
+        assert.equal((await read()).find(record => record.background).model, 'desktop-subagent-fixture/subagent', 'Default general-purpose profile inherits the primary model');
         assert.ok(fixture.requests.some(request => request.task.includes('CHILD_BACKGROUND')));
         await page.getByText('BACKGROUND_TASK_FINISHED', { exact: false }).first().waitFor();
       });
@@ -158,6 +192,15 @@ export const subagents = {
         await send(`SUBAGENT_E2E_FOLLOWUP ${id}`);
         await waitUntil(async () => (await read()).some(record => record.agentId === id && record.status === 'completed' && record.totalTokens > tokens), 'saved child context continuation'); await idle();
         assert.equal((await read()).find(record => record.agentId === id).result, 'FOLLOWUP_CONTEXT_RETAINED');
+      });
+      await step('restore-primary-model-for-new-child-sessions', async () => {
+        await chooseModel('');
+        const previous = new Set((await read()).map(record => record.agentId));
+        const requestCount = fixture.requests.length;
+        await send('SUBAGENT_E2E_PARALLEL: Verify the inherited primary model.');
+        await waitUntil(async () => (await read()).filter(record => !previous.has(record.agentId) && record.status === 'completed').length === 2, 'new children with inherited model'); await idle();
+        assert.ok((await read()).filter(record => !previous.has(record.agentId)).every(record => record.model === 'desktop-subagent-fixture/subagent'));
+        assert.ok(fixture.requests.slice(requestCount).filter(request => request.isChild).every(request => request.model === 'subagent'));
       });
       assert.deepEqual(fixture.failures, []);
     } finally { await writeFile(join(directory, 'subagent-evidence.json'), JSON.stringify({ observed, fixture }, null, 2)); }

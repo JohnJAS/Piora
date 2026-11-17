@@ -14,7 +14,7 @@
 
 ## 子代理委派
 
-`node scripts/run-desktop-e2e.mjs --scenario subagents --timeout-ms 1200000 --step-timeout-ms 180000` 使用真实 Electron、SDK 和工具，以及本地脚本模型，覆盖总开关、并行隔离、只读 Explore、轨迹/用量、SendMessage、后台运行中刷新与新输入、完成通知、失败/超时、停止/Esc/禁用和重启后的继续。它不复制用户凭据，也不代表真实服务商语义验收。
+`node scripts/run-desktop-e2e.mjs --scenario subagents --timeout-ms 1200000 --step-timeout-ms 180000` 使用真实 Electron、SDK 和工具，以及本地脚本模型，覆盖总开关、模型选择与刷新恢复、并行隔离、只读 Explore、轨迹/用量、SendMessage、后台运行中刷新与新输入、完成通知、失败/超时、停止/Esc/禁用和重启后的继续。场景配置两款本地模型，核对 Explore 的选择实际进入子代理请求、父模型和通用代理保持原选择，以及切回跟随后新子任务使用父模型。它不复制用户凭据，也不代表真实服务商语义验收。
 
 使用 GitHub 构建的应用时加 `--executable 'C:\实际目录\Piora.exe'`，不启动开发服务器或本地打包。发布流水线先运行 NSIS 安装器，再对安装后的应用执行这一场景。报告的 `application: packaged` 表示运行发布程序；是否执行过安装器须由调用方安装日志证明，从安装包提取负载运行时必须如实注明。
 

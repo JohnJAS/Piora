@@ -105,8 +105,9 @@ export const subagentsReal = {
         await waitUntil(() => toggle.isEnabled(), 'subagent enable save');
         await dialog.locator('[data-settings-id="laboratory.subagents"] summary').click();
         // Accessible label contains the profile identity in either supported locale.
-        const reader = dialog.getByRole('textbox', { name: /Explore/ });
-        await reader.fill(readerModel); await reader.press('Tab');
+        const reader = dialog.getByRole('combobox', { name: /Explore/ });
+        await waitUntil(() => reader.locator('option').evaluateAll((options, model) => options.some(option => option.value === model && !option.disabled), readerModel), 'reader model available');
+        await reader.selectOption(readerModel);
         await waitUntil(async () => {
           const data = await page.evaluate(async () => (await fetch('/api/settings/subagents')).json());
           return data.settings.modelOverrides.Explore === readerModel;
