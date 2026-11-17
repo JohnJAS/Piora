@@ -179,7 +179,12 @@ test('subagent settings preserve profile and limit changes with readable respons
         assert.equal(writes.length, writeCount);
         if (mode === 'partial') assert.equal(await model.locator('option[value="secondary/writer/v2"]').count(), 1, 'Partial discovery keeps usable models selectable');
         catalogMode = 'ready';
+        const refreshed = page.waitForResponse(response => {
+          const url = new URL(response.url());
+          return url.pathname === '/api/models' && url.searchParams.get('refresh') === '1';
+        });
         await status.getByRole('button', { name: /刷新列表|Refresh list/ }).click();
+        await refreshed;
         await catalogReady();
         assert.equal(await model.locator('option[value="secondary/writer/v2"]').count(), 1);
         assert.equal(catalogRequests.at(-1).refresh, '1');
