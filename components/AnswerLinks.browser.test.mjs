@@ -107,7 +107,12 @@ return <I18nProvider><AnswerLinkProvider openLink={navigation.openLink}><main><A
         assert.equal((await opens()).length, count);
       };
       const external = async (link, options = {}) => { const popup = page.waitForEvent("popup"); await link.click(options); const opened = await popup; await opened.waitForLoadState(); assert.equal(new URL(opened.url()).hostname, "docs.example.test"); await opened.close(); };
-      assert.equal(await builtin.getAttribute("aria-pressed"), "true");
+      assert.equal(await system.getAttribute("aria-pressed"), "true");
+      await external(linkA);
+      assert.equal((await opens()).length, 0, "default links must not open built-in tabs");
+      await builtin.click();
+      await page.reload();
+      assert.equal(await builtin.getAttribute("aria-pressed"), "true", "explicit built-in preference survives reload");
       // Queue two real clicks before either lazy panel or native session is ready.
       await linkA.click(); await linkB.click(); await waitCount(2);
       assert.deepEqual((await opens()).map(a => a.url), ["https://docs.example.test/a", "https://docs.example.test/b"]);

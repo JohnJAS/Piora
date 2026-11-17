@@ -595,7 +595,7 @@ export const enLocale: LocalePlugin = {
     "settings.conversation.promptSection": "5. System prompts & optimization",
     "settings.conversation.titleSection": "6. Automatic titles",
     "settings.answerLinks": "Open links in answers",
-    "settings.answerLinksHelp": "Open web links in a new built-in tab by default. Hold Ctrl, Command or Shift while clicking to use the other browser. In web mode, system browser opens a normal browser tab.",
+    "settings.answerLinksHelp": "Open web links in the system browser by default, or choose the built-in browser. Hold Ctrl, Command or Shift while clicking to use the other browser. In web mode, system browser opens a normal browser tab.",
     "settings.answerLinksBuiltin": "Built-in browser",
     "settings.answerLinksSystem": "System browser",
     "settings.conversationDescription": "Manage input, reply assistance, task execution, prompts, and automatic titles in order.",

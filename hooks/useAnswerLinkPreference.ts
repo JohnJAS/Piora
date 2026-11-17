@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 import { ANSWER_LINK_TARGET_STORAGE_KEY, parseAnswerLinkTarget, type AnswerLinkTarget } from "@/lib/answer-links";
 
 const listeners = new Set<() => void>();
-let fallback: AnswerLinkTarget = "builtin";
+let fallback: AnswerLinkTarget = parseAnswerLinkTarget(null);
 let memoryOverride = false;
 const emit = () => listeners.forEach(listener => listener());
 
@@ -31,6 +31,6 @@ function setTarget(target: AnswerLinkTarget) {
 }
 
 export function useAnswerLinkPreference() {
-  const target = useSyncExternalStore(subscribe, snapshot, () => "builtin" as const);
+  const target = useSyncExternalStore(subscribe, snapshot, () => parseAnswerLinkTarget(null));
   return { target, setTarget };
 }
