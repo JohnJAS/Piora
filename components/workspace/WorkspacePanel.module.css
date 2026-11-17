@@ -549,3 +549,5 @@
   backdrop-filter: blur(5px);
 }
 .browserModeContent { flex: 1; min-height: 0; overflow: hidden; }
+.browserZoom { display: flex; align-items: center; flex-shrink: 0; border-right: 1px solid var(--border); padding-right: 4px; margin-right: 4px; }
+.browserZoom button { font-size: var(--text-sm); min-width: 24px; padding: 2px 4px; font-variant-numeric: tabular-nums; }

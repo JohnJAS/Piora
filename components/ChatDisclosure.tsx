@@ -78,9 +78,9 @@ export function ChatDisclosure({ expanded, onExpandedChange, label, icon, descri
 }
 
 /** Shrink the directory before the basename; the tooltip always retains the full path. */
-export function DisclosurePath({ path }: { path: string }) {
+export function DisclosurePath({ path, filePath }: { path: string; filePath?: string }) {
   const separator = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
-  return <span className="chat-disclosure-path" title={path}>
+  return <span className="chat-disclosure-path" title={path} data-chat-file-path={filePath}>
     {separator >= 0 ? <span className="chat-disclosure-directory">{path.slice(0, separator + 1)}</span> : null}
     <span className="chat-disclosure-basename">{path.slice(separator + 1)}</span>
   </span>;

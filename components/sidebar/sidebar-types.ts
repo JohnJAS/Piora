@@ -103,6 +103,8 @@ declare global {
       selectHarmonyRuntimePath?: (kind: "sdk" | "hdc") => Promise<string | null>;
       onMenuAction?: (listener: (action: string) => void) => () => void;
       browser?: {
+        getPreferences?: () => Promise<import("@/desktop/src/browser-preferences").BrowserDownloadPreferences>;
+        setPreferences?: (input: { directory: string; askEachTime: boolean }) => Promise<import("@/desktop/src/browser-preferences").BrowserDownloadPreferences>;
         getState: () => Promise<DesktopBrowserState | null>;
         action: (input: DesktopBrowserAction) => Promise<DesktopBrowserState | null>;
         setViewport: (bounds: { x: number; y: number; width: number; height: number }, visible: boolean) => Promise<boolean>;
@@ -135,6 +137,7 @@ export interface DesktopUpdateState {
 }
 
 export interface DesktopBrowserState {
+  zoomFactor?: number;
   tabCount?: number;
   tabLimit?: number;
   idleTabCount?: number;
@@ -168,7 +171,7 @@ export interface DesktopBrowserAgentActivity {
 export type DesktopBrowserAgentBackend = "desktop" | "playwright";
 
 export interface DesktopBrowserAction {
-  action: "back" | "close_tab" | "close_idle_tabs" | "forward" | "navigate" | "new_tab" | "reload" | "set_session" | "switch_tab" | "configure_login" | "show_agent_tab";
+  action: "back" | "close_tab" | "close_idle_tabs" | "forward" | "navigate" | "new_tab" | "reload" | "set_session" | "switch_tab" | "configure_login" | "show_agent_tab" | "zoom_in" | "zoom_out" | "zoom_reset";
   sessionId?: string;
   tabId?: string;
   url?: string;

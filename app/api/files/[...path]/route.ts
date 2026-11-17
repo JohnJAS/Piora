@@ -540,8 +540,11 @@ export async function GET(
     let stat: fs.Stats;
     try {
       stat = fs.statSync(filePath);
-    } catch {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "ENOENT" || code === "ENOTDIR") return NextResponse.json({ error: "File not found", code: "FILE_NOT_FOUND" }, { status: 404 });
+      if (code === "EACCES" || code === "EPERM") return NextResponse.json({ error: "File access denied", code: "FILE_ACCESS_DENIED" }, { status: 403 });
+      return NextResponse.json({ error: "Unable to inspect file", code: "FILE_STAT_FAILED" }, { status: 500 });
     }
 
     if (!allowedBySessionReference && !isExistingFilePathAllowed(filePath, allowedRoots)) {

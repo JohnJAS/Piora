@@ -1,6 +1,7 @@
 export const RUNNING_STATUS_GENERATION_COUNT = 50;
 export const RUNNING_STATUS_MAX_LABEL_LENGTH = 80;
 export const RUNNING_STATUS_MAX_LABELS = 200;
+export const RUNNING_STATUS_MAX_PROMPT_LENGTH = 2_000;
 
 const zh = [
   "凝思求解中", "梳理思路中", "认真推敲中", "拆解问题中", "整理线索中",
@@ -65,6 +66,7 @@ export function pickRunningStatusLabel(labels: readonly string[], runKey: string
 
 export function runningStatusGenerationPrompt(locale: string): string {
   return `Write exactly 50 unique short running-status messages for Piora, an AI assistant. Language: ${locale === "en" ? "English" : "Simplified Chinese"}.
-Use a calm, thoughtful and friendly tone. These are generic placeholders while a request is running: do not claim that a task has finished, that a check has passed, or that any specific tool is being used. Avoid promises, percentages, emoji, numbering and marketing language.
-Keep each message concise (${locale === "en" ? "3–7 words" : "4–16 Chinese characters"}), with a maximum of 80 Unicode characters. Return only a JSON array of exactly 50 nonempty strings, with no Markdown or explanation.`;
+Follow the user's style, tone, wording and length requirements while keeping the output format, count, maximum length and factual constraints below. When no style is specified, use a calm, thoughtful and friendly tone without emoji or marketing language.
+These are generic placeholders while a request is running: do not claim that a task has finished, that a check has passed, or that any specific tool is being used. Avoid promises, percentages and numbering.
+Keep each message concise (usually ${locale === "en" ? "3–7 words" : "4–16 Chinese characters"} unless the user requests another length), with a maximum of 80 Unicode characters. Return only a JSON array of exactly 50 nonempty strings, with no Markdown or explanation.`;
 }

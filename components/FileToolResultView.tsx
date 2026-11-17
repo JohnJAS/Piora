@@ -26,8 +26,8 @@ function PreviewRows<T>({ items, stateKey, render }: { items: T[]; stateKey: str
 function FileLabel({ path, openPath, onOpenFile, directory = false }: { path: string; openPath?: string; onOpenFile?: (path: string) => void; directory?: boolean }) {
   const content = <><AliIcon name={directory ? "folder" : "file"} size={14} /><DisclosurePath path={path} /></>;
   return onOpenFile && openPath && !directory
-    ? <button type="button" className="file-tool-path" title={path} aria-label={path} onClick={() => onOpenFile(openPath)}>{content}</button>
-    : <span className="file-tool-path" title={path}>{content}</span>;
+    ? <button type="button" className="file-tool-path" title={path} aria-label={path} data-chat-file-path={openPath} onClick={() => onOpenFile(openPath)}>{content}</button>
+    : <span className="file-tool-path" title={path} data-chat-file-path={openPath}>{content}</span>;
 }
 
 function Lines({ lines, stateKey }: { lines: FileResultLine[]; stateKey: string }) {

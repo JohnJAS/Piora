@@ -22,6 +22,7 @@ import {
   type MenuItemConstructorOptions,
 } from "electron";
 import { BrowserCookieStore } from "./browser-cookie-store.js";
+import { BrowserPreferences, browserDownloadPath, browserFontPreferences, browserOrigin } from "./browser-preferences.js";
 import { BrowserPermissions } from "./browser-permissions.js";
 import { getCredentialVault } from "./credential-vault-ipc.js";
 import { BROWSER_LOGIN_STATE_SCRIPT, readBrowserLoginState } from "./browser-login.js";
@@ -46,12 +47,14 @@ export const BROWSER_BOOKMARK_MENU_CHANNEL = "pi:browser-bookmark-menu";
 export const BROWSER_AGENT_ACTIVITY_CHANNEL = "pi:browser-agent-activity";
 export const BROWSER_AGENT_BACKEND_CHANNEL = "pi:browser-agent-backend";
 export const BROWSER_AGENT_BACKEND_GET_CHANNEL = "pi:browser-get-agent-backend";
+export const BROWSER_PREFERENCES_CHANNEL = "pi:browser-preferences";
 
 export const BROWSER_PARTITION = "persist:piora-browser";
 const MAX_TABS = 20;
 const MANUAL_BROWSER_SESSION_ID = "__piora_browser_manual__";
 
 export interface DesktopBrowserState {
+  zoomFactor?: number;
   tabCount?: number;
   tabLimit?: number;
   idleTabCount?: number;
@@ -101,7 +104,7 @@ export interface ChromeBookmarkImportResult {
 }
 
 export interface DesktopBrowserAction {
-  action: "back" | "close_tab" | "close_idle_tabs" | "forward" | "navigate" | "new_tab" | "reload" | "set_session" | "switch_tab" | "configure_login" | "show_agent_tab";
+  action: "back" | "close_tab" | "close_idle_tabs" | "forward" | "navigate" | "new_tab" | "reload" | "set_session" | "switch_tab" | "configure_login" | "show_agent_tab" | "zoom_in" | "zoom_out" | "zoom_reset";
   sessionId?: string;
   tabId?: string;
   url?: string;
@@ -217,11 +220,15 @@ function validBounds(value: unknown, window: BrowserWindow): Rectangle | null {
   if (![candidate.x, candidate.y, candidate.width, candidate.height].every(Number.isFinite)) return null;
   if (candidate.width! <= 0 || candidate.height! <= 0) return null;
   const content = window.getContentBounds();
-  const x = Math.max(0, Math.round(candidate.x!));
-  const y = Math.max(0, Math.round(candidate.y!));
-  const width = Math.max(1, Math.min(Math.round(candidate.width!), content.width - x));
-  const height = Math.max(1, Math.min(Math.round(candidate.height!), content.height - y));
-  if (x >= content.width || y >= content.height) return null;
+  // DOM rectangles use CSS pixels; native views use device-independent pixels.
+  const zoom = window.webContents.getZoomFactor();
+  if (!Number.isFinite(zoom) || zoom <= 0) return null;
+  const x = Math.max(0, Math.ceil(candidate.x! * zoom));
+  const y = Math.max(0, Math.ceil(candidate.y! * zoom));
+  const right = Math.min(content.width, Math.floor((candidate.x! + candidate.width!) * zoom));
+  const bottom = Math.min(content.height, Math.floor((candidate.y! + candidate.height!) * zoom));
+  const width = right - x, height = bottom - y;
+  if (width <= 0 || height <= 0) return null;
   return { x, y, width, height };
 }
 
@@ -306,9 +313,25 @@ export class DesktopBrowserManager {
   private reportedAgentBackend: "desktop" | "playwright" | null = null;
   private storageFlushTimer: NodeJS.Timeout | undefined;
   private storageFlushChain: Promise<void> = Promise.resolve();
+  private readonly preferences: BrowserPreferences;
+  private defaultDownloadDirectory = "";
+  private readonly downloadPaths = new Set<string>();
   private readonly handleCookieChanged = (): void => this.scheduleStorageFlush();
   private readonly handleDownload = (_event: Event, item: DownloadItem, contents: WebContents): void => {
     if (!this.tabs.some((tab) => tab.view.webContents === contents)) return;
+    const preferences = this.preferences.downloads(this.defaultDownloadDirectory);
+    let reserved: string | undefined;
+    try {
+      mkdirSync(preferences.effectiveDirectory, { recursive: true });
+      const path = browserDownloadPath(preferences.effectiveDirectory, item.getFilename(), this.downloadPaths);
+      if (preferences.askEachTime) item.setSaveDialogOptions({ defaultPath: path });
+      else { reserved = path; this.downloadPaths.add(path); item.setSavePath(path); }
+    } catch (error) {
+      _event.preventDefault();
+      this.log.warn("Unable to save browser download in the selected directory", error);
+      this.sendDownload({ filename: item.getFilename(), path: "", percent: 0, state: "interrupted" });
+      return;
+    }
     const send = (state: DesktopBrowserDownload["state"]): void => {
       const total = item.getTotalBytes();
       const percent = total > 0 ? Math.round((item.getReceivedBytes() / total) * 100) : 0;
@@ -321,7 +344,7 @@ export class DesktopBrowserManager {
     };
     send("progressing");
     item.on("updated", (_downloadEvent, state) => send(state));
-    item.once("done", (_downloadEvent, state) => send(state));
+    item.once("done", (_downloadEvent, state) => { if (reserved) this.downloadPaths.delete(reserved); send(state); });
   };
 
   constructor(
@@ -331,6 +354,7 @@ export class DesktopBrowserManager {
     private readonly startup: { agentDirectory?: () => string | undefined; credentialVault?: typeof getCredentialVault } = {},
   ) {
     this.browserSession = session.fromPartition(BROWSER_PARTITION, { cache: true });
+    this.preferences = new BrowserPreferences(join(app.getPath("userData"), "browser-preferences.json"));
     this.cookieStore = new BrowserCookieStore(join(app.getPath("userData"), "browser-session-cookies.enc"), this.browserSession.cookies, safeStorage);
     this.storageReady = this.cookieStore.restore().catch(() => this.log.warn("Unable to restore browser session cookies"));
     this.configureSession();
@@ -424,7 +448,8 @@ export class DesktopBrowserManager {
   private configureSession(): void {
     this.browserSession.allowNTLMCredentialsForDomains(this.readLoginHosts().join(","));
     try {
-      this.browserSession.setDownloadPath(app.getPath("downloads"));
+      this.defaultDownloadDirectory = app.getPath("downloads");
+      this.browserSession.setDownloadPath(this.defaultDownloadDirectory);
     } catch (error) {
       // Headless Windows profiles (including hosted release runners) may not
       // expose a shell Downloads folder. Browser setup is optional startup
@@ -432,12 +457,18 @@ export class DesktopBrowserManager {
       // the entire desktop application fail before its renderer can mount.
       try {
         const fallbackDirectory = join(app.getPath("userData"), "Downloads");
+        this.defaultDownloadDirectory = fallbackDirectory;
         mkdirSync(fallbackDirectory, { recursive: true });
         this.browserSession.setDownloadPath(fallbackDirectory);
         this.log.warn("System Downloads folder is unavailable; using Piora Downloads", error);
       } catch (fallbackError) {
         this.log.warn("Unable to configure the browser download directory", fallbackError);
       }
+    }
+    const customDirectory = this.preferences.downloads(this.defaultDownloadDirectory).directory;
+    if (customDirectory) {
+      try { mkdirSync(customDirectory, { recursive: true }); this.browserSession.setDownloadPath(customDirectory); }
+      catch (error) { this.log.warn("Custom browser download directory is unavailable", error); }
     }
     this.browserPermissions = new BrowserPermissions(join(app.getPath("userData"), "browser-permissions.json"), {
       page: contents => {
@@ -464,6 +495,11 @@ export class DesktopBrowserManager {
 
   private registerIpc(): void {
     this.removeIpc();
+    ipcMain.handle(BROWSER_PREFERENCES_CHANNEL, (event, input: unknown) => {
+      if (!this.isTrustedSender(event)) throw new Error("Untrusted browser preferences request");
+      if (input === undefined) return this.preferences.downloads(this.defaultDownloadDirectory);
+      return this.preferences.updateDownloads(input, this.defaultDownloadDirectory, directory => this.browserSession.setDownloadPath(directory));
+    });
     ipcMain.handle(BROWSER_GET_STATE_CHANNEL, (event): DesktopBrowserState | null => {
       if (!this.isTrustedSender(event)) return null;
       return this.getState();
@@ -508,6 +544,7 @@ export class DesktopBrowserManager {
   }
 
   private removeIpc(): void {
+    ipcMain.removeHandler(BROWSER_PREFERENCES_CHANNEL);
     ipcMain.removeHandler(BROWSER_GET_STATE_CHANNEL);
     ipcMain.removeHandler(BROWSER_VIEWPORT_CHANNEL);
     ipcMain.removeHandler(BROWSER_ACTION_CHANNEL);
@@ -606,6 +643,13 @@ export class DesktopBrowserManager {
       try {
         if (new URL(url).origin === new URL(event.senderFrame.url).origin) event.returnValue = { allowed: this.credentialVault().allowedUrl(url) };
       } catch { /* Invalid renderer input stays denied. */ }
+    });
+    contents.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown" || !(input.control || input.meta) || input.alt) return;
+      const key = input.key.toLowerCase();
+      if (!["+", "=", "-", "0"].includes(key)) return;
+      event.preventDefault();
+      this.changeZoom(tab, key === "0" ? "zoom_reset" : key === "-" ? "zoom_out" : "zoom_in");
     });
     contents.on("ipc-message", (event, channel, value: unknown) => {
       if (event.senderFrame !== contents.mainFrame) return;
@@ -713,6 +757,7 @@ export class DesktopBrowserManager {
       void this.autoFillCredential(tab).catch(() => this.setLoginNotice(tab, "failed"));
     });
     contents.on("did-navigate", () => {
+      contents.setZoomLevel?.(this.preferences.zoomLevel(contents.getURL()));
       tab.documentEpoch = (tab.documentEpoch ?? 0) + 1;
       delete tab.automaticLoginKey;
       if (tab.releaseAfterNavigation) {
@@ -802,6 +847,7 @@ export class DesktopBrowserManager {
       })),
       title: active ? this.tabTitle(active) : "",
       url,
+      zoomFactor: contents?.getZoomFactor?.() ?? 1,
       ...(agent ? {
         agentTabId: agent.tabId,
         agentOperating: agent.operating,
@@ -934,6 +980,7 @@ export class DesktopBrowserManager {
       return;
     }
     if (active.unloaded) await this.restoreTab(active.id);
+    if (input.action === "zoom_in" || input.action === "zoom_out" || input.action === "zoom_reset") { this.changeZoom(active, input.action); return; }
     if (input.action === "configure_login") { this.showLoginMenu(active); return; }
     if (["navigate", "back", "forward", "reload"].includes(input.action)) this.abandonLogin(active);
     if (input.action === "navigate" && typeof input.url === "string") {
@@ -953,6 +1000,20 @@ export class DesktopBrowserManager {
     } else if (input.action === "new_tab") {
       this.noteTabUsed(this.createTab(typeof input.url === "string" ? input.url : "about:blank", true, this.displayedSessionId));
     }
+  }
+
+  private changeZoom(tab: BrowserTab, action: "zoom_in" | "zoom_out" | "zoom_reset"): void {
+    const contents = this.liveContents(tab);
+    if (!contents || !browserOrigin(contents.getURL())) return;
+    try {
+      const current = this.preferences.zoomLevel(contents.getURL());
+      const level = this.preferences.setZoomLevel(contents.getURL(), action === "zoom_reset" ? 0 : current + (action === "zoom_in" ? 0.5 : -0.5));
+      for (const candidate of this.tabs) {
+        const target = this.liveContents(candidate);
+        if (target && browserOrigin(target.getURL()) === browserOrigin(contents.getURL())) target.setZoomLevel(level);
+      }
+      this.sendState();
+    } catch (error) { this.log.warn("Unable to persist browser zoom", error); }
   }
 
   private readLoginHosts(): string[] {
@@ -1031,6 +1092,7 @@ export class DesktopBrowserManager {
       ...(popupOptions?.webContents ? { webContents: popupOptions.webContents } : {}),
       webPreferences: {
         ...popupOptions?.webPreferences,
+        ...browserFontPreferences(),
         partition: BROWSER_PARTITION,
         preload: join(__dirname, "browser-login-preload.js"),
         sandbox: true,

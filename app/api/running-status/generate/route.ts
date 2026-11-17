@@ -4,7 +4,7 @@ import { resolveDefaultModelPreference } from "@/lib/model-policy";
 import { readDefaultModel } from "@/lib/default-model-store";
 import { resolveVisibleModels, selectInitialModelScope } from "@/lib/model-scope";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
-import { parseGeneratedRunningStatusLabels, runningStatusGenerationPrompt } from "@/lib/running-status-labels";
+import { parseGeneratedRunningStatusLabels, runningStatusGenerationPrompt, RUNNING_STATUS_MAX_PROMPT_LENGTH } from "@/lib/running-status-labels";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +14,10 @@ export async function POST(request: Request) {
   try {
     const body = await parseJsonWithinLimit(request, 8 * 1024);
     if (!body || typeof body !== "object" || Array.isArray(body)) return Response.json({ error: "invalid_request" }, { status: 400 });
-    const input = body as { locale?: unknown; cwd?: unknown };
+    const input = body as { locale?: unknown; cwd?: unknown; prompt?: unknown };
     if (input.cwd !== undefined && typeof input.cwd !== "string") return Response.json({ error: "invalid_request" }, { status: 400 });
+    if (input.prompt !== undefined && (typeof input.prompt !== "string" || input.prompt.length > RUNNING_STATUS_MAX_PROMPT_LENGTH)) return Response.json({ error: "invalid_request" }, { status: 400 });
+    const prompt = typeof input.prompt === "string" ? input.prompt.trim() : "";
     const cwd = await resolveModelRequestCwd(input.cwd as string | undefined);
     const { modelRuntime, settingsManager } = await createTrustedModelServices(cwd, "system");
     const scope = await resolveVisibleModels(modelRuntime, settingsManager.getEnabledModels());
@@ -26,7 +28,7 @@ export async function POST(request: Request) {
     signal.throwIfAborted();
     const message = await modelRuntime.completeSimple(model, {
       systemPrompt: runningStatusGenerationPrompt(input.locale === "en" ? "en" : "zh-CN"),
-      messages: [{ role: "user", content: "Generate the 50 status messages now.", timestamp: Date.now() }],
+      messages: [{ role: "user", content: prompt ? `Generate the 50 status messages using these style and writing requirements:\n\n${prompt}` : "Generate the 50 status messages now.", timestamp: Date.now() }],
     }, { maxTokens: 4_096, maxRetries: 1, timeoutMs: 60_000, cacheRetention: "none", signal });
     signal.throwIfAborted();
     if (message.stopReason === "error" || message.stopReason === "aborted") return Response.json({ error: "generation_failed" }, { status: 502 });

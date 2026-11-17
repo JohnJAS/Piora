@@ -2,7 +2,7 @@ export type AnswerLinkTarget = "builtin" | "system";
 export const ANSWER_LINK_TARGET_STORAGE_KEY = "piora-answer-link-target:v1";
 
 export function parseAnswerLinkTarget(value: string | null): AnswerLinkTarget {
-  return value === "system" ? "system" : "builtin";
+  return value === "builtin" ? "builtin" : "system";
 }
 
 /** Only ordinary web URLs enter the browser panel; files retain their own handler. */
