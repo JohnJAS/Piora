@@ -28,31 +28,64 @@ export function SubagentSettings({ cwd }: { cwd?: string }) {
       setSettings(data.settings);
     } catch (error) { setError(String(error)); } finally { setSaving(false); }
   }
-  return <section className={styles.sectionCard} data-settings-id="laboratory.subagents">
-    <div className={styles.conversationRow}>
-      <span className={styles.conversationCopy}><strong className={styles.rowTitle}>{t("subagent.title")}</strong>
+  return <section className={`${styles.sectionCard} ${css.card}`} data-settings-id="laboratory.subagents">
+    <div className={css.header}>
+      <span className={css.headerCopy}><strong className={styles.rowTitle}>{t("subagent.title")}</strong>
         <span id={descriptionId} className={styles.rowDescription}>{t("subagent.description")}</span></span>
       <button type="button" role="switch" className={styles.switch} data-testid="subagent-toggle"
         aria-checked={settings?.enabled ?? false} aria-label={t("subagent.title")} aria-describedby={descriptionId}
         disabled={!settings || saving} onClick={() => { if (settings) void save({ ...settings, enabled: !settings.enabled }); }}><span aria-hidden="true" /></button>
     </div>
     {settings && <details className={css.options}>
-      <summary>{t("subagent.options")}</summary>
-      <div className={css.fields}>
-        {(["maxConcurrency", "timeoutSeconds", "maxTokens", "maxResultChars"] as const).map(key => <label key={key}>
-          <span>{t(`subagent.${key}`)}</span><input type="number" min={1} aria-label={t(`subagent.${key}`)} disabled={saving}
-            defaultValue={settings[key]} key={`${key}:${settings[key]}`} onBlur={event => { const value = Number(event.target.value); if (value !== settings[key]) void save({ ...settings, [key]: value }); }} />
-        </label>)}
+      <summary className={css.summary}>
+        <span>{t("subagent.options")}</span>
+        <span className={css.summaryHint}>{t("subagent.optionsHint")}</span>
+        <span className={css.chevron} aria-hidden="true" />
+      </summary>
+      <div className={css.body}>
+        <section className={css.group} aria-labelledby={`${descriptionId}-profiles`}>
+          <h3 id={`${descriptionId}-profiles`} className={css.groupTitle}>{t("subagent.profilesTitle")}</h3>
+          <p className={css.hint}>{t("subagent.profilesHint")}</p>
+          <div className={css.profiles}>
+            {profiles.map(profile => {
+              const builtin = profile.source === "built-in" && (profile.name === "general-purpose" || profile.name === "Explore");
+              const title = builtin ? t(profile.name === "Explore" ? "subagent.exploreTitle" : "subagent.generalTitle") : profile.name;
+              const description = builtin ? t(profile.name === "Explore" ? "subagent.exploreDescription" : "subagent.generalDescription") : profile.description;
+              const enabled = !settings.disabledProfiles.includes(profile.name);
+              return <div className={css.profile} key={profile.name} data-subagent-profile={profile.name} data-enabled={enabled}>
+                <label className={css.profileIdentity}>
+                  <input className={css.checkbox} type="checkbox" checked={enabled} disabled={saving}
+                    aria-label={t("subagent.enableProfile", { name: profile.name })}
+                    onChange={event => void save({ ...settings, disabledProfiles: event.target.checked ? settings.disabledProfiles.filter(name => name !== profile.name) : [...settings.disabledProfiles, profile.name] })} />
+                  <span className={css.profileCopy}>
+                    <span className={css.profileHeading}><strong>{title}</strong>{builtin && <span className={css.profileCode}>{profile.name}</span>}</span>
+                    <span className={css.profileDescription}>{description}</span>
+                  </span>
+                </label>
+                <label className={css.modelField}>
+                  <span className={css.modelLabel}><span>{t("subagent.profileModel")}</span><span className={css.modelFormat}>provider/modelId</span></span>
+                  <input className={css.modelInput} aria-label={t("subagent.model", { name: profile.name })} placeholder={t("subagent.inheritModel")} disabled={saving}
+                    defaultValue={settings.modelOverrides[profile.name] ?? ""} key={`${profile.name}:${settings.modelOverrides[profile.name] ?? ""}`}
+                    onBlur={event => { const value = event.target.value.trim(); if (value !== (settings.modelOverrides[profile.name] ?? "")) void save({ ...settings, modelOverrides: { ...settings.modelOverrides, [profile.name]: value } }); }} />
+                </label>
+              </div>;
+            })}
+          </div>
+          <p className={css.note}>{t("subagent.profileHelp")}</p>
+        </section>
+        <section className={css.group} aria-labelledby={`${descriptionId}-limits`}>
+          <h3 id={`${descriptionId}-limits`} className={css.groupTitle}>{t("subagent.limitsTitle")}</h3>
+          <p className={css.hint}>{t("subagent.limitsHint")}</p>
+          <div className={css.fields}>
+            {(["maxConcurrency", "timeoutSeconds", "maxTokens", "maxResultChars"] as const).map(key => <label className={css.field} key={key}>
+              <span>{t(`subagent.${key}`)}</span><input type="number" min={1} aria-label={t(`subagent.${key}`)} disabled={saving}
+                defaultValue={settings[key]} key={`${key}:${settings[key]}`} onBlur={event => { const value = Number(event.target.value); if (value !== settings[key]) void save({ ...settings, [key]: value }); }} />
+            </label>)}
+          </div>
+          <p className={css.note}>{t("subagent.budgetHelp")}</p>
+        </section>
       </div>
-      <p className={styles.localNote}>{t("subagent.budgetHelp")}</p>
-      {profiles.map(profile => <div className={css.profile} key={profile.name}>
-        <label><input type="checkbox" checked={!settings.disabledProfiles.includes(profile.name)} disabled={saving} onChange={event => void save({ ...settings, disabledProfiles: event.target.checked ? settings.disabledProfiles.filter(name => name !== profile.name) : [...settings.disabledProfiles, profile.name] })} /> {profile.name}</label>
-        <input aria-label={t("subagent.model", { name: profile.name })} placeholder={t("subagent.inheritModel")} disabled={saving}
-          defaultValue={settings.modelOverrides[profile.name] ?? ""} key={`${profile.name}:${settings.modelOverrides[profile.name] ?? ""}`}
-          onBlur={event => { const value = event.target.value.trim(); if (value !== (settings.modelOverrides[profile.name] ?? "")) void save({ ...settings, modelOverrides: { ...settings.modelOverrides, [profile.name]: value } }); }} />
-      </div>)}
-      <p className={styles.localNote}>{t("subagent.profileHelp")}</p>
     </details>}
-    {error && <p role="alert">{error}</p>}
+    {error && <p className={css.error} role="alert">{error}</p>}
   </section>;
 }
