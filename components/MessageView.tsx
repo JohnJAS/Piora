@@ -52,6 +52,7 @@ import { MessageImage, MessageImageViewer } from "./MessageImage";
 import { BrowserUserWaitCard } from "./BrowserUserWaitCard";
 import { CommandExecutionCard } from "./CommandExecutionView";
 import { ChatDisclosure, DisclosureChevron, DisclosurePath } from "./ChatDisclosure";
+import { ChatContentContextMenu } from "./ChatContentContextMenu";
 
 const DiffView = dynamic(
   () => import("./DiffView").then((module) => module.DiffView),
@@ -215,10 +216,10 @@ const HistoryVersionContext = createContext<string | undefined>(undefined);
 const ToolRunActiveContext = createContext(false);
 export const MessageView = memo(function MessageView(props: Props) {
   const history = props.mode === "history";
-  return <HistoryModeContext.Provider value={history}><ToolRunActiveContext.Provider value={!history && (props.toolRunActive ?? props.isStreaming ?? false)}><HistoryVersionContext.Provider value={props.historyVersion}><MessageContent {...props}
+  return <HistoryModeContext.Provider value={history}><ToolRunActiveContext.Provider value={!history && (props.toolRunActive ?? props.isStreaming ?? false)}><HistoryVersionContext.Provider value={props.historyVersion}><ChatContentContextMenu cwd={props.cwd}><MessageContent {...props}
     onFork={history ? undefined : props.onFork} onNavigate={history ? undefined : props.onNavigate}
     onEditFailed={history ? undefined : props.onEditFailed} onRetry={history ? undefined : props.onRetry} onEditContent={history ? undefined : props.onEditContent}
-    onOpenAutomation={history ? undefined : props.onOpenAutomation} /></HistoryVersionContext.Provider></ToolRunActiveContext.Provider></HistoryModeContext.Provider>;
+    onOpenAutomation={history ? undefined : props.onOpenAutomation} /></ChatContentContextMenu></HistoryVersionContext.Provider></ToolRunActiveContext.Provider></HistoryModeContext.Provider>;
 });
 
 const MessageContent = memo(function MessageContent({ mode, messageActions, message, isStreaming, intermediate, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onEditFailed, onRetry, retryPrompt, retryDisabled, showTimestamp, prevTimestamp, taskTiming, sessionId, onOpenAutomation, onOpenCommandExecution }: Props) {
@@ -1023,7 +1024,7 @@ function ToolCallBlock({ block, preparing, result, duration, cwd, sessionId, onO
     <ChatDisclosure className="tool-call-card" triggerClassName="tool-call-toggle"
       expanded={expanded} onExpandedChange={setExpanded} icon={summary.icon as AliIconName} label={summary.title}
       description={summary.subject ? <>
-        {summary.subjectIsPath ? <DisclosurePath path={summary.subject} /> : <span title={summary.subject}>{summary.subject}</span>}
+        {summary.subjectIsPath ? <DisclosurePath path={summary.subject} filePath={summary.subject} /> : <span title={summary.subject}>{summary.subject}</span>}
         {summary.detail ? <span className="tool-call-detail" title={summary.detail}>{summary.detail}</span> : null}
       </> : summary.detail ? <span title={summary.detail}>{summary.detail}</span> : undefined}
       metadata={<>
@@ -1091,7 +1092,7 @@ function FileChangeBlock({
   return (
     <ChatDisclosure className={`file-change-card ${statusClass}`} data-file-change-path={change.path}
       expanded={expanded} onExpandedChange={onExpandedChange} icon={icon} label={t(titleKey)}
-      triggerClassName="file-change-toggle tool-call-toggle" description={<DisclosurePath path={change.path} />}
+      triggerClassName="file-change-toggle tool-call-toggle" description={<DisclosurePath path={change.path} filePath={change.path} />}
       metadata={<>
         {change.status !== "completed" ? <span className={`chat-disclosure-status is-${change.status}`}>
           {t(change.status === "running" ? "command.status.running" : "command.status.failed")}
@@ -1104,7 +1105,7 @@ function FileChangeBlock({
         ) : null}
         {duration !== undefined ? <span>{duration}s</span> : null}
       </>}
-      actions={onOpenFile ? <button type="button" className="chat-disclosure-action" title={t("diff.openFile")}
+      actions={onOpenFile ? <button type="button" className="chat-disclosure-action" title={t("diff.openFile")} data-chat-file-path={change.path}
         aria-label={t("diff.openFile")} onClick={() => onOpenFile(change.path)}><AliIcon name="external-link" size={14} /></button> : null}>
       {change.patch ? (
         <DiffView className="file-change-diff" patch={change.patch} filePath={change.path} mode="unified" showFileHeader={false} />

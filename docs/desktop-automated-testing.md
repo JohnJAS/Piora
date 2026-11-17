@@ -29,6 +29,12 @@ node scripts/run-desktop-e2e.mjs --scenario subagents-real --executable 'C:\实�
 
 未指定时默认读取 `~/.pi/agent`，主模型为 `deepseek/deepseek-flash`，读取模型为 `new-provider/qwen3.8-max`。桌面设置过自定义 Agent 目录时应使用该目录；HTTP 200 仅证明请求到达，完整验收仍核对实际子工具、程序结果、轨迹隔离、用量与继续上下文。认证失败、模型执行不符或中断均保留为失败，不使用脚本模型替代。
 
+## 对话内容右键菜单
+
+`node scripts/run-desktop-e2e.mjs --scenario chat-context-menu --step-timeout-ms 180000` 在隔离目录准备合成会话、中文文件名和带空格的目录，先读取会话接口完成开发冷编译，通过 UI 选择并刷新测试会话，再操作右键菜单，核对系统剪贴板中的路径和网页地址、失效文件提示、键盘操作及刷新后恢复。Windows 上还通过 Shell 的只读窗口枚举核对资源管理器的目录和选中文件，结束时只关闭本轮新建且仍显示测试目录的资源管理器窗口，并恢复运行前的剪贴板文本。
+
+`chat-context-menu-evidence.json` 保存核对结果，截图与启动失败、复测记录沿用公共运行器。合成历史不代表真实模型生成，开发运行不代表发布安装包验收；无桌面桥的复制与降级、工具文件项、嵌套链接和窄视口由 `lib/chat-context-menu-browser.test.mjs` 的浏览器夹具覆盖。
+
 ## 运行
 
 在专用 worktree 安装锁文件依赖，使用 Node.js 22.19.0 或仓库支持的更新版本：

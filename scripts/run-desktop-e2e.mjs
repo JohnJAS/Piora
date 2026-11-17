@@ -14,8 +14,9 @@ import { planGoal } from './desktop-e2e/scenarios/plan-goal.mjs';
 import { usageDashboard } from './desktop-e2e/scenarios/usage-dashboard.mjs';
 import { subagents } from './desktop-e2e/scenarios/subagents.mjs';
 import { subagentsReal } from './desktop-e2e/scenarios/subagents-real.mjs';
+import { chatContextMenu } from './desktop-e2e/scenarios/chat-context-menu.mjs';
 
-const scenarios = [companionScaling, settingsTheme, stopShell, stopBash, desktopExtensions, browserPersistence, browserLogin, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard, subagents, subagentsReal];
+const scenarios = [companionScaling, settingsTheme, stopShell, stopBash, desktopExtensions, browserPersistence, browserLogin, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard, subagents, subagentsReal, chatContextMenu];
 
 export function parseOptions(args) {
   const options = { scenario: 'settings-theme' };

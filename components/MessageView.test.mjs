@@ -9,7 +9,10 @@ import { createJiti } from "jiti";
 const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
   tsconfigPaths: true,
-  alias: { "./SubagentTaskCard.module.css": fileURLToPath(new URL("../lib/css-module-test-stub.mjs", import.meta.url)) },
+  alias: {
+    "./SubagentTaskCard.module.css": fileURLToPath(new URL("../lib/css-module-test-stub.mjs", import.meta.url)),
+    "./ChatContentContextMenu.module.css": fileURLToPath(new URL("../lib/css-module-test-stub.mjs", import.meta.url)),
+  },
 });
 const { MessageView, getAutomationToolCardDetails, getUserMessagePreview } = await jiti.import("./MessageView.tsx");
 // Import through the same tsconfig alias used by the component so Jiti reuses
