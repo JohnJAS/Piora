@@ -1,6 +1,6 @@
 // Trusted application code only. Probe/fill return booleans; capture is consumed by
 // the desktop main process and is never exposed as an agent tool result.
-export function credentialFillScript(url: string, username: string, password: string, probe = false, submit = false, capture = false): string {
+export function credentialFillScript(url: string, username: string, password: string, probe = false, submit = false, capture = false, allowedHttpOrigins: string[] = []): string {
   return `(() => {
     const target = ${JSON.stringify(url)};
     const documents = [];
@@ -12,7 +12,8 @@ export function credentialFillScript(url: string, username: string, password: st
       } catch { /* Cross-origin frames are not credential targets. */ }
     };
     visit(window);
-    const doc = documents.find(doc => doc.location.protocol === 'https:' && doc.location.origin + doc.location.pathname === target);
+    const allowedHttpOrigins = ${JSON.stringify(allowedHttpOrigins)};
+    const doc = documents.find(doc => (doc.location.protocol === 'https:' || (doc.location.protocol === 'http:' && allowedHttpOrigins.includes(doc.location.origin))) && doc.location.origin + doc.location.pathname === target);
     if (!doc) return false;
     const win = doc.defaultView;
     const visible = e => !e.disabled && !e.readOnly && e.getClientRects().length && win.getComputedStyle(e).visibility === 'visible';

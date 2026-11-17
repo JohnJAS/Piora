@@ -106,21 +106,22 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     await page.locator('[data-settings-id="general.runtimeLog"]').getByText('F:/fixture/logs/runtime.log', { exact: true }).waitFor();
     await page.getByRole('heading', { name: '网页登录账户', exact: true }).waitFor();
     assert.equal(await page.getByLabel('自动保存网页登录账户并自动登录', { exact: true }).isChecked(), true);
-    await page.getByText('https://login.example/signin', { exact: true }).waitFor();
+    await page.getByText('https://login.example/signin · ••••••', { exact: true }).waitFor();
     await page.getByLabel('允许自动登录', { exact: true }).uncheck();
     assert.equal(await page.getByLabel('允许自动登录', { exact: true }).isChecked(), false);
     await page.getByRole('button', { name: '删除已记住账户', exact: true }).click();
-    await page.getByText('还没有记住的网站账户。成功登录支持的网站后会自动保存。', { exact: true }).waitFor();
+    await page.getByText('还没有可见账户。可登录支持的网站自动保存，或解锁后手动添加。', { exact: true }).waitFor();
     await page.getByLabel('自动保存网页登录账户并自动登录', { exact: true }).uncheck();
     assert.ok(await page.evaluate(() => window.vaultCalls.some(input => input.action === 'remember-configure' && input.enabled === false)));
-    assert.equal(await page.getByRole('button', { name: '创建凭据库', exact: true }).count(), 0, 'automatic account management does not restore the removed manual vault editor');
+    await page.getByText('凭据库（本地加密）', { exact: true }).click();
+    assert.equal(await page.getByRole('button', { name: '创建凭据库', exact: true }).isVisible(), true, 'the encrypted credential manager is reachable');
     for (const text of ['完整备份与迁移', '界面偏好（兼容旧版 JSON）', '本地凭据库', '组织使用统计']) {
       assert.equal(await page.getByText(text, { exact: true }).count(), 0, `${text} is removed from Data & Diagnostics`);
     }
     assert.equal(requests.some(pathname => /analytics|vault|backup/.test(pathname)), false, 'opening the remaining page does not initialize removed cards');
     await page.getByRole('heading', { name: '数据与诊断', exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(repo, '.verification/chat-settings/data-diagnostics.png') });
-    for (const query of ['完整备份', '界面偏好', '本地凭据库', '组织使用统计']) {
+    for (const query of ['完整备份', '界面偏好', '组织使用统计']) {
       await page.getByPlaceholder('搜索设置…').fill(query);
       await page.getByRole('main').getByText('没有匹配的设置项', { exact: true }).waitFor();
     }
@@ -128,6 +129,10 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     await page.getByRole('button', { name: /网页登录账户/ }).click();
     await page.locator('[data-settings-id="data.websiteAccounts"][data-settings-highlighted="true"]').waitFor();
     assert.equal(await page.getByLabel('自动保存网页登录账户并自动登录', { exact: true }).isChecked(), false, 'the saved disabled preference survives remounting the settings page');
+    await page.getByPlaceholder('搜索设置…').fill('凭据库');
+    await page.getByRole('button', { name: /凭据库（本地加密）/ }).click();
+    await page.locator('[data-settings-id="data.credentialVault"][data-settings-highlighted="true"]').waitFor();
+    assert.equal(await page.getByRole('button', { name: '创建凭据库', exact: true }).isVisible(), true, 'search opens the collapsed management section');
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

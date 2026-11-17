@@ -752,6 +752,7 @@ export class BrowserAgentControl {
     const ready = observation.samples >= 2 && (completed || this.host.now() - observation.candidateSince >= LOGIN_VERIFICATION_DELAY_MS);
     if (ready && tab.vaultProtected && this.host.finishLogin) {
       const replacement = this.host.finishLogin(tab.id, after?.authenticated === true);
+      if (this.tab(replacement)?.vaultProtected) return { completed: false };
       this.rememberAgentTab(request.sessionId, replacement);
       observation.tabId = replacement;
     }

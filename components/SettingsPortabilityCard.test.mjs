@@ -9,7 +9,7 @@ const shell = fs.readFileSync(new URL("./AppShell.tsx", import.meta.url), "utf8"
 test("Data & Diagnostics exposes website accounts, data location and logs without legacy cards", () => {
   assert.match(settings, /activeKey === "data"/);
   assert.doesNotMatch(settings, /SettingsPortabilityCard|ApplicationBackupCard|OrganizationAnalyticsSettings|general\.portability/);
-  assert.match(settings, /<CredentialVaultSettings rememberedOnly\s*\/>/);
+  assert.match(settings, /<CredentialVaultSettings\s*\/>/);
   assert.match(settings, /getAgentDataDirectory/);
   assert.match(settings, /<RuntimeLogSettings\s*\/>/);
 });

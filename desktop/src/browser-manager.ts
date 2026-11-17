@@ -1,5 +1,7 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { loginEvidence, loginEvidenceAccepted, matchesLoginReturn, type LoginEvidence } from "./credential-sso.js";
 import {
   app,
   BrowserWindow,
@@ -133,6 +135,8 @@ export interface DesktopBrowserDownload {
 }
 
 type BrowserTab = {
+  loginEntryUrl?: string;
+  loginParentTabId?: string;
   vaultProtected?: boolean;
   documentEpoch?: number;
   protectedDocumentEpoch?: number;
@@ -565,6 +569,7 @@ export class DesktopBrowserManager {
     this.installTabEvents(tab);
     if (activate || !this.activeTabIds.has(sessionId)) this.activeTabIds.set(sessionId, id);
     const targetUrl = normalizeAddress(rawUrl);
+    tab.loginEntryUrl = targetUrl;
     // Agent opens defer the load so the request can wait for did-stop-loading
     // instead of returning while the tab is still about:blank.
     if (!deferLoad && targetUrl !== "about:blank") {
@@ -602,6 +607,7 @@ export class DesktopBrowserManager {
   }
 
   private async loadTabUrl(tab: BrowserTab, url: string): Promise<void> {
+    if (url !== "about:blank") tab.loginEntryUrl = url;
     await this.storageReady;
     const contents = tab.view.webContents;
     if (contents.isDestroyed()) throw new Error("Browser tab is closed.");
@@ -628,6 +634,16 @@ export class DesktopBrowserManager {
 
   private installTabEvents(tab: BrowserTab): void {
     const contents = tab.view.webContents;
+    contents.on("ipc-message-sync", (event, channel, value: unknown) => {
+      if (channel !== "piora:credential-policy") return;
+      event.returnValue = { allowed: false };
+      if (event.senderFrame !== contents.mainFrame || tab.view.webContents !== contents) return;
+      const url = (value as { url?: unknown } | null)?.url;
+      if (typeof url !== "string") return;
+      try {
+        if (new URL(url).origin === new URL(event.senderFrame.url).origin) event.returnValue = { allowed: this.credentialVault().allowedUrl(url) };
+      } catch { /* Invalid renderer input stays denied. */ }
+    });
     contents.on("before-input-event", (event, input) => {
       if (input.type !== "keyDown" || !(input.control || input.meta) || input.alt) return;
       const key = input.key.toLowerCase();
@@ -637,6 +653,15 @@ export class DesktopBrowserManager {
     });
     contents.on("ipc-message", (event, channel, value: unknown) => {
       if (event.senderFrame !== contents.mainFrame) return;
+      if (channel === "piora:login-capture-rejected") {
+        const url = (value as { url?: unknown } | null)?.url;
+        const reason = (value as { reason?: unknown } | null)?.reason;
+        try { if (typeof url === "string" && new URL(url).origin === new URL(contents.getURL()).origin) {
+          if (!this.credentialVault().allowedUrl(url)) this.setLoginNotice(tab, "http-blocked");
+          else if (reason === "unsupported-form") this.setLoginNotice(tab, "unsupported-form");
+        } } catch { /* Invalid notice. */ }
+        return;
+      }
       if (channel === "piora:login-form-ready") {
         void this.autoFillCredential(tab).catch(() => this.setLoginNotice(tab, "failed"));
         return;
@@ -645,7 +670,7 @@ export class DesktopBrowserManager {
         if (this.loginRecoveries.has(tab.id)) return;
         const candidate = value as { url?: unknown; username?: unknown } | null;
         if (!this.credentialVault().rememberedStatus().enabled || typeof candidate?.url !== "string" || typeof candidate.username !== "string" || !candidate.username || candidate.username.length > 500) return;
-        try { if (new URL(candidate.url).origin !== new URL(contents.getURL()).origin || new URL(candidate.url).protocol !== "https:") return; } catch { return; }
+        try { if (new URL(candidate.url).origin !== new URL(contents.getURL()).origin || !this.credentialVault().allowedUrl(candidate.url)) { this.setLoginNotice(tab, "http-blocked"); return; } } catch { return; }
         tab.loginUsername = { url: candidate.url, username: candidate.username, expires: Date.now() + 120_000 };
         return;
       }
@@ -654,7 +679,7 @@ export class DesktopBrowserManager {
       if (!this.credentialVault().rememberedStatus().enabled || !value || typeof value !== "object") return;
       const candidate = value as { url?: unknown; username?: unknown; password?: unknown };
       if (typeof candidate.url !== "string" || typeof candidate.username !== "string" || typeof candidate.password !== "string" || candidate.username.length > 500 || candidate.password.length > 4096) return;
-      try { if (new URL(candidate.url).origin !== new URL(event.senderFrame.url).origin || new URL(candidate.url).protocol !== "https:") return; } catch { return; }
+      try { if (new URL(candidate.url).origin !== new URL(event.senderFrame.url).origin || !this.credentialVault().allowedUrl(candidate.url)) { this.setLoginNotice(tab, "http-blocked"); return; } } catch { return; }
       const staged = tab.loginUsername;
       const sameFlow = staged && staged.expires > Date.now() && new URL(staged.url).origin === new URL(candidate.url).origin;
       const username = candidate.username || (sameFlow ? staged.username : "");
@@ -681,7 +706,12 @@ export class DesktopBrowserManager {
       if (isBrowserUrl(url) && this.canCreateTab()) {
         return {
           action: "allow",
-          createWindow: (options) => this.createTab((options as { webContents?: WebContents }).webContents ? "about:blank" : url, true, tab.sessionId, options).view.webContents,
+          createWindow: (options) => {
+            const popup = this.createTab((options as { webContents?: WebContents }).webContents ? "about:blank" : url, true, tab.sessionId, options);
+            popup.loginEntryUrl = tab.loginEntryUrl || contents.getURL();
+            popup.loginParentTabId = tab.id;
+            return popup.view.webContents;
+          },
         };
       }
       if (!isBrowserUrl(url)) void shell.openExternal(url).catch((error) => this.log.warn("Unable to open browser protocol", error));
@@ -691,8 +721,11 @@ export class DesktopBrowserManager {
       if (tab.view.webContents !== contents) return;
       this.loginControllers.get(tab.id)?.abort();
       const candidate = this.rememberedCandidates.get(tab.id);
-      if (candidate) clearInterval(candidate.timer);
-      this.rememberedCandidates.delete(tab.id);
+      const opener = tab.loginParentTabId ? this.findTab(tab.loginParentTabId) : undefined;
+      if (!opener || opener.sessionId !== tab.sessionId || opener.view.webContents.isDestroyed()) {
+        if (candidate) clearInterval(candidate.timer);
+        this.rememberedCandidates.delete(tab.id);
+      }
       this.stopProtectedWatch(tab.id);
       if (tab.view.webContents === contents) this.settleNavigation(tab, new Error("Browser tab is closed."));
       if (this.destroyed || tab.view.webContents !== contents || tab.discarding) return;
@@ -926,6 +959,8 @@ export class DesktopBrowserManager {
       return;
     }
     if (input.action === "close_tab" && typeof input.tabId === "string") {
+      const closing = this.findTab(input.tabId);
+      if (closing?.sessionId === this.displayedSessionId) this.abandonLogin(closing);
       this.closeTab(input.tabId, this.displayedSessionId, true);
       return;
     }
@@ -950,6 +985,7 @@ export class DesktopBrowserManager {
     if (["navigate", "back", "forward", "reload"].includes(input.action)) this.abandonLogin(active);
     if (input.action === "navigate" && typeof input.url === "string") {
       await this.storageReady;
+      active.loginEntryUrl = normalizeAddress(input.url);
       await active.view.webContents.loadURL(normalizeAddress(input.url));
       this.noteTabUsed(active);
     } else if (input.action === "back" && active.view.webContents.navigationHistory.canGoBack()) {
@@ -1139,6 +1175,10 @@ export class DesktopBrowserManager {
   }
 
   private abandonLogin(tab: BrowserTab): void {
+    for (const [id, pending] of this.rememberedCandidates) if (pending.parentTabId === tab.id) {
+      clearInterval(pending.timer);
+      this.rememberedCandidates.delete(id);
+    }
     this.loginControllers.get(tab.id)?.abort();
     const candidate = this.rememberedCandidates.get(tab.id);
     if (candidate) clearInterval(candidate.timer);
@@ -1160,57 +1200,88 @@ export class DesktopBrowserManager {
   private rememberAccount(value: { url: string; username: string; password: string; startUrl?: string }): boolean {
     const store = this.credentialVault();
     store.rememberLogin(value);
-    if (value.startUrl && value.startUrl !== value.url) store.rememberLogin({ ...value, url: value.startUrl });
+    if (value.startUrl && value.startUrl !== value.url && new URL(value.startUrl).origin === new URL(value.url).origin) store.rememberLogin({ ...value, url: value.startUrl });
     return store.rememberedStatus().entries.some(item => item.url === value.url && item.enabled);
   }
 
-  private readonly rememberedCandidates = new Map<string, { value: { url: string; username: string; password: string; startUrl?: string }; timer: ReturnType<typeof setInterval> }>();
+  private readonly rememberedCandidates = new Map<string, { value: { url: string; username: string; password: string; startUrl?: string }; timer: ReturnType<typeof setInterval>; parentTabId?: string }>();
+  private async loginCookieFingerprint(context: LoginEvidence): Promise<string | null> {
+    if (context.rule?.evidence !== "cookie" || !context.rule.cookieName || !context.returnUrl) return null;
+    try {
+      const cookies = await this.browserSession.cookies.get({ url: context.returnUrl, name: context.rule.cookieName });
+      // Only the explicitly configured cookie is inspected. Values never leave main.
+      return cookies.length ? createHash("sha256").update(JSON.stringify(cookies.map(item => [item.domain, item.path, item.value]).sort())).digest("hex") : "";
+    } catch { return null; }
+  }
   private observeRememberedLogin(tab: BrowserTab, value: { url: string; username: string; password: string; startUrl?: string }): void {
     const previous = this.rememberedCandidates.get(tab.id);
     if (previous) clearInterval(previous.timer);
     const contents = tab.view.webContents;
+    const context = loginEvidence(value.url, tab.loginEntryUrl, this.credentialVault().ssoRules?.() ?? []);
+    const baselineCookie = this.loginCookieFingerprint(context);
+    const parent = tab.loginParentTabId ? this.findTab(tab.loginParentTabId) : undefined;
+    const parentEpoch = parent?.documentEpoch ?? 0;
     const deadline = Date.now() + 120_000;
     let busy = false;
     const timer = setInterval(() => {
-      if (contents.isDestroyed() || Date.now() > deadline || !this.credentialVault().rememberedStatus().enabled) {
+      const parentLive = parent && parent.sessionId === tab.sessionId && !parent.view.webContents.isDestroyed();
+      if ((contents.isDestroyed() && !parentLive) || Date.now() > deadline || !this.credentialVault().rememberedStatus().enabled || !this.credentialVault().allowedUrl(value.url)
+        || (context.rule && !(this.credentialVault().ssoRules?.() ?? []).some(rule => JSON.stringify(rule) === JSON.stringify(context.rule)))) {
         clearInterval(timer); this.rememberedCandidates.delete(tab.id);
         if (!contents.isDestroyed()) this.setLoginNotice(tab, "unverified");
         return;
       }
       if (busy) return;
       busy = true;
-      void contents.executeJavaScriptInIsolatedWorld(7332, [{ code: BROWSER_LOGIN_STATE_SCRIPT }]).then(raw => {
+      void (async () => {
+        let observed = contents;
+        // Only the recorded opener in this chat can complete a popup SSO flow,
+        // and it must have navigated since password capture (no pre-existing avatar).
+        if (context.returnUrl && parent && parent.sessionId === tab.sessionId && (parent.documentEpoch ?? 0) > parentEpoch && !parent.view.webContents.isDestroyed()
+          && matchesLoginReturn(context.returnUrl, parent.view.webContents.getURL())) observed = parent.view.webContents;
+        if (observed.isDestroyed()) return;
+        const epoch = observed === contents ? tab.documentEpoch : parent?.documentEpoch;
+        const raw = await observed.executeJavaScriptInIsolatedWorld(7332, [{ code: BROWSER_LOGIN_STATE_SCRIPT }]);
         const state = readBrowserLoginState(raw);
         if (this.rememberedCandidates.get(tab.id)?.timer !== timer) return;
+        const beforeCookie = await baselineCookie;
+        const afterCookie = context.rule?.evidence === "cookie" ? await this.loginCookieFingerprint(context) : null;
+        if (this.rememberedCandidates.get(tab.id)?.timer !== timer || observed.isDestroyed() || epoch !== (observed === contents ? tab.documentEpoch : parent?.documentEpoch)) return;
+        if (!this.credentialVault().rememberedStatus().enabled || !this.credentialVault().allowedUrl(value.url)
+          || (context.rule && !(this.credentialVault().ssoRules?.() ?? []).some(rule => JSON.stringify(rule) === JSON.stringify(context.rule)))) return;
+        const cookieChanged = beforeCookie !== null && Boolean(afterCookie) && beforeCookie !== afterCookie;
         // A redirect alone can also be a login error. Save only with a signed-in marker.
-        if (state?.ready && state.authenticated && !state.loginVisible && !state.challenge && !state.failed) {
+        if (state && loginEvidenceAccepted(value.url, context, state, cookieChanged)) {
           clearInterval(timer); this.rememberedCandidates.delete(tab.id);
           try { this.setLoginNotice(tab, this.rememberAccount(value) ? "saved" : "disabled"); }
           catch { this.setLoginNotice(tab, "save-failed"); }
-          if (tab.vaultProtected) this.finishProtectedLogin(tab.id);
+          if (observed !== contents && parent) {
+            this.setLoginNotice(parent, tab.loginNotice ?? "saved");
+            this.agentControl?.replaceLoginTab(tab.id, parent.id);
+            if (!contents.isDestroyed()) this.closeTab(tab.id, tab.sessionId, true);
+          } else if (tab.vaultProtected) this.finishProtectedLogin(tab.id);
         } else if (state?.challenge) {
           this.setLoginNotice(tab, "challenge");
         } else if (state?.failed) {
           clearInterval(timer); this.rememberedCandidates.delete(tab.id);
           this.setLoginNotice(tab, "failed");
+        } else if (state?.ready && context.returnUrl && !state.loginVisible && !matchesLoginReturn(context.returnUrl, state.url)) {
+          this.setLoginNotice(tab, "return-mismatch");
         }
-      }).catch(() => {}).finally(() => { busy = false; });
+      })().catch(() => {}).finally(() => { busy = false; });
     }, 250);
     timer.unref?.();
-    this.rememberedCandidates.set(tab.id, { value, timer });
+    this.rememberedCandidates.set(tab.id, { value, timer, ...(parent ? { parentTabId: parent.id } : {}) });
   }
   private finishProtectedLogin(tabId: string, authenticated = false): string {
     this.stopProtectedWatch(tabId);
     const tab = this.findTab(tabId);
     const pending = this.rememberedCandidates.get(tabId);
     if (pending) {
-      if (tab) {
-        if (authenticated) {
-          try { this.setLoginNotice(tab, this.rememberAccount(pending.value) ? "saved" : "disabled"); }
-          catch { this.setLoginNotice(tab, "save-failed"); }
-        } else this.setLoginNotice(tab, "unverified");
-      }
-      clearInterval(pending.timer); this.rememberedCandidates.delete(tabId);
+      // The bound observer, including any explicit cookie evidence, owns saving.
+      // A generic ready-page signal must not bypass its return-origin checks.
+      void authenticated;
+      return tabId;
     }
     if (!tab?.vaultProtected || tab.view.webContents.isDestroyed()) return tabId;
     // A committed full navigation discarded the credential document already.
@@ -1349,14 +1420,16 @@ export class DesktopBrowserManager {
     if (!tab || tab.unloaded || tab.vaultProtected || tab.view.webContents.isDestroyed()) throw new Error("No eligible login tab");
     const contents = tab.view.webContents;
     const store = this.credentialVault();
-    const credential = store.credential(id, contents.getURL());
-    const eligible = await contents.executeJavaScriptInIsolatedWorld(7332, [{ code: credentialFillScript(credential.url, "", "", true) }]);
+    let credential = store.credential(id, contents.getURL());
+    const eligible = await contents.executeJavaScriptInIsolatedWorld(7332, [{ code: credentialFillScript(credential.url, "", "", true, false, false, store.allowedOrigins()) }]);
     if (eligible !== true || tab.vaultProtected) throw new Error("No eligible login form");
+    credential = store.credential(id, contents.getURL());
     // Block both new operations and results from operations already in flight.
     // Remain protected across redirects and SPA navigation: pages may copy field values.
     this.protectCredentialTab(tab);
     try {
-      const filled = await contents.executeJavaScriptInIsolatedWorld(7332, [{ code: credentialFillScript(credential.url, credential.username, credential.password) }]);
+      if (!store.allowedUrl(credential.url)) throw new Error("Credential policy changed");
+      const filled = await contents.executeJavaScriptInIsolatedWorld(7332, [{ code: credentialFillScript(credential.url, credential.username, credential.password, false, false, false, store.allowedOrigins()) }]);
       if (filled !== true) throw new Error("No eligible login form");
       store.record(id, credential.url);
     } catch { throw new Error("Credential fill not completed; close the protected tab to resume."); }
@@ -1372,7 +1445,10 @@ export class DesktopBrowserManager {
 
   async releaseCredentials(): Promise<void> {
     const sessionId = this.displayedSessionId;
-    for (const tab of [...this.tabs]) if (tab.sessionId === sessionId && tab.vaultProtected) this.closeTab(tab.id, sessionId, true);
+    for (const tab of [...this.tabs]) if (tab.sessionId === sessionId && tab.vaultProtected) {
+      this.abandonLogin(tab);
+      this.closeTab(tab.id, sessionId, true);
+    }
     this.updateVisibility();
     this.sendState();
   }
