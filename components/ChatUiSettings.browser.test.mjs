@@ -34,9 +34,9 @@ test("chat settings keep editable status libraries, searchable prompts and theme
     for (const name of ["ModelRetrySettings", "RunningStatusSettings", "SystemPromptSelector", "ArchivedChatsSettings"]) {
       css += (await readFile(path.join(repo, "components", `${name}.module.css`), "utf8")).replace(/\.([a-zA-Z][\w-]*)/g, (_, value) => `.${name}_${value}`);
     }
-    const artifacts = path.join(repo, ".verification", "chat-ui-20261114"); await mkdir(artifacts, { recursive: true });
+    const artifacts = path.resolve(process.env.PIORA_CHAT_UI_ARTIFACTS || path.join(repo, ".verification", "chat-ui-20261114")); await mkdir(artifacts, { recursive: true });
     const generated = Array.from({ length: 50 }, (_, index) => `模型文案 ${index + 1}`);
-    let mode = "fail", generateCalls = 0; const releaseGeneration = Promise.withResolvers();
+    let mode = "fail", generateCalls = 0, expectedPrompt = ""; const releaseGeneration = Promise.withResolvers();
     browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : "chromium", headless: true });
     const page = await browser.newPage({ viewport: { width: 1000, height: 950 } }); const errors = [];
     page.on("pageerror", error => errors.push(error.message));
@@ -47,7 +47,7 @@ test("chat settings keep editable status libraries, searchable prompts and theme
       if (pathname === "/api/system-prompt") return route.fulfill({ json: { selectorVisible: true, defaultTemplateId: null, templates: [{ id: "review", name: "严格代码审查", prompt: "审查准则：检查问题原因。\n解释修改的实际影响。" }, { id: "coding", name: "编程助手", prompt: "编写清晰、可维护的代码。" }] } });
       if (pathname === "/api/models") return route.fulfill({ json: { modelList: [{ id: "model", provider: "fixture", name: "Fixture Model" }], defaultModel: { provider: "fixture", modelId: "model" } } });
       if (pathname === "/api/running-status/generate") {
-        generateCalls++; assert.deepEqual(route.request().postDataJSON(), { locale: "zh-CN", cwd: "C:/fixture/project" });
+        generateCalls++; assert.deepEqual(route.request().postDataJSON(), { locale: "zh-CN", cwd: "C:/fixture/project", ...(expectedPrompt ? { prompt: expectedPrompt } : {}) });
         if (mode === "fail") return route.fulfill({ status: 502, json: { error: "generation_failed" } });
         if (mode === "invalid") return route.fulfill({ json: { labels: generated.slice(1), model: "Fixture" } });
         await releaseGeneration.promise; return route.fulfill({ json: { labels: generated, model: "Fixture" } });
@@ -68,14 +68,31 @@ test("chat settings keep editable status libraries, searchable prompts and theme
     await page.reload(); await page.waitForFunction(value => document.querySelector("textarea")?.value === value, manual);
     const generate = page.getByRole("button", { name: "用模型生成并替换 50 条", exact: true });
     await generate.click(); await page.getByRole("alert").waitFor(); assert.equal(await library.inputValue(), manual);
+    const prompt = page.getByRole("textbox", { name: "生成要求 / 提示词（可选）", exact: true });
+    const requirements = "  轻松幽默，像程序员的内心独白。\n每条 6～12 字，不要表情符号。  ";
+    await prompt.fill(requirements); expectedPrompt = requirements.trim();
+    assert.equal(await library.inputValue(), manual, "editing generation requirements keeps the saved library");
+    await page.reload(); await page.waitForFunction(value => Array.from(document.querySelectorAll("textarea")).some(element => element.value === value), requirements);
+    assert.equal(await prompt.inputValue(), requirements, "generation requirements survive refresh without generating");
+    assert.equal(generateCalls, 1);
     mode = "invalid"; await generate.click(); await page.getByRole("alert").waitFor(); assert.equal(await library.inputValue(), manual);
+    assert.equal(await prompt.inputValue(), requirements, "failed generation keeps the writing requirements");
     mode = "valid"; await generate.click(); await page.getByRole("button", { name: "正在生成 50 条…", exact: true }).waitFor();
     assert.equal(await library.isDisabled(), true, "manual changes cannot be overwritten by a pending generation");
+    assert.equal(await prompt.isDisabled(), true, "requirements stay fixed for the in-flight generation");
     releaseGeneration.resolve(); await page.getByText("已用 Fixture 生成并保存 50 条文案，将从下一轮开始使用。", { exact: true }).waitFor();
     assert.deepEqual((await library.inputValue()).split("\n"), generated); assert.equal(generateCalls, 3);
     await library.fill([...generated, "手动追加的第 51 条"].join("\n")); await page.getByRole("button", { name: "保存文案库", exact: true }).click();
     await page.reload(); await page.waitForFunction(() => document.querySelector("textarea")?.value.includes("手动追加的第 51 条"));
     assert.equal((await library.inputValue()).split("\n").length, 51);
+    assert.equal(await prompt.inputValue(), requirements);
+    await page.setViewportSize({ width: 360, height: 850 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, "the prompt field fits narrow settings panels");
+    await page.screenshot({ path: path.join(artifacts, "status-style-narrow.png"), fullPage: true });
+    await page.locator("html").evaluate(element => element.classList.add("dark"));
+    await page.screenshot({ path: path.join(artifacts, "status-style-dark.png"), fullPage: true });
+    await page.locator("html").evaluate(element => element.classList.remove("dark"));
+    await page.setViewportSize({ width: 1000, height: 950 });
 
     const trigger = page.getByRole("button", { name: "系统提示词模板", exact: true }); await trigger.waitFor();
     assert.equal(await trigger.evaluate(element => Boolean(element.closest(".chat-composer-footer"))), true);
@@ -123,8 +140,10 @@ test("chat settings keep editable status libraries, searchable prompts and theme
     assert.deepEqual(await page.locator("select").evaluateAll(elements => elements.map(element => getComputedStyle(element).appearance)), ["base-select", "base-select", "base-select"]);
     await page.locator("#piora-gear").click(); await page.screenshot({ path: path.join(artifacts, "meme-select.png") });
     await page.goto("http://chat-ui.test/");
+    await prompt.fill(""); expectedPrompt = "";
     await page.evaluate(() => { localStorage.removeItem("piora-running-status-labels:v2"); localStorage.setItem("piora-running-status-label:v1", "之前保存的文案"); });
     await page.reload(); await page.waitForFunction(() => document.querySelector("textarea")?.value === "之前保存的文案");
+    assert.equal(await prompt.inputValue(), "", "clearing requirements is persisted");
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close(); assert.equal(path.dirname(directory), path.resolve(tmpdir()));

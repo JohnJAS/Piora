@@ -3,7 +3,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useRunningStatusLabel } from "@/hooks/useRunningStatusLabel";
-import { defaultRunningStatusLabels, normalizeRunningStatusLabels, parseGeneratedRunningStatusLabels } from "@/lib/running-status-labels";
+import { useRunningStatusGenerationPrompt } from "@/hooks/useRunningStatusGenerationPrompt";
+import { defaultRunningStatusLabels, normalizeRunningStatusLabels, parseGeneratedRunningStatusLabels, RUNNING_STATUS_MAX_PROMPT_LENGTH } from "@/lib/running-status-labels";
 import { AliIcon } from "./AliIcon";
 import shared from "./ModelRetrySettings.module.css";
 import styles from "./RunningStatusSettings.module.css";
@@ -11,6 +12,7 @@ import styles from "./RunningStatusSettings.module.css";
 export function RunningStatusSettings({ cwd }: { cwd?: string }) {
   const { t, locale } = useI18n();
   const { labels, setLabels } = useRunningStatusLabel();
+  const { prompt, setPrompt } = useRunningStatusGenerationPrompt();
   const [draft, setDraft] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [feedback, setFeedback] = useState<{ error: boolean; key: string; model?: string } | null>(null);
@@ -32,7 +34,7 @@ export function RunningStatusSettings({ cwd }: { cwd?: string }) {
     try {
       const response = await fetch("/api/running-status/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ locale, ...(cwd ? { cwd } : {}) }), signal: controller.signal,
+        body: JSON.stringify({ locale, ...(cwd ? { cwd } : {}), ...(prompt.trim() ? { prompt: prompt.trim() } : {}) }), signal: controller.signal,
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error === "model_unavailable" ? "settings.runningStatusNoModel" : "settings.runningStatusGenerateFailed");
@@ -60,7 +62,14 @@ export function RunningStatusSettings({ cwd }: { cwd?: string }) {
         <textarea className={styles.input} value={text} rows={8} disabled={generating}
           aria-describedby={`${id}-hint ${id}-count`} onChange={event => { setDraft(event.target.value); setFeedback(null); }} />
       </label>
+      <label className={styles.field}>
+        <span>{t("settings.runningStatusPrompt")}</span>
+        <textarea className={`${styles.input} ${styles.prompt}`} value={prompt} rows={3} disabled={generating}
+          maxLength={RUNNING_STATUS_MAX_PROMPT_LENGTH} placeholder={t("settings.runningStatusPromptPlaceholder")}
+          aria-describedby={`${id}-prompt-hint`} onChange={event => { setPrompt(event.target.value); setFeedback(null); }} />
+      </label>
     </div>
+    <p id={`${id}-prompt-hint`} className={styles.caption}>{t("settings.runningStatusPromptHint", { max: RUNNING_STATUS_MAX_PROMPT_LENGTH })}</p>
     <div className={styles.actions}>
       <span id={`${id}-count`} className={styles.caption}>{t("settings.runningStatusCount", { count: parsed?.length ?? 0 })}</span>
       <div>
