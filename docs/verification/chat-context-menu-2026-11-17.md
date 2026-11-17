@@ -1,6 +1,6 @@
 # 对话内容右键菜单验证
 
-日期：2026-11-17。基线：`3ce3748914fb6ea6e91ecca13cf2cdb37c0df7a0`。实现位于独立工作树 `F:\Piora-worktrees\chat-context-menu-20261117`，未修改原工作树中尚未提交的运行状态文案功能。
+日期：2026-11-17。基线：`3ce3748914fb6ea6e91ecca13cf2cdb37c0df7a0`。实现位于 `chat-context-menu-20261117` 独立工作树，未修改原工作树中尚未提交的运行状态文案功能。
 
 ## 变化与范围
 
@@ -27,7 +27,7 @@
 - `.verification/desktop-e2e-bqaGUx`：`open-synthetic-chat` 失败。首次会话接口冷编译请求耗时 30.2 秒，超出已有 UI 的 30 秒加载期限；接口后续读取返回 200，但本轮未进入菜单测试。新场景加入只读会话准备以避开该开发冷启动条件，保留全部菜单断言。
 - `.verification/desktop-e2e-t7WNaK`：`open-synthetic-chat` 失败。会话读回成功，但 Turbopack 报告 `MarkdownBody.tsx` 的 lazy compilation proxy 被 HMR 删除，界面停留在原始文本占位，120 秒内未出现链接。场景调整为准备会话并通过 UI 选中后刷新一次，再验证菜单；不代表开发冷启动 Markdown 加载已修复。
 - 后续运行改为工作树内的锁文件依赖（`npm ci --ignore-scripts` 并执行仓库依赖补丁），Next.js 为 16.4.6。使用经过本地官方 checksums.json 核对的缓存 Electron 45.2.3 运行开发测试；它不是锁文件声明的 Electron 45.3.1，也不是已发布安装包。
-- `.verification/desktop-e2e-IZIylQ`：**通过**。执行命令为 `node scripts/run-desktop-e2e.mjs --scenario chat-context-menu --electron-dist F:/Piora-worktrees/chat-context-menu-20261117/.verification/electron-45.2.3 --step-timeout-ms 180000 --timeout-ms 900000`。全部 8 个步骤通过，无未捕获页面异常、无运行器清理错误。
+- `.verification/desktop-e2e-IZIylQ`：**通过**。从工作树根目录执行命令 `node scripts/run-desktop-e2e.mjs --scenario chat-context-menu --electron-dist .verification/electron-45.2.3 --step-timeout-ms 180000 --timeout-ms 900000`。全部 8 个步骤通过，无未捕获页面异常、无运行器清理错误。
 - 本轮通过真实 UI 右键复制后读取系统剪贴板，得到去掉行列号的完整文件路径；复制网页链接保留查询参数和片段。失效文件提示、键盘打开与关闭、刷新后的复制也通过。
 - 原生资源管理器观察到测试目录，并确认 `报告.md` 是选中文件；随后通过目录路径菜单打开目录。证据：`.verification/desktop-e2e-IZIylQ/chat-context-menu-evidence.json`；菜单与错误提示截图分别为该目录下 `file-context-menu.png`、`missing-file-feedback.png`。
 

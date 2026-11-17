@@ -5,7 +5,7 @@
 ## zCODE 安装版的证据
 
 对象为 `G:\software\ZCode` 3.16.3.8992；REA 6.8.0 只对安装产物做静态解析，没有执行 zCODE 的运行时。
-证据存于本机 `C:\Users\lyh\.codex\visualizations\2026\11\16\01a1e511-55d4-72c1-b8f6-d8b38c7d7341`：
+证据存于本机 Codex 可视化产物目录的 `2026/11/16/01a1e511-55d4-72c1-b8f6-d8b38c7d7341` 子目录（未提交到仓库）：
 `rea-subagent-evidence`、`rea-subagent-runtime-evidence`、两个 `*-result.json`，以及 `rea-subagent/` 中带源位置的提取片段。
 
 ASAR 中 `subagentsStore-BF3iXtI0.js` 提供类型启用/禁用和配置管理。`glm/zcode.cjs` 的 Agent 参数定义从字符偏移 1445264 起；处理入口从 7776603 起；launch/run 从 12778516 起。静态证据显示：
