@@ -12,7 +12,7 @@ if (process.isMainFrame) {
   const danger = /^(?:register|sign[ -]?up|create.account|reset.password|change.password|pay(?:ment)?|checkout)(?:\s|$)|^(?:注册|创建账户|修改密码|重置密码|支付|付款)/i;
   function inspect(doc: Document, action?: Element) {
     const win = doc.defaultView;
-    if (!win || doc.location.protocol !== "https:" || doc.location.origin !== location.origin) return null;
+    if (!win || !["https:", "http:"].includes(doc.location.protocol) || doc.location.origin !== location.origin) return null;
     const visible = (el: Element) => {
       const input = el as HTMLInputElement;
       return !input.disabled && !input.readOnly && el.getClientRects().length > 0 && win.getComputedStyle(el).visibility === "visible";
@@ -43,7 +43,28 @@ if (process.isMainFrame) {
     if (!event.isTrusted) return;
     if (event.type === "submit" && Date.now() - (humanAction.get(doc) || 0) > 2000) return;
     const match = inspect(doc, action);
-    if (!match) return;
+    if (!match) {
+      // Explain an unsupported login without reading field values. Do not emit
+      // this for unrelated buttons or ordinary registration/payment actions.
+      const win = doc.defaultView;
+      const passwordVisible = [...doc.querySelectorAll('input[type="password"]')].some(el => el.getClientRects().length && win?.getComputedStyle(el).visibility === "visible");
+      const label = (el: Element) => (el.getAttribute("aria-label") || (el as HTMLElement).innerText || (el as HTMLInputElement).value || "").trim();
+      const loginAction = action ? loginWords.test(label(action)) : [...doc.querySelectorAll('button, input[type="submit"], [role="button"]')].some(el => loginWords.test(label(el)));
+      if (passwordVisible && loginAction && ["https:", "http:"].includes(doc.location.protocol) && doc.location.origin === location.origin) {
+        ipcRenderer.send("piora:login-capture-rejected", { url: doc.location.origin + doc.location.pathname, reason: "unsupported-form" });
+      }
+      return;
+    }
+    // Query the native authority at the moment of user submission. No values are
+    // read or sent for HTTP unless the current exact origin is still allowed.
+    if (doc.location.protocol === "http:") {
+      let allowed = false;
+      try { allowed = ipcRenderer.sendSync("piora:credential-policy", { url: match.url })?.allowed === true; } catch { /* Unavailable policy denies HTTP. */ }
+      if (!allowed) {
+        ipcRenderer.send("piora:login-capture-rejected", { url: match.url, reason: "http-blocked" });
+        return;
+      }
+    }
     const previous = captured.get(match.scope);
     if (previous?.stage === match.stage && Date.now() - previous.at < 250) return;
     const username = match.user?.value || "", password = match.password?.value || "";

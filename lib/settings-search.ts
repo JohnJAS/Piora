@@ -86,6 +86,9 @@ export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   { id: "general.autoLaunch", section: "general", requiresDesktop: true, labelKey: "settings.autoLaunch", descriptionKey: "settings.autoLaunchDescription", keywords: ["startup", "boot", "login", "开机", "启动"] },
   { id: "general.runtimeLog", section: "data", requiresDesktop: true, labelKey: "settings.runtimeLog.title", descriptionKey: "settings.runtimeLog.description", keywords: ["log", "logs", "diagnostics", "path", "日志", "诊断", "路径", "文件夹"] },
   { id: "data.websiteAccounts", section: "data", requiresDesktop: true, labelKey: "settings.websiteAccounts", descriptionKey: "settings.websiteAccountsDescription", keywords: ["browser", "login", "password", "accounts", "网页登录", "自动登录", "账户", "密码"] },
+  { id: "data.credentialVault", section: "data", requiresDesktop: true, labelKey: "settings.credentialVault", descriptionKey: "settings.credentialVaultDescription", keywords: ["credential", "vault", "backup", "import", "export", "凭据库", "备份", "导入", "导出", "主密码"] },
+  { id: "data.credentialWhitelist", section: "data", requiresDesktop: true, labelKey: "settings.credentialWhitelist", descriptionKey: "settings.credentialWhitelistDescription", keywords: ["http", "allowlist", "intranet", "白名单", "内网"] },
+  { id: "data.credentialSso", section: "data", requiresDesktop: true, labelKey: "settings.credentialSso", descriptionKey: "settings.credentialSsoDescription", keywords: ["sso", "oauth", "cookie", "回跳", "统一登录"] },
   { id: "general.globalShortcut", section: "shortcuts", requiresDesktop: true, labelKey: "settings.globalShortcut", descriptionKey: "settings.globalShortcutDescription", keywords: ["hotkey", "keyboard", "快捷键"] },
 
   { id: "conversation", section: "conversation", labelKey: "settings.conversation", descriptionKey: "settings.conversationDescription", keywords: ["chat", "session", "聊天", "会话"] },

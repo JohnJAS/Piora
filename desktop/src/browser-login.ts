@@ -45,11 +45,12 @@ export const BROWSER_LOGIN_STATE_SCRIPT = String.raw`(() => {
   const challenge = all('input[autocomplete="one-time-code"], input[name*="captcha" i], input[name="otp" i], iframe[src*="captcha"], [data-sitekey]').length > 0 || all('input').some(el => /验证码|动态口令|verification code|authenticator code/i.test(el.getAttribute('aria-label') || el.getAttribute('placeholder') || '')) || all('form, [role="dialog"]').some(el => /扫码登录|scan.*(?:sign|log).*in/i.test(label(el)) && [...el.querySelectorAll('canvas, img')].some(visible));
   const failureWords = /(?:incorrect|invalid|wrong).{0,30}(?:password|credentials|username)|(?:login|sign[ -]?in|authentication|access).{0,15}(?:failed|denied)|(?:密码|账号|用户名).{0,12}(?:错误|不正确|无效)|登录失败|认证失败|访问被拒绝/i;
   const failed = all('[role="alert"], [aria-live="assertive"], .error, .error-message, [data-testid="login-error"], h1, h2').some(el => failureWords.test(label(el))) || documents.some(doc => /^(?:error|access denied|forbidden|unauthorized|[45]\d\d)\b/i.test(doc.title) || /(?:^|\/)(?:error|access-denied|login-failed)(?:\/|$)/i.test(doc.location.pathname));
-  return { challenge, failed, ready: document.readyState !== 'loading', loginVisible, loginStage, authenticated: logout || userMenu, url: loginUrl || location.href };
+  const declaredAuthenticated = Boolean(document.querySelector('meta[name="piora-auth"][content="verified"]'));
+  return { challenge, failed, ready: document.readyState !== 'loading', loginVisible, loginStage, authenticated: logout || userMenu, ...(declaredAuthenticated ? { declaredAuthenticated: true } : {}), url: loginUrl || location.href };
 })()`;
 
 export type BrowserLoginStage = "username" | "password" | "credentials";
-export interface BrowserLoginState { challenge?: boolean; failed?: boolean; loginStage?: BrowserLoginStage; ready: boolean; loginVisible: boolean; authenticated: boolean; url: string }
+export interface BrowserLoginState { challenge?: boolean; failed?: boolean; declaredAuthenticated?: boolean; loginStage?: BrowserLoginStage; ready: boolean; loginVisible: boolean; authenticated: boolean; url: string }
 
 export function readBrowserLoginState(value: unknown): BrowserLoginState | null {
   if (!value || typeof value !== "object") return null;
@@ -60,6 +61,7 @@ export function readBrowserLoginState(value: unknown): BrowserLoginState | null 
   return { ready: row.ready, loginVisible: row.loginVisible, authenticated: row.authenticated, url: row.url,
     ...(typeof row.challenge === "boolean" ? { challenge: row.challenge } : {}),
     ...(typeof row.failed === "boolean" ? { failed: row.failed } : {}),
+    ...(row.declaredAuthenticated === true ? { declaredAuthenticated: true } : {}),
     ...(row.loginStage ? { loginStage: row.loginStage } : {}) };
 }
 

@@ -21,6 +21,11 @@ export function registerVaultHandlers(options: {
       const store = getCredentialVault();
       switch (input.action) {
         case "status": break;
+        case "http-allow": store.allowHttpOrigin(input.url ?? ""); break;
+        case "http-remove": store.removeHttpOrigin(input.url ?? ""); break;
+        case "sso-save": if (!input.rule) throw new Error(); store.saveSsoRule(input.rule); break;
+        case "sso-remove": store.removeSsoRule(input.id ?? ""); break;
+        case "remember-promote": store.promoteRemembered(input.id ?? ""); break;
         case "remember-configure": store.configureRemembered(input.enabled === true); break;
         case "remember-remove": store.removeRemembered(input.id ?? ""); break;
         case "remember-toggle": store.toggleRemembered(input.id ?? "", input.enabled === true); break;

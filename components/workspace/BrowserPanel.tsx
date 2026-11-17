@@ -51,6 +51,7 @@ const BROWSER_ONBOARDING_KEY = "piora-desktop-browser-onboarding-v1";
 const BROWSER_BOOKMARKS_KEY = "piora-desktop-browser-bookmarks-v2";
 const BROWSER_FOLLOW_AGENT_KEY = "piora-browser-follow-agent-v1";
 const LOGIN_NOTICES = {
+  "http-blocked": "browser.loginHttpBlocked", "return-mismatch": "browser.loginReturnMismatch",
   recovering: "browser.loginRecovering", saved: "browser.loginSaved", restored: "browser.loginRestored",
   challenge: "browser.loginChallenge", "no-account": "browser.loginNoAccount", "unsupported-form": "browser.loginUnsupported",
   failed: "browser.loginFailed", timeout: "browser.loginTimeout", cooldown: "browser.loginCooldown",

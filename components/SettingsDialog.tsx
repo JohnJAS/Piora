@@ -136,6 +136,9 @@ export function SettingsDialog({
         tab?.click();
         return false;
       }
+      for (let ancestor: HTMLElement | null = target; ancestor && ancestor !== root; ancestor = ancestor.parentElement) {
+        if (ancestor instanceof HTMLDetailsElement) ancestor.open = true;
+      }
       target.scrollIntoView({ block: "center", behavior: "instant" });
       const oldTabIndex = target.getAttribute("tabindex");
       target.tabIndex = -1;
@@ -560,7 +563,7 @@ export function SettingsDialog({
                     </div> : null}
                   </div>
                 </section> : null}
-                {desktop.available ? <div data-settings-id="data.websiteAccounts"><CredentialVaultSettings rememberedOnly /></div> : null}
+                {desktop.available ? <div data-settings-id="data.websiteAccounts"><CredentialVaultSettings /></div> : null}
                 {desktop.available ? <RuntimeLogSettings /> : null}
               </>
               ) : activeKey === "network" ? (
