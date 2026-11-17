@@ -154,7 +154,7 @@ export function readAnalyticsConfig(): AnalyticsConfig | undefined {
     const url = new URL(input.backend_url);
     if (
       !input.enabled ||
-      url.protocol !== "https:" ||
+      !["http:", "https:"].includes(url.protocol) ||
       url.username ||
       url.password ||
       url.search ||

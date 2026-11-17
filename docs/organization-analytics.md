@@ -6,13 +6,22 @@
 
 ## 启用范围
 
-只有企业显式在 %LOCALAPPDATA%\Piora\telemetry\config.json 配置 enabled=true 与 HTTPS backend_url 才启用。首次注册还需 enrollment_key，随后使用本安装凭证。普通用户没有配置时不采集、不上传。
+只有企业显式在 %LOCALAPPDATA%\Piora\telemetry\config.json 配置 enabled=true 与 HTTP 或 HTTPS backend_url 才启用。首次注册还需 enrollment_key，随后使用本安装凭证。普通用户没有配置时不采集、不上传。
 
 ~~~json
 {"enabled":true,"backend_url":"https://analytics.example.com","enrollment_key":"由企业安全分发，不能提交到仓库"}
 ~~~
 
-后台地址只接受 HTTPS origin；不接受用户名/密码、查询字符串或任意路径。配置变更后重启客户端。设置 > 数据 > 组织使用统计显示队列、上次成功、下一次同步和错误码；不向 renderer 返回接入密钥或安装秘密。Windows 用户名只用于管理员匹配员工，不能用 C:\Users 文件夹数量或重名账号推算人数。
+后台地址接受 HTTP 或 HTTPS origin，无需额外开关；不接受用户名/密码、查询字符串或任意路径。配置变更后重启客户端。设置 > 数据 > 组织使用统计显示队列、上次成功、下一次同步和错误码；不向 renderer 返回接入密钥或安装秘密。Windows 用户名只用于管理员匹配员工，不能用 C:\Users 文件夹数量或重名账号推算人数。
+
+### 内网 HTTP 与密钥
+
+同机测试可将 backend_url 设置为 `http://127.0.0.1:4319`；其他电脑使用后端服务器内网 IP 或域名，不能使用客户端自己的 127.0.0.1。HTTP 传输不加密，适用于受信任内网。后端须允许 HTTP，且对客户端开放相应端口。
+
+- `enrollment_key` 是后台管理员创建并安全分发的接入密钥，用于授权首次注册，不由客户端自行签发。
+- 设备凭证 ID 和随机秘密由客户端自动生成，在注册请求前通过 Windows DPAPI 加密保存在 `credentials.dpapi`，后续自动上传并轮换凭证。
+- 注册成功后可从配置中移除接入密钥。不要复制其他机器的凭证文件，也不要为切换后端随意删除原有队列与身份。
+- 修改源码不会更新已安装程序；需运行更新后的开发桌面或安装包含改动的新版本。
 
 ## 实现入口
 
