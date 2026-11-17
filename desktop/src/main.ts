@@ -3070,7 +3070,7 @@ async function initializeDesktopAnalytics(load = () => import("./analytics-deskt
   if (desktopAnalytics) return;
   try {
     const { startDesktopAnalytics } = await load();
-    desktopAnalytics = await startDesktopAnalytics(() => mainWindow);
+    desktopAnalytics = await startDesktopAnalytics(() => mainWindow, (code) => logger?.warn(code));
   } catch {
     logger?.warn("Organization analytics startup failed; application remains available");
   }
@@ -3083,7 +3083,6 @@ async function startApplication(): Promise<void> {
   app.setAppUserModelId(desktopDevelopmentRuntime ? "io.github.kexijiang.piora.dev" : "io.github.kexijiang.piora");
 
   logger ??= new FileLogger(app.getPath("userData"));
-  await initializeDesktopAnalytics();
   logger.debug("Desktop runtime diagnostics", { versions: process.versions, platform: process.platform, arch: process.arch, packaged: app.isPackaged });
   logger.info("Starting Piora", {
     appVersion: app.getVersion(),
@@ -3095,6 +3094,8 @@ async function startApplication(): Promise<void> {
 
   recordStartupStage("preparing-agent-data");
   piAgentDirectoryPath = resolvePiAgentDirectory(logger);
+  process.env[PI_AGENT_DIRECTORY_ENV] = piAgentDirectoryPath;
+  await initializeDesktopAnalytics();
   logger.info("Using Pi data directory", { directory: piAgentDirectoryPath });
 
   // Show an app-owned shell immediately while the bundled Next.js service

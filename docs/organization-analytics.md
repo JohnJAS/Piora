@@ -6,7 +6,7 @@
 
 ## 启用范围
 
-只有企业显式在 %LOCALAPPDATA%\Piora\telemetry\config.json 配置 enabled=true 与 HTTP 或 HTTPS backend_url 才启用。首次注册还需 enrollment_key，随后使用本安装凭证。普通用户没有配置时不采集、不上传。
+只有企业显式在 实际 Pi 数据目录下的 `piora/telemetry/config.json` 配置 enabled=true 与 HTTP 或 HTTPS backend_url 才启用。首次注册还需 enrollment_key，随后使用本安装凭证。普通用户没有配置时不采集、不上传。
 
 ~~~json
 {"enabled":true,"backend_url":"https://analytics.example.com","enrollment_key":"由企业安全分发，不能提交到仓库"}
@@ -97,3 +97,9 @@ node_modules/.bin/tsc --noEmit -p desktop/tsconfig.json
 服务端需先部署 #5 的迁移与能力接口，再启用组织域映射规则；客户端可以先升级，旧后端下继续普通统计。域账号只用于统计归属，工号规则、员工匹配和人工绑定优先级由后端管理，不构成企业身份认证。
 
 验证：合成域/本地/未知身份、注册重试、已有安装补报、严格旧端及故障恢复使用自动化夹具；本机 Windows 验证为本地账号回退。真实公司域设备、真实域控制器不可达及安装包升级尚未实机验收，不能由模拟测试替代。
+
+## 配置初始化与迁移（#465）
+
+首次启动以运行用户身份创建默认关闭配置，默认位于 `~/.pi/agent/piora/telemetry`，跟随设置或 `PI_CODING_AGENT_DIR`。配置、队列和凭证共用目录；已有配置不覆盖。失败仅记录无密钥的诊断码。
+
+旧 AppData/Piora/telemetry 保留且提示人工迁移，不自动复制。关闭所有新旧客户端，备份两目录，在同一 Windows 用户下将旧目录完整迁入尚未启用的新目录，包括 config.json、credentials.dpapi、SQLite 及 WAL/SHM 文件。不要合并两套已启用的身份与队列，不跨机器复制凭证。公共安装包不包含实际密钥。

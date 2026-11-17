@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { app, powerMonitor, safeStorage, type BrowserWindow } from "electron";
 import {
   AnalyticsStore,
+  initializeAnalyticsConfig,
   analyticsDirectory,
   readAnalyticsConfig,
   analyticsLaunchReason,
@@ -222,7 +223,9 @@ export class DesktopAnalytics {
 }
 export async function startDesktopAnalytics(
   window: () => BrowserWindow | null,
+  warn: (code: string) => void = () => {},
 ): Promise<DesktopAnalytics | undefined> {
+  initializeAnalyticsConfig(warn);
   const config = readAnalyticsConfig(),
     directory = analyticsDirectory();
   if (!config || !directory) return undefined;

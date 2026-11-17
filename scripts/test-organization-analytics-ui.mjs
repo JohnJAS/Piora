@@ -6,8 +6,8 @@ import { runDesktopScenario } from "./desktop-e2e/harness.mjs";
 const root = resolve(import.meta.dirname, "..");
 await mkdir(join(root, ".verification"), { recursive: true });
 const profile = await mkdtemp(join(root, ".verification", "analytics-ui-profile-"));
-const previous = process.env.LOCALAPPDATA;
-process.env.LOCALAPPDATA = profile;
+const previous = process.env.PI_CODING_AGENT_DIR;
+process.env.PI_CODING_AGENT_DIR = profile;
 const controller = new AbortController();
 const stop = () => controller.abort(new Error("Analytics UI test interrupted"));
 process.once("SIGINT", stop);
@@ -56,8 +56,8 @@ try {
   console.log(JSON.stringify({ status: result.report.status, directory: result.directory, error: result.report.error }));
   process.exitCode = result.report.status === "passed" ? 0 : 1;
 } finally {
-  if (previous === undefined) delete process.env.LOCALAPPDATA;
-  else process.env.LOCALAPPDATA = previous;
+  if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+  else process.env.PI_CODING_AGENT_DIR = previous;
   process.removeListener("SIGINT", stop);
   process.removeListener("SIGTERM", stop);
 }
