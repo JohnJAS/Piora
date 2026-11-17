@@ -1,5 +1,6 @@
 import { createHash, randomUUID, randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, existsSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -140,9 +141,30 @@ const fields: Record<string, readonly string[]> = {
   ],
 };
 export function analyticsDirectory(): string | undefined {
-  return process.platform === "win32" && process.env.LOCALAPPDATA
-    ? join(process.env.LOCALAPPDATA, "Piora", "telemetry")
+  return process.platform === "win32"
+    ? join(process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent"), "piora", "telemetry")
     : undefined;
+}
+
+/** Never overwrite enterprise configuration, even if another process wins creation. */
+export function initializeAnalyticsConfig(warn: (code: string) => void): void {
+  const directory = analyticsDirectory();
+  if (!directory) return;
+  try {
+    const legacy = process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, "Piora", "telemetry");
+    if (legacy && existsSync(legacy)) warn("ANALYTICS_LEGACY_DATA_REQUIRES_MANUAL_MIGRATION");
+    mkdirSync(directory, { recursive: true });
+    try {
+      writeFileSync(join(directory, "config.json"), JSON.stringify({ enabled: false, backend_url: "", enrollment_key: "" }, null, 2) + "\n", { flag: "wx" });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    const input = JSON.parse(readFileSync(join(directory, "config.json"), "utf8"));
+    if (!input || typeof input !== "object" || (input.enabled !== false && !readAnalyticsConfig()))
+      warn("ANALYTICS_CONFIG_INVALID");
+  } catch {
+    warn("ANALYTICS_CONFIG_INITIALIZATION_FAILED");
+  }
 }
 export function readAnalyticsConfig(): AnalyticsConfig | undefined {
   const directory = analyticsDirectory();
@@ -153,7 +175,7 @@ export function readAnalyticsConfig(): AnalyticsConfig | undefined {
     const input = JSON.parse(readFileSync(file, "utf8")) as AnalyticsConfig;
     const url = new URL(input.backend_url);
     if (
-      !input.enabled ||
+      input.enabled !== true ||
       !["http:", "https:"].includes(url.protocol) ||
       url.username ||
       url.password ||
