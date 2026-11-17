@@ -1418,8 +1418,6 @@ export const zhCNLocale: LocalePlugin = {
     "workspace.restorePanel": "恢复右侧工作区",
     "workspace.search": "搜索",
     "browser.tabs": "浏览器标签页",
-    "browser.followAgent": "跟随 Agent 浏览器",
-    "browser.followAgentDescription": "开启：查看当前任务的后台页面 · 关闭：独立浏览",
     "browser.agentOperating": "Agent 正在操作",
     "browser.loginWaiting": "请在浏览器中登录，完成后将自动继续。",
     "browser.waitTitle": "需要你在浏览器里完成",
