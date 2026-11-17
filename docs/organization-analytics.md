@@ -73,3 +73,18 @@ node_modules/.bin/tsc --noEmit -p desktop/tsconfig.json
 历史版本在真实开发 Electron 中通过设置导航、未配置状态、刷新和重载检查，未发生 renderer error。报告：.verification/desktop-e2e-czepTB/report.md（含旧版状态卡截图复测）；首次成功记录为 desktop-e2e-mCYUsq。前两次启动因 worktree 共享依赖超出 Turbopack root 而中断；成功复测临时按当前 Next.js 文档配置 additional root 指向共享依赖，结束后已恢复 next.config.ts。没有修改主工作目录或在其中运行开发服务。移除卡片后，`test-organization-analytics-ui.mjs` 改为检查四个旧设置入口均不存在、数据位置与运行日志仍可访问，并直接读取状态接口；旧报告不代表新版脚本已通过。
 
 本次不在主开发目录运行 next build、不构建发布包、不启用现有用户统计。上线仍需部署后端、企业安全配置、5 台试点及 GitHub Actions Windows 发布。
+
+## Windows 域身份（#462）
+
+仅在企业配置 `enabled: true` 且后端支持时读取当前 Piora 进程用户的 Windows 登录身份。通过 WindowsIdentity 的当前令牌 SID 查询 Win32_UserAccount，并核对 SID、域、登录名及 LocalAccount；不扫描用户目录，不依据显示名、USERNAME/USERDOMAIN 环境变量猜测工号。查询限时 5 秒，本地账号和无法确认的身份均不上报域名或登录名。不会读取密码或上传 SID/令牌。
+
+客户端对接 piora-analytics #5 的 `scripts/generate-contract.mjs` / `contracts/openapi.yaml`：
+
+- `GET /v1/capabilities` 返回 `data.capabilities` 含 `windows-domain-identity-v1` 才启用补报。能力结果最多缓存一小时；404、异常和缺失能力都回退到普通统计。能力发现不携带接入密钥或设备凭证。
+- 注册请求保持旧格式及原始持久化内容不变，包括 `windows_username`。首次注册完成后和已有安装均用设备凭证调用 `POST /v1/installations/identity`，请求为 `{ "identity": { "account_type": "domain", "domain": "CHINA", "account_name": "001234", "source": "windows_logon" } }`（合成示例）。本地账号为 `local`，未知为 `unknown`，两者域/登录名均为 null；未知来源为 `unavailable`。
+- 补报的 UUID 幂等键和精确请求体写入原 DPAPI vault 后才发送，跨重启重试保持一致；不修改安装 ID、不清空队列、不重新消耗 enrollment key。失败不暂停普通事件上传，下个同步周期重试。
+- 已成功确认的非 unknown 身份每天重采并补报，便于后端规则更新后重新匹配。采集失败的 unknown 身份在下次同步继续采集。`identity_collection_status` 在本地记录 available / unsupported / read_failed / unconfirmed；`identity_status` 记录匹配结果或 unsupported_backend / retry_pending，不把异常原文写入统计。
+
+服务端需先部署 #5 的迁移与能力接口，再启用组织域映射规则；客户端可以先升级，旧后端下继续普通统计。域账号只用于统计归属，工号规则、员工匹配和人工绑定优先级由后端管理，不构成企业身份认证。
+
+验证：合成域/本地/未知身份、注册重试、已有安装补报、严格旧端及故障恢复使用自动化夹具；本机 Windows 验证为本地账号回退。真实公司域设备、真实域控制器不可达及安装包升级尚未实机验收，不能由模拟测试替代。
