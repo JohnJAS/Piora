@@ -125,8 +125,10 @@ return <I18nProvider><AnswerLinkProvider openLink={navigation.openLink}><main><A
         assert.ok((await opens()).every(a => a.displayedSession === "first"));
         assert.equal(requests.filter(r => r.input).length, 0);
       }
-      // Returning from follow mode must remain on the explicit new manual tab.
-      if (mode !== "desktop") assert.equal(await page.getByRole("switch").getAttribute("aria-checked"), "false");
+      // Retired follow preferences cannot replace explicit answer-link navigation.
+      assert.equal(await page.getByRole("switch").count(), 0);
+      assert.equal(await page.evaluate(() => localStorage.getItem("piora-browser-follow-agent-v1")), null);
+      if (mode !== "web") assert.equal(await page.locator('[data-native-browser="true"]').count(), 1);
       if (mode === "desktop") {
         const publishAgentActivity = () => page.evaluate(() => window.agentActivityListener({ sessionId: "first", tabId: "original", status: "running" }));
         const switches = () => page.evaluate(() => window.nativeActions.filter(action => action.action === "switch_tab").length);
