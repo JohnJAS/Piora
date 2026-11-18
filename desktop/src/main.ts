@@ -1,5 +1,6 @@
 import { readCompanionScale, writeCompanionScale } from "./desktop-state.js";
 import { DshMemeManager } from "./dsh-meme-manager.js";
+import { DesktopExtensionRegistry } from "./desktop-extension-registry.js";
 import type { DesktopAnalytics } from "./analytics-desktop.mjs" with { "resolution-mode": "import" };
 let desktopAnalytics: DesktopAnalytics | undefined;
 import { memeNetwork } from "./dsh-meme-install.js";
@@ -188,7 +189,7 @@ if (desktopDevelopmentRuntime) {
 
 let mainWindow: BrowserWindow | null = null;
 let dshPetProxy: PetProxySettings | undefined;
-let dshPet: DshPetManager | undefined;
+const desktopExtensions = new DesktopExtensionRegistry();
 let dshMeme: DshMemeManager | undefined;
 let dshMemePanel: BrowserWindow | undefined;
 let dshPetSettings: BrowserWindow | undefined;
@@ -289,9 +290,9 @@ async function handleStandaloneMessage(message: unknown): Promise<unknown> {
       if (!dshMeme) throw new Error("DSH Meme desktop host unavailable");
       const input = candidate.value as { action?: string; path?: string; method?: string; body?: string; autoStart?: boolean };
       let value: unknown;
-      if (candidate.action === "status") value = dshMeme.status();
-      else if (candidate.action === "action" && typeof input?.action === "string") value = dshMeme.action(input.action);
-      else if (candidate.action === "preferences" && typeof input?.autoStart === "boolean") value = dshMeme.setAutoStart(input.autoStart);
+      if (candidate.action === "status") value = desktopExtensions.status("dsh-meme");
+      else if (candidate.action === "action" && typeof input?.action === "string") value = await desktopExtensions.action("dsh-meme", input.action);
+      else if (candidate.action === "preferences" && typeof input?.autoStart === "boolean") value = desktopExtensions.preferences("dsh-meme", { autoStart: input.autoStart });
       else if (candidate.action === "http" && typeof input?.path === "string" && (!input.method || ["GET", "POST"].includes(input.method))) value = await dshMeme.http(input.path, input.method, input.body);
       else throw new Error("Invalid meme bridge request");
       return { type: "pi-desktop:meme-response", requestId: candidate.requestId, ok: true, value };
@@ -1143,7 +1144,7 @@ function isTrustedMainWindowSender(event: IpcMainInvokeEvent): boolean {
 function initializeDshMeme(): void {
   if (!piAgentDirectoryPath) throw new Error("Pi data directory is unavailable");
   const closePanel = () => { dshMemePanel?.destroy(); dshMemePanel = undefined; };
-  dshMeme = new DshMemeManager({
+  const manager = new DshMemeManager({
     root: join(piAgentDirectoryPath, "piora", "desktop-extensions", "dsh-meme"),
     host: join(__dirname, "dsh-meme-host.js"),
     network: () => memeNetwork(process.env, dshPetProxy),
@@ -1172,12 +1173,18 @@ function initializeDshMeme(): void {
       try { await window.loadURL(url); window.show(); } catch (error) { window.destroy(); throw error; }
     },
   });
-  dshMeme.restore();
+  desktopExtensions.register("dsh-meme", {
+    status: () => manager.status(), action: action => manager.action(action),
+    preferences: value => typeof value.autoStart === "boolean" ? manager.setAutoStart(value.autoStart) : manager.status(),
+    restore: () => manager.restore(), dispose: () => manager.dispose(),
+  });
+  dshMeme = manager;
+  desktopExtensions.restore("dsh-meme");
 }
 
 function initializeDshPet(): void {
   if (!piAgentDirectoryPath) throw new Error("Pi data directory is unavailable");
-  dshPet = new DshPetManager({
+  const manager = new DshPetManager({
     root: preparePetRoot(piAgentDirectoryPath, app.getPath("userData")),
     network: () => petNetwork(process.env, dshPetProxy),
     tasks: async () => {
@@ -1207,20 +1214,47 @@ function initializeDshPet(): void {
     openFolder: async path => { const error = await shell.openPath(path); if (error) throw new Error(error); },
     closeSettings: () => { if (dshPetSettings && !dshPetSettings.isDestroyed()) dshPetSettings.destroy(); dshPetSettings = undefined; },
   });
-  for (const channel of ["pi:dsh-pet-status", "pi:dsh-pet-action", "pi:dsh-pet-preferences"]) ipcMain.removeHandler(channel);
+  desktopExtensions.register("dsh-pet", {
+    status: () => manager.status(), action: action => manager.action(action), preferences: value => manager.setPreferences(value),
+    restore: () => manager.restore(), dispose: () => manager.dispose(),
+  });
+  desktopExtensions.restore("dsh-pet");
+}
+
+function bindDesktopExtensionsIpc(): void {
+  for (const channel of ["pi:dsh-pet-status", "pi:dsh-pet-action", "pi:dsh-pet-preferences", "pi:desktop-extension-list",
+    "pi:desktop-extension-action", "pi:desktop-extension-preferences"]) ipcMain.removeHandler(channel);
+  ipcMain.handle("pi:desktop-extension-list", event => {
+    if (!isTrustedMainWindowSender(event)) throw new Error("Untrusted desktop extension request");
+    return desktopExtensions.list();
+  });
+  ipcMain.handle("pi:desktop-extension-action", (event, id: unknown, action: unknown) => {
+    if (!isTrustedMainWindowSender(event)) throw new Error("Untrusted desktop extension request");
+    return desktopExtensions.action(id, action);
+  });
+  ipcMain.handle("pi:desktop-extension-preferences", (event, id: unknown, value: unknown) => {
+    if (!isTrustedMainWindowSender(event)) throw new Error("Untrusted desktop extension request");
+    return desktopExtensions.preferences(id, value);
+  });
   ipcMain.handle("pi:dsh-pet-status", event => {
     if (!isTrustedMainWindowSender(event)) throw new Error("Untrusted desktop extension request");
-    return dshPet!.status();
+    return desktopExtensions.status("dsh-pet");
   });
   ipcMain.handle("pi:dsh-pet-action", (event, action: unknown) => {
-    if (!isTrustedMainWindowSender(event) || typeof action !== "string" || !["install", "start", "stop", "uninstall", "settings", "folder", "cancel"].includes(action)) throw new Error("Invalid desktop extension action");
-    return dshPet!.action(action as import("./dsh-pet-types.js").DshPetAction);
+    if (!isTrustedMainWindowSender(event)) throw new Error("Untrusted desktop extension request");
+    return desktopExtensions.action("dsh-pet", action);
   });
   ipcMain.handle("pi:dsh-pet-preferences", (event, value: unknown) => {
     if (!isTrustedMainWindowSender(event)) throw new Error("Untrusted desktop extension request");
-    return dshPet!.setPreferences(value);
+    return desktopExtensions.preferences("dsh-pet", value);
   });
-  dshPet.restore();
+}
+
+async function stopDesktopExtensions(): Promise<void> {
+  dshMeme = undefined;
+  const results = await desktopExtensions.dispose();
+  const errors = results.filter(result => result.status === "rejected").map(result => result.reason as unknown);
+  if (errors.length) throw new AggregateError(errors, "Desktop extension shutdown failed");
 }
 
 function isTrustedCompanionWindowSender(event: IpcMainInvokeEvent): boolean {
@@ -1436,8 +1470,7 @@ function currentAgentDataDirectoryInfo(): AgentDataDirectoryInfo {
 }
 
 async function suspendAgentRuntimeForDataMigration(): Promise<void> {
-  await dshMeme?.dispose();
-  await dshPet?.dispose();
+  await stopDesktopExtensions();
   await requestHarmonyEmergencyStop("agent_data_directory_migration");
   const activeServer = server;
   server = undefined;
@@ -3187,12 +3220,12 @@ async function startApplication(): Promise<void> {
   setImmediate(() => { if (!quitRequested) void initializeDesktopAnalytics(); }).unref();
   try { initializeDshPet(); } catch (error) { logger.warn("DSH Pet initialization failed", error); }
   try { initializeDshMeme(); } catch (error) { logger.warn("DSH Meme initialization failed", error); }
+  bindDesktopExtensionsIpc();
 }
 
 async function stopApplication(): Promise<void> {
   await clipboardController?.stop().catch(error => { if (error instanceof ClipboardDraftFlushError) throw error; logger?.warn("Clipboard shutdown failed", error); });
-  await dshMeme?.dispose().catch(error => logger?.warn("DSH Meme shutdown failed", error));
-  await dshPet?.dispose().catch(error => logger?.warn("DSH Pet shutdown failed", error));
+  await stopDesktopExtensions().catch(error => logger?.warn("Desktop extension shutdown failed", error));
   if (scheduledUpdateTimer) clearInterval(scheduledUpdateTimer);
   scheduledUpdateTimer = undefined;
   logger?.info("Stopping Piora");

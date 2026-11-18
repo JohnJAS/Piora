@@ -66,7 +66,7 @@ export const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   { id: "laboratory", section: "laboratory", labelKey: "laboratory.title", descriptionKey: "laboratory.description", keywords: ["labs", "experimental", "实验室", "实验"] },
   { id: "laboratory.planGoal", section: "laboratory", labelKey: "laboratory.planGoal", descriptionKey: "laboratory.planGoalDescription", keywords: ["plan", "goal", "mode", "计划", "目标", "模式", "实验室"] },
   { id: "laboratory.subagents", section: "laboratory", labelKey: "subagent.title", descriptionKey: "subagent.description", keywords: ["subagent", "agent", "parallel", "子代理", "委派", "并行", "后台"] },
-  { id: "desktopExtensions", section: "desktopExtensions", labelKey: "desktopExtensions.title", descriptionKey: "desktopExtensions.description", keywords: ["dsh-pet", "desktop", "桌宠", "桌面扩展"] },
+  { id: "desktopExtensions", section: "desktopExtensions", labelKey: "desktopExtensions.title", descriptionKey: "desktopExtensions.description", keywords: ["dsh-pet", "dsh-meme", "desktop", "桌宠", "表情包", "桌面扩展"] },
   { id: "shell", section: "shell", labelKey: "shell.title", descriptionKey: "shell.description", keywords: ["terminal", "shell", "PowerShell", "终端", "命令"] },
   { id: "shell.history", section: "shell", labelKey: "shell.history", descriptionKey: "shell.nativeHistoryHint", keywords: ["history", "PowerShell", "PSReadLine", "历史", "提示", "补全"] },
   { id: "shell.defaultShell", section: "shell", labelKey: "shell.defaultShell", descriptionKey: "shell.nativeProfileHint", keywords: ["bash", "powershell", "cmd", "wsl", "zsh", "shell", "终端", "切换", "默认"] },

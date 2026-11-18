@@ -55,6 +55,11 @@ const runtime = Object.freeze({
     action: (action: import("./dsh-pet-types.js").DshPetAction) => ipcRenderer.invoke("pi:dsh-pet-action", action),
     preferences: (value: { autoStart?: boolean; syncTasks?: boolean }) => ipcRenderer.invoke("pi:dsh-pet-preferences", value),
   }),
+  desktopExtensions: Object.freeze({
+    list: () => ipcRenderer.invoke("pi:desktop-extension-list"),
+    action: (id, action) => ipcRenderer.invoke("pi:desktop-extension-action", id, action),
+    preferences: (id, value) => ipcRenderer.invoke("pi:desktop-extension-preferences", id, value),
+  } satisfies import("./desktop-extension-registry.js").DesktopExtensionsBridge),
   harmonyMirror: Object.freeze({
     open: serial => ipcRenderer.invoke("pi:harmony-window-open", serial),
     focus: () => ipcRenderer.invoke("pi:harmony-window-focus"),

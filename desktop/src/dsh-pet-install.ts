@@ -9,7 +9,7 @@ import { DSH_PET_VERSION, type DshPetProgress } from "./dsh-pet-types.js";
 
 export const NPM_VERSION = "11.6.2";
 export const NPM_INTEGRITY = "7iKzNfy8lWYs3zq4oFPa8EXZz5xt9gQNKJZau3B1ErLBb6bF7sBJ00x09485DOvRT2l5Gerbl3VlZNT57MxJVA==";
-const PET_INTEGRITY = "E1ymE0/a1k2MJco2JDcWeqwMttjWNZWt5yMEN+jjKwWD+H2XT5OMUDmazMLhNnN5grmL9+lbE94iyEQMn5p+JA==";
+export const DSH_PET_INTEGRITY = "E1ymE0/a1k2MJco2JDcWeqwMttjWNZWt5yMEN+jjKwWD+H2XT5OMUDmazMLhNnN5grmL9+lbE94iyEQMn5p+JA==";
 
 export function verifyDownload(bytes: Uint8Array, integrity: string): void {
   if (createHash("sha512").update(bytes).digest("base64") !== integrity) throw new Error("Download integrity check failed");
@@ -100,7 +100,7 @@ export async function installPet(root: string, signal: AbortSignal, progress: (v
     await x({ file: join(staging, "npm.tgz"), cwd: join(staging, "npm"), strip: 1,
       filter: (name, entry) => !name.split(/[\\/]/).includes("..") && "type" in entry && ["File", "Directory"].includes(entry.type) });
     progress({ stage: "package", received: 0, total: null });
-    await download(new URL(`dsh-pet/-/dsh-pet-${DSH_PET_VERSION}.tgz`, network.registry).href, join(staging, "pet.tgz"), PET_INTEGRITY, 100 * 1024 * 1024, signal,
+    await download(new URL(`dsh-pet/-/dsh-pet-${DSH_PET_VERSION}.tgz`, network.registry).href, join(staging, "pet.tgz"), DSH_PET_INTEGRITY, 100 * 1024 * 1024, signal,
       (received, total) => progress({ stage: "package", received, total }), dispatcher);
     progress({ stage: "dependencies", received: 0, total: null });
     await writeFile(join(staging, "package.json"), JSON.stringify({ name: "piora-dsh-pet-runtime", private: true }));
