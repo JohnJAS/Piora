@@ -2,9 +2,9 @@
 export function createAsyncSnapshotCache<T>(ttlMs: number, capacity = 32) {
   const entries = new Map<string, { promise: Promise<T>; expiresAt: number }>();
   return {
-    get(key: string, load: () => Promise<T>): Promise<T> {
+    get(key: string, load: () => Promise<T>, force = false): Promise<T> {
       const previous = entries.get(key);
-      if (previous && previous.expiresAt > Date.now()) return previous.promise;
+      if (previous && (previous.expiresAt === Infinity || (!force && previous.expiresAt > Date.now()))) return previous.promise;
       const entry = { promise: Promise.resolve().then(load), expiresAt: Infinity };
       entries.delete(key);
       entries.set(key, entry);

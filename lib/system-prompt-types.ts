@@ -17,6 +17,7 @@ export interface SessionSystemPromptBinding {
   templateId: string | null;
   templateName: string | null;
   prompt: string | null;
+  promptDeferred?: true;
   appliedAt: string;
 }
 

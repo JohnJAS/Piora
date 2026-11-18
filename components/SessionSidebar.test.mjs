@@ -8,7 +8,7 @@ const taskStatusSource = await readFile(new URL("../hooks/useTaskStatus.ts", imp
 const globalStyles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const sidebarStyles = await readFile(new URL("./SessionSidebar.module.css", import.meta.url), "utf8");
 const splitSources = await Promise.all([
-  "ProjectList.tsx", "SidebarNavigation.tsx", "SidebarProjectArea.tsx", "SidebarFileArea.tsx",
+  "ProjectList.tsx", "SidebarNavigation.tsx", "SidebarProjectArea.tsx",
   "SidebarChatArea.tsx",
   "useSessionCatalog.ts", "sidebar-utils.ts", "sidebar-types.ts", "useProjectPicker.ts",
 ].map((file) => readFile(new URL(`./sidebar/${file}`, import.meta.url), "utf8")));

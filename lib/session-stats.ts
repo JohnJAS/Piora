@@ -5,16 +5,21 @@ const record = (value: unknown): RecordValue | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : undefined;
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
-/** Same whole-file entry scope as Pi getSessionStats, including non-current branches.
- * Nested usage is already rolled into the parent tool result; never add it again.
- * This helper deliberately needs no AgentSession, model, or connection.
- */
-export function summarizeSessionStats(manager: {
+interface StatsSource {
   getEntries(): readonly unknown[];
   getSessionId(): string;
   getSessionFile(): string | undefined;
   getSessionName(): string | undefined;
-}): SessionStatsInfo {
+  getEntryCount?(): number;
+}
+
+const memoized = new WeakMap<StatsSource, { count: number; stats: SessionStatsInfo }>();
+
+/** Same whole-file entry scope as Pi getSessionStats, including non-current branches.
+ * Nested usage is already rolled into the parent tool result; never add it again.
+ * This helper deliberately needs no AgentSession, model, or connection.
+ */
+export function summarizeSessionStats(manager: StatsSource): SessionStatsInfo {
   const stats: SessionStatsInfo = {
     sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile(), sessionName: manager.getSessionName(),
     scope: "session", costStatus: "unknown",
@@ -53,5 +58,15 @@ export function summarizeSessionStats(manager: {
   }
   stats.tokens.total = stats.tokens.input + stats.tokens.output + stats.tokens.cacheRead + stats.tokens.cacheWrite;
   stats.costStatus = known ? unknown ? "partial" : "known" : "unknown";
+  return stats;
+}
+
+export function summarizeLiveSessionStats(manager: StatsSource): SessionStatsInfo {
+  const count = manager.getEntryCount?.();
+  const previous = memoized.get(manager);
+  if (count !== undefined && previous?.count === count && previous.stats.sessionId === manager.getSessionId()
+    && previous.stats.sessionFile === manager.getSessionFile()) return previous.stats;
+  const stats = summarizeSessionStats(manager);
+  if (count !== undefined) memoized.set(manager, { count, stats });
   return stats;
 }

@@ -92,7 +92,7 @@ export function NewSessionProjectPicker({
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/sessions", { cache: "no-store" })
+    void fetch("/api/sessions?view=metadata", { cache: "no-store" })
       .then(async (response) => {
         const data = await response.json() as { sessions?: SessionInfo[] };
         if (!response.ok) throw new Error(`HTTP ${response.status}`);

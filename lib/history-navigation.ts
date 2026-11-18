@@ -6,7 +6,8 @@ export interface HistoryChatControls {
   leafId: string | null;
   switchBranch: (leafId: string) => Promise<boolean>;
   forkQuestion: (entryId: string, draft: ChatDraft) => Promise<boolean>;
-  focusEntry: (entryId: string) => void;
+  focusEntry: (entryId: string) => void | Promise<boolean>;
+  canLoadEarlier?: boolean;
 }
 export interface HistoryLocation { open: boolean; leafId: string | null; entryId: string | null }
 export function readHistoryLocation(params: Pick<URLSearchParams, "get">): HistoryLocation {

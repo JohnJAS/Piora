@@ -1,5 +1,6 @@
 import { getSessionMessageRouter } from "./session-message-router";
 import type { SessionCommandEvent, SessionCommandRecord } from "./session-message-types";
+import { enqueueStreamFrame, eventStreamQueue } from "./bounded-event-stream";
 
 export function commandOperationView(record: SessionCommandRecord) {
   return { commandId: record.commandId, idempotencyKey: record.idempotencyKey, targetSessionId: record.targetSessionId, status: record.status, revision: record.revision, queuePaused: record.queuePaused ?? false,
@@ -18,14 +19,19 @@ export function createChatCommandEventResponse(request: Request, sessionId: stri
       const buffered: SessionCommandEvent[] = [];
       const send = (value: unknown, cursor?: number) => {
         if (closed) return;
-        try { controller.enqueue(encoder.encode(`${cursor === undefined ? "" : `id: ${cursor}\n`}data: ${JSON.stringify(value)}\n\n`)); }
+        try {
+          if (!enqueueStreamFrame(controller, encoder.encode(`${cursor === undefined ? "" : `id: ${cursor}\n`}data: ${JSON.stringify(value)}\n\n`))) cleanup();
+        }
         catch { cleanup(); }
       };
       const unsubscribe = router.subscribeEvents(sessionId, event => {
-        if (initializing) buffered.push(event);
+        if (initializing) {
+          if (buffered.length >= 256) cleanup();
+          else buffered.push(event);
+        }
         else if (event.source === "ui" || event.operation) send(event, event.cursor);
       });
-      const heartbeat = setInterval(() => { if (!closed) { try { controller.enqueue(encoder.encode(":\n\n")); } catch { cleanup(); } } }, 30_000);
+      const heartbeat = setInterval(() => { if (!closed) { try { if (!enqueueStreamFrame(controller, encoder.encode(":\n\n"))) cleanup(); } catch { cleanup(); } } }, 30_000);
       cleanup = () => {
         if (closed) return;
         closed = true;
@@ -37,22 +43,19 @@ export function createChatCommandEventResponse(request: Request, sessionId: stri
       request.signal.addEventListener("abort", cleanup, { once: true });
       if (request.signal.aborted) { cleanup(); return; }
       try {
-        const cursor = router.listEvents(sessionId).at(-1)?.cursor ?? 0;
-        const operations = await router.listOperations(sessionId);
+        const cursor = router.lastEventCursor(sessionId);
+        const { commands, hasMore } = await router.operationWindow(sessionId);
         if (closed) return;
-        const recent = operations.slice(-50);
-        const visible = new Map(recent.map(command => [command.commandId, command]));
-        for (const command of operations) if (!["completed", "failed", "cancelled", "expired", "interrupted"].includes(command.status)) visible.set(command.commandId, command);
-        send({ type: "command_snapshot", operations: [...visible.values()].map(commandOperationView), hasMore: operations.length > 50, cursor }, cursor);
+        send({ type: "command_snapshot", operations: commands.map(commandOperationView), hasMore, cursor }, cursor);
         initializing = false;
         for (const event of buffered) if (event.cursor > cursor && (event.source === "ui" || event.operation)) send(event, event.cursor);
-        if (operations.some(command => command.status === "accepted" || command.status === "queued")) void router.resumeSession(sessionId);
+        if (commands.some(command => command.status === "accepted" || command.status === "queued")) void router.resumeSession(sessionId);
       } catch {
         send({ type: "command_stream_error", message: "Command state is unavailable" });
         cleanup();
       }
     },
     cancel() { cleanup(); },
-  });
+  }, eventStreamQueue);
   return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" } });
 }

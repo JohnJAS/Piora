@@ -62,6 +62,8 @@ import { GitToolsPopover } from "./workspace/GitToolsPopover";
 import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 import { prepareSessionSwitch } from "@/lib/session-prefetch";
+import { chatHistoryUrl } from "@/lib/chat-history-client";
+import { fetchSessionMetadata } from "@/lib/session-catalog-client";
 import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
 
 function getSelectionHistoryState(): Record<string, unknown> {
@@ -191,14 +193,9 @@ export function AppShell() {
         const payload = await response.json() as { notifications?: Array<{ id: string; title: string; status: "succeeded" | "failed" | "interrupted"; sessionId?: string }> };
         const notifications = Array.isArray(payload.notifications) ? payload.notifications : [];
         const delivered: string[] = [];
-        let sessionsById = new Map<string, SessionInfo>();
-        if (notifications.some((notification) => notification.sessionId)) {
-          const sessionsResponse = await fetch("/api/sessions", { cache: "no-store" });
-          if (sessionsResponse.ok) {
-            const sessionsPayload = await sessionsResponse.json() as { sessions?: SessionInfo[] };
-            sessionsById = new Map((sessionsPayload.sessions ?? []).map((session) => [session.id, session]));
-          }
-        }
+        const sessionIds = notifications.flatMap(notification => notification.sessionId ? [notification.sessionId] : []);
+        const sessions = await fetchSessionMetadata(sessionIds).catch(() => []);
+        const sessionsById = new Map(sessions.map(session => [session.id, session]));
         for (const notification of notifications) {
           const session = notification.sessionId ? sessionsById.get(notification.sessionId) : undefined;
           if (session && isProjectNotificationMuted(mutedProjectRoots, session.projectRoot ?? session.cwd)) {
@@ -238,14 +235,9 @@ export function AppShell() {
     if (newlyPending.length === 0) return;
     const appInForeground = document.visibilityState === "visible" && document.hasFocus();
     void (async () => {
-      let sessionsById = new Map<string, SessionInfo>();
-      if (newlyPending.some((snapshot) => snapshot.id !== selectedSession?.id)) {
-        const response = await fetch("/api/sessions", { cache: "no-store" }).catch(() => null);
-        if (response?.ok) {
-          const payload = await response.json() as { sessions?: SessionInfo[] };
-          sessionsById = new Map((payload.sessions ?? []).map((session) => [session.id, session]));
-        }
-      }
+      const sessionIds = newlyPending.map(snapshot => snapshot.id).filter(id => id !== selectedSession?.id);
+      const sessions = await fetchSessionMetadata(sessionIds).catch(() => []);
+      const sessionsById = new Map(sessions.map(session => [session.id, session]));
       for (const snapshot of newlyPending) {
         if (snapshot.id === selectedSession?.id && appInForeground) continue;
         const session = snapshot.id === selectedSession?.id ? selectedSession : sessionsById.get(snapshot.id);
@@ -559,6 +551,16 @@ export function AppShell() {
     if (isMobile) setSidebarOpen(false);
     setActiveTopPanel("session");
   }, [isMobile]);
+
+  useEffect(() => {
+    if (activeTopPanel !== "session" || !selectedSession?.id) return;
+    const controller = new AbortController();
+    void fetch("/api/sessions/" + encodeURIComponent(selectedSession.id) + "/stats", { signal: controller.signal })
+      .then(response => response.ok ? response.json() as Promise<SessionStatsInfo> : null)
+      .then(stats => { if (stats && !controller.signal.aborted) setSessionStats(stats); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [activeTopPanel, selectedSession?.id]);
 
   const handleSidebarToggle = useCallback(() => {
     if (isMobile) setActiveTopPanel(null);
@@ -1024,7 +1026,7 @@ export function AppShell() {
       if (!id || id === selectedSessionIdRef.current) return;
       controller = new AbortController();
       const active = controller;
-      void fetch(`/api/sessions/${encodeURIComponent(id)}?deferThinking=1&deferMedia=1`, { signal: active.signal })
+      void fetch(chatHistoryUrl(id), { signal: active.signal })
         .then(async response => response.ok ? response.json() : null)
         .then(body => { if (!active.signal.aborted && navigationVersion === workspaceNavigationVersionRef.current && window.location.search === requestedUrl && body?.info) void handleSelectSession(body.info, true); })
         .catch(() => {});
@@ -1037,10 +1039,7 @@ export function AppShell() {
     const sessionId = sanitizeNotificationSessionId(rawSessionId);
     if (!sessionId) return;
     try {
-      const response = await fetch("/api/sessions", { cache: "no-store" });
-      const payload = await response.json().catch(() => ({})) as { sessions?: SessionInfo[]; error?: string };
-      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-      const session = payload.sessions?.find((candidate) => candidate.id === sessionId);
+      const [session] = await fetchSessionMetadata([sessionId]);
       if (!session) throw new Error(`Session ${sessionId} is no longer available.`);
       handleSelectSession(session);
       setRefreshKey((key) => key + 1);
@@ -1358,10 +1357,8 @@ export function AppShell() {
   // handleCwdChange relies on. Hydrate it from the session list so switching
   // worktrees right after creating a session doesn't close the chat.
   const hydrateSelectedSession = useCallback((sessionId: string) => {
-    void fetch("/api/sessions")
-      .then((r) => (r.ok ? (r.json() as Promise<{ sessions: SessionInfo[] }>) : null))
-      .then((d) => {
-        const full = d?.sessions.find((s) => s.id === sessionId);
+    void fetchSessionMetadata([sessionId])
+      .then(([full]) => {
         if (!full) return;
         setSelectedSession((prev) => (prev && prev.id === sessionId && !prev.projectRoot ? full : prev));
       })
@@ -1650,7 +1647,7 @@ export function AppShell() {
     if (window.location.search !== url) pushUrlWithoutNextNavigation(url);
   }, []);
   const openRelatedHistory = useCallback(async (id: string) => {
-    const response = await fetch(`/api/sessions/${encodeURIComponent(id)}?deferThinking=1&deferMedia=1`);
+    const response = await fetch(chatHistoryUrl(id));
     const body = await response.json();
     if (!response.ok || !body.info) throw new Error(body.error || `HTTP ${response.status}`);
     if (!await handleSelectSession(body.info, true)) return;
@@ -2881,6 +2878,7 @@ export function AppShell() {
                 visible={!settingsDialogOpen}
                 historyVisible={historyDialogOpen && !settingsDialogOpen}
                 onHistoryControlsChange={setHistoryControls}
+                onOpenHistoryEntry={navigateHistory}
                 session={selectedSession}
                 focusEntryId={focusedEntryId}
                 newSessionCwd={effectiveNewSessionCwd}

@@ -67,8 +67,7 @@ npm test
 
 # 4. 浏览器实测：鼠标 + 键盘 + 错误态，控制台零新增错误
 
-# 5. 阶段收尾时（先 Ctrl+C 停 dev）
-npm run build:app && npm run verify:package && npm run smoke:portable
+# 5. 将 Windows NSIS 构建、安装冒烟和更新元数据验收交给 GitHub Actions。
 ```
 
 ### 0.4 提交规范
@@ -875,7 +874,7 @@ pi 的 bash 只有输出流，**没有 stdin**。它的模型是「一次性命�
 **验收**
 - [ ] 每项在便携 EXE 中实测通过
 - [ ] 多显示器 / DPI 变化不丢窗口
-- [ ] `npm run smoke:portable` 通过
+- [ ] GitHub Actions 的 Windows NSIS 安装冒烟通过
 
 ---
 

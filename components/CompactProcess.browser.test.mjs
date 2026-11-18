@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const { webpack } = require("next/dist/compiled/webpack/webpack.js");
 const repo = path.resolve(import.meta.dirname, "..");
 
-test("chat hides intermediate footers and gaps, opens live logs only on request, and defaults compact display off", { timeout: 180000 }, async (t) => {
+test("chat hides intermediate footers and gaps and opens live logs only on request", { timeout: 180000 }, async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), "piora-compact-process-"));
   let browser;
   try {
@@ -21,9 +21,7 @@ import {useRef,useState} from "react";
 import {createRoot} from "react-dom/client";
 import {I18nProvider} from "@/hooks/useI18n";
 import {ChatHistory} from "@/components/ChatHistory";
-import {useCompactProcessPreference} from "@/hooks/useCompactProcessPreference";
 function App(){
-  const {enabled,setEnabled}=useCompactProcessPreference();
   const [done,finish]=useState(false), [output,setOutput]=useState("old line\\none\\ntwo\\nthree"), [attention,setAttention]=useState(false), [draft,setDraft]=useState(null);
   const [failed,setFailed]=useState(false), [next,setNext]=useState(false), [mixed,setMixed]=useState(false), [activities,setActivities]=useState(false);
   const [activityCommand,setActivityCommand]=useState("Get-Content Z:/workspace/CreateMyCard/docs/project-overview.md -TotalCount 80");
@@ -56,11 +54,10 @@ function App(){
   window.reason=()=>setDraft({role:"assistant",content:[{type:"thinking",thinking:"LIVE_REASONING"}],timestamp:Date.now()});
   window.answer=()=>setDraft({role:"assistant",content:[{type:"thinking",thinking:"LIVE_REASONING"},{type:"text",text:"LIVE_FINAL_ANSWER"}],timestamp:Date.now()});
   window.fail=()=>{setFailed(true);finish(true)};
-  window.setCompact=setEnabled;
   window.revealEntry=(id)=>history.current.revealEntry(id);
-  return <I18nProvider><main><header>Piora <button role="switch" aria-label="轻量过程展示" aria-checked={enabled} onClick={()=>setEnabled(!enabled)}>轻量过程展示</button></header>
+  return <I18nProvider><main><header>Piora</header>
     <div id="scroll" className="overflow-y-auto" ref={scroll}><div className="chat-column">
-      <ChatHistory messages={messages} entryIds={mixed?["u","mixed","r","answer"]:["u","a","r","a2","r2","r3",...(attention?["wait"]:[]),...(done?["answer"]:[]),...(next?["next"]:[])]} compactProcess={location.search.includes("auto") || enabled} directProcess={location.search.includes("direct")}
+      <ChatHistory messages={messages} entryIds={mixed?["u","mixed","r","answer"]:["u","a","r","a2","r2","r3",...(attention?["wait"]:[]),...(done?["answer"]:[]),...(next?["next"]:[])]} compactProcess directProcess={location.search.includes("direct")}
         streamingMessage={draft} busy={!done} streaming={Boolean(draft)} isNew={false} forkingEntryId={null} highlightedEntryId={null} lastUserMsgRef={lastUser}
         pendingScrollToUserRef={pending} scrollContainer={scroll} handleRef={history} sessionId="fixture" cwd="Z:/workspace/CreateMyCard" onOpenFile={path=>window.openedFile=path} onDeleteMessage={async()=>{}} />
     </div></div><footer>发送消息…</footer></main></I18nProvider>;
@@ -155,9 +152,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     };
     page.on("pageerror", (error) => errors.push(error.message));
     await page.goto("http://compact.test/");
-    const toggle = page.getByRole("switch", { name: "轻量过程展示" });
     await page.locator(".command-execution-card").first().waitFor();
-    assert.equal(await toggle.getAttribute("aria-checked"), "false");
     assert.equal(await page.locator(".command-output-section").count(), 0);
     assert.equal(await page.locator(".message-row-assistant .message-response-meta").count(), 0);
     assert.equal(await page.locator(".message-row-assistant .message-delete-button").count(), 0);
@@ -289,8 +284,8 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     await page.evaluate(() => window.advanceAgain());
     await page.waitForFunction(() => document.querySelector(".cm-content")?.textContent.includes("six"));
     await page.locator(".command-execution-card .chat-disclosure-trigger").first().click();
-    await toggle.click();
-    await page.locator(".compact-process-toggle").click();
+    const beforePreview = page.locator(".compact-process-toggle");
+    if (await beforePreview.getAttribute("aria-expanded") === "true") await beforePreview.click();
     await page.locator(".compact-process-preview").waitFor();
     assert.equal(await page.locator(".compact-command-tail, .command-output-section").count(), 0);
     const inspectedCommand = (await page.locator(".compact-process-preview .compact-process-step").filter({ has: page.locator(".compact-command-expand") }).first().locator(".compact-process-step-detail").innerText()).replace(/\s+/g, " ").trim();
@@ -310,32 +305,20 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       return differs;
     }), true, "final answer keeps its primary text color");
     assert.equal(await page.locator(".message-row-assistant .message-response-meta").count(), 1);
-    assert.equal(await page.locator(".compact-process-toggle").getAttribute("aria-expanded"), "false");
-    assert.equal(await page.locator(".command-execution-card").count(), 0);
-    await page.locator(".compact-process-toggle").click();
+    const settledHeading = page.locator(".compact-process-toggle");
+    assert.equal(await settledHeading.getAttribute("aria-expanded"), "true", "opening the log manually survives settlement");
     await page.locator(".command-execution-card").first().waitFor();
     await screenshot("expanded");
     await page.locator(".compact-process-toggle").click();
     assert.equal(await page.locator(".command-execution-card").count(), 0);
     assert.match(await page.locator(".markdown-assistant-message").innerText(), /已修复 Shell/);
     await screenshot("completed");
-    await toggle.click();
-    assert.equal(await page.locator(".command-execution-card").count(), 0);
-    assert.equal(await page.locator(".compact-process-group").count(), 1);
-    assert.equal(await toggle.getAttribute("aria-checked"), "false");
     await page.reload();
-    await page.waitForFunction(() => document.querySelector('[role="switch"]')?.getAttribute("aria-checked") === "false");
+    await page.locator(".compact-process-toggle").waitFor();
     assert.equal(await page.locator(".compact-process-group").count(), 1);
-    await toggle.click();
-    await page.locator(".compact-process-group").waitFor();
-    // Another same-origin window receives the preference without reload.
     const second = await context.newPage();
     await second.goto("http://compact.test/");
     await second.locator(".compact-process-group").waitFor();
-    await toggle.click();
-    await second.waitForFunction(() => document.querySelector('[role="switch"]')?.getAttribute("aria-checked") === "false");
-    await toggle.click();
-    await second.waitForFunction(() => document.querySelector('[role="switch"]')?.getAttribute("aria-checked") === "true");
     await second.evaluate(() => window.think());
     await second.getByText("正在流式生成的正式回复", { exact: true }).waitFor();
     assert.equal(await second.locator(".compact-process-group").count(), 1);
@@ -354,7 +337,6 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     await screenshot("mobile-attention");
     // An untouched successful group folds; manual choices and unresolved work remain visible.
-    await page.evaluate(() => window.setCompact(false));
     for (const scenario of ["success", "manual-open", "manual-closed", "log-open", "failed", "attention"]) {
       const check = await context.newPage();
       check.on("pageerror", error => errors.push(error.message));
@@ -372,7 +354,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         if (scenario === "failed") window.fail(); else window.finish();
       }, scenario);
       await check.locator(".markdown-assistant-message h2").waitFor();
-      const shouldExpand = scenario !== "manual-closed" && scenario !== "failed";
+      const shouldExpand = ["manual-open", "log-open"].includes(scenario);
       assert.equal(await heading.getAttribute("aria-expanded"), String(shouldExpand), scenario);
       assert.equal(await check.locator(".command-execution-card").count(), shouldExpand ? 3 : 0, scenario);
       if (scenario === "failed") {
@@ -431,7 +413,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       }
       await check.evaluate(() => window.next());
       await check.getByText("下一轮输入", {exact:true}).waitFor();
-      const keepOpen = ["manual-open", "log-open", "failed", "attention"].includes(scenario);
+      const keepOpen = ["manual-open", "log-open", "failed"].includes(scenario);
       assert.equal(await heading.getAttribute("aria-expanded"), String(keepOpen), scenario + " after next input");
       assert.equal(await check.locator(".command-execution-card").count(), keepOpen ? 3 : 0);
       await check.close();
@@ -440,6 +422,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     activitiesPage.on("pageerror", error => errors.push(error.message));
     await activitiesPage.goto("http://compact.test/");
     await activitiesPage.evaluate(() => window.activities());
+    await activitiesPage.locator('.compact-process-toggle[aria-expanded="false"]').click();
     await activitiesPage.locator(".tool-call-card").first().waitFor();
     assert.equal(await activitiesPage.locator("[data-tool-activity], .tool-activity-toggle").count(), 0);
     assert.equal(await activitiesPage.locator(".tool-call-card").count(), 4);
@@ -513,6 +496,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     mixed.on("pageerror", error => errors.push(error.message));
     await mixed.goto("http://compact.test/");
     await mixed.evaluate(() => window.mix());
+    await mixed.locator('.compact-process-toggle[aria-expanded="false"]').click();
     await mixed.getByText("先说明计划", {exact:true}).waitFor();
     for (const width of [1200, 390]) {
       await mixed.setViewportSize({ width, height: 900 });
@@ -523,13 +507,16 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       assert.ok(textBounds);
       const alignment = await mixed.evaluate(edge => {
         return [...document.querySelectorAll(".compact-process-detail")].map(element => ({
-          left: element.getBoundingClientRect().left, edge, border: getComputedStyle(element).borderLeftWidth,
+          left: element.getBoundingClientRect().left,
+          edge,
+          border: getComputedStyle(element).borderLeftWidth,
+          inset: parseFloat(getComputedStyle(element).paddingLeft) + parseFloat(getComputedStyle(element).borderLeftWidth),
         }));
       }, textBounds.x);
       assert.ok(alignment.length > 0);
       for (const row of alignment) {
         assert.equal(row.border, "1px");
-        assert.ok(Math.abs(row.left - row.edge) <= 1, `process rail aligns with answer at ${width}px: ${JSON.stringify(row)}`);
+        assert.ok(Math.abs(row.left + row.inset - row.edge) <= 1, `process content aligns behind its rail at ${width}px: ${JSON.stringify(row)}`);
       }
     }
     await mixed.setViewportSize({ width: 1200, height: 900 });
@@ -575,13 +562,14 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     }
     await toggleAtReadingPosition(false);
     assert.equal(await mixed.locator(".thinking-block-trigger, .command-execution-card").count(), 0);
-    for (const text of ["先说明计划", "中途说明", "最后的说明"]) assert.equal(await mixed.getByText(text, {exact:true}).count(), 1);
+    for (const text of ["先说明计划", "中途说明", "最后的说明"]) assert.equal(await mixed.getByText(text, {exact:true}).count(), 0);
+    assert.equal(await mixed.getByText(/段落 0：用于验证/).count(), 1);
     await mixed.evaluate(() => window.revealEntry("mixed"));
     await mixed.locator(".thinking-block-trigger").waitFor();
     assert.equal(await mixedHeading.getAttribute("aria-expanded"), "true");
     await mixed.close();
     assert.deepEqual(errors, []);
-    t.diagnostic("Verified default-off preferences, contiguous shell steps without intermediate actions, opt-in live output, completion, persistence, cross-window sync and user handoff.");
+    t.diagnostic("Verified production compact behavior, contiguous shell steps, opt-in live output, manual disclosure, scroll anchors and user handoff.");
   } finally {
     await browser?.close();
     assert.equal(path.dirname(directory), path.resolve(tmpdir()));

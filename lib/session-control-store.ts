@@ -1,25 +1,26 @@
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import lockfile from "proper-lockfile";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { SessionCommandEvent, SessionCommandRecord, SessionCommandStatus } from "./session-message-types";
-import { recordAnalyticsCommand, reconcileAnalyticsJournals } from "./analytics-telemetry";
-
-type CommandJournalEntry =
-  | { kind: "command"; command: SessionCommandRecord }
-  | { kind: "status"; commandId: string; status: SessionCommandStatus; patch?: Partial<SessionCommandRecord>; timestamp: number };
-type EventJournalEntry = { event: SessionCommandEvent };
+import { recordAnalyticsCommand } from "./analytics-telemetry";
+import { endsInNewline, fileRevision, lastJsonLine } from "./jsonl-file-index";
+import {
+  findJournalCommand, indexJournalAppend, queryCommandById, queryCommandByKey, querySlashReceipts, readActiveCommands, readAllCommands, readJournalEvents,
+  readArchivePage, readOperationsPage, readOperationWindow, readSlashReceipts, readTaskTimings, resetSessionControlReadIndex,
+  type CommandJournalEntry, type CommandPageOptions, type EventJournalEntry,
+} from "./session-control-read-index";
 
 declare global {
   var __pioraSessionControlWriteLocks: Map<string, Promise<void>> | undefined;
-  var __pioraSessionControlCursors: Map<string, number> | undefined;
+  var __pioraSessionControlCursors: Map<string, { revision: string; cursor: number }> | undefined;
 }
 
 function writeLocks(): Map<string, Promise<void>> {
   return globalThis.__pioraSessionControlWriteLocks ??= new Map();
 }
 
-function cursors(): Map<string, number> {
+function cursors() {
   return globalThis.__pioraSessionControlCursors ??= new Map();
 }
 
@@ -27,11 +28,45 @@ function safeSessionFileName(sessionId: string): string {
   return Buffer.from(sessionId, "utf8").toString("base64url");
 }
 
-function parseLines<T>(path: string): T[] {
-  if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8").split(/\r?\n/).filter(Boolean).flatMap((line) => {
-    try { return [JSON.parse(line) as T]; } catch { return []; }
-  });
+function persistLines(kind: "commands" | "events", path: string, line: string) {
+  const before = statSync(path, { throwIfNoEntry: false });
+  let aligned = true;
+  if (before?.size) {
+    const descriptor = openSync(path, "r");
+    try { aligned = endsInNewline(descriptor, before.size); }
+    finally { closeSync(descriptor); }
+  }
+  const bytes = Buffer.from((aligned ? "" : "\n") + line + "\n", "utf8");
+  appendFileSync(path, bytes, { mode: 0o600, flush: kind === "commands" });
+  chmodSync(path, 0o600);
+  const after = statSync(path);
+  indexJournalAppend(kind, path, before, after, bytes, aligned);
+  return after;
+}
+
+function readLastCursor(path: string): number {
+  const snapshot = statSync(path, { throwIfNoEntry: false });
+  const cached = cursors().get(path);
+  if (!snapshot) return cached?.cursor ?? 0;
+  const revision = fileRevision(snapshot);
+  if (cached?.revision === revision) return cached.cursor;
+  const descriptor = openSync(path, "r");
+  try {
+    const state = fstatSync(descriptor);
+    const cursor = lastJsonLine<EventJournalEntry, number>(descriptor, state.size, entry =>
+      typeof entry.event?.cursor === "number" ? entry.event.cursor : undefined) ?? cached?.cursor ?? 0;
+    saveCursor(path, fileRevision(state), cursor);
+    return cursor;
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function saveCursor(path: string, revision: string, cursor: number): void {
+  const cache = cursors();
+  cache.delete(path);
+  cache.set(path, { revision, cursor });
+  if (cache.size > 1024) cache.delete(cache.keys().next().value!);
 }
 
 async function serializeWrite<T>(path: string, operation: () => T | Promise<T>): Promise<T> {
@@ -59,10 +94,7 @@ async function appendLocked(path: string, line: string, commit?: (persist: () =>
       retries: { retries: 50, factor: 1.15, minTimeout: 4, maxTimeout: 50 },
     });
     try {
-      const persist = () => {
-        appendFileSync(path, `${line}\n`, { encoding: "utf8", mode: 0o600, flush: true });
-        chmodSync(path, 0o600);
-      };
+      const persist = () => { persistLines("commands", path, line); };
       if (commit) commit(persist); else persist();
     } finally {
       await release();
@@ -92,13 +124,12 @@ export class SessionControlStore {
   }
 
   /** Successful slash commands need not create a user entry in SDK history. */
-  completedSlashPromptIds(sessionId: string): string[] {
-    return this.loadCommands(sessionId).filter((command) =>
-      command.source === "ui" && command.status === "completed"
-      && command.inputMode !== "text"
-      && command.delivery === "next_turn" && command.content.trimStart().startsWith("/")
-      && (command.operation || !command.images?.length && !command.materials?.length)
-    ).map((command) => command.idempotencyKey);
+  completedSlashPromptIds(sessionId: string, keys?: ReadonlySet<string>): string[] {
+    return readSlashReceipts(this.commandsPath(sessionId), keys);
+  }
+
+  queryCompletedSlashPromptIds(sessionId: string, keys?: ReadonlySet<string>): Promise<string[]> {
+    return querySlashReceipts(this.commandsPath(sessionId), keys);
   }
 
   eventsPath(sessionId: string): string {
@@ -110,55 +141,61 @@ export class SessionControlStore {
   }
 
   loadCommands(sessionId: string): SessionCommandRecord[] {
-    reconcileAnalyticsJournals(this.root);
-    const commands = new Map<string, SessionCommandRecord>();
-    for (const entry of parseLines<CommandJournalEntry>(this.commandsPath(sessionId))) {
-      if (entry.kind === "command" && entry.command?.commandId) {
-        commands.set(entry.command.commandId, { ...entry.command });
-      } else if (entry.kind === "status" && entry.commandId && commands.has(entry.commandId)) {
-        const current = commands.get(entry.commandId)!;
-        commands.set(entry.commandId, { ...current, ...entry.patch, status: entry.status });
-      }
-    }
-    return [...commands.values()].sort((left, right) => left.acceptedAt - right.acceptedAt);
+    return readAllCommands(this.commandsPath(sessionId));
+  }
+
+  loadActiveCommands(sessionId: string): Promise<SessionCommandRecord[]> {
+    return readActiveCommands(this.commandsPath(sessionId));
+  }
+
+  operationWindow(sessionId: string, limit = 50) {
+    return readOperationWindow(this.commandsPath(sessionId), limit);
+  }
+
+  readOperationPage(sessionId: string, options: CommandPageOptions) {
+    return readOperationsPage(this.commandsPath(sessionId), options);
+  }
+
+  readArchivePage(sessionId: string, offset: number) {
+    return readArchivePage(this.commandsPath(sessionId), offset);
+  }
+
+  readTaskTimings(sessionId: string, keys: ReadonlySet<string>) {
+    return readTaskTimings(this.commandsPath(sessionId), keys);
+  }
+
+  queryByCommandId(sessionId: string, commandId: string) {
+    return queryCommandById(this.commandsPath(sessionId), commandId);
+  }
+
+  queryByIdempotencyKey(sessionId: string, key: string): Promise<SessionCommandRecord | undefined> {
+    return queryCommandByKey(this.commandsPath(sessionId), key);
   }
 
   findByIdempotencyKey(idempotencyKey: string, sessionId?: string): SessionCommandRecord | undefined {
     const commandDir = join(this.root, "commands");
     if (!existsSync(commandDir)) return undefined;
     if (sessionId) {
-      return this.loadCommands(sessionId).find((command) => command.idempotencyKey === idempotencyKey);
+      return findJournalCommand(this.commandsPath(sessionId), { idempotencyKey });
     }
     for (const entry of readdirSync(commandDir) as string[]) {
       if (!entry.endsWith(".jsonl")) continue;
-      const commands = this.loadCommandsFromPath(join(commandDir, entry));
-      const match = commands.find((command) => command.idempotencyKey === idempotencyKey);
+      const match = findJournalCommand(join(commandDir, entry), { idempotencyKey });
       if (match) return match;
     }
     return undefined;
   }
 
-  findByCommandId(commandId: string): SessionCommandRecord | undefined {
+  findByCommandId(commandId: string, sessionId?: string): SessionCommandRecord | undefined {
+    if (sessionId) return findJournalCommand(this.commandsPath(sessionId), { commandId });
     const commandDir = join(this.root, "commands");
     if (!existsSync(commandDir)) return undefined;
     for (const entry of readdirSync(commandDir) as string[]) {
       if (!entry.endsWith(".jsonl")) continue;
-      const match = this.loadCommandsFromPath(join(commandDir, entry)).find((command) => command.commandId === commandId);
+      const match = findJournalCommand(join(commandDir, entry), { commandId });
       if (match) return match;
     }
     return undefined;
-  }
-
-  private loadCommandsFromPath(path: string): SessionCommandRecord[] {
-    const commands = new Map<string, SessionCommandRecord>();
-    for (const entry of parseLines<CommandJournalEntry>(path)) {
-      if (entry.kind === "command" && entry.command?.commandId) commands.set(entry.command.commandId, { ...entry.command });
-      else if (entry.kind === "status" && entry.commandId && commands.has(entry.commandId)) {
-        const current = commands.get(entry.commandId)!;
-        commands.set(entry.commandId, { ...current, ...entry.patch, status: entry.status });
-      }
-    }
-    return [...commands.values()];
   }
 
   async appendRecalledCommands(commands: SessionCommandRecord[], commit: (persist: () => void) => void): Promise<void> {
@@ -194,12 +231,9 @@ export class SessionControlStore {
         retries: { retries: 50, factor: 1.15, minTimeout: 4, maxTimeout: 50 },
       });
       try {
-        const existing = parseLines<EventJournalEntry>(path);
-        const last = existing.at(-1)?.event.cursor ?? cursors().get(event.sessionId) ?? 0;
-        const full: SessionCommandEvent = { ...event, cursor: last + 1 };
-        appendFileSync(path, `${JSON.stringify({ event: full } satisfies EventJournalEntry)}\n`, { encoding: "utf8", mode: 0o600 });
-        chmodSync(path, 0o600);
-        cursors().set(event.sessionId, full.cursor);
+        const full: SessionCommandEvent = { ...event, cursor: readLastCursor(path) + 1 };
+        const after = persistLines("events", path, JSON.stringify({ event: full } satisfies EventJournalEntry));
+        saveCursor(path, fileRevision(after), full.cursor);
         return full;
       } finally {
         await release();
@@ -208,9 +242,11 @@ export class SessionControlStore {
   }
 
   listEvents(sessionId: string, afterCursor = 0): SessionCommandEvent[] {
-    return parseLines<EventJournalEntry>(this.eventsPath(sessionId))
-      .map((entry) => entry.event)
-      .filter((event): event is SessionCommandEvent => Boolean(event && typeof event.cursor === "number" && event.cursor > afterCursor));
+    return readJournalEvents(this.eventsPath(sessionId), afterCursor);
+  }
+
+  lastEventCursor(sessionId: string): number {
+    return readLastCursor(this.eventsPath(sessionId));
   }
 
   /** Compact only old terminal commands; active commands remain recoverable. */
@@ -244,6 +280,7 @@ export class SessionControlStore {
 }
 
 export function resetSessionControlStoreForTests(): void {
+  resetSessionControlReadIndex();
   globalThis.__pioraSessionControlCursors?.clear();
   globalThis.__pioraSessionControlWriteLocks?.clear();
 }

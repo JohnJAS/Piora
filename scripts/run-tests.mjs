@@ -1,7 +1,12 @@
 import { spawn } from "node:child_process";
-import { discoverTestFiles, partitionTests, readTestTimings } from "./test-suite-files.mjs";
+import { checkTrackedTestOwnership, discoverTestFiles, partitionTests, readTestTimings } from "./test-suite-files.mjs";
 
 const options = process.argv.slice(2);
+if (options.length === 1 && options[0] === "--check-ownership") {
+  checkTrackedTestOwnership();
+  console.log("All tracked tests belong to exactly one CI suite.");
+  process.exit(0);
+}
 const shardOptions = options.filter(option => option.startsWith("--test-shard="));
 if (shardOptions.length > 1) throw new Error("Specify exactly one test shard");
 let files = discoverTestFiles();

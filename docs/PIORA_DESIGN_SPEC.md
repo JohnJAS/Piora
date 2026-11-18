@@ -69,7 +69,7 @@ Browser / Electron WebContents
 ### 1.3 已经做好的（不要重做）
 
 ✅ 会话流式输出、SSE 断线重连、run id 防串扰
-✅ Fork / in-session branch 双分支模型 + BranchNavigator
+✅ Fork / in-session branch 双分支模型 + 完整历史工作台
 ✅ Steer / Queue（发送中插话、排队）——**这是超过 Codex 的地方**
 ✅ 多 Provider 模型配置、OAuth/device-code/API Key 三种登录、models.json 编辑器
 ✅ Skills 安装/搜索/开关、Plugins 包管理
@@ -884,14 +884,10 @@ npm test               # node --test components/ hooks/ lib/ lib/i18n/
 
 ### 6.2 每个阶段结束必过
 ```bash
-npm run build:app
-npm run verify:package
-npm run verify:release
 npm run verify:hygiene
-npm run smoke:portable
 npm run licenses:check
 ```
-- 停掉 dev server 后再构建；
+- Windows NSIS 构建、安装冒烟与更新资产验证交给 GitHub Actions；
 - 用真实便携 EXE 手动验证：悬停零抖动、滚动、右键菜单、设置页、任务状态、审阅流程；
 - 中英文各截一轮关键界面回归图。
 

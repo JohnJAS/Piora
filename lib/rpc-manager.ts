@@ -103,13 +103,16 @@ import {
   createSessionSystemPromptBinding,
   readLatestSessionSystemPromptBinding,
   resolveSessionSystemPrompt,
+  summarizeSessionSystemPromptBinding,
 } from "./session-system-prompt";
 import type { SessionSystemPromptBinding, SystemPromptSelection } from "./system-prompt-types";
 import { buildPromptWithMaterials, resolvePromptMaterialReferences, restorePromptMaterialDisplayPreview } from "./prompt-materials";
 import type { PromptMaterialReference } from "./prompt-material-format";
 import { userInputTimeoutMs, type UserInputResult } from "./user-input";
 import { estimateContextUsageBreakdown } from "./context-usage";
-import { summarizeSessionStats } from "./session-stats";
+import { summarizeLiveSessionStats } from "./session-stats";
+import { parseRuntimeStateView, projectRuntimeContext, type SessionRuntimeStateView } from "./session-runtime-context";
+import { authorizeSessionCommand, enforceCommandProfile, recheckCommandSession, type SessionRpcCommand } from "./session-command-policy";
 import { mergeCommandOutputDetails } from "./command-execution";
 import { ChatCommandActivityTracker } from "./chat-command-activity";
 import { createChatCommandCatalog, templateUsesArguments } from "./chat-command-input";
@@ -1312,21 +1315,66 @@ export class AgentSessionWrapper {
     return () => this.onDestroyCallbacks.delete(cb);
   }
 
-  async send(command: Record<string, unknown>): Promise<unknown> {
-    assertRemotePolicyCommand(this.remotePolicy, command);
-    if (command.type !== "abort" && command.type !== "get_state") assertSessionNotMutating(this.sessionId);
+  getRuntimeState(view: SessionRuntimeStateView = "full") {
+    const runtime = this.getForegroundRuntime();
+    const progress = {
+      sessionId: this.sessionId,
+      runtime,
+      isStreaming: this.inner.isStreaming,
+      isPromptRunning: this.promptRunning,
+      isBashRunning: this.inner.isBashRunning,
+      runStartedAt: runtime === "idle" ? null : this.runStartedAt,
+      statusPhaseKind: runtime === "idle" ? null : this.statusPhaseKind,
+      statusPhaseStartedAt: runtime === "idle" ? null : this.statusPhaseStartedAt,
+      lastProgressAt: runtime === "idle" ? null : this.lastProgressAt,
+      isCompacting: this.inner.isCompacting,
+      compactionStartedAt: this.inner.isCompacting ? this.compactionStartedAt : null,
+    };
+    if (view === "progress") return progress;
+
+    const model = this.inner.model;
+    return {
+      ...progress,
+      subagents: this.subagents?.list() ?? [],
+      subagentsRunning: this.subagents?.running ?? false,
+      ...(this.runtimeProfile === "normal" ? { workflow: readWorkflowSnapshot(this.sessionId) } : {}),
+      ...(view === "full" ? { stats: summarizeLiveSessionStats(this.inner.sessionManager) } : {}),
+      runtimeProfile: this.runtimeProfile,
+      remotePolicy: this.remotePolicy,
+      sessionFile: this.inner.sessionFile ?? "",
+      activeTools: Array.from(this.runtimeToolCalls, ([id, tool]) => ({ id, name: tool.toolName })),
+      pendingApproval: this.pendingUiResponses.size > 0 || this.activeCustomUis.size > 0,
+      lastPromptFailed: this.lastPromptFailed,
+      lastPromptErrorSummary: this.lastPromptErrorSummary,
+      autoCompactionEnabled: this.inner.autoCompactionEnabled,
+      autoRetryEnabled: this.inner.autoRetryEnabled,
+      model: model ? { id: model.id, provider: model.provider } : undefined,
+      messageCount: 0,
+      pendingMessageCount: this.inner.pendingMessageCount,
+      queuedMessages: {
+        pendingInputs: this.getPendingInputs(),
+        steering: [...this.inner.getSteeringMessages()],
+        followUp: [...this.inner.getFollowUpMessages()],
+      },
+      ...projectRuntimeContext(this.inner, this.forceEmptySystemPrompt),
+      systemPromptBinding: view === "full" ? this.getSystemPromptBinding() : summarizeSessionSystemPromptBinding(this.getSystemPromptBinding()),
+      thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
+      extensionStatuses: this.getExtensionStatuses(),
+      extensionWidgets: this.getExtensionWidgets(),
+      capabilities: this.getSessionCapabilities(),
+      toolPermission: readToolPermission(this.sessionId, getAgentDir()),
+      ...(view === "full" ? { toolReviews: this.reviews().list() } : {}),
+    };
+  }
+
+  async send(command: SessionRpcCommand): Promise<unknown> {
+    const type = authorizeSessionCommand(this.sessionId, this.remotePolicy, command);
     this.resetIdleTimer();
     this.flushPendingProjectCapabilitySettings();
-    const type = command.type as string;
     const abortGeneration = this.abortGeneration;
-    if (this.runtimeProfile === "device-control" && DEVICE_CONTROL_DENIED_RPC_COMMANDS.has(type)) {
-      throw new Error(`RPC command ${type} is disabled by the device-control runtime profile.`);
-    }
+    enforceCommandProfile(type, this.runtimeProfile, DEVICE_CONTROL_DENIED_RPC_COMMANDS);
     if (this.shouldWaitForExtensions(type)) await this.waitForExtensionsBound();
-    if (type !== "abort" && type !== "get_state") {
-      assertSessionNotMutating(this.sessionId);
-      if (!this._alive) throw new Error("Session has been closed");
-    }
+    recheckCommandSession(type, this.sessionId, this._alive);
 
     if (type === "prompt" || type === "steer" || type === "follow_up") {
       if (this.stopping || abortGeneration !== this.abortGeneration) {
@@ -1699,70 +1747,8 @@ export class AgentSessionWrapper {
         return receipt();
       }
 
-      case "get_state": {
-        const model = this.inner.model;
-        // Background children remain visible to task status/idle cleanup, but
-        // must not pin the parent's composer or queue new foreground prompts.
-        const runtime = this.getForegroundRuntime();
-        const contextUsage = this.inner.getContextUsage();
-        const agentState = this.inner.agent.state;
-        const contextBreakdown = contextUsage ? estimateContextUsageBreakdown({
-          messages: agentState?.messages ?? [],
-          systemPrompt: this.forceEmptySystemPrompt ? "" : agentState?.systemPrompt ?? "",
-          tools: agentState?.tools ?? [],
-          totalTokens: contextUsage.tokens,
-        }) : undefined;
-        return {
-          sessionId: this.inner.sessionId,
-          subagents: this.subagents?.list() ?? [],
-          subagentsRunning: this.subagents?.running ?? false,
-          ...(this.runtimeProfile === "normal" ? { workflow: readWorkflowSnapshot(this.sessionId) } : {}),
-          stats: summarizeSessionStats(this.inner.sessionManager),
-          runtimeProfile: this.runtimeProfile,
-          remotePolicy: this.remotePolicy,
-          sessionFile: this.inner.sessionFile ?? "",
-          isStreaming: this.inner.isStreaming,
-          isPromptRunning: this.promptRunning,
-          isBashRunning: this.inner.isBashRunning,
-          runStartedAt: runtime === "idle" ? null : this.runStartedAt,
-          statusPhaseKind: runtime === "idle" ? null : this.statusPhaseKind,
-          statusPhaseStartedAt: runtime === "idle" ? null : this.statusPhaseStartedAt,
-          lastProgressAt: runtime === "idle" ? null : this.lastProgressAt,
-          isCompacting: this.inner.isCompacting,
-          compactionStartedAt: this.inner.isCompacting ? this.compactionStartedAt : null,
-          runtime,
-          activeTools: Array.from(this.runtimeToolCalls, ([id, tool]) => ({ id, name: tool.toolName })),
-          pendingApproval: this.pendingUiResponses.size > 0 || this.activeCustomUis.size > 0,
-          lastPromptFailed: this.lastPromptFailed,
-          lastPromptErrorSummary: this.lastPromptErrorSummary,
-          autoCompactionEnabled: this.inner.autoCompactionEnabled,
-          autoRetryEnabled: this.inner.autoRetryEnabled,
-          model: model ? { id: model.id, provider: model.provider } : undefined,
-          messageCount: 0,
-          pendingMessageCount: this.inner.pendingMessageCount,
-          queuedMessages: {
-            pendingInputs: this.getPendingInputs(),
-            steering: [...this.inner.getSteeringMessages()],
-            followUp: [...this.inner.getFollowUpMessages()],
-          },
-          contextUsage: contextUsage
-            ? {
-                percent: contextUsage.percent,
-                contextWindow: contextUsage.contextWindow,
-                tokens: contextUsage.tokens,
-                ...(contextBreakdown ? { breakdown: contextBreakdown } : {}),
-              }
-            : null,
-          systemPrompt: this.forceEmptySystemPrompt ? "" : this.inner.agent.state?.systemPrompt ?? "",
-          systemPromptBinding: this.getSystemPromptBinding(),
-          thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
-          extensionStatuses: this.getExtensionStatuses(),
-          extensionWidgets: this.getExtensionWidgets(),
-          capabilities: this.getSessionCapabilities(),
-          toolPermission: readToolPermission(this.sessionId, getAgentDir()),
-          toolReviews: this.reviews().list(),
-        };
-      }
+      case "get_state":
+        return this.getRuntimeState(parseRuntimeStateView(command.view));
 
       case "set_model": {
         this.assertSessionIdle("change model");
@@ -1919,7 +1905,7 @@ export class AgentSessionWrapper {
 
       case "get_session_stats": {
         return {
-          ...summarizeSessionStats(this.inner.sessionManager),
+          ...summarizeLiveSessionStats(this.inner.sessionManager),
           contextUsage: this.inner.getContextUsage() ?? undefined,
           sessionName: this.cachedSessionTitle ?? undefined,
         };

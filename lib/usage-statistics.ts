@@ -134,10 +134,9 @@ function streaks(activeDayIndexes: number[], todayIndex: number): { current: num
   return { current, longest };
 }
 
-export function calculateUsageStatistics(
-  records: SessionUsageRecord[],
-  options: { timezoneOffsetMinutes?: number; now?: number; activityDays?: number } = {},
-): UsageStatistics {
+type UsageOptions = { timezoneOffsetMinutes?: number; now?: number; activityDays?: number };
+
+function usageAccumulator(options: UsageOptions) {
   const timezoneOffsetMinutes = Number.isFinite(options.timezoneOffsetMinutes)
     ? Math.max(-840, Math.min(840, Math.trunc(options.timezoneOffsetMinutes!)))
     : 0;
@@ -151,40 +150,40 @@ export function calculateUsageStatistics(
   let longestSessionMs = 0;
   let sessions = 0;
 
-  for (const record of records) {
-    if (record.samples.length > 0) sessions += 1;
-    if (record.startedAt !== null && record.endedAt !== null && record.endedAt >= record.startedAt) {
-      longestSessionMs = Math.max(longestSessionMs, record.endedAt - record.startedAt);
+  const addSession = (startedAt: number | null, endedAt: number | null, used: boolean) => {
+    if (used) sessions++;
+    if (startedAt !== null && endedAt !== null && endedAt >= startedAt) {
+      longestSessionMs = Math.max(longestSessionMs, endedAt - startedAt);
     }
-    for (const sample of record.samples) {
-      totalTokens += sample.total;
-      breakdown.input += sample.input;
-      breakdown.output += sample.output;
-      breakdown.cacheRead += sample.cacheRead;
-      breakdown.cacheWrite += sample.cacheWrite;
-      const day = localDayIndex(sample.timestamp, timezoneOffsetMinutes);
-      const current = byDay.get(day) ?? { tokens: 0, turns: 0, breakdown: emptyBreakdown(), hourly: new Map<number, HourlyUsage>() };
-      current.tokens += sample.total;
-      current.turns += 1;
-      // Keep detailed buckets only for the browsable range; all-time totals
-      // above continue to include older sessions.
-      if (day >= rangeStart && day <= todayIndex) {
-        current.breakdown.input += sample.input;
-        current.breakdown.output += sample.output;
-        current.breakdown.cacheRead += sample.cacheRead;
-        current.breakdown.cacheWrite += sample.cacheWrite;
-        const hour = new Date(sample.timestamp - timezoneOffsetMinutes * 60_000).getUTCHours();
-        const bucket = current.hourly.get(hour) ?? { hour, tokens: 0, turns: 0 };
-        bucket.tokens += sample.total;
-        bucket.turns += 1;
-        current.hourly.set(hour, bucket);
-      }
-      byDay.set(day, current);
+  };
+  const addSample = (sample: UsageSample) => {
+    totalTokens += sample.total;
+    breakdown.input += sample.input;
+    breakdown.output += sample.output;
+    breakdown.cacheRead += sample.cacheRead;
+    breakdown.cacheWrite += sample.cacheWrite;
+    const day = localDayIndex(sample.timestamp, timezoneOffsetMinutes);
+    const current = byDay.get(day) ?? { tokens: 0, turns: 0, breakdown: emptyBreakdown(), hourly: new Map<number, HourlyUsage>() };
+    current.tokens += sample.total;
+    current.turns += 1;
+    if (day >= rangeStart && day <= todayIndex) {
+      current.breakdown.input += sample.input;
+      current.breakdown.output += sample.output;
+      current.breakdown.cacheRead += sample.cacheRead;
+      current.breakdown.cacheWrite += sample.cacheWrite;
+      const hour = new Date(sample.timestamp - timezoneOffsetMinutes * 60_000).getUTCHours();
+      const bucket = current.hourly.get(hour) ?? { hour, tokens: 0, turns: 0 };
+      bucket.tokens += sample.total;
+      bucket.turns += 1;
+      current.hourly.set(hour, bucket);
     }
-  }
+    byDay.set(day, current);
+  };
 
+  const finish = (): UsageStatistics => {
   const activeDayIndexes = [...byDay.entries()].filter(([, value]) => value.tokens > 0).map(([day]) => day);
-  const peakDailyTokens = Math.max(0, ...byDay.values().map((value) => value.tokens));
+  let peakDailyTokens = 0;
+  for (const value of byDay.values()) peakDailyTokens = Math.max(peakDailyTokens, value.tokens);
   const streak = streaks(activeDayIndexes, todayIndex);
   const daily: UsageStatistics["activity"]["daily"] = [];
   for (let day = rangeStart; day <= todayIndex; day += 1) {
@@ -217,10 +216,21 @@ export function calculateUsageStatistics(
       daily,
     },
   };
+  };
+  return { addSession, addSample, finish };
 }
 
-export async function readSessionUsageRecord(filePath: string): Promise<SessionUsageRecord> {
-  const samples: UsageSample[] = [];
+export function calculateUsageStatistics(records: SessionUsageRecord[], options: UsageOptions = {}): UsageStatistics {
+  const usage = usageAccumulator(options);
+  for (const record of records) {
+    usage.addSession(record.startedAt, record.endedAt, record.samples.length > 0);
+    for (const sample of record.samples) usage.addSample(sample);
+  }
+  return usage.finish();
+}
+
+async function scanSessionUsage(filePath: string, accept: (sample: UsageSample) => void) {
+  let used = false;
   let startedAt: number | null = null;
   let endedAt: number | null = null;
   let headerTimestamp: number | null = null;
@@ -252,7 +262,7 @@ export async function readSessionUsageRecord(filePath: string): Promise<SessionU
         }
         if (role === "assistant") {
           const sample = usageSample(entry.message?.usage, timestamp);
-          if (sample) samples.push(sample);
+          if (sample) { used = true; accept(sample); }
         }
       } catch {
         // A partially-written final line or a legacy malformed entry should not
@@ -263,30 +273,37 @@ export async function readSessionUsageRecord(filePath: string): Promise<SessionU
     lines.close();
     stream.destroy();
   }
+  return { startedAt, endedAt, used };
+}
+
+export async function readSessionUsageRecord(filePath: string): Promise<SessionUsageRecord> {
+  const samples: UsageSample[] = [];
+  const { startedAt, endedAt } = await scanSessionUsage(filePath, sample => samples.push(sample));
   return { startedAt, endedAt, samples };
 }
 
-async function mapWithConcurrency<T, R>(items: T[], worker: (item: T) => Promise<R>): Promise<R[]> {
-  const results = new Array<R>(items.length);
+async function eachWithConcurrency<T>(items: T[], worker: (item: T) => Promise<void>): Promise<void> {
   let cursor = 0;
   const workers = Array.from({ length: Math.min(FILE_READ_CONCURRENCY, items.length) }, async () => {
     while (cursor < items.length) {
       const index = cursor;
       cursor += 1;
-      results[index] = await worker(items[index]!);
+      await worker(items[index]!);
     }
   });
   await Promise.all(workers);
-  return results;
 }
 
 export async function readUsageStatistics(
   sessionPaths: string[],
-  options: { timezoneOffsetMinutes?: number; now?: number; activityDays?: number } = {},
+  options: UsageOptions = {},
 ): Promise<UsageStatistics> {
-  const records = await mapWithConcurrency(sessionPaths, async (filePath) => {
-    try { return await readSessionUsageRecord(filePath); }
-    catch { return { startedAt: null, endedAt: null, samples: [] }; }
+  const usage = usageAccumulator(options);
+  await eachWithConcurrency(sessionPaths, async (filePath) => {
+    try {
+      const record = await scanSessionUsage(filePath, usage.addSample);
+      usage.addSession(record.startedAt, record.endedAt, record.used);
+    } catch {}
   });
-  return calculateUsageStatistics(records, options);
+  return usage.finish();
 }

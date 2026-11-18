@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHmac, randomUUID } from "node:crypto";
-import { readFile, stat, realpath } from "node:fs/promises";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { readFile, stat, realpath, readdir } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { createInterface } from "node:readline";
 import { extname, isAbsolute, join, resolve } from "node:path";
 import { diffLines, applyPatch } from "diff";
 import {
@@ -40,6 +41,7 @@ declare global {
         context: AsyncLocalStorage<Context>;
         locks: Map<string, Promise<void>>;
         lastScan: number;
+        journalReplay?: Promise<void>;
         timer?: ReturnType<typeof setInterval>;
       }
     | undefined;
@@ -110,15 +112,11 @@ export function recoverAnalyticsPending(store: AnalyticsStore): void {
   }
 }
 export function startAnalyticsJournalReconciliation(root: string): void {
-  if (!analyticsStore() || state().timer) return;
+  if (state().timer) return;
   const reconcile = () => {
-    try {
-      reconcileAnalyticsJournals(root);
-    } catch {
-      /* fail open */
-    }
+    void reconcileAnalyticsJournals(root).catch(() => {});
   };
-  reconcile();
+  setImmediate(reconcile).unref();
   state().timer = setInterval(reconcile, 60000);
   state().timer?.unref();
 }
@@ -705,16 +703,25 @@ export function installAnalyticsFileObserver(
   }
 }
 /** Replay only journals newer than the explicit enrollment time; no old session backfill. */
-export function reconcileAnalyticsJournals(root: string): void {
+export async function reconcileAnalyticsJournals(root: string): Promise<void> {
+  const telemetry = state();
+  if (telemetry.journalReplay) return telemetry.journalReplay;
+  if (Date.now() - telemetry.lastScan < 60_000) return;
   const store = analyticsStore();
-  if (!store || Date.now() - state().lastScan < 60000) return;
-  state().lastScan = Date.now();
+  if (!store) return;
+  telemetry.lastScan = Date.now();
+  telemetry.journalReplay = replayAnalyticsJournals(root, store);
+  try { await telemetry.journalReplay; }
+  finally { telemetry.journalReplay = undefined; }
+}
+
+async function replayAnalyticsJournals(root: string, store: AnalyticsStore): Promise<void> {
   const dir = join(root, "commands");
-  if (!existsSync(dir)) return;
-  for (const file of readdirSync(dir).filter((x) => x.endsWith(".jsonl"))) {
+  const files = await readdir(dir).catch(() => []);
+  for (const file of files.filter((name) => name.endsWith(".jsonl"))) {
     try {
       const full = join(dir, file),
-        mtime = statSync(full).mtimeMs,
+        mtime = (await stat(full)).mtimeMs,
         key = "journal:" + file;
       if (
         mtime === (store.get<number>(key) ?? 0) ||
@@ -722,8 +729,16 @@ export function reconcileAnalyticsJournals(root: string): void {
       )
         continue;
       const commands = new Map<string, SessionCommandRecord>();
-      for (const line of readFileSync(full, "utf8").split(/\r?\n/)) {
+      const stream = createReadStream(full, { encoding: "utf8" });
+      const lines = createInterface({ input: stream, crlfDelay: Infinity });
+      try {
+      let processed = 0;
+      for await (const line of lines) {
         if (!line) continue;
+        if (++processed % 64 === 0) {
+          await new Promise<void>(resolveYield => setImmediate(resolveYield));
+          if (!readAnalyticsConfig()) return;
+        }
         let entry: {
           kind: string;
           command?: SessionCommandRecord;
@@ -752,6 +767,10 @@ export function reconcileAnalyticsJournals(root: string): void {
             recordAnalyticsCommand(updated, entry.timestamp, true);
           }
         }
+      }
+      } finally {
+        lines.close();
+        stream.destroy();
       }
       store.set(key, mtime);
     } catch {

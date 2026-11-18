@@ -35,6 +35,10 @@ node scripts/run-desktop-e2e.mjs --scenario subagents-real --executable 'C:\实�
 
 `chat-context-menu-evidence.json` 保存核对结果，截图与启动失败、复测记录沿用公共运行器。合成历史不代表真实模型生成，开发运行不代表发布安装包验收；无桌面桥的复制与降级、工具文件项、嵌套链接和窄视口由 `lib/chat-context-menu-browser.test.mjs` 的浏览器夹具覆盖。
 
+## 长对话分页
+
+`npm run test:desktop:e2e -- --scenario chat-history-pagination --step-timeout-ms 120000` 在独立 Agent 目录准备 120 轮合成聊天。在真实 Electron 中点击侧栏会话，核对最近 40 轮的响应体与首次绘制，再通过界面向前分页、检查滚动位置、用全局搜索定位旧回复并返回最新。使用同一 profile 重启后重新打开聊天。`history-pagination-evidence.json` 记录首包字节数、消息条数和滚动定位结果。场景使用开发服务和合成会话，真实模型和已安装版本需各自验收。
+
 ## 运行
 
 `node scripts/run-desktop-e2e.mjs --scenario workspace-issue-fixes --step-timeout-ms 180000 --timeout-ms 1200000` 复用右键菜单场景，再验证文件名引用的唯一定位/多候选选择、浏览器设置中的下载位置、实际下载文件与同名避让、立即切换目录、原生网页等宽字体、快捷键和站点缩放、面板拖拽及进程重启后的配置。使用合成历史和两个 loopback 站点；只读 API、磁盘文件和 CDP 字体信息用于核对，功能操作通过 UI 完成。系统“另存为”对话框的手动选择、报告者的 JupyterLab/CodeHub、真实模型和安装包均不计入此场景。

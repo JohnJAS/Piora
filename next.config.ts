@@ -61,6 +61,7 @@ const nextConfig: NextConfig = {
       "./.harmony-worker/**/*",
       "./lib/harmony/runtime/deveco-password.mjs",
       "./lib/harmony/log-library/vendor/*.mjs",
+      "./lib/read-runtime/*.mjs",
       "./node_modules/yauzl/**/*",
       "./node_modules/pend/**/*",
       "./node_modules/7z-bin/dist/**/*",

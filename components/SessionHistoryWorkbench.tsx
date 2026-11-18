@@ -338,7 +338,13 @@ export function SessionHistoryWorkbench({ sessionId, sessionName, location, cont
               if (row.kind !== "entry") return null;
               return <HistoryEntryCard node={row.node} detail={history.detail(row.node.id)} error={history.error(row.node.id)} ensure={history.ensure} store={getStore(row.node.id)} selected={row.node.id === preferences.entryId}
                 includeThinking={preferences.thinking} sessionId={sessionId} version={index.version} cwd={index.cwd} onOpenFile={onOpenFile} onOpenCommand={setCommand} onCopy={copy}
-                canFocus={Boolean(controls?.entryIds.includes(row.node.id))} onFocus={id => { controls?.focusEntry(id); onClose(); }} onFork={fork} busy={busy} />;
+                canFocus={Boolean(controls && (controls.entryIds.includes(row.node.id)
+                  || (!controls.busy && controls.canLoadEarlier && preferences.leafId === controls.leafId)))} onFocus={id => {
+                  void perform("focus:" + id, async () => {
+                    if (await controls?.focusEntry(id) === false) throw new Error(t("history.outsideContext"));
+                    onClose();
+                  });
+                }} onFork={fork} busy={busy} />;
             }} />}
           </div>
         </div>
