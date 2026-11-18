@@ -70,6 +70,7 @@ export class AnalyticsUploader {
   private stopped = false;
   private vault!: Vault;
   private failures = 0;
+  private displayNameSupported = false;
   private identitySupported = false;
   private capabilityCheckedAt = 0;
   private constructor(
@@ -288,6 +289,9 @@ export class AnalyticsUploader {
           const envelope = (await response.json()) as {
             data?: { capabilities?: unknown };
           };
+          this.displayNameSupported =
+            Array.isArray(envelope.data?.capabilities) &&
+            envelope.data.capabilities.includes("windows-display-name-v1");
           this.identitySupported =
             Array.isArray(envelope.data?.capabilities) &&
             envelope.data.capabilities.includes("windows-domain-identity-v1");
@@ -296,6 +300,14 @@ export class AnalyticsUploader {
       if (!this.identitySupported) {
         this.store.set("identity_status", "unsupported_backend");
         return;
+      }
+      if (
+        this.vault.identity_pending?.identity.display_name &&
+        !this.displayNameSupported
+      ) {
+        // A downgraded backend requires a new payload and idempotency key.
+        delete this.vault.identity_pending.identity.display_name;
+        this.vault.identity_pending.id = randomUUID();
       }
       const last = this.store.get<number>("identity_synced_at") ?? 0;
       if (!this.vault.identity_pending && Date.now() - last < 86400000) return;
@@ -306,7 +318,15 @@ export class AnalyticsUploader {
         const { account_type, domain, account_name, source } = observation;
         this.vault.identity_pending = {
           id: randomUUID(),
-          identity: { account_type, domain, account_name, source },
+          identity: {
+            account_type,
+            domain,
+            account_name,
+            source,
+            ...(this.displayNameSupported && observation.display_name
+              ? { display_name: observation.display_name }
+              : {}),
+          },
         };
       }
       // Persist the exact id/body before every attempt, including after a failed save.

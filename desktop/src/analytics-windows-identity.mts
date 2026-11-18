@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 /** Matches the backend WindowsIdentity schema. Never proof of authentication. */
 export interface WindowsIdentity {
+  display_name?: string;
   account_type: "domain" | "local" | "unknown";
   domain: string | null;
   account_name: string | null;
@@ -35,7 +36,7 @@ $sid = $identity.User.Value
 if ($sid -notmatch '^S-1-5-21-(\d+-){3}\d+$') { throw 'Unsupported account SID' }
 $account = @(Get-CimInstance -ClassName Win32_UserAccount -Filter "SID='$sid'")
 if ($account.Count -ne 1) { throw 'Account not resolved' }
-[ordered]@{ name=$identity.Name; sid=$sid; account_sid=$account[0].SID; domain=$account[0].Domain; login=$account[0].Name; local=$account[0].LocalAccount } | ConvertTo-Json -Compress
+[ordered]@{ name=$identity.Name; sid=$sid; account_sid=$account[0].SID; domain=$account[0].Domain; login=$account[0].Name; display_name=$account[0].FullName; local=$account[0].LocalAccount } | ConvertTo-Json -Compress
 `;
 
 export function parseWindowsIdentity(text: string): IdentityObservation {
@@ -58,7 +59,15 @@ export function parseWindowsIdentity(text: string): IdentityObservation {
         `${value.domain}\\${value.login}`.toUpperCase()
     )
       return unknownIdentity("unconfirmed");
+    const displayName =
+      typeof value.display_name === "string" ? value.display_name.trim() : "";
     return {
+      ...(!value.local &&
+      displayName &&
+      Array.from(displayName).length <= 120 &&
+      !/[\x00-\x1f\x7f]/.test(displayName)
+        ? { display_name: displayName }
+        : {}),
       account_type: value.local ? "local" : "domain",
       domain: value.local ? null : value.domain,
       account_name: value.local ? null : value.login,
