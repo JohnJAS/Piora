@@ -20,7 +20,8 @@ npm run dev:desktop  # Electron，不能与上一条同时占用同一个端口
 测试、文档与独立网站。如果在其他目录新增会渲染到界面的 Tailwind 类，请同步
 维护 `app/globals.css` 的 `@source`。无待恢复数据时不加载备份归档模块；
 实际导入仍在启动服务与读取界面设置之前处理。开发托盘在主页面导航完成后才开始
-查任务，状态读取不初始化 Agent SDK，前一请求未完成时不发起下一次轮询。
+查任务，状态读取不初始化 Agent SDK，前一请求未完成时不发起下一次轮询。开发版
+并行清理旧 Web 缓存和预热页面资源。导航仍等待页面就绪，缓存清理仍有 5 秒上限。
 
 ## 与已发布版同时运行
 
@@ -91,6 +92,23 @@ Playwright 可找到 Chromium。默认端口 30151，可用 `PIORA_BENCHMARK_POR
 原始结果目录后缀分别为 `webpack-42ad9c92-a060-4134-99fa-89fa85ac7bfb`
 与 `turbopack-ebe8f5ab-4f43-4fdf-8523-53099046b790`。
 品牌资源此前已生成；“空缓存”指 Next 编译缓存，不是全新依赖安装。
+
+### 2026-11-18 首屏复测
+
+同一 Windows 验证 worktree、Node.js 24.5.0 与 Next.js 16.4.5，连续用两个空
+Next 输出目录运行 `verify-dev-startup.mjs`：浏览器 `.app-shell` 可见时间从
+20.15 秒降到 17.70 秒（约 12%），首次导航至 DOMContentLoaded 从 16.26 秒
+降到 13.48 秒。保留 Windows 的默认缓存策略；这是单机相邻两次观测，
+不等同于安装版或整个 Electron 启动时间。独立的 PostCSS 对照中，扫描到的文件
+依赖从 2,467 个降到 1,219 个，代表性界面工具类仍正常生成。
+
+浏览器报告目录后缀分别为 `turbopack-28730621-df4d-4fb6-91a8-7baf39cc31a2`
+与 `turbopack-7834c268-878a-42bf-8d83-6cf295d867de`。真实 Windows Electron 的
+`settings-theme` 回归另外验证了设置入口、主题切换、刷新恢复及背景动效；
+桌面完整启动耗时受冷读盘影响较大，不能用上述浏览器数据承诺等比例加速。
+最终复测 `desktop-e2e-IKGhGR` 通过，启动阶段约 278 秒（包含冷编译和首次引导）；
+前一轮 `desktop-e2e-DGe4vX` 在 Next CLI 的 60 秒就绪期限内没有启动，未计为通过。
+未构建或运行正式安装包。
 
 ## 鸿蒙设备标签回归
 

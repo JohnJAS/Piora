@@ -3016,7 +3016,8 @@ async function startApplication(): Promise<void> {
   });
   if (!desktopDevelopmentRuntime) installPortableDesktopShortcut(logger);
   recordStartupStage("clearing-web-cache");
-  await clearObsoleteDesktopWebCaches(logger);
+  const developmentCacheCleanup = desktopDevelopmentRuntime ? clearObsoleteDesktopWebCaches(logger) : undefined;
+  if (!developmentCacheCleanup) await clearObsoleteDesktopWebCaches(logger);
 
   recordStartupStage("preparing-agent-data");
   piAgentDirectoryPath = resolvePiAgentDirectory(logger);
@@ -3045,7 +3046,7 @@ async function startApplication(): Promise<void> {
       }).catch((error) => logger?.warn("Development IPC request failed", error));
     });
     serverUrl = desktopDevelopmentRuntime.url;
-    await waitForDesktopDevelopmentServer(serverUrl, token);
+    await Promise.all([waitForDesktopDevelopmentServer(serverUrl, token), developmentCacheCleanup]);
     if (quitRequested || !serverUrl || mainWindow.isDestroyed()) return;
     configureSession(electronSession.fromPartition(DESKTOP_PARTITION, { cache: true }), serverUrl.origin, token);
     logger.info("Authenticated development service is ready", { elapsedMs: Date.now() - startupStartedAt });
