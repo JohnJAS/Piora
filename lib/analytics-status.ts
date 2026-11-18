@@ -29,6 +29,7 @@ export function readOrganizationAnalyticsStatus() {
     last_success_at: store.get<number>("last_success_at") ?? null,
     next_due_at: store.get<number>("next_due_at") ?? null,
     last_error: store.get<string>("last_error") ?? null,
+    recovery_status: store.get<string>("recovery_status") ?? null,
     upload_paused: store.get<boolean>("upload_paused") ?? false,
     interval_min_minutes: Math.round(policy.interval_min_seconds / 60),
     interval_max_minutes: Math.round(policy.interval_max_seconds / 60),

@@ -24,6 +24,15 @@ interface Vault {
   current: Credential;
   pending?: Credential;
   rotation_id?: string;
+  recovery_pending?: {
+    enrollment_key: string;
+    body: {
+      recovery_id: string;
+      installation_id: string;
+      previous_credential: Credential;
+      next_credential: Credential;
+    };
+  };
   identity_pending?: { id: string; identity: WindowsIdentity };
 }
 interface SecureStorage {
@@ -38,6 +47,7 @@ class UploadError extends Error {
   constructor(
     readonly status: number,
     readonly retryAfter: number,
+    readonly code?: string,
   ) {
     super("ANALYTICS_HTTP_" + status);
   }
@@ -69,6 +79,8 @@ export class AnalyticsUploader {
     private readonly fetcher: Fetcher = fetch,
     private readonly identityReader: () => Promise<IdentityObservation> = () =>
       collectWindowsIdentity(config.enabled),
+    private readonly configReader: () => AnalyticsConfig | undefined = () =>
+      config,
   ) {}
   static async create(
     store: AnalyticsStore,
@@ -76,6 +88,7 @@ export class AnalyticsUploader {
     secure: SecureStorage,
     fetcher: Fetcher = fetch,
     identityReader?: () => Promise<IdentityObservation>,
+    configReader?: () => AnalyticsConfig | undefined,
   ): Promise<AnalyticsUploader> {
     const uploader = new AnalyticsUploader(
       store,
@@ -83,6 +96,7 @@ export class AnalyticsUploader {
       secure,
       fetcher,
       identityReader,
+      configReader,
     );
     await uploader.initialize();
     return uploader;
@@ -197,14 +211,26 @@ export class AnalyticsUploader {
         signal: AbortSignal.timeout(15000),
         redirect: "error",
       });
-    if (!response.ok)
+    if (!response.ok) {
+      const errorBody = (await response.json().catch(() => null)) as {
+        error?: { code?: string };
+      } | null;
+      const code = [
+        "ENROLLMENT_INVALID",
+        "INSTALLATION_REVOKED",
+        "CREDENTIAL_RECOVERY_NOT_ALLOWED",
+      ].includes(errorBody?.error?.code ?? "")
+        ? errorBody?.error?.code
+        : undefined;
       throw new UploadError(
         response.status,
         Math.min(
           7200,
           Math.max(0, Number(response.headers.get("Retry-After")) || 0),
         ),
+        code,
       );
+    }
     const envelope = (await response.json()) as {
       data: Record<string, unknown>;
       meta: { server_time: string };
@@ -343,17 +369,103 @@ export class AnalyticsUploader {
     delete this.vault.rotation_id;
     await this.saveVault();
   }
+  private async recover(): Promise<void> {
+    const config = this.configReader();
+    if (!config?.enabled || config.backend_url !== this.config.backend_url)
+      throw new Error("ANALYTICS_RECOVERY_CONFIG_INVALID");
+    if (!this.vault.recovery_pending) {
+      if (!config.enrollment_key)
+        throw new Error("ANALYTICS_ENROLLMENT_REQUIRED");
+      const { credential_id, secret } = this.vault.current;
+      this.vault.recovery_pending = {
+        enrollment_key: config.enrollment_key,
+        body: {
+          recovery_id: randomUUID(),
+          installation_id: this.store.installationId,
+          previous_credential: { credential_id, secret },
+          next_credential: {
+            credential_id: randomUUID(),
+            secret: randomBytes(32).toString("base64url"),
+          },
+        },
+      };
+    }
+    // Persist before every attempt. Keep authorization stable across lost responses.
+    await this.saveVault();
+    const pending = this.vault.recovery_pending;
+    this.store.set("recovery_status", "pending");
+    let result: Record<string, unknown>;
+    try {
+      result = await this.request(
+        "/v1/installations/credentials/recover",
+        pending.body,
+        pending.enrollment_key,
+        pending.body.recovery_id,
+      );
+    } catch (error) {
+      this.store.set(
+        "recovery_status",
+        error instanceof UploadError
+          ? (error.code ?? "HTTP_" + error.status)
+          : "retry_pending",
+      );
+      // A definite authorization rejection cannot have committed this recovery.
+      if (error instanceof UploadError && error.code === "ENROLLMENT_INVALID") {
+        delete this.vault.recovery_pending;
+        await this.saveVault();
+      }
+      throw error;
+    }
+    if (
+      result.installation_id !== this.store.installationId ||
+      result.credential_id !== pending.body.next_credential.credential_id ||
+      typeof result.expires_at !== "string" ||
+      !Number.isFinite(Date.parse(result.expires_at))
+    )
+      throw new Error("ANALYTICS_RECOVERY_RESPONSE_INVALID");
+    const original = this.vault;
+    this.vault = {
+      ...original,
+      current: {
+        ...pending.body.next_credential,
+        expires_at: result.expires_at,
+      },
+    };
+    delete this.vault.recovery_pending;
+    delete this.vault.pending;
+    delete this.vault.rotation_id;
+    try {
+      await this.saveVault();
+    } catch (error) {
+      this.vault = original;
+      throw error;
+    }
+    this.store.set("recovery_status", "recovered");
+  }
+  private async refreshCredential(): Promise<void> {
+    if (this.vault.recovery_pending) return this.recover();
+    const expires = Date.parse(this.vault.current.expires_at ?? "");
+    if (!this.vault.pending && !(expires - Date.now() < 7 * 86400000)) return;
+    try {
+      await this.rotate();
+    } catch (error) {
+      // First try pending rotation material: a lost rotation reply may already
+      // have issued a usable credential. Only the server can authorize recovery.
+      if (
+        !(error instanceof UploadError) ||
+        error.status !== 401 ||
+        !(expires <= Date.now())
+      )
+        throw error;
+      await this.recover();
+    }
+  }
   async flush(): Promise<void> {
     if (this.busy || this.stopped) return;
     this.busy = true;
     try {
       await this.register();
-      if (
-        this.vault.pending ||
-        (this.vault.current.expires_at &&
-          Date.parse(this.vault.current.expires_at) - Date.now() < 7 * 86400000)
-      )
-        await this.rotate();
+      await this.refreshCredential();
       await this.syncIdentity();
       let policy = this.policy();
       this.store.prune(policy);
