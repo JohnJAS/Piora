@@ -56,8 +56,9 @@ test("shares bounded visible status polling without reserving an idle SSE connec
 });
 
 test("settles the project loading state when a background refresh supersedes the initial request", () => {
-  assert.match(source, /if \(loadSessionsRequestIdRef\.current === requestId\) setLoading\(false\)/);
-  assert.doesNotMatch(source, /if \(showLoading && loadSessionsRequestIdRef\.current === requestId\) setLoading\(false\)/);
+  const catalog = splitSources[4];
+  assert.match(catalog, /loadSessionsRequest\.current\?\.abort\(\);\s*const request = new AbortController\(\);\s*loadSessionsRequest\.current = request/);
+  assert.match(catalog, /finally \{\s*if \(loadSessionsRequest\.current === request\) \{\s*loadSessionsRequest\.current = null;\s*setCatalogComplete\(true\);\s*setLoading\(false\)/);
   assert.match(globalStyles, /\.sidebar-project-scroll\s*\{[^}]*background:\s*inherit/s);
 });
 

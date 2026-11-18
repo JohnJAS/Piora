@@ -56,7 +56,7 @@ async function withUnpersistedSessions(sessions: SessionInfo[]): Promise<Session
   return extras.length > 0 ? [...sessions, ...extras] : sessions;
 }
 
-export async function GET(request?: Request) {
+export async function GET(request: Request) {
   try {
     const runtimeProfile = getAgentRuntimeProfile();
     const profileStore = readAgentProfileStore();
@@ -67,15 +67,15 @@ export async function GET(request?: Request) {
     );
     const visibleIds = new Set(sessions.map((session) => session.id));
     const runningSessionIds = getRunningRpcSessionIds().filter((id) => visibleIds.has(id));
-    const query = request && new URL(request.url).searchParams;
-    if (query?.get("view") === "metadata") {
+    const query = new URL(request.url).searchParams;
+    if (query.get("view") === "metadata") {
       const ids = new Set(query.getAll("sessionId"));
       if (ids.size > 128) return NextResponse.json({ error: "Too many session IDs" }, { status: 400 });
       const requested = ids.size ? sessions.filter(session => ids.has(session.id)) : sessions;
       const result = query.has("presence") ? requested.slice(0, 1) : requested;
       return NextResponse.json({ sessions: result.map(preview), runtimeProfile });
     }
-    if (query?.get("view") === "sidebar") {
+    if (query.get("view") === "sidebar") {
       const requested = Number(query.get("offset") ?? "0");
       const offset = Number.isSafeInteger(requested) && requested >= 0 ? requested : 0;
       const version = createHash("sha256").update(JSON.stringify([...visibleIds])).digest("base64url");

@@ -22,6 +22,7 @@ const appShellSource = readFileSync(
   new URL("../components/AppShell.tsx", import.meta.url),
   "utf8",
 );
+const sessionCatalogSource = readFileSync(new URL("../lib/session-catalog-client.ts", import.meta.url), "utf8");
 
 test("completion notifications are opt-in and do not inherit the sound preference", () => {
   assert.match(hookSource, /useState\(false\)/);
@@ -47,8 +48,10 @@ test("clicking a notification opens its Session in the Piora instance that emitt
   assert.match(mainSource, /notification\.on\("click", \(\) => \{[\s\S]*?focusMainWindow\(\)[\s\S]*?webContents\.send\(NOTIFICATION_SESSION_CHANNEL, sessionId\)/);
   assert.match(preloadSource, /onNotificationSession\(listener: \(sessionId: string\) => void\)/);
   assert.match(appShellSource, /onNotificationSession\?\.\(\(sessionId\) =>/);
-  assert.match(appShellSource, /fetch\("\/api\/sessions", \{ cache: "no-store" \}\)/);
-  assert.match(appShellSource, /handleSelectSession\(session\)/);
+  assert.match(appShellSource, /const \[session\] = await fetchSessionMetadata\(\[sessionId\]\);[\s\S]{0,125}handleSelectSession\(session\)/);
+  assert.match(sessionCatalogSource, /new URLSearchParams\(\{ view: "metadata" \}\)/);
+  assert.match(sessionCatalogSource, /query\.append\("sessionId", id\)/);
+  assert.match(sessionCatalogSource, /fetch\("\/api\/sessions\?" \+ query, \{ cache: "no-store", signal \}\)/);
   assert.match(appShellSource, /notifyCompletion\(taskTitle, sessionId\)/);
   assert.match(appShellSource, /notifyUserInput\(snapshot\.title \?\? undefined, snapshot\.id\)/);
 });
