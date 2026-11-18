@@ -348,6 +348,10 @@ export function useBackground() {
     });
   }, [snapshot.preference]);
 
+  const setMotionEnabled = useCallback((motionEnabled: boolean) => {
+    commitPreference({ ...snapshot.preference, motionEnabled });
+  }, [snapshot.preference]);
+
   const reset = useCallback(async () => {
     operationRevision += 1;
     storedCustom = null;
@@ -374,6 +378,7 @@ export function useBackground() {
     setSidebarOverlay,
     setFilePanelOverlay,
     setBlur,
+    setMotionEnabled,
     reset,
   };
 }

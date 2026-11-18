@@ -32,6 +32,7 @@ export interface BackgroundManifest {
 
 export const BACKGROUND_PREFERENCE_STORAGE_KEY = "pi-background:v1";
 export const CHARACTER_OVERLAY_MIGRATION_KEY = "pi-background:character-overlay-v2";
+export const GLACIER_MOTION_BACKGROUND_ID = "nordic-ice-motion";
 export const CUSTOM_BACKGROUND_FALLBACK_STORAGE_KEY = "pi-background:custom-data-url:v1";
 export const CUSTOM_BACKGROUND_MAX_BYTES = 12 * 1024 * 1024;
 export const CUSTOM_BACKGROUND_DATA_URL_FALLBACK_MAX_BYTES = 1536 * 1024;
@@ -77,6 +78,7 @@ export interface BackgroundPreference {
   blur: number;
   sidebarOverlay: number;
   filePanelOverlay: number;
+  motionEnabled?: boolean;
 }
 
 export const DEFAULT_BACKGROUND_PREFERENCE: Readonly<BackgroundPreference> = Object.freeze({
@@ -174,7 +176,12 @@ export function parseBackgroundManifest(value: unknown): BackgroundManifest {
 
 export const BACKGROUND_MANIFEST = parseBackgroundManifest(manifestJson);
 export const CHARACTER_BACKGROUND_MANIFEST = parseBackgroundManifest(characterManifestJson);
-export const BACKGROUND_PRESETS = Object.freeze([...BACKGROUND_MANIFEST.presets, ...CHARACTER_BACKGROUND_MANIFEST.presets]);
+export const BACKGROUND_PRESETS = Object.freeze([
+  ...BACKGROUND_MANIFEST.presets.flatMap((preset) => preset.id === "nordic-ice"
+    ? [preset, { ...preset, id: GLACIER_MOTION_BACKGROUND_ID, nameKey: "background.preset.glacierMotion" }]
+    : [preset]),
+  ...CHARACTER_BACKGROUND_MANIFEST.presets,
+]);
 
 const BACKGROUND_PREPAINT_PRESETS = JSON.stringify(Object.fromEntries(
   BACKGROUND_PRESETS.map((preset) => [preset.id, {
@@ -205,14 +212,22 @@ export function normalizeBackgroundPreference(value: unknown): BackgroundPrefere
   const blur = clampInteger(value.blur, DEFAULT_BACKGROUND_PREFERENCE.blur, 0, 24);
   const sidebarOverlay = clampInteger(value.sidebarOverlay, DEFAULT_BACKGROUND_PREFERENCE.sidebarOverlay, 0, 90);
   const filePanelOverlay = clampInteger(value.filePanelOverlay, DEFAULT_BACKGROUND_PREFERENCE.filePanelOverlay, 0, 90);
+  const settings = {
+    schemaVersion: 1 as const,
+    overlay,
+    blur,
+    sidebarOverlay,
+    filePanelOverlay,
+    ...(typeof value.motionEnabled === "boolean" ? { motionEnabled: value.motionEnabled } : {}),
+  };
 
   if (value.source === "builtin" && typeof value.presetId === "string" && getBackgroundPreset(value.presetId)) {
-    return { schemaVersion: 1, source: "builtin", presetId: value.presetId, overlay, blur, sidebarOverlay, filePanelOverlay };
+    return { ...settings, source: "builtin", presetId: value.presetId };
   }
   if (value.source === "custom") {
-    return { schemaVersion: 1, source: "custom", presetId: null, overlay, blur, sidebarOverlay, filePanelOverlay };
+    return { ...settings, source: "custom", presetId: null };
   }
-  return { schemaVersion: 1, source: "none", presetId: null, overlay, blur, sidebarOverlay, filePanelOverlay };
+  return { ...settings, source: "none", presetId: null };
 }
 
 export function parseStoredBackgroundPreference(value: string | null): BackgroundPreference {

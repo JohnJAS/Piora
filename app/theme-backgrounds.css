@@ -39,6 +39,72 @@ html[data-app-background-active="true"] body::after {
   background: color-mix(in srgb, var(--bg) var(--app-background-overlay, 58%), transparent);
 }
 
+.glacier-background-motion {
+  display: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html:not(.desktop-pet-document) body:has(> .app-shell):not(:has(> .settings-backdrop)) > .glacier-background-motion {
+    display: block;
+    position: fixed;
+    z-index: 0;
+    inset: -32px; /* Match the static artwork's crop and leave room for parallax. */
+    overflow: hidden;
+    pointer-events: none;
+    transform: scale(1.035);
+    filter: blur(var(--app-background-blur, 0px));
+  }
+
+  .glacier-facets,
+  .glacier-glint {
+    position: absolute;
+    inset: 0;
+  }
+
+  .glacier-facets {
+    background: var(--app-background-image, none) center / cover no-repeat;
+  }
+
+  .glacier-background-motion[data-motion-running] .glacier-facets {
+    transition: transform 420ms cubic-bezier(0.18, 0.64, 0.32, 1);
+  }
+
+  .glacier-facets-middle {
+    mask-image: radial-gradient(ellipse 72% 75% at 50% 49%, transparent 55%, #000 94%);
+    transform: translate3d(calc(var(--glacier-x, 0px) * 0.4), calc(var(--glacier-y, 0px) * 0.4), 0);
+  }
+
+  .glacier-facets-front {
+    mask-image: radial-gradient(ellipse 61% 64% at 50% 48%, transparent 72%, #000 99%);
+    transform: translate3d(var(--glacier-x, 0px), var(--glacier-y, 0px), 0);
+  }
+
+  .glacier-glint {
+    mask-image:
+      radial-gradient(ellipse 26% 48% at 0% 27%, #000 18%, transparent 96%),
+      radial-gradient(ellipse 27% 45% at 100% 69%, #000 20%, transparent 94%);
+  }
+
+  .glacier-glint::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    background: linear-gradient(118deg, transparent 44%, rgb(175 222 255 / 0.14) 48%, rgb(246 253 255 / 0.75) 50%, transparent 53%);
+    animation: glacier-facet-sweep 32s linear infinite paused;
+  }
+
+  .glacier-background-motion[data-motion-running] .glacier-glint::before {
+    animation-play-state: running;
+  }
+
+  @keyframes glacier-facet-sweep {
+    0%, 6% { transform: translateX(-72%); opacity: 0; }
+    9%, 17% { opacity: 0.66; }
+    20%, 100% { transform: translateX(72%); opacity: 0; }
+  }
+}
+
 /* Lift only the app root above the fixed background pseudo-layers. Do NOT
  * use `body > *`: portals (settings dialog, context menus, tooltips) are
  * direct body children with their own fixed positioning and z-index, and

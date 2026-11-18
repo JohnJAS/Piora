@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useBackground } from "@/hooks/useBackground";
 import { useI18n } from "@/hooks/useI18n";
 import { isTheme, useTheme, type Theme } from "@/hooks/useTheme";
-import { getBackgroundPreset, SUPPORTED_BACKGROUND_MIME_TYPES } from "@/lib/backgrounds";
+import { getBackgroundPreset, GLACIER_MOTION_BACKGROUND_ID, SUPPORTED_BACKGROUND_MIME_TYPES } from "@/lib/backgrounds";
 import { CharacterThemeLooks } from "./CharacterThemeLooks";
 import { AliIcon } from "./AliIcon";
 
@@ -215,6 +215,18 @@ const APPEARANCE_LOOKS: readonly AppearanceLook[] = [
     previewOverlay: "rgba(245, 249, 252, 0.18)",
     nameKey: "appearance.look.nordic",
     descriptionKey: "appearance.look.nordicDescription",
+  },
+  {
+    id: "glacier-motion",
+    theme: "nordic",
+    backgroundId: GLACIER_MOTION_BACKGROUND_ID,
+    overlay: 18,
+    blur: 0,
+    sidebarOverlay: 24,
+    filePanelOverlay: 30,
+    previewOverlay: "rgba(129, 176, 227, 0.17)",
+    nameKey: "appearance.look.glacierMotion",
+    descriptionKey: "appearance.look.glacierMotionDescription",
   },
   {
     id: "sakura",

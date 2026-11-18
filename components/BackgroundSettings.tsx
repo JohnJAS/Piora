@@ -3,7 +3,7 @@
 import { useId, useRef } from "react";
 import { useBackground } from "@/hooks/useBackground";
 import { useI18n } from "@/hooks/useI18n";
-import { getBackgroundPreset, SUPPORTED_BACKGROUND_MIME_TYPES } from "@/lib/backgrounds";
+import { getBackgroundPreset, GLACIER_MOTION_BACKGROUND_ID, SUPPORTED_BACKGROUND_MIME_TYPES } from "@/lib/backgrounds";
 import type { BackgroundStorageErrorCode } from "@/lib/background-storage";
 import styles from "./BackgroundSettings.module.css";
 
@@ -46,6 +46,7 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
     setSidebarOverlay,
     setFilePanelOverlay,
     setBlur,
+    setMotionEnabled,
     reset,
   } = useBackground();
 
@@ -78,6 +79,18 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
       </div>
 
       <div className={styles.preview} aria-hidden="true" style={{ backgroundImage: previewBackground }} />
+
+      {selectedPreset?.id === GLACIER_MOTION_BACKGROUND_ID && (
+        <label className={styles.motionToggle}>
+          <input
+            type="checkbox"
+            checked={preference.motionEnabled !== false}
+            disabled={!hydrated || busy}
+            onChange={(event) => setMotionEnabled(event.currentTarget.checked)}
+          />
+          {t("background.motion")}
+        </label>
+      )}
 
       <div className={styles.field}>
         <span id={`${titleId}-source`} className={styles.fieldHeader}>{t("background.source")}</span>
