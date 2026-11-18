@@ -13,6 +13,7 @@ import {
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 import { listRooms } from "@/lib/room-store";
 import { getManagedRoomSessionIds } from "@/lib/room-session-visibility";
+import { listSubagentParents } from "@/lib/subagent-store";
 
 const SIDEBAR_PAGE_SIZE = 400;
 
@@ -68,9 +69,12 @@ export async function GET(request: Request) {
     const visibleIds = new Set(sessions.map((session) => session.id));
     const runningSessionIds = getRunningRpcSessionIds().filter((id) => visibleIds.has(id));
     const query = new URL(request.url).searchParams;
-    if (query.get("view") === "metadata") {
+    if (query.get("view") === "metadata" || query.get("view") === "subagents") {
       const ids = new Set(query.getAll("sessionId"));
       if (ids.size > 128) return NextResponse.json({ error: "Too many session IDs" }, { status: 400 });
+      if (query.get("view") === "subagents") {
+        return NextResponse.json({ subagentParentIds: listSubagentParents([...ids].filter(id => visibleIds.has(id))) }, { headers: { "Cache-Control": "no-store" } });
+      }
       const requested = ids.size ? sessions.filter(session => ids.has(session.id)) : sessions;
       const result = query.has("presence") ? requested.slice(0, 1) : requested;
       return NextResponse.json({ sessions: result.map(preview), runtimeProfile });
@@ -83,7 +87,9 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "The session list changed" }, { status: 409 });
       }
       const next = offset + SIDEBAR_PAGE_SIZE;
-      return NextResponse.json({ sessions: sessions.slice(offset, next).map(preview), runningSessionIds, runtimeProfile,
+      const page = sessions.slice(offset, next);
+      return NextResponse.json({ sessions: page.map(preview), runningSessionIds, runtimeProfile,
+        subagentParentIds: listSubagentParents(page.map(session => session.id)),
         version, nextOffset: next < sessions.length ? next : null });
     }
     return NextResponse.json({ sessions, runningSessionIds, runtimeProfile });

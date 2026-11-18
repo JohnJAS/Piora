@@ -30,6 +30,7 @@ export type TaskStatusPresentationKey = Attention | "running";
 export interface TaskRuntimeSnapshot {
   id: string;
   runtime: Runtime;
+  runningSubagentCount?: number;
   pendingApproval: boolean;
   lastPromptFailed: boolean;
   errorSummary?: string;
@@ -61,6 +62,11 @@ export interface RunningSessionsPayload {
   /** Compatibility field for clients from before the three-axis status model. */
   runningSessionIds: string[];
   runningSessions: TaskRuntimeSnapshot[];
+  subagentPresenceVersion?: string;
+  subagentRefreshEpoch?: string;
+  subagentRefreshCursor?: number;
+  subagentChanges?: string[];
+  subagentRefreshReset?: boolean;
 }
 
 export const STATUS_PRESENTATION: Record<TaskStatusPresentationKey, {

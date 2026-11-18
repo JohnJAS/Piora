@@ -216,7 +216,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
     nestedCallsStore, loading, error, messages, entryIds, modelChanges, streamState, replyHistorySettling, activeLeafId, switchHistoryBranch, forkHistoryQuestion,
     historyPage, loadEarlierHistory, loadNewestHistory,
     toolPermission, permissionSaving, handleToolPermission, toolReviews,
-    agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
+    agentRunning, backgroundSubagents, bashRunning, pendingBash, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactionStartedAt, compactError, compactResult, displayModel: displayModelValue, sessionStats,
     slashCommands, slashCommandsLoading, slashCommandsError, commandCatalog, chatCommands, queuedMessages, capabilities,
@@ -458,9 +458,9 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
 
   // Register the abort handler for the global Esc shortcut
   useEffect(() => {
-    registerAbortHandler(sessionBusy && !historyVisible ? handleAbort : null);
+    registerAbortHandler((sessionBusy || backgroundSubagents) && !historyVisible && visible ? handleAbort : null);
     return () => registerAbortHandler(null);
-  }, [sessionBusy, handleAbort, historyVisible]);
+  }, [sessionBusy, backgroundSubagents, handleAbort, historyVisible, visible]);
 
   const historyRef = useRef<ChatHistoryHandle>(null);
   const [highlightedEntryId, setHighlightedEntryId] = useState<string | null>(null);

@@ -2,13 +2,13 @@ import { Type } from "typebox";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getSubagentRuntime } from "../lib/subagent-runtime.ts";
 import { listSubagentProfiles, readSubagentSettings } from "../lib/subagent-settings.ts";
-import type { SubagentRecord } from "../lib/subagent-types.ts";
+import { projectSubagentDetail, type SubagentRecord } from "../lib/subagent-types.ts";
 
 function result(record: SubagentRecord) {
   const text = record.status === "running"
     ? `Async agent launched. agentId: ${record.agentId}. Continue non-overlapping work; a completion notification will arrive. Use SendMessage to continue after completion.`
     : `${record.result || record.error || "(No output)"}\nagentId: ${record.agentId}\nstatus: ${record.status}\n<usage>subagent_tokens: ${record.totalTokens}; tool_uses: ${record.totalToolUseCount}; duration_ms: ${(record.endedAt ?? Date.now()) - record.startedAt}</usage>`;
-  return { content: [{ type: "text" as const, text }], details: { subagent: record }, isError: ["failed", "cancelled", "interrupted"].includes(record.status) };
+  return { content: [{ type: "text" as const, text }], details: { subagent: projectSubagentDetail(record) }, isError: ["failed", "cancelled", "interrupted"].includes(record.status) };
 }
 export default function subagentExtension(api: ExtensionAPI) {
   api.on("before_agent_start", (event, ctx) => {

@@ -9,6 +9,7 @@ const FOCUSABLE_SELECTOR = [
   "input:not([disabled]):not([type='hidden'])",
   "select:not([disabled])",
   "textarea:not([disabled])",
+  "summary",
   "iframe",
   "audio[controls]",
   "video[controls]",

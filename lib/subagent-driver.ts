@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionWrapper, startRpcSession } from "./rpc-manager";
 import type { SubagentDriver } from "./subagent-runtime";
-import { isSubagentTool } from "./subagent-types";
+import { isSubagentTool, projectSubagentDetail } from "./subagent-types";
 import { saveSubagent } from "./subagent-store";
 import { isWorkflowTool } from "./workflow-tools";
 
@@ -75,7 +75,7 @@ export function createSubagentDriver(parent: AgentSessionWrapper, start: typeof 
       if (!parent.isAlive()) return;
       await parent.inner.sendCustomMessage({ customType: "piora-subagent-completion", display: true,
         content: `<subagent-notification>\n${record.description}: ${record.status}\nagentId: ${record.agentId}\n${record.result || record.error}\n</subagent-notification>`,
-        details: { subagent: record },
+        details: { subagent: projectSubagentDetail(record) },
       }, { deliverAs: "followUp", triggerTurn: true });
     },
   };

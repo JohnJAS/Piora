@@ -6,6 +6,9 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { OpenSubagentContext } from "@/hooks/useSubagents";
+import { SubagentInspector } from "./SubagentInspector";
+import type { SubagentSelection } from "@/lib/subagent-types";
 import { useApplicationShortcuts } from "@/hooks/useApplicationShortcuts";
 import { SessionSidebar, type SessionSidebarHandle } from "./SessionSidebar";
 import { ChatWindow, type TaskControls } from "./ChatWindow";
@@ -284,6 +287,8 @@ export function AppShell() {
   const historyReturnFocus = useRef<HTMLElement | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [subagentSelection, setSubagentSelection] = useState<SubagentSelection>();
+  const subagentOpener = useRef<HTMLElement | null>(null);
   const [rightPanelHasOpened, setRightPanelHasOpened] = useState(false);
   const [rightPanelMaximized, setRightPanelMaximized] = useState(false);
   // Keep the server and first client render identical. The persisted tab is
@@ -942,7 +947,7 @@ export function AppShell() {
     }
   }, [activeFileTabId, activeProjectRoot, fileTabs]);
 
-  const handleSelectSession = useCallback(async (session: SessionInfo, isRestore = false, entryId?: string) => {
+  const handleSelectSession = useCallback(async (session: SessionInfo, isRestore = false, entryId?: string, focusComposer = true) => {
     const navigationVersion = ++workspaceNavigationVersionRef.current;
     setPendingSessionSwitch(null);
     setSessionSwitchError(null);
@@ -1000,12 +1005,46 @@ export function AppShell() {
       // Session changes remount ChatWindow. Restore focus after that mount so
       // dismissing a native dialog or leaving a streaming session can never
       // strand keyboard input on the old, detached composer.
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => chatInputRef.current?.focus());
+      if (focusComposer) window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (workspaceNavigationVersionRef.current === navigationVersion) chatInputRef.current?.focus();
+        });
       });
     }
     return true;
   }, [isMobile, translate]);
+
+  const closeSubagent = useCallback(() => {
+    setSubagentSelection(undefined);
+    requestAnimationFrame(() => {
+      if (subagentOpener.current?.isConnected && subagentOpener.current.getClientRects().length) subagentOpener.current.focus({ preventScroll: true });
+      else chatInputRef.current?.focus();
+      subagentOpener.current = null;
+    });
+  }, []);
+
+  const openSubagent = useCallback((selection: SubagentSelection) => {
+    if (selectedSessionIdRef.current !== selection.parentSessionId) return;
+    workspaceNavigationVersionRef.current++;
+    subagentOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setSubagentSelection(selection);
+  }, []);
+
+  const openSidebarSubagent = useCallback(async (session: SessionInfo, agentId: string) => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (selectedSessionIdRef.current !== session.id) {
+      const version = workspaceNavigationVersionRef.current + 1;
+      if (!await handleSelectSession(session, false, undefined, false) || workspaceNavigationVersionRef.current !== version) return;
+    } else workspaceNavigationVersionRef.current++;
+    subagentOpener.current = opener;
+    setSubagentSelection({ parentSessionId: session.id, agentId });
+  }, [handleSelectSession]);
+
+  useEffect(() => {
+    if (subagentSelection && (selectedRoom || subagentSelection.parentSessionId !== selectedSession?.id)) {
+      setSubagentSelection(undefined);
+    }
+  }, [selectedRoom, selectedSession?.id, subagentSelection]);
 
   const handleSelectSearchResult = useCallback((session: SessionInfo, entryId: string) => {
     void handleSelectSession(session, false, entryId);
@@ -1995,6 +2034,8 @@ export function AppShell() {
     <SessionSidebar
       ref={sessionSidebarRef}
       selectedSessionId={selectedSession?.id ?? null}
+      selectedSubagent={subagentSelection}
+      onOpenSubagent={openSidebarSubagent}
       selectedRoomId={selectedRoom?.id ?? null}
       onSelectSession={handleSelectSession}
       onSelectSearchResult={handleSelectSearchResult}
@@ -2131,7 +2172,9 @@ export function AppShell() {
       }}
     />
   ) : null;
-  const effectiveRightPanelOpen = rightPanelOpen && !settingsDialogOpen;
+  const shownSubagent = !selectedRoom && !settingsDialogOpen && !historyDialogOpen && subagentSelection?.parentSessionId === selectedSession?.id ? subagentSelection : undefined;
+  const effectiveRightPanelOpen = (rightPanelOpen || Boolean(shownSubagent)) && !settingsDialogOpen;
+  const effectiveRightPanelMaximized = rightPanelMaximized && !shownSubagent;
 
   return (
     <AnswerLinkProvider openLink={answerNavigation.openLink}>
@@ -2211,7 +2254,7 @@ export function AppShell() {
       data-app-hydrated={appHydrated ? "" : undefined}
       data-side-panel-mode={rightPanelOverlayMode ? "overlay" : "split"}
       style={{
-        "--workspace-min-width": `${rightPanelOpen && !rightPanelOverlayMode ? CHAT_MIN_WIDTH_WITH_RIGHT_PANEL : WORKSPACE_MIN_WIDTH}px`,
+        "--workspace-min-width": `${effectiveRightPanelOpen && !rightPanelOverlayMode ? CHAT_MIN_WIDTH_WITH_RIGHT_PANEL : WORKSPACE_MIN_WIDTH}px`,
         "--right-panel-width": `${rightPanelResizer.width}px`,
         display: "flex",
         height: "100dvh",
@@ -2293,13 +2336,13 @@ export function AppShell() {
       <div
         ref={sidebarResizer.panelRef}
         id="session-sidebar"
-        inert={!sidebarOpen || rightPanelMaximized}
+        inert={!sidebarOpen || effectiveRightPanelMaximized || Boolean(shownSubagent && (rightPanelOverlayMode || isMobile))}
         className={`sidebar-container${sidebarOpen ? " sidebar-open" : " sidebar-closed"}${mobileSidebarReady ? "" : " sidebar-mobile-pending"}${sidebarResizer.isResizing ? " sidebar-resizing" : ""}`}
         style={{
           "--sidebar-width": `${sidebarResizer.width}px`,
           background: "var(--bg-panel)",
           borderRight: "1px solid var(--border)",
-          display: rightPanelMaximized ? "none" : "flex",
+          display: effectiveRightPanelMaximized ? "none" : "flex",
           flexDirection: "column",
           flexShrink: 0,
           zIndex: 200,
@@ -2307,7 +2350,7 @@ export function AppShell() {
       >
         {sidebarContent}
       </div>
-      {sidebarOpen && !rightPanelMaximized && (
+      {sidebarOpen && !effectiveRightPanelMaximized && (
         <div
           {...sidebarResizer.separatorProps}
           aria-controls="session-sidebar"
@@ -2318,7 +2361,7 @@ export function AppShell() {
       )}
 
       {/* Center: chat */}
-      <div id="piora-main-content" role="main" tabIndex={-1} className="workspace-main" style={{ flex: 1, display: rightPanelMaximized ? "none" : "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+      <div id="piora-main-content" role="main" tabIndex={-1} className="workspace-main" inert={Boolean(shownSubagent && (rightPanelOverlayMode || isMobile))} style={{ flex: 1, display: effectiveRightPanelMaximized ? "none" : "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
         {/* Quiet conversation chrome: identity on the left, contextual actions on the right. */}
         <div ref={topBarRef} className="app-topbar">
           <button
@@ -2423,14 +2466,14 @@ export function AppShell() {
                 </>
               ) : null}
               <button
-                className={`topbar-control topbar-icon-button right-panel-toggle ${rightPanelOpen ? "is-open" : "is-closed"}`}
+                className={`topbar-control topbar-icon-button right-panel-toggle ${effectiveRightPanelOpen ? "is-open" : "is-closed"}`}
                 type="button"
-                data-panel-open={rightPanelOpen ? "true" : "false"}
-                onClick={() => setRightPanelOpen((value) => !value)}
+                data-panel-open={effectiveRightPanelOpen ? "true" : "false"}
+                onClick={() => shownSubagent ? closeSubagent() : setRightPanelOpen((value) => !value)}
                 aria-controls="file-panel"
-                aria-expanded={rightPanelOpen}
-                title={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
-                aria-label={rightPanelOpen ? translate("files.hidePanel") : translate("files.showPanel")}
+                aria-expanded={effectiveRightPanelOpen}
+                title={translate(shownSubagent ? "subagent.closeDetails" : rightPanelOpen ? "files.hidePanel" : "files.showPanel")}
+                aria-label={translate(shownSubagent ? "subagent.closeDetails" : rightPanelOpen ? "files.hidePanel" : "files.showPanel")}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -2438,11 +2481,11 @@ export function AppShell() {
                   width: TOP_BAR_ICON_BUTTON_SIZE,
                   height: "100%",
                   padding: 0,
-                  background: rightPanelOpen ? "var(--bg-selected)" : "none",
+                  background: effectiveRightPanelOpen ? "var(--bg-selected)" : "none",
                   border: "none",
-                  borderTop: rightPanelOpen ? "2px solid var(--accent)" : "2px solid transparent",
+                  borderTop: effectiveRightPanelOpen ? "2px solid var(--accent)" : "2px solid transparent",
                   borderRadius: "var(--radius-control)",
-                  color: rightPanelOpen ? "var(--text)" : "var(--text-muted)",
+                  color: effectiveRightPanelOpen ? "var(--text)" : "var(--text-muted)",
                   cursor: "pointer",
                   transition: "color 0.1s, background 0.1s",
                 }}
@@ -2874,7 +2917,7 @@ export function AppShell() {
                 handleRef={roomWorkspaceRef}
               />
             ) : showChat ? (
-              <ChatWindow
+              <OpenSubagentContext.Provider value={openSubagent}><ChatWindow
                 key={sessionKey}
                 visible={!settingsDialogOpen}
                 historyVisible={historyDialogOpen && !settingsDialogOpen}
@@ -2906,7 +2949,7 @@ export function AppShell() {
                 onCapabilitiesChange={setSessionCapabilities}
                 onOpenModels={openModelsSettings}
                 onPromptSubmitted={() => setOnboardingPromptSubmittedKey((key) => key + 1)}
-              />
+              /></OpenSubagentContext.Provider>
             ) : initialCwdStatus === "validating" ? (
               <div
                 role="status"
@@ -2962,10 +3005,10 @@ export function AppShell() {
 
       <div
         aria-hidden="true"
-        className={`right-panel-overlay-backdrop${effectiveRightPanelOpen && !rightPanelMaximized ? " is-open" : ""}`}
-        onClick={() => setRightPanelOpen(false)}
+        className={`right-panel-overlay-backdrop${effectiveRightPanelOpen && !effectiveRightPanelMaximized ? " is-open" : ""}`}
+        onClick={() => shownSubagent ? closeSubagent() : setRightPanelOpen(false)}
       />
-      {effectiveRightPanelOpen && !rightPanelMaximized && (
+      {effectiveRightPanelOpen && !effectiveRightPanelMaximized && !shownSubagent && (
         <div
           {...rightPanelResizer.separatorProps}
           onPointerMove={(event) => {
@@ -2984,9 +3027,10 @@ export function AppShell() {
       <div
         ref={rightPanelResizer.panelRef}
         id="file-panel"
+        data-subagent-panel={shownSubagent ? "true" : undefined}
         aria-hidden={!effectiveRightPanelOpen}
         inert={!effectiveRightPanelOpen ? true : undefined}
-        className={`right-panel-container${effectiveRightPanelOpen ? " right-panel-open" : " right-panel-closed"}${rightPanelMaximized ? " right-panel-maximized" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
+        className={`right-panel-container${effectiveRightPanelOpen ? " right-panel-open" : " right-panel-closed"}${effectiveRightPanelMaximized ? " right-panel-maximized" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
         style={{
           "--right-panel-width": `${rightPanelResizer.width}px`,
           display: "flex",
@@ -2995,7 +3039,9 @@ export function AppShell() {
           background: "var(--bg)",
         } as React.CSSProperties}
       >
-        {rightPanelHasOpened ? <RightPanel
+        {shownSubagent && <SubagentInspector key={shownSubagent.parentSessionId + ":" + shownSubagent.agentId}
+          selection={shownSubagent} onClose={closeSubagent} modal={rightPanelOverlayMode || isMobile} />}
+        {rightPanelHasOpened ? <div hidden={Boolean(shownSubagent)} style={{ height: "100%", minHeight: 0 }}><RightPanel
           ref={rightPanelRef}
           answerNavigation={answerNavigation.request}
           onAnswerNavigationConsumed={answerNavigation.consume}
@@ -3007,7 +3053,7 @@ export function AppShell() {
           cwd={workspaceCwd}
           refreshKey={explorerRefreshKey}
           commitRequest={commitRequest}
-          active={effectiveRightPanelOpen}
+          active={effectiveRightPanelOpen && !shownSubagent}
           fileTabs={fileTabs}
           activeFileTabId={activeFileTabId}
           canReopenClosedFileTab={Boolean(reopenableClosedFileTab)}
@@ -3044,7 +3090,7 @@ export function AppShell() {
           onSelectAutomation={setSelectedAutomationId}
           onAutomationChanged={() => setSessionKey((key) => key + 1)}
           capabilities={selectedRoom ? null : sessionCapabilities}
-        /> : null}
+        /></div> : null}
       </div>
     {/* File panel toggle — always visible at top-right */}
     </div>

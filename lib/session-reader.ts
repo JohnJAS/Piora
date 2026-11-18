@@ -16,6 +16,7 @@ import { resolveProject, type ProjectInfo } from "./worktree";
 import { getPromptMaterialDisplayMetadata, restorePromptMaterialDisplayPreview } from "./prompt-materials";
 import { isProjectlessChatCwd } from "./projectless-chat-path";
 import { getProjectlessChatWorkspace } from "./projectless-chat-server";
+import { isSubagentTool, projectSubagentMessageDetails } from "./subagent-types";
 
 export { getAgentDir };
 
@@ -397,6 +398,12 @@ export function entryToUiMessage(
           }
         }
       }
+      if (message.role === "toolResult" && message.toolName && isSubagentTool(message.toolName)) {
+        return { ...message, details: projectSubagentMessageDetails(message.details) };
+      }
+      if (message.role === "custom" && message.customType === "piora-subagent-completion") {
+        return { ...message, details: projectSubagentMessageDetails(message.details) };
+      }
       if (!options.deferThinking || message.role !== "assistant") return message;
       return {
         ...message,
@@ -432,7 +439,7 @@ export function entryToUiMessage(
         customType: entry.customType,
         content: entry.content,
         display: entry.display,
-        details: entry.details,
+        details: entry.customType === "piora-subagent-completion" ? projectSubagentMessageDetails(entry.details) : entry.details,
         timestamp: parseEntryTimestamp(entry.timestamp),
       };
     default:

@@ -48,7 +48,7 @@ test("does not register row-level session deletion shortcuts", () => {
 test("shares bounded visible status polling without reserving an idle SSE connection", () => {
   assert.doesNotMatch(source, /fetch\("\/api\/agent\/running"/);
   assert.doesNotMatch(taskStatusSource, /new EventSource/);
-  assert.match(taskStatusSource, /fetch\("\/api\/agent\/running", \{ cache: "no-store", signal: controller.signal \}\)/);
+  assert.match(taskStatusSource, /fetch\("\/api\/agent\/running" \+ query, \{ cache: "no-store", signal: controller.signal \}\)/);
   assert.match(taskStatusSource, /pollController \|\| listenerCount\(\) === 0/);
   assert.match(taskStatusSource, /controller\.abort\(\), 10_000/);
   assert.match(taskStatusSource, /document\.visibilityState !== "visible"/);

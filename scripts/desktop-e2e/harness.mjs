@@ -130,7 +130,7 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
   };
   await connect();
   return {
-    page, origin, pageErrors,
+    page, origin, pageErrors, paths,
     getBrowser: () => browser,
     // Restart only this run's owned process tree, retaining its isolated profile.
     restart: async () => {
