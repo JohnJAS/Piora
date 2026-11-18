@@ -2315,7 +2315,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (sessionIdRef.current !== sid) return;
       const remove = new Set(deletedIds);
       const keep = messages.map((entry, index) => !remove.has(entryIds[index]) && !(promptId && entry.role === "user" && entry.clientPromptId === promptId));
-      setMessages(messages.filter((_entry, index) => keep[index]));
+      const remaining: AgentMessage[] = [];
+      let followsDeletedPrompt = false;
+      for (const [index, entry] of messages.entries()) {
+        if (!keep[index]) {
+          followsDeletedPrompt ||= entry.role === "user" || Boolean(entry.followsDeletedPrompt);
+          continue;
+        }
+        remaining.push(followsDeletedPrompt && entry.role !== "user" ? { ...entry, followsDeletedPrompt } : entry);
+        followsDeletedPrompt = false;
+      }
+      setMessages(remaining);
       setEntryIds(entryIds.filter((_entry, index) => keep[index]));
       if (sid) invalidatePrefetchedSession(sid);
       if (entryId && sid) {

@@ -128,7 +128,7 @@ export interface BashExecutionMessage {
   timestamp?: number;
 }
 
-export type AgentMessage = UserMessage | AssistantMessage | ToolResultMessage | CustomMessage | BashExecutionMessage;
+export type AgentMessage = (UserMessage | AssistantMessage | ToolResultMessage | CustomMessage | BashExecutionMessage) & { followsDeletedPrompt?: boolean };
 
 export type ExtensionUiRequest =
   | {

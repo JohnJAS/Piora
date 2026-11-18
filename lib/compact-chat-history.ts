@@ -60,7 +60,7 @@ export function buildCompactChatHistoryRows(
   for (let start = range?.start ?? 0; start < limit;) {
     let end = start + 1;
     // Compaction and custom status cards can occur within one user turn.
-    while (end < limit && messages[end].role !== "user") end++;
+    while (end < limit && messages[end].role !== "user" && !messages[end].followsDeletedPrompt) end++;
     const active = busy && end === messages.length;
     const anchor = messages[start];
     const key = `compact-process:${entryIds[start] || (anchor.role === "user" ? anchor.clientPromptId : undefined) || start}`;

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { app, powerMonitor, safeStorage, type BrowserWindow } from "electron";
+import { app, powerMonitor, safeStorage, session, type BrowserWindow } from "electron";
 import {
   AnalyticsStore,
   initializeAnalyticsConfig,
@@ -7,7 +7,7 @@ import {
   readAnalyticsConfig,
   analyticsLaunchReason,
 } from "./analytics-store.mjs";
-import { AnalyticsUploader } from "./analytics-uploader.mjs";
+import { AnalyticsUploader, createAnalyticsFetch } from "./analytics-uploader.mjs";
 
 export class DesktopAnalytics {
   private interval: ReturnType<typeof setInterval>;
@@ -235,7 +235,9 @@ export async function startDesktopAnalytics(
     store.set("app_version", app.getVersion());
     return new DesktopAnalytics(
       store,
-      await AnalyticsUploader.create(store, config, safeStorage, fetch, undefined, readAnalyticsConfig),
+      await AnalyticsUploader.create(store, config, safeStorage,
+        createAnalyticsFetch((url, init) => session.defaultSession.fetch(url, { ...init, credentials: "omit" })),
+        undefined, readAnalyticsConfig),
       window,
     );
   } catch {

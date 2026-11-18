@@ -1499,6 +1499,7 @@ export function AppShell() {
     }
   }, [selectedSession]);
 
+  const workspaceCwd = selectedRoom?.workspace.path ?? selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
   const handleOpenFile = useCallback((
     filePath: string,
     fileName: string,
@@ -1517,7 +1518,7 @@ export function AppShell() {
           id: tabId,
           label: fileName,
           filePath,
-          cwd: activeCwd ?? undefined,
+          cwd: workspaceCwd ?? undefined,
           sourceSessionId,
           initialDisplayMode: modeHint,
           ...(revealLine ? { revealLine, revealColumn, revealKey: Date.now() } : {}),
@@ -1540,7 +1541,7 @@ export function AppShell() {
     setRightPanelOpen(true);
     // On mobile the file panel is full-screen; close the drawer so it shows.
     if (isMobile) setSidebarOpen(false);
-  }, [activeCwd, isMobile]);
+  }, [workspaceCwd, isMobile]);
 
   const handleOpenLinkedFile = useCallback((filePath: string) => {
     const cwd = selectedSession?.cwd ?? newSessionCwd ?? activeCwd ?? undefined;
@@ -3004,7 +3005,7 @@ export function AppShell() {
           maximized={rightPanelMaximized}
           onMaximizedChange={setRightPanelMaximized}
           onClosePanel={() => setRightPanelOpen(false)}
-          cwd={selectedRoom?.workspace.path ?? activeCwd}
+          cwd={workspaceCwd}
           refreshKey={explorerRefreshKey}
           commitRequest={commitRequest}
           active={effectiveRightPanelOpen}

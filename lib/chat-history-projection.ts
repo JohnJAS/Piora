@@ -19,6 +19,11 @@ export function prepareChatHistory(
   for (let i = 0; i < saved.length; i++) {
     const message = saved[i];
     if (message.role === "toolResult") toolResults.set(message.toolCallId, message);
+    if (message.followsDeletedPrompt) {
+      if (lastAssistant >= 0) showTimestamps.add(lastAssistant);
+      lastAssistant = -1;
+      retryPrompt = undefined;
+    }
     if (message.role === "user") {
       retryPrompt = { message, entryId: ids[i] };
       userIndices.set(i, userIndices.size);
