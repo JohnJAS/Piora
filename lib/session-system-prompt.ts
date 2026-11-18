@@ -43,6 +43,11 @@ export function readLatestSessionSystemPromptBinding(
   return null;
 }
 
+export function summarizeSessionSystemPromptBinding(binding: SessionSystemPromptBinding | null): SessionSystemPromptBinding | null {
+  if (!binding?.prompt || Buffer.byteLength(JSON.stringify(binding.prompt)) <= 4096) return binding;
+  return { ...binding, prompt: null, promptDeferred: true };
+}
+
 export function createSessionSystemPromptBinding(
   selection: SystemPromptSelection,
   config: SystemPromptConfig = readSystemPromptConfig(),

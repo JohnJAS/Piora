@@ -20,6 +20,7 @@ interface Options {
   conversationKey: string;
   sessionId: string | null;
   scope: string;
+  timingPromptIds?: string[];
   catalog: ChatCommandCatalog;
   ensureSession(): Promise<string | null>;
   loadCatalog(): Promise<ChatCommandCatalog>;
@@ -47,6 +48,7 @@ export function useChatCommandOperations(options: Options) {
   const submitting = useRef(new Set<string>());
   const sessionId = options.sessionId ?? localSessionId;
   const sessionRef = useRef(sessionId);
+  const loadedTimings = useRef<{ sessionId: string; ids: Set<string> } | null>(null);
   sessionRef.current = sessionId;
   useEffect(() => {
     const confirmed = (event: Event) => {
@@ -62,6 +64,10 @@ export function useChatCommandOperations(options: Options) {
     const sid = sessionRef.current;
     if (!sid) return;
     const query = new URLSearchParams({ view: "operations", offset: String(offset) });
+    if (latest.current.timingPromptIds) {
+      query.set("scope", "chat");
+      for (const id of latest.current.timingPromptIds.slice(-80)) query.append("timingPromptId", id);
+    }
     for (const record of recordsRef.current.filter(record => record.targetSessionId === sid && !record.operation && !record.local && !terminal(record.status)).slice(0, 100)) query.append("trackedCommandId", record.commandId);
     for (const record of recordsRef.current.filter(record => record.targetSessionId === sid && record.local).slice(0, 100)) query.append("trackedPromptId", record.idempotencyKey);
     const response = await fetch(`/api/sessions/${encodeURIComponent(sid)}/submissions?${query}`, { cache: "no-store" });
@@ -78,9 +84,37 @@ export function useChatCommandOperations(options: Options) {
     for (const record of body.items.filter(record => terminal(record.status))) {
       if (notified.current.has(record.commandId)) continue;
       notified.current.add(record.commandId);
+      if (offset > 0 && !query.getAll("trackedCommandId").includes(record.commandId)
+        && !query.getAll("trackedPromptId").includes(record.idempotencyKey)) continue;
       latest.current.onFinished(record);
     }
   }, []);
+
+  useEffect(() => {
+    if (!sessionId || !options.timingPromptIds?.length) return;
+    const request = new AbortController();
+    const loaded = loadedTimings.current?.sessionId === sessionId ? loadedTimings.current : { sessionId, ids: new Set<string>() };
+    loadedTimings.current = loaded;
+    const ids = options.timingPromptIds.filter(id => !loaded.ids.has(id));
+    void (async () => {
+      for (let start = 0; start < ids.length; start += 80) {
+        const page = ids.slice(start, start + 80);
+        const query = new URLSearchParams({ view: "timings" });
+        for (const id of page) query.append("timingPromptId", id);
+        const response = await fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/submissions?" + query, {
+          signal: request.signal, cache: "no-store",
+        });
+        if (!response.ok || request.signal.aborted || sessionRef.current !== sessionId) return;
+        const body = await response.json() as { taskTimings?: ResponseTaskTiming[] };
+        if (request.signal.aborted || sessionRef.current !== sessionId) return;
+        for (const id of page) loaded.ids.add(id);
+        if (body.taskTimings?.length) {
+          setTaskTimings(current => mergeResponseTaskTimings(current.filter(record => record.taskTiming.sessionId === sessionId), body.taskTimings!));
+        }
+      }
+    })().catch(() => {});
+    return () => request.abort();
+  }, [options.timingPromptIds, sessionId]);
 
   useEffect(() => {
     const activeGeneration = ++generation.current;
@@ -116,6 +150,10 @@ export function useChatCommandOperations(options: Options) {
       try {
         const data = JSON.parse(event.data) as Omit<SessionCommandEvent, "type"> & { operations?: ChatCommandView[]; type: string; hasMore?: boolean };
         if (data.type === "command_snapshot" && data.operations) {
+          const pending = new Set(recordsRef.current.filter(record => record.local || !terminal(record.status)).map(record => record.idempotencyKey));
+          for (const record of data.operations) {
+            if (terminal(record.status) && !pending.has(record.idempotencyKey)) notified.current.add(record.commandId);
+          }
           setRecords(current => mergeChatCommandViews(current.filter(record => record.targetSessionId === sid || record.local && submitting.current.has(record.idempotencyKey)), data.operations!));
           setTaskTiming(current => mergeTaskTiming(current, latestTaskTiming(data.operations!)));
           setNextOffset(data.hasMore ? 50 : null);

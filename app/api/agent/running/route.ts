@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getRunningRpcSessionStatuses } from "@/lib/rpc-manager";
+import { getRunningRpcSessionStatuses } from "@/lib/rpc-running-status";
 import { createRunningSessionsPayload } from "@/lib/task-status";
 
 export const dynamic = "force-dynamic";

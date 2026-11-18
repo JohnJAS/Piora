@@ -4,7 +4,7 @@ export interface ProcessTimeRange { start: number; end: number }
 
 /** Include model generation and waiting, then end at the latest tool result. */
 export function processTimeRange(blocks: AssistantContentBlock[], timestamp: number | undefined,
-  previousTimestamp: number | undefined, results?: Map<string, ToolResultMessage>): ProcessTimeRange | undefined {
+  previousTimestamp: number | undefined, results?: Pick<ReadonlyMap<string, ToolResultMessage>, "get">): ProcessTimeRange | undefined {
   if (previousTimestamp === undefined || timestamp === undefined || !Number.isFinite(previousTimestamp)
     || !Number.isFinite(timestamp) || timestamp < previousTimestamp) return undefined;
   let end = timestamp;

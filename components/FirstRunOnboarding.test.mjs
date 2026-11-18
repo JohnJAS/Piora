@@ -24,7 +24,7 @@ test("first-run guide covers the real model, project, and first-message path", (
 });
 
 test("guide resumes safely and existing users are not auto-interrupted", () => {
-  assert.match(guide, /fetch\("\/api\/sessions"/);
+  assert.match(guide, /fetch\("\/api\/sessions\?view=metadata&presence=1", \{ cache: "no-store" \}\)/);
   assert.match(guide, /sessionCount === null/);
   assert.match(guide, /presentation === "paused"/);
   assert.match(guide, /className=\{styles\.resumePill\}/);

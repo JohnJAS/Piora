@@ -97,7 +97,7 @@ export function ConversationSearchDialog({ sessions, flags, hasProject, onClose,
     result,
   })), [response.results]);
 
-  const displayedSessions = trimmedQuery ? titleMatches : recentSessions;
+  const displayedSessions = trimmedQuery ? response.sessionMatches ?? titleMatches : recentSessions;
   const rowIds = useMemo(() => [
     ...displayedSessions.map((session) => `session:${session.id}`),
     ...chatResultRows.map((row) => row.id),
@@ -117,7 +117,7 @@ export function ConversationSearchDialog({ sessions, flags, hasProject, onClose,
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setLoading(true);
-      const params = new URLSearchParams({ q: trimmedQuery, archive, limit: "100" });
+      const params = new URLSearchParams({ q: trimmedQuery, archive, limit: "100", titles: "1" });
       if (project) params.set("project", project);
       try {
         const searchResponse = await fetch(`/api/sessions/search?${params}`, {
@@ -197,7 +197,7 @@ export function ConversationSearchDialog({ sessions, flags, hasProject, onClose,
   };
 
   const getRowIndex = (rowId: string): number => rowIds.indexOf(rowId);
-  const totalMatches = titleMatches.length + response.results.length + settingsResults.length;
+  const totalMatches = displayedSessions.length + response.results.length + settingsResults.length;
 
   return createPortal(
     <div className={styles.backdrop} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>

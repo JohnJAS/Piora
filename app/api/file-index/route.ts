@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import fs from "fs";
 import path from "path";
 import {
@@ -9,9 +7,8 @@ import {
   isFilePathAllowed,
   isWindowsAbsolutePath,
 } from "@/lib/file-access";
-import { buildEntriesFromFiles, filterFileEntries, type FileIndexEntry } from "@/lib/file-fuzzy";
-
-const execFileAsync = promisify(execFile);
+import type { FileIndexEntry } from "@/lib/file-fuzzy";
+import { readInWorker } from "@/lib/read-worker";
 
 // Same skip lists as /api/files — only used for the non-git readdir fallback.
 // Git-tracked repos rely on .gitignore instead (matches the TUI's fd behavior).
@@ -23,14 +20,12 @@ const IGNORED_NAMES = new Set([
 
 const IGNORED_SUFFIXES = [".pyc"];
 
-/** Cap on the plain (no-query) response used as the client-side index */
-const MAX_FILES = 5000;
-/** Hard caps on the full in-memory listing that ?q= searches against */
-const GIT_HARD_CAP = 200_000;
 const WALK_HARD_CAP = 50_000;
+const WALK_DIRECTORY_CAP = 50_000;
 const MAX_WALK_DEPTH = 8;
 const MAX_QUERY_LENGTH = 500;
 const CACHE_TTL_MS = 10_000;
+const CACHE_STALE_MS = 60_000;
 const CACHE_MAX_ENTRIES = 20;
 
 interface FileListing {
@@ -41,9 +36,10 @@ interface FileListing {
 }
 
 interface CacheEntry {
-  listing: FileListing;
-  /** Derived lazily on the first ?q= search against this listing */
-  entries?: FileIndexEntry[];
+  files: string[];
+  truncated: boolean;
+  version: string;
+  identity: string;
   expiresAt: number;
 }
 
@@ -60,22 +56,21 @@ function getIndexCache(): Map<string, CacheEntry> {
   return globalThis.__piFileIndexCache;
 }
 
-async function listWithGit(cwd: string): Promise<FileListing | null> {
-  try {
-    const { stdout } = await execFileAsync(
-      "git",
-      ["-C", cwd, "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-      { timeout: 10_000, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, LC_ALL: "C" } },
-    );
-    const all = stdout.split("\0").filter(Boolean);
-    if (all.length > GIT_HARD_CAP) {
-      return { files: all.slice(0, GIT_HARD_CAP), hardTruncated: true };
-    }
-    return { files: all, hardTruncated: false };
-  } catch {
-    // Not a git repo (or git unavailable) — caller falls back to readdir walk.
-    return null;
-  }
+function refreshIndex(cwd: string, identity: string): Promise<CacheEntry> {
+  const pending = globalThis.__piFileIndexPending ??= new Map();
+  const key = cwd + "\0" + identity;
+  const current = pending.get(key);
+  if (current) return current;
+  const refresh = readInWorker<Pick<CacheEntry, "files" | "truncated" | "version">>("fileList", { cwd, identity }).then(listing => {
+    const entry = { ...listing, identity, expiresAt: Date.now() + CACHE_TTL_MS };
+    const cache = getIndexCache();
+    cache.delete(cwd);
+    cache.set(cwd, entry);
+    if (cache.size > CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value!);
+    return entry;
+  }).finally(() => pending.delete(key));
+  pending.set(key, refresh);
+  return refresh;
 }
 
 async function listWithWalk(cwd: string): Promise<FileListing> {
@@ -95,7 +90,7 @@ async function listWithWalk(cwd: string): Promise<FileListing> {
       if (IGNORED_NAMES.has(d.name) || IGNORED_SUFFIXES.some((s) => d.name.endsWith(s))) continue;
       const childRel = rel ? `${rel}/${d.name}` : d.name;
       if (d.isDirectory()) {
-        if (depth + 1 <= MAX_WALK_DEPTH) {
+        if (depth + 1 <= MAX_WALK_DEPTH && queue.length < WALK_DIRECTORY_CAP) {
           queue.push({ abs: path.join(abs, d.name), rel: childRel, depth: depth + 1 });
         } else hardTruncated = true;
       } else if (d.isFile()) {
@@ -135,7 +130,7 @@ export async function GET(req: NextRequest) {
 
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(cwd);
+      stat = await fs.promises.stat(cwd);
     } catch {
       return NextResponse.json({ error: "Directory not found" }, { status: 404 });
     }
@@ -161,37 +156,24 @@ export async function GET(req: NextRequest) {
         truncated: listing.hardTruncated || matches.length > 100 });
     }
 
-    const cache = getIndexCache();
+    const identity = [stat.dev, stat.ino, stat.birthtimeMs, stat.mtimeMs, stat.ctimeMs].join(":");
+    const existing = getIndexCache().get(cwd);
     const now = Date.now();
-    let cached = cache.get(cwd);
-    if (!cached || cached.expiresAt <= now) {
-      const pending: Map<string, Promise<CacheEntry>> = globalThis.__piFileIndexPending ??= new Map();
-      let refresh = pending.get(cwd);
-      if (!refresh) {
-        refresh = (async () => {
-          const listing = (await listWithGit(cwd)) ?? await listWithWalk(cwd);
-          const entry = { listing, expiresAt: Date.now() + CACHE_TTL_MS };
-          cache.delete(cwd);
-          cache.set(cwd, entry);
-          if (cache.size > CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value!);
-          return entry;
-        })().finally(() => pending.delete(cwd));
-        pending.set(cwd, refresh);
-      }
-      cached = await refresh;
-    }
+    const usable = existing?.identity === identity && existing.expiresAt + CACHE_STALE_MS > now;
+    const cached = usable ? existing : await refreshIndex(cwd, identity);
+    if (usable && cached.expiresAt <= now) void refreshIndex(cwd, identity).catch(() => {});
 
     if (query) {
-      cached.entries ??= buildEntriesFromFiles(cached.listing.files);
-      return NextResponse.json({ matches: filterFileEntries(cached.entries, query) });
+      const search = (version: string) => readInWorker<{ matches: FileIndexEntry[] } | { missing: true }>("fileSearch", { cwd, identity, version, query }, req.signal);
+      let result = await search(cached.version);
+      if ("missing" in result) result = await search((await refreshIndex(cwd, identity)).version);
+      if ("missing" in result) return NextResponse.json({ error: "Workspace index changed; retry the search" }, { status: 503 });
+      return NextResponse.json(result);
     }
 
-    const { files, hardTruncated } = cached.listing;
-    return NextResponse.json({
-      files: files.slice(0, MAX_FILES),
-      truncated: hardTruncated || files.length > MAX_FILES,
-    });
+    return NextResponse.json({ files: cached.files, truncated: cached.truncated });
   } catch (error) {
+    if (req.signal.aborted) return new NextResponse(null, { status: 499 });
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
 }

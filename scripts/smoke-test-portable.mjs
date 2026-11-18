@@ -422,9 +422,8 @@ async function main() {
       suppliedExecutable = argument;
     }
   }
-  const executable = suppliedExecutable
-    ? resolve(projectRoot, suppliedExecutable)
-    : await findPortableExecutable(resolve(projectRoot, "desktop", "release"));
+  if (!suppliedExecutable) throw new Error("Specify the installed or unpacked Piora.exe explicitly.");
+  const executable = resolve(projectRoot, suppliedExecutable);
   const result = await smokeTestPortableExecutable(executable, {
     expectedVersion,
     expectedBrand,

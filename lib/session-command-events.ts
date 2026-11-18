@@ -25,6 +25,10 @@ export class SessionCommandEventHub {
     return this.store.listEvents(sessionId, afterCursor);
   }
 
+  lastCursor(sessionId: string): number {
+    return this.store.lastEventCursor(sessionId);
+  }
+
   subscribe(sessionId: string, listener: Listener): () => void {
     const set = this.listeners.get(sessionId) ?? new Set<Listener>();
     set.add(listener);

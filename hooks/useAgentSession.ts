@@ -11,6 +11,8 @@ import { savePendingPrompt, dismissPendingPrompt, readPendingPrompts, mergePendi
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
 import { invalidatePrefetchedSession, peekPrefetchedSession, takePrefetchedSession } from "@/lib/session-prefetch";
+import { chatHistoryUrl, combineOlderHistory, restoreChatHistory, type ChatHistoryResource } from "@/lib/chat-history-client";
+import type { SessionHistoryPage } from "@/lib/session-read-repository";
 import type {
   AgentMessage,
   ExtensionStatusItem,
@@ -55,6 +57,7 @@ import type {
 export type { AgentPhase } from "@/lib/agent-phase";
 
 export interface SessionData {
+  historyPage?: SessionHistoryPage;
   /** Client-only state fetched together with a prepared conversation switch. */
   initialAgentState?: { running: boolean; state?: AgentStateResponse };
   stats?: SessionStatsInfo;
@@ -468,6 +471,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const initiallyRunning = Boolean(initialRuntime && (initialRuntime.isStreaming || initialRuntime.isPromptRunning || initialRuntime.runtime === "running" || initialRuntime.runtime === "stopping"));
 
   const [data, setData] = useState<SessionData | null>(initialSessionData);
+  const [historyPage, setHistoryPage] = useState<SessionHistoryPage | undefined>(initialSessionData?.historyPage);
+  const historyPageRequest = useRef<AbortController | null>(null);
   const [loading, setLoading] = useState(!isNew && initialSessionData === null);
   const [error, setError] = useState<string | null>(null);
   const [activeLeafId, setActiveLeafId] = useState<string | null>(initialSessionData?.leafId ?? null);
@@ -710,6 +715,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     includeState = false,
     prefetchedData: Promise<unknown | null> | null = null,
   ) => {
+    historyPageRequest.current?.abort();
     sessionLoadAbortRef.current?.abort();
     const controller = new AbortController();
     sessionLoadAbortRef.current = controller;
@@ -731,8 +737,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       let d = await wait(prefetchedData) as SessionData | null;
       if (controller.signal.aborted) return null;
       if (!d) {
-        const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1" });
-        const res = await wait(fetch(`/api/sessions/${encodeURIComponent(sid)}?${params}`, {
+        const res = await wait(fetch(chatHistoryUrl(sid), {
           signal: controller.signal,
         }));
         if (res.status === 404) {
@@ -742,6 +747,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (showLoading) {
             setModelChanges([]);
             setData(null);
+            setHistoryPage(undefined);
             setActiveLeafId(null);
             if (!recovered.messages.length) setMessages([]);
             setError(null);
@@ -757,14 +763,15 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const response = await wait(fetch(`/api/sessions/${encodeURIComponent(sid)}/context?${new URLSearchParams({ leafId: editedBranch.target, deferThinking: "1", deferMedia: "1" })}`, { signal: controller.signal }));
         if (!response.ok) throw await sessionResponseError(response);
         const branch = await wait(response.json());
-        d = { ...d, context: branch.context, leafId: editedBranch.target };
+        d = { ...d, context: branch.context, leafId: editedBranch.target, persistedPromptIds: branch.persistedPromptIds, historyPage: undefined };
       } else if (editedBranch?.sid === sid && editedBranchRef.current === editedBranch) {
         editedBranchRef.current = null;
       }
-      const recovered = mergePendingPrompts(d.context.messages, d.context.entryIds ?? [], await wait(readPendingPrompts(sid)), d.persistedPromptIds);
+      const recovered = await wait(restoreChatHistory(sid, d, controller.signal));
       if (controller.signal.aborted || sessionIdRef.current !== sid || promptRunIdRef.current !== runId) return null;
       nestedCallsStore.reset();
       setData(d);
+      setHistoryPage(d.historyPage);
       setModelChanges(d.context.modelChanges ?? []);
       if (statsSequence === statsRefreshSequence.current) setSessionStatsOverride(d.stats ?? null);
       setActiveLeafId(d.leafId);
@@ -788,7 +795,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       try {
         let agentState = d.initialAgentState;
         if (!agentState) {
-          const stateRes = await wait(fetch(`/api/sessions/${encodeURIComponent(sid)}/state`, {
+          const stateRes = await wait(fetch(`/api/sessions/${encodeURIComponent(sid)}/state?view=chat`, {
             signal: controller.signal,
           }));
           if (!stateRes.ok) throw new Error(`HTTP ${stateRes.status}`);
@@ -841,6 +848,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [nestedCallsStore, acceptToolPermission]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null) => {
+    historyPageRequest.current?.abort();
     const runId = promptRunIdRef.current;
     const revision = ++historyRevisionRef.current;
     try {
@@ -857,6 +865,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setMessages(leafId ? d.context.messages : recovered.messages);
       setEntryIds(leafId ? d.context.entryIds : recovered.entryIds);
       setModelChanges(d.context.modelChanges ?? []);
+      setHistoryPage(undefined);
       void confirmPendingPrompts(recovered.confirmedIds).catch(console.error);
       return true;
     } catch (e) {
@@ -864,6 +873,60 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return false;
     }
   }, []);
+
+  useEffect(() => () => historyPageRequest.current?.abort(), []);
+
+  const loadEarlierHistory = useCallback(async (around?: string, beforePrepend?: () => void): Promise<boolean> => {
+    const sid = sessionIdRef.current;
+    const cursor = historyPage?.older;
+    if (!sid || (!around && !cursor) || historyPageRequest.current || agentRunningRef.current
+      || bashRunningRef.current || messageMutationRef.current) return false;
+    const controller = new AbortController();
+    historyPageRequest.current = controller;
+    const sequence = ++historyRevisionRef.current;
+    const runId = promptRunIdRef.current;
+    const latestMessages = messages;
+    const latestEntryIds = entryIds;
+    try {
+      const query: Record<string, string> = around ? { around, ...(activeLeafId ? { leafId: activeLeafId } : {}) } : { older: cursor! };
+      const response = await fetch(chatHistoryUrl(sid, query), { signal: controller.signal });
+      if (response.status === 409) {
+        invalidatePrefetchedSession(sid);
+        await loadSession(sid);
+        return false;
+      }
+      if (!response.ok) return false;
+      const loaded = await response.json() as ChatHistoryResource;
+      if (controller.signal.aborted || sessionIdRef.current !== sid || promptRunIdRef.current !== runId
+        || historyRevisionRef.current !== sequence || !loaded.historyPage || agentRunningRef.current
+        || bashRunningRef.current || messageMutationRef.current) return false;
+      if (around) {
+        if (!loaded.context.entryIds.includes(around) && !loaded.historyPage.oversized.some(turn => turn.anchors.includes(around))) return false;
+        setMessages(loaded.context.messages);
+        setEntryIds(loaded.context.entryIds);
+        setModelChanges(loaded.context.modelChanges ?? []);
+        setHistoryPage({ ...loaded.historyPage, focused: true });
+        return true;
+      }
+      const result = combineOlderHistory(loaded, { messages: latestMessages, entryIds: latestEntryIds, modelChanges, historyPage });
+      if (!result) return false;
+      beforePrepend?.();
+      setMessages(result.messages);
+      setEntryIds(result.entryIds);
+      setModelChanges(result.modelChanges);
+      setHistoryPage(result.historyPage);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (historyPageRequest.current === controller) historyPageRequest.current = null;
+    }
+  }, [activeLeafId, entryIds, historyPage, loadSession, messages, modelChanges]);
+
+  const loadNewestHistory = useCallback(() => {
+    const sid = sessionIdRef.current;
+    return sid ? loadSession(sid) : Promise.resolve(null);
+  }, [loadSession]);
 
   const promoteNewSession = useCallback((messageCount = 0, firstMessage = "") => {
     const sid = sessionIdRef.current;
@@ -1286,7 +1349,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           continue;
         }
         const commandId = submission?.runId === runId && submission.sid === sid ? submission.commandId : null;
-        const commandQuery = commandId ? `?promptCommandId=${encodeURIComponent(commandId)}` : "";
+        const commandQuery = "?view=progress" + (commandId ? `&promptCommandId=${encodeURIComponent(commandId)}` : "");
         try {
           const res = await fetch(`/api/agent/${encodeURIComponent(sid)}${commandQuery}`, { signal: AbortSignal.timeout(10_000) });
           if (res.ok) {
@@ -1327,7 +1390,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     ) {
       await delay(BASH_STATE_RECONCILE_MS);
       try {
-        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}?view=progress`);
         if (!res.ok) continue;
         const data = await res.json() as { state?: AgentStateResponse };
         if (data.state?.isBashRunning) {
@@ -1376,7 +1439,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const submission = promptSubmissionRef.current;
     if (submission?.runId === runId && submission.pending) return;
     const commandId = submission?.runId === runId && submission.sid === sid ? submission.commandId : null;
-    const commandQuery = commandId ? `?promptCommandId=${encodeURIComponent(commandId)}` : "";
+    const commandQuery = "?view=chat" + (commandId ? `&promptCommandId=${encodeURIComponent(commandId)}` : "");
     const pending = reconciliationRef.current;
     if (pending?.sid === sid && pending.runId === runId) return;
     // A slow old run must not block recovery of the newly selected run.
@@ -1490,7 +1553,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       pending = true;
       const revision = phaseEventRevisionRef.current;
       try {
-        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) });
+        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}?view=progress`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) });
         if (!res.ok) return;
         const data = await res.json() as { state?: AgentStateResponse };
         if (disposed || sessionIdRef.current !== sid || phaseEventRevisionRef.current !== revision || agentRunningRef.current) return;
@@ -1892,10 +1955,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
   }, [closeEvents, ensureEventsConnected, waitForPromptSettlement]);
 
+  const timingPromptIds = useMemo(() => messages.flatMap(message => message.role === "user" && message.clientPromptId ? [message.clientPromptId] : []), [messages]);
   const chatCommands = useChatCommandOperations({
     conversationKey: commandConversationKey,
     sessionId: session?.id ?? null,
     scope: session?.id ?? `new:${newSessionCwd}`,
+    timingPromptIds,
     catalog: commandCatalog,
     ensureSession: async () => sessionIdRef.current ?? await ensureNewSession(),
     loadCatalog: async () => {
@@ -2021,7 +2086,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         : displayMessage,
       timestamp: Date.now(),
     };
-    const replacement = replaceFailedPromptMessage(messages, entryIds, userMsg);
+    const latest = historyPage?.focused && data ? data : undefined;
+    const precedingIds = latest?.context.entryIds ?? entryIds;
+    const replacement = replaceFailedPromptMessage(latest?.context.messages ?? messages, precedingIds, userMsg);
+    if (latest) {
+      setHistoryPage(latest.historyPage);
+      setModelChanges(latest.context.modelChanges ?? []);
+    }
     setMessages(replacement.messages);
     setEntryIds(replacement.entryIds);
     optimisticUserMessageKeyRef.current = userMessageKey(userMsg);
@@ -2046,7 +2117,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const piImages = images?.map((img) => ({ type: "image" as const, data: img.data, mimeType: img.mimeType }));
     let sentSessionId: string | null = null;
     let promptRequestStarted = false;
-    const recovery: PendingPrompt = { branchAnchorId: entryIds.filter(Boolean).at(-1), id: clientPromptId, scope: sessionIdRef.current ?? `new:${newSessionCwd}`, message: userMsg, draft: recoveryDraft };
+    const recovery: PendingPrompt = { branchAnchorId: precedingIds.findLast(Boolean), id: clientPromptId, scope: sessionIdRef.current ?? `new:${newSessionCwd}`, message: userMsg, draft: recoveryDraft };
     const sendPrompt = async (sid: string, promptMaterials: PromptMaterialReference[]) => {
       // Preparation has ended, so Stop must reach the server. Admission is
       // still pending until the POST returns its exact queued command receipt.
@@ -2149,7 +2220,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         cancelPreparedPromptRef.current = null;
       }
     }
-  }, [messages, entryIds, isNew, newSessionCwd, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, closeEvents, t, submitChatCommand, workflowEnabled, workflowReady]);
+  }, [messages, entryIds, historyPage?.focused, data, isNew, newSessionCwd, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, closeEvents, t, submitChatCommand, workflowEnabled, workflowReady]);
 
   const handleWorkflowAction = useCallback(async (action: WorkflowAction): Promise<WorkflowSnapshot> => {
     const sid = sessionIdRef.current;
@@ -2314,19 +2385,21 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (promptId) await confirmPendingPrompts([...new Set([promptId, ...(message.role === "user" ? message.recoveryDraft?.retryOfPromptIds ?? [] : [])])]);
       if (sessionIdRef.current !== sid) return;
       const remove = new Set(deletedIds);
-      const keep = messages.map((entry, index) => !remove.has(entryIds[index]) && !(promptId && entry.role === "user" && entry.clientPromptId === promptId));
-      const remaining: AgentMessage[] = [];
-      let followsDeletedPrompt = false;
+      const retainedMessages: AgentMessage[] = [];
+      const retainedEntryIds: string[] = [];
+      let deletedUserBoundary = false;
       for (const [index, entry] of messages.entries()) {
-        if (!keep[index]) {
-          followsDeletedPrompt ||= entry.role === "user" || Boolean(entry.followsDeletedPrompt);
+        const deletedEntry = remove.has(entryIds[index]);
+        if (deletedEntry || (promptId && entry.role === "user" && entry.clientPromptId === promptId)) {
+          deletedUserBoundary ||= deletedEntry && (entry.role === "user" || entry.followsDeletedPrompt === true);
           continue;
         }
-        remaining.push(followsDeletedPrompt && entry.role !== "user" ? { ...entry, followsDeletedPrompt } : entry);
-        followsDeletedPrompt = false;
+        retainedMessages.push(deletedUserBoundary && entry.role !== "user" ? { ...entry, followsDeletedPrompt: true } : entry);
+        retainedEntryIds.push(entryIds[index]);
+        deletedUserBoundary = false;
       }
-      setMessages(remaining);
-      setEntryIds(entryIds.filter((_entry, index) => keep[index]));
+      setMessages(retainedMessages);
+      setEntryIds(retainedEntryIds);
       if (sid) invalidatePrefetchedSession(sid);
       if (entryId && sid) {
         await loadSession(sid);
@@ -3172,6 +3245,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     // State
     toolPermission, permissionSaving, handleToolPermission, toolReviews,
     nestedCallsStore, data, loading, error, activeLeafId, messages, entryIds, modelChanges, streamState, replyHistorySettling,
+    historyPage, loadEarlierHistory, loadNewestHistory,
     agentRunning, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
     retryInfo, contextUsage: effectiveContextUsage, systemPrompt, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactionStartedAt, compactError, compactResult, currentModel, displayModel, sessionStats,

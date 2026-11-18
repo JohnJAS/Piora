@@ -76,7 +76,7 @@ export function FirstRunOnboarding({
       return () => { cancelled = true; };
     }
 
-    void fetch("/api/sessions", { cache: "no-store" })
+    void fetch("/api/sessions?view=metadata&presence=1", { cache: "no-store" })
       .then(async (response) => {
         const payload = await response.json().catch(() => ({})) as { sessions?: unknown[] };
         if (!response.ok) throw new Error(`HTTP ${response.status}`);

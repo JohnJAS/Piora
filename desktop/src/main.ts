@@ -47,8 +47,8 @@ import {
 import { autoUpdater } from "electron-updater";
 import { ScheduledDesktopUpdater, parseUpdateSchedule, type UpdateSchedule } from "./update-schedule.js";
 import { readUpdateSchedule, writeUpdateSchedule } from "./desktop-state.js";
-import { readLastLaunchedVersion, writeLastLaunchedVersion } from "./desktop-state.js";
-import { createStartupDocument, isStartupDocumentUrl, loadStartupMedia, STARTUP_MEDIA_TIMEOUT_MS, STARTUP_CONTINUE_CHANNEL } from "./startup-scene.js";
+import { writeLastLaunchedVersion } from "./desktop-state.js";
+import { createStartupWindow } from "./startup-coordinator.js";
 import {
   companionFacingDirection,
   companionMotionPoint,
@@ -2408,14 +2408,31 @@ function updateTrayMenu(): void {
 }
 
 async function refreshTrayTaskCount(): Promise<void> {
-  if (!serverUrl || !applicationToken) return;
+  const url = serverUrl;
+  if (!url || !applicationToken) return;
   try {
-    const response = await fetch(new URL("/api/agent/running", serverUrl), { headers: { [DESKTOP_TOKEN_HEADER]: applicationToken } });
+    const response = await fetch(new URL("/api/agent/running", url), {
+      headers: { [DESKTOP_TOKEN_HEADER]: applicationToken }, signal: AbortSignal.timeout(5_000),
+    });
     if (!response.ok) return;
     const payload = await response.json() as { runningSessionIds?: unknown[] };
+    if (url !== serverUrl) return;
     const next = Array.isArray(payload.runningSessionIds) ? payload.runningSessionIds.length : 0;
     if (next !== runningTaskCount) { runningTaskCount = next; updateTrayMenu(); }
   } catch { /* The next poll retries after transient server errors. */ }
+}
+
+function startTrayTaskPolling(): void {
+  if (!tray || trayPollTimer || quitRequested) return;
+  let pending = false;
+  const poll = () => {
+    if (pending) return;
+    pending = true;
+    void refreshTrayTaskCount().finally(() => { pending = false; });
+  };
+  trayPollTimer = setInterval(poll, 2_500);
+  trayPollTimer.unref();
+  poll();
 }
 
 function installTray(): void {
@@ -2437,9 +2454,7 @@ function installTray(): void {
   tray.on("click", () => focusMainWindow(undefined, "tray"));
   tray.on("double-click", () => focusMainWindow(undefined, "tray"));
   updateTrayMenu();
-  trayPollTimer = setInterval(() => { void refreshTrayTaskCount(); }, 2_500);
-  trayPollTimer.unref();
-  void refreshTrayTaskCount();
+  if (!desktopDevelopmentRuntime) startTrayTaskPolling();
 }
 
 function registerGlobalShortcutHandler(): void {
@@ -2894,111 +2909,6 @@ function createMainWindow(
   return window;
 }
 
-function createStartupWindow(log: Logger): { window: BrowserWindow; ready: Promise<number>; finished: Promise<void>; ensureVisible: () => void } {
-  const { window, initialState } = createMainWindowShell(log);
-  // Retain the EventEmitter while the native window is alive. Accessing
-  // window.webContents from "closed" throws, even just to remove a listener.
-  const webContents = window.webContents;
-  const previousVersion = readLastLaunchedVersion(app.getPath("userData"), log);
-  const firstLaunchOfVersion = previousVersion !== app.getVersion();
-  const updated = Boolean(previousVersion) && firstLaunchOfVersion;
-  const mediaDirectory = app.isPackaged ? join(process.resourcesPath, "startup") : resolve(__dirname, "../../.branding/resources/startup");
-  const playIntro = firstLaunchOfVersion && !PORTABLE_SMOKE_TEST;
-  // Live development already waits for its server. Packaged startup always
-  // uses the local media policy, even when a development URL is in the environment.
-  const media = !app.isPackaged && process.env.PI_DESKTOP_DEV_SERVER_URL
-    ? {} : loadStartupMedia(mediaDirectory, playIntro);
-  const startupPath = join(app.getPath("userData"), "startup.html");
-  let finishIntro!: () => void;
-  const finished = new Promise<void>((resolveIntro) => { finishIntro = () => { resolveIntro(); }; });
-  // Start the watchdog before loading: a failed navigation never emits
-  // ready-to-show, so it must not be responsible for releasing startup.
-  const introTimer = setTimeout(finishIntro, STARTUP_MEDIA_TIMEOUT_MS);
-  introTimer.unref();
-  void finished.then(() => { clearTimeout(introTimer); });
-  const blockIntroNavigation = (event: Electron.Event) => {
-    // Keep the old document from replacing an in-flight application load.
-    // Main-process loadURL does not emit will-navigate.
-    event.preventDefault();
-  };
-  const continueIntro = (event: Electron.IpcMainEvent, channel: string) => {
-    if (channel !== STARTUP_CONTINUE_CHANNEL || webContents.isDestroyed() || !event.senderFrame
-      || event.senderFrame !== webContents.mainFrame || !isStartupDocumentUrl(event.senderFrame.url, startupPath)) return;
-    finishIntro();
-  };
-  const cleanupNavigationGuard = () => {
-    if (!webContents.isDestroyed()) {
-      webContents.removeListener("will-navigate", blockIntroNavigation);
-      webContents.removeListener("did-navigate", onNavigation);
-    }
-    if (!window.isDestroyed()) window.removeListener("closed", onClosed);
-  };
-  const onNavigation = (_event: Electron.Event, target: string) => {
-    if (isStartupDocumentUrl(target, startupPath)) return;
-    cleanupNavigationGuard();
-    finishIntro();
-  };
-  const onClosed = () => { cleanupNavigationGuard(); finishIntro(); };
-  webContents.on("will-navigate", blockIntroNavigation);
-  webContents.on("ipc-message", continueIntro);
-  webContents.on("did-navigate", onNavigation);
-  window.once("closed", onClosed);
-  let ensureVisible!: () => void;
-  const ready = new Promise<number>((resolveReady) => {
-    let shown = false;
-    ensureVisible = () => {
-      if (shown || window.isDestroyed()) return;
-      shown = true;
-      window.removeListener("ready-to-show", ensureVisible);
-      const readyAt = Date.now();
-      if (!PORTABLE_SMOKE_TEST) {
-        if (initialState.maximized) window.maximize();
-        window.show();
-      }
-      const startupMarker = process.env.PIORA_SMOKE_STARTUP_MARKER?.trim();
-      if (PORTABLE_SMOKE_TEST && startupMarker) {
-        writeFileSync(resolve(startupMarker), `${JSON.stringify({ schema: "piora-startup-v1", ready: true, surface: "electron-shell" })}\n`, { encoding: "utf8", flag: "wx" });
-      }
-      resolveReady(readyAt);
-      if (!playIntro || !media.video) finishIntro();
-    };
-    window.once("ready-to-show", ensureVisible);
-  });
-  const startupDocument = createStartupDocument({ chinese: app.getLocale().toLocaleLowerCase().startsWith("zh"), version: app.getVersion(), updated, ...media });
-  let navigation: Promise<void> = Promise.resolve();
-  try {
-    // The embedded film exceeds Chromium's navigation URL limit. Loading the
-    // same local HTML from a file keeps media offline without a huge data URL.
-    writeFileSync(startupPath, startupDocument, { encoding: "utf8", mode: 0o600 });
-    navigation = window.loadFile(startupPath).catch((error) => {
-      log.warn("Unable to load startup animation; continuing to the application", error);
-      finishIntro();
-    });
-  } catch (error) {
-    log.warn("Unable to prepare startup animation; continuing to the application", error);
-    finishIntro();
-  }
-  const handedOff = finished.then(async () => {
-    log.info("Releasing startup animation");
-    if (!webContents.isDestroyed()) webContents.removeListener("ipc-message", continueIntro);
-    // Leave the Chromium/IPC callback before starting another native operation.
-    await new Promise<void>(resolveTurn => setImmediate(resolveTurn));
-    if (!window.isDestroyed() && !webContents.isDestroyed()) {
-      // The watchdog may expire while loadFile is still navigating. Settle that
-      // navigation before loadURL, but a broken optional document cannot hold
-      // the application hostage even if Chromium never settles its promise.
-      try { webContents.stop(); }
-      catch (error) { log.warn("Unable to stop startup animation; continuing to the application", error); }
-    }
-    await runOptionalStartupTask("Startup animation navigation cleanup", () => navigation, log, 1_000);
-    // A rejected loadFile settles inside did-stop-loading. Loading the app in
-    // that same event can let old completion events settle the new navigation.
-    await new Promise<void>(resolveTurn => setImmediate(resolveTurn));
-    log.info("Startup animation handoff is complete");
-  });
-  return { window, ready, finished: handedOff, ensureVisible };
-}
-
 type SmokeRendererState = {
   readyState: string;
   rendererLoaded: boolean;
@@ -3070,9 +2980,25 @@ async function initializeDesktopAnalytics(load = () => import("./analytics-deskt
   if (desktopAnalytics) return;
   try {
     const { startDesktopAnalytics } = await load();
-    desktopAnalytics = await startDesktopAnalytics(() => mainWindow, (code) => logger?.warn(code));
+    const collector = await startDesktopAnalytics(() => mainWindow, (code) => logger?.warn(code));
+    if (quitRequested) collector?.stop();
+    else desktopAnalytics = collector;
   } catch {
     logger?.warn("Organization analytics startup failed; application remains available");
+  }
+}
+
+async function observeFirstComposer(window: BrowserWindow, origin: string, onReady: () => void): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline && !window.isDestroyed() && !quitRequested) {
+    const contents = window.webContents;
+    if (!isAllowedAppUrl(contents.getURL(), origin)) return;
+    const ready = await contents.executeJavaScript(
+      "Boolean(document.querySelector('.chat-composer-surface textarea:not([disabled])')?.getClientRects().length)",
+      false,
+    ).catch(() => false);
+    if (ready) { onReady(); return; }
+    await new Promise<void>(resolve => { setTimeout(resolve, 100).unref(); });
   }
 }
 
@@ -3095,14 +3021,13 @@ async function startApplication(): Promise<void> {
   recordStartupStage("preparing-agent-data");
   piAgentDirectoryPath = resolvePiAgentDirectory(logger);
   process.env[PI_AGENT_DIRECTORY_ENV] = piAgentDirectoryPath;
-  await initializeDesktopAnalytics();
   logger.info("Using Pi data directory", { directory: piAgentDirectoryPath });
 
   // Show an app-owned shell immediately while the bundled Next.js service
   // starts in parallel. The same BrowserWindow is then navigated to the app,
   // avoiding the process and rendering cost of creating a second window.
   recordStartupStage("creating-startup-window");
-  const startup = createStartupWindow(logger);
+  const startup = createStartupWindow(logger, createMainWindowShell, PORTABLE_SMOKE_TEST);
   mainWindow = startup.window;
   installTray();
   void startup.ready.then((readyAt) => {
@@ -3121,6 +3046,7 @@ async function startApplication(): Promise<void> {
     });
     serverUrl = desktopDevelopmentRuntime.url;
     await waitForDesktopDevelopmentServer(serverUrl, token);
+    if (quitRequested || !serverUrl || mainWindow.isDestroyed()) return;
     configureSession(electronSession.fromPartition(DESKTOP_PARTITION, { cache: true }), serverUrl.origin, token);
     logger.info("Authenticated development service is ready", { elapsedMs: Date.now() - startupStartedAt });
   } else {
@@ -3133,9 +3059,12 @@ async function startApplication(): Promise<void> {
     const initialRuntime = createStandaloneForProfile("normal");
     server = initialRuntime.instance;
     serverUrl = await server.start();
+    if (quitRequested || !serverUrl || mainWindow.isDestroyed()) return;
     activateStandaloneProfile("normal", initialRuntime.dataDirectory, serverUrl);
     logger.info("Bundled service is ready", { elapsedMs: Date.now() - startupStartedAt });
   }
+  recordStartupStage("local-service-ready");
+  startup.finish();
   await syncSavedDesktopNetworkProxy().catch(error => logger?.warn("Saved network proxy could not be applied at startup", error));
   warmInitialModelCatalog(serverUrl, token, logger);
 
@@ -3247,11 +3176,14 @@ async function startApplication(): Promise<void> {
   // An aborted first document can suppress ready-to-show even after a later
   // successful navigation. Do not leave the recovered application hidden.
   startup.ensureVisible();
+  if (desktopDevelopmentRuntime) startTrayTaskPolling();
   // Clipboard capture and shortcuts are already active; create the renderer
   // only when opened instead of retaining a hidden Chromium page at startup.
   writeLastLaunchedVersion(app.getPath("userData"), app.getVersion(), logger);
   logger.info("Application window is ready", { elapsedMs: Date.now() - startupStartedAt });
   recordStartupStage("ready");
+  void observeFirstComposer(mainWindow, serverUrl.origin, () => recordStartupStage("composer-interactive"));
+  setImmediate(() => { if (!quitRequested) void initializeDesktopAnalytics(); }).unref();
   try { initializeDshPet(); } catch (error) { logger.warn("DSH Pet initialization failed", error); }
   try { initializeDshMeme(); } catch (error) { logger.warn("DSH Meme initialization failed", error); }
 }

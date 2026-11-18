@@ -123,6 +123,7 @@ Stable CI runs the Windows source gate and Windows installer build in parallel, 
 - After success, check the Release contains the expected package set and verify downloaded SHA-256 checksums.
 - On clean machines, verify startup, model setup, image history reload, project selection, editing/conflicts, terminal, browser login, external extension loading, and the Harmony workbench's read-only projection, media, files, databases and agent actions when hardware is available.
 - For installed updates, test download, busy/unsaved deferral, installation, restart and data retention.
+- For a manual Windows upgrade, leave the previous version in the notification area and open the installer. Verify the installer prompts before the wizard, Cancel leaves the existing installation untouched, and Retry continues only after quitting from the tray. Reopen the previous version while the wizard is on the directory page and verify clicking Install checks again before replacing any files.
 - Record the exact commit, run and Release URLs. Historical acceptance/design documents describe their own tested versions, not automatic proof for the new release.
 
 See [README](../README.md), [desktop development](../desktop/README.md) and [black-screen troubleshooting](open-source/BLACK_SCREEN_TROUBLESHOOTING.md).

@@ -52,11 +52,9 @@ type AnalyticsRequest = {
 };
 type AnalyticsResponse = Pick<Response, "ok" | "status" | "json"> & { headers: Pick<Headers, "get" | "has">; body: { cancel(): Promise<void> } | null };
 type Fetcher = (url: string, init: AnalyticsRequest) => Promise<AnalyticsResponse>;
-const analyticsDispatcher = new Agent();
-const directFetch: Fetcher = (url, init) => fetch(url, { ...init, dispatcher: analyticsDispatcher });
 const gatewayErrors = new Set([502, 503, 504]);
 
-export function createAnalyticsFetch(configured: Fetcher, direct: Fetcher = directFetch): Fetcher {
+export function createAnalyticsFetch(configured: Fetcher, direct: Fetcher): Fetcher {
   let preferConfiguredUntil = 0;
   return async (url, init) => {
     const configuredFirst = Date.now() < preferConfiguredUntil;
@@ -120,23 +118,36 @@ export class AnalyticsUploader {
   private displayNameSupported = false;
   private identitySupported = false;
   private capabilityCheckedAt = 0;
+  private readonly dispatcher: Agent | undefined;
+  private readonly fetcher: Fetcher;
   private constructor(
     readonly store: AnalyticsStore,
     private readonly config: AnalyticsConfig,
     private readonly secure: SecureStorage,
-    private readonly fetcher: Fetcher,
+    fetcher: Fetcher | undefined,
     private readonly identityReader: () => Promise<IdentityObservation> = () =>
       collectWindowsIdentity(config.enabled),
     private readonly configReader: () => AnalyticsConfig | undefined = () =>
       config,
-  ) {}
+    configuredFetch: Fetcher = fetch,
+  ) {
+    const dispatcher = !fetcher && config.proxy_mode !== "inherit" ? new Agent() : undefined;
+    this.dispatcher = dispatcher;
+    if (!dispatcher) {
+      this.fetcher = fetcher ?? configuredFetch;
+    } else {
+      const direct: Fetcher = (url, init) => fetch(url, { ...init, dispatcher });
+      this.fetcher = config.proxy_mode === "direct" ? direct : createAnalyticsFetch(configuredFetch, direct);
+    }
+  }
   static async create(
     store: AnalyticsStore,
     config: AnalyticsConfig,
     secure: SecureStorage,
-    fetcher: Fetcher = createAnalyticsFetch(fetch),
+    fetcher?: Fetcher,
     identityReader?: () => Promise<IdentityObservation>,
     configReader?: () => AnalyticsConfig | undefined,
+    configuredFetch?: Fetcher,
   ): Promise<AnalyticsUploader> {
     const uploader = new AnalyticsUploader(
       store,
@@ -145,9 +156,15 @@ export class AnalyticsUploader {
       fetcher,
       identityReader,
       configReader,
+      configuredFetch,
     );
-    await uploader.initialize();
-    return uploader;
+    try {
+      await uploader.initialize();
+      return uploader;
+    } catch (error) {
+      uploader.stop();
+      throw error;
+    }
   }
   private async initialize(): Promise<void> {
     const { store, secure } = this;
@@ -670,7 +687,9 @@ export class AnalyticsUploader {
     ).toISOString();
   }
   stop(): void {
+    if (this.stopped) return;
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
+    void this.dispatcher?.destroy().catch(() => {});
   }
 }

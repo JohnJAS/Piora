@@ -44,7 +44,24 @@ html[data-app-background-active="true"] body::after {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  html:not(.desktop-pet-document) body:has(> .app-shell):not(:has(> .settings-backdrop)) > .glacier-background-motion {
+  html[data-app-background-motion="running"] {
+    --app-background-motion-play-state: running;
+  }
+
+  html[data-app-background-active="true"][data-app-background-motion]:not(.desktop-pet-document) body:has(> .app-shell):not(:has(> .settings-backdrop))::before,
+  html[data-app-background-active="true"][data-app-background-motion]:not(.desktop-pet-document) .settings-backdrop::before,
+  html[data-app-background-motion] .glacier-background-motion {
+    animation: app-background-drift 12s ease-in-out infinite var(--app-background-motion-play-state, paused);
+  }
+
+  @keyframes app-background-drift {
+    0%, 100% { transform: translate3d(0, 0, 0) scale(1.035); }
+    25% { transform: translate3d(-8px, -3px, 0) scale(1.042); }
+    50% { transform: translate3d(0, -5px, 0) scale(1.045); }
+    75% { transform: translate3d(8px, -3px, 0) scale(1.042); }
+  }
+
+  html[data-app-background-motion]:not(.desktop-pet-document) body:has(> .app-shell):not(:has(> .settings-backdrop)) > .glacier-background-motion {
     display: block;
     position: fixed;
     z-index: 0;
@@ -65,7 +82,7 @@ html[data-app-background-active="true"] body::after {
     background: var(--app-background-image, none) center / cover no-repeat;
   }
 
-  .glacier-background-motion[data-motion-running] .glacier-facets {
+  html[data-app-background-motion="running"] .glacier-facets {
     transition: transform 420ms cubic-bezier(0.18, 0.64, 0.32, 1);
   }
 
@@ -91,17 +108,13 @@ html[data-app-background-active="true"] body::after {
     inset: 0;
     opacity: 0;
     background: linear-gradient(118deg, transparent 44%, rgb(175 222 255 / 0.14) 48%, rgb(246 253 255 / 0.75) 50%, transparent 53%);
-    animation: glacier-facet-sweep 32s linear infinite paused;
-  }
-
-  .glacier-background-motion[data-motion-running] .glacier-glint::before {
-    animation-play-state: running;
+    animation: glacier-facet-sweep 22s linear infinite var(--app-background-motion-play-state, paused);
   }
 
   @keyframes glacier-facet-sweep {
-    0%, 6% { transform: translateX(-72%); opacity: 0; }
-    9%, 17% { opacity: 0.66; }
-    20%, 100% { transform: translateX(72%); opacity: 0; }
+    0% { transform: translateX(-72%); opacity: 0; }
+    7%, 24% { opacity: 0.48; }
+    32%, 100% { transform: translateX(72%); opacity: 0; }
   }
 }
 

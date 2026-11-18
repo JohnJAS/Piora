@@ -1,8 +1,9 @@
 import { buildCompactChatHistoryRows } from "./compact-chat-history";
-import { insertCommandHistoryRows, layoutChatResponseRows } from "./chat-history";
+import { insertCommandHistoryRows, layoutChatResponseRows, startsChatTurn } from "./chat-history";
 import { insertModelChangeRows, type ModelChangeNotice } from "./model-change-notices";
 import type { ChatCommandView } from "./chat-command-types";
 import type { AgentMessage, ToolResultMessage, UserMessage } from "./types";
+import { appendHistoryMessage, joinedRows } from "./chat-segments";
 const NO_STABLE_KEYS: string[] = [];
 
 /** Rebuilt on persisted/history edits, not on every streaming text update. */
@@ -15,26 +16,26 @@ export function prepareChatHistory(
   const showTimestamps = new Set<number>();
   const retryPrompts = new Map<number, { message: UserMessage; entryId?: string }>();
   let retryPrompt: { message: UserMessage; entryId?: string } | undefined;
-  let lastUser = -1, lastAssistant = -1;
+  let lastUser = -1, lastAssistant = -1, lastTurn = -1;
   for (let i = 0; i < saved.length; i++) {
     const message = saved[i];
     if (message.role === "toolResult") toolResults.set(message.toolCallId, message);
-    if (message.followsDeletedPrompt) {
+    if (startsChatTurn(message)) {
       if (lastAssistant >= 0) showTimestamps.add(lastAssistant);
+      lastTurn = i;
       lastAssistant = -1;
       retryPrompt = undefined;
-    }
-    if (message.role === "user") {
-      retryPrompt = { message, entryId: ids[i] };
-      userIndices.set(i, userIndices.size);
-      if (lastAssistant >= 0) showTimestamps.add(lastAssistant);
-      lastUser = i; lastAssistant = -1;
+      if (message.role === "user") {
+        retryPrompt = { message, entryId: ids[i] };
+        userIndices.set(i, userIndices.size);
+        lastUser = i;
+      }
     }
     if (message.role === "assistant") lastAssistant = i;
     if (message.role === "assistant" && message.stopReason === "error" && retryPrompt) retryPrompts.set(i, retryPrompt);
   }
   if (lastAssistant >= 0) showTimestamps.add(lastAssistant);
-  const start = Math.max(0, lastUser);
+  const start = Math.max(0, lastTurn);
   const prefixToolCalls = new Set(saved.slice(0, start).flatMap(message => message.role === "assistant" && Array.isArray(message.content)
     ? message.content.flatMap(block => block.type === "toolCall" ? [block.toolCallId] : []) : []));
   // Keep global indices/keys. Slicing before projection would change anonymous
@@ -44,22 +45,25 @@ export function prepareChatHistory(
   const extras = insertModelChangeRows(insertCommandHistoryRows([], saved, ids, operations), ids, notices);
   const rows = [...layoutChatResponseRows(prefix.rows, saved, false), ...extras.filter(row => row.index < start)]
     .sort((a, b) => a.index - b.index);
-  return { saved, ids, choices, compact, direct, start, prefix, rows, keys: rows.map(row => row.key), prefixToolCalls, operations, notices,
+  const user = saved[lastUser];
+  const userRowKey = user?.role === "user" ? "message:" + (ids[lastUser] || user.clientPromptId || lastUser) : undefined;
+  return { saved, ids, choices, compact, direct, start, prefix, rows, keys: rows.map(row => row.key), userRowKey, prefixToolCalls, operations, notices,
     tailExtras: extras.filter(row => row.index >= start),
     metadata: { toolResults, userIndices, showTimestamps, lastUser, retryPrompts } };
 }
 
 /** Only the latest user turn is reprojected as its assistant/tool output grows. */
 export function projectChatHistoryTail(base: ReturnType<typeof prepareChatHistory>, live: AgentMessage | null | undefined, busy: boolean) {
-  const messages = live ? [...base.saved, live] : base.saved;
+  const messages = appendHistoryMessage(base.saved, live);
   const toolResults = live?.role === "toolResult"
-    ? new Map(base.metadata.toolResults).set(live.toolCallId, live) : base.metadata.toolResults;
+    ? { get: (id: string) => live.toolCallId === id ? live : base.metadata.toolResults.get(id) } : base.metadata.toolResults;
   // A late tool result may belong to an earlier turn (e.g. queued user input).
   // Invalidate that projection rather than displaying stale error/handoff state.
   if (live?.role === "toolResult" && base.prefixToolCalls.has(live.toolCallId)) {
+    const complete = [...base.saved, live];
     const plan = buildCompactChatHistoryRows(messages, base.ids, busy, base.choices, base.saved.length, base.compact, base.direct);
-    const rows = insertModelChangeRows(layoutChatResponseRows(insertCommandHistoryRows(plan.rows, messages, base.ids, base.operations), messages, busy), base.ids, base.notices);
-    return { messages, rows, toolResults, entryRows: plan.entryRows, entryGroups: plan.entryGroups, stableKeys: NO_STABLE_KEYS };
+    const rows = insertModelChangeRows(layoutChatResponseRows(insertCommandHistoryRows(plan.rows, complete, base.ids, base.operations), messages, busy), base.ids, base.notices);
+    return { messages, rows: joinedRows([], rows), liveRows: rows, toolResults, entryRows: plan.entryRows, entryGroups: plan.entryGroups, stableKeys: NO_STABLE_KEYS };
   }
   const tail = buildCompactChatHistoryRows(messages, base.ids, busy, base.choices,
     live ? base.saved.length : -1, base.compact, base.direct,
@@ -71,9 +75,9 @@ export function projectChatHistoryTail(base: ReturnType<typeof prepareChatHistor
       && (live.timestamp ?? 0) > row.operation.acceptedAt) return { ...row, index: base.saved.length - .5 };
     return row;
   });
-  const rows = [...base.rows, ...[...layoutChatResponseRows(tail.rows, messages, busy, base.start), ...extras]
-    .sort((a, b) => a.index - b.index || (a.operation?.acceptedAt ?? 0) - (b.operation?.acceptedAt ?? 0))];
-  return { messages, rows, toolResults, stableKeys: base.keys,
+  const liveRows = [...layoutChatResponseRows(tail.rows, messages, busy, base.start), ...extras]
+    .sort((a, b) => a.index - b.index || (a.operation?.acceptedAt ?? 0) - (b.operation?.acceptedAt ?? 0));
+  return { messages, rows: joinedRows(base.rows, liveRows), liveRows, toolResults, stableKeys: base.keys,
     entryRows: { get: (id: string) => tail.entryRows.get(id) ?? base.prefix.entryRows.get(id) },
     entryGroups: { get: (id: string) => tail.entryGroups.get(id) ?? base.prefix.entryGroups.get(id) } };
 }

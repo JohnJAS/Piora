@@ -1,14 +1,14 @@
 import { useEffect, useRef } from "react";
+import type { BackgroundMotionKind } from "@/lib/backgrounds";
 
-export function GlacierBackgroundMotion() {
+export function BackgroundMotion({ kind }: { kind: BackgroundMotionKind }) {
   const sceneRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene || document.documentElement.classList.contains("desktop-pet-document")) return;
-
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const root = document.documentElement;
+    if (root.classList.contains("desktop-pet-document")) return;
+    const scene = sceneRef.current;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let active = false;
     let frame: number | null = null;
     let x = 0;
@@ -24,13 +24,13 @@ export function GlacierBackgroundMotion() {
     function updateActivity() {
       active = !reducedMotion.matches && document.visibilityState === "visible" && document.hasFocus();
       if (!active) center();
-      scene?.toggleAttribute("data-motion-running", active);
+      root.dataset.appBackgroundMotion = active ? "running" : "paused";
     }
 
     function move(event: PointerEvent) {
       if (!active || event.pointerType !== "mouse") return;
-      x = Math.max(-1, Math.min(1, (event.clientX / window.innerWidth) * 2 - 1)) * 13;
-      y = Math.max(-1, Math.min(1, (event.clientY / window.innerHeight) * 2 - 1)) * 8;
+      x = Math.max(-1, Math.min(1, (event.clientX / window.innerWidth) * 2 - 1)) * 10;
+      y = Math.max(-1, Math.min(1, (event.clientY / window.innerHeight) * 2 - 1)) * 6;
       if (frame !== null) return;
 
       frame = requestAnimationFrame(() => {
@@ -44,21 +44,26 @@ export function GlacierBackgroundMotion() {
     document.addEventListener("visibilitychange", updateActivity);
     window.addEventListener("focus", updateActivity);
     window.addEventListener("blur", updateActivity);
-    window.addEventListener("pointermove", move, { passive: true });
-    root.addEventListener("pointerleave", center);
+    if (scene) {
+      window.addEventListener("pointermove", move, { passive: true });
+      root.addEventListener("pointerleave", center);
+    }
     updateActivity();
     return () => {
       reducedMotion.removeEventListener("change", updateActivity);
       document.removeEventListener("visibilitychange", updateActivity);
       window.removeEventListener("focus", updateActivity);
       window.removeEventListener("blur", updateActivity);
-      window.removeEventListener("pointermove", move);
-      root.removeEventListener("pointerleave", center);
+      if (scene) {
+        window.removeEventListener("pointermove", move);
+        root.removeEventListener("pointerleave", center);
+      }
       center();
-      scene.removeAttribute("data-motion-running");
+      delete root.dataset.appBackgroundMotion;
     };
-  }, []);
+  }, [kind]);
 
+  if (kind !== "glacier") return null;
   return (
     <div className="glacier-background-motion" aria-hidden="true" ref={sceneRef}>
       <div className="glacier-facets glacier-facets-middle" />

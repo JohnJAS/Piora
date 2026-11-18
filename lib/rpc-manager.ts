@@ -62,6 +62,7 @@ import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-ty
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS } from "./custom-ui-terminal";
 import type { Runtime, TaskRuntimeActivity, TaskRuntimeActivityKind, TaskRuntimeSnapshot } from "./task-status";
+import { notifyRunningChange, scheduleRunningChange } from "./rpc-running-status";
 import { projectTaskRun } from "./task-run";
 import {
   assertCurrentAgentRuntimeProfile,
@@ -103,13 +104,16 @@ import {
   createSessionSystemPromptBinding,
   readLatestSessionSystemPromptBinding,
   resolveSessionSystemPrompt,
+  summarizeSessionSystemPromptBinding,
 } from "./session-system-prompt";
 import type { SessionSystemPromptBinding, SystemPromptSelection } from "./system-prompt-types";
 import { buildPromptWithMaterials, resolvePromptMaterialReferences, restorePromptMaterialDisplayPreview } from "./prompt-materials";
 import type { PromptMaterialReference } from "./prompt-material-format";
 import { userInputTimeoutMs, type UserInputResult } from "./user-input";
 import { estimateContextUsageBreakdown } from "./context-usage";
-import { summarizeSessionStats } from "./session-stats";
+import { summarizeLiveSessionStats } from "./session-stats";
+import { parseRuntimeStateView, projectRuntimeContext, type SessionRuntimeStateView } from "./session-runtime-context";
+import { authorizeSessionCommand, enforceCommandProfile, recheckCommandSession, type SessionRpcCommand } from "./session-command-policy";
 import { mergeCommandOutputDetails } from "./command-execution";
 import { ChatCommandActivityTracker } from "./chat-command-activity";
 import { createChatCommandCatalog, templateUsesArguments } from "./chat-command-input";
@@ -1312,21 +1316,66 @@ export class AgentSessionWrapper {
     return () => this.onDestroyCallbacks.delete(cb);
   }
 
-  async send(command: Record<string, unknown>): Promise<unknown> {
-    assertRemotePolicyCommand(this.remotePolicy, command);
-    if (command.type !== "abort" && command.type !== "get_state") assertSessionNotMutating(this.sessionId);
+  getRuntimeState(view: SessionRuntimeStateView = "full") {
+    const runtime = this.getForegroundRuntime();
+    const progress = {
+      sessionId: this.sessionId,
+      runtime,
+      isStreaming: this.inner.isStreaming,
+      isPromptRunning: this.promptRunning,
+      isBashRunning: this.inner.isBashRunning,
+      runStartedAt: runtime === "idle" ? null : this.runStartedAt,
+      statusPhaseKind: runtime === "idle" ? null : this.statusPhaseKind,
+      statusPhaseStartedAt: runtime === "idle" ? null : this.statusPhaseStartedAt,
+      lastProgressAt: runtime === "idle" ? null : this.lastProgressAt,
+      isCompacting: this.inner.isCompacting,
+      compactionStartedAt: this.inner.isCompacting ? this.compactionStartedAt : null,
+    };
+    if (view === "progress") return progress;
+
+    const model = this.inner.model;
+    return {
+      ...progress,
+      subagents: this.subagents?.list() ?? [],
+      subagentsRunning: this.subagents?.running ?? false,
+      ...(this.runtimeProfile === "normal" ? { workflow: readWorkflowSnapshot(this.sessionId) } : {}),
+      ...(view === "full" ? { stats: summarizeLiveSessionStats(this.inner.sessionManager) } : {}),
+      runtimeProfile: this.runtimeProfile,
+      remotePolicy: this.remotePolicy,
+      sessionFile: this.inner.sessionFile ?? "",
+      activeTools: Array.from(this.runtimeToolCalls, ([id, tool]) => ({ id, name: tool.toolName })),
+      pendingApproval: this.pendingUiResponses.size > 0 || this.activeCustomUis.size > 0,
+      lastPromptFailed: this.lastPromptFailed,
+      lastPromptErrorSummary: this.lastPromptErrorSummary,
+      autoCompactionEnabled: this.inner.autoCompactionEnabled,
+      autoRetryEnabled: this.inner.autoRetryEnabled,
+      model: model ? { id: model.id, provider: model.provider } : undefined,
+      messageCount: 0,
+      pendingMessageCount: this.inner.pendingMessageCount,
+      queuedMessages: {
+        pendingInputs: this.getPendingInputs(),
+        steering: [...this.inner.getSteeringMessages()],
+        followUp: [...this.inner.getFollowUpMessages()],
+      },
+      ...projectRuntimeContext(this.inner, this.forceEmptySystemPrompt),
+      systemPromptBinding: view === "full" ? this.getSystemPromptBinding() : summarizeSessionSystemPromptBinding(this.getSystemPromptBinding()),
+      thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
+      extensionStatuses: this.getExtensionStatuses(),
+      extensionWidgets: this.getExtensionWidgets(),
+      capabilities: this.getSessionCapabilities(),
+      toolPermission: readToolPermission(this.sessionId, getAgentDir()),
+      ...(view === "full" ? { toolReviews: this.reviews().list() } : {}),
+    };
+  }
+
+  async send(command: SessionRpcCommand): Promise<unknown> {
+    const type = authorizeSessionCommand(this.sessionId, this.remotePolicy, command);
     this.resetIdleTimer();
     this.flushPendingProjectCapabilitySettings();
-    const type = command.type as string;
     const abortGeneration = this.abortGeneration;
-    if (this.runtimeProfile === "device-control" && DEVICE_CONTROL_DENIED_RPC_COMMANDS.has(type)) {
-      throw new Error(`RPC command ${type} is disabled by the device-control runtime profile.`);
-    }
+    enforceCommandProfile(type, this.runtimeProfile, DEVICE_CONTROL_DENIED_RPC_COMMANDS);
     if (this.shouldWaitForExtensions(type)) await this.waitForExtensionsBound();
-    if (type !== "abort" && type !== "get_state") {
-      assertSessionNotMutating(this.sessionId);
-      if (!this._alive) throw new Error("Session has been closed");
-    }
+    recheckCommandSession(type, this.sessionId, this._alive);
 
     if (type === "prompt" || type === "steer" || type === "follow_up") {
       if (this.stopping || abortGeneration !== this.abortGeneration) {
@@ -1699,70 +1748,8 @@ export class AgentSessionWrapper {
         return receipt();
       }
 
-      case "get_state": {
-        const model = this.inner.model;
-        // Background children remain visible to task status/idle cleanup, but
-        // must not pin the parent's composer or queue new foreground prompts.
-        const runtime = this.getForegroundRuntime();
-        const contextUsage = this.inner.getContextUsage();
-        const agentState = this.inner.agent.state;
-        const contextBreakdown = contextUsage ? estimateContextUsageBreakdown({
-          messages: agentState?.messages ?? [],
-          systemPrompt: this.forceEmptySystemPrompt ? "" : agentState?.systemPrompt ?? "",
-          tools: agentState?.tools ?? [],
-          totalTokens: contextUsage.tokens,
-        }) : undefined;
-        return {
-          sessionId: this.inner.sessionId,
-          subagents: this.subagents?.list() ?? [],
-          subagentsRunning: this.subagents?.running ?? false,
-          ...(this.runtimeProfile === "normal" ? { workflow: readWorkflowSnapshot(this.sessionId) } : {}),
-          stats: summarizeSessionStats(this.inner.sessionManager),
-          runtimeProfile: this.runtimeProfile,
-          remotePolicy: this.remotePolicy,
-          sessionFile: this.inner.sessionFile ?? "",
-          isStreaming: this.inner.isStreaming,
-          isPromptRunning: this.promptRunning,
-          isBashRunning: this.inner.isBashRunning,
-          runStartedAt: runtime === "idle" ? null : this.runStartedAt,
-          statusPhaseKind: runtime === "idle" ? null : this.statusPhaseKind,
-          statusPhaseStartedAt: runtime === "idle" ? null : this.statusPhaseStartedAt,
-          lastProgressAt: runtime === "idle" ? null : this.lastProgressAt,
-          isCompacting: this.inner.isCompacting,
-          compactionStartedAt: this.inner.isCompacting ? this.compactionStartedAt : null,
-          runtime,
-          activeTools: Array.from(this.runtimeToolCalls, ([id, tool]) => ({ id, name: tool.toolName })),
-          pendingApproval: this.pendingUiResponses.size > 0 || this.activeCustomUis.size > 0,
-          lastPromptFailed: this.lastPromptFailed,
-          lastPromptErrorSummary: this.lastPromptErrorSummary,
-          autoCompactionEnabled: this.inner.autoCompactionEnabled,
-          autoRetryEnabled: this.inner.autoRetryEnabled,
-          model: model ? { id: model.id, provider: model.provider } : undefined,
-          messageCount: 0,
-          pendingMessageCount: this.inner.pendingMessageCount,
-          queuedMessages: {
-            pendingInputs: this.getPendingInputs(),
-            steering: [...this.inner.getSteeringMessages()],
-            followUp: [...this.inner.getFollowUpMessages()],
-          },
-          contextUsage: contextUsage
-            ? {
-                percent: contextUsage.percent,
-                contextWindow: contextUsage.contextWindow,
-                tokens: contextUsage.tokens,
-                ...(contextBreakdown ? { breakdown: contextBreakdown } : {}),
-              }
-            : null,
-          systemPrompt: this.forceEmptySystemPrompt ? "" : this.inner.agent.state?.systemPrompt ?? "",
-          systemPromptBinding: this.getSystemPromptBinding(),
-          thinkingLevel: this.inner.agent.state?.thinkingLevel ?? "off",
-          extensionStatuses: this.getExtensionStatuses(),
-          extensionWidgets: this.getExtensionWidgets(),
-          capabilities: this.getSessionCapabilities(),
-          toolPermission: readToolPermission(this.sessionId, getAgentDir()),
-          toolReviews: this.reviews().list(),
-        };
-      }
+      case "get_state":
+        return this.getRuntimeState(parseRuntimeStateView(command.view));
 
       case "set_model": {
         this.assertSessionIdle("change model");
@@ -1919,7 +1906,7 @@ export class AgentSessionWrapper {
 
       case "get_session_stats": {
         return {
-          ...summarizeSessionStats(this.inner.sessionManager),
+          ...summarizeLiveSessionStats(this.inner.sessionManager),
           contextUsage: this.inner.getContextUsage() ?? undefined,
           sessionName: this.cachedSessionTitle ?? undefined,
         };
@@ -2635,13 +2622,12 @@ export class AgentSessionWrapper {
 // ============================================================================
 
 declare global {
-  var __piSessions: Map<string, AgentSessionWrapper> | undefined;
   var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
   var __piStartingSessionCwds: Map<string, number> | undefined;
-  var __piRunningListeners: Set<(sessions: TaskRuntimeSnapshot[]) => void> | undefined;
-  var __piRunningNotifyTimer: ReturnType<typeof setTimeout> | undefined;
   var __piServicesCache: Map<string, AgentSessionServices> | undefined;
 }
+
+export { getRunningRpcSessionIds, getRunningRpcSessionStatuses, notifyRunningChange, subscribeRunningSessions } from "./rpc-running-status";
 
 // ==========================================================================
 // Per-session services cache.
@@ -2795,37 +2781,6 @@ export function destroyRpcSessionsForCwd(cwd: string): number {
   return sessions.length;
 }
 
-export function getRunningRpcSessionIds(): string[] {
-  return getRunningRpcSessionStatuses()
-    .filter((session) => session.runtime !== "idle")
-    .map((session) => session.id);
-}
-
-export function getRunningRpcSessionStatuses(includeIdle = false): TaskRuntimeSnapshot[] {
-  const statuses: TaskRuntimeSnapshot[] = [];
-  for (const session of getRegistry().values()) {
-    if (!session.isAlive() || session.isSubagentSession?.()) continue;
-    // globalThis deliberately retains wrappers across Next.js hot reloads.
-    // A wrapper created by the previous module version does not yet have the
-    // three-axis accessor, so adapt it until that live session is recreated.
-    const snapshot = typeof session.getTaskRuntimeSnapshot === "function"
-      ? session.getTaskRuntimeSnapshot()
-      : {
-          id: session.sessionId,
-          runtime: session.inner.isCompacting ? "compacting" as const : session.isRunning() ? "running" as const : "idle" as const,
-          pendingApproval: false,
-          lastPromptFailed: false,
-        };
-    const hasOpenTaskRun = snapshot.taskRun
-      && snapshot.taskRun.phase !== "completed"
-      && snapshot.taskRun.phase !== "cancelled";
-    if (includeIdle || snapshot.runtime !== "idle" || snapshot.pendingApproval || snapshot.lastPromptFailed || hasOpenTaskRun) {
-      statuses.push(snapshot);
-    }
-  }
-  return statuses.sort((a, b) => a.id.localeCompare(b.id));
-}
-
 export interface UnpersistedSessionInfo {
   id: string;
   path: string;
@@ -2898,29 +2853,6 @@ export function getUnpersistedSessionInfos(excludeIds?: ReadonlySet<string>): Un
 }
 
 // ----------------------------------------------------------------------------
-// Running-status broadcaster
-//
-// Pushes the current set of running session ids to subscribers whenever any
-// session's running state may have changed. This lets the sidebar receive live
-// updates over SSE instead of polling. Listeners live on globalThis so they
-// survive Next.js hot-reload.
-// ----------------------------------------------------------------------------
-
-function getRunningListeners(): Set<(sessions: TaskRuntimeSnapshot[]) => void> {
-  if (!globalThis.__piRunningListeners) globalThis.__piRunningListeners = new Set();
-  return globalThis.__piRunningListeners;
-}
-
-/** Subscribe to running-session-id changes. Returns an unsubscribe function. */
-export function subscribeRunningSessions(listener: (sessions: TaskRuntimeSnapshot[]) => void): () => void {
-  const listeners = getRunningListeners();
-  listeners.add(listener);
-  return () => { listeners.delete(listener); };
-}
-
-let lastRunningSnapshot = "";
-const RUNNING_SNAPSHOT_THROTTLE_MS = 250;
-
 function isImmediateRunningSnapshotEvent(event: AgentEvent): boolean {
   return event.type === "agent_start"
     || event.type === "agent_end"
@@ -2929,32 +2861,6 @@ function isImmediateRunningSnapshotEvent(event: AgentEvent): boolean {
     || event.type === "auto_compaction_start"
     || event.type === "auto_compaction_end"
     || event.type === "extension_ui_request";
-}
-
-function scheduleRunningChange(): void {
-  if (globalThis.__piRunningNotifyTimer) return;
-  globalThis.__piRunningNotifyTimer = setTimeout(() => {
-    globalThis.__piRunningNotifyTimer = undefined;
-    notifyRunningChange();
-  }, RUNNING_SNAPSHOT_THROTTLE_MS);
-}
-
-/**
- * Recompute the running-session-id set and, if it changed since the last
- * notification, broadcast it to subscribers. Cheap to call often.
- */
-export function notifyRunningChange(): void {
-  if (globalThis.__piRunningNotifyTimer) {
-    clearTimeout(globalThis.__piRunningNotifyTimer);
-    globalThis.__piRunningNotifyTimer = undefined;
-  }
-  const sessions = getRunningRpcSessionStatuses();
-  const snapshot = JSON.stringify(sessions);
-  if (snapshot === lastRunningSnapshot) return;
-  lastRunningSnapshot = snapshot;
-  for (const listener of getRunningListeners()) {
-    try { listener(sessions); } catch { /* ignore listener errors */ }
-  }
 }
 
 /**

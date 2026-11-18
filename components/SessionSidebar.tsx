@@ -63,7 +63,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     customPathOpen, setCustomPathOpen, customPathError, setCustomPathError,
     customPathValidating, commitCustomPath, handleCustomPathClick, handleDefaultCwd,
   } = useProjectPicker({ setSelectedCwd, setRememberedProjectRoots, setHiddenProjectRoots, onProjectSelected: handlePickedProject });
-  const { allSessions, loading, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions, markSessionUnread } = useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectRoots });
+  const { allSessions, loading, catalogComplete, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions, markSessionUnread } = useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectRoots });
   const { state: worktreeState, error: worktreeError } = useWorktrees(selectedCwd, true, refreshKey);
 
   useEffect(() => {
@@ -140,8 +140,9 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     if (selectedCwd === null) {
       // Restore the chat first; its committed selection synchronizes cwd.
       if (initialSessionId && !restoredRef.current) {
-        restoredRef.current = true;
         const target = allSessions.find((s) => s.id === initialSessionId);
+        if (!target && !catalogComplete) return;
+        restoredRef.current = true;
         if (target) {
           onSelectSession(target, true);
           return;
@@ -162,7 +163,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         setSelectedCwd(projects[0]);
       }
     }
-  }, [allSessions, hiddenProjectRoots, initialSessionId, loading, onInitialRestoreDone, onSelectSession, rememberedProjectRoots, selectedCwd, selectedRoomId, selectedSessionId, sessionFlags, skipInitialProjectSelection]);
+  }, [allSessions, catalogComplete, hiddenProjectRoots, initialSessionId, loading, onInitialRestoreDone, onSelectSession, rememberedProjectRoots, selectedCwd, selectedRoomId, selectedSessionId, sessionFlags, skipInitialProjectSelection]);
 
   useImperativeHandle(ref, () => ({
     openProjectPicker: handleCustomPathClick,

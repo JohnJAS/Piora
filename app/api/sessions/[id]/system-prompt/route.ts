@@ -11,6 +11,7 @@ import {
   selectionForSessionSystemPromptBinding,
 } from "@/lib/session-system-prompt";
 import { invalidateSessionListCache, resolveSessionPath } from "@/lib/session-reader";
+import { readSessionPromptBinding } from "@/lib/session-read-repository";
 import type { SystemPromptSelection } from "@/lib/system-prompt-types";
 
 function parseSelection(value: unknown): SystemPromptSelection {
@@ -23,21 +24,21 @@ function parseSelection(value: unknown): SystemPromptSelection {
   throw new Error("Invalid system prompt selection.");
 }
 
-async function readBinding(id: string) {
+async function readBinding(id: string, signal?: AbortSignal) {
   const live = getRpcSession(id);
   if (live?.isAlive()) return live.getSystemPromptBinding();
   const filePath = await resolveSessionPath(id);
   if (!filePath) return undefined;
-  return readLatestSessionSystemPromptBinding(SessionManager.open(filePath).getEntries());
+  return readSessionPromptBinding(filePath, signal);
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
   try {
-    const binding = await readBinding(id);
+    const binding = await readBinding(id, request.signal);
     if (binding === undefined) return NextResponse.json({ error: "Session not found" }, { status: 404 });
     return NextResponse.json({ binding, selection: selectionForSessionSystemPromptBinding(binding) });
   } catch (error) {

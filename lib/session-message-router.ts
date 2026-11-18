@@ -154,6 +154,8 @@ export class SessionMessageRouter {
   private readonly queueActions = new Set<string>();
   private readonly operationExecutions = new Map<string, Promise<void>>();
   private readonly knownCommands = new Map<string, SessionCommandRecord>();
+  private readonly commandsBySubmission = new Map<string, SessionCommandRecord>();
+  private readonly loadingInboxes = new Map<string, Promise<void>>();
   private readonly activeCommands = new Map<string, SessionCommandRecord>();
   private readonly wakeSubscriptions = new Map<string, () => void>();
   private readonly pendingSubmissions = new Map<string, Promise<DispatchReceipt>>();
@@ -180,10 +182,23 @@ export class SessionMessageRouter {
   private async ensureLoaded(sessionId: string): Promise<SessionInboxState> {
     const inbox = this.inbox(sessionId);
     if (inbox.loaded) return inbox;
-    inbox.loaded = true;
-    for (const command of this.store.loadCommands(sessionId)) {
-      this.knownCommands.set(command.commandId, command);
-      if (TERMINAL_STATUSES.has(command.status)) continue;
+    let loading = this.loadingInboxes.get(sessionId);
+    if (!loading) {
+      loading = this.restoreInbox(sessionId);
+      this.loadingInboxes.set(sessionId, loading);
+    }
+    try {
+      await loading;
+      inbox.loaded = true;
+      return inbox;
+    } finally {
+      if (this.loadingInboxes.get(sessionId) === loading) this.loadingInboxes.delete(sessionId);
+    }
+  }
+
+  private async restoreInbox(sessionId: string): Promise<void> {
+    for (const command of await this.store.loadActiveCommands(sessionId)) {
+      this.rememberCommand(command);
       if (command.workflowAction) {
         const live = getRpcSession(sessionId);
         if (command.runId && live?.isAlive() && live.getActivePromptRunId() === command.runId) {
@@ -230,7 +245,6 @@ export class SessionMessageRouter {
         try { getSessionInboxRegistry().enqueue(command); } catch { /* a later receipt will report a full inbox */ }
       }
     }
-    return inbox;
   }
 
   private async publish(event: Omit<SessionCommandEvent, "cursor">): Promise<void> {
@@ -248,7 +262,7 @@ export class SessionMessageRouter {
     Object.assign(command, patch);
     command.revision = (command.revision ?? 0) + 1;
     patch = { ...patch, revision: command.revision };
-    this.knownCommands.set(command.commandId, command);
+    this.rememberCommand(command);
     command = { ...command, ...(command.operation ? { operation: structuredClone(command.operation) } : {}) };
     await this.store.appendStatus(command, status, patch);
     const latest = this.knownCommands.get(command.commandId) ?? command;
@@ -329,7 +343,7 @@ export class SessionMessageRouter {
     const pending = this.pendingSubmissions.get(this.submissionKey(sessionId, idempotencyKey));
     if (pending) return { ...await pending, idempotent: true };
     await this.ensureLoaded(sessionId);
-    const command = this.submissionCommand(sessionId, idempotencyKey);
+    const command = await this.submissionCommand(sessionId, idempotencyKey);
     if (!command) return undefined;
     await this.commandDurability.get(command.commandId);
     if (!TERMINAL_STATUSES.has(command.status)) void this.drain(sessionId);
@@ -341,11 +355,21 @@ export class SessionMessageRouter {
     return JSON.stringify([sessionId, idempotencyKey]);
   }
 
-  private submissionCommand(sessionId: string, idempotencyKey: string): SessionCommandRecord | undefined {
-    const known = [...this.knownCommands.values()].find(command => command.targetSessionId === sessionId && command.idempotencyKey === idempotencyKey);
+  private rememberCommand(command: SessionCommandRecord): void {
+    this.knownCommands.set(command.commandId, command);
+    const key = this.submissionKey(command.targetSessionId, command.idempotencyKey);
+    const existing = this.commandsBySubmission.get(key);
+    if (!existing || existing.commandId === command.commandId) this.commandsBySubmission.set(key, command);
+  }
+
+  private async submissionCommand(sessionId: string, idempotencyKey: string): Promise<SessionCommandRecord | undefined> {
+    const key = this.submissionKey(sessionId, idempotencyKey);
+    const known = this.commandsBySubmission.get(key);
     if (known) return known;
-    const stored = this.store.findByIdempotencyKey(idempotencyKey, sessionId);
-    if (stored) this.knownCommands.set(stored.commandId, stored);
+    const stored = await this.store.queryByIdempotencyKey(sessionId, idempotencyKey);
+    const current = this.commandsBySubmission.get(key);
+    if (current) return current;
+    if (stored) this.rememberCommand(stored);
     return stored;
   }
 
@@ -357,7 +381,7 @@ export class SessionMessageRouter {
 
   private async admitSubmission(input: SessionMessageInput): Promise<DispatchReceipt> {
     const key = this.submissionKey(input.targetSessionId, input.idempotencyKey);
-    const existing = this.submissionCommand(input.targetSessionId, input.idempotencyKey);
+    const existing = await this.submissionCommand(input.targetSessionId, input.idempotencyKey);
     if (existing) {
       if (this.cancellationIntents.has(key)) await this.cancelRecord(existing);
       if (!TERMINAL_STATUSES.has(existing.status)) void this.drain(existing.targetSessionId);
@@ -382,7 +406,7 @@ export class SessionMessageRouter {
     await this.ensureLoaded(input.targetSessionId);
     const command = this.makeRecord(input);
     if (command.operation) command.operation.anchorEntryId = getRpcSession(input.targetSessionId)?.inner?.sessionManager.getLeafId() ?? undefined;
-    this.knownCommands.set(command.commandId, command);
+    this.rememberCommand(command);
     let commandPersisted = false;
     try {
       const durability = this.store.appendCommand(command);
@@ -414,6 +438,10 @@ export class SessionMessageRouter {
     } catch (error) {
       const code = /full|too large/i.test(safeErrorMessage(error)) ? (safeErrorMessage(error).includes("large") ? "SESSION_MESSAGE_TOO_LARGE" : "SESSION_QUEUE_FULL") : "RUNTIME_START_FAILED";
       getSessionInboxRegistry().removeCommand(command.targetSessionId, command.commandId);
+      if (!commandPersisted && this.knownCommands.get(command.commandId) === command) {
+        this.knownCommands.delete(command.commandId);
+        if (this.commandsBySubmission.get(key) === command) this.commandsBySubmission.delete(key);
+      }
       if (commandPersisted && !this.isCancelled(command) && !TERMINAL_STATUSES.has(command.status)) {
         // The original must be durable before admission, but a rejected inbox
         // admission must also be terminal so recovery cannot replay it.
@@ -444,7 +472,7 @@ export class SessionMessageRouter {
     const message = { ...input, delivery: "steer" as const };
     validateInput(message, this.maxMessageBytes);
     assertPrincipal(message, principal);
-    const existing = this.store.findByIdempotencyKey(input.idempotencyKey, input.targetSessionId);
+    const existing = await this.store.queryByIdempotencyKey(input.targetSessionId, input.idempotencyKey);
     if (existing) return { accepted: true, commandId: existing.commandId, sessionId: existing.targetSessionId, status: existing.status, attachedRunId: existing.attachedRunId, idempotent: true };
     const session = (await this.getLiveSession(input.targetSessionId));
     await this.ensureLoaded(input.targetSessionId);
@@ -502,13 +530,15 @@ export class SessionMessageRouter {
   /** Recall into separate durable, paused queue entries before removing SDK input. */
   async recallQueuedInputs(sessionId: string, mutation?: { inputId: string; action: "queue" | "delete" }): Promise<SessionCommandRecord[]> {
     const mutationKey = mutation ? "pending-input:" + mutation.inputId : undefined;
-    if (mutationKey) { const existing = this.store.findByIdempotencyKey(mutationKey, sessionId); if (existing) return [existing]; }
+    if (mutationKey) {
+      const existing = await this.store.queryByIdempotencyKey(sessionId, mutationKey);
+      if (existing) return [existing];
+    }
     const inbox = await this.ensureLoaded(sessionId);
     const session = await this.getLiveSession(sessionId);
     const batch = session.prepareQueueRecall(mutation?.inputId);
-    const archived = new Map(this.store.loadCommands(sessionId).map(command => [command.commandId, command]));
     const commands = batch.messages.map(({ message, commandId }) => {
-      const original = commandId ? archived.get(commandId) : undefined;
+      const original = commandId ? this.store.findByCommandId(commandId, sessionId) : undefined;
       if (commandId && !original) throw new Error("The original submission is unavailable; nothing was removed.");
       let content: string;
       let images: SessionMessageInput["images"];
@@ -539,7 +569,7 @@ export class SessionMessageRouter {
       if (mutation?.action !== "delete" && (inbox.queue.length + commands.length > SESSION_INBOX_LIMIT || inbox.queuedBytes + commands.reduce((sum, command) => sum + sessionCommandBytes(command), 0) > SESSION_INBOX_MAX_BYTES)) throw new SessionMessageRouterError("SESSION_QUEUE_FULL", "The queue is full; nothing was removed.");
       persist();
       for (const command of commands) {
-        this.knownCommands.set(command.commandId, command);
+        this.rememberCommand(command);
         if (mutation?.action !== "delete") getSessionInboxRegistry().enqueue(command);
       }
     }));
@@ -1028,7 +1058,7 @@ export class SessionMessageRouter {
       throw new SessionMessageRouterError("INVALID_SESSION_MESSAGE", "A bounded original submission identity is required.");
     }
     assertPrincipal({ targetSessionId: input.targetSessionId, content: "", source: "ui", idempotencyKey: input.idempotencyKey }, principal);
-    let command = this.submissionCommand(input.targetSessionId, input.idempotencyKey);
+    let command = await this.submissionCommand(input.targetSessionId, input.idempotencyKey);
     if (input.promptCommandId) {
       command = this.canonicalCommand(input.promptCommandId);
     }
@@ -1065,7 +1095,7 @@ export class SessionMessageRouter {
     getSessionInboxRegistry().removeCommand(command.targetSessionId, command.commandId);
     // Canonical mutation happens synchronously, before journal waits or SDK calls.
     command.status = "cancelled";
-    this.knownCommands.set(command.commandId, command);
+    this.rememberCommand(command);
     const admission = this.admissions.get(command.commandId);
     const active = this.activeCommands.get(command.targetSessionId);
     const session = admission?.session ?? getRpcSession(command.targetSessionId);
@@ -1124,13 +1154,22 @@ export class SessionMessageRouter {
     };
   }
 
-  async getCommand(commandId: string): Promise<SessionCommandRecord> {
-    return { ...this.canonicalCommand(commandId) };
+  async getCommand(commandId: string, sessionId?: string): Promise<SessionCommandRecord> {
+    if (!sessionId) return { ...this.canonicalCommand(commandId) };
+    const known = this.knownCommands.get(commandId);
+    if (known?.targetSessionId === sessionId) return { ...known };
+    const found = await this.store.queryByCommandId(sessionId, commandId);
+    if (!found) throw new SessionMessageRouterError("COMMAND_NOT_FOUND", "Command not found.");
+    return { ...found };
   }
 
-  async listOperations(sessionId: string): Promise<SessionCommandRecord[]> {
+  async operationWindow(sessionId: string) {
     await this.ensureLoaded(sessionId);
-    return this.store.loadCommands(sessionId).filter(command => command.source === "ui" && (command.operation || !TERMINAL_STATUSES.has(command.status)));
+    return this.store.operationWindow(sessionId);
+  }
+
+  lastEventCursor(sessionId: string): number {
+    return this.events.lastCursor(sessionId);
   }
 
   private canonicalCommand(commandId: string): SessionCommandRecord {
@@ -1138,7 +1177,7 @@ export class SessionMessageRouter {
     if (known) return known;
     const found = this.store.findByCommandId(commandId);
     if (!found) throw new SessionMessageRouterError("COMMAND_NOT_FOUND", "Command not found.");
-    this.knownCommands.set(commandId, found);
+    this.rememberCommand(found);
     return found;
   }
 

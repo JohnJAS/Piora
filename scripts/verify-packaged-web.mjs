@@ -974,6 +974,9 @@ async function main() {
   for (const name of ["store-worker.cjs", "history-import.cjs", "integration.ps1", "integration.bash", "integration.zsh"]) {
     await assertFile(join(`${packagedRuntimeArchive}.unpacked`, "lib", "shell", "runtime", name));
   }
+  for (const name of ["worker.mjs", "session-history.mjs", "file-index.mjs", "file-ranking.mjs"]) {
+    await assertFile(join(`${packagedRuntimeArchive}.unpacked`, "lib", "read-runtime", name));
+  }
   await assertFile(join(`${packagedRuntimeArchive}.unpacked`, "lib", "harmony", "runtime", "sqlite-inspector.cjs"));
   await assertFile(join(`${packagedRuntimeArchive}.unpacked`, "lib", "harmony", "runtime", "sqlite-error-location.cjs"));
   for (const asset of ["dist/node.mjs", "dist/sqlite3.wasm"]) {

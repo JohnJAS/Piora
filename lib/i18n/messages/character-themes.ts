@@ -1,6 +1,6 @@
 export const characterThemesZh = {
   "appearance.characters.title": "角色主题",
-  "appearance.characters.hint": "选择角色，同时切换配色、背景与面板遮罩。",
+  "appearance.characters.hint": "选择角色，同时切换配色、背景与面板遮罩。背景默认轻微移动，可在「背景」中关闭。",
   "appearance.characters.all": "全部角色",
   "appearance.characters.restore": "恢复切换前外观",
   "appearance.characters.credits": "素材署名与来源",
@@ -64,7 +64,7 @@ export const characterThemesZh = {
 
 export const characterThemesEn = {
   "appearance.characters.title": "Character themes",
-  "appearance.characters.hint": "Switch the palette, artwork and panel washes together.",
+  "appearance.characters.hint": "Switch the palette, artwork and panel washes together. Turn off the gentle background motion in Background settings.",
   "appearance.characters.all": "All characters",
   "appearance.characters.restore": "Restore previous appearance",
   "appearance.characters.credits": "Artwork attribution and sources",

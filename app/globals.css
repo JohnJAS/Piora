@@ -1,4 +1,7 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
+@source "./**/*.{ts,tsx,js,jsx,mdx}";
+@source "../{components,hooks,lib}/**/*.{ts,tsx,js,jsx,mdx}";
+@source not "../{app,components,hooks,lib}/**/*.{test,spec}.{ts,tsx,js,jsx,mdx}";
 
 /* Inter (SIL Open Font License 1.1) — bundled locally in /fonts/inter. */
 @font-face {

@@ -8,7 +8,7 @@ const taskStatusSource = await readFile(new URL("../hooks/useTaskStatus.ts", imp
 const globalStyles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const sidebarStyles = await readFile(new URL("./SessionSidebar.module.css", import.meta.url), "utf8");
 const splitSources = await Promise.all([
-  "ProjectList.tsx", "SidebarNavigation.tsx", "SidebarProjectArea.tsx", "SidebarFileArea.tsx",
+  "ProjectList.tsx", "SidebarNavigation.tsx", "SidebarProjectArea.tsx",
   "SidebarChatArea.tsx",
   "useSessionCatalog.ts", "sidebar-utils.ts", "sidebar-types.ts", "useProjectPicker.ts",
 ].map((file) => readFile(new URL(`./sidebar/${file}`, import.meta.url), "utf8")));
@@ -56,8 +56,9 @@ test("shares bounded visible status polling without reserving an idle SSE connec
 });
 
 test("settles the project loading state when a background refresh supersedes the initial request", () => {
-  assert.match(source, /if \(loadSessionsRequestIdRef\.current === requestId\) setLoading\(false\)/);
-  assert.doesNotMatch(source, /if \(showLoading && loadSessionsRequestIdRef\.current === requestId\) setLoading\(false\)/);
+  const catalog = splitSources[4];
+  assert.match(catalog, /loadSessionsRequest\.current\?\.abort\(\);\s*const request = new AbortController\(\);\s*loadSessionsRequest\.current = request/);
+  assert.match(catalog, /finally \{\s*if \(loadSessionsRequest\.current === request\) \{\s*loadSessionsRequest\.current = null;\s*setCatalogComplete\(true\);\s*setLoading\(false\)/);
   assert.match(globalStyles, /\.sidebar-project-scroll\s*\{[^}]*background:\s*inherit/s);
 });
 

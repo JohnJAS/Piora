@@ -30,6 +30,7 @@ export interface ConversationSearchResult {
 
 export interface ConversationSearchResponse {
   results: ConversationSearchResult[];
+  sessionMatches?: SessionInfo[];
   durationMs: number;
   truncated: boolean;
 }

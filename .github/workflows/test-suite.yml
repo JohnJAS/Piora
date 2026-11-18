@@ -61,6 +61,14 @@ jobs:
         if: matrix.shard == 1
         run: node scripts/diagnose-sharp-electron.mjs
 
+      - name: Check test suite ownership
+        if: matrix.shard == 1
+        run: node scripts/run-tests.mjs --check-ownership
+
+      - name: Check read models at scale
+        if: matrix.shard == 1
+        run: npm run perf:read-models
+
       # Call the launcher directly so npm cannot consume the Node test flags.
       # Each shard remains serial so native/browser fixtures do not compete.
       - name: Run test shard

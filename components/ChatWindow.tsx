@@ -53,6 +53,7 @@ interface Props {
   visible?: boolean;
   historyVisible?: boolean;
   onHistoryControlsChange?: (controls: HistoryChatControls | null) => void;
+  onOpenHistoryEntry?: (leafId: string | null, entryId: string) => void;
   session: SessionInfo | null;
   focusEntryId?: string | null;
   newSessionCwd: string | null;
@@ -164,7 +165,7 @@ function getUserInputText(message: AgentMessage): string | null {
   return text.length > 0 ? text : null;
 }
 
-export function ChatWindow({ visible = true, historyVisible = false, onHistoryControlsChange, session, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenModels, onPromptSubmitted }: Props) {
+export function ChatWindow({ visible = true, historyVisible = false, onHistoryControlsChange, onOpenHistoryEntry, session, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenModels, onPromptSubmitted }: Props) {
   // A new-chat action remounts this window. Directory names cannot identify
   // drafts: two new chats in the same project must never restore each other.
   const [newChatDraftKey] = useState(() => `new:${crypto.randomUUID()}`);
@@ -213,6 +214,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
 
   const {
     nestedCallsStore, loading, error, messages, entryIds, modelChanges, streamState, replyHistorySettling, activeLeafId, switchHistoryBranch, forkHistoryQuestion,
+    historyPage, loadEarlierHistory, loadNewestHistory,
     toolPermission, permissionSaving, handleToolPermission, toolReviews,
     agentRunning, bashRunning, pendingBash, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
@@ -462,27 +464,54 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
 
   const historyRef = useRef<ChatHistoryHandle>(null);
   const [highlightedEntryId, setHighlightedEntryId] = useState<string | null>(null);
+  const [pendingHistoryFocus, setPendingHistoryFocus] = useState<string | null>(null);
+  const [earlierLoading, setEarlierLoading] = useState(false);
+  const [earlierError, setEarlierError] = useState(false);
+  const readingEarlier = historyPage?.focused === true;
+  const openHistoryEntry = useCallback((id: string) => onOpenHistoryEntry?.(activeLeafId, id), [activeLeafId, onOpenHistoryEntry]);
   const handledFocusEntryRef = useRef<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-  const focusHistoryEntry = useCallback((id: string) => {
+  const focusHistoryEntry = useCallback(async (id: string) => {
     pauseHistoryFollow();
-    historyRef.current?.revealEntry(id);
-    setHighlightedEntryId(id);
-  }, [pauseHistoryFollow]);
+    const linked = historyPage?.oversized.find(turn => turn.anchors.includes(id))?.id ?? id;
+    if (!entryIds.includes(linked) && (sessionBusy || !historyPage || !await loadEarlierHistory(id))) return false;
+    setPendingHistoryFocus(id);
+    return true;
+  }, [entryIds, historyPage, loadEarlierHistory, pauseHistoryFollow, sessionBusy]);
   useEffect(() => {
     onHistoryControlsChange?.({ busy: sessionBusy || agentPhase?.kind === "stopping" || isCompacting || loading || deletingMessage || preparingRetry,
-      entryIds, leafId: activeLeafId, switchBranch: switchHistoryBranch, forkQuestion: forkHistoryQuestion, focusEntry: focusHistoryEntry });
-  }, [activeLeafId, agentPhase?.kind, deletingMessage, entryIds, focusHistoryEntry, forkHistoryQuestion, isCompacting, loading, onHistoryControlsChange, preparingRetry, sessionBusy, switchHistoryBranch]);
+      entryIds, leafId: activeLeafId, switchBranch: switchHistoryBranch, forkQuestion: forkHistoryQuestion, focusEntry: focusHistoryEntry, canLoadEarlier: Boolean(historyPage) });
+  }, [activeLeafId, agentPhase?.kind, deletingMessage, entryIds, focusHistoryEntry, forkHistoryQuestion, historyPage, isCompacting, loading, onHistoryControlsChange, preparingRetry, sessionBusy, switchHistoryBranch]);
   useEffect(() => () => onHistoryControlsChange?.(null), [onHistoryControlsChange]);
   useEffect(() => {
-    if (!focusEntryId || loading || !entryIds.includes(focusEntryId)) return;
+    if (!focusEntryId || loading || sessionBusy) return;
     const focusKey = (session?.id ?? "new") + ":" + focusEntryId;
     if (handledFocusEntryRef.current === focusKey) return;
-    handledFocusEntryRef.current = focusKey;
+    void focusHistoryEntry(focusEntryId).then(found => {
+      if (found) handledFocusEntryRef.current = focusKey;
+    });
+  }, [focusEntryId, focusHistoryEntry, loading, session?.id, sessionBusy]);
+  useEffect(() => {
+    if (!pendingHistoryFocus || historyVisible || !visible) return;
+    const id = historyPage?.oversized.find(turn => turn.anchors.includes(pendingHistoryFocus))?.id ?? pendingHistoryFocus;
+    if (!entryIds.includes(id)) return;
+    historyRef.current?.revealEntry(id);
+    setHighlightedEntryId(id);
+    setPendingHistoryFocus(null);
+  }, [entryIds, historyPage, historyVisible, pendingHistoryFocus, visible]);
+  const loadOlder = useCallback(async () => {
+    if (earlierLoading || sessionBusy) return;
+    setEarlierLoading(true);
+    setEarlierError(false);
     pauseHistoryFollow();
-    historyRef.current?.revealEntry(focusEntryId);
-    setHighlightedEntryId(focusEntryId);
-  }, [entryIds, focusEntryId, loading, pauseHistoryFollow, session?.id]);
+    try { setEarlierError(!await loadEarlierHistory(undefined, () => historyRef.current?.captureAnchor())); }
+    finally { setEarlierLoading(false); }
+  }, [earlierLoading, loadEarlierHistory, pauseHistoryFollow, sessionBusy]);
+  const returnToNewest = useCallback(async () => {
+    await loadNewestHistory();
+    setEarlierError(false);
+    handleScrollToBottom();
+  }, [handleScrollToBottom, loadNewestHistory]);
   useEffect(() => {
     if (!highlightedEntryId) return;
     const timer = window.setTimeout(() => setHighlightedEntryId(null), 4_000);
@@ -651,9 +680,9 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
     ? <NewSessionContextChip label={newSessionProjectLabel} title={isProjectlessChat ? undefined : messageCwd} />
     : null, [isEmptyNew, newSessionProjectLabel, isProjectlessChat, messageCwd]);
   const composerToolbarControl = useMemo(() => (
-    <SystemPromptSelector selection={systemPromptSelection} binding={systemPromptBinding}
+    <SystemPromptSelector selection={systemPromptSelection} binding={systemPromptBinding} sessionId={session?.id}
       disabled={sessionBusy || systemPromptSaving} onChange={handleSystemPromptSelection} />
-  ), [systemPromptSelection, systemPromptBinding, sessionBusy, systemPromptSaving, handleSystemPromptSelection]);
+  ), [systemPromptSelection, systemPromptBinding, session?.id, sessionBusy, systemPromptSaving, handleSystemPromptSelection]);
 
   const { queueAction, edit: editQueuedDraft } = chatCommands;
   const queueActions = useMemo<ChatCommandQueueActions>(() => ({
@@ -857,6 +886,15 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
           <div style={{ padding: `0 ${isMobile ? CHAT_COLUMN_PADDING : CHAT_COLUMN_RIGHT_PADDING}px 0 ${CHAT_COLUMN_LEFT_PADDING}px` }}>
             <div className="chat-column">
               <ExtensionWidgets widgets={aboveEditorWidgets} />
+              {historyPage?.older || readingEarlier ? <div className="flex items-center justify-center gap-3 py-2 text-sm text-text-muted" aria-busy={earlierLoading}>
+                {historyPage?.older ? <button type="button" className="cursor-pointer underline" disabled={earlierLoading || sessionBusy} onClick={() => void loadOlder()}>
+                  {t("history.loadEarlier")}
+                </button> : null}
+                {readingEarlier ? <button type="button" className="cursor-pointer underline" disabled={sessionBusy} onClick={() => void returnToNewest()}>
+                  {t("history.returnToNewest")}
+                </button> : null}
+                {earlierError ? <span role="status">{t("history.loadError")}</span> : null}
+              </div> : null}
 
             <ChatHistory
               visible={visible}
@@ -868,6 +906,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
               isNew={isNew} forkingEntryId={forkingEntryId} highlightedEntryId={highlightedEntryId}
               lastUserMsgRef={lastUserMsgRef} pendingScrollToUserRef={pendingScrollToUserRef} scrollContainer={scrollContainerRef} handleRef={historyRef}
               modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile}
+              onOpenHistoryEntry={onOpenHistoryEntry ? openHistoryEntry : undefined}
               onBranch={deletingMessage ? undefined : handleBranch} onFork={deletingMessage ? undefined : handleFork} onNavigate={deletingMessage ? undefined : handleNavigate} onEditContent={handleEditContent}
               onEditFailed={handleEditFailedMessage} onRetry={handleRetryMessage} retryDisabled={sessionBusy || deletingMessage || preparingRetry}
               onDeleteMessage={handleDeleteMessage} deleteDisabled={sessionBusy || deletingMessage || isCompacting || preparingRetry}

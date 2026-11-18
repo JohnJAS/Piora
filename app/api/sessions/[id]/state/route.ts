@@ -3,7 +3,7 @@ import { getRpcSession } from "@/lib/rpc-manager";
 import { resolveSessionPath } from "@/lib/session-reader";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -15,7 +15,8 @@ export async function GET(
     const rpc = getRpcSession(id);
     if (!rpc?.isAlive()) return NextResponse.json({ running: false });
 
-    const state = await rpc.send({ type: "get_state" });
+    const view = new URL(req.url).searchParams.get("view");
+    const state = await rpc.send({ type: "get_state", ...(view === "chat" ? { view } : {}) });
     return NextResponse.json({ running: true, state });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

@@ -146,7 +146,7 @@ interface Props {
   isStreaming?: boolean;
   toolRunActive?: boolean;
   intermediate?: boolean;
-  toolResults?: Map<string, ToolResultMessage>;
+  toolResults?: Pick<ReadonlyMap<string, ToolResultMessage>, "get">;
   modelNames?: Record<string, string>;
   cwd?: string;
   onOpenFile?: (filePath: string) => void;
@@ -183,8 +183,8 @@ function formatTime(ts?: number): string | null {
 
 function haveSameRelevantToolResults(
   message: AgentMessage,
-  previous: Map<string, ToolResultMessage> | undefined,
-  next: Map<string, ToolResultMessage> | undefined,
+  previous: Pick<ReadonlyMap<string, ToolResultMessage>, "get"> | undefined,
+  next: Pick<ReadonlyMap<string, ToolResultMessage>, "get"> | undefined,
 ): boolean {
   if (previous === next || message.role !== "assistant") return true;
   for (const block of (message as AssistantMessage).content ?? []) {
@@ -611,7 +611,7 @@ function AssistantMessageView({
   message: AssistantMessage;
   isStreaming?: boolean;
   intermediate?: boolean;
-  toolResults?: Map<string, ToolResultMessage>;
+  toolResults?: Pick<ReadonlyMap<string, ToolResultMessage>, "get">;
   modelNames?: Record<string, string>;
   cwd?: string;
   onOpenFile?: (filePath: string) => void;
@@ -672,14 +672,16 @@ function AssistantMessageView({
   const toolCallDurations = useMemo<Map<string, number>>(() => {
     const map = new Map<string, number>();
     if (!toolResults || !message.timestamp) return map;
-    for (const [callId, result] of toolResults) {
-      if (result.timestamp && message.timestamp) {
+    for (const block of message.content) {
+      if (block.type !== "toolCall") continue;
+      const result = toolResults.get(block.toolCallId);
+      if (result?.timestamp && message.timestamp) {
         const secs = Math.round((result.timestamp - message.timestamp) / 1000);
-        if (secs > 0) map.set(callId, secs);
+        if (secs > 0) map.set(block.toolCallId, secs);
       }
     }
     return map;
-  }, [toolResults, message.timestamp]);
+  }, [toolResults, message.content, message.timestamp]);
 
   const textContent = blocks
     .filter((b): b is TextContent => b?.type === "text")
@@ -840,7 +842,7 @@ function AssistantMessageView({
   );
 }
 
-function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, sessionId, entryId, blockIndex, onOpenAutomation, onOpenCommandExecution }: { block: AssistantContentBlock; toolResults?: Map<string, ToolResultMessage>; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string) => void; sessionId?: string; entryId?: string; blockIndex: number; onOpenAutomation?: (automationId: string) => void; onOpenCommandExecution?: (data: CommandExecutionData) => void }) {
+function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, sessionId, entryId, blockIndex, onOpenAutomation, onOpenCommandExecution }: { block: AssistantContentBlock; toolResults?: Pick<ReadonlyMap<string, ToolResultMessage>, "get">; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string) => void; sessionId?: string; entryId?: string; blockIndex: number; onOpenAutomation?: (automationId: string) => void; onOpenCommandExecution?: (data: CommandExecutionData) => void }) {
   if (block.type === "text") {
     return <TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} />;
   }

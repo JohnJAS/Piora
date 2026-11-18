@@ -16,6 +16,7 @@ import styles from "./SystemPromptSelector.module.css";
 interface Props {
   selection: SystemPromptSelection;
   binding?: SessionSystemPromptBinding | null;
+  sessionId?: string;
   disabled?: boolean;
   onChange: (selection: SystemPromptSelection) => void | Promise<void>;
 }
@@ -34,7 +35,7 @@ function selectionValue(selection: SystemPromptSelection): string {
   return selection.mode === "template" ? selection.templateId : DEFAULT_VALUE;
 }
 
-export function SystemPromptSelector({ selection, binding, disabled = false, onChange }: Props) {
+export function SystemPromptSelector({ selection, binding, sessionId, disabled = false, onChange }: Props) {
   const { t } = useI18n();
   const popupId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -46,6 +47,7 @@ export function SystemPromptSelector({ selection, binding, disabled = false, onC
   const [query, setQuery] = useState("");
   const [previewId, setPreviewId] = useState(DEFAULT_VALUE);
   const [position, setPosition] = useState<PopupPosition | null>(null);
+  const [savedPrompt, setSavedPrompt] = useState<{ key: string; text: string | null } | null>(null);
 
   useEffect(() => {
     if (catalog?.selectorVisible === false) setOpen(false);
@@ -127,13 +129,36 @@ export function SystemPromptSelector({ selection, binding, disabled = false, onC
     : defaultTemplate?.name ?? t("system.piDefault");
   const selectedValue = selectionValue(selection);
   const unavailableSnapshot = selection.mode === "template" && !selectedTemplateExists;
+  const snapshotKey = sessionId && binding?.promptDeferred ? sessionId + ":" + binding.revision : null;
+  const bindingRevision = binding?.revision;
+  useEffect(() => {
+    if (!open || !unavailableSnapshot || !snapshotKey || !sessionId || savedPrompt?.key === snapshotKey) return;
+    const request = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/system-prompt", {
+          signal: AbortSignal.any([request.signal, AbortSignal.timeout(15_000)]),
+        });
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        const body = await response.json() as { binding?: SessionSystemPromptBinding };
+        if (!request.signal.aborted) setSavedPrompt({ key: snapshotKey, text: body.binding?.revision === bindingRevision ? body.binding?.prompt ?? null : null });
+      } catch {
+        if (!request.signal.aborted) setSavedPrompt({ key: snapshotKey, text: null });
+      }
+    })();
+    return () => request.abort();
+  }, [bindingRevision, open, savedPrompt?.key, sessionId, snapshotKey, unavailableSnapshot]);
+  const snapshotPrompt = snapshotKey && savedPrompt?.key === snapshotKey ? savedPrompt.text : binding?.prompt;
+  const snapshotDisplay = snapshotPrompt || (snapshotKey
+    ? t(savedPrompt?.key === snapshotKey ? "system.snapshotLoadFailed" : "system.snapshotLoading")
+    : t("system.emptyTemplate"));
   const isDisabled = disabled || loading;
   const matches = (name: string, prompt: string) => `${name} ${prompt}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
   const templates = catalog?.templates.filter(template => matches(template.name, template.prompt)) ?? [];
   const showDefault = matches(defaultTemplate?.name ?? t("system.piDefault"), t("system.defaultPreset"));
   const previewTemplate = catalog?.templates.find(template => template.id === previewId);
   const previewName = previewId === DEFAULT_VALUE ? defaultTemplate?.name ?? t("system.piDefault") : previewTemplate?.name ?? binding?.templateName ?? t("system.snapshot");
-  const previewText = previewId === DEFAULT_VALUE ? defaultTemplate?.prompt || t("system.piDefaultDescription") : previewTemplate?.prompt || binding?.prompt || t("system.emptyTemplate");
+  const previewText = previewId === DEFAULT_VALUE ? defaultTemplate?.prompt || t("system.piDefaultDescription") : previewTemplate?.prompt || snapshotDisplay;
 
   const select = (next: SystemPromptSelection) => {
     setOpen(false);
@@ -226,17 +251,17 @@ export function SystemPromptSelector({ selection, binding, disabled = false, onC
             {selectedValue === template.id ? <AliIcon name="check" size={15} /> : null}
           </button>
         ))}
-        {unavailableSnapshot && matches(binding?.templateName ?? "", binding?.prompt ?? "") ? (
+        {unavailableSnapshot && matches(binding?.templateName ?? "", snapshotPrompt ?? "") ? (
           <button type="button" role="option" aria-selected="true" onClick={() => setOpen(false)}>
             <span className={styles.optionIcon}><AliIcon name="archive" size={15} /></span>
             <span className={styles.optionCopy}>
               <strong>{binding?.templateName ?? t("system.snapshot")}</strong>
-              <small>{binding?.prompt || t("system.emptyTemplate")}</small>
+              <small>{snapshotDisplay}</small>
             </span>
             <AliIcon name="check" size={15} />
           </button>
         ) : null}
-        {!showDefault && templates.length === 0 && !(unavailableSnapshot && matches(binding?.templateName ?? "", binding?.prompt ?? "")) ? <p className={styles.empty}>{t("system.noMatchingTemplates")}</p> : null}
+        {!showDefault && templates.length === 0 && !(unavailableSnapshot && matches(binding?.templateName ?? "", snapshotPrompt ?? "")) ? <p className={styles.empty}>{t("system.noMatchingTemplates")}</p> : null}
       </div>
       <details className={styles.preview}>
         <summary>{t("system.previewTemplate")}</summary>

@@ -1,19 +1,20 @@
 import { NextResponse } from "next/server";
 
 import { restorePromptMaterialDisplay } from "@/lib/prompt-materials";
-import { getSessionEntries, resolveSessionPath } from "@/lib/session-reader";
+import { resolveSessionPath } from "@/lib/session-reader";
+import { readSessionHistoryEntry } from "@/lib/session-read-repository";
 
 export const runtime = "nodejs";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string; entryId: string }> },
 ) {
   const { id, entryId } = await params;
   try {
     const filePath = await resolveSessionPath(id);
     if (!filePath) return NextResponse.json({ error: "Session not found" }, { status: 404 });
-    const entry = getSessionEntries(filePath).find((candidate) => candidate.id === entryId);
+    const entry = await readSessionHistoryEntry(filePath, entryId, req.signal);
     if (!entry || entry.type !== "message" || entry.message.role !== "user") {
       return NextResponse.json({ error: "User message not found" }, { status: 404 });
     }

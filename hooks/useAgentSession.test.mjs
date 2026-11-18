@@ -97,7 +97,7 @@ function sendHarness(overrides = {}) {
     uploadPromptMaterialFiles: async () => [], AgentCommandError: class extends Error {}, EventStreamConnectionError: class extends Error {},
     savePendingPrompt: async (record) => { env.saved = structuredClone(record); }, sendAgentCommand: async () => {},
     submitChatCommand: async () => { throw new Error("Unexpected command submission in ordinary prompt test"); },
-    persistentChatInputOptions, replaceFailedPromptMessage, workflowEnabled: true, workflowReady: true,
+    persistentChatInputOptions, replaceFailedPromptMessage, workflowEnabled: true, workflowReady: true, historyPage: undefined, data: null,
   };
   for (const name of new Set(send.match(/\b\w+Ref\b/g))) env[name] = { current: null };
   for (const name of new Set(send.match(/\bset[A-Z]\w+(?=\()/g))) env[name] = () => {};
@@ -112,6 +112,19 @@ function sendHarness(overrides = {}) {
   const run = new Function("env", `with(env) { ${js}; return handleSend; }`)(env);
   return { env, run };
 }
+
+test("sending from an old search result uses the latest transcript and recovery anchor", async () => {
+  const latestUser = { role: "user", content: "latest question" };
+  const latestReply = { role: "assistant", content: [{ type: "text", text: "latest reply" }] };
+  const recentIds = ["nearby-user", "latest-entry"];
+  const { env, run } = sendHarness({
+    data: { context: { messages: [latestUser, latestReply], entryIds: recentIds }, historyPage: { focused: false } },
+    historyPage: { focused: true }, entryIds: ["searched-entry"], messages: [{ role: "user", content: "older" }],
+  });
+  assert.equal(await run("continue"), true);
+  assert.equal(env.saved.branchAnchorId, "latest-entry");
+  assert.deepEqual(env.messages.slice(0, 2), [latestUser, latestReply]);
+});
 
 test("actual send callback commits recovery before network and keeps input after stop during acknowledgement", async () => {
   let acknowledge;
@@ -504,7 +517,7 @@ function promptSubmissionHarness(overrides = {}) {
   }
   const reviewCallback = source.slice(source.indexOf("  const acceptToolReviews = useCallback"), source.indexOf("  useEffect(() => {", source.indexOf("  const acceptToolReviews = useCallback")));
   const callbacks = reviewCallback + source.slice(source.indexOf("  const handleAgentEvent = useCallback"), source.indexOf("  handleAgentEventRef.current = handleAgentEvent;"))
-    + source.slice(source.indexOf("  const resumeQueuedInput = useCallback"), source.indexOf("  const chatCommands = useChatCommandOperations"))
+    + source.slice(source.indexOf("  const resumeQueuedInput = useCallback"), source.indexOf("  const timingPromptIds = useMemo"))
     + source.slice(source.indexOf("  const handleSend = useCallback"), source.indexOf("  const executeBash = useCallback"))
     + source.slice(source.indexOf("  const handleAbort = useCallback"), source.indexOf("  const handleDeleteMessage = useCallback"));
   for (const name of new Set(callbacks.match(/\b\w+Ref\b/g))) if (!(name in h.env)) h.env[name] = { current: null };
@@ -856,7 +869,7 @@ test("actual accepted prompt stays open through every nonterminal command state 
   h.env.response.state.runtime = "idle";
   await h.reconcileAgentState("session-a"); await h.reconcileAgentState("session-a");
   assert.deepEqual(h.calls, [["close"], ["load", "session-a"]]);
-  assert.ok(urls.every(url => url === "/api/agent/session-a?promptCommandId=cmd-current"));
+  assert.ok(urls.every(url => url === "/api/agent/session-a?view=chat&promptCommandId=cmd-current"));
 });
 
 test("actual settlement polling waits for the exact accepted command to become terminal", async () => {
@@ -870,7 +883,7 @@ test("actual settlement polling waits for the exact accepted command to become t
   await h.advanceDelay(); assert.deepEqual(h.calls, []);
   h.env.response.promptCommand = { commandId: "cmd-current", status: "failed" };
   await h.advanceDelay(); await polling;
-  assert.ok(urls.every(url => url === "/api/agent/session-a?promptCommandId=cmd-current"));
+  assert.ok(urls.every(url => url === "/api/agent/session-a?view=progress&promptCommandId=cmd-current"));
   assert.deepEqual(h.calls, [["close"], ["load", "session-a"]]);
 });
 
@@ -902,7 +915,7 @@ test("old actual prompt POST acknowledgements cannot replace a newer run's comma
     return { ok: true, json: async () => ({ running: true, state: { runtime: "idle" }, promptCommand: { commandId: "cmd-new", status: "queued" } }) };
   };
   await h.reconcileAgentState("session-a"); assert.deepEqual(h.calls, []);
-  assert.deepEqual(urls, ["/api/agent/session-a?promptCommandId=cmd-new"]);
+  assert.deepEqual(urls, ["/api/agent/session-a?view=chat&promptCommandId=cmd-new"]);
 });
 
 test("an old command GET cannot settle the next actual submission", async () => {
@@ -1114,6 +1127,7 @@ function sessionLoadHarness(overrides = {}) {
   const load = source.slice(source.indexOf("  const loadSession = useCallback"), source.indexOf("  const loadContext = useCallback"));
   const env = {
     nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 },
+    historyPageRequest: { current: null },
     editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [],
     useCallback: callback => callback, AbortController, URLSearchParams,
     acceptToolPermission: value => { env.permission = value; },
@@ -1121,6 +1135,7 @@ function sessionLoadHarness(overrides = {}) {
     translateRef: { current: key => key }, invalidatePrefetchedSession() {},
     setTimeout: callback => { env.expire = callback; return 1; }, clearTimeout() {},
     readPendingPrompts: async () => [], mergePendingPrompts: messages => ({ messages, entryIds: [], confirmedIds: [] }),
+    restoreChatHistory: async (sid, data) => env.mergePendingPrompts(data.context.messages, data.context.entryIds, await env.readPendingPrompts(sid), data.persistedPromptIds),
     confirmPendingPrompts: async () => {}, selectionFromSystemPromptBinding: () => null, systemPromptSelectionRef: { current: null },
   };
   for (const name of new Set(load.match(/\bset[A-Z]\w+(?=\()/g))) {
@@ -1621,10 +1636,11 @@ test("edit navigation waits for server success and context, and propagates failu
   await assert.rejects(failed.navigate("parent"), /history.loadError/); assert.deepEqual(failed.events, ["navigate"]);
 });
 test("historical context excludes unconfirmed recovery copies without deleting them", async () => {
-  const callback = source.slice(source.indexOf("  const loadContext = useCallback"), source.indexOf("  const promoteNewSession = useCallback"));
+  const callback = source.slice(source.indexOf("  const loadContext = useCallback"), source.indexOf("  useEffect(() => () => historyPageRequest"));
   const js = ts.transpileModule(callback, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const pending = [{ id: "pending" }];
   const env = { editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [], useCallback: fn => fn, promptRunIdRef: { current: 1 }, historyRevisionRef: { current: 0 }, sessionIdRef: { current: "session" }, URLSearchParams,
+    historyPageRequest: { current: null }, setHistoryPage() {},
     fetch: async () => ({ ok: true, json: async () => ({ context: { messages: ["ancestor"], entryIds: ["parent"] } }) }),
     readPendingPrompts: async () => pending, mergePendingPrompts: () => ({ messages: ["ancestor", "later failure"], entryIds: ["parent", ""], confirmedIds: [] }),
     setMessages: value => { env.messages = value; }, setEntryIds: value => { env.ids = value; }, setModelChanges: value => { env.modelChanges = value; }, confirmPendingPrompts: async ids => { assert.deepEqual(ids, []); } };

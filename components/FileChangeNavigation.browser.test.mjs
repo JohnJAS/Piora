@@ -40,7 +40,7 @@ test("file change arrows navigate real editors, drafts, folds, independent tabs,
       "large.txt": { content: largeLines.join("\n"), language: "text", patch: largePatch },
       "deleted.txt": { patch: "--- a/deleted.txt\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-deleted first\n-deleted last", status: "deleted" },
     };
-    const css = (await Promise.all(["app/globals.css", "components/FileEditor.module.css", "components/DiffView.module.css", "components/FileCodeEditor.css", "components/EditorSearch.css"].map(file => readFile(path.join(repo, file), "utf8")))).join("\n").replace(/:global\(([^)]+)\)/g, "$1").replace('@import "tailwindcss";', "");
+    const css = (await Promise.all(["app/globals.css", "components/FileEditor.module.css", "components/DiffView.module.css", "components/FileCodeEditor.css", "components/EditorSearch.css"].map(file => readFile(path.join(repo, file), "utf8")))).join("\n").replace(/:global\(([^)]+)\)/g, "$1").replace(/^@(?:import|source) .*$/gm, "");
     browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : "chromium", headless: true });
     const page = await browser.newPage({ viewport: { width: 1000, height: 760 } });
     const errors = [], writes = [];

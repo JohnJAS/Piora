@@ -101,7 +101,7 @@ export function replaceFailedPromptMessage(messages: AgentMessage[], entryIds: s
 }
 
 /** A matching receipt ID, never matching text, is proof this exact send is durable. */
-export function mergePendingPrompts(messages: AgentMessage[], entryIds: string[], pending: PendingPrompt[], persistedIds: string[] = []) {
+export function mergePendingPrompts(messages: AgentMessage[], entryIds: string[], pending: PendingPrompt[], persistedIds: string[] = [], activeAnchorIds: readonly string[] = []) {
   const displayed = new Set(messages.flatMap((message) => message.role === "user" && message.clientPromptId ? [message.clientPromptId] : []));
   const confirmed = new Set(persistedIds);
   const byId = new Map(pending.map(record => [record.id, record]));
@@ -114,7 +114,8 @@ export function mergePendingPrompts(messages: AgentMessage[], entryIds: string[]
       receipts.push(id);
     }
   }
-  const visiblePending = pending.filter(record => !record.branchAnchorId || entryIds.includes(record.branchAnchorId));
+  const visibleAnchors = new Set([...entryIds, ...activeAnchorIds]);
+  const visiblePending = pending.filter(record => !record.branchAnchorId || visibleAnchors.has(record.branchAnchorId));
   // A durable replacement hides its linked failures without deleting their backup.
   // Confirmation still depends exclusively on disk receipts.
   const superseded = new Set(visiblePending.flatMap(record => record.draft.retryOfPromptIds ?? []));

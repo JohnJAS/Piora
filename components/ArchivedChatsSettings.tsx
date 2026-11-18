@@ -63,7 +63,7 @@ export function ArchivedChatsSettings({ onChanged, onSessionDeleted }: Props) {
     try {
       setLoading(true);
       const [sessionsResponse, flagsResponse] = await Promise.all([
-        fetch("/api/sessions", { cache: "no-store", signal }),
+        fetch("/api/sessions?view=metadata", { cache: "no-store", signal }),
         fetch("/api/sessions/flags", { cache: "no-store", signal }),
       ]);
       if (!sessionsResponse.ok) throw new Error(`Sessions HTTP ${sessionsResponse.status}`);

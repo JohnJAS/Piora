@@ -38,38 +38,3 @@ export function reduceAgentTerminal(commands: AgentTerminalCommand[], value: unk
     status: event.type === "tool_execution_update" ? "running" : event.isError === true ? "failed" : "completed",
   });
 }
-
-export function restoreAgentTerminal(messages: unknown): AgentTerminalCommand[] {
-  let commands: AgentTerminalCommand[] = [];
-  if (!Array.isArray(messages)) return commands;
-  for (const raw of messages) {
-    const message = record(raw);
-    if (message.role === "assistant" && Array.isArray(message.content)) {
-      for (const rawBlock of message.content) {
-        const block = record(rawBlock);
-        if (block.type !== "toolCall") continue;
-        commands = reduceAgentTerminal(commands, { type: "tool_execution_start", toolCallId: block.toolCallId ?? block.id, toolName: block.toolName ?? block.name, args: block.input ?? block.arguments });
-      }
-    } else if (message.role === "toolResult") {
-      commands = reduceAgentTerminal(commands, { type: "tool_execution_end", toolCallId: message.toolCallId, result: message, isError: message.isError });
-    } else if (message.role === "bashExecution" && typeof message.command === "string") {
-      commands.push({ id: `manual:${commands.length}:${message.timestamp}`, command: message.command, output: typeof message.output === "string" ? message.output.slice(-100_000) : "", status: message.cancelled ? "interrupted" : message.exitCode ? "failed" : "completed" });
-    }
-  }
-  // Entries without an end marker may genuinely still be running (for example
-  // after a page reload mid-command). Keep "running" here and let the live
-  // registry prove otherwise via downgradeUnconfirmedRunning.
-  return commands.slice(-60);
-}
-
-/**
- * A restored "running" entry with no end marker is only interrupted once the
- * live command registry — which tracks executions started in this server
- * process — says it is not executing. Downgrading at restore time mislabels a
- * silent long-running command as dead.
- */
-export function downgradeUnconfirmedRunning(commands: AgentTerminalCommand[], liveIds: ReadonlySet<string>): AgentTerminalCommand[] {
-  return commands.map((item) => item.status === "running" && !liveIds.has(item.id)
-    ? { ...item, status: "interrupted" }
-    : item);
-}

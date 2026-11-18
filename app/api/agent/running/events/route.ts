@@ -1,4 +1,4 @@
-import { getRunningRpcSessionStatuses, subscribeRunningSessions } from "@/lib/rpc-manager";
+import { getRunningRpcSessionStatuses, subscribeRunningSessions } from "@/lib/rpc-running-status";
 import { createRunningSessionsPayload } from "@/lib/task-status";
 
 export const dynamic = "force-dynamic";

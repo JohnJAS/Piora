@@ -189,15 +189,16 @@ test("assistant messages omit repeated model and usage metadata", () => {
   }
 });
 
-test("failed shell rows open by default and respect explicit collapse", () => {
+test("failed shell rows stay collapsed until their details are explicitly opened", () => {
   const command = "npm run check -- --project ./packages/a/tsconfig.json\nnode ./scripts/verify.mjs --all";
   const message = { role: "assistant", content: [{ type: "toolCall", toolCallId: "shell", toolName: "powershell", input: { command } }] };
   const result = { role: "toolResult", toolCallId: "shell", toolName: "powershell", isError: true,
     content: [{ type: "text", text: "src/a.ts(4): error TS2322: wrong type\nCommand exited with code 2" }],
     details: { truncation: { truncated: true }, fullOutputPath: "C:\\Temp\\pi-powershell-a.log" } };
-  const defaultExpanded = renderMessage(message, { toolResults: new Map([["shell", result]]) });
-  assert.match(defaultExpanded, /command-execution-toggle" aria-expanded="true"/);
-  assert.match(defaultExpanded, /TS2322/);
+  const defaultCollapsed = renderMessage(message, { toolResults: new Map([["shell", result]]) });
+  assert.match(defaultCollapsed, /command-execution-toggle" aria-expanded="false"/);
+  assert.match(defaultCollapsed, /失败.*退出码 2/);
+  assert.doesNotMatch(defaultCollapsed, /TS2322/);
   const collapsedState = createVirtualRowState();
   collapsedState.set("command:shell", false);
   const collapsed = renderToStaticMarkup(React.createElement(I18nProvider, null,
@@ -213,6 +214,7 @@ test("failed shell rows open by default and respect explicit collapse", () => {
   rowState.set("command:shell", true);
   const expanded = renderToStaticMarkup(React.createElement(I18nProvider, null,
     React.createElement(VirtualRowStateContext.Provider, { value: rowState }, React.createElement(MessageView, { message, cwd: "F:\\Piora", toolResults: new Map([["shell", result]]) }))));
+  assert.match(expanded, /command-execution-toggle" aria-expanded="true"/);
   assert.match(expanded, /退出码 2/);
   assert.match(expanded, /错误摘录/);
   assert.match(expanded, /class="command-section-label">命令<\/span>/);

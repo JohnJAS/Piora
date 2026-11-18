@@ -8,7 +8,7 @@ import { CHAT_BOTTOM_FOLLOW_EVENT, isChatBottomFollowing, pinChatBottom } from "
 import { CHAT_DISCLOSURE_TOGGLE_EVENT } from "@/lib/chat-scroll";
 import { VirtualRowStateContext } from "./VirtualRowState";
 
-export interface VirtualListHandle { scrollToKey(key: string): void; cancelNavigation(): void }
+export interface VirtualListHandle { scrollToKey(key: string): void; cancelNavigation(): void; captureAnchor(): void }
 interface Props {
   keys: readonly string[];
   renderItem: (key: string, index: number) => ReactNode;
@@ -60,7 +60,7 @@ export function VirtualList({ keys, renderItem, estimate, scrollContainer, handl
   current.current = { keys, offsets };
   const [range, setRange] = useState(() => ({ start: initialTail ? Math.max(0, keys.length - 30) : 0, end: initialTail ? keys.length : Math.min(30, keys.length) }));
   const anchor = useRef<{ key: string; inset: number } | null>(null);
-  const navigation = useRef<{ key: string } | null>(null);
+  const navigation = useRef<{ key: string; inset?: number } | null>(null);
   const [navigationKey, setNavigationKey] = useState<string | null>(null);
   const initialized = useRef(false);
   const [focusedKey, setFocusedKey] = useState<string | null>(null);
@@ -149,7 +149,24 @@ export function VirtualList({ keys, renderItem, estimate, scrollContainer, handl
     syncRange();
   }, [listTop, syncRange, releaseDisclosure]);
   const cancelNavigation = useCallback(() => { navigation.current = null; anchor.current = null; resizeBottomAnchor.current = false; setNavigationKey(null); releaseDisclosure(); }, [releaseDisclosure]);
-  useImperativeHandle(handleRef, () => ({ scrollToKey, cancelNavigation }), [scrollToKey, cancelNavigation]);
+  const captureAnchor = useCallback(() => {
+    const scroller = parent.current;
+    if (!scroller || !current.current.keys.length) return;
+    const top = scroller.scrollTop - listTop();
+    const index = virtualIndexAt(current.current.offsets, top);
+    const key = current.current.keys[index];
+    if (!key) return;
+    const element = root.current?.querySelector<HTMLElement>(`:scope > [data-virtual-key="${CSS.escape(key)}"]`);
+    const inset = element
+      ? scroller.getBoundingClientRect().top + scroller.clientTop - element.getBoundingClientRect().top
+      : top - current.current.offsets[index];
+    releaseDisclosure();
+    resizeBottomAnchor.current = false;
+    anchor.current = null;
+    navigation.current = { key, inset };
+    setNavigationKey(key);
+  }, [listTop, releaseDisclosure]);
+  useImperativeHandle(handleRef, () => ({ scrollToKey, cancelNavigation, captureAnchor }), [scrollToKey, cancelNavigation, captureAnchor]);
 
   const measure = useCallback((key: string, height: number) => {
     height = Math.max(1, height);
@@ -321,7 +338,8 @@ export function VirtualList({ keys, renderItem, estimate, scrollContainer, handl
         const top = target
           ? target.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - scroller.clientTop
           : listTop() + offsets[index];
-        scroller.scrollTop = Math.max(0, top - scroller.clientHeight * 0.3);
+        const inset = navigation.current.inset ?? -scroller.clientHeight * 0.3;
+        scroller.scrollTop = Math.max(0, top + inset);
       }
     } else if (resizeBottomAnchor.current && !isChatBottomFollowing(scroller)) {
       scroller.scrollTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);

@@ -4,8 +4,13 @@ import { isCommandToolName } from "./command-execution";
 import type { ChatCommandView } from "./chat-command-types";
 import { isSubagentTool } from "./subagent-types";
 
+export function startsChatTurn(message: AgentMessage): boolean {
+  return message.role === "user" || message.followsDeletedPrompt === true
+    || message.role === "custom" && message.customType === "history-oversized-turn";
+}
+
 export function isChatTurnAnchor(message: AgentMessage): boolean {
-  return message.role === "user" || message.role === "custom" && message.customType === "compaction";
+  return startsChatTurn(message) || message.role === "custom" && message.customType === "compaction";
 }
 
 export interface ChatHistoryRow {
@@ -93,19 +98,18 @@ export function buildChatHistoryRows(messages: AgentMessage[], entryIds: string[
 }
 
 /** Only a settled turn's final reply gets a footer; tool steps share one continuous body. */
-export function layoutChatResponseRows(rows: ChatHistoryRow[], messages: AgentMessage[], busy: boolean, start = 0): ChatHistoryRow[] {
+export function layoutChatResponseRows(rows: ChatHistoryRow[], messages: import("./chat-segments").ChatMessages, busy: boolean, start = 0): ChatHistoryRow[] {
   const responseEnds = new Set<number>();
   let laterAssistant = false;
   let active = busy;
   for (let index = messages.length - 1; index >= start; index--) {
     const message = messages[index];
     // Compaction can happen inside one response; only a new user prompt ends it.
-    if (message.role === "user") { laterAssistant = false; active = false; }
-    else if (message.role === "assistant" && (getDisplayableAssistantBlocks(message).length || hasAssistantNotice(message))) {
+    if (message.role === "assistant" && (getDisplayableAssistantBlocks(message).length || hasAssistantNotice(message))) {
       if (!laterAssistant && !active) responseEnds.add(index);
       laterAssistant = true;
     }
-    if (message.followsDeletedPrompt) { laterAssistant = false; active = false; }
+    if (startsChatTurn(message)) { laterAssistant = false; active = false; }
   }
   return rows.map((row) => {
     if (row.message?.role !== "assistant") return row;

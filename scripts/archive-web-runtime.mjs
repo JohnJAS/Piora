@@ -10,5 +10,5 @@ export async function createWebRuntimeArchive(source, destination) {
   // require real sidecar files, with ordinary Node resolution inside the child.
   // SQLite diagnostics import ESM and read their adjacent WASM binary from an ordinary worker.
   // Log ESM workers and their archive dependencies require real sidecar paths.
-  await createPackageWithOptions(source, destination, { unpackDir: "**/{node-pty,@img,@sqlite.org,shell/runtime,hypium-driver,harmony/audio,harmony/runtime,harmony/log-library/vendor,7z-bin,yauzl,pend,harmony-video,.harmony-worker}" });
+  await createPackageWithOptions(source, destination, { unpackDir: "**/{node-pty,@img,@sqlite.org,shell/runtime,hypium-driver,harmony/audio,harmony/runtime,harmony/log-library/vendor,read-runtime,7z-bin,yauzl,pend,harmony-video,.harmony-worker}" });
 }

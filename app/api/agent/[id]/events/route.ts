@@ -2,6 +2,7 @@ import { createAgentEventTransport } from "@/lib/agent-event-transport";
 import { getAgentRuntimeProfile } from "@/lib/agent-runtime-profile";
 import { resolveOrStartRpcSession } from "@/lib/session-runtime-resolver";
 import { createChatCommandEventResponse } from "@/lib/chat-command-events";
+import { enqueueStreamFrame, eventStreamQueue } from "@/lib/bounded-event-stream";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,9 @@ export async function GET(
       const encoder = new TextEncoder();
       const transport = createAgentEventTransport((data) => {
         if (closed) return;
-        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); }
+        try {
+          if (!enqueueStreamFrame(controller, encoder.encode(`data: ${JSON.stringify(data)}\n\n`))) cleanup();
+        }
         catch { cleanup(); }
       }, { incremental: new URL(req.url).searchParams.get("transport") === "delta" });
       cleanup = () => {
@@ -55,22 +58,24 @@ export async function GET(
       }
       transport.push({ type: "connected", sessionId: id, runtimeProfile });
       unsubscribe = resolved.onEvent((event) => transport.push(event));
+      if (closed) { unsubscribe(); return; }
       // Seed content and its server-owned rate immediately on session switch
       // or reconnect, including when the model is currently silent.
       const message = resolved.getStreamingMessage();
       if (message) transport.push({ type: "message_update", message });
+      if (closed) return;
       timers.metrics = setInterval(() => {
         const streamingMetrics = resolved.getStreamingMetrics();
         if (streamingMetrics) transport.push({ type: "message_metrics", streamingMetrics });
       }, 1_000);
       timers.heartbeat = setInterval(() => {
         if (!closed) {
-          try { controller.enqueue(encoder.encode(":\n\n")); } catch { cleanup(); }
+          try { if (!enqueueStreamFrame(controller, encoder.encode(":\n\n"))) cleanup(); } catch { cleanup(); }
         }
       }, 30_000);
     },
     cancel() { cleanup(); },
-  });
+  }, eventStreamQueue);
 
   return new Response(stream, {
     headers: {

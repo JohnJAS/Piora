@@ -64,7 +64,7 @@ function createPrefetch(
     controller,
     promise: Promise.resolve(null),
   };
-  entry.promise = fetch(`/api/sessions/${encodeURIComponent(session.id)}?deferThinking=1&deferMedia=1`, {
+  entry.promise = fetch(`/api/sessions/${encodeURIComponent(session.id)}?deferThinking=1&deferMedia=1&view=chat`, {
     signal: controller.signal,
   })
       .then(async (response) => {
@@ -144,7 +144,7 @@ export function takePrefetchedSession(
 /** Prepare both history and runtime before replacing the visible chat. */
 export async function prepareSessionSwitch(session: Pick<SessionInfo, "id" | "modified">): Promise<unknown | null> {
   const cached = Boolean(peekPrefetchedSession(session));
-  const state = fetch(`/api/sessions/${encodeURIComponent(session.id)}/state`, { signal: AbortSignal.timeout(10_000), cache: "no-store" })
+  const state = fetch(`/api/sessions/${encodeURIComponent(session.id)}/state?view=chat`, { signal: AbortSignal.timeout(10_000), cache: "no-store" })
     .then(response => response.ok ? response.json() as Promise<{ running: boolean; state?: unknown }> : null).catch(() => null);
   const [preparedSnapshot, initialAgentState] = await Promise.all([takePrefetchedSession(session), state]);
   let snapshot = preparedSnapshot;

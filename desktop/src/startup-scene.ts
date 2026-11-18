@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { APP_BRAND, APP_DISPLAY_NAME } from "./branding.js";
 
 export const STARTUP_CINEMATIC_MS = 8_000;
@@ -23,13 +23,13 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 }
 
-export function loadStartupMedia(directory: string, play = true): { video?: string; poster?: string; icon?: string } {
+export function loadStartupMedia(directory: string, play = true, linked = false): { video?: string; poster?: string; icon?: string } {
   const asset = (name: string, mime: string, maximum: number) => {
     const path = join(directory, name);
-    if (!existsSync(path)) return undefined;
     try {
-      const data = readFileSync(path);
-      return data.byteLength <= maximum ? `data:${mime};base64,${data.toString("base64")}` : undefined;
+      const info = statSync(path);
+      if (!info.isFile() || info.size > maximum) return undefined;
+      return linked ? pathToFileURL(path).href : `data:${mime};base64,${readFileSync(path).toString("base64")}`;
     } catch { return undefined; }
   };
   const video = play && APP_BRAND.startup.video ? asset(APP_BRAND.startup.video, "video/mp4", 12_000_000) : undefined;
@@ -45,7 +45,7 @@ export function createStartupDocument(options: { chinese: boolean; version: stri
   const title = APP_BRAND.id === "piora" ? "PIORA" : name;
   return `<!doctype html><html lang="${zh ? "zh-CN" : "en"}"><head>
 <meta charset="utf-8"><title>${name} · ${zh ? "正在启动" : "Starting"}</title><meta name="color-scheme" content="dark"><meta name="theme-color" content="#080a0f">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; media-src data:; style-src 'unsafe-inline'; script-src 'nonce-piora-startup'; base-uri 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: file:; media-src data: file:; style-src 'unsafe-inline'; script-src 'nonce-piora-startup'; base-uri 'none'">
 <style>
 *{box-sizing:border-box}html,body{height:100%;width:100%;margin:0}body{overflow:hidden;background:#080a0f;color:#effaff;font-family:'Segoe UI','Microsoft YaHei UI',sans-serif}
 .scene,.shade,.fallback{position:absolute;inset:0;width:100%;height:100%}.scene{object-fit:cover;object-position:center}.fallback{background:radial-gradient(ellipse at 65% 30%,#154256,transparent 60%),linear-gradient(145deg,#080a0f,#122938)}
@@ -58,7 +58,7 @@ main{position:absolute;top:25%;left:5%;right:5%;display:flex;align-items:flex-st
 ${APP_BRAND.id !== "piora" ? ".intro-copy{min-width:0;max-width:100%}.title{font-size:clamp(24px,5vw,64px);letter-spacing:.02em;overflow-wrap:anywhere}.wordmark{letter-spacing:.04em;overflow-wrap:anywhere}" : ""}
 ${options.allowSkip === false ? "#skip-intro{display:none}" : ""}
 </style></head><body class="${video ? "film" : "poster"}">
-<div class="fallback"></div>${poster ? `<img class="scene" src="${poster}" alt="">` : ""}${video ? `<video class="scene" autoplay muted playsinline preload="auto" ${poster ? `poster="${poster}"` : ""} aria-hidden="true"><source src="${video}" type="video/mp4"></video>` : ""}<div class="shade"></div>
+<div class="fallback"></div>${poster ? `<img class="scene" src="${escapeHtml(poster)}" alt="">` : ""}${video ? `<video class="scene" autoplay muted playsinline preload="metadata" ${poster ? `poster="${escapeHtml(poster)}"` : ""} aria-hidden="true"><source src="${escapeHtml(video)}" type="video/mp4"></video>` : ""}<div class="shade"></div>
 <header class="top"><div class="wordmark">${wordmark}</div>${APP_BRAND.id === "piora" ? '<div class="mission"><span class="live"></span>POLARIS EXPEDITION<br>PX-06 · 2076</div>' : ""}</header>
 <main><div class="intro-copy">${options.icon ? `<img width="72" height="72" src="${escapeHtml(options.icon)}" alt="">` : ""}<div class="eyebrow">${updated ? "A NEW HORIZON AWAITS" : "BEYOND THE NEXT HORIZON"}</div><h1 class="title">${title}</h1><div class="subtitle">${zh ? updated ? "更新就绪。下一程，驶向未知。" : "保持好奇，驶向未知。" : updated ? "Update ready. A new frontier awaits." : "Stay curious. Explore what comes next."}</div></div><div class="statusbox"><div class="status" role="status">${zh ? `正在启动 ${name}` : `Starting ${name}`}${video ? "" : `<br>${zh ? "正在准备你的工作区" : "Preparing your workspace"}`}</div><div class="progress" role="progressbar" aria-label="${zh ? "正在启动" : "Starting"}"></div><div class="actions"><span class="version">v${escapeHtml(options.version)}</span><button type="button" id="skip-intro">${zh ? "跳过动画" : "Skip intro"} ↗</button></div></div></main>
 <script nonce="piora-startup">const clip=document.querySelector('video');const motion=matchMedia('(prefers-reduced-motion: reduce)');let continued=false;function continueStartup(){if(continued)return;continued=true;clip?.pause();window.piDesktop?.finishStartupIntro();}document.querySelector('#skip-intro')?.addEventListener('click',continueStartup);function settleMotion(){if(motion.matches)continueStartup();}motion.addEventListener('change',settleMotion);clip?.addEventListener('error',continueStartup,true);clip?.addEventListener('ended',continueStartup,{once:true});settleMotion();</script>

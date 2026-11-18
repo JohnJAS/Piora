@@ -2,6 +2,12 @@ import type { FileEntry, SessionEntry } from "@earendil-works/pi-coding-agent";
 
 export const DELETED_MESSAGE_TYPE = "piora-deleted-message";
 
+export function isDeletedUserMessage(entry: { type?: unknown; customType?: unknown; data?: unknown }): boolean {
+  if (entry.type !== "custom" || entry.customType !== DELETED_MESSAGE_TYPE) return false;
+  const data = entry.data as { deletedUser?: unknown; role?: unknown; clientPromptId?: unknown } | undefined;
+  return data?.deletedUser === true || data?.role === "user" || typeof data?.clientPromptId === "string";
+}
+
 export function persistedMessagePromptIds(entries: readonly SessionEntry[]): string[] {
   return entries.flatMap(entry => {
     if (entry.type === "message") {
@@ -33,8 +39,11 @@ export function deleteSessionMessageEntries(entries: FileEntry[], entryId: strin
   return {
     entries: entries.map(entry => {
       if (entry.type === "session" || !deletedIds.has(entry.id)) return entry;
-      const id = entry.type === "message" && entry.message.role === "user" ? (entry.message as { clientPromptId?: string }).clientPromptId : undefined;
-      return { type: "custom", customType: DELETED_MESSAGE_TYPE, id: entry.id, parentId: entry.parentId, timestamp: entry.timestamp, ...(entry.type === "message" && entry.message.role === "user" ? { data: { deletedUser: true, ...(id ? { clientPromptId: id } : {}) } } : {}) } satisfies SessionEntry;
+      const user = entry.type === "message" && entry.message.role === "user" ? entry.message as { clientPromptId?: string } : undefined;
+      return {
+        type: "custom", customType: DELETED_MESSAGE_TYPE, id: entry.id, parentId: entry.parentId, timestamp: entry.timestamp,
+        ...(user ? { data: { deletedUser: true, ...(user.clientPromptId ? { clientPromptId: user.clientPromptId } : {}) } } : {}),
+      } satisfies SessionEntry;
     }),
     deletedIds: [...deletedIds],
   };
