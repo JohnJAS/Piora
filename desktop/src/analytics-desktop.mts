@@ -235,7 +235,7 @@ export async function startDesktopAnalytics(
     store.set("app_version", app.getVersion());
     return new DesktopAnalytics(
       store,
-      await AnalyticsUploader.create(store, config, safeStorage, fetch, undefined, readAnalyticsConfig),
+      await AnalyticsUploader.create(store, config, safeStorage, undefined, undefined, readAnalyticsConfig),
       window,
     );
   } catch {

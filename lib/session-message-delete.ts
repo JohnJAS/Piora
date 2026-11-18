@@ -34,7 +34,7 @@ export function deleteSessionMessageEntries(entries: FileEntry[], entryId: strin
     entries: entries.map(entry => {
       if (entry.type === "session" || !deletedIds.has(entry.id)) return entry;
       const id = entry.type === "message" && entry.message.role === "user" ? (entry.message as { clientPromptId?: string }).clientPromptId : undefined;
-      return { type: "custom", customType: DELETED_MESSAGE_TYPE, id: entry.id, parentId: entry.parentId, timestamp: entry.timestamp, ...(id ? { data: { clientPromptId: id } } : {}) } satisfies SessionEntry;
+      return { type: "custom", customType: DELETED_MESSAGE_TYPE, id: entry.id, parentId: entry.parentId, timestamp: entry.timestamp, ...(entry.type === "message" && entry.message.role === "user" ? { data: { deletedUser: true, ...(id ? { clientPromptId: id } : {}) } } : {}) } satisfies SessionEntry;
     }),
     deletedIds: [...deletedIds],
   };

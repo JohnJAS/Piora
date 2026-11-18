@@ -16,6 +16,8 @@ import { getPromptMaterialDisplayMetadata, restorePromptMaterialDisplayPreview }
 import { isProjectlessChatCwd } from "./projectless-chat-path";
 import { getProjectlessChatWorkspace } from "./projectless-chat-server";
 
+import { DELETED_MESSAGE_TYPE } from "./session-message-delete";
+
 export { getAgentDir };
 
 async function loadAllSessions(): Promise<SessionInfo[]> {
@@ -266,11 +268,19 @@ export function buildSessionContext(
   // fork/navigation targets aligned while preserving pi's compaction ordering.
   const messages: AgentMessage[] = [];
   const entryIds: string[] = [];
+  let followsDeletedPrompt = false;
   for (const entry of contextEntries) {
     const localEntry = entry as unknown as SessionEntry;
+    if (localEntry.type === "custom" && localEntry.customType === DELETED_MESSAGE_TYPE) {
+      const data = localEntry.data;
+      // Older user tombstones retained only their submission receipt.
+      if (isRecord(data) && (data.deletedUser === true || typeof data.clientPromptId === "string")) followsDeletedPrompt = true;
+      continue;
+    }
     const m = entryToUiMessage(localEntry, options);
     if (m) {
-      messages.push(m);
+      messages.push(followsDeletedPrompt && m.role !== "user" ? { ...m, followsDeletedPrompt } : m);
+      followsDeletedPrompt = false;
       entryIds.push(localEntry.id);
     }
   }

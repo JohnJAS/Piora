@@ -105,6 +105,7 @@ export function layoutChatResponseRows(rows: ChatHistoryRow[], messages: AgentMe
       if (!laterAssistant && !active) responseEnds.add(index);
       laterAssistant = true;
     }
+    if (message.followsDeletedPrompt) { laterAssistant = false; active = false; }
   }
   return rows.map((row) => {
     if (row.message?.role !== "assistant") return row;

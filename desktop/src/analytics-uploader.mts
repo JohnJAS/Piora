@@ -1,3 +1,4 @@
+import { Agent, fetch } from "undici";
 import { randomInt, randomUUID, randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -43,6 +44,8 @@ interface SecureStorage {
   ): Promise<{ result: string; shouldReEncrypt: boolean }>;
 }
 type Fetcher = typeof fetch;
+const analyticsDispatcher = new Agent();
+const directFetch: Fetcher = (url, init) => fetch(url, { ...init, dispatcher: analyticsDispatcher });
 class UploadError extends Error {
   constructor(
     readonly status: number,
@@ -77,7 +80,7 @@ export class AnalyticsUploader {
     readonly store: AnalyticsStore,
     private readonly config: AnalyticsConfig,
     private readonly secure: SecureStorage,
-    private readonly fetcher: Fetcher = fetch,
+    private readonly fetcher: Fetcher,
     private readonly identityReader: () => Promise<IdentityObservation> = () =>
       collectWindowsIdentity(config.enabled),
     private readonly configReader: () => AnalyticsConfig | undefined = () =>
@@ -87,7 +90,7 @@ export class AnalyticsUploader {
     store: AnalyticsStore,
     config: AnalyticsConfig,
     secure: SecureStorage,
-    fetcher: Fetcher = fetch,
+    fetcher: Fetcher = directFetch,
     identityReader?: () => Promise<IdentityObservation>,
     configReader?: () => AnalyticsConfig | undefined,
   ): Promise<AnalyticsUploader> {
