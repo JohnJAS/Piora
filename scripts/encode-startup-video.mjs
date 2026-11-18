@@ -34,10 +34,14 @@ function ffmpeg(args) {
   const result = spawnSync(executable, ["-hide_banner", "-loglevel", "error", "-y", ...args], { stdio: "inherit", windowsHide: true });
   if (result.status !== 0) throw new Error(`FFmpeg failed: ${result.status}`);
 }
-ffmpeg(["-framerate", String(fps), "-i", pattern, "-frames:v", String(frameCount), "-c:v", "libx264", "-preset", "slow", "-crf", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-an", join(destination, "polaris-rover.mp4")]);
-// The new film opens from black: use the side-logo shot for a useful static fallback.
+const movie = join(destination, "polaris-rover.mp4");
+ffmpeg(["-framerate", String(fps), "-i", pattern, "-frames:v", String(frameCount),
+  "-vf", "scale=in_range=full:out_range=tv:out_color_matrix=bt709", "-c:v", "libx264",
+  "-preset", "slow", "-crf", "20", "-pix_fmt", "yuv420p", "-colorspace", "bt709",
+  "-color_primaries", "bt709", "-color_trc", "bt709", "-movflags", "+faststart", "-an", movie]);
+// Use the picture as decoded by the player for the static side-nameplate shot.
 const posterFrame = imported ? Math.round((frameCount - 1) * .49) + 1 : 1;
-ffmpeg(["-i", framePath(posterFrame), "-frames:v", "1", "-q:v", "3", join(destination, "polaris-rover.jpg")]);
+ffmpeg(["-i", movie, "-vf", "select=eq(n\\," + (posterFrame - 1) + ")", "-frames:v", "1", "-q:v", "2", join(destination, "polaris-rover.jpg")]);
 copyFileSync(blendPath, join(destination, "polaris-rover.blend"));
 const files = Object.fromEntries(["polaris-rover.mp4", "polaris-rover.jpg", "polaris-rover.blend"].map((name) => {
   const bytes = readFileSync(join(destination, name));

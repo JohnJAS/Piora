@@ -2903,11 +2903,11 @@ function createStartupWindow(log: Logger): { window: BrowserWindow; ready: Promi
   const firstLaunchOfVersion = previousVersion !== app.getVersion();
   const updated = Boolean(previousVersion) && firstLaunchOfVersion;
   const mediaDirectory = app.isPackaged ? join(process.resourcesPath, "startup") : resolve(__dirname, "../../.branding/resources/startup");
-  // The authenticated dev launcher already waits for the live server. Avoid
-  // synchronously reading/base64-embedding the release film on every restart.
-  // Packaged startup always retains the offline intro, even with a stray env.
+  const playIntro = firstLaunchOfVersion && !PORTABLE_SMOKE_TEST;
+  // Live development already waits for its server. Packaged startup always
+  // uses the local media policy, even when a development URL is in the environment.
   const media = !app.isPackaged && process.env.PI_DESKTOP_DEV_SERVER_URL
-    ? {} : loadStartupMedia(mediaDirectory);
+    ? {} : loadStartupMedia(mediaDirectory, playIntro);
   const startupPath = join(app.getPath("userData"), "startup.html");
   let finishIntro!: () => void;
   const finished = new Promise<void>((resolveIntro) => { finishIntro = () => { resolveIntro(); }; });
@@ -2960,7 +2960,7 @@ function createStartupWindow(log: Logger): { window: BrowserWindow; ready: Promi
         writeFileSync(resolve(startupMarker), `${JSON.stringify({ schema: "piora-startup-v1", ready: true, surface: "electron-shell" })}\n`, { encoding: "utf8", flag: "wx" });
       }
       resolveReady(readyAt);
-      if (!firstLaunchOfVersion || !media.video || PORTABLE_SMOKE_TEST) finishIntro();
+      if (!playIntro || !media.video) finishIntro();
     };
     window.once("ready-to-show", ensureVisible);
   });

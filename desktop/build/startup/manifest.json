@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "renderer": "Blender 5.2.1 LTS / EEVEE",
+  "renderer": "Blender 5.2.1 LTS / CYCLES",
   "width": 1920,
   "height": 1080,
   "fps": 30,
@@ -10,16 +10,16 @@
   "audio": false,
   "files": {
     "polaris-rover.mp4": {
-      "bytes": 5298445,
-      "sha256": "c82c8b09f80f952ef199fddedffcdcb9581f6353d09ad68038a284893166a73d"
+      "bytes": 9795449,
+      "sha256": "be0329d2ba5fe2236a81861ebc311ae4b44cfb0270872aef1242d6c2e38e5179"
     },
     "polaris-rover.jpg": {
-      "bytes": 228982,
-      "sha256": "3d1f4b5fc13af178ed82dce7987698f74b49147f87608c52deb4e41bb6fd0669"
+      "bytes": 233474,
+      "sha256": "a090f39b5ec2c0022788adabf8e2f416851007253d97df957dff2018fca73b54"
     },
     "polaris-rover.blend": {
-      "bytes": 3889944,
-      "sha256": "1456afe22ef7f84ad54c4b573a3f87f65ad72376556971c76cff4577c94a46d6"
+      "bytes": 4984902,
+      "sha256": "1242c4e1fd9913ee5feb00f76aaab31d6af77422b567f546fae9019fd14587a7"
     }
   }
 }

@@ -1,47 +1,46 @@
-# Piora · 北极星探索启动动画
+# 冰脊 · PX-06，2076
 
-当前方案采用用户提供的 `piora_intro.py`：2076 年、北极星方向的虚构冰岩世界、PX-06 无人六轮探测车，保留行驶、车身标识特写、减速扫描和品牌片尾。整段 8 秒、30 fps、1920 × 1080、无音轨。车型、地形、三维文字、材质与特效均由脚本生成，不依赖外部模型或贴图。
+北极星方向的冰岩世界。PX-06 的前轮掀起冰壳，六轮越过斜向冰脊，车顶探头在刹停时抬起。最后一镜将近墩、远墩和峡谷横梁对齐成 π。全片为 1920 × 1080、30 fps、240 帧的静音 H.264。
 
-脚本已在 **Blender 5.2.1 LTS / Windows** 实际生成场景并渲染。Blender 4.5 兼容分支保留，但本机没有执行 4.5 验证。`polaris-rover.py` 是 beta.5 使用的旧版风格化场景。
+| Blender 帧（从 1 开始） | 镜头 |
+| --- | --- |
+| 1–42 | 轮齿下的冰晶泛白，裂纹先于冰壳翻起。冰壳有上下两个面、粗糙断口和薄边。 |
+| 43–135 | 从车头一侧低位跟拍。第 118 帧是铭牌海报。 |
+| 136–219 | 车体刹停回弹，探头上仰，摄影机沿弧线升高。 |
+| 220–240 | 透视对齐，锁定 21 帧。 |
 
-## 先检查一帧
+## 编辑与预演
 
-```powershell
-blender -b -t 6 --python-exit-code 1 --python scripts/blender/piora_intro.py -- --mode FRAME --quality PREVIEW --out .verification/piora-intro
-```
-
-也可以在 Blender 的 Scripting 工作区打开脚本并运行。默认 `PREVIEW + BUILD` 只生成并保存场景，F12 渲染当前镜头。需要使用 Blender 可执行文件的完整路径时，将命令中的 `blender` 替换为该路径。
-
-每次运行创建独立的 `run_时间戳` 目录，不覆盖已有输出，也不删除当前工程中的其他场景。工程中同时嵌入了生成脚本，运动烘焙为普通关键帧，不要求开启自动执行 Python。
-
-## 正式出片
+使用 Blender 5.2.1 LTS。打开 `desktop/build/startup/polaris-rover.blend` 可以直接拖动时间线或按 F12 渲染。文件保存时停在第 118 帧。轮组、悬架、探头和摄影机均使用普通关键帧。`PIORA_Relic` 集合中的三个独立网格保持静止，生成脚本和图标 SVG 均嵌入工程。
 
 ```powershell
-blender -b -t 6 --python-exit-code 1 --python scripts/blender/piora_intro.py -- --mode ANIMATION --quality FINAL --format PNG_SEQUENCE --out .verification/piora-intro
-node scripts/encode-startup-video.mjs <ffmpeg路径> <上一步的run目录>
+blender -b -t 6 --python-exit-code 1 --python scripts/blender/piora_intro.py -- --mode FRAME --quality PREVIEW --format PNG_SEQUENCE --out .verification/ice-ridge
+blender -b -t 6 --python-exit-code 1 --python scripts/blender/piora_intro.py -- --mode ANIMATION --quality PREVIEW --format MP4 --out .verification/ice-ridge
 ```
 
-编码器检查全部 240 张 PNG 的尺寸，生成 H.264/yuv420p、fast-start MP4，并以车身标识镜头生成静态封面。它把视频、封面、可编辑 `.blend` 和哈希清单放到 `desktop/build/startup`。可在命令末尾追加输出目录，进行预览而不替换应用资源。
+预演使用 480 × 270 和完整 8 秒的路线、地形和机位。脚本在每次运行时新建一个 `run_…` 目录。开场看接触斑和轮缘上的赭色检修标记，跟拍看地面的相对运动和车身滞后，升镜看各构件在远山前的相对位移。
 
-脚本也支持 `--format MP4` 直接使用 Blender 编码；项目发布采用 PNG 序列加 FFmpeg，便于逐帧检查并保留渲染中间结果。
+## 生成正式资产
 
-## 验证
+```powershell
+blender -b -t 6 --python-exit-code 1 --python scripts/blender/piora_intro.py -- --mode ANIMATION --quality FINAL --format PNG_SEQUENCE --out .verification/ice-ridge
+$run = (Get-ChildItem .verification/ice-ridge -Directory -Filter 'run_*' | Sort-Object Name -Descending | Select-Object -First 1).FullName
+blender -b "$run/piora_polaris_2076.blend" --python-exit-code 1 --python scripts/blender/verify_intro.py
+node scripts/encode-startup-video.mjs ffmpeg $run
+```
+
+正式成片使用 Cycles。生成器优先选择可用的 GPU。编码器检查 PNG 序列，写入 BT.709、yuv420p、fast-start MP4，从该 MP4 解码第 118 帧作为 JPG 海报，并记录 MP4、JPG、压缩 `.blend` 的字节数和 SHA-256。可以在编码命令末尾指定暂存目录。
+
+轮胎颗粒、金属加工纹和陶瓷涂层使用物体坐标，随轮组和车身移动。冰面沿风向铺开磨砂霜层，冰壳的透光面与磨粗的断口分别着色。遗迹的紫青冰脉在背光侧露出，暖光集中在横梁左端。
+
+## 复核
 
 ```powershell
 python scripts/blender/test_numerics.py
-blender -b <run目录>/piora_polaris_2076.blend --python-exit-code 1 --python scripts/blender/verify_intro.py
-node --test lib/desktop-startup-visual.test.mjs lib/startup-media-assets.test.mjs
+node --test lib/desktop-startup-visual.test.mjs lib/desktop-startup-loading.test.mjs lib/startup-media-assets.test.mjs
+npm run preview:startup
 ```
 
-- 原有 8 项数值检查：路线、地表插值、净空、取景等。
-- Blender 实际场景检查：240 帧的 1,440 次轮心接地检查、9 个镜头位置的实际车体包围盒、停车状态、品牌片尾透明度，以及车身标识与序列号不重叠。
-- 最终仍需查看视频，检查动作、光照、字幕与淡入淡出的观感。上述数值检查不是完整车辆物理仿真，也不能代替视觉验收。
+打开 `http://127.0.0.1:31043/` 可查看 Piora 桌面启动文档中的成片及右上角跳过控件。版本记忆、启动放行与 10 秒看门狗由 Electron 主进程负责。
 
-## 本次兼容修复
-
-- Blender 5.2 的视频输出使用 `image_settings.media_type = "VIDEO"`；单帧渲染切回 `IMAGE` 后正确恢复原设置。
-- 适配辉光节点的 Type/Quality 输入、混合与数值节点的新名称，以及 Alpha Over 的具名插槽。
-- 缩小并上移车身主标识，与下方序列号分开；三维文字仍可编辑。
-- 工程以压缩副本保存。原始 ZIP 不作修改。
-
-启动页按视频原比例显示完整画面，不叠加大标题；保留跳过、静音、减少动态效果的静态回退和超时保护。片尾自然结束后进入应用，媒体加载异常最多等待 10 秒。
+`verify_intro.py` 在保存的场景中对六轮逐帧检查，读取轮齿网格与地面三角形的间距，并用轮心位移核对转角。它还检查铭牌和序列号的间隔、跟拍取景、停车位置、结尾机位和遗迹网格相对 SVG 的投影误差。最终视觉验收使用编码后的视频。

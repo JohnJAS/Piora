@@ -48,28 +48,30 @@ class Checks(unittest.TestCase):
             x=m.drive_x(i/239)
             ground=[m.surface_height(x+dx,y) for dx in m.WHEEL_X for y in m.WHEEL_Y]
             avg=sum(ground)/6
-            for h in ground:
+            pitch_slope=(sum(ground[4:])-sum(ground[:2]))/6.2
+            roll_slope=(sum(ground[1::2])-sum(ground[::2]))/7.32
+            for (dx,y),h in zip(((dx,y) for dx in m.WHEEL_X for y in m.WHEEL_Y),ground):
                 self.assertTrue(math.isfinite(h))
                 self.assertAlmostEqual((h+m.WHEEL_RADIUS)-h,m.WHEEL_RADIUS)
-                self.assertGreater(avg+1.05-h,0.85)
+                self.assertGreater(avg+1.05+pitch_slope*dx+roll_slope*y-h,0.85)
 
     def test_camera_does_not_intersect_ground(self):
         for i in range(240):
             u=i/239
-            x=m.drive_x(u)
             pos,aim,lens=m.camera_pose(u)
-            avg=sum(m.surface_height(x+dx,y) for dx in m.WHEEL_X for y in m.WHEEL_Y)/6
-            self.assertGreater(pos[2]+avg-m.surface_height(x+pos[0],pos[1]),0.65)
-            self.assertGreater(lens,24)
+            self.assertGreater(pos[2]-m.surface_height(*pos[:2]),0.65)
+            self.assertTrue(22 <= lens <= 42)
 
-    def test_rover_stays_in_camera_frame(self):
+    def test_tracking_shot_contains_all_six_wheels_and_mast(self):
         # Conservative world-space envelope of main rover components. Terrain tilt
         # is small; add a margin to the envelope rather than importing mathutils.
         points=[(x,y,z) for x in (-2.27,2.27) for y in (-1.51,1.51) for z in (0,2.05)]
         points += [(x,y,3.05) for x in (.52,1.30) for y in (-.43,.43)]
         aspect=16/9
         max_screen=0
-        for i in range(240):
+        for i in range(42,136):
+            x=m.drive_x(i/239)
+            floor=sum(m.surface_height(x+dx,y) for dx in m.WHEEL_X for y in m.WHEEL_Y)/6
             pos,target,lens=m.camera_pose(i/239)
             forward=norm(sub(target,pos))
             right=norm(cross(forward,(0,0,1)))
@@ -77,7 +79,7 @@ class Checks(unittest.TestCase):
             tan_x=18/lens
             tan_y=tan_x/aspect
             for p in points:
-                ray=sub(p,pos)
+                ray=sub((x+p[0],p[1],floor+p[2]),pos)
                 depth=dot(ray,forward)
                 self.assertGreater(depth,0)
                 sx=abs(dot(ray,right)/(depth*tan_x))
@@ -86,6 +88,30 @@ class Checks(unittest.TestCase):
                 self.assertLess(sx,.99)
                 self.assertLess(sy,.99)
         print('Maximum conservative rover screen extent (edge=1):',round(max_screen,4))
+
+    def test_pressure_and_tracking_shots_share_screen_direction(self):
+        for i in range(136):
+            pos,target,_=m.camera_pose(i/239)
+            right=norm(cross(sub(target,pos),(0,0,1)))
+            self.assertGreater(right[0], .8)
+
+    def test_three_depths_project_onto_the_locked_sightline(self):
+        eye,aim,lens=m.camera_pose(1)
+        fw=norm(sub(aim,eye))
+        right=norm(cross(fw,(0,0,1)))
+        up=cross(right,fw)
+        for x,y in ((246,310),(363,326),(655,326),(256,789),(790,786)):
+            sx,sy=m.icon_screen(x,y)
+            for depth in (124,153,174):
+                ray=sub(m.screen_ray(sx,sy,depth),eye)
+                self.assertAlmostEqual(.5+lens/36*dot(ray,right)/dot(ray,fw),sx,places=7)
+                self.assertAlmostEqual(.5+16/9*lens/36*dot(ray,up)/dot(ray,fw),sy,places=7)
+
+    def test_park_and_camera_lock(self):
+        for frame in range(152,241):
+            self.assertEqual(m.drive_x((frame-1)/239),m.END_X)
+        for frame in range(m.ALIGN_FRAME,241):
+            self.assertEqual(m.camera_pose((frame-1)/239),m.camera_pose(1))
 
     def test_box_normals_point_outward(self):
         v=m.box_geometry((2,3,4))

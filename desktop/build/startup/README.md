@@ -1,24 +1,12 @@
-# Polaris Expedition / PX-06 / 2076
+# PX-06 · 冰脊
 
-The active film uses the scene script supplied by the project owner and adapted
-for Blender 5.2.1 LTS. It depicts a fictional ice-rock world in the direction of
-Polaris. The rover, terrain, lettering, materials and effects are procedural;
-no downloaded models, textures or fonts are used.
+2076 年，PX-06 在北极星方向的冰岩世界驶上冰脊。镜头升起时，近墩、峡谷横梁和远墩从一个角度对齐成 π。
 
-- `polaris-rover.mp4`: 1920×1080, 30 fps, 240 frames / 8 seconds, H.264/yuv420p,
-  fast-start, no audio.
-- `polaris-rover.jpg`: side-logo shot, used as the static fallback (the film opens
-  from black, so the first frame is unsuitable as a poster).
-- `polaris-rover.blend`: editable, compressed scene with the supplied script
-  embedded and all movement baked. Kept in Git, excluded from the installer.
-- `manifest.json`: dimensions, timing, poster frame, sizes and SHA-256 hashes.
+- `polaris-rover.mp4` 是 Piora 的桌面开屏影片。1920 × 1080、30 帧/秒、8 秒、H.264，无音轨。
+- `polaris-rover.jpg` 是成片的第 118 帧，用于静态开屏。
+- `polaris-rover.blend` 保留可编辑场景、动画和生成脚本。
+- `manifest.json` 记录影片参数、资产大小和 SHA-256。
 
-See `scripts/blender/README.md` for reproducible rendering, encoding and checks.
-The source is `scripts/blender/piora_intro.py`. The installer ships only MP4/JPG;
-neither Blender nor Python is needed to play the startup film.
+首次启动新版时从本地播放影片。播放结束、跳过或超时后进入已就绪的工作区。开启减少动态效果时显示海报。同版本再次启动直接等待工作区就绪。
 
-The desktop shows the complete frame without cropping or large overlaid titles,
-offers Skip intro, honors reduced-motion preferences, and continues after the
-film ends. A ten-second outer timeout prevents media initialization failures from
-blocking startup. Later launches of the same version enter the workspace as soon
-as it is ready.
+在仓库根目录运行 `npm run preview:startup`，打开 <http://127.0.0.1:31043/>。渲染与检查步骤见 [Blender 制作说明](../../../scripts/blender/README.md)。

@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { APP_BRAND, APP_DISPLAY_NAME } from "./branding.js";
 
 export const STARTUP_CINEMATIC_MS = 8_000;
-// Allow media initialization without cutting the eight-second film's closing title.
+// Allow media initialization without cutting the eight-second film's closing shot.
 export const STARTUP_MEDIA_TIMEOUT_MS = STARTUP_CINEMATIC_MS + 2_000;
 export const STARTUP_CONTINUE_CHANNEL = "pi:startup-continue";
 
@@ -23,7 +23,7 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
 }
 
-export function loadStartupMedia(directory: string): { video?: string; poster?: string; icon?: string } {
+export function loadStartupMedia(directory: string, play = true): { video?: string; poster?: string; icon?: string } {
   const asset = (name: string, mime: string, maximum: number) => {
     const path = join(directory, name);
     if (!existsSync(path)) return undefined;
@@ -32,7 +32,7 @@ export function loadStartupMedia(directory: string): { video?: string; poster?: 
       return data.byteLength <= maximum ? `data:${mime};base64,${data.toString("base64")}` : undefined;
     } catch { return undefined; }
   };
-  const video = APP_BRAND.startup.video ? asset(APP_BRAND.startup.video, "video/mp4", 12_000_000) : undefined;
+  const video = play && APP_BRAND.startup.video ? asset(APP_BRAND.startup.video, "video/mp4", 12_000_000) : undefined;
   const poster = APP_BRAND.startup.poster ? asset(APP_BRAND.startup.poster, "image/jpeg", 1_000_000) : undefined;
   const icon = asset("icon.png", "image/png", 2_000_000);
   return { ...(video ? { video } : {}), ...(poster ? { poster } : {}), ...(icon ? { icon } : {}) };

@@ -1,13 +1,6 @@
 # -*- coding: utf-8 -*-
-"""
-PIORA / POLARIS EXPEDITION / 2076
-Procedural Blender startup film — no external models, textures or add-ons.
-
-使用：Blender → Scripting → Open 此文件 → Run Script。
-先用 PREVIEW + BUILD 检查构图；FINAL + ANIMATION 输出完整影片。
-实测版本：Blender 5.2.1 LTS；保留 Blender 4.5 兼容分支，4.5 尚未实机验证。
-本脚本新建场景，不删除现有场景；输出写入每次运行的独立目录。
-所有运动烘焙为关键帧，无需开启 Auto Run Python Scripts。
+"""Piora / POLARIS 2076 — The Sightline. Self-contained, editable Blender film.
+Build from the checkout or open the shipped scene and render its baked timeline.
 """
 from __future__ import annotations
 
@@ -31,24 +24,19 @@ except ImportError:
 # ============================================================================
 CONFIG = {
     "brand": "piora",                       # 车身两侧 + 片尾的真实文字
-    "subtitle": "The Operating System for Personal AI Agents",
     "year": 2076,
     "duration": 8.0,                         # 秒；可改为 4.0，动作会整体压缩
     "fps": 30,
     "resolution": (1920, 1080),
-    "quality": "PREVIEW",                    # PREVIEW=50%分辨率；FINAL=100%
-    "engine": "EEVEE",                       # EEVEE 或 CYCLES
+    "quality": "PREVIEW",                    # PREVIEW=25%分辨率；FINAL=100%
+    "engine": "CYCLES",                       # EEVEE 或 CYCLES
     "render_mode": "BUILD",                  # BUILD / FRAME / ANIMATION
     "output_format": "MP4",                  # MP4 或 PNG_SEQUENCE
     "output_dir": "",                        # 留空：用户主目录/Piora_Animation
     "font_path": "",                         # 留空用 Blender 内置字体
     "save_blend": True,
-    "dust": True,
     "tracks": True,
-    "scan_effect": True,
-    "show_moon": True,
-    "show_metadata": True,
-    "motion_blur": True,
+    "motion_blur": False,
     "seed": 2076,
 }
 
@@ -72,11 +60,10 @@ PALETTE = {
 WHEEL_RADIUS = 0.68
 WHEEL_X = (-1.55, 0.0, 1.55)
 WHEEL_Y = (-1.22, 1.22)
-START_X = -5.4
-END_X = 1.35
+START_X = -9.5
+END_X = 2.6
 PREFIX = "PIORA_"
 SCENE = None
-HUD = None
 COLLECTIONS = {}
 MATERIALS = {}
 MESH_CACHE = {}
@@ -107,35 +94,37 @@ def lerp(a, b, t):
 
 
 def drive_x(u):
-    """Smooth acceleration/braking; stopped for the final 25% of the film."""
-    return lerp(START_X, END_X, smoother(u / 0.75))
+    """Constant approach speed, then constant deceleration into the crest."""
+    t = clamp(u) * 239
+    brake, stop = 124, 151
+    if t >= stop:
+        return END_X
+    elapsed = min(t, stop)
+    travel = elapsed - max(0, elapsed - brake) ** 2 / (2 * (stop - brake))
+    return lerp(START_X, END_X, travel / ((brake + stop) * .5))
 
 
 def terrain_height(x, y):
-    """A continuous invented ice/regolith landscape, not an astronomical map."""
-    low = (1.30 * math.sin(x * 0.032 + 0.4) * math.cos(y * 0.046 - 0.3)
-           + 0.70 * math.sin(x * 0.082 + y * 0.061)
-           + 0.31 * math.sin(x * 0.21 - y * 0.17)
-           + 0.10 * math.sin(x * 0.57 + y * 0.41))
-    route = 0.075 * math.sin(x * 0.67) + 0.022 * math.sin(1.8 * x + 0.4 * y)
-    corridor = math.exp(-((y / 4.0) ** 4))
-    ridges = smooth((abs(y) - 13.0) / 34.0) * (
-        2.4 + 4.0 * abs(math.sin(0.043 * x + 0.025 * y)) ** 3
-        + 2.3 * abs(math.sin(0.12 * x - 0.042 * y)) ** 5)
-    crater_r = math.hypot(x - 18.0, y - 18.0)
-    crater = (1.4 * math.exp(-((crater_r - 7.0) / 1.1) ** 2)
-              - 1.1 * math.exp(-(crater_r / 5.8) ** 4))
-    return lerp(low + ridges + crater, route, corridor)
+    # A diagonal transverse lip makes the six contact patches cross at different times.
+    lip = x - .32 * y
+    lane = (.12 + .92 * smooth((x + 5) / 8)
+            + .23 * math.exp(-((lip + .7) / .92) ** 2)
+            + .085 * math.exp(-((lip + 6.45) / .56) ** 2)
+            + .045 * math.sin(1.72 * x + .62 * y))
+    shelf = (1.12 + .8 * math.sin(x * .19 + y * .17)
+             + .48 * math.sin(x * .49 - y * .25) + .18 * math.sin(y * 1.4 + x * .6))
+    shelf = lerp(lane, shelf, smooth((abs(y) - 2.2) / 5))
+    ravine = smooth((y - 7 - 2.7 * math.sin(x * .13)) / 11)
+    opposite = smooth((y - 60 - 6 * math.cos(x * .13)) / 15)
+    gullies = 1.6 * math.sin(x * .13 + y * .04) + .7 * math.sin(x * .4 - y * .2)
+    return shelf - ravine * (11 + gullies) + opposite * (5 + gullies)
 
 
-def make_axis(preview):
-    """Dense around the rover, coarser toward the horizon; no overlapping grids."""
-    n = 110 if preview else 174
-    center = [lerp(-28.0, 28.0, i / n) for i in range(n + 1)]
-    outer_n = 32 if preview else 44
-    positive = [28.0 + 455.0 * (i / outer_n) ** 1.85
-                for i in range(1, outer_n + 1)]
-    return [-v for v in reversed(positive)] + center + positive
+def make_axis(preview=False):
+    # Identical ground and contact geometry in scouting renders and in the negative.
+    inner = [i / 4 for i in range(-96, 97)]
+    outer = [24 + 480 * (i / 45) ** 1.70 for i in range(1, 46)]
+    return [-v for v in reversed(outer)] + inner + outer
 
 
 def surface_height(x, y):
@@ -156,22 +145,74 @@ def surface_height(x, y):
     return (1.0 - ty) * h00 + tx * h11 + (ty - tx) * h01
 
 
+def wheel_support(x, y):
+    """Lowest non-penetrating pose for a tread cylinder on a diagonal, faceted ridge."""
+    support = -math.inf
+    for step in range(-12,13):
+        dx = step * .025
+        radius_z = math.sqrt(WHEEL_RADIUS**2 - dx**2)
+        for dy in (-.201,0.,.201):
+            support = max(support, surface_height(x+dx,y+dy) + radius_z)
+    return support
+
+
+FINAL_CAMERA = (59., -88., 19.5)
+FINAL_HEADING = (-.46, math.sqrt(1 - .46 ** 2))
+FINAL_PITCH = .025
+FINAL_LENS = 32.
+ALIGN_FRAME = 220
+
+
+def sight_basis():
+    dx, dy = FINAL_HEADING
+    cp, sp = math.cos(FINAL_PITCH), math.sin(FINAL_PITCH)
+    return (dx * cp, dy * cp, sp), (dy, -dx, 0.), (-dx * sp, -dy * sp, cp)
+
+
+def screen_ray(sx, sy, depth):
+    """Unproject positions from the locked composition onto separate depth planes."""
+    fw, rt, up = sight_basis()
+    width = 36 / FINAL_LENS
+    return tuple(FINAL_CAMERA[i] + depth * (fw[i] + width * ((sx-.5)*rt[i]
+                 + (sy-.5)*9/16*up[i])) for i in range(3))
+
+
+def icon_screen(x, y):
+    return .553 + (x - 512) * .00064, .505 + (550 - y) * .00064 * 16/9
+
+
 def camera_pose(u):
-    """Continuous single take: approach → side branding → gentle pull-back."""
-    nodes = [
-        (0.00, (6.8, -10.8, 2.8), (0.10, 0.0, 1.20), 40.0),
-        (0.25, (4.7, -8.5, 2.35), (0.15, 0.0, 1.30), 40.0),
-        (0.55, (3.35, -7.6, 2.42), (0.25, -0.05, 1.28), 38.0),
-        (0.75, (5.2, -10.2, 3.0), (0.35, 0.0, 1.45), 38.0),
-        (1.00, (7.0, -13.8, 4.0), (0.30, 0.0, 1.55), 33.0),
-    ]
-    for left, right in zip(nodes, nodes[1:]):
-        if u <= right[0]:
-            t = smooth((u - left[0]) / (right[0] - left[0]))
-            pos = tuple(lerp(a, b, t) for a, b in zip(left[1], right[1]))
-            target = tuple(lerp(a, b, t) for a, b in zip(left[2], right[2]))
-            return pos, target, lerp(left[3], right[3], t)
-    return nodes[-1][1], nodes[-1][2], nodes[-1][3]
+    frame = 1 + 239 * u
+    x = drive_x(u)
+    front = x + WHEEL_X[-1]
+    if frame >= ALIGN_FRAME:
+        return FINAL_CAMERA, screen_ray(.5,.5,112), FINAL_LENS
+    if frame < 43:
+        walk = front - (START_X + WHEEL_X[-1])
+        aim_x = front + .76 - .39 * walk
+        ground = surface_height(aim_x, -1.4)
+        return ((aim_x + .66, -3.76, ground + .70),
+                (aim_x, -1.16, ground + .41), 37.)
+    a = clamp((frame - 43) / 92)
+    offset = (lerp(4.42, 4.75, a), lerp(-8.85, -9.15, a), lerp(1.34, 1.84, a))
+    floor = surface_height(x, 0)
+    start_pos = (x + offset[0], offset[1], floor + offset[2])
+    # A small lead to the right leaves the column rising behind the vehicle.
+    start_aim = (x + .22, -.03, floor + 1.55)
+    if frame <= 136:
+        return start_pos, start_aim, lerp(40., 42., a)
+    t = smooth((frame - 136) / (ALIGN_FRAME - 136))
+    yaw0 = math.atan2(4.75, 9.15)
+    yaw1 = math.atan2(FINAL_CAMERA[0] - END_X, -FINAL_CAMERA[1])
+    # A bowed jib path keeps the monuments separated until the end of the move.
+    yaw = lerp(yaw0, yaw1, t) + .67 * math.sin(math.pi * t)
+    length = lerp(math.hypot(4.75, 9.15), math.hypot(FINAL_CAMERA[0]-END_X, FINAL_CAMERA[1]), t)
+    pos = (x + math.sin(yaw)*length, -math.cos(yaw)*length,
+           lerp(floor + 1.84, FINAL_CAMERA[2], t) + 3.4*math.sin(math.pi*t))
+    end_aim = screen_ray(.5, .5, 112)
+    aim = tuple(lerp(start_aim[i], end_aim[i], t) for i in range(3))
+    aim = (aim[0], aim[1], aim[2] + 6*math.sin(math.pi*t))
+    return pos, aim, lerp(42., FINAL_LENS, t) - 12.5*math.sin(math.pi*t)
 
 
 def rgba(hex_string, alpha=1.0):
@@ -450,38 +491,9 @@ def build_materials():
     MATERIALS["lettering"] = principled("Ceramic inlay lettering", "F4F5F8", .2, .35)
     MATERIALS["small_print"] = principled("Service markings", "4B5666", .2, .6)
     MATERIALS["violet"] = emissive("Low power violet status light", PALETTE["violet"], 2.1)
-    MATERIALS["headlamp"] = emissive("Headlamp diffuser", "DAE8F6", 5.0)
+    MATERIALS["headlamp"] = emissive("Headlamp diffuser", "FFF0D3", 8.0)
     MATERIALS["lens"] = principled("Coated optic", "172C43", .78, .13, .7)
     MATERIALS["tracks"] = principled("Compressed wheel regolith", "141B29", .05, .98)
-    MATERIALS["rock"] = principled("Fractured basalt", "343B4A", .17, .92)
-    MATERIALS["ice"] = principled("Exposed mineral ice", "748FA7", .22, .27, .34)
-    ma = principled("Ice regolith procedural ground", "4B5667", .14, .8)
-    ns, ls = ma.node_tree.nodes, ma.node_tree.links
-    bs = ns.get("Principled BSDF")
-    tex = ns.new("ShaderNodeTexCoord")
-    broad = ns.new("ShaderNodeTexNoise")
-    broad.inputs["Scale"].default_value = .39
-    broad.inputs["Detail"].default_value = 4
-    broad.inputs["Roughness"].default_value = .72
-    ls.new(tex.outputs["Object"], broad.inputs["Vector"])
-    ramp = ns.new("ShaderNodeValToRGB")
-    ramp.color_ramp.elements[0].position = .23
-    ramp.color_ramp.elements[0].color = rgba(PALETTE["ground_dark"])
-    ramp.color_ramp.elements[1].position = .79
-    ramp.color_ramp.elements[1].color = rgba(PALETTE["ground_light"])
-    ramp.color_ramp.elements.new(.64).color = rgba("738293")
-    ls.new(broad.outputs["Fac"], ramp.inputs[0])
-    ls.new(ramp.outputs["Color"], bs.inputs["Base Color"])
-    micro = ns.new("ShaderNodeTexNoise")
-    micro.inputs["Scale"].default_value = 42
-    micro.inputs["Detail"].default_value = 3
-    ls.new(tex.outputs["Object"], micro.inputs["Vector"])
-    bump = ns.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = .55
-    bump.inputs["Distance"].default_value = .05
-    ls.new(micro.outputs["Fac"], bump.inputs["Height"])
-    ls.new(bump.outputs["Normal"], bs.inputs["Normal"])
-    MATERIALS["terrain"] = ma
     if CFG["font_path"]:
         fp = Path(CFG["font_path"]).expanduser()
         if not fp.is_file():
@@ -489,103 +501,412 @@ def build_materials():
         MATERIALS["font"] = bpy.data.fonts.load(str(fp), check_existing=True)
 
 
-def build_terrain():
-    global AXIS_COORDS
-    AXIS_COORDS = make_axis(CFG["quality"] == "PREVIEW")
-    n = len(AXIS_COORDS)
-    verts = [(x, y, terrain_height(x, y)) for y in AXIS_COORDS for x in AXIS_COORDS]
-    faces = []
-    for j in range(n - 1):
-        for i in range(n - 1):
-            a = j*n+i
-            faces.extend(((a, a+1, a+n+1), (a, a+n+1, a+n)))
-    smooth_mesh(mesh_obj("Fictional ice world", verts, faces, MATERIALS["terrain"], "Environment"))
-    templates = []
-    for k in range(8):
-        me = sphere_data("Basalt template", 5, 9)
-        for v in me.vertices:
-            v.co *= RNG.uniform(.72, 1.20)
-            v.co.x += .12 * v.co.z
-        me.materials.append(MATERIALS["rock"])
-        templates.append(me)
-    for i in range(130 if CFG["quality"] == "PREVIEW" else 240):
-        x, y = RNG.uniform(-30, 32), RNG.uniform(-19, 36)
-        if abs(y) < 2.4 and -11 < x < 6:
-            continue  # Keep all six wheels' swept volume clear.
-        radius = RNG.uniform(.075, .5) if i % 7 else RNG.uniform(.5, 1.2)
-        ob = obj_new("Basalt fragment %03d" % i, templates[i % len(templates)], "Environment")
-        ob.location = (x, y, surface_height(x, y) + .20*radius)
-        ob.scale = (radius*RNG.uniform(.8, 1.6), radius, radius*RNG.uniform(.45, .95))
-        ob.rotation_euler = (RNG.uniform(-.25, .25), RNG.uniform(-.3, .3), RNG.uniform(0, math.tau))
-    # Angular, non-emissive ice outcrops. Not giant glowing fantasy crystals.
-    for i, (x, y, sx, sy, sz) in enumerate([
-            (-9, 7, 1.5, .65, 1.3), (4, 9, 2.2, .7, 1.55),
-            (11, 16, 1.2, .8, 2.2), (-16, 18, 2.1, .9, 2.5),
-            (17, -9, 1.2, .5, .9), (-12, -6, 1.0, .55, .8)]):
-        v = [(-sx, -sy, 0), (sx, -sy, 0), (sx, sy, 0), (-sx, sy, 0),
-             (-.55*sx, -.5*sy, sz), (.25*sx, -.35*sy, sz*1.12),
-             (.50*sx, .35*sy, sz*.7), (-.4*sx, .5*sy, sz*.88)]
-        ob = mesh_obj("Fractured ice shelf %02d" % i, v, BOX_FACES,
-                      MATERIALS["ice"], "Environment", bevel=.035)
-        ob.location = (x, y, surface_height(x, y)-.05)
-        ob.rotation_euler.z = RNG.uniform(-1, 1)
+def field(ma, vector, scale, detail=3., rough=.62, distortion=0.):
+    ns, ls = ma.node_tree.nodes, ma.node_tree.links
+    n = ns.new("ShaderNodeTexNoise")
+    for key, val in (("Scale", scale), ("Detail", detail), ("Roughness", rough), ("Distortion", distortion)):
+        n.inputs[key].default_value = val
+    if vector is not None:
+        ls.new(vector, n.inputs["Vector"])
+    return n.outputs["Fac"]
+
+
+def ramp(ma, source, stops):
+    n = ma.node_tree.nodes.new("ShaderNodeValToRGB")
+    c = n.color_ramp
+    c.elements.remove(c.elements[1])
+    for i, (pos, color) in enumerate(stops):
+        e = c.elements[0] if i == 0 else c.elements.new(pos)
+        e.position = pos
+        e.color = rgba(color)
+    ma.node_tree.links.new(source, n.inputs[0])
+    return n.outputs["Color"]
+
+
+def vector_scale(ma, vec, factors):
+    n = ma.node_tree.nodes.new("ShaderNodeVectorMath")
+    n.operation = "MULTIPLY"
+    n.inputs[1].default_value = factors
+    ma.node_tree.links.new(vec, n.inputs[0])
+    return n.outputs[0]
+
+
+def mix_color(ma, fac, a, b):
+    ns, ls = ma.node_tree.nodes, ma.node_tree.links
+    n = ns.new("ShaderNodeMixRGB")
+    for i, val in enumerate((fac, a, b)):
+        if isinstance(val, (float, int, tuple)):
+            n.inputs[i].default_value = val
+        else:
+            ls.new(val, n.inputs[i])
+    return n.outputs[0]
+
+
+def map_value(ma, source, low, high):
+    nodes, links = ma.node_tree.nodes, ma.node_tree.links
+    node = nodes.new("ShaderNodeMapRange")
+    node.inputs["To Min"].default_value = low
+    node.inputs["To Max"].default_value = high
+    links.new(source, node.inputs["Value"])
+    return node.outputs["Result"]
+
+
+def relief(ma, source, distance, strength):
+    ns, ls = ma.node_tree.nodes, ma.node_tree.links
+    n = ns.new("ShaderNodeBump")
+    normal = ns["Principled BSDF"].inputs["Normal"]
+    n.inputs["Distance"].default_value = distance
+    n.inputs["Strength"].default_value = strength
+    if normal.is_linked:
+        ls.new(normal.links[0].from_socket, n.inputs["Normal"])
+    ls.new(source, n.inputs["Height"])
+    ls.new(n.outputs["Normal"], normal)
+
+
+def machine_finish(ma, stops, scale, roughness, depth, direction=(1., 1., 1.)):
+    nodes, links = ma.node_tree.nodes, ma.node_tree.links
+    surface = nodes["Principled BSDF"]
+    # Local coordinates keep wear marks attached to rolling wheels and the chassis.
+    position = nodes.new("ShaderNodeTexCoord").outputs["Object"]
+    grain = field(ma, vector_scale(ma, position, direction), scale, 2., .65)
+    links.new(ramp(ma, grain, stops), surface.inputs["Base Color"])
+    links.new(map_value(ma, grain, *roughness), surface.inputs["Roughness"])
+    relief(ma, grain, depth, .32)
+
+
+def finish_rover_surfaces():
+    m = MATERIALS
+    rubber = m["rubber"].node_tree.nodes["Principled BSDF"]
+    set_input(rubber, "Metallic", 0.)
+    machine_finish(m["rubber"], [(.18, "20272D"), (.47, "323B43"), (.78, "4A5154")],
+                   72., (.64, .91), .0028)
+    machine_finish(m["metal"], [(.21, "545F68"), (.48, "65717B"), (.78, "7B8992")],
+                   63., (.24, .38), .00042, (.9, 3.2, .9))
+    machine_finish(m["ceramic"], [(.16, "B4B6B1"), (.46, "C8CCC9"), (.79, "DBDDD5")],
+                   27., (.29, .45), .00072)
+    m["traction"] = principled("Forged carbide traction shoes", "44515D", .65, .43)
+    machine_finish(m["traction"], [(.20, "27353F"), (.50, "4B5A64"), (.79, "687783")],
+                   61., (.33, .57), .0024)
+    m["traction_edge"] = principled("Burnished contact edges", "8C99A0", .71, .32)
+
+
+def mineral(name, stops, scales, rough, metallic=.12, bump=.045):
+    ma = principled(name, stops[1][1], metallic, rough, .18)
+    nodes, links = ma.node_tree.nodes, ma.node_tree.links
+    pos = nodes.new("ShaderNodeNewGeometry").outputs["Position"]
+    vec = vector_scale(ma, pos, scales)
+    veining = field(ma, vec, 1.0, 4., .67, .33)
+    links.new(ramp(ma, veining, stops), nodes["Principled BSDF"].inputs["Base Color"])
+    relief(ma, field(ma, vec, 4., 2.2), bump, .24)
+    return ma
+
+
+def build_ice_materials():
+    m = MATERIALS
+    m["terrain"] = mineral("Wind-scoured ice over shale",
+        [(.18, "162837"), (.39, "2C4755"), (.52, "405E6F"), (.64, "60828E"), (.76, "91A9AA")],
+        (.38, 1.2, .75), .47, .035, .021)
+    n, l = m["terrain"].node_tree.nodes, m["terrain"].node_tree.links
+    pos = n.new("ShaderNodeNewGeometry").outputs["Position"]
+    ice = n.new("ShaderNodeTexVoronoi")
+    ice.feature = "DISTANCE_TO_EDGE"
+    ice.inputs["Scale"].default_value = .48
+    l.new(vector_scale(m["terrain"], pos, (.75, 1.5, 1.)), ice.inputs["Vector"])
+    bs = n["Principled BSDF"]
+    base = bs.inputs["Base Color"].links[0].from_socket
+    line = ramp(m["terrain"], ice.outputs["Distance"], [(0., "161616"), (.007, "9B9B9B"), (.018, "FFFFFF")])
+    bed = mix_color(m["terrain"], line, rgba("223944"), base)
+    drifts = field(m["terrain"], vector_scale(m["terrain"], pos, (.61, 2.4, 2.2)), 2.1, 2.8, .64)
+    frost = ramp(m["terrain"], drifts, [(.39, "000000"), (.53, "353535"), (.64, "BEBEBE"), (.75, "F2F2EB")])
+    grain=field(m["terrain"],vector_scale(m["terrain"],pos,(1.8,3.7,1.4)),23,2.4)
+    snow = ramp(m["terrain"], grain, [(.15, "8BA1AA"), (.46, "ADBEBE"), (.79, "D3D3C4")])
+    l.new(mix_color(m["terrain"], frost, bed, snow), bs.inputs["Base Color"])
+    l.new(map_value(m["terrain"], frost, .31, .78), bs.inputs["Roughness"])
+    relief(m["terrain"],grain,.014,.34)
+    m["rock"] = mineral("Laminated graphite / exposed bedrock",
+        [(.23,"132734"),(.43,"243543"),(.57,"415461"),(.64,"687578"),(.78,"95978B")], (.8,.7,5), .60)
+    m["pack"] = mineral("Glacial blue / sheared shelf",
+        [(.22,"142D3B"),(.43,"365767"),(.59,"6D909A"),(.69,"A4B9B9"),(.82,"D0D8D2")], (.9,.5,5.2), .36, .06)
+    m["salt"] = mineral("Opaque hoarfrost / fresh break",
+        [(.24,"819DA2"),(.46,"B9CDCB"),(.61,"E6E4CF"),(.78,"FFF1D4")], (12,15,19), .51, .06, .008)
+    m["ruin"] = mineral("Antique gneiss / trapped blue ice",
+        [(.19,"354755"),(.39,"536675"),(.53,"77868A"),(.61,"9AA19A"),(.80,"BCBDB0")],
+        (.22,.145,.66), .55, .045, .19)
+    m["rind"] = mineral("Pressure-polished mineral rind",
+        [(.19,"62717D"),(.40,"839093"),(.55,"A2ACA6"),(.69,"BAC2B3"),(.81,"D6D0BD")], (.27,.31,.51), .44, .07, .16)
+    m["violet_ice"] = mineral("Amethyst inclusions",
+        [(.24,"3F455D"),(.43,"68668B"),(.59,"9589BB"),(.74,"BEB6CD")], (.11,.21,.55), .28, .25)
+    m["edge"] = mineral("Cyan transmitted ice at the foot",
+        [(.22,"356A83"),(.45,"548C9D"),(.58,"83B6C1"),(.77,"ADD6D1")], (.13,.19,.52), .22, .16)
+    m["seam"] = principled("Recessed mineral fault", "566267", .20, .54)
+    ice_edge = m["edge"].node_tree.nodes["Principled BSDF"]
+    set_input(ice_edge, "Emission Color", rgba("93DEE2"))
+    set_input(ice_edge, "Emission Strength", .09)
+    m["amber"] = principled("Ochre ceramic service enamel", "D79B54", .38, .34)
+    m["small_print"].node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = rgba("AAB9B8")
+    # A transparent closure keeps the rock visible through two real, separated ice faces in EEVEE.
+    ma = principled("Clear laminar ice / air interface", "A3CBCB", .04, .21, .31)
+    ns, ls = ma.node_tree.nodes, ma.node_tree.links
+    fres = ns.new("ShaderNodeFresnel")
+    fres.inputs["IOR"].default_value = 1.31
+    mapping = ns.new("ShaderNodeMapRange")
+    mapping.inputs["To Min"].default_value = .10
+    mapping.inputs["To Max"].default_value = .90
+    ls.new(fres.outputs[0], mapping.inputs[0])
+    mix = ns.new("ShaderNodeMixShader")
+    ls.new(mapping.outputs[0], mix.inputs[0])
+    ls.new(ns.new("ShaderNodeBsdfTransparent").outputs[0], mix.inputs[1])
+    ls.new(ns["Principled BSDF"].outputs[0], mix.inputs[2])
+    ls.new(mix.outputs[0], ns["Material Output"].inputs["Surface"])
+    ma.surface_render_method = "BLENDED"
+    m["glaze"] = ma.copy()
+    m["glaze"].name = PREFIX + "Wind-polished thin glaze"
+    glaze_nodes, glaze_links = m["glaze"].node_tree.nodes, m["glaze"].node_tree.links
+    coverage = glaze_nodes.new("ShaderNodeAttribute")
+    coverage.attribute_name = "IceCoverage"
+    glaze_mix = glaze_nodes.get(mix.name).inputs[0]
+    fade = glaze_nodes.new("ShaderNodeMath")
+    fade.operation = "MULTIPLY"
+    glaze_links.new(glaze_mix.links[0].from_socket, fade.inputs[0])
+    glaze_links.new(coverage.outputs["Fac"], fade.inputs[1])
+    glaze_links.new(fade.outputs[0], glaze_mix)
+    if CFG["engine"] == "CYCLES":
+        glass=ns.new("ShaderNodeBsdfGlass")
+        glass.inputs["Color"].default_value=rgba("EEF9FA")
+        glass.inputs["IOR"].default_value=1.31
+        position=ns.new("ShaderNodeTexCoord").outputs["Object"]
+        waves=field(ma,vector_scale(ma,position,(1.,3.2,1.)),17.,2.8)
+        ls.new(map_value(ma,waves,.035,.15),glass.inputs["Roughness"])
+        normals=ns.new("ShaderNodeBump")
+        normals.inputs["Distance"].default_value=.0029
+        normals.inputs["Strength"].default_value=.27
+        ls.new(waves,normals.inputs["Height"])
+        ls.new(normals.outputs[0],glass.inputs["Normal"])
+        ls.new(glass.outputs[0],ns["Material Output"].inputs["Surface"])
+    m["clear"] = ma
+    m["glint"] = principled("Polished edge of the fracture", "B3CED0", .055, .26, .22)
+    bs = m["glint"].node_tree.nodes["Principled BSDF"]
+    set_input(bs, "Emission Color", rgba("FFE3B8"))
+    set_input(bs, "Emission Strength", .08)
+    machine_finish(m["glint"], [(.20,"809DA5"),(.49,"BECFCC"),(.73,"E0E0CF")],
+                   115., (.19,.44), .0018)
 
 
 def build_world():
-    world = bpy.data.worlds.new(PREFIX + "Deep space")
+    world = bpy.data.worlds.new(PREFIX + "Polar dawn")
     world.use_nodes = True
     SCENE.world = world
     ns, ls = world.node_tree.nodes, world.node_tree.links
-    ns.clear()
-    out = ns.new("ShaderNodeOutputWorld")
-    bg = ns.new("ShaderNodeBackground")
-    bg.inputs["Strength"].default_value = .32
-    tex = ns.new("ShaderNodeTexCoord")
-    xyz = ns.new("ShaderNodeSeparateXYZ")
-    ls.new(tex.outputs["Normal"], xyz.inputs[0])
-    ramp = ns.new("ShaderNodeValToRGB")
-    ramp.color_ramp.elements[0].position = 0.0
-    ramp.color_ramp.elements[0].color = rgba("263149")
-    ramp.color_ramp.elements[1].position = .6
-    ramp.color_ramp.elements[1].color = rgba("030611")
-    ls.new(xyz.outputs["Z"], ramp.inputs[0])
-    vor = ns.new("ShaderNodeTexVoronoi")
-    vor.feature = "F1"
-    vor.inputs["Scale"].default_value = 155
-    ls.new(tex.outputs["Normal"], vor.inputs["Vector"])
-    stars = ns.new("ShaderNodeValToRGB")
-    stars.color_ramp.elements[0].position = .008
-    stars.color_ramp.elements[0].color = (8, 8.5, 10, 1)
-    stars.color_ramp.elements[1].position = .033
-    stars.color_ramp.elements[1].color = (0, 0, 0, 1)
-    ls.new(vor.outputs["Distance"], stars.inputs[0])
-    add = ns.new("ShaderNodeMixRGB")
-    add.blend_type = "ADD"
-    add.inputs[0].default_value = 1.0
-    ls.new(ramp.outputs["Color"], add.inputs[1])
-    ls.new(stars.outputs["Color"], add.inputs[2])
-    ls.new(add.outputs[0], bg.inputs["Color"])
-    ls.new(bg.outputs[0], out.inputs[0])
-    if CFG["show_moon"]:
-        ma = principled("Fictional distant moon", "708098", .08, .95)
-        ns, ls = ma.node_tree.nodes, ma.node_tree.links
-        bs = ns.get("Principled BSDF")
-        tex = ns.new("ShaderNodeTexNoise")
-        tex.inputs["Scale"].default_value = 7
-        tex.inputs["Detail"].default_value = 5
-        ra = ns.new("ShaderNodeValToRGB")
-        ra.color_ramp.elements[0].color = rgba("1B233A")
-        ra.color_ramp.elements[1].color = rgba("8792A5")
-        ls.new(tex.outputs["Fac"], ra.inputs[0])
-        ls.new(ra.outputs[0], bs.inputs["Base Color"])
-        bu = ns.new("ShaderNodeBump")
-        bu.inputs["Strength"].default_value = .38
-        bu.inputs["Distance"].default_value = .3
-        ls.new(tex.outputs["Fac"], bu.inputs["Height"])
-        ls.new(bu.outputs["Normal"], bs.inputs["Normal"])
-        sphere("Fictional companion moon", (-118, 267, 48), 34, ma, detail=48)
-    st = emissive("Polaris cinematic beacon", "E4E3FF", 12)
-    sphere("Distant navigation star (artistic)", (4, 325, 37), .30, st, detail=10)
+    bg = ns.get("Background")
+    direction = ns.new("ShaderNodeTexCoord").outputs["Normal"]
+    split = ns.new("ShaderNodeSeparateXYZ")
+    ls.new(direction, split.inputs[0])
+    # World Normal points inward. Map a small elevation range into the horizon gradient.
+    height = ns.new("ShaderNodeMath")
+    height.operation = "MULTIPLY_ADD"
+    height.inputs[1].default_value = -1.7
+    height.inputs[2].default_value = .19
+    ls.new(split.outputs["Z"], height.inputs[0])
+    sky = ramp(world, height.outputs[0], [(0.,"ACABAA"),(.19,"D6BBA4"),(.26,"ABB8BC"),
+               (.42,"688391"),(.63,"405C70"),(.87,"253D53"),(1.,"21384C")])
+    mist = field(world, vector_scale(world, direction, (4., 5., 29.)), 2.2, 4, .66, .44)
+    filaments = ramp(world, mist, [(.37,"000000"),(.53,"101010"),(.67,"424242"),(.80,"636363")])
+    ls.new(mix_color(world, filaments, sky, rgba("C9BCAF")), bg.inputs["Color"])
+    bg.inputs["Strength"].default_value = .65
+
+
+def mountain_ranges():
+    from mathutils import noise
+    for layer,(base_y,height,tint,snow,veil) in enumerate([
+            (252,43,"647684","C5C7C3",.66), (177,30,"5D7281","BDC7C8",.56),
+            (121,17,"4C6777","AEBFC0",.46)]):
+        mat=principled("Nunatak %d / windward snow and blue shale" % layer,tint,.06,.78)
+        ns,ls=mat.node_tree.nodes,mat.node_tree.links
+        geom=ns.new("ShaderNodeNewGeometry")
+        split=ns.new("ShaderNodeSeparateXYZ")
+        ls.new(geom.outputs["Normal"],split.inputs[0])
+        broad=field(mat,vector_scale(mat,geom.outputs["Position"],(.14,.11,.33)),.93,3.)
+        blend=ns.new("ShaderNodeMath")
+        blend.operation="MULTIPLY_ADD"
+        ls.new(broad,blend.inputs[0])
+        blend.inputs[1].default_value=.35
+        ls.new(split.outputs["Z"],blend.inputs[2])
+        snowline=ramp(mat,blend.outputs[0],[(.49,"252525"),(.79,"777777"),(.96,"FFFFFF")])
+        ls.new(mix_color(mat,snowline,rgba(tint),rgba(snow)),ns["Principled BSDF"].inputs["Base Color"])
+        # Aerial perspective increases for each successive range.
+        atmosphere=ns.new("ShaderNodeMixShader")
+        atmosphere.inputs[0].default_value=veil
+        air=ns.new("ShaderNodeEmission")
+        air.inputs["Color"].default_value=rgba(("A7AAAB","A0AAAD","91A2A8")[layer])
+        air.inputs["Strength"].default_value=.78
+        ls.new(ns["Principled BSDF"].outputs[0],atmosphere.inputs[1])
+        ls.new(air.outputs[0],atmosphere.inputs[2])
+        ls.new(atmosphere.outputs[0],ns["Material Output"].inputs["Surface"])
+        verts,faces=[],[]
+        samples,rows=323,20
+        for j in range(rows):
+            v=j/(rows-1)
+            for i in range(samples):
+                x=(i-samples/2)*1.85
+                k=x+layer*78.3
+                n=noise.noise_vector(Vector((k*.043,layer+.142,1.63))).x
+                mass=(.22 + .25*(1+math.sin(k*.039+1.1)) + .11*(1+math.sin(k*.087))
+                      + .21*abs(n)+.10*abs(math.sin(k*.143+.7)))
+                ridge=base_y + 11*math.sin(k*.039)+3.6*n
+                y=ridge+(v-.77)*44
+                profile=max(0.,1-abs(v-.77)/.77)
+                relief=noise.fractal(Vector((k*.087,y*.073,layer+.68)),.8,2.1,3)
+                xval=x+(1-v)*(2.2*n+1.35*math.sin(k*.27))
+                z=-7+height*mass*profile+2.15*profile*relief
+                verts.append((xval,y,z))
+        for j in range(rows-1):
+            for i in range(samples-1):
+                a=j*samples+i
+                faces.extend(((a,a+1,a+samples+1),(a,a+samples+1,a+samples)))
+        smooth_mesh(mesh_obj("Distant glacier range %d"%layer,verts,faces,mat,"Environment"))
+
+
+def floe(name, x, y, sx, sy, height, heading, group="Environment"):
+    # Broad tabular forms, a tilted cleavage plane and a strip of opaque snow at its rim.
+    m = MATERIALS
+    profile = [(-.99,-.40),(-.50,-.88),(.49,-.73),(1.,-.12),(.64,.69),(-.56,.70)]
+    v, f, indices = [], [], []
+    for level, inset in ((0.,1.),(.73,.95),(.90,.91),(1.,.86)):
+        for a, b in profile:
+            v.append((a*sx*inset + .16*level*sx, b*sy*inset,
+                      height * level * (.67 + .27*b - .23*a)))
+    for j in range(3):
+        for i in range(6):
+            k = (i+1)%6
+            f.append((j*6+i,j*6+k,(j+1)*6+k,(j+1)*6+i))
+            indices.append(2 if j == 2 else (0 if j == 0 and i%3==0 else 1))
+    f.extend([(18,19,20,21,22,23),(5,4,3,2,1,0)])
+    indices.extend([1,0])
+    ob = mesh_obj(name, v, f, m["rock"], group)
+    for mat in (m["pack"],m["salt"]):
+        ob.data.materials.append(mat)
+    for p, idx in zip(ob.data.polygons,indices):
+        p.material_index = idx
+    ob.location = (x,y,surface_height(x,y)-height*.14)
+    ob.rotation_euler.z = heading
+    return ob
+
+
+def build_landscape():
+    global AXIS_COORDS
+    AXIS_COORDS = make_axis()
+    n = len(AXIS_COORDS)
+    verts = [(x,y,terrain_height(x,y)) for y in AXIS_COORDS for x in AXIS_COORDS]
+    faces = []
+    for j in range(n-1):
+        for i in range(n-1):
+            a = j*n+i
+            faces.extend(((a,a+1,a+n+1),(a,a+n+1,a+n)))
+    smooth_mesh(mesh_obj("Fictional ice world", verts, faces, MATERIALS["terrain"], "Environment"))
+    mountain_ranges()
+    for i in range(147):
+        x, y = RNG.uniform(-64,66), RNG.uniform(-22,63)
+        if abs(y)<4.5 or (y < -2 and -10 < x < 8):
+            continue
+        size = RNG.uniform(.6, 3.5) * (1.6 if y>12 else .75)
+        floe("Calved ice and shale %03d" % i,x,y,size,RNG.uniform(.4,1.1)*size,
+             size*RNG.uniform(.45,1.85),RNG.uniform(-1,1))
+    for x,y,sx,sy,h,a in [(-14,-4.5,1.1,.43,.28,.22),(-6,-5.9,1.3,.44,.39,.3),
+                            (-3.5,-3.8,.94,.42,.62,-.15),(.2,-4.3,1.85,.59,.74,.22),
+                            (4.9,-4,1.36,.46,.66,-.7),(7.5,-3.7,1.94,.63,.88,.25)]:
+        floe("Foreground shear / tracking parallax",x,y,sx,sy,h,a)
+    # Long exposed strata along the canyon banks instead of a flat featureless floor.
+    for i in range(46):
+        x = -70 + i * 3.2
+        y = 11 + 2.6*math.sin(x*.13)
+        floe("Canyon lip / bedded basalt", x,y,RNG.uniform(2.7,6),RNG.uniform(1.5,3.8),
+             RNG.uniform(2.6,5.1),RNG.uniform(-.27,.27))
+
+
+def read_icon_paths():
+    import re
+    import xml.etree.ElementTree as ET
+    # Keep the source path with the editable scene for use away from the checkout.
+    if "__file__" in globals():
+        icon = Path(__file__).resolve().parents[2] / "desktop/build/piora-icon.svg"
+        if icon.is_file():
+            source = icon.read_text(encoding="utf-8")
+        else:
+            source = bpy.data.texts["piora-icon.svg"].as_string()
+    else:
+        source = bpy.data.texts["piora-icon.svg"].as_string()
+    if not bpy.data.texts.get("piora-icon.svg"):
+        bpy.data.texts.new("piora-icon.svg").write(source)
+    path = next(p for p in ET.fromstring(source).iter() if p.get("stroke") == "url(#pi)")
+    return [[(v[i],v[i+1]) for i in range(0,8,2)] for v in
+            ([float(n) for n in re.findall(r"-?[\d.]+", sub)] for sub in path.get("d").split("M")[1:])]
+
+
+def build_ruin():
+    fw = Vector(sight_basis()[0])
+    m = MATERIALS
+    for idx,(controls,depth,title) in enumerate(zip(read_icon_paths(), (153.,124.,174.),
+            ("Lintel / crossing the gorge","West pier / near ice","East pier / buried basalt"))):
+        def path(t):
+            u = 1-t
+            weights = (u**3,3*u*u*t,3*u*t*t,t**3)
+            uv = [sum(w*p[i] for w,p in zip(weights,controls)) for i in (0,1)]
+            return Vector(screen_ray(*icon_screen(*uv),depth))
+        radius = depth * 36/FINAL_LENS * .00064*54
+        # Cylindrical courses alternate with a recessed, worn joint. The tips are hemispherical.
+        cuts = (.11,.285,.49,.685,.875) if idx==0 else (.12,.32,.54,.735,.90)
+        ts = sorted({i/70 for i in range(71)} | {v+d for v in cuts for d in (-.007,0,.006)})
+        rings = [(0., -math.sin(a)*radius, max(.018,math.cos(a))) for a in (math.pi/2,1.27,.98,.68,.36,.17)]
+        rings += [(t,0.,1.) for t in ts]
+        rings += [(1.,math.sin(a)*radius,max(.018,math.cos(a))) for a in (.17,.36,.68,.98,1.27,math.pi/2)]
+        verts,faces,slots = [],[],[]
+        sides = 28
+        for j,(t,extension,r) in enumerate(rings):
+            tangent = (path(min(1,t+.001))-path(max(0,t-.001))).normalized()
+            across = fw.cross(tangent).normalized()
+            center = path(t) + tangent*extension
+            joint = min(abs(t-c) for c in cuts)
+            taper = 1 - .018*max(0,1-joint/.007)
+            for k in range(sides):
+                angle = k*math.tau/sides
+                ca,sa = math.cos(angle),math.sin(angle)
+                flutes = .025*math.sin(k*2.51 + idx) + .016*math.sin(k*1.9+11*t)
+                erode = 1+flutes+.016*math.sin(32*t + k*.59)+.007*math.sin(91*t+3*k)
+                # Broad chisel facets on the main face; organic weathering along the edges.
+                v = across*math.copysign(abs(ca)**.84,ca) + fw*.73*math.copysign(abs(sa)**.84,sa)
+                verts.append(tuple(center + v*(radius*r*taper*erode)))
+                if j==len(rings)-1:
+                    continue
+                p = j*sides+k
+                q = j*sides+(k+1)%sides
+                faces.append((p,q,q+sides,p+sides))
+                weathering = math.sin(4*angle + 8*t) + .65*math.cos(9*angle - 5*t)
+                slot = 1 if weathering > .96 or (idx==0 and weathering > 0 and ca>.62) else 0
+                if idx==2 and t>.56+.055*math.sin(5*angle) and k%10 not in (0,1):
+                    slot = 2 if t<.77+.05*math.cos(4*angle) else 3
+                if joint<.003 and math.sin(k*.58 + t*19)>.02:
+                    slot = 4
+                slots.append(slot)
+        faces += [tuple(reversed(range(sides))),tuple(range(len(verts)-sides,len(verts)))]
+        slots += [1,1]
+        ob = mesh_obj(title,verts,faces,m["ruin"],"Relic")
+        for key in ("rind","violet_ice","edge","seam"):
+            ob.data.materials.append(m[key])
+        for face,slot in zip(ob.data.polygons,slots):
+            face.material_index=slot
+        ob["sightline_depth_m"] = depth
+        ob["svg_start"] = list(controls[0])
+        ob["svg_end"] = list(controls[-1])
+        # Rounded cap terminates in a low mass of displaced, half-buried scree.
+        if idx:
+            foot = path(1)
+            for k in range(11):
+                a = RNG.uniform(0,math.tau)
+                rr = radius*RNG.uniform(.9,1.65)
+                x,y=foot.x+rr*math.cos(a),foot.y+rr*math.sin(a)
+                if y < 3.8:
+                    continue
+                floe("Pier talus",x,y,RNG.uniform(.7,2.2),RNG.uniform(.5,1.8),RNG.uniform(.45,1.6),a)
 
 
 def make_light(name, kind, loc, energy, color, size=3.0, target=(0, 0, 1), parent=None):
@@ -608,10 +929,30 @@ def make_light(name, kind, loc, energy, color, size=3.0, target=(0, 0, 1), paren
 
 
 def build_lighting():
-    make_light("Polar stellar rim", "SUN", (-9, 12, 16), 2.2, "D0D7ED")
-    make_light("Soft ceramic key", "AREA", (0, -5, 8), 1350, "DEE5F5", 8)
-    make_light("Quiet violet rim", "AREA", (-4, 6, 6), 1550, "A399CF", 7)
-    make_light("Logo legibility fill", "AREA", (5, -7, 3.8), 550, "C0D0E1", 5)
+    key = make_light("Dawn / warm grazing light", "SUN", (-35,5,15), 2.95, "FFE4BF")
+    key.data.angle = math.radians(2.8)
+    sky = make_light("Ice valley / skylight", "SUN", (18,-38,43), .71, "BACFE9")
+    sky.data.use_shadow = False
+    bounce = make_light("Body / soft overhead reflection","AREA",(-1,-1.8,6.9),690,"EBF0EF",6)
+    strip = make_light("Nameplate / moving bevel reflection","AREA",(-.8,-5.5,3.1),485,"FFE4C7",3.3,
+                       (-.5,0,1.8))
+    strip.data.shape = "RECTANGLE"
+    strip.data.size, strip.data.size_y = .48,4.8
+    for lamp in (bounce,strip):
+        energy = lamp.data.energy
+        for frame, level in ((1,1.),(128,1.),(158,.09)):
+            lamp.data.energy = energy*level
+            lamp.data.keyframe_insert("energy",frame=shot_frame(frame))
+    if CFG["engine"] == "CYCLES":
+        flag = box("Crest sunset / off-camera shadow flag",(-15.4,2.8,10.1),(6.5,7,.24),
+                   MATERIALS["rock"],0,group="Lighting")
+        flag.visible_camera = flag.visible_glossy = flag.visible_transmission = False
+    make_light("Lintel / first light","AREA",(-39,13,62),63000,"FFE1BA",19,(-24,38,51))
+    make_light("East pier / light through brash","AREA",(27,66,5),9400,"A6D3EF",12,(18,85,2))
+    make_light("Clear ice / back edge","AREA",(-7.3,.7,1.55),420,"FFD6A4",1.7,(-6.5,-1.5,.4))
+    card = make_light("Macro / narrow reflection card","AREA",(-6.1,-4.1,1.9),78,"F4D4AC",.7,(-6.5,-1.4,.5))
+    card.data.shape="RECTANGLE"
+    card.data.size,card.data.size_y=.19,1.3
 
 
 def octagon(length, width, z, corner):
@@ -667,6 +1008,18 @@ def build_wheel(parent, tag):
                  m["graphite"], parent, (math.pi/2, 0, 0))
         cylinder("Axle cap " + tag, (0, side*.259, 0), .115, .025,
                  m["metal"], parent, (math.pi/2, 0, 0))
+    for i in range(8):
+        a=math.tau*i/8
+        cylinder("Wheel lug "+tag, (.145*math.cos(a),-.258,.145*math.sin(a)),.018,.018,
+                 m["metal"], parent,(math.pi/2,0,0),segments=6)
+    for side in (-1, 1):
+        for radius, gauge in ((.181,.008),(.105,.007),(.071,.005)):
+            torus("Turned hub shoulder "+tag,(0,side*.275,0),radius,gauge,m["dark_metal"],parent,(math.pi/2,0,0))
+        torus("Elastomer sidewall "+tag,(0,side*.165,0),.542,.071,m["rubber"],parent,(math.pi/2,0,0))
+        for radius in (.529,.548,.566):
+            torus("Sidewall moulding "+tag,(0,side*.230,0),radius,.005,m["graphite"],parent,(math.pi/2,0,0))
+    # An ochre inspection mark makes angular motion visible in the opening shot.
+    box("Tire inspection mark "+tag,(.588,-.226,0),(.066,.012,.046),m["amber"],.003,parent)
     spokes, treads = [], []
     for i in range(24):
         a = math.tau*i/24
@@ -689,7 +1042,12 @@ def build_wheel(parent, tag):
             treads.append((radial*.6625 + axial*side*.093,
                            (.068, .203, .035), basis))
     batch_boxes("Compliant lattice " + tag, spokes, m["dark_metal"], parent)
-    batch_boxes("Chevron traction shoes " + tag, treads, m["metal"], parent)
+    batch_boxes("Chevron traction shoes " + tag, treads, m["traction"], parent)
+    shoe = bpy.data.objects.get(PREFIX + "Chevron traction shoes " + tag)
+    shoe.data.materials.append(m["traction_edge"])
+    chamfer = shoe.modifiers.new("Polished tread edges", "BEVEL")
+    chamfer.width, chamfer.segments = .0065, 2
+    chamfer.material = 1
 
 
 def build_fender(carrier, tag):
@@ -744,12 +1102,20 @@ def build_rover():
             m["graphite"], .012, root)
         box("Quiet side status strip", (.25, side*1.043, 1.494), (1.65, .012, .015),
             m["violet"], .004, root)
-        text("Vehicle serial", "PX-06 / AUTONOMOUS EXPLORER", (0, side*1.037, 1.550),
+        text("Vehicle serial", "PX-06   /   POLARIS   2076", (0, side*1.037, 1.550),
              .055, m["small_print"], root, rot=rot, tracking=1.1)
+        for sign in (-1, 1):
+            for z in (1.59, 1.80):
+                cylinder("Nameplate rivet", (sign*1.18, side*1.045, z), .023, .013,
+                         m["metal"],root, (math.pi/2,0,0),segments=12)
+        for i in range(3):
+            box("Ochre service chevron", (1.44+i*.088,side*.968,1.68),(.043,.032,.17),
+                m["amber"],.004,root,rot=(0,-.27,0))
+        text("Expedition stencil", "06", (-1.59, side*.97,1.70),.19,m["graphite"],root,rot=rot)
     # Low, unmanned forward sensor fascia — no cockpit, no humanoid face.
     box("Front sensor fascia", (2.17, 0, 1.62), (.09, 1.36, .27), m["graphite"], .035, root)
     for side in (-1, 1):
-        box("Headlight strip", (2.222, side*.45, 1.659), (.012, .35, .042),
+        box("Headlight strip", (2.222, side*.45, 1.659), (.024, .38, .079),
             m["headlamp"], .008, root)
         cylinder("Forward proximity optic", (2.229, side*.16, 1.607), .056, .035,
                  m["lens"], root, (0, math.pi/2, 0))
@@ -828,6 +1194,9 @@ def build_rover():
             arms.extend(((outer, anchor, "barrel"), (piston, anchor, "piston")))
             wheels.append({"x": x, "y": y, "carrier": carrier, "spin": spin,
                            "arms": arms, "angle": 0.0, "last_center": None})
+    for sign in (-1,1):
+        box("Corner lamp / warm lens",(2.205,sign*.72,1.64),(.078,.098,.071),
+            m["headlamp"],.016,root)
     return root, sensor, wheels
 
 
@@ -838,7 +1207,7 @@ def build_camera():
     data.sensor_fit = "HORIZONTAL"
     data.clip_start, data.clip_end = .08, 1500
     data.dof.use_dof = True
-    data.dof.aperture_fstop = 7.1  # Preserve the side logo and landscape together.
+    data.dof.aperture_fstop = 10.  # Preserve the side logo and landscape together.
     data.dof.aperture_blades = 7
     focus = empty("Camera focus", group="Cameras")
     data.dof.focus_object = focus
@@ -855,54 +1224,59 @@ def key_transform(ob, f, scale=False):
 
 
 def bake_motion(root, sensor, wheels, cam, focus):
-    for f in range(1, SCENE.frame_end + 1):
-        u = (f-1)/(SCENE.frame_end-1)
-        x = drive_x(u)
-        hs = [surface_height(x+w["x"], w["y"]) for w in wheels]
-        avg = sum(hs)/len(hs)
-        front = sum(h for h, w in zip(hs, wheels) if w["x"] > 1)/2
-        back = sum(h for h, w in zip(hs, wheels) if w["x"] < -1)/2
-        left = sum(h for h, w in zip(hs, wheels) if w["y"] < 0)/3
-        right = sum(h for h, w in zip(hs, wheels) if w["y"] > 0)/3
-        root.location = (x, 0, avg)
-        root.rotation_euler = (math.atan2(right-left, 2.44),
-                               -math.atan2(front-back, 3.10), 0)
-        key_transform(root, f)
-        inv = root.rotation_euler.to_matrix().transposed()
-        qinv = root.rotation_euler.to_quaternion().conjugated()
-        for w, h in zip(wheels, hs):
-            center = Vector((x+w["x"], w["y"], h+WHEEL_RADIUS))
-            local = inv @ (center - root.location)
-            w["carrier"].location = local
-            w["carrier"].rotation_quaternion = qinv
-            key_transform(w["carrier"], f)
+    height = pitch = roll = 0.
+    for f in range(1, SCENE.frame_end+1):
+        u=(f-1)/(SCENE.frame_end-1)
+        frame=1+239*u
+        x=drive_x(u)
+        hs=[surface_height(x+w["x"],w["y"]) for w in wheels]
+        mean=sum(hs)/len(hs)
+        want_pitch=-math.atan2(sum(hs[4:])-sum(hs[:2]), 6.2)
+        want_roll=math.atan2(sum(hs[1::2])-sum(hs[::2]), 7.32)
+        gain=1. if f==1 else .245
+        height=lerp(height,mean,gain)
+        roll=lerp(roll,want_roll,gain)
+        pitch=lerp(pitch,want_pitch,gain)
+        brake=math.exp(-((frame-145)/6.5)**2)-.44*math.exp(-((frame-155)/4.8)**2)
+        sink=.057*math.exp(-((frame-18)/4.7)**2) + .042*brake
+        root.location=(x,0,height-sink)
+        root.rotation_euler=(roll,pitch+.032*brake+.022*math.exp(-((frame-18)/5.3)**2),0)
+        key_transform(root,f)
+        inv=root.rotation_euler.to_matrix().transposed()
+        qinv=root.rotation_euler.to_quaternion().conjugated()
+        for w,h in zip(wheels,hs):
+            px,py=x+w["x"],w["y"]
+            center=Vector((px,py,wheel_support(px,py)))
+            local=inv@(center-root.location)
+            w["carrier"].location=local
+            w["carrier"].rotation_quaternion=qinv
+            key_transform(w["carrier"],f)
             if w["last_center"] is not None:
-                w["angle"] += (center-w["last_center"]).length/WHEEL_RADIUS
-            w["last_center"] = center.copy()
-            w["spin"].rotation_euler.y = w["angle"]
-            w["spin"].keyframe_insert("rotation_euler", frame=f)
-            for arm, anchor, kind in w["arms"]:
-                if kind == "barrel":
-                    a, b = anchor, anchor.lerp(local, .58)
-                elif kind == "piston":
-                    a, b = anchor.lerp(local, .47), local
+                w["angle"]+=(center-w["last_center"]).length/WHEEL_RADIUS
+            w["last_center"]=center.copy()
+            w["spin"].rotation_euler.y=w["angle"]
+            w["spin"].keyframe_insert("rotation_euler",frame=f)
+            for arm,anchor,kind in w["arms"]:
+                if kind=="barrel":
+                    a,b=anchor,anchor.lerp(local,.58)
+                elif kind=="piston":
+                    a,b=anchor.lerp(local,.47),local
                 else:
-                    a, b = anchor, local
-                update_rod(arm, a, b)
-                key_transform(arm, f, scale=True)
-        scan = smooth((u-.56)/.19)
-        sensor.rotation_euler.z = lerp(-.12, .24, scan)
-        sensor.rotation_euler.y = -.035 * math.sin(scan*math.pi)
-        sensor.keyframe_insert("rotation_euler", frame=f)
-        offset, aim, lens = camera_pose(u)
-        cam.location = (x+offset[0], offset[1], avg+offset[2])
-        target = Vector((x+aim[0], aim[1], avg+aim[2]))
-        cam.rotation_euler = (target-cam.location).to_track_quat("-Z", "Y").to_euler()
-        cam.data.lens = lens
-        key_transform(cam, f)
-        cam.data.keyframe_insert("lens", frame=f)
-        focus.location = (x+.15, -.35, avg+1.65)
-        focus.keyframe_insert("location", frame=f)
+                    a,b=anchor,local
+                update_rod(arm,a,b)
+                key_transform(arm,f,scale=True)
+        look=smooth((frame-138)/24)
+        sensor.rotation_euler.z=lerp(.04,1.19,look)
+        sensor.rotation_euler.y=lerp(.065,-.43,look)
+        sensor.keyframe_insert("rotation_euler",frame=f)
+        pos,aim,lens=camera_pose(u)
+        cam.location=pos
+        cam.rotation_euler=(Vector(aim)-cam.location).to_track_quat("-Z","Y").to_euler()
+        cam.data.lens=lens
+        key_transform(cam,f)
+        cam.data.keyframe_insert("lens",frame=f)
+        focus.location=aim
+        focus.keyframe_insert("location",frame=f)
 
 
 def scale_visibility(ob, on, off=None, scale=(1, 1, 1)):
@@ -943,111 +1317,199 @@ def build_tracks():
             scale_visibility(ob, on)
 
 
-def dust_material(i):
-    ma = bpy.data.materials.new(PREFIX + "Local dust %02d" % i)
-    ma.use_nodes = True
-    ns, ls = ma.node_tree.nodes, ma.node_tree.links
-    ns.clear()
-    out = ns.new("ShaderNodeOutputMaterial")
-    vol = ns.new("ShaderNodeVolumeScatter")
-    vol.inputs["Color"].default_value = rgba("798492")
-    vol.inputs["Anisotropy"].default_value = .18
-    tex = ns.new("ShaderNodeTexCoord")
-    dist = ns.new("ShaderNodeVectorMath")
-    dist.operation = "DISTANCE"
-    dist.inputs[1].default_value = (.5, .5, .5)
-    ls.new(tex.outputs["Generated"], dist.inputs[0])
-    ramp = ns.new("ShaderNodeMapRange")
-    ramp.inputs["From Min"].default_value = .1
-    ramp.inputs["From Max"].default_value = .5
-    ramp.inputs["To Min"].default_value = 1.0
-    ramp.inputs["To Max"].default_value = 0.0
-    ramp.clamp = True
-    ls.new(dist.outputs["Value"], ramp.inputs["Value"])
-    noise = ns.new("ShaderNodeTexNoise")
-    noise.inputs["Scale"].default_value = 6
-    ls.new(tex.outputs["Generated"], noise.inputs["Vector"])
-    mul = ns.new("ShaderNodeMath")
-    mul.operation = "MULTIPLY"
-    ls.new(ramp.outputs["Result"], mul.inputs[0])
-    ls.new(noise.outputs["Fac"], mul.inputs[1])
-    density = ns.new("ShaderNodeValue")
-    density.name = "Density envelope"
-    gain = ns.new("ShaderNodeMath")
-    gain.operation = "MULTIPLY"
-    ls.new(mul.outputs[0], gain.inputs[0])
-    ls.new(density.outputs[0], gain.inputs[1])
-    ls.new(gain.outputs[0], vol.inputs["Density"])
-    ls.new(vol.outputs[0], out.inputs["Volume"])
-    return ma, density.outputs[0]
+def shot_frame(reference):
+    return F((reference - 1) / 239)
 
 
-def build_dust():
-    n = 14 if CFG["quality"] == "PREVIEW" else 26
-    for i in range(n):
-        u = lerp(.15, .65, i/max(1, n-1))
-        birth = F(u)
-        life = max(8, round(SCENE.frame_end*.17))
-        side = -1 if i % 2 else 1
-        x, y = drive_x(u)-1.8, side*1.22
-        z = surface_height(x, y)+.12
-        ma, density = dust_material(i)
-        ob = sphere("Fine displaced powder", (x, y, z), .001, ma, "Effects", detail=10)
-        ob.scale = (.001,)*3
-        ob.keyframe_insert("scale", frame=1)
-        ob.keyframe_insert("scale", frame=max(1, birth-1))
-        animate_value(density, [(1, 0), (max(1, birth-1), 0)])
-        for j in range(9):
-            q = j/8
-            frame = min(SCENE.frame_end, birth+round(q*life))
-            size = lerp(.08, .62, q)
-            ob.location = (x-.7*q, y+side*.21*q, z+.44*q-.15*q*q)
-            ob.scale = (size*1.4, size*.72, size*.7)
-            key_transform(ob, frame, scale=True)
-            animate_value(density, [(frame, 1.7*math.sin(math.pi*q)**1.5)])
-        death = min(SCENE.frame_end, birth+life+1)
-        ob.scale = (.001,)*3
-        ob.keyframe_insert("scale", frame=death)
-        animate_value(density, [(death, 0)])
-    grain = principled("Ballistic ice grains", "8D9AA8", .18, .75)
-    for i in range(32):
-        u = RNG.uniform(.16, .63)
-        birth, life = F(u), max(8, round(.11*SCENE.frame_end))
-        side = RNG.choice((-1, 1))
-        start = Vector((drive_x(u)-1.9, side*1.22, 0))
-        start.z = surface_height(start.x, start.y)+.10
-        ob = sphere("Ballistic grain", start, .001, grain, "Effects", detail=4)
-        ob.scale = (.00001,)*3
-        ob.keyframe_insert("scale", frame=1)
-        ob.keyframe_insert("scale", frame=max(1, birth-1))
-        r = RNG.uniform(.008, .02)
-        for j in range(9):
-            q = j/8
-            f = min(SCENE.frame_end, birth+round(q*life))
-            ob.location = start+Vector((-.52*q, side*.18*q, .7*q*(1-q)))
-            ob.scale = (r*math.sin(math.pi*q),)*3
-            ob.keyframe_insert("location", frame=f)
-            ob.keyframe_insert("scale", frame=f)
+def reveal_crack(name, xy, radius, start, finish):
+    points = [(x, y, surface_height(x,y)+.028) for x,y in xy]
+    ob = curve_line(name, points, MATERIALS["salt"], radius*.64, group="Effects")
+    cu = ob.data
+    for i,p in enumerate(cu.splines[0].points):
+        p.radius = (1.05-.89*i/(len(points)-1)) * (1 + .13*math.sin(i*3.7))
+    curves = [cu]
+    if len(points)>4:
+        lower = [(x,y+.003,z-.002) for x,y,z in points]
+        fault = curve_line(name+" / blue cleft", lower, MATERIALS["rock"],radius*1.32,group="Effects")
+        for i,p in enumerate(fault.data.splines[0].points):
+            p.radius = 1 - .9*i/(len(points)-1)
+        curves.append(fault.data)
+    for spline in curves:
+        for ref, amount in ((1,0.), (start,0.), (finish,1.)):
+            spline.bevel_factor_end = amount
+            spline.keyframe_insert("bevel_factor_end", frame=shot_frame(ref))
+    return ob
 
 
-def build_scan():
-    mat = emissive("Surface survey arc", "A6A0DD", 1.8, fade=True)
-    a, b = F(.60), F(.81)
-    animate_value(mat.node_tree.nodes["Visibility"].outputs[0],
-                  [(1, 0), (a, 0), (F(.66), .40), (F(.76), .28), (b, 0)])
-    ob = curve_line("Ground conforming survey arc", [(0, 0, 0)]*49,
-                    mat, .006, group="Effects")
-    pts = ob.data.splines[0].points
-    # Baked curve coordinates: the arc hugs the actual triangular ground mesh.
-    for f in range(a, b+1):
-        q = (f-a)/max(1, b-a)
-        radius = lerp(.6, 3.7, q)
-        cx = drive_x(.60)+2.0
-        for i, p in enumerate(pts):
-            ang = lerp(-.8, .8, i/(len(pts)-1))
-            x, y = cx+radius*math.cos(ang), radius*math.sin(ang)
-            p.co = (x, y, surface_height(x, y)+.028, 1)
-            p.keyframe_insert("co", frame=f)
+def break_ice():
+    m = MATERIALS
+    axle = lambda f: drive_x((f-1)/239) + WHEEL_X[-1]
+    cx, cy = axle(12)+.09, -1.475
+    # Rock inclusions under an optically clear surface; only a few centimetres of ice.
+    for k in range(12):
+        x,y=cx+RNG.uniform(-.45,2.1),cy+RNG.uniform(-.75,.81)
+        floe_ob=floe("Sub-surface shale",x,y,RNG.uniform(.08,.23),RNG.uniform(.035,.09),.024,RNG.uniform(-1,1))
+        for p in floe_ob.data.polygons:
+            p.material_index=0
+    # Obsidian beneath the pressure plate follows the irregular perimeter of the ice.
+    # The mouth of the fracture remains open once the fore-wheel ejects the lid.
+    under_x,under_y=cx+1.10,cy-.28
+    boundary=[]
+    for i in range(34):
+        a=i*math.tau/34
+        r=.89+.11*math.sin(3*a+.3)+.09*math.cos(a*7)
+        x=under_x+r*math.cos(a)*.79+math.sin(a)*.17
+        y=under_y+r*math.sin(a)*.38
+        boundary.append((x,y))
+    rock_verts=[(under_x,under_y,surface_height(under_x,under_y)+.009)]
+    rock_verts.extend((x,y,surface_height(x,y)+.006) for x,y in boundary)
+    fan=[(0,i+1,(i+1)%len(boundary)+1) for i in range(len(boundary))]
+    mesh_obj("Obsidian exposed in the shallow break",rock_verts,fan,m["rock"],"Effects")
+    # The glaze peters out along a fault; there is no straight rectangular patch edge.
+    vertices=[(under_x,under_y,surface_height(under_x,under_y)+.021)]
+    coverage=[1.]
+    faces=[]
+    for j in range(1,6):
+        u=j/5
+        for i,(bx,by) in enumerate(boundary):
+            x=lerp(under_x,bx,1.15*u)
+            y=lerp(under_y,by,1.22*u)
+            vertices.append((x,y,surface_height(x,y)+.021-.014*u**3))
+            coverage.append(1.-smooth((u-.59)/.41))
+            if j==1:
+                faces.append((0,1+i,1+(i+1)%len(boundary)))
+            else:
+                a=1+(j-2)*len(boundary)
+                ni=(i+1)%len(boundary)
+                faces.append((a+i,a+i+len(boundary),a+ni+len(boundary),a+ni))
+    glaze=mesh_obj("Thin ice / bedrock visible below",vertices,faces,m["glaze"],"Effects")
+    glaze.data.attributes.new("IceCoverage","FLOAT","POINT").data.foreach_set("value",coverage)
+    # Trapped air turns the transparent sheet milky just outside the contact patch.
+    frost_v, frost_f = [], []
+    for i in range(170):
+        angle=RNG.uniform(0,math.tau)
+        r=math.sqrt(RNG.random())
+        u,v=.17*r*math.cos(angle),.066*r*math.sin(angle)
+        q=RNG.uniform(.003,.013)*(1.1-.45*r)
+        k=len(frost_v)
+        frost_v.extend(((u-q,v,0.),(u+q*.8,v-q*.45,0.),(u+q*.53,v+q*.68,.001)))
+        frost_f.append((k,k+1,k+2))
+    frost=mesh_obj("Cloud of crushed ice cells",frost_v,frost_f,m["salt"],"Effects")
+    frost.location=(cx,cy,surface_height(cx,cy)+.026)
+    for frame,amount in ((1,0.),(7,0.),(10,.40),(14,1.)):
+        frost.scale=(amount,amount,amount)
+        frost.keyframe_insert("scale",frame=shot_frame(frame))
+    # Stress whitening grows where the lug lands, followed by a branching extensional fracture.
+    for k in range(30):
+        ang = RNG.uniform(0, math.tau)
+        radius = RNG.uniform(.045,.19)
+        xx,yy = cx+RNG.uniform(-.032,.045),cy+RNG.uniform(-.03,.035)
+        xy = [(xx,yy),(xx+.45*radius*math.cos(ang+.22),yy+.4*radius*math.sin(ang)),
+              (xx+radius*math.cos(ang),yy+radius*math.sin(ang))]
+        reveal_crack("Crushed grains / load patch",xy,.0039,RNG.randint(8,11),RNG.randint(12,15))
+    for j,(length,angle) in enumerate(((1.67,-.28),(1.12,.51),(.83,-.8),(.46,1.4))):
+        xy=[(cx,cy)]
+        for i in range(1,10):
+            x = cx + math.cos(angle)*length*i/9
+            y = cy + math.sin(angle)*length*i/9 + RNG.uniform(-.042,.042)
+            xy.append((x,y))
+        reveal_crack("Running fracture %d" % j,xy,.006 if j==0 else .004,13+j,24+j)
+        for i in (3,6):
+            x,y=xy[i]
+            sign=(-1)**(i+j)
+            reveal_crack("Fracture bifurcation",[(x,y),(x+.1,y+.085*sign),(x+.25,y+.13*sign)],
+                         .003,14+i,22+i)
+    origin = Vector((axle(23)+.17,-1.56,0))
+    origin.z = surface_height(origin.x,origin.y)+.031
+    corners=[(-.31,-.12),(-.19,-.23),(.19,-.18),(.34,-.025),(.16,.15),(-.08,.195),(-.29,.09)]
+    outline=[]
+    for i,(x,y) in enumerate(corners):
+        ex,ey=corners[(i+1)%len(corners)]
+        for k in range(5):
+            t=k/5
+            outline.append((lerp(x,ex,t)+RNG.uniform(-.008,.008),lerp(y,ey,t)+RNG.uniform(-.005,.005)))
+    count=len(outline)
+    v=[]
+    for layer in range(3):
+        for i,(x,y) in enumerate(outline):
+            thickness=.012+.024*(.33-x)/.66+.004*math.sin(i*2.47)
+            inset=(1.,.998,.976+.014*math.sin(i*2.23))[layer]
+            v.append((x*inset,y*inset,thickness*(0.,.67,1.)[layer]+.019*x))
+    faces=[tuple(reversed(range(count))),tuple(range(2*count,3*count))]
+    indices=[0,0]
+    for j in range(2):
+        for k in range(count):
+            p=j*count+k
+            q=j*count+(k+1)%count
+            faces.append((p,q,q+count,p+count))
+            indices.append(1 if (k<7 or k>29) and k%5!=2 else (2 if j==1 or 10<k<22 else 0))
+    shard=mesh_obj("Spalled shell / three material fracture",v,faces,m["clear"],"Effects")
+    for key in ("salt","glint"):
+        shard.data.materials.append(m[key])
+    for p,idx in zip(shard.data.polygons,indices):
+        p.material_index=idx
+    for i in range(21):
+        t=i/21
+        x,y=-.20+t*.34,-.14+.17*t+.016*math.sin(t*7)
+        a=RNG.uniform(.026,.096)*(1-t*.6)
+        cu=curve_line("Feather inclusion",[(x-.045,y-.017,.013),(x,y,.014),
+                     (x+a*.40,y+a*.29,.016),(x+a*.75,y+a,.019)],m["salt"],RNG.uniform(.00045,.0010),shard,"Effects")
+        cu.data.splines[0].points[-1].radius=.15
+    for i in range(25):
+        a=RNG.uniform(.0008,.0026)
+        sphere("Trapped air", (RNG.uniform(-.19,.14),RNG.uniform(-.13,.11),.014),
+               (a*1.5,a,a*.66),m["salt"],"Effects",shard,detail=5)
+    cam_pos,aim,_ = camera_pose(41/239)
+    direction=(Vector(aim)-Vector(cam_pos)).normalized()
+    near=Vector(cam_pos)+direction*.17
+    for f,pos,rot in [(1,origin,(0,0,0)),(22,origin,(0,0,0)),
+            (26,origin+Vector((.08,-.06,.118)),(-.47,-.17,-.09)),
+            (31,origin+Vector((.31,-.30,.37)),(-.96,-.37,.08)),
+            (36,origin.lerp(near,.57)+Vector((0,0,.24)),(-1.50,-.53,.36)),
+            (42,near,(-2.16,-.61,.59)),(49,near+Vector((.65,-.87,-.63)),(-3.,-.74,1.2))]:
+        shard.location=pos
+        shard.rotation_euler=rot
+        key_transform(shard,shot_frame(f))
+    shard.location.z=surface_height(shard.location.x,shard.location.y)-.07
+    shard.keyframe_insert("location",frame=shot_frame(54))
+    for i in range(6):
+        p=origin+Vector((RNG.uniform(-.1,.1),RNG.uniform(-.12,.12),.006))
+        s=RNG.uniform(.025,.07)
+        fleck=mesh_obj("Secondary brittle flake",[(0,0,0),(s,0,0),(.3*s,s*.7,.008),(0,0,.014)],
+                       [(0,2,1),(0,1,3),(1,2,3),(2,0,3)],m["salt"],"Effects")
+        delta=Vector((RNG.uniform(.2,.7),-RNG.uniform(.1,.45),0))
+        for f,h,t in ((24,0.,0.),(31,.18+i*.017,.42),(42,0.,1.)):
+            fleck.location=p+delta*t+Vector((0,0,h))
+            fleck.rotation_euler.y=t*(1+i)
+            key_transform(fleck,shot_frame(f))
+
+
+def build_compositor():
+    if bpy.app.version >= (5,0,0):
+        tree=bpy.data.node_groups.new(PREFIX+"Optical highlights","CompositorNodeTree")
+        tree.interface.new_socket(name="Image",in_out="OUTPUT",socket_type="NodeSocketColor")
+        SCENE.compositing_node_group=tree
+        out=tree.nodes.new("NodeGroupOutput")
+    else:
+        SCENE.use_nodes=True
+        tree=SCENE.node_tree
+        tree.nodes.clear()
+        out=tree.nodes.new("CompositorNodeComposite")
+    beauty=tree.nodes.new("CompositorNodeRLayers")
+    beauty.scene=SCENE
+    glow=tree.nodes.new("CompositorNodeGlare")
+    if glow.inputs.get("Type") is not None:
+        set_input(glow,"Type","Fog Glow")
+        set_input(glow,"Quality","Medium")
+        set_input(glow,"Threshold",3.2)
+        set_input(glow,"Strength",.16)
+        set_input(glow,"Size",.21)
+    else:
+        glow.glare_type="FOG_GLOW"
+        glow.threshold=3.2
+        glow.mix=-.84
+    tree.links.new(beauty.outputs["Image"],glow.inputs["Image"])
+    tree.links.new(glow.outputs["Image"],out.inputs["Image"])
 
 
 def configure_scene(scene, hud=False):
@@ -1060,7 +1522,7 @@ def configure_scene(scene, hud=False):
         else:
             raise
     scene.render.resolution_x, scene.render.resolution_y = CFG["resolution"]
-    scene.render.resolution_percentage = 50 if CFG["quality"] == "PREVIEW" else 100
+    scene.render.resolution_percentage = 25 if CFG["quality"] == "PREVIEW" else 100
     scene.render.fps = CFG["fps"]
     scene.frame_start = 1
     scene.frame_end = max(2, round(CFG["duration"] * CFG["fps"]))
@@ -1072,11 +1534,16 @@ def configure_scene(scene, hud=False):
         scene.render.motion_blur_shutter = .28
     eevee = getattr(scene, "eevee", None)
     if eevee and hasattr(eevee, "taa_render_samples"):
-        eevee.taa_render_samples = 48 if CFG["quality"] == "PREVIEW" else 128
+        eevee.taa_render_samples = 4 if CFG["quality"] == "PREVIEW" else 16
     if eevee and hasattr(eevee, "volumetric_samples"):
         eevee.volumetric_samples = 32 if CFG["quality"] == "PREVIEW" else 64
     if scene.render.engine == "CYCLES":
-        scene.cycles.samples = 40 if CFG["quality"] == "PREVIEW" else 160
+        scene.cycles.samples = 6 if CFG["quality"] == "PREVIEW" else 20
+        scene.cycles.use_adaptive_sampling = True
+        scene.cycles.adaptive_threshold = .075
+        scene.cycles.adaptive_min_samples = 6
+        scene.cycles.transparent_max_bounces = 6
+        scene.render.use_persistent_data = True
         scene.cycles.use_denoising = True
         scene.cycles.max_bounces = 6
         scene.cycles.volume_bounces = 1
@@ -1094,6 +1561,9 @@ def configure_scene(scene, hud=False):
                         for d in prefs.devices:
                             d.use = d in devices
                         scene.cycles.device = "GPU"
+                        if backend == "OPTIX":
+                            scene.cycles.denoiser = "OPTIX"
+                            scene.cycles.denoising_use_gpu = True
                         print("[Piora] Cycles GPU:", backend)
                         break
                 except (TypeError, ValueError, RuntimeError):
@@ -1105,7 +1575,7 @@ def configure_scene(scene, hud=False):
         scene.view_settings.look = "AgX - Medium High Contrast"
     except (TypeError, ValueError):
         pass
-    scene.view_settings.exposure = .35
+    scene.view_settings.exposure = .05
     scene.view_settings.gamma = 1.0
     if not hud:
         set_output(scene)
@@ -1138,117 +1608,9 @@ def set_output(scene):
         scene.render.filepath = str(OUT / "frames" / "frame_")
 
 
-def build_hud():
-    global HUD
-    HUD = bpy.data.scenes.new(PREFIX + "Brand overlay")
-    col = bpy.data.collections.new(PREFIX + "Brand overlay")
-    HUD.collection.children.link(col)
-    COLLECTIONS["HUD"] = col
-    configure_scene(HUD, hud=True)
-    HUD.render.resolution_x = SCENE.render.resolution_x
-    HUD.render.resolution_y = SCENE.render.resolution_y
-    world = bpy.data.worlds.new(PREFIX + "Overlay world")
-    world.use_nodes = True
-    world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0
-    HUD.world = world
-    data = bpy.data.cameras.new(PREFIX + "Overlay orthographic")
-    data.type = "ORTHO"
-    data.ortho_scale = 16.0
-    camera = obj_new("Overlay camera", data, "HUD")
-    camera.location = (0, 0, 10)
-    HUD.camera = camera  # Default camera -Z points directly at the XY typography.
-    white = emissive("Brand title", "EEF0F8", 1.8, fade=True)
-    subtitle = emissive("Brand subtitle", "BDC3D4", 1.4, fade=True)
-    violet = emissive("Brand navigation star", "A396D6", 1.65, fade=True)
-    for ma, start, finish in ((white, .78, .92), (violet, .76, .90),
-                             (subtitle, .84, .98)):
-        animate_value(ma.node_tree.nodes["Visibility"].outputs[0],
-                      [(1, 0), (F(start), 0), (F(finish), 1)])
-    title = text("Closing brand", CFG["brand"], (0, .12, 0), 1.42,
-                 white, group="HUD", tracking=1.04)
-    star_mark("Closing north star", (0, 1.80, 0), .34, violet, "HUD")
-    sub = text("Closing promise", CFG["subtitle"], (0, -.91, 0), .227,
-               subtitle, group="HUD", tracking=1.02)
-    # The wording is editable. Fit long custom names instead of clipping them.
-    bpy.context.view_layer.update()
-    if title.dimensions.x > 10:
-        title.scale *= 10/title.dimensions.x
-    if sub.dimensions.x > 12.5:
-        sub.scale *= 12.5/sub.dimensions.x
-    if CFG["show_metadata"]:
-        meta = emissive("Expedition metadata", "B2BDCF", 1.2, fade=True)
-        animate_value(meta.node_tree.nodes["Visibility"].outputs[0],
-                      [(1, 0), (F(.10), .76), (F(.64), .76), (F(.75), 0)])
-        aspect = CFG["resolution"][0]/CFG["resolution"][1]
-        half_h = 8/aspect
-        text("Mission annotation", "POLARIS EXPEDITION  /  " + str(CFG["year"]),
-             (-7.05, -half_h+.62, 0), .15, meta, group="HUD", align="LEFT", tracking=1.15)
-        text("Mission phase", "AUTONOMOUS EXPLORATION", (7.05, -half_h+.62, 0),
-             .125, meta, group="HUD", align="RIGHT", tracking=1.12)
-    return HUD
-
-
-def build_compositor():
-    # Blender 5 moved scene compositor trees into compositing_node_group.
-    if bpy.app.version >= (5, 0, 0):
-        tree = bpy.data.node_groups.new(PREFIX + "Film composite", "CompositorNodeTree")
-        tree.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
-        SCENE.compositing_node_group = tree
-        output = tree.nodes.new("NodeGroupOutput")
-    else:
-        SCENE.use_nodes = True
-        tree = SCENE.node_tree
-        tree.nodes.clear()
-        output = tree.nodes.new("CompositorNodeComposite")
-    SCENE.render.use_compositing = True
-    ns, ls = tree.nodes, tree.links
-    beauty = ns.new("CompositorNodeRLayers")
-    beauty.scene = SCENE
-    beauty.location = (-620, 100)
-    glow = ns.new("CompositorNodeGlare")
-    if glow.inputs.get("Type") is not None:
-        set_input(glow, "Type", "Fog Glow")
-        set_input(glow, "Quality", "High")
-    else:
-        glow.glare_type = "FOG_GLOW"
-        glow.quality = "HIGH"
-    if not set_input(glow, "Threshold", 1.6) and hasattr(glow, "threshold"):
-        glow.threshold = 1.6
-    if not set_input(glow, "Strength", .22) and hasattr(glow, "mix"):
-        glow.mix = -.78
-    if not set_input(glow, "Size", .27) and hasattr(glow, "size"):
-        glow.size = 7
-    glow.location = (-380, 100)
-    ls.new(beauty.outputs["Image"], glow.inputs["Image"])
-    fade = ns.new("ShaderNodeMixRGB" if bpy.app.version >= (5, 2, 0) else "CompositorNodeMixRGB")
-    fade.blend_type = "MIX"
-    fade.inputs[1].default_value = rgba(PALETTE["background"])
-    ls.new(glow.outputs["Image"], fade.inputs[2])
-    visibility = ns.new("ShaderNodeValue" if bpy.app.version >= (5, 2, 0) else "CompositorNodeValue")
-    visibility.label = "Scene fade — holds the final brand frame"
-    animate_value(visibility.outputs[0], [(1, .015), (F(.075), 1),
-                  (F(.735), 1), (F(.94), .035), (SCENE.frame_end, .035)])
-    ls.new(visibility.outputs[0], fade.inputs[0])
-    overlay = ns.new("CompositorNodeRLayers")
-    overlay.scene = HUD
-    overlay.location = (-150, -150)
-    over = ns.new("CompositorNodeAlphaOver")
-    if over.inputs.get("Background") is not None:
-        over.inputs["Factor"].default_value = 1
-        ls.new(fade.outputs[0], over.inputs["Background"])
-        ls.new(overlay.outputs["Image"], over.inputs["Foreground"])
-    else:
-        over.inputs[0].default_value = 1
-        ls.new(fade.outputs[0], over.inputs[1])
-        ls.new(overlay.outputs["Image"], over.inputs[2])
-    ls.new(over.outputs["Image"], output.inputs["Image"])
-    fade.location = (-100, 100)
-    over.location, output.location = (160, 100), (380, 100)
-
-
 def linearize_actions():
     """Supports legacy and layered actions. No interpolation overshoot in bakes."""
-    ids = list(SCENE.objects) + list(HUD.objects)
+    ids = list(SCENE.objects)
     ids += [o.data for o in ids if o.data is not None]
     ids += [m.node_tree for m in bpy.data.materials
             if m.name.startswith(PREFIX) and m.use_nodes]
@@ -1287,11 +1649,11 @@ def setup_workspace():
                 space.region_3d.view_perspective = "CAMERA"
                 space.overlay.show_overlays = False
                 space.shading.type = "MATERIAL"
-    for name, u in [("01 / ARRIVAL", .02), ("02 / PIORA BADGE", .45),
-                    ("03 / SURVEY", .67), ("04 / BRAND", .93)]:
-        SCENE.timeline_markers.new(name, frame=F(u))
-    SCENE.frame_set(F(.49))
-    HUD.frame_set(F(.49))
+    for name,frame in (("01 / CONTACT",1),("Pressure fracture",13),("Spall",26),
+                       ("02 / RIDGE",43),("Side plate / poster",118),
+                       ("03 / DISCOVERY",136),("Stop",152),("Sightline lock",220)):
+        SCENE.timeline_markers.new(name, frame=shot_frame(frame))
+    SCENE.frame_set(shot_frame(118))
 
 
 def get_config():
@@ -1342,7 +1704,7 @@ def main():
         raise RuntimeError("本脚本以 Blender 4.5 LTS 为基线，请使用 4.5 或更新版本。")
     CFG = get_config()
     RNG = random.Random(CFG["seed"])
-    base = Path(CFG["output_dir"]).expanduser() if CFG["output_dir"] else Path.home()/"Piora_Animation"
+    base = Path(CFG["output_dir"]).expanduser().resolve() if CFG["output_dir"] else Path.home()/"Piora_Animation"
     OUT = base / datetime.now().strftime("run_%Y%m%d_%H%M%S_%f")
     OUT.mkdir(parents=True, exist_ok=False)
     MESH_CACHE.clear()
@@ -1351,28 +1713,29 @@ def main():
     SCENE = bpy.data.scenes.new(PREFIX + "Polaris expedition 2076")
     if bpy.context.window:
         bpy.context.window.scene = SCENE
-    for name in ("Rover", "Environment", "Lighting", "Cameras", "Effects"):
+    for name in ("Rover", "Environment", "Relic", "Lighting", "Cameras", "Effects"):
         col = bpy.data.collections.new(PREFIX + name)
         SCENE.collection.children.link(col)
         COLLECTIONS[name] = col
     configure_scene(SCENE)
     print("[Piora] Building procedural materials and ice world...")
     build_materials()
-    build_terrain()
+    build_ice_materials()
+    finish_rover_surfaces()
+    build_landscape()
+    build_ruin()
     build_world()
     build_lighting()
     print("[Piora] Building six-wheel autonomous rover...")
     root, sensor, wheels = build_rover()
+    emitter=MATERIALS["headlamp"].node_tree.nodes.get("Emission")
+    animate_value(emitter.inputs["Strength"],[(1,5.),(shot_frame(142),5.),(shot_frame(161),27.)])
     cam, focus = build_camera()
     print("[Piora] Baking ground contact, wheel rotation and camera...")
     bake_motion(root, sensor, wheels, cam, focus)
     if CFG["tracks"]:
         build_tracks()
-    if CFG["dust"]:
-        build_dust()
-    if CFG["scan_effect"]:
-        build_scan()
-    build_hud()
+    break_ice()
     build_compositor()
     linearize_actions()
     setup_workspace()
@@ -1385,8 +1748,12 @@ def main():
     except (NameError, OSError):
         pass
     if CFG["save_blend"]:
+        # Keep output portable if the saved project moves to another workstation.
+        render_path = SCENE.render.filepath
+        SCENE.render.filepath = "//frames/frame_" if CFG["output_format"] == "PNG_SEQUENCE" else "//piora_intro.mp4"
         # copy=True does not overwrite/switch the user's original .blend filepath.
-        bpy.ops.wm.save_as_mainfile(filepath=str(OUT / "piora_polaris_2076.blend"), copy=True, compress=True)
+        bpy.ops.wm.save_as_mainfile(filepath=str(OUT / "piora_polaris_2076.blend"), copy=True, compress=True, relative_remap=False)
+        SCENE.render.filepath = render_path
     print("[Piora] Scene:", SCENE.name)
     print("[Piora] Output:", OUT)
     print("[Piora] The current frame is the side-logo hero view. F12 previews it.")
