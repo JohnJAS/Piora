@@ -43,9 +43,53 @@ interface SecureStorage {
     value: Buffer,
   ): Promise<{ result: string; shouldReEncrypt: boolean }>;
 }
-type Fetcher = typeof fetch;
+type AnalyticsRequest = {
+  method: "GET" | "POST";
+  headers?: Record<string, string>;
+  body?: string;
+  redirect: "error";
+  signal?: AbortSignal;
+};
+type AnalyticsResponse = Pick<Response, "ok" | "status" | "json"> & { headers: Pick<Headers, "get" | "has">; body: { cancel(): Promise<void> } | null };
+type Fetcher = (url: string, init: AnalyticsRequest) => Promise<AnalyticsResponse>;
 const analyticsDispatcher = new Agent();
 const directFetch: Fetcher = (url, init) => fetch(url, { ...init, dispatcher: analyticsDispatcher });
+const gatewayErrors = new Set([502, 503, 504]);
+
+export function createAnalyticsFetch(configured: Fetcher, direct: Fetcher = directFetch): Fetcher {
+  let preferDirectUntil = 0;
+  return async (url, init) => {
+    const directFirst = Date.now() < preferDirectUntil;
+    const first = directFirst ? direct : configured;
+    const second = directFirst ? configured : direct;
+    // The uploader sends replayable JSON with stable operation or event IDs.
+    // Give each path its own deadline, including after a connection timeout.
+    const attempt = (send: Fetcher) => send(url, {
+      ...init, signal: AbortSignal.timeout(init.method === "GET" ? 5000 : 15000),
+    });
+    let response;
+    try {
+      response = await attempt(first);
+      if (!gatewayErrors.has(response.status) || response.headers.has("retry-after")) return response;
+    } catch {
+      // A connection failure can precede any HTTP response.
+    }
+    try {
+      const alternative = await attempt(second);
+      if (alternative.ok) preferDirectUntil = directFirst ? 0 : Date.now() + 10 * 60_000;
+      if (response && gatewayErrors.has(alternative.status)) {
+        await alternative.body?.cancel();
+        return response;
+      }
+      await response?.body?.cancel();
+      return alternative;
+    } catch (error) {
+      if (response) return response;
+      throw error;
+    }
+  };
+}
+
 class UploadError extends Error {
   constructor(
     readonly status: number,
@@ -90,7 +134,7 @@ export class AnalyticsUploader {
     store: AnalyticsStore,
     config: AnalyticsConfig,
     secure: SecureStorage,
-    fetcher: Fetcher = directFetch,
+    fetcher: Fetcher = createAnalyticsFetch(fetch),
     identityReader?: () => Promise<IdentityObservation>,
     configReader?: () => AnalyticsConfig | undefined,
   ): Promise<AnalyticsUploader> {
@@ -212,7 +256,6 @@ export class AnalyticsUploader {
           ...(idempotency ? { "Idempotency-Key": idempotency } : {}),
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15000),
         redirect: "error",
       });
     if (!response.ok) {
@@ -284,7 +327,6 @@ export class AnalyticsUploader {
           this.config.backend_url + "/v1/capabilities",
           {
             method: "GET",
-            signal: AbortSignal.timeout(5000),
             redirect: "error",
           },
         );
