@@ -21,7 +21,10 @@ const runtimeBySession = new Map<string, TaskRuntimeSnapshot>();
 const snapshotSignatures = new Map<string, string>();
 const sessionListeners = new Map<string, Set<() => void>>();
 const storeListeners = new Set<() => void>();
-let runtimeStoreState: { ready: boolean; snapshots: TaskRuntimeSnapshot[] } = { ready: false, snapshots: [] };
+let runtimeStoreState: { ready: boolean; snapshots: TaskRuntimeSnapshot[]; subagentPresenceVersion?: string } = { ready: false, snapshots: [] };
+let subagentRefreshEpoch: string | undefined;
+let subagentRefreshCursor: number | undefined;
+const subagentListeners = new Map<string, Set<() => void>>();
 let pollController: AbortController | null = null;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let visibilityBound = false;
@@ -29,7 +32,39 @@ let visibilityBound = false;
 function listenerCount(): number {
   let count = storeListeners.size;
   for (const listeners of sessionListeners.values()) count += listeners.size;
+  for (const listeners of subagentListeners.values()) count += listeners.size;
   return count;
+}
+
+export function markSubagentChanged(parentId: string): void {
+  const listeners = subagentListeners.get(parentId);
+  if (!listeners) return;
+  for (const listener of listeners) listener();
+}
+
+export function getSubagentRefreshEpoch(): string | undefined { return subagentRefreshEpoch; }
+
+function applySubagentUpdates(payload: Partial<RunningSessionsPayload>): void {
+  if (typeof payload.subagentRefreshEpoch !== "string") return;
+  subagentRefreshEpoch = payload.subagentRefreshEpoch;
+  subagentRefreshCursor = payload.subagentRefreshCursor;
+  if (payload.subagentRefreshReset) {
+    for (const listeners of subagentListeners.values()) for (const listener of listeners) listener();
+  } else {
+    for (const id of payload.subagentChanges ?? []) markSubagentChanged(id);
+  }
+}
+
+export function subscribeSubagentChanges(parentId: string, listener: () => void): () => void {
+  const listeners = subagentListeners.get(parentId) ?? new Set<() => void>();
+  listeners.add(listener);
+  subagentListeners.set(parentId, listeners);
+  connect();
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size) subagentListeners.delete(parentId);
+    disconnect();
+  };
 }
 
 function emitChange(changedSessionIds: Set<string>): void {
@@ -73,7 +108,7 @@ function applyPayload(payload: Partial<RunningSessionsPayload>): void {
   for (const id of runtimeBySession.keys()) {
     if (!next.has(id)) changedSessionIds.add(id);
   }
-  if (runtimeStoreState.ready && changedSessionIds.size === 0) return;
+  if (runtimeStoreState.ready && changedSessionIds.size === 0 && runtimeStoreState.subagentPresenceVersion === payload.subagentPresenceVersion) return;
 
   runtimeBySession.clear();
   for (const [id, session] of next) runtimeBySession.set(id, session);
@@ -81,6 +116,7 @@ function applyPayload(payload: Partial<RunningSessionsPayload>): void {
   for (const [id, signature] of nextSignatures) snapshotSignatures.set(id, signature);
   runtimeStoreState = {
     ready: true,
+    subagentPresenceVersion: payload.subagentPresenceVersion,
     snapshots: [...runtimeBySession.values()].sort((left, right) => (left.startedAt ?? 0) - (right.startedAt ?? 0)),
   };
   emitChange(changedSessionIds);
@@ -92,10 +128,15 @@ async function pollSnapshot(): Promise<void> {
   pollController = controller;
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
-    const response = await fetch("/api/agent/running", { cache: "no-store", signal: controller.signal });
+    const query = subagentRefreshEpoch && subagentRefreshCursor !== undefined
+      ? "?subagentsEpoch=" + encodeURIComponent(subagentRefreshEpoch) + "&subagentsAfter=" + subagentRefreshCursor : "";
+    const response = await fetch("/api/agent/running" + query, { cache: "no-store", signal: controller.signal });
     if (response.ok) {
       const payload = await response.json() as RunningSessionsPayload;
-      if (!controller.signal.aborted) applyPayload(payload);
+      if (!controller.signal.aborted) {
+        applyPayload(payload);
+        applySubagentUpdates(payload);
+      }
     }
   } catch {
     // The next visible poll retries transient failures.

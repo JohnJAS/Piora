@@ -7,6 +7,7 @@ declare global {
     piDesktop?: {
       vault?: import("@/desktop/src/credential-vault-types").VaultBridge;
       dshPet?: import("@/desktop/src/dsh-pet-types").DshPetBridge;
+      desktopExtensions?: import("@/desktop/src/desktop-extension-registry").DesktopExtensionsBridge;
       harmonyMirror?: import("@/desktop/src/harmony-window-types").HarmonyWindowBridge;
       messages?: import("@/desktop/src/harmony-window-types").PioraMessageBridge;
       files?: { getPathForFile: (file: File) => string };
@@ -212,6 +213,8 @@ export interface DesktopBrowserDownload {
 }
 
 export interface SessionSidebarProps {
+  selectedSubagent?: import("@/lib/subagent-types").SubagentSelection;
+  onOpenSubagent?: (session: SessionInfo, agentId: string) => void;
   selectedSessionId: string | null;
   selectedRoomId?: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;

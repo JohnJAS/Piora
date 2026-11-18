@@ -8,7 +8,7 @@ import { readLaboratorySettings } from "./laboratory-settings";
 import { SubagentRuntime, bindSubagentRuntime } from "./subagent-runtime";
 import { createSubagentDriver } from "./subagent-driver";
 import { readSubagentSettings } from "./subagent-settings";
-import { isSubagentTool } from "./subagent-types";
+import { isSubagentTool, projectSubagentDetail, type SubagentRecord } from "./subagent-types";
 import { isWorkflowTool } from "./workflow-tools";
 import { recordAgentTerminalEvent } from "./agent-terminal-registry";
 import { ToolReviewController } from "./tool-permission-gate";
@@ -503,8 +503,9 @@ export class AgentSessionWrapper {
 
   isSubagentSession(): boolean { return Boolean(this.permissionParent); }
 
-  notifySubagentChanged(record: { background: boolean; status: string }): void {
-    this.emit({ type: "subagent_update", background: record.background, status: record.status });
+  notifySubagentChanged(record: SubagentRecord): void {
+    this.emit({ type: "subagent_update", parentSessionId: record.parentSessionId, agentId: record.agentId,
+      background: record.background, status: record.status, attempt: record.attempt ?? 1, revision: record.revision ?? 0 });
     scheduleRunningChange();
   }
 
@@ -882,6 +883,7 @@ export class AgentSessionWrapper {
       ...(title ? { title } : {}),
       ...(this.taskActivity ? { activity: this.taskActivity } : {}),
       ...(contextUsage ? { contextUsage } : {}),
+      ...(this.subagents?.activeCount ? { runningSubagentCount: this.subagents.activeCount } : {}),
       ...(activeTaskRun ? { taskRun: activeTaskRun } : {}),
     };
   }
@@ -1336,7 +1338,7 @@ export class AgentSessionWrapper {
     const model = this.inner.model;
     return {
       ...progress,
-      subagents: this.subagents?.list() ?? [],
+      subagents: this.subagents?.list().map(projectSubagentDetail) ?? [],
       subagentsRunning: this.subagents?.running ?? false,
       ...(this.runtimeProfile === "normal" ? { workflow: readWorkflowSnapshot(this.sessionId) } : {}),
       ...(view === "full" ? { stats: summarizeLiveSessionStats(this.inner.sessionManager) } : {}),

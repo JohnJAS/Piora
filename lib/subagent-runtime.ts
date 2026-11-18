@@ -17,18 +17,24 @@ export class SubagentRuntime {
   constructor(readonly parentSessionId: string, readonly cwd: string, private driver: SubagentDriver,
     private settings: () => SubagentSettings = readSubagentSettings) {
     for (const record of listSubagentRecords(parentSessionId)) {
-      if (record.status === "running") { record.status = "interrupted"; record.endedAt = Date.now(); record.error = "Application stopped before this task completed. Check effects before continuing."; saveSubagent(record); }
+      if (record.status === "running") { record.status = "interrupted"; record.endedAt = Date.now(); record.error = "Application stopped before this task completed. Check effects before continuing."; record.revision = (record.revision ?? 0) + 1; saveSubagent(record); }
       this.records.set(record.agentId, record);
     }
   }
   list(): SubagentRecord[] { return [...this.records.values()].map(record => ({ ...record })); }
   get running(): boolean { return this.active.size > 0 || this.notifications > 0; }
+  get activeCount(): number { return this.active.size; }
   get(id: string): SubagentRecord {
     const record = this.records.get(id);
     if (!record) throw new Error("Subagent does not belong to this conversation");
     return { ...record };
   }
-  private persist(record: SubagentRecord) { saveSubagent(record); this.records.set(record.agentId, record); this.driver.changed?.({ ...record }); }
+  private persist(record: SubagentRecord) {
+    record.revision = (record.revision ?? 0) + 1;
+    saveSubagent(record);
+    this.records.set(record.agentId, record);
+    this.driver.changed?.({ ...record });
+  }
   private profile(name: string): SubagentProfile {
     const settings = this.settings();
     if (!settings.enabled || this.disposed) throw new Error("Subagents are disabled");
@@ -53,7 +59,9 @@ export class SubagentRuntime {
     if (!prompt?.trim() || prompt.length > 100_000) throw new TypeError("Provide a bounded message");
     if (this.active.has(id)) throw new Error("Subagent is running; wait for its result before continuing");
     if (!record.childSessionFile) throw new Error("Subagent has no saved context to continue");
-    record.prompt = prompt; record.background = false; record.status = "running"; record.error = undefined; record.endedAt = undefined;
+    record.prompt = prompt; record.background = false; record.status = "running";
+    record.attempt = (record.attempt ?? 1) + 1; record.attemptStartedAt = Date.now();
+    record.result = ""; record.error = undefined; record.endedAt = undefined;
     return this.execute(record, profile, signal);
   }
   private async execute(record: SubagentRecord, profile: SubagentProfile, parentSignal?: AbortSignal): Promise<SubagentRecord> {
@@ -114,6 +122,13 @@ export class SubagentRuntime {
   }
   stop(id: string, reason = "Subagent cancelled"): SubagentRecord {
     const record = this.get(id); this.active.get(id)?.controller.abort(new Error(reason)); return record;
+  }
+  stopAttempt(id: string, expectedAttempt: number): { record: SubagentRecord; accepted: boolean } | null {
+    const record = this.records.get(id);
+    if (!record || (record.attempt ?? 1) !== expectedAttempt) return null;
+    const active = this.active.get(id);
+    if (active) active.controller.abort(new Error("Subagent cancelled"));
+    return { record: { ...record }, accepted: Boolean(active) };
   }
   async stopAll(reason = "Parent task cancelled"): Promise<void> {
     const running = [...this.active.values()];

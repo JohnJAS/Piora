@@ -30,6 +30,7 @@ import { reduceAgentPhase, type AgentPhase } from "@/lib/agent-phase";
 import { isRunProgressEvent, type RunStatusClock } from "@/lib/run-progress";
 import { useI18n } from "@/hooks/useI18n";
 import { useExtensionDialog } from "@/hooks/useExtensionDialog";
+import { markSubagentChanged } from "@/hooks/useTaskStatus";
 import { useChatCommandOperations } from "@/hooks/useChatCommandOperations";
 import { createChatCommandCatalog, persistentChatInputOptions } from "@/lib/chat-command-input";
 import type { ChatCommandCatalog, ChatCommandView, ChatInputOptions } from "@/lib/chat-command-types";
@@ -1607,6 +1608,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     switch (event.type) {
       case "subagent_update":
+        if (typeof event.parentSessionId === "string" && event.parentSessionId === sessionIdRef.current) {
+          markSubagentChanged(event.parentSessionId);
+        }
         if (event.background && event.status === "running") {
           backgroundSubagentsRef.current = true;
           setBackgroundSubagents(true);
@@ -2317,6 +2321,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sid = sessionIdRef.current;
     const runId = promptRunIdRef.current;
     if (abortRequestRunIdRef.current === runId) return;
+    if (sid && backgroundSubagentsRef.current && !agentRunningRef.current && !bashRunningRef.current) {
+      abortRequestRunIdRef.current = runId;
+      try { await sendAgentCommand(sid, { type: "abort" }, { timeoutMs: 10_000 }); }
+      catch (error) {
+        addNotice({ type: "error", message: t("chat.stopFailed", { reason: error instanceof Error ? error.message : String(error) }) });
+      } finally {
+        if (abortRequestRunIdRef.current === runId) abortRequestRunIdRef.current = null;
+      }
+      return;
+    }
     suppressCompletionNotificationRef.current = true;
     if (bashRunningRef.current) {
       if (!sid) return;
@@ -3246,7 +3260,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     toolPermission, permissionSaving, handleToolPermission, toolReviews,
     nestedCallsStore, data, loading, error, activeLeafId, messages, entryIds, modelChanges, streamState, replyHistorySettling,
     historyPage, loadEarlierHistory, loadNewestHistory,
-    agentRunning, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
+    agentRunning, backgroundSubagents, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
     retryInfo, contextUsage: effectiveContextUsage, systemPrompt, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactionStartedAt, compactError, compactResult, currentModel, displayModel, sessionStats,
     slashCommands, slashCommandsLoading, slashCommandsError, commandCatalog, chatCommands, queuedMessages, capabilities, capabilitiesSaving,

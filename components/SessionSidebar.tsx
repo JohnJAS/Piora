@@ -25,6 +25,7 @@ import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 import { ConversationSearchDialog } from "./ConversationSearchDialog";
 import type { SessionMoveTarget } from "./sidebar/TaskContextMenu";
 import { useProjectNotificationPreferences } from "@/hooks/useProjectNotificationPreferences";
+import { SubagentSidebarContext } from "@/hooks/useSubagents";
 
 export type { SessionSidebarHandle } from "./sidebar/sidebar-types";
 
@@ -36,7 +37,7 @@ function createTemporarySessionId(): string {
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }
 
-export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, selectedRoomId, onSelectSession, onSelectSearchResult, onSelectRoom, onNewSession, onRequestNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenSettings, activeProjectRoot }, ref) {
+export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, selectedSubagent, onOpenSubagent, selectedRoomId, onSelectSession, onSelectSearchResult, onSelectRoom, onNewSession, onRequestNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenSettings, activeProjectRoot }, ref) {
   const { t } = useI18n();
   const [sessionFlags, setSessionFlags] = useState<SessionFlags>({});
   const primaryActionRef = useRef<HTMLButtonElement>(null);
@@ -63,7 +64,9 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     customPathOpen, setCustomPathOpen, customPathError, setCustomPathError,
     customPathValidating, commitCustomPath, handleCustomPathClick, handleDefaultCwd,
   } = useProjectPicker({ setSelectedCwd, setRememberedProjectRoots, setHiddenProjectRoots, onProjectSelected: handlePickedProject });
-  const { allSessions, loading, catalogComplete, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions, markSessionUnread } = useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectRoots });
+  const { allSessions, loading, catalogComplete, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions, markSessionUnread, subagentParentIds, subagentCounts } = useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectRoots });
+  const subagentSidebar = useMemo(() => ({ parentIds: subagentParentIds, activeCounts: subagentCounts, open: onOpenSubagent, selected: selectedSubagent }),
+    [subagentParentIds, subagentCounts, onOpenSubagent, selectedSubagent]);
   const { state: worktreeState, error: worktreeError } = useWorktrees(selectedCwd, true, refreshKey);
 
   useEffect(() => {
@@ -451,6 +454,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
           onInitialRestoreDone={onInitialRoomRestoreDone}
         />
       ) : null}
+      <SubagentSidebarContext.Provider value={subagentSidebar}>
       <SidebarProjectArea
         loading={loading} error={error}
         handleDefaultCwd={handleDefaultCwd} handleCustomPathClick={handleCustomPathClick}
@@ -486,6 +490,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
         sessionOrder={sessionOrder}
         onReorderSessions={reorderSessions}
       />
+      </SubagentSidebarContext.Provider>
       <SidebarFooter
         deletedToast={deletedSessionToast}
         archivedToast={archivedSessionToast}

@@ -330,6 +330,15 @@ test("stop never resubmits queued input or changes drafts, including repeated st
   await stopping;
   assert.deepEqual(pending.calls, [], "late stop replies cannot edit either session's composer or start a run");
 });
+
+test("the unified stop cancels a pure background child through the parent without finishing a foreground prompt", async () => {
+  const commands = [];
+  const background = abortHarness({ agentRunningRef: { current: false }, backgroundSubagentsRef: { current: true },
+    sendAgentCommand: async (id, command) => { commands.push({ id, command }); } });
+  await background.run();
+  assert.deepEqual(commands, [{ id: "session", command: { type: "abort" } }]);
+  assert.deepEqual(background.calls, []);
+});
 test("retry lineage is durable before the replacement prompt is admitted", async () => {
   let acknowledged;
   const { env, run } = sendHarness();

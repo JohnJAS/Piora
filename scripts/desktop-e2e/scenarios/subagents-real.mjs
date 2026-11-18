@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, unlink } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, writeFile, unlink } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -42,7 +42,7 @@ export const subagentsReal = {
     report.credentials = 'selected existing credentials copied to isolated runtime and removed during cleanup';
     report.models = { parent: parentModel, reader: readerModel };
   },
-  async run({ page, origin, directory, step, waitUntil }) {
+  async run({ page, origin, directory, paths, step, waitUntil }) {
     let sessionId;
     const observations = [];
     const readJson = async path => {
@@ -57,7 +57,7 @@ export const subagentsReal = {
       }
     };
     const records = async () => {
-      const data = await readJson(`/api/agent/${sessionId}/subagents?transcript=true`);
+      const data = await readJson(`/api/agent/${sessionId}/subagents`);
       assert.equal(data.status, 200); observations.push(data.body.records); return data.body.records;
     };
     const assertParentHealthy = async () => {
@@ -126,7 +126,7 @@ export const subagentsReal = {
         const reader = list.find(record => record.agentType === 'Explore'), writer = list.find(record => record.agentType === 'general-purpose');
         assert.ok(reader && writer); assert.equal(reader.model, readerModel);
         assert.ok(reader.totalToolUseCount > 0 && writer.totalToolUseCount >= 2);
-        assert.ok(list.every(record => record.totalTokens > 0 && !record.prompt.includes('PARENT_ONLY_REAL_9461')));
+        assert.ok(list.every(record => record.totalTokens > 0 && !Object.hasOwn(record, 'prompt') && !Object.hasOwn(record, 'childSessionFile')));
         assert.match(reader.result, /16/); assert.match(reader.result, /34/);
         const response = await readJson(`/api/sessions/${sessionId}`);
         assert.equal(response.status, 200); const history = response.body;
@@ -137,12 +137,23 @@ export const subagentsReal = {
         const probe = execFileSync(process.execPath, ['-e', 'const sum=require(process.argv[1]);if(sum([3,5,8])!==16||sum([13,21])!==34)process.exit(1);console.log("16,34")', join(workspace, 'sum.cjs')], { encoding: 'utf8', windowsHide: true, timeout: 10_000 });
         assert.equal(probe.trim(), '16,34');
         for (const record of list) {
-          const transcript = await readFile(record.childSessionFile, 'utf8');
+          const folder = join(paths.agent, 'piora', 'subagent-sessions', sessionId, record.agentId);
+          const privateRecord = JSON.parse(await readFile(join(paths.agent, 'piora', 'subagent-runs', sessionId, record.agentId + '.json'), 'utf8'));
+          assert.ok(!privateRecord.prompt.includes('PARENT_ONLY_REAL_9461'), 'parent private history must not be placed in the delegated prompt');
+          const files = (await readdir(folder)).filter(file => file.endsWith('.jsonl'));
+          assert.equal(files.length, 1);
+          const transcript = await readFile(join(folder, files[0]), 'utf8');
           assert.ok(!transcript.includes('PARENT_ONLY_REAL_9461'), 'parent private history must remain isolated');
           const card = page.locator(`[data-subagent-id="${record.agentId}"]`).first();
           await card.locator('[aria-expanded]').click();
           await card.locator('[data-subagent-role="toolResult"]').first().waitFor();
         }
+        const group = page.locator(`[data-subagent-group="${sessionId}"]`);
+        await group.click();
+        await page.locator(`[data-subagent-row="${reader.agentId}"]`).click();
+        const details = page.locator(`[data-subagent-inspector="${reader.agentId}"]`);
+        await details.locator('[data-subagent-role="toolResult"]').first().waitFor();
+        await details.getByRole('button', { name: /Close subagent details|关闭子代理详情/ }).click();
         await page.screenshot({ path: join(directory, 'real-subagents.png'), animations: 'disabled' });
       });
       await step('real-model-continues-owned-child-context', async () => {

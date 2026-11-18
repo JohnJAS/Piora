@@ -10,6 +10,7 @@ import { VirtualList, type VirtualListHandle } from "../VirtualList";
 import styles from "../SessionSidebar.module.css";
 import { AliIcon } from "../AliIcon";
 import { TaskRow } from "./TaskRow";
+import { SubagentTreeRows } from "./SubagentTreeRows";
 import type { SessionMoveTarget } from "./TaskContextMenu";
 
 interface CommonProps {
@@ -246,10 +247,12 @@ export function TaskList({ nodes, scope, pageSize, reorderable = true, onReorder
     <div id={treeId} role="tree" aria-label={t("sidebar.chats")}>
       <VirtualList keys={keys} estimate={35} handleRef={listRef} pinnedKeys={dragState ? [dragState.sourceId] : []} renderItem={(_key, index) => {
         const row = rows[index];
-        return <SessionTreeItem row={row} scope={scope + ":" + (row.parentId ?? "root") + ":" + (props.flags[row.session.id]?.pinned ? "pinned" : "regular")}
+        return <div role="none" data-session-tree-block><SessionTreeItem row={row} scope={scope + ":" + (row.parentId ?? "root") + ":" + (props.flags[row.session.id]?.pinned ? "pinned" : "regular")}
           dragState={dragState} onToggleCollapse={toggleExpanded} onKeyDown={(event) => navigateRow(row, event)}
           onPointerDown={beginSessionDrag} onPointerMove={handlePointerMove} onPointerEnd={finishPointer}
-          onClickCapture={suppressSessionClick} onSelectSession={onSelectSession} {...props} />;
+          onClickCapture={suppressSessionClick} onSelectSession={onSelectSession} {...props} />
+          <SubagentTreeRows row={row} />
+        </div>;
       }} />
     </div>
     {pageSize && allRows.length > pageSize ? <button type="button" className={styles.sessionShowMore} aria-controls={treeId} aria-expanded={visibleCount >= allRows.length} onClick={() => {

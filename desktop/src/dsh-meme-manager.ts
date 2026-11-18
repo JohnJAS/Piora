@@ -6,13 +6,13 @@ import { setTimeout as delay } from "node:timers/promises";
 import { installMeme, memeNetwork, DSH_MEME_VERSION, prepareMemeRuntime } from "./dsh-meme-install.js";
 import { petEnvironment, removePetDirectory } from "./dsh-pet-install.js";
 import { preparePetNetwork, type PetNetwork } from "./dsh-pet-network.js";
-import type { DshPetProgress } from "./dsh-pet-types.js";
-export interface MemeStatus { version: string; installed: boolean; phase: string; autoStart: boolean; error: string | null; progress: DshPetProgress | null }
+import type { DshPetProgress, DshPetStatus } from "./dsh-pet-types.js";
+export interface MemeStatus { version: string; installed: boolean; phase: DshPetStatus["phase"]; autoStart: boolean; error: string | null; progress: DshPetProgress | null }
 export class DshMemeManager {
   private child: ChildProcess | undefined;
   private port = 0;
   private token = "";
-  private phase = "stopped";
+  private phase: MemeStatus["phase"] = "stopped";
   private error: string | null = null;
   private progress: DshPetProgress | null = null;
   private autoStart = false;

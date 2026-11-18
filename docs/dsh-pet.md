@@ -16,7 +16,7 @@
 | 宠物设置 | Piora 已有 Companion 宠物 | Piora Companion 窗口 |
 | 桌面扩展 | 本次接入的 DSH Pet | 独立进程和透明窗口 |
 
-本次没有引入通用 DSH/Cordis 插件宿主。后续体系支持跟踪在 [upstream #250](https://github.com/kexijiang/Piora/issues/250)。参考了 [DSH Desktop](https://github.com/anywhere-labs/dsh-desktop) 的独立宿主与运行时生命周期；这里使用 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) 发布包的 standalone 入口，不加载 Cordis Profile。
+桌面扩展页统一管理 Pet 和 Meme 两个固定版本。Pet 继续通过 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet) 发布包的 standalone 入口运行，Meme 使用自己的专用宿主。通用 DSH/Cordis 兼容进度见 [#250](https://github.com/kexijiang/pi-desktop/issues/250)。
 
 ## 安装和隔离
 
