@@ -37,7 +37,9 @@ test("automatically optimizes an unnamed session title after a completed turn", 
 test("opens settings as a viewport-wide page above the complete application shell", () => {
   assert.match(appShell, /\{settingsPage\}/);
   assert.match(appShell, /display: settingsDialogOpen \? "none" : "block"/);
-  assert.match(appShell, /const effectiveRightPanelOpen = rightPanelOpen && !settingsDialogOpen/);
+  assert.match(appShell, /const shownSubagent = !selectedRoom && !settingsDialogOpen && !historyDialogOpen/);
+  assert.match(appShell, /const effectiveRightPanelOpen = \(rightPanelOpen \|\| Boolean\(shownSubagent\)\) && !settingsDialogOpen/);
+  assert.match(appShell, /aria-hidden=\{!effectiveRightPanelOpen\}/);
   assert.match(settingsDialog, /createPortal/);
   assert.match(settingsDialog, /aria-modal="true"/);
   assert.match(settingsDialog, /document\.body/);
