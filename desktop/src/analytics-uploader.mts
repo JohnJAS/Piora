@@ -57,11 +57,11 @@ const directFetch: Fetcher = (url, init) => fetch(url, { ...init, dispatcher: an
 const gatewayErrors = new Set([502, 503, 504]);
 
 export function createAnalyticsFetch(configured: Fetcher, direct: Fetcher = directFetch): Fetcher {
-  let preferDirectUntil = 0;
+  let preferConfiguredUntil = 0;
   return async (url, init) => {
-    const directFirst = Date.now() < preferDirectUntil;
-    const first = directFirst ? direct : configured;
-    const second = directFirst ? configured : direct;
+    const configuredFirst = Date.now() < preferConfiguredUntil;
+    const first = configuredFirst ? configured : direct;
+    const second = configuredFirst ? direct : configured;
     // The uploader sends replayable JSON with stable operation or event IDs.
     // Give each path its own deadline, including after a connection timeout.
     const attempt = (send: Fetcher) => send(url, {
@@ -76,7 +76,7 @@ export function createAnalyticsFetch(configured: Fetcher, direct: Fetcher = dire
     }
     try {
       const alternative = await attempt(second);
-      if (alternative.ok) preferDirectUntil = directFirst ? 0 : Date.now() + 10 * 60_000;
+      if (alternative.ok) preferConfiguredUntil = configuredFirst ? 0 : Date.now() + 10 * 60_000;
       if (response && gatewayErrors.has(alternative.status)) {
         await alternative.body?.cancel();
         return response;
