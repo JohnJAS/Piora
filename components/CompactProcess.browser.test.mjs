@@ -361,8 +361,13 @@ createRoot(document.getElementById("root")).render(<App/>);`);
         assert.match(await heading.innerText(), /需要关注/);
         assert.match(await heading.innerText(), /1 个报错/);
         await heading.click();
-        assert.equal(await check.locator(".command-execution-toggle").first().getAttribute("aria-expanded"), "true");
+        const failedCard = check.locator(".command-execution-toggle").first();
+        assert.equal(await failedCard.getAttribute("aria-expanded"), "false");
+        assert.match(await failedCard.innerText(), /失败/);
+        assert.equal(await check.locator(".cm-content").count(), 0);
         assert.equal(await check.locator(".command-execution-toggle").nth(1).getAttribute("aria-expanded"), "false");
+        await failedCard.click();
+        await check.locator(".command-execution-card.is-expanded .cm-content").waitFor();
       }
       if (scenario === "success") {
         assert.match(await heading.innerText(), /处理结束.*思考 1 段.*执行 3 条命令/s);

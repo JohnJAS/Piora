@@ -10,13 +10,12 @@ import { writePrivateFileAtomicSync } from "./atomic-file";
 import { validateClientBackup } from "./app-backup-client";
 import { PROMPT_MATERIAL_MARKER_PREFIX, PROMPT_MATERIAL_MARKER_SUFFIX, type PromptMaterialMarkerPayload } from "./prompt-material-format";
 import { backupInventory, createBackupArchive, extractBackupArchive, safeBackupPath, type BackupManifest, type BackupRoot } from "./app-backup-archive";
+import { backupControlRoot, backupJob, backupRestoreJournalPath, newBackupJob } from "./app-backup-state";
 import { requestDesktopClipboardBackup } from "./desktop-clipboard-backup";
 import { ClipboardDatabase } from "../desktop/src/clipboard-database";
 import { importClipboardArchive } from "../desktop/src/clipboard-archive";
 
-export const backupControlRoot = () => `${getRuntimeAgentDataDirectory()}.piora-transfer`;
-export function backupJob(id: string) { if (!/^[a-f0-9-]{36}$/.test(id)) throw new Error("backup_job"); return path.join(backupControlRoot(), id); }
-export async function newBackupJob() { const id = randomUUID(); await mkdir(backupJob(id), { recursive: true, mode: 0o700 }); return id; }
+export { backupControlRoot, backupJob, newBackupJob } from "./app-backup-state";
 function relativeInside(root: string, file: string) { const result = path.relative(root, file); return result === "" || (!result.startsWith("..") && !path.isAbsolute(result)); }
 function clipboardRestoreTarget(agent: string) {
   if (!process.env.PIORA_DESKTOP_USER_DATA_DIR) return null;
@@ -208,7 +207,7 @@ export async function prepareApplicationRestore(id: string, requestedMappings: B
   }
   // The journal is outside every directory being swapped. Original data is retained as a recovery copy.
   const transaction = { id, staged, target, previous: `${target}.before-import-${id}`, phase: "prepared", directories, external: external.filter((file) => !relativeInside(target, file.target)).map((file, index) => ({ target: file.target, content: readFileSync(file.source, "utf8"), previous: path.join(backupJob(id), `external-before-${index}`), existed: existsSync(file.target) })) };
-  const journal = path.join(backupControlRoot(), "pending.json");
+  const journal = backupRestoreJournalPath();
   if (existsSync(journal)) throw new Error("backup_pending");
   await writeFile(journal, JSON.stringify(transaction), { flag: "wx", mode: 0o600 });
   return { id, previous: transaction.previous };
@@ -216,7 +215,7 @@ export async function prepareApplicationRestore(id: string, requestedMappings: B
 
 /** Must run before SDK/store modules and automation workers are imported. */
 export async function applyPendingApplicationRestore() {
-  const journal = path.join(backupControlRoot(), "pending.json"); if (!existsSync(journal)) return;
+  const journal = backupRestoreJournalPath(); if (!existsSync(journal)) return;
   const tx = JSON.parse(await readFile(journal, "utf8"));
   if (tx.target !== getRuntimeAgentDataDirectory() || tx.previous !== `${tx.target}.before-import-${tx.id}` || path.dirname(tx.staged) !== backupJob(tx.id)) throw new Error("backup_journal");
   for (const directory of tx.directories ?? []) {

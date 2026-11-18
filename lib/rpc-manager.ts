@@ -62,6 +62,7 @@ import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-ty
 import type { ExtensionUiRequest, ExtensionUiResponse, ExtensionWidgetItem } from "./types";
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS } from "./custom-ui-terminal";
 import type { Runtime, TaskRuntimeActivity, TaskRuntimeActivityKind, TaskRuntimeSnapshot } from "./task-status";
+import { notifyRunningChange, scheduleRunningChange } from "./rpc-running-status";
 import { projectTaskRun } from "./task-run";
 import {
   assertCurrentAgentRuntimeProfile,
@@ -2621,13 +2622,12 @@ export class AgentSessionWrapper {
 // ============================================================================
 
 declare global {
-  var __piSessions: Map<string, AgentSessionWrapper> | undefined;
   var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
   var __piStartingSessionCwds: Map<string, number> | undefined;
-  var __piRunningListeners: Set<(sessions: TaskRuntimeSnapshot[]) => void> | undefined;
-  var __piRunningNotifyTimer: ReturnType<typeof setTimeout> | undefined;
   var __piServicesCache: Map<string, AgentSessionServices> | undefined;
 }
+
+export { getRunningRpcSessionIds, getRunningRpcSessionStatuses, notifyRunningChange, subscribeRunningSessions } from "./rpc-running-status";
 
 // ==========================================================================
 // Per-session services cache.
@@ -2781,37 +2781,6 @@ export function destroyRpcSessionsForCwd(cwd: string): number {
   return sessions.length;
 }
 
-export function getRunningRpcSessionIds(): string[] {
-  return getRunningRpcSessionStatuses()
-    .filter((session) => session.runtime !== "idle")
-    .map((session) => session.id);
-}
-
-export function getRunningRpcSessionStatuses(includeIdle = false): TaskRuntimeSnapshot[] {
-  const statuses: TaskRuntimeSnapshot[] = [];
-  for (const session of getRegistry().values()) {
-    if (!session.isAlive() || session.isSubagentSession?.()) continue;
-    // globalThis deliberately retains wrappers across Next.js hot reloads.
-    // A wrapper created by the previous module version does not yet have the
-    // three-axis accessor, so adapt it until that live session is recreated.
-    const snapshot = typeof session.getTaskRuntimeSnapshot === "function"
-      ? session.getTaskRuntimeSnapshot()
-      : {
-          id: session.sessionId,
-          runtime: session.inner.isCompacting ? "compacting" as const : session.isRunning() ? "running" as const : "idle" as const,
-          pendingApproval: false,
-          lastPromptFailed: false,
-        };
-    const hasOpenTaskRun = snapshot.taskRun
-      && snapshot.taskRun.phase !== "completed"
-      && snapshot.taskRun.phase !== "cancelled";
-    if (includeIdle || snapshot.runtime !== "idle" || snapshot.pendingApproval || snapshot.lastPromptFailed || hasOpenTaskRun) {
-      statuses.push(snapshot);
-    }
-  }
-  return statuses.sort((a, b) => a.id.localeCompare(b.id));
-}
-
 export interface UnpersistedSessionInfo {
   id: string;
   path: string;
@@ -2884,29 +2853,6 @@ export function getUnpersistedSessionInfos(excludeIds?: ReadonlySet<string>): Un
 }
 
 // ----------------------------------------------------------------------------
-// Running-status broadcaster
-//
-// Pushes the current set of running session ids to subscribers whenever any
-// session's running state may have changed. This lets the sidebar receive live
-// updates over SSE instead of polling. Listeners live on globalThis so they
-// survive Next.js hot-reload.
-// ----------------------------------------------------------------------------
-
-function getRunningListeners(): Set<(sessions: TaskRuntimeSnapshot[]) => void> {
-  if (!globalThis.__piRunningListeners) globalThis.__piRunningListeners = new Set();
-  return globalThis.__piRunningListeners;
-}
-
-/** Subscribe to running-session-id changes. Returns an unsubscribe function. */
-export function subscribeRunningSessions(listener: (sessions: TaskRuntimeSnapshot[]) => void): () => void {
-  const listeners = getRunningListeners();
-  listeners.add(listener);
-  return () => { listeners.delete(listener); };
-}
-
-let lastRunningSnapshot = "";
-const RUNNING_SNAPSHOT_THROTTLE_MS = 250;
-
 function isImmediateRunningSnapshotEvent(event: AgentEvent): boolean {
   return event.type === "agent_start"
     || event.type === "agent_end"
@@ -2915,32 +2861,6 @@ function isImmediateRunningSnapshotEvent(event: AgentEvent): boolean {
     || event.type === "auto_compaction_start"
     || event.type === "auto_compaction_end"
     || event.type === "extension_ui_request";
-}
-
-function scheduleRunningChange(): void {
-  if (globalThis.__piRunningNotifyTimer) return;
-  globalThis.__piRunningNotifyTimer = setTimeout(() => {
-    globalThis.__piRunningNotifyTimer = undefined;
-    notifyRunningChange();
-  }, RUNNING_SNAPSHOT_THROTTLE_MS);
-}
-
-/**
- * Recompute the running-session-id set and, if it changed since the last
- * notification, broadcast it to subscribers. Cheap to call often.
- */
-export function notifyRunningChange(): void {
-  if (globalThis.__piRunningNotifyTimer) {
-    clearTimeout(globalThis.__piRunningNotifyTimer);
-    globalThis.__piRunningNotifyTimer = undefined;
-  }
-  const sessions = getRunningRpcSessionStatuses();
-  const snapshot = JSON.stringify(sessions);
-  if (snapshot === lastRunningSnapshot) return;
-  lastRunningSnapshot = snapshot;
-  for (const listener of getRunningListeners()) {
-    try { listener(sessions); } catch { /* ignore listener errors */ }
-  }
 }
 
 /**

@@ -169,6 +169,7 @@ publish:
   releaseType: release
 
 nsis:
+  include: build/piora-installer.nsh
   # Include every payload file in the archive for exact integrity verification.
   preCompressedFileExtensions: []
   oneClick: false

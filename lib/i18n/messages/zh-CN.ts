@@ -1028,7 +1028,7 @@ export const zhCNLocale: LocalePlugin = {
     "appearance.look.nordic": "北境冰蓝",
     "appearance.look.nordicDescription": "清透冰川蓝与轻盈雾面",
     "appearance.look.glacierMotion": "北境冰川 · 微动",
-    "appearance.look.glacierMotionDescription": "冰晶随鼠标错层移动，偶尔掠过一束冷光",
+    "appearance.look.glacierMotionDescription": "冰川背景缓慢漂移，冰晶随鼠标轻微错层，偶尔掠过一束冷光",
     "appearance.look.sakura": "樱花薄雾",
     "appearance.look.sakuraDescription": "柔和樱粉与淡紫晨雾",
     "appearance.look.cyber": "赛博青",

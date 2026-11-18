@@ -17,6 +17,7 @@ export function analyticsLaunchReason(
 export interface AnalyticsConfig {
   backend_url: string;
   enrollment_key?: string;
+  proxy_mode?: "direct" | "inherit";
   enabled: boolean;
 }
 export interface AnalyticsPolicy {
@@ -181,7 +182,8 @@ export function readAnalyticsConfig(): AnalyticsConfig | undefined {
       url.password ||
       url.search ||
       url.hash ||
-      url.pathname !== "/"
+      url.pathname !== "/" ||
+      (input.proxy_mode !== undefined && input.proxy_mode !== "direct" && input.proxy_mode !== "inherit")
     )
       return undefined;
     return {
@@ -190,6 +192,7 @@ export function readAnalyticsConfig(): AnalyticsConfig | undefined {
       ...(typeof input.enrollment_key === "string"
         ? { enrollment_key: input.enrollment_key }
         : {}),
+      ...(input.proxy_mode === undefined ? {} : { proxy_mode: input.proxy_mode }),
     };
   } catch {
     return undefined;

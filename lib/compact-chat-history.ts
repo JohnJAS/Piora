@@ -35,10 +35,8 @@ export function commandPreviewTail(output: string): string {
     .map((line) => line.length > 240 ? `${line.slice(0, 240)}…` : line).join("\n");
 }
 
-function needsAttention(block: AssistantContentBlock, results: Pick<ReadonlyMap<string, ToolResultMessage>, "get">, active: boolean, includeErrors = true): boolean {
+function needsAttention(block: AssistantContentBlock, result: ToolResultMessage | undefined, active: boolean): boolean {
   if (block.type !== "toolCall") return false;
-  const result = results.get(block.toolCallId);
-  if (result?.isError && includeErrors) return true;
   if (!active && (!result || result.isStreaming)) return true;
   // User handoff remains actionable even while the surrounding process is folded.
   return block.toolName === "browser" && block.input?.action === "wait_for_user"
@@ -86,8 +84,8 @@ export function buildCompactChatHistoryRows(
     }
     const steps: ProcessStep[] = [];
     const activities: CompactProcessGroup["activities"] = {};
-    let attention = false;
     let unresolved = false;
+    let nonCommandError = false;
     for (let i = start; i < end; i++) {
       const message = messages[i];
       if (message.role === "toolResult") continue;
@@ -96,7 +94,6 @@ export function buildCompactChatHistoryRows(
         turnRows.push({ key: rowKey, index: i, message });
         continue;
       }
-      attention ||= i !== streamingIndex && hasAssistantNotice(message);
       unresolved ||= i !== streamingIndex && hasAssistantNotice(message);
       const content = Array.isArray(message.content) ? message.content : [];
       const progressText = compact && (i !== lastAssistant || content.some(block => block.type === "toolCall"));
@@ -111,15 +108,16 @@ export function buildCompactChatHistoryRows(
         if (previous?.process === process && previous.activity === activity) previous.blocks.push(block);
         else segments.push({ offset: b, process, activity, blocks: [block] });
         if (process) {
-          attention ||= needsAttention(block, results, active);
-          unresolved ||= needsAttention(block, results, active, false);
           const result = block.type === "toolCall" ? results.get(block.toolCallId) : undefined;
+          const command = block.type === "toolCall" && isCommandToolName(block.toolName);
+          unresolved ||= needsAttention(block, result, active);
+          nonCommandError ||= !command && result?.isError === true;
           const status = block.type === "toolCall" ? result?.isError ? "error" : result && !result.isStreaming ? "done" : active ? "running" : "unknown"
             : i === streamingIndex && b === content.length - 1 ? "running" : "done";
           steps.push({ key: `${rowKey}:${b}`, block, status,
-            output: block.type === "toolCall" && isCommandToolName(block.toolName) && result?.isStreaming ? commandPreviewTail(toolResultText(result)) : undefined });
+            output: command && result?.isStreaming ? commandPreviewTail(toolResultText(result)) : undefined });
           const kind = block.type === "thinking" ? "thinking" : block.type !== "toolCall" ? "other"
-            : isCommandToolName(block.toolName) ? "command" : block.toolName === "read" ? "read"
+            : command ? "command" : block.toolName === "read" ? "read"
               : ["grep", "find", "ls"].includes(block.toolName) ? "search" : ["edit", "write"].includes(block.toolName) ? "edit" : "other";
           activities[kind] = (activities[kind] ?? 0) + 1;
         }
@@ -135,14 +133,16 @@ export function buildCompactChatHistoryRows(
       }
     }
     // The final answer stays outside the turn's single process disclosure.
-    const open = direct || (!interrupted && ((attention && active) || (unresolved && !compact)))
+    const errorCount = steps.filter(step => step.status === "error").length;
+    const attention = unresolved || errorCount > 0;
+    const open = direct || (!interrupted && ((active && nonCommandError) || (unresolved && (active || !compact))))
       || (choices.get(key) ?? (interrupted || (compact ? active : end === messages.length)));
     // Secondary rows stay individually virtualized under the process heading.
     // Thinking, prose and custom notices still split the assistant message.
     let headingAdded = false;
     for (const row of turnRows) {
       if (row.secondary && !headingAdded && !direct) {
-        rows.push({ key, index: row.index - 0.1, compactProcess: { active, expanded: open, count: steps.length, attention, errorCount: steps.filter(step => step.status === "error").length, activities,
+        rows.push({ key, index: row.index - 0.1, compactProcess: { active, expanded: open, count: steps.length, attention, errorCount, activities,
           ...(interrupted ? { interrupted: true } : {}),
           startedAt, endedAt: active ? undefined : endedAt, preview: steps.slice(-3) } });
         headingAdded = true;

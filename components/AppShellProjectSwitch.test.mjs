@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
+import { createJiti } from "jiti";
 import ts from "typescript";
 
+const { chatHistoryUrl } = await createJiti(import.meta.url).import("../lib/chat-history-client.ts");
 const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 const cwdHandler = source.slice(
   source.indexOf("const handleCwdChange"),
@@ -102,6 +104,49 @@ test("selecting a session in another project survives cwd synchronization", () =
     cwdHandler,
     /if \(!cwdBelongsToCurrentSelection\) \{\s*replaceUrlWithoutNextNavigation\("\/"\);\s*\}/,
   );
+});
+
+test("the file panel and new file tabs use the selected worktree before sidebar cwd catches up", () => {
+  const declarations = new Map();
+  let panelCwd;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) declarations.set(node.name.text, node.initializer.getText(syntax));
+    if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+      if (node.tagName.getText(syntax) === "RightPanel") {
+        const attribute = node.attributes.properties.find(attribute => ts.isJsxAttribute(attribute) && attribute.name.getText(syntax) === "cwd");
+        panelCwd = attribute?.initializer?.expression?.getText(syntax);
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(syntax);
+  assert.ok(panelCwd);
+  const activeCwd = "F:\\Piora";
+  const worktree = "F:\\Piora-worktrees\\feature";
+  const mirroredRoom = "F:\\room-workspace";
+  const getCwd = ts.transpileModule(`
+    ${["chatWorkspaceCwd", "isProjectlessConversation", "workspaceCwd"].filter(name => declarations.has(name)).map(name => `const ${name} = ${declarations.get(name)};`).join("\n")}
+    (${declarations.get("handleOpenFile")})(file, "readme.md");
+    ${panelCwd};
+  `, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  for (const [selection, expected] of [
+    [{ selectedSession: { cwd: worktree, projectRoot: activeCwd } }, worktree],
+    [{ newSessionCwd: worktree }, worktree],
+    [{ selectedRoom: { workspace: { path: mirroredRoom } }, selectedSession: { cwd: worktree } }, mirroredRoom],
+    [{ selectedSession: { cwd: "F:\\scratch", projectless: true } }, null],
+    [{}, activeCwd],
+  ]) {
+    let tabs = [];
+    const noop = () => {};
+    assert.equal(vm.runInNewContext(getCwd, {
+      activeCwd, isMobile: false, newSessionCwd: null, effectiveNewSessionCwd: selection.newSessionCwd ?? null,
+      selectedRoom: null, selectedSession: null, isProjectlessChatCwd: () => false, ...selection,
+      file: `${expected ?? "F:\\scratch"}\\readme.md`, useCallback: callback => callback,
+      setFileTabs: update => { tabs = update(tabs); }, setClosedFileTabs: noop,
+      setActiveFileTabId: noop, setRightPanelTab: noop, setRightPanelOpen: noop,
+    }), expected);
+    assert.equal(tabs[0].cwd, expected ?? undefined);
+  }
 });
 
 test("selection URL updates permit native Next synchronization with an empty history state", async () => {
@@ -231,11 +276,15 @@ test("a search hit in the selected chat updates its anchor without remounting or
 
 test("returning through history to the current chat cancels an in-flight replacement", async () => {
   let release, restore;
+  const fetches = [];
   const h = createSelectionHarness("current", { href: "https://piora.test/?session=next", prepare: () => new Promise(resolve => { release = resolve; }) });
   Object.defineProperty(h.location, "search", { get: () => new URL(h.location.href).search });
   Object.assign(h.context, {
-    AbortController, URLSearchParams, handleSelectSession: h.select,
-    fetch: async () => ({ ok: true, json: async () => ({ info: { id: "next" } }) }),
+    AbortController, URLSearchParams, chatHistoryUrl, handleSelectSession: h.select,
+    fetch: async (url, { signal }) => {
+      fetches.push({ url, signal });
+      return { ok: true, json: async () => ({ info: { id: "next" } }) };
+    },
     readHistoryLocation: () => ({ open: false, leafId: null, entryId: null }),
   });
   h.context.window.addEventListener = (_type, callback) => { restore = callback; };
@@ -244,8 +293,13 @@ test("returning through history to the current chat cancels an in-flight replace
   restore();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.values.get("setPendingSessionSwitch").id, "next");
+  assert.equal(fetches.length, 1);
+  const historyUrl = new URL(fetches[0].url, h.location.href);
+  assert.equal(historyUrl.pathname, "/api/sessions/next");
+  assert.equal(historyUrl.searchParams.get("view"), "chat");
   h.location.href = "https://piora.test/?session=current";
   restore();
+  assert.equal(fetches[0].signal.aborted, true);
   assert.equal(h.values.get("setPendingSessionSwitch"), null);
   release({ context: { messages: [] }, info: { id: "next" } });
   await new Promise(resolve => setImmediate(resolve));

@@ -1496,7 +1496,9 @@ export function AppShell() {
     }
   }, [selectedSession]);
 
-  const workspaceCwd = selectedRoom?.workspace.path ?? selectedSession?.cwd ?? newSessionCwd ?? activeCwd;
+  const chatWorkspaceCwd = selectedSession?.cwd ?? newSessionCwd;
+  const isProjectlessConversation = selectedSession?.projectless === true || isProjectlessChatCwd(chatWorkspaceCwd);
+  const workspaceCwd = selectedRoom?.workspace.path ?? (isProjectlessConversation ? null : chatWorkspaceCwd ?? activeCwd);
   const handleOpenFile = useCallback((
     filePath: string,
     fileName: string,
@@ -1682,7 +1684,6 @@ export function AppShell() {
   const showChat = selectedSession !== null || effectiveNewSessionCwd !== null;
   const showRoom = selectedRoom !== null;
   const showConversation = showChat || showRoom;
-  const isProjectlessConversation = selectedSession?.projectless === true || isProjectlessChatCwd(effectiveNewSessionCwd);
   const isProjectlessSurface = isProjectlessConversation || (
     !selectedRoom
     && !selectedSession

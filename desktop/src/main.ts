@@ -2408,14 +2408,31 @@ function updateTrayMenu(): void {
 }
 
 async function refreshTrayTaskCount(): Promise<void> {
-  if (!serverUrl || !applicationToken) return;
+  const url = serverUrl;
+  if (!url || !applicationToken) return;
   try {
-    const response = await fetch(new URL("/api/agent/running", serverUrl), { headers: { [DESKTOP_TOKEN_HEADER]: applicationToken } });
+    const response = await fetch(new URL("/api/agent/running", url), {
+      headers: { [DESKTOP_TOKEN_HEADER]: applicationToken }, signal: AbortSignal.timeout(5_000),
+    });
     if (!response.ok) return;
     const payload = await response.json() as { runningSessionIds?: unknown[] };
+    if (url !== serverUrl) return;
     const next = Array.isArray(payload.runningSessionIds) ? payload.runningSessionIds.length : 0;
     if (next !== runningTaskCount) { runningTaskCount = next; updateTrayMenu(); }
   } catch { /* The next poll retries after transient server errors. */ }
+}
+
+function startTrayTaskPolling(): void {
+  if (!tray || trayPollTimer || quitRequested) return;
+  let pending = false;
+  const poll = () => {
+    if (pending) return;
+    pending = true;
+    void refreshTrayTaskCount().finally(() => { pending = false; });
+  };
+  trayPollTimer = setInterval(poll, 2_500);
+  trayPollTimer.unref();
+  poll();
 }
 
 function installTray(): void {
@@ -2437,9 +2454,7 @@ function installTray(): void {
   tray.on("click", () => focusMainWindow(undefined, "tray"));
   tray.on("double-click", () => focusMainWindow(undefined, "tray"));
   updateTrayMenu();
-  trayPollTimer = setInterval(() => { void refreshTrayTaskCount(); }, 2_500);
-  trayPollTimer.unref();
-  void refreshTrayTaskCount();
+  if (!desktopDevelopmentRuntime) startTrayTaskPolling();
 }
 
 function registerGlobalShortcutHandler(): void {
@@ -3161,6 +3176,7 @@ async function startApplication(): Promise<void> {
   // An aborted first document can suppress ready-to-show even after a later
   // successful navigation. Do not leave the recovered application hidden.
   startup.ensureVisible();
+  if (desktopDevelopmentRuntime) startTrayTaskPolling();
   // Clipboard capture and shortcuts are already active; create the renderer
   // only when opened instead of retaining a hidden Chromium page at startup.
   writeLastLaunchedVersion(app.getPath("userData"), app.getVersion(), logger);

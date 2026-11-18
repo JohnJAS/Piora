@@ -2385,19 +2385,21 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (promptId) await confirmPendingPrompts([...new Set([promptId, ...(message.role === "user" ? message.recoveryDraft?.retryOfPromptIds ?? [] : [])])]);
       if (sessionIdRef.current !== sid) return;
       const remove = new Set(deletedIds);
-      const keep = messages.map((entry, index) => !remove.has(entryIds[index]) && !(promptId && entry.role === "user" && entry.clientPromptId === promptId));
-      const remaining: AgentMessage[] = [];
-      let followsDeletedPrompt = false;
+      const retainedMessages: AgentMessage[] = [];
+      const retainedEntryIds: string[] = [];
+      let deletedUserBoundary = false;
       for (const [index, entry] of messages.entries()) {
-        if (!keep[index]) {
-          followsDeletedPrompt ||= entry.role === "user" || Boolean(entry.followsDeletedPrompt);
+        const deletedEntry = remove.has(entryIds[index]);
+        if (deletedEntry || (promptId && entry.role === "user" && entry.clientPromptId === promptId)) {
+          deletedUserBoundary ||= deletedEntry && (entry.role === "user" || entry.followsDeletedPrompt === true);
           continue;
         }
-        remaining.push(followsDeletedPrompt && entry.role !== "user" ? { ...entry, followsDeletedPrompt } : entry);
-        followsDeletedPrompt = false;
+        retainedMessages.push(deletedUserBoundary && entry.role !== "user" ? { ...entry, followsDeletedPrompt: true } : entry);
+        retainedEntryIds.push(entryIds[index]);
+        deletedUserBoundary = false;
       }
-      setMessages(remaining);
-      setEntryIds(entryIds.filter((_entry, index) => keep[index]));
+      setMessages(retainedMessages);
+      setEntryIds(retainedEntryIds);
       if (sid) invalidatePrefetchedSession(sid);
       if (entryId && sid) {
         await loadSession(sid);

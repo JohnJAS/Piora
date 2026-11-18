@@ -4,7 +4,7 @@ import { fileRevision } from "./jsonl-file-index";
 import { stat } from "node:fs/promises";
 import { readInWorker } from "./read-worker";
 import { buildSessionContext, entryToUiMessage } from "./session-reader";
-import { persistedMessagePromptIds } from "./session-message-delete";
+import { isDeletedUserMessage, persistedMessagePromptIds } from "./session-message-delete";
 import { readLatestSessionSystemPromptBinding, summarizeSessionSystemPromptBinding } from "./session-system-prompt";
 import { summarizeSessionStats } from "./session-stats";
 import type { SessionStatsInfo } from "./pi-types";
@@ -78,12 +78,6 @@ export function readHistoryAnchor(query: URLSearchParams, name: "leafId" | "arou
   const value = query.get(name);
   if (value !== null && (!value || value.length > 128)) throw new SessionHistoryPageError(400, "Invalid history anchor");
   return value ?? undefined;
-}
-
-function isDeletedUser(entry: SessionEntry): boolean {
-  if (entry.type !== "custom" || entry.customType !== "piora-deleted-message") return false;
-  const data = entry.data as { deletedUser?: unknown; role?: unknown; clientPromptId?: unknown } | undefined;
-  return data?.deletedUser === true || data?.role === "user" || typeof data?.clientPromptId === "string";
 }
 
 function previewMessage(message: AgentMessage | undefined): string {
@@ -175,7 +169,7 @@ export async function readSessionPage(path: string, modified: string, options: P
       deletedBoundary = false;
       continue;
     }
-    if (isDeletedUser(entry)) {
+    if (isDeletedUserMessage(entry)) {
       deletedBoundary = true;
       continue;
     }

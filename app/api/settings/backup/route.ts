@@ -2,12 +2,9 @@ import { createReadStream, existsSync } from "node:fs";
 import { readFile, writeFile, open } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
-import { backupJob, newBackupJob, exportApplicationBackup, previewApplicationBackup, prepareApplicationRestore, backupControlRoot } from "@/lib/app-backup";
+import { backupJob, hasPendingApplicationRestore, newBackupJob } from "@/lib/app-backup-state";
 import { getRuntimeAgentDataDirectory } from "@/lib/runtime-home";
 import { isApiRequestAllowed, hasJsonContentType } from "@/lib/request-security";
-import { listAllSessions } from "@/lib/session-reader";
-import { acquireDesktopUpdateLease, releaseDesktopUpdateLease } from "@/lib/prompt-run-registry";
-import { getRunningRpcSessionIds } from "@/lib/rpc-manager";
 import { parseJsonWithinLimit } from "@/lib/bounded-json";
 
 export const dynamic = "force-dynamic";
@@ -36,16 +33,25 @@ export async function PUT(req: Request) {
 }
 export async function POST(req: Request) {
   if (!isApiRequestAllowed(req) || !hasJsonContentType(req)) return Response.json({ error: "Access denied" }, { status: 403 });
-  let lease: string | undefined; let refresh: ReturnType<typeof setInterval> | undefined; let prepared = false;
+  let releaseLease: (() => void) | undefined; let refresh: ReturnType<typeof setInterval> | undefined; let prepared = false;
   try {
     const body = await parseJsonWithinLimit(req, 256 * 1024 ** 2) as { action?: string; id: string; password: string; client?: unknown; previousClient?: unknown; mappings: Array<{ from: string; to: string }> };
     if (!body || typeof body !== "object") throw new Error("backup_format");
-    if (body.action === "preview") return Response.json({ manifest: await previewApplicationBackup(body.id, body.password) }, { headers });
+    if (body.action === "preview") {
+      const { previewApplicationBackup } = await import("@/lib/app-backup");
+      return Response.json({ manifest: await previewApplicationBackup(body.id, body.password) }, { headers });
+    }
     if (body.action !== "export" && body.action !== "prepare") throw new Error("backup_action");
-    if (getRunningRpcSessionIds().length || existsSync(path.join(backupControlRoot(), "pending.json"))) throw new Error("backup_busy");
-    lease = acquireDesktopUpdateLease(); if (!lease) throw new Error("backup_busy");
+    const [{ getRunningRpcSessionIds }, { acquireDesktopUpdateLease, releaseDesktopUpdateLease }] = await Promise.all([
+      import("@/lib/rpc-running-status"), import("@/lib/prompt-run-registry"),
+    ]);
+    if (getRunningRpcSessionIds().length || hasPendingApplicationRestore()) throw new Error("backup_busy");
+    const lease = acquireDesktopUpdateLease(); if (!lease) throw new Error("backup_busy");
+    releaseLease = () => releaseDesktopUpdateLease(lease);
     refresh = setInterval(() => { const current = globalThis.__pioraDesktopUpdateLease; if (current && current.token === lease) current.expiresAt = Date.now() + 120_000; }, 30_000);
+    const { exportApplicationBackup, prepareApplicationRestore } = await import("@/lib/app-backup");
     if (body.action === "export") {
+      const { listAllSessions } = await import("@/lib/session-reader");
       const sessions = await listAllSessions();
       return Response.json(await exportApplicationBackup(body.password, body.client, sessions.filter((session) => !session.projectless).map((session) => session.projectRoot ?? session.cwd)), { headers });
     }
@@ -54,5 +60,5 @@ export async function POST(req: Request) {
     const result = await prepareApplicationRestore(body.id, body.mappings); prepared = true;
     return Response.json(result, { headers });
   } catch (error) { return fail(error); }
-  finally { if (refresh) clearInterval(refresh); if (lease && !prepared) releaseDesktopUpdateLease(lease); }
+  finally { if (refresh) clearInterval(refresh); if (!prepared) releaseLease?.(); }
 }

@@ -195,9 +195,19 @@ const BACKGROUND_PREPAINT_PRESETS = JSON.stringify(Object.fromEntries(
 export const BACKGROUND_INITIALIZATION_SCRIPT = `(function(){try{var p=${BACKGROUND_PREPAINT_PRESETS},v=localStorage.getItem("${BACKGROUND_PREFERENCE_STORAGE_KEY}");if(!v)return;var s=JSON.parse(v),b=s&&s.source==="builtin"&&typeof s.presetId==="string"?p[s.presetId]:null;if(!b)return;var n=function(x,d,a,z){return typeof x==="number"&&isFinite(x)?Math.min(z,Math.max(a,Math.round(x))):d},o=n(s.overlay,58,0,90),l=n(s.blur,0,0,24),u=n(s.sidebarOverlay,36,0,90),f=n(s.filePanelOverlay,42,0,90),r=document.documentElement;if(localStorage.getItem("${CHARACTER_OVERLAY_MIGRATION_KEY}")!=="1"){var m=b.legacyCharacterOverlay===o&&u===82&&f===86&&l===0;if(m){u=36;f=42;s.sidebarOverlay=u;s.filePanelOverlay=f}try{if(m)localStorage.setItem("${BACKGROUND_PREFERENCE_STORAGE_KEY}",JSON.stringify(s));localStorage.setItem("${CHARACTER_OVERLAY_MIGRATION_KEY}","1")}catch(_){}}r.dataset.appBackgroundActive="true";r.dataset.appBackgroundSource="builtin";r.dataset.appBackgroundPreset=s.presetId;r.style.setProperty("--app-background-image",b.asset?'url("'+b.asset+'")':"none");r.style.setProperty("--app-background-fallback",b.fallback);r.style.setProperty("--app-background-overlay",o+"%");r.style.setProperty("--app-background-blur",l+"px");r.style.setProperty("--app-background-sidebar-overlay",u+"%");r.style.setProperty("--app-background-file-panel-overlay",f+"%")}catch(_){}})();`;
 
 const PRESETS_BY_ID = new Map(BACKGROUND_PRESETS.map((preset) => [preset.id, preset]));
+const CHARACTER_MOTION_BACKGROUND_IDS = new Set(CHARACTER_BACKGROUND_MANIFEST.presets
+  .filter((preset) => preset.artworkStatus === "available")
+  .map((preset) => preset.id));
 
 export function getBackgroundPreset(id: string | null | undefined): BackgroundPreset | undefined {
   return id ? PRESETS_BY_ID.get(id) : undefined;
+}
+
+export type BackgroundMotionKind = "ambient" | "glacier";
+
+export function getBackgroundMotionKind(id: string | null | undefined): BackgroundMotionKind | undefined {
+  if (id === GLACIER_MOTION_BACKGROUND_ID) return "glacier";
+  return id && CHARACTER_MOTION_BACKGROUND_IDS.has(id) ? "ambient" : undefined;
 }
 
 function clampInteger(value: unknown, fallback: number, min: number, max: number): number {

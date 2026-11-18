@@ -3,7 +3,7 @@
 import { useId, useRef } from "react";
 import { useBackground } from "@/hooks/useBackground";
 import { useI18n } from "@/hooks/useI18n";
-import { getBackgroundPreset, GLACIER_MOTION_BACKGROUND_ID, SUPPORTED_BACKGROUND_MIME_TYPES } from "@/lib/backgrounds";
+import { getBackgroundMotionKind, getBackgroundPreset, SUPPORTED_BACKGROUND_MIME_TYPES } from "@/lib/backgrounds";
 import type { BackgroundStorageErrorCode } from "@/lib/background-storage";
 import styles from "./BackgroundSettings.module.css";
 
@@ -80,7 +80,7 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
 
       <div className={styles.preview} aria-hidden="true" style={{ backgroundImage: previewBackground }} />
 
-      {selectedPreset?.id === GLACIER_MOTION_BACKGROUND_ID && (
+      {getBackgroundMotionKind(selectedPreset?.id) && (
         <label className={styles.motionToggle}>
           <input
             type="checkbox"

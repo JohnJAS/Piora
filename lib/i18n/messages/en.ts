@@ -1028,7 +1028,7 @@ export const enLocale: LocalePlugin = {
     "appearance.look.nordic": "Nordic Ice",
     "appearance.look.nordicDescription": "Airy glacier blue with a soft frosted surface",
     "appearance.look.glacierMotion": "Glacier · Motion",
-    "appearance.look.glacierMotionDescription": "Ice facets shift with the pointer and catch an occasional glint",
+    "appearance.look.glacierMotionDescription": "The ice drifts gently, with extra depth near the pointer and an occasional glint",
     "appearance.look.sakura": "Sakura Mist",
     "appearance.look.sakuraDescription": "Soft blossom pink with a lavender haze",
     "appearance.look.cyber": "Cyber Teal",
