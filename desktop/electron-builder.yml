@@ -20,6 +20,7 @@ directories:
 
 files:
   - dist/**/*
+  - cordis-plugins/**/*
   - package.json
 
 # `npm run build:web` stages public/ and .next/static/ into this tree.

@@ -471,8 +471,7 @@ export function SettingsDialog({
                 </section> : <div className={styles.searchEmpty} role="status">{t("settings.searchEmpty")}</div>}
               </>
             ) : <>
-              {activeEntry.key === "browser" ? <BrowserSettings /> : null}
-              {activeEntry.key === "general" ? (
+              {activeEntry.key === "browser" ? <BrowserSettings /> : activeEntry.key === "general" ? (
               <>
                 <div className={styles.contentHeading}>
                   <h2>{t("settings.general")}</h2>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { DshPetAction } from "@/desktop/src/dsh-pet-types";
 import type { DesktopExtensionEntry, DesktopExtensionId, DesktopExtensionPreferences, DesktopExtensionState } from "@/desktop/src/desktop-extension-registry";
+import { CordisDirectorySettings } from "./CordisDirectorySettings";
 import styles from "./DesktopExtensionsSettings.module.css";
 import settingsStyles from "./SettingsDialog.module.css";
 
@@ -133,5 +134,6 @@ export function DesktopExtensionsSettings() {
     {available !== false && !entries && !error && <p role="status">{t("desktopExtensions.loading")}</p>}
     {error && <p className={styles.error} role="alert">{error}</p>}
     {entries?.map(entry => <ExtensionCard key={entry.manifest.id} entry={entry} update={update} />)}
+    {available && <CordisDirectorySettings />}
   </section>;
 }
