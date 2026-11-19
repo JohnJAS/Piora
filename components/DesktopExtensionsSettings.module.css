@@ -13,3 +13,23 @@
 .option { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
 .card a { color: var(--accent); }
 .error { color: var(--text); border-left: 3px solid var(--accent); padding-left: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.directory { display: grid; min-width: 0; gap: 16px; }
+.directory > h3 { margin: 4px 0 0; font-size: var(--text-base); font-weight: 650; }
+.versionPicker, .directorySearch { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
+.versionPicker select, .directorySearch input {
+  min-height: var(--control-height);
+  max-width: 100%;
+  font: inherit;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text);
+}
+.directorySearch input { width: min(24rem, 100%); }
+.extensionDetails { color: var(--text-muted); overflow-wrap: anywhere; }
+.extensionDetails summary { width: fit-content; cursor: pointer; color: var(--text); }
+.extensionDetails p { margin-top: 8px; }
+.extensionDetails pre { max-height: 12rem; overflow: auto; white-space: pre-wrap; font: var(--text-xs)/1.5 var(--font-mono); }
+.discoveryList { list-style: none; margin: 0; padding: 0; }
+.discoveryList li { display: grid; gap: 6px; padding-block: 12px; border-top: 1px solid var(--border-soft); }

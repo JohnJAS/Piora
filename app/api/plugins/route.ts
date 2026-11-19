@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { existsSync, readFileSync, statSync } from "fs";
-import { basename, dirname, extname, join, relative } from "path";
+import { basename, dirname, extname, join, relative, resolve } from "path";
 import {
   DefaultPackageManager,
   getAgentDir,
@@ -13,6 +13,7 @@ import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-acces
 import { invalidateServicesCache } from "@/lib/rpc-manager";
 import { inspectMcpCapabilities } from "@/lib/mcp-capabilities";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
+import { isDesktopExtensionPackage } from "@/lib/desktop-extension-package";
 import type {
   PluginDiagnostic,
   PluginPackageInfo,
@@ -334,7 +335,14 @@ export async function POST(req: Request) {
 
     if (body.action === "install") {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
-      await packageManager.installAndPersist(source, { local });
+      const desktopPackageResponse = () => NextResponse.json({
+        code: "desktop-extension-package",
+        error: "This package declares a desktop extension. Open Settings > Desktop extensions to check its compatibility.",
+      }, { status: 409 });
+      if (isDesktopExtensionPackage(resolve(body.cwd, source))) return desktopPackageResponse();
+      await packageManager.install(source, { local });
+      if (isDesktopExtensionPackage(packageManager.getInstalledPath(source, local ? "project" : "user"))) return desktopPackageResponse();
+      packageManager.addSourceToSettings(source, { local });
     } else if (body.action === "remove") {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
       await packageManager.removeAndPersist(source, { local });

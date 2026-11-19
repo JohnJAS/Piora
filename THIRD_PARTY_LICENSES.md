@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `392ff9034747a8a2173765e2ab7dc24bd88308959d521388431ea7676df70814`
+Lockfile SHA-256: `f00cf87bcf74d41252d47169144faa3ca37fcee3a5d82497a79ab58e3a8f0a9f`
 
-Unique locked packages: **1273**. Runtime packages: **772**. Build/development-only packages: **501**.
+Unique locked packages: **1276**. Runtime packages: **775**. Build/development-only packages: **501**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -75,6 +75,8 @@ Every locked package declares a license.
 | `@codemirror/state` | `6.7.6` | MIT | No |
 | `@codemirror/streamparser` | `6.0.0` | MIT | No |
 | `@codemirror/view` | `6.43.15` | MIT | No |
+| `@deepseek-ai/cordis` | `4.1.0` | MIT | No |
+| `@deepseek-ai/cosmokit` | `1.9.0` | MIT | No |
 | `@earendil-works/pi-agent-core` | `1.5.2` | MIT | No |
 | `@earendil-works/pi-ai` | `1.5.2` | MIT | No |
 | `@earendil-works/pi-codemode` | `1.5.2` | MIT | No |
@@ -196,6 +198,7 @@ Every locked package declares a license.
 | `@smithy/types` | `4.19.0` | Apache-2.0 | No |
 | `@sqlite.org/sqlite-wasm` | `3.53.4-build2` | Apache-2.0 | No |
 | `@stablelib/base64` | `1.0.1` | MIT | No |
+| `@standard-schema/spec` | `1.1.0` | MIT | No |
 | `@swc/helpers` | `0.5.23` | Apache-2.0 | No |
 | `@types/d3` | `7.4.3` | MIT | No |
 | `@types/d3-array` | `3.2.2` | MIT | No |

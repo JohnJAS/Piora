@@ -682,7 +682,8 @@ export function PluginsConfig({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "install", source, scope: installScope, cwd }),
       });
-      const next = (await res.json()) as PluginsResponse & { error?: string };
+      const next = (await res.json()) as PluginsResponse & { error?: string; code?: string };
+      if (next.code === "desktop-extension-package") throw new Error(t("desktopExtensions.useDesktopSettings"));
       if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
       setData(next);
       const installed = findInstalledPackage(next.packages, source, installScope);
@@ -695,7 +696,7 @@ export function PluginsConfig({
     } finally {
       setBusyKey(null);
     }
-  }, [cwd, installScope, installSource]);
+  }, [cwd, installScope, installSource, t]);
 
   const reloadSession = useCallback(async () => {
     if (!sessionId) return;
