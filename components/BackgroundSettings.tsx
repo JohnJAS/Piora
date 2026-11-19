@@ -51,6 +51,7 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
   } = useBackground();
 
   const selectedPreset = getBackgroundPreset(preference.presetId);
+  const motion = getBackgroundMotionKind(selectedPreset?.id);
   const previewBackground = selectedPreset
     ? selectedPreset.artworkStatus === "available"
       ? `url("${selectedPreset.asset}"), ${selectedPreset.fallback}`
@@ -80,7 +81,7 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
 
       <div className={styles.preview} aria-hidden="true" style={{ backgroundImage: previewBackground }} />
 
-      {getBackgroundMotionKind(selectedPreset?.id) && (
+      {motion && (
         <label className={styles.motionToggle}>
           <input
             type="checkbox"
@@ -88,7 +89,7 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
             disabled={!hydrated || busy}
             onChange={(event) => setMotionEnabled(event.currentTarget.checked)}
           />
-          {t("background.motion")}
+          {t(motion === "character" ? "background.characterMotion" : "background.motion")}
         </label>
       )}
 

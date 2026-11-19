@@ -43,13 +43,33 @@ html[data-app-background-active="true"] body::after {
   display: none;
 }
 
+.character-background-motion {
+  position: fixed;
+  z-index: 0;
+  inset: -32px;
+  width: calc(100% + 64px);
+  height: calc(100% + 64px);
+  pointer-events: none;
+  visibility: hidden;
+  filter: blur(var(--app-background-blur, 0px));
+  transform: scale(1.035);
+}
+
+.settings-backdrop > .character-background-motion {
+  position: absolute;
+}
+
 @media (prefers-reduced-motion: no-preference) {
+  html[data-app-background-active="true"]:not(.desktop-pet-document) .character-background-motion[data-ready="true"] {
+    visibility: visible;
+  }
+
   html[data-app-background-motion="running"] {
     --app-background-motion-play-state: running;
   }
 
-  html[data-app-background-active="true"][data-app-background-motion]:not(.desktop-pet-document) body:has(> .app-shell):not(:has(> .settings-backdrop))::before,
-  html[data-app-background-active="true"][data-app-background-motion]:not(.desktop-pet-document) .settings-backdrop::before,
+  html[data-app-background-preset="nordic-ice-motion"][data-app-background-motion]:not(.desktop-pet-document) body:has(> .app-shell):not(:has(> .settings-backdrop))::before,
+  html[data-app-background-preset="nordic-ice-motion"][data-app-background-motion]:not(.desktop-pet-document) .settings-backdrop::before,
   html[data-app-background-motion] .glacier-background-motion {
     animation: app-background-drift 12s ease-in-out infinite var(--app-background-motion-play-state, paused);
   }

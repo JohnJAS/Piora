@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 export const settingsTheme = {
   id: 'settings-theme',
   scope: 'real Electron development window; theme UI and reload persistence',
-  coverage: ['actual settings navigation and radio clicks', 'rendered theme and localStorage agreement', 'reload persistence', 'hands-free glacier and character wallpaper motion', 'glacier parallax, motion toggle and reduced motion', 'uncaught renderer errors'],
+  coverage: ['actual settings navigation and radio clicks', 'rendered theme and localStorage agreement', 'reload persistence', 'glacier parallax and character pixel motion with fixed scenery', 'motion toggle and reduced motion', 'uncaught renderer errors'],
   limits: ['model calls and chat sending', 'native system dialogs', 'packaged builds and updates', 'visual design acceptance'],
   async run({ page, reload, screenshot, step, waitUntil }) {
     async function openAppearance() {
@@ -25,7 +25,7 @@ export const settingsTheme = {
       const matrix = new DOMMatrixReadOnly(style.transform === 'none' ? undefined : style.transform);
       return { name: style.animationName, state: style.animationPlayState, x: matrix.m41, y: matrix.m42, scale: matrix.m11 };
     }, selector);
-    async function assertAmbientMotion(selector) {
+    async function assertGlacierDrift(selector) {
       const initial = await waitUntil(async () => {
         const style = await wallpaperStyle(selector);
         return style.name === 'app-background-drift' && style.state === 'running' && style;
@@ -38,6 +38,41 @@ export const settingsTheme = {
       assert.ok(moved.scale >= 1.034 && moved.scale <= 1.046, JSON.stringify(moved));
     }
     const assertStaticWallpaper = selector => waitUntil(async () => (await wallpaperStyle(selector)).name === 'none', `still wallpaper on ${selector}`);
+    const characterScene = page.locator('.character-background-motion');
+    function readCharacterFrame(canvas) {
+      // Read a rendered frame before the browser clears the WebGL back buffer.
+      return canvas.evaluate(element => new Promise(resolve => {
+        const gl = element.getContext('webgl');
+        const tile = (x, y) => {
+          const size = 32;
+          const pixels = new Uint8Array(size * size * 4);
+          gl.readPixels(Math.round(gl.drawingBufferWidth * x - size / 2),
+            Math.round(gl.drawingBufferHeight * (1 - y) - size / 2), size, size, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+          return Array.from(pixels.filter((_, index) => index % 4 !== 3));
+        };
+        let attempts = 0;
+        function sample() {
+          const scenery = tile(0.18, 0.22);
+          if (scenery.some(color => color > 0)) resolve({ scenery, character: tile(0.76, 0.23) });
+          else if (++attempts < 4) requestAnimationFrame(sample);
+          else resolve(null);
+        }
+        requestAnimationFrame(sample);
+      }));
+    }
+    async function assertCharacterMotion(host, preset) {
+      const canvas = page.locator(`${host} > .character-background-motion[data-character-background="${preset}"]`);
+      await canvas.waitFor({ state: 'visible' });
+      await assertStaticWallpaper(host);
+      const first = await waitUntil(() => readCharacterFrame(canvas), `rendered character frame in ${host}`);
+      await waitUntil(async () => {
+        const next = await readCharacterFrame(canvas);
+        if (!next) return false;
+        assert.deepEqual(next.scenery, first.scenery, 'The scenery must stay in place during the character animation');
+        return next.character.filter((color, index) => Math.abs(color - first.character[index]) > 6).length > 100;
+      }, `character pixels move without pointer input in ${host}`);
+      assert.equal(await characterScene.count(), 1);
+    }
     let dialog;
     await step('open-settings', async () => { dialog = await openAppearance(); });
     await step('theme-dark', async () => {
@@ -63,7 +98,7 @@ export const settingsTheme = {
     const closeSettings = () => dialog.getByRole('button', { name: /^(Back to Piora|返回 Piora)$/ }).click();
     const backgrounds = () => dialog.getByRole('tab', { name: /^(Background|背景)$/ });
     const colors = () => dialog.getByRole('tab', { name: /^(Theme & colors|主题与配色)$/i });
-    const toggle = () => dialog.getByRole('checkbox', { name: /^(Background motion|背景微动)$/ });
+    const toggle = () => dialog.getByRole('checkbox', { name: /^(Background motion|背景微动|Character animation|角色动画)$/ });
     const assertPreset = preset => waitUntil(() => page.evaluate(preset => document.documentElement.dataset.appBackgroundPreset === preset, preset), `selected ${preset} background`);
     await step('glacier-parallax', async () => {
       await page.emulateMedia({ reducedMotion: 'no-preference' });
@@ -71,10 +106,10 @@ export const settingsTheme = {
       await assertPreset('nordic-ice-motion');
       assert.equal(await motion().getAttribute('aria-checked'), 'true');
       assert.equal(await still().getAttribute('aria-checked'), 'false');
-      await assertAmbientMotion('.settings-backdrop');
+      await assertGlacierDrift('.settings-backdrop');
       await closeSettings();
       await scene.waitFor({ state: 'visible' });
-      await assertAmbientMotion('body');
+      await assertGlacierDrift('body');
       await page.mouse.move(32, 140);
       await page.waitForFunction(() => {
         const offset = selector => new DOMMatrixReadOnly(getComputedStyle(document.querySelector(selector)).transform).m41;
@@ -122,21 +157,24 @@ export const settingsTheme = {
         await assertTheme(preset);
         await assertPreset(preset);
         assert.equal(await look(preset).getAttribute('aria-pressed'), 'true');
-        await assertAmbientMotion('.settings-backdrop');
+        await assertCharacterMotion('.settings-backdrop', preset);
       }
       await closeSettings();
-      await assertAmbientMotion('body');
+      await assertCharacterMotion('body', 'character-whale-abyss');
       await screenshot('character-motion.png');
       await reload();
       await assertPreset('character-whale-abyss');
-      await assertAmbientMotion('body');
+      await assertCharacterMotion('body', 'character-whale-abyss');
       await page.emulateMedia({ reducedMotion: 'reduce' });
+      await characterScene.waitFor({ state: 'detached' });
       await assertStaticWallpaper('body');
       assert.match(await page.evaluate(() => getComputedStyle(document.body, '::before').backgroundImage), /whale-abyss\.webp/);
       await page.emulateMedia({ reducedMotion: 'no-preference' });
       dialog = await openAppearance();
       await backgrounds().click();
+      assert.ok(await toggle().isChecked());
       await toggle().uncheck();
+      await characterScene.waitFor({ state: 'detached' });
       await assertStaticWallpaper('.settings-backdrop');
       await reload();
       await assertPreset('character-whale-abyss');
@@ -144,6 +182,9 @@ export const settingsTheme = {
       dialog = await openAppearance();
       await backgrounds().click();
       assert.equal(await toggle().isChecked(), false);
+      assert.equal(await characterScene.count(), 0);
+      await toggle().check();
+      await assertCharacterMotion('.settings-backdrop', 'character-whale-abyss');
     });
   },
 };

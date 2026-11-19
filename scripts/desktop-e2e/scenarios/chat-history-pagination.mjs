@@ -4,11 +4,17 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const fixtures = new Map();
+const longAnswer = [
+  "# Archived Markdown answer",
+  "- **Preview list item**",
+  "```text\npreview code sample\n```",
+  "Additional fixture content. ".repeat(12_000),
+].join("\n\n");
 
 export const chatHistoryPagination = {
   id: "chat-history-pagination",
   scope: "Windows Electron and the local Next.js service with on-disk synthetic SDK history",
-  coverage: ["bounded initial history and first paint", "load older while preserving the scroll anchor", "locate an older entry", "return to latest", "restart with the same profile"],
+  coverage: ["bounded initial history and first paint", "load older while preserving the scroll anchor and Markdown previews", "locate an older entry", "return to latest", "restart with the same profile"],
   limits: ["no model provider", "no physical Harmony device", "no release packaging"],
   async prepare({ paths, directory, report }) {
     const id = randomUUID();
@@ -24,7 +30,7 @@ export const chatHistoryPagination = {
       const number = Math.ceil(index / 2);
       const message = index % 2
         ? { role: "user", content: "Fixture question " + number, timestamp: Date.parse(timestamp) + index }
-        : { role: "assistant", content: [{ type: "text", text: number === 4 ? "First milestone only" : "Fixture answer " + number }], provider: "fixture", model: "local",
+        : { role: "assistant", content: [{ type: "text", text: number === 1 ? longAnswer : number === 4 ? "First milestone only" : "Fixture answer " + number }], provider: "fixture", model: "local",
           api: "openai-completions", stopReason: "stop", timestamp: Date.parse(timestamp) + index };
       entries.push({ type: "message", id: entryId(index), parentId: index === 1 ? null : entryId(index - 1), timestamp, message });
     }
@@ -109,6 +115,12 @@ export const chatHistoryPagination = {
       await readEarlier().waitFor({ state: "hidden" });
       await scrollToOldest();
       await page.getByText("Fixture question 1", { exact: true }).waitFor();
+      const preview = page.locator('[data-chat-entry-id="00000001"][role="note"]');
+      await preview.getByRole("heading", { name: "Archived Markdown answer", exact: true }).waitFor();
+      await preview.getByRole("listitem").getByText("Preview list item", { exact: true }).waitFor();
+      await preview.locator("pre code").getByText("preview code sample", { exact: true }).waitFor();
+      await preview.getByRole("button", { name: /^(在完整历史中查看原文|Open original in history)$/ }).waitFor();
+      evidence.markdownPreview = true;
     });
     await step("locate-old-search-result", async () => {
       await page.reload();
