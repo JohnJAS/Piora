@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
-import type { BackgroundMotionKind } from "@/lib/backgrounds";
 
-export function BackgroundMotion({ kind }: { kind: BackgroundMotionKind }) {
+export function BackgroundMotion() {
   const sceneRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,9 +60,8 @@ export function BackgroundMotion({ kind }: { kind: BackgroundMotionKind }) {
       center();
       delete root.dataset.appBackgroundMotion;
     };
-  }, [kind]);
+  }, []);
 
-  if (kind !== "glacier") return null;
   return (
     <div className="glacier-background-motion" aria-hidden="true" ref={sceneRef}>
       <div className="glacier-facets glacier-facets-middle" />

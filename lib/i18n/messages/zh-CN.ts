@@ -1154,6 +1154,7 @@ export const zhCNLocale: LocalePlugin = {
     "background.filePanelOverlay": "文件面板透明度",
     "background.blur": "模糊",
     "background.motion": "背景微动",
+    "background.characterMotion": "角色动画",
     "background.artworkPending": "该资源位的最终原创图片尚待生成，当前显示的是配色预览。",
     "background.error.corruptImage": "无法解码这张图片。",
     "background.error.dimensionsTooLarge": "图片尺寸过大。",
