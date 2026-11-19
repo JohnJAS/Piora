@@ -2,10 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import vm from "node:vm";
-import { createJiti } from "jiti";
 import ts from "typescript";
 
-const { chatHistoryUrl } = await createJiti(import.meta.url).import("../lib/chat-history-client.ts");
 const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 const cwdHandler = source.slice(
   source.indexOf("const handleCwdChange"),
@@ -259,10 +257,10 @@ test("returning through history to the current chat cancels an in-flight replace
   const h = createSelectionHarness("current", { href: "https://piora.test/?session=next" });
   Object.defineProperty(h.location, "search", { get: () => new URL(h.location.href).search });
   Object.assign(h.context, {
-    AbortController, URLSearchParams, chatHistoryUrl, handleSelectSession: h.select,
-    fetch: (url, { signal }) => new Promise(resolve => {
-      fetches.push({ url, signal });
-      release = () => resolve({ ok: true, json: async () => ({ info: { id: "next" } }) });
+    AbortController, URLSearchParams, handleSelectSession: h.select,
+    resolveNavigationSession: (id, signal) => new Promise(resolve => {
+      fetches.push({ id, signal });
+      release = () => resolve({ id });
     }),
     readHistoryLocation: () => ({ open: false, leafId: null, entryId: null }),
   });
@@ -273,9 +271,7 @@ test("returning through history to the current chat cancels an in-flight replace
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.context.selectedSessionIdRef.current, "current");
   assert.equal(fetches.length, 1);
-  const historyUrl = new URL(fetches[0].url, h.location.href);
-  assert.equal(historyUrl.pathname, "/api/sessions/next");
-  assert.equal(historyUrl.searchParams.get("view"), "chat");
+  assert.equal(fetches[0].id, "next");
   h.location.href = "https://piora.test/?session=current";
   restore();
   assert.equal(fetches[0].signal.aborted, true);

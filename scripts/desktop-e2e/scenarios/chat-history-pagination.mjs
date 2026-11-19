@@ -66,25 +66,30 @@ export const chatHistoryPagination = {
       await page.mouse.wheel(0, -100000);
       await page.waitForFunction(() => document.querySelector(".chat-scroll-container")?.scrollTop === 0);
     };
-    await step("initial-chat-page", async () => {
-      const [response] = await Promise.all([
-        page.waitForResponse(response => {
-          const url = new URL(response.url());
-          return url.pathname === catalogURL && url.searchParams.get("view") === "chat";
-        }),
-        page.locator('[data-session-drag-id="' + fixture.id + '"]').click(),
-      ]);
-      await page.locator('[data-chat-surface][data-session-id="' + fixture.id + '"] textarea').waitFor();
-      const text = await response.text();
-      assert.equal(response.status(), 200, text);
-      const body = JSON.parse(text);
-      evidence.firstPageBytes = Buffer.byteLength(text);
+    await step("prepare-history-endpoints", async () => {
+      // Prime the dev route compiler independently of the measured click.
+      const [history, state] = await page.evaluate(async path => {
+        const urls = [path + "?deferThinking=1&deferMedia=1&view=chat", path + "/state?view=chat"];
+        return Promise.all(urls.map(async url => {
+          const response = await fetch(url, { cache: "no-store" });
+          return { status: response.status, text: await response.text() };
+        }));
+      }, catalogURL);
+      assert.deepEqual([history.status, state.status], [200, 200]);
+      const body = JSON.parse(history.text);
+      evidence.firstPageBytes = Buffer.byteLength(history.text);
       evidence.firstPageMessages = body.context.entryIds.length;
       assert.equal(evidence.firstPageMessages, 80);
       assert.equal(body.context.entryIds.at(-1), fixture.lastId);
       assert.ok(evidence.firstPageBytes < 100_000);
       assert.ok(body.historyPage.older);
+    });
+    await step("initial-chat-page", async () => {
+      await page.locator('[data-session-drag-id="' + fixture.id + '"]').click();
+      await page.locator('[data-chat-surface][data-session-id="' + fixture.id + '"] textarea').waitFor();
       await page.getByText("Fixture answer 120", { exact: true }).waitFor();
+      await readEarlier().waitFor();
+      assert.equal(await page.getByText("Fixture question 80", { exact: true }).count(), 0);
     });
     await step("load-older-over-the-ui", async () => {
       await scrollToOldest();
@@ -173,6 +178,7 @@ export const chatHistoryPagination = {
         const surface = page.locator('[data-chat-surface][data-session-id="' + fixture.otherId + '"]');
         const composer = surface.locator("textarea");
         await composer.waitFor();
+        await page.waitForFunction(() => Boolean(window.pioraFirstTargetFrame));
         const firstFrame = await page.evaluate(() => window.pioraFirstTargetFrame);
         assert.equal(firstFrame.sessionId, fixture.otherId);
         assert.equal(firstFrame.hasComposer, true);

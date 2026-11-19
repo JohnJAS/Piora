@@ -98,6 +98,7 @@ function App(){const[selectedSession,setSelectedSession]=useState(sessions.a),[s
       window.markdownWorkerErrors = [];
       const NativeWorker = window.Worker;
       window.Worker = class extends NativeWorker {
+        terminated = false;
         constructor(url, options) {
           super(url, options);
           if (options?.name === "piora-markdown") {
@@ -106,8 +107,14 @@ function App(){const[selectedSession,setSelectedSession]=useState(sessions.a),[s
               if (event.data.chunks) window.markdownFinished++;
               if (event.data.error) window.markdownWorkerErrors.push("Markdown parse failed");
             });
-            this.addEventListener("error", event => window.markdownWorkerErrors.push(event.message || String(url)));
+            this.addEventListener("error", event => {
+              if (!this.terminated) window.markdownWorkerErrors.push(event.message || String(url));
+            });
           }
+        }
+        terminate() {
+          this.terminated = true;
+          super.terminate();
         }
       };
     });
@@ -258,6 +265,7 @@ function App(){const[selectedSession,setSelectedSession]=useState(sessions.a),[s
       });
     assert.deepEqual(await page.evaluate(() => window.markdownWorkerErrors), []);
     const answer = page.locator('[data-chat-entry-id="long-assistant"] .markdown-body');
+    await page.waitForFunction(() => document.querySelector('[data-chat-entry-id="long-assistant"] .footnotes li'));
     assert.equal(await answer.locator("h2").filter({ hasText: /^Section \d+$/ }).count(), 2100);
     assert.equal(await answer.locator("ul > li").count(), 4200);
     assert.equal(await answer.getByText("The complete long reply ends here.", { exact: true }).count(), 1);
@@ -265,7 +273,7 @@ function App(){const[selectedSession,setSelectedSession]=useState(sessions.a),[s
     assert.equal(await answer.locator("mark").textContent(), "Preserved highlight");
     assert.equal(await answer.locator(".katex").count(), 1);
     assert.match(await answer.locator("p").filter({ hasText: "Character entity" }).textContent(), /Character entity © and a note/);
-    assert.match(await answer.locator("ol > li").textContent(), /^Full note text\./);
+    assert.match((await answer.locator("ol > li").textContent()).trim(), /^Full note text\./);
     assert.equal(await composer.inputValue(), "DRAFT_DURING_LONG_MARKDOWN");
     await select("a");
     assert.equal(await composer.inputValue(), "DRAFT_A_PRESERVED");

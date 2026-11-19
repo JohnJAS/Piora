@@ -4381,6 +4381,11 @@ pre, code {
   background: var(--bg-subtle);
   color: var(--text-muted);
 }
+.long-markdown-section {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 640px;
+}
+
 .markdown-table-wrap {
   width: 100%;
   max-width: 100%;

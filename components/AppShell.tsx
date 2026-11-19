@@ -64,7 +64,6 @@ import type { GitStatusResponse } from "@/lib/git-types";
 import { GitToolsPopover } from "./workspace/GitToolsPopover";
 import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
-import { chatHistoryUrl } from "@/lib/chat-history-client";
 import { fetchSessionMetadata } from "@/lib/session-catalog-client";
 import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
 
@@ -824,8 +823,6 @@ export function AppShell() {
     // selection, not a new navigation that may cancel the user's next pick.
     const navigationVersion = cwdBelongsToSelectedSession || cwdBelongsToSelectedRoom
       ? workspaceNavigationVersionRef.current : ++workspaceNavigationVersionRef.current;
-    if (!cwdBelongsToSelectedSession && !cwdBelongsToSelectedRoom) {
-    }
     // Skip if cwd is null (initial mount).
     if (!cwd) { setActiveCwd(null); return; }
     const newProject = projectRoot ?? cwd;
@@ -1018,6 +1015,10 @@ export function AppShell() {
     void handleSelectSession(session, false, entryId);
   }, [handleSelectSession]);
 
+  const resolveNavigationSession = useCallback(async (id: string, signal?: AbortSignal) => {
+    return sessionSidebarRef.current?.findSession(id) ?? (await fetchSessionMetadata([id], signal))[0];
+  }, []);
+
   useEffect(() => {
     let controller: AbortController | null = null;
     const restore = () => {
@@ -1031,27 +1032,28 @@ export function AppShell() {
       if (!id || id === selectedSessionIdRef.current) return;
       controller = new AbortController();
       const active = controller;
-      void fetch(chatHistoryUrl(id), { signal: active.signal })
-        .then(async response => response.ok ? response.json() : null)
-        .then(body => { if (!active.signal.aborted && navigationVersion === workspaceNavigationVersionRef.current && window.location.search === requestedUrl && body?.info) void handleSelectSession(body.info, true); })
+      void resolveNavigationSession(id, active.signal)
+        .then(session => { if (!active.signal.aborted && navigationVersion === workspaceNavigationVersionRef.current && window.location.search === requestedUrl && session) void handleSelectSession(session, true); })
         .catch(() => {});
     };
     window.addEventListener("popstate", restore);
     return () => { controller?.abort(); window.removeEventListener("popstate", restore); };
-  }, [handleSelectSession]);
+  }, [handleSelectSession, resolveNavigationSession]);
 
   const openNotificationSession = useCallback(async (rawSessionId: unknown) => {
     const sessionId = sanitizeNotificationSessionId(rawSessionId);
     if (!sessionId) return;
     try {
-      const [session] = await fetchSessionMetadata([sessionId]);
+      const version = ++workspaceNavigationVersionRef.current;
+      const session = await resolveNavigationSession(sessionId);
+      if (version !== workspaceNavigationVersionRef.current) return;
       if (!session) throw new Error(`Session ${sessionId} is no longer available.`);
       handleSelectSession(session);
       setRefreshKey((key) => key + 1);
     } catch (error) {
       console.warn("Unable to open the notification Session:", error);
     }
-  }, [handleSelectSession]);
+  }, [handleSelectSession, resolveNavigationSession]);
 
   useEffect(() => {
     const unsubscribeDesktop = window.piDesktop?.onNotificationSession?.((sessionId) => {
@@ -1644,13 +1646,14 @@ export function AppShell() {
     if (window.location.search !== url) pushUrlWithoutNextNavigation(url);
   }, []);
   const openRelatedHistory = useCallback(async (id: string) => {
-    const response = await fetch(chatHistoryUrl(id));
-    const body = await response.json();
-    if (!response.ok || !body.info) throw new Error(body.error || `HTTP ${response.status}`);
-    if (!await handleSelectSession(body.info, true)) return;
+    const version = ++workspaceNavigationVersionRef.current;
+    const session = await resolveNavigationSession(id);
+    if (version !== workspaceNavigationVersionRef.current) return;
+    if (!session) throw new Error(`Session ${id} is no longer available.`);
+    if (!await handleSelectSession(session, true) || selectedSessionIdRef.current !== id) return;
     setHistoryLocation({ open: true, leafId: null, entryId: null }); setHistoryDialogOpen(true);
     pushUrlWithoutNextNavigation(historyLocationUrl(id));
-  }, [handleSelectSession]);
+  }, [handleSelectSession, resolveNavigationSession]);
 
   const handleTaskRename = useCallback(async (name: string) => {
     if (!selectedSession) return;
