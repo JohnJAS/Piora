@@ -5,13 +5,13 @@ import { tmpdir } from 'node:os';
 
 export async function prepareSubagentModel({ paths, registerCleanup, report }) {
   const workspace = await mkdtemp(join(tmpdir(), 'piora-subagent-workspace-'));
-  const fixture = { workspace, backgroundDelayMs: 1500, requests: [], holds: [], failures: [], files: { A: join(workspace, 'child-a.txt'), B: join(workspace, 'child-b.txt') } };
+  const fixture = { workspace, backgroundDelayMs: 1500, explorationToolRounds: 1, requests: [], holds: [], failures: [], files: { A: join(workspace, 'child-a.txt'), B: join(workspace, 'child-b.txt') } };
   await writeFile(fixture.files.A, 'ALPHA_ISOLATED_RESULT'); await writeFile(fixture.files.B, 'BETA_ISOLATED_RESULT');
-  function respond(res, calls, content) {
+  function respond(res, calls, content, promptTokens = 50) {
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
     const emit = (delta, finish_reason = null, usage) => res.write(`data: ${JSON.stringify({ id: 'subagent-fixture', object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: 'subagent', choices: [{ index: 0, delta, finish_reason }], ...(usage ? { usage } : {}) })}\n\n`);
     emit({ role: 'assistant', ...(calls?.length ? { tool_calls: calls.map((call, index) => ({ index, id: `sa-${fixture.requests.length}-${index}`, type: 'function', function: { name: call.name, arguments: JSON.stringify(call.args) } })) } : { content }) });
-    emit({}, calls?.length ? 'tool_calls' : 'stop', { prompt_tokens: 50, completion_tokens: 10, total_tokens: 60 }); res.end('data: [DONE]\n\n');
+    emit({}, calls?.length ? 'tool_calls' : 'stop', { prompt_tokens: promptTokens, completion_tokens: 10, total_tokens: promptTokens + 10 }); res.end('data: [DONE]\n\n');
   }
   const text = message => typeof message?.content === 'string' ? message.content : (message?.content ?? []).map(block => block.text ?? '').join('\n');
   const server = createServer(async (req, res) => {
@@ -21,7 +21,6 @@ export async function prepareSubagentModel({ paths, registerCleanup, report }) {
       const user = [...messages].reverse().find(message => message.role === 'user'), task = text(user);
       const tools = (body.tools ?? []).map(tool => tool.function?.name);
       const isChild = /CHILD_(A|B|HOLD|FOLLOWUP|BACKGROUND|FAIL)/.test(task);
-      const last = messages.at(-1), toolReply = last?.role === 'tool';
       const observation = { task, isChild, tools, at: Date.now(), model: body.model, parentSecretLeaked: isChild && JSON.stringify(messages).includes('PARENT_PRIVATE_CONTEXT') };
       fixture.requests.push(observation);
       if (isChild) {
@@ -42,8 +41,10 @@ export async function prepareSubagentModel({ paths, registerCleanup, report }) {
           res.once('close', () => clearTimeout(timer)); return;
         }
         const key = /CHILD_A/.test(task) ? 'A' : 'B';
-        if (!toolReply) return respond(res, [{ name: 'read', args: { path: fixture.files[key] } }]);
-        return respond(res, null, key === 'A' ? 'ALPHA_ISOLATED_RESULT' : 'BETA_ISOLATED_RESULT');
+        const finishedReads = messages.slice(messages.lastIndexOf(user) + 1).filter(message => message.role === 'tool').length;
+        // Reproduce the usage of a large context while keeping fixture responses small.
+        if (finishedReads < fixture.explorationToolRounds) return respond(res, [{ name: 'read', args: { path: fixture.files[key] } }], undefined, 80_000);
+        return respond(res, null, key === 'A' ? 'ALPHA_ISOLATED_RESULT' : 'BETA_ISOLATED_RESULT', 80_000);
       }
       // Non-task requests (title generation, suggestions) stay harmless.
       if (!/SUBAGENT_E2E_/.test(task)) return respond(res, null, 'Subagent fixture');
@@ -66,7 +67,7 @@ export async function prepareSubagentModel({ paths, registerCleanup, report }) {
         if (!afterAgent) return respond(res, [{ name: 'Agent', args: { description: 'Failing subagent', prompt: 'CHILD_FAIL: Return the actual provider failure.', subagent_type: 'Explore' } }]);
         return respond(res, null, 'CHILD_FAILURE_REPORTED');
       }
-      if (/SUBAGENT_E2E_(STOP|DISABLE|RESTART|TIMEOUT|ESCAPE)/.test(task)) {
+      if (/SUBAGENT_E2E_(STOP|DISABLE|RESTART|ESCAPE)/.test(task)) {
         if (!afterAgent) return respond(res, (/SUBAGENT_E2E_STOP/.test(task) ? ['A', 'B'] : ['A']).map(key => ({ name: 'Agent', args: { description: `Held subagent ${key}`, prompt: 'CHILD_HOLD: Wait for cancellation.', subagent_type: 'Explore' } })));
         return respond(res, null, 'HELD_TASK_SETTLED');
       }

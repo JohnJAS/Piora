@@ -1,18 +1,15 @@
 export const SUBAGENT_TOOLS = ["Agent", "SendMessage", "TaskOutput", "TaskStop"] as const;
+export const MAX_SUBAGENT_RESULT_CHARS = 8_000;
 export function isSubagentTool(name: string): boolean { return (SUBAGENT_TOOLS as readonly string[]).includes(name); }
 export interface SubagentSettings {
   enabled: boolean;
-  maxConcurrency: number;
-  timeoutSeconds: number;
-  maxTokens: number;
-  maxResultChars: number;
   disabledProfiles: string[];
   modelOverrides: Record<string, string>;
 }
 export interface SubagentProfile {
   name: string; description: string; systemPrompt: string;
   source: "built-in" | "user" | "project";
-  tools?: string[]; disallowedTools?: string[]; model?: string; maxTurns: number; background?: boolean;
+  tools?: string[]; disallowedTools?: string[]; model?: string; background?: boolean;
 }
 export type SubagentStatus = "running" | "completed" | "failed" | "cancelled" | "interrupted";
 export interface SubagentRecord {
@@ -74,7 +71,7 @@ export function projectSubagent(record: SubagentProjectionSource): SubagentListI
 
 export function projectSubagentDetail(record: SubagentProjectionSource): SubagentDetail {
   return {
-    ...projectSubagent(record), model: record.model?.slice(0, 256), result: record.result.slice(0, 8_000),
+    ...projectSubagent(record), model: record.model?.slice(0, 256), result: record.result.slice(0, MAX_SUBAGENT_RESULT_CHARS),
     error: record.error?.slice(0, 2_000), totalTokens: record.totalTokens, totalToolUseCount: record.totalToolUseCount,
   };
 }

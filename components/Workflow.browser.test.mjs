@@ -112,7 +112,7 @@ createRoot(document.getElementById('root')).render(<I18nProvider><App/></I18nPro
       if (!url.pathname.startsWith("/api/")) return route.fulfill({ contentType: "text/html", body: '<!doctype html><meta charset="utf-8"><style>:root{--bg:#fff;--bg-panel:#fafafa;--bg-hover:#f1f1f1;--bg-selected:#eee;--border:#dedede;--border-soft:#dedede;--surface-raised:#fff;--floating-background:#fff;--floating-border:#dedede;--floating-filter:none;--floating-shadow:0 5px 18px #0002;--radius-control:8px;--ui-font-family:Arial,sans-serif;--text:#262626;--text-muted:#666;--text-dim:#a3a3a3;--accent:#2563eb;--text-xs:12px;--text-sm:14px}body{font-family:Arial,sans-serif;color:var(--text);line-height:1.5}' + tooltipCss + composerThemeCss + '</style><div id="root"></div><script src="/bundle.js"></script>' });
       if (url.pathname === "/api/models") return route.fulfill({ json: { models: {}, modelList: [] } });
       if (url.pathname === "/api/settings/subagents") return route.fulfill({ json: {
-        settings: { enabled: false, maxConcurrency: 4, timeoutSeconds: 300, maxTokens: 200000, maxResultChars: 8000, disabledProfiles: [], modelOverrides: {} }, profiles: [],
+        settings: { enabled: false, disabledProfiles: [], modelOverrides: {} }, profiles: [],
       } });
       if (url.pathname === "/api/settings/laboratory") {
         if (route.request().method() === "PUT") {

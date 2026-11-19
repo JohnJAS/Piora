@@ -33,7 +33,7 @@ export function SubagentTaskCard({ sessionId, toolCallId, input, seed }: {
       {openDetails && <button type="button" onClick={() => openDetails({ parentSessionId: current.parentSessionId, agentId: current.agentId })}>{t("subagent.openDetails")}</button>}
       {current.status === "running" && <SubagentStopButton key={current.agentId + ":" + current.attempt} record={current} stale={remote.failed || !observed} />}
     </> : undefined}>
-    {current && <SubagentSummary record={current} showDuration={false} />}
+    {current && <SubagentSummary record={current} />}
     {remote.failed && <button type="button" className={css.link} onClick={remote.refresh}>{t("subagent.refreshError")}</button>}
     {expanded && owner && current && <SubagentActivity key={current.agentId + ":" + current.attempt} record={current} />}
   </ChatDisclosure>;

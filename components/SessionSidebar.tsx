@@ -64,9 +64,9 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     customPathOpen, setCustomPathOpen, customPathError, setCustomPathError,
     customPathValidating, commitCustomPath, handleCustomPathClick, handleDefaultCwd,
   } = useProjectPicker({ setSelectedCwd, setRememberedProjectRoots, setHiddenProjectRoots, onProjectSelected: handlePickedProject });
-  const { allSessions, loading, catalogComplete, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions, markSessionUnread, subagentParentIds, subagentCounts } = useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectRoots });
-  const subagentSidebar = useMemo(() => ({ parentIds: subagentParentIds, activeCounts: subagentCounts, open: onOpenSubagent, selected: selectedSubagent }),
-    [subagentParentIds, subagentCounts, onOpenSubagent, selectedSubagent]);
+  const { allSessions, loading, catalogComplete, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions, markSessionUnread, subagentCounts } = useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectRoots });
+  const subagentSidebar = useMemo(() => ({ activeCounts: subagentCounts, open: onOpenSubagent, selected: selectedSubagent }),
+    [subagentCounts, onOpenSubagent, selectedSubagent]);
   const { state: worktreeState, error: worktreeError } = useWorktrees(selectedCwd, true, refreshKey);
 
   useEffect(() => {

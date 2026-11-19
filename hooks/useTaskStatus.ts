@@ -21,7 +21,7 @@ const runtimeBySession = new Map<string, TaskRuntimeSnapshot>();
 const snapshotSignatures = new Map<string, string>();
 const sessionListeners = new Map<string, Set<() => void>>();
 const storeListeners = new Set<() => void>();
-let runtimeStoreState: { ready: boolean; snapshots: TaskRuntimeSnapshot[]; subagentPresenceVersion?: string } = { ready: false, snapshots: [] };
+let runtimeStoreState: { ready: boolean; snapshots: TaskRuntimeSnapshot[] } = { ready: false, snapshots: [] };
 let subagentRefreshEpoch: string | undefined;
 let subagentRefreshCursor: number | undefined;
 const subagentListeners = new Map<string, Set<() => void>>();
@@ -108,7 +108,7 @@ function applyPayload(payload: Partial<RunningSessionsPayload>): void {
   for (const id of runtimeBySession.keys()) {
     if (!next.has(id)) changedSessionIds.add(id);
   }
-  if (runtimeStoreState.ready && changedSessionIds.size === 0 && runtimeStoreState.subagentPresenceVersion === payload.subagentPresenceVersion) return;
+  if (runtimeStoreState.ready && changedSessionIds.size === 0) return;
 
   runtimeBySession.clear();
   for (const [id, session] of next) runtimeBySession.set(id, session);
@@ -116,7 +116,6 @@ function applyPayload(payload: Partial<RunningSessionsPayload>): void {
   for (const [id, signature] of nextSignatures) snapshotSignatures.set(id, signature);
   runtimeStoreState = {
     ready: true,
-    subagentPresenceVersion: payload.subagentPresenceVersion,
     snapshots: [...runtimeBySession.values()].sort((left, right) => (left.startedAt ?? 0) - (right.startedAt ?? 0)),
   };
   emitChange(changedSessionIds);

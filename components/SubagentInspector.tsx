@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { fetchSubagent, requestSubagentStop, SubagentRequestError, useSubagentQuery, type SubagentDetailResponse } from "@/hooks/useSubagents";
-import type { SubagentDetail, SubagentSelection, SubagentTranscriptPage } from "@/lib/subagent-types";
+import type { SubagentDetail, SubagentSelection, SubagentTranscriptEntry, SubagentTranscriptPage } from "@/lib/subagent-types";
 import { AliIcon } from "./AliIcon";
 import styles from "./SubagentTaskCard.module.css";
 
@@ -12,20 +12,53 @@ function detailQuery(agentId: string) {
   return new URLSearchParams({ agentId }).toString();
 }
 
-export function SubagentActivity({ record, toolCallId }: { record?: SubagentDetail; toolCallId?: string }) {
+type ActivityItem = SubagentTranscriptEntry | { id: string; role: "tools"; entries: SubagentTranscriptEntry[] };
+
+function groupActivity(entries: SubagentTranscriptEntry[]): ActivityItem[] {
+  const items: ActivityItem[] = [];
+  for (const entry of entries) {
+    if (entry.role !== "toolCall" && entry.role !== "toolResult") {
+      items.push(entry);
+      continue;
+    }
+    const previous = items.at(-1);
+    if (previous?.role === "tools") previous.entries.push(entry);
+    else items.push({ id: "tools:" + entry.id, role: "tools", entries: [entry] });
+  }
+  return items;
+}
+
+function ActivityEntry({ entry }: { entry: SubagentTranscriptEntry }) {
   const { t } = useI18n();
-  const query = record ? detailQuery(record.agentId) + "&transcript=true" : undefined;
-  const latest = useSubagentQuery<SubagentDetailResponse>(record?.parentSessionId, query);
+  const title = t("subagent.role." + entry.role) + (entry.toolName ? " · " + entry.toolName : "");
+  const toolResult = entry.role === "toolResult";
+  return <li className={styles.entry} data-subagent-role={entry.role}>
+    {entry.role === "omitted" ? <p>{t("subagent.omitted")}</p> : !entry.text ? <p>{title}</p> :
+      <details>
+        <summary>
+          <span>{title}</span>
+          {!toolResult && <span className={styles.preview} aria-hidden="true">{entry.text.trim().slice(0, 160)}</span>}
+        </summary>
+        {toolResult ? <pre className={styles.toolOutput}>{entry.text}</pre> : <p className={styles.entryText}>{entry.text}</p>}
+        {entry.truncated && <small className={styles.truncated}>{t("subagent.truncated")}</small>}
+      </details>}
+  </li>;
+}
+
+export function SubagentActivity({ record, showHeading = true }: { record: SubagentDetail; showHeading?: boolean }) {
+  const { t } = useI18n();
+  const query = detailQuery(record.agentId) + "&transcript=true";
+  const latest = useSubagentQuery<SubagentDetailResponse>(record.parentSessionId, query);
   const [history, setHistory] = useState<SubagentTranscriptPage | null>(null);
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(false);
   const requestRef = useRef<AbortController | null>(null);
   useEffect(() => () => { requestRef.current?.abort(); }, []);
 
-  const base = latest.data?.records[0]?.attempt === record?.attempt ? latest.data?.transcript : undefined;
+  const base = latest.data?.records[0]?.attempt === record.attempt ? latest.data?.transcript : undefined;
   const cursor = history ? history.before : base?.before;
   const earlier = async () => {
-    if (!record || !query || !cursor || requestRef.current) return;
+    if (!cursor || requestRef.current) return;
     const controller = new AbortController();
     requestRef.current = controller;
     setLoading(true);
@@ -52,24 +85,25 @@ export function SubagentActivity({ record, toolCallId }: { record?: SubagentDeta
     }
   };
   const entries = history?.entries ?? base?.entries ?? [];
-  return <div className={styles.transcript} data-subagent-transcript data-subagent-tool-call={toolCallId}>
-    <strong>{t("subagent.transcript")}</strong>
-    {latest.failed && <button type="button" className={styles.link} onClick={latest.refresh}>{t("subagent.refreshError")}</button>}
-    {failed && <p role="alert">{t("subagent.refreshError")}</p>}
-    {history && <button type="button" className={styles.link} disabled={loading} onClick={() => setHistory(null)}>{t("subagent.latest")}</button>}
-    {cursor && <button type="button" className={styles.link} disabled={loading} onClick={() => void earlier()}>
-      {t(loading ? "subagent.loading" : "subagent.earlier")}
-    </button>}
-    {entries.map(entry => {
-      const title = t("subagent.role." + entry.role) + (entry.toolName ? " · " + entry.toolName : "");
-      return <div key={entry.id} className={styles.message} data-subagent-role={entry.role}>
-        {entry.role === "toolResult" ? <details><summary>{title}</summary><pre>{entry.text}</pre></details> : <>
-          <span>{title}</span>
-          <pre>{entry.role === "omitted" ? t("subagent.omitted") : entry.text}</pre>
-        </>}
-        {entry.truncated && <small>{t("subagent.truncated")}</small>}
-      </div>;
-    })}
+  return <div className={styles.transcript} data-subagent-transcript>
+    {showHeading && <strong>{t("subagent.transcript")}</strong>}
+    {(latest.failed || failed || history || cursor) && <div className={styles.historyActions}>
+      {latest.failed && <button type="button" className={styles.link} onClick={latest.refresh}>{t("subagent.refreshError")}</button>}
+      {failed && <p role="alert">{t("subagent.refreshError")}</p>}
+      {history && <button type="button" className={styles.link} disabled={loading} onClick={() => setHistory(null)}>{t("subagent.latest")}</button>}
+      {cursor && <button type="button" className={styles.link} disabled={loading} onClick={() => void earlier()}>
+        {t(loading ? "subagent.loading" : "subagent.earlier")}
+      </button>}
+    </div>}
+    {entries.length > 0 && <ol className={styles.entries}>
+      {groupActivity(entries).map(item => item.role === "tools" ?
+        <li key={item.id} className={styles.entry}>
+          <details data-subagent-tools>
+            <summary>{t("subagent.toolActivity", { count: item.entries.length })}</summary>
+            <ol className={styles.tools}>{item.entries.map(entry => <ActivityEntry key={entry.id} entry={entry} />)}</ol>
+          </details>
+        </li> : <ActivityEntry key={item.id} entry={item} />)}
+    </ol>}
     {!entries.length && !latest.failed && <p>{t(base ? "subagent.noTranscript" : "subagent.loading")}</p>}
   </div>;
 }
@@ -117,21 +151,24 @@ export function subagentElapsedSeconds(record: SubagentDetail): number {
   return Math.max(0, Math.round(((record.endedAt ?? Date.now()) - (record.attemptStartedAt ?? record.startedAt)) / 1_000));
 }
 
-export function SubagentSummary({ record, showDuration = true }: { record: SubagentDetail; showDuration?: boolean }) {
+export function SubagentSummary({ record }: { record: SubagentDetail }) {
   const { t } = useI18n();
   return <>
-    <p className={styles.usage}>{showDuration ? subagentElapsedSeconds(record) + "s · " : ""}{t("subagent.cumulative")} · {t("subagent.tokens", { tokens: record.totalTokens, tools: record.totalToolUseCount })}{record.model ? " · " + record.model : ""}</p>
+    <p className={styles.usage}>{t("subagent.cumulative")} · {t("subagent.tokens", { tokens: record.totalTokens, tools: record.totalToolUseCount })}{record.model ? " · " + record.model : ""}</p>
     {record.result && <p className={styles.result}>{record.result}</p>}
     {record.error && <p className={styles.result} role="alert">{record.error}</p>}
   </>;
 }
 
-export function SubagentInspector({ selection, onClose, modal }: { selection: SubagentSelection; onClose: () => void; modal: boolean }) {
-  const { t } = useI18n();
+export function SubagentInspector({ selection, onClose, modal, resizeHandle }: {
+  selection: SubagentSelection; onClose: () => void; modal: boolean; resizeHandle?: ReactNode;
+}) {
+  const { t, locale } = useI18n();
   const { data, failed, refresh } = useSubagentQuery<SubagentDetailResponse>(selection.parentSessionId, detailQuery(selection.agentId));
   const record = data?.records[0];
   const section = useRef<HTMLElement | null>(null);
   const close = useRef<HTMLButtonElement | null>(null);
+  const [activityOpen, setActivityOpen] = useState(false);
   useFocusTrap(section, modal, { initialFocus: close, onEscape: onClose });
   useEffect(() => {
     if (!modal) close.current?.focus({ preventScroll: true });
@@ -145,19 +182,52 @@ export function SubagentInspector({ selection, onClose, modal }: { selection: Su
       }
     }}>
     <header className={styles.header}>
-      <strong>{t("subagent.details")}</strong>
-      <button type="button" ref={close} className={styles.button} aria-label={t("subagent.closeDetails")} onClick={onClose}><AliIcon name="close" size={14} /></button>
+      <div className={styles.heading}>
+        <h2>{record?.description ?? t("subagent.details")}</h2>
+        {record && <p className={styles.metadata}>
+          <span className={styles.status} data-status={record.status}>{t("subagent." + record.status)}</span>
+          <span>{record.agentType}</span>
+          <span>{subagentElapsedSeconds(record)}s</span>
+        </p>}
+      </div>
+      <button type="button" ref={close} className={`${styles.button} ${styles.close}`} aria-label={t("subagent.closeDetails")} onClick={onClose}><AliIcon name="close" size={14} /></button>
     </header>
-    <div className={styles.body}>
+    {resizeHandle}
+    <div className={styles.body} id="subagent-inspector-body">
       {failed && <button type="button" className={styles.link} onClick={refresh}>{t("subagent.refreshError")}</button>}
       {!record && !failed && <p>{t(data ? "subagent.empty" : "subagent.loadingList")}</p>}
       {record && <>
-        <h2>{record.description}</h2>
-        <p className={styles.metadata}>{record.agentType} · {t("subagent." + record.status)} · {t(record.background ? "subagent.background" : "subagent.foreground")}</p>
-        <SubagentSummary record={record} />
+        {record.result && <section className={styles.outcome}>
+          <h3>{t("subagent.outcome")}</h3>
+          <p className={styles.result}>{record.result}</p>
+        </section>}
+        {record.error && <section className={`${styles.outcome} ${styles.failure}`} role="alert">
+          <h3>{t(record.status === "failed" ? "subagent.errorReason" : "subagent.endReason")}</h3>
+          <p className={styles.result}>{record.error === "Subagent token budget exhausted" ? t("subagent.legacyBudgetError") : record.error}</p>
+        </section>}
         <SubagentStopButton key={"stop:" + record.agentId + ":" + record.attempt} record={record} stale={failed} inspector />
-        <span className={styles.readOnly}>{t("subagent.readOnly")}</span>
-        <SubagentActivity key={"activity:" + record.agentId + ":" + record.attempt} record={record} />
+        <details className={styles.disclosure} data-subagent-activity onToggle={event => setActivityOpen(event.currentTarget.open)}>
+          <summary>
+            <AliIcon name="history" size={15} />
+            <span>{t("subagent.transcript")}</span>
+            <AliIcon name="chevron-right" size={12} className={styles.chevron} />
+          </summary>
+          {activityOpen && <SubagentActivity key={record.agentId + ":" + record.attempt} record={record} showHeading={false} />}
+        </details>
+        <details className={styles.disclosure} data-subagent-run-info>
+          <summary>
+            <AliIcon name="info" size={15} />
+            <span>{t("subagent.runInfo")}</span>
+            <AliIcon name="chevron-right" size={12} className={styles.chevron} />
+          </summary>
+          <dl className={styles.runInfo}>
+            {record.model && <div><dt>{t("subagent.profileModel")}</dt><dd>{record.model}</dd></div>}
+            <div><dt>{t("subagent.runMode")}</dt><dd>{t(record.background ? "subagent.background" : "subagent.foreground")}</dd></div>
+            <div><dt>{t("subagent.cumulative")}</dt><dd>{t("subagent.tokens", {
+              tokens: record.totalTokens.toLocaleString(locale), tools: record.totalToolUseCount,
+            })}</dd></div>
+          </dl>
+        </details>
       </>}
     </div>
   </section>;

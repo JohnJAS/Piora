@@ -6,7 +6,6 @@ import type { SessionInfo } from "@/lib/types";
 import { getSubagentRefreshEpoch, markSubagentChanged, subscribeSubagentChanges } from "./useTaskStatus";
 
 export interface SubagentSidebarState {
-  parentIds: ReadonlySet<string>;
   activeCounts: ReadonlyMap<string, number>;
   selected?: SubagentSelection;
   open?: (session: SessionInfo, agentId: string) => void;

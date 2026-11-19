@@ -5252,6 +5252,28 @@ span.linenumber {
 .panel-resize-handle.is-resizing::after {
   background: color-mix(in srgb, var(--text-muted) 70%, var(--border));
 }
+.subagent-panel-resize-handle {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  margin: 0;
+}
+.subagent-panel-resize-handle::after {
+  left: 0;
+}
+.subagent-panel-resize-handle::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 3px;
+  height: 32px;
+  border-radius: 2px;
+  background: var(--text-dim);
+  opacity: 0.55;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
 .right-panel-overlay-backdrop {
   display: none;
 }
@@ -5298,11 +5320,11 @@ span.linenumber {
   .right-panel-container {
     overflow: hidden;
     transition: width 0.2s ease, min-width 0.2s ease;
-    flex-basis: var(--right-panel-width, clamp(360px, 42vw, 640px));
+    flex-basis: var(--workspace-panel-width, var(--right-panel-width, clamp(360px, 42vw, 640px)));
     flex-shrink: 0;
   }
   .right-panel-container.right-panel-open {
-    width: var(--right-panel-width, clamp(360px, 42vw, 640px));
+    width: var(--workspace-panel-width, var(--right-panel-width, clamp(360px, 42vw, 640px)));
     min-width: 420px;
   }
   .right-panel-container.right-panel-closed {
@@ -5352,7 +5374,7 @@ span.linenumber {
     right: 0;
     bottom: 0;
     z-index: 250;
-    width: min(var(--right-panel-width, 560px), calc(100vw - 48px));
+    width: min(var(--workspace-panel-width, var(--right-panel-width, 560px)), calc(100vw - 48px));
     min-width: 420px;
     overflow: hidden;
     box-shadow: -12px 0 32px rgba(0, 0, 0, 0.18);
@@ -5374,10 +5396,8 @@ span.linenumber {
 }
 
 @media (min-width: 641px) {
-  .right-panel-container.right-panel-open[data-subagent-panel] {
-    width: 352px;
-    flex-basis: 352px;
-    min-width: 0;
+  .right-panel-container[data-subagent-panel] {
+    --workspace-panel-width: var(--subagent-panel-width);
   }
   .right-panel-container[data-subagent-panel] > [data-subagent-inspector] {
     width: 100%;

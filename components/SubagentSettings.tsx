@@ -104,17 +104,6 @@ export function SubagentSettings({ cwd }: { cwd?: string }) {
           </div>
           <p className={css.note}>{t("subagent.profileHelp")}</p>
         </section>
-        <section className={css.group} aria-labelledby={`${descriptionId}-limits`}>
-          <h3 id={`${descriptionId}-limits`} className={css.groupTitle}>{t("subagent.limitsTitle")}</h3>
-          <p className={css.hint}>{t("subagent.limitsHint")}</p>
-          <div className={css.fields}>
-            {(["maxConcurrency", "timeoutSeconds", "maxTokens", "maxResultChars"] as const).map(key => <label className={css.field} key={key}>
-              <span>{t(`subagent.${key}`)}</span><input type="number" min={1} aria-label={t(`subagent.${key}`)} disabled={saving}
-                defaultValue={settings[key]} key={`${key}:${settings[key]}`} onBlur={event => { const value = Number(event.target.value); if (value !== settings[key]) void save({ ...settings, [key]: value }); }} />
-            </label>)}
-          </div>
-          <p className={css.note}>{t("subagent.budgetHelp")}</p>
-        </section>
       </div>
     </details>}
     {error && <p className={css.error} role="alert">{error}</p>}

@@ -91,6 +91,7 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
     checkAlive();
     page = await waitUntil(() => {
       checkAlive();
+      if (!browser.isConnected()) throw new Error('Electron disconnected before its application window opened');
       return browser.contexts().flatMap(context => context.pages()).find(candidate => candidate.url().startsWith(origin + '/'));
     }, { signal, timeoutMs: 600_000, label: 'Piora application window' });
     page.setDefaultTimeout(stepTimeoutMs);
