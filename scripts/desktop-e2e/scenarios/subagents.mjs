@@ -181,6 +181,8 @@ export const subagents = {
           const composer = page.locator('textarea').first();
           await composer.fill('Keep this independent parent draft');
           const opener = detailButton(record.agentId);
+          const openerId = await opener.getAttribute('id');
+          assert.ok(openerId, 'The details button has an identity that survives a chat history refresh');
           await opener.focus();
           await page.keyboard.press('Enter');
           const details = inspectorFor(record.agentId);
@@ -211,7 +213,7 @@ export const subagents = {
           await page.screenshot({ path: join(directory, 'subagent-expanded-activity.png'), animations: 'disabled' });
           await page.keyboard.press('Escape');
           await details.waitFor({ state: 'hidden' });
-          await waitUntil(() => opener.evaluate(element => element === document.activeElement), 'focus returned to chat card');
+          await waitUntil(() => opener.evaluate((element, id) => element.id === id && element === document.activeElement, openerId), 'focus returned to chat card');
           await composer.fill('');
         } finally { if (oldViewport) await page.setViewportSize(oldViewport); }
       });

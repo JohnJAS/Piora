@@ -8,10 +8,10 @@ import { getSubagentRefreshEpoch, markSubagentChanged, subscribeSubagentChanges 
 export interface SubagentSidebarState {
   activeCounts: ReadonlyMap<string, number>;
   selected?: SubagentSelection;
-  open?: (session: SessionInfo, agentId: string) => void;
+  open?: (session: SessionInfo, agentId: string, openerId: string) => void;
 }
 export const SubagentSidebarContext = createContext<SubagentSidebarState | null>(null);
-export const OpenSubagentContext = createContext<((selection: SubagentSelection) => void) | null>(null);
+export const OpenSubagentContext = createContext<((selection: SubagentSelection, openerId: string) => void) | null>(null);
 
 interface Snapshot { data?: unknown; failed?: boolean }
 const empty: Snapshot = {};

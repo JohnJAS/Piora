@@ -25,12 +25,13 @@ export function SubagentTaskCard({ sessionId, toolCallId, input, seed }: {
   const current = observed && (!localSeed || compareSubagentVersions(observed, localSeed) >= 0) ? observed : seed;
   const owner = Boolean(current && current.parentSessionId === sessionId);
   const title = current?.description ?? String(input?.description ?? t("subagent.title"));
+  const detailsButtonId = `piora-subagent-details-${sessionId}-${toolCallId ?? current?.agentId}`;
   return <ChatDisclosure className={css.card} data-subagent-id={current?.agentId ?? "pending"} data-subagent-status={current?.status ?? "running"}
     expanded={expanded} onExpandedChange={setExpanded} icon="robot" label={title}
     description={current ? current.agentType + " · " + t("subagent." + current.status) : t("subagent.waiting")}
     metadata={current ? subagentElapsedSeconds(current) + "s" : undefined}
     actions={owner && current ? <>
-      {openDetails && <button type="button" onClick={() => openDetails({ parentSessionId: current.parentSessionId, agentId: current.agentId })}>{t("subagent.openDetails")}</button>}
+      {openDetails && <button type="button" id={detailsButtonId} onClick={() => openDetails({ parentSessionId: current.parentSessionId, agentId: current.agentId }, detailsButtonId)}>{t("subagent.openDetails")}</button>}
       {current.status === "running" && <SubagentStopButton key={current.agentId + ":" + current.attempt} record={current} stale={remote.failed || !observed} />}
     </> : undefined}>
     {current && <SubagentSummary record={current} />}

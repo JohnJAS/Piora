@@ -215,7 +215,7 @@ export interface DesktopBrowserDownload {
 export interface SessionSidebarProps {
   selectedSession?: SessionInfo | null;
   selectedSubagent?: import("@/lib/subagent-types").SubagentSelection;
-  onOpenSubagent?: (session: SessionInfo, agentId: string) => void;
+  onOpenSubagent?: (session: SessionInfo, agentId: string, openerId: string) => void;
   selectedSessionId: string | null;
   selectedRoomId?: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean) => void;
