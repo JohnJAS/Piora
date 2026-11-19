@@ -2,21 +2,16 @@ import { randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { cordisCompatibility, isExtensionId, isRpcName, makeJson, type CordisAction, type CordisEntry, type CordisPhase, type CordisProfile, type CordisRelease, type CordisService, type Json } from "./cordis-extension-contract.js";
+import { cordisCompatibility, isExtensionId, isExtensionVersion, isPackageName, isRpcName, makeJson, type CordisAction, type CordisCheckResult, type CordisEntry, type CordisPhase, type CordisProfile, type CordisRelease, type CordisService, type Json } from "./cordis-extension-contract.js";
+import { checkCommunityPackage } from "./cordis-community-registry.js";
 import { discoverCordisExtensions } from "./cordis-extension-catalog.js";
-import { extensionPackageDir, stageCordisPackages, verifyCordisFiles } from "./cordis-extension-install.js";
+import { extensionPackageDir, readCommunityClient, stageCordisPackages, verifyCordisFiles } from "./cordis-extension-install.js";
+import type { PanelRequest } from "./cordis-panel-windows.js";
 import { CordisHostProcess } from "./cordis-host-process.js";
 import type { HostService, HostServiceRequest } from "./cordis-host-protocol.js";
 import { CordisProfileStore, type InstalledSlot } from "./cordis-profile-store.js";
 import { petEnvironment } from "./dsh-pet-install.js";
 import type { PetNetwork } from "./dsh-pet-network.js";
-
-interface Panel {
-  id: string;
-  title: string;
-  html: string;
-  invoke: (method: string, input: unknown, signal: AbortSignal) => Promise<Json>;
-}
 
 interface ManagerOptions {
   root: string;
@@ -28,8 +23,8 @@ interface ManagerOptions {
   tasks: (signal: AbortSignal) => Promise<unknown>;
   model: (input: Json, signal: AbortSignal) => Promise<unknown>;
   notify: (title: string, body: string) => void;
-  openPanel: (panel: Panel) => Promise<void>;
-  closePanel: (id: string) => void;
+  openPanel: (panel: PanelRequest, signal?: AbortSignal) => Promise<void>;
+  closePanel: (id: string) => void | Promise<void>;
 }
 
 const capability: Record<HostService, CordisService> = {
@@ -72,6 +67,7 @@ class ProfileRuntime {
     const phase = !active && this.phase === "stopped" ? "absent" : this.phase;
     return {
       id: profile.id, name: profile.name, description: profile.description, source: profile.source, assetsLicense: profile.assetsLicense,
+      ...(profile.community ? { community: profile.community } : {}),
       releases: profile.releases.map(release => ({ version: release.version, packages: release.packages.map(pkg => ({
         name: pkg.name, version: pkg.version, license: pkg.license,
         source: pkg.source.kind === "npm" ? "https://www.npmjs.com/package/" + pkg.name + "/v/" + pkg.version : profile.source,
@@ -79,7 +75,7 @@ class ProfileRuntime {
       })) })),
       compatibility: {
         cordis: release.cordis, hostApi: release.hostApi, bundle: release.bundle, services: release.services,
-        panel: Boolean(release.panel),
+        panel: Boolean(release.panel || release.communityClient),
         reason: active && !this.findRelease(active.version) ? "The installed version is no longer verified" : cordisCompatibility(profile, release),
       },
       state: {
@@ -246,7 +242,7 @@ class ProfileRuntime {
       onExit: reason => {
         if (this.host?.instance !== instance) return;
         this.host = undefined;
-        this.options.closePanel(this.profile.id);
+        void this.options.closePanel(this.profile.id);
         this.recordError(new Error(reason));
       },
       receiveService: async (message, signal) => {
@@ -265,7 +261,8 @@ class ProfileRuntime {
         action: "boot", input: { release, slot: store.files(slot.id), data, ...(fromSchema !== undefined ? { fromSchema } : {}) },
       }, signal, 20_000);
       if (actual !== slot.version) throw new Error("The Cordis process reported another version");
-      await delay(120, undefined, { signal });
+      if (release.communityClient) await this.openCommunityPanel(store, slot, release.communityClient, instance, true, signal);
+      else await delay(120, undefined, { signal });
       if (!instance.alive) throw new Error("The Cordis process exited during the health check");
       return { instance, version: slot.version };
     } catch (error) {
@@ -289,7 +286,7 @@ class ProfileRuntime {
       return null;
     }
     if (message.service === "closePanel") {
-      this.options.closePanel(this.profile.id);
+      await this.options.closePanel(this.profile.id);
       return null;
     }
     throw new Error("Invalid extension service request");
@@ -297,8 +294,10 @@ class ProfileRuntime {
 
   private async openPanel(store: CordisProfileStore, slot: InstalledSlot) {
     const host = this.host;
-    const panel = this.checkedRelease(slot.version).panel;
-    if (!panel || !host?.instance.alive || store.state.active?.id !== slot.id) throw new Error("Start the profile before opening its panel");
+    const { panel, communityClient } = this.checkedRelease(slot.version);
+    if (!host?.instance.alive || store.state.active?.id !== slot.id) throw new Error("Start the profile before opening its panel");
+    if (communityClient) return this.openCommunityPanel(store, slot, communityClient, host.instance, false, this.controller?.signal);
+    if (!panel) throw new Error("This extension does not have a panel");
     const path = join(extensionPackageDir(store.files(slot.id), panel.package), panel.asset);
     if ((await stat(path)).size > 512 * 1024) throw new Error("The extension panel is too large");
     const html = await readFile(path, "utf8");
@@ -312,8 +311,25 @@ class ProfileRuntime {
     });
   }
 
+  private async openCommunityPanel(store: CordisProfileStore, slot: InstalledSlot,
+    client: NonNullable<CordisRelease["communityClient"]>, instance: CordisHostProcess, probe: boolean, signal?: AbortSignal) {
+    const source = (await readCommunityClient(store.files(slot.id), client)).toString("base64");
+    if (!instance.alive) throw new Error("The extension stopped while opening its panel");
+    await this.options.openPanel({
+      id: probe ? this.profile.id + "-health" : this.profile.id,
+      title: this.profile.name,
+      community: { package: client.package, version: slot.version, source, slots: client.slots, note: this.profile.community!.note, probe },
+      invoke: (method, input, signal) => {
+        if (!instance.alive || !(method === "community.storage.read" || method === "community.storage.write" && !probe)) {
+          throw new Error("Unsupported community panel action");
+        }
+        return instance.request({ action: "invoke", input: { method, payload: makeJson(input) } }, signal, 8_000);
+      },
+    }, signal);
+  }
+
   private async stopHost() {
-    this.options.closePanel(this.profile.id);
+    await this.options.closePanel(this.profile.id);
     const active = this.host;
     if (!active) return;
     await active.instance.stop();
@@ -335,6 +351,7 @@ export class CordisExtensionManager {
   private readonly entries = new Map<string, ProfileRuntime>();
   private readonly shutdown = new AbortController();
   private discovery: ReturnType<typeof discoverCordisExtensions> | undefined;
+  private readonly checks = new Map<string, Promise<CordisCheckResult>>();
 
   constructor(private readonly options: ManagerOptions) {
     for (const profile of options.catalog) {
@@ -370,10 +387,29 @@ export class CordisExtensionManager {
     return this.discovery;
   }
 
+  async check(name: unknown, version: unknown): Promise<CordisCheckResult> {
+    this.shutdown.signal.throwIfAborted();
+    if (typeof name !== "string" || !isPackageName(name)) return { compatibility: "unavailable", reasons: [{ code: "missingNpm" }] };
+    if (typeof version !== "string" || !isExtensionVersion(version)) return { compatibility: "unavailable", reasons: [{ code: "missingVersion" }] };
+    if (this.options.dedicated.get(name) === version || this.options.catalog.some(profile =>
+      profile.community?.package === name && profile.releases.some(release => release.version === version && !cordisCompatibility(profile, release)))) {
+      return { compatibility: "verified", reasons: [] };
+    }
+    const key = name + "@" + version;
+    const existing = this.checks.get(key);
+    if (existing) return existing;
+    if (this.checks.size >= 6) throw new Error("Too many compatibility checks. Try again after the current checks finish.");
+    const result = checkCommunityPackage(name, version, this.options.network(), this.shutdown.signal)
+      .finally(() => { this.checks.delete(key); });
+    this.checks.set(key, result);
+    return result;
+  }
+
   async dispose() {
     this.shutdown.abort();
     const results = await Promise.allSettled(Array.from(this.entries.values(), runtime => runtime.dispose()));
     await this.discovery?.catch(() => {});
+    await Promise.allSettled(this.checks.values());
     const failures = results.filter(result => result.status === "rejected");
     if (failures.length) throw new AggregateError(failures.map(failure => failure.reason), "Could not stop all Cordis hosts");
   }

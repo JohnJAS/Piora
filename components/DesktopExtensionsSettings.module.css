@@ -32,4 +32,7 @@
 .extensionDetails p { margin-top: 8px; }
 .extensionDetails pre { max-height: 12rem; overflow: auto; white-space: pre-wrap; font: var(--text-xs)/1.5 var(--font-mono); }
 .discoveryList { list-style: none; margin: 0; padding: 0; }
-.discoveryList li { display: grid; gap: 6px; padding-block: 12px; border-top: 1px solid var(--border-soft); }
+.discoveryList > li { display: grid; gap: 8px; padding-block: 14px; border-top: 1px solid var(--border-soft); }
+.communityEntry { display: grid; min-width: 0; gap: 10px; }
+.checkReasons { display: grid; gap: 6px; padding-inline-start: 1.25rem; color: var(--text-muted); }
+.checkReasons code { display: block; overflow-wrap: anywhere; }

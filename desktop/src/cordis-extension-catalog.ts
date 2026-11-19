@@ -1,6 +1,7 @@
 import { fetch } from "undici";
 import { CORDIS_HOST_API, CORDIS_VERSION, cordisCompatibility, isExtensionVersion, isPackageName, type CordisDiscoveryEntry, type CordisProfile, type CordisRelease } from "./cordis-extension-contract.js";
 import { petDispatcher, preparePetNetwork, type PetNetwork } from "./dsh-pet-network.js";
+import { communityCordisCatalog } from "./cordis-community-catalog.js";
 
 const monitorRelease = (version: string, schema: number): CordisRelease => ({
   version, schema, cordis: CORDIS_VERSION, hostApi: CORDIS_HOST_API, bundle: "simple-insert",
@@ -35,6 +36,7 @@ export const bundledCordisCatalog: readonly CordisProfile[] = [
     assetsLicense: "MIT",
     releases: [monitorRelease("1.1.0", 2), monitorRelease("1.0.0", 1)],
   },
+  ...communityCordisCatalog,
 ];
 
 const discoveryUrl = "https://awesome-dsh-plugin.com/plugins.json";
@@ -53,8 +55,9 @@ function trustedCatalogLink(value: unknown): string | null {
 export function parseCordisDiscovery(value: unknown, catalog: readonly CordisProfile[], dedicated: ReadonlyMap<string, string>): CordisDiscoveryEntry[] {
   const input = value as { plugins?: unknown };
   if (!Array.isArray(input?.plugins)) throw new Error("The DSH directory returned an invalid listing");
-  const approved = new Set(catalog.flatMap(profile => profile.releases.filter(release => !cordisCompatibility(profile, release))
-    .flatMap(release => release.packages.map(pkg => pkg.name + "@" + pkg.version))));
+  const approved = new Map(catalog.flatMap(profile => profile.releases.flatMap(release =>
+    profile.community && !cordisCompatibility(profile, release)
+      ? [[profile.community.package + "@" + release.version, profile.id] as const] : [])));
   const output: CordisDiscoveryEntry[] = [];
   for (const raw of input.plugins as Array<Record<string, unknown> | null>) {
     if (!raw || typeof raw.name !== "string" || !raw.name.trim()) continue;
@@ -62,13 +65,12 @@ export function parseCordisDiscovery(value: unknown, catalog: readonly CordisPro
     const version = typeof raw.version === "string" && isExtensionVersion(raw.version) ? raw.version : null;
     const description = raw.description as { en?: unknown; zh?: unknown } | null;
     const text = (value: unknown) => typeof value === "string" ? value.trim().slice(0, 420) : "";
-    const compatibility = pkg === "dshmarket" ? "incompatible"
-      : pkg && version && dedicated.get(pkg) === version ? "dedicated"
-      : pkg && version && approved.has(pkg + "@" + version) ? "verified" : "unverified";
+    const verifiedId = pkg && version ? approved.get(pkg + "@" + version) ?? null : null;
+    const compatibility = pkg && version && dedicated.get(pkg) === version ? "dedicated" : verifiedId ? "verified" : "unverified";
     output.push({
       name: raw.name.trim().slice(0, 100), package: pkg, version,
       description: { en: text(description?.en), zh: text(description?.zh) },
-      source: trustedCatalogLink(raw.page) ?? trustedCatalogLink(raw.url), compatibility,
+      source: trustedCatalogLink(raw.page) ?? trustedCatalogLink(raw.url), compatibility, verifiedId,
     });
   }
   return output;

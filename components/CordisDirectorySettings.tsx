@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { CordisAction, CordisDiscoveryEntry, CordisEntry } from "@/desktop/src/cordis-extension-contract";
+import type { CordisAction, CordisCheckResult, CordisDiscoveryEntry, CordisEntry } from "@/desktop/src/cordis-extension-contract";
+import type { DesktopExtensionEntry, DesktopExtensionId, DesktopExtensionState } from "@/desktop/src/desktop-extension-registry";
 import { useI18n } from "@/hooks/useI18n";
 import styles from "./DesktopExtensionsSettings.module.css";
 import settingsStyles from "./SettingsDialog.module.css";
@@ -18,8 +19,10 @@ function CordisCard({ entry }: { entry: CordisEntry }) {
   const busy = pending || changing.has(state.phase);
   const release = entry.releases.find(release => release.version === (state.version ?? version)) ?? entry.releases[0];
   const chooseVersion = state.version === null && entry.releases.length > 1;
-  const canUpdate = Boolean(state.version && latest && state.version !== latest);
+  const canUpdate = Boolean(state.version && (entry.community
+    ? entry.releases.findIndex(release => release.version === state.version) > 0 : latest && state.version !== latest));
   const description = locale === "zh-CN" ? entry.description.zh : entry.description.en;
+  const note = entry.community?.note[locale === "zh-CN" ? "zh" : "en"];
 
   async function change(action: CordisAction | "autoStart", target?: string) {
     const bridge = window.piDesktop?.desktopExtensions?.cordis;
@@ -35,15 +38,17 @@ function CordisCard({ entry }: { entry: CordisEntry }) {
   }
 
   return (
-    <article className={styles.card} data-desktop-extension={entry.id} aria-labelledby={entry.id + "-title"}>
+    <article className={entry.community ? styles.communityEntry : styles.card} data-desktop-extension={entry.id} aria-labelledby={entry.id + "-title"}>
       <div className={styles.header}>
         <div>
-          <h3 id={entry.id + "-title"}>{entry.name}</h3>
-          <p>{t("desktopExtensions.cordisVerified")} · Cordis {compatibility.cordis}</p>
+          <h3 id={entry.id + "-title"}>{entry.community
+            ? <a href={entry.source} target="_blank" rel="noreferrer">{entry.name}</a> : entry.name}</h3>
+          <p>{entry.community ? t("desktopExtensions.discovered.verified") + " · " + entry.community.package : t("desktopExtensions.cordisVerified") + " · Cordis " + compatibility.cordis}</p>
         </div>
         <span role="status">{t("desktopExtensions.state." + state.phase)}</span>
       </div>
       <p>{description}</p>
+      {note && <p className={styles.description}>{note}</p>}
       {state.version && <p className={styles.description}>
         {t("desktopExtensions.installedVersion", { version: state.version })}
         {state.runningVersion && " · " + t("desktopExtensions.runningVersion", { version: state.runningVersion })}
@@ -64,7 +69,7 @@ function CordisCard({ entry }: { entry: CordisEntry }) {
         )}
         {!state.version ? (
           <button type="button" disabled={busy || Boolean(compatibility.reason)} onClick={() => void change("install", version)}>
-            {t("desktopExtensions.installExtension")}
+            {t(entry.community ? "desktopExtensions.installVersion" : "desktopExtensions.installExtension", { version: version ?? "" })}
           </button>
         ) : (
           <>
@@ -109,7 +114,66 @@ function CordisCard({ entry }: { entry: CordisEntry }) {
   );
 }
 
-function CommunityDirectory() {
+type UpdateDedicated = (id: DesktopExtensionId, state: DesktopExtensionState) => void;
+
+function CommunityListing({ entry, dedicated, updateDedicated }: {
+  entry: CordisDiscoveryEntry;
+  dedicated?: DesktopExtensionEntry;
+  updateDedicated: UpdateDedicated;
+}) {
+  const { t, locale } = useI18n();
+  const [check, setCheck] = useState<CordisCheckResult>();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string>();
+  const state = dedicated?.state;
+  const compatibility = check?.compatibility ?? (entry.package && entry.version ? entry.compatibility : "unavailable");
+
+  async function checkOrInstall() {
+    const bridge = window.piDesktop?.desktopExtensions;
+    if (!bridge || pending) return;
+    setPending(true);
+    setError(undefined);
+    try {
+      if (dedicated) updateDedicated(dedicated.manifest.id, await bridge.action(dedicated.manifest.id, "install"));
+      else if (bridge.cordis) setCheck(await bridge.cordis.check(entry.package, entry.version));
+    } catch (cause) {
+      setError(dedicated ? (cause instanceof Error ? cause.message : String(cause)) : t("desktopExtensions.checkFailed"));
+    } finally { setPending(false); }
+  }
+
+  return <li data-community-package={entry.package ?? undefined}>
+    <div className={styles.header}>
+      {entry.source ? <a href={entry.source} target="_blank" rel="noreferrer">{entry.name}</a> : <strong>{entry.name}</strong>}
+      <span role="status">{state ? t("desktopExtensions.state." + state.phase) : t("desktopExtensions.discovered." + compatibility)}</span>
+    </div>
+    {entry.package && <p className={styles.description}>{[entry.package, entry.version].filter(Boolean).join(" ")}</p>}
+    <p>{entry.description[locale === "zh-CN" ? "zh" : "en"] || entry.description.en || entry.description.zh}</p>
+    {!entry.package || !entry.version ? <p className={styles.description}>
+      {t("desktopExtensions.check." + (entry.package ? "missingVersion" : "missingNpm"))}
+    </p> : <div className={styles.actions}>
+      {dedicated
+        ? state && !state.installed && <button type="button" disabled={pending || changing.has(state.phase)} onClick={() => void checkOrInstall()}>
+          {t("desktopExtensions.installVersion", { version: entry.version })}
+        </button>
+        : <button type="button" disabled={pending} onClick={() => void checkOrInstall()}>
+          {t(pending ? "desktopExtensions.checking" : check ? "desktopExtensions.checkAgain" : "desktopExtensions.checkCompatibility")}
+        </button>}
+    </div>}
+    {check && <ul className={styles.checkReasons} aria-live="polite">
+      {check.reasons.map(reason => <li key={reason.code}>
+        {t("desktopExtensions.check." + reason.code)}
+        {reason.detail && <code>{reason.detail}</code>}
+      </li>)}
+    </ul>}
+    {(error || state?.error) && <p className={styles.error} role="alert">{error || state?.error}</p>}
+  </li>;
+}
+
+function CommunityDirectory({ profiles, dedicated, updateDedicated }: {
+  profiles: CordisEntry[];
+  dedicated: readonly DesktopExtensionEntry[] | undefined;
+  updateDedicated: UpdateDedicated;
+}) {
   const { t, locale } = useI18n();
   const [entries, setEntries] = useState<CordisDiscoveryEntry[]>();
   const [query, setQuery] = useState("");
@@ -127,11 +191,13 @@ function CommunityDirectory() {
     finally { setLoading(false); }
   }
   const normalized = query.trim().toLocaleLowerCase();
-  const shown = useMemo(() => {
-    if (!normalized) return entries;
-    return entries?.filter(entry => [entry.name, entry.package, entry.description[locale === "zh-CN" ? "zh" : "en"]]
-      .some(text => text?.toLocaleLowerCase().includes(normalized)));
-  }, [entries, locale, normalized]);
+  const language = locale === "zh-CN" ? "zh" : "en";
+  const matches = (...fields: (string | null | undefined)[]) => fields.some(field => field?.toLocaleLowerCase().includes(normalized));
+  const verified = profiles.filter(entry =>
+    matches(entry.name, entry.community?.package, entry.description[language], ...entry.releases.map(release => release.version)));
+  const visible = useMemo(() => (entries ?? []).filter(entry => !entry.verifiedId && (!normalized
+    || [entry.name, entry.package, entry.version, entry.description[language]].some(field => field?.toLocaleLowerCase().includes(normalized)))),
+  [entries, language, normalized]);
 
   return (
     <section className={styles.card} aria-labelledby="desktop-extensions-community-title">
@@ -148,24 +214,23 @@ function CommunityDirectory() {
       </div>
       {loading && <p role="status">{t("desktopExtensions.directoryLoading")}</p>}
       {error && <p className={styles.error} role="alert">{error}</p>}
-      {shown && <>
+      {(profiles.length > 0 || entries) && <>
         <label className={styles.directorySearch}>
           <span>{t("desktopExtensions.searchDirectory")}</span>
           <input type="search" value={query} onChange={event => { setQuery(event.target.value); setLimit(30); }} />
         </label>
-        {shown.length === 0 && <p role="status">{t("settings.searchEmpty")}</p>}
+        {verified.length === 0 && visible.length === 0 && <p role="status">{t(entries ? "settings.searchEmpty" : "desktopExtensions.loadToSearch")}</p>}
         <ul className={styles.discoveryList}>
-          {shown.slice(0, limit).map((entry, index) => <li key={entry.name + "-" + index}>
-            <div className={styles.header}>
-              {entry.source ? <a href={entry.source} target="_blank" rel="noreferrer">{entry.name}</a> : <strong>{entry.name}</strong>}
-              <span>{t("desktopExtensions.discovered." + entry.compatibility)}</span>
-            </div>
-            {entry.version && <p className={styles.description}>{entry.package} {entry.version}</p>}
-            <p>{entry.description[locale === "zh-CN" ? "zh" : "en"] || entry.description.en || entry.description.zh}</p>
-            {entry.compatibility === "incompatible" && <p className={styles.description}>{t("desktopExtensions.incompatibleDshClient")}</p>}
-          </li>)}
+          {verified.map(entry => <li key={entry.id}><CordisCard entry={entry} /></li>)}
+          {visible.slice(0, limit).map((entry, index) => <CommunityListing
+            key={JSON.stringify([entry.package, entry.version, entry.name, entry.source, index])}
+            entry={entry}
+            dedicated={entry.compatibility === "dedicated" ? dedicated?.find(item => item.manifest.id === entry.package
+              && item.manifest.version === entry.version) : undefined}
+            updateDedicated={updateDedicated}
+          />)}
         </ul>
-        {shown.length > limit && <div className={styles.actions}>
+        {visible.length > limit && <div className={styles.actions}>
           <button type="button" onClick={() => setLimit(count => count + 30)}>{t("desktopExtensions.moreDirectoryResults")}</button>
         </div>}
       </>}
@@ -173,7 +238,10 @@ function CommunityDirectory() {
   );
 }
 
-export function CordisDirectorySettings() {
+export function CordisDirectorySettings({ dedicated, updateDedicated }: {
+  dedicated: readonly DesktopExtensionEntry[] | undefined;
+  updateDedicated: UpdateDedicated;
+}) {
   const { t } = useI18n();
   const [available, setAvailable] = useState(false);
   const [entries, setEntries] = useState<CordisEntry[]>();
@@ -206,8 +274,8 @@ export function CordisDirectorySettings() {
       <h3 id="desktop-extensions-directory-title">{t("desktopExtensions.directoryTitle")}</h3>
       {!entries && !error && <p role="status">{t("desktopExtensions.loading")}</p>}
       {error && <p className={styles.error} role="alert">{error}</p>}
-      {entries?.map(entry => <CordisCard key={entry.id} entry={entry} />)}
-      <CommunityDirectory />
+      {entries?.filter(entry => !entry.community).map(entry => <CordisCard key={entry.id} entry={entry} />)}
+      <CommunityDirectory profiles={entries?.filter(entry => entry.community) ?? []} dedicated={dedicated} updateDedicated={updateDedicated} />
     </section>
   );
 }

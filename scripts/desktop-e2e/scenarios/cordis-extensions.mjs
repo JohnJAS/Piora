@@ -114,11 +114,13 @@ export const cordisExtensions = {
         await community.getByRole("button", { name: /^(Load directory|加载目录)$/ }).click();
         const search = community.getByRole("searchbox", { name: /^(Search community extensions|搜索社区扩展)$/ });
         const alert = community.getByRole("alert");
-        await waitUntil(async () => await search.isVisible() || await alert.isVisible(), "the live community directory response");
+        await waitUntil(async () => await community.getByRole("button", { name: /^(Refresh directory|刷新目录)$/ }).isEnabled().catch(() => false)
+          || await alert.isVisible(), "the live community directory response");
         if (await alert.isVisible()) assert.fail(await alert.innerText());
         const observed = community.getByText(/^(Unverified|未验证)$/).first();
         await observed.waitFor();
-        assert.equal(await community.getByRole("button", { name: /^(Install extension|安装扩展)$/ }).count(), 0);
+        const row = observed.locator("xpath=ancestor::li[1]");
+        assert.equal(await row.getByRole("button", { name: /^(Install|安装)/ }).count(), 0);
         await search.fill("no-such-extension-acceptance-query");
         await waitUntil(async () => await community.getByRole("listitem").count() === 0, "directory search filters the live entries");
         await search.clear();

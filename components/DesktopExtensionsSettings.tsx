@@ -134,6 +134,6 @@ export function DesktopExtensionsSettings() {
     {available !== false && !entries && !error && <p role="status">{t("desktopExtensions.loading")}</p>}
     {error && <p className={styles.error} role="alert">{error}</p>}
     {entries?.map(entry => <ExtensionCard key={entry.manifest.id} entry={entry} update={update} />)}
-    {available && <CordisDirectorySettings />}
+    {available && <CordisDirectorySettings dedicated={entries} updateDedicated={update} />}
   </section>;
 }

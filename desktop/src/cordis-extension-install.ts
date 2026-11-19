@@ -5,6 +5,7 @@ import { x } from "tar";
 import { download } from "./dsh-pet-install.js";
 import { petDispatcher, preparePetNetwork, type PetNetwork } from "./dsh-pet-network.js";
 import { isAssetPath, type CordisEntry, type CordisPackage, type CordisRelease } from "./cordis-extension-contract.js";
+import { injectionNames, type CommunityManifest } from "./cordis-community-registry.js";
 
 export const extensionPackageDir = (slot: string, name: string) => join(slot, "node_modules", name);
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
@@ -23,6 +24,16 @@ export async function verifyCordisFiles(slot: string, release: CordisRelease): P
   if (release.panel && !(await lstat(join(extensionPackageDir(slot, release.panel.package), release.panel.asset))).isFile()) {
     throw new Error("The verified client panel is missing");
   }
+  if (release.communityClient) await readCommunityClient(slot, release.communityClient);
+}
+
+export async function readCommunityClient(slot: string, client: NonNullable<CordisRelease["communityClient"]>): Promise<Buffer> {
+  const file = join(extensionPackageDir(slot, client.package), client.asset);
+  const stats = await lstat(file);
+  if (!stats.isFile() || stats.size > 512 * 1024) throw new Error("Missing or oversized reviewed community client");
+  const bytes = await readFile(file);
+  if (sha256(bytes) !== client.sha256) throw new Error("Community client integrity check failed: " + client.package);
+  return bytes;
 }
 
 async function unpackPinnedArchive(archive: string, root: string) {
@@ -88,10 +99,18 @@ export async function stageCordisPackages(options: {
       signal.throwIfAborted();
       await unpackPinnedArchive(archive, directory);
       await unlink(archive);
-      const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8")) as {
-        dsh?: { bundle?: { patch?: unknown }; client?: unknown }; dependencies?: Record<string, string>;
-      };
-      if (manifest.dsh?.bundle?.patch || manifest.dsh?.client) throw new Error("The package requires an unsupported DSH bundle patch or client");
+      const manifest = JSON.parse(await readFile(join(directory, "package.json"), "utf8")) as CommunityManifest;
+      const client = release.communityClient;
+      if (client?.package === pkg.name) {
+        const exported = manifest.exports?.["./client"];
+        const path = typeof exported === "object" && exported ? (exported as { default?: unknown }).default : exported;
+        const inject = injectionNames(manifest.dsh?.client?.inject);
+        if (path !== "./" + client.asset || inject.length !== client.inject.length || inject.some(name => !client.inject.includes(name))) {
+          throw new Error("The upstream client entry or required services differ from the reviewed release");
+        }
+      } else if (manifest.dsh?.bundle?.patch || manifest.dsh?.client) {
+        throw new Error("The package requires an unsupported DSH bundle patch or client");
+      }
       for (const dependency of Object.keys(manifest.dependencies ?? {})) {
         if (!release.packages.some(candidate => candidate.name === dependency)) throw new Error("Missing pinned dependency: " + dependency);
       }
