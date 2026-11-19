@@ -230,17 +230,24 @@ export const subagents = {
         const togglePanel = page.locator('.right-panel-toggle');
         const close = inspector.getByRole('button', { name: /^(Close subagent details|关闭子代理详情)$/ });
         const resize = inspector.getByRole('separator', { name: /^(Resize subagent details|调整子代理详情宽度)$/ });
-        const readWidth = async () => (await inspector.boundingBox())?.width;
-        const drag = async amount => {
+        const readWidth = () => inspector.evaluate(element => element.getBoundingClientRect().width);
+        const drag = async (amount, layout) => {
+          await page.bringToFront();
+          const before = await readWidth();
           const bounds = await resize.boundingBox();
           assert.ok(bounds, 'the resize grip is visible');
           const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
           await page.mouse.move(x, y);
           await page.mouse.down();
           try {
-            const before = await readWidth();
+            await waitUntil(() => resize.evaluate(element => element.classList.contains('is-resizing')), 'the grip has started dragging');
             await page.mouse.move(x - amount, y, { steps: 6 });
-            await waitUntil(async () => (await readWidth()) >= before + amount - 3, 'panel resizes while dragging');
+            // A capture requests a compositor frame for a backgrounded Windows runner.
+            await page.screenshot({ path: join(directory, `subagent-resizing-${layout}.png`) });
+            await waitUntil(async () => {
+              const width = await readWidth();
+              return width >= before + amount - 3 && await resize.evaluate(element => element.classList.contains('is-resizing'));
+            }, `${layout} panel grows from ${before}px by ${amount}px while dragging`);
           } finally { await page.mouse.up(); }
         };
         const oldViewport = page.viewportSize();
@@ -258,7 +265,7 @@ export const subagents = {
             const bounds = await inspector.boundingBox();
             return bounds && bounds.width >= 518 && bounds.width <= 522;
           }, 'inspector uses its own readable default width');
-          await drag(110);
+          await drag(110, 'split');
           assert.ok((await readWidth()) >= 627);
           await close.click();
           await panel.waitFor();
@@ -281,7 +288,7 @@ export const subagents = {
           assert.equal(await output.evaluate(element => element === document.activeElement), true);
           await page.keyboard.press('Tab');
           assert.equal(await close.evaluate(element => element === document.activeElement), true);
-          await drag(60);
+          await drag(60, 'overlay');
           await resize.press('ArrowRight');
           const keyboardWidth = await readWidth();
           await resize.press('ArrowLeft');
