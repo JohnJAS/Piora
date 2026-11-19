@@ -42,6 +42,13 @@ export interface CordisRelease {
   migrateFrom?: readonly number[];
   migrationPackage?: string;
   panel?: { package: string; asset: string; protocol: number; methods: readonly string[] };
+  communityClient?: {
+    package: string;
+    asset: string;
+    sha256: string;
+    slots: readonly string[];
+    inject: readonly string[];
+  };
   health: { method: string; package: string };
 }
 
@@ -51,6 +58,7 @@ export interface CordisProfile {
   source: string;
   description: { en: string; zh: string };
   assetsLicense: string | null;
+  community?: { package: string; note: CordisProfile["description"] };
   /** Latest verified release first. */
   releases: readonly CordisRelease[];
 }
@@ -64,6 +72,7 @@ export interface CordisEntry {
   source: string;
   description: CordisProfile["description"];
   assetsLicense: string | null;
+  community?: CordisProfile["community"];
   releases: Array<{ version: string; packages: Array<{ name: string; version: string; license: string; source: string; integrity: string }> }>;
   compatibility: { cordis: string; hostApi: number; bundle: string; services: readonly string[]; panel: boolean; reason: string | null };
   state: {
@@ -85,7 +94,19 @@ export interface CordisDiscoveryEntry {
   version: string | null;
   description: CordisProfile["description"];
   source: string | null;
-  compatibility: "unverified" | "incompatible" | "dedicated" | "verified";
+  compatibility: "unverified" | "dedicated" | "verified";
+  verifiedId: string | null;
+}
+
+export type CordisCheckReason = {
+  code: "missingNpm" | "missingVersion" | "missingRelease" | "missingIntegrity" | "needsReview"
+    | "clientServices" | "hostServices" | "bundlePatch" | "carrier" | "dependencies" | "cordisVersion" | "manualSteps";
+  detail?: string;
+};
+
+export interface CordisCheckResult {
+  compatibility: "unverified" | "incompatible" | "unavailable" | "verified";
+  reasons: CordisCheckReason[];
 }
 
 export interface CordisDesktopBridge {
@@ -93,6 +114,7 @@ export interface CordisDesktopBridge {
   action(id: string, action: CordisAction, version?: string): Promise<CordisEntry>;
   autoStart(id: string, enabled: boolean): Promise<CordisEntry>;
   discover(): Promise<CordisDiscoveryEntry[]>;
+  check(name: string | null, version: string | null): Promise<CordisCheckResult>;
 }
 
 export function makeJson(value: unknown, limit = 64 * 1024): Json {
@@ -131,5 +153,10 @@ export function cordisCompatibility(profile: CordisProfile, release: CordisRelea
   const panel = release.panel;
   if (panel && (panel.protocol !== 1 || !release.services.includes("pioraPanel") || !hasEntry(panel.package)
     || !isAssetPath(panel.asset) || panel.methods.some(method => !isRpcName(method)))) return "Unsupported client panel entry or RPC protocol";
+  const client = release.communityClient;
+  if ((client || profile.community) && (!client || panel || profile.community?.package !== client.package
+    || !release.packages.some(pkg => pkg.name === client.package && pkg.version === release.version && pkg.source.kind === "npm" && !pkg.entry)
+    || !isAssetPath(client.asset) || !/^[0-9a-f]{64}$/.test(client.sha256) || !client.slots.length
+    || client.slots.some(slot => !isRpcName(slot)))) return "Invalid reviewed community client";
   return null;
 }

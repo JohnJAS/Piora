@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `1bd86004f09ce0d4ddb6bcabb57bf1ce72d4faa07f0284b77357cc7a47621caa`
+Lockfile SHA-256: `6e2a4b36839e264f4baf9352bc6e8d251fbcd929866147ad5e45cca1c2aac492`
 
-Unique locked packages: **1276**. Runtime packages: **775**. Build/development-only packages: **501**.
+Unique locked packages: **1304**. Runtime packages: **775**. Build/development-only packages: **529**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -834,6 +834,32 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `@emnapi/core` | `1.9.1` | MIT | Yes |
 | `@emnapi/wasi-threads` | `1.2.0` | MIT | Yes |
 | `@emnapi/wasi-threads` | `1.2.3` | MIT | Yes |
+| `@esbuild/aix-ppc64` | `0.28.2` | MIT | Yes |
+| `@esbuild/android-arm` | `0.28.2` | MIT | Yes |
+| `@esbuild/android-arm64` | `0.28.2` | MIT | Yes |
+| `@esbuild/android-x64` | `0.28.2` | MIT | Yes |
+| `@esbuild/darwin-arm64` | `0.28.2` | MIT | Yes |
+| `@esbuild/darwin-x64` | `0.28.2` | MIT | Yes |
+| `@esbuild/freebsd-arm64` | `0.28.2` | MIT | Yes |
+| `@esbuild/freebsd-x64` | `0.28.2` | MIT | Yes |
+| `@esbuild/linux-arm` | `0.28.2` | MIT | Yes |
+| `@esbuild/linux-arm64` | `0.28.2` | MIT | Yes |
+| `@esbuild/linux-ia32` | `0.28.2` | MIT | Yes |
+| `@esbuild/linux-loong64` | `0.28.2` | MIT | Yes |
+| `@esbuild/linux-mips64el` | `0.28.2` | MIT | Yes |
+| `@esbuild/linux-ppc64` | `0.28.2` | MIT | Yes |
+| `@esbuild/linux-riscv64` | `0.28.2` | MIT | Yes |
+| `@esbuild/linux-s390x` | `0.28.2` | MIT | Yes |
+| `@esbuild/linux-x64` | `0.28.2` | MIT | Yes |
+| `@esbuild/netbsd-arm64` | `0.28.2` | MIT | Yes |
+| `@esbuild/netbsd-x64` | `0.28.2` | MIT | Yes |
+| `@esbuild/openbsd-arm64` | `0.28.2` | MIT | Yes |
+| `@esbuild/openbsd-x64` | `0.28.2` | MIT | Yes |
+| `@esbuild/openharmony-arm64` | `0.28.2` | MIT | Yes |
+| `@esbuild/sunos-x64` | `0.28.2` | MIT | Yes |
+| `@esbuild/win32-arm64` | `0.28.2` | MIT | Yes |
+| `@esbuild/win32-ia32` | `0.28.2` | MIT | Yes |
+| `@esbuild/win32-x64` | `0.28.2` | MIT | Yes |
 | `@eslint-community/eslint-utils` | `4.9.1` | MIT | No |
 | `@eslint-community/regexpp` | `4.12.2` | MIT | No |
 | `@eslint/config-array` | `0.23.5` | Apache-2.0 | No |
@@ -902,6 +928,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `@types/react-dom` | `19.3.0` | MIT | No |
 | `@types/react-syntax-highlighter` | `15.5.13` | MIT | No |
 | `@types/responselike` | `1.0.3` | MIT | No |
+| `@types/semver` | `7.8.0` | MIT | No |
 | `@types/stats.js` | `0.17.4` | MIT | No |
 | `@types/three` | `0.187.0` | MIT | No |
 | `@types/turndown` | `5.0.6` | MIT | No |
@@ -1031,6 +1058,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `es-shim-unscopables` | `1.1.0` | MIT | No |
 | `es-to-primitive` | `1.3.0` | MIT | No |
 | `es6-error` | `4.1.1` | MIT | Yes |
+| `esbuild` | `0.28.2` | MIT | No |
 | `escape-string-regexp` | `4.0.0` | MIT | No |
 | `eslint` | `10.14.0` | MIT | No |
 | `eslint-config-next` | `16.4.6` | MIT | No |

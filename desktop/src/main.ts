@@ -1197,7 +1197,7 @@ function initializeCordisExtensions(): void {
     catalog: bundledCordisCatalog,
     dedicated: new Map(desktopExtensions.list().map(item => [item.manifest.id, item.manifest.version])),
     network: () => memeNetwork(process.env, dshPetProxy),
-    openPanel: panel => panels.open(panel),
+    openPanel: (panel, signal) => panels.open(panel, signal),
     closePanel: id => panels.close(id),
     notify: (title, body) => { if (Notification.isSupported()) new Notification({ title, body }).show(); },
     tasks: async signal => {
@@ -1270,11 +1270,12 @@ function bindDesktopExtensionsIpc(): void {
     return cordisExtensions;
   };
   for (const channel of ["pi:cordis-extension-list", "pi:cordis-extension-action", "pi:cordis-extension-autostart",
-    "pi:cordis-extension-discover"]) ipcMain.removeHandler(channel);
+    "pi:cordis-extension-discover", "pi:cordis-extension-check"]) ipcMain.removeHandler(channel);
   ipcMain.handle("pi:cordis-extension-list", event => getCordis(event).list());
   ipcMain.handle("pi:cordis-extension-action", (event, id: unknown, action: unknown, version: unknown) => getCordis(event).action(id, action, version));
   ipcMain.handle("pi:cordis-extension-autostart", (event, id: unknown, enabled: unknown) => getCordis(event).autoStart(id, enabled));
   ipcMain.handle("pi:cordis-extension-discover", event => getCordis(event).discover());
+  ipcMain.handle("pi:cordis-extension-check", (event, name: unknown, version: unknown) => getCordis(event).check(name, version));
   for (const channel of ["pi:dsh-pet-status", "pi:dsh-pet-action", "pi:dsh-pet-preferences", "pi:desktop-extension-list",
     "pi:desktop-extension-action", "pi:desktop-extension-preferences"]) ipcMain.removeHandler(channel);
   ipcMain.handle("pi:desktop-extension-list", event => {

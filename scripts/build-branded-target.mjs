@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { rm } from "node:fs/promises";
 import { resolve } from "node:path";
 import { brandBuildFingerprint, recordBrandBuild } from "./brand-build-integrity.mjs";
+import { buildCordisCommunityRenderer } from "./build-cordis-community-renderer.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const target = process.argv[2];
@@ -18,4 +19,5 @@ for (const args of commands) {
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
+if (target === "desktop") await buildCordisCommunityRenderer(root);
 await recordBrandBuild(root, target, before);

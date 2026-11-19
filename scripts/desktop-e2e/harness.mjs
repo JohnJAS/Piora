@@ -42,7 +42,7 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
   report.origin = origin;
   report.debugging = debugging;
   report.credentials = 'not-copied-or-injected';
-  if (scenario?.prepare) await scenario.prepare({ paths, directory, signal, registerCleanup, report });
+  if (scenario?.prepare) await scenario.prepare({ paths, directory, env, signal, registerCleanup, report });
   const log = createWriteStream(join(directory, 'desktop.log'), { flags: 'wx' });
   let logError;
   log.on('error', error => { logError = error; });
