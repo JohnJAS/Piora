@@ -20,10 +20,8 @@ export const cordisExtensions = {
     async function openSettings() {
       const settings = page.getByRole("button", { name: /^(Settings|设置)$/ });
       const dialog = page.getByRole("dialog", { name: /^(Settings|设置)$/ });
-      await waitUntil(async () => {
-        if (!await dialog.isVisible()) await settings.click();
-        return dialog.isVisible();
-      }, "the desktop settings dialog");
+      if (!await dialog.isVisible()) await settings.click();
+      await dialog.waitFor();
       await dialog.getByTestId("settings-desktopExtensions").click();
       card = dialog.locator('[data-desktop-extension="piora-task-monitor"]');
       await card.getByRole("heading", { name: "Piora Task Monitor" }).waitFor();
@@ -115,10 +113,16 @@ export const cordisExtensions = {
         const community = page.getByRole("region", { name: /^(DSH community directory|DSH 社区目录)$/ });
         await community.getByRole("button", { name: /^(Load directory|加载目录)$/ }).click();
         const search = community.getByRole("searchbox", { name: /^(Search community extensions|搜索社区扩展)$/ });
-        await search.waitFor();
+        const alert = community.getByRole("alert");
+        await waitUntil(async () => await search.isVisible() || await alert.isVisible(), "the live community directory response");
+        if (await alert.isVisible()) assert.fail(await alert.innerText());
         const observed = community.getByText(/^(Unverified|未验证)$/).first();
         await observed.waitFor();
         assert.equal(await community.getByRole("button", { name: /^(Install extension|安装扩展)$/ }).count(), 0);
+        await search.fill("no-such-extension-acceptance-query");
+        await waitUntil(async () => await community.getByRole("listitem").count() === 0, "directory search filters the live entries");
+        await search.clear();
+        await observed.waitFor();
       });
     }
   },

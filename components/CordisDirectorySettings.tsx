@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CordisAction, CordisDiscoveryEntry, CordisEntry } from "@/desktop/src/cordis-extension-contract";
 import { useI18n } from "@/hooks/useI18n";
 import styles from "./DesktopExtensionsSettings.module.css";
@@ -127,8 +127,11 @@ function CommunityDirectory() {
     finally { setLoading(false); }
   }
   const normalized = query.trim().toLocaleLowerCase();
-  const shown = entries?.filter(entry =>
-    [entry.name, entry.package, entry.description[locale === "zh-CN" ? "zh" : "en"]].some(text => text?.toLocaleLowerCase().includes(normalized)));
+  const shown = useMemo(() => {
+    if (!normalized) return entries;
+    return entries?.filter(entry => [entry.name, entry.package, entry.description[locale === "zh-CN" ? "zh" : "en"]]
+      .some(text => text?.toLocaleLowerCase().includes(normalized)));
+  }, [entries, locale, normalized]);
 
   return (
     <section className={styles.card} aria-labelledby="desktop-extensions-community-title">

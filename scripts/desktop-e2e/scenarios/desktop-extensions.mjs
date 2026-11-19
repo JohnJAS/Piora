@@ -51,7 +51,7 @@ export const desktopExtensions = {
   scope: "real Electron settings, restricted desktop extension IPC and both real managers using local installed-program fixtures",
   coverage: ["both extensions on one page", "no project required", "installation entries", "untrusted action rejection",
     "desktop-only task endpoint", "independent start/stop and preferences", "autostart after app restart", "uninstall preserves data"],
-  limits: ["test host entries represent installed programs; upstream installation and native windows have separate smoke tests", "model calls", "packaged builds"],
+  limits: ["test host entries represent installed programs; upstream installation and native windows have separate smoke tests", "model calls"],
   async run({ page, directory, restart, screenshot, step, waitUntil }) {
     let dialog;
     const pet = () => dialog.locator('[data-desktop-extension="dsh-pet"]');
@@ -67,11 +67,9 @@ export const desktopExtensions = {
       await page.waitForFunction(() => document.querySelector("[data-app-hydrated]"));
       const settings = page.getByRole("button", { name: /^(Settings|设置)$/ });
       dialog = page.getByRole("dialog", { name: /^(Settings|设置)$/ });
-      await waitUntil(async () => {
-        if (!await dialog.isVisible()) await settings.click();
-        return dialog.isVisible();
-      }, "desktop settings dialog");
-      await dialog.getByRole("button", { name: /^(Desktop extensions|桌面扩展)$/ }).click();
+      if (!await dialog.isVisible()) await settings.click();
+      await dialog.waitFor();
+      await dialog.getByTestId("settings-desktopExtensions").click();
       await pet().getByRole("heading", { name: "DSH Pet", exact: true }).waitFor();
       await meme().getByRole("heading", { name: "DSH Meme", exact: true }).waitFor();
     }

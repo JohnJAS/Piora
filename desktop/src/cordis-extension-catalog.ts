@@ -11,7 +11,7 @@ const monitorRelease = (version: string, schema: number): CordisRelease => ({
       name: "piora-task-monitor-service", version, license: "MIT", entry: "index.cjs",
       inject: ["pioraTasks", "pioraStorage"], provides: ["taskMonitor"],
       source: { kind: "bundled", files: [
-        { source: "task-monitor/provider.cjs", path: "index.cjs", sha256: "8b5cb2da7d7fedc13d717ce2006dcba5e49523cf6fdb54aa720ef0e01fcc8be3" },
+        { source: "task-monitor/provider.cjs", path: "index.cjs", sha256: "261bac2acffd83f3992c7421a0c898cd8a9781b7ac38c4012f646407a8c52713" },
       ] },
     },
     {
@@ -38,6 +38,7 @@ export const bundledCordisCatalog: readonly CordisProfile[] = [
 ];
 
 const discoveryUrl = "https://awesome-dsh-plugin.com/plugins.json";
+const maxDiscoveryBytes = 32 * 1024 * 1024;
 
 function trustedCatalogLink(value: unknown): string | null {
   if (typeof value !== "string" || value.length > 512) return null;
@@ -55,7 +56,7 @@ export function parseCordisDiscovery(value: unknown, catalog: readonly CordisPro
   const approved = new Set(catalog.flatMap(profile => profile.releases.filter(release => !cordisCompatibility(profile, release))
     .flatMap(release => release.packages.map(pkg => pkg.name + "@" + pkg.version))));
   const output: CordisDiscoveryEntry[] = [];
-  for (const raw of input.plugins.slice(0, 2000) as Array<Record<string, unknown> | null>) {
+  for (const raw of input.plugins as Array<Record<string, unknown> | null>) {
     if (!raw || typeof raw.name !== "string" || !raw.name.trim()) continue;
     const pkg = typeof raw.npm === "string" && isPackageName(raw.npm) ? raw.npm : null;
     const version = typeof raw.version === "string" && isExtensionVersion(raw.version) ? raw.version : null;
@@ -75,7 +76,7 @@ export function parseCordisDiscovery(value: unknown, catalog: readonly CordisPro
 
 export async function discoverCordisExtensions(root: string, network: PetNetwork, catalog: readonly CordisProfile[], dedicated: ReadonlyMap<string, string>, signal: AbortSignal) {
   const dispatcher = petDispatcher(await preparePetNetwork(root, network));
-  const deadline = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
+  const deadline = AbortSignal.any([signal, AbortSignal.timeout(45_000)]);
   try {
     const response = await fetch(discoveryUrl, { dispatcher, signal: deadline, redirect: "error" });
     if (!response.ok || !response.body) throw new Error("The DSH directory is unavailable (" + response.status + ")");
@@ -83,7 +84,7 @@ export async function discoverCordisExtensions(root: string, network: PetNetwork
     let size = 0;
     for await (const chunk of response.body) {
       size += chunk.byteLength;
-      if (size > 5 * 1024 * 1024) throw new Error("The DSH directory exceeded its size limit");
+      if (size > maxDiscoveryBytes) throw new Error("The DSH directory exceeded its size limit");
       chunks.push(Buffer.from(chunk));
     }
     return parseCordisDiscovery(JSON.parse(Buffer.concat(chunks).toString("utf8")), catalog, dedicated);

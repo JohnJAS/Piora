@@ -118,13 +118,13 @@ async function bootHost(boot: CordisBoot, signal: AbortSignal) {
   for (const pkg of release.packages) {
     signal.throwIfAborted();
     if (!pkg.entry) continue;
-    const module = await import(pathToFileURL(join(packageRoot(boot, pkg.name), pkg.entry)).href);
-    const entry = (module.default ?? module) as Plugin;
+    const loaded = await import(pathToFileURL(join(packageRoot(boot, pkg.name), pkg.entry)).href);
+    const entry = (loaded.default ?? loaded) as Plugin;
     if (typeof entry !== "function" && typeof entry?.apply !== "function") throw new Error("Invalid Cordis entry: " + pkg.name);
     const actual = Object.keys(Inject.resolve(entry.inject));
     const undeclared = actual.find(service => !pkg.inject?.includes(service));
     if (undeclared) throw new Error(pkg.name + " requests undeclared service: " + undeclared);
-    const migrate = module.migrate ?? (entry as { migrate?: Migration }).migrate;
+    const migrate = loaded.migrate ?? (entry as { migrate?: Migration }).migrate;
     plugins.push({ pkg, entry, ...(typeof migrate === "function" ? { migrate: migrate as Migration } : {}) });
   }
   if (boot.fromSchema !== undefined && boot.fromSchema !== release.schema) {

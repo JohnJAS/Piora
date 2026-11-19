@@ -4,6 +4,7 @@ exports.name = "piora-task-monitor-provider";
 exports.inject = ["pioraTasks", "pioraStorage"];
 
 exports.apply = (ctx) => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- This is the installed CommonJS package's own manifest.
   const version = require("./package.json").version;
   const tasks = ctx.get("pioraTasks");
   const storage = ctx.get("pioraStorage");
