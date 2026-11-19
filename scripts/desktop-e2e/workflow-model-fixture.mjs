@@ -4,7 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /** Only the model is scripted. The desktop, SDK, tools, stores and UI are real. */
-export async function prepareWorkflowModel({ paths, directory, registerCleanup, report }) {
+export async function prepareWorkflowModel({ paths, directory, registerCleanup, report }, modelName = 'Plan / Goal Fixture') {
   const fixture = {
     stage: 'plan', requests: [], calls: [], holds: [], failures: [],
     forbiddenPath: join(directory, 'plan-forbidden.txt'), approvedPath: join(directory, 'plan-approved.txt'),
@@ -85,7 +85,7 @@ export async function prepareWorkflowModel({ paths, directory, registerCleanup, 
   const provider = 'desktop-workflow-fixture';
   await writeFile(join(paths.agent, 'models.json'), JSON.stringify({ providers: { [provider]: {
     api: 'openai-completions', baseUrl: `http://127.0.0.1:${server.address().port}/v1`, apiKey: 'local-test-only',
-    models: [{ id: 'plan-goal', name: 'Plan / Goal Fixture', reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 4096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
+    models: [{ id: 'plan-goal', name: modelName, reasoning: false, input: ['text'], contextWindow: 128000, maxTokens: 4096, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
   } } }));
   const settingsPath = join(paths.agent, 'settings.json');
   const settings = JSON.parse(await readFile(settingsPath, 'utf8'));
