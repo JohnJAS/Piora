@@ -43,6 +43,12 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* The original timer dock sits above, rather than below, its settings here. */
+#community-root[data-package="dsh-pomodoro-box"] .dshPomo_panel {
+  inset: calc(100% + 8px) auto auto 0;
+  max-width: calc(100vw - 40px);
+}
+
 /* The offline Panda Calendar panel has no location, weather, or chat integration. */
 [data-package="dsh-panda-calendar"] .pc-card:has(.pc-weather-body),
 [data-package="dsh-panda-calendar"] .pc-snapshot,

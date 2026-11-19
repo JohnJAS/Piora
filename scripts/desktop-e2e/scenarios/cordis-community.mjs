@@ -52,9 +52,12 @@ async function prepare({ env, paths, signal, registerCleanup, report }) {
 
 async function exercisePanel(window, name, first) {
   if (name === "dsh-niuma-timer") {
-    await window.locator(".nt-chip").click();
-    await window.locator(".nt-foot-actions .nt-btn").last().click();
     const salary = window.locator(".nt-form .nt-field input[type=number]").first();
+    if (!await salary.isVisible()) {
+      const actions = window.locator(".nt-foot-actions");
+      if (!await actions.isVisible()) await window.locator(".nt-chip").click();
+      await actions.locator(".nt-btn").last().click();
+    }
     if (first) {
       await salary.fill("19000");
       await window.locator(".nt-form button.nt-btn.primary").click();
