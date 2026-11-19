@@ -48,7 +48,9 @@ test("clicking a notification opens its Session in the Piora instance that emitt
   assert.match(mainSource, /notification\.on\("click", \(\) => \{[\s\S]*?focusMainWindow\(\)[\s\S]*?webContents\.send\(NOTIFICATION_SESSION_CHANNEL, sessionId\)/);
   assert.match(preloadSource, /onNotificationSession\(listener: \(sessionId: string\) => void\)/);
   assert.match(appShellSource, /onNotificationSession\?\.\(\(sessionId\) =>/);
-  assert.match(appShellSource, /const \[session\] = await fetchSessionMetadata\(\[sessionId\]\);[\s\S]{0,125}handleSelectSession\(session\)/);
+  assert.match(appShellSource, /sessionSidebarRef\.current\?\.findSession\(id\) \?\? \(await fetchSessionMetadata\(\[id\], signal\)\)\[0\]/);
+  const openFromNotification = appShellSource.slice(appShellSource.indexOf("const openNotificationSession"), appShellSource.indexOf("const handleNewSession ="));
+  assert.match(openFromNotification, /const session = await resolveNavigationSession\(sessionId\);\s*if \(version !== workspaceNavigationVersionRef\.current\) return;[\s\S]*?handleSelectSession\(session\)/);
   assert.match(sessionCatalogSource, /new URLSearchParams\(\{ view: "metadata" \}\)/);
   assert.match(sessionCatalogSource, /query\.append\("sessionId", id\)/);
   assert.match(sessionCatalogSource, /fetch\("\/api\/sessions\?" \+ query, \{ cache: "no-store", signal \}\)/);
