@@ -2752,6 +2752,7 @@ export const zhCNLocale: LocalePlugin = {
     "chat.showInComposer": "展开编辑",
     "chat.reasoningEffort": "推理强度",
     "chat.selectModel": "选择模型",
+    "chat.selectCurrentModel": "选择模型，当前为{model}",
     "chat.noModels": "没有可用模型",
     "chat.modelError": "模型错误",
     "chat.modelScopeWarning": "模型范围警告",

@@ -2752,6 +2752,7 @@ export const enLocale: LocalePlugin = {
     "chat.showInComposer": "Edit inline",
     "chat.reasoningEffort": "Reasoning effort",
     "chat.selectModel": "Select model",
+    "chat.selectCurrentModel": "Select model, currently {model}",
     "chat.noModels": "No available models",
     "chat.modelError": "Model error",
     "chat.modelScopeWarning": "Model scope warning",

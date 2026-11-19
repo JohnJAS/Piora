@@ -2540,6 +2540,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
                   disabled={isStreaming}
                   aria-haspopup="menu"
                   aria-expanded={modelDropdownOpen}
+                  aria-label={currentName ? t("chat.selectCurrentModel", { model: currentName }) : t("chat.selectModel")}
                   title={currentName ?? (modelOptions.length > 0 ? t("chat.selectModel") : t("chat.noModels"))}
                 >
                   <ModelProviderIcon provider={isAutoModelSelection ? undefined : model?.provider} modelId={isAutoModelSelection ? undefined : model?.modelId} modelName={currentName} size={14} />

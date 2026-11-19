@@ -259,7 +259,11 @@ test("renders an icon-only send control and dynamic context ring", () => {
   assert.match(globalCss, /\.context-usage-tooltip-note\s*\{/);
   assert.match(html, /data-model-brand="openai"/);
   assert.doesNotMatch(html, /<button[^>]*data-context-used/);
-  assert.ok(html.indexOf("data-context-used") < html.indexOf('title="选择模型"'));
+  const modelButton = html.match(/<button\b[^>]*class="model-settings-trigger"[^>]*>/);
+  assert.ok(modelButton);
+  assert.match(modelButton[0], /aria-label="选择模型，当前为GPT-5"/);
+  assert.match(modelButton[0], /title="GPT-5"/);
+  assert.ok(html.indexOf("data-context-used") < modelButton.index);
   assert.match(html, /class="session-stats-tooltip"/);
   assert.match(html, /class="session-stats-tooltip-title">会话信息</);
   assert.doesNotMatch(html, /class="session-stats-tooltip-title">Icon migration task</);

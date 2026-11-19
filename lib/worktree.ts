@@ -100,15 +100,12 @@ export async function resolveProject(cwd: string): Promise<ProjectInfo> {
       "--abbrev-ref", "HEAD",
     ]);
     const [commonDir, gitDir, toplevel, ref] = out.split("\n").map((l) => l.trim());
-    // git prints resolved (symlink-free) paths; normalize cwd the same way
-    let realCwd = cwd;
-    try { realCwd = realpathSync(cwd); } catch { /* keep as-is */ }
     // For a linked worktree, --git-dir differs from --git-common-dir.
     // Only collapse *worktree toplevels* into the main repo. A session whose
     // cwd is a subdirectory of a repo keeps its own project identity —
     // grouping subdirs under the repo root would change where new sessions
     // are created for existing users.
-    const isTopLevel = worktreePathsEqual(toplevel, realCwd);
+    const isTopLevel = worktreePathsEqual(toplevel, cwd);
     const isWorktreeTopLevel = !worktreePathsEqual(gitDir, commonDir) && isTopLevel;
     info = {
       projectRoot: isTopLevel ? checkoutPath(isWorktreeTopLevel ? dirname(commonDir) : cwd) : cwd,
@@ -195,8 +192,8 @@ function sanitizeBranchForDir(branch: string): string {
 }
 
 function worktreePathsEqual(left: string, right: string): boolean {
-  const resolvedLeft = resolve(left);
-  const resolvedRight = resolve(right);
+  const resolvedLeft = checkoutPath(left);
+  const resolvedRight = checkoutPath(right);
   return process.platform === "win32"
     ? resolvedLeft.toLowerCase() === resolvedRight.toLowerCase()
     : resolvedLeft === resolvedRight;
