@@ -38,7 +38,8 @@ test("opens settings as a viewport-wide page above the complete application shel
   assert.match(appShell, /\{settingsPage\}/);
   assert.match(appShell, /display: settingsDialogOpen \? "none" : "block"/);
   assert.match(appShell, /const shownSubagent = !selectedRoom && !settingsDialogOpen && !historyDialogOpen/);
-  assert.match(appShell, /const effectiveRightPanelOpen = \(rightPanelOpen \|\| Boolean\(shownSubagent\)\) && !settingsDialogOpen/);
+  assert.match(appShell, /const subagentPanelOpen = Boolean\(shownSubagent\)/);
+  assert.match(appShell, /const effectiveRightPanelOpen = \(rightPanelOpen \|\| subagentPanelOpen\) && !settingsDialogOpen/);
   assert.match(appShell, /aria-hidden=\{!effectiveRightPanelOpen\}/);
   assert.match(settingsDialog, /createPortal/);
   assert.match(settingsDialog, /aria-modal="true"/);
