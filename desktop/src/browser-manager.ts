@@ -1595,12 +1595,12 @@ export class DesktopBrowserManager {
       },
       finishLogin: (tabId: string, authenticated?: boolean) => this.finishProtectedLogin(tabId, authenticated),
       recoverLogin: (tabId: string, signal: AbortSignal) => this.recoverLogin(tabId, signal),
-      executeIsolated: (tabId: string, worldId: number, code: string) => {
+      executeIsolated: (tabId: string, worldId: number, code: string, userGesture?: boolean) => {
         const tab = this.findTab(tabId);
         if (code === BROWSER_LOGIN_STATE_SCRIPT && tab?.vaultProtected && !tab.view.webContents.isDestroyed()) {
           return tab.view.webContents.executeJavaScriptInIsolatedWorld(worldId, [{ code }]);
         }
-        return this.credentialGuardedRead(tabId, contents => contents.executeJavaScriptInIsolatedWorld(worldId, [{ code }]));
+        return this.credentialGuardedRead(tabId, contents => contents.executeJavaScriptInIsolatedWorld(worldId, [{ code }], userGesture));
       },
       executeMain: (tabId: string, code: string) => (
         this.credentialGuardedRead(tabId, contents => contents.executeJavaScript(`globalThis.eval(${JSON.stringify(code)})`))
@@ -1633,10 +1633,17 @@ export class DesktopBrowserManager {
       debuggerSend: (tabId: string, method: string, params?: Record<string, unknown>) => (
         this.credentialGuardedRead(tabId, contents => contents.debugger.sendCommand(method, params))
       ),
-      onTabEvent: (tabId: string, event: "render-process-gone" | "debugger-detach" | "destroyed", handler: (payload?: unknown) => void) => {
+      onTabEvent: (tabId: string, event: "render-process-gone" | "debugger-detach" | "destroyed" | "file-chooser-opened", handler: (payload?: unknown) => void) => {
         const tab = this.findTab(tabId);
         if (!tab || tab.unloaded) return () => undefined;
         const contents = tab.view.webContents;
+        if (event === "file-chooser-opened") {
+          const listener = (_event: Event, method: string, params: unknown) => {
+            if (method === "Page.fileChooserOpened") handler(params);
+          };
+          contents.debugger.on("message", listener);
+          return () => { if (!contents.isDestroyed()) contents.debugger.off("message", listener); };
+        }
         if (event === "render-process-gone") {
           const listener = () => handler();
           contents.on("render-process-gone", listener);

@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import { BROWSER_LOGIN_STATE_SCRIPT, browserLoginCompleted, LOGIN_VERIFICATION_DELAY_MS, readBrowserLoginState, type BrowserLoginState } from "./browser-login.js";
 import {
   ACTIVE_ELEMENT_PASSWORD_SCRIPT,
@@ -18,9 +19,12 @@ import {
   RELOAD_NOTICE,
   RENDERER_CRASHED_ERROR,
   REQUEST_TIMEOUT_MS,
+  UPLOAD_PAGE_CHANGED_ERROR,
   abortReason,
   assertAgentTabCapacity,
   buildKeyDispatchEvents,
+  browserUploadNotice,
+  captureFileChooser,
   createPendingRequestTable,
   elementCenterInvocation,
   focusInvocation,
@@ -34,6 +38,7 @@ import {
   scrollInvocation,
   sensitivePageNotice,
   unreferencedTypeFocus,
+  uploadTargetInvocation,
   SNAPSHOT_COLLECT_SCRIPT,
   WAITING_FOR_USER_ERROR,
   type OwnedTabCandidate,
@@ -83,7 +88,7 @@ export interface BrowserAgentHost {
   detach(tabId: string): void;
   setBackgroundThrottling(tabId: string, allowed: boolean): void;
   capturePage(tabId: string, options: { stayHidden: boolean; stayAwake: boolean }): Promise<{ byteLength: number; base64: string }>;
-  executeIsolated(tabId: string, worldId: number, code: string): Promise<unknown>;
+  executeIsolated(tabId: string, worldId: number, code: string, userGesture?: boolean): Promise<unknown>;
   executeMain?(tabId: string, code: string): Promise<unknown>;
   /** Tab id, main-frame navigation epoch, and URL. Different for each tab, including same-URL navigations. */
   navigationToken(tabId: string): string;
@@ -94,7 +99,7 @@ export interface BrowserAgentHost {
   debuggerSend(tabId: string, method: string, params?: Record<string, unknown>): Promise<unknown>;
   onTabEvent(
     tabId: string,
-    event: "render-process-gone" | "debugger-detach" | "destroyed",
+    event: "render-process-gone" | "debugger-detach" | "destroyed" | "file-chooser-opened",
     handler: (payload?: unknown) => void,
   ): () => void;
   pushActivity(activity: BrowserAgentActivity): void;
@@ -108,6 +113,7 @@ export interface BrowserAgentRequest {
   url?: string;
   selector?: string;
   ref?: string;
+  files?: string[];
   text?: string;
   key?: string;
   submit?: boolean;
@@ -150,6 +156,11 @@ interface CommandEntry {
   reject: (error: Error) => void;
 }
 
+interface FileChooserEvent {
+  backendNodeId?: number;
+  mode?: string;
+}
+
 interface TabMeta {
   agentOpened: boolean;
   refsInvalid: boolean;
@@ -157,7 +168,7 @@ interface TabMeta {
 }
 
 const ACTIONS = new Set([
-  "open", "back", "forward", "reload", "snapshot", "click", "type", "press", "scroll",
+  "open", "back", "forward", "reload", "snapshot", "click", "upload", "type", "press", "scroll",
   "screenshot", "tabs", "new_tab", "switch_tab", "close_tab", "idle", "session_closed", "evaluate",
   "recover_login", "evaluate_check", "wait_begin", "wait_check", "wait_end",
 ]);
@@ -178,6 +189,7 @@ function limited(value: unknown, max: number): string | undefined {
 }
 
 export class BrowserAgentControl {
+  private readonly uploadingTabs = new Set<string>();
   private readonly host: BrowserAgentHost;
   private readonly cdpTimeoutMs: number;
   private readonly navigationTimeoutMs: number;
@@ -502,6 +514,8 @@ export class BrowserAgentControl {
         return this.evaluate(request, signal);
       case "click":
         return this.click(request, signal);
+      case "upload":
+        return this.upload(request, signal);
       case "type":
         return this.type(request, signal);
       case "press":
@@ -783,11 +797,71 @@ export class BrowserAgentControl {
       this.assertRefs(tab.id, request);
       const point = await this.elementPoint(tab.id, request);
       this.throwIfAborted(signal);
-      await this.inputCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y, button: "none", clickCount: 0 });
-      await this.inputCommand(tab.id, "Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button: "left", clickCount: 1 });
-      await this.inputCommand(tab.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button: "left", clickCount: 1 });
+      await this.clickPoint(tab.id, point);
       this.throwIfAborted(signal);
       return this.pageResult(request, tab.id);
+    });
+  }
+
+  private async clickPoint(tabId: string, point: { x: number; y: number }): Promise<void> {
+    await this.inputCommand(tabId, "Input.dispatchMouseEvent", { ...point, type: "mouseMoved", button: "none", clickCount: 0 });
+    await this.inputCommand(tabId, "Input.dispatchMouseEvent", { ...point, type: "mousePressed", button: "left", clickCount: 1 });
+    await this.inputCommand(tabId, "Input.dispatchMouseEvent", { ...point, type: "mouseReleased", button: "left", clickCount: 1 });
+  }
+
+  private async upload(request: BrowserAgentRequest, signal: AbortSignal): Promise<unknown> {
+    const { files, ref, selector } = request;
+    if (!files?.length || !request.url || (!ref && !selector)) throw new Error("upload requires files, the current page URL, and a ref or selector.");
+    const url = httpUrl(request.url);
+    return this.withOwnedTab(request, signal, async (tab) => {
+      const tabId = tab.id;
+      this.assertRefs(tabId, request);
+      if (tab.url !== url) throw new Error(UPLOAD_PAGE_CHANGED_ERROR);
+      if (this.uploadingTabs.has(tabId)) throw new Error("An upload is already selecting files in this tab.");
+      const token = this.host.navigationToken(tabId);
+      const assertCurrent = () => {
+        this.throwIfAborted(signal);
+        if (this.host.navigationToken(tabId) !== token) throw new Error(UPLOAD_PAGE_CHANGED_ERROR);
+      };
+      const targetScript = uploadTargetInvocation({ url, ...(ref ? { ref } : {}), ...(selector ? { selector } : {}) });
+      this.uploadingTabs.add(tabId);
+      try {
+        await this.command(tabId, "Page.enable", {});
+        assertCurrent();
+        await this.command(tabId, "Page.setInterceptFileChooserDialog", { enabled: true });
+        const chooser = await captureFileChooser<FileChooserEvent>(
+          accept => this.host.onTabEvent(tabId, "file-chooser-opened", payload => accept(payload as FileChooserEvent)),
+          async () => {
+            assertCurrent();
+            const target = await this.isolated(tabId, targetScript, true) as { click?: boolean; error?: string } | null;
+            if (target?.error) throw new Error(target.error);
+            if (typeof target?.click !== "boolean") throw new Error("Could not inspect the upload control.");
+            if (target.click) {
+              const point = await this.elementPoint(tabId, request);
+              assertCurrent();
+              await this.clickPoint(tabId, point);
+            }
+          },
+          signal,
+        );
+        if (typeof chooser?.backendNodeId !== "number" || chooser.backendNodeId <= 0) {
+          throw new Error("The picker has no HTML file input. Target a standard file upload control.");
+        }
+        if (files.length > 1 && chooser.mode !== "selectMultiple") throw new Error("This upload control accepts one file at a time.");
+        assertCurrent();
+        await this.command(tabId, "DOM.setFileInputFiles", { backendNodeId: chooser.backendNodeId, files });
+        return this.pageResult(request, tabId, browserUploadNotice(files.length));
+      } finally {
+        try {
+          await this.command(tabId, "Page.setInterceptFileChooserDialog", { enabled: false });
+        } catch {
+          // Ending the debugger session also resets chooser interception.
+          this.detachQuiet(tabId);
+          this.onDebuggerDetach(tabId);
+        } finally {
+          this.uploadingTabs.delete(tabId);
+        }
+      }
     });
   }
 
@@ -1158,8 +1232,8 @@ export class BrowserAgentControl {
     return { url: parsed.url || this.tab(tabId)?.url || "" };
   }
 
-  private isolated(tabId: string, code: string): Promise<unknown> {
-    return this.runTabOp(tabId, () => this.host.executeIsolated(tabId, ISOLATED_WORLD_ID, code), this.cdpTimeoutMs, "Browser tab script timed out");
+  private isolated(tabId: string, code: string, userGesture?: boolean): Promise<unknown> {
+    return this.runTabOp(tabId, () => this.host.executeIsolated(tabId, ISOLATED_WORLD_ID, code, userGesture), this.cdpTimeoutMs, "Browser tab script timed out");
   }
 
   private async observeLogin(tabId: string): Promise<BrowserLoginState | null> {
@@ -1367,6 +1441,13 @@ function normalizeRequest(message: unknown): BrowserAgentRequest | null {
   if (url) request.url = url;
   if (selector) request.selector = selector;
   if (ref) request.ref = ref;
+  if (request.action === "upload") {
+    const files = candidate.files;
+    if (!Array.isArray(files) || files.length === 0 || !files.every(file => typeof file === "string" && isAbsolute(file) && !file.includes("\0"))) {
+      throw new Error("upload requires absolute local file paths.");
+    }
+    request.files = files;
+  }
   if (text !== undefined) request.text = text;
   if (key) request.key = key;
   if (candidate.submit === true) request.submit = true;

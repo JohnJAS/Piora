@@ -190,6 +190,10 @@ node --test lib/desktop-e2e.test.mjs
 
 `npm run test:desktop:e2e -- --scenario browser-login` 使用隔离的真实 Electron 开发窗口、本地确定性模型和本地登录页面，验证发送任务后自动展开浏览器、没有登录卡片或完成按钮、通过原生页面 UI 登录后继续工具调用并回复；同时核对批准模式、能力包菜单和新会话快捷卡片已移除。模型与登录凭据均为合成夹具，不代表真实模型、第三方账号、SSO、后台 Playwright 或安装包验收。产物和失败清理由同一生命周期入口管理。
 
+### Agent 浏览器上传
+
+`npm run test:desktop:e2e -- --scenario browser-upload --timeout-ms 1200000 --step-timeout-ms 240000` 在隔离的 Electron 开发窗口中，通过聊天输入框分别发送内置浏览器和后台浏览器的上传任务。夹具预建会话并等待真实 Agent 事件流握手，避免首次开发编译占满聊天的连接时限。模型和接收站点都只监听本机，工具确认仅在测试配置中关闭。接收端逐项核对隐藏文件控件和动态选择按钮提交的文件名与内容。运行报告会记录两个浏览器模式的回执和时长。
+
 ## Plan / Goal 工作流
 
 ```powershell

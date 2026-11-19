@@ -9,10 +9,12 @@ export const IDLE_UNLOAD_MS = 10 * 60 * 1000;
 export const AUTO_IDLE_MS = 3 * 60 * 1000;
 export const MANUAL_BROWSER_SESSION_ID = "__piora_browser_manual__";
 export const CDP_TIMEOUT_MS = 10_000;
+export const FILE_CHOOSER_TIMEOUT_MS = 8_000;
 export const REQUEST_TIMEOUT_MS = 40_000;
 
 export const EVALUATE_DISABLED_ERROR = "evaluate requires a matching inspected document token.";
 export const EVALUATE_PAGE_CHANGED_ERROR = "The page changed after inspection. evaluate was not run; take a new snapshot and try again.";
+export const UPLOAD_PAGE_CHANGED_ERROR = "The upload page changed. Take a new snapshot and verify the destination before retrying.";
 export const MAX_AGENT_TABS_ERROR = "This session already has 5 agent browser tabs. Close unused tabs before opening another.";
 export const REFS_INVALID_ERROR = "Element refs are invalid after the tab was reloaded. Take a new snapshot before interacting.";
 export const RENDERER_CRASHED_ERROR = "Browser tab renderer crashed.";
@@ -202,7 +204,7 @@ export function formatSnapshotNode(node: SnapshotNode): string {
     return `[${node.ref}] ${kind} type=password — password field`;
   }
   const label = (node.name ?? "").replace(/\s+/g, " ").trim().slice(0, 180);
-  return `[${node.ref}] ${kind}${label ? ` — ${label}` : ""}`;
+  return `[${node.ref}] ${kind}${node.type === "file" ? " type=file" : ""}${label ? ` — ${label}` : ""}`;
 }
 
 export function formatSnapshot(input: {
@@ -384,6 +386,60 @@ export function focusInvocation(args: { ref?: string; selector?: string }): stri
 
 export function elementCenterInvocation(args: { ref?: string; selector?: string }): string {
   return focusInvocation(args);
+}
+
+export function uploadTargetInvocation(args: { ref?: string; selector?: string; url: string }): string {
+  return `(() => {
+    const args = ${JSON.stringify(args)};
+    ${REF_LOOKUP_SOURCE}
+    if (location.href !== args.url) return { error: ${JSON.stringify(UPLOAD_PAGE_CHANGED_ERROR)} };
+    const target = args.ref ? pioraRefElement(args.ref) : document.querySelector(args.selector);
+    if (!target) return { error: ${JSON.stringify(REF_NOT_FOUND_ERROR)} };
+    if (target.matches(":disabled")) return { error: "Upload control is disabled." };
+    if (target instanceof HTMLInputElement && target.type === "file") {
+      target.showPicker();
+      return { click: false };
+    }
+    return { click: true };
+  })()`;
+}
+
+export function browserUploadNotice(count: number): string {
+  return `Selected ${count} ${count === 1 ? "file" : "files"} for upload. Check the page and submit or verify completion as appropriate.`;
+}
+
+export async function captureFileChooser<T>(
+  subscribe: (accept: (chooser: T) => void) => () => void,
+  open: () => Promise<unknown>,
+  signal?: AbortSignal,
+): Promise<T> {
+  let accept!: (chooser: T) => void;
+  let fail!: (error: Error) => void;
+  const chosen = new Promise<T>((resolve, reject) => {
+    accept = resolve;
+    fail = reject;
+  });
+  const unsubscribe = subscribe(accept);
+  const onAbort = () => fail(new Error("Browser action aborted"));
+  signal?.addEventListener("abort", onAbort, { once: true });
+  if (signal?.aborted) onAbort();
+  const timer = setTimeout(() => fail(new Error(
+    "No file picker opened. Target a file input or a button that opens one.",
+  )), FILE_CHOOSER_TIMEOUT_MS);
+  const opened = Promise.resolve().then(() => {
+    if (signal?.aborted) throw new Error("Browser action aborted");
+    return open();
+  });
+  try {
+    const [chooser] = await Promise.all([chosen, opened]);
+    return chooser;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+    // Keep interception active until the click or showPicker call has settled.
+    await opened.catch(() => undefined);
+    unsubscribe();
+  }
 }
 
 export interface KeyDispatchEvent {

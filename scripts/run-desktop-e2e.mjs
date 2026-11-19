@@ -6,6 +6,7 @@ import { stopShell, stopBash } from './desktop-e2e/scenarios/stop-shell.mjs';
 import { settingsTheme } from './desktop-e2e/scenarios/settings-theme.mjs';
 import { browserPersistence } from './desktop-e2e/scenarios/browser-persistence.mjs';
 import { browserLogin } from './desktop-e2e/scenarios/browser-login.mjs';
+import { browserUpload } from './desktop-e2e/scenarios/browser-upload.mjs';
 import { browserSettings } from './desktop-e2e/scenarios/browser-settings.mjs';
 import { desktopExtensions } from './desktop-e2e/scenarios/desktop-extensions.mjs';
 import { cordisExtensions } from './desktop-e2e/scenarios/cordis-extensions.mjs';
@@ -22,7 +23,7 @@ import { chatHistoryPagination } from './desktop-e2e/scenarios/chat-history-pagi
 import { workspaceIssueFixes } from './desktop-e2e/scenarios/workspace-issue-fixes.mjs';
 import { worktreeChatLayout } from './desktop-e2e/scenarios/worktree-chat-layout.mjs';
 
-const scenarios = [companionScaling, settingsTheme, stopShell, stopBash, desktopExtensions, cordisExtensions, cordisCommunity, browserPersistence, browserLogin, browserSettings, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard, subagents, subagentsReal, chatContextMenu, chatHistoryPagination, workspaceIssueFixes, worktreeChatLayout];
+const scenarios = [companionScaling, settingsTheme, stopShell, stopBash, desktopExtensions, cordisExtensions, cordisCommunity, browserPersistence, browserLogin, browserUpload, browserSettings, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard, subagents, subagentsReal, chatContextMenu, chatHistoryPagination, workspaceIssueFixes, worktreeChatLayout];
 
 export function parseOptions(args) {
   const options = { scenario: 'settings-theme' };
