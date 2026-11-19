@@ -47,7 +47,6 @@ import React from 'react'; import {createRoot} from 'react-dom/client';
 import {GitToolsPopover} from "@/components/workspace/GitToolsPopover";
 import {SessionSidebar} from '@/components/SessionSidebar'; import {I18nProvider} from '@/hooks/useI18n';
 import {parseWorkspaceContinuity,workspaceContinuityStorageKey} from '@/lib/workspace-continuity';
-import {prepareSessionSwitch} from '@/lib/session-prefetch';
 import {isProjectlessChatCwd} from '@/lib/projectless-chat-path';
 ${["getSelectionHistoryState", "replaceUrlWithoutNextNavigation"].map(name => helpers.get(name)).join("\n")}
 const sessions=${JSON.stringify(sessions)};
@@ -57,7 +56,6 @@ function App(){
   const [selectedRoom,setSelectedRoom]=React.useState(null);
   const [newSessionCwd,setNewSessionCwd]=React.useState(null);
   const [sessionKey,setSessionKey]=React.useState(0);
-  const [,setPendingSessionSwitch]=React.useState(null),[,setSessionSwitchError]=React.useState(null);
   const [activeCwd,setActiveCwd]=React.useState(sessions[0].cwd);
   const [activeProjectRoot,setActiveProjectRoot]=React.useState(sessions[0].projectRoot);
   const activeProjectRootRef=React.useRef(sessions[0].projectRoot);

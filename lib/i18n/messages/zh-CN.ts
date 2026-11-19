@@ -2652,7 +2652,7 @@ export const zhCNLocale: LocalePlugin = {
     "chat.openImage": "打开第 {count} 张图片",
     "chat.copyImage": "复制图片",
     "chat.copyImageFailed": "复制失败，请重试。",
-    "chat.sessionSwitchFailed": "会话加载失败，请重新选择会话重试。",
+    "chat.sessionSwitchFailed": "会话加载失败",
     "chatCommands.attachmentSummary": "{count} 个附件",
     "chat.projectlessGuide": "当前会话未关联项目；你可以直接选择模型并聊天。会话类型：",
     "chat.projectGuide": "模型可在左上角“设置 → 模型”中配置；项目可通过顶部项目菜单切换。当前项目：",

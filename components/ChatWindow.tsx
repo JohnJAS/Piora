@@ -54,6 +54,7 @@ interface Props {
   historyVisible?: boolean;
   onHistoryControlsChange?: (controls: HistoryChatControls | null) => void;
   session: SessionInfo | null;
+  initialRunning?: boolean;
   focusEntryId?: string | null;
   newSessionCwd: string | null;
   newSessionInitialModel?: { provider: string; modelId: string } | null;
@@ -164,7 +165,7 @@ function getUserInputText(message: AgentMessage): string | null {
   return text.length > 0 ? text : null;
 }
 
-export function ChatWindow({ visible = true, historyVisible = false, onHistoryControlsChange, session, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenModels, onPromptSubmitted }: Props) {
+export function ChatWindow({ visible = true, historyVisible = false, onHistoryControlsChange, session, initialRunning, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenModels, onPromptSubmitted }: Props) {
   // A new-chat action remounts this window. Directory names cannot identify
   // drafts: two new chats in the same project must never restore each other.
   const [newChatDraftKey] = useState(() => `new:${crypto.randomUUID()}`);
@@ -212,7 +213,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
   }, [chatInputRef]);
 
   const {
-    nestedCallsStore, loading, error, messages, entryIds, modelChanges, streamState, replyHistorySettling, activeLeafId, switchHistoryBranch, forkHistoryQuestion,
+    nestedCallsStore, loading, sessionHydrating, error, retrySessionLoad, messages, entryIds, modelChanges, streamState, replyHistorySettling, activeLeafId, switchHistoryBranch, forkHistoryQuestion,
     historyPage, loadEarlierHistory, loadNewestHistory,
     toolPermission, permissionSaving, handleToolPermission, toolReviews,
     agentRunning, backgroundSubagents, bashRunning, pendingBash, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
@@ -235,13 +236,14 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
     viewVisible: visible,
     workflowEnabled: laboratory.ready ? laboratory.planGoalEnabled : undefined,
     workflowReady: laboratory.ready,
-    session, newSessionCwd, newSessionInitialModel,
+    session, initialRunning, newSessionCwd, newSessionInitialModel,
     newSessionInitialSystemPromptSelection: initialPrompt?.systemPromptSelection ?? null,
     newSessionInitialPermissionMode: initialPrompt?.permissionMode,
     onAgentEnd, onSessionCreated, onSessionForked,
     modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsPanelOpen,
   });
   const sessionBusy = agentRunning || bashRunning;
+  const sessionReadOnly = loading || sessionHydrating || Boolean(error);
   const workflow = useWorkflow(session?.id ?? sessionIdRef.current, visible, sessionBusy, handleWorkflowAction);
   const [browserWaiting, setBrowserWaiting] = useState(false);
   const responseTimings = useMemo(() => responseTaskTimings(messages, chatCommands.taskTimings), [messages, chatCommands.taskTimings]);
@@ -284,10 +286,11 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
     : 0;
   const locallyClaimedInitialPromptRef = useRef<string | null>(null);
   const handleComposerSend = useCallback(async (...args: Parameters<typeof handleSend>) => {
+    if (sessionReadOnly) return false;
     const accepted = await handleSend(...args);
     if (accepted !== false) onPromptSubmitted?.();
     return accepted;
-  }, [handleSend, onPromptSubmitted]);
+  }, [handleSend, onPromptSubmitted, sessionReadOnly]);
   const handleEditFailedMessage = useCallback(async (message: UserMessage) => {
     if (!message.recoveryDraft) return;
     const draft = message.recoveryDraft;
@@ -372,14 +375,16 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
 
   useEffect(() => {
     onTaskControlsChange?.({
-      disabled: sessionBusy,
-      runCommand: async (command, excludeFromContext) => { await handleSend(`${excludeFromContext ? "!!" : "!"}${command}`); },
+      disabled: sessionBusy || sessionReadOnly,
+      runCommand: async (command, excludeFromContext) => {
+        if (!sessionReadOnly) await handleSend(`${excludeFromContext ? "!!" : "!"}${command}`);
+      },
       abort: handleAbort,
       bashRunning,
       pendingCommand: pendingBash?.command ?? null,
       latestBash,
     });
-  }, [bashRunning, handleAbort, handleSend, latestBash, onTaskControlsChange, pendingBash?.command, sessionBusy]);
+  }, [bashRunning, handleAbort, handleSend, latestBash, onTaskControlsChange, pendingBash?.command, sessionBusy, sessionReadOnly]);
 
   useEffect(() => () => onTaskControlsChange?.(null), [onTaskControlsChange]);
   useEffect(() => { onCapabilitiesChange?.(capabilities); }, [capabilities, onCapabilitiesChange]);
@@ -476,18 +481,18 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
     return true;
   }, [entryIds, historyPage, loadEarlierHistory, pauseHistoryFollow, sessionBusy]);
   useEffect(() => {
-    onHistoryControlsChange?.({ busy: sessionBusy || agentPhase?.kind === "stopping" || isCompacting || loading || deletingMessage || preparingRetry,
+    onHistoryControlsChange?.({ busy: sessionBusy || agentPhase?.kind === "stopping" || isCompacting || sessionReadOnly || deletingMessage || preparingRetry,
       entryIds, leafId: activeLeafId, switchBranch: switchHistoryBranch, forkQuestion: forkHistoryQuestion, focusEntry: focusHistoryEntry, canLoadEarlier: Boolean(historyPage) });
-  }, [activeLeafId, agentPhase?.kind, deletingMessage, entryIds, focusHistoryEntry, forkHistoryQuestion, historyPage, isCompacting, loading, onHistoryControlsChange, preparingRetry, sessionBusy, switchHistoryBranch]);
+  }, [activeLeafId, agentPhase?.kind, deletingMessage, entryIds, focusHistoryEntry, forkHistoryQuestion, historyPage, isCompacting, onHistoryControlsChange, preparingRetry, sessionBusy, sessionReadOnly, switchHistoryBranch]);
   useEffect(() => () => onHistoryControlsChange?.(null), [onHistoryControlsChange]);
   useEffect(() => {
-    if (!focusEntryId || loading || sessionBusy) return;
+    if (!focusEntryId || sessionReadOnly || sessionBusy) return;
     const focusKey = (session?.id ?? "new") + ":" + focusEntryId;
     if (handledFocusEntryRef.current === focusKey) return;
     void focusHistoryEntry(focusEntryId).then(found => {
       if (found) handledFocusEntryRef.current = focusKey;
     });
-  }, [focusEntryId, focusHistoryEntry, loading, session?.id, sessionBusy]);
+  }, [focusEntryId, focusHistoryEntry, session?.id, sessionBusy, sessionReadOnly]);
   useEffect(() => {
     if (!pendingHistoryFocus || historyVisible || !visible) return;
     if (!entryIds.includes(pendingHistoryFocus)) return;
@@ -677,8 +682,8 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
     : null, [isEmptyNew, newSessionProjectLabel, isProjectlessChat, messageCwd]);
   const composerToolbarControl = useMemo(() => (
     <SystemPromptSelector selection={systemPromptSelection} binding={systemPromptBinding} sessionId={session?.id}
-      disabled={sessionBusy || systemPromptSaving} onChange={handleSystemPromptSelection} />
-  ), [systemPromptSelection, systemPromptBinding, session?.id, sessionBusy, systemPromptSaving, handleSystemPromptSelection]);
+      disabled={sessionBusy || sessionReadOnly || systemPromptSaving} onChange={handleSystemPromptSelection} />
+  ), [systemPromptSelection, systemPromptBinding, session?.id, sessionBusy, sessionReadOnly, systemPromptSaving, handleSystemPromptSelection]);
 
   const { queueAction, edit: editQueuedDraft } = chatCommands;
   const queueActions = useMemo<ChatCommandQueueActions>(() => ({
@@ -715,7 +720,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
       workflow={laboratory.planGoalEnabled ? { mode: workflow.snapshot?.mode ?? "agent", turnBudget: workflow.snapshot?.turnBudget ?? DEFAULT_WORKFLOW_TURN_BUDGET } : undefined}
       workflowEnabled={laboratory.ready ? laboratory.planGoalEnabled : undefined}
       workflowBusy={workflow.busy}
-      sendDisabled={!laboratory.ready || workflow.busy || laboratory.planGoalEnabled && Boolean((session?.id ?? sessionIdRef.current) && !workflow.snapshot)}
+      sendDisabled={sessionReadOnly || !laboratory.ready || workflow.busy || laboratory.planGoalEnabled && Boolean((session?.id ?? sessionIdRef.current) && !workflow.snapshot)}
       onSend={handleComposerSend}
       onQueueInput={chatCommands.submit}
       commandCatalog={commandCatalog}
@@ -730,8 +735,8 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
       modelNames={modelNames}
       modelList={modelList}
       modelError={modelError}
-      onModelChange={handleModelChange}
-      onCompact={session ? handleCompact : undefined}
+      onModelChange={sessionReadOnly ? undefined : handleModelChange}
+      onCompact={session && !sessionReadOnly ? handleCompact : undefined}
       onAbortCompaction={handleAbortCompaction}
       isCompacting={isCompacting}
       compactionStartedAt={compactionStartedAt}
@@ -742,8 +747,8 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
       thinkingLevel={thinkingLevel}
       toolPermission={toolPermission}
       permissionSaving={permissionSaving}
-      onToolPermissionChange={handleToolPermission}
-      onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}
+      onToolPermissionChange={sessionReadOnly ? undefined : handleToolPermission}
+      onThinkingLevelChange={(session || isNew) && !sessionReadOnly ? handleThinkingLevelChange : undefined}
       availableThinkingLevels={availableThinkingLevels}
       thinkingLevelMap={currentThinkingLevelMap}
       retryInfo={retryInfo}
@@ -763,30 +768,22 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
   const aboveEditorWidgets = extensionWidgets.filter((widget) => widget.placement !== "belowEditor");
   const belowEditorWidgets = extensionWidgets.filter((widget) => widget.placement === "belowEditor");
 
-  if (loading) {
-    return (
-      <div className="relative flex h-full flex-col overflow-hidden" aria-busy="true">
-        <div className="session-loading-indicator flex flex-1 items-center justify-center text-text-muted" role="status">
-          {t("chat.loadingSession")}
-        </div>
-        <div className="session-loading-composer" aria-hidden="true" />
+  const loadError = error ? (
+    <div className="session-history-status">
+      <div role="alert">
+        <div>{t("chat.sessionSwitchFailed")}</div>
+        {error !== t("chat.sessionSwitchFailed") ? <div className="text-text-muted">{error}</div> : null}
       </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex h-full items-center justify-center text-red-400">
-        {error}
-      </div>
-    );
-  }
+      <button type="button" onClick={retrySessionLoad}>{t("common.retry")}</button>
+    </div>
+  ) : null;
 
   return (
     <NestedToolCallsContext.Provider value={nestedCallsStore}>
     <div
       ref={chatSurfaceRef}
       data-chat-surface
+      data-session-id={session?.id}
       className="relative flex h-full flex-col overflow-hidden"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
@@ -855,6 +852,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
           projectPath={isProjectlessChat ? null : messageCwd}
         >
           <div>
+            {loadError}
             <NoticeShelf notices={notices} align="right" />
             {chatCommands.records.map(record => <ChatCommandCard key={record.commandId} record={record} actions={commandActions} />)}
             {chatInputElement}
@@ -881,18 +879,22 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
         <div id="chat-scroll-container" ref={scrollContainerRef} className="chat-scroll-container flex-1 overflow-y-auto pt-4">
           <div style={{ padding: `0 ${isMobile ? CHAT_COLUMN_PADDING : CHAT_COLUMN_RIGHT_PADDING}px 0 ${CHAT_COLUMN_LEFT_PADDING}px` }}>
             <div className="chat-column">
+              {loadError}
+              {loading && !messages.length ? (
+                <div className="session-history-status session-loading-indicator" role="status">{t("chat.loadingSession")}</div>
+              ) : null}
               <ExtensionWidgets widgets={aboveEditorWidgets} />
               {historyPage?.older || readingEarlier ? <div className="flex items-center justify-center gap-3 py-2 text-sm text-text-muted" aria-busy={earlierLoading}>
-                {historyPage?.older ? <button type="button" className="cursor-pointer underline" disabled={earlierLoading || sessionBusy} onClick={() => void loadOlder()}>
+                {historyPage?.older ? <button type="button" className="cursor-pointer underline" disabled={earlierLoading || sessionBusy || sessionReadOnly} onClick={() => void loadOlder()}>
                   {t("history.loadEarlier")}
                 </button> : null}
-                {readingEarlier ? <button type="button" className="cursor-pointer underline" disabled={sessionBusy} onClick={() => void returnToNewest()}>
+                {readingEarlier ? <button type="button" className="cursor-pointer underline" disabled={sessionBusy || sessionReadOnly} onClick={() => void returnToNewest()}>
                   {t("history.returnToNewest")}
                 </button> : null}
                 {earlierError ? <span role="status">{t("history.loadError")}</span> : null}
               </div> : null}
 
-            <ChatHistory
+            {messages.length > 0 || !loading && !error ? <ChatHistory
               visible={visible}
               key={session?.id ?? sessionIdRef.current ?? "new"}
               operations={chatCommands.records} commandActions={commandActions}
@@ -902,11 +904,11 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
               isNew={isNew} forkingEntryId={forkingEntryId} highlightedEntryId={highlightedEntryId}
               lastUserMsgRef={lastUserMsgRef} pendingScrollToUserRef={pendingScrollToUserRef} scrollContainer={scrollContainerRef} handleRef={historyRef}
               modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile}
-              onBranch={deletingMessage ? undefined : handleBranch} onFork={deletingMessage ? undefined : handleFork} onNavigate={deletingMessage ? undefined : handleNavigate} onEditContent={handleEditContent}
-              onEditFailed={handleEditFailedMessage} onRetry={handleRetryMessage} retryDisabled={sessionBusy || deletingMessage || preparingRetry}
-              onDeleteMessage={handleDeleteMessage} deleteDisabled={sessionBusy || deletingMessage || isCompacting || preparingRetry}
+              onBranch={deletingMessage || sessionReadOnly ? undefined : handleBranch} onFork={deletingMessage || sessionReadOnly ? undefined : handleFork} onNavigate={deletingMessage || sessionReadOnly ? undefined : handleNavigate} onEditContent={handleEditContent}
+              onEditFailed={handleEditFailedMessage} onRetry={handleRetryMessage} retryDisabled={sessionBusy || sessionReadOnly || deletingMessage || preparingRetry}
+              onDeleteMessage={handleDeleteMessage} deleteDisabled={sessionBusy || sessionReadOnly || deletingMessage || isCompacting || preparingRetry}
               sessionId={session?.id ?? sessionIdRef.current ?? undefined} onOpenAutomation={onOpenAutomation} onOpenCommandExecution={setCommandExecutionDialog}
-            />
+            /> : null}
 
             {agentRunning && (agentPhase?.kind === "stopping" || ((!streamState.streamingMessage || statusIdleMs >= STATUS_STALL_AFTER_MS) && visionStatus?.phase !== "failed")) && (
               visionStatus && agentPhase?.kind !== "stopping" ? (

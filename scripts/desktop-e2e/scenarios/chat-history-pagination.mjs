@@ -16,10 +16,11 @@ const longAnswer = [
 export const chatHistoryPagination = {
   id: "chat-history-pagination",
   scope: "Windows Electron and the local Next.js service with on-disk synthetic SDK history",
-  coverage: ["bounded initial history and first paint", "load older while preserving the scroll anchor", "render a complete long Markdown reply in chat", "locate an older entry", "return to latest", "restart with the same profile"],
+  coverage: ["bounded initial history and first paint", "load older while preserving the scroll anchor", "render a complete long Markdown reply in chat", "switch immediately to another chat while history is held", "locate an older entry", "return to latest", "restart with the same profile"],
   limits: ["no model provider", "no physical Harmony device", "no release packaging"],
   async prepare({ paths, directory, report }) {
     const id = randomUUID();
+    const otherId = randomUUID();
     const workspace = join(directory, "history-workspace");
     const folder = join(paths.agent, "sessions", "--chat-history-pagination-fixture--");
     await mkdir(workspace, { recursive: true });
@@ -38,8 +39,14 @@ export const chatHistoryPagination = {
     }
     entries.push({ type: "session_info", id: entryId(total + 1), parentId: entryId(total), timestamp, name: "History pagination fixture" });
     await writeFile(join(folder, id + ".jsonl"), entries.map(entry => JSON.stringify(entry)).join("\n") + "\n");
-    fixtures.set(directory, { id, total, lastId: entryId(total) });
-    report.fixture = { sessionId: id, messages: total, dataset: "synthetic text-only history" };
+    const otherEntries = [
+      { type: "session", version: 3, id: otherId, cwd: workspace, timestamp },
+      { type: "message", id: entryId(1), parentId: null, timestamp, message: { role: "user", content: "Target conversation question", timestamp: Date.parse(timestamp) } },
+      { type: "session_info", id: entryId(2), parentId: entryId(1), timestamp, name: "Immediate switch target" },
+    ];
+    await writeFile(join(folder, otherId + ".jsonl"), otherEntries.map(entry => JSON.stringify(entry)).join("\n") + "\n");
+    fixtures.set(directory, { id, otherId, total, lastId: entryId(total) });
+    report.fixture = { sessionId: id, switchTargetId: otherId, messages: total, dataset: "synthetic text-only history" };
   },
   async run({ page, restart, step, directory }) {
     const fixture = fixtures.get(directory);
@@ -60,20 +67,14 @@ export const chatHistoryPagination = {
       await page.waitForFunction(() => document.querySelector(".chat-scroll-container")?.scrollTop === 0);
     };
     await step("initial-chat-page", async () => {
-      await page.evaluate(() => {
-        window.pioraHistoryLoadingFlash = false;
-        const observer = new MutationObserver(() => {
-          if (document.querySelector(".session-loading-indicator")) window.pioraHistoryLoadingFlash = true;
-        });
-        observer.observe(document.body, { subtree: true, childList: true });
-        window.pioraFinishHistoryPaintProbe = () => { observer.disconnect(); return window.pioraHistoryLoadingFlash; };
-      });
-      const received = page.waitForResponse(response => {
-        const url = new URL(response.url());
-        return url.pathname === catalogURL && url.searchParams.get("view") === "chat";
-      });
-      await page.locator('[data-session-drag-id="' + fixture.id + '"]').click();
-      const response = await received;
+      const [response] = await Promise.all([
+        page.waitForResponse(response => {
+          const url = new URL(response.url());
+          return url.pathname === catalogURL && url.searchParams.get("view") === "chat";
+        }),
+        page.locator('[data-session-drag-id="' + fixture.id + '"]').click(),
+      ]);
+      await page.locator('[data-chat-surface][data-session-id="' + fixture.id + '"] textarea').waitFor();
       const text = await response.text();
       assert.equal(response.status(), 200, text);
       const body = JSON.parse(text);
@@ -84,8 +85,6 @@ export const chatHistoryPagination = {
       assert.ok(evidence.firstPageBytes < 100_000);
       assert.ok(body.historyPage.older);
       await page.getByText("Fixture answer 120", { exact: true }).waitFor();
-      evidence.loadingFlash = await page.evaluate(() => window.pioraFinishHistoryPaintProbe());
-      assert.equal(evidence.loadingFlash, false);
     });
     await step("load-older-over-the-ui", async () => {
       await scrollToOldest();
@@ -143,6 +142,56 @@ export const chatHistoryPagination = {
       await answer.getByText(longAnswerEnd, { exact: true }).waitFor();
       assert.equal(await page.getByRole("button", { name: /^(在完整历史中查看原文|Open original in history)$/ }).count(), 0);
       evidence.fullMarkdownInChat = true;
+    });
+    await step("switch-from-long-chat", async () => {
+      const query = /^(搜索聊天或设置…|Search chats or settings…)$/;
+      await page.getByRole("button", { name: /^(搜索|Search)$/ }).click();
+      await page.getByPlaceholder(query).fill("First milestone only");
+      await page.getByPlaceholder(query).press("Escape");
+      await page.getByPlaceholder(query).waitFor({ state: "hidden" });
+      const url = candidate => candidate.pathname === "/api/sessions/" + fixture.otherId && candidate.searchParams.get("view") === "chat";
+      let release;
+      const gate = new Promise(resolve => { release = resolve; });
+      const pauseHistory = async route => { await gate; await route.continue(); };
+      await page.route(url, pauseHistory);
+      try {
+        await page.evaluate(id => {
+          document.addEventListener("click", event => {
+            if (!event.target.closest('[data-session-drag-id="' + id + '"]')) return;
+            const start = performance.now();
+            requestAnimationFrame(() => {
+              const surface = document.querySelector("[data-chat-surface]");
+              window.pioraFirstTargetFrame = {
+                elapsedMs: performance.now() - start,
+                sessionId: surface?.dataset.sessionId,
+                hasComposer: Boolean(surface?.querySelector("textarea")),
+              };
+            });
+          }, { capture: true, once: true });
+        }, fixture.otherId);
+        await page.locator('[data-session-drag-id="' + fixture.otherId + '"]').click();
+        const surface = page.locator('[data-chat-surface][data-session-id="' + fixture.otherId + '"]');
+        const composer = surface.locator("textarea");
+        await composer.waitFor();
+        const firstFrame = await page.evaluate(() => window.pioraFirstTargetFrame);
+        assert.equal(firstFrame.sessionId, fixture.otherId);
+        assert.equal(firstFrame.hasComposer, true);
+        assert.equal(await page.getByRole("heading", { name: "Archived Markdown answer", exact: true }).count(), 0);
+        await composer.fill("Draft typed before the history arrives");
+        const originalComposer = await composer.elementHandle();
+        release();
+        await page.getByText("Target conversation question", { exact: true }).waitFor();
+        assert.equal(await composer.inputValue(), "Draft typed before the history arrives");
+        assert.equal(await composer.evaluate((node, previous) => node === previous, originalComposer), true);
+        await originalComposer.dispose();
+        evidence.firstTargetFrame = firstFrame;
+        evidence.draftRetainedAcrossLoad = true;
+      } finally {
+        release();
+        await page.unroute(url, pauseHistory);
+      }
+      await page.locator('[data-session-drag-id="' + fixture.id + '"]').click();
+      await page.getByText("Fixture answer 120", { exact: true }).waitFor();
     });
     await step("locate-old-search-result", async () => {
       await page.reload();

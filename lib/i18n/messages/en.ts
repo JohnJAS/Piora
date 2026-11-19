@@ -2652,7 +2652,7 @@ export const enLocale: LocalePlugin = {
     "chat.openImage": "Open image {count}",
     "chat.copyImage": "Copy image",
     "chat.copyImageFailed": "Copy failed. Please try again.",
-    "chat.sessionSwitchFailed": "The chat could not be loaded. Select it again to retry.",
+    "chat.sessionSwitchFailed": "Could not load the chat",
     "chatCommands.attachmentSummary": "Attachments: {count}",
     "chat.projectlessGuide": "This conversation is not linked to a project. Choose a model and start chatting. Conversation type: ",
     "chat.projectGuide": "Configure models in Settings → Models or switch projects from the top project menu. Current project: ",

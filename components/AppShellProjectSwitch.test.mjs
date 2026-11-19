@@ -42,10 +42,9 @@ function createSelectionHarness(selectedId, {
   isMobile = false,
   href = "https://piora.test/",
   initialHistoryState = { __NA: true, _N: true, __PRIVATE_NEXTJS_INTERNALS_TREE: { tree: "retained" }, ownedCustomData: "retained" },
-  prepare = async session => ({ context: { messages: [] }, info: { id: session.id } }),
 } = {}) {
   const calls = new Map();
-  const values = new Map([["setPendingSessionSwitch", null], ["setSessionKey", 0]]);
+  const values = new Map([["setSessionKey", 0]]);
   const frameCallbacks = [];
   const historyWrites = [];
   const location = { href };
@@ -63,7 +62,7 @@ function createSelectionHarness(selectedId, {
     suppressCwdBumpRef: { current: false },
     workspaceNavigationVersionRef: { current: 0 },
     chatInputRef: { current: { focus: () => calls.set("focus", (calls.get("focus") ?? 0) + 1) } },
-    prepareSessionSwitch: prepare, translate: key => key,
+    fetch: () => assert.fail("selection must not wait for data"),
     window: { history, location, requestAnimationFrame: (callback) => frameCallbacks.push(callback) },
   };
   for (const name of [
@@ -71,12 +70,10 @@ function createSelectionHarness(selectedId, {
     "setActiveTopPanel", "setNewSessionCwd", "setNewSessionInitialModel", "setNewSessionInitialPrompt",
     "setSelectedSession", "setFocusedEntryId", "setSessionKey", "setSystemPrompt",
     "setInitialSessionRestored", "setSidebarOpen",
-    "setPendingSessionSwitch", "setSessionSwitchError",
   ]) {
     context[name] = (value) => {
       calls.set(name, [...(calls.get(name) ?? []), value]);
       values.set(name, typeof value === "function" ? value(values.get(name)) : value);
-      if (name === "setSelectedSession") context.selectedSessionIdRef.current = value?.id ?? null;
     };
   }
   const sandbox = vm.createContext(context);
@@ -190,12 +187,13 @@ test("clicking the selected session restores its URL without remounting the chat
   assert.equal(harness.pendingFrames(), 0);
 });
 
-test("clicking another session prepares the projection before the normal selection and remount path", async () => {
+test("clicking another session immediately selects it, updates the URL and closes the mobile drawer", () => {
   const session = { id: "owned-session-2", cwd: "F:\\Piora" };
   const harness = createSelectionHarness("owned-session-1", { isMobile: true });
-  await harness.select(session);
+  void harness.select(session);
 
   assert.equal(new URL(harness.location.href).searchParams.get("session"), session.id);
+  assert.equal(harness.context.selectedSessionIdRef.current, session.id);
   assert.deepEqual(harness.calls.get("setSelectedSession"), [session]);
   assert.equal(harness.calls.get("setSessionKey").length, 1);
   assert.equal(harness.calls.get("setSessionKey")[0](4), 5);
@@ -224,50 +222,31 @@ test("restoring a session from history never rewrites the URL", async () => {
   }
 });
 
-test("a cold switch retains the current chat until its fresh version and search target are ready", async () => {
-  let release;
-  const h=createSelectionHarness("old",{prepare:()=>new Promise(resolve=>{release=resolve;})});
-  const pending=h.select({id:"next",modified:"sidebar-old",cwd:"C:/next"},false,"target-entry");
-  assert.equal(h.calls.has("setSelectedSession"),false);
-  assert.equal(h.calls.has("setSessionKey"),false);
-  assert.equal(h.values.get("setPendingSessionSwitch").id,"next");
-  release({context:{messages:[]},info:{id:"next",modified:"server-new"}});await pending;
-  assert.equal(h.calls.get("setSelectedSession")[0].modified,"server-new");
-  assert.deepEqual(h.calls.get("setFocusedEntryId"),["target-entry"]);
-  assert.equal(new URL(h.location.href).searchParams.get("entry"),"target-entry");
-  assert.equal(h.values.get("setPendingSessionSwitch"),null);
+test("a cold selection commits its search anchor in the click handler", () => {
+  const h = createSelectionHarness("old");
+  const session = { id: "next", modified: "sidebar-old", cwd: "C:/next" };
+  void h.select(session, false, "target-entry");
+  assert.deepEqual(h.calls.get("setSelectedSession"), [session]);
+  assert.equal(h.calls.get("setSessionKey").length, 1);
+  assert.deepEqual(h.calls.get("setFocusedEntryId"), ["target-entry"]);
+  assert.equal(new URL(h.location.href).searchParams.get("entry"), "target-entry");
 });
 
-test("only the latest selection commits and an older request cannot dismiss its pending state", async () => {
-  const releases=new Map();
-  const h=createSelectionHarness("old",{prepare:session=>new Promise(resolve=>releases.set(session.id,resolve))});
-  const first=h.select({id:"first"}),last=h.select({id:"last"});
-  releases.get("first")({context:{messages:[]}});await first;
-  assert.equal(h.calls.has("setSelectedSession"),false);
-  assert.equal(h.values.get("setPendingSessionSwitch").id,"last");
-  releases.get("last")({context:{messages:[]}});await last;
-  assert.deepEqual(h.calls.get("setSelectedSession").map(session=>session.id),["last"]);
-});
-
-test("failed and superseded session loads leave the current conversation selected", async () => {
-  for(const failure of [null,new Error("offline")]){
-    const h=createSelectionHarness("old",{prepare:async()=>{if(failure)throw failure;return null;}});
-    await h.select({id:"next"});
-    assert.equal(h.calls.has("setSelectedSession"),false);
-    assert.equal(h.context.selectedSessionIdRef.current,"old");
-    assert.equal(h.values.get("setSessionSwitchError"),"chat.sessionSwitchFailed");
-    assert.equal(h.values.get("setPendingSessionSwitch"),null);
-  }
-  let release;
-  const h=createSelectionHarness("old",{prepare:()=>new Promise(resolve=>{release=resolve;})});
-  const pending=h.select({id:"next"});
-  h.context.workspaceNavigationVersionRef.current++;
-  release({context:{messages:[]}});await pending;
-  assert.equal(h.calls.has("setSelectedSession"),false,"a newer project, room or new-chat action wins");
+test("rapid selections update the target before a React render and invalidate older navigation", () => {
+  const h = createSelectionHarness("old");
+  const previousVersion = h.context.workspaceNavigationVersionRef.current;
+  void h.select({ id: "first" });
+  void h.select({ id: "last" });
+  void h.select({ id: "last" });
+  assert.deepEqual(h.calls.get("setSelectedSession").map(session => session.id), ["first", "last"]);
+  assert.equal(h.calls.get("setSessionKey").length, 2);
+  assert.equal(h.context.selectedSessionIdRef.current, "last");
+  assert.equal(new URL(h.location.href).searchParams.get("session"), "last");
+  assert.ok(h.context.workspaceNavigationVersionRef.current > previousVersion);
 });
 
 test("a search hit in the selected chat updates its anchor without remounting or reloading",async()=>{
-  const h=createSelectionHarness("same",{prepare:async()=>assert.fail("must not reload the current session")});
+  const h=createSelectionHarness("same");
   await h.select({id:"same"},false,"same-entry");
   assert.deepEqual(h.calls.get("setFocusedEntryId"),["same-entry"]);
   assert.equal(h.calls.has("setSessionKey"),false);
@@ -277,14 +256,14 @@ test("a search hit in the selected chat updates its anchor without remounting or
 test("returning through history to the current chat cancels an in-flight replacement", async () => {
   let release, restore;
   const fetches = [];
-  const h = createSelectionHarness("current", { href: "https://piora.test/?session=next", prepare: () => new Promise(resolve => { release = resolve; }) });
+  const h = createSelectionHarness("current", { href: "https://piora.test/?session=next" });
   Object.defineProperty(h.location, "search", { get: () => new URL(h.location.href).search });
   Object.assign(h.context, {
     AbortController, URLSearchParams, chatHistoryUrl, handleSelectSession: h.select,
-    fetch: async (url, { signal }) => {
+    fetch: (url, { signal }) => new Promise(resolve => {
       fetches.push({ url, signal });
-      return { ok: true, json: async () => ({ info: { id: "next" } }) };
-    },
+      release = () => resolve({ ok: true, json: async () => ({ info: { id: "next" } }) });
+    }),
     readHistoryLocation: () => ({ open: false, leafId: null, entryId: null }),
   });
   h.context.window.addEventListener = (_type, callback) => { restore = callback; };
@@ -292,7 +271,7 @@ test("returning through history to the current chat cancels an in-flight replace
   const cleanup = h.run(`(${historyRestorationCallback.getText(syntax)})`)();
   restore();
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(h.values.get("setPendingSessionSwitch").id, "next");
+  assert.equal(h.context.selectedSessionIdRef.current, "current");
   assert.equal(fetches.length, 1);
   const historyUrl = new URL(fetches[0].url, h.location.href);
   assert.equal(historyUrl.pathname, "/api/sessions/next");
@@ -300,8 +279,7 @@ test("returning through history to the current chat cancels an in-flight replace
   h.location.href = "https://piora.test/?session=current";
   restore();
   assert.equal(fetches[0].signal.aborted, true);
-  assert.equal(h.values.get("setPendingSessionSwitch"), null);
-  release({ context: { messages: [] }, info: { id: "next" } });
+  release();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.context.selectedSessionIdRef.current, "current");
   assert.equal(h.calls.has("setSessionKey"), false);

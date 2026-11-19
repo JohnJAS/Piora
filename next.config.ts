@@ -5,6 +5,12 @@ import { developmentFilesystemCache } from "./scripts/development-filesystem-cac
 
 const { version } = JSON.parse(readFileSync(join(__dirname, "package.json"), "utf8")) as { version: string };
 const deploymentId = `piora-${version.replace(/[^A-Za-z0-9_-]/g, "-")}`;
+// Browser bundling picks DOM implementations for these dependencies even in
+// a worker. Both default entry points also support the worker environment.
+const markdownWorkerAliases = {
+  "decode-named-character-reference": "./node_modules/decode-named-character-reference/index.js",
+  "hast-util-from-html-isomorphic": "./node_modules/hast-util-from-html-isomorphic/index.js",
+};
 let piVersion = "unknown";
 try {
   const piPkgPath = join(__dirname, "node_modules/@earendil-works/pi-coding-agent/package.json");
@@ -40,6 +46,7 @@ const nextConfig: NextConfig = {
     resolveAlias: {
       "./clipboard-database.js": "./desktop/src/clipboard-database.ts",
       "./clipboard-types.js": "./desktop/src/clipboard-types.ts",
+      ...Object.fromEntries(Object.entries(markdownWorkerAliases).map(([name, path]) => [name, { browser: path }])),
     },
   },
   // The app has a dedicated transparent desktop-pet renderer. Next's floating
@@ -112,6 +119,11 @@ const nextConfig: NextConfig = {
     });
     // Shared desktop TypeScript uses Node16 .js import specifiers.
     config.resolve.extensionAlias = { ...config.resolve.extensionAlias, ".js": [".js", ".ts", ".tsx"] };
+    if (!isServer) {
+      for (const [name, path] of Object.entries(markdownWorkerAliases)) {
+        config.resolve.alias[`${name}$`] = join(__dirname, path);
+      }
+    }
     // Release builds are one-shot and never reuse this cache. Disabling the
     // multi-hundred-megabyte filesystem cache also avoids a Webpack cache
     // finalization stall observed on Windows packaging machines.

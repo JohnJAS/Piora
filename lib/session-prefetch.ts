@@ -6,6 +6,7 @@ const MAX_PREFETCH_CACHE_BYTES = 16 * 1024 * 1024;
 interface PrefetchEntry {
   sessionId: string;
   modified: string;
+  requestedModified: string;
   createdAt: number;
   lastAccessedAt: number;
   byteLength: number;
@@ -56,6 +57,7 @@ function createPrefetch(
   const entry: PrefetchEntry = {
     sessionId: session.id,
     modified: session.modified,
+    requestedModified: session.modified,
     createdAt,
     lastAccessedAt: createdAt,
     byteLength: 0,
@@ -71,13 +73,13 @@ function createPrefetch(
         if (!response.ok) return null;
         const raw = await response.text();
         if (controller.signal.aborted) return null;
+        const data = JSON.parse(raw) as { sessionId?: string; info?: { id?: string; modified?: unknown }; context?: { messages?: unknown } };
+        if (!Array.isArray(data?.context?.messages) || data.info?.id && data.info.id !== session.id || data.sessionId && data.sessionId !== session.id) return null;
         entry.byteLength = new Blob([raw]).size;
         cachedPrefetchBytes += entry.byteLength;
-        const data = JSON.parse(raw) as { info?: { modified?: unknown } };
         entry.data = data;
-        // Preserve the exact version returned by the server. If a task appended
-        // after the sidebar snapshot, the fresher payload is safe to display but
-        // will no longer match that stale sidebar version on a later switch.
+        // The sidebar may lag behind this response. Keep both versions until
+        // the sidebar publishes a different one.
         if (typeof data.info?.modified === "string") entry.modified = data.info.modified;
         return data;
       })
@@ -113,7 +115,7 @@ export function prefetchSession(
     return;
   }
   const existing = prefetchedSessions.get(session.id);
-  if (existing && existing.modified === session.modified && Date.now() - existing.createdAt < PREFETCH_TTL_MS) {
+  if (existing && matchesVersion(existing, session.modified) && Date.now() - existing.createdAt < PREFETCH_TTL_MS) {
     existing.lastAccessedAt = Date.now();
     if (options.keepOnMouseLeave) existing.cancelOnLeave = false;
     return;
@@ -127,35 +129,27 @@ export function cancelSessionPrefetch(sessionId: string): void {
   if (entry?.cancelOnLeave) removePrefetch(entry, true);
 }
 
+export function cancelPendingSessionPrefetch(sessionId: string): void {
+  const entry = prefetchedSessions.get(sessionId);
+  if (entry && !entry.settled) removePrefetch(entry, true);
+}
+
+function matchesVersion(entry: PrefetchEntry, modified: string): boolean {
+  return entry.modified === modified || entry.requestedModified === modified;
+}
+
 export function takePrefetchedSession(
   session: Pick<SessionInfo, "id" | "modified">,
 ): Promise<unknown | null> | null {
   prunePrefetchedSessions();
   const entry = prefetchedSessions.get(session.id);
-  if (!entry || entry.modified !== session.modified || Date.now() - entry.createdAt >= PREFETCH_TTL_MS) {
+  if (!entry || !matchesVersion(entry, session.modified) || Date.now() - entry.createdAt >= PREFETCH_TTL_MS) {
     if (entry) removePrefetch(entry, true);
     return createPrefetch(session, false).promise;
   }
   entry.lastAccessedAt = Date.now();
   entry.cancelOnLeave = false;
   return entry.promise;
-}
-
-/** Prepare both history and runtime before replacing the visible chat. */
-export async function prepareSessionSwitch(session: Pick<SessionInfo, "id" | "modified">): Promise<unknown | null> {
-  const cached = Boolean(peekPrefetchedSession(session));
-  const state = fetch(`/api/sessions/${encodeURIComponent(session.id)}/state?view=chat`, { signal: AbortSignal.timeout(10_000), cache: "no-store" })
-    .then(response => response.ok ? response.json() as Promise<{ running: boolean; state?: unknown }> : null).catch(() => null);
-  const [preparedSnapshot, initialAgentState] = await Promise.all([takePrefetchedSession(session), state]);
-  let snapshot = preparedSnapshot;
-  // A background task may have started since a hover snapshot was captured.
-  // Never mount that running conversation using its earlier idle history.
-  if (cached && initialAgentState?.running) {
-    invalidatePrefetchedSession(session.id);
-    snapshot = await takePrefetchedSession(session);
-  }
-  if (snapshot && typeof snapshot === "object" && initialAgentState) Object.assign(snapshot, { initialAgentState });
-  return snapshot;
 }
 
 /**
@@ -172,7 +166,7 @@ export function peekPrefetchedSession(
     !entry
     || !entry.settled
     || !entry.data
-    || entry.modified !== session.modified
+    || !matchesVersion(entry, session.modified)
     || Date.now() - entry.createdAt >= PREFETCH_TTL_MS
   ) {
     return null;

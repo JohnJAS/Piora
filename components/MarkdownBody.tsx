@@ -12,8 +12,11 @@ import { useMarkdownRehypePlugins } from "@/hooks/useMarkdownRehypePlugins";
 import { rehypeAssistantEmphasis } from "@/lib/markdown-emphasis";
 import { answerLinkTargetForClick, normalizeAnswerLink } from "@/lib/answer-links";
 import { useAnswerLinks } from "./AnswerLinkProvider";
+import { LongMarkdown } from "./LongMarkdown";
 
 export { preloadMarkdownMathRenderer, preloadMarkdownRawHtmlParser } from "@/hooks/useMarkdownRehypePlugins";
+
+const LONG_REPLY_LENGTH = 32 * 1024;
 
 let markdownCodeToolsPromise: ReturnType<typeof importMarkdownCodeTools> | null = null;
 
@@ -67,14 +70,9 @@ export const MarkdownBody = memo(function MarkdownBody(props: MarkdownBodyProps)
 });
 
 const MarkdownRenderer = memo(function MarkdownRenderer({ children, className, isStreaming, cwd, onOpenFile }: MarkdownBodyProps) {
-  const normalizedMarkdown = useMemo(() => normalizeTextHighlights(normalizeDisplayMath(children)), [children]);
-  const baseRehypePlugins = useMarkdownRehypePlugins(normalizedMarkdown);
   const isAssistantMessage = className?.split(/\s+/).includes("markdown-assistant-message") ?? false;
   const answerLinks = useAnswerLinks();
-  const remarkPlugins = useMemo(() => onOpenFile && isAssistantMessage ? [...markdownRemarkPlugins, remarkFileReferences] : markdownRemarkPlugins, [onOpenFile, isAssistantMessage]);
-  const rehypePlugins = useMemo(() => isAssistantMessage
-    ? [...(baseRehypePlugins ?? []), rehypeAssistantEmphasis]
-    : baseRehypePlugins, [baseRehypePlugins, isAssistantMessage]);
+  const fileReferences = Boolean(onOpenFile) && isAssistantMessage;
   // Stable renderer identities keep stateful blocks mounted across message hover updates.
   const components = useMemo<Components>(() => ({
     text({ children }) {
@@ -177,13 +175,28 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ children, className, i
 
   return (
     <div className={["markdown-body", className].filter(Boolean).join(" ")}>
-      <ReactMarkdown
-        remarkPlugins={remarkPlugins}
-        rehypePlugins={rehypePlugins}
-        components={components}
-      >
-        {normalizedMarkdown}
-      </ReactMarkdown>
+      {isAssistantMessage && children.length >= LONG_REPLY_LENGTH
+        ? <LongMarkdown source={children} fileReferences={fileReferences} components={components} />
+        : <InlineMarkdown source={children} isAssistantMessage={isAssistantMessage} fileReferences={fileReferences} components={components} />}
     </div>
   );
 });
+
+function InlineMarkdown({ source, fileReferences, isAssistantMessage, components }: {
+  source: string;
+  fileReferences: boolean;
+  isAssistantMessage: boolean;
+  components: Components;
+}) {
+  const normalizedMarkdown = useMemo(() => normalizeTextHighlights(normalizeDisplayMath(source)), [source]);
+  const baseRehypePlugins = useMarkdownRehypePlugins(normalizedMarkdown);
+  const remarkPlugins = useMemo(() => fileReferences ? [...markdownRemarkPlugins, remarkFileReferences] : markdownRemarkPlugins, [fileReferences]);
+  const rehypePlugins = useMemo(() => isAssistantMessage
+    ? [...(baseRehypePlugins ?? []), rehypeAssistantEmphasis]
+    : baseRehypePlugins, [baseRehypePlugins, isAssistantMessage]);
+  return (
+    <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
+      {normalizedMarkdown}
+    </ReactMarkdown>
+  );
+}

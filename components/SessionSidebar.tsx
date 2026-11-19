@@ -174,8 +174,7 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
     focusPrimaryNavigation() { primaryActionRef.current?.focus({ preventScroll: true }); },
   }), [handleCustomPathClick]);
   const handleSelectSessionFromList = useCallback((s: SessionInfo) => {
-    // The selected-session prop synchronizes cwd after the prepared switch.
-    // Advancing cwd first would clear the old chat while its replacement loads.
+    // The selected-session prop synchronizes cwd after the selection commits.
     onSelectSession(s);
   }, [onSelectSession]);
 
