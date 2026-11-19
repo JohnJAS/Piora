@@ -8,7 +8,7 @@ import { isDeletedUserMessage, persistedMessagePromptIds } from "./session-messa
 import { readLatestSessionSystemPromptBinding, summarizeSessionSystemPromptBinding } from "./session-system-prompt";
 import { summarizeSessionStats } from "./session-stats";
 import type { SessionStatsInfo } from "./pi-types";
-import type { AgentMessage, SessionContext, SessionEntry, SessionHeader } from "./types";
+import type { AgentMessage, SessionContext, SessionEntry, SessionHeader, TextContent } from "./types";
 import type { SessionSystemPromptBinding } from "./system-prompt-types";
 
 export const HISTORY_PAGE_BYTES = 256 * 1024;
@@ -95,7 +95,7 @@ function cursorFor(generation: string, leafId: string | null, before: string | n
   return before && leafId && before.length <= 128 && leafId.length <= 128 ? encodeHistoryCursor({ generation, leafId, before }) : null;
 }
 
-function oversizedMessage(preview = ""): AgentMessage {
+function oversizedMessage(preview: string | TextContent[] = ""): AgentMessage {
   return { role: "custom", customType: "history-oversized-turn", content: preview, display: true };
 }
 
@@ -164,7 +164,9 @@ export async function readSessionPage(path: string, modified: string, options: P
   const previews = new Map(result.previews.map(preview => [preview.id, preview.messages]));
   for (const entry of result.entries) {
     if (entry.type === "oversize") {
-      context.messages.push(oversizedMessage(previews.get(entry.id)?.map(item => item.text).join("\n\n")));
+      // A clipped prompt may end inside a fence. Render its Markdown
+      // independently so it cannot absorb the following answer preview.
+      context.messages.push(oversizedMessage(previews.get(entry.id)?.map(({ text }) => ({ type: "text", text }))));
       context.entryIds.push(entry.id);
       deletedBoundary = false;
       continue;

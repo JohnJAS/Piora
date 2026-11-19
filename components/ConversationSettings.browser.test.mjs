@@ -28,6 +28,7 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     page.on('request', request => requests.push(new URL(request.url()).pathname));
     await page.addInitScript(() => localStorage.setItem('pi-locale', 'zh-CN'));
     let approvalsEnabled = true;
+    let reserve = null;
     await page.route('https://chat-settings.test/**', async route => {
       const url = new URL(route.request().url());
       if (url.pathname === '/api/settings/tool-approval') {
@@ -36,7 +37,11 @@ test('one chat settings page preserves controls, legacy entries and searchable t
       }
       if (url.pathname.endsWith('.js')) return route.fulfill({ contentType: 'text/javascript', body: await readFile(path.join(directory, path.basename(url.pathname))) });
       if (url.pathname === '/api/models-config/retry') return route.fulfill({ json: { enabled: true, maxRetries: 3, baseDelayMs: 2000, provider: { timeoutMs: null, maxRetries: null, maxRetryDelayMs: 60000 }, httpIdleTimeoutMs: 120000 } });
-      if (url.pathname.startsWith('/api/')) return route.fulfill({ json: { enabled: false, reserveTokens: 16384, templates: [], defaultTemplateId: null, settings: { enabled: true, maxRetries: 3, baseDelayMs: 2000, provider: { timeoutMs: null, maxRetries: null, maxRetryDelayMs: 60000 }, httpIdleTimeoutMs: 120000 }, modelList: [], models: [], files: [] } });
+      if (url.pathname === '/api/models-config/compaction') {
+        if (route.request().method() === 'PATCH') reserve = route.request().postDataJSON().settings.reserveTokens;
+        return route.fulfill({ json: { reserveTokens: reserve ?? 16384, configuredReserveTokens: reserve } });
+      }
+      if (url.pathname.startsWith('/api/')) return route.fulfill({ json: { enabled: false, templates: [], defaultTemplateId: null, settings: { enabled: true, maxRetries: 3, baseDelayMs: 2000, provider: { timeoutMs: null, maxRetries: null, maxRetryDelayMs: 60000 }, httpIdleTimeoutMs: 120000 }, modelList: [], models: [], files: [] } });
       return route.fulfill({ contentType: 'text/html', body: `<meta charset="utf-8"><style>${css}body{margin:0}</style><div id="root"></div><script src="/bundle.js"></script>` });
     });
     await page.goto('https://chat-settings.test/');
@@ -63,6 +68,20 @@ test('one chat settings page preserves controls, legacy entries and searchable t
     for (const id of ['permission.settings', 'conversation.autoScroll', 'conversation.notifications', 'conversation.runningSendMode', 'general.runningStatusLabel', 'general.modelRetry', 'models.compaction', 'conversation.systemPrompt', 'conversation.promptOptimizer', 'conversation.titleModel']) {
       assert.equal(await page.locator(`[data-settings-id="${id}"]`).count(), 1, `${id} remains available exactly once`);
     }
+    const compaction = page.locator('[data-settings-id="models.compaction"]');
+    const reserveInput = compaction.getByPlaceholder('随模型计算');
+    const saveCompaction = compaction.getByRole('button', { name: '保存', exact: true });
+    assert.equal(await reserveInput.inputValue(), '');
+    assert.equal(await saveCompaction.isDisabled(), true);
+    await reserveInput.fill('0');
+    await saveCompaction.click();
+    await compaction.getByRole('status').waitFor();
+    assert.equal(reserve, 0);
+    await reserveInput.fill('');
+    await saveCompaction.click();
+    await compaction.getByRole('status').waitFor();
+    assert.equal(reserve, null);
+    assert.equal(await saveCompaction.isDisabled(), true);
     const autoScroll = page.getByRole('switch', { name: '自动跟随最新输出', exact: true });
     await autoScroll.click();
     assert.equal(await autoScroll.getAttribute('aria-checked'), 'false');
