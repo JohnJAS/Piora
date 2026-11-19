@@ -62,6 +62,6 @@ export function combineOlderHistory(older: ChatHistoryResource, current: LoadedC
   const modelChanges = new Map([...older.context.modelChanges ?? [], ...current.modelChanges].map(notice => [notice.id, notice]));
   return {
     messages: [...olderMessages, ...current.messages], entryIds: [...olderIds, ...current.entryIds], modelChanges: [...modelChanges.values()],
-    historyPage: { ...older.historyPage, focused: current.historyPage.focused, oversized: [...older.historyPage.oversized, ...current.historyPage.oversized] },
+    historyPage: { ...older.historyPage, focused: current.historyPage.focused },
   };
 }

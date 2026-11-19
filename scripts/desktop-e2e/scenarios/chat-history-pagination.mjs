@@ -4,17 +4,19 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const fixtures = new Map();
+const longAnswerEnd = "The complete answer ends here.";
 const longAnswer = [
   "# Archived Markdown answer",
-  "- **Preview list item**",
-  "```text\npreview code sample\n```",
+  "- **Archived list item**",
+  "```text\narchived code sample\n```",
   "Additional fixture content. ".repeat(12_000),
+  longAnswerEnd,
 ].join("\n\n");
 
 export const chatHistoryPagination = {
   id: "chat-history-pagination",
   scope: "Windows Electron and the local Next.js service with on-disk synthetic SDK history",
-  coverage: ["bounded initial history and first paint", "load older while preserving the scroll anchor and Markdown previews", "locate an older entry", "return to latest", "restart with the same profile"],
+  coverage: ["bounded initial history and first paint", "load older while preserving the scroll anchor", "render a complete long Markdown reply in chat", "locate an older entry", "return to latest", "restart with the same profile"],
   limits: ["no model provider", "no physical Harmony device", "no release packaging"],
   async prepare({ paths, directory, report }) {
     const id = randomUUID();
@@ -45,7 +47,12 @@ export const chatHistoryPagination = {
     assert.ok(fixture);
     const catalogURL = "/api/sessions/" + fixture.id;
     const evidence = {};
-    const readEarlier = () => page.getByRole("button", { name: /^(加载更早消息|Load earlier messages)$/ });
+    const earlierLabel = /^(加载更早消息|Load earlier messages)$/;
+    const readEarlier = () => page.getByRole("button", { name: earlierLabel });
+    const olderResponse = () => page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === catalogURL && url.searchParams.has("older");
+    });
     const scroll = page.locator(".chat-scroll-container");
     const scrollToOldest = async () => {
       await scroll.hover();
@@ -86,10 +93,7 @@ export const chatHistoryPagination = {
       await originalAnchor.waitFor();
       const before = await originalAnchor.boundingBox();
       assert.ok(before);
-      const received = page.waitForResponse(response => {
-        const url = new URL(response.url());
-        return url.pathname === catalogURL && url.searchParams.has("older");
-      });
+      const received = olderResponse();
       await readEarlier().click();
       const response = await received;
       const text = await response.text();
@@ -111,16 +115,34 @@ export const chatHistoryPagination = {
       evidence.preservedScrollAnchor = true;
       await scrollToOldest();
       await page.getByText("Fixture question 41", { exact: true }).waitFor();
+      const shortHistory = olderResponse();
       await readEarlier().click();
+      const shortResponse = await shortHistory;
+      assert.equal(shortResponse.status(), 200);
+      const shortPage = await shortResponse.json();
+      assert.equal(shortPage.context.entryIds[0], "00000003");
+      assert.ok(shortPage.historyPage.older);
+      await page.getByRole("button", { name: earlierLabel, disabled: false }).waitFor();
+      await scrollToOldest();
+      await page.getByText("Fixture question 2", { exact: true }).waitFor();
+
+      const fullHistory = olderResponse();
+      await readEarlier().click();
+      const fullResponse = await fullHistory;
+      assert.equal(fullResponse.status(), 200);
+      const fullPage = await fullResponse.json();
+      assert.deepEqual(fullPage.context.entryIds, ["00000001", "00000002"]);
+      assert.equal(fullPage.context.messages[1].content[0].text, longAnswer);
       await readEarlier().waitFor({ state: "hidden" });
       await scrollToOldest();
       await page.getByText("Fixture question 1", { exact: true }).waitFor();
-      const preview = page.locator('[data-chat-entry-id="00000001"][role="note"]');
-      await preview.getByRole("heading", { name: "Archived Markdown answer", exact: true }).waitFor();
-      await preview.getByRole("listitem").getByText("Preview list item", { exact: true }).waitFor();
-      await preview.locator("pre code").getByText("preview code sample", { exact: true }).waitFor();
-      await preview.getByRole("button", { name: /^(在完整历史中查看原文|Open original in history)$/ }).waitFor();
-      evidence.markdownPreview = true;
+      const answer = page.locator('[data-chat-entry-id="00000002"]');
+      await answer.getByRole("heading", { name: "Archived Markdown answer", exact: true }).waitFor();
+      await answer.getByRole("listitem").getByText("Archived list item", { exact: true }).waitFor();
+      await answer.locator("pre code").getByText("archived code sample", { exact: true }).waitFor();
+      await answer.getByText(longAnswerEnd, { exact: true }).waitFor();
+      assert.equal(await page.getByRole("button", { name: /^(在完整历史中查看原文|Open original in history)$/ }).count(), 0);
+      evidence.fullMarkdownInChat = true;
     });
     await step("locate-old-search-result", async () => {
       await page.reload();

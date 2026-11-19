@@ -1289,8 +1289,6 @@ export const zhCNLocale: LocalePlugin = {
     "history.loadError": "完整历史加载失败",
     "history.loadEarlier": "加载更早消息",
     "history.returnToNewest": "返回最新消息",
-    "history.oversizedTurn": "长消息预览",
-    "history.openOriginal": "在完整历史中查看原文",
     "history.retry": "重试",
     "common.retry": "重试",
     "history.frameTitle": "完整会话历史内容",

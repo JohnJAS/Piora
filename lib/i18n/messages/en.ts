@@ -1289,8 +1289,6 @@ export const enLocale: LocalePlugin = {
     "history.loadError": "The full history could not be loaded",
     "history.loadEarlier": "Load earlier messages",
     "history.returnToNewest": "Return to latest messages",
-    "history.oversizedTurn": "Preview of a large turn",
-    "history.openOriginal": "Open original in history",
     "history.retry": "Retry",
     "common.retry": "Retry",
     "history.frameTitle": "Full conversation history content",

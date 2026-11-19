@@ -2922,7 +2922,6 @@ export function AppShell() {
                 visible={!settingsDialogOpen}
                 historyVisible={historyDialogOpen && !settingsDialogOpen}
                 onHistoryControlsChange={setHistoryControls}
-                onOpenHistoryEntry={navigateHistory}
                 session={selectedSession}
                 focusEntryId={focusedEntryId}
                 newSessionCwd={effectiveNewSessionCwd}

@@ -902,7 +902,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         || historyRevisionRef.current !== sequence || !loaded.historyPage || agentRunningRef.current
         || bashRunningRef.current || messageMutationRef.current) return false;
       if (around) {
-        if (!loaded.context.entryIds.includes(around) && !loaded.historyPage.oversized.some(turn => turn.anchors.includes(around))) return false;
+        if (!loaded.context.entryIds.includes(around)) return false;
         setMessages(loaded.context.messages);
         setEntryIds(loaded.context.entryIds);
         setModelChanges(loaded.context.modelChanges ?? []);

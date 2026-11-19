@@ -53,7 +53,6 @@ interface Props {
   visible?: boolean;
   historyVisible?: boolean;
   onHistoryControlsChange?: (controls: HistoryChatControls | null) => void;
-  onOpenHistoryEntry?: (leafId: string | null, entryId: string) => void;
   session: SessionInfo | null;
   focusEntryId?: string | null;
   newSessionCwd: string | null;
@@ -165,7 +164,7 @@ function getUserInputText(message: AgentMessage): string | null {
   return text.length > 0 ? text : null;
 }
 
-export function ChatWindow({ visible = true, historyVisible = false, onHistoryControlsChange, onOpenHistoryEntry, session, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenModels, onPromptSubmitted }: Props) {
+export function ChatWindow({ visible = true, historyVisible = false, onHistoryControlsChange, session, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenModels, onPromptSubmitted }: Props) {
   // A new-chat action remounts this window. Directory names cannot identify
   // drafts: two new chats in the same project must never restore each other.
   const [newChatDraftKey] = useState(() => `new:${crypto.randomUUID()}`);
@@ -468,13 +467,11 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
   const [earlierLoading, setEarlierLoading] = useState(false);
   const [earlierError, setEarlierError] = useState(false);
   const readingEarlier = historyPage?.focused === true;
-  const openHistoryEntry = useCallback((id: string) => onOpenHistoryEntry?.(activeLeafId, id), [activeLeafId, onOpenHistoryEntry]);
   const handledFocusEntryRef = useRef<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const focusHistoryEntry = useCallback(async (id: string) => {
     pauseHistoryFollow();
-    const linked = historyPage?.oversized.find(turn => turn.anchors.includes(id))?.id ?? id;
-    if (!entryIds.includes(linked) && (sessionBusy || !historyPage || !await loadEarlierHistory(id))) return false;
+    if (!entryIds.includes(id) && (sessionBusy || !historyPage || !await loadEarlierHistory(id))) return false;
     setPendingHistoryFocus(id);
     return true;
   }, [entryIds, historyPage, loadEarlierHistory, pauseHistoryFollow, sessionBusy]);
@@ -493,12 +490,11 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
   }, [focusEntryId, focusHistoryEntry, loading, session?.id, sessionBusy]);
   useEffect(() => {
     if (!pendingHistoryFocus || historyVisible || !visible) return;
-    const id = historyPage?.oversized.find(turn => turn.anchors.includes(pendingHistoryFocus))?.id ?? pendingHistoryFocus;
-    if (!entryIds.includes(id)) return;
-    historyRef.current?.revealEntry(id);
-    setHighlightedEntryId(id);
+    if (!entryIds.includes(pendingHistoryFocus)) return;
+    historyRef.current?.revealEntry(pendingHistoryFocus);
+    setHighlightedEntryId(pendingHistoryFocus);
     setPendingHistoryFocus(null);
-  }, [entryIds, historyPage, historyVisible, pendingHistoryFocus, visible]);
+  }, [entryIds, historyVisible, pendingHistoryFocus, visible]);
   const loadOlder = useCallback(async () => {
     if (earlierLoading || sessionBusy) return;
     setEarlierLoading(true);
@@ -906,7 +902,6 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
               isNew={isNew} forkingEntryId={forkingEntryId} highlightedEntryId={highlightedEntryId}
               lastUserMsgRef={lastUserMsgRef} pendingScrollToUserRef={pendingScrollToUserRef} scrollContainer={scrollContainerRef} handleRef={historyRef}
               modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile}
-              onOpenHistoryEntry={onOpenHistoryEntry ? openHistoryEntry : undefined}
               onBranch={deletingMessage ? undefined : handleBranch} onFork={deletingMessage ? undefined : handleFork} onNavigate={deletingMessage ? undefined : handleNavigate} onEditContent={handleEditContent}
               onEditFailed={handleEditFailedMessage} onRetry={handleRetryMessage} retryDisabled={sessionBusy || deletingMessage || preparingRetry}
               onDeleteMessage={handleDeleteMessage} deleteDisabled={sessionBusy || deletingMessage || isCompacting || preparingRetry}
