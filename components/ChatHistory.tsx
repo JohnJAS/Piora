@@ -7,6 +7,7 @@ import { messageFingerprint } from "@/lib/chat-history";
 import type { AgentMessage } from "@/lib/types";
 import { useI18n } from "@/hooks/useI18n";
 import { MessageView } from "./MessageView";
+import { LazyMarkdownBody } from "./LazyMarkdownBody";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { AliIcon } from "./AliIcon";
 import { VirtualList, type VirtualListHandle } from "./VirtualList";
@@ -160,9 +161,18 @@ function ChatHistoryContent({ visible: _visible, messages: savedMessages, modelC
     const index = row.index;
     const message = row.message!;
     if (message.role === "custom" && message.customType === "history-oversized-turn") {
+      const previews = typeof message.content === "string"
+        ? [message.content]
+        : message.content.flatMap(block => block.type === "text" ? [block.text] : []);
       return <div className={`chat-message-shell text-text-muted${highlightedEntryId === entryIds[index] ? " is-search-target" : ""}`} data-chat-entry-id={entryIds[index]} role="note">
         {t("history.oversizedTurn")}
-        {message.content && typeof message.content === "string" ? <p className="mt-2 whitespace-pre-wrap break-words text-text">{message.content}</p> : null}
+        <RenderErrorBoundary resetKey={messageFingerprint(message, entryIds[index])} fallbackLabel={t("chat.messageRenderFailed")} errorTitle={t("chat.messageRenderError")}>
+          {previews.filter(Boolean).map((preview, index) => (
+            <LazyMarkdownBody key={index} className="mt-2 text-text markdown-assistant-message" cwd={messageProps.cwd} onOpenFile={messageProps.onOpenFile}>
+              {preview}
+            </LazyMarkdownBody>
+          ))}
+        </RenderErrorBoundary>
         {onOpenHistoryEntry && entryIds[index] ? <button className="mt-2 cursor-pointer underline" type="button" onClick={() => onOpenHistoryEntry(entryIds[index])}>{t("history.openOriginal")}</button> : null}
       </div>;
     }
