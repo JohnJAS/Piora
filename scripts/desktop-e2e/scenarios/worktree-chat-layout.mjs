@@ -5,15 +5,17 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { prepareWorkflowModel } from "../workflow-model-fixture.mjs";
 
+const longModelName = "Workspace Acceptance Model with an Extra Long Display Name for the Composer";
+
 export const worktreeChatLayout = {
   id: "worktree-chat-layout",
   mode: "scripted-model",
   scope: "Windows Electron, real Git checkouts and session files, isolated profile and loopback model",
-  coverage: ["file panel close across projects and restart", "Markdown row edges", "new conversation in a linked checkout", "open Pocket from the main window and switch its header tabs"],
+  coverage: ["docked and overlay file panels across projects and restart", "Markdown row edges", "new conversation in a linked checkout", "long model name and Dream focus ring", "open Pocket from the main window and switch its header tabs"],
   limits: ["live provider", "release packaging"],
   async prepare(context) {
     const { paths, directory, report } = context;
-    await prepareWorkflowModel(context);
+    await prepareWorkflowModel(context, longModelName);
     const repo = join(directory, "project");
     const checkout = join(directory, "feature-worktree");
     const other = join(directory, "unrelated");
@@ -44,12 +46,18 @@ export const worktreeChatLayout = {
   async run({ page, directory, step, restart, waitUntil, getBrowser }) {
     const { repo, checkout, ids: [main, linked, other] } = fixtures.get(directory);
     fixtures.delete(directory);
+    const wideWindow = { width: 1440, height: 900 };
     const row = id => page.locator('[data-session-drag-id="' + id + '"]');
     const project = () => row(main).locator("xpath=ancestor::section[@data-project-drag-root][1]");
-    const open = id => row(id).click();
+    const openSidebar = async () => {
+      const button = page.locator(".desktop-titlebar-sidebar-toggle");
+      if (await button.getAttribute("aria-expanded") === "false") await button.click();
+    };
+    const open = async id => { await openSidebar(); await row(id).click(); };
     const toggle = () => page.locator(".right-panel-toggle");
     const closed = () => page.locator('.right-panel-toggle[aria-expanded="false"]').waitFor();
     await step("prepare-history-routes", async () => {
+      await page.setViewportSize(wideWindow);
       // Compile cold development routes before measuring the actual UI flow.
       const statuses = await page.evaluate(async id => Promise.all([
         "/api/sessions/" + id + "?deferThinking=1&deferMedia=1&view=chat", "/api/sessions/" + id + "/state?view=chat",
@@ -80,22 +88,22 @@ export const worktreeChatLayout = {
       await page.locator('.right-panel-toggle[aria-expanded="true"]').waitFor();
       await toggle().click();
       await closed();
+      await page.setViewportSize({ width: 1024, height: 720 });
+      await page.getByRole("link", { name: "note.md" }).click();
+      const backdrop = page.locator(".right-panel-overlay-backdrop.is-open");
+      await backdrop.click({ position: { x: 64, y: 240 } });
+      await closed();
+      await page.setViewportSize(wideWindow);
       await open(other);
       await page.locator('[data-chat-surface][data-session-id="' + other + '"] table').waitFor();
       await closed();
       await open(linked);
       await page.getByRole("link", { name: "note.md" }).waitFor();
       await closed();
-      page = await restart();
-      await open(linked);
-      await page.getByRole("link", { name: "note.md" }).waitFor();
-      await closed();
-      await toggle().click();
-      await page.locator('.right-panel-toggle[aria-expanded="true"]').waitFor();
-      await toggle().click();
     });
     let createdId;
     await step("create-send-and-reload-linked-session", async () => {
+      await openSidebar();
       const add = project().getByRole("button", { name: new RegExp("feature-worktree.*(新建会话|$)") });
       await add.click();
       const composer = page.locator(".chat-composer-textarea");
@@ -113,11 +121,39 @@ export const worktreeChatLayout = {
       await page.reload();
       await item.waitFor();
       await item.click();
-      await page.getByText("Linked worktree first message", { exact: true }).waitFor();
+      const transcript = page.locator('[data-chat-surface][data-session-id="' + createdId + '"]');
+      await transcript.getByText("Linked worktree first message", { exact: true }).waitFor();
       const info = await page.evaluate(async id => (await (await fetch("/api/sessions?view=metadata&sessionId=" + id)).json()).sessions[0], createdId);
       assert.equal(info.cwd, checkout);
       assert.equal(info.projectRoot, repo);
       assert.equal(info.worktreeBranch, "feature");
+    });
+    await step("long-model-and-dream-composer-focus", async () => {
+      await page.getByRole("button", { name: /^(Settings|设置)$/ }).click();
+      const dialog = page.getByRole("dialog", { name: /^(Settings|设置)$/ });
+      await dialog.getByRole("button", { name: /^(Appearance & Language|外观与界面)$/ }).click();
+      await dialog.locator('[data-settings-id="appearance.theme"] button[aria-expanded]').click();
+      await dialog.locator('[role="radio"][data-theme-id="dream"]').click();
+      await page.locator('html[data-theme="dream"]').waitFor();
+      await dialog.getByRole("button", { name: /^(Back to Piora|返回 Piora)$/ }).click();
+      await page.setViewportSize({ width: 1024, height: 720 });
+      const model = page.locator(".chat-composer-footer .model-settings-control .model-settings-trigger");
+      await model.waitFor();
+      assert.equal(await model.getAttribute("title"), longModelName);
+      const geometry = await model.locator(".model-settings-trigger-label").evaluate(label => {
+        const footer = label.closest(".chat-composer-footer");
+        return { clipped: label.clientWidth > 0 && label.scrollWidth > label.clientWidth,
+          overflow: getComputedStyle(label).textOverflow, footerFits: footer.scrollWidth <= footer.clientWidth + 1 };
+      });
+      assert.deepEqual(geometry, { clipped: true, overflow: "ellipsis", footerFits: true });
+      const composer = page.locator(".chat-composer-textarea");
+      await composer.focus();
+      assert.deepEqual(await composer.evaluate(field => {
+        const css = getComputedStyle(field);
+        return [css.borderTopWidth, css.boxShadow, css.outlineStyle, field.closest(".chat-composer-surface").matches(":focus-within")];
+      }), ["0px", "none", "none", true]);
+      await page.screenshot({ path: join(directory, "compact-dream-composer.png") });
+      await page.setViewportSize(wideWindow);
     });
     await step("open-pocket-from-window-header", async () => {
       await page.getByRole("button", { name: /^(打开随身舱|Open Pocket)$/ }).click();
@@ -149,6 +185,18 @@ export const worktreeChatLayout = {
         return last.left >= box.left && last.right <= box.right + 1 && box.right <= innerWidth;
       });
       await panel.screenshot({ path: join(directory, "pocket-header-narrow.png") });
+    });
+    await step("restore-closed-panel-after-normal-quit", async () => {
+      await page.waitForFunction(() => localStorage.getItem("piora-right-panel-open") === "false");
+      page = await restart({ graceful: true });
+      await page.setViewportSize(wideWindow);
+      await open(linked);
+      await page.getByRole("link", { name: "note.md" }).waitFor();
+      await closed();
+      await toggle().click();
+      await page.locator('.right-panel-toggle[aria-expanded="true"]').waitFor();
+      await toggle().click();
+      await closed();
     });
   },
 };

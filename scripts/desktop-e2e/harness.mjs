@@ -133,7 +133,17 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
     page, origin, pageErrors, paths,
     getBrowser: () => browser,
     // Restart only this run's owned process tree, retaining its isolated profile.
-    restart: async () => {
+    restart: async ({ graceful = false } = {}) => {
+      if (graceful) {
+        const session = await browser.newBrowserCDPSession();
+        const quit = session.send('Browser.close').catch(error => {
+          if (!/target.*closed|session closed/i.test(error.message)) throw error;
+        });
+        await Promise.all([quit, waitUntil(() => desktop.outcome(), {
+          signal, timeoutMs: 60_000, label: 'owned desktop to finish normal shutdown',
+        })]);
+        if (desktop.outcome().code !== 0) throw new Error('Desktop did not exit cleanly during restart');
+      }
       await browser.close(); await stopProcess(desktop); await checkPorts();
       desktop = start('scripts/dev-desktop.mjs', Boolean(executable));
       (report.restartPids ??= []).push(desktop.child.pid);
