@@ -78,17 +78,24 @@ export function parseCordisDiscovery(value: unknown, catalog: readonly CordisPro
 
 export async function discoverCordisExtensions(root: string, network: PetNetwork, catalog: readonly CordisProfile[], dedicated: ReadonlyMap<string, string>, signal: AbortSignal) {
   const dispatcher = petDispatcher(await preparePetNetwork(root, network));
-  const deadline = AbortSignal.any([signal, AbortSignal.timeout(45_000)]);
+  const idle = new AbortController();
+  const idleTimer = setTimeout(() => idle.abort(new Error("The DSH directory download stopped responding")), 45_000);
+  const deadline = AbortSignal.any([signal, idle.signal, AbortSignal.timeout(5 * 60_000)]);
   try {
     const response = await fetch(discoveryUrl, { dispatcher, signal: deadline, redirect: "error" });
     if (!response.ok || !response.body) throw new Error("The DSH directory is unavailable (" + response.status + ")");
+    idleTimer.refresh();
     const chunks: Buffer[] = [];
     let size = 0;
     for await (const chunk of response.body) {
+      idleTimer.refresh();
       size += chunk.byteLength;
       if (size > maxDiscoveryBytes) throw new Error("The DSH directory exceeded its size limit");
       chunks.push(Buffer.from(chunk));
     }
     return parseCordisDiscovery(JSON.parse(Buffer.concat(chunks).toString("utf8")), catalog, dedicated);
-  } finally { await dispatcher.destroy(); }
+  } finally {
+    clearTimeout(idleTimer);
+    await dispatcher.destroy();
+  }
 }

@@ -361,25 +361,26 @@ export function CompanionPanel() {
     { id: "memory", icon: "brain", label: "记忆" },
     { id: "mind", icon: "setting", label: "设置" },
   ];
-  const activeTabLabel = tabs.find((item) => item.id === tab)?.label;
+  useEffect(() => {
+    document.getElementById(`cabin-tab-${tab}`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [tab]);
 
   return (
     <main className={`${styles.panel} companion-panel-root`} aria-busy={busy || quickAccess.busy}>
-      <aside className={styles.sidebar}>
+      <div className={styles.workspace}>
+      <header className={styles.topbar}>
         <div className={styles.brand}><Image className={styles.brandMark} src="/icons/icon-192.png" width={34} height={34} alt={brandText("Piora")} unoptimized /><span>随身舱<small>{APP_DISPLAY_NAME.toUpperCase()} POCKET</small></span></div>
-        <nav className={styles.tabs} role="tablist" aria-orientation="vertical" aria-label="随身舱功能" onKeyDown={(event) => {
-          if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+        <button className={styles.searchButton} type="button" onClick={() => { navigate("home"); requestAnimationFrame(() => searchRef.current?.focus()); }} aria-label="搜索工具 Ctrl+K"><AliIcon name="search" size={15} /><kbd>Ctrl K</kbd></button>
+        <nav className={styles.tabs} role="tablist" aria-orientation="horizontal" aria-label="随身舱功能" onKeyDown={(event) => {
+          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
           event.preventDefault();
           const index = tabs.findIndex((item) => item.id === tab);
-          const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + tabs.length) % tabs.length;
+          const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
           navigate(tabs[next].id); document.getElementById(`cabin-tab-${tabs[next].id}`)?.focus();
         }}>
-          {tabs.map(({ id, icon, label }) => <button type="button" role="tab" id={`cabin-tab-${id}`} aria-controls="cabin-content" tabIndex={tab === id ? 0 : -1} key={id} aria-selected={tab === id} data-active={tab === id} data-secondary={id === "now"} onClick={() => navigate(id)}><AliIcon name={icon} size={18} /><span>{label}</span>{id === "tasks" && activeTasks.length > 0 ? <small>{activeTasks.length}</small> : null}</button>)}
+          {tabs.map(({ id, icon, label }) => <button type="button" role="tab" id={`cabin-tab-${id}`} title={label} aria-label={label} aria-controls="cabin-content" tabIndex={tab === id ? 0 : -1} key={id} aria-selected={tab === id} data-active={tab === id} onClick={() => navigate(id)}><AliIcon name={icon} size={18} /><span>{label}</span>{id === "tasks" && activeTasks.length > 0 ? <small>{activeTasks.length}</small> : null}</button>)}
         </nav>
-        <span className={styles.sidebarFoot}>随开 · 随用</span>
-      </aside>
-      <div className={styles.workspace}>
-      <header className={styles.topbar}><span>{activeTabLabel}</span><button type="button" onClick={() => { navigate("home"); requestAnimationFrame(() => searchRef.current?.focus()); }} aria-label="搜索工具 Ctrl+K"><AliIcon name="search" size={15} /><kbd>Ctrl K</kbd></button></header>
+      </header>
       {error || (runtimeError && tab !== "json") ? <div className={styles.error} role="alert"><span>{error || runtimeError}</span>{error ? <button type="button" onClick={() => setError("")} aria-label="关闭错误提示">×</button> : <button type="button" onClick={() => void refresh().catch((cause: unknown) => setRuntimeError(cause instanceof Error ? cause.message : String(cause)))}>重试</button>}</div> : null}
       <section id="cabin-content" className={styles.content} data-tool={tab} role="tabpanel" aria-labelledby={`cabin-tab-${tab}`}>
         {tab === "home" ? <div className={styles.home}>

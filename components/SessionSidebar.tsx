@@ -37,7 +37,7 @@ function createTemporarySessionId(): string {
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }
 
-export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSessionId, selectedSubagent, onOpenSubagent, selectedRoomId, onSelectSession, onSelectSearchResult, onSelectRoom, onNewSession, onRequestNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenSettings, activeProjectRoot }, ref) {
+export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function SessionSidebar({ selectedSession, selectedSessionId, selectedSubagent, onOpenSubagent, selectedRoomId, onSelectSession, onSelectSearchResult, onSelectRoom, onNewSession, onRequestNewSession, initialSessionId, initialRoomId, skipInitialProjectSelection, onInitialRestoreDone, onInitialRoomRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onOpenSettings, activeProjectRoot }, ref) {
   const { t } = useI18n();
   const [sessionFlags, setSessionFlags] = useState<SessionFlags>({});
   const primaryActionRef = useRef<HTMLButtonElement>(null);
@@ -255,15 +255,27 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   }, [loadSessions]);
 
   const handleNewSessionInProject = useCallback((cwd: string) => {
+    const root = projectRootFor(cwd);
+    if (root) setCollapsedProjectKeys(previous => {
+      if (!previous.has(root)) return previous;
+      const next = new Set(previous);
+      next.delete(root);
+      return next;
+    });
     // Pi will be spawned lazily when the user sends the first message.
     onNewSession?.(createTemporarySessionId(), cwd);
-  }, [onNewSession]);
+  }, [onNewSession, projectRootFor, setCollapsedProjectKeys]);
 
   const selectedProject = projectRootFor(selectedCwd);
-  const activeSessions = useMemo(
-    () => allSessions.filter((session) => !sessionFlags[session.id]?.archived),
-    [allSessions, sessionFlags],
-  );
+  const activeSessions = useMemo(() => {
+    const visible = allSessions.filter(session => !sessionFlags[session.id]?.archived);
+    // Keep the newly admitted chat visible until the catalog catches up.
+    if (selectedSession && !sessionFlags[selectedSession.id]?.archived && !allSessions.some(session => session.id === selectedSession.id)) {
+      const root = selectedSession.projectRoot ?? projectRootFor(selectedSession.cwd);
+      return [...visible, { ...selectedSession, projectRoot: root ?? undefined }];
+    }
+    return visible;
+  }, [allSessions, projectRootFor, selectedSession, sessionFlags]);
   const projectlessSessions = useMemo(
     () => activeSessions.filter((session) => session.projectless),
     [activeSessions],

@@ -2260,6 +2260,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
           </div>}
           <textarea
             ref={textareaRef}
+            className="chat-composer-textarea"
             aria-autocomplete="list"
             aria-controls={slashMenuOpen ? slashListId : atMenuPosition ? atListId : undefined}
             aria-activedescendant={slashMenuOpen && filteredSlashCommands[slashActiveIndex] ? `${slashListId}-${slashActiveIndex}` : atMenuPosition && atMatches[atActiveIndex] ? `${atListId}-${atActiveIndex}` : undefined}
@@ -2308,7 +2309,8 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
             }
             rows={1}
             style={{
-              flex: 1,
+              flex: "1 0 100%",
+              minWidth: 0,
               background: "none",
               border: "none",
               outline: "none",
@@ -2334,7 +2336,8 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
           {isCommandInput && parsedCommandInput.kind === "invalid" && !slashMenuOpen && value.trim() !== "/" && <div className={commandStyles.validation} role="status">
             <p>{t(`chatCommands.error.${parsedCommandInput.code}`, { name: parsedCommandInput.name })}</p><button type="button" onClick={() => { setValue([value, commandInputOptions.afterPrompt].filter(Boolean).join("\n\n")); setCommandInputOptions(current => ({ workflow: current.workflow, inputMode: "text" })); }}>{t("chatCommands.asText")}</button>
           </div>}
-          <div className="chat-composer-footer" data-has-workflow={workflowEnabled && workflow ? true : undefined}>
+          <div className="chat-composer-footer" data-has-workflow={workflowEnabled && workflow ? true : undefined}
+            data-workflow-mode={workflowEnabled && workflow ? (commandInputOptions.workflow ?? workflow).mode : undefined}>
             <div ref={attachmentMenuRef} className="composer-add-control">
               {attachmentMenuOpen && (
                 <div className="composer-add-menu" role="menu" aria-label={t("chat.addMenu")}>
@@ -2537,7 +2540,8 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
                   disabled={isStreaming}
                   aria-haspopup="menu"
                   aria-expanded={modelDropdownOpen}
-                  title={modelOptions.length > 0 ? t("chat.selectModel") : t("chat.noModels")}
+                  aria-label={currentName ? t("chat.selectCurrentModel", { model: currentName }) : t("chat.selectModel")}
+                  title={currentName ?? (modelOptions.length > 0 ? t("chat.selectModel") : t("chat.noModels"))}
                 >
                   <ModelProviderIcon provider={isAutoModelSelection ? undefined : model?.provider} modelId={isAutoModelSelection ? undefined : model?.modelId} modelName={currentName} size={14} />
                   <span className="model-settings-trigger-label">
