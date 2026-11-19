@@ -233,14 +233,15 @@ export const subagents = {
         const readWidth = () => inspector.evaluate(element => element.getBoundingClientRect().width);
         const drag = async (amount, layout) => {
           await page.bringToFront();
+          // The overlay slides in without changing width. Hover waits for a stable hit target.
+          await resize.hover();
           const before = await readWidth();
           const bounds = await resize.boundingBox();
           assert.ok(bounds, 'the resize grip is visible');
           const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
-          await page.mouse.move(x, y);
           await page.mouse.down();
           try {
-            await waitUntil(() => resize.evaluate(element => element.classList.contains('is-resizing')), 'the grip has started dragging');
+            await waitUntil(() => resize.evaluate(element => element.classList.contains('is-resizing')), `${layout} grip has started dragging`);
             await page.mouse.move(x - amount, y, { steps: 6 });
             // A capture requests a compositor frame for a backgrounded Windows runner.
             await page.screenshot({ path: join(directory, `subagent-resizing-${layout}.png`) });
