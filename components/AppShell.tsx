@@ -64,8 +64,6 @@ import type { GitStatusResponse } from "@/lib/git-types";
 import { GitToolsPopover } from "./workspace/GitToolsPopover";
 import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
-import { prepareSessionSwitch } from "@/lib/session-prefetch";
-import { chatHistoryUrl } from "@/lib/chat-history-client";
 import { fetchSessionMetadata } from "@/lib/session-catalog-client";
 import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
 
@@ -269,8 +267,6 @@ export function AppShell() {
   const [initialCwdError, setInitialCwdError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [sessionKey, setSessionKey] = useState(0);
-  const [pendingSessionSwitch, setPendingSessionSwitch] = useState<{ id: string; version: number } | null>(null);
-  const [sessionSwitchError, setSessionSwitchError] = useState<string | null>(null);
   const [explorerRefreshKey, setExplorerRefreshKey] = useState(0);
   const [modelsRefreshKey, setModelsRefreshKey] = useState(0);
   const [onboardingRestartKey, setOnboardingRestartKey] = useState(0);
@@ -536,8 +532,6 @@ export function AppShell() {
 
   const openSettings = useCallback((key: SettingsKey = "general", itemId?: string) => {
     workspaceNavigationVersionRef.current++;
-    setPendingSessionSwitch(null);
-    setSessionSwitchError(null);
     setSettingsItemId(itemId);
     setActiveTopPanel(null);
     if (isMobile) setSidebarOpen(false);
@@ -829,10 +823,6 @@ export function AppShell() {
     // selection, not a new navigation that may cancel the user's next pick.
     const navigationVersion = cwdBelongsToSelectedSession || cwdBelongsToSelectedRoom
       ? workspaceNavigationVersionRef.current : ++workspaceNavigationVersionRef.current;
-    if (!cwdBelongsToSelectedSession && !cwdBelongsToSelectedRoom) {
-      setPendingSessionSwitch(null);
-      setSessionSwitchError(null);
-    }
     // Skip if cwd is null (initial mount).
     if (!cwd) { setActiveCwd(null); return; }
     const newProject = projectRoot ?? cwd;
@@ -949,32 +939,6 @@ export function AppShell() {
 
   const handleSelectSession = useCallback(async (session: SessionInfo, isRestore = false, entryId?: string, focusComposer = true) => {
     const navigationVersion = ++workspaceNavigationVersionRef.current;
-    setPendingSessionSwitch(null);
-    setSessionSwitchError(null);
-    if (isRestore || selectedSessionIdRef.current !== session.id) {
-      // Keep the current conversation and its composer mounted until the new
-      // projection is ready. Switching through the empty loading shell flashes
-      // the entire column, even when the local request only takes one frame.
-      setPendingSessionSwitch({ id: session.id, version: navigationVersion });
-      try {
-        const snapshot = await prepareSessionSwitch(session) as { context?: { messages?: unknown }; info?: { id?: string; modified?: string } } | null;
-        if (navigationVersion !== workspaceNavigationVersionRef.current) return false;
-        if (!snapshot || !Array.isArray(snapshot.context?.messages) || snapshot.info?.id && snapshot.info.id !== session.id) {
-          setSessionSwitchError(translate("chat.sessionSwitchFailed"));
-          return false;
-        }
-        // A running session can advance beyond the sidebar's modified stamp.
-        // Match the fetched version so the remounted hook can seed it on its
-        // first render instead of discarding it as an older prefetch.
-        if (typeof snapshot.info?.modified === "string") session = { ...session, modified: snapshot.info.modified };
-      } catch {
-        if (navigationVersion === workspaceNavigationVersionRef.current) setSessionSwitchError(translate("chat.sessionSwitchFailed"));
-        return false;
-      } finally {
-        setPendingSessionSwitch(current => current?.version === navigationVersion ? null : current);
-      }
-    }
-    if (navigationVersion !== workspaceNavigationVersionRef.current) return false;
     setSettingsDialogOpen(false);
     if (!isRestore) { setHistoryDialogOpen(false); setHistoryLocation({ open: false, leafId: null, entryId: null }); }
     setSelectedRoom(null);
@@ -987,6 +951,7 @@ export function AppShell() {
     setNewSessionCwd(null);
     setNewSessionInitialModel(null);
     setNewSessionInitialPrompt(null);
+    selectedSessionIdRef.current = session.id;
     setSelectedSession(session);
     if (!isRestore) setFocusedEntryId(entryId ?? null);
     setSessionKey((k) => k + 1);
@@ -1012,7 +977,7 @@ export function AppShell() {
       });
     }
     return true;
-  }, [isMobile, translate]);
+  }, [isMobile]);
 
   const closeSubagent = useCallback(() => {
     setSubagentSelection(undefined);
@@ -1050,13 +1015,15 @@ export function AppShell() {
     void handleSelectSession(session, false, entryId);
   }, [handleSelectSession]);
 
+  const resolveNavigationSession = useCallback(async (id: string, signal?: AbortSignal) => {
+    return sessionSidebarRef.current?.findSession(id) ?? (await fetchSessionMetadata([id], signal))[0];
+  }, []);
+
   useEffect(() => {
     let controller: AbortController | null = null;
     const restore = () => {
       controller?.abort(); controller = null;
       const navigationVersion = ++workspaceNavigationVersionRef.current;
-      setPendingSessionSwitch(null);
-      setSessionSwitchError(null);
       const requestedUrl = window.location.search;
       const params = new URLSearchParams(window.location.search);
       const location = readHistoryLocation(params);
@@ -1065,27 +1032,28 @@ export function AppShell() {
       if (!id || id === selectedSessionIdRef.current) return;
       controller = new AbortController();
       const active = controller;
-      void fetch(chatHistoryUrl(id), { signal: active.signal })
-        .then(async response => response.ok ? response.json() : null)
-        .then(body => { if (!active.signal.aborted && navigationVersion === workspaceNavigationVersionRef.current && window.location.search === requestedUrl && body?.info) void handleSelectSession(body.info, true); })
+      void resolveNavigationSession(id, active.signal)
+        .then(session => { if (!active.signal.aborted && navigationVersion === workspaceNavigationVersionRef.current && window.location.search === requestedUrl && session) void handleSelectSession(session, true); })
         .catch(() => {});
     };
     window.addEventListener("popstate", restore);
     return () => { controller?.abort(); window.removeEventListener("popstate", restore); };
-  }, [handleSelectSession]);
+  }, [handleSelectSession, resolveNavigationSession]);
 
   const openNotificationSession = useCallback(async (rawSessionId: unknown) => {
     const sessionId = sanitizeNotificationSessionId(rawSessionId);
     if (!sessionId) return;
     try {
-      const [session] = await fetchSessionMetadata([sessionId]);
+      const version = ++workspaceNavigationVersionRef.current;
+      const session = await resolveNavigationSession(sessionId);
+      if (version !== workspaceNavigationVersionRef.current) return;
       if (!session) throw new Error(`Session ${sessionId} is no longer available.`);
       handleSelectSession(session);
       setRefreshKey((key) => key + 1);
     } catch (error) {
       console.warn("Unable to open the notification Session:", error);
     }
-  }, [handleSelectSession]);
+  }, [handleSelectSession, resolveNavigationSession]);
 
   useEffect(() => {
     const unsubscribeDesktop = window.piDesktop?.onNotificationSession?.((sessionId) => {
@@ -1108,8 +1076,6 @@ export function AppShell() {
     initialPrompt?: NewSessionInitialPrompt | null,
   ) => {
     workspaceNavigationVersionRef.current++;
-    setPendingSessionSwitch(null);
-    setSessionSwitchError(null);
     setSettingsDialogOpen(false);
     setSelectedRoom(null);
     setSelectedSession(null);
@@ -1125,8 +1091,6 @@ export function AppShell() {
 
   const handleRequestNewSession = useCallback(() => {
     workspaceNavigationVersionRef.current++;
-    setPendingSessionSwitch(null);
-    setSessionSwitchError(null);
     setSettingsDialogOpen(false);
     setSelectedRoom(null);
     setSelectedSession(null);
@@ -1167,8 +1131,6 @@ export function AppShell() {
 
   const handleSelectRoom = useCallback((room: CollaborationRoom, isRestore = false) => {
     workspaceNavigationVersionRef.current++;
-    setPendingSessionSwitch(null);
-    setSessionSwitchError(null);
     setSettingsDialogOpen(false);
     setSelectedSession(null);
     setNewSessionCwd(null);
@@ -1496,8 +1458,6 @@ export function AppShell() {
 
   const handleSessionForked = useCallback((newSessionId: string) => {
     workspaceNavigationVersionRef.current++;
-    setPendingSessionSwitch(null);
-    setSessionSwitchError(null);
     setHistoryDialogOpen(false);
     setHistoryLocation({ open: false, leafId: null, entryId: null });
     setRefreshKey((k) => k + 1);
@@ -1521,8 +1481,6 @@ export function AppShell() {
     setRefreshKey((k) => k + 1);
     if (selectedSession && sessionIds.includes(selectedSession.id)) {
       workspaceNavigationVersionRef.current++;
-      setPendingSessionSwitch(null);
-      setSessionSwitchError(null);
       const cwd = selectedSession.cwd;
       setSelectedSession(null);
       setNewSessionCwd(cwd ?? null);
@@ -1688,13 +1646,14 @@ export function AppShell() {
     if (window.location.search !== url) pushUrlWithoutNextNavigation(url);
   }, []);
   const openRelatedHistory = useCallback(async (id: string) => {
-    const response = await fetch(chatHistoryUrl(id));
-    const body = await response.json();
-    if (!response.ok || !body.info) throw new Error(body.error || `HTTP ${response.status}`);
-    if (!await handleSelectSession(body.info, true)) return;
+    const version = ++workspaceNavigationVersionRef.current;
+    const session = await resolveNavigationSession(id);
+    if (version !== workspaceNavigationVersionRef.current) return;
+    if (!session) throw new Error(`Session ${id} is no longer available.`);
+    if (!await handleSelectSession(session, true) || selectedSessionIdRef.current !== id) return;
     setHistoryLocation({ open: true, leafId: null, entryId: null }); setHistoryDialogOpen(true);
     pushUrlWithoutNextNavigation(historyLocationUrl(id));
-  }, [handleSelectSession]);
+  }, [handleSelectSession, resolveNavigationSession]);
 
   const handleTaskRename = useCallback(async (name: string) => {
     if (!selectedSession) return;
@@ -2905,8 +2864,7 @@ export function AppShell() {
           <div className="workspace-layout">
             {/* Chat content */}
             <div className="workspace-chat">
-            {pendingSessionSwitch ? <div className="session-switch-status is-pending" role="status">{translate("chat.loadingSession")}</div> : sessionSwitchError ? <div className="session-switch-status" role="alert">{sessionSwitchError}</div> : null}
-            <div style={{ height: "100%", display: settingsDialogOpen ? "none" : "block", visibility: historyDialogOpen && !selectedRoom ? "hidden" : undefined }} aria-hidden={settingsDialogOpen || historyDialogOpen && !selectedRoom} aria-busy={Boolean(pendingSessionSwitch)} inert={Boolean(pendingSessionSwitch) || historyDialogOpen && !selectedRoom}>
+            <div style={{ height: "100%", display: settingsDialogOpen ? "none" : "block", visibility: historyDialogOpen && !selectedRoom ? "hidden" : undefined }} aria-hidden={settingsDialogOpen || historyDialogOpen && !selectedRoom} inert={historyDialogOpen && !selectedRoom}>
             {selectedRoom ? (
               <RoomWorkspace
                 key={`${sessionKey}:${selectedRoom.id}`}
@@ -2922,8 +2880,8 @@ export function AppShell() {
                 visible={!settingsDialogOpen}
                 historyVisible={historyDialogOpen && !settingsDialogOpen}
                 onHistoryControlsChange={setHistoryControls}
-                onOpenHistoryEntry={navigateHistory}
                 session={selectedSession}
+                initialRunning={runningTaskSnapshots.some(snapshot => snapshot.id === selectedSession?.id && (snapshot.runtime === "running" || snapshot.runtime === "stopping"))}
                 focusEntryId={focusedEntryId}
                 newSessionCwd={effectiveNewSessionCwd}
                 newSessionInitialModel={newSessionInitialModel}

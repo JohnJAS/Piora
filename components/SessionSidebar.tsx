@@ -169,13 +169,13 @@ export const SessionSidebar = forwardRef<SessionSidebarHandle, Props>(function S
   }, [allSessions, catalogComplete, hiddenProjectRoots, initialSessionId, loading, onInitialRestoreDone, onSelectSession, rememberedProjectRoots, selectedCwd, selectedRoomId, selectedSessionId, sessionFlags, skipInitialProjectSelection]);
 
   useImperativeHandle(ref, () => ({
+    findSession: (id: string) => allSessions.find(session => session.id === id),
     openProjectPicker: handleCustomPathClick,
     openConversationSearch() { setConversationSearchOpen(true); },
     focusPrimaryNavigation() { primaryActionRef.current?.focus({ preventScroll: true }); },
-  }), [handleCustomPathClick]);
+  }), [allSessions, handleCustomPathClick]);
   const handleSelectSessionFromList = useCallback((s: SessionInfo) => {
-    // The selected-session prop synchronizes cwd after the prepared switch.
-    // Advancing cwd first would clear the old chat while its replacement loads.
+    // The selected-session prop synchronizes cwd after the selection commits.
     onSelectSession(s);
   }, [onSelectSession]);
 

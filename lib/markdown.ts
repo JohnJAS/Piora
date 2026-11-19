@@ -13,6 +13,14 @@ const markdownSanitizeSchema = {
   strip: [...(defaultSchema.strip || []), "iframe", "object", "style", "form"],
 };
 
+export function markdownHasMath(markdown: string): boolean {
+  return /(^|[^\\])\$\$?/m.test(markdown);
+}
+
+export function markdownHasRawHtml(markdown: string): boolean {
+  return /<(?:!--|\/?[A-Za-z][^>]*>)/.test(markdown);
+}
+
 export function normalizeDisplayMath(markdown: string): string {
   const lineBreak = markdown.includes("\r\n") ? "\r\n" : "\n";
   const lines = markdown.split(/\r?\n/);

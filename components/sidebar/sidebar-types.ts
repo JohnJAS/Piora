@@ -239,4 +239,5 @@ export interface SessionSidebarHandle {
   openProjectPicker: () => void;
   openConversationSearch: () => void;
   focusPrimaryNavigation: () => void;
+  findSession: (id: string) => SessionInfo | undefined;
 }

@@ -10,7 +10,7 @@ import { createAgentEventDecoder } from "@/lib/agent-event-transport";
 import { savePendingPrompt, dismissPendingPrompt, readPendingPrompts, mergePendingPrompts, replaceFailedPromptMessage, confirmPendingPrompts, type PendingPrompt } from "@/lib/prompt-recovery";
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
-import { invalidatePrefetchedSession, peekPrefetchedSession, takePrefetchedSession } from "@/lib/session-prefetch";
+import { cancelPendingSessionPrefetch, invalidatePrefetchedSession, peekPrefetchedSession, takePrefetchedSession } from "@/lib/session-prefetch";
 import { chatHistoryUrl, combineOlderHistory, restoreChatHistory, type ChatHistoryResource } from "@/lib/chat-history-client";
 import type { SessionHistoryPage } from "@/lib/session-read-repository";
 import type {
@@ -59,8 +59,6 @@ export type { AgentPhase } from "@/lib/agent-phase";
 
 export interface SessionData {
   historyPage?: SessionHistoryPage;
-  /** Client-only state fetched together with a prepared conversation switch. */
-  initialAgentState?: { running: boolean; state?: AgentStateResponse };
   stats?: SessionStatsInfo;
   persistedPromptIds?: string[];
   sessionId: string;
@@ -216,6 +214,7 @@ export interface UseAgentSessionOptions {
   workflowEnabled?: boolean;
   workflowReady?: boolean;
   session: SessionInfo | null;
+  initialRunning?: boolean;
   newSessionCwd: string | null;
   newSessionInitialModel?: { provider: string; modelId: string } | null;
   newSessionInitialSystemPromptSelection?: SystemPromptSelection | null;
@@ -468,14 +467,24 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [initialSessionData] = useState<SessionData | null>(() => (
     session ? peekPrefetchedSession(session) as SessionData | null : null
   ));
-  const initialRuntime = initialSessionData?.initialAgentState?.state;
-  const initiallyRunning = Boolean(initialRuntime && (initialRuntime.isStreaming || initialRuntime.isPromptRunning || initialRuntime.runtime === "running" || initialRuntime.runtime === "stopping"));
+  const initiallyRunning = Boolean(opts.initialRunning);
 
   const [data, setData] = useState<SessionData | null>(initialSessionData);
   const [historyPage, setHistoryPage] = useState<SessionHistoryPage | undefined>(initialSessionData?.historyPage);
   const historyPageRequest = useRef<AbortController | null>(null);
-  const [loading, setLoading] = useState(!isNew && initialSessionData === null);
+  const [loading, setLoading] = useState(Boolean(session) && initialSessionData === null);
+  const [sessionHydrating, setSessionHydrating] = useState(Boolean(session));
   const [error, setError] = useState<string | null>(null);
+  const [sessionLoadAttempt, setSessionLoadAttempt] = useState(0);
+  const retrySessionLoad = useCallback(() => {
+    if (session) {
+      invalidatePrefetchedSession(session.id);
+      setLoading(true);
+      setSessionHydrating(true);
+    }
+    setError(null);
+    setSessionLoadAttempt(attempt => attempt + 1);
+  }, [session]);
   const [activeLeafId, setActiveLeafId] = useState<string | null>(initialSessionData?.leafId ?? null);
   const [messages, setMessages] = useState<AgentMessage[]>(initialSessionData?.context.messages ?? []);
   const [deletingMessage, setDeletingMessage] = useState(false);
@@ -488,7 +497,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [agentRunning, setAgentRunning] = useState(initiallyRunning);
   const [replyHistorySettling, setReplyHistorySettling] = useState(false);
   const [liveOutputFollowPaused, setLiveOutputFollowPaused] = useState(false);
-  const [bashRunning, setBashRunning] = useState(Boolean(initialRuntime?.isBashRunning));
+  const [bashRunning, setBashRunning] = useState(false);
   const [pendingBash, setPendingBash] = useState<{ command: string; excludeFromContext: boolean; output?: string } | null>(null);
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
   const [modelList, setModelList] = useState<ModelEntry[]>([]);
@@ -509,8 +518,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [forkingEntryId, setForkingEntryId] = useState<string | null>(null);
   const [currentModelOverride, setCurrentModelOverride] = useState<{ provider: string; modelId: string } | null>(null);
   const [pendingModel, setPendingModel] = useState<{ provider: string; modelId: string } | null>(null);
-  const [isCompacting, setIsCompacting] = useState(Boolean(initialRuntime?.isCompacting));
-  const [compactionStartedAt, setCompactionStartedAt] = useState<number | null>(initialRuntime?.compactionStartedAt ?? null);
+  const [isCompacting, setIsCompacting] = useState(false);
+  const [compactionStartedAt, setCompactionStartedAt] = useState<number | null>(null);
   const manualCompactionPendingRef = useRef(false);
   const [compactError, setCompactError] = useState<string | null>(null);
   const [compactResult, setCompactResult] = useState<CompactResultInfo | null>(null);
@@ -609,7 +618,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [session?.id, newSessionCwd, acceptToolPermission]);
 
   const agentRunningRef = useRef(initiallyRunning);
-  const [backgroundSubagents, setBackgroundSubagents] = useState(Boolean(initialRuntime?.subagentsRunning));
+  const [backgroundSubagents, setBackgroundSubagents] = useState(false);
   const backgroundSubagentsRef = useRef(backgroundSubagents);
   const reconciliationRef = useRef<{ sid: string; runId: number; controller: AbortController } | null>(null);
   useEffect(() => {
@@ -620,7 +629,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     window.addEventListener("piora:project-model-changed", receive);
     return () => window.removeEventListener("piora:project-model-changed", receive);
   }, []);
-  const bashRunningRef = useRef(Boolean(initialRuntime?.isBashRunning));
+  const bashRunningRef = useRef(false);
   const bashRecoveryIdRef = useRef(0);
   const handleAgentEventRef = useRef<((event: AgentEvent) => void) | null>(null);
   const initialScrollDoneRef = useRef(false);
@@ -714,10 +723,11 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     sid: string,
     showLoading = false,
     includeState = false,
-    prefetchedData: Promise<unknown | null> | null = null,
+    initialSession: Pick<SessionInfo, "id" | "modified"> | null = null,
   ) => {
     historyPageRequest.current?.abort();
     sessionLoadAbortRef.current?.abort();
+    if (!initialSession) invalidatePrefetchedSession(sid);
     const controller = new AbortController();
     sessionLoadAbortRef.current = controller;
     const statsSequence = ++statsRefreshSequence.current;
@@ -733,9 +743,23 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       controller.abort();
       invalidatePrefetchedSession(sid);
     }, 30_000);
+    const fetchState = () => fetch(`/api/sessions/${encodeURIComponent(sid)}/state?view=chat`, {
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
+      cache: "no-store",
+    }).then(async response => response.ok ? await response.json() as { running: boolean; state?: AgentStateResponse } : null)
+      .catch(() => null);
     try {
       if (showLoading) setLoading(true);
-      let d = await wait(prefetchedData) as SessionData | null;
+      // Start both reads at the same time. Cold history can paint while the
+      // runtime lookup is pending, and cached history is already on screen.
+      const stateRequest = initialSession && includeState ? fetchState() : null;
+      const showingCachedHistory = initialSession && !showLoading && Boolean(peekPrefetchedSession(initialSession));
+      let d = initialSession ? await wait(takePrefetchedSession(initialSession)) as SessionData | null : null;
+      if (initialSession && showingCachedHistory && (await wait(stateRequest))?.running) {
+        // The live session may have advanced since the cached projection.
+        invalidatePrefetchedSession(sid);
+        d = await wait(takePrefetchedSession(initialSession)) as SessionData | null;
+      }
       if (controller.signal.aborted) return null;
       if (!d) {
         const res = await wait(fetch(chatHistoryUrl(sid), {
@@ -750,15 +774,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
             setData(null);
             setHistoryPage(undefined);
             setActiveLeafId(null);
-            if (!recovered.messages.length) setMessages([]);
-            setError(null);
+            if (!recovered.messages.length) { setMessages([]); setEntryIds([]); }
           }
+          if (initialSession) setError(recovered.messages.length ? null : translateRef.current("chat.sessionSwitchFailed"));
           return null;
         }
         if (!res.ok) throw await sessionResponseError(res);
         d = await wait(res.json()) as SessionData;
       }
       if (controller.signal.aborted || sessionIdRef.current !== sid || promptRunIdRef.current !== runId) return null;
+      if (!Array.isArray(d?.context?.messages) || d.info?.id && d.info.id !== sid || d.sessionId && d.sessionId !== sid) {
+        throw new Error(translateRef.current("chat.sessionSwitchFailed"));
+      }
       const editedBranch = editedBranchRef.current;
       if (editedBranch?.sid === sid && d.leafId === editedBranch.previousLeaf) {
         const response = await wait(fetch(`/api/sessions/${encodeURIComponent(sid)}/context?${new URLSearchParams({ leafId: editedBranch.target, deferThinking: "1", deferMedia: "1" })}`, { signal: controller.signal }));
@@ -794,14 +821,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!includeState) return null;
 
       try {
-        let agentState = d.initialAgentState;
-        if (!agentState) {
-          const stateRes = await wait(fetch(`/api/sessions/${encodeURIComponent(sid)}/state?view=chat`, {
-            signal: controller.signal,
-          }));
-          if (!stateRes.ok) throw new Error(`HTTP ${stateRes.status}`);
-          agentState = await wait(stateRes.json()) as { running: boolean; state?: AgentStateResponse };
-        }
+        const agentState = await wait(stateRequest ?? fetchState());
+        if (!agentState) return null;
         if (controller.signal.aborted || sessionIdRef.current !== sid || promptRunIdRef.current !== runId) return null;
 
         const liveState = agentState.state;
@@ -841,6 +862,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       clearTimeout(timeout);
       if (sessionLoadAbortRef.current === controller) {
+        if (!messagesLoaded) controller.abort();
         sessionLoadAbortRef.current = null;
         if (timedOut && !messagesLoaded && sessionIdRef.current === sid && promptRunIdRef.current === runId) setError(translateRef.current("chat.loadSessionTimeout"));
         setLoading(false);
@@ -849,6 +871,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   }, [nestedCallsStore, acceptToolPermission]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null) => {
+    invalidatePrefetchedSession(sid);
     historyPageRequest.current?.abort();
     const runId = promptRunIdRef.current;
     const revision = ++historyRevisionRef.current;
@@ -902,7 +925,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         || historyRevisionRef.current !== sequence || !loaded.historyPage || agentRunningRef.current
         || bashRunningRef.current || messageMutationRef.current) return false;
       if (around) {
-        if (!loaded.context.entryIds.includes(around) && !loaded.historyPage.oversized.some(turn => turn.anchors.includes(around))) return false;
+        if (!loaded.context.entryIds.includes(around)) return false;
         setMessages(loaded.context.messages);
         setEntryIds(loaded.context.entryIds);
         setModelChanges(loaded.context.modelChanges ?? []);
@@ -2009,7 +2032,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const trimmedMessage = message.trim();
     if (!trimmedMessage && !images?.length && !files?.length) return false;
     if (files?.some((file) => !file.path && file.text == null)) {
-      setError(translateRef.current("chat.attachmentMissingPath"));
+      addNotice({ type: "error", message: translateRef.current("chat.attachmentMissingPath") });
       return false;
     }
     if (inputOptions?.inputMode !== "text" && trimmedMessage.startsWith("/")) {
@@ -2992,9 +3015,18 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   // Load session on mount
   useEffect(() => {
+    let disposed = false;
     if (session) {
       sessionIdRef.current = session.id;
-      loadSession(session.id, initialSessionData === null, true, takePrefetchedSession(session)).then((agentState) => {
+      loadSession(session.id, initialSessionData === null || sessionLoadAttempt > 0, true, session).then((agentState) => {
+        if (disposed) return;
+        setSessionHydrating(false);
+        const liveRuntime = agentState?.state;
+        if (initiallyRunning && agentState && !liveRuntime?.isStreaming && !liveRuntime?.isPromptRunning && liveRuntime?.runtime !== "running" && liveRuntime?.runtime !== "stopping") {
+          agentRunningRef.current = false;
+          setAgentRunning(false);
+          dispatch({ type: "end" });
+        }
         if (agentState?.running) {
           if (agentState.state && agentState.state.runtime !== "idle") restoreStatusClock(agentState.state);
           invalidatePrefetchedSession(session.id);
@@ -3040,28 +3072,29 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } else if (newSessionCwd) {
       const initialRun = promptRunIdRef.current;
       void readPendingPrompts(`new:${newSessionCwd}`).then((pending) => {
-        if (promptRunIdRef.current !== initialRun || sessionIdRef.current) return;
+        if (disposed || promptRunIdRef.current !== initialRun || sessionIdRef.current) return;
         const recovered = mergePendingPrompts([], [], pending);
         setMessages(recovered.messages);
         setEntryIds(recovered.entryIds);
-      }).catch((error) => setError(String(error)));
+      }).catch((error) => { if (!disposed) setError(String(error)); });
     }
     return () => {
+      disposed = true;
       bashRecoveryIdRef.current += 1;
       sessionLoadAbortRef.current?.abort();
       sessionLoadAbortRef.current = null;
-      if (session) invalidatePrefetchedSession(session.id);
+      if (session) cancelPendingSessionPrefetch(session.id);
       closeEvents(true);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sessionLoadAttempt]);
 
   useEffect(() => {
     const sid = sessionIdRef.current;
-    if (sid && (agentRunning || bashRunning || streamState.isStreaming)) {
+    if (sid && !sessionHydrating && (agentRunning || bashRunning || streamState.isStreaming || isCompacting)) {
       invalidatePrefetchedSession(sid);
     }
-  }, [agentRunning, bashRunning, streamState.isStreaming]);
+  }, [agentRunning, bashRunning, streamState.isStreaming, isCompacting, sessionHydrating]);
 
   useEffect(() => {
     onSystemPromptChange?.(systemPrompt);
@@ -3258,7 +3291,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   return {
     // State
     toolPermission, permissionSaving, handleToolPermission, toolReviews,
-    nestedCallsStore, data, loading, error, activeLeafId, messages, entryIds, modelChanges, streamState, replyHistorySettling,
+    nestedCallsStore, data, loading, sessionHydrating, error, retrySessionLoad, activeLeafId, messages, entryIds, modelChanges, streamState, replyHistorySettling,
     historyPage, loadEarlierHistory, loadNewestHistory,
     agentRunning, backgroundSubagents, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, thinkingLevel,
     retryInfo, contextUsage: effectiveContextUsage, systemPrompt, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,

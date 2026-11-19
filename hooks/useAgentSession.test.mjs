@@ -488,8 +488,8 @@ function sessionMountHarness(response) {
   }
   h.env.agentRunningRef.current = false;
   Object.assign(h.env, {
-    session: { id: "session-a" }, initialSessionData: null, response,
-    useEffect: callback => { h.cleanup = callback(); }, takePrefetchedSession: () => null,
+    session: { id: "session-a" }, initialSessionData: null, initiallyRunning: false, sessionLoadAttempt: 0, response,
+    useEffect: callback => { h.cleanup = callback(); }, cancelPendingSessionPrefetch() {},
     invalidatePrefetchedSession() {}, connectEvents: async sid => h.calls.push(["connect", sid]),
     loadSession: async sid => { h.calls.push(["load", sid]); return h.env.response; },
   });
@@ -1138,10 +1138,11 @@ function sessionLoadHarness(overrides = {}) {
     nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 },
     historyPageRequest: { current: null },
     editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [],
-    useCallback: callback => callback, AbortController, URLSearchParams,
+    useCallback: callback => callback, AbortController, AbortSignal, URLSearchParams,
     acceptToolPermission: value => { env.permission = value; },
     sessionLoadAbortRef: { current: null }, sessionIdRef: { current: "session" }, promptRunIdRef: { current: 0 },
     translateRef: { current: key => key }, invalidatePrefetchedSession() {},
+    peekPrefetchedSession: () => null, takePrefetchedSession: () => env.history,
     setTimeout: callback => { env.expire = callback; return 1; }, clearTimeout() {},
     readPendingPrompts: async () => [], mergePendingPrompts: messages => ({ messages, entryIds: [], confirmedIds: [] }),
     restoreChatHistory: async (sid, data) => env.mergePendingPrompts(data.context.messages, data.context.entryIds, await env.readPendingPrompts(sid), data.persistedPromptIds),
@@ -1159,9 +1160,12 @@ function sessionLoadHarness(overrides = {}) {
 test("session hydration restores model-change metadata and clears it for an older branch", async () => {
   const { env, run } = sessionLoadHarness();
   const notices = [{ id: "switch", afterEntryId: "reply", from: { provider: "p", modelId: "a" }, to: { provider: "p", modelId: "b" } }];
-  await run("session", false, false, Promise.resolve({ context: { messages: [], entryIds: [], modelChanges: notices }, leafId: "switch" }));
+  const selected = { id: "session", modified: "one" };
+  env.history = Promise.resolve({ context: { messages: [], entryIds: [], modelChanges: notices }, leafId: "switch" });
+  await run("session", false, false, selected);
   assert.deepEqual(env.setModelChangesValue, notices);
-  await run("session", false, false, Promise.resolve({ context: { messages: [], entryIds: [] }, leafId: "reply" }));
+  env.history = Promise.resolve({ context: { messages: [], entryIds: [] }, leafId: "reply" });
+  await run("session", false, false, selected);
   assert.deepEqual(env.setModelChangesValue, []);
 });
 
@@ -1187,7 +1191,8 @@ test("a stalled prefetch or recovery read releases session loading and reports a
   for (const phase of ["prefetch", "recovery"]) {
     const never = new Promise(() => {});
     const { env, run } = sessionLoadHarness(phase === "recovery" ? { readPendingPrompts: () => never } : {});
-    const pending = run("session", true, false, phase === "prefetch" ? never : Promise.resolve(payload));
+    env.history = phase === "prefetch" ? never : Promise.resolve(payload);
+    const pending = run("session", true, false, { id: "session", modified: "one" });
     await Promise.resolve();
     env.expire();
     assert.equal(await pending, null);
@@ -1200,8 +1205,11 @@ test("a stalled prefetch or recovery read releases session loading and reports a
 test("a silent replacement load clears an initial spinner without showing a cancelled load error", async () => {
   const { env, run } = sessionLoadHarness();
   let release;
-  const initial = run("session", true, false, new Promise(resolve => { release = resolve; }));
-  const replacement = run("session", false, false, Promise.resolve({ context: { messages: [], entryIds: [] }, leafId: null }));
+  const selected = { id: "session", modified: "one" };
+  env.history = new Promise(resolve => { release = resolve; });
+  const initial = run("session", true, false, selected);
+  env.history = Promise.resolve({ context: { messages: [], entryIds: [] }, leafId: null });
+  const replacement = run("session", false, false, selected);
   await replacement;
   release(null);
   await Promise.all([initial, replacement]);
@@ -1649,7 +1657,7 @@ test("historical context excludes unconfirmed recovery copies without deleting t
   const js = ts.transpileModule(callback, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const pending = [{ id: "pending" }];
   const env = { editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [], useCallback: fn => fn, promptRunIdRef: { current: 1 }, historyRevisionRef: { current: 0 }, sessionIdRef: { current: "session" }, URLSearchParams,
-    historyPageRequest: { current: null }, setHistoryPage() {},
+    historyPageRequest: { current: null }, setHistoryPage() {}, invalidatePrefetchedSession() {},
     fetch: async () => ({ ok: true, json: async () => ({ context: { messages: ["ancestor"], entryIds: ["parent"] } }) }),
     readPendingPrompts: async () => pending, mergePendingPrompts: () => ({ messages: ["ancestor", "later failure"], entryIds: ["parent", ""], confirmedIds: [] }),
     setMessages: value => { env.messages = value; }, setEntryIds: value => { env.ids = value; }, setModelChanges: value => { env.modelChanges = value; }, confirmPendingPrompts: async ids => { assert.deepEqual(ids, []); } };
@@ -1674,8 +1682,9 @@ test("edit then failed send and repeated reload retain the new branch and only i
   const oldDisk = { leafId: "old-leaf", context: { messages: [ancestor, { role: "user", content: "abandoned" }], entryIds: ["parent", "old-leaf"] } };
   const h = sessionLoadHarness({ editedBranchRef: selection, mergePendingPrompts, readPendingPrompts: async () => pending,
     fetch: async () => ({ ok: true, json: async () => ({ context: { messages: [ancestor], entryIds: ["parent"] } }) }) });
+  h.env.history = Promise.resolve(oldDisk);
   for (let i = 0; i < 3; i++) {
-    await h.run("session", false, false, Promise.resolve(oldDisk));
+    await h.run("session", false, false, { id: "session", modified: "one" });
     assert.equal(h.env.setErrorValue, null);
     assert.equal(h.env.setActiveLeafIdValue, "parent");
     assert.equal(h.env.setMessagesValue.length, 2);

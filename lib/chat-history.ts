@@ -5,8 +5,7 @@ import type { ChatCommandView } from "./chat-command-types";
 import { isSubagentTool } from "./subagent-types";
 
 export function startsChatTurn(message: AgentMessage): boolean {
-  return message.role === "user" || message.followsDeletedPrompt === true
-    || message.role === "custom" && message.customType === "history-oversized-turn";
+  return message.role === "user" || message.followsDeletedPrompt === true;
 }
 
 export function isChatTurnAnchor(message: AgentMessage): boolean {

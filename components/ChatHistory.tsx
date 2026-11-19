@@ -7,7 +7,6 @@ import { messageFingerprint } from "@/lib/chat-history";
 import type { AgentMessage } from "@/lib/types";
 import { useI18n } from "@/hooks/useI18n";
 import { MessageView } from "./MessageView";
-import { LazyMarkdownBody } from "./LazyMarkdownBody";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { AliIcon } from "./AliIcon";
 import { VirtualList, type VirtualListHandle } from "./VirtualList";
@@ -22,7 +21,6 @@ type MessageProps = ComponentProps<typeof MessageView>;
 interface Props extends Pick<MessageProps, "modelNames" | "cwd" | "onOpenFile" | "onFork" | "onNavigate" | "onEditContent" | "onEditFailed" | "onRetry" | "retryDisabled" | "sessionId" | "onOpenAutomation" | "onOpenCommandExecution"> {
   visible?: boolean;
   onBranch?: (entryId: string) => Promise<void>;
-  onOpenHistoryEntry?: (entryId: string) => void;
   messages: AgentMessage[];
   modelChanges?: ModelChange[];
   compactProcess?: boolean;
@@ -78,7 +76,7 @@ function DeleteMessageAction({ message, entryId, onDelete, disabled }: { message
 }
 
 /** One turn projection for saved history and the live tail in both display modes. */
-function ChatHistoryContent({ visible: _visible, messages: savedMessages, modelChanges = NO_MODEL_CHANGES, compactProcess = true, directProcess = false, streamingMessage, entryIds, busy, streaming, interruptionId, isNew, forkingEntryId, highlightedEntryId, lastUserMsgRef, pendingScrollToUserRef, scrollContainer, handleRef, onBranch, onOpenHistoryEntry, onDeleteMessage, deleteDisabled = false, operations = NO_OPERATIONS, commandActions, responseTimings, ...messageProps }: Props) {
+function ChatHistoryContent({ visible: _visible, messages: savedMessages, modelChanges = NO_MODEL_CHANGES, compactProcess = true, directProcess = false, streamingMessage, entryIds, busy, streaming, interruptionId, isNew, forkingEntryId, highlightedEntryId, lastUserMsgRef, pendingScrollToUserRef, scrollContainer, handleRef, onBranch, onDeleteMessage, deleteDisabled = false, operations = NO_OPERATIONS, commandActions, responseTimings, ...messageProps }: Props) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState<Map<string, boolean>>(() => new Map());
   const [inspectCommand, setInspectCommand] = useState<string | null>(null);
@@ -160,22 +158,6 @@ function ChatHistoryContent({ visible: _visible, messages: savedMessages, modelC
       }} />;
     const index = row.index;
     const message = row.message!;
-    if (message.role === "custom" && message.customType === "history-oversized-turn") {
-      const previews = typeof message.content === "string"
-        ? [message.content]
-        : message.content.flatMap(block => block.type === "text" ? [block.text] : []);
-      return <div className={`chat-message-shell text-text-muted${highlightedEntryId === entryIds[index] ? " is-search-target" : ""}`} data-chat-entry-id={entryIds[index]} role="note">
-        {t("history.oversizedTurn")}
-        <RenderErrorBoundary resetKey={messageFingerprint(message, entryIds[index])} fallbackLabel={t("chat.messageRenderFailed")} errorTitle={t("chat.messageRenderError")}>
-          {previews.filter(Boolean).map((preview, index) => (
-            <LazyMarkdownBody key={index} className="mt-2 text-text markdown-assistant-message" cwd={messageProps.cwd} onOpenFile={messageProps.onOpenFile}>
-              {preview}
-            </LazyMarkdownBody>
-          ))}
-        </RenderErrorBoundary>
-        {onOpenHistoryEntry && entryIds[index] ? <button className="mt-2 cursor-pointer underline" type="button" onClick={() => onOpenHistoryEntry(entryIds[index])}>{t("history.openOriginal")}</button> : null}
-      </div>;
-    }
     const showTimestamp = row.showTimestamp ?? (metadata.showTimestamps.has(index) && !(streaming && index === messages.length - 1));
     return <CompactProcessContext.Provider value={true}><RevealProcessCommandContext.Provider value={inspectCommand}><div className={`chat-message-shell${row.secondary ? " compact-process-detail" : ""}${highlightedEntryId === entryIds[index] ? " is-search-target" : ""}`} data-chat-entry-id={entryIds[index]} data-chat-user-index={metadata.userIndices.get(index)}
       data-process-join-before={Boolean(row.processGroupKey && rows.get(rowIndex - 1)?.processGroupKey === row.processGroupKey) || undefined}

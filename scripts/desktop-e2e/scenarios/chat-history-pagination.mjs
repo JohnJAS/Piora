@@ -4,20 +4,23 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 const fixtures = new Map();
+const longAnswerEnd = "The complete answer ends here.";
 const longAnswer = [
   "# Archived Markdown answer",
-  "- **Preview list item**",
-  "```text\npreview code sample\n```",
+  "- **Archived list item**",
+  "```text\narchived code sample\n```",
   "Additional fixture content. ".repeat(12_000),
+  longAnswerEnd,
 ].join("\n\n");
 
 export const chatHistoryPagination = {
   id: "chat-history-pagination",
   scope: "Windows Electron and the local Next.js service with on-disk synthetic SDK history",
-  coverage: ["bounded initial history and first paint", "load older while preserving the scroll anchor and Markdown previews", "locate an older entry", "return to latest", "restart with the same profile"],
+  coverage: ["bounded initial history and first paint", "load older while preserving the scroll anchor", "render a complete long Markdown reply in chat", "switch immediately to another chat while history is held", "locate an older entry", "return to latest", "restart with the same profile"],
   limits: ["no model provider", "no physical Harmony device", "no release packaging"],
   async prepare({ paths, directory, report }) {
     const id = randomUUID();
+    const otherId = randomUUID();
     const workspace = join(directory, "history-workspace");
     const folder = join(paths.agent, "sessions", "--chat-history-pagination-fixture--");
     await mkdir(workspace, { recursive: true });
@@ -36,8 +39,14 @@ export const chatHistoryPagination = {
     }
     entries.push({ type: "session_info", id: entryId(total + 1), parentId: entryId(total), timestamp, name: "History pagination fixture" });
     await writeFile(join(folder, id + ".jsonl"), entries.map(entry => JSON.stringify(entry)).join("\n") + "\n");
-    fixtures.set(directory, { id, total, lastId: entryId(total) });
-    report.fixture = { sessionId: id, messages: total, dataset: "synthetic text-only history" };
+    const otherEntries = [
+      { type: "session", version: 3, id: otherId, cwd: workspace, timestamp },
+      { type: "message", id: entryId(1), parentId: null, timestamp, message: { role: "user", content: "Target conversation question", timestamp: Date.parse(timestamp) } },
+      { type: "session_info", id: entryId(2), parentId: entryId(1), timestamp, name: "Immediate switch target" },
+    ];
+    await writeFile(join(folder, otherId + ".jsonl"), otherEntries.map(entry => JSON.stringify(entry)).join("\n") + "\n");
+    fixtures.set(directory, { id, otherId, total, lastId: entryId(total) });
+    report.fixture = { sessionId: id, switchTargetId: otherId, messages: total, dataset: "synthetic text-only history" };
   },
   async run({ page, restart, step, directory }) {
     const fixture = fixtures.get(directory);
@@ -45,40 +54,42 @@ export const chatHistoryPagination = {
     assert.ok(fixture);
     const catalogURL = "/api/sessions/" + fixture.id;
     const evidence = {};
-    const readEarlier = () => page.getByRole("button", { name: /^(加载更早消息|Load earlier messages)$/ });
+    const earlierLabel = /^(加载更早消息|Load earlier messages)$/;
+    const readEarlier = () => page.getByRole("button", { name: earlierLabel });
+    const olderResponse = () => page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === catalogURL && url.searchParams.has("older");
+    });
     const scroll = page.locator(".chat-scroll-container");
     const scrollToOldest = async () => {
       await scroll.hover();
       await page.mouse.wheel(0, -100000);
       await page.waitForFunction(() => document.querySelector(".chat-scroll-container")?.scrollTop === 0);
     };
-    await step("initial-chat-page", async () => {
-      await page.evaluate(() => {
-        window.pioraHistoryLoadingFlash = false;
-        const observer = new MutationObserver(() => {
-          if (document.querySelector(".session-loading-indicator")) window.pioraHistoryLoadingFlash = true;
-        });
-        observer.observe(document.body, { subtree: true, childList: true });
-        window.pioraFinishHistoryPaintProbe = () => { observer.disconnect(); return window.pioraHistoryLoadingFlash; };
-      });
-      const received = page.waitForResponse(response => {
-        const url = new URL(response.url());
-        return url.pathname === catalogURL && url.searchParams.get("view") === "chat";
-      });
-      await page.locator('[data-session-drag-id="' + fixture.id + '"]').click();
-      const response = await received;
-      const text = await response.text();
-      assert.equal(response.status(), 200, text);
-      const body = JSON.parse(text);
-      evidence.firstPageBytes = Buffer.byteLength(text);
+    await step("prepare-history-endpoints", async () => {
+      // Prime the dev route compiler independently of the measured click.
+      const [history, state] = await page.evaluate(async path => {
+        const urls = [path + "?deferThinking=1&deferMedia=1&view=chat", path + "/state?view=chat"];
+        return Promise.all(urls.map(async url => {
+          const response = await fetch(url, { cache: "no-store" });
+          return { status: response.status, text: await response.text() };
+        }));
+      }, catalogURL);
+      assert.deepEqual([history.status, state.status], [200, 200]);
+      const body = JSON.parse(history.text);
+      evidence.firstPageBytes = Buffer.byteLength(history.text);
       evidence.firstPageMessages = body.context.entryIds.length;
       assert.equal(evidence.firstPageMessages, 80);
       assert.equal(body.context.entryIds.at(-1), fixture.lastId);
       assert.ok(evidence.firstPageBytes < 100_000);
       assert.ok(body.historyPage.older);
+    });
+    await step("initial-chat-page", async () => {
+      await page.locator('[data-session-drag-id="' + fixture.id + '"]').click();
+      await page.locator('[data-chat-surface][data-session-id="' + fixture.id + '"] textarea').waitFor();
       await page.getByText("Fixture answer 120", { exact: true }).waitFor();
-      evidence.loadingFlash = await page.evaluate(() => window.pioraFinishHistoryPaintProbe());
-      assert.equal(evidence.loadingFlash, false);
+      await readEarlier().waitFor();
+      assert.equal(await page.getByText("Fixture question 80", { exact: true }).count(), 0);
     });
     await step("load-older-over-the-ui", async () => {
       await scrollToOldest();
@@ -86,10 +97,7 @@ export const chatHistoryPagination = {
       await originalAnchor.waitFor();
       const before = await originalAnchor.boundingBox();
       assert.ok(before);
-      const received = page.waitForResponse(response => {
-        const url = new URL(response.url());
-        return url.pathname === catalogURL && url.searchParams.has("older");
-      });
+      const received = olderResponse();
       await readEarlier().click();
       const response = await received;
       const text = await response.text();
@@ -111,16 +119,85 @@ export const chatHistoryPagination = {
       evidence.preservedScrollAnchor = true;
       await scrollToOldest();
       await page.getByText("Fixture question 41", { exact: true }).waitFor();
+      const shortHistory = olderResponse();
       await readEarlier().click();
+      const shortResponse = await shortHistory;
+      assert.equal(shortResponse.status(), 200);
+      const shortPage = await shortResponse.json();
+      assert.equal(shortPage.context.entryIds[0], "00000003");
+      assert.ok(shortPage.historyPage.older);
+      await page.getByRole("button", { name: earlierLabel, disabled: false }).waitFor();
+      await scrollToOldest();
+      await page.getByText("Fixture question 2", { exact: true }).waitFor();
+
+      const fullHistory = olderResponse();
+      await readEarlier().click();
+      const fullResponse = await fullHistory;
+      assert.equal(fullResponse.status(), 200);
+      const fullPage = await fullResponse.json();
+      assert.deepEqual(fullPage.context.entryIds, ["00000001", "00000002"]);
+      assert.equal(fullPage.context.messages[1].content[0].text, longAnswer);
       await readEarlier().waitFor({ state: "hidden" });
       await scrollToOldest();
       await page.getByText("Fixture question 1", { exact: true }).waitFor();
-      const preview = page.locator('[data-chat-entry-id="00000001"][role="note"]');
-      await preview.getByRole("heading", { name: "Archived Markdown answer", exact: true }).waitFor();
-      await preview.getByRole("listitem").getByText("Preview list item", { exact: true }).waitFor();
-      await preview.locator("pre code").getByText("preview code sample", { exact: true }).waitFor();
-      await preview.getByRole("button", { name: /^(在完整历史中查看原文|Open original in history)$/ }).waitFor();
-      evidence.markdownPreview = true;
+      const answer = page.locator('[data-chat-entry-id="00000002"]');
+      await answer.getByRole("heading", { name: "Archived Markdown answer", exact: true }).waitFor();
+      await answer.getByRole("listitem").getByText("Archived list item", { exact: true }).waitFor();
+      await answer.locator("pre code").getByText("archived code sample", { exact: true }).waitFor();
+      await answer.getByText(longAnswerEnd, { exact: true }).waitFor();
+      assert.equal(await page.getByRole("button", { name: /^(在完整历史中查看原文|Open original in history)$/ }).count(), 0);
+      evidence.fullMarkdownInChat = true;
+    });
+    await step("switch-from-long-chat", async () => {
+      const query = /^(搜索聊天或设置…|Search chats or settings…)$/;
+      await page.getByRole("button", { name: /^(搜索|Search)$/ }).click();
+      await page.getByPlaceholder(query).fill("First milestone only");
+      await page.getByPlaceholder(query).press("Escape");
+      await page.getByPlaceholder(query).waitFor({ state: "hidden" });
+      const url = candidate => candidate.pathname === "/api/sessions/" + fixture.otherId && candidate.searchParams.get("view") === "chat";
+      let release;
+      const gate = new Promise(resolve => { release = resolve; });
+      const pauseHistory = async route => { await gate; await route.continue(); };
+      await page.route(url, pauseHistory);
+      try {
+        await page.evaluate(id => {
+          document.addEventListener("click", event => {
+            if (!event.target.closest('[data-session-drag-id="' + id + '"]')) return;
+            const start = performance.now();
+            requestAnimationFrame(() => {
+              const surface = document.querySelector("[data-chat-surface]");
+              window.pioraFirstTargetFrame = {
+                elapsedMs: performance.now() - start,
+                sessionId: surface?.dataset.sessionId,
+                hasComposer: Boolean(surface?.querySelector("textarea")),
+              };
+            });
+          }, { capture: true, once: true });
+        }, fixture.otherId);
+        await page.locator('[data-session-drag-id="' + fixture.otherId + '"]').click();
+        const surface = page.locator('[data-chat-surface][data-session-id="' + fixture.otherId + '"]');
+        const composer = surface.locator("textarea");
+        await composer.waitFor();
+        await page.waitForFunction(() => Boolean(window.pioraFirstTargetFrame));
+        const firstFrame = await page.evaluate(() => window.pioraFirstTargetFrame);
+        assert.equal(firstFrame.sessionId, fixture.otherId);
+        assert.equal(firstFrame.hasComposer, true);
+        assert.equal(await page.getByRole("heading", { name: "Archived Markdown answer", exact: true }).count(), 0);
+        await composer.fill("Draft typed before the history arrives");
+        const originalComposer = await composer.elementHandle();
+        release();
+        await page.getByText("Target conversation question", { exact: true }).waitFor();
+        assert.equal(await composer.inputValue(), "Draft typed before the history arrives");
+        assert.equal(await composer.evaluate((node, previous) => node === previous, originalComposer), true);
+        await originalComposer.dispose();
+        evidence.firstTargetFrame = firstFrame;
+        evidence.draftRetainedAcrossLoad = true;
+      } finally {
+        release();
+        await page.unroute(url, pauseHistory);
+      }
+      await page.locator('[data-session-drag-id="' + fixture.id + '"]').click();
+      await page.getByText("Fixture answer 120", { exact: true }).waitFor();
     });
     await step("locate-old-search-result", async () => {
       await page.reload();

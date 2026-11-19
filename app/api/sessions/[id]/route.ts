@@ -246,7 +246,7 @@ async function loadHistoryPageResponse(id: string, path: string, query: URLSearc
   const pendingModel = readPendingSessionModel(id);
   const running = Boolean(getRpcSession(id)?.isRunning());
   const signature = [fileRevision(info), pendingModel?.revision, running].join(":");
-  const projection = "paged:" + JSON.stringify([query.get("older"), leafId, around]);
+  const projection = "paged-v2:" + JSON.stringify([query.get("older"), leafId, around]);
   const etag = sessionResponseEtag(id, signature, projection);
   const headers = { "cache-control": "private, no-cache", etag, "content-type": "application/json; charset=utf-8" };
   if (matchesEtag(request.headers.get("if-none-match"), etag)) return new Response(null, { status: 304, headers });
@@ -370,7 +370,7 @@ export async function GET(
           return NextResponse.json({
             sessionId: id, filePath: source.filePath, leafId: source.manager.getLeafId(), tree: [],
             context, systemPromptBinding: summarizeSessionSystemPromptBinding(readLatestSessionSystemPromptBinding(source.manager.getEntries())),
-            historyPage: { older: null, contextVersion: "memory", oversized: [] },
+            historyPage: { older: null, contextVersion: "memory" },
           }, { headers: { "cache-control": "private, no-store" } });
         }
       }

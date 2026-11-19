@@ -8,7 +8,7 @@ import { isDeletedUserMessage, persistedMessagePromptIds } from "./session-messa
 import { readLatestSessionSystemPromptBinding, summarizeSessionSystemPromptBinding } from "./session-system-prompt";
 import { summarizeSessionStats } from "./session-stats";
 import type { SessionStatsInfo } from "./pi-types";
-import type { AgentMessage, SessionContext, SessionEntry, SessionHeader, TextContent } from "./types";
+import type { AgentMessage, SessionContext, SessionEntry, SessionHeader } from "./types";
 import type { SessionSystemPromptBinding } from "./system-prompt-types";
 
 export const HISTORY_PAGE_BYTES = 256 * 1024;
@@ -23,7 +23,6 @@ export interface SessionHistoryCursor {
 export interface SessionHistoryPage {
   older: string | null;
   contextVersion: string;
-  oversized: Array<{ id: string; anchors: string[] }>;
   focused?: boolean;
 }
 
@@ -49,9 +48,7 @@ type WorkerPage =
     thinkingLevel: string;
     modelChanges: SessionContext["modelChanges"];
     promptBinding?: SessionSystemPromptBinding;
-    entries: Array<SessionEntry | { type: "oversize"; id: string }>;
-    oversize: SessionHistoryPage["oversized"];
-    previews: Array<{ id: string; messages: Array<{ id: string; text: string; timestamp?: number }> }>;
+    entries: SessionEntry[];
   };
 
 export class SessionHistoryPageError extends Error {
@@ -95,10 +92,6 @@ function cursorFor(generation: string, leafId: string | null, before: string | n
   return before && leafId && before.length <= 128 && leafId.length <= 128 ? encodeHistoryCursor({ generation, leafId, before }) : null;
 }
 
-function oversizedMessage(preview: string | TextContent[] = ""): AgentMessage {
-  return { role: "custom", customType: "history-oversized-turn", content: preview, display: true };
-}
-
 async function legacyPage(path: string, modified: string, options: PageOptions) {
   const manager = SessionManager.open(path);
   const header = manager.getHeader() as SessionHeader | null;
@@ -116,31 +109,20 @@ async function legacyPage(path: string, modified: string, options: PageOptions) 
     end = focus + 1;
     while (end < full.messages.length && full.messages[end].role !== "user") end++;
   }
-  const messages: AgentMessage[] = [];
-  const entryIds: string[] = [];
-  const oversized: SessionHistoryPage["oversized"] = [];
+  const pageEnd = end;
   let bytes = 0, turns = 0;
   while (end > 0 && turns < HISTORY_PAGE_TURNS) {
     let start = end - 1;
     while (start > 0 && full.messages[start].role !== "user") start--;
-    const raw = full.messages.slice(start, end);
-    const size = Buffer.byteLength(JSON.stringify(raw), "utf8");
+    const size = Buffer.byteLength(JSON.stringify(full.messages.slice(start, end)), "utf8");
     if (turns && bytes + size > HISTORY_PAGE_BYTES) break;
-    const anchors = full.entryIds.slice(start, end);
-    if (size > HISTORY_PAGE_BYTES) {
-      oversized.push({ id: anchors[0], anchors: [...new Set([anchors[0], ...(options.around ? [options.around] : []), ...anchors.slice(-64)])] });
-      messages.unshift(oversizedMessage(raw.map(previewMessage).find(Boolean)));
-      entryIds.unshift(anchors[0]);
-      bytes += 128;
-    } else {
-      messages.unshift(...raw);
-      entryIds.unshift(...anchors);
-      bytes += size;
-    }
+    bytes += size;
     end = start;
     turns++;
   }
-  const historyPage = { older: cursorFor(generation, leafId, end && entryIds[0] ? entryIds[0] : null), contextVersion: generation, oversized };
+  const messages = full.messages.slice(end, pageEnd);
+  const entryIds = full.entryIds.slice(end, pageEnd);
+  const historyPage = { older: cursorFor(generation, leafId, end > 0 ? entryIds[0] ?? null : null), contextVersion: generation };
   return { leafId, historyPage,
     context: { ...full, messages, entryIds, modelChanges: full.modelChanges?.filter(notice => entryIds.includes(notice.afterEntryId)) },
     info: header ? sessionInfo(header, manager.getSessionName(), modified, messages.length, previewMessage(full.messages.find(message => message.role === "user")), path) : null,
@@ -161,16 +143,7 @@ export async function readSessionPage(path: string, modified: string, options: P
     messages: [], entryIds: [], modelChanges: result.modelChanges, model: result.model, thinkingLevel: result.thinkingLevel,
   };
   let deletedBoundary = false;
-  const previews = new Map(result.previews.map(preview => [preview.id, preview.messages]));
   for (const entry of result.entries) {
-    if (entry.type === "oversize") {
-      // A clipped prompt may end inside a fence. Render its Markdown
-      // independently so it cannot absorb the following answer preview.
-      context.messages.push(oversizedMessage(previews.get(entry.id)?.map(({ text }) => ({ type: "text", text }))));
-      context.entryIds.push(entry.id);
-      deletedBoundary = false;
-      continue;
-    }
     if (isDeletedUserMessage(entry)) {
       deletedBoundary = true;
       continue;
@@ -185,7 +158,7 @@ export async function readSessionPage(path: string, modified: string, options: P
     context, leafId: result.leafId,
     historyPage: {
       older: cursorFor(result.generation, result.leafId, result.before),
-      contextVersion: result.contextVersion, oversized: result.oversize,
+      contextVersion: result.contextVersion,
     } satisfies SessionHistoryPage,
     systemPromptBinding: summarizeSessionSystemPromptBinding(result.promptBinding ?? null),
     info: sessionInfo(result.header, result.name, modified, context.messages.length,
