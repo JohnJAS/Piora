@@ -1775,6 +1775,11 @@ select:focus-visible,
 }
 
 .chat-composer-footer[data-has-workflow] { flex-wrap: wrap; }
+@container chat-composer (min-width: 561px) {
+  [data-composer-variant="launcher"] .chat-composer-footer:not([data-workflow-mode="goal"]) { flex-wrap: nowrap; }
+  [data-composer-variant="launcher"] .composer-submit-controls { max-width: min(34cqi, 300px); }
+}
+.chat-composer-footer[data-workflow-mode="goal"] .chat-composer-workflow { flex-shrink: 0; }
 
 .composer-submit-controls {
   display: flex;
@@ -1803,6 +1808,8 @@ select:focus-visible,
 
   [data-composer-variant="launcher"] .composer-submit-controls {
     flex-basis: 100%;
+    max-width: 100%;
+    justify-content: flex-end;
   }
 }
 
@@ -1816,7 +1823,7 @@ select:focus-visible,
 .model-settings-control {
   position: relative;
   min-width: 36px;
-  max-width: 250px;
+  max-width: min(24cqi, 250px);
   flex: 0 1 auto;
 }
 
@@ -4393,7 +4400,7 @@ pre, code {
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-inline: contain;
-  scrollbar-gutter: stable;
+  background: var(--bg-panel);
   scrollbar-width: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);

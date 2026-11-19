@@ -108,7 +108,7 @@ html[data-theme="dream"] .composer-surface {
 html[data-theme="dream"] .theme-menu-option:focus-visible,
 html[data-theme="dream"] button:focus-visible,
 html[data-theme="dream"] input:focus-visible,
-html[data-theme="dream"] textarea:focus-visible {
+html[data-theme="dream"] textarea:not(.chat-composer-textarea):focus-visible {
   outline-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(145, 168, 154, 0.14);
 }

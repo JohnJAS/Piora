@@ -399,6 +399,7 @@ export function AppShell() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem("piora-right-panel-tab");
+    setRightPanelOpen(window.localStorage.getItem("piora-right-panel-open") === "true");
     setRightPanelTab(stored === "automation" || stored === "review" || stored === "files" || stored === "commands" || stored === "ssh" || stored === "browser" || stored === "harmony" ? stored : "home");
     setRightPanelTabRestored(true);
   }, []);
@@ -407,6 +408,10 @@ export function AppShell() {
     if (!rightPanelTabRestored) return;
     window.localStorage.setItem("piora-right-panel-tab", rightPanelTab);
   }, [rightPanelTab, rightPanelTabRestored]);
+
+  useEffect(() => {
+    if (rightPanelTabRestored) window.localStorage.setItem("piora-right-panel-open", String(rightPanelOpen));
+  }, [rightPanelOpen, rightPanelTabRestored]);
 
   useEffect(() => {
     if (!rightPanelOpen) setRightPanelMaximized(false);
@@ -816,7 +821,8 @@ export function AppShell() {
 
   const handleCwdChange = useCallback(async (cwd: string | null, projectRoot?: string | null) => {
     const proposedProject = projectRoot ?? cwd;
-    const cwdBelongsToSelectedSession = selectedSession?.cwd === cwd || cwd === null && Boolean(selectedSession && (selectedSession.projectless || isProjectlessChatCwd(selectedSession.cwd)));
+    const cwdBelongsToSelectedSession = selectedSession?.cwd === cwd || (cwd !== null && cwd === newSessionCwd)
+      || cwd === null && Boolean(selectedSession && (selectedSession.projectless || isProjectlessChatCwd(selectedSession.cwd)));
     const cwdBelongsToSelectedRoom = Boolean(selectedRoom?.projectRoot && proposedProject
       && selectedRoom.projectRoot.toLocaleLowerCase() === proposedProject.toLocaleLowerCase());
     // A delayed sidebar synchronization is part of the previous committed
@@ -865,7 +871,6 @@ export function AppShell() {
       suppressCwdBumpRef.current = false;
       setFileTabs(restored.tabs);
       setActiveFileTabId(restored.activeTabId);
-      if (restored.tabs.length > 0) setRightPanelOpen(true);
       return;
     }
     // Worktrees of one repo share a project root. Moving the effective cwd
@@ -900,13 +905,10 @@ export function AppShell() {
         : nextTabs.at(-1)?.id ?? null;
     setFileTabs(nextTabs);
     setActiveFileTabId(nextActiveId);
-    // Restoring project files must not close a device/tool panel the user
-    // opened while the initial project notification was still pending.
-    setRightPanelOpen(open => nextTabs.length > 0 || (open && rightPanelTab !== "files"));
     if (!cwdBelongsToCurrentSelection) {
       replaceUrlWithoutNextNavigation("/");
     }
-  }, [activeFileTabId, fileTabs, rightPanelTab, selectedRoom, selectedSession, translate]);
+  }, [activeFileTabId, fileTabs, newSessionCwd, selectedRoom, selectedSession, translate]);
 
   useEffect(() => {
     if (!activeProjectRoot) return;
@@ -1155,11 +1157,11 @@ export function AppShell() {
 
   const handleRoomBrowser = useCallback((sessionId: string, options?: { automatic?: boolean }) => {
     if (!selectedRoom?.members.some((member) => member.binding.sessionId === sessionId)) return;
-    if (options?.automatic && roomBrowser?.roomId === selectedRoom.id && roomBrowser.manual) return;
+    if (options?.automatic && (!rightPanelOpen || (roomBrowser?.roomId === selectedRoom.id && roomBrowser.manual))) return;
     setRoomBrowser({ roomId: selectedRoom.id, sessionId, manual: !options?.automatic });
     setRightPanelTab("browser");
     setRightPanelOpen(true);
-  }, [roomBrowser, selectedRoom]);
+  }, [rightPanelOpen, roomBrowser, selectedRoom]);
 
   const handleOpenDesktopUpdate = useCallback(() => {
     if (desktopUpdateInstallPendingRef.current) return;
@@ -1992,6 +1994,7 @@ export function AppShell() {
   const sidebarContent = (
     <SessionSidebar
       ref={sessionSidebarRef}
+      selectedSession={selectedSession}
       selectedSessionId={selectedSession?.id ?? null}
       selectedSubagent={subagentSelection}
       onOpenSubagent={openSidebarSubagent}
@@ -2424,6 +2427,11 @@ export function AppShell() {
                   </button>
                 </>
               ) : null}
+              {desktopChrome && <button className="topbar-control topbar-icon-button" type="button"
+                title={translate("companion.openPocket")} aria-label={translate("companion.openPocket")}
+                onClick={() => void window.piDesktop?.companionAction?.("open-panel")}>
+                <AliIcon name="archive" size={16} />
+              </button>}
               <button
                 className={`topbar-control topbar-icon-button right-panel-toggle ${effectiveRightPanelOpen ? "is-open" : "is-closed"}`}
                 type="button"

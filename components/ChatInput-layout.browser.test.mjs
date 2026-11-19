@@ -73,7 +73,8 @@ createRoot(document.getElementById("root")).render(<App/>);`);
     });
     await new Promise((resolve, reject) => compiler.run((error, stats) => compiler.close(() => error || stats.hasErrors() ? reject(error || new Error(stats.toString({ all: false, errors: true }))) : resolve())));
     const css = (await readFile(path.join(repo, "node_modules/tailwindcss/preflight.css"), "utf8"))
-      + (await readFile(path.join(repo, "app/globals.css"), "utf8")).replace(/^@import.*$/gm, "");
+      + (await readFile(path.join(repo, "app/globals.css"), "utf8")).replace(/^@import.*$/gm, "")
+      + await readFile(path.join(repo, "public/themes/codex-dream-skin/skin.css"), "utf8");
     browser = await chromium.launch({ channel: process.platform === "win32" ? "msedge" : "chromium", headless: true });
     for (const locale of ["zh-CN", "en"]) {
       const context = await browser.newContext({ locale, viewport: { width: 1440, height: 1100 } });
@@ -148,6 +149,16 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       }
       await page.locator("#launcher, #conversation").evaluateAll(sections => sections.forEach(section => { section.style.width = "590px"; }));
       const conversation = page.locator("#conversation");
+      const field = conversation.locator(".chat-composer-textarea");
+      await page.evaluate(() => document.documentElement.dataset.theme = "dream");
+      await field.focus();
+      const fieldStyle = await field.evaluate(element => {
+        const css = getComputedStyle(element);
+        return [css.borderTopWidth, css.boxShadow, css.outlineStyle, element.closest(".chat-composer-surface").matches(":focus-within")];
+      });
+      assert.deepEqual(fieldStyle, ["0px", "none", "none", true], "the composer owns the focus ring even with the Dream skin");
+      await page.evaluate(() => delete document.documentElement.dataset.theme);
+      assert.equal(await conversation.locator(".model-settings-control button").first().getAttribute("title"), "DeepSeek V4.1 Flash Very Long Model Name");
       assert.equal(await conversation.locator(".model-settings-trigger .model-default-badge").count(), 0, "the default model has no extra composer badge");
       assert.equal(await page.locator("[data-permission-trigger]").count(), 0, "disabled approvals hide the control in both composers");
       await conversation.locator(".model-settings-trigger:not([data-permission-trigger])").click();
@@ -616,6 +627,23 @@ createRoot(document.getElementById("root")).render(<App/>);`);
           promptBeforeOptimize: hasFooterPrompt ? true : null }, "footer controls follow permission, mode, system prompt and optimization order");
       };
       await assertFooterWorkflowOrder(launcher, true);
+      for (const width of [900, 720, 480, 320]) {
+        await launcher.evaluate((node, value) => { node.style.width = value + "px"; }, width);
+        const layout = await launcher.locator(".chat-composer-footer").evaluate(footer => {
+          const label = footer.querySelector(".model-settings-control .model-settings-trigger-label");
+          const original = label.textContent;
+          const controls = [footer.querySelector("[data-permission-trigger]"), footer.querySelector(".chat-composer-workflow"), footer.querySelector(".prompt-optimize-button"), footer.querySelector(".composer-submit-controls")];
+          const rows = () => controls.map(node => Math.round(node.getBoundingClientRect().top - footer.getBoundingClientRect().top));
+          label.textContent = "maas-deepseek-v4.1-flash-volcengine-" + "production".repeat(12);
+          const long = rows(), truncated = label.scrollWidth > label.clientWidth;
+          label.textContent = "Mini";
+          const short = rows();
+          label.textContent = original;
+          return { long, short, truncated };
+        });
+        assert.deepEqual(layout.long, layout.short, `${locale}/${width}: changing only model length must not move actions to another row`);
+        assert.equal(layout.truncated, true);
+      }
       const capture = process.env.PIORA_COMPOSER_SCREENSHOTS
         ? path.join(repo, ".verification", "launcher-composer-ux") : null;
       if (capture) await mkdir(capture, { recursive: true });

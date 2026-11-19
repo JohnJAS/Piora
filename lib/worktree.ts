@@ -74,7 +74,12 @@ function inferRemovedWorktree(cwd: string): ProjectInfo | null {
   if (!parent.endsWith("-worktrees")) return null;
   const repoRoot = parent.slice(0, -"-worktrees".length);
   if (!repoRoot || !existsSync(join(repoRoot, ".git"))) return null;
-  return { projectRoot: repoRoot, branch: basename(cwd), isWorktree: true, isTopLevel: true };
+  return { projectRoot: checkoutPath(repoRoot), branch: basename(cwd), isWorktree: true, isTopLevel: true };
+}
+
+function checkoutPath(path: string): string {
+  try { return realpathSync.native(path); }
+  catch { return resolve(path); }
 }
 
 export async function resolveProject(cwd: string): Promise<ProjectInfo> {
@@ -106,7 +111,7 @@ export async function resolveProject(cwd: string): Promise<ProjectInfo> {
     const isTopLevel = worktreePathsEqual(toplevel, realCwd);
     const isWorktreeTopLevel = !worktreePathsEqual(gitDir, commonDir) && isTopLevel;
     info = {
-      projectRoot: isWorktreeTopLevel ? dirname(commonDir) : cwd,
+      projectRoot: isTopLevel ? checkoutPath(isWorktreeTopLevel ? dirname(commonDir) : cwd) : cwd,
       branch: ref && ref !== "HEAD" ? ref : null,
       isWorktree: isWorktreeTopLevel,
       isTopLevel,
@@ -130,7 +135,7 @@ export async function resolveProject(cwd: string): Promise<ProjectInfo> {
 /** Main repo root (parent of the shared .git dir), or throws for non-git dirs */
 async function getRepoRoot(cwd: string): Promise<string> {
   const commonDir = await git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"]);
-  return dirname(commonDir);
+  return checkoutPath(dirname(commonDir));
 }
 
 /**
@@ -160,7 +165,7 @@ export async function listWorktrees(cwd: string): Promise<WorktreeInfo[]> {
       // not marked them prunable yet.
       if (!current.prunable && existsSync(current.path)) {
         worktrees.push({
-          path: current.path,
+          path: checkoutPath(current.path),
           branch: current.branch ?? null,
           isMain: worktrees.length === 0,
         });

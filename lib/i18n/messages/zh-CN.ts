@@ -304,6 +304,7 @@ export const zhCNLocale: LocalePlugin = {
     "projectTools.runtimePhase.failed": "安装失败",
     "companion.title": "Pi 宠物助手",
     "companion.open": "打开宠物助手",
+    "companion.openPocket": "打开随身舱",
     "companion.close": "关闭宠物助手",
     "companion.settingsTitle": "宠物设置",
     "companion.settingsDescription": "管理桌宠互动模型、任务中心、资料库与本机宠物外观。",
