@@ -285,7 +285,7 @@ export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [subagentSelection, setSubagentSelection] = useState<SubagentSelection>();
-  const subagentOpener = useRef<HTMLElement | null>(null);
+  const subagentFocus = useRef<{ openerId: string; restore: boolean } | null>(null);
   const shownSubagent = !selectedRoom && !settingsDialogOpen && !historyDialogOpen && subagentSelection?.parentSessionId === selectedSession?.id ? subagentSelection : undefined;
   const subagentPanelOpen = Boolean(shownSubagent);
   const effectiveRightPanelOpen = (rightPanelOpen || subagentPanelOpen) && !settingsDialogOpen;
@@ -999,30 +999,38 @@ export function AppShell() {
   }, [isMobile]);
 
   const closeSubagent = useCallback(() => {
+    if (subagentFocus.current) subagentFocus.current.restore = true;
     setSubagentSelection(undefined);
-    requestAnimationFrame(() => {
-      if (subagentOpener.current?.isConnected && subagentOpener.current.getClientRects().length) subagentOpener.current.focus({ preventScroll: true });
-      else chatInputRef.current?.focus();
-      subagentOpener.current = null;
-    });
   }, []);
 
-  const openSubagent = useCallback((selection: SubagentSelection) => {
+  const openSubagent = useCallback((selection: SubagentSelection, openerId: string) => {
     if (selectedSessionIdRef.current !== selection.parentSessionId) return;
     workspaceNavigationVersionRef.current++;
-    subagentOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    subagentFocus.current = { openerId, restore: false };
     setSubagentSelection(selection);
   }, []);
 
-  const openSidebarSubagent = useCallback(async (session: SessionInfo, agentId: string) => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const openSidebarSubagent = useCallback(async (session: SessionInfo, agentId: string, openerId: string) => {
     if (selectedSessionIdRef.current !== session.id) {
       const version = workspaceNavigationVersionRef.current + 1;
       if (!await handleSelectSession(session, false, undefined, false) || workspaceNavigationVersionRef.current !== version) return;
     } else workspaceNavigationVersionRef.current++;
-    subagentOpener.current = opener;
+    subagentFocus.current = { openerId, restore: false };
     setSubagentSelection({ parentSessionId: session.id, agentId });
   }, [handleSelectSession]);
+
+  useEffect(() => {
+    const focus = subagentFocus.current;
+    if (subagentSelection || !focus?.restore) return;
+    subagentFocus.current = null;
+    // Restored history and virtualized rows can replace the trigger while details are open.
+    const frame = requestAnimationFrame(() => {
+      const opener = document.getElementById(focus.openerId);
+      if (opener?.getClientRects().length && !opener.closest("[inert]")) opener.focus({ preventScroll: true });
+      else chatInputRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [subagentSelection]);
 
   useEffect(() => {
     if (subagentSelection && (selectedRoom || subagentSelection.parentSessionId !== selectedSession?.id)) {

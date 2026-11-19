@@ -3,9 +3,8 @@
 import { useContext, useState, type CSSProperties } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { SubagentSidebarContext, useSubagentQuery, type SubagentSidebarState } from "@/hooks/useSubagents";
-import type { SessionInfo } from "@/lib/types";
 import type { FlatTask } from "@/lib/sidebar-tree-window";
-import type { SubagentListItem, SubagentListPage } from "@/lib/subagent-types";
+import type { SubagentListPage } from "@/lib/subagent-types";
 import { AliIcon } from "../AliIcon";
 import styles from "./SubagentTreeRows.module.css";
 
@@ -17,14 +16,13 @@ export function SubagentTreeRows({ row }: { row: FlatTask }) {
 }
 
 function RunningSubagentRows({ row, active, open, selected }: {
-  row: FlatTask; active: number; open: (session: SessionInfo, agentId: string) => void; selected: SubagentSidebarState["selected"];
+  row: FlatTask; active: number; open: NonNullable<SubagentSidebarState["open"]>; selected: SubagentSidebarState["selected"];
 }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const parent = row.session.id;
   const list = useSubagentQuery<SubagentListPage>(expanded ? parent : undefined, expanded ? "view=list" : undefined);
   const level = Math.min(row.depth, 5) + 2;
-  const choose = (item: SubagentListItem) => open(row.session, item.agentId);
   const toggle = () => setExpanded(!expanded);
 
   return <div role="none" className={styles.tree} style={{ "--subagent-depth": level - 1 } as CSSProperties}>
@@ -51,9 +49,10 @@ function RunningSubagentRows({ row, active, open, selected }: {
       {!list.data && !list.failed && <p className={styles.notice} role="status">{t("subagent.loadingList")}</p>}
       {list.data?.records.filter(item => item.status === "running").map(item => {
         const isSelected = selected?.parentSessionId === parent && selected.agentId === item.agentId;
-        return <button type="button" role="treeitem" aria-level={level + 1} aria-selected={isSelected} className={styles.row}
+        const rowId = `piora-subagent-sidebar-${item.agentId}`;
+        return <button type="button" id={rowId} role="treeitem" aria-level={level + 1} aria-selected={isSelected} className={styles.row}
           data-subagent-row={item.agentId} data-status={item.status} key={item.agentId} title={item.description}
-          onClick={() => choose(item)} onKeyDown={event => {
+          onClick={() => open(row.session, item.agentId, rowId)} onKeyDown={event => {
             const target = event.currentTarget;
             let next: HTMLElement | null | undefined;
             if (event.key === "ArrowLeft") next = target.parentElement?.parentElement?.querySelector("[data-subagent-group]");
