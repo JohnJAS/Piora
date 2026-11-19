@@ -128,6 +128,7 @@ const LANGUAGE_MENU_WIDTH = 176;
 const PROJECT_MENU_WIDTH = 360;
 const TASK_CONTROLS_MENU_WIDTH = 336;
 const SYSTEM_PROMPT_MENU_WIDTH = 480;
+const SUBAGENT_PANEL_DEFAULT_WIDTH = 520;
 
 // Settings and secondary dialogs are not part of the first usable frame.
 // Keeping them out of the startup chunk avoids parsing their large management
@@ -285,6 +286,9 @@ export function AppShell() {
   const [rightPanelOpen, setRightPanelOpen] = useState(false);
   const [subagentSelection, setSubagentSelection] = useState<SubagentSelection>();
   const subagentOpener = useRef<HTMLElement | null>(null);
+  const shownSubagent = !selectedRoom && !settingsDialogOpen && !historyDialogOpen && subagentSelection?.parentSessionId === selectedSession?.id ? subagentSelection : undefined;
+  const subagentPanelOpen = Boolean(shownSubagent);
+  const effectiveRightPanelOpen = (rightPanelOpen || subagentPanelOpen) && !settingsDialogOpen;
   const [rightPanelHasOpened, setRightPanelHasOpened] = useState(false);
   const [rightPanelMaximized, setRightPanelMaximized] = useState(false);
   // Keep the server and first client render identical. The persisted tab is
@@ -310,6 +314,7 @@ export function AppShell() {
   const desktopUpdateInstallPendingRef = useRef(false);
   const sidebarWidthRef = useRef(SIDEBAR_DEFAULT_WIDTH);
   const rightPanelWidthRef = useRef(RIGHT_PANEL_FALLBACK_WIDTH);
+  const subagentPanelWidthRef = useRef(SUBAGENT_PANEL_DEFAULT_WIDTH);
   const getResponsiveRightPanelWidth = useCallback(
     () => typeof window === "undefined"
       ? RIGHT_PANEL_FALLBACK_WIDTH
@@ -321,10 +326,10 @@ export function AppShell() {
       ? SIDEBAR_MAX_WIDTH
       : getSidebarMaxWidth({
         viewportWidth: window.innerWidth,
-        rightPanelOpen,
-        rightPanelWidth: rightPanelWidthRef.current,
+        rightPanelOpen: effectiveRightPanelOpen,
+        rightPanelWidth: subagentPanelOpen ? subagentPanelWidthRef.current : rightPanelWidthRef.current,
       }),
-    [rightPanelOpen],
+    [effectiveRightPanelOpen, subagentPanelOpen],
   );
   const getResponsiveRightPanelMaxWidth = useCallback(
     () => typeof window === "undefined"
@@ -359,8 +364,20 @@ export function AppShell() {
     storageKey: "pi-right-panel-width",
     widthRef: rightPanelWidthRef,
   });
+  const subagentPanelResizer = useResizablePanel({
+    ariaLabel: translate("subagent.resizeDetails"),
+    cssVariable: "--subagent-panel-width",
+    defaultWidth: SUBAGENT_PANEL_DEFAULT_WIDTH,
+    getMaxWidth: getResponsiveRightPanelMaxWidth,
+    growthDirection: "left",
+    maxWidth: RIGHT_PANEL_MAX_WIDTH,
+    minWidth: RIGHT_PANEL_MIN_WIDTH,
+    panelRef: rightPanelResizer.panelRef,
+    storageKey: "pi-subagent-panel-width",
+    widthRef: subagentPanelWidthRef,
+  });
   const reclampSidebarWidth = sidebarResizer.reclampWidth;
-  const reclampRightPanelWidth = rightPanelResizer.reclampWidth;
+  const reclampRightPanelWidth = subagentPanelOpen ? subagentPanelResizer.reclampWidth : rightPanelResizer.reclampWidth;
   // On mobile the sidebar is an overlay drawer; hide it by default so the chat
   // is visible on load. Runs once the breakpoint resolves after hydration.
   useEffect(() => {
@@ -389,10 +406,10 @@ export function AppShell() {
     if (rightPanelOverlayMode && rightPanelOpen && sidebarOpen) setSidebarOpen(false);
   }, [rightPanelOpen, rightPanelOverlayMode, sidebarOpen]);
   useEffect(() => {
-    if (!rightPanelOpen) return;
+    if (!effectiveRightPanelOpen) return;
     reclampSidebarWidth();
     reclampRightPanelWidth();
-  }, [reclampRightPanelWidth, reclampSidebarWidth, rightPanelOpen]);
+  }, [effectiveRightPanelOpen, reclampRightPanelWidth, reclampSidebarWidth]);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const sessionSidebarRef = useRef<SessionSidebarHandle>(null);
   const rightPanelRef = useRef<RightPanelHandle>(null);
@@ -2134,9 +2151,8 @@ export function AppShell() {
       }}
     />
   ) : null;
-  const shownSubagent = !selectedRoom && !settingsDialogOpen && !historyDialogOpen && subagentSelection?.parentSessionId === selectedSession?.id ? subagentSelection : undefined;
-  const effectiveRightPanelOpen = (rightPanelOpen || Boolean(shownSubagent)) && !settingsDialogOpen;
   const effectiveRightPanelMaximized = rightPanelMaximized && !shownSubagent;
+  const rightPanelIsResizing = subagentPanelOpen ? subagentPanelResizer.isResizing : rightPanelResizer.isResizing;
 
   return (
     <AnswerLinkProvider openLink={answerNavigation.openLink}>
@@ -2996,9 +3012,10 @@ export function AppShell() {
         data-subagent-panel={shownSubagent ? "true" : undefined}
         aria-hidden={!effectiveRightPanelOpen}
         inert={!effectiveRightPanelOpen ? true : undefined}
-        className={`right-panel-container${effectiveRightPanelOpen ? " right-panel-open" : " right-panel-closed"}${effectiveRightPanelMaximized ? " right-panel-maximized" : ""}${rightPanelResizer.isResizing ? " right-panel-resizing" : ""}`}
+        className={`right-panel-container${effectiveRightPanelOpen ? " right-panel-open" : " right-panel-closed"}${effectiveRightPanelMaximized ? " right-panel-maximized" : ""}${rightPanelIsResizing ? " right-panel-resizing" : ""}`}
         style={{
           "--right-panel-width": `${rightPanelResizer.width}px`,
+          "--subagent-panel-width": `${subagentPanelResizer.width}px`,
           display: "flex",
           flexDirection: "column",
           borderLeft: "1px solid var(--border)",
@@ -3006,7 +3023,14 @@ export function AppShell() {
         } as React.CSSProperties}
       >
         {shownSubagent && <SubagentInspector key={shownSubagent.parentSessionId + ":" + shownSubagent.agentId}
-          selection={shownSubagent} onClose={closeSubagent} modal={rightPanelOverlayMode || isMobile} />}
+          selection={shownSubagent} onClose={closeSubagent} modal={rightPanelOverlayMode || isMobile}
+          resizeHandle={!isMobile && <div
+            {...subagentPanelResizer.separatorProps}
+            aria-controls="subagent-inspector-body"
+            className={`panel-resize-handle subagent-panel-resize-handle${subagentPanelResizer.isResizing ? " is-resizing" : ""}`}
+            data-resize-handle="subagent-panel"
+            title={`${translate("subagent.resizeDetails")}: ${translate("layout.resizeHint")}`}
+          />} />}
         {rightPanelHasOpened ? <div hidden={Boolean(shownSubagent)} style={{ height: "100%", minHeight: 0 }}><RightPanel
           ref={rightPanelRef}
           answerNavigation={answerNavigation.request}

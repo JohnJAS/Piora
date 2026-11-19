@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const { webpack } = require('next/dist/compiled/webpack/webpack.js');
 const repo = path.resolve(import.meta.dirname, '..');
 
-test('subagent settings preserve profile and limit changes with readable responsive controls in both languages', { timeout: 180000 }, async () => {
+test('subagent settings preserve profile choices with readable responsive controls in both languages', { timeout: 180000 }, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'piora-subagent-settings-'));
   const artifacts = path.join(repo, '.verification/subagent-settings-ui');
   let browser;
@@ -30,7 +30,7 @@ test('subagent settings preserve profile and limit changes with readable respons
     browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : 'chromium', headless: true });
     const observations = [];
     for (const locale of ['zh-CN', 'en']) {
-      let settings = { enabled: false, maxConcurrency: 4, timeoutSeconds: 300, maxTokens: 200000, maxResultChars: 8000, disabledProfiles: [], modelOverrides: {} };
+      let settings = { enabled: false, disabledProfiles: [], modelOverrides: {} };
       const profiles = [{ name: 'general-purpose', source: 'built-in', description: 'Independent work' }, { name: 'Explore', source: 'built-in', description: 'Read-only exploration' }];
       const modelList = [{ provider: 'fixture', id: 'reader', name: 'Fixture Reader' }, { provider: 'secondary', id: 'writer/v2', name: 'Fixture Writer' }];
       const catalogRequests = [], writes = [];
@@ -69,18 +69,12 @@ test('subagent settings preserve profile and limit changes with readable respons
       await page.waitForFunction(() => !document.querySelector('[data-testid="subagent-toggle"]')?.disabled);
       assert.equal(await toggle.isChecked(), false);
       assert.equal(await card.locator('details').getAttribute('open'), null);
-      assert.equal(await card.getByRole('spinbutton').isVisible(), false);
       const save = action => Promise.all([page.waitForResponse(response => response.url().includes('/api/settings/subagents') && response.request().method() === 'PUT'), action()]);
       await save(() => toggle.click());
       await page.waitForFunction(() => document.querySelector('[data-testid="subagent-toggle"]')?.getAttribute('aria-checked') === 'true');
       await card.locator('summary').click();
       assert.equal(await card.getByRole('checkbox').count(), 2);
-      const values = [['maxConcurrency', /concurrency|并发/i, 3], ['timeoutSeconds', /timeout|超时/i, 45], ['maxTokens', /token.*budget|token 预算/i, 100000], ['maxResultChars', /result characters|最大字符/i, 4096]];
-      for (const [key, label, value] of values) {
-        const input = card.getByRole('spinbutton', { name: label });
-        await input.fill(String(value)); await save(() => input.press('Tab'));
-        assert.equal(settings[key], value);
-      }
+      assert.equal(await card.locator('input[type="number"]').count(), 0, 'The expanded settings have no manual run limits');
       const explore = card.getByRole('checkbox', { name: /Explore/ });
       await save(() => explore.click()); assert.deepEqual(settings.disabledProfiles, ['Explore']);
       const model = card.getByRole('combobox', { name: /Explore/ });
@@ -99,17 +93,11 @@ test('subagent settings preserve profile and limit changes with readable respons
       assert.equal(await explore.isChecked(), false);
       assert.equal(await model.inputValue(), 'fixture/reader');
       assert.equal(await generalModel.inputValue(), 'secondary/writer/v2');
-      for (const [, label, value] of values) assert.equal(await card.getByRole('spinbutton', { name: label }).inputValue(), String(value));
       // Restore through the same UI so the previews show the ordinary defaults.
       await save(() => explore.click());
       await save(() => model.selectOption(''));
       assert.equal(settings.modelOverrides['general-purpose'], 'secondary/writer/v2', 'Resetting Explore does not change the general model');
       await save(() => generalModel.selectOption(''));
-      for (const [key, label] of values) {
-        const value = { maxConcurrency: 4, timeoutSeconds: 300, maxTokens: 200000, maxResultChars: 8000 }[key];
-        const input = card.getByRole('spinbutton', { name: label });
-        await input.fill(String(value)); await save(() => input.press('Tab'));
-      }
       for (const width of [1680, 1100, 760, 390]) {
         await page.setViewportSize({ width, height: 1000 });
         const geometry = await card.evaluate(element => {
@@ -119,7 +107,6 @@ test('subagent settings preserve profile and limit changes with readable respons
         });
         assert.ok(geometry.pageWidth <= geometry.viewport + 1, `Horizontal overflow at ${locale}/${width}`);
         assert.ok(geometry.inputs.every(input => input.x >= geometry.left + 8 && input.right <= geometry.right - 8), 'Controls stay inside the card');
-        assert.ok(geometry.inputs.filter(input => input.type === 'number').every(input => input.width <= 180), 'Numeric controls remain compact');
         assert.equal(geometry.inputs.filter(input => input.type === 'select-one').length, 2);
         assert.ok(geometry.inputs.filter(input => input.type === 'select-one').every(input => input.width >= 160), 'Model controls remain readable');
         observations.push({ locale, width, ...geometry });

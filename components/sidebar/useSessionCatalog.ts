@@ -13,7 +13,6 @@ export interface SessionCompletionAnnouncement {
 
 export function useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectRoots }: { selectedSessionId: string | null; refreshKey?: number; mutedProjectRoots: ReadonlySet<string> }) {
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
-  const [subagentParentIds, setSubagentParentIds] = useState<ReadonlySet<string>>(() => new Set());
   const [loading, setLoading] = useState(true);
   const [catalogComplete, setCatalogComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +38,6 @@ export function useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectR
     try {
       if (showLoading) setLoading(true);
       const sessions = new Map<string, SessionInfo>();
-      const subagentParents = new Set<string>();
       let offset: number | null = 0;
       let version: string | undefined;
       let retried = false;
@@ -52,26 +50,22 @@ export function useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectR
           version = undefined;
           offset = 0;
           sessions.clear();
-          subagentParents.clear();
           continue;
         }
         if (!response.ok) throw new Error("HTTP " + response.status);
-        const data = await response.json() as { sessions: SessionInfo[]; runningSessionIds?: string[]; version?: string; nextOffset?: number | null; subagentParentIds?: string[] };
+        const data = await response.json() as { sessions: SessionInfo[]; runningSessionIds?: string[]; version?: string; nextOffset?: number | null };
         if (request.signal.aborted) return;
         version = data.version;
         for (const session of data.sessions) sessions.set(session.id, session);
-        for (const id of data.subagentParentIds ?? []) subagentParents.add(id);
         if (offset === 0) setFallbackRunningSessionIds(new Set(data.runningSessionIds ?? []));
         if (offset === 0 && showLoading) {
           setAllSessions([...sessions.values()]);
-          setSubagentParentIds(new Set(subagentParents));
           setLoading(false);
         }
         offset = typeof data.nextOffset === "number" && data.nextOffset > offset ? data.nextOffset : null;
       }
       if (request.signal.aborted) return;
       setAllSessions([...sessions.values()]);
-      setSubagentParentIds(subagentParents);
       const existingIds = new Set(sessions.keys());
       setUnreadSessionIds((previous) => {
         if (previous.size === 0) return previous;
@@ -97,35 +91,6 @@ export function useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectR
     void loadSessions(first);
   }, [loadSessions, refreshKey]);
   useEffect(() => () => { loadSessionsRequest.current?.abort(); loadSessionsRequest.current = null; }, []);
-
-  const subagentPresenceVersion = runtimeState.subagentPresenceVersion;
-  const sessionIdList = useMemo(() => JSON.stringify(allSessions.map(session => session.id).sort()), [allSessions]);
-  useEffect(() => {
-    if (!subagentPresenceVersion || !catalogComplete) return;
-    const ids = JSON.parse(sessionIdList) as string[];
-    if (!ids.length) return;
-    const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const load = async () => {
-      try {
-        const parents = new Set<string>();
-        for (let offset = 0; offset < ids.length; offset += 128) {
-          const query = new URLSearchParams({ view: "subagents" });
-          for (const id of ids.slice(offset, offset + 128)) query.append("sessionId", id);
-          const response = await fetch("/api/sessions?" + query, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]), cache: "no-store" });
-          if (!response.ok) throw new Error("Could not refresh subagent presence");
-          const result = await response.json() as { subagentParentIds?: string[] };
-          for (const id of result.subagentParentIds ?? []) parents.add(id);
-        }
-        if (!controller.signal.aborted) setSubagentParentIds(parents);
-      } catch {
-        if (!controller.signal.aborted) timer = setTimeout(() => void load(), 5_000);
-      }
-    };
-    void load();
-    return () => { controller.abort(); clearTimeout(timer); };
-  }, [sessionIdList, catalogComplete, subagentPresenceVersion]);
-
 
   useEffect(() => { saveUnreadSessionIds(unreadSessionIds); }, [unreadSessionIds]);
 
@@ -186,5 +151,5 @@ export function useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectR
     });
   }, []);
 
-  return { allSessions, loading, catalogComplete, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions, markSessionUnread, subagentParentIds, subagentCounts };
+  return { allSessions, loading, catalogComplete, error, runningSessionIds, unreadSessionIds, completionAnnouncement, loadSessions, markSessionUnread, subagentCounts };
 }

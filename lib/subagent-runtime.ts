@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { listSubagentProfiles, readSubagentSettings } from "./subagent-settings.ts";
 import { listSubagentRecords, saveSubagent } from "./subagent-store.ts";
-import type { SubagentLaunch, SubagentProfile, SubagentRecord, SubagentSettings } from "./subagent-types.ts";
+import { MAX_SUBAGENT_RESULT_CHARS, type SubagentLaunch, type SubagentProfile, type SubagentRecord, type SubagentSettings } from "./subagent-types.ts";
+
+const MAX_CONCURRENT_SUBAGENTS = 4;
 
 export interface SubagentDriver {
   run(record: SubagentRecord, profile: SubagentProfile, signal: AbortSignal,
@@ -65,16 +67,13 @@ export class SubagentRuntime {
     return this.execute(record, profile, signal);
   }
   private async execute(record: SubagentRecord, profile: SubagentProfile, parentSignal?: AbortSignal): Promise<SubagentRecord> {
-    const settings = this.settings();
-    if (!settings.enabled || this.disposed) throw new Error("Subagents are disabled");
+    if (!this.settings().enabled || this.disposed) throw new Error("Subagents are disabled");
     parentSignal?.throwIfAborted();
-    if (this.active.size >= settings.maxConcurrency) throw new Error(`Subagent concurrency limit (${settings.maxConcurrency}) reached. Wait for an existing task.`);
-    if (this.list().reduce((sum, item) => sum + item.totalTokens, 0) >= settings.maxTokens) throw new Error("Subagent token budget exhausted");
+    if (this.active.size >= MAX_CONCURRENT_SUBAGENTS) throw new Error(`Subagent concurrency limit (${MAX_CONCURRENT_SUBAGENTS}) reached. Wait for an existing task.`);
     const controller = new AbortController();
     const cancel = () => controller.abort(parentSignal?.reason ?? new Error("Parent task cancelled"));
     if (!record.background) parentSignal?.addEventListener("abort", cancel, { once: true });
     const baseTokens = record.totalTokens, baseTools = record.totalToolUseCount;
-    const timer = setTimeout(() => controller.abort(new Error("Subagent timed out")), settings.timeoutSeconds * 1000);
     this.persist(record);
     // Register synchronously before invoking the driver, including drivers that settle immediately.
     const task = Promise.resolve().then(async () => {
@@ -84,20 +83,20 @@ export class SubagentRuntime {
         const result = await this.driver.run(record, profile, controller.signal, (tokens, tools) => {
           record.totalTokens = baseTokens + tokens; record.totalToolUseCount = baseTools + tools;
           this.persist(record);
-          const current = this.settings();
-          if (!current.enabled) controller.abort(new Error("Subagents were disabled"));
-          if (this.list().reduce((sum, item) => sum + item.totalTokens, 0) >= current.maxTokens) controller.abort(new Error("Subagent token budget exhausted"));
+          if (!this.settings().enabled) controller.abort(new Error("Subagents were disabled"));
         });
         controller.signal.throwIfAborted();
         const suffix = "\n[Truncated; see child transcript.]";
-        record.result = result.length > settings.maxResultChars ? `${result.slice(0, Math.max(0, settings.maxResultChars - suffix.length))}${suffix}`.slice(0, settings.maxResultChars) : result;
+        record.result = result.length > MAX_SUBAGENT_RESULT_CHARS
+          ? result.slice(0, MAX_SUBAGENT_RESULT_CHARS - suffix.length) + suffix
+          : result;
         record.status = "completed";
       } catch (error) {
         const reason = controller.signal.aborted ? controller.signal.reason : error;
         record.error = reason instanceof Error ? reason.message : String(reason);
-        record.status = controller.signal.aborted && !/timed out|budget|turn limit/i.test(record.error) ? "cancelled" : "failed";
+        record.status = controller.signal.aborted ? "cancelled" : "failed";
       } finally {
-        clearTimeout(timer); parentSignal?.removeEventListener("abort", cancel);
+        if (!record.background) parentSignal?.removeEventListener("abort", cancel);
         notify = record.background && !this.disposed && record.status !== "cancelled" && this.settings().enabled;
         if (notify) this.notifications++;
         record.endedAt = Date.now(); this.active.delete(record.agentId); this.persist(record);

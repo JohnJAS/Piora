@@ -146,12 +146,16 @@ export const subagentsReal = {
           assert.ok(!transcript.includes('PARENT_ONLY_REAL_9461'), 'parent private history must remain isolated');
           const card = page.locator(`[data-subagent-id="${record.agentId}"]`).first();
           await card.locator('[aria-expanded]').click();
+          await card.locator('[data-subagent-tools] > summary').first().click();
           await card.locator('[data-subagent-role="toolResult"]').first().waitFor();
         }
         const group = page.locator(`[data-subagent-group="${sessionId}"]`);
-        await group.click();
-        await page.locator(`[data-subagent-row="${reader.agentId}"]`).click();
+        await group.waitFor({ state: 'hidden' });
+        const card = page.locator(`[data-subagent-id="${reader.agentId}"]`).first();
+        await card.getByRole('button', { name: /^(View details|查看详情)$/ }).click();
         const details = page.locator(`[data-subagent-inspector="${reader.agentId}"]`);
+        await details.locator('[data-subagent-activity] > summary').click();
+        await details.locator('[data-subagent-tools] > summary').first().click();
         await details.locator('[data-subagent-role="toolResult"]').first().waitFor();
         await details.getByRole('button', { name: /Close subagent details|关闭子代理详情/ }).click();
         await page.screenshot({ path: join(directory, 'real-subagents.png'), animations: 'disabled' });

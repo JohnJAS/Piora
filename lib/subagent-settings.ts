@@ -5,22 +5,22 @@ import { writePrivateFileAtomicSync } from "./atomic-file.ts";
 import type { SubagentProfile, SubagentSettings } from "./subagent-types.ts";
 
 export const DEFAULT_SUBAGENT_SETTINGS: SubagentSettings = {
-  enabled: false, maxConcurrency: 4, timeoutSeconds: 300, maxTokens: 200_000,
-  maxResultChars: 8_000, disabledProfiles: [], modelOverrides: {},
+  enabled: false, disabledProfiles: [], modelOverrides: {},
 };
+
+const legacyLimitFields = new Set(["maxConcurrency", "timeoutSeconds", "maxTokens", "maxResultChars"]);
+
 export function subagentSettingsPath(): string { return join(getAgentDir(), "piora", "subagents.json"); }
 export function parseSubagentSettings(value: unknown): SubagentSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Invalid subagent settings");
   const v = value as SubagentSettings;
-  if (Object.keys(v).some(key => !(key in DEFAULT_SUBAGENT_SETTINGS)) || typeof v.enabled !== "boolean") throw new TypeError("Invalid subagent settings fields");
-  for (const [key, max] of [["maxConcurrency", 16], ["timeoutSeconds", 3600], ["maxTokens", 10_000_000], ["maxResultChars", 100_000]] as const) {
-    if (!Number.isSafeInteger(v[key]) || v[key] < 1 || v[key] > max) throw new TypeError(`Invalid ${key}`);
-  }
+  // Older settings files and open clients can still send the retired limit fields.
+  if (Object.keys(v).some(key => !Object.hasOwn(DEFAULT_SUBAGENT_SETTINGS, key) && !legacyLimitFields.has(key))
+    || typeof v.enabled !== "boolean") throw new TypeError("Invalid subagent settings fields");
   if (!Array.isArray(v.disabledProfiles) || v.disabledProfiles.length > 200 || v.disabledProfiles.some(name => typeof name !== "string" || !name || name.length > 200)) throw new TypeError("Invalid disabled profiles");
   if (!v.modelOverrides || typeof v.modelOverrides !== "object" || Array.isArray(v.modelOverrides) || Object.keys(v.modelOverrides).length > 200
     || Object.entries(v.modelOverrides).some(([name, model]) => !name || name.length > 200 || typeof model !== "string" || model.length > 256 || (model !== "" && !/^[^/\s]+\/.+$/u.test(model)))) throw new TypeError("Models use provider/modelId");
-  return { enabled: v.enabled, maxConcurrency: v.maxConcurrency, timeoutSeconds: v.timeoutSeconds, maxTokens: v.maxTokens,
-    maxResultChars: v.maxResultChars, disabledProfiles: [...new Set(v.disabledProfiles)], modelOverrides: { ...v.modelOverrides } };
+  return { enabled: v.enabled, disabledProfiles: [...new Set(v.disabledProfiles)], modelOverrides: { ...v.modelOverrides } };
 }
 export function readSubagentSettings(): SubagentSettings {
   try { return parseSubagentSettings(JSON.parse(readFileSync(subagentSettingsPath(), "utf8"))); }
@@ -33,9 +33,9 @@ export function writeSubagentSettings(value: unknown): SubagentSettings {
   return settings;
 }
 const builtins: SubagentProfile[] = [
-  { name: "general-purpose", description: "Independent research, implementation and review.", source: "built-in", maxTurns: 30,
+  { name: "general-purpose", description: "Independent research, implementation and review.", source: "built-in",
     systemPrompt: "Complete the delegated task independently. You have a separate context, share the parent's workspace, and receive only the supplied task, not its conversation. Respect project instructions. Coordinate file ownership and avoid overwriting unrelated changes. Return a concise result with evidence, file paths, checks actually run, and remaining limitations. Never claim checks you did not run." },
-  { name: "Explore", description: "Read-only workspace exploration and code search.", source: "built-in", maxTurns: 20,
+  { name: "Explore", description: "Read-only workspace exploration and code search.", source: "built-in",
     tools: ["read", "grep", "find", "ls"], systemPrompt: "Explore the workspace using read-only tools. Do not change files or execute commands. Return concise findings with file paths and evidence. Your context is isolated from the parent; use the supplied task." },
 ];
 function toolList(value: unknown): string[] | undefined {
@@ -58,11 +58,9 @@ export function listSubagentProfiles(cwd: string): SubagentProfile[] {
       const { frontmatter: v, body } = parseFrontmatter(readFileSync(path, "utf8"));
       const name = String(v.name ?? file.slice(0, -3));
       if (!name.trim() || name.length > 200 || builtins.some(profile => profile.name.toLowerCase() === name.toLowerCase())) throw new Error(`Invalid/reserved subagent profile: ${name}`);
-      const maxTurns = v.maxTurns === undefined ? 30 : Number(v.maxTurns);
-      if (!Number.isSafeInteger(maxTurns) || maxTurns < 1 || maxTurns > 100) throw new Error(`Invalid maxTurns: ${file}`);
       if (v.model !== undefined && (typeof v.model !== "string" || !/^[^/\s]+\/.+$/u.test(v.model))) throw new Error(`Invalid model: ${file}`);
       profiles.set(name, { name, source, description: String(v.description ?? name).slice(0, 1000), systemPrompt: body,
-        tools: toolList(v.tools), disallowedTools: toolList(v.disallowedTools), model: v.model as string | undefined, maxTurns,
+        tools: toolList(v.tools), disallowedTools: toolList(v.disallowedTools), model: v.model as string | undefined,
         background: v.background === true });
     }
   }

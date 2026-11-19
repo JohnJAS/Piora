@@ -7,9 +7,9 @@ let fixture;
 export const subagents = {
   id: 'subagents', mode: 'local-model-fixture',
   scope: 'Real Electron UI, SDK child sessions, independent tool execution, cancellation and disk recovery with a deterministic loopback model.',
-  coverage: ['default-off toggle and reload', 'profile model selection and inherited model restoration', 'isolated parallel child contexts', 'read-only Explore', 'transcript and usage', 'sidebar discovery and parent draft', 'workspace panel restoration and narrow modal focus', 'English dark mode and Chinese light mode', 'background notification', 'SendMessage continuation', 'provider failure and timeout', 'parallel Stop and Escape cancellation', 'disable cancellation', 'restart interruption and saved continuation'],
+  coverage: ['default-off toggle and reload', 'profile model selection without manual execution limits', 'parallel child contexts beyond the former token budget', 'read-only Explore', 'collapsed task, reply and tool details', 'running-only sidebar and parent draft', 'independent inspector resizing with workspace restoration', 'narrow modal focus', 'English dark mode and Chinese light mode', 'background notification', 'SendMessage continuation', 'provider failure', 'parallel Stop and Escape cancellation', 'disable cancellation', 'restart interruption and saved continuation'],
   limits: ['Model responses are scripted; not real-provider semantic acceptance.', 'Parent runtime creation is fixture preparation; task submissions and feature changes use the UI.', 'No other platforms or external accounts are exercised.'],
-  async prepare(context) { fixture = await prepareSubagentModel(context); fixture.backgroundDelayMs = 15_000; },
+  async prepare(context) { fixture = await prepareSubagentModel(context); fixture.backgroundDelayMs = 30_000; },
   async run(context) {
     let { page } = context;
     const { step, waitUntil, reload, restart, directory, paths } = context;
@@ -67,14 +67,13 @@ export const subagents = {
       await page.getByRole('button', { name: /^(Send|发送)$/ }).click();
       await waitUntil(() => fixture.requests.slice(previousCount).some(request => !request.isChild && request.task.includes(message)), 'submitted prompt to reach the fixture: ' + message);
     };
-    const timeoutSeconds = async seconds => {
-      const dialog = await openLaboratory();
-      await waitUntil(() => dialog.getByTestId('subagent-toggle').isEnabled(), 'subagent settings loaded');
-      await dialog.locator('[data-settings-id="laboratory.subagents"] summary').click();
-      const input = dialog.getByRole('spinbutton', { name: /timeout|超时/i });
-      await input.fill(String(seconds)); await input.press('Tab');
-      await waitUntil(async () => (await page.evaluate(async () => (await fetch('/api/settings/subagents')).json())).settings.timeoutSeconds === seconds, 'timeout setting saved');
-      await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+    const taskCard = agentId => page.locator(`[data-subagent-id="${agentId}"]`).first();
+    const detailButton = agentId => taskCard(agentId).getByRole('button', { name: /^(View details|查看详情)$/ });
+    const inspectorFor = agentId => page.locator(`[data-subagent-inspector="${agentId}"]`);
+    const openTools = async parent => {
+      const tools = parent.locator('[data-subagent-tools]').first();
+      await tools.locator(':scope > summary').click();
+      return tools.locator('[data-subagent-role="toolResult"]').first();
     };
     const idle = () => waitUntil(async () => {
       if (!sessionId) return false;
@@ -91,14 +90,32 @@ export const subagents = {
           return { status: response.status, data: await response.json() };
         }, fixture.workspace);
         assert.equal(prepared.status, 200); sessionId = prepared.data.sessionId;
+        const chatReady = page.waitForResponse(response => {
+          const url = new URL(response.url());
+          return url.pathname === `/api/sessions/${sessionId}/state` && response.ok();
+        });
+        chatReady.catch(() => {});
+        await page.goto(`${context.origin}/?session=${sessionId}`, { waitUntil: 'domcontentloaded' });
+        await chatReady;
+        await page.locator('textarea').first().waitFor();
         await page.evaluate(async id => {
           await fetch(`/api/agent/${id}`);
-          const response = await fetch(`/api/agent/${id}/events`);
-          const reader = response.body.getReader();
-          await reader.read(); await reader.cancel();
+          await new Promise((resolve, reject) => {
+            const source = new EventSource(`/api/agent/${id}/events?transport=delta`);
+            const finish = error => {
+              source.close();
+              clearTimeout(timeout);
+              if (error) reject(error); else resolve();
+            };
+            const timeout = setTimeout(() => finish(new Error('Fixture event stream did not become ready')), 90_000);
+            source.onmessage = ({ data }) => {
+              if (JSON.parse(data).type === 'connected') finish();
+            };
+            source.onerror = () => {
+              if (source.readyState === EventSource.CLOSED) finish(new Error('Fixture event stream closed during preparation'));
+            };
+          });
         }, sessionId);
-        await page.goto(`${context.origin}/?session=${sessionId}`, { waitUntil: 'domcontentloaded' });
-        await page.locator('textarea').first().waitFor();
       });
       await step('default-off-and-opt-in', async () => {
         await send('SUBAGENT_E2E_OFF: PARENT_PRIVATE_CONTEXT');
@@ -113,6 +130,7 @@ export const subagents = {
         const card = dialog.locator('[data-settings-id="laboratory.subagents"]');
         await waitUntil(() => card.getByRole('switch').isEnabled(), 'subagent settings loaded');
         if (await card.locator('details').getAttribute('open') === null) await card.locator('summary').click();
+        assert.equal(await card.locator('input[type="number"]').count(), 0, 'No manual subagent run limits');
         const picker = card.getByRole('combobox', { name: /Explore/ });
         await waitUntil(async () => await picker.getAttribute('aria-busy') === 'false' && await picker.isEnabled(), 'subagent model catalog');
         return picker;
@@ -141,40 +159,59 @@ export const subagents = {
         const records = await read(); assert.deepEqual(records.map(record => record.result).sort(), ['ALPHA_ISOLATED_RESULT', 'BETA_ISOLATED_RESULT']);
         assert.ok(records.every(record => !Object.hasOwn(record, 'prompt') && !Object.hasOwn(record, 'childSessionFile')));
         assert.ok(records.every(record => record.totalToolUseCount === 1 && record.totalTokens > 0));
+        assert.ok(records.reduce((sum, record) => sum + record.totalTokens, 0) > 200_000);
         assert.ok(records.every(record => record.model === readerModel), 'Both Explore sessions use the selected model');
         assert.ok(fixture.requests.filter(request => request.isChild).every(request => request.model === 'subagent-reader'), 'Selected model reaches the provider request');
         assert.ok(fixture.requests.filter(request => !request.isChild).every(request => request.model === 'subagent'), 'Primary model remains independent');
         assert.ok(fixture.requests.filter(request => request.isChild).every(request => !request.parentSecretLeaked && !request.tools.some(name => ['write', 'edit', 'bash', 'powershell', 'Agent'].includes(name))));
-        const card = page.locator(`[data-subagent-id="${records[0].agentId}"]`).first();
-        await card.getByRole('button').first().click(); await card.locator('[data-subagent-role="toolResult"]').waitFor();
+        const card = taskCard(records[0].agentId);
+        await card.locator('[aria-expanded]').click();
+        const result = await openTools(card);
+        await result.waitFor();
+        assert.equal(await result.locator('pre').isVisible(), false, 'Tool payload starts collapsed');
         await page.screenshot({ path: join(directory, 'subagent-transcript.png'), animations: 'disabled' });
       });
-      await step('sidebar-discovers-persisted-children-without-replacing-the-parent', async () => {
-        const records = await read();
+      await step('finished-children-are-opened-from-chat-with-a-compact-overview', async () => {
+        const [record] = await read();
         const group = page.locator(`[data-subagent-group="${sessionId}"]`);
-        await group.waitFor();
-        assert.equal(await group.getAttribute('aria-expanded'), 'false');
+        await group.waitFor({ state: 'hidden' });
         const oldViewport = page.viewportSize();
         await page.setViewportSize({ width: 1600, height: 900 });
         try {
           const composer = page.locator('textarea').first();
           await composer.fill('Keep this independent parent draft');
-          await group.focus();
-          await page.keyboard.press('ArrowRight');
-          const row = page.locator(`[data-subagent-row="${records[0].agentId}"]`);
-          await row.waitFor();
-          assert.equal(await row.getAttribute('data-status'), 'completed');
-          await row.focus();
+          const opener = detailButton(record.agentId);
+          await opener.focus();
           await page.keyboard.press('Enter');
-          const details = page.locator(`[data-subagent-inspector="${records[0].agentId}"]`);
-          await details.locator('[data-subagent-role="toolResult"]').waitFor();
+          const details = inspectorFor(record.agentId);
+          await details.getByText(record.result, { exact: true }).waitFor();
+          const activity = details.locator('[data-subagent-activity]');
+          const runInfo = details.locator('[data-subagent-run-info]');
+          assert.equal(await activity.getAttribute('open'), null);
+          assert.equal(await runInfo.getAttribute('open'), null);
+          assert.equal(await activity.locator('[data-subagent-transcript]').count(), 0);
           assert.equal(await details.locator('textarea').count(), 0);
           assert.equal(await composer.inputValue(), 'Keep this independent parent draft');
           assert.equal(new URL(page.url()).searchParams.get('session'), sessionId);
-          await page.screenshot({ path: join(directory, 'subagent-sidebar-and-detail.png'), animations: 'disabled' });
+          await page.screenshot({ path: join(directory, 'subagent-overview.png'), animations: 'disabled' });
+          await activity.locator(':scope > summary').click();
+          const instructions = activity.locator('[data-subagent-role="user"]').first();
+          const reply = activity.locator('[data-subagent-role="assistant"]').first();
+          await instructions.waitFor(); await reply.waitFor();
+          assert.equal(await instructions.locator('details').getAttribute('open'), null);
+          assert.equal(await reply.locator('details').getAttribute('open'), null);
+          await instructions.locator('summary').click();
+          await instructions.locator('p').filter({ hasText: 'Read the assigned fixture' }).waitFor();
+          const result = await openTools(activity);
+          await result.waitFor();
+          await result.locator('summary').click();
+          await result.locator('pre').filter({ hasText: record.result }).waitFor();
+          await runInfo.locator(':scope > summary').click();
+          await runInfo.getByText(record.model, { exact: true }).waitFor();
+          await page.screenshot({ path: join(directory, 'subagent-expanded-activity.png'), animations: 'disabled' });
           await page.keyboard.press('Escape');
           await details.waitFor({ state: 'hidden' });
-          await waitUntil(() => row.evaluate(element => element === document.activeElement), 'focus returned to child row');
+          await waitUntil(() => opener.evaluate(element => element === document.activeElement), 'focus returned to chat card');
           await composer.fill('');
         } finally { if (oldViewport) await page.setViewportSize(oldViewport); }
       });
@@ -183,39 +220,58 @@ export const subagents = {
         await waitUntil(async () => (await read()).some(record => record.agentId === id && record.result === 'FOLLOWUP_CONTEXT_RETAINED'), 'SendMessage result'); await idle();
         assert.ok(fixture.requests.some(request => request.task.includes('CHILD_FOLLOWUP')));
       });
-      await step('keep-workspace-panel-and-trap-narrow-inspector-focus', async () => {
-        const group = page.locator(`[data-subagent-group="${sessionId}"]`);
-        const row = group.locator('..').locator('[data-subagent-row]').first();
+      await step('resize-details-without-changing-the-workspace-and-trap-narrow-focus', async () => {
+        const [record] = await read();
+        const opener = detailButton(record.agentId);
         const inspector = page.locator('[data-subagent-inspector]');
         const panel = page.locator('.right-panel-surface');
         const togglePanel = page.locator('.right-panel-toggle');
         const close = inspector.getByRole('button', { name: /^(Close subagent details|关闭子代理详情)$/ });
+        const resize = inspector.getByRole('separator', { name: /^(Resize subagent details|调整子代理详情宽度)$/ });
+        const readWidth = async () => (await inspector.boundingBox())?.width;
+        const drag = async amount => {
+          const bounds = await resize.boundingBox();
+          assert.ok(bounds, 'the resize grip is visible');
+          const x = bounds.x + bounds.width / 2, y = bounds.y + bounds.height / 2;
+          await page.mouse.move(x, y);
+          await page.mouse.down();
+          try {
+            const before = await readWidth();
+            await page.mouse.move(x - amount, y, { steps: 6 });
+            await waitUntil(async () => (await readWidth()) >= before + amount - 3, 'panel resizes while dragging');
+          } finally { await page.mouse.up(); }
+        };
         const oldViewport = page.viewportSize();
         try {
           await page.setViewportSize({ width: 1600, height: 900 });
           await togglePanel.click();
           await panel.waitFor();
           const originalPanel = await panel.elementHandle();
-          if (await group.getAttribute('aria-expanded') !== 'true') await group.click();
-          await row.click();
+          const originalWidth = (await panel.boundingBox()).width;
+          await opener.click();
           await close.waitFor();
           assert.equal(await panel.isVisible(), false);
           assert.equal(await togglePanel.getAttribute('aria-expanded'), 'true');
           await waitUntil(async () => {
             const bounds = await inspector.boundingBox();
-            return bounds && bounds.width >= 340 && bounds.width <= 380;
-          }, 'inspector uses its own compact width instead of the file panel minimum');
+            return bounds && bounds.width >= 518 && bounds.width <= 522;
+          }, 'inspector uses its own readable default width');
+          await drag(110);
+          assert.ok((await readWidth()) >= 627);
           await close.click();
           await panel.waitFor();
           assert.equal(await panel.evaluate((current, original) => current === original, originalPanel), true, 'the original workspace remains mounted');
+          await waitUntil(async () => Math.abs((await panel.boundingBox())?.width - originalWidth) <= 2, 'resizing details leaves the file workspace width');
           await originalPanel.dispose();
           await togglePanel.click();
           await waitUntil(() => page.locator('#file-panel').getAttribute('aria-hidden').then(value => value === 'true'), 'the preserved workspace is closed and inert');
 
           await page.setViewportSize({ width: 1050, height: 780 });
-          await row.click();
-          const output = inspector.locator('summary').last();
+          await reload();
+          await opener.click();
+          const output = inspector.locator('[data-subagent-run-info] > summary');
           await output.waitFor();
+          await waitUntil(async () => (await readWidth()) >= 627, 'detail width restored after reload');
           assert.equal(await inspector.getAttribute('role'), 'dialog');
           assert.equal(await inspector.getAttribute('aria-modal'), 'true');
           await waitUntil(() => close.evaluate(element => element === document.activeElement), 'narrow inspector gets initial focus');
@@ -223,17 +279,27 @@ export const subagents = {
           assert.equal(await output.evaluate(element => element === document.activeElement), true);
           await page.keyboard.press('Tab');
           assert.equal(await close.evaluate(element => element === document.activeElement), true);
+          await drag(60);
+          await resize.press('ArrowRight');
+          const keyboardWidth = await readWidth();
+          await resize.press('ArrowLeft');
+          await waitUntil(async () => (await readWidth()) >= keyboardWidth + 9, 'keyboard resizing works inside the modal');
           const chromeBounds = await page.locator('.desktop-titlebar').boundingBox();
           const closeBounds = await close.boundingBox();
           assert.ok(chromeBounds && closeBounds && closeBounds.y >= chromeBounds.y + chromeBounds.height, 'window chrome must not cover the detail controls');
           await page.screenshot({ path: join(directory, 'subagent-narrow.png'), animations: 'disabled' });
           await page.keyboard.press('Escape');
           await inspector.waitFor({ state: 'hidden' });
-          await waitUntil(() => row.evaluate(element => element === document.activeElement), 'narrow inspector returns focus');
-          await row.click();
+          await waitUntil(() => opener.evaluate(element => element === document.activeElement), 'narrow inspector returns focus');
+          await page.setViewportSize({ width: 590, height: 780 });
+          await opener.click();
+          await waitUntil(async () => (await readWidth()) >= 585, 'phone-width details fill the screen');
+          assert.equal(await resize.isVisible(), false);
           await close.click();
           await inspector.waitFor({ state: 'hidden' });
-          await group.click();
+          await page.setViewportSize({ width: 1600, height: 900 });
+          await page.locator('.desktop-titlebar-sidebar-toggle').click();
+          await waitUntil(() => page.locator('#session-sidebar.sidebar-open').isVisible(), 'sidebar restored after the phone-width check');
         } finally { if (oldViewport) await page.setViewportSize(oldViewport); }
       });
       await step('localize-subagent-inspector-in-light-and-dark-themes', async () => {
@@ -241,8 +307,8 @@ export const subagents = {
         try {
           await page.setViewportSize({ width: 1600, height: 900 });
           for (const view of [
-            { locale: 'English', theme: 'dark', title: 'Subagent details', group: /^Subagents( \d+)?$/, readOnly: 'Read only' },
-            { locale: '简体中文', theme: 'light', title: '子代理详情', group: /^子代理( \d+)?$/, readOnly: '只读' },
+            { locale: 'English', theme: 'dark', title: 'Subagent details', activity: 'Activity', outcome: 'Result' },
+            { locale: '简体中文', theme: 'light', title: '子代理详情', activity: '执行记录', outcome: '任务结果' },
           ]) {
             await page.getByRole('button', { name: /^(Settings|设置)$/ }).click();
             const dialog = page.getByRole('dialog', { name: /^(Settings|设置)$/ });
@@ -254,16 +320,15 @@ export const subagents = {
             await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, view.theme);
             await dialog.getByRole('button', { name: /^(Back to Piora|返回 Piora)$/ }).click();
             await dialog.waitFor({ state: 'hidden' });
-            const group = page.locator(`[data-subagent-group="${sessionId}"]`);
-            assert.match((await group.innerText()).trim(), view.group);
-            if (await group.getAttribute('aria-expanded') !== 'true') await group.click();
-            await group.locator('..').locator('[data-subagent-row]').first().click();
+            const [record] = await read();
+            await detailButton(record.agentId).click();
             const inspector = page.getByRole('region', { name: view.title, exact: true });
-            await inspector.getByText(view.readOnly, { exact: true }).waitFor();
+            await inspector.getByRole('heading', { name: view.outcome }).waitFor();
+            await inspector.getByText(view.activity, { exact: true }).click();
+            await inspector.locator('[data-subagent-role="user"]').first().waitFor();
             await page.screenshot({ path: join(directory, `subagent-${view.theme}.png`), animations: 'disabled' });
             await inspector.getByRole('button', { name: /^(Close subagent details|关闭子代理详情)$/ }).click();
             await inspector.waitFor({ state: 'hidden' });
-            await group.click();
           }
         } finally { if (oldViewport) await page.setViewportSize(oldViewport); }
       });
@@ -294,19 +359,15 @@ export const subagents = {
         const failed = (await read()).find(record => record.description === 'Failing subagent');
         assert.match(failed.error, /Intentional subagent provider failure/);
         const group = page.locator(`[data-subagent-group="${sessionId}"]`);
-        assert.equal(await group.getAttribute('aria-expanded'), 'false', 'failure must not auto-expand the sidebar');
-        const card = page.locator(`[data-subagent-id="${failed.agentId}"]`).first();
+        await group.waitFor({ state: 'hidden' });
+        const card = taskCard(failed.agentId);
         await card.locator('[aria-expanded]').click();
         await card.getByRole('alert').filter({ hasText: 'Intentional subagent provider failure' }).waitFor();
-      });
-      await step('timeout-cancels-provider-and-allows-recovery', async () => {
-        await timeoutSeconds(5); const count = fixture.holds.length;
-        await send('SUBAGENT_E2E_TIMEOUT');
-        await waitUntil(() => fixture.holds.length === count + 1, 'provider request started before the subagent timeout');
-        await waitUntil(async () => (await read()).some(record => record.status === 'failed' && /timed out/.test(record.error)), 'failed timeout record'); await idle();
-        assert.equal(fixture.holds.length, count + 1);
-        await waitUntil(() => fixture.holds[count].closed, 'timed-out child provider connection closed');
-        await timeoutSeconds(300);
+        await detailButton(failed.agentId).click();
+        const inspector = inspectorFor(failed.agentId);
+        await inspector.getByRole('alert').filter({ hasText: 'Intentional subagent provider failure' }).waitFor();
+        await page.screenshot({ path: join(directory, 'subagent-failure.png'), animations: 'disabled' });
+        await inspector.getByRole('button', { name: /Close subagent details|关闭子代理详情/ }).click();
       });
       await step('stop-cancels-active-child-provider', async () => {
         const count = fixture.holds.length; await send('SUBAGENT_E2E_STOP');
@@ -321,23 +382,36 @@ export const subagents = {
         await waitUntil(() => fixture.holds.length === baseline + 2, 'two held children before one-child stop');
         const children = (await read()).filter(record => record.status === 'running');
         assert.equal(children.length, 2);
-        const card = page.locator(`[data-subagent-id="${children[0].agentId}"]`).first();
-        const open = card.getByRole('button', { name: /^(View details|查看详情)$/ });
-        await open.click();
-        const panel = page.locator(`[data-subagent-inspector="${children[0].agentId}"]`);
+        const group = page.locator(`[data-subagent-group="${sessionId}"]`);
+        await group.waitFor();
+        assert.equal(await group.getAttribute('aria-expanded'), 'false');
+        await group.focus();
+        await page.keyboard.press('ArrowRight');
+        const rows = group.locator('..').locator('[data-subagent-row]');
+        const row = rows.and(page.locator(`[data-subagent-row="${children[0].agentId}"]`));
+        await row.waitFor();
+        assert.equal(await rows.count(), 2, 'Only the live child tasks appear below the chat');
+        await row.focus();
+        await page.keyboard.press('Enter');
+        const panel = inspectorFor(children[0].agentId);
         await panel.waitFor();
         await page.keyboard.press('Escape');
         await panel.waitFor({ state: 'hidden' });
+        await waitUntil(() => row.evaluate(element => element === document.activeElement), 'focus returns to the live sidebar item');
         assert.equal(fixture.holds.slice(baseline).filter(hold => hold.closed).length, 0);
-        await open.click();
+        await detailButton(children[0].agentId).click();
         await panel.locator('[data-subagent-stop]').click();
         await waitUntil(async () => (await read()).find(record => record.agentId === children[0].agentId)?.status === 'cancelled', 'only the selected attempt cancelled');
         assert.equal((await read()).find(record => record.agentId === children[1].agentId)?.status, 'running');
         await waitUntil(() => fixture.holds.slice(baseline).filter(hold => hold.closed).length === 1, 'exactly one held provider request closed');
+        await row.waitFor({ state: 'hidden' });
+        assert.equal(await rows.count(), 1, 'The stopped child disappears while its sibling stays visible');
+        assert.equal(await panel.isVisible(), true);
         await panel.getByRole('button', { name: /Close subagent details|关闭子代理详情/ }).click();
         await page.getByRole('button', { name: /^(Stop agent|停止智能体)$/ }).click();
         await waitUntil(() => fixture.holds.slice(baseline).every(hold => hold.closed), 'parent stop settles remaining children');
         await idle();
+        await group.waitFor({ state: 'hidden' });
       });
       await step('escape-cancels-active-child', async () => {
         const count = fixture.holds.length; await send('SUBAGENT_E2E_ESCAPE');
@@ -357,12 +431,15 @@ export const subagents = {
         page = await restart(); observe(page);
         await page.goto(`${context.origin}/?session=${sessionId}`, { waitUntil: 'domcontentloaded' });
         await page.locator('textarea').first().waitFor();
-        await waitUntil(async () => (await read()).some(record => record.status === 'interrupted'), 'interrupted record after restart');
+        const interrupted = await waitUntil(async () => (await read()).find(record => record.status === 'interrupted'), 'interrupted record after restart');
         assert.equal(fixture.holds.length, count + 1, 'restart must not automatically repeat the child request');
         const group = page.locator(`[data-subagent-group="${sessionId}"]`);
-        await group.click();
-        await group.locator('xpath=..').locator('[data-subagent-row][data-status="interrupted"]').waitFor();
+        await group.waitFor({ state: 'hidden' });
+        await detailButton(interrupted.agentId).click();
+        const inspector = inspectorFor(interrupted.agentId);
+        await inspector.locator('[data-status="interrupted"]').waitFor();
         await page.screenshot({ path: join(directory, 'subagent-restarted.png'), animations: 'disabled' });
+        await inspector.getByRole('button', { name: /Close subagent details|关闭子代理详情/ }).click();
       });
       await step('continue-saved-child-after-application-restart', async () => {
         const id = (await read()).find(record => record.description === 'Explore A').agentId;

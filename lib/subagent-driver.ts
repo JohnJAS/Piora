@@ -34,7 +34,7 @@ export function createSubagentDriver(parent: AgentSessionWrapper, start: typeof 
         record.childSessionId = realSessionId; record.childSessionFile = child.inner.sessionFile;
         record.model = child.inner.model ? `${child.inner.model.provider}/${child.inner.model.id}` : model;
         saveSubagent(record);
-        let tokens = 0, toolCount = 0, turns = 0, output = "";
+        let tokens = 0, toolCount = 0, output = "";
         const completion = new Promise<string>((resolve, reject) => {
           cancel = () => { void child.send({ type: "abort" }).catch(() => undefined); reject(signal.reason ?? new Error("Subagent cancelled")); };
           signal.addEventListener("abort", cancel, { once: true });
@@ -49,10 +49,6 @@ export function createSubagentDriver(parent: AgentSessionWrapper, start: typeof 
                 progress(tokens, toolCount);
                 if (message.stopReason === "error" || message.stopReason === "aborted") reject(new Error(message.errorMessage || "Subagent model did not complete"));
               }
-            }
-            if (event.type === "turn_end" && ++turns >= profile.maxTurns) {
-              const results = event.toolResults as unknown[] | undefined;
-              if (results?.length) { void child.send({ type: "abort" }).catch(() => undefined); reject(new Error("Subagent turn limit reached")); }
             }
             if (event.type === "prompt_error") reject(new Error(String(event.errorMessage ?? "Subagent failed")));
             if (event.type === "prompt_done") {
