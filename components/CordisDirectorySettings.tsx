@@ -127,6 +127,8 @@ function CommunityListing({ entry, dedicated, updateDedicated }: {
   const [error, setError] = useState<string>();
   const state = dedicated?.state;
   const compatibility = check?.compatibility ?? (entry.package && entry.version ? entry.compatibility : "unavailable");
+  const description = dedicated ? t(dedicated.manifest.id === "dsh-pet" ? "desktopExtensions.petDescription" : "desktopExtensions.memeDescription")
+    : entry.description[locale === "zh-CN" ? "zh" : "en"] || entry.description.en || entry.description.zh;
 
   async function checkOrInstall() {
     const bridge = window.piDesktop?.desktopExtensions;
@@ -146,8 +148,9 @@ function CommunityListing({ entry, dedicated, updateDedicated }: {
       {entry.source ? <a href={entry.source} target="_blank" rel="noreferrer">{entry.name}</a> : <strong>{entry.name}</strong>}
       <span role="status">{state ? t("desktopExtensions.state." + state.phase) : t("desktopExtensions.discovered." + compatibility)}</span>
     </div>
-    {entry.package && <p className={styles.description}>{[entry.package, entry.version].filter(Boolean).join(" ")}</p>}
-    <p>{entry.description[locale === "zh-CN" ? "zh" : "en"] || entry.description.en || entry.description.zh}</p>
+    {entry.package && <p className={styles.description}>{[entry.package, entry.version].filter(Boolean).join(" ")}
+      {dedicated && " · " + t("desktopExtensions.discovered.dedicated")}</p>}
+    {description && <p>{description}</p>}
     {!entry.package || !entry.version ? <p className={styles.description}>
       {t("desktopExtensions.check." + (entry.package ? "missingVersion" : "missingNpm"))}
     </p> : <div className={styles.actions}>
@@ -195,7 +198,8 @@ function CommunityDirectory({ profiles, dedicated, updateDedicated }: {
   const matches = (...fields: (string | null | undefined)[]) => fields.some(field => field?.toLocaleLowerCase().includes(normalized));
   const verified = profiles.filter(entry =>
     matches(entry.name, entry.community?.package, entry.description[language], ...entry.releases.map(release => release.version)));
-  const visible = useMemo(() => (entries ?? []).filter(entry => !entry.verifiedId && (!normalized
+  const adapters = dedicated?.filter(({ manifest }) => matches(manifest.name, manifest.id, manifest.version)) ?? [];
+  const visible = useMemo(() => (entries ?? []).filter(entry => !entry.verifiedId && entry.compatibility !== "dedicated" && (!normalized
     || [entry.name, entry.package, entry.version, entry.description[language]].some(field => field?.toLocaleLowerCase().includes(normalized)))),
   [entries, language, normalized]);
 
@@ -214,19 +218,24 @@ function CommunityDirectory({ profiles, dedicated, updateDedicated }: {
       </div>
       {loading && <p role="status">{t("desktopExtensions.directoryLoading")}</p>}
       {error && <p className={styles.error} role="alert">{error}</p>}
-      {(profiles.length > 0 || entries) && <>
+      {(profiles.length > 0 || dedicated?.length || entries) && <>
         <label className={styles.directorySearch}>
           <span>{t("desktopExtensions.searchDirectory")}</span>
           <input type="search" value={query} onChange={event => { setQuery(event.target.value); setLimit(30); }} />
         </label>
-        {verified.length === 0 && visible.length === 0 && <p role="status">{t(entries ? "settings.searchEmpty" : "desktopExtensions.loadToSearch")}</p>}
+        {verified.length === 0 && adapters.length === 0 && visible.length === 0 && <p role="status">{t(entries ? "settings.searchEmpty" : "desktopExtensions.loadToSearch")}</p>}
         <ul className={styles.discoveryList}>
           {verified.map(entry => <li key={entry.id}><CordisCard entry={entry} /></li>)}
+          {adapters.map(adapter => <CommunityListing
+            key={adapter.manifest.id}
+            entry={{ name: adapter.manifest.name, package: adapter.manifest.id, version: adapter.manifest.version,
+              description: { en: "", zh: "" }, source: adapter.manifest.source, compatibility: "dedicated", verifiedId: null }}
+            dedicated={adapter}
+            updateDedicated={updateDedicated}
+          />)}
           {visible.slice(0, limit).map((entry, index) => <CommunityListing
             key={JSON.stringify([entry.package, entry.version, entry.name, entry.source, index])}
             entry={entry}
-            dedicated={entry.compatibility === "dedicated" ? dedicated?.find(item => item.manifest.id === entry.package
-              && item.manifest.version === entry.version) : undefined}
             updateDedicated={updateDedicated}
           />)}
         </ul>

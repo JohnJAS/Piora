@@ -123,7 +123,13 @@ export const cordisCommunity = {
       return window;
     }
 
-    await settings();
+    await step("verified-dedicated-versions-also-install-from-the-list", async () => {
+      await settings();
+      for (const name of ["dsh-pet", "dsh-meme"]) {
+        await community.locator(`[data-community-package="${name}"]`)
+          .getByRole("button", { name: /^(Install|安装) \d+\.\d+\.\d+$/ }).waitFor();
+      }
+    });
     for (const { name, older, latest } of samples) {
       const card = cardFor(name);
       const start = card.getByRole("button", { name: /^(Start|启动)$/ });
