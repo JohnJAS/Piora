@@ -70,7 +70,7 @@ export async function reservePort(port = 0, minimumPort = 0) {
   if (!Number.isInteger(minimumPort) || minimumPort < 0 || minimumPort > 65535) throw new RangeError('Invalid minimum port');
   if (port !== 0 && port < minimumPort) throw new RangeError(`Application port must be ${minimumPort}–65535`);
   for (let attempt = 0; ; attempt++) {
-    const server = createServer();
+    const server = createServer(socket => socket.destroy());
     try {
       await new Promise((resolve, reject) => {
         server.once('error', reject);

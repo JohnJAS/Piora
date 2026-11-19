@@ -100,6 +100,10 @@ export const worktreeChatLayout = {
       await add.click();
       const composer = page.locator(".chat-composer-textarea");
       await composer.fill("Linked worktree first message");
+      // The new checkout resolves its own model list after the draft is already editable.
+      const send = page.getByRole("button", { name: /^(Send|发送)$/ }).and(page.locator(":enabled"));
+      await send.waitFor();
+      assert.equal(await composer.inputValue(), "Linked worktree first message");
       await composer.press("Enter");
       await page.getByText("Plan / Goal fixture", { exact: true }).waitFor({ timeout: 120_000 });
       createdId = new URL(page.url()).searchParams.get("session");
