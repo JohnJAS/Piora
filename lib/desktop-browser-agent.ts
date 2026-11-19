@@ -93,6 +93,7 @@ export interface DesktopAgentCall {
   url?: string;
   selector?: string;
   ref?: string;
+  files?: string[];
   text?: string;
   key?: string;
   submit?: boolean;
@@ -159,7 +160,7 @@ export function callDesktopAgentBrowser(input: DesktopAgentCall): Promise<unknow
     sessionId: input.sessionId,
     action: input.action,
   };
-  for (const key of ["tabId", "url", "selector", "ref", "text", "key", "submit", "deltaX", "deltaY", "x", "y", "tabIndex", "fullPage", "reason", "purpose", "waitId", "confirmed", "navigationToken"] as const) {
+  for (const key of ["tabId", "url", "selector", "ref", "files", "text", "key", "submit", "deltaX", "deltaY", "x", "y", "tabIndex", "fullPage", "reason", "purpose", "waitId", "confirmed", "navigationToken"] as const) {
     const value = input[key];
     if (value !== undefined) payload[key] = value;
   }

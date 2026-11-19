@@ -76,6 +76,7 @@ const assets = [
     // relative imports through this tree. Stage the complete Piora library so
     // adding a transitive helper cannot silently break only packaged builds.
     ["Piora runtime support modules", "lib"],
+    ["Browser agent upload helpers", "desktop/src/browser-agent-logic.ts"],
     ["Browser login observation", "desktop/src/browser-login.ts"],
     ["Browser login recovery", "desktop/src/browser-login-recovery.ts"],
     ["Piora analytics shared store", "desktop/src/analytics-store.mts"],
