@@ -40,6 +40,7 @@ import { validateAgentImages } from "./image-attachments";
 import { installImageContextPolicy } from "./image-context";
 import { installProviderPayloadValidation } from "./provider-payload";
 import { installModelStallGuard } from "./model-stall-guard";
+import { installModelAwareCompactionSettings, withCompactionRetentionLimit } from "./compaction-settings";
 import { reloadModelRetrySettings } from "./retry-settings";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
@@ -1784,19 +1785,12 @@ export class AgentSessionWrapper {
           const usedTokens = Math.max(this.inner.getContextUsage()?.tokens ?? 0, estimatedTokens);
           if (usedTokens > targetWindow) {
             this.beginRun("compacting", "Compacting conversation before model change");
-            const settingsManager = this.inner.settingsManager;
-            const originalGetCompactionSettings = settingsManager.getCompactionSettings;
-            // Keep less recent history for a smaller target. This override belongs only
-            // to this session and this compaction; persisted preferences stay intact.
-            settingsManager.getCompactionSettings = () => {
-              const settings = originalGetCompactionSettings.call(settingsManager);
-              return {
-                ...settings,
-                keepRecentTokens: Math.min(settings.keepRecentTokens, Math.max(1024, Math.floor(targetWindow * 0.4))),
-              };
-            };
             try {
-              const result = await this.withFinalRunningNotification(() => this.inner.compact()) as { estimatedTokensAfter?: number };
+              const result = await this.withFinalRunningNotification(() => withCompactionRetentionLimit(
+                this.inner.settingsManager,
+                Math.floor(targetWindow * 0.4),
+                () => this.inner.compact(),
+              )) as { estimatedTokensAfter?: number };
               compacted = true;
               const newState = this.inner.agent.state;
               const after = estimateContextUsageBreakdown({
@@ -1810,7 +1804,6 @@ export class AgentSessionWrapper {
                 throw new Error(`Compacted context still needs about ${afterTokens} tokens, exceeding ${provider}/${modelId}'s ${targetWindow}-token window`);
               }
             } finally {
-              settingsManager.getCompactionSettings = originalGetCompactionSettings;
               invalidateSessionListCache();
               this.flushPendingProjectCapabilitySettings();
             }
@@ -3054,6 +3047,7 @@ export async function startRpcSession(
     // instance and idempotent across cached reuse.
     // Also cover sessions that were being constructed when global settings changed.
     await services.settingsManager.reload();
+    installModelAwareCompactionSettings(services.settingsManager);
     installProviderPayloadValidation(services.modelRuntime);
     installAnalyticsModelObserver(services.modelRuntime, "chat");
     installModelStallGuard(services.modelRuntime, process.env, services.settingsManager);

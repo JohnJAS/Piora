@@ -5,10 +5,17 @@ import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
 import styles from "./ModelRetrySettings.module.css";
 
+async function readReserveInput(response: Response): Promise<string> {
+  const data = await response.json() as { reserveTokens?: number; configuredReserveTokens?: number | null; error?: string };
+  if (!response.ok || typeof data.reserveTokens !== "number") throw new Error(data.error ?? `HTTP ${response.status}`);
+  return data.configuredReserveTokens === null ? "" : String(data.configuredReserveTokens ?? data.reserveTokens);
+}
+
 export function ModelCompactionSettings() {
   const { t } = useI18n();
   const [value, setValue] = useState("");
-  const [saved, setSaved] = useState("");
+  const [saved, setSaved] = useState<string | null>(null);
+  const [badInput, setBadInput] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -16,23 +23,26 @@ export function ModelCompactionSettings() {
   useEffect(() => {
     const controller = new AbortController();
     void fetch("/api/models-config/compaction", { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
-        const data = await response.json() as { reserveTokens?: number; error?: string };
-        if (!response.ok || typeof data.reserveTokens !== "number") throw new Error(data.error ?? `HTTP ${response.status}`);
-        setValue(String(data.reserveTokens));
-        setSaved(String(data.reserveTokens));
+      .then(readReserveInput)
+      .then((reserve) => {
+        setValue(reserve);
+        setSaved(reserve);
       })
       .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
+        if (!controller.signal.aborted) {
+          setSaved("");
+          setError(cause instanceof Error ? cause.message : String(cause));
+        }
       });
     return () => controller.abort();
   }, []);
 
-  const numeric = Number(value);
-  const valid = value.trim() !== "" && Number.isInteger(numeric) && numeric >= 0 && numeric <= 131_072;
+  const numeric = value === "" ? null : Number(value);
+  const valid = !badInput && (numeric === null || (Number.isInteger(numeric) && numeric >= 0 && numeric <= 131_072));
+  const canSave = saved !== null && !busy && valid && value !== saved;
 
   const save = async () => {
-    if (!valid) return;
+    if (!canSave) return;
     setBusy(true);
     setError(null);
     setSuccess(false);
@@ -42,10 +52,9 @@ export function ModelCompactionSettings() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ settings: { reserveTokens: numeric } }),
       });
-      const data = await response.json() as { reserveTokens?: number; error?: string };
-      if (!response.ok || typeof data.reserveTokens !== "number") throw new Error(data.error ?? `HTTP ${response.status}`);
-      setValue(String(data.reserveTokens));
-      setSaved(String(data.reserveTokens));
+      const reserve = await readReserveInput(response);
+      setValue(reserve);
+      setSaved(reserve);
       setSuccess(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -65,7 +74,17 @@ export function ModelCompactionSettings() {
     <div className={styles.fields}>
       <label>
         <span>{t("modelCompaction.reserveTokens")}</span>
-        <input type="number" min={0} max={131072} step={1} value={value} disabled={busy} aria-invalid={value !== "" && !valid} onChange={(event) => { setValue(event.target.value); setSuccess(false); setError(null); }} />
+        <input
+          type="number" min={0} max={131072} step={1} value={value}
+          placeholder={t("modelCompaction.automatic")}
+          disabled={busy || saved === null} aria-invalid={!valid}
+          onChange={(event) => {
+            setValue(event.currentTarget.value);
+            setBadInput(event.currentTarget.validity.badInput);
+            setSuccess(false);
+            setError(null);
+          }}
+        />
         <small>{t("modelCompaction.reserveHint")}</small>
       </label>
     </div>
@@ -73,7 +92,7 @@ export function ModelCompactionSettings() {
     {success ? <div className={styles.success} role="status">{t("modelCompaction.saved")}</div> : null}
     <div className={styles.footer}>
       <p><AliIcon name="info" size={13} />{t("modelCompaction.scope")}</p>
-      <div className={styles.actions}><button type="button" className={styles.primary} disabled={busy || !valid || value === saved} onClick={() => void save()}>{busy ? t("modelRetry.applying") : t("modelRetry.save")}</button></div>
+      <div className={styles.actions}><button type="button" className={styles.primary} disabled={!canSave} onClick={() => void save()}>{busy ? t("modelRetry.applying") : t("modelRetry.save")}</button></div>
     </div>
   </section>;
 }

@@ -13,8 +13,8 @@
  * `@earendil-works/pi-coding-agent` (`dist/core/provider-composer.js`) fills
  * `contextWindow ?? 128000` and `maxTokens ?? 16384` on the in-memory model
  * only. Auto-compaction then uses `shouldCompact`: estimated tokens greater
- * than `contextWindow - reserveTokens`. `reserveTokens` is the separate
- * compaction setting (SDK default 16384), not this field. The request output
+ * than `contextWindow - reserveTokens`. Piora derives the compaction reserve
+ * from the resolved model limits when no valid override applies. The request output
  * cap is `clampMaxTokensToContext`: `min(model.maxTokens, max(1, contextWindow
  * - used - 4096))`. That SDK fill is intentionally unchanged so models already
  * in use keep working. New saves cannot omit the fields, so the fill remains
