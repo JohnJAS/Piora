@@ -1,5 +1,12 @@
 export const SUBAGENT_TOOLS = ["Agent", "SendMessage", "TaskOutput", "TaskStop"] as const;
 export const MAX_SUBAGENT_RESULT_CHARS = 8_000;
+export const SUBAGENT_RESULT_TRUNCATION_SUFFIX = "\n[Truncated; see child transcript.]";
+
+export function truncatedSubagentResultPrefix(result: string): string | undefined {
+  if (result.length === MAX_SUBAGENT_RESULT_CHARS && result.endsWith(SUBAGENT_RESULT_TRUNCATION_SUFFIX)) {
+    return result.slice(0, -SUBAGENT_RESULT_TRUNCATION_SUFFIX.length);
+  }
+}
 export function isSubagentTool(name: string): boolean { return (SUBAGENT_TOOLS as readonly string[]).includes(name); }
 export interface SubagentSettings {
   enabled: boolean;
