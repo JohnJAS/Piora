@@ -2451,11 +2451,6 @@ export function AppShell() {
                   </button>
                 </>
               ) : null}
-              {desktopChrome && <button className="topbar-control topbar-icon-button" type="button"
-                title={translate("companion.openPocket")} aria-label={translate("companion.openPocket")}
-                onClick={() => void window.piDesktop?.companionAction?.("open-panel")}>
-                <AliIcon name="archive" size={16} />
-              </button>}
               <button
                 className={`topbar-control topbar-icon-button right-panel-toggle ${effectiveRightPanelOpen ? "is-open" : "is-closed"}`}
                 type="button"
