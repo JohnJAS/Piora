@@ -107,7 +107,7 @@ export async function fetchSubagent<T>(parent: string, query: string, signal?: A
   return response.json() as Promise<T>;
 }
 
-export interface SubagentDetailResponse { records: SubagentDetail[]; transcript?: SubagentTranscriptPage }
+export interface SubagentDetailResponse { records: SubagentDetail[]; transcript?: SubagentTranscriptPage; fullResult?: string | null }
 
 export function useSubagentQuery<T>(parent: string | undefined, query: string | undefined) {
   const key = parent && query ? parent + "?" + query : undefined;

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { fetchSubagent, requestSubagentStop, SubagentRequestError, useSubagentQuery, type SubagentDetailResponse } from "@/hooks/useSubagents";
-import type { SubagentDetail, SubagentSelection, SubagentTranscriptEntry, SubagentTranscriptPage } from "@/lib/subagent-types";
+import { compareSubagentVersions, truncatedSubagentResultPrefix, type SubagentDetail, type SubagentSelection, type SubagentTranscriptEntry, type SubagentTranscriptPage } from "@/lib/subagent-types";
 import { AliIcon } from "./AliIcon";
+import { LazyMarkdownBody } from "./LazyMarkdownBody";
 import styles from "./SubagentTaskCard.module.css";
 
 function detailQuery(agentId: string) {
@@ -28,7 +29,7 @@ function groupActivity(entries: SubagentTranscriptEntry[]): ActivityItem[] {
   return items;
 }
 
-function ActivityEntry({ entry }: { entry: SubagentTranscriptEntry }) {
+function ActivityEntry({ entry, markdown }: { entry: SubagentTranscriptEntry; markdown: boolean }) {
   const { t } = useI18n();
   const title = t("subagent.role." + entry.role) + (entry.toolName ? " · " + entry.toolName : "");
   const toolResult = entry.role === "toolResult";
@@ -39,13 +40,17 @@ function ActivityEntry({ entry }: { entry: SubagentTranscriptEntry }) {
           <span>{title}</span>
           {!toolResult && <span className={styles.preview} aria-hidden="true">{entry.text.trim().slice(0, 160)}</span>}
         </summary>
-        {toolResult ? <pre className={styles.toolOutput}>{entry.text}</pre> : <p className={styles.entryText}>{entry.text}</p>}
+        {toolResult ? <pre className={styles.toolOutput}>{entry.text}</pre>
+          : markdown ? <div className={styles.entryMarkdown}><LazyMarkdownBody className="markdown-assistant-message">{entry.text}</LazyMarkdownBody></div>
+          : <p className={styles.entryText}>{entry.text}</p>}
         {entry.truncated && <small className={styles.truncated}>{t("subagent.truncated")}</small>}
       </details>}
   </li>;
 }
 
-export function SubagentActivity({ record, showHeading = true }: { record: SubagentDetail; showHeading?: boolean }) {
+export function SubagentActivity({ record, showHeading = true, markdown = false }: {
+  record: SubagentDetail; showHeading?: boolean; markdown?: boolean;
+}) {
   const { t } = useI18n();
   const query = detailQuery(record.agentId) + "&transcript=true";
   const latest = useSubagentQuery<SubagentDetailResponse>(record.parentSessionId, query);
@@ -100,9 +105,9 @@ export function SubagentActivity({ record, showHeading = true }: { record: Subag
         <li key={item.id} className={styles.entry}>
           <details data-subagent-tools>
             <summary>{t("subagent.toolActivity", { count: item.entries.length })}</summary>
-            <ol className={styles.tools}>{item.entries.map(entry => <ActivityEntry key={entry.id} entry={entry} />)}</ol>
+            <ol className={styles.tools}>{item.entries.map(entry => <ActivityEntry key={entry.id} entry={entry} markdown={markdown} />)}</ol>
           </details>
-        </li> : <ActivityEntry key={item.id} entry={item} />)}
+        </li> : <ActivityEntry key={item.id} entry={item} markdown={markdown} />)}
     </ol>}
     {!entries.length && !latest.failed && <p>{t(base ? "subagent.noTranscript" : "subagent.loading")}</p>}
   </div>;
@@ -160,6 +165,40 @@ export function SubagentSummary({ record }: { record: SubagentDetail }) {
   </>;
 }
 
+function SubagentResult({ record }: { record: SubagentDetail }) {
+  const { t } = useI18n();
+  const contentId = useId();
+  const [expanded, setExpanded] = useState(false);
+  const prefix = truncatedSubagentResultPrefix(record.result);
+  const saved = (prefix ?? record.result).replace(/\r\n?/g, "\n").trimEnd();
+  const preview = Array.from(saved.split("\n", 10).join("\n")).slice(0, 520).join("").trimEnd();
+  const canExpand = prefix !== undefined || preview !== saved;
+  const loadFull = expanded && prefix !== undefined;
+  const full = useSubagentQuery<SubagentDetailResponse>(record.parentSessionId, loadFull ? detailQuery(record.agentId) + "&fullResult=true" : undefined);
+  const returned = full.data?.records[0];
+  const recovered = returned && compareSubagentVersions(returned, record) === 0 ? full.data?.fullResult : undefined;
+  const loading = loadFull && recovered === undefined && !full.failed;
+  const visible = !canExpand || expanded && !loading ? recovered ?? saved : preview;
+
+  return <section className={styles.outcome} data-subagent-result>
+    <div className={styles.resultHeading}>
+      <h3>{t("subagent.outcome")}</h3>
+      {canExpand && <button type="button" className={styles.link} aria-expanded={expanded} aria-controls={contentId}
+        onClick={() => setExpanded(value => !value)}>
+        {t(expanded ? "subagent.collapseResult" : "subagent.expandResult")}
+      </button>}
+    </div>
+    <div id={contentId} aria-busy={loading || undefined}>
+      <LazyMarkdownBody className="markdown-assistant-message">{visible}</LazyMarkdownBody>
+    </div>
+    {loading && <p className={styles.resultNotice} role="status">{t("subagent.loadingResult")}</p>}
+    {loadFull && recovered === null && <p className={styles.resultNotice}>{t("subagent.fullResultUnavailable")}</p>}
+    {loadFull && full.failed && recovered === undefined && <button type="button" className={`${styles.link} ${styles.resultNotice}`} onClick={full.refresh}>
+      {t("subagent.retryResult")}
+    </button>}
+  </section>;
+}
+
 export function SubagentInspector({ selection, onClose, modal, resizeHandle }: {
   selection: SubagentSelection; onClose: () => void; modal: boolean; resizeHandle?: ReactNode;
 }) {
@@ -197,10 +236,7 @@ export function SubagentInspector({ selection, onClose, modal, resizeHandle }: {
       {failed && <button type="button" className={styles.link} onClick={refresh}>{t("subagent.refreshError")}</button>}
       {!record && !failed && <p>{t(data ? "subagent.empty" : "subagent.loadingList")}</p>}
       {record && <>
-        {record.result && <section className={styles.outcome}>
-          <h3>{t("subagent.outcome")}</h3>
-          <p className={styles.result}>{record.result}</p>
-        </section>}
+        {record.result && <SubagentResult key={record.agentId + ":" + record.attempt} record={record} />}
         {record.error && <section className={`${styles.outcome} ${styles.failure}`} role="alert">
           <h3>{t(record.status === "failed" ? "subagent.errorReason" : "subagent.endReason")}</h3>
           <p className={styles.result}>{record.error === "Subagent token budget exhausted" ? t("subagent.legacyBudgetError") : record.error}</p>
@@ -212,7 +248,7 @@ export function SubagentInspector({ selection, onClose, modal, resizeHandle }: {
             <span>{t("subagent.transcript")}</span>
             <AliIcon name="chevron-right" size={12} className={styles.chevron} />
           </summary>
-          {activityOpen && <SubagentActivity key={record.agentId + ":" + record.attempt} record={record} showHeading={false} />}
+          {activityOpen && <SubagentActivity key={record.agentId + ":" + record.attempt} record={record} showHeading={false} markdown />}
         </details>
         <details className={styles.disclosure} data-subagent-run-info>
           <summary>

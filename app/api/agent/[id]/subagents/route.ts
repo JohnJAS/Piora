@@ -6,7 +6,7 @@ import { getRpcSession } from "@/lib/rpc-manager";
 import { getAgentRuntimeProfile } from "@/lib/agent-runtime-profile";
 import { isSessionVisibleInAgentRuntimeProfile, readAgentProfileStore } from "@/lib/agent-profile-store";
 import { compareSubagents, isSubagentId, projectSubagent, projectSubagentDetail } from "@/lib/subagent-types";
-import { readSubagentTranscript, StaleSubagentTranscript } from "@/lib/subagent-transcript";
+import { readSubagentResult, readSubagentTranscript, StaleSubagentTranscript } from "@/lib/subagent-transcript";
 import { InvalidJsonBodyError, JsonBodyTooLargeError, parseJsonWithinLimit } from "@/lib/bounded-json";
 import { assertSessionNotMutating } from "@/lib/session-mutation";
 
@@ -61,9 +61,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const projected = (exact ? selected : selected.slice(0, pageSize)).map(projectSubagentDetail);
     const transcript = query.get("transcript") === "true" && exact && selected.length === 1
       ? await readSubagentTranscript(selected[0], query.get("before"), request.signal) : undefined;
-    if (transcript !== undefined && !await canReadParent(id)) return NextResponse.json({ error: "Conversation not found" }, { status: 404, headers });
+    const fullResult = query.get("fullResult") === "true" && agentId && selected.length === 1
+      ? await readSubagentResult(selected[0], request.signal) : undefined;
+    if ((transcript !== undefined || fullResult !== undefined) && !await canReadParent(id)) {
+      return NextResponse.json({ error: "Conversation not found" }, { status: 404, headers });
+    }
     assertSessionNotMutating(id);
-    return NextResponse.json({ records: projected, ...(transcript !== undefined ? { transcript } : {}) }, { headers });
+    return NextResponse.json({ records: projected, transcript, fullResult }, { headers });
   } catch (error) {
     const status = error instanceof TypeError ? 400 : error instanceof StaleSubagentTranscript ? 409 : 500;
     return NextResponse.json({ error: status === 500 ? "Could not read subagent history" : (error as Error).message }, { status, headers });

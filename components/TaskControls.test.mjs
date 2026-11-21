@@ -110,6 +110,7 @@ test("exposes project-scoped capabilities without permission tiers", () => {
 });
 
 test("keeps the file drawer toggle inside the shell and aligns both header states", () => {
+  assert.doesNotMatch(appShell, /companion\.openPocket/);
   assert.match(appShell, /className=\{`topbar-control topbar-icon-button right-panel-toggle/);
   assert.match(appShell, /aria-controls="file-panel"/);
   assert.match(appShell, /<SessionHistoryWorkbench/);

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { listSubagentProfiles, readSubagentSettings } from "./subagent-settings.ts";
 import { listSubagentRecords, saveSubagent } from "./subagent-store.ts";
-import { MAX_SUBAGENT_RESULT_CHARS, type SubagentLaunch, type SubagentProfile, type SubagentRecord, type SubagentSettings } from "./subagent-types.ts";
+import { MAX_SUBAGENT_RESULT_CHARS, SUBAGENT_RESULT_TRUNCATION_SUFFIX, type SubagentLaunch, type SubagentProfile, type SubagentRecord, type SubagentSettings } from "./subagent-types.ts";
 
 const MAX_CONCURRENT_SUBAGENTS = 4;
 
@@ -86,9 +86,8 @@ export class SubagentRuntime {
           if (!this.settings().enabled) controller.abort(new Error("Subagents were disabled"));
         });
         controller.signal.throwIfAborted();
-        const suffix = "\n[Truncated; see child transcript.]";
         record.result = result.length > MAX_SUBAGENT_RESULT_CHARS
-          ? result.slice(0, MAX_SUBAGENT_RESULT_CHARS - suffix.length) + suffix
+          ? result.slice(0, MAX_SUBAGENT_RESULT_CHARS - SUBAGENT_RESULT_TRUNCATION_SUFFIX.length) + SUBAGENT_RESULT_TRUNCATION_SUFFIX
           : result;
         record.status = "completed";
       } catch (error) {

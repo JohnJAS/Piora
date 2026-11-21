@@ -304,7 +304,6 @@ export const enLocale: LocalePlugin = {
     "projectTools.runtimePhase.failed": "Installation failed",
     "companion.title": "Pi companion",
     "companion.open": "Open companion",
-    "companion.openPocket": "Open Pocket",
     "companion.close": "Close companion",
     "companion.settingsTitle": "Companion settings",
     "companion.settingsDescription": "Manage the interaction model, task center, library, and local pet appearance.",
