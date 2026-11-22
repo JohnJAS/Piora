@@ -1,5 +1,6 @@
 "use client";
 
+import { AliIcon } from "@/components/AliIcon";
 import { useEffect, useState } from "react";
 import type { Transfer, TransferAction, Visit } from "@/desktop/src/browser/contracts";
 import { errorText, useBrowserCopy, type ToolsBridge } from "./shared";
@@ -97,39 +98,56 @@ export function BrowserRecords({
   return (
     <div className={styles.records} data-browser-records={recent ? "recent" : kind}>
       {!recent && (
-        <input
-          type="search"
-          aria-label={copy("搜索记录", "Search records")}
-          placeholder={copy("搜索记录", "Search records")}
-          value={text}
-          onChange={(event) => {
-            setCursors([]);
-            setText(event.target.value);
-          }}
-        />
-      )}
-      {!recent && kind === "history" && (
-        <label className={styles.actions}>
-          {copy("访问日期", "Date visited")}
-          <input
-            type="date"
-            value={day}
-            onChange={(event) => {
-              setCursors([]);
-              setDay(event.target.value);
-            }}
-          />
-        </label>
+        <div className={styles.searchLine}>
+          <label>
+            <AliIcon name="search" size={16} />
+            <input
+              type="search"
+              aria-label={copy("搜索记录", "Search records")}
+              placeholder={copy("搜索记录", "Search records")}
+              value={text}
+              onChange={(event) => {
+                setCursors([]);
+                setText(event.target.value);
+              }}
+            />
+          </label>
+          {kind === "history" && (
+            <label className={styles.actions}>
+              {copy("访问日期", "Date visited")}
+              <input
+                type="date"
+                value={day}
+                onChange={(event) => {
+                  setCursors([]);
+                  setDay(event.target.value);
+                }}
+              />
+            </label>
+          )}
+        </div>
       )}
       {error && <p role="alert">{error}</p>}
-      {!busy && !rows.length && <p>{copy("没有匹配的记录", "No matching records")}</p>}
+      {!busy && !rows.length && (
+        <div className={styles.empty}>
+          <AliIcon name={kind === "history" ? "history" : "download"} size={23} />
+          <p>
+            {text || day
+              ? copy("没有匹配的记录", "No matching records")
+              : kind === "history"
+                ? copy("暂无浏览记录", "No browsing history yet")
+                : copy("暂无下载记录", "No downloads yet")}
+          </p>
+        </div>
+      )}
       {kind === "history"
         ? visits.slice(0, pageSize).map((row, index) => (
             <div key={row.id}>
               {(index === 0 || date(visits[index - 1]!.visited) !== date(row.visited)) && (
                 <h4>{date(row.visited)}</h4>
               )}
-              <div className={styles.record}>
+              <div className={styles.record} data-visit-id={row.id}>
+                <AliIcon name="earth" size={16} />
                 <button className={styles.link} type="button" title={row.url} onClick={() => navigate(row.url)}>
                   <strong>{row.title || row.url}</strong>
                   <small>
@@ -141,7 +159,7 @@ export function BrowserRecords({
                   aria-label={copy("删除访问记录", "Delete visit")}
                   onClick={() => void act(bridge.tools("deleteVisit", row.id))}
                 >
-                  ×
+                  <AliIcon name="close" size={14} />
                 </button>
               </div>
             </div>
@@ -158,17 +176,20 @@ export function BrowserRecords({
             }
             return (
               <article className={styles.download} key={row.id} data-transfer-state={row.state}>
-                <strong>{row.filename}</strong>
-                <small title={row.path}>
-                  {date(row.started)} ·{" "}
-                  {row.missing ? copy("文件已移动或删除", "File moved or deleted") : stateLabel[row.state]}
-                  {row.live &&
-                    " · " +
-                      (row.total > 0
-                        ? Math.floor((row.received * 100) / row.total) + "%"
-                        : row.received.toLocaleString(locale) + " B")}
-                </small>
-                {row.live && <progress max={row.total || 1} value={row.total > 0 ? row.received : undefined} />}
+                <AliIcon name="file" size={19} />
+                <div className={styles.downloadCopy}>
+                  <strong>{row.filename}</strong>
+                  <small title={row.path}>
+                    {date(row.started)} ·{" "}
+                    {row.missing ? copy("文件已移动或删除", "File moved or deleted") : stateLabel[row.state]}
+                    {row.live &&
+                      " · " +
+                        (row.total > 0
+                          ? Math.floor((row.received * 100) / row.total) + "%"
+                          : row.received.toLocaleString(locale) + " B")}
+                  </small>
+                  {row.live && <progress max={row.total || 1} value={row.total > 0 ? row.received : undefined} />}
+                </div>
                 <div className={styles.actions}>
                   {actions.map((action) => (
                     <button

@@ -8,7 +8,13 @@ import { ProfileSettingsHome } from "./workspace/browser/BrowserProfileSection";
 import { reopenFromSettings, type ToolsBridge } from "./workspace/browser/shared";
 import styles from "./SettingsDialog.module.css";
 
-export function BrowserSettings() {
+export function BrowserSettings({ requestedPage }: { requestedPage?: string } = {}) {
+  const bridge = typeof window === "undefined" ? undefined : window.piDesktop?.browser;
+  const content = <BrowserPreferences />;
+  return bridge?.tools ? <ProfileSettingsHome requestedPage={requestedPage} bridge={bridge as ToolsBridge} navigate={reopenFromSettings}>{content}</ProfileSettingsHome> : content;
+}
+
+function BrowserPreferences() {
   const { t } = useI18n();
   const [preferences, setPreferences] = useState<BrowserDownloadPreferences | null>(null);
   const [directory, setDirectory] = useState("");
@@ -48,7 +54,6 @@ export function BrowserSettings() {
         <h2>{t("browserPreferences.title")}</h2>
         <p>{t("browserPreferences.description")}</p>
       </div>
-      {typeof window !== "undefined" && window.piDesktop?.browser?.tools && <ProfileSettingsHome bridge={window.piDesktop.browser as ToolsBridge} navigate={reopenFromSettings} />}
       <section data-settings-id="browser.downloads" className={`${styles.promptCard} ${styles.browserPreferencesCard}`} aria-labelledby="browser-download-label">
         <form onSubmit={event => { event.preventDefault(); void save(); }}>
           <div className={styles.browserDownloadPath}>

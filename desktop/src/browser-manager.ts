@@ -453,9 +453,12 @@ export class DesktopBrowserManager {
       throw new Error("Browser tab changed");
     }
     const epoch = tab.navigationEpoch;
-    return { tab, contents, protected: Boolean(tab.vaultProtected),
-      current: () => !this.destroyed && tab.sessionId === this.displayedSessionId && this.activeTab(this.displayedSessionId) === tab
-        && this.liveContents(tab) === contents && tab.navigationEpoch === epoch };
+    const current = () => !this.destroyed && tab.sessionId === this.displayedSessionId && this.activeTab(this.displayedSessionId) === tab
+      && this.liveContents(tab) === contents && tab.navigationEpoch === epoch;
+    return { tab, contents, protected: Boolean(tab.vaultProtected), current,
+      focusIfVisible: () => {
+        if (current() && this.requestedVisible && tab.attached && this.window.isFocused()) contents.focus();
+      } };
   }
 
   private scheduleStorageFlush(): void {

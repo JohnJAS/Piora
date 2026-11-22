@@ -62,6 +62,11 @@ async function main() {
         await timings.measure("unpacked-smoke", () => script("scripts/smoke-test-portable.mjs", unpacked, "--expected-version", tag, "--packaged-runtime", "--expected-brand", brand));
         await timings.measure("installed-smoke", () => script("scripts/smoke-test-portable.mjs", installed, "--expected-version", tag, "--packaged-runtime", "--expected-brand", brand));
         await timings.measure("installed-subagents", () => script("scripts/run-desktop-e2e.mjs", "--scenario", "subagents", "--executable", installed, "--timeout-ms", "900000", "--step-timeout-ms", "90000"));
+        if (process.env.PIORA_CI_BROWSER_ACCEPTANCE === "1" && process.env.RUNNER_ENVIRONMENT === "github-hosted") {
+          for (const scenario of ["browser-menu", "browser-menu-appearance", "browser-menu-native"]) {
+            await timings.measure("installed-" + scenario, () => script("scripts/run-desktop-e2e.mjs", "--scenario", scenario, "--executable", installed, "--timeout-ms", "900000", "--step-timeout-ms", "150000"));
+          }
+        }
         await timings.measure("electron-payload-integrity", () => script("scripts/verify-portable-runtime.mjs", join(releaseRoot, "win-unpacked"), tag));
       },
     ]);

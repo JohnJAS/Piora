@@ -17,6 +17,7 @@ import { BrowserDevices } from "./devices.js";
 import { BrowserPageTools } from "./page-tools.js";
 import { bindTabTools, type TabToolHost } from "./tab-events.js";
 import { BrowserMenuPopup } from "./menu-popup.js";
+import { BrowserModal } from "./modal.js";
 import { MAX_BROWSER_ZOOM, MIN_BROWSER_ZOOM, type BrowserDownloadPreferences } from "../browser-preferences.js";
 import type { CredentialVault } from "../credential-vault.js";
 import type { BrowserPermissions } from "../browser-permissions.js";
@@ -37,6 +38,7 @@ export interface LocatedPage {
   contents: WebContents;
   protected: boolean;
   current: () => boolean;
+  focusIfVisible: () => void;
 }
 interface Host {
   window: BrowserWindow;
@@ -60,6 +62,7 @@ export class BrowserTools {
   readonly devices: BrowserDevices;
   readonly pages: BrowserPageTools;
   readonly popup = new BrowserMenuPopup();
+  private readonly modal = new BrowserModal();
   private readonly contacts: BrowserContacts;
   private readonly imports: BrowserProfileImport;
   private readonly privacy: BrowserPrivacy;
@@ -102,6 +105,7 @@ export class BrowserTools {
       window.webContents.send("pi:browser-tools-event", event);
   }
   changed(section: "history" | "downloads" | "contacts" | "devices") {
+    if (section === "downloads") this.modal.notifyDownloads();
     this.notify({ kind: "library", section });
   }
   close() {
@@ -109,11 +113,12 @@ export class BrowserTools {
     this.closed = true;
     if (this.registering) ipcMain.removeHandler(channel);
     this.popup.close();
+    this.modal.close();
     this.imports.close();
     this.transfers.close();
     this.library.close();
   }
-  private async dispatch(command: keyof BrowserEndpoints, value: unknown): Promise<unknown> {
+  private async dispatch(command: keyof BrowserEndpoints, value: unknown, owner = this.host.window): Promise<unknown> {
     const input = (value ?? {}) as Record<string, unknown>;
     const id = () => {
       if (!Number.isSafeInteger(value) || Number(value) < 1) throw new Error("Invalid record ID");
@@ -122,6 +127,12 @@ export class BrowserTools {
     const target = input.target as BrowserTarget;
     const page = () => this.host.locate(target);
     switch (command) {
+      case "recent":
+        if (!Number.isFinite(input.x) || !Number.isFinite(input.y)) throw new Error("Invalid menu anchor");
+        return this.modal.show(this.host.window, "recent", (action, args, dialog) => this.dispatch(action as keyof BrowserEndpoints, args, dialog), {x: Number(input.x), y: Number(input.y)});
+      case "modal":
+        if (value !== "import" && value !== "privacy") throw new Error("Invalid dialog");
+        return this.modal.show(this.host.window, value, (action, input, dialog) => this.dispatch(action as keyof BrowserEndpoints, input, dialog));
       case "menu": {
         const opened = this.host.empty(target) ? undefined : page();
         if (!Number.isFinite(input.x) || !Number.isFinite(input.y)) throw new Error("Invalid menu anchor");
@@ -158,7 +169,10 @@ export class BrowserTools {
       case "page": {
         const current = page();
         if (current.protected) throw new Error("请先完成当前凭据填写");
-        if (input.action === "print") return this.pages.print(current.contents);
+        if (input.action === "print") {
+          current.focusIfVisible();
+          return this.pages.print(current.contents).finally(current.focusIfVisible);
+        }
         if (input.action === "screenshot")
           return this.pages.screenshot(current.contents, () => current.current() && !page().protected);
         throw new Error("Invalid page action");
@@ -213,7 +227,7 @@ export class BrowserTools {
         return this.pages.fill(current.contents, contact, current.current);
       }
       case "importChoose":
-        return this.imports.choose(value as ImportKind);
+        return this.imports.choose(value as ImportKind, owner);
       case "importApply":
         return this.imports.apply(String(input.token), input.replace === true, input.sites as string[]);
       case "importCancel":

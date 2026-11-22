@@ -5,7 +5,7 @@ import type { ClearCategory, ClearPreview, ClearRange } from "@/desktop/src/brow
 import { errorText, useBrowserCopy, type ToolsBridge } from "./shared";
 import styles from "./BrowserTools.module.css";
 
-export function PrivacyControls({ bridge }: { bridge: ToolsBridge }) {
+export function PrivacyControls({ bridge, close }: { bridge: ToolsBridge; close?(): void }) {
   const { copy } = useBrowserCopy();
   const labels: Record<ClearCategory, string> = {
     history: copy("浏览历史", "Browsing history"),
@@ -65,11 +65,13 @@ export function PrivacyControls({ bridge }: { bridge: ToolsBridge }) {
   };
   return (
     <div className={styles.form}>
-      <fieldset disabled={busy}>
+      <fieldset className={styles.options} aria-label={copy("数据类别", "Data types")} disabled={busy}>
         {(Object.keys(labels) as ClearCategory[]).map((key) => (
-          <label className={styles.check} key={key}>
+          <label className={styles.option} key={key}>
+            <span>{labels[key]}</span>
             <input
               type="checkbox"
+              className={styles.switch}
               checked={categories.includes(key)}
               onChange={(event) => {
                 setCategories((current) =>
@@ -79,7 +81,6 @@ export function PrivacyControls({ bridge }: { bridge: ToolsBridge }) {
                 setMessage("");
               }}
             />
-            {labels[key]}
           </label>
         ))}
       </fieldset>
@@ -130,19 +131,31 @@ export function PrivacyControls({ bridge }: { bridge: ToolsBridge }) {
               </li>
             ))}
           </ul>
-          <div className={styles.actions}>
-            <button disabled={busy} type="button" onClick={() => void clear()}>
-              {copy("确认清除", "Confirm clear")}
+          <div className={styles.footer}>
+            <button className={styles.secondary} disabled={busy} type="button" onClick={() => setPreview(null)}>
+              {copy("返回", "Back")}
             </button>
-            <button disabled={busy} type="button" onClick={() => setPreview(null)}>
-              {copy("取消", "Cancel")}
+            <button className={styles.primary} disabled={busy} type="button" onClick={() => void clear()}>
+              {copy("确认清除", "Confirm clear")}
             </button>
           </div>
         </>
       ) : (
-        <button disabled={busy || !categories.length || incompatible} type="button" onClick={() => void inspect()}>
-          {copy("预览清理范围", "Preview data to clear")}
-        </button>
+        <div className={styles.footer}>
+          {close && (
+            <button type="button" className={styles.secondary} onClick={close}>
+              {copy("取消", "Cancel")}
+            </button>
+          )}
+          <button
+            className={styles.primary}
+            disabled={busy || !categories.length || incompatible}
+            type="button"
+            onClick={() => void inspect()}
+          >
+            {copy("预览清理范围", "Preview data to clear")}
+          </button>
+        </div>
       )}
       {message && <p role="status">{message}</p>}
     </div>

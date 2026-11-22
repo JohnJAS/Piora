@@ -230,40 +230,48 @@ async function verifyScaledMenu(parent, tabId, scale) {
         dark: scale === 1.5,
       })})`,
     );
+    // Cleanup can destroy the fixture window after a failed assertion.
+    outcome.catch(() => {});
     const [, child] = await created;
     return [outcome, child];
   })();
-  const waitFor = async (predicate) => {
+  const waitFor = async (predicate, message) => {
     const end = Date.now() + 6000;
     do {
       if (await predicate()) return;
       await new Promise((resolve) => setTimeout(resolve, 50));
     } while (Date.now() < end);
-    assert.fail("the native menu did not reach the expected state");
+    const state = popup.isDestroyed() ? "closed" : await popup.webContents.executeJavaScript(`({
+      width: innerWidth, submenu: Boolean(document.querySelector(".sub")),
+      focused: document.activeElement?.getAttribute("data-sub") || document.activeElement?.getAttribute("data-action")
+    })`);
+    assert.fail(`${message}: ${JSON.stringify(state)}`);
   };
   await waitFor(() =>
-    popup.webContents.executeJavaScript('Boolean(document.querySelector("[data-sub=devices]"))'),
+    popup.webContents.executeJavaScript('Boolean(document.querySelector("[data-sub=devices]"))'), "primary menu opens",
   );
-  const bounds = popup.getBounds(),
-    anchor = parent.getContentBounds();
-  const physicalAnchor = { x: Math.round(anchor.x + measured.x), y: Math.round(anchor.y + measured.y) };
-  const work = screen.getDisplayNearestPoint(physicalAnchor).workArea;
-  assert.ok(
-    Math.abs(
-      bounds.x - Math.max(work.x, Math.min(work.x + work.width - bounds.width, physicalAnchor.x - bounds.width)),
-    ) <= 2,
-  );
-  assert.ok(
-    Math.abs(bounds.y - Math.max(work.y, Math.min(work.y + work.height - bounds.height, physicalAnchor.y + 4))) <=
-      2,
-  );
+  const bounds = popup.getBounds();
+  const anchor = parent.getContentBounds();
+  const point = { x: Math.round(anchor.x + measured.x), y: Math.round(anchor.y + measured.y) };
+  const work = screen.getDisplayNearestPoint(point).workArea;
+  const client = popup.getContentBounds();
+  const paint = await popup.webContents.executeJavaScript(`(() => {
+    const rect = document.querySelector("main > section").getBoundingClientRect();
+    return {left:rect.left, top:rect.top, right:rect.right, width:rect.width, height:rect.height};
+  })()`);
+  // Frameless Windows have invisible resize/shadow margins, so measure the painted menu edge.
+  const expectedRight = Math.max(work.x + paint.width, Math.min(work.x + work.width, point.x));
+  const expectedTop = Math.max(work.y, Math.min(work.y + work.height - paint.height, point.y + 4));
+  const geometry = JSON.stringify({ scale, point, client, paint, work });
+  assert.ok(Math.abs(client.x + paint.right - expectedRight) <= 2, "horizontal menu alignment " + geometry);
+  assert.ok(Math.abs(client.y + paint.top - expectedTop) <= 2, "vertical menu alignment " + geometry);
   await popup.webContents.executeJavaScript('document.querySelector("[data-sub=devices]").focus()');
   const key = (name) => {
     popup.webContents.sendInputEvent({ type: "keyDown", keyCode: name });
     popup.webContents.sendInputEvent({ type: "keyUp", keyCode: name });
   };
   key("Right");
-  await waitFor(() => popup.getBounds().width > bounds.width);
+  await waitFor(() => popup.getBounds().width > bounds.width, "native popup expands");
   const aligned = await popup.webContents.executeJavaScript(`(() => {
     const source = document.querySelector("[data-sub=devices]").getBoundingClientRect();
     const submenu = document.querySelector(".sub").getBoundingClientRect();
@@ -271,7 +279,10 @@ async function verifyScaledMenu(parent, tabId, scale) {
   })()`);
   assert.equal(aligned, true, "submenu aligned with its trigger inside the work area");
   key("Left");
-  await waitFor(() => popup.getBounds().width === bounds.width);
+  await waitFor(async () => {
+    if (Math.abs(popup.getContentBounds().width - client.width) > 4) return false;
+    return popup.webContents.executeJavaScript(`!document.querySelector(".sub") && document.activeElement?.dataset.sub === "devices"`);
+  }, "submenu collapses and focus returns to the device item");
   key("Escape");
   assert.equal(await result, null);
   console.log("PASS Windows display scale " + scale + ": menu anchor, keyboard submenu, dismissal.");

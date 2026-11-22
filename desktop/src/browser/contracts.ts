@@ -105,7 +105,10 @@ interface Endpoint<I, O> {
   input: I;
   output: O;
 }
+export type BrowserDialogKind = "import" | "privacy";
 export interface BrowserEndpoints {
+  modal: Endpoint<BrowserDialogKind, "vault" | null>;
+  recent: Endpoint<{x: number; y: number}, "downloads" | null>;
   menu: Endpoint<
     { target: BrowserTarget; x: number; y: number; locale: string; dark: boolean },
     MenuChoice | null

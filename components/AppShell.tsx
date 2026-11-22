@@ -569,8 +569,8 @@ export function AppShell() {
   const openHistoryLink = answerNavigation.openLink;
   useEffect(() => {
     const settings = (event: Event) => {
-      if ((event as CustomEvent).detail === "vault") openSettings("data", "data.websiteAccounts");
-      else openSettings("browser");
+      const destination: unknown = (event as CustomEvent).detail;
+      openSettings("browser", typeof destination === "string" && ["vault", "passwordManager", "contacts", "downloads", "history", "devices"].includes(destination) ? "browser.page." + destination : undefined);
     };
     const history = (event: Event) => {
       const url = (event as CustomEvent).detail;

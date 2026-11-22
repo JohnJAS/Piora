@@ -17,8 +17,26 @@ export const sectionLabels: Record<BrowserSection, [string, string]> = {
   privacy: ["清除浏览数据", "Clear browsing data"],
   devices: ["显示与设备", "Display and devices"],
 };
-export const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));
-export function openBrowserSettings(destination: "browser" | "vault") {
+export const errorText = (error: unknown) => {
+  const message = (error instanceof Error ? error.message : String(error)).replace(
+    /^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/i,
+    "",
+  );
+  if (/Browser tab changed|Render frame was disposed/i.test(message))
+    return document.documentElement.lang.startsWith("en")
+      ? "The tab changed. Try again on the current page."
+      : "网页已切换，请在当前标签页重试。";
+  return message;
+};
+export type BrowserSettingsPage =
+  | "browser"
+  | "passwordManager"
+  | "vault"
+  | "history"
+  | "downloads"
+  | "contacts"
+  | "devices";
+export function openBrowserSettings(destination: BrowserSettingsPage) {
   window.dispatchEvent(new CustomEvent("piora:browser-settings", { detail: destination }));
 }
 export function reopenFromSettings(url: string) {

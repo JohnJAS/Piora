@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState, type RefObject } from "react";
+import { AliIcon } from "@/components/AliIcon";
 import { createPortal } from "react-dom";
 import type { BrowserToolInvoke, Visit } from "@/desktop/src/browser/contracts";
 import styles from "./BrowserTools.module.css";
@@ -132,8 +133,11 @@ export function BrowserAddress({
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => submit(row.url)}
               >
-                <strong>{row.title || row.url}</strong>
-                <small>{row.url}</small>
+                <AliIcon name="history" size={15} />
+                <span>
+                  <strong>{row.title || row.url}</strong>
+                  <small>{row.url}</small>
+                </span>
               </button>
             ))}
           </div>,

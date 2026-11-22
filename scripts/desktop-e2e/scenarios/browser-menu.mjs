@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 import { nativeMenuAcceptance } from "../browser-menu-native.mjs";
 
 let fixture;
@@ -50,7 +51,7 @@ function serve(request, response) {
     response.end(
       "<title>Fixture login</title><h1>" +
         siteTitle +
-        '</h1><form method="POST" action="/fixture-auth"><input name="username" autocomplete="username"><input type="password" name="password" autocomplete="current-password"><button>Submit fixture login</button></form>',
+        '</h1><form method="POST" action="/fixture-auth"><input name="username" autocomplete="username"><input type="password" name="password" autocomplete="current-password"><button>Sign in to fixture</button></form>',
     );
     return;
   }
@@ -98,6 +99,40 @@ function serve(request, response) {
       (signed ? "Signed in" : "Signed out") +
       '</output><form><input autocomplete="name"><input autocomplete="email"><input autocomplete="tel"><textarea autocomplete="street-address"></textarea></form></div>',
   );
+}
+
+async function captureImportWorkspace({ page, guest, dialog, directory }) {
+  const viewport = await page.locator("[data-native-browser=true] [data-browser-viewport]").boundingBox();
+  assert.ok(viewport);
+  const [shell, website, overlay] = await Promise.all([
+    page.screenshot({ scale: "css" }),
+    guest.screenshot({ scale: "css" }),
+    dialog.screenshot({ scale: "css", omitBackground: true }),
+  ]);
+  const { width, height } = await sharp(shell).metadata();
+  const left = Math.max(0, Math.round(viewport.x)),
+    top = Math.max(0, Math.round(viewport.y));
+  const guestLayer = await sharp(website)
+    .resize(
+      Math.min(width - left, Math.round(viewport.width)),
+      Math.min(height - top, Math.round(viewport.height)),
+      { fit: "fill" },
+    )
+    .png()
+    .toBuffer();
+  assert.deepEqual(
+    await sharp(overlay)
+      .metadata()
+      .then((m) => [m.width, m.height]),
+    [width, height],
+  );
+  await sharp(shell)
+    .composite([
+      { input: guestLayer, left, top },
+      { input: overlay, left: 0, top: 0 },
+    ])
+    .png()
+    .toFile(join(directory, "import-workspace.png"));
 }
 
 export const browserMenu = {
@@ -155,7 +190,16 @@ export const browserMenu = {
     fixture = { origin: "http://127.0.0.1:" + server.address().port, downloads, id, profile: paths.profile };
     report.fixture = { origin: fixture.origin, profile: "isolated", sessions: 1 };
   },
-  async run({ page: initial, getBrowser, restart, step, waitUntil, directory, native = false }) {
+  async run({
+    page: initial,
+    getBrowser,
+    restart,
+    step,
+    waitUntil,
+    directory,
+    native = false,
+    appearance = false,
+  }) {
     let page = initial,
       guest;
     const state = () => page.evaluate(() => window.piDesktop.browser.getState());
@@ -176,18 +220,24 @@ export const browserMenu = {
       for (let attempt = 0; attempt < 2; attempt++) {
         await fixtureChat.click();
         if (await address().isVisible()) break;
+        await page.keyboard.press(process.platform === "darwin" ? "Meta+t" : "Control+t");
         try {
-          await reveal.or(trigger).or(address()).first().waitFor({ timeout: 25000 });
-          if (await reveal.isVisible()) await reveal.click();
-          await trigger.or(address()).first().waitFor({ timeout: 40000 });
-          if (await address().isVisible()) break;
-          await trigger.click();
-          await page.getByRole("menuitem", { name: /浏览器|Browser/ }).click();
-          await address().waitFor({ timeout: 40000 });
+          await address().waitFor({ timeout: 25000 });
           break;
-        } catch (error) {
-          if (attempt) throw error;
-          await page.reload({ waitUntil: "domcontentloaded" });
+        } catch {
+          const openedTab = page.locator("#workspace-browser-tab");
+          if (await openedTab.isVisible()) {
+            await openedTab.click();
+          } else {
+            if (await reveal.isVisible()) await reveal.click();
+            if (await trigger.isVisible()) {
+              if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
+              const item = page.getByRole("menuitem", { name: /^(浏览器|Browser)$/ });
+              if (await item.isVisible()) await item.click();
+            }
+          }
+          if (await address().isVisible()) break;
+          if (!attempt) await page.reload({ waitUntil: "domcontentloaded" });
         }
       }
       await address().waitFor();
@@ -210,6 +260,15 @@ export const browserMenu = {
       await menu.locator("button[data-action=history]").waitFor();
       return menu;
     };
+    let floating;
+    const expectFloating = async (section) => {
+      floating = await waitUntil(
+        () => pages().find((p) => !p.isClosed() && p.url().includes("/desktop-browser-dialog?section=" + section)),
+        "native " + section + " window",
+      );
+      await floating.locator('[data-profile-section="' + section + '"]').waitFor();
+      return floating;
+    };
     const choose = async (action, sub) => {
       const menu = await popup();
       if (sub) await menu.locator("[data-sub=" + sub + "]").click();
@@ -217,9 +276,100 @@ export const browserMenu = {
         .locator("button[data-action=" + action + "]")
         .last()
         .click();
+      if (action === "import" || action === "privacy") await expectFloating(action);
     };
-    const close = () => page.getByRole("button", { name: /^(Close manager|关闭管理页)$/ }).click();
-    const sheet = (section) => page.locator('[data-profile-section="' + section + '"]');
+    const close = async () => {
+      if (floating && !floating.isClosed()) {
+        const surface = floating;
+        await Promise.all([
+          surface.waitForEvent("close"),
+          surface.getByRole("button", { name: /^(关闭|Close)$/ }).click(),
+        ]);
+        floating = undefined;
+      } else {
+        const settings = page.getByRole("dialog", { name: /^(设置|Settings)$/ });
+        if (await settings.isVisible()) {
+          await page.keyboard.press("Escape");
+          await settings.waitFor({ state: "hidden" });
+        }
+      }
+    };
+    const sheet = (section) =>
+      (floating && !floating.isClosed() && ["recent", "import", "privacy"].includes(section)
+        ? floating
+        : page
+      ).locator('[data-profile-section="' + section + '"]');
+    if (appearance) {
+      await step("native-menu-import-window-and-browser-settings", async () => {
+        await openPanel();
+        await navigate("/book");
+        const menu = await popup();
+        await menu.locator("[data-action=import]").hover();
+        await menu.locator("main > section").screenshot({ path: join(directory, "menu.png") });
+        await menu.locator("[data-action=import]").click();
+        const dialog = await expectFloating("import");
+        const region = dialog.getByRole("dialog");
+        const measure = await region.evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          return {
+            width: r.width,
+            height: r.height,
+            x: r.x,
+            y: r.y,
+            viewport: [innerWidth, innerHeight],
+            backdrop: getComputedStyle(el.parentElement).backgroundColor,
+          };
+        });
+        assert.ok(
+          measure.width > 300 &&
+            measure.width <= 522 &&
+            Math.abs(measure.x * 2 + measure.width - measure.viewport[0]) <= 3,
+        );
+        assert.equal(new URL(guest.url()).pathname, "/book");
+        await region.screenshot({ path: join(directory, "import.png") });
+        await captureImportWorkspace({ page, guest, dialog, directory });
+        await writeFile(join(directory, "dialog-geometry.json"), JSON.stringify(measure));
+        await close();
+        await choose("vault", "autofill");
+        const vault = sheet("vault");
+        await vault.getByRole("tab", { name: /^(设置|Settings)$/ }).click();
+        await page
+          .getByRole("dialog", { name: /^(设置|Settings)$/ })
+          .screenshot({ path: join(directory, "password-settings.png") });
+        await close();
+        await choose("history");
+        await sheet("history").locator("strong").first().waitFor();
+        await sheet("history").screenshot({ path: join(directory, "history.png") });
+        await close();
+        await choose("privacy");
+        await sheet("privacy").screenshot({ path: join(directory, "privacy.png") });
+        await close();
+        await choose("contacts", "autofill");
+        await sheet("contacts").screenshot({ path: join(directory, "contacts.png") });
+        await close();
+        await choose("downloads");
+        await sheet("downloads").screenshot({ path: join(directory, "downloads.png") });
+        await close();
+        await page.getByRole("button", { name: /^(近期下载|Recent downloads)$/ }).click();
+        await expectFloating("recent");
+        await sheet("recent").screenshot({ path: join(directory, "recent-downloads.png") });
+        await close();
+        await choose("find");
+        const findBar = page.getByRole("search", { name: /在页面中查找|Find in page/ });
+        await findBar.getByRole("textbox").fill(word);
+        await waitUntil(
+          async () => /1\s*\/\s*3/.test(await findBar.locator("output").innerText()),
+          "find shows the current page count",
+        );
+        await findBar.screenshot({ path: join(directory, "find.png") });
+        await findBar.getByRole("textbox").press("Escape");
+        await choose("device", "devices");
+        const toolbar = page.locator("[data-browser-device]");
+        await toolbar.getByRole("combobox", { name: /设备预设|Device preset/ }).selectOption("iPhone SE");
+        await toolbar.screenshot({ path: join(directory, "device-toolbar.png") });
+      });
+      return;
+    }
     if (native)
       return nativeMenuAcceptance({
         fixture,
@@ -348,6 +498,7 @@ export const browserMenu = {
       await guest.locator("#slow").click();
       await guest.locator("#fast").click();
       await page.getByRole("button", { name: /^(近期下载|Recent downloads)$/ }).click();
+      await expectFloating("recent");
       await sheet("recent")
         .getByRole("button", { name: /查看全部下载|See all downloads/ })
         .click();
@@ -419,9 +570,15 @@ export const browserMenu = {
       await choose("history");
       const history = sheet("history");
       await history.getByRole("searchbox").fill("/second");
-      const old = history.getByRole("button", { name: /删除访问记录|Delete visit/ });
-      await old.waitFor();
-      await old.click();
+      await waitUntil(async () => {
+        const visibleUrls = await history
+          .locator("[data-visit-id] button[title]")
+          .evaluateAll((links) => links.map((link) => link.title));
+        return visibleUrls.length > 0 && visibleUrls.every((url) => url.includes("/second"));
+      }, "history search returned only matching visits");
+      const selectedVisit = await history.locator("[data-visit-id]").first().getAttribute("data-visit-id");
+      const old = history.locator('[data-visit-id="' + selectedVisit + '"]');
+      await old.getByRole("button", { name: /删除访问记录|Delete visit/ }).click();
       await old.waitFor({ state: "detached" });
       await history.getByLabel(/访问日期|Date visited/).fill("2000-01-01");
       await history.getByText(/没有匹配的记录|No matching records/).waitFor();
@@ -474,7 +631,38 @@ export const browserMenu = {
       await navigate("/book");
       await guest.getByText("Signed out", { exact: true }).waitFor();
     });
+    await step("abrupt-restart-keeps-visits-and-marks-unfinished-download-interrupted", async () => {
+      await navigate("/crash-survivor");
+      await guest.locator("#slow").click();
+      await choose("downloads");
+      await sheet("downloads")
+        .locator('article[data-transfer-state="progressing"]')
+        .filter({ hasText: "slow-notes.txt" })
+        .waitFor();
+      page = await restart();
+      await openPanel();
+      await address().fill("crash-survivor");
+      await page.getByRole("option").filter({ hasText: "/crash-survivor" }).first().click();
+      await waitUntil(async () => (await state()).url.endsWith("/crash-survivor"), "visit survived forced exit");
+      await choose("downloads");
+      const rows = sheet("downloads");
+      await rows
+        .locator('article[data-transfer-state="interrupted"]')
+        .filter({ hasText: "slow-notes.txt" })
+        .waitFor();
+      assert.equal(await rows.getByRole("button", { name: /^(暂停|继续|Pause|Resume)$/ }).count(), 0);
+      assert.equal(await rows.getByText("unknown-size.txt", { exact: true }).count(), 0);
+      assert.deepEqual(await readFile(join(fixture.downloads, "fast-notes.txt")), content);
+    });
   },
+};
+
+export const browserMenuAppearance = {
+  ...browserMenu,
+  id: "browser-menu-appearance",
+  scope: "Real Windows menu, modal over a live webpage and browser settings in an isolated profile.",
+  coverage: ["native menu and import dialog", "password manager, history and privacy surfaces"],
+  run: (context) => browserMenu.run({ ...context, appearance: true }),
 };
 
 export const browserMenuNative = {

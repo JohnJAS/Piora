@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { execFile } from "node:child_process";
 import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { fixtureBrowserPid, menuDialog } from "./browser-menu-dialog.mjs";
 
@@ -34,10 +35,16 @@ export async function nativeMenuAcceptance({ fixture, ui, step, waitUntil, direc
   await step("unlock-fixture-vault-and-allow-the-isolated-loopback-form", async () => {
     await ui.choose("vault", "autofill");
     const vault = dialog().locator('[data-settings-id="data.websiteAccounts"]');
+    await vault.getByRole("tab", { name: /^(设置|Settings)$/ }).click();
     await vault.locator('details[data-settings-id="data.credentialVault"] summary').click();
     await vault.getByLabel(/主密码（导入时|Master password \(backup/).fill("isolated-view-master");
     await vault.getByRole("button", { name: /^(创建凭据库|Create vault)$/ }).click();
     await vault.getByRole("button", { name: /^(锁定|Lock)$/ }).waitFor();
+    await vault
+      .getByRole("checkbox", {
+        name: /自动保存网页登录账户并自动登录|Remember website accounts and sign in automatically/,
+      })
+      .uncheck();
     await vault
       .locator("summary")
       .filter({ hasText: /HTTP 站点白名单|HTTP site allowlist/ })
@@ -75,7 +82,10 @@ export async function nativeMenuAcceptance({ fixture, ui, step, waitUntil, direc
     const row = dialog().getByRole("listitem").filter({ hasText: "Fixture account" });
     await row.getByRole("button", { name: /填入当前浏览器|Fill current browser/ }).click();
     await ui.page().keyboard.press("Escape");
-    assert.equal(await ui.guest().locator("[name=username]").inputValue(), "fixture-person");
+    await waitUntil(
+      async () => (await ui.guest().locator("[name=username]").inputValue()) === "fixture-person",
+      "the manual fill reached the selected fixture form",
+    );
     assert.equal(
       await ui
         .guest()
@@ -83,7 +93,7 @@ export async function nativeMenuAcceptance({ fixture, ui, step, waitUntil, direc
         .evaluate((el) => el.value === "synthetic-only-pass"),
       true,
     );
-    await ui.guest().getByRole("button", { name: "Submit fixture login" }).click();
+    await ui.guest().getByRole("button", { name: "Sign in to fixture" }).click();
     await ui.guest().getByText("Signed in", { exact: true }).waitFor();
   });
   await step("only-the-isolated-piora-session-backup-restores-the-fixture-login", async () => {
@@ -142,15 +152,13 @@ export async function nativeMenuAcceptance({ fixture, ui, step, waitUntil, direc
       }
     }, "native printer produced a PDF file");
     assert.ok((await readFile(pdf)).subarray(0, 5).equals(Buffer.from("%PDF-")));
-    const raster = join(directory, "printed-page");
-    await run("pdftoppm", ["-f", "1", "-l", "1", "-scale-to", "720", "-singlefile", "-png", pdf, raster], {
+    const raster = join(directory, "printed-page.png");
+    const renderer = fileURLToPath(new URL("./render-fixture-pdf.ps1", import.meta.url));
+    await run("powershell.exe", ["-NoProfile", "-File", renderer, pdf, raster], {
       windowsHide: true,
       timeout: 30000,
     });
-    const pixels = await sharp(raster + ".png")
-      .removeAlpha()
-      .raw()
-      .toBuffer();
+    const pixels = await sharp(raster).removeAlpha().raw().toBuffer();
     let markerPixels = 0;
     for (let i = 0; i < pixels.length; i += 3)
       if (pixels[i] > 160 && pixels[i + 1] < 70 && pixels[i + 2] > 100 && pixels[i + 2] < 205) markerPixels++;

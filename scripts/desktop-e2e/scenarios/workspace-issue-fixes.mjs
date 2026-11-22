@@ -109,18 +109,22 @@ export const workspaceIssueFixes = {
         // CDP keyboard input does not establish native before-input-event delivery.
         // The desktop event fixture checks those shortcuts; exercise real native
         // zoom here through the production UI, retaining all zoom assertions.
-        await page.getByRole("button", { name: /^(Zoom in|放大页面)$/ }).click();
+        await page.locator("[data-browser-menu-trigger]").click();
+        const menu = await waitUntil(() => getBrowser().contexts().flatMap(item => item.pages()).find(item => item.url().startsWith("data:text/html") && !item.isClosed()), "native browser menu");
+        const zoomIn = menu.locator("[data-action=zoom_in]"), zoomOut = menu.locator("[data-action=zoom_out]");
+        await zoomIn.click();
         await waitUntil(async () => (await state()).zoomFactor > 1, "zoom control updates actual native page");
         evidence.zoom = (await state()).zoomFactor;
-        await page.getByRole("button", { name: /^(Zoom out|缩小页面)$/ }).click();
+        await zoomOut.click();
         assert.equal((await state()).zoomFactor, 1);
-        await page.getByRole("button", { name: /^(Zoom in|放大页面)$/ }).click();
-        await page.getByRole("button", { name: /^(Zoom in|放大页面)$/ }).click();
+        await zoomIn.click();
+        await zoomIn.click();
         assert.ok((await state()).zoomFactor > evidence.zoom);
-        await page.getByRole("button", { name: /^(Reset page zoom|重置页面缩放)$/ }).click();
+        await menu.locator("button[data-action=zoom_reset]").last().click();
         assert.equal((await state()).zoomFactor, 1);
-        await page.getByRole("button", { name: /^(Zoom in|放大页面)$/ }).click();
+        await zoomIn.click();
         evidence.zoom = (await state()).zoomFactor;
+        await Promise.all([menu.waitForEvent("close"), menu.keyboard.press("Escape")]);
         await navigate(fixture.origins[1]); assert.equal((await state()).zoomFactor, 1);
         site = await navigate(fixture.origins[0]); assert.ok(Math.abs((await state()).zoomFactor - evidence.zoom) < 0.001);
       });
@@ -143,7 +147,8 @@ export const workspaceIssueFixes = {
       });
       await step("ask-before-download-setting", async () => {
         const dialog = await settings();
-        await dialog.getByLabel(/^(Ask where to save each file before downloading|每次下载前询问保存位置)$/).check();
+        const ask = dialog.getByRole("switch", {name:/^(Ask where to save each file before downloading|每次下载前询问保存位置)$/});
+        if (await ask.getAttribute("aria-checked") !== "true") await ask.click();
         await dialog.getByRole("button", { name: /^(Save download settings|保存下载设置)$/ }).click();
         await dialog.getByText(/^(Download settings saved\.|下载设置已保存。)$/).waitFor();
         await page.keyboard.press("Escape");

@@ -14,16 +14,35 @@ ipcRenderer.once("pi:browser-popup-ready", (_event, model: MenuModel & { left: b
     el.setAttribute("role", "menu");
     return el;
   };
+  const icon = (path: string, size = 14) => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", String(size));
+    svg.setAttribute("height", String(size));
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "1.6");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    const line = document.createElementNS(svg.namespaceURI, "path");
+    line.setAttribute("d", path);
+    svg.append(line);
+    return svg;
+  };
   const primary = panel();
   root.append(primary);
   let secondary: HTMLElement | undefined;
   let opener: HTMLButtonElement | undefined;
-  function closeSub() {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stopHover = () => clearTimeout(timer);
+  function closeSub(restore = true) {
+    stopHover();
     if (!secondary) return;
     secondary.remove();
     secondary = undefined;
     opener?.setAttribute("aria-expanded", "false");
-    opener?.focus();
+    if (restore) opener?.focus();
     send("collapse");
   }
   function item(parent: HTMLElement, title: string, action: string, enabled = true) {
@@ -33,6 +52,11 @@ ipcRenderer.once("pi:browser-popup-ready", (_event, model: MenuModel & { left: b
     button.disabled = !enabled;
     button.setAttribute("role", "menuitem");
     button.addEventListener("click", () => send(action));
+    if (parent === primary)
+      button.addEventListener("pointerenter", () => {
+        stopHover();
+        timer = setTimeout(() => closeSub(false), 120);
+      });
     parent.append(button);
     return button;
   }
@@ -43,9 +67,13 @@ ipcRenderer.once("pi:browser-popup-ready", (_event, model: MenuModel & { left: b
     button.setAttribute("role", "menuitem");
     button.setAttribute("aria-haspopup", "menu");
     button.setAttribute("aria-expanded", "false");
-    const open = () => {
-      if (secondary && opener === button) return;
-      closeSub();
+    button.append(icon("m9 6 6 6-6 6", 12));
+    const open = (focus = true) => {
+      if (secondary && opener === button) {
+        if (focus) secondary.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+        return;
+      }
+      closeSub(false);
       opener = button;
       secondary = panel();
       secondary.className = "sub";
@@ -60,9 +88,15 @@ ipcRenderer.once("pi:browser-popup-ready", (_event, model: MenuModel & { left: b
       );
       secondary.style.marginTop = submenuTop + "px";
       ipcRenderer.send("pi:browser-popup-input", { submenuTop, submenuHeight });
-      secondary.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+      if (focus) secondary.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+      secondary.addEventListener("pointerenter", stopHover);
     };
-    button.addEventListener("click", open);
+    button.addEventListener("click", () => open());
+    button.addEventListener("pointerenter", () => {
+      stopHover();
+      timer = setTimeout(() => open(false), 170);
+    });
+    button.addEventListener("pointerleave", stopHover);
     button.addEventListener("keydown", (event) => {
       if (event.key === "ArrowRight") {
         event.preventDefault();
@@ -80,17 +114,26 @@ ipcRenderer.once("pi:browser-popup-ready", (_event, model: MenuModel & { left: b
   const heading = document.createElement("span");
   heading.textContent = label("缩放", "Zoom");
   group.append(heading);
-  const minus = item(group, "−", "zoom_out", model.page && !model.minZoom);
-  const reset = item(group, Math.round(model.zoom * 100) + "%", "zoom_reset", model.page);
+  const stepper = document.createElement("div");
+  stepper.className = "stepper";
+  group.append(stepper);
+  const minus = item(stepper, "−", "zoom_out", model.page && !model.minZoom);
+  minus.setAttribute("aria-label", label("缩小", "Zoom out"));
+  const reset = item(stepper, Math.round(model.zoom * 100) + "%", "zoom_reset", model.page);
   reset.title = label("重置缩放", "Reset zoom");
-  const plus = item(group, "+", "zoom_in", model.page && !model.maxZoom);
-  const again = item(group, "↻", "zoom_reset", model.page);
+  const plus = item(stepper, "+", "zoom_in", model.page && !model.maxZoom);
+  plus.setAttribute("aria-label", label("放大", "Zoom in"));
+  const again = item(group, "", "zoom_reset", model.page);
+  again.append(icon("M20 7v5h-5 M4 17v-5h5 M6 7a7 7 0 0 1 12-1l2 3 M4 15l2 3a7 7 0 0 0 12-1"));
   again.setAttribute("aria-label", reset.title);
   ipcRenderer.on("pi:browser-popup-zoom", (_event, data: Pick<MenuModel, "zoom" | "minZoom" | "maxZoom">) => {
     reset.textContent = Math.round(data.zoom * 100) + "%";
+    again.disabled = data.zoom === 1;
     minus.disabled = data.minZoom;
     plus.disabled = data.maxZoom;
   });
+  again.disabled = !model.page || model.zoom === 1;
+  group.addEventListener("pointerenter", () => closeSub(false));
   primary.append(group);
   divider();
   submenu(label("设备工具栏", "Device toolbar"), "devices", (el) => {
@@ -118,7 +161,9 @@ ipcRenderer.once("pi:browser-popup-ready", (_event, model: MenuModel & { left: b
   item(primary, label("清除浏览数据", "Clear browsing data"), "privacy");
   divider();
   item(primary, label("浏览器设置", "Browser settings"), "settings");
+  document.addEventListener("pointermove", () => document.body.classList.remove("using-keys"));
   document.addEventListener("keydown", (event) => {
+    document.body.classList.add("using-keys");
     if (event.key === "Escape" || (secondary && event.key === "ArrowLeft")) {
       event.preventDefault();
       if (secondary) closeSub();

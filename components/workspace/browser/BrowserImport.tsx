@@ -1,12 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AliIcon } from "@/components/AliIcon";
 import type { ImportKind, ImportPreview } from "@/desktop/src/browser/contracts";
 import { errorText, openBrowserSettings, useBrowserCopy, type ToolsBridge } from "./shared";
 import styles from "./BrowserTools.module.css";
 
 type Source = "chrome" | "edge" | "piora";
-export function ProfileImport({ bridge }: { bridge: ToolsBridge }) {
+export function ProfileImport({
+  bridge,
+  cancel,
+  openVault = () => openBrowserSettings("vault"),
+}: {
+  bridge: ToolsBridge;
+  cancel(): void;
+  openVault?(): void;
+}) {
   const { copy } = useBrowserCopy();
   const [source, setSource] = useState<Source>("chrome"),
     [kinds, setKinds] = useState<ImportKind[]>(["passwords"]);
@@ -98,58 +107,83 @@ export function ProfileImport({ bridge }: { bridge: ToolsBridge }) {
       setBusy(false);
     }
   };
+  const busyLabel = copy("处理中…", "Working…");
+  const description =
+    source === "piora"
+      ? copy(
+          "可恢复此 Windows 账户下的 Piora 加密会话备份。",
+          "Restore a Piora session backup created with this Windows account.",
+        )
+      : copy(
+          "从 " +
+            (source === "chrome" ? "Google Chrome" : "Microsoft Edge") +
+            " 导出的密码 CSV 文件中选择要导入的站点。",
+          "Choose sites from a password CSV exported by the selected browser.",
+        );
   return (
     <div className={styles.form}>
-      <label>
-        {copy("来源", "Source")}
-        <select
-          value={source}
-          disabled={busy}
-          onChange={(event) => {
-            reset();
-            const next = event.target.value as Source;
-            setSource(next);
-            setKinds(next === "piora" ? ["cookies"] : ["passwords"]);
-          }}
-        >
-          <option value="chrome">Google Chrome</option>
-          <option value="edge">Microsoft Edge</option>
-          <option value="piora">Piora</option>
-        </select>
+      <label className={styles.sourceLine}>
+        <span>{copy("从", "From")}</span>
+        <span className={styles.sourceSelect}>
+          {source === "chrome" ? (
+            <i className={styles.chromeMark} aria-hidden="true" />
+          ) : (
+            <AliIcon name={source === "piora" ? "desktop" : "earth"} size={17} />
+          )}
+          <select
+            aria-label={copy("来源浏览器", "Source browser")}
+            value={source}
+            disabled={busy}
+            onChange={(event) => {
+              reset();
+              const next = event.target.value as Source;
+              setSource(next);
+              setKinds(next === "piora" ? ["cookies"] : ["passwords"]);
+            }}
+          >
+            <option value="chrome">Google Chrome</option>
+            <option value="edge">Microsoft Edge</option>
+            <option value="piora">Piora</option>
+          </select>
+          <AliIcon name="chevron-down" size={14} />
+        </span>
       </label>
-      <fieldset disabled={busy || previews.length > 0}>
-        {(["passwords", "cookies"] as const).map((kind) => (
-          <label className={styles.check} key={kind}>
-            <input
-              type="checkbox"
-              checked={kinds.includes(kind)}
-              disabled={kind === "cookies" && source !== "piora"}
-              onChange={(event) =>
-                setKinds((current) =>
-                  event.target.checked ? [...current, kind] : current.filter((k) => k !== kind),
-                )
-              }
-            />
-            {names[kind]}
-          </label>
-        ))}
+      <p className={styles.helper}>{description}</p>
+      <fieldset
+        className={styles.options}
+        disabled={busy || previews.length > 0}
+        aria-label={copy("导入内容", "Data to import")}
+      >
+        {(["passwords", "cookies"] as const).map((kind) => {
+          const unavailable = kind === "cookies" && source !== "piora";
+          return (
+            <label className={styles.option} key={kind} data-disabled={unavailable || undefined}>
+              <AliIcon name={kind === "passwords" ? "key" : "cookie"} size={18} />
+              <span>
+                {kind === "passwords" ? copy("已保存的密码", "Saved passwords") : "Cookie"}
+                {unavailable && (
+                  <small>{copy("可从 Piora 加密备份导入", "Available from a Piora encrypted backup")}</small>
+                )}
+              </span>
+              <input
+                className={styles.switch}
+                type="checkbox"
+                role="switch"
+                aria-label={names[kind]}
+                checked={kinds.includes(kind)}
+                disabled={unavailable}
+                onChange={(event) =>
+                  setKinds((current) =>
+                    event.target.checked ? [...current, kind] : current.filter((item) => item !== kind),
+                  )
+                }
+              />
+            </label>
+          );
+        })}
       </fieldset>
-      <p>
-        {source === "piora"
-          ? copy(
-              "可选择同一系统账户的 Piora 加密会话备份。密码可从导出文件导入，凭据库加密备份在密码管理器中恢复。",
-              "Choose a Piora session backup from this OS account. Password files can be imported here. Restore encrypted vault backups in Password manager.",
-            )
-          : copy(
-              "选择你从来源浏览器正式导出的密码 CSV 文件。此来源的网站登录可在 Piora 内完成。",
-              "Choose a password CSV exported by this browser. Sign in to websites inside Piora for this source.",
-            )}
-      </p>
-      <button type="button" disabled={busy} onClick={() => openBrowserSettings("vault")}>
-        {copy("打开密码管理器", "Open password manager")}
-      </button>
       {previews.map((entry) => (
-        <fieldset key={entry.token} disabled={busy}>
+        <fieldset key={entry.token} disabled={busy} className={styles.previewBox}>
           <legend>
             {names[entry.kind]} · {entry.filename}
           </legend>
@@ -167,7 +201,7 @@ export function ProfileImport({ bridge }: { bridge: ToolsBridge }) {
                     ...current,
                     [entry.token]: event.target.checked
                       ? [...(current[entry.token] ?? []), site]
-                      : (current[entry.token] ?? []).filter((x) => x !== site),
+                      : (current[entry.token] ?? []).filter((item) => item !== site),
                   }))
                 }
               />
@@ -176,50 +210,70 @@ export function ProfileImport({ bridge }: { bridge: ToolsBridge }) {
           ))}
         </fieldset>
       ))}
-      {previews.length > 0 ? (
-        <>
-          <label className={styles.check}>
-            <input
-              type="checkbox"
-              checked={replace}
-              disabled={busy}
-              onChange={(event) => setReplace(event.target.checked)}
-            />
-            {copy("替换重复项目", "Replace existing entries")}
-          </label>
-          {replace && (
-            <small>
-              {copy(
-                "同一站点有多个同名账户时，优先匹配已保存的登录地址。无法确定的条目将跳过。",
-                "For accounts sharing a site and username, the saved sign-in URL takes priority. Ambiguous entries are skipped.",
-              )}
-            </small>
+      {previews.length ? (
+        <label className={styles.check}>
+          <input
+            type="checkbox"
+            checked={replace}
+            disabled={busy}
+            onChange={(event) => setReplace(event.target.checked)}
+          />
+          {copy("替换重复项目", "Replace existing entries")}
+        </label>
+      ) : null}
+      {replace && (
+        <p className={styles.helper}>
+          {copy(
+            "同名账户按登录地址匹配，无法区分的条目会跳过。",
+            "Accounts are matched by sign-in address. Ambiguous matches are skipped.",
           )}
-          <div className={styles.actions}>
-            <button
-              disabled={busy || !Object.values(sites).some((selected) => selected.length)}
-              type="button"
-              onClick={() => void apply()}
-            >
-              {copy("确认导入", "Confirm import")}
-            </button>
-            <button disabled={busy} type="button" onClick={reset}>
-              {copy("取消", "Cancel")}
-            </button>
+        </p>
+      )}
+      {!previews.length && kinds.includes("passwords") && (
+        <div className={styles.note}>
+          <AliIcon name="lock" size={16} />
+          <div>
+            <strong>{copy("密码保存到本机凭据库", "Passwords are saved in your local vault")}</strong>
+            <p>
+              {copy("导入密码前，请先解锁凭据库。", "Unlock the vault before importing passwords.")}{" "}
+              <button className={styles.textButton} type="button" disabled={busy} onClick={openVault}>
+                {copy("打开密码管理器", "Open password manager")}
+              </button>
+            </p>
           </div>
-        </>
-      ) : (
-        <button disabled={busy || !kinds.length} type="button" onClick={() => void choose()}>
-          {copy("选择文件并预览", "Choose files and preview")}
-        </button>
+        </div>
       )}
       {messages.length > 0 && (
-        <ul role="status">
+        <ul className={styles.feedback} role="status">
           {messages.map((value, i) => (
             <li key={i}>{value}</li>
           ))}
         </ul>
       )}
+      <footer className={styles.footer}>
+        <button className={styles.secondary} type="button" disabled={busy} onClick={cancel}>
+          {copy("取消", "Cancel")}
+        </button>
+        {previews.length ? (
+          <button
+            className={styles.primary}
+            disabled={busy || !Object.values(sites).some((selected) => selected.length)}
+            type="button"
+            onClick={() => void apply()}
+          >
+            {busy ? busyLabel : copy("确认导入", "Confirm import")}
+          </button>
+        ) : (
+          <button
+            className={styles.primary}
+            disabled={busy || !kinds.length}
+            type="button"
+            onClick={() => void choose()}
+          >
+            {busy ? busyLabel : copy("选择文件并预览", "Choose files and preview")}
+          </button>
+        )}
+      </footer>
     </div>
   );
 }

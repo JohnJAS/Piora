@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useState, type PointerEvent } from "react";
+import { AliIcon } from "@/components/AliIcon";
 import { createPortal } from "react-dom";
 import type { DeviceViewport } from "@/desktop/src/browser/contracts";
 import { devices, fitViewport } from "@/desktop/src/browser/device-display";
@@ -45,22 +46,25 @@ export function DeviceToolbar({
     if (size !== viewport[axis]) change({ ...viewport, preset: "responsive", [axis]: size });
   };
   const fit = fitViewport(rect, viewport);
-  const drag = (event: PointerEvent<HTMLButtonElement>, axis: "width" | "height") => {
+  const drag = (event: PointerEvent<HTMLButtonElement>, horizontal: -1 | 0 | 1, bottom: boolean) => {
     if (event.button !== 0 || fit.scale <= 0) return;
     event.preventDefault();
-    const handle = event.currentTarget;
-    const start = axis === "width" ? event.clientX : event.clientY,
-      original = viewport[axis];
-    const pointer = event.pointerId;
+    const handle = event.currentTarget,
+      pointer = event.pointerId;
+    const x = event.clientX,
+      y = event.clientY;
     handle.setPointerCapture(pointer);
     suspend(true);
+    const clamp = (value: number) => Math.max(160, Math.min(4096, Math.round(value)));
     const move = (e: globalThis.PointerEvent) => {
       if (e.pointerId !== pointer) return;
-      const delta = (axis === "width" ? 2 * (e.clientX - start) : e.clientY - start) / fit.scale;
       change({
         ...viewport,
         preset: "responsive",
-        [axis]: Math.max(160, Math.min(4096, Math.round(original + delta))),
+        width: horizontal
+          ? clamp(viewport.width + (horizontal * 2 * (e.clientX - x)) / fit.scale)
+          : viewport.width,
+        height: bottom ? clamp(viewport.height + (e.clientY - y) / fit.scale) : viewport.height,
       });
     };
     const done = () => {
@@ -74,6 +78,7 @@ export function DeviceToolbar({
   return (
     <>
       <div className={styles.device} data-browser-device="">
+        <AliIcon name="mobile" size={15} />
         <select
           aria-label={copy("设备预设", "Device preset")}
           value={viewport.preset}
@@ -95,27 +100,31 @@ export function DeviceToolbar({
           ))}
         </select>
         {(["width", "height"] as const).map((axis) => (
-          <input
-            key={axis}
-            type="number"
-            min="160"
-            max="4096"
-            aria-label={
-              axis === "width" ? copy("逻辑宽度", "Viewport width") : copy("逻辑高度", "Viewport height")
-            }
-            value={axis === "width" ? width : height}
-            onChange={(event) => (axis === "width" ? setWidth : setHeight)(event.target.value)}
-            onBlur={(event) => commit(axis, event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.currentTarget.blur();
-            }}
-          />
+          <label className={styles.dimension} key={axis}>
+            {axis === "height" && <span aria-hidden="true">×</span>}
+            <input
+              type="number"
+              min="160"
+              max="4096"
+              aria-label={
+                axis === "width" ? copy("逻辑宽度", "Viewport width") : copy("逻辑高度", "Viewport height")
+              }
+              value={axis === "width" ? width : height}
+              onChange={(event) => (axis === "width" ? setWidth : setHeight)(event.target.value)}
+              onBlur={(event) => commit(axis, event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") event.currentTarget.blur();
+              }}
+            />
+          </label>
         ))}
         <button
           type="button"
+          aria-label={copy("旋转", "Rotate")}
+          title={copy("旋转", "Rotate")}
           onClick={() => change({ ...viewport, width: viewport.height, height: viewport.width })}
         >
-          {copy("旋转", "Rotate")}
+          <AliIcon name="reload" size={15} />
         </button>
         <select
           aria-label={copy("预览比例", "Preview scale")}
@@ -133,7 +142,7 @@ export function DeviceToolbar({
           aria-label={copy("关闭设备工具栏", "Close device toolbar")}
           onClick={() => change({ ...viewport, enabled: false })}
         >
-          ×
+          <AliIcon name="close" size={14} />
         </button>
       </div>
       {host &&
@@ -141,22 +150,52 @@ export function DeviceToolbar({
         rect.height > 0 &&
         createPortal(
           <>
-            <button
-              type="button"
-              tabIndex={-1}
-              className={styles.sideHandle}
-              aria-label={copy("拖动调整宽度", "Drag to resize width")}
-              style={{ left: fit.bounds.x + fit.bounds.width, top: 0, height: fit.bounds.height }}
-              onPointerDown={(event) => drag(event, "width")}
-            />
+            {([-1, 1] as const).map((side) => (
+              <button
+                key={side}
+                type="button"
+                tabIndex={-1}
+                className={styles.sideHandle}
+                aria-label={
+                  side < 0
+                    ? copy("拖动左边缘调整宽度", "Resize from the left")
+                    : copy("拖动右边缘调整宽度", "Resize from the right")
+                }
+                style={{
+                  left: side < 0 ? fit.bounds.x - 6 : fit.bounds.x + fit.bounds.width,
+                  top: 0,
+                  height: fit.bounds.height,
+                }}
+                onPointerDown={(event) => drag(event, side, false)}
+              />
+            ))}
             <button
               type="button"
               tabIndex={-1}
               className={styles.bottomHandle}
               aria-label={copy("拖动调整高度", "Drag to resize height")}
               style={{ left: fit.bounds.x, top: fit.bounds.height, width: fit.bounds.width }}
-              onPointerDown={(event) => drag(event, "height")}
+              onPointerDown={(event) => drag(event, 0, true)}
             />
+            {([-1, 1] as const).map((side) => (
+              <button
+                key={side}
+                type="button"
+                tabIndex={-1}
+                className={styles.cornerHandle}
+                aria-label={
+                  side < 0
+                    ? copy("拖动左下角调整尺寸", "Resize from bottom left")
+                    : copy("拖动右下角调整尺寸", "Resize from bottom right")
+                }
+                style={{
+                  left: side < 0 ? fit.bounds.x - 7 : fit.bounds.x + fit.bounds.width - 1,
+                  top: fit.bounds.height - 1,
+                  cursor: side < 0 ? "nesw-resize" : "nwse-resize",
+                }}
+                onPointerDown={(event) => drag(event, side, true)}
+              />
+            ))}
           </>,
           host,
         )}

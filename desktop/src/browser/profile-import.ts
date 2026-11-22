@@ -35,11 +35,11 @@ export class BrowserProfileImport {
   close() {
     for (const token of this.pending.keys()) this.cancel(token);
   }
-  async choose(kind: ImportKind): Promise<ImportPreview | null> {
+  async choose(kind: ImportKind, owner = this.parent): Promise<ImportPreview | null> {
     if (kind !== "cookies" && kind !== "passwords") throw new Error("Invalid import type");
     if (kind === "passwords" && !this.vault().status().unlocked)
       throw new Error("请先在密码管理器中创建或解锁凭据库");
-    const result = await dialog.showOpenDialog(this.parent, {
+    const result = await dialog.showOpenDialog(owner, {
       properties: ["openFile"],
       filters: [
         kind === "passwords"

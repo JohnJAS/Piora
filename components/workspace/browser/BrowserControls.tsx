@@ -1,15 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type {
-  BrowserSection,
-  BrowserTarget,
-  DeviceViewport,
-  MenuChoice,
-  Transfer,
-} from "@/desktop/src/browser/contracts";
-import { BrowserProfileSection } from "./BrowserProfileSection";
+import type { BrowserTarget, DeviceViewport, MenuChoice, Transfer } from "@/desktop/src/browser/contracts";
+import { AliIcon } from "@/components/AliIcon";
 import { DeviceToolbar } from "./DeviceToolbar";
 import { errorText, openBrowserSettings, useBrowserCopy, type ToolsBridge } from "./shared";
 import styles from "./BrowserTools.module.css";
@@ -22,9 +16,7 @@ export function BrowserControls({
   active,
   slot,
   viewport,
-  cover,
   suspend,
-  navigate,
   report,
 }: {
   bridge: ToolsBridge;
@@ -34,9 +26,7 @@ export function BrowserControls({
   active: boolean;
   slot: HTMLElement | null;
   viewport: HTMLElement | null;
-  cover(value: boolean): void;
   suspend(value: boolean): void;
-  navigate(url: string): void;
   report(message: string): void;
 }) {
   const { locale, copy } = useBrowserCopy(),
@@ -44,8 +34,7 @@ export function BrowserControls({
       () => ({ sessionId, tabId, navigationEpoch }),
       [sessionId, tabId, navigationEpoch],
     );
-  const [section, setSection] = useState<BrowserSection | "recent" | null>(null),
-    [finding, setFinding] = useState(false);
+  const [finding, setFinding] = useState(false);
   const [device, setDevice] = useState<DeviceViewport | null>(null),
     [query, setQuery] = useState(""),
     [match, setMatch] = useState({ total: 0, index: 0 });
@@ -56,20 +45,16 @@ export function BrowserControls({
     findQuery = useRef("");
   const alive = useRef(true),
     counter = useRef(0);
-  useLayoutEffect(() => {
-    cover(section !== null && section !== "recent");
-    return () => cover(false);
-  }, [cover, section]);
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
       void bridge.tools("dismissMenu", target).catch(() => {});
-      void bridge.tools("find", { target, query: "" }).catch(() => {});
+      if (target.tabId && findQuery.current) void bridge.tools("find", { target, query: "" }).catch(() => {});
     };
   }, [bridge, target]);
   useEffect(() => {
-    if (!active) {
+    if (!active || !tabId) {
       void bridge.tools("dismissMenu", target).catch(() => {});
       return;
     }
@@ -83,16 +68,16 @@ export function BrowserControls({
     return () => {
       current = false;
     };
-  }, [active, bridge, target]);
+  }, [active, bridge, tabId, target]);
   const closeFind = () => {
+    const clearSelection = Boolean(findQuery.current);
     findQuery.current = "";
     setFinding(false);
     setQuery("");
     setMatch({ total: 0, index: 0 });
-    void bridge.tools("find", { target, query: "" }).catch(() => {});
+    if (clearSelection) void bridge.tools("find", { target, query: "" }).catch(() => {});
   };
   const openFind = () => {
-    setSection(null);
     setFinding(true);
     requestAnimationFrame(() => {
       input.current?.focus();
@@ -123,7 +108,7 @@ export function BrowserControls({
       } else if (event.action === "find") openFind();
       else {
         setFinding(false);
-        setSection(event.action);
+        openBrowserSettings(event.action);
       }
     });
     return () => {
@@ -148,21 +133,24 @@ export function BrowserControls({
   );
   const choose = async (choice: MenuChoice | null) => {
     if (!choice || !alive.current) return;
+    report("");
     setStatus("");
     if (choice === "find") {
       openFind();
       return;
     }
     if (choice === "print" || choice === "screenshot") {
-      setSection(null);
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       if (!alive.current) return;
       await bridge.tools("page", { target, action: choice });
       if (alive.current && choice === "screenshot") setStatus(copy("网页截图已复制", "Page screenshot copied"));
+    } else if (choice === "import" || choice === "privacy") {
+      closeFind();
+      const next = await bridge.tools("modal", choice);
+      if (next === "vault") openBrowserSettings("vault");
     } else if (choice === "settings" || choice === "vault")
       openBrowserSettings(choice === "vault" ? "vault" : "browser");
     else if (choice === "device") {
-      setSection(null);
       const previous = await bridge.tools("device", { target });
       if (alive.current) changeDevice({ ...previous, enabled: !previous.enabled });
     } else if (choice === "deviceDefault") {
@@ -170,7 +158,7 @@ export function BrowserControls({
       if (alive.current) await bridge.tools("deviceDefault", !previous);
     } else {
       closeFind();
-      setSection(choice);
+      openBrowserSettings(choice);
     }
   };
   const open = async () => {
@@ -205,12 +193,18 @@ export function BrowserControls({
         className={styles.downloadButton}
         aria-label={downloadsLabel}
         title={downloadsLabel}
-        onClick={() => {
+        onClick={(event) => {
           closeFind();
-          setSection((x) => (x === "recent" ? null : "recent"));
+          const box = event.currentTarget.getBoundingClientRect();
+          void bridge
+            .tools("recent", { x: box.right, y: box.bottom })
+            .then((value) => {
+              if (value === "downloads") openBrowserSettings("downloads");
+            })
+            .catch((e) => report(errorText(e)));
         }}
       >
-        <span aria-hidden="true">↓</span>
+        <AliIcon name="download" size={15} />
         {activity?.live && (
           <small>{activity.total > 0 ? Math.floor((100 * activity.received) / activity.total) + "%" : "…"}</small>
         )}
@@ -224,7 +218,7 @@ export function BrowserControls({
         title={copy("浏览器菜单", "Browser menu")}
         onClick={() => void open()}
       >
-        •••
+        <AliIcon name="ellipsis" size={16} />
       </button>
       {slot &&
         createPortal(
@@ -239,6 +233,7 @@ export function BrowserControls({
             )}
             {finding && (
               <div className={styles.find} role="search" aria-label={copy("在页面中查找", "Find in page")}>
+                <AliIcon name="search" size={15} />
                 <input
                   ref={input}
                   aria-label={copy("查找内容", "Find text")}
@@ -266,7 +261,7 @@ export function BrowserControls({
                   disabled={!query}
                   onClick={() => find(query, "previous")}
                 >
-                  ↑
+                  <AliIcon name="arrowup" size={14} />
                 </button>
                 <button
                   type="button"
@@ -274,28 +269,15 @@ export function BrowserControls({
                   disabled={!query}
                   onClick={() => find(query, "next")}
                 >
-                  ↓
+                  <AliIcon name="arrowdown" size={14} />
                 </button>
                 <button type="button" aria-label={copy("关闭查找", "Close find")} onClick={closeFind}>
                   ×
                 </button>
               </div>
             )}
-            {device?.enabled && (!section || section === "recent") && (
+            {device?.enabled && (
               <DeviceToolbar viewport={device} host={viewport} change={changeDevice} suspend={suspend} />
-            )}
-            {section && (
-              <BrowserProfileSection
-                section={section}
-                bridge={bridge}
-                target={target}
-                close={() => setSection(null)}
-                expand={() => setSection("downloads")}
-                navigate={(url) => {
-                  setSection(null);
-                  navigate(url);
-                }}
-              />
             )}
           </>,
           slot,

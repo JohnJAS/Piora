@@ -1,5 +1,6 @@
 "use client";
 
+import { AliIcon } from "@/components/AliIcon";
 import { useEffect, useState } from "react";
 import type { BrowserContact, BrowserTarget, ContactFields } from "@/desktop/src/browser/contracts";
 import { errorText, useBrowserCopy, type ToolsBridge } from "./shared";
@@ -51,10 +52,19 @@ export function ContactBook({ bridge, target }: { bridge: ToolsBridge; target?: 
   };
   return (
     <div className={styles.records}>
+      {!rows.length && !entry && (
+        <div className={styles.empty}>
+          <AliIcon name="user" size={24} />
+          <p>{copy("暂无联系人", "No contacts yet")}</p>
+        </div>
+      )}
       {rows.map((row) => (
         <article className={styles.download} key={row.id}>
-          <strong>{row.name}</strong>
-          <small>{[row.address, row.phone, row.email].filter(Boolean).join(" · ")}</small>
+          <AliIcon name="user" size={18} />
+          <div className={styles.downloadCopy}>
+            <strong>{row.name}</strong>
+            <small>{[row.address, row.phone, row.email].filter(Boolean).join(" · ")}</small>
+          </div>
           <div className={styles.actions}>
             {target && (
               <button
@@ -86,7 +96,7 @@ export function ContactBook({ bridge, target }: { bridge: ToolsBridge; target?: 
       ))}
       {entry ? (
         <form
-          className={styles.form}
+          className={`${styles.form} ${styles.contactEditor}`}
           onSubmit={(event) => {
             event.preventDefault();
             void run(bridge.tools("saveContact", entry), () => setEntry(null));
@@ -104,14 +114,17 @@ export function ContactBook({ bridge, target }: { bridge: ToolsBridge; target?: 
             </label>
           ))}
           <div className={styles.actions}>
-            <button type="submit">{copy("保存联系人", "Save contact")}</button>
+            <button type="submit" className={styles.primary}>
+              {copy("保存联系人", "Save contact")}
+            </button>
             <button type="button" onClick={() => setEntry(null)}>
               {copy("取消", "Cancel")}
             </button>
           </div>
         </form>
       ) : (
-        <button type="button" onClick={() => setEntry({ ...empty })}>
+        <button type="button" className={styles.primary} onClick={() => setEntry({ ...empty })}>
+          <AliIcon name="plus" size={14} />
           {copy("新增联系人", "Add contact")}
         </button>
       )}
