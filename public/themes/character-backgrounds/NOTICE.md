@@ -3,11 +3,35 @@
 These images are generated fan interpretations, not official brand mascots.
 The application's MIT code license does not grant rights to these character assets.
 
+The `motion/` atlases are derived from the corresponding bundled paintings.
+Their alpha channels trace the animated parts. Their color channels reconstruct
+the small areas revealed when a part moves. Each atlas shares its source
+painting's attribution and terms as listed below. The animation uses the
+painted poses and the AI character traits in lmy414's sheets.
+
+Clean plates in `scripts/character-motion-plates/` contain painted details
+normally hidden by the moving parts. The built-in image generator was given
+a crop of the original with the part masked, and asked to preserve framing,
+color, lighting and line work while continuing the drawing behind the mask.
+For example, removing Claude's raised forearm reveals her copper hair and
+neckline, removing GPT's crystal-bearing hand reveals the wing membrane, and
+removing Kimi's flute reveals the star-patterned cape and blouse. These edits
+are registered to the original artwork. Only exposed pixels appear in use.
+Plate names match the wallpaper; a suffix such as `-2` selects its second
+moving part. Run `python scripts/prepare-character-motion.py` to bake the
+atlases from the registered plates, outlines and original paintings.
+
+### 晴汐的露台行礼
+
+`performances/whale-tide-stage.webp` 保留举杯壁纸的近景构图，补绘人物原先遮挡的露台。`performances/whale-tide-actor.webm` 单独保存带透明通道的人物与茶杯。播放器叠放两层，采用相同的尺寸和裁切位置。双向走步、转身和提裙礼使用以原画为参考的补绘素材，沿用原壁纸的署名和 CC BY-NC-SA 4.0 改编条款。[原画、补绘提示词和制作底稿](../../../scripts/character-performances/whale-tide/)
+
+制作脚本 `scripts/bake-character-walk.py` 导出 1920 × 1080 的露台底图和每秒 60 帧的无声角色动画。去程的双手交叠取形于接待站姿，再配上两次小步换重心。返程的肩、肘和腕依次跟随步子，转圈使用单独绘制的背身和裙摆姿势。[体前叠手示范](https://www.cdp.edu.cn/__local/E/BE/B0/09D2517B1B1250971E6C49CE9A5_182DFE2F_29E30F.pdf) · [接待步态示范](https://www.youtube.com/watch?v=S4BZ4UtQqfU) · [走步动画教程](https://www.animationmentor.com/blog/tutorial-animating-human-walk-cycle/) · [英国皇家芭蕾舞团的定点转头示范](https://www.youtube.com/watch?v=88bsYB9i6Mc) · [RIFE 插帧工具](https://github.com/nihui/rife-ncnn-vulkan)
+
 ## AI characters (17 images)
 
 - Original character designs: **ZipZipPipe（胖次狐）**, https://space.bilibili.com/4168597
 - Supplemental character sheets: **lmy414**, https://github.com/lmy414/ai-chan-sheets
-- Reference repository selected by the user: https://github.com/JohnJAS/ai-chan-sheets
+- Reference repository used to generate the original wallpapers, with individual commits and paths in `provenance.json`: https://github.com/JohnJAS/ai-chan-sheets
 - Reference sheet license: **CC BY-NC-SA 4.0**, https://creativecommons.org/licenses/by-nc-sa/4.0/
 - These generated adaptations are provided under **CC BY-NC-SA 4.0** for the new adaptation contribution, subject to the retained rights in the original character designs. Attribution, noncommercial use and share-alike conditions apply. No endorsement or trademark license is asserted.
 - Changes: a new scene and pose for each wallpaper, with the character sheet used for identity and costume reference; generated with Codex built-in image_gen on 2026-10-30, then encoded as WebP. Exact reference commit, file, URL and generation prompt are recorded in `provenance.json`.
