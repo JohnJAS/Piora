@@ -94,7 +94,7 @@ export function portOpen(port) {
 }
 
 export function startProcess(command, args, options) {
-  const child = spawn(command, args, { ...options, detached: process.platform !== 'win32', windowsHide: true });
+  const child = spawn(command, args, { windowsHide: true, ...options, detached: process.platform !== 'win32' });
   // Observe errors immediately, including ENOENT before a caller starts waiting.
   const exited = new Promise(resolve => {
     child.once('error', error => resolve({ error: error.message }));

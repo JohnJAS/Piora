@@ -59,7 +59,7 @@ async function main() {
   try {
     const scenario = scenarios.find(candidate => candidate.id === options.scenario);
     const result = await runDesktopScenario({ ...options, root: resolve(import.meta.dirname, '..'), scenario, signal: controller.signal });
-    console.log(JSON.stringify({ status: result.report.status, directory: result.directory, failedStep: result.report.failedStep }));
+    console.log(JSON.stringify({ status: result.report.status, directory: result.directory, failedStep: result.report.failedStep, error: result.report.error?.message }));
     process.exitCode = result.report.status === 'passed' ? 0 : result.report.status === 'cancelled' ? 130 : 1;
   } finally {
     for (const name of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.removeListener(name, stop);

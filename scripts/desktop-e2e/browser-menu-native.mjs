@@ -30,8 +30,6 @@ export async function nativeMenuAcceptance({ fixture, ui, step, waitUntil, direc
   const pick = async (button, path) => {
     await Promise.all([button.click(), file("open", path)]);
   };
-  await ui.openPanel();
-  await ui.navigate("/book");
   await step("unlock-fixture-vault-and-allow-the-isolated-loopback-form", async () => {
     await ui.choose("vault", "autofill");
     const vault = dialog().locator('[data-settings-id="data.websiteAccounts"]');

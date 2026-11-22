@@ -53,7 +53,11 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
   const start = (script, packaged = false) => {
     signal.throwIfAborted();
     const handle = startProcess(packaged ? executable : process.execPath,
-      packaged ? [`--remote-debugging-port=${paths.debugPort}`] : [join(root, script)], { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+      packaged ? [`--remote-debugging-port=${paths.debugPort}`] : [join(root, script)], {
+        cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'],
+        // Win32 SW_HIDE also hides the packaged GUI. Its WebContentsViews attach only to a visible host.
+        windowsHide: !packaged,
+      });
     handle.child.stdout.pipe(log, { end: false }); handle.child.stderr.pipe(log, { end: false });
     registerCleanup(() => stopProcess(handle));
     return handle;
@@ -94,6 +98,7 @@ async function launchDesktop({ root, directory, signal, registerCleanup, report,
       if (!browser.isConnected()) throw new Error('Electron disconnected before its application window opened');
       return browser.contexts().flatMap(context => context.pages()).find(candidate => candidate.url().startsWith(origin + '/'));
     }, { signal, timeoutMs: 600_000, label: 'Piora application window' });
+    await page.bringToFront();
     page.setDefaultTimeout(stepTimeoutMs);
     page.setDefaultNavigationTimeout(stepTimeoutMs);
     page.on('pageerror', error => pageErrors.push(error.message));

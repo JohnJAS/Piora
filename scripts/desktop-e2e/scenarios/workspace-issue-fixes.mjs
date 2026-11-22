@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { openChatBrowser } from "../open-chat-browser.mjs";
 import { createServer } from "node:http";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -48,21 +49,18 @@ export const workspaceIssueFixes = {
       await page.getByRole("button", { name: /^(Settings|设置)$/ }).click();
       const dialog = page.getByRole("dialog", { name: /^(Settings|设置)$/ });
       await dialog.getByRole("button", { name: /^(Browser|浏览器)$/ }).click();
-      await dialog.getByLabel(/^(Download location|下载位置)$/).waitFor();
+      await dialog.getByRole("textbox", { name: /^(Download location|下载位置)$/ }).waitFor();
       return dialog;
     };
     const saveDirectory = async path => {
       const dialog = await settings();
-      await dialog.getByLabel(/^(Download location|下载位置)$/).fill(path);
+      await dialog.getByRole("textbox", { name: /^(Download location|下载位置)$/ }).fill(path);
       await dialog.getByRole("button", { name: /^(Save download settings|保存下载设置)$/ }).click();
       await dialog.getByText(/^(Download settings saved\.|下载设置已保存。)$/).waitFor();
       await page.keyboard.press("Escape");
     };
     const navigate = async origin => {
-      const address = page.getByRole("combobox", { name: /^(Address|地址)$/ });
-      if (!await address.isVisible()) await page.keyboard.press(process.platform === "darwin" ? "Meta+t" : "Control+t");
-      await address.waitFor();
-      await waitUntil(async () => (await state()).sessionId === fixture.id, "browser bound to the selected fixture chat");
+      const address = await openChatBrowser(page, fixture.id, waitUntil);
       await address.fill(origin + "/"); await address.press("Enter");
       await waitUntil(async () => (await state()).url === origin + "/", "native browser reached fixture origin");
       return waitUntil(() => getBrowser().contexts().flatMap(context => context.pages()).find(site => site.url() === origin + "/"), "native browser page");

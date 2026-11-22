@@ -6,7 +6,7 @@
 
 ## Windows 内置浏览器菜单
 
-`browser-menu` 用独立 Windows 配置验证网页操作、联系人、并发下载、历史、清理及重启。`browser-menu-appearance` 在真实窗口中保存菜单、导入、个人资料下拉、设置页和近期下载等截图，并实际选择有独立历史的测试资料。工作区合成图按原生控件的位置叠加同一时刻的聊天、网页和透明弹窗。个人资料全部由夹具生成，包含两项同名记录。`browser-menu-native` 操作系统文件选择器和 Windows 打印对话框，使用 Microsoft Print to PDF 和 Windows 自带的 PDF 渲染器检查打印专用样式。三种场景均可用 `--executable` 核对 CI 生成的桌面程序。手动启动安装包比较工作流时可同时选择 `browser_acceptance`，在隔离的 Windows 托管机检查安装后的程序。
+`browser-menu` 用独立 Windows 配置验证网页操作、联系人、并发下载、历史、清理及重启。`browser-menu-appearance` 在真实窗口中保存菜单、导入、个人资料下拉、设置页和近期下载等截图，并实际选择有独立历史的测试资料。工作区合成图按原生控件的位置叠加同一时刻的聊天、网页和透明弹窗。个人资料全部由夹具生成，包含两项同名记录。`browser-menu-native` 操作系统文件选择器和 Windows 打印对话框，使用 Microsoft Print to PDF 和 Windows 自带的 PDF 渲染器检查打印专用样式。三种场景均可用 `--executable` 核对 CI 生成的桌面程序。手动启动安装包比较工作流时可同时选择 `browser_acceptance`，在隔离的 Windows 托管机检查安装后的程序。安装版场景实际显示主窗口，通过聊天右侧的工具菜单打开网页。工作流保存每项报告、资料菜单截图和失败画面。
 
 `node scripts/test-desktop-browser-navigation.mjs` 使用独立 Electron 配置检查真实 Agent 在设备预览显示、收起和恢复后的点击。加 `--dpi=1.25` 或 `--dpi=1.5` 可在单个测试进程下核对相应显示比例与菜单定位。
 

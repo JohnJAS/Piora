@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { openChatBrowser } from '../open-chat-browser.mjs';
 import { createServer } from 'node:http';
 import { mkdir, writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -32,7 +33,7 @@ export const browserPersistence = {
     for (const name of ['Persistence chat A', 'Persistence chat B']) {
       const id = randomUUID(), timestamp = new Date().toISOString();
       sessionIds[name] = id;
-      await writeFile(join(sessions, `${id}.jsonl`), [
+      await writeFile(join(sessions, `${timestamp.replaceAll(":", "-")}_${id}.jsonl`), [
         {type:'session',version:3,id,timestamp,cwd},
         {type:'message',id:'user1',parentId:null,message:{role:'user',content:'Controlled browser persistence fixture',timestamp:Date.now()}},
         {type:'session_info',id:'info1',parentId:'user1',name,timestamp},
@@ -46,13 +47,8 @@ export const browserPersistence = {
     let loginAt = 0;
     const observations = [];
     async function open(name) {
-      await page.getByText(name, { exact: true }).first().click();
-      await page.locator(`[data-chat-surface][data-session-id="${fixture.sessionIds[name]}"]`).waitFor();
-      const address = page.getByRole('combobox', { name: /^(Address|地址)$/ });
-      if (!await address.isVisible()) await page.keyboard.press(process.platform === 'darwin' ? 'Meta+t' : 'Control+t');
-      await address.waitFor();
+      const address = await openChatBrowser(page, fixture.sessionIds[name], waitUntil);
       const target = `${fixture.origin}/${name.endsWith("A") ? "chat-a" : "chat-b"}`;
-      await waitUntil(async () => (await page.evaluate(() => window.piDesktop.browser.getState())).sessionId === fixture.sessionIds[name], "selected chat browser binding");
       await address.fill(target); await address.press('Enter');
       return waitUntil(() => getBrowser().contexts().flatMap(context => context.pages()).find(candidate => candidate.url() === target), 'controlled site native browser target');
     }

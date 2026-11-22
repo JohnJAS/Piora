@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { nativeMenuAcceptance } from "../browser-menu-native.mjs";
+import { openChatBrowser } from "../open-chat-browser.mjs";
 
 let fixture;
 const word = "纸上星河";
@@ -222,7 +223,7 @@ export const browserMenu = {
     const id = randomUUID(),
       timestamp = new Date().toISOString();
     await writeFile(
-      join(sessions, id + ".jsonl"),
+      join(sessions, timestamp.replaceAll(":", "-") + "_" + id + ".jsonl"),
       [
         { type: "session", version: 3, id, timestamp, cwd },
         {
@@ -257,42 +258,7 @@ export const browserMenu = {
       getBrowser()
         .contexts()
         .flatMap((c) => c.pages());
-    const openPanel = async () => {
-      const fixtureChat = page.getByText("Browser menu fixture", { exact: true }).first();
-      const trigger = page.getByRole("button", { name: /^(打开工具|Open tool)$/ });
-      const reveal = page.getByRole("button", { name: /^(显示文件面板|Show file panel)$/ });
-      const readyStatus = await page.evaluate(async (id) => {
-        const response = await fetch("/api/sessions/" + id, { signal: AbortSignal.timeout(90000) });
-        return response.status;
-      }, fixture.id);
-      assert.equal(readyStatus, 200, "fixture chat is ready before opening the workspace");
-      for (let attempt = 0; attempt < 2; attempt++) {
-        await fixtureChat.click();
-        await page.locator(`[data-chat-surface][data-session-id="${fixture.id}"]`).waitFor();
-        if (await address().isVisible()) break;
-        await page.keyboard.press(process.platform === "darwin" ? "Meta+t" : "Control+t");
-        try {
-          await address().waitFor({ timeout: 25000 });
-          break;
-        } catch {
-          const openedTab = page.locator("#workspace-browser-tab");
-          if (await openedTab.isVisible()) {
-            await openedTab.click();
-          } else {
-            if (await reveal.isVisible()) await reveal.click();
-            if (await trigger.isVisible()) {
-              if ((await trigger.getAttribute("aria-expanded")) !== "true") await trigger.click();
-              const item = page.getByRole("menuitem", { name: /^(浏览器|Browser)$/ });
-              if (await item.isVisible()) await item.click();
-            }
-          }
-          if (await address().isVisible()) break;
-          if (!attempt) await page.reload({ waitUntil: "domcontentloaded" });
-        }
-      }
-      await address().waitFor();
-      await waitUntil(async () => (await state()).sessionId === fixture.id, "browser bound to fixture");
-    };
+    const openPanel = () => openChatBrowser(page, fixture.id, waitUntil);
     const navigate = async (path) => {
       const url = fixture.origin + path;
       await address().fill(url);
@@ -349,10 +315,10 @@ export const browserMenu = {
         ? floating
         : page
       ).locator('[data-profile-section="' + section + '"]');
+    await step("select-the-fixture-chat-and-open-its-browser", openPanel);
+    await step("navigate-to-the-fixture-page", () => navigate("/book"));
     if (appearance) {
       await step("native-menu-import-window-and-browser-settings", async () => {
-        await openPanel();
-        await navigate("/book");
         const menu = await popup();
         await menu.locator("[data-action=import]").hover();
         await menu.locator("main > section").screenshot({ path: join(directory, "menu.png") });
@@ -474,8 +440,6 @@ export const browserMenu = {
         },
       });
     await step("targeted-page-find-and-inline-zoom", async () => {
-      await openPanel();
-      await navigate("/book");
       let menu = await popup();
       await menu.locator("[data-action=zoom_in]").click();
       await waitUntil(async () => (await state()).zoomFactor > 1, "website zoom increased");
