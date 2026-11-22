@@ -41,7 +41,7 @@ and [`third_party/iconfont-ant-design/SOURCE.md`](third_party/iconfont-ant-desig
 
 ## Mediabunny
 
-Harmony owned-stream MP4 recording uses unmodified Mediabunny 1.60.0,
+Harmony owned-stream MP4 recording uses unmodified Mediabunny 1.66.0,
 Copyright (c) 2026-present, Vanilagy and contributors, under MPL-2.0.
 See [license](third_party/mediabunny/LICENSE) and
 [source availability](third_party/mediabunny/SOURCE.md). Desktop distributions

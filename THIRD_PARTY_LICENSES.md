@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `90451b2937b2859a79168eb3c02ad38d327fbee8b779df70cb2caaf1490a7fb0`
+Lockfile SHA-256: `8e22c09d3bc87b188695eb8d0cf2aaf282e9026e31b543c823b299695b8c1ee9`
 
-Unique locked packages: **1304**. Runtime packages: **775**. Build/development-only packages: **529**.
+Unique locked packages: **1304**. Runtime packages: **776**. Build/development-only packages: **528**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -123,26 +123,26 @@ Every locked package declares a license.
 | `@isaacs/fs-minipass` | `4.0.1` | ISC | No |
 | `@isaacs/nonrecursive-glob-match` | `1.1.0` | BlueOak-1.0.0 | No |
 | `@js-sdsl/ordered-map` | `4.4.2` | MIT | No |
-| `@koromix/koffi-android-arm64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-android-x64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-darwin-arm64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-darwin-x64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-freebsd-arm64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-freebsd-ia32` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-freebsd-x64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-linux-arm` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-linux-arm64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-linux-ia32` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-linux-loong64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-linux-ppc64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-linux-riscv64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-linux-x64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-openbsd-arm64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-openbsd-ia32` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-openbsd-x64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-win32-arm64` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-win32-ia32` | `3.3.7` | MIT | Yes |
-| `@koromix/koffi-win32-x64` | `3.3.7` | MIT | Yes |
+| `@koromix/koffi-android-arm64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-android-x64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-darwin-arm64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-darwin-x64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-freebsd-arm64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-freebsd-ia32` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-freebsd-x64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-linux-arm` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-linux-arm64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-linux-ia32` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-linux-loong64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-linux-ppc64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-linux-riscv64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-linux-x64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-openbsd-arm64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-openbsd-ia32` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-openbsd-x64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-win32-arm64` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-win32-ia32` | `3.3.8` | MIT | Yes |
+| `@koromix/koffi-win32-x64` | `3.3.8` | MIT | Yes |
 | `@lezer/common` | `1.5.2` | MIT | No |
 | `@lezer/cpp` | `1.1.6` | MIT | No |
 | `@lezer/css` | `1.3.6` | MIT | No |
@@ -160,7 +160,7 @@ Every locked package declares a license.
 | `@lezer/sass` | `1.1.0` | MIT | No |
 | `@lezer/xml` | `1.0.6` | MIT | No |
 | `@lezer/yaml` | `1.0.4` | MIT | No |
-| `@lobehub/icons` | `6.15.1` | MIT | No |
+| `@lobehub/icons` | `6.15.2` | MIT | No |
 | `@marijn/find-cluster-break` | `1.0.4` | MIT | No |
 | `@mermaid-js/parser` | `2.0.1` | MIT | No |
 | `@microsoft/winappcli` | `0.8.0` | MIT | Yes |
@@ -517,7 +517,7 @@ Every locked package declares a license.
 | `jws` | `4.0.1` | MIT | No |
 | `katex` | `0.19.1` | MIT | No |
 | `khroma` | `2.1.0` | MIT | No |
-| `koffi` | `3.3.7` | MIT | No |
+| `koffi` | `3.3.8` | MIT | No |
 | `layout-base` | `1.0.2` | MIT | No |
 | `layout-base` | `2.0.1` | MIT | No |
 | `lazy-val` | `1.0.5` | MIT | No |
@@ -558,7 +558,7 @@ Every locked package declares a license.
 | `mdast-util-to-markdown` | `2.1.2` | MIT | No |
 | `mdast-util-to-string` | `4.0.0` | MIT | No |
 | `media-typer` | `1.1.1` | MIT | No |
-| `mediabunny` | `1.65.2` | MPL-2.0 | No |
+| `mediabunny` | `1.66.0` | MPL-2.0 | No |
 | `merge-descriptors` | `2.0.0` | MIT | No |
 | `mermaid` | `12.3.0` | MIT | No |
 | `micromark` | `4.0.2` | MIT | No |
@@ -635,12 +635,12 @@ Every locked package declares a license.
 | `picocolors` | `1.1.1` | ISC | No |
 | `pkce-challenge` | `5.0.1` | MIT | No |
 | `pkg-types` | `1.3.1` | MIT | No |
-| `playwright-core` | `1.65.0` | Apache-2.0 | No |
+| `playwright-core` | `1.65.1` | Apache-2.0 | No |
 | `points-on-curve` | `0.2.0` | MIT | No |
 | `points-on-path` | `0.2.1` | MIT | No |
 | `polished` | `4.3.1` | MIT | No |
 | `portfinder` | `1.0.38` | MIT | No |
-| `postcss` | `8.5.32` | MIT | No |
+| `postcss` | `8.5.33` | MIT | No |
 | `prismjs` | `1.30.0` | MIT | No |
 | `process` | `0.11.10` | MIT | No |
 | `process-nextick-args` | `2.0.1` | MIT | No |
@@ -687,6 +687,7 @@ Every locked package declares a license.
 | `scheduler` | `0.28.0` | MIT | No |
 | `semver` | `7.7.4` | ISC | No |
 | `semver` | `7.8.5` | ISC | No |
+| `semver` | `7.8.6` | ISC | No |
 | `send` | `1.2.1` | MIT | No |
 | `serve-static` | `2.2.1` | MIT | No |
 | `setimmediate` | `1.0.5` | MIT | No |
@@ -862,7 +863,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `@esbuild/win32-x64` | `0.28.2` | MIT | Yes |
 | `@eslint-community/eslint-utils` | `4.9.1` | MIT | No |
 | `@eslint-community/regexpp` | `4.12.2` | MIT | No |
-| `@eslint/config-array` | `0.23.5` | Apache-2.0 | No |
+| `@eslint/config-array` | `0.23.6` | Apache-2.0 | No |
 | `@eslint/config-helpers` | `0.7.0` | Apache-2.0 | No |
 | `@eslint/core` | `1.2.1` | Apache-2.0 | No |
 | `@eslint/object-schema` | `3.0.5` | Apache-2.0 | No |
@@ -1044,7 +1045,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `dotenv-expand` | `11.0.7` | BSD-2-Clause | No |
 | `duplexer2` | `0.1.4` | BSD-3-Clause | No |
 | `ejs` | `3.1.10` | Apache-2.0 | No |
-| `electron` | `45.3.1` | MIT | No |
+| `electron` | `45.3.3` | MIT | No |
 | `electron-builder` | `26.18.0` | MIT | No |
 | `electron-publish` | `26.18.0` | MIT | No |
 | `electron-to-chromium` | `1.5.399` | ISC | No |
@@ -1060,7 +1061,7 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `es6-error` | `4.1.1` | MIT | Yes |
 | `esbuild` | `0.28.2` | MIT | No |
 | `escape-string-regexp` | `4.0.0` | MIT | No |
-| `eslint` | `10.14.0` | MIT | No |
+| `eslint` | `10.15.0` | MIT | No |
 | `eslint-config-next` | `16.4.6` | MIT | No |
 | `eslint-import-resolver-node` | `0.3.9` | MIT | No |
 | `eslint-import-resolver-typescript` | `3.10.1` | ISC | No |
@@ -1203,7 +1204,6 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `mimic-response` | `1.0.1` | MIT | No |
 | `mimic-response` | `3.1.0` | MIT | No |
 | `minimatch` | `10.2.5` | BlueOak-1.0.0 | No |
-| `minimatch` | `10.2.6` | BlueOak-1.0.0 | No |
 | `minimatch` | `11.0.8` | BlueOak-1.0.0 | No |
 | `minimatch` | `3.1.5` | ISC | No |
 | `minimist` | `1.2.8` | MIT | No |
