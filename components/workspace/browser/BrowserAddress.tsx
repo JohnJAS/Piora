@@ -63,15 +63,29 @@ export function BrowserAddress({
     inputRef.current?.blur();
     navigate(url.trim());
   };
+  let domain: string | undefined;
+  if (invoke && !focus && /^https?:\/\//i.test(value)) {
+    try {
+      domain = new URL(value).host;
+    } catch {
+      /* Keep partially entered URLs visible. */
+    }
+  }
   const open = focus && editing && Boolean(rows.length) && Boolean(slot);
   return (
     <>
       <form
+        data-domain={domain || undefined}
         onSubmit={(event) => {
           event.preventDefault();
           if (!composing(inputRef.current)) submit(open && selected >= 0 ? rows[selected]!.url : value);
         }}
       >
+        {domain && (
+          <span className={styles.addressHost} aria-hidden="true">
+            {domain}
+          </span>
+        )}
         <input
           ref={inputRef}
           value={value}

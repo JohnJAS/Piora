@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { DatabaseSync } from "node:sqlite";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -148,6 +149,54 @@ export const browserMenu = {
   limits: ["physical monitor DPI switching", "external browser accounts and sync services"],
   async prepare({ paths, directory, registerCleanup, report, env }) {
     env.PIORA_DESKTOP_E2E_FIXED_SOURCE = "1";
+    const browserRoots = join(directory, "external-profile-fixtures");
+    if (process.platform === "win32") env.LOCALAPPDATA = browserRoots;
+    else if (process.platform === "linux") env.XDG_CONFIG_HOME = browserRoots;
+    if (process.platform === "win32" || process.platform === "linux") {
+      const chrome =
+        process.platform === "win32"
+          ? join(browserRoots, "Google", "Chrome", "User Data")
+          : join(browserRoots, "google-chrome");
+      const edge =
+        process.platform === "win32"
+          ? join(browserRoots, "Microsoft", "Edge", "User Data")
+          : join(browserRoots, "microsoft-edge");
+      for (const [root, ids] of [
+        [chrome, ["Default", "Profile 1", "Profile 2"]],
+        [edge, ["Default"]],
+      ]) {
+        const info_cache = {};
+        for (const dir of ids) {
+          await mkdir(join(root, dir), { recursive: true });
+          const work = dir !== "Profile 2";
+          info_cache[dir] = {
+            name: work ? "工作" : "阅读",
+            gaia_given_name: work ? "工作" : "阅读",
+            user_name: "",
+            is_using_default_name: true,
+          };
+          const db = new DatabaseSync(join(root, dir, "History"));
+          try {
+            db.exec(
+              "CREATE TABLE urls(id INTEGER PRIMARY KEY,url TEXT,title TEXT,hidden INTEGER); CREATE TABLE visits(id INTEGER PRIMARY KEY,url INTEGER,visit_time INTEGER)",
+            );
+            db.prepare("INSERT INTO urls VALUES(1,?,?,0)").run(
+              "https://" + (work ? "work" : "reading") + ".example.invalid/",
+              "归档测试",
+            );
+            db.prepare("INSERT INTO visits VALUES(1,1,?)").run(
+              (BigInt(Date.now() - 86400000) + 11644473600000n) * 1000n,
+            );
+          } finally {
+            db.close();
+          }
+        }
+        await writeFile(
+          join(root, "Local State"),
+          JSON.stringify({ profile: { last_used: "Default", info_cache } }),
+        );
+      }
+    }
     const server = createServer(serve);
     await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
     registerCleanup(
@@ -326,7 +375,32 @@ export const browserMenu = {
             Math.abs(measure.x * 2 + measure.width - measure.viewport[0]) <= 3,
         );
         assert.equal(new URL(guest.url()).pathname, "/book");
+        const picker = region.getByRole("combobox");
+        await waitUntil(async () => await picker.isEnabled(), "installed profile names are available");
         await region.screenshot({ path: join(directory, "import.png") });
+        await picker.click();
+        const profiles = region.getByRole("listbox");
+        assert.equal(await profiles.locator('[data-source-id^="chrome/"]').count(), 3);
+        assert.equal(await profiles.locator("[aria-selected=true]").count(), 1);
+        assert.equal(await picker.locator("svg:last-child").count(), 1);
+        await region.screenshot({ path: join(directory, "profile-menu.png") });
+        await profiles.locator('[data-source-id="chrome/Profile 2"]').click();
+        await picker.press("ArrowDown");
+        await picker.press("Escape");
+        assert.ok(await region.isVisible());
+        assert.equal(await profiles.isVisible(), false);
+        await region.getByRole("switch", { name: /已保存的密码|Saved passwords/ }).uncheck();
+        await region.getByRole("switch", { name: /浏览记录|Browsing history/ }).check();
+        await region.getByRole("button", { name: /预览导入|Preview import/ }).click();
+        await region.getByText("https://reading.example.invalid", { exact: true }).waitFor();
+        assert.equal(await region.getByText("https://work.example.invalid", { exact: true }).count(), 0);
+        await region.getByRole("button", { name: /确认导入|Confirm import/ }).click();
+        await region
+          .getByRole("status")
+          .filter({ hasText: /已导入 1|Imported 1/ })
+          .waitFor();
+        await picker.click();
+        await profiles.locator('[data-source-id="chrome/Default"]').click();
         await captureImportWorkspace({ page, guest, dialog, directory });
         await writeFile(join(directory, "dialog-geometry.json"), JSON.stringify(measure));
         await close();
@@ -338,7 +412,9 @@ export const browserMenu = {
           .screenshot({ path: join(directory, "password-settings.png") });
         await close();
         await choose("history");
-        await sheet("history").locator("strong").first().waitFor();
+        await sheet("history")
+          .getByText(/reading\.example\.invalid/)
+          .waitFor();
         await sheet("history").screenshot({ path: join(directory, "history.png") });
         await close();
         await choose("privacy");

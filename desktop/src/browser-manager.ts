@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { browserDataRoot } from "./browser/import-sources.js";
 import { createHash } from "node:crypto";
 import { loginEvidence, loginEvidenceAccepted, matchesLoginReturn, type LoginEvidence } from "./credential-sso.js";
 import {
@@ -235,19 +236,8 @@ function validBounds(value: unknown, window: BrowserWindow): Rectangle | null {
   return { x, y, width, height };
 }
 
-function chromeUserDataDirectory(): string | null {
-  if (process.platform === "win32") {
-    const localAppData = process.env.LOCALAPPDATA?.trim();
-    return localAppData ? join(localAppData, "Google", "Chrome", "User Data") : null;
-  }
-  if (process.platform === "darwin") {
-    return join(app.getPath("home"), "Library", "Application Support", "Google", "Chrome");
-  }
-  return join(app.getPath("home"), ".config", "google-chrome");
-}
-
 function readChromeBookmarks(): ChromeBookmarkImportResult {
-  const userData = chromeUserDataDirectory();
+  const userData = browserDataRoot("chrome");
   if (!userData) return { bookmarkCount: 0, profiles: [] };
 
   let profileDirectories: string[];

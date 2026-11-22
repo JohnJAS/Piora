@@ -2,11 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AliIcon } from "@/components/AliIcon";
-import type { ImportKind, ImportPreview } from "@/desktop/src/browser/contracts";
+import type { ImportKind, ImportPreview, ImportSource } from "@/desktop/src/browser/contracts";
 import { errorText, openBrowserSettings, useBrowserCopy, type ToolsBridge } from "./shared";
 import styles from "./BrowserTools.module.css";
 
-type Source = "chrome" | "edge" | "piora";
+import { BrowserImportSource, browserNames } from "./BrowserImportSource";
+
+const lastSource = "piora-browser-import-source";
 export function ProfileImport({
   bridge,
   cancel,
@@ -17,7 +19,8 @@ export function ProfileImport({
   openVault?(): void;
 }) {
   const { copy } = useBrowserCopy();
-  const [source, setSource] = useState<Source>("chrome"),
+  const [sources, setSources] = useState<ImportSource[]>([]),
+    [selectedId, setSelectedId] = useState(""),
     [kinds, setKinds] = useState<ImportKind[]>(["passwords"]);
   const [previews, setPreviews] = useState<ImportPreview[]>([]),
     [sites, setSites] = useState<Record<string, string[]>>({});
@@ -26,7 +29,39 @@ export function ProfileImport({
     [messages, setMessages] = useState<string[]>([]);
   const tokens = useRef(new Set<string>()),
     mounted = useRef(true);
-  const names = { passwords: copy("密码", "Passwords"), cookies: "Cookie" };
+  const selected = sources.find((row) => row.id === selectedId);
+  const source = selected?.browser;
+  const names = {
+    passwords: copy("密码", "Passwords"),
+    cookies: "Cookie",
+    history: copy("浏览记录", "Browsing history"),
+  };
+  useEffect(() => {
+    let live = true;
+    void bridge
+      .tools("importSources", null)
+      .then((options) => {
+        if (!live) return;
+        let previous = "";
+        try {
+          previous = localStorage.getItem(lastSource) ?? "";
+        } catch {
+          /* storage is optional */
+        }
+        const first = options.find((row) => row.id === previous) ?? options[0];
+        setSources(options);
+        if (first) {
+          setSelectedId(first.id);
+          setKinds(first.browser === "piora" ? ["cookies"] : ["passwords"]);
+        }
+      })
+      .catch((reason) => {
+        if (live) setMessages([errorText(reason)]);
+      });
+    return () => {
+      live = false;
+    };
+  }, [bridge]);
   useEffect(() => {
     mounted.current = true;
     const outstanding = tokens.current;
@@ -45,6 +80,7 @@ export function ProfileImport({
     setMessages([]);
   };
   const choose = async () => {
+    if (!selected) return;
     reset();
     setBusy(true);
     const chosen: ImportPreview[] = [],
@@ -52,7 +88,7 @@ export function ProfileImport({
       problems: string[] = [];
     for (const kind of kinds) {
       try {
-        const result = await bridge.tools("importChoose", kind);
+        const result = await bridge.tools("importChoose", { kind, sourceId: selected.id });
         if (!mounted.current) {
           if (result) await bridge.tools("importCancel", result.token);
           break;
@@ -108,71 +144,113 @@ export function ProfileImport({
     }
   };
   const busyLabel = copy("处理中…", "Working…");
+  const selectedName = selected ? [browserNames[selected.browser], selected.name].filter(Boolean).join(" · ") : "";
   const description =
     source === "piora"
-      ? copy(
-          "可恢复此 Windows 账户下的 Piora 加密会话备份。",
-          "Restore a Piora session backup created with this Windows account.",
-        )
-      : copy(
-          "从 " +
-            (source === "chrome" ? "Google Chrome" : "Microsoft Edge") +
-            " 导出的密码 CSV 文件中选择要导入的站点。",
-          "Choose sites from a password CSV exported by the selected browser.",
-        );
+      ? copy("选择此 Windows 账户的 Piora 加密备份。", "Choose a Piora backup created with this Windows account.")
+      : kinds.includes("history")
+        ? copy(
+            "浏览记录来自所选个人资料。如该浏览器正在使用资料，请先完全退出。",
+            "Browsing history comes from the selected profile. Close the source browser if the profile is in use.",
+          )
+        : copy(
+            "选择由" + selectedName + " 导出的密码 CSV 文件。",
+            "Choose the password CSV exported from " + selectedName + ".",
+          );
   return (
     <div className={styles.form}>
-      <label className={styles.sourceLine}>
-        <span>{copy("从", "From")}</span>
-        <span className={styles.sourceSelect}>
-          {source === "chrome" ? (
-            <i className={styles.chromeMark} aria-hidden="true" />
-          ) : (
-            <AliIcon name={source === "piora" ? "desktop" : "earth"} size={17} />
+      <BrowserImportSource
+        options={sources}
+        current={selected}
+        disabled={busy}
+        select={(next) => {
+          reset();
+          setSelectedId(next.id);
+          setKinds(next.browser === "piora" ? ["cookies"] : ["passwords"]);
+          try {
+            localStorage.setItem(lastSource, next.id);
+          } catch {
+            /* storage is optional */
+          }
+        }}
+      />
+      {selected && (
+        <p className={styles.helper}>
+          {description}{" "}
+          {source === "piora" && (
+            <button className={styles.textButton} type="button" onClick={openVault}>
+              {copy("打开 Piora 密码管理器", "Open Piora password manager")}
+            </button>
           )}
-          <select
-            aria-label={copy("来源浏览器", "Source browser")}
-            value={source}
-            disabled={busy}
-            onChange={(event) => {
-              reset();
-              const next = event.target.value as Source;
-              setSource(next);
-              setKinds(next === "piora" ? ["cookies"] : ["passwords"]);
-            }}
-          >
-            <option value="chrome">Google Chrome</option>
-            <option value="edge">Microsoft Edge</option>
-            <option value="piora">Piora</option>
-          </select>
-          <AliIcon name="chevron-down" size={14} />
-        </span>
-      </label>
-      <p className={styles.helper}>{description}</p>
+          {kinds.includes("passwords") && selected.directory && (
+            <button
+              className={styles.textButton}
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                void bridge.tools("openImportSource", selected.id).catch((e) => setMessages([errorText(e)]))
+              }
+            >
+              {copy("打开此资料的密码管理器", "Open this profile’s password manager")}
+            </button>
+          )}
+        </p>
+      )}
       <fieldset
         className={styles.options}
         disabled={busy || previews.length > 0}
         aria-label={copy("导入内容", "Data to import")}
       >
-        {(["passwords", "cookies"] as const).map((kind) => {
-          const unavailable = kind === "cookies" && source !== "piora";
+        {(["passwords", "cookies", "history", "extensions"] as const).map((kind) => {
+          const unavailable =
+            !selected ||
+            kind === "extensions" ||
+            (kind === "passwords" && source === "piora") ||
+            (kind === "cookies" && source !== "piora") ||
+            (kind === "history" && !selected?.directory);
+          const title =
+            kind === "extensions"
+              ? copy("扩展程序", "Extensions")
+              : kind === "passwords"
+                ? copy("已保存的密码", "Saved passwords")
+                : names[kind];
+          const hint =
+            kind === "passwords" && source === "piora"
+              ? copy("在密码管理器中恢复凭据库备份", "Restore vault backups in the password manager")
+              : kind === "cookies" && unavailable
+                ? copy("可从 Piora 加密备份导入", "Available from a Piora encrypted backup")
+                : kind === "extensions"
+                  ? copy("当前版本暂不支持导入浏览器扩展", "Extension import is unavailable")
+                  : kind === "history" && unavailable
+                    ? copy("需要选择本机 Chrome 或 Edge 个人资料", "Choose a local Chrome or Edge profile")
+                    : "";
           return (
             <label className={styles.option} key={kind} data-disabled={unavailable || undefined}>
-              <AliIcon name={kind === "passwords" ? "key" : "cookie"} size={18} />
+              <AliIcon
+                name={
+                  kind === "passwords"
+                    ? "key"
+                    : kind === "cookies"
+                      ? "cookie"
+                      : kind === "history"
+                        ? "history"
+                        : "puzzle"
+                }
+                size={18}
+              />
               <span>
-                {kind === "passwords" ? copy("已保存的密码", "Saved passwords") : "Cookie"}
-                {unavailable && (
-                  <small>{copy("可从 Piora 加密备份导入", "Available from a Piora encrypted backup")}</small>
-                )}
+                {title}
+                {hint && <small>{hint}</small>}
               </span>
               <input
                 className={styles.switch}
                 type="checkbox"
                 role="switch"
-                aria-label={names[kind]}
-                checked={kinds.includes(kind)}
+                aria-label={title}
+                checked={kind !== "extensions" && kinds.includes(kind)}
                 disabled={unavailable}
                 onChange={(event) =>
+                  kind !== "extensions" &&
                   setKinds((current) =>
                     event.target.checked ? [...current, kind] : current.filter((item) => item !== kind),
                   )
@@ -210,7 +288,7 @@ export function ProfileImport({
           ))}
         </fieldset>
       ))}
-      {previews.length ? (
+      {previews.some((item) => item.kind !== "history") ? (
         <label className={styles.check}>
           <input
             type="checkbox"
@@ -266,11 +344,15 @@ export function ProfileImport({
         ) : (
           <button
             className={styles.primary}
-            disabled={busy || !kinds.length}
+            disabled={busy || !selected || !kinds.length}
             type="button"
             onClick={() => void choose()}
           >
-            {busy ? busyLabel : copy("选择文件并预览", "Choose files and preview")}
+            {busy
+              ? busyLabel
+              : kinds.length === 1 && kinds[0] === "history"
+                ? copy("预览导入", "Preview import")
+                : copy("选择文件并预览", "Choose files and preview")}
           </button>
         )}
       </footer>

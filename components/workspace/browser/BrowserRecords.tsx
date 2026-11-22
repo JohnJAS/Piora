@@ -22,14 +22,16 @@ export function BrowserRecords({
   const { copy, locale } = useBrowserCopy();
   const [day, setDay] = useState("");
   const [text, setText] = useState(""),
-    [cursors, setCursors] = useState<number[]>([]);
+    [cursors, setCursors] = useState<Array<{ id: number; visited?: number }>>([]);
   const [visits, setVisits] = useState<Visit[]>([]),
     [downloads, setDownloads] = useState<Transfer[]>([]);
   const [revision, setRevision] = useState(0),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const pageSize = recent ? 5 : 25;
-  const before = cursors.at(-1);
+  const cursor = cursors.at(-1),
+    before = cursor?.id,
+    beforeVisited = cursor?.visited;
   useEffect(
     () =>
       bridge.onToolsEvent?.((event) => {
@@ -45,6 +47,7 @@ export function BrowserRecords({
     const query = {
       text,
       before,
+      beforeVisited,
       limit: pageSize + 1,
       ...(midnight && tomorrow ? { since: midnight.getTime(), until: tomorrow.getTime() - 1 } : {}),
     };
@@ -67,7 +70,7 @@ export function BrowserRecords({
     return () => {
       current = false;
     };
-  }, [before, bridge, day, kind, pageSize, revision, text]);
+  }, [before, beforeVisited, bridge, day, kind, pageSize, revision, text]);
   const act = async (request: Promise<unknown>) => {
     try {
       await request;
@@ -221,7 +224,14 @@ export function BrowserRecords({
             <button
               type="button"
               disabled={rows.length <= pageSize}
-              onClick={() => setCursors((stack) => [...stack, rows[pageSize - 1]!.id])}
+              onClick={() =>
+                setCursors((stack) => [
+                  ...stack,
+                  kind === "history"
+                    ? { id: visits[pageSize - 1]!.id, visited: visits[pageSize - 1]!.visited }
+                    : { id: downloads[pageSize - 1]!.id },
+                ])
+              }
             >
               {copy("下一页", "Next")}
             </button>

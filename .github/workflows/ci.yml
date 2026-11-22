@@ -229,6 +229,16 @@ jobs:
         env:
           EXPECTED_TAG: ${{ steps.metadata.outputs.tag }}
         run: node scripts/verify-windows-update-artifacts.mjs desktop/release $env:EXPECTED_TAG
+      - name: Save browser acceptance build before testing
+        if: matrix.variant == 'after' && inputs.browser_acceptance
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-acceptance-input-${{ github.run_attempt }}
+          path: |
+            desktop/release/*-setup.exe
+            desktop/release/beta.yml
+          retention-days: 3
+          compression-level: 0
       - name: Install and fully verify benchmark artifacts
         shell: pwsh
         run: |
@@ -238,6 +248,14 @@ jobs:
         env:
           EXPECTED_TAG: ${{ steps.metadata.outputs.tag }}
           PIORA_CI_BROWSER_ACCEPTANCE: ${{ matrix.variant == 'after' && inputs.browser_acceptance && '1' || '0' }}
+      - name: Save isolated desktop acceptance reports
+        if: always() && matrix.variant == 'after' && inputs.browser_acceptance
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: browser-acceptance-reports-${{ github.run_attempt }}
+          path: .verification/desktop-e2e-*/report.md
+          if-no-files-found: warn
+          retention-days: 3
       - name: Upload verified benchmark installers
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:

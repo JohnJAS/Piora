@@ -5,7 +5,7 @@ import type { BrowserDialogKind } from "./contracts.js";
 const channel = "pi:browser-modal";
 const commands = {
   recent: new Set(["downloads", "transfer"]),
-  import: new Set(["importChoose", "importApply", "importCancel"]),
+  import: new Set(["importSources", "openImportSource", "importChoose", "importApply", "importCancel"]),
   privacy: new Set(["clearPreview", "clearApply"]),
 };
 

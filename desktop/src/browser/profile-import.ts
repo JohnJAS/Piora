@@ -4,10 +4,17 @@ import { open } from "node:fs/promises";
 import { dialog, safeStorage, type BrowserWindow, type Cookie, type Session } from "electron";
 import type { CredentialVault } from "../credential-vault.js";
 import { readPioraCookieSnapshot, sessionCookieDetails } from "../browser-cookie-store.js";
-import type { ImportKind, ImportPreview, ImportResult } from "./contracts.js";
+import type { ImportKind, ImportPreview, ImportResult, ImportSelection, ImportedVisit } from "./contracts.js";
 
 import { passwordCsv, type PasswordRow } from "./password-csv.js";
-type Batch = { kind: "passwords"; rows: PasswordRow[] } | { kind: "cookies"; rows: Cookie[]; skipped: number };
+import { selectedImportSource } from "./import-sources.js";
+import { profileHistory } from "./profile-history.js";
+import type { BrowserLibrary } from "./library.js";
+
+type Batch =
+  | { kind: "history"; rows: ImportedVisit[]; source: string; skipped: number }
+  | { kind: "passwords"; rows: PasswordRow[] }
+  | { kind: "cookies"; rows: Cookie[]; skipped: number };
 const cookieKey = (cookie: Cookie) => JSON.stringify([cookie.domain, cookie.path, cookie.name]);
 function cookieSite(cookie: Cookie) {
   const details = sessionCookieDetails(cookie);
@@ -24,6 +31,8 @@ export class BrowserProfileImport {
     private readonly session: Session,
     private readonly vault: () => CredentialVault,
     private readonly writeSites: <T>(operation: () => Promise<T>) => Promise<T>,
+    private readonly library: BrowserLibrary,
+    private readonly historyChanged: () => void,
   ) {}
   cancel(token: string) {
     const entry = this.pending.get(token);
@@ -35,12 +44,40 @@ export class BrowserProfileImport {
   close() {
     for (const token of this.pending.keys()) this.cancel(token);
   }
-  async choose(kind: ImportKind, owner = this.parent): Promise<ImportPreview | null> {
+  async choose(selection: ImportKind | ImportSelection, owner = this.parent): Promise<ImportPreview | null> {
+    const kind = typeof selection === "string" ? selection : selection?.kind;
+    const source =
+      typeof selection === "object" && selection ? await selectedImportSource(selection.sourceId) : undefined;
+    if (kind === "history") {
+      if (!source) throw new Error("请选择来源个人资料");
+      const { rows, skipped } = await profileHistory(source);
+      const { duplicates } = this.library.importVisits(rows, source.id, true);
+      const sites = [...new Set(rows.map((row) => new URL(row.url).origin))];
+      return this.stage(
+        { kind, rows, skipped, source: source.id },
+        source.name,
+        rows.length,
+        duplicates,
+        skipped,
+        sites,
+      );
+    }
+    if (kind === "cookies" && source && source.browser !== "piora") throw new Error("请选择 Piora 会话备份来源。");
     if (kind !== "cookies" && kind !== "passwords") throw new Error("Invalid import type");
     if (kind === "passwords" && !this.vault().status().unlocked)
       throw new Error("请先在密码管理器中创建或解锁凭据库");
     const result = await dialog.showOpenDialog(owner, {
       properties: ["openFile"],
+      ...(source?.name
+        ? {
+            title:
+              "选择文件 · " +
+              (source.browser === "chrome" ? "Google Chrome" : "Microsoft Edge") +
+              " · " +
+              source.name +
+              " — 选择此个人资料导出的密码 CSV",
+          }
+        : {}),
       filters: [
         kind === "passwords"
           ? { name: "Chrome / Edge password CSV", extensions: ["csv"] }
@@ -102,11 +139,21 @@ export class BrowserProfileImport {
     } finally {
       bytes.fill(0);
     }
+    return this.stage(batch, filename, valid, duplicates, skipped, sites);
+  }
+  private stage(
+    batch: Batch,
+    filename: string,
+    valid: number,
+    duplicates: number,
+    skipped: number,
+    sites: string[],
+  ): ImportPreview {
     const token = randomUUID();
     const timer = setTimeout(() => this.cancel(token), 5 * 60000);
     timer.unref();
     this.pending.set(token, { batch, timer });
-    return { token, filename, kind, valid, duplicates, skipped, sites };
+    return { token, filename, kind: batch.kind, valid, duplicates, skipped, sites };
   }
   async apply(token: string, replace: boolean, sites: string[]): Promise<ImportResult> {
     const pending = this.pending.get(token);
@@ -114,6 +161,12 @@ export class BrowserProfileImport {
     this.cancel(token);
     const selected = new Set(sites);
     const batch = pending.batch;
+    if (batch.kind === "history") {
+      const rows = batch.rows.filter((row) => selected.has(new URL(row.url).origin));
+      const { added } = this.library.importVisits(rows, batch.source);
+      this.historyChanged();
+      return { added, skipped: batch.skipped + batch.rows.length - added, failed: 0 };
+    }
     if (batch.kind === "passwords") {
       const rows = batch.rows.filter((row) => {
         try {

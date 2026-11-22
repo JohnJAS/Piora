@@ -500,7 +500,7 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
       setError(decideError instanceof Error ? decideError.message : t("browser.actionFailed"));
     }
   };
-  return <div className={styles.browserRoot} data-native-browser="true">
+  return <div className={styles.browserRoot} data-native-browser="true" data-browser-chrome={bridge.tools ? "menu" : undefined}>
     {state?.loginNotice ? <div className={styles.browserAgentOperating} role="status" data-browser-login-notice={state.loginNotice}>
       <span>{t(LOGIN_NOTICES[state.loginNotice as keyof typeof LOGIN_NOTICES] ?? "browser.loginUnverified")}</span>
     </div> : null}
@@ -558,17 +558,20 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
     </div>
     {state?.tabCount !== undefined && state.tabCount >= (state.tabLimit ?? 20) ? <div className={styles.browserError} role="status">{t("browser.tabLimitReached", { limit: state.tabLimit ?? 20 })}</div> : null}
     <div className={styles.browserToolbar}>
+      <div className={styles.browserNavigation}>
       <button type="button" aria-label={t("browser.back")} disabled={!state?.canGoBack} onClick={() => void act({ action: "back" })}><AliIcon name="arrowleft" size={14} /></button>
       <button type="button" aria-label={t("browser.forward")} disabled={!state?.canGoForward} onClick={() => void act({ action: "forward" })}><AliIcon name="arrowright" size={14} /></button>
       <button type="button" aria-label={t("browser.reload")} disabled={!state} onClick={() => void act({ action: "reload" })}><AliIcon name="reload" size={14} /></button>
+      </div>
       <BrowserAddress key={state?.activeTabId ?? "starting"} value={address} change={setAddress} inputRef={addressRef} label={t("browser.address")}
         placeholder={t("browser.addressPlaceholder")} invoke={bridge.tools} slot={toolSlot} navigate={url => void act({action:"navigate", url})} />
       <button type="button" aria-label={t("browser.siteLogin")} title={t("browser.siteLogin")} disabled={!state || blank} onClick={() => void act({ action: "configure_login" })}><AliIcon name="lock" size={14} /></button>
+      {bridge.tools && !barNodes.length && <button type="button" disabled={importing} aria-label={t("browser.refreshBookmarks")} title={t("browser.refreshBookmarks")} onClick={() => void importChromeBookmarks()}><AliIcon name="bookmark" size={15} /></button>}
       {state && bridge.tools && <BrowserControls key={[state.sessionId, state.activeTabId, state.navigationEpoch].join("/")} bridge={bridge as ToolsBridge} navigationEpoch={state.navigationEpoch ?? 0}
         sessionId={state.sessionId} tabId={state.activeTabId} active={active} slot={toolSlot} viewport={viewportRef.current}
         suspend={setDeviceDragging} report={setError} />}
     </div>
-    <div className={styles.browserBookmarkBar} aria-label={t("browser.bookmarkBar")}>
+    {(!bridge.tools || barNodes.length > 0) && <div className={styles.browserBookmarkBar} aria-label={t("browser.bookmarkBar")}>
       {!bridge.tools && <div className={styles.browserZoom} role="group" aria-label={t("browserPreferences.zoom")}>
         <button type="button" disabled={!state || blank} aria-label={t("browserPreferences.zoomOut")} onClick={() => void act({ action: "zoom_out" })}>−</button>
         <button type="button" disabled={!state || blank} title={t("browserPreferences.zoomReset")} aria-label={t("browserPreferences.zoomReset")} onClick={() => void act({ action: "zoom_reset" })}>{Math.round((state?.zoomFactor ?? 1) * 100)}%</button>
@@ -602,7 +605,7 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
       >
         <AliIcon name="reload" size={12} />
       </button>
-    </div>
+    </div>}
     {error ? <div className={styles.browserError} role="alert">{error}</div> : null}
     <div ref={setToolSlot} style={{ flex: "0 1 auto", minHeight: 0, maxHeight: "55%", overflow: "auto" }} />
     <div ref={viewportRef} className={styles.browserViewport} data-browser-viewport="" data-busy={state?.loading ? "true" : undefined}>

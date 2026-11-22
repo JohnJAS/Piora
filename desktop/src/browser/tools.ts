@@ -12,6 +12,7 @@ import { BrowserLibrary } from "./library.js";
 import { BrowserTransfers } from "./transfers.js";
 import { BrowserPrivacy } from "./privacy.js";
 import { BrowserContacts } from "./contacts.js";
+import { importSources, openImportSource } from "./import-sources.js";
 import { BrowserProfileImport } from "./profile-import.js";
 import { BrowserDevices } from "./devices.js";
 import { BrowserPageTools } from "./page-tools.js";
@@ -29,6 +30,7 @@ import type {
   ClearOptions,
   DeviceViewport,
   ImportKind,
+  ImportSelection,
   Transfer,
   TransferAction,
   BrowserQuery,
@@ -74,7 +76,14 @@ export class BrowserTools {
     this.library = new BrowserLibrary(join(directory, "library.sqlite"));
     this.devices = new BrowserDevices(() => this.library.deviceDefault());
     this.contacts = new BrowserContacts(join(directory, "contacts.enc"), safeStorage);
-    this.imports = new BrowserProfileImport(host.window, host.session, host.vault, host.writeSites);
+    this.imports = new BrowserProfileImport(
+      host.window,
+      host.session,
+      host.vault,
+      host.writeSites,
+      this.library,
+      () => this.changed("history"),
+    );
     this.transfers = new BrowserTransfers(this.library, host.preferences, (row) => {
       host.download(row);
       this.changed("downloads");
@@ -118,7 +127,11 @@ export class BrowserTools {
     this.transfers.close();
     this.library.close();
   }
-  private async dispatch(command: keyof BrowserEndpoints, value: unknown, owner = this.host.window): Promise<unknown> {
+  private async dispatch(
+    command: keyof BrowserEndpoints,
+    value: unknown,
+    owner = this.host.window,
+  ): Promise<unknown> {
     const input = (value ?? {}) as Record<string, unknown>;
     const id = () => {
       if (!Number.isSafeInteger(value) || Number(value) < 1) throw new Error("Invalid record ID");
@@ -129,10 +142,17 @@ export class BrowserTools {
     switch (command) {
       case "recent":
         if (!Number.isFinite(input.x) || !Number.isFinite(input.y)) throw new Error("Invalid menu anchor");
-        return this.modal.show(this.host.window, "recent", (action, args, dialog) => this.dispatch(action as keyof BrowserEndpoints, args, dialog), {x: Number(input.x), y: Number(input.y)});
+        return this.modal.show(
+          this.host.window,
+          "recent",
+          (action, args, dialog) => this.dispatch(action as keyof BrowserEndpoints, args, dialog),
+          { x: Number(input.x), y: Number(input.y) },
+        );
       case "modal":
         if (value !== "import" && value !== "privacy") throw new Error("Invalid dialog");
-        return this.modal.show(this.host.window, value, (action, input, dialog) => this.dispatch(action as keyof BrowserEndpoints, input, dialog));
+        return this.modal.show(this.host.window, value, (action, input, dialog) =>
+          this.dispatch(action as keyof BrowserEndpoints, input, dialog),
+        );
       case "menu": {
         const opened = this.host.empty(target) ? undefined : page();
         if (!Number.isFinite(input.x) || !Number.isFinite(input.y)) throw new Error("Invalid menu anchor");
@@ -142,29 +162,38 @@ export class BrowserTools {
           maxZoom: (opened?.contents.getZoomLevel() ?? 0) >= MAX_BROWSER_ZOOM,
         });
         this.menuOwner = target;
-        return this.popup.show(
-          this.host.window,
-          {
-            x: Number(input.x),
-            y: Number(input.y),
-            locale: String(input.locale),
-            dark: input.dark === true,
-            page: Boolean(opened && opened.contents.getURL() !== "about:blank" && !opened.protected),
-            hasTab: Boolean(opened),
-            device: Boolean(opened && this.devices.get(target.tabId).enabled),
-            defaultDevice: this.library.deviceDefault(),
-            ...zoom(),
-          },
-          opened?.current ?? (() => this.host.empty(target)),
-          (action) => {
-            this.host.zoom(target, action);
-            return zoom();
-          },
-        ).finally(() => { if (this.menuOwner === target) this.menuOwner = undefined; });
+        return this.popup
+          .show(
+            this.host.window,
+            {
+              x: Number(input.x),
+              y: Number(input.y),
+              locale: String(input.locale),
+              dark: input.dark === true,
+              page: Boolean(opened && opened.contents.getURL() !== "about:blank" && !opened.protected),
+              hasTab: Boolean(opened),
+              device: Boolean(opened && this.devices.get(target.tabId).enabled),
+              defaultDevice: this.library.deviceDefault(),
+              ...zoom(),
+            },
+            opened?.current ?? (() => this.host.empty(target)),
+            (action) => {
+              this.host.zoom(target, action);
+              return zoom();
+            },
+          )
+          .finally(() => {
+            if (this.menuOwner === target) this.menuOwner = undefined;
+          });
       }
       case "dismissMenu":
-        if (this.menuOwner && input.sessionId === this.menuOwner.sessionId && input.tabId === this.menuOwner.tabId
-          && input.navigationEpoch === this.menuOwner.navigationEpoch) this.popup.close();
+        if (
+          this.menuOwner &&
+          input.sessionId === this.menuOwner.sessionId &&
+          input.tabId === this.menuOwner.tabId &&
+          input.navigationEpoch === this.menuOwner.navigationEpoch
+        )
+          this.popup.close();
         return;
       case "page": {
         const current = page();
@@ -226,8 +255,13 @@ export class BrowserTools {
         if (!contact || current.protected) throw new Error("无法填入当前网页");
         return this.pages.fill(current.contents, contact, current.current);
       }
+      case "openImportSource":
+        if (typeof value !== "string" || owner === this.host.window) throw new Error("请从导入窗口选择个人资料。");
+        return openImportSource(value);
+      case "importSources":
+        return importSources();
       case "importChoose":
-        return this.imports.choose(value as ImportKind, owner);
+        return this.imports.choose(value as ImportKind | ImportSelection, owner);
       case "importApply":
         return this.imports.apply(String(input.token), input.replace === true, input.sites as string[]);
       case "importCancel":

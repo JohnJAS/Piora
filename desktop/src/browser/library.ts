@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { BrowserQuery, Transfer, TransferState, Visit } from "./contracts.js";
+import type { BrowserQuery, ImportedVisit, Transfer, TransferState, Visit } from "./contracts.js";
 
 export function historyUrl(raw: string): string | null {
   try {
@@ -47,6 +47,7 @@ export class BrowserLibrary {
     this.db.exec(`BEGIN;
       CREATE TABLE IF NOT EXISTS visits (id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL, title TEXT NOT NULL, visited INTEGER NOT NULL, source TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS visit_url ON visits(url);
+      CREATE INDEX IF NOT EXISTS visit_identity ON visits(url,visited);
       CREATE INDEX IF NOT EXISTS visit_title ON visits(title COLLATE NOCASE);
       CREATE INDEX IF NOT EXISTS visit_time ON visits(visited DESC);
       CREATE TABLE IF NOT EXISTS transfers (id INTEGER PRIMARY KEY AUTOINCREMENT, filename TEXT NOT NULL, path TEXT NOT NULL, url TEXT NOT NULL, started INTEGER NOT NULL, ended INTEGER, received INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL);
@@ -65,17 +66,48 @@ export class BrowserLibrary {
         .run(url, title.slice(0, 1000), at, source).lastInsertRowid,
     );
   }
+  importVisits(rows: ImportedVisit[], source: string, preview = false) {
+    const exists = this.db.prepare("SELECT 1 FROM visits WHERE url=? AND visited=? LIMIT 1");
+    const insert = this.db.prepare("INSERT INTO visits(url,title,visited,source) VALUES(?,?,?,?)");
+    let added = 0,
+      duplicates = 0;
+    const batch = new Set<string>();
+    if (!preview) this.db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const row of rows) {
+        const key = row.visited + " " + row.url;
+        if (batch.has(key) || exists.get(row.url, row.visited)) {
+          duplicates++;
+          continue;
+        }
+        batch.add(key);
+        added++;
+        if (!preview) insert.run(row.url, row.title, row.visited, source);
+      }
+      if (!preview) this.db.exec("COMMIT");
+      return { added, duplicates };
+    } catch (error) {
+      if (!preview) this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
   title(id: number, value: string) {
     this.db.prepare("UPDATE visits SET title=? WHERE id=?").run(value.slice(0, 1000), id);
   }
   history(query: BrowserQuery): Visit[] {
     const { text, before, since, until, limit } = queryValues(query);
     const filter =
-      "id < ? AND visited BETWEEN ? AND ? AND (instr(lower(url),lower(?)) OR instr(lower(title),lower(?)))";
+      "(visited,id) < (?,?) AND visited BETWEEN ? AND ? AND (instr(lower(url),lower(?)) OR instr(lower(title),lower(?)))";
+    const beforeTime = Number.isFinite(query.beforeVisited)
+      ? Number(query.beforeVisited)
+      : Number(
+          this.db.prepare("SELECT visited FROM visits WHERE id=?").get(before)?.visited ?? Number.MAX_SAFE_INTEGER,
+        );
     const sql = query.suggestions
-      ? `WITH ranked AS (SELECT max(id) AS id, count(*) AS frequency FROM visits WHERE ${filter} GROUP BY url) SELECT visits.* FROM ranked JOIN visits USING(id) ORDER BY visited / 86400000 DESC, frequency DESC, id DESC LIMIT ?`
-      : `SELECT * FROM visits WHERE ${filter} ORDER BY id DESC LIMIT ?`;
-    return this.db.prepare(sql).all(before, since, until, text, text, limit) as unknown as Visit[];
+      ? `WITH matches AS (SELECT *, row_number() OVER (PARTITION BY url ORDER BY visited DESC,id DESC) AS ordinal, count(*) OVER (PARTITION BY url) AS frequency FROM visits WHERE ${filter})
+          SELECT id,url,title,visited,source FROM matches WHERE ordinal=1 ORDER BY visited / 86400000 DESC, frequency DESC, visited DESC,id DESC LIMIT ?`
+      : `SELECT * FROM visits WHERE ${filter} ORDER BY visited DESC,id DESC LIMIT ?`;
+    return this.db.prepare(sql).all(beforeTime, before, since, until, text, text, limit) as unknown as Visit[];
   }
   deleteVisit(id: number) {
     this.db.prepare("DELETE FROM visits WHERE id=?").run(id);

@@ -55,12 +55,18 @@ export async function nativeMenuAcceptance({ fixture, ui, step, waitUntil, direc
     await ui.page().keyboard.press("Escape");
   });
   const importPane = () => ui.sheet("import");
-  const source = () => importPane().getByRole("combobox");
+  const selectSource = async (id) => {
+    await importPane().getByRole("combobox").click();
+    await importPane()
+      .getByRole("listbox")
+      .locator('[data-source-id="' + id + '"]')
+      .click();
+  };
   const select = () => importPane().getByRole("button", { name: /选择文件并预览|Choose files and preview/ });
   const confirm = () => importPane().getByRole("button", { name: /确认导入|Confirm import/ });
   await step("native-file-import-add-deduplicate-and-fill-a-real-test-form", async () => {
     await ui.choose("import");
-    await source().selectOption("chrome");
+    await selectSource("chrome/Default");
     await pick(select(), csv);
     await importPane().getByText("synthetic-passwords.csv", { exact: false }).waitFor();
     assert.ok(!(await importPane().innerText()).includes("synthetic-only-pass"));
@@ -69,7 +75,7 @@ export async function nativeMenuAcceptance({ fixture, ui, step, waitUntil, direc
       .getByRole("status")
       .filter({ hasText: /已导入 1|Imported 1/ })
       .waitFor();
-    await source().selectOption("edge");
+    await selectSource("edge/Default");
     await pick(select(), csv);
     await confirm().click();
     await importPane()
@@ -120,7 +126,7 @@ export async function nativeMenuAcceptance({ fixture, ui, step, waitUntil, direc
     await ui.guest().reload();
     await ui.guest().getByText("Signed out", { exact: true }).waitFor();
     await ui.choose("import");
-    await source().selectOption("piora");
+    await selectSource("piora");
     await pick(select(), cookieFile);
     await confirm().click();
     await importPane()

@@ -28,6 +28,7 @@ export interface Visit {
 export interface BrowserQuery {
   text?: string;
   before?: number;
+  beforeVisited?: number;
   since?: number;
   until?: number;
   suggestions?: boolean;
@@ -82,7 +83,20 @@ export interface ClearPreview {
   since: number;
   until: number;
 }
-export type ImportKind = "passwords" | "cookies";
+export type ImportBrowser = "chrome" | "edge" | "piora";
+export interface ImportSource {
+  id: string;
+  browser: ImportBrowser;
+  name: string;
+  directory: string;
+  account: string;
+}
+export type ImportKind = "passwords" | "cookies" | "history";
+export interface ImportSelection {
+  kind: ImportKind;
+  sourceId: string;
+}
+export type ImportedVisit = Pick<Visit, "url" | "title" | "visited">;
 export interface ImportPreview {
   token: string;
   filename: string;
@@ -108,7 +122,7 @@ interface Endpoint<I, O> {
 export type BrowserDialogKind = "import" | "privacy";
 export interface BrowserEndpoints {
   modal: Endpoint<BrowserDialogKind, "vault" | null>;
-  recent: Endpoint<{x: number; y: number}, "downloads" | null>;
+  recent: Endpoint<{ x: number; y: number }, "downloads" | null>;
   menu: Endpoint<
     { target: BrowserTarget; x: number; y: number; locale: string; dark: boolean },
     MenuChoice | null
@@ -127,7 +141,9 @@ export interface BrowserEndpoints {
   saveContact: Endpoint<ContactFields & { id?: string }, void>;
   deleteContact: Endpoint<string, void>;
   fillContact: Endpoint<{ target: BrowserTarget; id: string }, number>;
-  importChoose: Endpoint<ImportKind, ImportPreview | null>;
+  importSources: Endpoint<null, ImportSource[]>;
+  openImportSource: Endpoint<string, void>;
+  importChoose: Endpoint<ImportKind | ImportSelection, ImportPreview | null>;
   importApply: Endpoint<{ token: string; replace: boolean; sites: string[] }, ImportResult>;
   importCancel: Endpoint<string, void>;
   clearPreview: Endpoint<ClearOptions, ClearPreview>;

@@ -79,6 +79,7 @@ const ICONS = {
   },
   "chart-no-axes-column": { stroke: ["M5 21v-6", "M12 21V3", "M19 21V9"] },
   "check": { stroke: ["M20 6 9 17l-5-5"] },
+  "puzzle": { stroke: ["M4 7h4a2.5 2.5 0 1 1 4 0h5v4a2.5 2.5 0 1 1 0 4v4h-5a2.5 2.5 0 1 0-4 0H4v-4a2.5 2.5 0 1 0 0-4z"] },
   "chevron-down": { stroke: ["m6 9 6 6 6-6"] },
   "chevron-right": { stroke: ["m9 18 6-6-6-6"] },
   "check-circle": {
