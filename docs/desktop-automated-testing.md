@@ -4,6 +4,12 @@
 
 默认 `settings-theme` 场景通过设置按钮打开外观界面，点击深色主题，核对实际页面主题与持久设置，刷新后再次核对，再切换浅色并重复验证。它没有模型调用，不需要供应商凭据，也不直接写入主题状态。另有 Windows 专用的 `stop-shell` / `stop-bash` 停止场景，使用本地模型响应夹具和真实 shell 进程，见下文。
 
+## Windows 内置浏览器菜单
+
+`browser-menu` 用独立 Windows 配置验证网页操作、联系人、并发下载、历史、清理及重启。`browser-menu-appearance` 在真实窗口中保存菜单、导入、个人资料下拉、设置页和近期下载等截图，并实际选择有独立历史的测试资料。工作区合成图按原生控件的位置叠加同一时刻的聊天、网页和透明弹窗。个人资料全部由夹具生成，包含两项同名记录。`browser-menu-native` 操作系统文件选择器和 Windows 打印对话框，使用 Microsoft Print to PDF 和 Windows 自带的 PDF 渲染器检查打印专用样式。三种场景均可用 `--executable` 核对 CI 生成的桌面程序。手动启动安装包比较工作流时可同时选择 `browser_acceptance`，在隔离的 Windows 托管机检查安装后的程序。安装版场景实际显示主窗口，通过聊天右侧的工具菜单打开网页。工作流保存每项报告、资料菜单截图和失败画面。
+
+`node scripts/test-desktop-browser-navigation.mjs` 使用独立 Electron 配置检查真实 Agent 在设备预览显示、收起和恢复后的点击。加 `--dpi=1.25` 或 `--dpi=1.5` 可在单个测试进程下核对相应显示比例与菜单定位。
+
 ## 使用量月度与每日看板
 
 `npm run test:desktop:e2e -- --scenario usage-dashboard --step-timeout-ms 120000` 在独立 profile 中准备合成会话文件，通过真实 Electron 设置界面与本地鉴权 API 验证月度聚合、日期切换、逐日下钻、分时用量、空数据、可选范围、刷新、键盘切换和重载，并保存明暗主题与窄视口截图。使用量接口不 mock，不调用模型、不复制用户会话或凭据。
@@ -190,7 +196,7 @@ node --test lib/desktop-e2e.test.mjs
 
 ## 浏览器登录自动继续
 
-`npm run test:desktop:e2e -- --scenario browser-login` 使用隔离的真实 Electron 开发窗口、本地确定性模型和本地登录页面，验证发送任务后自动展开浏览器、没有登录卡片或完成按钮、通过原生页面 UI 登录后继续工具调用并回复；同时核对批准模式、能力包菜单和新会话快捷卡片已移除。模型与登录凭据均为合成夹具，不代表真实模型、第三方账号、SSO、后台 Playwright 或安装包验收。产物和失败清理由同一生命周期入口管理。
+`npm run test:desktop:e2e -- --scenario browser-login` 使用隔离的真实 Electron 开发窗口、本地确定性模型和本地登录页面，验证发送任务后自动展开浏览器、没有登录卡片或完成按钮、通过原生页面 UI 登录后继续工具调用并回复；夹具关闭工具批准开关，核对批准模式入口隐藏，并检查能力包菜单和新会话快捷卡片。模型与登录凭据均为合成夹具，不代表真实模型、第三方账号、SSO、后台 Playwright 或安装包验收。产物和失败清理由同一生命周期入口管理。
 
 ### Agent 浏览器上传
 

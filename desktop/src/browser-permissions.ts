@@ -40,11 +40,15 @@ export class BrowserPermissions {
   private readonly pending = new Map<string, Promise<boolean>>();
   private queue: Promise<unknown> = Promise.resolve();
   private revision = 0;
+  private readonly decidedAt = new Map<string, number>();
 
   constructor(private readonly file: string, private readonly host: BrowserPermissionHost) {
     try {
       const data = JSON.parse(readFileSync(file, "utf8"));
-      if (data?.version !== 1 || !data.origins || typeof data.origins !== "object") return;
+      if ((data?.version !== 1 && data?.version !== 2) || !data.origins || typeof data.origins !== "object") return;
+      if (data.version === 2 && data.times && typeof data.times === "object") {
+        for (const [id, at] of Object.entries(data.times)) if (typeof at === "number" && Number.isFinite(at)) this.decidedAt.set(id, at);
+      }
       for (const [origin, values] of Object.entries(data.origins).slice(0, 500)) {
         if (originOf(origin) !== origin || !values || typeof values !== "object") continue;
         const valid = Object.fromEntries(Object.entries(values).filter(([key, value]) => Object.hasOwn(labels, key) && typeof value === "boolean"));
@@ -70,6 +74,7 @@ export class BrowserPermissions {
     if (!origin) return;
     this.revision++;
     this.saved.delete(origin);
+    for (const id of this.decidedAt.keys()) if (id.startsWith(origin + "\n")) this.decidedAt.delete(id);
     for (const key of this.temporary.keys()) if (key.startsWith(`${origin}\n`)) this.temporary.delete(key);
     this.persist();
   }
@@ -115,10 +120,17 @@ export class BrowserPermissions {
       const store = answer.remember ? this.saved : this.temporary;
       const storeKey = answer.remember ? origin : `${origin}\n${page.documentId}`;
       const values = { ...store.get(storeKey) };
-      for (const key of missing) values[key] = answer.decision;
+      for (const key of missing) {
+        values[key] = answer.decision;
+        this.decidedAt.set(storeKey + "\n" + key, Date.now());
+      }
       store.set(storeKey, values);
       // Bound per-document memory without expanding a permission to another page.
-      if (this.temporary.size > 500) this.temporary.delete(this.temporary.keys().next().value!);
+      if (this.temporary.size > 500) {
+        const oldest = this.temporary.keys().next().value!;
+        for (const key of Object.keys(this.temporary.get(oldest)!)) this.decidedAt.delete(oldest + "\n" + key);
+        this.temporary.delete(oldest);
+      }
       if (answer.remember) this.persist();
       return answer.decision;
     });
@@ -128,11 +140,35 @@ export class BrowserPermissions {
     finally { this.pending.delete(id); }
   }
 
-  private persist(): void {
+  range(since: number, until: number, clear: boolean): number {
+    const removals: Array<{ store: Map<string, Decisions>; scope: string; permission: string }> = [];
+    for (const store of [this.saved, this.temporary]) {
+      for (const [scope, values] of store) for (const permission of Object.keys(values)) {
+        const at = this.decidedAt.get(scope + "\n" + permission);
+        if (at === undefined ? since === 0 : at >= since && at <= until) removals.push({ store, scope, permission });
+      }
+    }
+    if (!clear) return removals.length;
+    this.revision++;
+    const undo: Array<() => void> = [];
+    for (const { store, scope, permission } of removals) {
+      const values = store.get(scope)!;
+      const old = values[permission]!, id = scope + "\n" + permission, at = this.decidedAt.get(id);
+      undo.push(() => { values[permission] = old; store.set(scope, values); if (at !== undefined) this.decidedAt.set(id, at); });
+      delete values[permission]; this.decidedAt.delete(id);
+      if (!Object.keys(values).length) store.delete(scope);
+    }
+    try { if (removals.some(item => item.store === this.saved)) this.persist(true); }
+    catch (error) { for (const restore of undo) restore(); throw error; }
+    return removals.length;
+  }
+
+  private persist(throwOnFailure = false): void {
     try {
       mkdirSync(dirname(this.file), { recursive: true });
-      writeFileSync(`${this.file}.tmp`, JSON.stringify({ version: 1, origins: Object.fromEntries(this.saved) }), { mode: 0o600 });
+      const times = Object.fromEntries([...this.decidedAt].filter(([key]) => key.split("\n").length === 2));
+      writeFileSync(`${this.file}.tmp`, JSON.stringify({ version: 2, origins: Object.fromEntries(this.saved), times }), { mode: 0o600 });
       renameSync(`${this.file}.tmp`, this.file);
-    } catch (error) { this.host.warn(error); }
+    } catch (error) { this.host.warn(error); if (throwOnFailure) throw error; }
   }
 }

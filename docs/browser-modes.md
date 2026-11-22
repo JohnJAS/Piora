@@ -13,6 +13,14 @@ panel updates after a successful save; reopening a panel loads the saved mode.
   provides an interactive screenshot preview, and the agent uses the same
   background browser. No remote-debugging setup or connection prompt is needed.
 
+## Built-in browser menu
+
+On Windows desktop, use the menu beside the address bar to find text, print the current page, adjust site zoom, preview a device size or copy a screenshot of the visible page. A device preview follows its tab when the panel is hidden or expanded. You can set a default for new tabs.
+
+The address bar searches the built-in profile's history. Downloads shows active transfers and previous files across app restarts. Removing a download record leaves the file on disk. Browser settings also opens history, downloads, contacts, password management, profile import and data clearing.
+
+For password import, choose a file exported by Chrome or Edge, unlock the Piora vault and confirm the sites to include. The session migration option accepts Piora's marked, encrypted session backup for the same Windows account. For other sources, sign into the website in Piora. Site data and cache currently support clearing all time. History, download records, contacts and timestamped site permissions also support shorter periods.
+
 ## Sign-in persistence
 
 Background mode keeps the original `<agentDir>/piora/browser-profile` directory,

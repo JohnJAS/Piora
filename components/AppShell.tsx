@@ -585,6 +585,26 @@ export function AppShell() {
     return () => window.removeEventListener("piora:open-reply-settings", open);
   }, [openSettings]);
 
+  const openHistoryLink = answerNavigation.openLink;
+  useEffect(() => {
+    const settings = (event: Event) => {
+      const destination: unknown = (event as CustomEvent).detail;
+      openSettings("browser", typeof destination === "string" && ["vault", "passwordManager", "contacts", "downloads", "history", "devices"].includes(destination) ? "browser.page." + destination : undefined);
+    };
+    const history = (event: Event) => {
+      const url = (event as CustomEvent).detail;
+      if (typeof url !== "string" || !/^https?:\/\//i.test(url)) return;
+      setSettingsDialogOpen(false);
+      openHistoryLink(url);
+    };
+    window.addEventListener("piora:browser-settings", settings);
+    window.addEventListener("piora:browser-history-open", history);
+    return () => {
+      window.removeEventListener("piora:browser-settings", settings);
+      window.removeEventListener("piora:browser-history-open", history);
+    };
+  }, [openHistoryLink, openSettings]);
+
   const openModelsSettings = useCallback(() => openSettings("models"), [openSettings]);
 
   const openSessionStatsPanel = useCallback(() => {

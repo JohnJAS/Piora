@@ -4,9 +4,17 @@ import { useCallback, useEffect, useState } from "react";
 import type { BrowserDownloadPreferences } from "@/desktop/src/browser-preferences";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
+import { ProfileSettingsHome } from "./workspace/browser/BrowserProfileSection";
+import { reopenFromSettings, type ToolsBridge } from "./workspace/browser/shared";
 import styles from "./SettingsDialog.module.css";
 
-export function BrowserSettings() {
+export function BrowserSettings({ requestedPage }: { requestedPage?: string } = {}) {
+  const bridge = typeof window === "undefined" ? undefined : window.piDesktop?.browser;
+  const content = <BrowserPreferences />;
+  return bridge?.tools ? <ProfileSettingsHome requestedPage={requestedPage} bridge={bridge as ToolsBridge} navigate={reopenFromSettings}>{content}</ProfileSettingsHome> : content;
+}
+
+function BrowserPreferences() {
   const { t } = useI18n();
   const [preferences, setPreferences] = useState<BrowserDownloadPreferences | null>(null);
   const [directory, setDirectory] = useState("");

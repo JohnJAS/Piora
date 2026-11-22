@@ -211,8 +211,11 @@ async function main() {
     }
   });
 
-  log("tsc", "watching desktop/src");
-  typeScriptProcess = spawn(process.execPath, [join(root, "node_modules", "@typescript", "native", "lib", "tsc.js"), "-p", join(root, "desktop", "tsconfig.json"), "--watch", "--preserveWatchOutput"], {
+  const fixedSource = process.env.PIORA_DESKTOP_E2E_FIXED_SOURCE === "1";
+  log("tsc", fixedSource ? "compiling isolated desktop test sources" : "watching desktop/src");
+  const compilerArgs = [join(root, "node_modules", "@typescript", "native", "lib", "tsc.js"), "-p", join(root, "desktop", "tsconfig.json")];
+  if (!fixedSource) compilerArgs.push("--watch", "--preserveWatchOutput");
+  typeScriptProcess = spawn(process.execPath, compilerArgs, {
     cwd: root,
     detached: process.platform !== "win32",
     env: sharedEnvironment,
@@ -230,7 +233,12 @@ async function main() {
   forwardLines(typeScriptProcess.stdout, "tsc", handleTypeScriptLine);
   forwardLines(typeScriptProcess.stderr, "tsc", handleTypeScriptLine);
   typeScriptProcess.once("exit", (code, signal) => {
-    if (!initialCompileResolved) rejectInitialCompile(new Error(`Electron TypeScript watcher exited before a successful compile (code=${String(code)}, signal=${String(signal)})`));
+    if (fixedSource && code === 0) {
+      initialCompileResolved = true;
+      resolveInitialCompile();
+      return;
+    }
+    if (!initialCompileResolved) rejectInitialCompile(new Error(`Electron TypeScript compiler exited before a successful compile (code=${String(code)}, signal=${String(signal)})`));
     if (!stopping) void shutdown(code || 1);
   });
 

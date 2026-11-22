@@ -122,7 +122,7 @@ export function SettingsDialog({
   const [targetItem, setTargetItem] = useState<{ id: string } | null>(null);
   useEffect(() => { setTargetItem(focusedItemId ? { id: focusedItemId } : null); }, [focusedItemId, open]);
   useEffect(() => {
-    if (!open || searchQuery || !targetItem || targetItem.id === activeKey) return;
+    if (!open || searchQuery || !targetItem || targetItem.id === activeKey || targetItem.id.startsWith("browser.page.")) return;
     const root = dialogRef.current;
     if (!root) return;
     let cleanupHighlight: (() => void) | undefined;
@@ -471,7 +471,7 @@ export function SettingsDialog({
                 </section> : <div className={styles.searchEmpty} role="status">{t("settings.searchEmpty")}</div>}
               </>
             ) : <>
-              {activeEntry.key === "browser" ? <BrowserSettings /> : activeEntry.key === "general" ? (
+              {activeEntry.key === "browser" ? <BrowserSettings requestedPage={targetItem?.id} /> : activeEntry.key === "general" ? (
               <>
                 <div className={styles.contentHeading}>
                   <h2>{t("settings.general")}</h2>

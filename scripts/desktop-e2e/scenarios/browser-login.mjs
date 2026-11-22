@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+const fixtureTitlePrompt = "Give this fixture a short title. Marker: PIORA_BROWSER_LOGIN_TITLE.";
 let fixture;
 export const browserLogin = {
   id: 'browser-login',
@@ -24,7 +25,11 @@ export const browserLogin = {
         const chunks = []; for await (const chunk of req) chunks.push(chunk);
         const body = JSON.parse(Buffer.concat(chunks).toString());
         const tools = body.messages.filter(message => message.role === 'tool').length;
-        const browserRequest = body.tools?.some(tool => tool.function?.name === 'browser') === true;
+        const last = body.messages.at(-1);
+        const lastText = typeof last?.content === 'string' ? last.content : (Array.isArray(last?.content) ? last.content.map(part => part.text ?? '').join('\n') : '');
+        // A title request can inherit the chat's browser tool schemas and all three tool results.
+        const titleRequest = last?.role === 'user' && lastText.includes(fixtureTitlePrompt);
+        const browserRequest = !titleRequest && body.tools?.some(tool => tool.function?.name === 'browser') === true;
         const action = !browserRequest ? null : tools === 0 ? { action: 'open', url: fixture.origin + '/login' }
           : tools === 1 ? { action: 'wait_for_user', purpose: 'login', reason: 'Sign in to the local test site' }
           : tools === 2 ? { action: 'snapshot' } : null;
@@ -52,6 +57,7 @@ export const browserLogin = {
     await writeFile(join(paths.agent, 'piora/tool-permissions/default.json'), JSON.stringify({ mode: 'ask', revision: 9, schemaVersion: 2 }));
   },
   async run({ page, getBrowser, step, waitUntil, screenshot, directory }) {
+    await page.evaluate(prompt => localStorage.setItem('piora-session-title-prompt-v1', prompt), fixtureTitlePrompt);
     await step('prepare-isolated-event-stream', async () => {
       const handshake = await page.evaluate(async cwd => {
         const created = await fetch('/api/agent/new', { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -84,7 +90,7 @@ export const browserLogin = {
       await page.locator('textarea').first().fill('Open the local fixture and continue automatically after I sign in.');
       await page.getByRole('button', { name: /^(Send|发送)$/ }).click();
       await page.getByRole('button', { name: /^(Allow once|允许本次)$/ }).click();
-      await page.getByRole('textbox', { name: /^(Address|地址)$/ }).waitFor({ state: 'visible' });
+      await page.getByRole('combobox', { name: /^(Address|地址)$/ }).waitFor({ state: 'visible' });
       await waitUntil(() => fixture.requests.some(request => request.action === 'wait_for_user'), 'login tool to begin');
       await page.getByText(/Sign in in the browser|请在浏览器中登录/).waitFor({ timeout: 75000 });
       assert.equal(await page.locator('.browser-user-wait, .browser-handoff-notice').count(), 0);
