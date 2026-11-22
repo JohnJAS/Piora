@@ -95,7 +95,8 @@ createRoot(document.getElementById('root')).render(<I18nProvider><App/></I18nPro
     let holdNextAction = false;
     let failNextAction = false;
     let reconcileFailedAction = false;
-    let failNextWorkflowRead = false;
+    let failWorkflowReadsUntilRetry = false;
+    let workflowRetryReads = 0;
     let laboratory = { planGoalEnabled: false };
     let holdLaboratoryRead = false;
     let failLaboratoryRead = true;
@@ -152,7 +153,13 @@ createRoot(document.getElementById('root')).render(<I18nProvider><App/></I18nPro
         if (action.action === "cancel") state.current.status = "cancelled";
         return route.fulfill({ json: { snapshot: state } });
       }
-      if (failNextWorkflowRead) { failNextWorkflowRead = false; return route.fulfill({ status: 503, json: { error: "fixture workflow read failed" } }); }
+      if (failWorkflowReadsUntilRetry) {
+        if (route.request().headers()["x-piora-workflow-retry"] !== "true") {
+          return route.fulfill({ status: 503, json: { error: "fixture workflow read failed" } });
+        }
+        workflowRetryReads++;
+        failWorkflowReadsUntilRetry = false;
+      }
       const captured = structuredClone(states[sid]);
       const afterFailedAction = reconcileFailedAction;
       reconcileFailedAction = false;
@@ -386,7 +393,7 @@ createRoot(document.getElementById('root')).render(<I18nProvider><App/></I18nPro
     await assertModeCollapsed("Agent");
     assert.equal(await modeToggle.locator("svg").count(), 1, "the compact trigger keeps only the mode icon without a disclosure arrow");
     const compactModeBox = await modePicker.boundingBox();
-    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now())));
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now()) + 30_000));
     await modeToggle.click();
     assert.equal(await modeToggle.getAttribute("aria-expanded"), "true");
     assert.deepEqual(await modePicker.boundingBox(), compactModeBox, "opening the menu does not resize or move its trigger");
@@ -798,14 +805,46 @@ createRoot(document.getElementById('root')).render(<I18nProvider><App/></I18nPro
     await chooseDraft("goal");
     await assertNoWorkflowStrip("selecting a new Goal does not promote historical Plans into the current strip");
     assert.deepEqual(await page.evaluate(() => window.state.snapshot.history), retainedHistory, "hidden terminal details remain in the workflow history model");
-    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now())));
-    failNextWorkflowRead = true;
-    await page.evaluate(() => window.state.refresh());
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now()) + 30_000));
+    failWorkflowReadsUntilRetry = true;
     const loadError = page.getByRole("alert").filter({ hasText: locale === "zh-CN" ? "无法加载工作流状态。" : "Workflow state could not be loaded." });
+    // A poll may already be in flight when the clock pauses. Keep failing
+    // background reads and retry refresh until that request has settled.
+    for (let attempt = 0; attempt < 50 && !(await loadError.isVisible()); attempt++) {
+      await page.evaluate(() => window.state.refresh());
+      await page.waitForTimeout(50);
+    }
     await loadError.waitFor();
     await assertNoWorkflowStrip("a history-only load failure displays its error without resurrecting the strip");
-    await loadError.getByRole("button").click();
+    const retryWorkflow = loadError.getByRole("button");
+    await retryWorkflow.evaluate(button => {
+      const originalFetch = window.fetch;
+      let inRetryClick = false;
+      const begin = event => { if (event.isTrusted && button.contains(event.target)) inRetryClick = true; };
+      const end = () => { inRetryClick = false; };
+      document.addEventListener("click", begin, true);
+      window.addEventListener("click", end);
+      window.fetch = (input, init) => {
+        if (inRetryClick && typeof input === "string" && new URL(input, location.href).pathname.endsWith("/workflow")) {
+          const headers = new Headers(init?.headers);
+          headers.set("x-piora-workflow-retry", "true");
+          init = { ...init, headers };
+        }
+        return originalFetch.call(window, input, init);
+      };
+      window.restoreWorkflowRetryFixture = () => {
+        window.fetch = originalFetch;
+        document.removeEventListener("click", begin, true);
+        window.removeEventListener("click", end);
+      };
+    });
+    for (let attempt = 0; attempt < 10 && failWorkflowReadsUntilRetry; attempt++) {
+      if (await retryWorkflow.isVisible()) await retryWorkflow.click();
+      await page.waitForTimeout(100);
+    }
+    assert.equal(workflowRetryReads, 1, "only the explicit Retry can recover the workflow read");
     await page.waitForFunction(() => window.state.error === null);
+    await page.evaluate(() => window.restoreWorkflowRetryFixture());
     await page.clock.resume();
 
     // The displayed workflow comes from the current run, independently of the
