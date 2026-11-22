@@ -16,15 +16,33 @@ import { AliIcon, type AliIconName } from "../AliIcon";
 import styles from "./WorkspacePanel.module.css";
 import { AutomationPanel } from "../AutomationPanel";
 import { SSHPanel } from "./SSHPanel";
+import { PlanSidePanelTab } from "../workflow/PlanSidePanelTab";
+import { GoalSidePanelTab } from "../workflow/GoalSidePanelTab";
+import {
+  dispatchFocusSideChatComposer,
+  isSideChatTab,
+  parseSideChatTabId,
+  toSideChatLoadingTabId,
+  toSideChatTabId,
+  type SideChatTabId,
+} from "../side-chat/side-chat-events";
+import {
+  SideChatMenuEntries,
+  SideChatTabPanels,
+  SideChatTabStripItems,
+  type RightPanelSideChatProps,
+} from "../side-chat/SideChatRightPanelSlots";
 import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
 import type { PromptFileChanges } from "@/lib/prompt-file-changes";
 import { pollVisibleDocument } from "@/lib/visible-poller";
 import type { BrowserNavigationRequest } from "@/lib/answer-links";
 
-export type RightPanelTab = "home" | "automation" | "review" | "files" | "commands" | "ssh" | "browser" | "design" | "harmony";
+type StaticToolTab = "automation" | "review" | "files" | "commands" | "ssh" | "browser" | "design" | "harmony" | "plan" | "goal";
+export type RightPanelTab = "home" | StaticToolTab | SideChatTabId;
 export interface RightPanelHandle { focusActiveTab: () => void; focusFileSearch: () => void; }
 
 interface Props {
+  sideChat?: RightPanelSideChatProps;
   answerNavigation?: BrowserNavigationRequest;
   onAnswerNavigationConsumed?: (id: string) => void;
   commitRequest?: { cwd: string; id: number } | null;
@@ -63,7 +81,7 @@ interface Props {
   capabilities: SessionCapabilitiesState | null;
 }
 
-const TOOLS: Array<{ id: Exclude<RightPanelTab, "home">; icon: AliIconName; shortcut?: string }> = [
+const TOOLS: Array<{ id: StaticToolTab; icon: AliIconName; shortcut?: string; labelKey?: string }> = [
   { id: "automation", icon: "calendar" },
   { id: "review", icon: "diff", shortcut: "Ctrl+Shift+G" },
   { id: "commands", icon: "code" },
@@ -75,12 +93,19 @@ const TOOLS: Array<{ id: Exclude<RightPanelTab, "home">; icon: AliIconName; shor
   { id: "files", icon: "folder-open", shortcut: "Ctrl+P" },
 ];
 
+const DYNAMIC_TOOLS: Array<{ id: StaticToolTab; icon: AliIconName; labelKey: string }> = [
+  { id: "plan", icon: "list-check", labelKey: "workflow.plan.panelTitle" },
+  { id: "goal", icon: "target", labelKey: "workflow.goal.panelTitle" },
+];
+
+const ALL_TOOLS = [...TOOLS, ...DYNAMIC_TOOLS];
+
 const DesignToHarmonyPanel = dynamic(
   () => import("./design-to-harmony/DesignToHarmonyPanel").then((module) => module.DesignToHarmonyPanel),
   { ssr: false },
 );
 
-type ToolTab = Exclude<RightPanelTab, "home">;
+type ToolTab = StaticToolTab;
 const TREE_SPLIT_KEY = "piora-file-tree-share";
 const TREE_HANDLE_WIDTH = 6;
 
@@ -103,7 +128,7 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
   const { activeTab, onActiveTabChange, cwd, refreshKey, active, fileTabs, activeFileTabId } = props;
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [addMenuPosition, setAddMenuPosition] = useState({ left: 8, top: 48, width: 278 });
-  const [openTools, setOpenTools] = useState<ToolTab[]>(() => activeTab === "home" ? [] : [activeTab]);
+  const [openTools, setOpenTools] = useState<ToolTab[]>(() => activeTab === "home" || isSideChatTab(activeTab) ? [] : [activeTab]);
   const [filesHasOpened, setFilesHasOpened] = useState(activeTab === "files");
   const [draggedTool, setDraggedTool] = useState<ToolTab | null>(null);
   const [dropTargetTool, setDropTargetTool] = useState<ToolTab | null>(null);
@@ -184,7 +209,13 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     </div>;
   };
   useImperativeHandle(ref, () => ({
-    focusActiveTab: () => (activeTab === "home" ? firstLauncherRef.current : activeTabRef.current)?.focus({ preventScroll: true }),
+    focusActiveTab: () => {
+      if (isSideChatTab(activeTab)) {
+        dispatchFocusSideChatComposer(parseSideChatTabId(activeTab)?.id);
+        return;
+      }
+      (activeTab === "home" ? firstLauncherRef.current : activeTabRef.current)?.focus({ preventScroll: true });
+    },
     focusFileSearch: () => { setFileNavMode("tree"); setTreeDrawerOpen(true); requestAnimationFrame(() => explorerRef.current?.focusSearch()); },
   }), [activeTab]);
 
@@ -240,7 +271,7 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
   }, [activeTab]);
 
   useEffect(() => {
-    if (activeTab === "home") return;
+    if (activeTab === "home" || isSideChatTab(activeTab)) return;
     setOpenTools((current) => current.includes(activeTab) ? current : [...current, activeTab]);
   }, [activeTab]);
 
@@ -275,16 +306,30 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     });
   };
 
-  const moveToolTabFocus = (event: React.KeyboardEvent<HTMLButtonElement>, tab: ToolTab) => {
-    const currentIndex = openTools.indexOf(tab);
+  const sideChatTabIds: RightPanelTab[] = props.sideChat?.enabled
+    ? [
+        ...props.sideChat.openIds
+          .filter((sideId) => props.sideChat!.items.some((item) => item.id === sideId))
+          .map((sideId) => toSideChatTabId(sideId)),
+        ...props.sideChat.pendingCreates.map((entry) => toSideChatLoadingTabId(entry.clientId)),
+      ]
+    : [];
+  const allRenderedTabs: RightPanelTab[] = [...openTools, ...sideChatTabIds];
+
+  const moveToolTabFocus = (event: React.KeyboardEvent<HTMLButtonElement>, tab: RightPanelTab) => {
+    const currentIndex = allRenderedTabs.indexOf(tab);
+    if (currentIndex < 0 || allRenderedTabs.length === 0) return;
     let nextIndex: number;
-    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % openTools.length;
-    else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + openTools.length) % openTools.length;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % allRenderedTabs.length;
+    else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + allRenderedTabs.length) % allRenderedTabs.length;
     else if (event.key === "Home") nextIndex = 0;
-    else if (event.key === "End") nextIndex = openTools.length - 1;
+    else if (event.key === "End") nextIndex = allRenderedTabs.length - 1;
     else return;
     event.preventDefault();
-    onActiveTabChange(openTools[nextIndex]);
+    const nextTab = allRenderedTabs[nextIndex];
+    const parsedSide = parseSideChatTabId(nextTab);
+    if (parsedSide?.kind === "live" && props.sideChat) props.sideChat.onSelect(parsedSide.id);
+    else onActiveTabChange(nextTab);
     requestAnimationFrame(() => activeTabRef.current?.focus({ preventScroll: true }));
   };
 
@@ -293,7 +338,7 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     <div className={`${styles.panelChrome} right-panel-chrome`}>
       <div className={styles.toolTabs} role="tablist" aria-label={t("workspace.panelTabs")}>
         {openTools.map((toolId) => {
-          const tool = TOOLS.find((candidate) => candidate.id === toolId);
+          const tool = ALL_TOOLS.find((candidate) => candidate.id === toolId);
           if (!tool) return null;
           const selected = activeTab === tool.id;
           return <div
@@ -317,7 +362,7 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
             onDrop={(event) => {
               event.preventDefault();
               const source = (draggedTool ?? event.dataTransfer.getData("text/piora-tool-tab")) as ToolTab;
-              if (TOOLS.some((candidate) => candidate.id === source)) moveTool(source, tool.id);
+              if (ALL_TOOLS.some((candidate) => candidate.id === source)) moveTool(source, tool.id);
               setDraggedTool(null);
               setDropTargetTool(null);
             }}
@@ -325,11 +370,20 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
           >
             <button ref={selected ? activeTabRef : undefined} type="button" role="tab" aria-selected={selected} aria-controls={`workspace-${tool.id}`} id={`workspace-${tool.id}-tab`} tabIndex={selected ? 0 : -1} onClick={() => onActiveTabChange(tool.id)} onKeyDown={(event) => moveToolTabFocus(event, tool.id)}>
               <AliIcon name={tool.icon} size={14} />
-              <span>{t(`workspace.${tool.id}`)}</span>
+              <span>{t(tool.labelKey ?? `workspace.${tool.id}`)}</span>
             </button>
             <button className={styles.closeToolTab} type="button" aria-label={t("workspace.closeTool")} onClick={() => closeTool(tool.id)}><AliIcon name="close" size={12} /></button>
           </div>;
         })}
+        <SideChatTabStripItems
+          sideChat={props.sideChat}
+          activeTab={activeTab}
+          tabClassName={styles.activeToolTab}
+          closeClassName={styles.closeToolTab}
+          activeTabRef={activeTabRef}
+          onActivateTab={(tab) => onActiveTabChange(tab)}
+          onTabKeyDown={moveToolTabFocus}
+        />
       </div>
       <div className={styles.panelChromeActions}>
         <div ref={addMenuRef} className={styles.addToolWrap}>
@@ -340,6 +394,7 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
               <span>{t(`workspace.${tool.id}`)}</span>
               {tool.shortcut ? <kbd>{tool.shortcut}</kbd> : null}
             </button>)}
+            <SideChatMenuEntries sideChat={props.sideChat} variant="menu" onAfterSelect={() => setAddMenuOpen(false)} />
           </div>, document.body) : null}
         </div>
         <button type="button" title={t(props.maximized ? "workspace.restorePanel" : "workspace.maximizePanel")} aria-label={t(props.maximized ? "workspace.restorePanel" : "workspace.maximizePanel")} onClick={() => props.onMaximizedChange(!props.maximized)}><AliIcon name={props.maximized ? "fullscreen-exit" : "fullscreen"} size={14} /></button>
@@ -352,6 +407,7 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
         <span>{t(`workspace.${tool.id}`)}</span>
         {tool.shortcut ? <kbd>{tool.shortcut}</kbd> : null}
       </button>)}
+      <SideChatMenuEntries sideChat={props.sideChat} variant="launcher" />
     </div> : null}
     <section id="workspace-review" role="tabpanel" aria-labelledby="workspace-review-tab" hidden={activeTab !== "review"} className={styles.panel}>
       {activeTab === "review" ? <RenderErrorBoundary resetKey={`review:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><ReviewPanel cwd={cwd} commitRequest={props.commitRequest?.cwd === cwd ? props.commitRequest.id : undefined} refreshKey={refreshKey} onRefresh={props.onRefresh} onOpenFile={(path) => { props.onOpenFile(path, path.replace(/\\/g, "/").split("/").pop() ?? path); onActiveTabChange("files"); }} /></RenderErrorBoundary> : null}
@@ -441,5 +497,12 @@ export const RightPanel = forwardRef<RightPanelHandle, Props>(function RightPane
     <section id="workspace-automation" role="tabpanel" aria-labelledby="workspace-automation-tab" hidden={activeTab !== "automation"} className={styles.panel}>
       {active && activeTab === "automation" ? <RenderErrorBoundary resetKey={`automation:${props.selectedAutomationId ?? "list"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><AutomationPanel automationId={props.selectedAutomationId} sessionId={props.sessionId} sessionName={props.sessionName} cwd={cwd} onSelectAutomation={props.onSelectAutomation} onAutomationChanged={props.onAutomationChanged} /></RenderErrorBoundary> : null}
     </section>
+    <section id="workspace-plan" role="tabpanel" aria-labelledby="workspace-plan-tab" hidden={activeTab !== "plan"} className={styles.panel}>
+      {activeTab === "plan" ? <RenderErrorBoundary resetKey={`plan:${props.sessionId ?? "none"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><PlanSidePanelTab sessionId={props.sessionId} cwd={cwd} sessionRunning={props.sessionRunning} refreshKey={refreshKey} /></RenderErrorBoundary> : null}
+    </section>
+    <section id="workspace-goal" role="tabpanel" aria-labelledby="workspace-goal-tab" hidden={activeTab !== "goal"} className={styles.panel}>
+      {activeTab === "goal" ? <RenderErrorBoundary resetKey={`goal:${props.sessionId ?? "none"}:${refreshKey}`} fallbackLabel={t("workspace.panelRenderFailed")}><GoalSidePanelTab sessionId={props.sessionId} sessionRunning={props.sessionRunning} refreshKey={refreshKey} /></RenderErrorBoundary> : null}
+    </section>
+    <SideChatTabPanels sideChat={props.sideChat} panelActive={active} activeTab={activeTab} panelClassName={styles.panel} />
   </div>;
 });

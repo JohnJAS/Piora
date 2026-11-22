@@ -67,7 +67,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: "Conversation not found" }, { status: 404, headers });
     }
     assertSessionNotMutating(id);
-    return NextResponse.json({ records: projected, transcript, fullResult }, { headers });
+    return NextResponse.json({
+      records: projected,
+      ...(transcript !== undefined ? { transcript } : {}),
+      ...(fullResult !== undefined ? { fullResult } : {}),
+    }, { headers });
   } catch (error) {
     const status = error instanceof TypeError ? 400 : error instanceof StaleSubagentTranscript ? 409 : 500;
     return NextResponse.json({ error: status === 500 ? "Could not read subagent history" : (error as Error).message }, { status, headers });

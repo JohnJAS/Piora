@@ -5,7 +5,10 @@ import test from "node:test";
 const source = await readFile(new URL("./DiffView.tsx", import.meta.url), "utf8");
 const styles = await readFile(new URL("./DiffView.module.css", import.meta.url), "utf8");
 const fileViewer = await readFile(new URL("./FileViewer.tsx", import.meta.url), "utf8");
-const messageView = await readFile(new URL("./MessageView.tsx", import.meta.url), "utf8");
+const messageView = (await Promise.all([
+  readFile(new URL("./MessageView.tsx", import.meta.url), "utf8"),
+  readFile(new URL("./message-view/ToolCallBlock.tsx", import.meta.url), "utf8"),
+])).join("\n");
 const globalStyles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const reviewPanel = await readFile(new URL("./workspace/ReviewPanel.tsx", import.meta.url), "utf8");
 const workspaceStyles = await readFile(new URL("./workspace/WorkspacePanel.module.css", import.meta.url), "utf8");
@@ -43,7 +46,7 @@ test("loads omitted unchanged context instead of treating its bar as a hunk coll
 test("both existing diff surfaces use the shared DiffView", () => {
   assert.match(fileViewer, /import \{ DiffView \} from "\.\/DiffView"/);
   assert.match(fileViewer, /<DiffView patch=\{gitDiff\.patch!\}/);
-  assert.match(messageView, /import\("\.\/DiffView"\)/);
+  assert.match(messageView, /import\("\.\.\/DiffView"\)/);
   assert.match(messageView, /<DiffView patch=\{diff\.text\} mode="split"/);
   assert.doesNotMatch(messageView, /function SplitPatchView/);
 });

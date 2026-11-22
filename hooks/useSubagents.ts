@@ -12,6 +12,7 @@ export interface SubagentSidebarState {
 }
 export const SubagentSidebarContext = createContext<SubagentSidebarState | null>(null);
 export const OpenSubagentContext = createContext<((selection: SubagentSelection, openerId: string) => void) | null>(null);
+export const ContinueSubagentContext = createContext<((record: SubagentDetail) => void) | null>(null);
 
 interface Snapshot { data?: unknown; failed?: boolean }
 const empty: Snapshot = {};

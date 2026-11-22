@@ -23,7 +23,6 @@ export interface SessionHistoryCursor {
 export interface SessionHistoryPage {
   older: string | null;
   contextVersion: string;
-  focused?: boolean;
 }
 
 interface PageOptions {
@@ -33,23 +32,23 @@ interface PageOptions {
   signal?: AbortSignal;
 }
 
-type WorkerPage =
-  | { stale: true }
-  | { missingAnchor: true }
-  | { unsupported: true }
-  | {
-    generation: string;
-    contextVersion: string;
-    leafId: string | null;
-    header: SessionHeader;
-    name?: string;
-    before: string | null;
-    model: SessionContext["model"];
-    thinkingLevel: string;
-    modelChanges: SessionContext["modelChanges"];
-    promptBinding?: SessionSystemPromptBinding;
-    entries: SessionEntry[];
-  };
+type WorkerHistory = {
+  leafId: string | null;
+  header: SessionHeader;
+  name?: string;
+  model: SessionContext["model"];
+  thinkingLevel: string;
+  modelChanges: SessionContext["modelChanges"];
+  promptBinding?: SessionSystemPromptBinding;
+  entries: SessionEntry[];
+};
+
+type WorkerReadFailure = { stale: true } | { unsupported: true };
+type WorkerPage = WorkerReadFailure | { missingAnchor: true } | WorkerHistory & {
+  generation: string;
+  contextVersion: string;
+  before: string | null;
+};
 
 export class SessionHistoryPageError extends Error {
   constructor(readonly status: number, message: string) { super(message); }
@@ -139,6 +138,36 @@ export async function readSessionPage(path: string, modified: string, options: P
   if ("stale" in result) throw new SessionHistoryPageError(409, "History changed; refresh the conversation");
   if ("missingAnchor" in result) throw new SessionHistoryPageError(404, "History entry not found");
   if ("unsupported" in result) return legacyPage(path, modified, options);
+  return {
+    ...projectWorkerHistory(path, modified, result),
+    historyPage: {
+      older: cursorFor(result.generation, result.leafId, result.before),
+      contextVersion: result.contextVersion,
+    } satisfies SessionHistoryPage,
+  };
+}
+
+export function buildSessionTranscript(manager: SessionManager, path: string, modified: string) {
+  const leafId = manager.getLeafId();
+  const entries = manager.getEntries() as unknown as SessionEntry[];
+  const context = buildSessionContext(entries, leafId, { deferThinking: true, deferToolResultImages: true, includeCompactedMessages: true });
+  const header = manager.getHeader() as SessionHeader | null;
+  return {
+    context, leafId,
+    systemPromptBinding: summarizeSessionSystemPromptBinding(readLatestSessionSystemPromptBinding(entries)),
+    info: header ? sessionInfo(header, manager.getSessionName(), modified, context.messages.length,
+      previewMessage(context.messages.find(message => message.role === "user")), path) : null,
+  };
+}
+
+export async function readSessionTranscript(path: string, modified: string) {
+  const result = await readInWorker<WorkerHistory | WorkerReadFailure>("sessionTranscript", { path });
+  if ("stale" in result) throw new SessionHistoryPageError(409, "History changed; refresh the conversation");
+  if ("unsupported" in result) return buildSessionTranscript(SessionManager.open(path), path, modified);
+  return projectWorkerHistory(path, modified, result);
+}
+
+function projectWorkerHistory(path: string, modified: string, result: WorkerHistory) {
   const context: SessionContext = {
     messages: [], entryIds: [], modelChanges: result.modelChanges, model: result.model, thinkingLevel: result.thinkingLevel,
   };
@@ -156,10 +185,6 @@ export async function readSessionPage(path: string, modified: string, options: P
   }
   return {
     context, leafId: result.leafId,
-    historyPage: {
-      older: cursorFor(result.generation, result.leafId, result.before),
-      contextVersion: result.contextVersion,
-    } satisfies SessionHistoryPage,
     systemPromptBinding: summarizeSessionSystemPromptBinding(result.promptBinding ?? null),
     info: sessionInfo(result.header, result.name, modified, context.messages.length,
       previewMessage(context.messages.find(message => message.role === "user")), path),

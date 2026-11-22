@@ -2,7 +2,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const source = readFileSync(new URL("./ModelsConfig.tsx", import.meta.url), "utf8");
+const mainSource = readFileSync(new URL("./ModelsConfig.tsx", import.meta.url), "utf8");
+const modelDetailSource = readFileSync(new URL("./models-config/ModelDetail.tsx", import.meta.url), "utf8");
+const source = [
+  mainSource,
+  modelDetailSource,
+  readFileSync(new URL("./models-config/ProviderDetail.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./models-config/VisionAgentDetail.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./models-config/AuthDetails.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./models-config/AddProviderPicker.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./models-config/ManagedModelsList.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./models-config/ProviderSidebarTree.tsx", import.meta.url), "utf8"),
+].join("\n");
 const scopeSource = readFileSync(new URL("../lib/model-scope-settings.ts", import.meta.url), "utf8");
 const testRouteSource = readFileSync(new URL("../app/api/models-config/test/route.ts", import.meta.url), "utf8");
 
@@ -70,7 +81,7 @@ test("saving a new custom model refreshes and restores it into the visible provi
 });
 
 test("context window and max output are required basic fields without hardcoded defaults", () => {
-  const detail = source.slice(source.indexOf("function ModelLimitFields"), source.indexOf("function OAuthDetail"));
+  const detail = modelDetailSource.slice(modelDetailSource.indexOf("function ModelLimitFields"));
   const contextAt = detail.indexOf('t("models.form.contextWindow")');
   const imageAt = detail.indexOf('t("models.form.imageInput")');
   const advancedAt = detail.indexOf('t("models.advancedSettings")');

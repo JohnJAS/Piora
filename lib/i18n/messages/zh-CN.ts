@@ -14,6 +14,7 @@ import type { LocalePlugin } from "../types";
 import { smartShellZh } from "./smart-shell";
 import { sshZh } from "./ssh";
 import { quickAccessZh } from "./quick-access";
+import { SIDE_CHAT_MESSAGES_ZH } from "./side-chat";
 
 /** Pi Web 内置简体中文语言包。 */
 export const zhCNLocale: LocalePlugin = {
@@ -74,6 +75,7 @@ export const zhCNLocale: LocalePlugin = {
     ...sshZh,
     ...quickAccessZh,
     ...replySuggestionsZh,
+    ...SIDE_CHAT_MESSAGES_ZH,
     "chat.deleteMessage": "删除消息",
     "chat.deletingMessage": "正在删除…",
     "chat.deleteMessageBusy": "请停止或等待任务完成后再删除消息。",
@@ -1287,8 +1289,6 @@ export const zhCNLocale: LocalePlugin = {
     "history.reload": "重新加载历史",
     "history.loading": "正在生成完整历史…",
     "history.loadError": "完整历史加载失败",
-    "history.loadEarlier": "加载更早消息",
-    "history.returnToNewest": "返回最新消息",
     "history.retry": "重试",
     "common.retry": "重试",
     "history.frameTitle": "完整会话历史内容",
@@ -2548,7 +2548,6 @@ export const zhCNLocale: LocalePlugin = {
     "chat.toolCalls": "次工具调用",
     "chat.collapseProcess": "收起处理详情",
     "chat.expandProcess": "展开处理详情",
-    "chat.loadEarlier": "向上滚动以加载更早的消息（隐藏 {count} 条）",
     "chat.expandLongMessage": "展开完整消息 · {count} 行",
     "chat.collapseLongMessage": "收起消息 · {count} 行",
     "chat.loadingLongMessage": "正在载入完整内容…",

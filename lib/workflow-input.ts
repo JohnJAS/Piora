@@ -1,4 +1,4 @@
-import type { WorkflowAction, WorkflowMode, WorkflowPromptOptions } from "./workflow-types";
+import type { WorkflowAction, WorkflowCriterion, WorkflowMode, WorkflowPromptOptions } from "./workflow-types";
 
 export class WorkflowInputError extends Error {
   readonly code = "INVALID_WORKFLOW_INPUT";
@@ -25,6 +25,8 @@ export function parseWorkflowPromptOptions(value: unknown): WorkflowPromptOption
   return {
     mode: parseWorkflowMode(input.mode),
     ...(input.turnBudget !== undefined ? { turnBudget: parseWorkflowBudget(input.turnBudget) } : {}),
+    ...(input.preservePausedGoal === true ? { preservePausedGoal: true } : {}),
+    ...(input.resumePausedGoal === true ? { resumePausedGoal: true } : {}),
   };
 }
 
@@ -33,14 +35,58 @@ export function parseWorkflowRevision(value: unknown): number {
   return value;
 }
 
+function parseOptionalText(value: unknown, field: string, limit: number): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !value.trim() || value.length > limit) {
+    throw new WorkflowInputError(`${field} is empty or too large.`);
+  }
+  return value;
+}
+
+function parseOptionalCriteria(value: unknown): WorkflowCriterion[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 50) {
+    throw new WorkflowInputError("Acceptance criteria must be a list of up to 50 items.");
+  }
+  return value.map((item, index) => {
+    const entry = record(item);
+    const id = parseOptionalText(entry.id, `criteria[${index}].id`, 100);
+    const text = parseOptionalText(entry.text, `criteria[${index}].text`, 5000);
+    const status = entry.status;
+    if (!id || !text || (status !== "pending" && status !== "verified")) {
+      throw new WorkflowInputError(`criteria[${index}] is invalid.`);
+    }
+    const evidence = typeof entry.evidence === "string" && entry.evidence.length <= 20_000 ? entry.evidence : "";
+    return { id, text, evidence, status };
+  });
+}
+
+const VALID_WORKFLOW_ACTIONS = new Set([
+  "approve",
+  "revise",
+  "exit",
+  "pause",
+  "resume",
+  "cancel",
+  "set_budget",
+  "edit_goal",
+  "replace_goal",
+]);
+
 export function parseWorkflowAction(value: unknown): WorkflowAction {
   const input = record(value);
-  if (!["approve", "revise", "exit", "pause", "resume", "cancel", "set_budget"].includes(String(input.action))) throw new WorkflowInputError("Unknown workflow action.");
+  if (!VALID_WORKFLOW_ACTIONS.has(String(input.action))) throw new WorkflowInputError("Unknown workflow action.");
   if (typeof input.runId !== "string" || !input.runId || input.runId.length > 128) throw new WorkflowInputError("A workflow run ID is required.");
+  const objective = parseOptionalText(input.objective, "objective", 100_000);
+  const criteria = parseOptionalCriteria(input.criteria);
+  const planMarkdown = parseOptionalText(input.planMarkdown, "planMarkdown", 100_000);
   return {
     action: input.action as WorkflowAction["action"],
     runId: input.runId,
     expectedRevision: parseWorkflowRevision(input.expectedRevision),
     ...(input.turnBudget !== undefined ? { turnBudget: parseWorkflowBudget(input.turnBudget) } : {}),
+    ...(objective !== undefined ? { objective } : {}),
+    ...(criteria !== undefined ? { criteria } : {}),
+    ...(planMarkdown !== undefined ? { planMarkdown } : {}),
   };
 }

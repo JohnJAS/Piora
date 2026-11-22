@@ -24,6 +24,7 @@ export async function GET(
     const context = buildSessionContext(sm.getEntries() as never, leafId, {
       deferThinking,
       deferToolResultImages,
+      includeCompactedMessages: url.searchParams.get("view") === "transcript",
     });
 
     const slashReceipts = await new SessionControlStore().queryCompletedSlashPromptIds(id);

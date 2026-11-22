@@ -11,7 +11,7 @@ export const worktreeChatLayout = {
   id: "worktree-chat-layout",
   mode: "scripted-model",
   scope: "Windows Electron, real Git checkouts and session files, isolated profile and loopback model",
-  coverage: ["docked and overlay file panels across projects and restart", "Markdown row edges", "new conversation in a linked checkout", "long model name and Dream focus ring", "open Pocket from the main window and switch its header tabs"],
+  coverage: ["docked and overlay file panels across projects and restart", "Markdown row edges", "new conversation in a linked checkout", "long model name and Dream focus ring", "open Pocket with the keyboard shortcut and switch its header tabs"],
   limits: ["live provider", "release packaging"],
   async prepare(context) {
     const { paths, directory, report } = context;
@@ -60,7 +60,7 @@ export const worktreeChatLayout = {
       await page.setViewportSize(wideWindow);
       // Compile cold development routes before measuring the actual UI flow.
       const statuses = await page.evaluate(async id => Promise.all([
-        "/api/sessions/" + id + "?deferThinking=1&deferMedia=1&view=chat", "/api/sessions/" + id + "/state?view=chat",
+        "/api/sessions/" + id + "?deferThinking=1&deferMedia=1&view=transcript", "/api/sessions/" + id + "/state?view=chat",
       ].map(async url => {
         const response = await fetch(url, { cache: "no-store" });
         await response.text();
@@ -155,8 +155,10 @@ export const worktreeChatLayout = {
       await page.screenshot({ path: join(directory, "compact-dream-composer.png") });
       await page.setViewportSize(wideWindow);
     });
-    await step("open-pocket-from-window-header", async () => {
-      await page.getByRole("button", { name: /^(打开随身舱|Open Pocket)$/ }).click();
+    await step("open-pocket-with-shortcut", async () => {
+      // The previous step leaves focus in the composer, where application shortcuts are preserved.
+      await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
+      await page.keyboard.press("Control+Space");
       const panel = await waitUntil(() => getBrowser().contexts().flatMap(context => context.pages()).find(p => p.url().includes("/desktop-companion-panel")), "Pocket window");
       const tabs = panel.locator('header [role="tablist"][aria-orientation="horizontal"]');
       await tabs.waitFor({ timeout: 120_000 });

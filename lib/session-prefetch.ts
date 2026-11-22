@@ -1,4 +1,5 @@
 import type { SessionInfo } from "./types";
+import { chatHistoryUrl } from "./chat-history-client";
 
 const PREFETCH_TTL_MS = 30_000;
 const MAX_PREFETCH_CACHE_BYTES = 16 * 1024 * 1024;
@@ -66,7 +67,7 @@ function createPrefetch(
     controller,
     promise: Promise.resolve(null),
   };
-  entry.promise = fetch(`/api/sessions/${encodeURIComponent(session.id)}?deferThinking=1&deferMedia=1&view=chat`, {
+  entry.promise = fetch(chatHistoryUrl(session.id), {
     signal: controller.signal,
   })
       .then(async (response) => {

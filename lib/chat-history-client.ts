@@ -1,34 +1,27 @@
-import type { ModelChangeNotice } from "./model-change-notices";
 import { mergePendingPrompts, readPendingPrompts } from "./prompt-recovery";
-import type { SessionHistoryPage } from "./session-read-repository";
-import type { AgentMessage, SessionContext } from "./types";
+import type { SessionContext } from "./types";
 
 export interface ChatHistoryResource {
   context: SessionContext;
   leafId: string | null;
-  historyPage?: SessionHistoryPage;
   persistedPromptIds?: string[];
 }
 
-export interface LoadedChatHistory {
-  messages: AgentMessage[];
-  entryIds: string[];
-  modelChanges: ModelChangeNotice[];
-  historyPage?: SessionHistoryPage;
-}
-
-export function chatHistoryUrl(sessionId: string, extra: Record<string, string> = {}): string {
-  const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1", view: "chat", ...extra });
-  return "/api/sessions/" + encodeURIComponent(sessionId) + "?" + params;
+export function chatHistoryUrl(sessionId: string, branch?: { leafId: string | null }): string {
+  const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1", view: "transcript" });
+  if (branch?.leafId) params.set("leafId", branch.leafId);
+  return "/api/sessions/" + encodeURIComponent(sessionId) + (branch ? "/context?" : "?") + params;
 }
 
 export async function restoreChatHistory(sessionId: string, resource: ChatHistoryResource, signal?: AbortSignal) {
-  const { context, historyPage, leafId } = resource;
+  const { context, leafId, persistedPromptIds } = resource;
+  const entryIds = context.entryIds ?? [];
   const pending = await readPendingPrompts(sessionId);
-  if (!pending.length || !historyPage) return mergePendingPrompts(context.messages, context.entryIds ?? [], pending, resource.persistedPromptIds);
+  if (!pending.length) return { messages: context.messages, entryIds, confirmedIds: [] };
+  if (persistedPromptIds) return mergePendingPrompts(context.messages, entryIds, pending, persistedPromptIds);
   const retired = new Set<string>();
   const anchors = new Set<string>();
-  const displayed = new Set(context.entryIds);
+  const displayed = new Set(entryIds);
   for (let offset = 0; offset < pending.length; offset += 128) {
     if (signal?.aborted) throw signal.reason;
     const records = pending.slice(offset, offset + 128);
@@ -46,22 +39,5 @@ export async function restoreChatHistory(sessionId: string, resource: ChatHistor
     for (const id of result.persistedPromptIds) retired.add(id);
     for (const id of result.activeAnchorIds) anchors.add(id);
   }
-  return mergePendingPrompts(context.messages, context.entryIds, pending, [...retired], [...anchors]);
-}
-
-export function combineOlderHistory(older: ChatHistoryResource, current: LoadedChatHistory): LoadedChatHistory | null {
-  if (!older.historyPage || !current.historyPage || older.historyPage.contextVersion !== current.historyPage.contextVersion) return null;
-  const seen = new Set(current.entryIds.filter(Boolean));
-  const olderIds: string[] = [];
-  const olderMessages: AgentMessage[] = [];
-  older.context.entryIds.forEach((id, index) => {
-    if (seen.has(id)) return;
-    olderIds.push(id);
-    olderMessages.push(older.context.messages[index]);
-  });
-  const modelChanges = new Map([...older.context.modelChanges ?? [], ...current.modelChanges].map(notice => [notice.id, notice]));
-  return {
-    messages: [...olderMessages, ...current.messages], entryIds: [...olderIds, ...current.entryIds], modelChanges: [...modelChanges.values()],
-    historyPage: { ...older.historyPage, focused: current.historyPage.focused },
-  };
+  return mergePendingPrompts(context.messages, entryIds, pending, [...retired], [...anchors]);
 }

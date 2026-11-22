@@ -57,6 +57,7 @@ test('subagent settings preserve profile choices with readable responsive contro
           return route.fulfill({ json: { models: {}, modelList: catalogMode === 'empty' ? [] : modelList, ...(catalogMode === 'partial' ? { modelError: 'Fixture partial discovery' } : {}) } });
         }
         if (pathname === '/api/settings/laboratory') return route.fulfill({ json: { planGoalEnabled: false } });
+        if (pathname === '/api/settings/side-chat') return route.fulfill({ json: { enabled: false } });
         if (pathname.endsWith('.js')) return route.fulfill({ contentType: 'text/javascript', body: await readFile(path.join(directory, path.basename(pathname))) });
         if (pathname.startsWith('/fonts/')) return route.fulfill({ contentType: 'font/woff2', body: await readFile(path.join(repo, 'public', pathname.slice(1))) });
         if (pathname.startsWith('/api/')) throw new Error('Unexpected API request: ' + pathname);

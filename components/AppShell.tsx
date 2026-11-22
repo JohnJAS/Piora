@@ -6,9 +6,10 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { useGlobalKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
-import { OpenSubagentContext } from "@/hooks/useSubagents";
+import { ContinueSubagentContext, OpenSubagentContext } from "@/hooks/useSubagents";
 import { SubagentInspector } from "./SubagentInspector";
-import type { SubagentSelection } from "@/lib/subagent-types";
+import { buildContinueSubagentPrompt } from "./subagents/format";
+import type { SubagentDetail, SubagentSelection } from "@/lib/subagent-types";
 import { useApplicationShortcuts } from "@/hooks/useApplicationShortcuts";
 import { SessionSidebar, type SessionSidebarHandle } from "./SessionSidebar";
 import { ChatWindow, type TaskControls } from "./ChatWindow";
@@ -62,6 +63,12 @@ import type { CollaborationRoom } from "@/lib/room-types";
 import type { DesktopUpdateState } from "./sidebar/sidebar-types";
 import type { GitStatusResponse } from "@/lib/git-types";
 import { GitToolsPopover } from "./workspace/GitToolsPopover";
+import { useSideChatSettings } from "@/hooks/useSideChatSettings";
+import { useSideChatController } from "./side-chat/useSideChatController";
+import { SideChatSwitcherPopover } from "./side-chat/SideChatSwitcherPopover";
+import { SideChatCloseConfirmDialog } from "./side-chat/SideChatCloseConfirmDialog";
+import { dispatchFocusSideChatComposer, parseSideChatTabId, type SideChatTabId } from "./side-chat/side-chat-events";
+import sideChatStyles from "./side-chat/SideChat.module.css";
 import { readSessionTitleModel, readSessionTitlePrompt } from "@/lib/session-title-settings";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 import { fetchSessionMetadata } from "@/lib/session-catalog-client";
@@ -289,11 +296,13 @@ export function AppShell() {
   const shownSubagent = !selectedRoom && !settingsDialogOpen && !historyDialogOpen && subagentSelection?.parentSessionId === selectedSession?.id ? subagentSelection : undefined;
   const subagentPanelOpen = Boolean(shownSubagent);
   const effectiveRightPanelOpen = (rightPanelOpen || subagentPanelOpen) && !settingsDialogOpen;
+  const [subagentInspectorWide, setSubagentInspectorWide] = useState(false);
   const [rightPanelHasOpened, setRightPanelHasOpened] = useState(false);
   const [rightPanelMaximized, setRightPanelMaximized] = useState(false);
   // Keep the server and first client render identical. The persisted tab is
   // restored after hydration so React never has to replace this subtree.
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>("home");
+  const [restoredSideChatTab, setRestoredSideChatTab] = useState<SideChatTabId | null>(null);
   const showAnswerBrowser = useCallback(() => { setRightPanelTab("browser"); setRightPanelOpen(true); }, []);
   const answerNavigation = useAnswerLinkNavigation(
     selectedRoom ? `room:${selectedRoom.id}:${roomPanelMember?.binding.sessionId ?? ""}` : `chat:${selectedSession?.id ?? "new"}`,
@@ -416,15 +425,25 @@ export function AppShell() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem("piora-right-panel-tab");
+    const parsedSideChat = stored ? parseSideChatTabId(stored) : null;
     setRightPanelOpen(window.localStorage.getItem("piora-right-panel-open") === "true");
     setRightPanelTab(stored === "automation" || stored === "review" || stored === "files" || stored === "commands" || stored === "ssh" || stored === "browser" || stored === "harmony" ? stored : "home");
+    setRestoredSideChatTab(parsedSideChat?.kind === "live" ? (stored as SideChatTabId) : null);
     setRightPanelTabRestored(true);
   }, []);
 
   useEffect(() => {
+    if (restoredSideChatTab && rightPanelTab !== "home") {
+      setRestoredSideChatTab(null);
+    }
+  }, [restoredSideChatTab, rightPanelTab]);
+
+  useEffect(() => {
     if (!rightPanelTabRestored) return;
+    if (rightPanelTab === "home" && restoredSideChatTab !== null) return;
+    if (parseSideChatTabId(rightPanelTab)?.kind === "loading") return;
     window.localStorage.setItem("piora-right-panel-tab", rightPanelTab);
-  }, [rightPanelTab, rightPanelTabRestored]);
+  }, [restoredSideChatTab, rightPanelTab, rightPanelTabRestored]);
 
   useEffect(() => {
     if (rightPanelTabRestored) window.localStorage.setItem("piora-right-panel-open", String(rightPanelOpen));
@@ -1009,6 +1028,13 @@ export function AppShell() {
     subagentFocus.current = { openerId, restore: false };
     setSubagentSelection(selection);
   }, []);
+
+  const continueSubagentInChat = useCallback((record: SubagentDetail) => {
+    const prompt = buildContinueSubagentPrompt(record, locale);
+    chatInputRef.current?.prependText(prompt);
+    if (rightPanelOverlayMode || isMobile) setSubagentSelection(undefined);
+    window.requestAnimationFrame(() => chatInputRef.current?.focus());
+  }, [locale, rightPanelOverlayMode, isMobile]);
 
   const openSidebarSubagent = useCallback(async (session: SessionInfo, agentId: string, openerId: string) => {
     if (selectedSessionIdRef.current !== session.id) {
@@ -1859,9 +1885,57 @@ export function AppShell() {
       setRightPanelOpen(true);
       requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab());
     };
+    const onOpenWorkflowPanel = (event: Event) => {
+      const tab = (event as CustomEvent<{ tab?: "plan" | "goal" }>).detail?.tab;
+      if (tab !== "plan" && tab !== "goal") return;
+      setRightPanelTab(tab);
+      setRightPanelOpen(true);
+      requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab());
+    };
     window.addEventListener("piora:open-agent-browser", onOpenAgentBrowser);
-    return () => window.removeEventListener("piora:open-agent-browser", onOpenAgentBrowser);
+    window.addEventListener("piora:open-workflow-panel", onOpenWorkflowPanel);
+    return () => {
+      window.removeEventListener("piora:open-agent-browser", onOpenAgentBrowser);
+      window.removeEventListener("piora:open-workflow-panel", onOpenWorkflowPanel);
+    };
   }, []);
+
+  const sideChatSettings = useSideChatSettings();
+  const sideChatEnabled = sideChatSettings.enabled && !selectedRoom;
+  const sideChatButtonRef = useRef<HTMLButtonElement | null>(null);
+  const [sideChatSwitcherOpen, setSideChatSwitcherOpen] = useState(false);
+  const parentSideChatSnapshot = useMemo(
+    () => (selectedSession && !selectedRoom ? runningTaskSnapshots.find((item) => item.id === selectedSession.id) ?? null : null),
+    [runningTaskSnapshots, selectedRoom, selectedSession],
+  );
+  const handleJumpToMainChat = useCallback(() => {
+    window.requestAnimationFrame(() => chatInputRef.current?.focus());
+  }, []);
+  const handlePromotedSideChat = useCallback((promotedSession: SessionInfo) => {
+    setRefreshKey((key) => key + 1);
+    void handleSelectSession(promotedSession);
+  }, [handleSelectSession]);
+  const handleRestoredSideChatTabHandled = useCallback(() => {
+    setRestoredSideChatTab(null);
+  }, []);
+  const sideChat = useSideChatController({
+    enabled: sideChatEnabled,
+    parentSession: selectedRoom ? null : selectedSession,
+    parentSnapshot: parentSideChatSnapshot,
+    parentRunning: Boolean(taskControls?.disabled),
+    rightPanelOpen: rightPanelOpen && !subagentSelection && !settingsDialogOpen,
+    rightPanelTab,
+    setRightPanelOpen,
+    setRightPanelTab,
+    restoredSideChatTab,
+    onRestoredSideChatTabHandled: handleRestoredSideChatTabHandled,
+    onPromotedSession: handlePromotedSideChat,
+    onJumpToParent: handleJumpToMainChat,
+    onOpenFile: handleOpenLinkedFile,
+  });
+  useEffect(() => {
+    setSideChatSwitcherOpen(false);
+  }, [selectedSession?.id, sideChatEnabled]);
 
   const commandActions = useMemo<CommandContext["actions"]>(() => ({
     "navigate.newSession": handleNewSessionInCurrentProject,
@@ -1881,7 +1955,19 @@ export function AppShell() {
     "panel.commands": () => { setRightPanelTab("commands"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "panel.browser": () => { setRightPanelTab("browser"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
     "panel.design": () => { setRightPanelTab("design"); setRightPanelOpen(true); requestAnimationFrame(() => rightPanelRef.current?.focusActiveTab()); },
+    "panel.openSideChat": () => {
+      if (!sideChat.canCreate) return;
+      void sideChat.openOrCreateSideChat().then(() => dispatchFocusSideChatComposer());
+    },
+    "composer.focusSideChat": () => {
+      const targetId = sideChat.activeSideChatId ?? sideChat.openIds[0];
+      if (!targetId) return;
+      sideChat.selectSideChat(targetId);
+      dispatchFocusSideChatComposer(targetId);
+    },
+    "composer.focusMainChat": () => { chatInputRef.current?.focus(); },
     "composer.voiceInput": () => { chatInputRef.current?.focus(); chatInputRef.current?.toggleVoiceInput(); },
+    "composer.togglePlanMode": () => { chatInputRef.current?.focus(); chatInputRef.current?.togglePlanMode(); },
     "companion.togglePanel": () => { void window.piDesktop?.companionAction?.("open-panel"); },
     "companion.clipboard": () => { void window.piDesktop?.clipboard?.historyV2?.open("quick"); },
     "panel.toggleSidebar": () => setSidebarOpen((open) => !open),
@@ -1896,8 +1982,16 @@ export function AppShell() {
       }, 0);
     },
     "git.refresh": handleExplorerRefresh,
-  }), [currentProjectCwd, handleExplorerRefresh, handleNewSessionInCurrentProject, handleOpenProjectPicker, handleTaskExport, handleTaskRename, handleViewFullHistory, openSettings]);
-  const commandContext = useMemo<CommandContext>(() => ({ hasProject: Boolean(currentProjectCwd), hasSession: Boolean(selectedSession), isRunning: Boolean(taskControls?.disabled), isGitRepository: currentIsGitRepository, actions: commandActions }), [commandActions, currentIsGitRepository, currentProjectCwd, selectedSession, taskControls?.disabled]);
+  }), [currentProjectCwd, handleExplorerRefresh, handleNewSessionInCurrentProject, handleOpenProjectPicker, handleTaskExport, handleTaskRename, handleViewFullHistory, openSettings, sideChat]);
+  const commandContext = useMemo<CommandContext>(() => ({
+    hasProject: Boolean(currentProjectCwd),
+    hasSession: Boolean(selectedSession),
+    isRunning: Boolean(taskControls?.disabled),
+    isGitRepository: currentIsGitRepository,
+    sideChatEnabled,
+    hasSideChat: sideChat.openIds.length > 0,
+    actions: commandActions,
+  }), [commandActions, currentIsGitRepository, currentProjectCwd, selectedSession, sideChat.openIds.length, sideChatEnabled, taskControls?.disabled]);
   const shortcutLabels = useMemo(() => Object.fromEntries(APPLICATION_SHORTCUTS.map((item) => [
     item.id,
     formatShortcutBinding(shortcutBindings[item.id], isMacPlatform(typeof window === "undefined" ? undefined : window.piDesktop?.platform)),
@@ -1906,7 +2000,7 @@ export function AppShell() {
 
   useEffect(() => {
     const handleApplicationShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || shouldPreserveApplicationShortcut(event.target)) return;
+      if (event.defaultPrevented) return;
       const shortcut = APPLICATION_SHORTCUTS.find((item) => shortcutMatchesEvent(
         event,
         shortcutBindings[item.id],
@@ -1915,9 +2009,12 @@ export function AppShell() {
       if (!shortcut) return;
       // The composer owns this shortcut so it remains available while its
       // textarea is focused and ignores editors, terminals, and other inputs.
-      if (shortcut.id === "composer.voiceInput") return;
+      if (shortcut.id === "composer.voiceInput" || shortcut.id === "composer.togglePlanMode") return;
       // Device capture belongs to the visible Harmony panel, never a global command.
       if (shortcut.id === "harmony.screenshot") return;
+      const insideComposer = Boolean((event.target instanceof Element ? event.target : null)?.closest(".chat-composer-surface"));
+      const allowInsideComposer = shortcut.id === "panel.openSideChat" || shortcut.id === "composer.focusMainChat";
+      if (shouldPreserveApplicationShortcut(event.target) && !(allowInsideComposer && insideComposer)) return;
       if (historyDialogOpen && shortcut.id.startsWith("session.")) return;
       event.preventDefault();
       if (shortcut.id === "palette.open") setCommandPaletteOpen(true);
@@ -2451,6 +2548,50 @@ export function AppShell() {
                   </button>
                 </>
               ) : null}
+              {sideChatEnabled && selectedSession ? (
+                <>
+                  <button
+                    ref={sideChatButtonRef}
+                    className={`topbar-control topbar-icon-button ${sideChatStyles.topbarButton}`}
+                    type="button"
+                    data-testid="topbar-side-chat-button"
+                    aria-haspopup="dialog"
+                    aria-expanded={sideChatSwitcherOpen}
+                    title={translate("sideChat.panelTitle")}
+                    aria-label={translate("sideChat.panelTitle")}
+                    onClick={() => setSideChatSwitcherOpen((open) => !open)}
+                  >
+                    <AliIcon name="chat-bubble-plus" size={16} />
+                    {sideChat.unreadCount > 0 || sideChat.anyRunning ? (
+                      <span
+                        className={sideChatStyles.unreadDot}
+                        aria-label={translate(sideChat.unreadCount > 0 ? "sideChat.unreadIndicator" : "sideChat.runningIndicator")}
+                      />
+                    ) : null}
+                  </button>
+                  <SideChatSwitcherPopover
+                    open={sideChatSwitcherOpen}
+                    anchorRef={sideChatButtonRef}
+                    canCreate={sideChat.canCreate}
+                    items={sideChat.items}
+                    activeSideChatId={sideChat.activeSideChatId}
+                    unreadIds={sideChat.unreadIds}
+                    onClose={() => setSideChatSwitcherOpen(false)}
+                    onSelect={(sideId) => {
+                      sideChat.selectSideChat(sideId);
+                      dispatchFocusSideChatComposer(sideId);
+                    }}
+                    onCreate={(storage) => {
+                      void sideChat.openOrCreateSideChat({ storage, forceNew: true }).then(() => {
+                        dispatchFocusSideChatComposer();
+                      });
+                    }}
+                    onUnarchive={(sideId) => {
+                      void sideChat.setArchivedSideChat(sideId, false);
+                    }}
+                  />
+                </>
+              ) : null}
               <button
                 className={`topbar-control topbar-icon-button right-panel-toggle ${effectiveRightPanelOpen ? "is-open" : "is-closed"}`}
                 type="button"
@@ -2902,7 +3043,7 @@ export function AppShell() {
                 handleRef={roomWorkspaceRef}
               />
             ) : showChat ? (
-              <OpenSubagentContext.Provider value={openSubagent}><ChatWindow
+              <ContinueSubagentContext.Provider value={continueSubagentInChat}><OpenSubagentContext.Provider value={openSubagent}><ChatWindow
                 key={sessionKey}
                 visible={!settingsDialogOpen}
                 historyVisible={historyDialogOpen && !settingsDialogOpen}
@@ -2934,7 +3075,9 @@ export function AppShell() {
                 onCapabilitiesChange={setSessionCapabilities}
                 onOpenModels={openModelsSettings}
                 onPromptSubmitted={() => setOnboardingPromptSubmittedKey((key) => key + 1)}
-              /></OpenSubagentContext.Provider>
+                sideChatEnabled={sideChatEnabled && !sideChat.parentArchived}
+                onOpenSideChat={sideChat.openOrCreateSideChat}
+              /></OpenSubagentContext.Provider></ContinueSubagentContext.Provider>
             ) : initialCwdStatus === "validating" ? (
               <div
                 role="status"
@@ -3013,6 +3156,7 @@ export function AppShell() {
         ref={rightPanelResizer.panelRef}
         id="file-panel"
         data-subagent-panel={shownSubagent ? "true" : undefined}
+        data-subagent-wide={shownSubagent && subagentInspectorWide ? "true" : undefined}
         aria-hidden={!effectiveRightPanelOpen}
         inert={!effectiveRightPanelOpen ? true : undefined}
         className={`right-panel-container${effectiveRightPanelOpen ? " right-panel-open" : " right-panel-closed"}${effectiveRightPanelMaximized ? " right-panel-maximized" : ""}${rightPanelIsResizing ? " right-panel-resizing" : ""}`}
@@ -3025,15 +3169,32 @@ export function AppShell() {
           background: "var(--bg)",
         } as React.CSSProperties}
       >
-        {shownSubagent && <SubagentInspector key={shownSubagent.parentSessionId + ":" + shownSubagent.agentId}
-          selection={shownSubagent} onClose={closeSubagent} modal={rightPanelOverlayMode || isMobile}
-          resizeHandle={!isMobile && <div
-            {...subagentPanelResizer.separatorProps}
-            aria-controls="subagent-inspector-body"
-            className={`panel-resize-handle subagent-panel-resize-handle${subagentPanelResizer.isResizing ? " is-resizing" : ""}`}
-            data-resize-handle="subagent-panel"
-            title={`${translate("subagent.resizeDetails")}: ${translate("layout.resizeHint")}`}
-          />} />}
+        {shownSubagent && (
+          <ContinueSubagentContext.Provider value={continueSubagentInChat}>
+            <SubagentInspector
+              key={`${shownSubagent.parentSessionId}:${shownSubagent.agentId}`}
+              selection={shownSubagent}
+              onClose={closeSubagent}
+              onSelect={setSubagentSelection}
+              modal={rightPanelOverlayMode || isMobile}
+              expandedWidth={subagentInspectorWide}
+              onToggleWidth={() => {
+                const nextWide = !subagentInspectorWide;
+                subagentPanelResizer.setWidth(nextWide ? Math.min(560, window.innerWidth * 0.48) : SUBAGENT_PANEL_DEFAULT_WIDTH);
+                setSubagentInspectorWide(nextWide);
+              }}
+              cwd={workspaceCwd ?? undefined}
+              onOpenFile={handleOpenLinkedFile}
+              resizeHandle={!isMobile && <div
+                {...subagentPanelResizer.separatorProps}
+                aria-controls="subagent-inspector-body"
+                className={`panel-resize-handle subagent-panel-resize-handle${subagentPanelResizer.isResizing ? " is-resizing" : ""}`}
+                data-resize-handle="subagent-panel"
+                title={`${translate("subagent.resizeDetails")}: ${translate("layout.resizeHint")}`}
+              />}
+            />
+          </ContinueSubagentContext.Provider>
+        )}
         {rightPanelHasOpened ? <div hidden={Boolean(shownSubagent)} style={{ height: "100%", minHeight: 0 }}><RightPanel
           ref={rightPanelRef}
           answerNavigation={answerNavigation.request}
@@ -3083,6 +3244,7 @@ export function AppShell() {
           onSelectAutomation={setSelectedAutomationId}
           onAutomationChanged={() => setSessionKey((key) => key + 1)}
           capabilities={selectedRoom ? null : sessionCapabilities}
+          sideChat={sideChat.panelProps}
         /></div> : null}
       </div>
     {/* File panel toggle — always visible at top-right */}
@@ -3121,6 +3283,11 @@ export function AppShell() {
       onPrepareFirstPrompt={handlePrepareFirstPrompt}
     />
     <ConfirmationHost />
+    <SideChatCloseConfirmDialog
+      open={Boolean(sideChat.pendingCloseConfirm)}
+      onCancel={sideChat.cancelCloseConfirm}
+      onConfirm={sideChat.confirmCloseTemporary}
+    />
     </AnswerLinkProvider>
   );
 }

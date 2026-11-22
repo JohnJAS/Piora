@@ -1,9 +1,6 @@
 import { readCompanionScale, writeCompanionScale } from "./desktop-state.js";
 import { DshMemeManager } from "./dsh-meme-manager.js";
 import { DesktopExtensionRegistry } from "./desktop-extension-registry.js";
-import { CordisExtensionManager } from "./cordis-extension-manager.js";
-import { bundledCordisCatalog } from "./cordis-extension-catalog.js";
-import { CordisPanelWindows } from "./cordis-panel-windows.js";
 import type { DesktopAnalytics } from "./analytics-desktop.mjs" with { "resolution-mode": "import" };
 let desktopAnalytics: DesktopAnalytics | undefined;
 import { memeNetwork } from "./dsh-meme-install.js";
@@ -194,8 +191,6 @@ let mainWindow: BrowserWindow | null = null;
 let dshPetProxy: PetProxySettings | undefined;
 const desktopExtensions = new DesktopExtensionRegistry();
 let dshMeme: DshMemeManager | undefined;
-let cordisExtensions: CordisExtensionManager | undefined;
-let cordisPanels: CordisPanelWindows | undefined;
 let dshMemePanel: BrowserWindow | undefined;
 let dshPetSettings: BrowserWindow | undefined;
 let harmonyWindows: HarmonyWindows | undefined;
@@ -1187,44 +1182,6 @@ function initializeDshMeme(): void {
   desktopExtensions.restore("dsh-meme");
 }
 
-function initializeCordisExtensions(): void {
-  if (!piAgentDirectoryPath) throw new Error("Pi data directory is unavailable");
-  const panels = cordisPanels ??= new CordisPanelWindows();
-  const manager = new CordisExtensionManager({
-    root: join(piAgentDirectoryPath, "piora", "desktop-extensions", "cordis"),
-    assets: join(__dirname, "..", "cordis-plugins"),
-    worker: join(__dirname, "cordis-extension-worker.mjs"),
-    catalog: bundledCordisCatalog,
-    dedicated: new Map(desktopExtensions.list().map(item => [item.manifest.id, item.manifest.version])),
-    network: () => memeNetwork(process.env, dshPetProxy),
-    openPanel: (panel, signal) => panels.open(panel, signal),
-    closePanel: id => panels.close(id),
-    notify: (title, body) => { if (Notification.isSupported()) new Notification({ title, body }).show(); },
-    tasks: async signal => {
-      if (!serverUrl || !applicationToken) throw new Error("Piora is restarting");
-      const response = await fetch(new URL("/api/desktop/dsh-pet/tasks", serverUrl), {
-        headers: { [DESKTOP_TOKEN_HEADER]: applicationToken }, signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]),
-      });
-      if (!response.ok) throw new Error("Task status unavailable");
-      const payload = await response.json() as { tasks?: import("./dsh-pet-types.js").PetTaskSnapshot[] };
-      if (!Array.isArray(payload.tasks)) throw new Error("Invalid task snapshot");
-      return payload.tasks.map(task => ({ running: task.runtime !== "idle", awaitingApproval: task.pendingApproval === true }));
-    },
-    model: async (input, signal) => {
-      if (!serverUrl || !applicationToken) throw new Error("Piora is restarting");
-      const response = await fetch(new URL("/api/desktop/cordis/model", serverUrl), {
-        method: "POST", headers: { [DESKTOP_TOKEN_HEADER]: applicationToken, "Content-Type": "application/json" },
-        body: JSON.stringify(input), signal,
-      });
-      if (!response.ok) throw new Error("Extension model request failed (" + response.status + ")");
-      const result = await response.json() as { value: string };
-      return result.value;
-    },
-  });
-  cordisExtensions = manager;
-  void manager.restore();
-}
-
 function initializeDshPet(): void {
   if (!piAgentDirectoryPath) throw new Error("Pi data directory is unavailable");
   const manager = new DshPetManager({
@@ -1265,17 +1222,6 @@ function initializeDshPet(): void {
 }
 
 function bindDesktopExtensionsIpc(): void {
-  const getCordis = (event: IpcMainInvokeEvent) => {
-    if (!isTrustedMainWindowSender(event) || !cordisExtensions) throw new Error("Desktop extensions are unavailable");
-    return cordisExtensions;
-  };
-  for (const channel of ["pi:cordis-extension-list", "pi:cordis-extension-action", "pi:cordis-extension-autostart",
-    "pi:cordis-extension-discover", "pi:cordis-extension-check"]) ipcMain.removeHandler(channel);
-  ipcMain.handle("pi:cordis-extension-list", event => getCordis(event).list());
-  ipcMain.handle("pi:cordis-extension-action", (event, id: unknown, action: unknown, version: unknown) => getCordis(event).action(id, action, version));
-  ipcMain.handle("pi:cordis-extension-autostart", (event, id: unknown, enabled: unknown) => getCordis(event).autoStart(id, enabled));
-  ipcMain.handle("pi:cordis-extension-discover", event => getCordis(event).discover());
-  ipcMain.handle("pi:cordis-extension-check", (event, name: unknown, version: unknown) => getCordis(event).check(name, version));
   for (const channel of ["pi:dsh-pet-status", "pi:dsh-pet-action", "pi:dsh-pet-preferences", "pi:desktop-extension-list",
     "pi:desktop-extension-action", "pi:desktop-extension-preferences"]) ipcMain.removeHandler(channel);
   ipcMain.handle("pi:desktop-extension-list", event => {
@@ -1306,10 +1252,7 @@ function bindDesktopExtensionsIpc(): void {
 
 async function stopDesktopExtensions(): Promise<void> {
   dshMeme = undefined;
-  const cordis = cordisExtensions;
-  cordisExtensions = undefined;
-  const stopped = await Promise.allSettled([desktopExtensions.dispose(), cordis?.dispose()]);
-  const results = stopped.flatMap(result => result.status === "fulfilled" ? result.value ?? [] : [result]);
+  const results = await desktopExtensions.dispose();
   const errors = results.filter(result => result.status === "rejected").map(result => result.reason as unknown);
   if (errors.length) throw new AggregateError(errors, "Desktop extension shutdown failed");
 }
@@ -1548,7 +1491,6 @@ async function restoreAgentRuntimeAfterDataMigrationFailure(
     activateStandaloneProfile("normal", restoredRuntime.dataDirectory, restoredUrl);
     initializeDshPet();
     initializeDshMeme();
-    initializeCordisExtensions();
     if (mainWindow && !mainWindow.isDestroyed()) {
       let rendererOrigin: string | undefined;
       try {
@@ -3278,7 +3220,6 @@ async function startApplication(): Promise<void> {
   setImmediate(() => { if (!quitRequested) void initializeDesktopAnalytics(); }).unref();
   try { initializeDshPet(); } catch (error) { logger.warn("DSH Pet initialization failed", error); }
   try { initializeDshMeme(); } catch (error) { logger.warn("DSH Meme initialization failed", error); }
-  try { initializeCordisExtensions(); } catch (error) { logger.warn("Cordis extension initialization failed", error); }
   bindDesktopExtensionsIpc();
 }
 

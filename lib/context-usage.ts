@@ -168,8 +168,21 @@ function contextTokensFromUsage(message: AssistantMessage): number | null {
   return tokens > 0 ? tokens : null;
 }
 
-export function estimateSessionContextUsage(messages: AgentMessage[], contextWindow: number): ContextUsage | null {
+export function estimateSessionContextUsage(messages: AgentMessage[], contextWindow: number, entryIds?: string[]): ContextUsage | null {
   if (!Number.isFinite(contextWindow) || contextWindow <= 0) return null;
+
+  if (entryIds) {
+    // Chat shows the entire branch. Estimate from the checkpoint and the
+    // retained messages in the order used by the model's compacted context.
+    const checkpointIndex = messages.findLastIndex(message => message.role === "custom" && message.customType === "compaction");
+    const checkpoint = messages[checkpointIndex];
+    if (checkpoint?.role === "custom") {
+      const firstKept = (checkpoint.details as { firstKeptEntryId?: string } | undefined)?.firstKeptEntryId;
+      const retainedIndex = firstKept ? entryIds.indexOf(firstKept) : -1;
+      const kept = retainedIndex >= 0 ? messages.slice(retainedIndex, checkpointIndex) : [];
+      messages = [checkpoint, ...kept, ...messages.slice(checkpointIndex + 1)];
+    }
+  }
 
   let tokens = 0;
   let trailingStart = 0;

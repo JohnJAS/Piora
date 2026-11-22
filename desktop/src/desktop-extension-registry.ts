@@ -1,7 +1,6 @@
 import { DSH_PET_VERSION, type DshPetAction, type DshPetProgress, type DshPetStatus } from "./dsh-pet-types.js";
 import { DSH_PET_INTEGRITY } from "./dsh-pet-install.js";
 import { DSH_MEME_INTEGRITY, DSH_MEME_VERSION } from "./dsh-meme-install.js";
-import type { CordisDesktopBridge } from "./cordis-extension-contract.js";
 
 const manifests = [
   { id: "dsh-pet", name: "DSH Pet", version: DSH_PET_VERSION, source: "https://github.com/PC2005-cloud/dsh-pet",
@@ -29,7 +28,6 @@ export interface DesktopExtensionState {
 export interface DesktopExtensionEntry { manifest: DesktopExtensionManifest; state: DesktopExtensionState | null }
 export interface DesktopExtensionPreferences { autoStart?: boolean; syncTasks?: boolean }
 export interface DesktopExtensionsBridge {
-  cordis?: CordisDesktopBridge;
   list(): Promise<DesktopExtensionEntry[]>;
   action(id: DesktopExtensionId, action: DshPetAction): Promise<DesktopExtensionState>;
   preferences(id: DesktopExtensionId, value: DesktopExtensionPreferences): Promise<DesktopExtensionState>;

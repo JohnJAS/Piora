@@ -366,6 +366,7 @@ export function useResizablePanel(options: UseResizablePanelOptions) {
     panelRef,
     reclampWidth,
     resetWidth,
+    setWidth: commitWidth,
     separatorProps: {
       "aria-label": ariaLabel,
       "aria-orientation": "vertical" as const,

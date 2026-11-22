@@ -393,6 +393,17 @@ export const TaskRow = memo(function TaskRow({
             </span>
           ) : null}
 
+          {taskStatus.activeGoal ? (
+            <span
+              title={t("workflow.goal.active")}
+              aria-label={t("workflow.goal.active")}
+              data-testid="sidebar-active-goal-badge"
+              style={{ color: "var(--accent)", display: "inline-flex", flexShrink: 0 }}
+            >
+              <AliIcon name="target" size={12} />
+            </span>
+          ) : null}
+
           {taskStatusPresentationKey !== "none" ? (
             <TaskStatusIndicator status={taskStatus} />
           ) : null}

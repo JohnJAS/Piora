@@ -239,7 +239,9 @@ export function useTaskStatus({
   const runtime = snapshot?.runtime ?? fallbackRuntime;
   const runningIds = runtime === "running" || runtime === "stopping" ? new Set([sessionId]) : new Set<string>();
   const compactingIds = runtime === "compacting" ? new Set([sessionId]) : new Set<string>();
-  const pendingApprovalIds = snapshot?.pendingApproval ? new Set([sessionId]) : new Set<string>();
+  const pendingApprovalIds = snapshot?.pendingApproval || snapshot?.awaitingPlanApproval
+    ? new Set([sessionId])
+    : new Set<string>();
 
   const status = deriveTaskStatus({
     sessionId,
@@ -255,6 +257,8 @@ export function useTaskStatus({
   const statusWithStartedAt = {
     ...status,
     ...(snapshot?.startedAt !== undefined ? { startedAt: snapshot.startedAt } : {}),
+    ...(snapshot?.activeGoal ? { activeGoal: true } : {}),
+    ...(snapshot?.awaitingPlanApproval ? { awaitingPlanApproval: true } : {}),
   };
   return runtime === "stopping" ? { ...statusWithStartedAt, runtime: "stopping" } : statusWithStartedAt;
 }

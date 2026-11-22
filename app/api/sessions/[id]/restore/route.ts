@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { invalidateSessionListCache } from "@/lib/session-reader";
 import { restoreSession } from "@/lib/session-trash";
+import { invalidateSideChatCache } from "@/lib/side-chat/store";
 
 // POST /api/sessions/[id]/restore
 // Moves the session (and its whole subtree) back from the trash. Used by the
@@ -15,6 +16,7 @@ export async function POST(
     if (!restored) {
       return NextResponse.json({ error: "Session no longer recoverable" }, { status: 404 });
     }
+    invalidateSideChatCache();
     invalidateSessionListCache();
     return NextResponse.json({ ok: true });
   } catch (error) {

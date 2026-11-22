@@ -11,6 +11,7 @@ const { NestedToolCallsStore } = await createJiti(import.meta.url).import("../li
 const { buildLocalFilePrompt } = await createJiti(import.meta.url).import("../lib/file-attachments.ts");
 const { normalizeToolCalls } = await createJiti(import.meta.url).import("../lib/normalize.ts");
 const { replaceFailedPromptMessage } = await createJiti(import.meta.url).import("../lib/prompt-recovery.ts");
+const { chatHistoryUrl } = await createJiti(import.meta.url).import("../lib/chat-history-client.ts");
 const { persistentChatInputOptions } = await createJiti(import.meta.url).import("../lib/chat-command-input.ts");
 const { PromptErrorNotices } = await createJiti(import.meta.url).import("../lib/prompt-error-notices.ts");
 const { getAssistantErrorMessage } = await createJiti(import.meta.url).import("../lib/message-display.ts");
@@ -97,7 +98,7 @@ function sendHarness(overrides = {}) {
     uploadPromptMaterialFiles: async () => [], AgentCommandError: class extends Error {}, EventStreamConnectionError: class extends Error {},
     savePendingPrompt: async (record) => { env.saved = structuredClone(record); }, sendAgentCommand: async () => {},
     submitChatCommand: async () => { throw new Error("Unexpected command submission in ordinary prompt test"); },
-    persistentChatInputOptions, replaceFailedPromptMessage, workflowEnabled: true, workflowReady: true, historyPage: undefined, data: null,
+    persistentChatInputOptions, replaceFailedPromptMessage, workflowEnabled: true, workflowReady: true,
   };
   for (const name of new Set(send.match(/\b\w+Ref\b/g))) env[name] = { current: null };
   for (const name of new Set(send.match(/\bset[A-Z]\w+(?=\()/g))) env[name] = () => {};
@@ -113,17 +114,18 @@ function sendHarness(overrides = {}) {
   return { env, run };
 }
 
-test("sending from an old search result uses the latest transcript and recovery anchor", async () => {
+test("sending while reading an old message keeps the full transcript and uses the latest recovery anchor", async () => {
+  const oldUser = { role: "user", content: "older" };
   const latestUser = { role: "user", content: "latest question" };
   const latestReply = { role: "assistant", content: [{ type: "text", text: "latest reply" }] };
-  const recentIds = ["nearby-user", "latest-entry"];
+  const messages = [oldUser, latestUser, latestReply];
   const { env, run } = sendHarness({
-    data: { context: { messages: [latestUser, latestReply], entryIds: recentIds }, historyPage: { focused: false } },
-    historyPage: { focused: true }, entryIds: ["searched-entry"], messages: [{ role: "user", content: "older" }],
+    entryIds: ["searched-entry", "nearby-user", "latest-entry"], messages,
   });
   assert.equal(await run("continue"), true);
   assert.equal(env.saved.branchAnchorId, "latest-entry");
-  assert.deepEqual(env.messages.slice(0, 2), [latestUser, latestReply]);
+  assert.deepEqual(env.messages.slice(0, 3), messages);
+  assert.equal(env.messages.at(-1).content, "continue");
 });
 
 test("actual send callback commits recovery before network and keeps input after stop during acknowledgement", async () => {
@@ -1136,7 +1138,7 @@ function sessionLoadHarness(overrides = {}) {
   const load = source.slice(source.indexOf("  const loadSession = useCallback"), source.indexOf("  const loadContext = useCallback"));
   const env = {
     nestedCallsStore: new NestedToolCallsStore(), statsRefreshSequence: { current: 0 },
-    historyPageRequest: { current: null },
+    chatHistoryUrl,
     editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [],
     useCallback: callback => callback, AbortController, AbortSignal, URLSearchParams,
     acceptToolPermission: value => { env.permission = value; },
@@ -1653,11 +1655,11 @@ test("edit navigation waits for server success and context, and propagates failu
   await assert.rejects(failed.navigate("parent"), /history.loadError/); assert.deepEqual(failed.events, ["navigate"]);
 });
 test("historical context excludes unconfirmed recovery copies without deleting them", async () => {
-  const callback = source.slice(source.indexOf("  const loadContext = useCallback"), source.indexOf("  useEffect(() => () => historyPageRequest"));
+  const callback = source.slice(source.indexOf("  const loadContext = useCallback"), source.indexOf("  const promoteNewSession = useCallback"));
   const js = ts.transpileModule(callback, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
   const pending = [{ id: "pending" }];
   const env = { editedBranchRef: { current: null }, activeLeafId: null, data: null, entryIds: [], useCallback: fn => fn, promptRunIdRef: { current: 1 }, historyRevisionRef: { current: 0 }, sessionIdRef: { current: "session" }, URLSearchParams,
-    historyPageRequest: { current: null }, setHistoryPage() {}, invalidatePrefetchedSession() {},
+    chatHistoryUrl, invalidatePrefetchedSession() {},
     fetch: async () => ({ ok: true, json: async () => ({ context: { messages: ["ancestor"], entryIds: ["parent"] } }) }),
     readPendingPrompts: async () => pending, mergePendingPrompts: () => ({ messages: ["ancestor", "later failure"], entryIds: ["parent", ""], confirmedIds: [] }),
     setMessages: value => { env.messages = value; }, setEntryIds: value => { env.ids = value; }, setModelChanges: value => { env.modelChanges = value; }, confirmPendingPrompts: async ids => { assert.deepEqual(ids, []); } };

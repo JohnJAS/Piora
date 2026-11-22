@@ -9,8 +9,6 @@ import { browserLogin } from './desktop-e2e/scenarios/browser-login.mjs';
 import { browserUpload } from './desktop-e2e/scenarios/browser-upload.mjs';
 import { browserSettings } from './desktop-e2e/scenarios/browser-settings.mjs';
 import { desktopExtensions } from './desktop-e2e/scenarios/desktop-extensions.mjs';
-import { cordisExtensions } from './desktop-e2e/scenarios/cordis-extensions.mjs';
-import { cordisCommunity } from './desktop-e2e/scenarios/cordis-community.mjs';
 import { harmonyMirror } from './desktop-e2e/scenarios/harmony-mirror.mjs';
 import { companionPanel } from './desktop-e2e/scenarios/companion-panel.mjs';
 import { harmonyLogs } from './desktop-e2e/scenarios/harmony-logs.mjs';
@@ -19,11 +17,11 @@ import { usageDashboard } from './desktop-e2e/scenarios/usage-dashboard.mjs';
 import { subagents } from './desktop-e2e/scenarios/subagents.mjs';
 import { subagentsReal } from './desktop-e2e/scenarios/subagents-real.mjs';
 import { chatContextMenu } from './desktop-e2e/scenarios/chat-context-menu.mjs';
-import { chatHistoryPagination } from './desktop-e2e/scenarios/chat-history-pagination.mjs';
+import { chatHistoryFull } from './desktop-e2e/scenarios/chat-history-full.mjs';
 import { workspaceIssueFixes } from './desktop-e2e/scenarios/workspace-issue-fixes.mjs';
 import { worktreeChatLayout } from './desktop-e2e/scenarios/worktree-chat-layout.mjs';
 
-const scenarios = [companionScaling, settingsTheme, stopShell, stopBash, desktopExtensions, cordisExtensions, cordisCommunity, browserPersistence, browserLogin, browserUpload, browserSettings, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard, subagents, subagentsReal, chatContextMenu, chatHistoryPagination, workspaceIssueFixes, worktreeChatLayout];
+const scenarios = [companionScaling, settingsTheme, stopShell, stopBash, desktopExtensions, browserPersistence, browserLogin, browserUpload, browserSettings, harmonyMirror, companionPanel, harmonyLogs, planGoal, usageDashboard, subagents, subagentsReal, chatContextMenu, chatHistoryFull, workspaceIssueFixes, worktreeChatLayout];
 
 export function parseOptions(args) {
   const options = { scenario: 'settings-theme' };

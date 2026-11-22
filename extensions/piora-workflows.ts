@@ -3,6 +3,12 @@ import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getWorkflowRuntime, planToolAllowed, type WorkflowRuntime } from "../lib/workflow-runtime.ts";
 import type { WorkflowStore } from "../lib/workflow-store.ts";
 
+const TodoStepSchema = Type.Object({
+  id: Type.String({ minLength: 1, maxLength: 100 }),
+  label: Type.String({ minLength: 1, maxLength: 500 }),
+  status: Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed")]),
+});
+
 /** Workflow controls use unique tool names, leaving installed /plan and /goal commands intact. */
 export function createWorkflowExtension(options: { store?: WorkflowStore } = {}) {
   return (api: ExtensionAPI) => {
@@ -46,7 +52,7 @@ export function createWorkflowExtension(options: { store?: WorkflowStore } = {})
       if (continuation) api.sendUserMessage(continuation, { deliverAs: "followUp" });
     });
     api.registerTool(defineTool({
-      name: "piora_submit_plan", label: "Submit plan", description: "Submit a complete plan for user review in Piora Plan mode. Include objective, scope, implementation steps and validation. The host persists this exact Markdown snapshot; this does not authorize implementation.",
+      name: "piora_submit_plan", label: "Submit plan", description: "Submit a complete plan for user review in Piora Plan mode. Include objective, scope, implementation steps and validation. The host persists this Markdown snapshot as an editable PLAN.md; this does not authorize implementation.",
       executionMode: "sequential",
       parameters: Type.Object({ title: Type.String({ minLength: 1, maxLength: 500 }), markdown: Type.String({ minLength: 1, maxLength: 100_000 }) }),
       async execute(_id, params) {
@@ -56,11 +62,12 @@ export function createWorkflowExtension(options: { store?: WorkflowStore } = {})
       },
     }));
     api.registerTool(defineTool({
-      name: "piora_update_goal", label: "Update goal", description: "Record progress and acceptance evidence for the current Piora Goal. The original objective cannot be changed. Criteria are locked after their first declaration. Completed requires every criterion verified with concrete observed evidence; waiting requires a reason. Do not report unrun checks as verified.",
+      name: "piora_update_goal", label: "Update goal", description: "Record progress, step checklist, and acceptance evidence for the current Piora Goal. The original objective cannot be changed. Criteria are locked after their first declaration. Completed requires every criterion verified with concrete observed evidence; waiting requires a reason. Do not report unrun checks as verified.",
       executionMode: "sequential",
       parameters: Type.Object({
         progress: Type.String({ minLength: 1, maxLength: 20_000 }),
         criteria: Type.Optional(Type.Array(Type.Object({ id: Type.String({ minLength: 1, maxLength: 100 }), text: Type.String({ minLength: 1, maxLength: 5000 }), evidence: Type.String({ maxLength: 20_000 }), status: Type.Union([Type.Literal("pending"), Type.Literal("verified")]) }), { minItems: 1, maxItems: 50 })),
+        steps: Type.Optional(Type.Array(TodoStepSchema, { minItems: 0, maxItems: 50 })),
         status: Type.Optional(Type.Union([Type.Literal("running"), Type.Literal("completed"), Type.Literal("waiting")])),
         reason: Type.Optional(Type.String({ maxLength: 5000 })),
       }),
@@ -68,6 +75,18 @@ export function createWorkflowExtension(options: { store?: WorkflowStore } = {})
         if (!runtime) throw new Error("Workflow session unavailable");
         const snapshot = runtime.updateGoal(params);
         return { content: [{ type: "text" as const, text: `Goal state: ${snapshot.current?.status}. Evidence is recorded as the agent's report.` }], details: { workflow: snapshot } };
+      },
+    }));
+    api.registerTool(defineTool({
+      name: "piora_update_steps", label: "Update steps", description: "Update the live step checklist displayed above the composer (pending, in_progress, completed). Use during multi-step Plan execution or Goal runs so the user can track real-time step progress.",
+      executionMode: "sequential",
+      parameters: Type.Object({
+        steps: Type.Array(TodoStepSchema, { minItems: 0, maxItems: 50 }),
+      }),
+      async execute(_id, params) {
+        if (!runtime) throw new Error("Workflow session unavailable");
+        const snapshot = runtime.updateTodoSteps(params.steps);
+        return { content: [{ type: "text" as const, text: `Updated ${snapshot.todoSteps?.length ?? 0} workflow steps.` }], details: { workflow: snapshot } };
       },
     }));
   };

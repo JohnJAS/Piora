@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const plugins = readFileSync(new URL("./PluginsConfig.tsx", import.meta.url), "utf8");
+const plugins = [
+  readFileSync(new URL("./PluginsConfig.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./plugins-config/PluginDetails.tsx", import.meta.url), "utf8"),
+].join("\n");
 const extensions = readFileSync(new URL("./ExtensionsConfig.tsx", import.meta.url), "utf8");
 const skills = readFileSync(new URL("./SkillsConfig.tsx", import.meta.url), "utf8");
 const companions = readFileSync(new URL("./CompanionSettingsDialog.tsx", import.meta.url), "utf8");

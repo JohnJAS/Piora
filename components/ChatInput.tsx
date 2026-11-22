@@ -2,81 +2,30 @@
 import { ToolPermissionControl } from "./ToolPermissionControl";
 import type { PermissionMode, ToolPermissionState } from "@/lib/tool-permission-policy";
 
-import React, { useId, useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
-import { createPortal } from "react-dom";
+import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
 import { useReplyDraft } from "@/hooks/useReplyDraft";
 import { useReplySuggestions } from "@/hooks/useReplySuggestions";
 import { ReplySuggestionBar } from "./ReplySuggestionBar";
-import { CompactionProgress, CompactionResult } from "./CompactionProgress";
 import type { ReplySource } from "@/lib/reply-suggestions";
-import { useAnchoredMenuPosition } from "@/hooks/useAnchoredMenuPosition";
-import { readPromptOptimizerModel, readPromptOptimizerSystemPrompt } from "@/lib/prompt-optimizer-settings";
 import type { AttachedFile, BuiltinSlashCommandResult, CompactResultInfo, SlashCommandInfo } from "@/hooks/useAgentSession";
 import type { ChatCommandCatalog, ChatInputOptions } from "@/lib/chat-command-types";
 import { createChatCommandCatalog, parseChatInput } from "@/lib/chat-command-input";
 import commandStyles from "./ChatCommandComposer.module.css";
 import { storeBrowserFiles } from "@/lib/file-attachments";
-import { clearDraft, getDraft, setDraft, hydrateDraft, deferDraftPersistence, DRAFT_STORAGE_ERROR_EVENT, type ChatDraftFile, type ChatDraftImage } from "@/lib/draft-store";
+import { clearDraft, getDraft, setDraft, hydrateDraft, deferDraftPersistence, DRAFT_STORAGE_ERROR_EVENT } from "@/lib/draft-store";
 import {
   MAX_ATTACHED_IMAGE_BYTES,
   MAX_ATTACHED_IMAGE_TOTAL_BYTES,
   MAX_ATTACHED_IMAGES,
   getBase64DecodedByteLength,
-  isBase64ImageWithinLimits,
 } from "@/lib/image-attachments";
 import {
   LARGE_PASTE_CHARACTER_THRESHOLD,
   MAX_ATTACHED_FILE_BYTES,
-  MAX_PROMPT_MATERIAL_COUNT,
   MAX_PROMPT_MATERIAL_BYTES,
   shouldMaterializeDirectPrompt,
 } from "@/lib/prompt-input-policy";
 import { ModelChangeCoordinator } from "@/lib/model-change-coordinator";
-const MAX_ATTACHED_FILES = MAX_PROMPT_MATERIAL_COUNT;
-const COMPOSER_MAX_HEIGHT = 360;
-const IGNORED_NESTED_ATTACHMENT_DIRECTORIES = new Set([".git", ".next", "node_modules"]);
-
-type BrowserAttachmentFile = Pick<File, "name"> & { webkitRelativePath?: string };
-
-function normalizedAttachmentPath(file: BrowserAttachmentFile): string[] {
-  return (file.webkitRelativePath ?? "")
-    .replace(/\\/g, "/")
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter((segment) => segment && segment !== "." && segment !== "..");
-}
-
-export function getAttachmentFileName(file: BrowserAttachmentFile): string {
-  const relativePath = normalizedAttachmentPath(file).join("/");
-  return relativePath || file.name;
-}
-
-export function isFolderAttachmentFileAllowed(file: BrowserAttachmentFile): boolean {
-  const pathSegments = normalizedAttachmentPath(file);
-  // The first segment is the folder the user explicitly selected. Only skip
-  // hidden/generated directories nested inside that explicit selection.
-  return !pathSegments.slice(1, -1).some((segment) => (
-    segment.startsWith(".") || IGNORED_NESTED_ATTACHMENT_DIRECTORIES.has(segment.toLocaleLowerCase())
-  ));
-}
-
-function resizeComposerTextarea(textarea: HTMLTextAreaElement): void {
-  textarea.style.height = "auto";
-  const viewportLimit = typeof window === "undefined" ? COMPOSER_MAX_HEIGHT : Math.round(window.innerHeight * 0.38);
-  textarea.style.height = `${Math.min(textarea.scrollHeight, Math.max(200, Math.min(COMPOSER_MAX_HEIGHT, viewportLimit)))}px`;
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-import {
-  buildAtInsertText, extractAtQuery, filterFileEntries,
-  type AtQueryMatch, type FileIndexEntry,
-} from "@/lib/file-fuzzy";
-import { getCachedFileIndex, loadFileIndex, type ClientFileIndex } from "@/lib/file-index-client";
-import { FolderIcon, getFileIcon } from "./FileIcons";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useI18n } from "@/hooks/useI18n";
 import { useApplicationShortcuts } from "@/hooks/useApplicationShortcuts";
@@ -86,13 +35,13 @@ import { useRunningSendMode } from "@/hooks/useRunningSendMode";
 import { useSendShortcut } from "@/hooks/useSendShortcut";
 import { formatShortcutBinding, isMacPlatform, shortcutMatchesEvent, shouldPreserveApplicationShortcut } from "@/lib/keyboard-shortcuts";
 import { AliIcon } from "./AliIcon";
-import { MessageImage, MessageImageViewer } from "./MessageImage";
-import { ModelProviderIcon } from "./ModelProviderIcon";
 import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import type { ExtensionStatusItem } from "@/lib/types";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
-import { WorkflowModePicker } from "./WorkflowModePicker";
-import { DEFAULT_WORKFLOW_TURN_BUDGET, type WorkflowPromptOptions } from "@/lib/workflow-types";
+import { WorkflowModePills } from "./workflow/WorkflowModePills";
+import { useComposerWorkflow, type PausedGoalPendingSubmission } from "./workflow/useComposerWorkflow";
+import { parseSideSlashTrigger } from "@/lib/side-chat/composer-trigger";
+import { DEFAULT_WORKFLOW_TURN_BUDGET, type WorkflowMode, type WorkflowPromptOptions } from "@/lib/workflow-types";
 import {
   buildSlashCommandRegistry,
   filterSlashCommandRegistry,
@@ -100,26 +49,55 @@ import {
   type SlashCommandPaletteItem,
   type SlashCommandSource,
 } from "@/lib/commands";
+import {
+  COMPOSITION_END_ENTER_GRACE_MS,
+  MAX_ATTACHED_FILES,
+  MODEL_FILTER_THRESHOLD,
+  SLASH_SOURCES,
+  THINKING_LEVEL_LABEL_KEYS,
+  attachedFileToDraftFile,
+  draftFilesToAttachedFiles,
+  draftImagesToAttachedImages,
+  filterModelOptions,
+  getAttachmentFileName,
+  getContextRemainingPercent,
+  imageToDraftImage,
+  isFolderAttachmentFileAllowed,
+  joinSpeechText,
+  resizeComposerTextarea,
+  revokeImagePreview,
+  type AttachedImage,
+  type ModelMenuSection,
+  type ModelOption,
+  type ThinkingLevel,
+} from "./chat-input/shared";
+import {
+  ComposerAttachmentsBar,
+  ComposerStatusBanners,
+  ModelErrorBanner,
+  PromptOptimizationReview,
+} from "./chat-input/ComposerBanners";
+import { FileMentionMenu, InputHistoryMenu, SlashCommandMenu } from "./chat-input/ComposerMenus";
+import { ContextUsageRing, SessionStatsBadge } from "./chat-input/ComposerMetrics";
+import { ModelSettingsMenu } from "./chat-input/ModelSettingsMenu";
+import {
+  AttachmentAddMenu,
+  StreamingSubmitControl,
+  VoiceInputControl,
+} from "./chat-input/ComposerFooterControls";
+import { useFileMentionAutocomplete } from "./chat-input/useFileMentionAutocomplete";
+import { usePromptOptimization } from "./chat-input/usePromptOptimization";
+import { useSendModePopover } from "./chat-input/useSendModePopover";
 
-export interface AttachedImage {
-  data: string;   // base64, no prefix
-  mimeType: string;
-  previewUrl: string; // object URL for display
-}
-
-interface ModelOption {
-  provider: string;
-  modelId: string;
-  name: string;
-  isDefault?: boolean;
-}
-
-interface PromptOptimizationState {
-  source: string;
-  loading: boolean;
-  result?: string;
-  error?: string;
-}
+export {
+  ModelErrorBanner,
+  filterModelOptions,
+  getAttachmentFileName,
+  getContextRemainingPercent,
+  isFolderAttachmentFileAllowed,
+  joinSpeechText,
+  type AttachedImage,
+};
 
 interface Props {
   replySource?: ReplySource | null;
@@ -176,15 +154,26 @@ interface Props {
   workflow?: WorkflowPromptOptions;
   workflowEnabled?: boolean;
   workflowBusy?: boolean;
+  hasActiveGoal?: boolean;
+  hasPausedGoal?: boolean;
+  workflowAutoContinuing?: boolean;
+  onWorkflowModeChange?: (mode: WorkflowMode) => void;
+  onRequestGoalReplace?: (inlineObjective?: string) => void;
+  onRequestPausedGoalResume?: (pending: PausedGoalPendingSubmission) => void;
   toolPermission?: ToolPermissionState | null;
   permissionSaving?: boolean;
   onToolPermissionChange?: (mode: PermissionMode) => void;
+  surfacePlacement?: "main" | "side";
+  sideChatEnabled?: boolean;
+  canOpenSideChat?: boolean;
+  onOpenSideChat?: (initialPrompt?: string) => Promise<import("./side-chat/useSideChatController").OpenSideChatResult | void> | import("./side-chat/useSideChatController").OpenSideChatResult | void;
 }
 
 export interface ChatInputHandle {
   focus: () => void;
   submit: () => void;
   insertText: (text: string) => void;
+  insertQuotedText: (quoted: string) => void;
   insertIfEmpty: (text: string) => void;
   prependText: (text: string, retryOfPromptIds?: string[]) => void;
   addImages: (files: File[]) => void;
@@ -194,146 +183,9 @@ export interface ChatInputHandle {
   sendText: (text: string) => boolean;
   restoreCommandDraft: (draft: import("@/lib/draft-store").ChatDraft) => boolean;
   toggleVoiceInput: () => void;
-}
-
-const COMPOSITION_END_ENTER_GRACE_MS = 100;
-const MODEL_FILTER_THRESHOLD = 8;
-
-export function joinSpeechText(before: string, transcript: string, after: string, language: string): {
-  value: string;
-  selection: number;
-} {
-  const text = transcript.trim();
-  if (!text) return { value: before + after, selection: before.length };
-
-  // Mandarin dictation does not normally use spaces between phrases. For
-  // space-delimited languages, keep dictated text readable when inserted at
-  // the caret in the middle of an existing prompt.
-  const usesWordSpaces = !language.toLocaleLowerCase().startsWith("zh");
-  const leadingSpace = usesWordSpaces && before.length > 0 && !/\s$/.test(before) ? " " : "";
-  const trailingSpace = usesWordSpaces && after.length > 0 && !/^\s/.test(after) ? " " : "";
-  const inserted = leadingSpace + text + trailingSpace;
-  return {
-    value: before + inserted + after,
-    selection: before.length + inserted.length - trailingSpace.length,
-  };
-}
-
-export function filterModelOptions(options: ModelOption[], query: string): ModelOption[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  if (!normalizedQuery) return options;
-
-  return options.filter((option) => (
-    `${option.name} ${option.modelId}`
-      .toLocaleLowerCase()
-      .includes(normalizedQuery)
-  ));
-}
-
-const THINKING_LEVELS = ["auto", "off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
-type ThinkingLevel = typeof THINKING_LEVELS[number];
-type ModelMenuSection = "models" | "reasoning" | null;
-const THINKING_LEVEL_DESC_KEYS: Record<typeof THINKING_LEVELS[number], string> = {
-  auto: "chat.thinkingUseDefault", off: "chat.thinkingOff", minimal: "chat.thinkingMinimal", low: "chat.thinkingLow",
-  medium: "chat.thinkingMedium", high: "chat.thinkingHigh", xhigh: "chat.thinkingXhigh", max: "chat.thinkingMax",
-};
-const THINKING_LEVEL_LABEL_KEYS: Record<ThinkingLevel, string> = {
-  auto: "chat.thinkingLevelAuto", off: "chat.thinkingLevelOff", minimal: "chat.thinkingLevelMinimal", low: "chat.thinkingLevelLow",
-  medium: "chat.thinkingLevelMedium", high: "chat.thinkingLevelHigh", xhigh: "chat.thinkingLevelXhigh", max: "chat.thinkingLevelMax",
-};
-
-function formatTokenCount(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}k`;
-  return tokens.toLocaleString();
-}
-
-export function getContextRemainingPercent(
-  usage: { percent: number | null; contextWindow: number; tokens: number | null } | null | undefined,
-): number | null {
-  if (!usage || usage.contextWindow <= 0) return null;
-  const usedPercent = usage.tokens !== null
-    ? (usage.tokens / usage.contextWindow) * 100
-    : usage.percent;
-  if (usedPercent === null || !Number.isFinite(usedPercent)) return null;
-  return Math.max(0, Math.min(100, 100 - usedPercent));
-}
-
-const SLASH_SOURCES: SlashCommandSource[] = ["builtin", "extension", "prompt", "skill"];
-
-const SLASH_SOURCE_GROUP_LABEL_KEYS: Record<SlashCommandSource, string> = {
-  builtin: "chat.builtIn",
-  extension: "chat.extensions",
-  prompt: "chat.prompts",
-  skill: "chat.skills",
-};
-
-
-function imageToDraftImage(image: AttachedImage): ChatDraftImage {
-  return { data: image.data, mimeType: image.mimeType };
-}
-
-function draftImageToAttachedImage(image: ChatDraftImage): AttachedImage {
-  return {
-    ...image,
-    previewUrl: `data:${image.mimeType};base64,${image.data}`,
-  };
-}
-
-function draftImagesToAttachedImages(images: ChatDraftImage[] | undefined): AttachedImage[] {
-  return (images ?? [])
-    .filter(isBase64ImageWithinLimits)
-    .slice(0, MAX_ATTACHED_IMAGES)
-    .map(draftImageToAttachedImage);
-}
-
-function attachedFileToDraftFile(file: AttachedFile): ChatDraftFile {
-  return { ...file };
-}
-
-function draftFilesToAttachedFiles(files: ChatDraftFile[] | undefined): AttachedFile[] {
-  return (files ?? []).slice(0, MAX_ATTACHED_FILES).map((file) => ({ ...file }));
-}
-
-function revokeImagePreview(image: AttachedImage): void {
-  if (image.previewUrl.startsWith("blob:")) {
-    URL.revokeObjectURL(image.previewUrl);
-  }
-}
-
-function ModelNoticeBanner({ tone, title, body }: { tone: "error" | "warning"; title: string; body: string }) {
-  const color = tone === "error" ? "239,68,68" : "234,179,8";
-  return (
-    <div
-      role="alert"
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 8,
-        maxHeight: 120,
-        marginBottom: 8,
-        padding: "7px 10px",
-        overflowY: "auto",
-        border: `1px solid rgba(${color},0.3)`,
-        borderRadius: "var(--radius-control)",
-        background: `rgba(${color},0.07)`,
-        color: `rgb(${color})`,
-        fontSize: "var(--text-xs)",
-        lineHeight: 1.45,
-      }}
-    >
-      <AliIcon name="warning" size={13} style={{ marginTop: 1 }} />
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 600 }}>{title}</div>
-        <div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{body}</div>
-      </div>
-    </div>
-  );
-}
-
-export function ModelErrorBanner({ error, title = "模型错误" }: { error?: string | null; title?: string }) {
-  if (!error) return null;
-  return <ModelNoticeBanner tone="error" title={title} body={error} />;
+  togglePlanMode: () => void;
+  enterGoalDraftMode: (inlineObjective?: string) => void;
+  clearGoalDraftMode: () => void;
 }
 
 export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function ChatInput({
@@ -354,47 +206,25 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   placeholder,
   contextControl, toolbarControl, queueContent,
   workflow, workflowBusy = false, workflowEnabled = true,
+  hasActiveGoal = false, hasPausedGoal = false, workflowAutoContinuing = false,
+  onWorkflowModeChange, onRequestGoalReplace, onRequestPausedGoalResume,
   toolPermission, permissionSaving, onToolPermissionChange,
+  surfacePlacement = "main", sideChatEnabled = false, canOpenSideChat = false, onOpenSideChat,
   replySource = null,
 }: Props, ref) {
   const { t, locale } = useI18n();
   const { mode: defaultSendMode } = useRunningSendMode();
   const runningSendMode = defaultSendMode;
-  const sendModeMenuId = useId();
-  const sendModeMenuRef = useRef<HTMLDivElement>(null);
-  const sendModeButtonRef = useRef<HTMLDivElement>(null);
-  const sendModeHoverDismissed = useRef(false);
-  const sendModeCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const keepSendModeOpen = useCallback(() => {
-    if (sendModeCloseTimer.current) clearTimeout(sendModeCloseTimer.current);
-    sendModeCloseTimer.current = null;
-  }, []);
-  const closeSendModeMenu = useCallback(() => {
-    keepSendModeOpen();
-    // The revealed trigger remains under the pointer; wait for it to leave
-    // before accepting another hover, including after an Escape dismissal.
-    sendModeHoverDismissed.current = true;
-    sendModeMenuRef.current?.hidePopover();
-  }, [keepSendModeOpen]);
-  const scheduleSendModeClose = useCallback(() => {
-    keepSendModeOpen();
-    sendModeCloseTimer.current = setTimeout(() => {
-      const menu = sendModeMenuRef.current;
-      if (!menu?.matches(":hover") && !sendModeButtonRef.current?.matches(":hover") && !menu?.contains(document.activeElement)) menu?.hidePopover();
-    }, 180);
-  }, [keepSendModeOpen]);
-  const openSendModeMenu = useCallback((focus = false) => {
-    keepSendModeOpen();
-    const rect = sendModeButtonRef.current?.getBoundingClientRect();
-    const menu = sendModeMenuRef.current;
-    if (!rect || !menu) return;
-    menu.style.width = rect.width + "px";
-    menu.style.right = Math.max(8, window.innerWidth - rect.right) + "px";
-    menu.style.bottom = Math.max(8, window.innerHeight - rect.bottom) + "px";
-    if (!menu.matches(":popover-open")) menu.showPopover();
-    if (focus) menu.querySelector<HTMLButtonElement>("button[data-mode]")?.focus();
-  }, [keepSendModeOpen]);
-  useEffect(() => keepSendModeOpen, [keepSendModeOpen]);
+  const {
+    sendModeMenuId,
+    sendModeMenuRef,
+    sendModeButtonRef,
+    sendModeHoverDismissedRef,
+    keepSendModeOpen,
+    closeSendModeMenu,
+    scheduleSendModeClose,
+    openSendModeMenu,
+  } = useSendModePopover();
   const { shortcut: sendShortcut, newlineShortcut } = useSendShortcut();
   const isMobile = useIsMobile();
   const { bindings: applicationShortcutBindings } = useApplicationShortcuts();
@@ -441,7 +271,6 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   const [modelDropdownRect, setModelDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const [modelMenuSection, setModelMenuSection] = useState<ModelMenuSection>(null);
   const [modelFilter, setModelFilter] = useState("");
-  const [promptOptimization, setPromptOptimization] = useState<PromptOptimizationState | null>(null);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [attachedImages, setAttachedImages] = useState<AttachedImage[]>(() => (
     draftKey ? draftImagesToAttachedImages(getDraft(draftKey)?.images) : []
@@ -459,30 +288,19 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   const bashExcluded = bashMode && trimmedValue.startsWith("!!");
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [slashActiveIndex, setSlashActiveIndex] = useState(0);
-  const [atQuery, setAtQuery] = useState<AtQueryMatch | null>(null);
-  const [atMenuOpen, setAtMenuOpen] = useState(false);
-  const [atActiveIndex, setAtActiveIndex] = useState(0);
   const [historyMenuOpen, setHistoryMenuOpen] = useState(false);
   const [historyActiveIndex, setHistoryActiveIndex] = useState(0);
 
-  const [fileIndex, setFileIndex] = useState<ClientFileIndex | null>(() => cwd ? getCachedFileIndex(cwd) : null);
-  const [fileIndexLoading, setFileIndexLoading] = useState(false);
-  const [atServerResult, setAtServerResult] = useState<{ cwd: string; query: string; matches: FileIndexEntry[] } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const followUpTextareaRef = useRef<HTMLTextAreaElement>(null);
   const inputAnchorRef = useRef<HTMLDivElement>(null);
-  const atMenuRef = useRef<HTMLDivElement>(null);
-  const atListRef = useRef<HTMLDivElement>(null);
-  const atListId = React.useId();
   const slashListId = React.useId();
-  const atMenuPosition = useAnchoredMenuPosition(inputAnchorRef, atMenuOpen && atQuery !== null);
   const submitRef = useRef<() => void>(() => {});
   const sendingRef = useRef(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelDropdownPanelRef = useRef<HTMLDivElement>(null);
   const attachmentMenuRef = useRef<HTMLDivElement>(null);
   const historyMenuRef = useRef<HTMLDivElement>(null);
-  const promptOptimizerAbortRef = useRef<AbortController | null>(null);
   const modelChangeCoordinatorRef = useRef<ModelChangeCoordinator | null>(null);
   if (!modelChangeCoordinatorRef.current) {
     modelChangeCoordinatorRef.current = new ModelChangeCoordinator();
@@ -498,7 +316,6 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   const lastCompositionEndAtRef = useRef(0);
   const slashCommandsRequestedRef = useRef(false);
   const slashItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const atItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const historyItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const draftKeyRef = useRef(draftKey);
   const retryOfPromptIdsRef = useRef<string[]>(draftKey ? getDraft(draftKey)?.retryOfPromptIds ?? [] : []);
@@ -511,6 +328,79 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   attachedImagesRef.current = attachedImages;
   const attachedFilesRef = useRef(attachedFiles);
   attachedFilesRef.current = attachedFiles;
+
+  const {
+    promptOptimization,
+    setPromptOptimization,
+    promptOptimizerAbortRef,
+    handleOptimizePrompt,
+  } = usePromptOptimization({
+    value,
+    valueRef,
+    cwd,
+    model,
+    isAutoModelSelection,
+    isStreaming,
+  });
+
+  const composerWorkflow = useComposerWorkflow({
+    workflow,
+    workflowEnabled: Boolean(workflowEnabled && workflow),
+    workflowBusy,
+    hasActiveGoal,
+    hasPausedGoal,
+    workflowAutoContinuing,
+    isStreaming,
+    draftKey,
+    value,
+    valueRef,
+    setValue,
+    textareaRef,
+    commandInputOptions,
+    setCommandInputOptions,
+    onWorkflowModeChange,
+    onRequestGoalReplace,
+    onRequestPausedGoalResume,
+    onAfterModeChange: () => {
+      setSlashMenuOpen(false);
+      setHistoryMenuOpen(false);
+    },
+    surfacePlacement,
+    sideChatEnabled,
+    canOpenSideChat,
+    hasAttachments: attachedImages.length > 0 || attachedFiles.length > 0,
+    onOpenSideChat,
+    onSideChatNotice: setAttachmentError,
+  });
+
+  const {
+    atQuery,
+    setAtQuery,
+    atMenuOpen,
+    setAtMenuOpen,
+    atActiveIndex,
+    setAtActiveIndex,
+    fileIndex,
+    fileIndexLoading,
+    needsServerSearch,
+    serverResultInUse,
+    atMatches,
+    atMenuRef,
+    atListRef,
+    atItemRefs,
+    atListId,
+    atMenuPosition,
+    updateAtQuery,
+    applyAtCompletion,
+  } = useFileMentionAutocomplete({
+    cwd,
+    value,
+    setValue,
+    textareaRef,
+    inputAnchorRef,
+    workflowEnabled: Boolean(workflowEnabled && workflow),
+    onSelectWorkflowMention: composerWorkflow.handleWorkflowMention,
+  });
 
   useEffect(() => {
     if (folderInputRef.current) folderInputRef.current.webkitdirectory = true;
@@ -661,6 +551,15 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     toggleVoiceInput() {
       voiceToggleRef.current();
     },
+    togglePlanMode() {
+      composerWorkflow.togglePlanMode();
+    },
+    enterGoalDraftMode(inlineObjective?: string) {
+      composerWorkflow.enterGoalDraftMode(inlineObjective);
+    },
+    clearGoalDraftMode() {
+      composerWorkflow.clearGoalDraftMode();
+    },
     insertIfEmpty(text: string) {
       const ta = textareaRef.current;
       const current = ta ? ta.value : value;
@@ -710,6 +609,22 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
         ta.setSelectionRange(position, position);
         ta.focus();
         resizeComposerTextarea(ta);
+      });
+    },
+    insertQuotedText(quoted: string) {
+      const trimmed = quoted.trim();
+      if (!trimmed) return;
+      const ta = textareaRef.current;
+      const current = ta ? ta.value : valueRef.current;
+      const combined = `${[current.trimEnd(), trimmed].filter(Boolean).join("\n\n")}\n\n`;
+      setValue(combined);
+      setAtQuery(null);
+      requestAnimationFrame(() => {
+        const element = textareaRef.current;
+        if (!element) return;
+        element.focus({ preventScroll: true });
+        element.setSelectionRange(combined.length, combined.length);
+        resizeComposerTextarea(element);
       });
     },
     addImages(files: File[]) {
@@ -790,7 +705,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [clearImages, draftKey, stopVoiceInput, resetReplyDraft]);
+  }, [clearImages, draftKey, stopVoiceInput, resetReplyDraft, setAtQuery]);
 
   useEffect(() => {
     if (!draftKey || draftKeyRef.current !== draftKey || hydratedDraftKey !== draftKey) return;
@@ -842,7 +757,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     attachedFilesRef.current = nextFiles;
     setAttachedImages(nextImages);
     setAttachedFiles(nextFiles);
-  }, [draftKey, stopVoiceInput, resetReplyDraft, replyDraftRef]);
+  }, [draftKey, stopVoiceInput, resetReplyDraft, replyDraftRef, promptOptimizerAbortRef, setAtQuery, setPromptOptimization]);
 
   useEffect(() => {
     if (!draftKey) return;
@@ -883,7 +798,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
       promptOptimizerAbortRef.current?.abort();
       attachedImagesRef.current.forEach(revokeImagePreview);
     };
-  }, [stopVoiceInput]);
+  }, [stopVoiceInput, promptOptimizerAbortRef]);
 
   const handleSend = useCallback(async (overrideOptions?: ChatInputOptions) => {
     if (sendingRef.current) return;
@@ -1010,48 +925,14 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     submitRef.current = () => { void handleSend(); };
   }, [handleSend]);
 
-  const handleOptimizePrompt = useCallback(async () => {
-    const source = value.trim();
-    const configuredModel = readPromptOptimizerModel(window.localStorage);
-    const optimizerModel = configuredModel ?? (model ? { provider: model.provider, modelId: model.modelId } : null);
-    if (!source || !optimizerModel || isAutoModelSelection || isStreaming || source.startsWith("/") || source.startsWith("!")) return;
+  const submitComposer = useCallback(
+    (overrideOptions?: ChatInputOptions) => composerWorkflow.submitWithWorkflowTriggers(handleSend, overrideOptions),
+    [composerWorkflow, handleSend],
+  );
 
-    promptOptimizerAbortRef.current?.abort();
-    const controller = new AbortController();
-    promptOptimizerAbortRef.current = controller;
-    setPromptOptimization({ source, loading: true });
-
-    try {
-      const response = await fetch("/api/prompts/optimize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: source,
-          provider: optimizerModel.provider,
-          modelId: optimizerModel.modelId,
-          cwd: cwd ?? undefined,
-          systemPrompt: readPromptOptimizerSystemPrompt(window.localStorage),
-        }),
-        signal: controller.signal,
-      });
-      const payload = await response.json().catch(() => ({})) as { optimizedPrompt?: unknown; error?: unknown };
-      if (!response.ok || typeof payload.optimizedPrompt !== "string" || !payload.optimizedPrompt.trim()) {
-        const message = typeof payload.error === "string" ? payload.error : t("chat.optimizePromptFailed");
-        throw new Error(message);
-      }
-      if (valueRef.current.trim() !== source) return;
-      setPromptOptimization({ source, loading: false, result: payload.optimizedPrompt.trim() });
-    } catch (error) {
-      if (controller.signal.aborted || valueRef.current.trim() !== source) return;
-      setPromptOptimization({
-        source,
-        loading: false,
-        error: error instanceof Error ? error.message : t("chat.optimizePromptFailed"),
-      });
-    } finally {
-      if (promptOptimizerAbortRef.current === controller) promptOptimizerAbortRef.current = null;
-    }
-  }, [cwd, isAutoModelSelection, isStreaming, model, t, value]);
+  useEffect(() => {
+    submitRef.current = () => { void submitComposer(); };
+  }, [submitComposer]);
 
   const slashQuery = value.trimStart().startsWith("/") && !/\s/.test(value.trimStart().slice(1))
     ? value.trimStart().slice(1).toLowerCase()
@@ -1059,8 +940,10 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
 
   const filteredSlashCommands = (() => {
     if (slashQuery === null) return [];
-    return filterSlashCommandRegistry(buildSlashCommandRegistry(slashCommands ?? [], isStreaming, commandCatalog)
+    const workflowItems = composerWorkflow.buildWorkflowSlashItems(slashQuery);
+    const registryItems = filterSlashCommandRegistry(buildSlashCommandRegistry(slashCommands ?? [], isStreaming, commandCatalog)
       .filter(command => command.supported !== false || slashQuery.trim().length > 0), slashQuery, t);
+    return [...workflowItems, ...registryItems];
   })();
 
   const groupedSlashCommands = (() => {
@@ -1081,12 +964,13 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     : t(slashQuery ? "chat.matches" : "chat.commands", { count: filteredSlashCommands.length });
   const hasInputText = Boolean(value.trim());
   const canSend = !sendDisabled && !permissionSaving && !isProcessingImages && !isProcessingFiles
+    && !workflowAutoContinuing
     && (!isAutoModelSelection || isCommandInput)
     && (hasInputText || attachedImages.length > 0 || attachedFiles.length > 0);
   const canQueueStreamingMessage = canSend && (Boolean(onQueueInput) || hasInputText && attachedImages.length === 0 && attachedFiles.length === 0);
   useEffect(() => {
-    if (!canQueueStreamingMessage) sendModeHoverDismissed.current = false;
-  }, [canQueueStreamingMessage]);
+    if (!canQueueStreamingMessage) sendModeHoverDismissedRef.current = false;
+  }, [canQueueStreamingMessage, sendModeHoverDismissedRef]);
   const canOptimizePrompt = hasInputText
     && !isStreaming
     && !isAutoModelSelection
@@ -1094,20 +978,6 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     && !trimmedValue.startsWith("/")
     && !trimmedValue.startsWith("!")
     && !promptOptimization?.loading;
-
-
-
-  // ── @ file autocomplete ──────────────────────────────────────────────────
-  // Recomputed from the text before the caret on every change/caret move.
-  // Disabled entirely when there is no cwd (new session without a directory).
-  const updateAtQuery = useCallback((text: string, cursor: number | null) => {
-    if (!cwd) {
-      setAtQuery(null);
-      return;
-    }
-    const pos = cursor ?? text.length;
-    setAtQuery(extractAtQuery(text.slice(0, pos)));
-  }, [cwd]);
 
   const applyVoiceTranscript = useCallback((transcript: string) => {
     const insertion = speechInsertionRef.current;
@@ -1146,7 +1016,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
       promptOptimizerAbortRef.current = null;
       setPromptOptimization(null);
     }
-  }, [locale, promptOptimization]);
+  }, [locale, promptOptimization, promptOptimizerAbortRef, setAtMenuOpen, setPromptOptimization]);
 
   const localDictation = useLocalDictation({
     language: locale === "zh-CN" ? "zh" : "en",
@@ -1186,128 +1056,6 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     return () => window.removeEventListener("keydown", handleVoiceShortcut);
   }, [toggleVoiceInput, voiceInputBinding, voiceInputSupported]);
 
-  const atQueryText = atQuery?.query ?? null;
-  const atLocalMatches: FileIndexEntry[] = React.useMemo(() => (
-    atQueryText !== null && fileIndex && fileIndex.cwd === cwd
-      ? filterFileEntries(fileIndex.entries, atQueryText)
-      : []
-  ), [atQueryText, fileIndex, cwd]);
-
-  // When the client index is truncated (repo larger than the index cap),
-  // local filtering cannot see deep files, so queries are also ranked
-  // server-side against the full listing. Local matches render immediately
-  // and are replaced when the (debounced) server result for the current
-  // query arrives; stale responses are ignored via the query/cwd tag.
-  const needsServerSearch = Boolean(atQueryText && fileIndex?.truncated && fileIndex.cwd === cwd);
-  useEffect(() => {
-    if (!needsServerSearch || !cwd || !atQueryText) return;
-    const fetchCwd = cwd;
-    const query = atQueryText;
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      fetch(`/api/file-index?cwd=${encodeURIComponent(fetchCwd)}&q=${encodeURIComponent(query)}`, { signal: controller.signal })
-        .then((res) => {
-          if (!res.ok) throw new Error(`file search failed: ${res.status}`);
-          return res.json() as Promise<{ matches?: FileIndexEntry[] }>;
-        })
-        .then((data) => {
-          if (!controller.signal.aborted) setAtServerResult({ cwd: fetchCwd, query, matches: data.matches ?? [] });
-        })
-        .catch(() => {
-          // Keep showing local matches; the next keystroke retries.
-        });
-    }, 150);
-    return () => { clearTimeout(timer); controller.abort(); };
-  }, [needsServerSearch, atQueryText, cwd]);
-
-  const serverResultInUse = needsServerSearch
-    && atServerResult !== null
-    && atServerResult.cwd === cwd
-    && atServerResult.query === atQueryText;
-  const atMatches: FileIndexEntry[] = serverResultInUse ? atServerResult.matches : atLocalMatches;
-
-  // Open/reset the menu whenever the @token appears or changes (mirrors the
-  // slash menu: Escape closes it, the next keystroke re-opens it).
-  const atTokenKey = atQuery === null ? null : `${atQuery.start}:${atQuery.quoted ? 1 : 0}:${atQuery.query}`;
-  useEffect(() => {
-    if (atTokenKey === null) {
-      setAtMenuOpen(false);
-      setAtActiveIndex(0);
-      return;
-    }
-    setAtMenuOpen(true);
-    setAtActiveIndex(0);
-  }, [atTokenKey]);
-
-  // Warm the directory after the composer mounts, before @ is needed. Reuse
-  // other sessions' entries immediately and refresh stale data in the background.
-  const atTokenActive = atQuery !== null;
-  useEffect(() => {
-    if (!cwd) return;
-    let cancelled = false;
-    const cached = getCachedFileIndex(cwd);
-    setFileIndex(cached);
-    setFileIndexLoading(!cached);
-    const refresh = () => {
-      void loadFileIndex(cwd)
-        .then((index) => { if (!cancelled) setFileIndex(index); })
-        .catch(() => { /* Keep cached entries; the next open retries. */ })
-        .finally(() => { if (!cancelled) setFileIndexLoading(false); });
-    };
-    const timer = setTimeout(refresh, atTokenActive ? 0 : 400);
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [atTokenActive, cwd]);
-
-  const applyAtCompletion = useCallback((entry: FileIndexEntry) => {
-    if (!atQuery) return;
-    const ta = textareaRef.current;
-    const cursor = ta?.selectionStart ?? value.length;
-    const before = value.slice(0, atQuery.start);
-    let after = value.slice(cursor);
-    // Completing inside a quoted token (@"my dir/… with the caret before the
-    // closing quote): the replacement carries its own closing quote, so drop
-    // the old one right after the caret (mirrors the TUI's applyCompletion).
-    if (atQuery.quoted && after.startsWith('"')) {
-      after = after.slice(1);
-    }
-    const insert = buildAtInsertText(entry.path, entry.isDir, atQuery.quoted);
-    const newValue = before + insert.text + after;
-    const newPos = before.length + insert.cursorOffset;
-    setValue(newValue);
-    // setValue alone does not fire onChange — re-derive the token here. Files
-    // end with a space (token closes, menu hides); directories end with "/"
-    // before the caret (token stays open for drill-down into the directory).
-    setAtQuery(extractAtQuery(newValue.slice(0, newPos)));
-    requestAnimationFrame(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(newPos, newPos);
-      resizeComposerTextarea(el);
-    });
-  }, [setValue, atQuery, value]);
-
-  useEffect(() => {
-    if (atActiveIndex >= atMatches.length) {
-      setAtActiveIndex(Math.max(0, atMatches.length - 1));
-    }
-  }, [atMatches.length, atActiveIndex]);
-
-  useEffect(() => {
-    atItemRefs.current.length = atMatches.length;
-  }, [atMatches.length]);
-
-  useEffect(() => {
-    if (!atMenuOpen) return;
-    const item = atItemRefs.current[atActiveIndex];
-    const list = atListRef.current;
-    if (!item || !list) return;
-    const row = item.getBoundingClientRect();
-    const bounds = list.getBoundingClientRect();
-    if (row.top < bounds.top) list.scrollTop += row.top - bounds.top;
-    else if (row.bottom > bounds.bottom) list.scrollTop += row.bottom - bounds.bottom;
-  }, [atActiveIndex, atMenuOpen, atMatches.length, atMenuPosition]);
-
   useEffect(() => {
     if (historyActiveIndex >= inputHistory.length) {
       setHistoryActiveIndex(Math.max(0, inputHistory.length - 1));
@@ -1336,7 +1084,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
       ta.style.height = "auto";
       resizeComposerTextarea(ta);
     });
-  }, [commitReplyDraft]);
+  }, [commitReplyDraft, setAtQuery]);
 
   const applySlashCommand = useCallback((command: SlashCommandPaletteItem) => {
     if (command.supported === false) { setAttachmentError(t("chatCommands.unsupported")); return; }
@@ -1415,6 +1163,15 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
       sendingRef.current = false;
     }
   }, [attachedImages, attachedFiles, onPromptWithStreamingBehavior, onSteer, onFollowUp, clearInput, replyDraftRef, resetReplyDraft, onQueueInput, handleSend]);
+
+  const selectSlashCommand = useCallback((command: SlashCommandPaletteItem) => {
+    if (composerWorkflow.handleSlashWorkflowSelect(command)) {
+      setSlashMenuOpen(false);
+      setSlashActiveIndex(0);
+      return;
+    }
+    applySlashCommand(command);
+  }, [composerWorkflow, applySlashCommand]);
 
   const submitStreamingMessage = useCallback(() => {
     if (!canQueueStreamingMessage) return;
@@ -1535,12 +1292,16 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
         if ((e.key === "Tab" || isPlainEnter(e)) && filteredSlashCommands[slashActiveIndex]) {
           e.preventDefault();
           const selected = filteredSlashCommands[slashActiveIndex];
-          if (matchesSendShortcut(e, sendShortcut) && selected.name === slashQuery && selected.argumentMode !== "required") {
-            setSlashMenuOpen(false);
-            void handleSend();
+          if (selected.key === "workflow:plan" || selected.key === "workflow:goal") {
+            selectSlashCommand(selected);
             return;
           }
-          applySlashCommand(filteredSlashCommands[slashActiveIndex]);
+          if (matchesSendShortcut(e, sendShortcut) && selected.name === slashQuery && selected.argumentMode !== "required") {
+            setSlashMenuOpen(false);
+            void submitComposer();
+            return;
+          }
+          selectSlashCommand(selected);
           return;
         }
       }
@@ -1568,6 +1329,13 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
           applyAtCompletion(atMatches[atActiveIndex]);
           return;
         }
+      }
+
+      if (composerWorkflow.handleWorkflowKeyDown(e, {
+        menusOpen: historyMenuOpen || slashMenuOpen || atMenuOpen,
+        isComposing,
+      })) {
+        return;
       }
 
       if (e.key === "ArrowUp" && !isComposing && !isStreaming && inputHistory.length > 0 && value.trim().length === 0) {
@@ -1614,17 +1382,18 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
       if (matchesSendShortcut(e, sendShortcut)) {
         e.preventDefault();
         if (e.repeat) return;
-        if (isStreaming && !isCommandInput && (onQueueInput || onSteer || onFollowUp)) {
+        const isSideSlash = surfacePlacement !== "side" && sideChatEnabled && parseSideSlashTrigger(valueRef.current).matched;
+        if (isStreaming && !isCommandInput && !isSideSlash && (onQueueInput || onSteer || onFollowUp)) {
           submitStreamingMessage();
         } else {
-          handleSend();
+          void submitComposer();
         }
         return;
       }
       // Only the configured newline binding inserts a line break.
       if (e.key === "Enter") e.preventDefault();
     },
-    [isStreaming, isCommandInput, onQueueInput, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, applySlashCommand, handleSend, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, stopVoiceInput, localVoiceRecording, attachmentMenuOpen, submitStreamingMessage, undoReplyDraft, sendShortcut, newlineShortcut, setValue, updateAtQuery, closeSendModeMenu]
+    [isStreaming, isCommandInput, surfacePlacement, sideChatEnabled, onQueueInput, onSteer, onFollowUp, onAbort, slashMenuOpen, slashQuery, filteredSlashCommands, slashActiveIndex, selectSlashCommand, submitComposer, composerWorkflow, getNextSlashIndex, atMenuOpen, atQuery, atMatches, atActiveIndex, applyAtCompletion, historyMenuOpen, inputHistory, historyActiveIndex, applyHistoryInput, value, stopVoiceInput, localVoiceRecording, attachmentMenuOpen, submitStreamingMessage, undoReplyDraft, sendShortcut, newlineShortcut, setValue, updateAtQuery, closeSendModeMenu, sendModeMenuRef, setAtActiveIndex, setAtMenuOpen]
   );
 
   const handleInput = useCallback(() => {
@@ -1717,40 +1486,6 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   const currentName = displayModelName;
   const activeThinkingLevel = (thinkingLevel ?? "auto") as ThinkingLevel;
   const thinkingLevelLabel = t(THINKING_LEVEL_LABEL_KEYS[activeThinkingLevel] ?? THINKING_LEVEL_LABEL_KEYS.auto);
-  const contextRemainingPercent = getContextRemainingPercent(contextUsage);
-  const contextUsedPercent = contextRemainingPercent === null ? null : 100 - contextRemainingPercent;
-  const contextUsageLabel = contextUsedPercent === null
-    ? t("chat.contextUsageUnknown")
-    : t("chat.contextUsageLabel", { percent: Math.round(contextUsedPercent) });
-  const contextTokenLabel = contextUsage?.tokens === null || !contextUsage?.contextWindow
-    ? t("chat.contextTokensUnknown")
-    : t("chat.contextTokensUsed", {
-        used: formatTokenCount(contextUsage.tokens),
-        total: formatTokenCount(contextUsage.contextWindow),
-      });
-  const contextBreakdownRows: [string, string][] | null = contextUsage?.breakdown ? [
-    [t("chat.contextSystemPrompt"), formatTokenCount(contextUsage.breakdown.systemPrompt)],
-    [t("chat.contextProjectInstructions"), formatTokenCount(contextUsage.breakdown.projectInstructions)],
-    [t("chat.contextToolDefinitions"), formatTokenCount(contextUsage.breakdown.toolDefinitions)],
-    [t("chat.contextConversationMessages"), formatTokenCount(contextUsage.breakdown.conversationMessages)],
-    ...(contextUsage.breakdown.otherRuntime > 0
-      ? [[t("chat.contextOtherRuntime"), formatTokenCount(contextUsage.breakdown.otherRuntime)] as [string, string]]
-      : []),
-  ] : null;
-  const sessionMessageRows: [string, string][] = sessionStats ? [
-    [t("session.user"), sessionStats.userMessages.toLocaleString(locale)],
-    [t("session.assistant"), sessionStats.assistantMessages.toLocaleString(locale)],
-    [t("session.toolCalls"), sessionStats.toolCalls.toLocaleString(locale)],
-    [t("session.total"), sessionStats.totalMessages.toLocaleString(locale)],
-  ] : [];
-  const sessionTokenRows: [string, string][] = sessionStats ? [
-    [t("session.input"), sessionStats.tokens.input.toLocaleString(locale)],
-    [t("session.output"), sessionStats.tokens.output.toLocaleString(locale)],
-    ...(sessionStats.tokens.cacheRead > 0
-      ? [[t("session.cacheRead"), sessionStats.tokens.cacheRead.toLocaleString(locale)] as [string, string]]
-      : []),
-    [t("session.total"), sessionStats.tokens.total.toLocaleString(locale)],
-  ] : [];
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -1775,7 +1510,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  }, [atMenuRef, setAtMenuOpen]);
 
   return (
     <div
@@ -1820,76 +1555,18 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
         }}
       />
       <div className="composer-column">
-        <ModelErrorBanner error={modelError} title={t("chat.modelError")} />
-        {/* Retry banner */}
-        {retryInfo && (
-          <div style={{
-            marginBottom: 8, padding: "5px 10px",
-            background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)",
-            borderRadius: "var(--radius-control)", fontSize: "var(--text-sm)", color: "rgba(180,130,0,0.9)",
-            display: "flex", alignItems: "center", gap: 6,
-          }}>
-            <AliIcon name="reload" size={11} />
-             {t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts })}{retryInfo.errorMessage && <span style={{ opacity: 0.7, marginLeft: 4 }}>— {retryInfo.errorMessage}</span>}
-          </div>
-        )}
-        {isCompacting ? <CompactionProgress key={draftKey} startedAt={compactionStartedAt} onStop={onAbortCompaction} /> : null}
-        {!isCompacting && compactResult ? <CompactionResult result={compactResult} onDismiss={onDismissCompactResult} /> : null}
-        {compactError && (
-          <div
-            className="composer-surface"
-            role="alert"
-            style={{
-              marginBottom: 8,
-              padding: "7px 10px",
-              background: "rgba(239,68,68,0.07)",
-              border: "1px solid rgba(239,68,68,0.3)",
-              borderRadius: "var(--radius-control)",
-              color: "#ef4444",
-              fontFamily: "var(--font-mono)",
-              fontSize: "var(--text-sm)",
-              lineHeight: 1.5,
-              whiteSpace: "pre-wrap",
-              overflowWrap: "anywhere",
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 8,
-            }}
-          >
-            <div style={{ minWidth: 0, flex: 1 }}>
-              {compactError}
-              <span style={{ display: "block", marginTop: 4, fontFamily: "inherit", fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
-                {t("chat.compactErrorHint")}
-              </span>
-            </div>
-            {onDismissCompactError && (
-              <button
-                type="button"
-                onClick={onDismissCompactError}
-                title={t("chat.dismissCompactError")}
-                aria-label={t("chat.dismissCompactError")}
-                style={{
-                  display: "inline-flex",
-                  width: 24,
-                  height: 24,
-                  flex: "none",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  margin: -3,
-                  padding: 0,
-                  border: 0,
-                  borderRadius: "var(--radius-control)",
-                  background: "transparent",
-                  color: "currentColor",
-                  cursor: "pointer",
-                  opacity: 0.78,
-                }}
-              >
-                <AliIcon name="close" size={12} />
-              </button>
-            )}
-          </div>
-        )}
+        <ComposerStatusBanners
+          modelError={modelError}
+          retryInfo={retryInfo}
+          draftKey={draftKey}
+          isCompacting={isCompacting}
+          compactionStartedAt={compactionStartedAt}
+          onAbortCompaction={onAbortCompaction}
+          compactResult={compactResult}
+          onDismissCompactResult={onDismissCompactResult}
+          compactError={compactError}
+          onDismissCompactError={onDismissCompactError}
+        />
         {/* Image previews */}
         <ReplySuggestionBar {...suggestions} draft={replyDraft} onChange={(next, caret) => {
           stopVoiceInput(true);
@@ -1911,309 +1588,73 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
           </div>
         )}
         {isProcessingFiles && <div role="status" style={{ marginBottom: 6, color: "var(--text-muted)", fontSize: "var(--text-xs)" }}>{t("chat.processingFiles")}</div>}
-        {attachedImages.length > 0 && (
-          <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
-            {attachedImages.map((img, i) => (
-              <div key={i} style={{ position: "relative", flexShrink: 0 }}>
-                <MessageImage src={img.previewUrl} index={i} className="composer-image-thumbnail"
-                  onOpen={() => setPreviewImage({ src: `data:${img.mimeType};base64,${img.data}`, index: i })} />
-                <button
-                  type="button"
-                  onClick={() => removeImage(i)}
-                  title={t("chat.removeAttachment")} aria-label={t("chat.removeAttachment")}
-                  style={{
-                    position: "absolute", top: -4, right: -4,
-                    width: 16, height: 16, borderRadius: "50%",
-                    background: "var(--bg-panel)", border: "1px solid var(--border)",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    cursor: "pointer", padding: 0, color: "var(--text-muted)",
-                  }}
-                >
-                  <AliIcon name="close" size={8} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        {previewImage && <MessageImageViewer src={previewImage.src} index={previewImage.index} onClose={() => setPreviewImage(null)} />}
-
-        {/* Attached non-image files */}
-        {attachedFiles.length > 0 && (
-          <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
-            {attachedFiles.map((file, i) => (
-              <div
-                key={`${file.name}:${i}`}
-                title={file.path ? `${file.path}\n${t("chat.attachedLocalHint")}` : file.text == null ? t("chat.attachmentMissingPath") : `${file.name} · ${formatFileSize(file.size)}`}
-                style={{
-                  display: "flex", alignItems: "center", gap: 6,
-                  maxWidth: 260, padding: "4px 6px 4px 8px",
-                  background: "var(--bg-panel)", border: "1px solid var(--border)",
-                  borderRadius: "var(--radius-control)", fontSize: "var(--text-xs)", color: "var(--text-muted)",
-                }}
-              >
-                <AliIcon name="file" size={12} />
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)" }}>
-                  {file.name}
-                </span>
-                {file.path && <span style={{ flexShrink: 0, color: "var(--text-dim)" }}>{formatFileSize(file.size)}</span>}
-                {file.kind === "paste" && (
-                  <button
-                    type="button"
-                    onClick={() => restorePastedFile(i)}
-                    title={t("chat.restorePasteToComposer")}
-                    aria-label={t("chat.restorePasteToComposer")}
-                    style={{
-                      flexShrink: 0, padding: "1px 4px", border: "none", borderRadius: 4,
-                      background: "transparent", color: "var(--accent)", cursor: "pointer",
-                      fontSize: "var(--text-xs)", whiteSpace: "nowrap",
-                    }}
-                  >
-                    {t("chat.showInComposer")}
-                  </button>
-                )}
-                <button
-                  onClick={() => removeFile(i)}
-                  title={t("chat.removeAttachment")}
-                  aria-label={t("chat.removeAttachment")}
-                  style={{
-                    flexShrink: 0, width: 16, height: 16, padding: 0, border: "none", borderRadius: "50%",
-                    background: "transparent", color: "var(--text-muted)", cursor: "pointer",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}
-                >
-                  <AliIcon name="close" size={8} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        <ComposerAttachmentsBar
+          attachedImages={attachedImages}
+          previewImage={previewImage}
+          onSetPreviewImage={setPreviewImage}
+          onRemoveImage={removeImage}
+          attachedFiles={attachedFiles}
+          onRestorePastedFile={restorePastedFile}
+          onRemoveFile={removeFile}
+        />
 
         {/* Main input */}
         <div ref={inputAnchorRef} style={{ position: "relative" }}>
           {historyMenuOpen && inputHistory.length > 0 && (
-            <div
-              ref={historyMenuRef}
-              style={{
-                position: "absolute",
-                left: 0,
-                right: 0,
-                bottom: "calc(100% + 8px)",
-                zIndex: 120,
-                background: "var(--bg)",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius-control)",
-                boxShadow: "0 -6px 20px rgba(0,0,0,0.12)",
-                overflow: "hidden",
-                maxHeight: "min(44vh, 360px)",
-              }}
-            >
-              <div
-                title="Input history"
-                style={{
-                  height: 30,
-                  padding: "0 10px",
-                  borderBottom: "1px solid var(--border)",
-                  display: "flex",
-                  alignItems: "center",
-                  color: "var(--text-dim)",
-                }}
-              >
-                <AliIcon name="history" size={14} />
-              </div>
-              <div style={{ maxHeight: "calc(min(44vh, 360px) - 31px)", overflowY: "auto", padding: 4 }}>
-                {inputHistory.map((item, index) => {
-                  const active = index === historyActiveIndex;
-                  return (
-                    <button
-                      key={`${index}:${item}`}
-                      ref={(node) => {
-                        historyItemRefs.current[index] = node;
-                      }}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        applyHistoryInput(item);
-                      }}
-                      onMouseEnter={() => setHistoryActiveIndex(index)}
-                      style={{
-                        width: "100%",
-                        display: "flex",
-                        alignItems: "flex-start",
-                        gap: 8,
-                        padding: "7px 8px",
-                        border: "none",
-                        borderRadius: "var(--radius-control)",
-                        background: active ? "var(--bg-selected)" : "none",
-                        color: "var(--text)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        fontSize: "var(--text-sm)",
-                        lineHeight: 1.45,
-                      }}
-                    >
-                      <span style={{ flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-dim)", paddingTop: 1 }}>
-                        {index + 1}
-                      </span>
-                      <span style={{ minWidth: 0, display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 2, overflow: "hidden", overflowWrap: "anywhere" }}>
-                        {item}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <InputHistoryMenu
+              menuRef={historyMenuRef}
+              itemRefs={historyItemRefs}
+              inputHistory={inputHistory}
+              activeIndex={historyActiveIndex}
+              onHoverIndex={setHistoryActiveIndex}
+              onSelect={applyHistoryInput}
+            />
           )}
           {slashMenuOpen && slashQuery !== null && (
-            <div id={slashListId} className="slash-command-menu" role="listbox" aria-label={t("chat.slashCommands", { label: slashCommandCountLabel })}>
-              <div className="slash-command-menu-header">
-                <span>{slashCommandsLoading ? t("chat.loadingCommands") : t("chat.slashCommands", { label: slashCommandCountLabel })}</span>
-                <span className="slash-command-menu-hints" aria-hidden="true"><kbd>↑</kbd><kbd>↓</kbd> {t("chat.commandSwitch")} · <kbd>Tab</kbd> {t("chatCommands.selectHint")} · <kbd>esc</kbd> {t("chat.commandClose")}</span>
-              </div>
-              <div className="slash-command-menu-list">
-                {slashCommandsError && <div className="slash-command-menu-empty" role="alert">{t("chatCommands.catalogFailed")} · {slashCommandsError} <button type="button" onClick={() => void onLoadSlashCommands?.()}>{t("chatCommands.retry")}</button></div>}
-                {!slashCommandsLoading && filteredSlashCommands.length === 0 ? (
-                  <div className="slash-command-menu-empty">{t("chat.noCommands")}</div>
-                ) : (
-                  groupedSlashCommands.map((group) => (
-                    <section key={group.source} className="slash-command-group">
-                      <div className="slash-command-group-header">
-                        <span>{t(SLASH_SOURCE_GROUP_LABEL_KEYS[group.source])}</span>
-                        <span>{group.items.length}</span>
-                      </div>
-                      {group.items.map(({ command, index }) => {
-                        const active = index === slashActiveIndex;
-                        return (
-                          <button
-                            key={`${command.source}:${command.name}`}
-                            ref={(node) => {
-                              slashItemRefs.current[index] = node;
-                            }}
-                            type="button"
-                            role="option"
-                            id={`${slashListId}-${index}`}
-                            aria-selected={active}
-                            aria-disabled={command.supported === false}
-                            className="slash-command-item"
-                            data-active={active ? "true" : "false"}
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                            }}
-                            onClick={() => applySlashCommand(command)}
-                            onMouseEnter={() => setSlashActiveIndex(index)}
-                          >
-                            <span className="slash-command-item-name">/{command.name}{command.argumentHint && <span className="slash-command-item-argument"> {command.argumentHint}</span>}</span>
-                            <span className="slash-command-item-desc">{command.supported === false ? t("chatCommands.unsupported") : isStreaming && command.source === "builtin" ? t("chat.commandWaitUntilIdle") : getSlashCommandDescription(command, t)}</span>
-                            <span className="slash-command-item-source">{t(SLASH_SOURCE_GROUP_LABEL_KEYS[command.source])}</span>
-                          </button>
-                        );
-                      })}
-                    </section>
-                  ))
-                )}
-              </div>
-            </div>
+            <SlashCommandMenu
+              listId={slashListId}
+              countLabel={slashCommandCountLabel}
+              loading={slashCommandsLoading}
+              error={slashCommandsError}
+              onRetryLoad={() => void onLoadSlashCommands?.()}
+              isStreaming={isStreaming}
+              filteredCount={filteredSlashCommands.length}
+              groups={groupedSlashCommands}
+              activeIndex={slashActiveIndex}
+              itemRefs={slashItemRefs}
+              onHoverIndex={setSlashActiveIndex}
+              onSelect={selectSlashCommand}
+            />
           )}
-          {atMenuOpen && atQuery !== null && atMenuPosition && (() => {
-            const indexLoading = fileIndexLoading && (!fileIndex || fileIndex.cwd !== cwd);
-             const matchCountLabel = atMatches.length === 1 ? t("chat.match") : t("chat.matches", { count: atMatches.length });
-            // With a truncated index, local results are provisional — the
-            // debounced server search over the full listing replaces them.
-            const truncatedHint = fileIndex?.truncated && !serverResultInUse
-               ? (atQuery.query ? t("chat.searchingAll") : t("chat.indexTruncated"))
-              : "";
-            return createPortal(
-              <div
-                ref={atMenuRef}
-                className="file-mention-menu"
-                data-testid="file-mention-menu"
-                style={atMenuPosition}
-              >
-                <div className="file-mention-header">
-                  <span>
-                    {indexLoading
-                       ? t("chat.loadingFiles")
-                       : t("chat.files", { label: matchCountLabel, hint: truncatedHint })}
-                  </span>
-                   <span className="file-mention-hints">{t("chat.tabEnter")}</span>
-                </div>
-                <div ref={atListRef} id={atListId} className="file-mention-list" role="listbox" aria-label={t("chat.files", { label: matchCountLabel, hint: truncatedHint })}>
-                  {!indexLoading && atMatches.length === 0 ? (
-                    <div className="file-mention-empty">
-                       {needsServerSearch && !serverResultInUse ? t("chat.searching") : t("chat.noMatchingFiles")}
-                    </div>
-                  ) : (
-                    atMatches.map((entry, index) => {
-                      const active = index === atActiveIndex;
-                      const name = entry.path.split("/").pop() ?? entry.path;
-                      const dirPrefix = entry.path.slice(0, entry.path.length - name.length);
-                      return (
-                        <button
-                          key={`${entry.isDir ? "d" : "f"}:${entry.path}`}
-                          ref={(node) => {
-                            atItemRefs.current[index] = node;
-                          }}
-                          type="button"
-                          id={`${atListId}-${index}`}
-                          role="option"
-                          aria-selected={active}
-                          aria-label={entry.path}
-                          title={entry.path}
-                          className="file-mention-item"
-                          data-active={active}
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => applyAtCompletion(entry)}
-                          onMouseEnter={() => setAtActiveIndex(index)}
-                        >
-                          <span className="file-mention-icon">
-                            {entry.isDir ? <FolderIcon size={14} name={name} /> : getFileIcon(name, 14)}
-                          </span>
-                          <span className="file-mention-copy">
-                            <span className="file-mention-name">{name}{entry.isDir ? "/" : ""}</span>
-                            {dirPrefix && <span className="file-mention-directory">{dirPrefix}</span>}
-                          </span>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>,
-              document.body,
-            );
-          })()}
+          {atMenuOpen && atQuery !== null && atMenuPosition && (
+            <FileMentionMenu
+              menuRef={atMenuRef}
+              listRef={atListRef}
+              itemRefs={atItemRefs}
+              listId={atListId}
+              position={atMenuPosition}
+              cwd={cwd}
+              atQuery={atQuery}
+              fileIndex={fileIndex}
+              fileIndexLoading={fileIndexLoading}
+              needsServerSearch={needsServerSearch}
+              serverResultInUse={serverResultInUse}
+              matches={atMatches}
+              activeIndex={atActiveIndex}
+              onHoverIndex={setAtActiveIndex}
+              onSelect={applyAtCompletion}
+            />
+          )}
           {promptOptimization && !promptOptimization.loading && (
-            <div
-              className={`prompt-optimization-review${promptOptimization.error ? " is-error" : ""}`}
-              role={promptOptimization.error ? "alert" : "region"}
-              aria-label={t("chat.optimizedPrompt")}
-            >
-              <div className="prompt-optimization-header">
-                <span className="prompt-optimization-title">
-                  <AliIcon name={promptOptimization.error ? "warning" : "solution"} size={14} />
-                  {promptOptimization.error ? t("chat.optimizePromptFailed") : t("chat.optimizedPrompt")}
-                </span>
-                <div className="prompt-optimization-actions">
-                  <button type="button" onClick={() => setPromptOptimization(null)}>
-                    {t("chat.keepOriginalPrompt")}
-                  </button>
-                  {promptOptimization.result && (
-                    <button
-                      type="button"
-                      className="is-primary"
-                      onClick={() => {
-                        commitReplyDraft({ value: promptOptimization.result!, spans: [] });
-                        setPromptOptimization(null);
-                        requestAnimationFrame(() => textareaRef.current?.focus());
-                      }}
-                    >
-                      {t("chat.useOptimizedPrompt")}
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="prompt-optimization-content">
-                {promptOptimization.error ?? promptOptimization.result}
-              </div>
-            </div>
+            <PromptOptimizationReview
+              state={promptOptimization}
+              onKeepOriginal={() => setPromptOptimization(null)}
+              onUseOptimized={(result) => {
+                commitReplyDraft({ value: result, spans: [] });
+                setPromptOptimization(null);
+                requestAnimationFrame(() => textareaRef.current?.focus());
+              }}
+            />
           )}
           {contextControl && <div className="chat-composer-topbar">
             <div className="chat-composer-context">{contextControl}</div>
@@ -2302,12 +1743,17 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
             onInput={handleInput}
             onPaste={handlePaste}
             placeholder={
-              placeholder ?? (isStreaming && (onSteer || onFollowUp)
-                ? t("chat.steerPlaceholder")
-                : isStreaming ? t("chat.agentPlaceholder")
-                : t("chat.messagePlaceholder"))
+              workflowAutoContinuing
+                ? t("workflow.goal.continuing")
+                : composerWorkflow.isGoalDrafting
+                  ? t("workflow.goal.draftPlaceholder")
+                  : (placeholder ?? (isStreaming && (onSteer || onFollowUp)
+                    ? t("chat.steerPlaceholder")
+                    : isStreaming ? t("chat.agentPlaceholder")
+                    : t("chat.messagePlaceholder")))
             }
-            rows={1}
+            data-goal-drafting={composerWorkflow.isGoalDrafting ? "true" : undefined}
+            rows={composerWorkflow.isGoalDrafting ? 3 : 1}
             style={{
               flex: "1 0 100%",
               minWidth: 0,
@@ -2319,9 +1765,10 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
               fontSize: "var(--chat-font-size)",
               lineHeight: "var(--chat-line-height)",
               fontFamily: "inherit",
-              minHeight: 24,
+              minHeight: composerWorkflow.isGoalDrafting ? 80 : 24,
               maxHeight: "min(38vh, 360px)",
               overflow: "auto",
+              transition: "min-height 180ms ease",
             }}
           />
 
@@ -2337,100 +1784,53 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
             <p>{t(`chatCommands.error.${parsedCommandInput.code}`, { name: parsedCommandInput.name })}</p><button type="button" onClick={() => { setValue([value, commandInputOptions.afterPrompt].filter(Boolean).join("\n\n")); setCommandInputOptions(current => ({ workflow: current.workflow, inputMode: "text" })); }}>{t("chatCommands.asText")}</button>
           </div>}
           <div className="chat-composer-footer" data-has-workflow={workflowEnabled && workflow ? true : undefined}
-            data-workflow-mode={workflowEnabled && workflow ? (commandInputOptions.workflow ?? workflow).mode : undefined}>
-            <div ref={attachmentMenuRef} className="composer-add-control">
-              {attachmentMenuOpen && (
-                <div className="composer-add-menu" role="menu" aria-label={t("chat.addMenu")}>
-                  <div className="composer-add-menu-title">{t("chat.add")}</div>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="composer-add-option"
-                    onClick={() => {
-                      setAttachmentMenuOpen(false);
-                      fileInputRef.current?.click();
-                    }}
-                  >
-                    <span className="composer-add-option-icon"><AliIcon name="attachment" size={15} /></span>
-                    <span className="composer-add-option-copy">
-                      <strong>{t("chat.attachFiles")}</strong>
-                      <small>{t("chat.attachFilesDescription")}</small>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="composer-add-option"
-                    onClick={() => {
-                      setAttachmentMenuOpen(false);
-                      folderInputRef.current?.click();
-                    }}
-                  >
-                    <span className="composer-add-option-icon"><AliIcon name="folder-open" size={15} /></span>
-                    <span className="composer-add-option-copy">
-                      <strong>{t("chat.attachFolder")}</strong>
-                      <small>{t("chat.attachFolderDescription")}</small>
-                    </span>
-                  </button>
-                </div>
-              )}
-              <button
-                type="button"
-                className={`composer-add-trigger${attachmentMenuOpen ? " is-open" : ""}${attachedImages.length || attachedFiles.length ? " has-attachments" : ""}`}
-                onClick={() => setAttachmentMenuOpen((open) => !open)}
-                disabled={!canAttachFiles}
-                title={t("chat.add")}
-                aria-label={t("chat.add")}
-                aria-haspopup="menu"
-                aria-expanded={attachmentMenuOpen}
-              >
-                <AliIcon name="plus" size={15} />
-              </button>
-            </div>
+            data-workflow-mode={workflowEnabled && workflow ? (composerWorkflow.isGoalDrafting ? "goal" : composerWorkflow.isPlanMode ? "plan" : "agent") : undefined}>
+            <AttachmentAddMenu
+              menuRef={attachmentMenuRef}
+              open={attachmentMenuOpen}
+              canAttachFiles={canAttachFiles}
+              hasAttachments={Boolean(attachedImages.length || attachedFiles.length)}
+              workflowEnabled={Boolean(workflowEnabled && workflow)}
+              planWorkflowActive={composerWorkflow.isPlanMode}
+              goalWorkflowActive={composerWorkflow.isGoalDrafting || hasActiveGoal}
+              workflowDisabled={isStreaming || workflowBusy}
+              onToggle={() => setAttachmentMenuOpen((open) => !open)}
+              onAttachFiles={() => {
+                setAttachmentMenuOpen(false);
+                fileInputRef.current?.click();
+              }}
+              onAttachFolder={() => {
+                setAttachmentMenuOpen(false);
+                folderInputRef.current?.click();
+              }}
+              onTogglePlanWorkflow={() => {
+                setAttachmentMenuOpen(false);
+                composerWorkflow.togglePlanMode();
+              }}
+              onStartGoalWorkflow={() => {
+                setAttachmentMenuOpen(false);
+                composerWorkflow.enterGoalDraftMode();
+              }}
+            />
             {onToolPermissionChange && <ToolPermissionControl state={toolPermission ?? null} saving={permissionSaving} onChange={onToolPermissionChange} />}
-            {workflowEnabled && workflow && <div className="chat-composer-workflow">
-              <WorkflowModePicker value={commandInputOptions.workflow ?? workflow} disabled={isStreaming || workflowBusy}
-                onChange={next => setCommandInputOptions(current => ({ ...current, workflow: next }))} />
-            </div>}
+            {workflowEnabled && workflow && (
+              <WorkflowModePills
+                mode={composerWorkflow.isPlanMode ? "plan" : "agent"}
+                goalDrafting={composerWorkflow.isGoalDrafting}
+                disabled={isStreaming || workflowBusy}
+                onExitPlan={composerWorkflow.exitPlanMode}
+                onClearGoalDraft={composerWorkflow.clearGoalDraftMode}
+              />
+            )}
             {toolbarControl}
             {voiceInputSupported && (
-              <>
-                <button
-                  type="button"
-                  className={`voice-input-button${voiceListening ? " is-listening" : ""}${voiceTranscribing ? " is-transcribing" : ""}${effectiveVoiceError ? " is-error" : ""}`}
-                  onClick={toggleVoiceInput}
-                  disabled={voiceTranscribing}
-                  aria-pressed={voiceListening}
-                  aria-label={voiceListening ? t("chat.stopVoiceInput") : t("chat.startVoiceInput")}
-                  title={voiceInputShortcut
-                    ? t("chat.voiceInputShortcutHint", {
-                      action: voiceListening ? t("chat.stopVoiceInput") : t("chat.startVoiceInput"),
-                      shortcut: voiceInputShortcut,
-                    })
-                    : voiceListening ? t("chat.stopVoiceInput") : t("chat.startVoiceInput")}
-                >
-                  <AliIcon name="microphone" size={15} />
-                </button>
-                {(voiceListening || voiceTranscribing || effectiveVoiceError) && (
-                  <span
-                    className={`voice-input-status${effectiveVoiceError ? " is-error" : ""}`}
-                    role="status"
-                    aria-live="polite"
-                  >
-                    {voiceListening
-                      ? t("chat.voiceListening")
-                      : voiceTranscribing
-                        ? t("chat.voiceTranscribing")
-                      : effectiveVoiceError === "permission"
-                        ? t("chat.voicePermissionDenied")
-                        : effectiveVoiceError === "microphone"
-                          ? t("chat.voiceMicrophoneUnavailable")
-                          : effectiveVoiceError === "no-speech"
-                            ? t("chat.voiceNoSpeech")
-                            : t("chat.voiceInputFailed")}
-                  </span>
-                )}
-              </>
+              <VoiceInputControl
+                voiceListening={voiceListening}
+                transcribing={voiceTranscribing}
+                error={effectiveVoiceError}
+                shortcut={voiceInputShortcut}
+                onToggle={toggleVoiceInput}
+              />
             )}
             <button
               type="button"
@@ -2446,364 +1846,82 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
             </button>
             <div style={{ flex: 1 }} />
             {variant === "conversation" ? <ExtensionStatusBar statuses={extensionStatuses} /> : null}
-            {variant === "conversation" ? <div className="session-stats-control">
-              <div className="session-stats-trigger" tabIndex={0} aria-label={t("session.title")}>
-                <AliIcon name="chart-no-axes-column" size={18} />
-              </div>
-              <div className="session-stats-tooltip" role="tooltip">
-                <div className="session-stats-tooltip-title">{t("session.title")}</div>
-                {sessionStats ? (
-                  <div className="session-stats-tooltip-sections">
-                    <div>
-                      <div className="session-stats-tooltip-section-title">{t("session.messages")}</div>
-                      <div className="session-stats-tooltip-grid">
-                        {sessionMessageRows.map(([label, value]) => <React.Fragment key={`message:${label}`}><span>{label}</span><strong>{value}</strong></React.Fragment>)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="session-stats-tooltip-section-title">{t("session.tokens")}</div>
-                      <div className="session-stats-tooltip-grid">
-                        {sessionTokenRows.map(([label, value]) => <React.Fragment key={`token:${label}`}><span>{label}</span><strong>{value}</strong></React.Fragment>)}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="session-stats-tooltip-empty">{t("session.load")}</div>
-                )}
-                {sessionStats ? (
-                  <div className="session-stats-tooltip-cost"><span>{t("session.cumulativeCost")}</span><strong>{sessionStats.costStatus === "unknown" ? t("session.costUnknown") : `$${sessionStats.cost.toFixed(4)}${sessionStats.costStatus === "partial" ? ` (${t("session.costPartial")})` : ""}`}</strong></div>
-                ) : null}
-              </div>
-            </div> : null}
-            {variant === "conversation" ? <div className="context-usage-control">
-              <div
-                className="context-usage-ring"
-                tabIndex={0}
-                aria-label={`${contextUsageLabel}. ${contextTokenLabel}`}
-                data-context-used={contextUsedPercent?.toFixed(2) ?? "unknown"}
-              >
-                <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
-                  <circle cx="10" cy="10" r="8" pathLength="100" fill="none" stroke="color-mix(in srgb, var(--text-dim) 40%, transparent)" strokeWidth="2.4" />
-                  {contextUsedPercent === null ? (
-                    <circle cx="10" cy="10" r="8" pathLength="100" fill="none" stroke="var(--text-dim)" strokeWidth="2.2" strokeLinecap="round" strokeDasharray="3 6" transform="rotate(-90 10 10)" />
-                  ) : (
-                    <circle
-                      cx="10" cy="10" r="8" pathLength="100" fill="none"
-                      stroke={contextUsedPercent >= 90 ? "#ef4444" : contextUsedPercent >= 75 ? "#f59e0b" : "var(--text-muted)"}
-                      strokeWidth="2.4" strokeLinecap="round"
-                      strokeDasharray={`${contextUsedPercent} ${100 - contextUsedPercent}`}
-                      transform="rotate(-90 10 10)"
-                      style={{ transition: "stroke-dasharray 240ms ease, stroke 180ms ease" }}
-                    />
-                  )}
-                </svg>
-              </div>
-              <div className="context-usage-tooltip" role="tooltip">
-                <div className="context-usage-tooltip-heading">
-                  <span>{t("chat.contextWindow")}:</span>
-                  <span>{contextUsageLabel}</span>
-                </div>
-                <div className="context-usage-tooltip-value">{contextTokenLabel}</div>
-                {contextBreakdownRows ? (
-                  <div className="context-usage-breakdown">
-                    <div className="context-usage-breakdown-title">{t("chat.contextBreakdownTitle")}</div>
-                    {contextBreakdownRows.map(([label, value]) => (
-                      <div className="context-usage-breakdown-row" key={label}>
-                        <span>{label}</span>
-                        <strong>≈ {value}</strong>
-                      </div>
-                    ))}
-                    <div className="context-usage-tooltip-note">{t("chat.contextBreakdownNote")}</div>
-                  </div>
-                ) : <div className="context-usage-tooltip-note">{t("chat.contextIncludesSystemTools")}</div>}
-              </div>
-            </div> : null}
+            {variant === "conversation" ? <SessionStatsBadge sessionStats={sessionStats} /> : null}
+            {variant === "conversation" ? <ContextUsageRing contextUsage={contextUsage} /> : null}
             <div className="composer-submit-controls">
             {/* Codex-style model settings: one compact summary chip with focused submenus. */}
             {(modelOptions.length > 0 || currentName || modelError) && onModelChange && (
-              <div ref={dropdownRef} className="model-settings-control">
-                <button
-                  type="button"
-                  className={`model-settings-trigger${modelDropdownOpen ? " is-open" : ""}`}
-                  onClick={(event) => {
-                    const rect = event.currentTarget.getBoundingClientRect();
-                    setModelDropdownRect({ top: rect.top, left: rect.left, width: rect.width });
-                    setModelDropdownOpen((open) => {
-                      if (!open) setModelMenuSection(null);
-                      else {
-                        setModelMenuSection(null);
-                        setModelFilter("");
-                      }
-                      return !open;
-                    });
-                  }}
-                  disabled={isStreaming}
-                  aria-haspopup="menu"
-                  aria-expanded={modelDropdownOpen}
-                  aria-label={currentName ? t("chat.selectCurrentModel", { model: currentName }) : t("chat.selectModel")}
-                  title={currentName ?? (modelOptions.length > 0 ? t("chat.selectModel") : t("chat.noModels"))}
-                >
-                  <ModelProviderIcon provider={isAutoModelSelection ? undefined : model?.provider} modelId={isAutoModelSelection ? undefined : model?.modelId} modelName={currentName} size={14} />
-                  <span className="model-settings-trigger-label">
-                    {currentName ?? (modelOptions.length > 0 ? t("chat.selectModel") : t("chat.noModels"))}
-                  </span>
-                  {onThinkingLevelChange && !isAutoModelSelection ? <span className="model-settings-trigger-reasoning">{thinkingLevelLabel}</span> : null}
-                </button>
-                {modelDropdownOpen && modelDropdownRect && (() => {
-                  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-                  const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
-                  const bottom = viewportHeight - modelDropdownRect.top + 7;
-                  const maxH = Math.max(160, Math.min(modelDropdownRect.top - 12, viewportHeight * 0.68));
-                  const desktopPanelWidth = 230;
-                  const desktopPanelLeft = Math.min(
-                    Math.max(8, modelDropdownRect.left),
-                    Math.max(8, viewportWidth - desktopPanelWidth - 8),
-                  );
-                  const submenuLeftSpace = desktopPanelLeft - 8;
-                  const submenuRightSpace = viewportWidth - desktopPanelLeft - desktopPanelWidth - 8;
-                  const submenuOpensRight = submenuRightSpace >= submenuLeftSpace;
-                  const submenuWidth = Math.min(
-                    292,
-                    Math.max(160, (submenuOpensRight ? submenuRightSpace : submenuLeftSpace) - 7),
-                  );
-                  const panelPos: React.CSSProperties = isMobile
-                    ? { left: 8, right: 8, maxWidth: "calc(100vw - 16px)" }
-                    : { left: desktopPanelLeft, right: "auto", width: desktopPanelWidth };
-                  const visibleSection = isMobile ? modelMenuSection : null;
-                  const selectableThinkingLevels = THINKING_LEVELS.filter((level) => (
-                    !availableThinkingLevels || level === "auto" || availableThinkingLevels.includes(level)
-                  ));
-                  const renderModelChoices = () => (
-                    <>
-                      {showModelFilter ? (
-                        <div className="model-settings-search">
-                          <AliIcon name="search" size={13} />
-                          <input
-                            value={modelFilter}
-                            onChange={(event) => setModelFilter(event.target.value)}
-                            placeholder={t("chat.filterModels")}
-                            aria-label={t("chat.filterModels")}
-                            autoComplete="off"
-                            spellCheck={false}
-                          />
-                        </div>
-                      ) : null}
-                      <div className="model-settings-list">
-                        {modelsByProvider.length === 0 ? (
-                          <div className="model-settings-empty">
-                            {modelFilter.trim() ? t("chat.noMatchingModels") : t("chat.noModels")}
-                          </div>
-                        ) : modelsByProvider.map((group) => (
-                          <div key={group.provider}>
-                            {modelsByProvider.length > 1 ? <div className="model-settings-provider">{group.provider}</div> : null}
-                            {group.options.map((option) => {
-                              const isActive = !isAutoModelSelection && option.modelId === model?.modelId && option.provider === model?.provider;
-                              return (
-                                <button
-                                  key={`${option.provider}:${option.modelId}`}
-                                  type="button"
-                                  className={`model-settings-choice${isActive ? " is-active" : ""}`}
-                                  onClick={() => {
-                                    setModelDropdownOpen(false);
-                                    setModelMenuSection(null);
-                                    setModelFilter("");
-                                    if (!isActive || isAutoModelSelection) {
-                                      modelChangeCoordinatorRef.current!.track(onModelChange(option.provider, option.modelId));
-                                    }
-                                  }}
-                                  role="menuitemradio"
-                                  aria-checked={isActive}
-                                >
-                                  <ModelProviderIcon className="model-settings-choice-icon" provider={option.provider} modelId={option.modelId} modelName={option.name} size={15} />
-                                  <span className="model-settings-choice-label">{option.name}</span>
-                                  {isActive ? <AliIcon name="check" size={11} /> : null}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  );
-                  const renderReasoningChoices = () => (
-                    <div className="model-settings-list">
-                      {selectableThinkingLevels.map((level) => {
-                        const isActive = activeThinkingLevel === level;
-                        const mappedValue = level !== "auto" && thinkingLevelMap ? thinkingLevelMap[level] : undefined;
-                        return (
-                          <button
-                            key={level}
-                            type="button"
-                            className={`model-settings-choice model-settings-reasoning-choice${isActive ? " is-active" : ""}`}
-                            onClick={() => {
-                              setModelDropdownOpen(false);
-                              setModelMenuSection(null);
-                              if (!isActive) onThinkingLevelChange?.(level);
-                            }}
-                            role="menuitemradio"
-                            aria-checked={isActive}
-                            title={t(THINKING_LEVEL_DESC_KEYS[level])}
-                          >
-                            <span>{t(THINKING_LEVEL_LABEL_KEYS[level])}</span>
-                            {mappedValue != null && mappedValue !== level ? <small>{mappedValue}</small> : null}
-                            {isActive ? <AliIcon name="check" size={11} /> : null}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  );
-                  return createPortal(
-                    <div
-                      ref={modelDropdownPanelRef}
-                      className="model-settings-popover"
-                      style={{ position: "fixed", bottom, maxHeight: maxH, ...panelPos }}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Escape") return;
-                        event.stopPropagation();
-                        if (modelMenuSection) setModelMenuSection(null);
-                        else setModelDropdownOpen(false);
-                      }}
-                    >
-                      {visibleSection ? (
-                        <div className="model-settings-subview" role="menu">
-                          <button type="button" className="model-settings-back" onClick={() => { setModelMenuSection(null); setModelFilter(""); }}>
-                            <AliIcon name="arrowleft" size={13} />
-                            <span>{visibleSection === "models" ? t("i18n.model") : t("chat.reasoningEffort")}</span>
-                          </button>
-                          {visibleSection === "models" ? renderModelChoices() : renderReasoningChoices()}
-                        </div>
-                      ) : (
-                        <div className="model-settings-root" role="menu">
-                          <button
-                            type="button"
-                            className={`model-settings-row${modelMenuSection === "models" ? " is-active" : ""}`}
-                            onMouseEnter={() => { if (!isMobile) setModelMenuSection("models"); }}
-                            onClick={() => setModelMenuSection("models")}
-                            role="menuitem"
-                          >
-                            <span className="model-settings-row-label">{t("i18n.model")}</span>
-                            <span className="model-settings-row-value">{currentName ?? t("chat.selectModel")}</span>
-                          </button>
-                          {onThinkingLevelChange && !isAutoModelSelection ? (
-                            <button
-                              type="button"
-                              className={`model-settings-row${modelMenuSection === "reasoning" ? " is-active" : ""}`}
-                              onMouseEnter={() => { if (!isMobile) setModelMenuSection("reasoning"); }}
-                              onClick={() => setModelMenuSection("reasoning")}
-                              role="menuitem"
-                            >
-                              <span className="model-settings-row-label">{t("chat.reasoningEffort")}</span>
-                              <span className="model-settings-row-value">{thinkingLevelLabel}</span>
-                            </button>
-                          ) : null}
-                          {!isStreaming && onCompact ? (
-                            <div className="model-settings-footer">
-                              {isCompacting ? (
-                                <div className="model-settings-compaction" role="status" aria-live="polite">
-                                  <span className="model-settings-compaction-spinner" aria-hidden="true" />
-                                  <span className="model-settings-compaction-label">{t("chat.compacting")}</span>
-                                  <button
-                                    type="button"
-                                    className="model-settings-compaction-stop"
-                                    onClick={onAbortCompaction}
-                                    title={t("chat.stopCompaction")}
-                                    aria-label={t("chat.stopCompaction")}
-                                  >
-                                    <AliIcon name="stop" size={10} />
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="model-settings-row"
-                                  onClick={() => {
-                                    setModelDropdownOpen(false);
-                                    setModelMenuSection(null);
-                                    onCompact();
-                                  }}
-                                  title={t("chat.compactContext")}
-                                >
-                                  <span>{t("chat.compactContext")}</span>
-                                  <AliIcon name="shrink" size={12} />
-                                </button>
-                              )}
-                            </div>
-                          ) : null}
-                          {!isMobile && modelMenuSection ? (
-                            <div
-                              className="model-settings-submenu"
-                              role="menu"
-                              style={{
-                                maxHeight: maxH,
-                                width: submenuWidth,
-                                ...(submenuOpensRight
-                                  ? { left: "calc(100% + 7px)", right: "auto" }
-                                  : { right: "calc(100% + 7px)", left: "auto" }),
-                              }}
-                            >
-                              <div className="model-settings-submenu-title">
-                                {modelMenuSection === "models" ? t("i18n.model") : t("chat.reasoningEffort")}
-                              </div>
-                              {modelMenuSection === "models" ? renderModelChoices() : renderReasoningChoices()}
-                            </div>
-                          ) : null}
-                        </div>
-                      )}
-                    </div>,
-                    document.body,
-                  );
-                })()}
-              </div>
-            )}
-            {isStreaming && !isCommandInput ? (
-              <div className="streaming-action-control">
-                {canQueueStreamingMessage ? <div ref={sendModeButtonRef} className="streaming-send-button" onPointerEnter={keepSendModeOpen} onPointerLeave={() => { sendModeHoverDismissed.current = false; scheduleSendModeClose(); }}><button type="button" className="streaming-action-primary" onClick={submitStreamingMessage} title={t(runningSendMode === "steer" ? "chat.steer" : "chat.queueSend")} aria-label={t(runningSendMode === "steer" ? "chat.steer" : "chat.queueSend")}><span>{t(runningSendMode === "steer" ? "chat.steer" : "chat.queueSend")}</span><AliIcon name="send" size={15} /></button>
-                  <button type="button" className="streaming-mode-picker" aria-controls={sendModeMenuId} aria-label={t("settings.runningSendMode")} aria-haspopup="menu"
-                    onPointerEnter={event => { if (event.pointerType === "mouse" && !sendModeHoverDismissed.current) openSendModeMenu(); }}
-                    onClick={event => openSendModeMenu(event.detail === 0)}
-                    onKeyDown={event => { if (event.key === "ArrowUp" || event.key === "ArrowDown") { event.preventDefault(); openSendModeMenu(true); } }}>
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 15 6-6 6 6" /></svg>
-                  </button>
-                  <div id={sendModeMenuId} ref={sendModeMenuRef} popover="auto" role="menu" aria-label={t("settings.runningSendMode")} className="streaming-mode-menu" onPointerEnter={keepSendModeOpen} onPointerLeave={scheduleSendModeClose} onKeyDown={event => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      closeSendModeMenu();
-                      sendModeButtonRef.current?.querySelector<HTMLButtonElement>(".streaming-mode-picker")?.focus();
-                      return;
+              <ModelSettingsMenu
+                dropdownRef={dropdownRef}
+                panelRef={modelDropdownPanelRef}
+                isMobile={isMobile}
+                isStreaming={isStreaming}
+                isCompacting={isCompacting}
+                isAutoModelSelection={isAutoModelSelection}
+                model={model}
+                currentName={currentName}
+                modelOptions={modelOptions}
+                modelsByProvider={modelsByProvider}
+                showModelFilter={showModelFilter}
+                modelFilter={modelFilter}
+                onModelFilterChange={setModelFilter}
+                dropdownOpen={modelDropdownOpen}
+                dropdownRect={modelDropdownRect}
+                menuSection={modelMenuSection}
+                onToggleDropdown={(rect) => {
+                  setModelDropdownRect(rect);
+                  setModelDropdownOpen((open) => {
+                    if (!open) setModelMenuSection(null);
+                    else {
+                      setModelMenuSection(null);
+                      setModelFilter("");
                     }
-                    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-                    event.preventDefault();
-                    const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button[data-mode]"));
-                    const index = items.indexOf(document.activeElement as HTMLButtonElement);
-                    items[event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (index + (event.key === "ArrowUp" ? -1 : 1) + items.length) % items.length]?.focus();
-                  }}>
-                    <div className="streaming-mode-actions">
-                    {([runningSendMode === "steer" ? "next_turn" : "steer", runningSendMode] as const).map(mode => <button key={mode} type="button" role="menuitem" data-mode={mode} onClick={() => {
-                      closeSendModeMenu();
-                      void sendQueued(mode === "steer" ? "steer" : "followup");
-                    }}>
-                      <span>{t(mode === "steer" ? "chat.steer" : "chat.queueSend")}</span>
-                      <AliIcon name="send" size={15} />
-
-                    </button>)}
-                    </div>
-                    <button type="button" className="streaming-mode-collapse" aria-label={t("settings.runningSendMode")} onClick={closeSendModeMenu}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg></button>
-                  </div>
-                </div> : <button
-                  type="button"
-                  onClick={onAbort}
-                  title={t("chat.stopAgent")}
-                  aria-label={t("chat.stopAgent")}
-                  className="streaming-stop-button"
-                >
-                  <AliIcon name="stop" size={15} />
-                </button>}
-              </div>
+                    return !open;
+                  });
+                }}
+                onCloseDropdown={() => {
+                  setModelDropdownOpen(false);
+                  setModelMenuSection(null);
+                  setModelFilter("");
+                }}
+                onSelectSection={setModelMenuSection}
+                onSelectModel={(provider, modelId, isActive) => {
+                  setModelDropdownOpen(false);
+                  setModelMenuSection(null);
+                  setModelFilter("");
+                  if (!isActive || isAutoModelSelection) {
+                    modelChangeCoordinatorRef.current!.track(onModelChange(provider, modelId));
+                  }
+                }}
+                activeThinkingLevel={activeThinkingLevel}
+                thinkingLevelLabel={thinkingLevelLabel}
+                availableThinkingLevels={availableThinkingLevels}
+                thinkingLevelMap={thinkingLevelMap}
+                onThinkingLevelChange={onThinkingLevelChange}
+                onCompact={onCompact}
+                onAbortCompaction={onAbortCompaction}
+              />
+            )}
+            {isStreaming && !isCommandInput && !(surfacePlacement !== "side" && sideChatEnabled && parseSideSlashTrigger(value).matched) ? (
+              <StreamingSubmitControl
+                canQueueStreamingMessage={canQueueStreamingMessage}
+                runningSendMode={runningSendMode}
+                sendModeMenuId={sendModeMenuId}
+                sendModeButtonRef={sendModeButtonRef}
+                sendModeMenuRef={sendModeMenuRef}
+                sendModeHoverDismissedRef={sendModeHoverDismissedRef}
+                keepSendModeOpen={keepSendModeOpen}
+                closeSendModeMenu={closeSendModeMenu}
+                scheduleSendModeClose={scheduleSendModeClose}
+                openSendModeMenu={openSendModeMenu}
+                onSubmitStreamingMessage={submitStreamingMessage}
+                onSendQueued={sendQueued}
+                onAbort={onAbort}
+              />
             ) : (
               <button
                 type="button"
-                onClick={() => void handleSend()}
+                onClick={() => void submitComposer()}
                 disabled={!canSend}
                 title={t(isCommandInput ? parsedCommandInput.kind === "command" && parsedCommandInput.afterPrompt ? "chatCommands.executeAndAsk" : "chatCommands.execute" : isProcessingImages ? "chat.processingImages" : isProcessingFiles ? "chat.processingFiles" : isAutoModelSelection ? "chat.selectModel" : "chat.send")}
                 aria-label={t(isCommandInput ? "chatCommands.execute" : isProcessingImages ? "chat.processingImages" : isProcessingFiles ? "chat.processingFiles" : isAutoModelSelection ? "chat.selectModel" : "chat.send")}

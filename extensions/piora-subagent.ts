@@ -1,8 +1,9 @@
 import { Type } from "typebox";
 import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getSubagentRuntime } from "../lib/subagent-runtime.ts";
-import { listSubagentProfiles, readSubagentSettings } from "../lib/subagent-settings.ts";
-import { projectSubagentDetail, type SubagentRecord } from "../lib/subagent-types.ts";
+import { readSubagentSettings } from "../lib/subagent-settings.ts";
+import { listSubagentProfilesSafe } from "../lib/subagents/profile-manager.ts";
+import { isSubagentProfileDisabled, projectSubagentDetail, type SubagentRecord } from "../lib/subagent-types.ts";
 
 function result(record: SubagentRecord) {
   const text = record.status === "running"
@@ -15,7 +16,7 @@ export default function subagentExtension(api: ExtensionAPI) {
     if (!getSubagentRuntime(ctx.sessionManager.getSessionId())) return;
     const settings = readSubagentSettings();
     if (!settings.enabled) return;
-    const profiles = listSubagentProfiles(ctx.cwd).filter(profile => !settings.disabledProfiles.includes(profile.name));
+    const profiles = listSubagentProfilesSafe(ctx.cwd).profiles.filter(profile => !isSubagentProfileDisabled(settings, profile));
     return { systemPrompt: `${event.systemPrompt}\n\n<available_subagents>\n${profiles.map(profile => `${profile.name}: ${profile.description}`).join("\n")}\nUse Agent for independent multi-step tasks and parallel exploration. Each Agent starts with only the supplied prompt, in a separate context sharing this workspace. Include necessary context and clear file ownership. Do not duplicate delegated work. Relay useful conclusions to the user. SendMessage continues an existing child context. Background completions arrive automatically. Child tools inherit your permissions; nested delegation is disabled.\n</available_subagents>` };
   });
   const runtime = (id: string) => { const value = getSubagentRuntime(id); if (!value) throw new Error("Subagents are unavailable in this session"); return value; };

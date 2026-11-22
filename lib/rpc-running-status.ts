@@ -14,7 +14,9 @@ export function getRunningRpcSessionIds(): string[] {
 }
 
 export function getRunningRpcSessionStatuses(includeIdle = false): TaskRuntimeSnapshot[] {
-  const statuses: TaskRuntimeSnapshot[] = [];
+  const byId = new Map<string, TaskRuntimeSnapshot>();
+  const runningSideChatsByParent = new Map<string, string[]>();
+
   for (const session of globalThis.__piSessions?.values() ?? []) {
     if (!session.isAlive() || session.isSubagentSession?.()) continue;
     // globalThis deliberately retains wrappers across Next.js hot reloads.
@@ -28,14 +30,48 @@ export function getRunningRpcSessionStatuses(includeIdle = false): TaskRuntimeSn
           pendingApproval: false,
           lastPromptFailed: false,
         };
+    if (session.isSideConversation?.()) {
+      const parentId = session.getSideChatParentId?.();
+      if (parentId && (snapshot.runtime !== "idle" || snapshot.pendingApproval)) {
+        const list = runningSideChatsByParent.get(parentId) ?? [];
+        list.push(session.sessionId);
+        runningSideChatsByParent.set(parentId, list);
+      }
+      continue;
+    }
     const hasOpenTaskRun = snapshot.taskRun
       && snapshot.taskRun.phase !== "completed"
       && snapshot.taskRun.phase !== "cancelled";
-    if (includeIdle || snapshot.runtime !== "idle" || snapshot.pendingApproval || snapshot.lastPromptFailed || hasOpenTaskRun) {
-      statuses.push(snapshot);
+    if (
+      includeIdle
+      || snapshot.runtime !== "idle"
+      || snapshot.pendingApproval
+      || snapshot.lastPromptFailed
+      || Boolean(hasOpenTaskRun)
+      || Boolean(snapshot.activeGoal)
+      || Boolean(snapshot.awaitingPlanApproval)
+    ) {
+      byId.set(snapshot.id, snapshot);
     }
   }
-  return statuses.sort((left, right) => left.id.localeCompare(right.id));
+
+  for (const [parentId, sideIds] of runningSideChatsByParent) {
+    sideIds.sort((left, right) => left.localeCompare(right));
+    const existing = byId.get(parentId);
+    if (existing) {
+      byId.set(parentId, { ...existing, runningSideChatIds: sideIds });
+    } else {
+      byId.set(parentId, {
+        id: parentId,
+        runtime: "idle",
+        pendingApproval: false,
+        lastPromptFailed: false,
+        runningSideChatIds: sideIds,
+      });
+    }
+  }
+
+  return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
 }
 
 /** Subscribe to running-session-id changes. Returns an unsubscribe function. */

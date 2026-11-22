@@ -180,10 +180,47 @@ export function ModelsExperience({ cwd, onClose, onModelsChanged, embedded = fal
         </nav>
         <main className={styles.detail}>
           {loading && !providerIds.length && <p className={styles.hint}>{c.loading}</p>}
-          {(view.kind === "picker" || (view.kind === "home" && !selectedProvider && !loading)) && <><h3 className={styles.panelTitle}>{c.add}</h3><p className={styles.groupLabel}>{c.other}</p><div className={styles.catalog}><button className={styles.catalogItem} onClick={() => setView({ kind: "wizard" })}><Glyph name="plus" /><span>{c.custom}</span><span>›</span></button>{catalogIds.map(id => <button className={styles.catalogItem} key={id} disabled={busy} onClick={() => {
-            if (removedProviders.has(id)) void mutate(async () => { await scopeAction("restore-removed-provider", id); setView({ kind: "manage", id }); });
-            else void selectProvider(id);
-          }}><ModelProviderIcon provider={id} size={28} /><span>{displayName(id)}</span><span>{removedProviders.has(id) ? c.restore : "›"}</span></button>)}</div></>}
+          {(view.kind === "picker" || (view.kind === "home" && !selectedProvider && !loading)) && (
+            <>
+              <h3 className={styles.panelTitle}>{c.add}</h3>
+              <p className={styles.groupLabel}>{c.other}</p>
+              <div className={styles.catalog}>
+                <button className={styles.catalogItem} onClick={() => setView({ kind: "wizard" })}>
+                  <Glyph name="plus" />
+                  <span>{c.custom}</span>
+                  <span aria-hidden="true">›</span>
+                </button>
+                {catalogIds.map(id => {
+                  const name = displayName(id);
+                  const isRemoved = removedProviders.has(id);
+                  const restoreLabel = isRemoved ? `${name} ${c.restore}` : undefined;
+                  return (
+                    <button
+                      className={styles.catalogItem}
+                      key={id}
+                      disabled={busy}
+                      aria-label={restoreLabel}
+                      title={restoreLabel}
+                      onClick={() => {
+                        if (isRemoved) {
+                          void mutate(async () => {
+                            await scopeAction("restore-removed-provider", id);
+                            setView({ kind: "manage", id });
+                          });
+                        } else {
+                          void selectProvider(id);
+                        }
+                      }}
+                    >
+                      <ModelProviderIcon provider={id} size={28} />
+                      <span>{name}</span>
+                      <span aria-hidden="true">›</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
           {view.kind === "vision" && <div className={styles.extras}><h3>{c.vision}</h3><ModelFallbackSetting /><VisionAgentDetail cwd={cwd} /></div>}
           {((["home", "manage"].includes(view.kind) && custom) || view.kind === "wizard") && <ProviderPanel key={custom ? `${selectedProvider}:${JSON.stringify(custom)}` : "new"} c={c}
             existingNames={Object.keys(config.providers ?? {})} initialName={custom ? selectedProvider : undefined} initial={custom} scope={scope} busy={busy} onDirty={setDirty} onModal={setModalOpen} saveError={error}

@@ -9,9 +9,9 @@ export function createBrowserViewportSync(setViewport: SetViewport) {
   let inFlight = false;
   let pending: BrowserViewportBounds | null = null;
 
-  const hide = () => {
+  const hide = (bounds = HIDDEN_BOUNDS) => {
     pending = null;
-    void setViewport(HIDDEN_BOUNDS, false).catch(() => {});
+    void setViewport(bounds, false).catch(() => {});
   };
   const flush = async () => {
     if (inFlight || disposed) return;
@@ -36,6 +36,9 @@ export function createBrowserViewportSync(setViewport: SetViewport) {
       if (!visible) { hide(); return; }
       pending = bounds;
       void flush();
+    },
+    suspend(bounds: BrowserViewportBounds) {
+      if (!disposed) hide(bounds);
     },
     dispose() {
       if (disposed) return;

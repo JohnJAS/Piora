@@ -197,8 +197,11 @@ export function SidebarProjectArea(props: Props) {
           </div>
         )}
         {error && (
-          <div style={{ padding: "12px 14px", color: "#f87171", fontSize: "var(--text-sm)" }}>
-            {error}
+          <div role="alert" style={{ padding: "12px 14px", color: "#f87171", fontSize: "var(--text-sm)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <span>{error}</span>
+            <button type="button" onClick={() => void loadSessions()} style={{ flex: "none", fontSize: "var(--text-xs)", padding: "2px 8px", borderRadius: "var(--radius-control)", border: "1px solid currentColor", background: "transparent", color: "inherit", cursor: "pointer" }}>
+              {t("common.retry")}
+            </button>
           </div>
         )}
         {!loading && !error && projectGroups.length === 0 && (

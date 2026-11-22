@@ -15,7 +15,9 @@ import { ChatHistory, type ChatHistoryHandle } from "./ChatHistory";
 import { MessageView } from "./MessageView";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { ChatInput, type ChatInputHandle } from "./ChatInput";
-import { WorkflowPanel } from "./WorkflowPanel";
+import { ChatWorkflowDock } from "./workflow/ChatWorkflowDock";
+import type { PausedGoalPendingSubmission } from "./workflow/useComposerWorkflow";
+import { SubagentSessionBar } from "./subagents/SubagentSessionBar";
 import { useWorkflow } from "@/hooks/useWorkflow";
 import { useLaboratorySettings } from "@/hooks/useLaboratorySettings";
 import { DEFAULT_WORKFLOW_TURN_BUDGET } from "@/lib/workflow-types";
@@ -42,7 +44,9 @@ import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
 import { getProjectLabel } from "@/lib/session-project-groups";
 import { isProjectlessChatCwd } from "@/lib/projectless-chat-path";
 import { ExtensionDialog, ExtensionCustomPanel } from "./ExtensionUi";
-import { UserInputCard } from "./UserInputCard";
+import { SideChatSelectionMenu } from "./side-chat/SideChatSelectionMenu";
+import { PIORA_SIDE_CHAT_INSERT_MAIN_EVENT } from "./side-chat/side-chat-events";
+import type { OpenSideChatRequest, OpenSideChatResult } from "./side-chat/useSideChatController";
 import type { SessionCapabilitiesState } from "@/lib/session-capabilities";
 import { findVisionAgentStatus, VisionAgentStatus } from "./VisionAgentStatus";
 import { getVisionRetryPayload } from "@/lib/message-images";
@@ -81,6 +85,8 @@ interface Props {
   onCapabilitiesChange?: (capabilities: SessionCapabilitiesState | null) => void;
   onOpenModels?: () => void;
   onPromptSubmitted?: () => void;
+  sideChatEnabled?: boolean;
+  onOpenSideChat?: (request?: OpenSideChatRequest) => Promise<OpenSideChatResult> | OpenSideChatResult | void;
 }
 
 export interface TaskControls {
@@ -165,7 +171,7 @@ function getUserInputText(message: AgentMessage): string | null {
   return text.length > 0 ? text : null;
 }
 
-export function ChatWindow({ visible = true, historyVisible = false, onHistoryControlsChange, session, initialRunning, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenModels, onPromptSubmitted }: Props) {
+export function ChatWindow({ visible = true, historyVisible = false, onHistoryControlsChange, session, initialRunning, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onOpenTaskChanges, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenModels, onPromptSubmitted, sideChatEnabled = false, onOpenSideChat }: Props) {
   // A new-chat action remounts this window. Directory names cannot identify
   // drafts: two new chats in the same project must never restore each other.
   const [newChatDraftKey] = useState(() => `new:${crypto.randomUUID()}`);
@@ -214,14 +220,13 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
 
   const {
     nestedCallsStore, loading, sessionHydrating, error, retrySessionLoad, messages, entryIds, modelChanges, streamState, replyHistorySettling, activeLeafId, switchHistoryBranch, forkHistoryQuestion,
-    historyPage, loadEarlierHistory, loadNewestHistory,
     toolPermission, permissionSaving, handleToolPermission, toolReviews,
     agentRunning, backgroundSubagents, bashRunning, pendingBash, modelNames, modelList, modelError, modelThinkingLevels, modelThinkingLevelMaps, thinkingLevel,
     retryInfo, contextUsage, systemPromptBinding, systemPromptSelection, systemPromptSaving, forkingEntryId,
     isCompacting, compactionStartedAt, compactError, compactResult, displayModel: displayModelValue, sessionStats,
     slashCommands, slashCommandsLoading, slashCommandsError, commandCatalog, chatCommands, queuedMessages, capabilities,
     liveOutputFollowPaused,
-    notices, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
+    notices, extensionDialog, extensionCustomUi, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput, liveWorkflowSnapshot,
     isAutoModelSelection,
     agentPhase, interruptedRunId,
     isNew,
@@ -244,7 +249,16 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
   });
   const sessionBusy = agentRunning || bashRunning;
   const sessionReadOnly = loading || sessionHydrating || Boolean(error);
-  const workflow = useWorkflow(session?.id ?? sessionIdRef.current, visible, sessionBusy, handleWorkflowAction);
+  const workflow = useWorkflow(session?.id ?? sessionIdRef.current, visible, sessionBusy, handleWorkflowAction, liveWorkflowSnapshot);
+  const [replaceGoalRequest, setReplaceGoalRequest] = useState<{ inlineObjective?: string } | null>(null);
+  const [pausedGoalSubmission, setPausedGoalSubmission] = useState<PausedGoalPendingSubmission | null>(null);
+  const currentWorkflowRun = workflow.snapshot?.current ?? null;
+  const hasActiveGoal = Boolean(
+    currentWorkflowRun?.kind === "goal"
+    && currentWorkflowRun.status !== "completed"
+    && currentWorkflowRun.status !== "cancelled",
+  );
+  const hasPausedGoal = Boolean(currentWorkflowRun?.kind === "goal" && currentWorkflowRun.status === "paused");
   const [browserWaiting, setBrowserWaiting] = useState(false);
   const responseTimings = useMemo(() => responseTaskTimings(messages, chatCommands.taskTimings), [messages, chatCommands.taskTimings]);
   const timingInReply = !sessionBusy && [...responseTimings.values()].some(timing =>
@@ -469,30 +483,25 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
   const historyRef = useRef<ChatHistoryHandle>(null);
   const [highlightedEntryId, setHighlightedEntryId] = useState<string | null>(null);
   const [pendingHistoryFocus, setPendingHistoryFocus] = useState<string | null>(null);
-  const [earlierLoading, setEarlierLoading] = useState(false);
-  const [earlierError, setEarlierError] = useState(false);
-  const readingEarlier = historyPage?.focused === true;
   const handledFocusEntryRef = useRef<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-  const focusHistoryEntry = useCallback(async (id: string) => {
+  const focusHistoryEntry = useCallback((id: string) => {
+    if (!entryIds.includes(id)) return false;
     pauseHistoryFollow();
-    if (!entryIds.includes(id) && (sessionBusy || !historyPage || !await loadEarlierHistory(id))) return false;
     setPendingHistoryFocus(id);
     return true;
-  }, [entryIds, historyPage, loadEarlierHistory, pauseHistoryFollow, sessionBusy]);
+  }, [entryIds, pauseHistoryFollow]);
   useEffect(() => {
     onHistoryControlsChange?.({ busy: sessionBusy || agentPhase?.kind === "stopping" || isCompacting || sessionReadOnly || deletingMessage || preparingRetry,
-      entryIds, leafId: activeLeafId, switchBranch: switchHistoryBranch, forkQuestion: forkHistoryQuestion, focusEntry: focusHistoryEntry, canLoadEarlier: Boolean(historyPage) });
-  }, [activeLeafId, agentPhase?.kind, deletingMessage, entryIds, focusHistoryEntry, forkHistoryQuestion, historyPage, isCompacting, onHistoryControlsChange, preparingRetry, sessionBusy, sessionReadOnly, switchHistoryBranch]);
+      entryIds, leafId: activeLeafId, switchBranch: switchHistoryBranch, forkQuestion: forkHistoryQuestion, focusEntry: focusHistoryEntry });
+  }, [activeLeafId, agentPhase?.kind, deletingMessage, entryIds, focusHistoryEntry, forkHistoryQuestion, isCompacting, onHistoryControlsChange, preparingRetry, sessionBusy, sessionReadOnly, switchHistoryBranch]);
   useEffect(() => () => onHistoryControlsChange?.(null), [onHistoryControlsChange]);
   useEffect(() => {
-    if (!focusEntryId || sessionReadOnly || sessionBusy) return;
+    if (!focusEntryId) return;
     const focusKey = (session?.id ?? "new") + ":" + focusEntryId;
     if (handledFocusEntryRef.current === focusKey) return;
-    void focusHistoryEntry(focusEntryId).then(found => {
-      if (found) handledFocusEntryRef.current = focusKey;
-    });
-  }, [focusEntryId, focusHistoryEntry, session?.id, sessionBusy, sessionReadOnly]);
+    if (focusHistoryEntry(focusEntryId)) handledFocusEntryRef.current = focusKey;
+  }, [focusEntryId, focusHistoryEntry, session?.id]);
   useEffect(() => {
     if (!pendingHistoryFocus || historyVisible || !visible) return;
     if (!entryIds.includes(pendingHistoryFocus)) return;
@@ -500,19 +509,6 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
     setHighlightedEntryId(pendingHistoryFocus);
     setPendingHistoryFocus(null);
   }, [entryIds, historyVisible, pendingHistoryFocus, visible]);
-  const loadOlder = useCallback(async () => {
-    if (earlierLoading || sessionBusy) return;
-    setEarlierLoading(true);
-    setEarlierError(false);
-    pauseHistoryFollow();
-    try { setEarlierError(!await loadEarlierHistory(undefined, () => historyRef.current?.captureAnchor())); }
-    finally { setEarlierLoading(false); }
-  }, [earlierLoading, loadEarlierHistory, pauseHistoryFollow, sessionBusy]);
-  const returnToNewest = useCallback(async () => {
-    await loadNewestHistory();
-    setEarlierError(false);
-    handleScrollToBottom();
-  }, [handleScrollToBottom, loadNewestHistory]);
   useEffect(() => {
     if (!highlightedEntryId) return;
     const timer = window.setTimeout(() => setHighlightedEntryId(null), 4_000);
@@ -685,17 +681,87 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
       disabled={sessionBusy || sessionReadOnly || systemPromptSaving} onChange={handleSystemPromptSelection} />
   ), [systemPromptSelection, systemPromptBinding, session?.id, sessionBusy, sessionReadOnly, systemPromptSaving, handleSystemPromptSelection]);
 
-  const { queueAction, edit: editQueuedDraft } = chatCommands;
+  const canOpenSideChat = Boolean(sideChatEnabled && session?.id && !sessionReadOnly && (messages.length > 0 || sessionBusy));
+  useEffect(() => {
+    if (!visible) return;
+    const onInsertIntoMain = (event: Event) => {
+      const text = (event as CustomEvent<{ text?: string }>).detail?.text;
+      if (!text?.trim()) return;
+      chatInputRef?.current?.insertQuotedText(text);
+    };
+    window.addEventListener(PIORA_SIDE_CHAT_INSERT_MAIN_EVENT, onInsertIntoMain);
+    return () => window.removeEventListener(PIORA_SIDE_CHAT_INSERT_MAIN_EVENT, onInsertIntoMain);
+  }, [chatInputRef, visible]);
+
+  const { queueAction, edit: editQueuedDraft, restore: restoreQueuedDraft } = chatCommands;
   const queueActions = useMemo<ChatCommandQueueActions>(() => ({
     cancel: async record => { await queueAction(record, "cancel"); },
     steer: async record => { await queueAction(record, "steer"); },
     edit: editQueuedDraft,
     save: async (record, text) => { await queueAction(record, "edit", text); },
     resume: async record => { await queueAction(record, "resume"); },
-  }), [queueAction, editQueuedDraft]);
+    ...(canOpenSideChat ? {
+      openInSideChat: async (record) => {
+        if (!onOpenSideChat) return;
+        let activeRecord = record;
+        let didPause = false;
+        if (record.status === "queued" && !record.queuePaused) {
+          activeRecord = await queueAction(record, "pause");
+          didPause = true;
+        }
+        try {
+          const draft = await restoreQueuedDraft(activeRecord);
+          const fullText = (
+            activeRecord.operation?.steps[0]?.status === "completed" && activeRecord.operation.afterPrompt
+              ? activeRecord.operation.afterPrompt
+              : draft.value
+          ).trim();
+          if (!fullText) {
+            if (didPause) await queueAction(activeRecord, "resume").catch(() => {});
+            return;
+          }
+          const result = await onOpenSideChat({
+            initialPrompt: fullText,
+            forceNew: true,
+            durableSubmit: true,
+            idempotencyKey: `side-transfer:${activeRecord.commandId}`,
+          });
+          if (result && !result.ok) {
+            throw new Error(result.error || t("sideChat.createFailed", { error: "" }));
+          }
+        } catch (error) {
+          if (didPause) {
+            await queueAction(activeRecord, "resume").catch(() => {});
+          }
+          throw error;
+        }
+        await queueAction(activeRecord, "cancel");
+      },
+    } : {}),
+  }), [canOpenSideChat, editQueuedDraft, onOpenSideChat, queueAction, restoreQueuedDraft, t]);
+  const openPendingInSideChat = useCallback(async (item: { id: string; text: string }) => {
+    const text = item.text.trim();
+    if (!text || !onOpenSideChat) return;
+    const result = await onOpenSideChat({
+      initialPrompt: text,
+      forceNew: true,
+      durableSubmit: true,
+      idempotencyKey: `side-transfer-pending:${item.id}`,
+    });
+    if (result && !result.ok) {
+      throw new Error(result.error || t("sideChat.createFailed", { error: "" }));
+    }
+    await handlePendingInputAction(item.id, "delete");
+  }, [handlePendingInputAction, onOpenSideChat, t]);
   const composerQueueContent = useMemo(() => (
-    <ChatCommandQueue records={chatCommands.records} actions={queueActions} pendingMessages={queuedMessages} onPendingAction={handlePendingInputAction} />
-  ), [chatCommands.records, queueActions, queuedMessages, handlePendingInputAction]);
+    <ChatCommandQueue
+      records={chatCommands.records}
+      actions={queueActions}
+      pendingMessages={queuedMessages}
+      onPendingAction={handlePendingInputAction}
+      onOpenPendingInSideChat={canOpenSideChat ? openPendingInSideChat : undefined}
+    />
+  ), [canOpenSideChat, chatCommands.records, handlePendingInputAction, openPendingInSideChat, queueActions, queuedMessages]);
 
   const chatInputElement = (
     <>
@@ -703,10 +769,37 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
     {chatCommands.connectionError && <div role="status" style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)", padding: "6px 10px" }}>{chatCommands.connectionError}</div>}
     <div style={isEmptyNew ? undefined : { paddingLeft: isMobile ? CHAT_COLUMN_PADDING : CHAT_COLUMN_LEFT_PADDING, paddingRight: isMobile ? CHAT_COLUMN_PADDING : CHAT_INPUT_RIGHT_PADDING }}>
       <div className="chat-column">
-        <WorkflowPanel snapshot={workflow.snapshot} busy={workflow.busy} running={sessionBusy} enabled={laboratory.planGoalEnabled} settingsReady={laboratory.ready}
+        <SubagentSessionBar sessionId={session?.id} />
+        <ChatWorkflowDock
+          sessionId={session?.id ?? sessionIdRef.current}
+          snapshot={workflow.snapshot}
+          busy={workflow.busy}
+          running={sessionBusy}
+          enabled={laboratory.planGoalEnabled}
+          settingsReady={laboratory.ready}
           error={!laboratory.ready && laboratory.error ? t("laboratory.error") : workflow.error}
-          onRequestRevision={() => chatInputRef?.current?.focus()}
-          onAction={workflow.act} onRefresh={laboratory.ready ? workflow.refresh : laboratory.refresh} cwd={session?.cwd ?? newSessionCwd ?? undefined} />
+          isMobile={isMobile}
+          userInputRequest={extensionDialog?.method === "request_user_input" ? extensionDialog : null}
+          onRespondUserInput={respondToExtensionUi}
+          toolPermission={toolPermission}
+          permissionSaving={permissionSaving}
+          onToolPermissionChange={sessionReadOnly ? undefined : handleToolPermission}
+          onAction={workflow.act}
+          onAcceptSnapshot={workflow.accept}
+          onRefresh={laboratory.ready ? workflow.refresh : laboratory.refresh}
+          onOpenTaskChanges={onOpenTaskChanges}
+          onSendPlanRevision={async (feedback) => {
+            await handleComposerSend(feedback, undefined, undefined, undefined, undefined, {
+              workflow: { mode: "plan", turnBudget: workflow.snapshot?.turnBudget ?? DEFAULT_WORKFLOW_TURN_BUDGET },
+            });
+          }}
+          onFocusComposer={() => chatInputRef?.current?.focus()}
+          onEnterGoalDraft={(inlineObjective) => chatInputRef?.current?.enterGoalDraftMode(inlineObjective)}
+          replaceGoalRequest={replaceGoalRequest}
+          onClearReplaceGoalRequest={() => setReplaceGoalRequest(null)}
+          pausedGoalSubmission={pausedGoalSubmission}
+          onClearPausedGoalSubmission={() => setPausedGoalSubmission(null)}
+        />
       </div>
     </div>
     <ChatInput
@@ -720,6 +813,23 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
       workflow={laboratory.planGoalEnabled ? { mode: workflow.snapshot?.mode ?? "agent", turnBudget: workflow.snapshot?.turnBudget ?? DEFAULT_WORKFLOW_TURN_BUDGET } : undefined}
       workflowEnabled={laboratory.ready ? laboratory.planGoalEnabled : undefined}
       workflowBusy={workflow.busy}
+      hasActiveGoal={hasActiveGoal}
+      hasPausedGoal={hasPausedGoal}
+      workflowAutoContinuing={Boolean(workflow.snapshot?.autoContinuing)}
+      onWorkflowModeChange={(mode) => {
+        if (session?.id && workflow.snapshot && !sessionBusy && workflow.snapshot.mode !== mode && !hasActiveGoal) {
+          void workflow.configureMode(mode);
+        }
+      }}
+      onRequestGoalReplace={(inlineObjective) => setReplaceGoalRequest({ inlineObjective })}
+      onRequestPausedGoalResume={(pending) => setPausedGoalSubmission(pending)}
+      surfacePlacement="main"
+      sideChatEnabled={Boolean(sideChatEnabled)}
+      canOpenSideChat={canOpenSideChat}
+      onOpenSideChat={(initialPrompt) => onOpenSideChat?.({
+        ...(initialPrompt ? { initialPrompt, durableSubmit: true } : {}),
+        forceNew: Boolean(initialPrompt),
+      })}
       sendDisabled={sessionReadOnly || !laboratory.ready || workflow.busy || laboratory.planGoalEnabled && Boolean((session?.id ?? sessionIdRef.current) && !workflow.snapshot)}
       onSend={handleComposerSend}
       onQueueInput={chatCommands.submit}
@@ -823,9 +933,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
       )}
 
       <BrowserHandoffNotice sessionId={session?.id} busy={sessionBusy} onWaitingChange={setBrowserWaiting} />
-      {extensionDialog?.method === "request_user_input" ? (
-        <UserInputCard key={extensionDialog.id} request={extensionDialog} onRespond={respondToExtensionUi} />
-      ) : extensionDialog ? (
+      {extensionDialog && extensionDialog.method !== "request_user_input" ? (
         <ExtensionDialog request={extensionDialog} onRespond={respondToExtensionUi} />
       ) : null}
 
@@ -877,6 +985,13 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
           </div>
         </div>
         <div id="chat-scroll-container" ref={scrollContainerRef} className="chat-scroll-container flex-1 overflow-y-auto pt-4">
+          <SideChatSelectionMenu
+            containerRef={scrollContainerRef}
+            enabled={canOpenSideChat}
+            onAskSelection={(selectedText) => {
+              void onOpenSideChat?.({ quotedSelection: selectedText, forceNew: true });
+            }}
+          />
           <div style={{ padding: `0 ${isMobile ? CHAT_COLUMN_PADDING : CHAT_COLUMN_RIGHT_PADDING}px 0 ${CHAT_COLUMN_LEFT_PADDING}px` }}>
             <div className="chat-column">
               {loadError}
@@ -884,15 +999,6 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
                 <div className="session-history-status session-loading-indicator" role="status">{t("chat.loadingSession")}</div>
               ) : null}
               <ExtensionWidgets widgets={aboveEditorWidgets} />
-              {historyPage?.older || readingEarlier ? <div className="flex items-center justify-center gap-3 py-2 text-sm text-text-muted" aria-busy={earlierLoading}>
-                {historyPage?.older ? <button type="button" className="cursor-pointer underline" disabled={earlierLoading || sessionBusy || sessionReadOnly} onClick={() => void loadOlder()}>
-                  {t("history.loadEarlier")}
-                </button> : null}
-                {readingEarlier ? <button type="button" className="cursor-pointer underline" disabled={sessionBusy || sessionReadOnly} onClick={() => void returnToNewest()}>
-                  {t("history.returnToNewest")}
-                </button> : null}
-                {earlierError ? <span role="status">{t("history.loadError")}</span> : null}
-              </div> : null}
 
             {messages.length > 0 || !loading && !error ? <ChatHistory
               visible={visible}
@@ -908,13 +1014,14 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
               onEditFailed={handleEditFailedMessage} onRetry={handleRetryMessage} retryDisabled={sessionBusy || sessionReadOnly || deletingMessage || preparingRetry}
               onDeleteMessage={handleDeleteMessage} deleteDisabled={sessionBusy || sessionReadOnly || deletingMessage || isCompacting || preparingRetry}
               sessionId={session?.id ?? sessionIdRef.current ?? undefined} onOpenAutomation={onOpenAutomation} onOpenCommandExecution={setCommandExecutionDialog}
+              completedGoal={workflow.snapshot?.completedGoal ?? null}
             /> : null}
 
             {agentRunning && (agentPhase?.kind === "stopping" || ((!streamState.streamingMessage || statusIdleMs >= STATUS_STALL_AFTER_MS) && visionStatus?.phase !== "failed")) && (
               visionStatus && agentPhase?.kind !== "stopping" ? (
                 <VisionAgentStatus status={visionStatus} t={t} />
               ) : (
-                <StatusPulse compact={compactProcess} label={browserWaiting ? t("chat.browserWaiting") : phaseLabel(agentPhase, t)} elapsedMs={statusElapsedMs} idleMs={browserWaiting ? 0 : statusIdleMs} retryInfo={retryInfo} t={t} />
+                <StatusPulse compact={compactProcess} label={browserWaiting ? t("chat.browserWaiting") : workflow.snapshot?.mode === "plan" && agentPhase?.kind !== "stopping" && agentPhase?.kind !== "running_tools" ? t("workflow.plan.planningShimmer") : phaseLabel(agentPhase, t)} elapsedMs={statusElapsedMs} idleMs={browserWaiting ? 0 : statusIdleMs} retryInfo={retryInfo} t={t} />
               )
             )}
 
@@ -1021,7 +1128,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
               tokensPerSecond={agentRunning && streamState.isStreaming && streamState.streamingMessage?.role === "assistant"
                 && !isCompacting && !retryInfo && agentPhase?.kind !== "stopping"
                 ? streamState.streamingMessage.streamingMetrics?.tokensPerSecond : null}
-              phase={isCompacting ? t("chat.compacting") : extensionDialog ? t("chat.taskDuration.waitingInput") : retryInfo ? t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts }) : phaseLabel(agentPhase, t)}
+              phase={isCompacting ? t("chat.compacting") : extensionDialog ? t("chat.taskDuration.waitingInput") : retryInfo ? t("chat.retrying", { attempt: retryInfo.attempt, max: retryInfo.maxAttempts }) : workflow.snapshot?.mode === "plan" && agentPhase?.kind !== "stopping" && agentPhase?.kind !== "running_tools" ? t("workflow.plan.planningShimmer") : phaseLabel(agentPhase, t)}
               t={t}
             />
             <ExtensionWidgets widgets={belowEditorWidgets} />

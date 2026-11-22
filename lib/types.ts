@@ -146,6 +146,16 @@ export type ExtensionUiRequest =
       questions: import("./user-input").UserInputQuestion[];
       timeout?: number;
       expiresAt?: number;
+      snoozed?: boolean;
+      paused?: boolean;
+    }
+  | {
+      type: "extension_ui_request";
+      id: string;
+      method: "request_user_input_state";
+      snoozed: boolean;
+      paused: boolean;
+      expiresAt?: number;
     }
   | {
       type: "extension_ui_request";

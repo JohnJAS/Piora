@@ -1,142 +1,67 @@
 "use client";
 
-import { summarizeProviderError } from "@/lib/provider-payload";
-import { modelTimeoutDisplay } from "@/lib/model-timeout-display";
-import { taskElapsedMs, type TaskTiming } from "@/lib/task-timing";
-import { formatStatusDuration } from "@/lib/status-duration";
-import { thinkingPreview } from "@/lib/thinking-preview";
-import { messageImageUrl } from "@/lib/message-images";
-import { NestedToolCalls, useNestedToolCalls } from "./NestedToolCalls";
-import { SubagentTaskCard } from "./SubagentTaskCard";
-import { isSubagentTool, type SubagentDetail } from "@/lib/subagent-types";
-import { ProcessStack } from "./ProcessStack";
-import { processTimeRange } from "@/lib/process-duration";
-
-import { createContext, useContext, memo, useState, useRef, useEffect, useMemo, useCallback, type ReactNode } from "react";
-import { useVirtualRowToggle } from "./VirtualRowState";
+import { memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
-import { LazyMarkdownBody as MarkdownBody } from "./LazyMarkdownBody";
-import { UserMessageText } from "./UserMessageText";
-import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
-import { parseCompactionSummary } from "@/lib/compaction-summary";
-import { summarizeToolDisclosure } from "@/lib/tool-summary";
-import { fileToolResult } from "@/lib/file-tool-result";
-import { FileToolResultView } from "./FileToolResultView";
-import { commandExitCode, commandResultMetadata, commandStatus, isCommandToolName, toolResultText, type CommandExecutionData } from "@/lib/command-execution";
-import { getFileChangeInfo, type FileChangeInfo } from "@/lib/file-change";
+import { copyText } from "@/lib/clipboard";
+import type { CommandExecutionData } from "@/lib/command-execution";
+import type { CompletedGoalBadge } from "@/lib/workflow-types";
+import { GoalAchievedBadge } from "./workflow/GoalAchievedBadge";
 import {
   getAssistantErrorMessage,
-  isAssistantAborted,
   getThinkingBlockDisplay,
+  isAssistantAborted,
   isEmptyThinkingBlock,
   shouldSubscribeToThinkingLoad,
   subscribeToThinkingLoad,
   type ThinkingLoadState,
 } from "@/lib/message-display";
+import { modelTimeoutDisplay } from "@/lib/model-timeout-display";
+import { processTimeRange } from "@/lib/process-duration";
+import { summarizeProviderError } from "@/lib/provider-payload";
+import { formatStatusDuration } from "@/lib/status-duration";
+import { isSubagentTool, hasSubagentProjection, projectSubagentDetail, type SubagentDetail } from "@/lib/subagent-types";
+import { taskElapsedMs, type TaskTiming } from "@/lib/task-timing";
+import { thinkingPreview } from "@/lib/thinking-preview";
 import type {
   AgentMessage,
-  UserMessage,
-  AssistantMessage,
-  CustomMessage,
-  ToolResultMessage,
-  BashExecutionMessage,
   AssistantContentBlock,
+  AssistantMessage,
+  BashExecutionMessage,
+  CustomMessage,
   TextContent,
-  ImageContent,
-  ToolCallContent,
   ThinkingContent,
+  ToolCallContent,
+  ToolResultMessage,
+  UserMessage,
 } from "@/lib/types";
-import { AliIcon, type AliIconName } from "./AliIcon";
-import { MessageImage, MessageImageViewer } from "./MessageImage";
-import { BrowserUserWaitCard } from "./BrowserUserWaitCard";
-import { CommandExecutionCard } from "./CommandExecutionView";
-import { ChatDisclosure, DisclosureChevron, DisclosurePath } from "./ChatDisclosure";
+import { AliIcon } from "./AliIcon";
 import { ChatContentContextMenu } from "./ChatContentContextMenu";
+import { ChatDisclosure } from "./ChatDisclosure";
+import { LazyMarkdownBody as MarkdownBody } from "./LazyMarkdownBody";
+import { ProcessStack } from "./ProcessStack";
+import { SubagentTaskCard } from "./SubagentTaskCard";
+import { SubagentCompletionCard } from "./subagents/SubagentCompletionCard";
+import { useVirtualRowToggle } from "./VirtualRowState";
+import { BashExecutionView, CompactionMessageView, CustomMessageView } from "./message-view/CustomMessageViews";
+import {
+  formatTime,
+  getMessageText,
+  haveSameRelevantToolResults,
+  HistoryModeContext,
+  HistoryVersionContext,
+  loadThinkingContent,
+  ToolRunActiveContext,
+} from "./message-view/shared";
+import { ToolCallBlock } from "./message-view/ToolCallBlock";
+import { UserMessageView } from "./message-view/UserMessageView";
 
-const DiffView = dynamic(
-  () => import("./DiffView").then((module) => module.DiffView),
-  { ssr: false },
-);
+export { getAutomationToolCardDetails, getUserMessagePreview } from "./message-view/shared";
+
 const AutomationCard = dynamic(
   () => import("./AutomationPanel").then((module) => module.AutomationCard),
   { ssr: false },
 );
-
-const MAX_THINKING_CACHE_ENTRIES = 100;
-const THINKING_LOAD_TIMEOUT_MS = 15_000;
-const USER_MESSAGE_COLLAPSE_LINE_THRESHOLD = 12;
-const USER_MESSAGE_PREVIEW_LINES = 8;
-const USER_MESSAGE_COLLAPSE_CHAR_THRESHOLD = 2_400;
-const USER_MESSAGE_PREVIEW_CHARS = 1_800;
-type ThinkingCacheEntry = { promise: Promise<string> };
-const thinkingContentCache = new Map<string, ThinkingCacheEntry>();
-
-export function getUserMessagePreview(content: string): { collapsible: boolean; preview: string; lineCount: number } {
-  const lines = content.split(/\r\n|\r|\n/);
-  const collapsible = lines.length > USER_MESSAGE_COLLAPSE_LINE_THRESHOLD
-    || content.length > USER_MESSAGE_COLLAPSE_CHAR_THRESHOLD;
-  if (!collapsible) return { collapsible: false, preview: content, lineCount: lines.length };
-
-  const linePreview = lines.slice(0, USER_MESSAGE_PREVIEW_LINES).join("\n");
-  const preview = linePreview.length > USER_MESSAGE_PREVIEW_CHARS
-    ? `${linePreview.slice(0, USER_MESSAGE_PREVIEW_CHARS).trimEnd()}…`
-    : linePreview;
-  return { collapsible: true, preview, lineCount: lines.length };
-}
-
-function loadThinkingContent(sessionId: string, entryId: string, blockIndex: number, historyVersion?: string): Promise<string> {
-  const key = `${sessionId}:${entryId}:${blockIndex}:${historyVersion ?? "chat"}`;
-  const cached = thinkingContentCache.get(key);
-  if (cached) {
-    thinkingContentCache.delete(key);
-    thinkingContentCache.set(key, cached);
-    return cached.promise;
-  }
-
-  const cacheEntry = {} as ThinkingCacheEntry;
-  const request = (async () => {
-    const controller = new AbortController();
-    let timedOut = false;
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, THINKING_LOAD_TIMEOUT_MS);
-    try {
-      const response = await fetch(
-        historyVersion
-          ? `/api/sessions/${encodeURIComponent(sessionId)}/history/content?${new URLSearchParams({ entryId, blockIndex: String(blockIndex), kind: "thinking", version: historyVersion })}`
-          : `/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/thinking?blockIndex=${blockIndex}`,
-        { signal: controller.signal },
-      );
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        throw new Error(body.error || `HTTP ${response.status}`);
-      }
-      const data = await response.json() as { thinking?: unknown };
-      if (typeof data.thinking !== "string") throw new Error("Invalid thinking response");
-      return data.thinking;
-    } catch (error) {
-      if (timedOut) throw new Error("Thinking content request timed out");
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  })().catch((error) => {
-    if (thinkingContentCache.get(key) === cacheEntry) {
-      thinkingContentCache.delete(key);
-    }
-    throw error;
-  });
-
-  cacheEntry.promise = request;
-  thinkingContentCache.set(key, cacheEntry);
-  if (thinkingContentCache.size > MAX_THINKING_CACHE_ENTRIES) {
-    const oldestKey = thinkingContentCache.keys().next().value;
-    if (oldestKey) thinkingContentCache.delete(oldestKey);
-  }
-  return request;
-}
 
 interface Props {
   mode?: "chat" | "history";
@@ -166,68 +91,104 @@ interface Props {
   sessionId?: string;
   onOpenAutomation?: (automationId: string) => void;
   onOpenCommandExecution?: (data: CommandExecutionData) => void;
+  completedGoal?: CompletedGoalBadge | null;
 }
 
-function formatTime(ts?: number): string | null {
-  if (!ts) return null;
-  const d = new Date(ts);
-  const now = new Date();
-  const isToday = d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (isToday) return time;
-  const date = d.toLocaleDateString([], { month: "short", day: "numeric", year: d.getFullYear() !== now.getFullYear() ? "numeric" : undefined });
-  return `${date} ${time}`;
-}
-
-function haveSameRelevantToolResults(
-  message: AgentMessage,
-  previous: Pick<ReadonlyMap<string, ToolResultMessage>, "get"> | undefined,
-  next: Pick<ReadonlyMap<string, ToolResultMessage>, "get"> | undefined,
-): boolean {
-  if (previous === next || message.role !== "assistant") return true;
-  for (const block of (message as AssistantMessage).content ?? []) {
-    if (block?.type === "toolCall" && previous?.get(block.toolCallId) !== next?.get(block.toolCallId)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-export function getAutomationToolCardDetails(
-  block: Pick<ToolCallContent, "toolName" | "input">,
-  result: ToolResultMessage | undefined,
-): { id: string; name?: string; rrule?: string } | null {
-  if (block.toolName !== "piora_automation" || (block.input as { action?: unknown })?.action !== "create" || result?.isError) {
-    return null;
-  }
-  const automation = (result?.details as { automation?: { id?: unknown; name?: unknown; rrule?: unknown } } | undefined)?.automation;
-  if (typeof automation?.id !== "string") return null;
-  return {
-    id: automation.id,
-    ...(typeof automation.name === "string" ? { name: automation.name } : {}),
-    ...(typeof automation.rrule === "string" ? { rrule: automation.rrule } : {}),
-  };
-}
-
-const HistoryModeContext = createContext(false);
-const HistoryVersionContext = createContext<string | undefined>(undefined);
-const ToolRunActiveContext = createContext(false);
 export const MessageView = memo(function MessageView(props: Props) {
   const history = props.mode === "history";
-  return <HistoryModeContext.Provider value={history}><ToolRunActiveContext.Provider value={!history && (props.toolRunActive ?? props.isStreaming ?? false)}><HistoryVersionContext.Provider value={props.historyVersion}><ChatContentContextMenu cwd={props.cwd} onOpenFile={props.onOpenFile}><MessageContent {...props}
-    onFork={history ? undefined : props.onFork} onNavigate={history ? undefined : props.onNavigate}
-    onEditFailed={history ? undefined : props.onEditFailed} onRetry={history ? undefined : props.onRetry} onEditContent={history ? undefined : props.onEditContent}
-    onOpenAutomation={history ? undefined : props.onOpenAutomation} /></ChatContentContextMenu></HistoryVersionContext.Provider></ToolRunActiveContext.Provider></HistoryModeContext.Provider>;
+  return (
+    <HistoryModeContext.Provider value={history}>
+      <ToolRunActiveContext.Provider value={!history && (props.toolRunActive ?? props.isStreaming ?? false)}>
+        <HistoryVersionContext.Provider value={props.historyVersion}>
+          <ChatContentContextMenu cwd={props.cwd} onOpenFile={props.onOpenFile}>
+            <MessageContent
+              {...props}
+              onFork={history ? undefined : props.onFork}
+              onNavigate={history ? undefined : props.onNavigate}
+              onEditFailed={history ? undefined : props.onEditFailed}
+              onRetry={history ? undefined : props.onRetry}
+              onEditContent={history ? undefined : props.onEditContent}
+              onOpenAutomation={history ? undefined : props.onOpenAutomation}
+            />
+          </ChatContentContextMenu>
+        </HistoryVersionContext.Provider>
+      </ToolRunActiveContext.Provider>
+    </HistoryModeContext.Provider>
+  );
 });
 
-const MessageContent = memo(function MessageContent({ mode, messageActions, message, isStreaming, intermediate, toolResults, modelNames, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onEditFailed, onRetry, retryPrompt, retryDisabled, showTimestamp, prevTimestamp, taskTiming, sessionId, onOpenAutomation, onOpenCommandExecution }: Props) {
+const MessageContent = memo(function MessageContent({
+  mode,
+  messageActions,
+  message,
+  isStreaming,
+  intermediate,
+  toolResults,
+  modelNames,
+  cwd,
+  onOpenFile,
+  entryId,
+  onFork,
+  forking,
+  onNavigate,
+  prevAssistantEntryId,
+  onEditContent,
+  onEditFailed,
+  onRetry,
+  retryPrompt,
+  retryDisabled,
+  showTimestamp,
+  prevTimestamp,
+  taskTiming,
+  sessionId,
+  onOpenAutomation,
+  onOpenCommandExecution,
+  completedGoal,
+}: Props) {
   if (message.role === "user") {
-    return <UserMessageView messageActions={messageActions} message={message as UserMessage} cwd={cwd} onOpenFile={onOpenFile} entryId={entryId} onFork={onFork} forking={forking} onNavigate={onNavigate} prevAssistantEntryId={prevAssistantEntryId} onEditContent={onEditContent} onEditFailed={onEditFailed} onRetry={onRetry} retryDisabled={retryDisabled} sessionId={sessionId} />;
+    return (
+      <UserMessageView
+        messageActions={messageActions}
+        message={message as UserMessage}
+        cwd={cwd}
+        onOpenFile={onOpenFile}
+        entryId={entryId}
+        onFork={onFork}
+        forking={forking}
+        onNavigate={onNavigate}
+        prevAssistantEntryId={prevAssistantEntryId}
+        onEditContent={onEditContent}
+        onEditFailed={onEditFailed}
+        onRetry={onRetry}
+        retryDisabled={retryDisabled}
+        sessionId={sessionId}
+      />
+    );
   }
   if (message.role === "assistant") {
-    return <AssistantMessageView messageActions={messageActions} message={message as AssistantMessage} isStreaming={isStreaming} intermediate={intermediate} toolResults={toolResults} modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} showTimestamp={showTimestamp} prevTimestamp={prevTimestamp} taskTiming={taskTiming} sessionId={sessionId} entryId={entryId} onOpenAutomation={onOpenAutomation} onOpenCommandExecution={onOpenCommandExecution} onRetry={onRetry} retryPrompt={retryPrompt} retryDisabled={retryDisabled} />;
+    return (
+      <AssistantMessageView
+        messageActions={messageActions}
+        message={message as AssistantMessage}
+        isStreaming={isStreaming}
+        intermediate={intermediate}
+        toolResults={toolResults}
+        modelNames={modelNames}
+        cwd={cwd}
+        onOpenFile={onOpenFile}
+        showTimestamp={showTimestamp}
+        prevTimestamp={prevTimestamp}
+        taskTiming={taskTiming}
+        sessionId={sessionId}
+        entryId={entryId}
+        onOpenAutomation={onOpenAutomation}
+        onOpenCommandExecution={onOpenCommandExecution}
+        onRetry={onRetry}
+        retryPrompt={retryPrompt}
+        retryDisabled={retryDisabled}
+        completedGoal={completedGoal}
+      />
+    );
   }
   if (message.role === "toolResult") {
     // Rendered inline under its toolCall — skip standalone rendering if paired
@@ -240,13 +201,32 @@ const MessageContent = memo(function MessageContent({ mode, messageActions, mess
     if (mode !== "history" && (message as CustomMessage).customType === "piora-automation") {
       const details = (message as CustomMessage).details as { automationId?: unknown; name?: unknown; rrule?: unknown } | undefined;
       return typeof details?.automationId === "string" ? (
-        <div className="message-row"><AutomationCard
-          automationId={details.automationId}
-          fallbackName={typeof details.name === "string" ? details.name : undefined}
-          fallbackRrule={typeof details.rrule === "string" ? details.rrule : undefined}
-          onOpen={onOpenAutomation}
-        /><div className="message-hover-actions">{messageActions}</div></div>
+        <div className="message-row">
+          <AutomationCard
+            automationId={details.automationId}
+            fallbackName={typeof details.name === "string" ? details.name : undefined}
+            fallbackRrule={typeof details.rrule === "string" ? details.rrule : undefined}
+            onOpen={onOpenAutomation}
+          />
+          <div className="message-hover-actions">{messageActions}</div>
+        </div>
       ) : null;
+    }
+    if ((message as CustomMessage).customType === "piora-subagent-completion") {
+      const custom = message as CustomMessage;
+      const rawSubagent = (custom.details as { subagent?: unknown } | undefined)?.subagent;
+      if (hasSubagentProjection(rawSubagent)) {
+        return (
+          <SubagentCompletionCard
+            record={projectSubagentDetail(rawSubagent)}
+            rawText={getMessageText(custom.content)}
+            sessionId={sessionId}
+            cwd={cwd}
+            onOpenFile={onOpenFile}
+            messageActions={messageActions}
+          />
+        );
+      }
     }
     return <CustomMessageView messageActions={messageActions} message={message as CustomMessage} cwd={cwd} onOpenFile={onOpenFile} />;
   }
@@ -279,311 +259,9 @@ const MessageContent = memo(function MessageContent({ mode, messageActions, mess
     && prev.prevTimestamp === next.prevTimestamp
     && prev.sessionId === next.sessionId
     && prev.onOpenAutomation === next.onOpenAutomation
-    && prev.onOpenCommandExecution === next.onOpenCommandExecution;
+    && prev.onOpenCommandExecution === next.onOpenCommandExecution
+    && prev.completedGoal === next.completedGoal;
 });
-
-function UserMessageView({ messageActions, message, cwd, onOpenFile, entryId, onFork, forking, onNavigate, prevAssistantEntryId, onEditContent, onEditFailed, onRetry, retryDisabled, sessionId }: {
-  messageActions?: ReactNode;
-  message: UserMessage;
-  cwd?: string;
-  onOpenFile?: (filePath: string) => void;
-  entryId?: string;
-  onFork?: (entryId: string) => void;
-  forking?: boolean;
-  onNavigate?: (entryId: string) => Promise<boolean>;
-  prevAssistantEntryId?: string;
-  onEditContent?: (content: string) => void;
-  onEditFailed?: (message: UserMessage) => Promise<void>;
-  onRetry?: (message: UserMessage, entryId?: string) => Promise<void>;
-  retryDisabled?: boolean;
-  sessionId?: string;
-}) {
-  const { t, locale } = useI18n();
-  const [hovered, setHovered] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [retrying, setRetrying] = useState(false);
-  const [retryError, setRetryError] = useState<string | null>(null);
-  const [contentExpanded, setContentExpanded] = useVirtualRowToggle("user-content");
-  const [loadedContent, setLoadedContent] = useState<string | null>(null);
-  const [contentLoading, setContentLoading] = useState(false);
-  const [contentLoadError, setContentLoadError] = useState<string | null>(null);
-  const [openImageIndex, setOpenImageIndex] = useState<number | null>(null);
-
-  const initialContent =
-    typeof message.content === "string"
-      ? message.content
-      : Array.isArray(message.content)
-        ? message.content
-          .filter((b): b is TextContent => b?.type === "text" && typeof b.text === "string")
-          .map((b) => b.text as string)
-          .join("\n")
-        : "";
-  const content = loadedContent ?? initialContent;
-  const historyVersion = useContext(HistoryVersionContext);
-  const historyMode = useContext(HistoryModeContext);
-  const hasDeferredContent = message.deferredContent === true && loadedContent === null;
-
-  const imageBlocks: ImageContent[] =
-    Array.isArray(message.content)
-      ? message.content.filter((b): b is ImageContent => b?.type === "image")
-      : [];
-
-  const time = formatTime(message.timestamp);
-  const sendError = message.sendError;
-  const canFork = !!entryId && !!onFork;
-  const canNavigate = !!entryId && !!prevAssistantEntryId && !!onNavigate;
-  const contentPreview = useMemo(() => {
-    const preview = getUserMessagePreview(content);
-    return hasDeferredContent
-      ? { ...preview, collapsible: true, lineCount: message.deferredLineCount ?? preview.lineCount }
-      : preview;
-  }, [content, hasDeferredContent, message.deferredLineCount]);
-  const displayedContent = contentPreview.collapsible && !contentExpanded
-    ? contentPreview.preview
-    : content;
-  const contentLineCount = contentPreview.lineCount.toLocaleString(locale);
-
-  const loadFullContent = useCallback(async (): Promise<string> => {
-    if (!hasDeferredContent) return content;
-    if (!sessionId || !entryId) throw new Error(t("chat.longMessageUnavailable"));
-    setContentLoading(true);
-    setContentLoadError(null);
-    try {
-      const response = await fetch(historyVersion
-        ? `/api/sessions/${encodeURIComponent(sessionId)}/history/content?${new URLSearchParams({ entryId, kind: "prompt", version: historyVersion })}`
-        : `/api/sessions/${encodeURIComponent(sessionId)}/entries/${encodeURIComponent(entryId)}/prompt-material`,
-      historyVersion ? { signal: AbortSignal.timeout(30_000) } : undefined);
-      const body = await response.json().catch(() => ({})) as { content?: unknown; error?: unknown };
-      if (!response.ok || typeof body.content !== "string") {
-        throw new Error(typeof body.error === "string" ? body.error : `HTTP ${response.status}`);
-      }
-      setLoadedContent(body.content);
-      return body.content;
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      setContentLoadError(errorMessage);
-      throw error;
-    } finally {
-      setContentLoading(false);
-    }
-  }, [hasDeferredContent, content, sessionId, entryId, t, historyVersion]);
-
-  useEffect(() => {
-    if (contentExpanded && hasDeferredContent) void loadFullContent().catch(() => {});
-  }, [contentExpanded, hasDeferredContent, loadFullContent]);
-
-  const copyContent = () => {
-    Promise.resolve(loadFullContent()).then((fullContent) => copyText(fullContent)).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }).catch(() => {});
-  };
-
-  const toggleContent = () => {
-    if (contentExpanded) {
-      setContentExpanded(false);
-      return;
-    }
-    if (!hasDeferredContent) {
-      setContentExpanded(true);
-      return;
-    }
-    void loadFullContent().then(() => setContentExpanded(true)).catch(() => {});
-  };
-
-  return (
-    <div
-      className="message-row message-row-user"
-      style={{ marginBottom: 16, display: "flex", flexDirection: "column", alignItems: "flex-end" }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 6, maxWidth: "85%" }}>
-        <div
-          className="message-user-bubble"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            background: "var(--user-bg)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-surface)",
-            padding: "8px 12px",
-            fontSize: "var(--text-base)",
-            lineHeight: 1.6,
-            color: "var(--text)",
-            wordBreak: "break-word",
-          }}
-        >
-          {imageBlocks.length > 0 && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: content ? 8 : 0 }}>
-              {imageBlocks.map((img, i) => {
-                const src = messageImageUrl(img);
-                return src ? <MessageImage key={i} src={src} index={i} onOpen={() => setOpenImageIndex(i)} /> : null;
-              })}
-            </div>
-          )}
-          {openImageIndex !== null && imageBlocks[openImageIndex] && (
-            <MessageImageViewer
-              src={imageSource(imageBlocks[openImageIndex])}
-              index={openImageIndex}
-              onClose={() => setOpenImageIndex(null)}
-            />
-          )}
-          {content && (
-            <>
-              <UserMessageText text={displayedContent} cwd={cwd} onOpenFile={onOpenFile} />
-              {contentPreview.collapsible && (
-                <button
-                  type="button"
-                  className="message-user-expand"
-                  aria-expanded={contentExpanded}
-                  aria-label={t(contentExpanded ? "chat.collapseLongMessage" : "chat.expandLongMessage", { count: contentLineCount })}
-                  onClick={toggleContent}
-                  disabled={contentLoading}
-                >
-                  <DisclosureChevron />
-                  {contentLoading
-                    ? t("chat.loadingLongMessage")
-                    : t(contentExpanded ? "chat.collapseLongMessage" : "chat.expandLongMessage", { count: contentLineCount })}
-                </button>
-              )}
-              {contentLoadError && <div role="alert" style={{ marginTop: 6, color: "var(--status-failed)", fontSize: "var(--text-xs)" }}>{contentLoadError}</div>}
-            </>
-          )}
-        </div>
-
-      </div>
-
-      {sendError && (
-        <div role="alert" style={{ marginTop: -10, marginBottom: 10, color: "var(--status-failed, #dc2626)", fontSize: "var(--text-xs)", maxWidth: "85%" }}>
-          {t(message.sendUnconfirmed ? "chat.sendUnconfirmed" : "chat.sendFailed")}：{sendError}
-        </div>
-      )}
-
-      {/* Bottom row: action buttons + timestamp */}
-      {retryError ? <div role="alert" style={{ color: "var(--status-failed)", fontSize: "var(--text-xs)" }}>{retryError}</div> : null}
-      {!historyMode && (
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "flex-end",
-          gap: 6, marginTop: 3,
-        }}>
-          {onRetry ? <button type="button" title={t("chat.retryMessageTitle")} disabled={retryDisabled || retrying}
-            onClick={() => { if (retrying || retryDisabled) return; setRetrying(true); setRetryError(null); void onRetry(message, entryId).catch((reason) => setRetryError(reason instanceof Error ? reason.message : String(reason))).finally(() => setRetrying(false)); }}
-            style={{
-              display: "flex", alignItems: "center", gap: 4, padding: "3px 8px", height: 22,
-              background: "none", border: "none", borderRadius: "var(--radius-control)",
-              color: "var(--text-dim)", cursor: retryDisabled || retrying ? "not-allowed" : "pointer",
-              opacity: hovered ? (retryDisabled ? 0.45 : 1) : 0,
-              pointerEvents: hovered ? "auto" : "none",
-              transition: "opacity 0.12s", fontSize: "var(--text-xs)",
-            }}>
-            <AliIcon name="reload" size={11} />{t(retrying ? "chat.retryMessageSending" : "chat.retryMessage")}
-          </button> : null}
-          <div style={{
-            display: "flex", gap: 3,
-            opacity: hovered ? 1 : 0,
-            pointerEvents: hovered ? "auto" : "none",
-            transition: "opacity 0.12s",
-          }}>
-            <button
-              onClick={copyContent}
-               title={t("i18n.copyMessage")}
-              style={{
-                display: "flex", alignItems: "center", gap: 4,
-                padding: "3px 8px", height: 22,
-                background: "none", border: "none",
-                borderRadius: "var(--radius-control)",
-                color: copied ? "var(--accent)" : "var(--text-dim)",
-                cursor: "pointer",
-                fontSize: "var(--text-xs)", fontWeight: 400,
-                whiteSpace: "nowrap",
-                transition: "color 0.12s",
-              }}
-              onMouseEnter={(e) => { if (!copied) e.currentTarget.style.color = "var(--accent)"; }}
-              onMouseLeave={(e) => { if (!copied) e.currentTarget.style.color = "var(--text-dim)"; }}
-            >
-              {copied ? (
-                <AliIcon name="check" size={11} />
-              ) : (
-                <AliIcon name="copy" size={11} />
-              )}
-               {copied ? t("i18n.copied") : t("i18n.copy")}
-            </button>
-            {message.sendError && message.recoveryDraft && onEditFailed && <button type="button" disabled={retryDisabled || retrying}
-              onClick={() => { if (retrying || retryDisabled) return; setRetryError(null); setRetrying(true); void onEditFailed(message).catch(reason => setRetryError(reason instanceof Error ? reason.message : String(reason))).finally(() => setRetrying(false)); }}
-              style={{ background: "none", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: "var(--text-xs)" }}>
-              <AliIcon name="history" size={11} />{t("i18n.editFromHere")}
-            </button>}
-            {messageActions}
-          </div>
-          {(canFork || canNavigate) && (
-            <div style={{
-              display: "flex", gap: 3,
-              opacity: (hovered || forking) ? 1 : 0,
-              pointerEvents: (hovered || forking) ? "auto" : "none",
-              transition: "opacity 0.12s",
-            }}>
-              {canNavigate && (
-                <button
-                  disabled={retrying || retryDisabled}
-                  onClick={() => {
-                    if (retrying || retryDisabled) return;
-                    setRetrying(true); setRetryError(null);
-                    void loadFullContent().then(async (fullContent) => {
-                      if (await onNavigate!(prevAssistantEntryId!)) onEditContent?.(fullContent);
-                    }).catch(reason => setRetryError(reason instanceof Error ? reason.message : String(reason)))
-                      .finally(() => setRetrying(false));
-                  }}
-                   title={t("i18n.editFromHereTitle")}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 4,
-                    padding: "3px 8px", height: 22,
-                    background: "none", border: "none",
-                    borderRadius: "var(--radius-control)",
-                    color: "var(--text-dim)",
-                    cursor: "pointer",
-                    fontSize: "var(--text-xs)", fontWeight: 400,
-                    whiteSpace: "nowrap",
-                    transition: "color 0.12s",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-dim)"; }}
-                >
-                  <AliIcon name="history" size={11} />
-                   {t("i18n.editFromHere")}
-                </button>
-              )}
-              {canFork && (
-                <button
-                  onClick={() => { onFork!(entryId!); }}
-                  disabled={forking}
-                   title={forking ? t("i18n.creatingSession") : t("i18n.newSessionTitle")}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 4,
-                    padding: "3px 8px", height: 22,
-                    background: "none", border: "none",
-                    borderRadius: "var(--radius-control)",
-                    color: forking ? "var(--accent)" : "var(--text-dim)",
-                    cursor: forking ? "not-allowed" : "pointer",
-                    fontSize: "var(--text-xs)", fontWeight: 400,
-                    whiteSpace: "nowrap",
-                    transition: "color 0.12s",
-                  }}
-                  onMouseEnter={(e) => { if (!forking) e.currentTarget.style.color = "var(--accent)"; }}
-                  onMouseLeave={(e) => { if (!forking) e.currentTarget.style.color = "var(--text-dim)"; }}
-                >
-                  <AliIcon name="fork" size={11} />
-                   {forking ? t("i18n.creating") : t("i18n.newSession")}
-                </button>
-              )}
-            </div>
-          )}
-          {time && <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)" }}>{time}</span>}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function AssistantMessageView({
   onRetry,
@@ -603,6 +281,7 @@ function AssistantMessageView({
   entryId,
   onOpenAutomation,
   onOpenCommandExecution,
+  completedGoal,
 }: {
   onRetry?: Props["onRetry"];
   retryPrompt?: Props["retryPrompt"];
@@ -622,6 +301,7 @@ function AssistantMessageView({
   entryId?: string;
   onOpenAutomation?: (automationId: string) => void;
   onOpenCommandExecution?: (data: CommandExecutionData) => void;
+  completedGoal?: CompletedGoalBadge | null;
 }) {
   const { t } = useI18n();
   const time = showTimestamp ? formatTime(message.timestamp) : null;
@@ -634,7 +314,12 @@ function AssistantMessageView({
   const blocks = blockItems.map(({ block }) => block);
   const blockGroups: { process: boolean; items: typeof blockItems }[] = [];
   for (const item of blockItems) {
-    const process = item.block.type === "thinking" || item.block.type === "toolCall" && !isSubagentTool(item.block.toolName);
+    const standaloneTool = item.block.type === "toolCall" && (
+      isSubagentTool(item.block.toolName)
+      || item.block.toolName === "piora_submit_plan"
+      || item.block.toolName === "piora_request_user_input"
+    );
+    const process = item.block.type === "thinking" || (item.block.type === "toolCall" && !standaloneTool);
     const previous = blockGroups.at(-1);
     if (process && previous?.process) previous.items.push(item);
     else blockGroups.push({ process, items: [item] });
@@ -643,8 +328,11 @@ function AssistantMessageView({
   const providerError = getAssistantErrorMessage(message, { isStreaming });
   const providerErrorDetail = providerError ? summarizeProviderError(providerError) : null;
   const timeout = providerError ? modelTimeoutDisplay(providerError) : null;
-  const providerErrorSummary = timeout ? t(timeout.key, { seconds: timeout.seconds }) : providerErrorDetail?.code === "model_output_budget"
-    ? t("chat.modelOutputBudgetError") : providerErrorDetail?.summary ?? "";
+  const providerErrorSummary = timeout
+    ? t(timeout.key, { seconds: timeout.seconds })
+    : providerErrorDetail?.code === "model_output_budget"
+      ? t("chat.modelOutputBudgetError")
+      : providerErrorDetail?.summary ?? "";
   const stopped = isAssistantAborted(message, { isStreaming });
   const retryInFlight = useRef(false);
   const [retrying, setRetrying] = useState(false);
@@ -659,7 +347,6 @@ function AssistantMessageView({
   const [streamingDurations, setStreamingDurations] = useState<Map<number, number>>(new Map());
 
   // Thinking duration derived from file timestamps: time from prev message end to this message end
-  // This is the total generation time (thinking + any text before first tool call)
   const thinkingDurationFromFile = useMemo<number | undefined>(() => {
     if (!message.timestamp || !prevTimestamp) return undefined;
     const secs = Math.round((message.timestamp - prevTimestamp) / 1000);
@@ -667,8 +354,6 @@ function AssistantMessageView({
   }, [message.timestamp, prevTimestamp]);
 
   // Tool call durations derived from session file timestamps (accurate for completed messages)
-  // assistant message timestamp = when generation ended = when tools started running
-  // toolResult timestamp = when tool execution finished
   const toolCallDurations = useMemo<Map<string, number>>(() => {
     const map = new Map<string, number>();
     if (!toolResults || !message.timestamp) return map;
@@ -711,13 +396,9 @@ function AssistantMessageView({
     const tick = () => {
       const items = blockItemsRef.current;
       const now = Date.now();
-
-      // Record start time for each block the first time we see it
       items.forEach(({ originalIndex }) => {
         if (!blockStartTimesRef.current.has(originalIndex)) blockStartTimesRef.current.set(originalIndex, now);
       });
-
-      // When a non-last block has a successor already started, finalise its duration
       setStreamingDurations((prev: Map<number, number>) => {
         let changed = false;
         const next = new Map(prev);
@@ -753,11 +434,34 @@ function AssistantMessageView({
         {blockGroups.map((group) => {
           const key = `${entryId ?? "stream"}-${group.items[0].originalIndex}`;
           const content = group.items.map(({ block, originalIndex }) => (
-          <BlockView key={`${entryId ?? "stream"}-${originalIndex}`} block={block} toolResults={toolResults} isStreaming={isStreaming && (block.type !== "thinking" || originalIndex === blockItems.at(-1)?.originalIndex)} streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)} toolCallDurations={toolCallDurations} cwd={cwd} onOpenFile={onOpenFile} sessionId={sessionId} entryId={entryId} blockIndex={originalIndex} onOpenAutomation={onOpenAutomation} onOpenCommandExecution={onOpenCommandExecution} />
+            <BlockView
+              key={`${entryId ?? "stream"}-${originalIndex}`}
+              block={block}
+              toolResults={toolResults}
+              isStreaming={isStreaming && (block.type !== "thinking" || originalIndex === blockItems.at(-1)?.originalIndex)}
+              streamingDuration={streamingDurations.get(originalIndex) ?? (block.type === "thinking" ? thinkingDurationFromFile : undefined)}
+              toolCallDurations={toolCallDurations}
+              cwd={cwd}
+              onOpenFile={onOpenFile}
+              sessionId={sessionId}
+              entryId={entryId}
+              blockIndex={originalIndex}
+              onOpenAutomation={onOpenAutomation}
+              onOpenCommandExecution={onOpenCommandExecution}
+            />
           ));
-          return group.process ? <ProcessStack key={key} stateKey={key} count={group.items.length}
-            timeRanges={[processTimeRange(group.items.map(({ block }) => block), message.timestamp, prevTimestamp, toolResults)]}>{content}</ProcessStack>
-            : <div key={key} className="message-answer-block">{content}</div>;
+          return group.process ? (
+            <ProcessStack
+              key={key}
+              stateKey={key}
+              count={group.items.length}
+              timeRanges={[processTimeRange(group.items.map(({ block }) => block), message.timestamp, prevTimestamp, toolResults)]}
+            >
+              {content}
+            </ProcessStack>
+          ) : (
+            <div key={key} className="message-answer-block">{content}</div>
+          );
         })}
       </div>
 
@@ -779,83 +483,155 @@ function AssistantMessageView({
           }}
         >
           {stopped ? t("chat.generationStopped") : t("chat.providerError", { reason: providerErrorSummary })}
-          {!stopped && (providerErrorDetail?.structured || timeout) && <details>
-            <summary>{t("chat.providerErrorDetails")}{providerErrorDetail?.code ? ` · ${providerErrorDetail.code}` : ""}</summary>
-            <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", margin: "8px 0 0" }}>{providerError}</pre>
-          </details>}
-          {!stopped && onRetry && retryPrompt && <div style={{ marginTop: 8 }}>
-            <button type="button" className="message-delete-button" disabled={retryDisabled || retrying}
-              title={t("chat.retryMessageTitle")} onClick={() => {
-                if (retryDisabled || retryInFlight.current) return;
-                retryInFlight.current = true; setRetrying(true); setRetryError(null);
-                void onRetry(retryPrompt.message, retryPrompt.entryId)
-                  .catch(reason => setRetryError(reason instanceof Error ? reason.message : String(reason)))
-                  .finally(() => { retryInFlight.current = false; setRetrying(false); });
-              }}><AliIcon name="reload" size={12} />{t("chat.retryMessage")}</button>
-            {retryError && <span role="alert">{retryError}</span>}
-          </div>}
+          {!stopped && (providerErrorDetail?.structured || timeout) && (
+            <details>
+              <summary>{t("chat.providerErrorDetails")}{providerErrorDetail?.code ? ` · ${providerErrorDetail.code}` : ""}</summary>
+              <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", margin: "8px 0 0" }}>{providerError}</pre>
+            </details>
+          )}
+          {!stopped && onRetry && retryPrompt && (
+            <div style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className="message-delete-button"
+                disabled={retryDisabled || retrying}
+                title={t("chat.retryMessageTitle")}
+                onClick={() => {
+                  if (retryDisabled || retryInFlight.current) return;
+                  retryInFlight.current = true;
+                  setRetrying(true);
+                  setRetryError(null);
+                  void onRetry(retryPrompt.message, retryPrompt.entryId)
+                    .catch(reason => setRetryError(reason instanceof Error ? reason.message : String(reason)))
+                    .finally(() => { retryInFlight.current = false; setRetrying(false); });
+                }}
+              >
+                <AliIcon name="reload" size={12} />{t("chat.retryMessage")}
+              </button>
+              {retryError && <span role="alert">{retryError}</span>}
+            </div>
+          )}
         </div>
       )}
 
-      {!hideFooter && <div className="message-response-meta" style={{
-        display: "flex", alignItems: "center", gap: 8, marginTop: 4,
-      }}>
-        {responseDuration && !isStreaming && (
-          <span data-response-task-duration title={t("chat.taskDuration.hint")} style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>
-            {t("chat.taskDuration.total")} {responseDuration}
-          </span>
-        )}
-        {textContent && !isStreaming && !historyMode && (
-          <button
-            onClick={copyContent}
-             title={t("i18n.copyMessage")}
-            style={{
-              display: "flex", alignItems: "center", gap: 4,
-              padding: "3px 8px", height: 22,
-              background: "none", border: "none",
-              borderRadius: "var(--radius-control)",
-              color: copied ? "var(--accent)" : "var(--text-dim)",
-              cursor: "pointer",
-              fontSize: "var(--text-xs)", fontWeight: 400,
-              whiteSpace: "nowrap",
-              opacity: hovered ? 1 : 0,
-              pointerEvents: hovered ? "auto" : "none",
-              transition: "opacity 0.12s, color 0.12s",
-            }}
-            onMouseEnter={(e) => { if (!copied) e.currentTarget.style.color = "var(--accent)"; }}
-            onMouseLeave={(e) => { if (!copied) e.currentTarget.style.color = "var(--text-dim)"; }}
-          >
-            {copied ? (
-              <AliIcon name="check" size={11} />
-            ) : (
-              <AliIcon name="copy" size={11} />
-            )}
-             {copied ? t("i18n.copied") : t("i18n.copy")}
-          </button>
-        )}
-        {!isStreaming ? <span className="message-hover-actions" style={{ marginLeft: "auto" }}>{messageActions}</span> : null}
-        {time && !isStreaming && (
-          <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)" }}>{time}</span>
-        )}
-      </div>}
+      {!hideFooter && (
+        <div className="message-response-meta" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+          {responseDuration && !isStreaming && (
+            <span data-response-task-duration title={t("chat.taskDuration.hint")} style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)", fontVariantNumeric: "tabular-nums" }}>
+              {t("chat.taskDuration.total")} {responseDuration}
+            </span>
+          )}
+          {completedGoal && !isStreaming && <GoalAchievedBadge completedGoal={completedGoal} />}
+          {textContent && !isStreaming && !historyMode && (
+            <button
+              onClick={copyContent}
+              title={t("i18n.copyMessage")}
+              style={{
+                display: "flex", alignItems: "center", gap: 4,
+                padding: "3px 8px", height: 22,
+                background: "none", border: "none",
+                borderRadius: "var(--radius-control)",
+                color: copied ? "var(--accent)" : "var(--text-dim)",
+                cursor: "pointer",
+                fontSize: "var(--text-xs)", fontWeight: 400,
+                whiteSpace: "nowrap",
+                opacity: hovered ? 1 : 0,
+                pointerEvents: hovered ? "auto" : "none",
+                transition: "opacity 0.12s, color 0.12s",
+              }}
+              onMouseEnter={(e) => { if (!copied) e.currentTarget.style.color = "var(--accent)"; }}
+              onMouseLeave={(e) => { if (!copied) e.currentTarget.style.color = "var(--text-dim)"; }}
+            >
+              {copied ? <AliIcon name="check" size={11} /> : <AliIcon name="copy" size={11} />}
+              {copied ? t("i18n.copied") : t("i18n.copy")}
+            </button>
+          )}
+          {!isStreaming ? <span className="message-hover-actions" style={{ marginLeft: "auto" }}>{messageActions}</span> : null}
+          {time && !isStreaming && (
+            <span style={{ fontSize: "var(--text-xs)", color: "var(--text-dim)" }}>{time}</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function BlockView({ block, toolResults, isStreaming, streamingDuration, toolCallDurations, cwd, onOpenFile, sessionId, entryId, blockIndex, onOpenAutomation, onOpenCommandExecution }: { block: AssistantContentBlock; toolResults?: Pick<ReadonlyMap<string, ToolResultMessage>, "get">; isStreaming?: boolean; streamingDuration?: number; toolCallDurations?: Map<string, number>; cwd?: string; onOpenFile?: (filePath: string) => void; sessionId?: string; entryId?: string; blockIndex: number; onOpenAutomation?: (automationId: string) => void; onOpenCommandExecution?: (data: CommandExecutionData) => void }) {
+function BlockView({
+  block,
+  toolResults,
+  isStreaming,
+  streamingDuration,
+  toolCallDurations,
+  cwd,
+  onOpenFile,
+  sessionId,
+  entryId,
+  blockIndex,
+  onOpenAutomation,
+  onOpenCommandExecution,
+}: {
+  block: AssistantContentBlock;
+  toolResults?: Pick<ReadonlyMap<string, ToolResultMessage>, "get">;
+  isStreaming?: boolean;
+  streamingDuration?: number;
+  toolCallDurations?: Map<string, number>;
+  cwd?: string;
+  onOpenFile?: (filePath: string) => void;
+  sessionId?: string;
+  entryId?: string;
+  blockIndex: number;
+  onOpenAutomation?: (automationId: string) => void;
+  onOpenCommandExecution?: (data: CommandExecutionData) => void;
+}) {
   if (block.type === "text") {
     return <TextBlock block={block as TextContent} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} />;
   }
   if (block.type === "thinking") {
     const thinkingBlock = block as ThinkingContent;
-    return <ThinkingBlock block={thinkingBlock} duration={streamingDuration} isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile} sessionId={sessionId} entryId={entryId} blockIndex={thinkingBlock.deferredBlockIndex ?? blockIndex} />;
+    return (
+      <ThinkingBlock
+        block={thinkingBlock}
+        duration={streamingDuration}
+        isStreaming={isStreaming}
+        cwd={cwd}
+        onOpenFile={onOpenFile}
+        sessionId={sessionId}
+        entryId={entryId}
+        blockIndex={thinkingBlock.deferredBlockIndex ?? blockIndex}
+      />
+    );
   }
   if (block.type === "toolCall") {
     const tc = block as ToolCallContent;
     const result = toolResults?.get(tc.toolCallId);
     const duration = toolCallDurations?.get(tc.toolCallId);
-    if (isSubagentTool(tc.toolName)) return <SubagentTaskCard sessionId={sessionId} toolCallId={tc.toolCallId} input={tc.input} seed={(result?.details as { subagent?: SubagentDetail } | undefined)?.subagent} />;
-    return <ToolCallBlock block={tc} preparing={isStreaming} result={result} duration={duration} cwd={cwd} sessionId={sessionId} onOpenFile={onOpenFile} onOpenAutomation={onOpenAutomation} onOpenCommandExecution={onOpenCommandExecution} />;
+    if (isSubagentTool(tc.toolName)) {
+      return (
+        <SubagentTaskCard
+          sessionId={sessionId}
+          toolCallId={tc.toolCallId}
+          toolName={tc.toolName}
+          input={tc.input}
+          seed={(result?.details as { subagent?: SubagentDetail } | undefined)?.subagent}
+          toolResult={result}
+          cwd={cwd}
+          onOpenFile={onOpenFile}
+        />
+      );
+    }
+    return (
+      <ToolCallBlock
+        block={tc}
+        preparing={isStreaming}
+        result={result}
+        duration={duration}
+        cwd={cwd}
+        sessionId={sessionId}
+        onOpenFile={onOpenFile}
+        onOpenAutomation={onOpenAutomation}
+        onOpenCommandExecution={onOpenCommandExecution}
+      />
+    );
   }
   return null;
 }
@@ -864,7 +640,16 @@ function TextBlock({ block, isStreaming, cwd, onOpenFile }: { block: TextContent
   return <MarkdownBody className="markdown-assistant-message" isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile}>{block.text}</MarkdownBody>;
 }
 
-function ThinkingBlock({ block, duration, isStreaming, cwd, onOpenFile, sessionId, entryId, blockIndex }: {
+function ThinkingBlock({
+  block,
+  duration,
+  isStreaming,
+  cwd,
+  onOpenFile,
+  sessionId,
+  entryId,
+  blockIndex,
+}: {
   block: ThinkingContent;
   duration?: number;
   isStreaming?: boolean;
@@ -910,10 +695,16 @@ function ThinkingBlock({ block, duration, isStreaming, cwd, onOpenFile, sessionI
     : getThinkingBlockDisplay(block, sourceKey, loadState);
 
   return (
-    <ChatDisclosure className="thinking-block" triggerClassName="thinking-block-trigger"
-      expanded={expanded} onExpandedChange={setExpanded} icon="brain" label={t("i18n.thinking")}
+    <ChatDisclosure
+      className="thinking-block"
+      triggerClassName="thinking-block-trigger"
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+      icon="brain"
+      label={t("i18n.thinking")}
       description={!expanded && display.status === "content" ? thinkingPreview(display.content, isStreaming) : undefined}
-      metadata={duration !== undefined ? `${duration}s` : undefined}>
+      metadata={duration !== undefined ? `${duration}s` : undefined}
+    >
       <div className={`thinking-block-content${display.status === "error" ? " is-error" : ""}`}>
         {display.status === "loading"
           ? <span className="thinking-block-status">{t("i18n.loadingThinking")}</span>
@@ -925,430 +716,4 @@ function ThinkingBlock({ block, duration, isStreaming, cwd, onOpenFile, sessionI
       </div>
     </ChatDisclosure>
   );
-}
-
-
-function ToolCallBlock({ block, preparing, result, duration, cwd, sessionId, onOpenFile, onOpenAutomation, onOpenCommandExecution }: { block: ToolCallContent; preparing?: boolean; result?: ToolResultMessage; duration?: number; cwd?: string; sessionId?: string; onOpenFile?: (filePath: string) => void; onOpenAutomation?: (automationId: string) => void; onOpenCommandExecution?: (data: CommandExecutionData) => void }) {
-  const { t } = useI18n();
-  const historyMode = useContext(HistoryModeContext);
-  const [expanded, setExpanded] = useVirtualRowToggle(`tool:${block.toolCallId}`, Boolean(result?.isError && !result.isStreaming));
-  const [diagnosticsOpen, setDiagnosticsOpen] = useVirtualRowToggle(`diagnostics:${block.toolCallId}`);
-  const runActive = useContext(ToolRunActiveContext);
-  const pending = runActive && (!result || result.isStreaming === true);
-  const [waitSeconds, setWaitSeconds] = useState(0);
-  useEffect(() => {
-    if (!pending) return;
-    const started = Date.now();
-    const timer = setInterval(() => setWaitSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
-    return () => clearInterval(timer);
-  }, [pending, block.toolCallId]);
-  const phase = result && !result.isStreaming ? result.isError ? "error" : "ok" : !runActive ? "unfinished" : preparing && !result ? "preparing" : "running";
-  const longWait = t(phase === "preparing" ? "toolSummary.preparingLong" : "toolSummary.waitingLong");
-  const diagnostics = safeJson({ toolName: block.toolName, state: phase, streamingParameters: phase === "preparing", waitingSeconds: pending ? waitSeconds : undefined, input: block.input, result: result ?? null });
-  const fileChange = getFileChangeInfo(block, result);
-  const resultDiff = result && !result.isError ? getResultDiff(result) : null;
-  const summary = summarizeToolDisclosure(block.toolName, block.input, result?.isStreaming ? undefined : result, t);
-  const automationDetails = getAutomationToolCardDetails(block, result);
-  const nestedCalls = useNestedToolCalls(block.toolCallId, result?.nestedCalls);
-  const fileResult = useMemo(() => fileToolResult(block, result, cwd), [block, result, cwd]);
-
-  if (isCommandToolName(block.toolName)) {
-    const output = toolResultText(result);
-    const metadata = commandResultMetadata(result);
-    const data: CommandExecutionData = {
-      id: block.toolCallId,
-      toolName: block.toolName,
-      command: typeof block.input.command === "string" ? block.input.command : "",
-      output,
-      status: commandStatus(result, output),
-      isStreaming: pending,
-      historical: historyMode || !runActive && (!result || result.isStreaming === true),
-      duration,
-      cwd,
-      exitCode: commandExitCode(result, output),
-      truncated: metadata.truncated,
-      fullOutputPath: metadata.fullOutputPath,
-      sessionId,
-      diagnostics,
-    };
-    return <CommandExecutionCard data={data} onOpen={onOpenCommandExecution} />;
-  }
-
-  if (block.toolName === "browser" && block.input.action === "wait_for_user") {
-    return <BrowserUserWaitCard
-      sessionId={sessionId}
-      toolCallId={block.toolCallId}
-      reason={typeof block.input.reason === "string" ? block.input.reason : ""}
-      result={result}
-      historical={historyMode}
-      purpose={block.input.purpose === "login" || block.input.purpose === "confirmation" ? block.input.purpose : undefined}
-    />;
-  }
-
-  if (automationDetails && !historyMode) {
-    return (
-      <AutomationCard
-        automationId={automationDetails.id}
-        fallbackName={automationDetails.name}
-        fallbackRrule={automationDetails.rrule}
-        onOpen={onOpenAutomation}
-      />
-    );
-  }
-
-  // Result display
-  const resultText = result && Array.isArray(result.content)
-    ? result.content
-      .filter((b): b is { type: "text"; text: string } => b?.type === "text" && typeof b.text === "string")
-      .map((b) => b.text as string)
-      .join("\n")
-    : null;
-  const resultIsEmpty = resultText === null ? false : (resultText.trim() === "(no output)" || resultText.trim() === "");
-  const isError = result?.isError ?? false;
-
-  if (fileChange && result && !result.isStreaming) {
-    return (
-      <FileChangeBlock
-        change={fileChange}
-        resultText={resultText ?? ""}
-        duration={duration}
-        expanded={expanded}
-        diagnosticsOpen={diagnosticsOpen}
-        diagnostics={diagnostics}
-        onOpenFile={onOpenFile}
-        onExpandedChange={setExpanded}
-        onDiagnosticsOpenChange={setDiagnosticsOpen}
-      />
-    );
-  }
-
-  return (
-    <ChatDisclosure className="tool-call-card" triggerClassName="tool-call-toggle"
-      expanded={expanded} onExpandedChange={setExpanded} icon={summary.icon as AliIconName} label={summary.title}
-      description={summary.subject ? <>
-        {summary.subjectIsPath ? <DisclosurePath path={summary.subject} filePath={summary.subject} /> : <span title={summary.subject}>{summary.subject}</span>}
-        {summary.detail ? <span className="tool-call-detail" title={summary.detail}>{summary.detail}</span> : null}
-      </> : summary.detail ? <span title={summary.detail}>{summary.detail}</span> : undefined}
-      metadata={<>
-        {nestedCalls ? <span>{t("nestedCalls.progress", { done: nestedCalls.calls.filter(call => call.status === "ok" || call.status === "error").length, total: nestedCalls.calls.length })}</span> : null}
-        <span className={`chat-disclosure-status is-${phase === "unfinished" ? "unknown" : phase === "preparing" ? "running" : phase}`}>{t(phase === "unfinished" ? "toolSummary.unfinished" : phase === "preparing" ? "toolSummary.preparing" : phase === "running" ? "command.status.running" : phase === "error" ? "command.status.failed" : "command.status.success")}</span>
-        {pending && waitSeconds > 0 ? <span title={waitSeconds >= 60 ? longWait : undefined}>{waitSeconds}s{waitSeconds >= 60 ? ` · ${t("toolSummary.takingLong")}` : ""}</span> : null}
-        {duration !== undefined ? <span>{duration}s</span> : null}
-      </>}>
-      {result ? resultDiff
-        ? <PairedDiffResult diff={resultDiff} />
-        : fileResult ? <FileToolResultView model={fileResult} toolCallId={block.toolCallId} onOpenFile={onOpenFile} />
-        : <PairedResult text={resultText ?? ""} isEmpty={resultIsEmpty} isError={isError} />
-        : <div className="chat-disclosure-notice">{t(phase === "unfinished" ? "toolSummary.unfinishedResult" : phase === "preparing" ? "toolSummary.preparing" : "command.waitingForOutput")}</div>}
-      {pending && waitSeconds >= 60 ? <div className="chat-disclosure-notice">{longWait}</div> : null}
-      {nestedCalls ? <NestedToolCalls snapshot={nestedCalls} /> : null}
-      <ChatDisclosure variant="inline" expanded={diagnosticsOpen} onExpandedChange={setDiagnosticsOpen}
-        label={t("toolSummary.diagnostics")}>
-        <pre className="chat-disclosure-diagnostics">{diagnostics}</pre>
-      </ChatDisclosure>
-    </ChatDisclosure>
-  );
-}
-
-function FileChangeBlock({
-  change,
-  resultText,
-  duration,
-  expanded,
-  diagnosticsOpen,
-  diagnostics,
-  onOpenFile,
-  onExpandedChange,
-  onDiagnosticsOpenChange,
-}: {
-  change: FileChangeInfo;
-  resultText: string;
-  duration?: number;
-  expanded: boolean;
-  diagnosticsOpen: boolean;
-  diagnostics: string;
-  onOpenFile?: (filePath: string) => void;
-  onExpandedChange: (value: boolean) => void;
-  onDiagnosticsOpenChange: (value: boolean) => void;
-}) {
-  const { t } = useI18n();
-  const titleKey = change.status === "running"
-    ? "fileChange.running"
-    : change.status === "failed"
-      ? "fileChange.failed"
-      : change.kind === "created"
-        ? "fileChange.created"
-        : change.kind === "unchanged"
-          ? "fileChange.unchanged"
-          : "fileChange.edited";
-  const icon: AliIconName = change.kind === "created" ? "file-add" : "edit";
-  const statusClass = change.status === "failed" ? "is-failed" : change.status === "running" ? "is-running" : "is-complete";
-  const noDiffMessage = change.unavailableReason === "too_large"
-    ? t("fileChange.tooLarge")
-    : change.unavailableReason === "binary"
-      ? t("fileChange.binary")
-      : change.kind === "unchanged"
-        ? t("fileChange.noChanges")
-        : t("fileChange.unavailable");
-
-  return (
-    <ChatDisclosure className={`file-change-card ${statusClass}`} data-file-change-path={change.path}
-      expanded={expanded} onExpandedChange={onExpandedChange} icon={icon} label={t(titleKey)}
-      triggerClassName="file-change-toggle tool-call-toggle" description={<DisclosurePath path={change.path} filePath={change.path} />}
-      metadata={<>
-        {change.status !== "completed" ? <span className={`chat-disclosure-status is-${change.status}`}>
-          {t(change.status === "running" ? "command.status.running" : "command.status.failed")}
-        </span> : null}
-        {change.status === "completed" && (change.added > 0 || change.removed > 0) ? (
-          <span className="file-change-stats" aria-label={t("fileChange.stats", { added: change.added, removed: change.removed })}>
-            <span className="file-change-additions">+{change.added}</span>
-            <span className="file-change-deletions">−{change.removed}</span>
-          </span>
-        ) : null}
-        {duration !== undefined ? <span>{duration}s</span> : null}
-      </>}
-      actions={onOpenFile ? <button type="button" className="chat-disclosure-action" title={t("diff.openFile")} data-chat-file-path={change.path}
-        aria-label={t("diff.openFile")} onClick={() => onOpenFile(change.path)}><AliIcon name="external-link" size={14} /></button> : null}>
-      {change.patch ? (
-        <DiffView className="file-change-diff" patch={change.patch} filePath={change.path} mode="unified" showFileHeader={false} />
-      ) : change.status === "failed" ? (
-        <PairedResult text={resultText} isEmpty={!resultText.trim()} isError />
-      ) : (
-        <div className="chat-disclosure-notice">{noDiffMessage}</div>
-      )}
-      <ChatDisclosure variant="inline" expanded={diagnosticsOpen} onExpandedChange={onDiagnosticsOpenChange}
-        label={t("toolSummary.diagnostics")}>
-        <pre className="chat-disclosure-diagnostics">{diagnostics}</pre>
-      </ChatDisclosure>
-    </ChatDisclosure>
-  );
-}
-
-interface ResultDiff {
-  text: string;
-}
-
-function PairedDiffResult({ diff }: { diff: ResultDiff }) {
-  return <div className="tool-result-diff"><DiffView patch={diff.text} mode="split" /></div>;
-}
-
-function getResultDiff(result: ToolResultMessage): ResultDiff | null {
-  const details = (result as ToolResultMessage & { details?: unknown }).details;
-  if (!isRecord(details)) return null;
-
-  const patch = typeof details.patch === "string" ? details.patch : null;
-  if (patch) return { text: patch };
-
-  const diff = typeof details.diff === "string" ? details.diff : null;
-  if (diff) return { text: diff };
-
-  return null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function PairedResult({ text, isEmpty, isError }: {
-  text: string;
-  isEmpty: boolean;
-  isError: boolean;
-}) {
-  const { t } = useI18n();
-  return <pre className={`tool-result-output${isError ? " is-error" : ""}${isEmpty ? " is-empty" : ""}`}>
-    {isEmpty ? t("i18n.noOutput") : text}
-  </pre>;
-}
-
-function CompactionMessageView({ message }: { message: CustomMessage }) {
-  const { t } = useI18n();
-  const summary = getMessageText(message.content);
-  const parsedSummary = useMemo(() => parseCompactionSummary(summary), [summary]);
-  const time = formatTime(message.timestamp);
-
-  return (
-    <div className="chat-disclosure is-expanded compaction-message-card">
-      <div className="chat-disclosure-heading">
-        <AliIcon name="archive" size={14} aria-hidden="true" />
-        <span className="chat-disclosure-label">{t("i18n.conversationCompacted")}</span>
-        {time ? <span className="chat-disclosure-meta">{time}</span> : null}
-      </div>
-      <div className="chat-disclosure-content">
-        <p className="compaction-description">{t("i18n.compactionDescription")}</p>
-        {parsedSummary.body ? <MarkdownBody className="markdown-compaction-message">{parsedSummary.body}</MarkdownBody>
-          : <span className="chat-disclosure-notice">{t("i18n.noSummary")}</span>}
-        <CompactionFileMetadata readFiles={parsedSummary.readFiles} modifiedFiles={parsedSummary.modifiedFiles} />
-      </div>
-    </div>
-  );
-}
-
-function CompactionFileMetadata({ readFiles, modifiedFiles }: { readFiles: string[]; modifiedFiles: string[] }) {
-  const { t } = useI18n();
-  const total = readFiles.length + modifiedFiles.length;
-  if (total === 0) return null;
-
-  const parts = [];
-  if (readFiles.length > 0) parts.push(`${readFiles.length} read`);
-  if (modifiedFiles.length > 0) parts.push(`${modifiedFiles.length} modified`);
-
-  return (
-    <details className="compaction-file-details">
-       <summary><DisclosureChevron />{t("i18n.fileContext", { details: parts.join(", ") })}</summary>
-       {modifiedFiles.length > 0 && <CompactionFileList title={t("i18n.modifiedFiles")} files={modifiedFiles} />}
-       {readFiles.length > 0 && <CompactionFileList title={t("i18n.readFiles")} files={readFiles} />}
-    </details>
-  );
-}
-
-function CompactionFileList({ title, files }: { title: string; files: string[] }) {
-  return (
-    <div className="compaction-file-section">
-      <div className="compaction-file-title">{title}</div>
-      <ul className="compaction-file-list">
-        {files.map((file) => (
-          <li key={file}>{file}</li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function CustomMessageView({ messageActions, message, cwd, onOpenFile }: { messageActions?: ReactNode; message: CustomMessage; cwd?: string; onOpenFile?: (filePath: string) => void }) {
-  const { t } = useI18n();
-  const isHiddenDisplay = message.display === false;
-  const [contentExpanded, setContentExpanded] = useState(!isHiddenDisplay);
-  const [detailsExpanded, setDetailsExpanded] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [openImageIndex, setOpenImageIndex] = useState<number | null>(null);
-  const text = getMessageText(message.content);
-  const images = getMessageImages(message.content);
-  const hasDetails = message.details !== undefined;
-  const detailsText = hasDetails ? safeJson(message.details) : "";
-  const title = formatCustomType(message.customType);
-  const time = formatTime(message.timestamp);
-
-  const copyContent = () => {
-    copyText(text || detailsText).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  };
-
-  const actions = <>
-    {text || detailsText ? <button type="button" className="chat-disclosure-action" onClick={copyContent}
-      title={t(copied ? "i18n.copied" : "i18n.copy")} aria-label={t(copied ? "i18n.copied" : "i18n.copy")}>
-      <AliIcon name={copied ? "check" : "copy"} size={14} />
-    </button> : null}
-    <span className="message-hover-actions">{messageActions}</span>
-  </>;
-  const body = <>
-    {images.length > 0 ? <div className="custom-message-images">
-      {images.map((img, i) => {
-        const src = imageSource(img);
-        return src ? <MessageImage key={i} src={src} index={i} onOpen={() => setOpenImageIndex(i)} /> : null;
-      })}
-    </div> : null}
-    {text ? <MarkdownBody className="markdown-custom-message" cwd={cwd} onOpenFile={onOpenFile}>{text}</MarkdownBody>
-      : <span className="chat-disclosure-notice">{t("i18n.noMessage")}</span>}
-  </>;
-  const details = <pre className="chat-disclosure-diagnostics custom-message-details">{detailsText}</pre>;
-
-  return (
-    <div className="message-row custom-message-row">
-      {isHiddenDisplay ? (
-        <ChatDisclosure className="custom-message-card" expanded={contentExpanded} onExpandedChange={setContentExpanded}
-          icon="message" label={title} description={text ? previewText(text) : t("i18n.showExtensionMessage")}
-          metadata={<><span>{t("i18n.hiddenExtensionMessage")}</span>{time ? <span>{time}</span> : null}</>} actions={actions}>
-          {body}
-          {hasDetails ? details : null}
-        </ChatDisclosure>
-      ) : (
-        <div className="chat-disclosure is-expanded custom-message-card">
-          <div className="chat-disclosure-header">
-            <div className="chat-disclosure-heading">
-              <AliIcon name="message" size={14} aria-hidden="true" />
-              <span className="chat-disclosure-label">{title}</span>
-              {time ? <span className="chat-disclosure-meta">{time}</span> : null}
-            </div>
-            <div className="chat-disclosure-actions">{actions}</div>
-          </div>
-          <div className="chat-disclosure-content">
-            {body}
-            {hasDetails ? <ChatDisclosure variant="inline" expanded={detailsExpanded} onExpandedChange={setDetailsExpanded}
-              label={t(detailsExpanded ? "i18n.hideDetails" : "i18n.showDetails")}>{details}</ChatDisclosure> : null}
-          </div>
-        </div>
-      )}
-      {openImageIndex !== null && images[openImageIndex] ? (
-        <MessageImageViewer src={imageSource(images[openImageIndex])} index={openImageIndex} onClose={() => setOpenImageIndex(null)} />
-      ) : null}
-    </div>
-  );
-}
-
-function getMessageText(content: CustomMessage["content"] | UserMessage["content"]): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((b): b is TextContent => b?.type === "text" && typeof b.text === "string")
-    .map((b) => b.text as string)
-    .join("\n");
-}
-
-function getMessageImages(content: CustomMessage["content"] | UserMessage["content"]): ImageContent[] {
-  if (!Array.isArray(content)) return [];
-  return content.filter((b): b is ImageContent => b?.type === "image");
-}
-
-function imageSource(img: ImageContent): string {
-  return messageImageUrl(img);
-}
-
-function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
-function formatCustomType(type: string): string {
-  return typeof type === "string" && type ? type : "extension";
-}
-
-function previewText(text: string): string {
-  if (typeof text !== "string") return "Show extension message";
-  const normalized = text.replace(/\s+/g, " ").trim();
-  if (!normalized) return "Show extension message";
-  return normalized.length > 140 ? `${normalized.slice(0, 140)}...` : normalized;
-}
-
-
-function BashExecutionView({ messageActions, message, sessionId, cwd, onOpenCommandExecution }: { messageActions?: ReactNode; message: BashExecutionMessage; sessionId?: string; cwd?: string; onOpenCommandExecution?: (data: CommandExecutionData) => void }) {
-  const historyMode = useContext(HistoryModeContext);
-  const isPending = !message.output && message.exitCode === undefined && !message.cancelled;
-  const toolName = message.excludeFromContext ? "bash (local)" : "bash";
-  const data: CommandExecutionData = {
-    id: `bash-${message.timestamp ?? message.command}`,
-    toolName,
-    command: message.command,
-    output: message.output,
-    status: isPending || message.exitCode === undefined && !message.cancelled ? "running" : message.cancelled ? "cancelled" : message.exitCode === 0 ? "success" : "failed",
-    isStreaming: !historyMode && message.exitCode === undefined && !message.cancelled,
-    historical: historyMode,
-    cwd,
-    exitCode: message.exitCode,
-    truncated: message.truncated === true,
-    fullOutputPath: message.fullOutputPath,
-    sessionId,
-    diagnostics: safeJson({
-      command: message.command,
-      exitCode: message.exitCode,
-      cancelled: message.cancelled,
-      truncated: message.truncated,
-      fullOutputPath: message.fullOutputPath,
-    }),
-  };
-  return <div style={{ margin: "6px 0" }}><CommandExecutionCard data={data} onOpen={onOpenCommandExecution} actions={messageActions} /></div>;
 }

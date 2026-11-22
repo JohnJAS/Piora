@@ -16,7 +16,8 @@ import type {
 } from "@/components/sidebar/sidebar-types";
 import { useI18n } from "@/hooks/useI18n";
 import { nextFollowState } from "@/lib/browser-follow";
-import { createBrowserViewportSync } from "@/lib/browser-viewport-sync";
+import { createBrowserViewportSync, type BrowserViewportBounds } from "@/lib/browser-viewport-sync";
+import { browserViewportCovered, observeBrowserViewportOverlays } from "@/lib/browser-viewport-overlays";
 import { PANEL_RESIZE_EVENT } from "@/lib/panel-resize-events";
 import { pollVisibleDocument } from "@/lib/visible-poller";
 import { normalizeAnswerLink, type BrowserNavigationRequest } from "@/lib/answer-links";
@@ -226,6 +227,7 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
   const viewportRef = useRef<HTMLDivElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
   const viewportSyncRef = useRef<ReturnType<typeof createBrowserViewportSync> | null>(null);
+  const viewportLayoutRef = useRef<{ bounds: BrowserViewportBounds; covered: boolean } | null>(null);
   const panelActiveRef = useRef(active);
   panelActiveRef.current = active;
 
@@ -293,12 +295,17 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
     const top = Math.max(0, rect.top, panelRect?.top ?? rect.top);
     const right = Math.min(window.innerWidth, rect.right, panelRect?.right ?? rect.right);
     const bottom = Math.min(window.innerHeight, rect.bottom, panelRect?.bottom ?? rect.bottom);
-    viewportSyncRef.current?.sync({
+    const bounds = {
       x: Math.ceil(left),
       y: Math.ceil(top),
       width: Math.max(0, Math.floor(right) - Math.ceil(left)),
       height: Math.max(0, Math.floor(bottom) - Math.ceil(top)),
-    }, panelActiveRef.current && !resizingRef.current && visible && right > left && bottom > top);
+    };
+    const show = panelActiveRef.current && !resizingRef.current && visible && bounds.width > 0 && bounds.height > 0;
+    const covered = show && browserViewportCovered(element.ownerDocument, bounds);
+    viewportLayoutRef.current = { bounds, covered };
+    if (covered) viewportSyncRef.current?.suspend(bounds);
+    else viewportSyncRef.current?.sync(bounds, show);
   }, [state?.url]);
 
   useLayoutEffect(() => {
@@ -306,6 +313,13 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
     // panel's width animation. Queue an explicit hide before paint so a widened
     // browser view cannot remain over the chat after the panel is collapsed.
     syncViewport(active && state?.url !== "about:blank");
+    const document = viewportRef.current?.ownerDocument;
+    if (!document || !active || !state?.url || state.url === "about:blank") return;
+    // Dialogs rendered into portals do not resize the browser's DOM viewport.
+    return observeBrowserViewportOverlays(document, () => {
+      const layout = viewportLayoutRef.current;
+      if (layout && browserViewportCovered(document, layout.bounds) !== layout.covered) syncViewport();
+    });
   }, [active, state?.url, syncViewport]);
 
   useEffect(() => {

@@ -59,13 +59,6 @@ const runtime = Object.freeze({
     list: () => ipcRenderer.invoke("pi:desktop-extension-list"),
     action: (id, action) => ipcRenderer.invoke("pi:desktop-extension-action", id, action),
     preferences: (id, value) => ipcRenderer.invoke("pi:desktop-extension-preferences", id, value),
-    cordis: Object.freeze({
-      list: () => ipcRenderer.invoke("pi:cordis-extension-list"),
-      action: (id, action, version) => ipcRenderer.invoke("pi:cordis-extension-action", id, action, version),
-      autoStart: (id, enabled) => ipcRenderer.invoke("pi:cordis-extension-autostart", id, enabled),
-      discover: () => ipcRenderer.invoke("pi:cordis-extension-discover"),
-      check: (name, version) => ipcRenderer.invoke("pi:cordis-extension-check", name, version),
-    } satisfies import("./cordis-extension-contract.js").CordisDesktopBridge),
   } satisfies import("./desktop-extension-registry.js").DesktopExtensionsBridge),
   harmonyMirror: Object.freeze({
     open: serial => ipcRenderer.invoke("pi:harmony-window-open", serial),

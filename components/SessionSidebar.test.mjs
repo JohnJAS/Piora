@@ -58,7 +58,9 @@ test("shares bounded visible status polling without reserving an idle SSE connec
 test("settles the project loading state when a background refresh supersedes the initial request", () => {
   const catalog = splitSources[4];
   assert.match(catalog, /loadSessionsRequest\.current\?\.abort\(\);\s*const request = new AbortController\(\);\s*loadSessionsRequest\.current = request/);
-  assert.match(catalog, /finally \{\s*if \(loadSessionsRequest\.current === request\) \{\s*loadSessionsRequest\.current = null;\s*setCatalogComplete\(true\);\s*setLoading\(false\)/);
+  assert.match(catalog, /setError\(null\);\s*setCatalogComplete\(true\)/);
+  assert.match(catalog, /catch \(caught\) \{\s*if \(!request\.signal\.aborted\) \{\s*setCatalogComplete\(false\);\s*setError\(String\(caught\)\);\s*\}\s*\}/);
+  assert.match(catalog, /finally \{\s*if \(loadSessionsRequest\.current === request\) \{\s*loadSessionsRequest\.current = null;\s*setLoading\(false\)/);
   assert.match(globalStyles, /\.sidebar-project-scroll\s*\{[^}]*background:\s*inherit/s);
 });
 

@@ -5,19 +5,31 @@ import type { ExtensionUiRequest } from "@/lib/types";
 
 export type ExtensionDialogRequest = Extract<ExtensionUiRequest, { method: "request_user_input" | "select" | "confirm" | "input" | "editor" }>;
 type CloseRequest = Extract<ExtensionUiRequest, { method: "close" }>;
+type UserInputStateRequest = Extract<ExtensionUiRequest, { method: "request_user_input_state" }>;
 
 /** Local expiry only dismisses UI. The server owns settlement of the tool. */
 export function useExtensionDialog() {
   const [dialog, setDialog] = useState<ExtensionDialogRequest | null>(null);
-  const receiveDialog = useCallback((request: ExtensionDialogRequest | CloseRequest) => {
+  const receiveDialog = useCallback((request: ExtensionDialogRequest | CloseRequest | UserInputStateRequest) => {
     if (request.method === "close") {
       setDialog(current => current?.id === request.id ? null : current);
+    } else if (request.method === "request_user_input_state") {
+      setDialog(current => {
+        if (!current || current.id !== request.id || current.method !== "request_user_input") return current;
+        return {
+          ...current,
+          snoozed: request.snoozed,
+          paused: request.paused,
+          expiresAt: request.expiresAt,
+        };
+      });
     } else if (!request.expiresAt || request.expiresAt > Date.now()) {
       setDialog(request);
     }
   }, []);
   useEffect(() => {
     if (!dialog?.expiresAt) return;
+    if (dialog.method === "request_user_input" && (dialog.snoozed || dialog.paused)) return;
     const expiresAt = dialog.expiresAt;
     const dismiss = () => setDialog(current => current?.id === dialog.id ? null : current);
     const reconcile = () => { if (Date.now() >= expiresAt) dismiss(); };

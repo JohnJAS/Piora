@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile(new URL("./FileExplorer.tsx", import.meta.url), "utf8");
+const source = (await Promise.all([
+  readFile(new URL("./FileExplorer.tsx", import.meta.url), "utf8"),
+  readFile(new URL("./file-explorer/TreeNode.tsx", import.meta.url), "utf8"),
+  readFile(new URL("./file-explorer/SearchAndChanges.tsx", import.meta.url), "utf8"),
+])).join("\n");
 
 test("file explorer exposes the WAI-ARIA tree hierarchy", () => {
   assert.match(source, /role="tree"/);

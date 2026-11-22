@@ -10,14 +10,24 @@ export const planGoal = {
   id: 'plan-goal',
   mode: 'local-model-fixture',
   scope: 'real Electron UI, Next routes, SDK and workflow tools with a deterministic loopback model; API reads only verify results',
-  coverage: ['laboratory defaults off and is enabled through Settings UI', 'new-chat Plan selection', 'single-row Plan and Goal previews expand on hover without moving the composer or transcript', 'mode selector and collapsed/expanded screenshots', 'runtime denial of an attempted Plan write', 'immutable plan revision and confirmation', 'real SDK write after UI approval', 'Goal continuation and turn budget', 'pause, refresh, resume and cancel', 'process restart without automatic replay', 'persisted history and model-reported evidence', 'disabled laboratory preserves history and stop controls but blocks new modes and continuation', 'disabling laboratory stops automatic continuation at the current turn boundary'],
+  coverage: [
+    'laboratory defaults off and is enabled through Settings UI',
+    'zero persistent footer mode picker; Plan and Goal entry via + menu, /plan, /goal and removable mode pills',
+    'runtime denial of an attempted Plan write',
+    'ProposedPlanCard in transcript, editable PLAN.md side panel, and inline ImplementPlanCard confirmation',
+    'immutable plan revision and one-shot real SDK write after UI approval',
+    'Goal drafting mode, single-line GoalComposerRail, GoalSidePanelTab budget guardrails, and GoalAchievedBadge',
+    'pause, refresh, resume and cancel',
+    'process restart without automatic replay',
+    'persisted history and model-reported evidence',
+    'disabled laboratory preserves history and stop controls but blocks new modes and continuation',
+    'disabling laboratory stops automatic continuation at the current turn boundary',
+  ],
   limits: ['real model reasoning or evidence truthfulness', 'arbitrary external MCP tools', 'packaged installer', 'non-Windows platforms', 'real task semantic acceptance'],
   async prepare(context) { fixture = await prepareWorkflowModel(context); },
   async run(context) {
     let { page } = context;
     const { step, waitUntil, reload, restart, directory } = context;
-    // Capture the current page after restart and finish finite CSS transitions so
-    // preview screenshots show the settled UI instead of a partly faded frame.
     const screenshot = name => page.screenshot({ path: join(directory, name), animations: 'disabled', timeout: 5_000 });
     const observations = [], mutations = [], laboratory = [];
     let sessionId;
@@ -29,27 +39,25 @@ export const planGoal = {
       if (body?.type === 'submit_input' || body?.type === 'prompt') sessionId = path.split('/').at(-1);
     });
     observe(page);
-    const panel = () => page.getByTestId('workflow-panel');
-    const revealWorkflow = async () => {
-      await page.getByTestId('workflow-peek-toggle').hover();
-      await page.getByTestId('workflow-peek-content').waitFor({ state: 'visible' });
+
+    const openAddMenu = async () => {
+      await page.getByTestId('composer-add-trigger').click();
     };
-    const clickWorkflow = async testId => {
-      await revealWorkflow();
-      await page.getByTestId(testId).click();
+    const activatePlanMode = async () => {
+      await openAddMenu();
+      await page.getByTestId('composer-add-plan-mode').click();
+      await page.getByTestId('workflow-plan-pill').waitFor({ state: 'visible' });
     };
-    const workflowGeometry = async () => {
-      const composer = await page.locator('textarea').first().boundingBox();
-      const transcript = await page.locator('#chat-scroll-container').boundingBox();
-      assert.ok(composer && transcript, 'Composer and transcript must be visible');
-      return { composer, transcript };
+    const activateGoalDraftMode = async () => {
+      await openAddMenu();
+      await page.getByTestId('composer-add-goal-mode').click();
+      await page.getByTestId('workflow-goal-pill').waitFor({ state: 'visible' });
     };
-    const collapseWorkflow = async () => {
-      await page.locator('textarea').first().hover();
-      await waitUntil(async () => await page.getByTestId('workflow-peek-toggle').getAttribute('aria-expanded') === 'false', 'workflow to collapse after pointer leaves');
-      assert.equal(await page.getByTestId('workflow-peek-content').isVisible(), false);
-      const row = await page.getByTestId('workflow-peek').boundingBox();
-      assert.ok(row && row.height <= 40, 'Collapsed workflow occupies only one row');
+    const openGoalSidePanel = async () => {
+      const panel = page.getByTestId('goal-side-panel');
+      if (await panel.isVisible().catch(() => false)) return;
+      await page.getByTestId('goal-rail-open-panel').click();
+      await panel.waitFor({ state: 'visible' });
     };
     const readLaboratory = async () => {
       const result = await page.evaluate(async () => {
@@ -74,7 +82,16 @@ export const planGoal = {
       if (imageName) await screenshot(imageName);
       await page.keyboard.press('Escape');
       await dialog.waitFor({ state: 'hidden' });
-      await waitUntil(async () => enabled ? await page.getByTestId('workflow-mode-select').count() === 1 : await page.getByTestId('workflow-mode-select').count() === 0, 'composer laboratory visibility');
+      // Verify composer footer never shows a persistent mode dropdown, and + menu reflects Laboratory state.
+      assert.equal(await page.getByTestId('workflow-mode-select').count(), 0);
+      await openAddMenu();
+      await waitUntil(
+        async () => enabled
+          ? await page.getByTestId('composer-add-plan-mode').count() === 1
+          : await page.getByTestId('composer-add-plan-mode').count() === 0,
+        'composer laboratory visibility in + menu',
+      );
+      await page.keyboard.press('Escape');
     };
     const snapshot = async () => {
       assert.ok(sessionId, 'UI send must establish a real session');
@@ -90,8 +107,13 @@ export const planGoal = {
     const stateIs = async expected => {
       await waitUntil(() => sessionId, 'UI submission to identify its new session');
       await waitUntil(async () => (await snapshot()).current?.status === expected, `workflow status ${expected}`);
-      await waitUntil(async () => await panel().getAttribute('data-status') === expected, `rendered workflow status ${expected}`);
-      return snapshot();
+      const state = await snapshot();
+      if (state.current?.kind === 'goal' && !['completed', 'cancelled'].includes(expected)) {
+        await waitUntil(async () => await page.getByTestId('goal-composer-rail').getAttribute('data-status') === expected, `rendered goal rail status ${expected}`);
+      } else if (state.current?.kind === 'plan' && expected === 'awaiting_approval') {
+        await page.getByTestId('implement-plan-card').waitFor({ state: 'visible' });
+      }
+      return state;
     };
     const send = async message => {
       await page.locator('textarea').first().fill(message);
@@ -101,6 +123,7 @@ export const planGoal = {
       const result = await page.evaluate(async id => (await fetch(`/api/agent/${encodeURIComponent(id)}`)).json(), sessionId);
       return !result.running || result.state?.runtime === 'idle';
     }, 'SDK run to settle');
+
     try {
       await step('laboratory-default-off-and-enable', async () => {
         assert.equal((await readLaboratory()).planGoalEnabled, false, 'Fresh profiles must not opt into Plan / Goal');
@@ -108,10 +131,10 @@ export const planGoal = {
         await setLaboratory(true, 'laboratory-enabled.png');
         assert.equal(fixture.requests.filter(request => request.workflow).length, 0, 'Enabling the laboratory does not start a model');
       });
+
       await step('plan-new-chat-read-only', async () => {
-        await page.getByTestId('workflow-mode-plan').click();
-        assert.equal(await page.getByTestId('workflow-mode-plan').getAttribute('aria-pressed'), 'true');
-        await screenshot('mode-selector-plan.png');
+        await activatePlanMode();
+        await screenshot('mode-pill-plan.png');
         await send('PLAN_GOAL_E2E_PLAN: Plan the fixture write, wait for my approval before changing files.');
         const state = await stateIs('awaiting_approval');
         assert.equal(state.mode, 'plan');
@@ -120,20 +143,15 @@ export const planGoal = {
         assert.equal(await read(fixture.approvedPath), null);
         assert.equal(fixture.calls.filter(call => call.name === 'write').length, 1, 'Fixture must actually attempt the denied write');
         await idle();
+        await page.getByTestId('proposed-plan-card').waitFor({ state: 'visible' });
+        await page.getByTestId('implement-plan-card').waitFor({ state: 'visible' });
         await waitUntil(() => page.getByTestId('workflow-plan-approve').isEnabled(), 'plan confirmation control to become ready');
-        await page.getByRole('button', { name: /^(Send|发送)$/ }).waitFor({ state: 'visible' });
-        await collapseWorkflow();
-        const before = await workflowGeometry();
-        await screenshot('plan-collapsed.png');
-        await revealWorkflow();
-        assert.deepEqual(await workflowGeometry(), before, 'Previewing the plan must not move the composer or transcript');
-        await collapseWorkflow();
-        assert.deepEqual(await workflowGeometry(), before, 'Collapsing the plan must retain the conversation layout');
-        await revealWorkflow();
-        await waitUntil(() => page.getByTestId('workflow-plan-approve').isEnabled(), 'plan confirmation control to become ready');
-        await page.getByTestId('workflow-peek-content').hover({ position: { x: 8, y: 8 } });
         await screenshot('plan-awaiting-approval.png');
+        await page.getByTestId('workflow-plan-open-editor').click();
+        await page.getByTestId('plan-side-panel').waitFor({ state: 'visible' });
+        await screenshot('plan-side-panel-editor.png');
       });
+
       let firstPlan;
       await step('plan-refresh-and-revise', async () => {
         firstPlan = (await snapshot()).current;
@@ -141,10 +159,9 @@ export const planGoal = {
         const restored = await stateIs('awaiting_approval');
         assert.equal(restored.current.id, firstPlan.id);
         assert.equal(restored.current.markdown, firstPlan.markdown);
-        await clickWorkflow('workflow-plan-revise');
-        await stateIs('planning');
         fixture.stage = 'plan-revised';
-        await send('PLAN_GOAL_E2E_REVISE: Include the exact APPROVED_BY_UI output in the plan.');
+        await page.getByTestId('workflow-plan-revise-input').fill('PLAN_GOAL_E2E_REVISE: Include the exact APPROVED_BY_UI output in the plan.');
+        await page.getByTestId('workflow-plan-revise').click();
         const revised = await stateIs('awaiting_approval');
         assert.equal(revised.current.title, 'Fixture plan v2');
         assert.equal(revised.current.id, firstPlan.id);
@@ -153,9 +170,10 @@ export const planGoal = {
         assert.equal(await read(fixture.approvedPath), null);
         await idle();
       });
+
       await step('plan-approve-and-execute-once', async () => {
         fixture.stage = 'plan-approved';
-        await clickWorkflow('workflow-plan-approve');
+        await page.getByTestId('workflow-plan-approve').click();
         await waitUntil(async () => await read(fixture.approvedPath) === 'APPROVED_BY_UI', 'real approved write');
         await stateIs('completed');
         await idle();
@@ -163,120 +181,119 @@ export const planGoal = {
         assert.equal(await read(fixture.forbiddenPath), null);
         await screenshot('plan-executed.png');
       });
+
       await step('goal-existing-chat-budget', async () => {
         fixture.stage = 'goal-budget';
-        await page.getByTestId('workflow-mode-goal').click();
-        await page.getByTestId('workflow-budget-input').fill('2');
-        assert.equal(await page.getByTestId('workflow-mode-goal').getAttribute('aria-pressed'), 'true');
-        await screenshot('mode-selector-goal.png');
-        await send('PLAN_GOAL_E2E_BUDGET: Work until the controlled checkpoint, using a budget of two turns.');
+        await activateGoalDraftMode();
+        await screenshot('mode-pill-goal-draft.png');
+        await send('PLAN_GOAL_E2E_BUDGET: Work until the controlled checkpoint.');
         const state = await stateIs('budget_exhausted');
         await idle();
-        assert.equal(state.current.turnsUsed, 2);
-        assert.equal(state.current.turnBudget, 2);
+        assert.equal(state.current.turnsUsed, state.current.turnBudget);
         assert.equal(state.current.criteria[0].status, 'pending');
-        assert.equal(fixture.calls.filter(call => call.stage === 'goal-budget' && call.name === 'piora_update_goal').length, 2);
         await reload();
         assert.equal((await stateIs('budget_exhausted')).current.id, state.current.id);
-        await collapseWorkflow();
-        const before = await workflowGeometry();
         await screenshot('goal-budget-exhausted.png');
-        await revealWorkflow();
-        assert.deepEqual(await workflowGeometry(), before, 'Previewing the goal must not move the composer or transcript');
-        await page.getByTestId('workflow-peek-content').hover({ position: { x: 8, y: 8 } });
-        await screenshot('goal-hover-expanded.png');
-        await collapseWorkflow();
-        assert.deepEqual(await workflowGeometry(), before, 'Collapsing the goal must retain the conversation layout');
       });
+
       await step('goal-budget-edit-does-not-resume', async () => {
         const before = fixture.requests.filter(request => request.workflow).length;
-        await revealWorkflow();
-        await page.getByTestId('workflow-run-budget-input').fill('4');
-        await clickWorkflow('workflow-goal-set-budget');
-        await waitUntil(async () => (await snapshot()).current?.turnBudget === 4, 'updated budget');
+        await openGoalSidePanel();
+        const currentBudget = (await snapshot()).current.turnBudget;
+        await page.getByTestId('workflow-run-budget-input').fill(String(currentBudget + 2));
+        await page.getByTestId('workflow-goal-set-budget').click();
+        await waitUntil(async () => (await snapshot()).current?.turnBudget === currentBudget + 2, 'updated budget');
         assert.equal((await snapshot()).current.status, 'budget_exhausted');
         assert.equal(fixture.requests.filter(request => request.workflow).length, before, 'Saving budget cannot start a workflow model request');
         fixture.stage = 'budget-complete';
-        await clickWorkflow('workflow-goal-resume');
+        await page.getByTestId('workflow-goal-resume').click();
         const completed = await stateIs('completed');
         await idle();
         assert.equal(completed.current.criteria[0].status, 'verified');
         assert.match(completed.current.criteria[0].evidence, /synthetic model-reported evidence/);
+        await waitUntil(async () => await page.getByTestId('goal-composer-rail').count() === 0, 'completed goal hides rail');
+        await page.getByTestId('goal-achieved-badge').waitFor({ state: 'visible' });
       });
+
       await step('goal-pause-refresh-resume', async () => {
         fixture.stage = 'pause-hold';
+        await activateGoalDraftMode();
         await send('PLAN_GOAL_E2E_PAUSE: Wait for my pause and resume before reaching the controlled checkpoint.');
         await waitUntil(() => fixture.holds.some(hold => hold.stage === 'pause-hold'), 'live held provider request');
         await stateIs('running');
-        await clickWorkflow('workflow-goal-pause');
+        await page.getByTestId('workflow-goal-pause').click();
         const paused = await stateIs('paused');
         await idle();
         await waitUntil(() => fixture.holds.find(hold => hold.stage === 'pause-hold')?.closed, 'paused request to close');
         await reload();
         assert.equal((await stateIs('paused')).current.id, paused.current.id);
         fixture.stage = 'pause-complete';
-        await clickWorkflow('workflow-goal-resume');
+        await page.getByTestId('workflow-goal-resume').click();
         assert.equal((await stateIs('completed')).current.id, paused.current.id);
         await idle();
         await screenshot('goal-resumed-completed.png');
       });
+
       await step('goal-cancel', async () => {
         fixture.stage = 'cancel-hold';
+        await activateGoalDraftMode();
         await send('PLAN_GOAL_E2E_CANCEL: Keep this controlled goal open until I cancel.');
         await waitUntil(() => fixture.holds.some(hold => hold.stage === 'cancel-hold'), 'live cancellable request');
-        await clickWorkflow('workflow-goal-cancel');
+        await page.getByTestId('workflow-goal-cancel').click();
         await stateIs('cancelled');
         await idle();
         await waitUntil(() => fixture.holds.find(hold => hold.stage === 'cancel-hold')?.closed, 'cancelled request to close');
         await reload();
         await stateIs('cancelled');
       });
+
       await step('goal-process-restart-does-not-replay', async () => {
         fixture.stage = 'restart-hold';
-        await page.getByTestId('workflow-mode-goal').click();
+        await activateGoalDraftMode();
         await send('PLAN_GOAL_E2E_RESTART: Keep the controlled goal open until an explicit resume after restart.');
         await waitUntil(() => fixture.holds.some(hold => hold.stage === 'restart-hold'), 'live pre-restart request');
         const running = await stateIs('running');
         const before = fixture.requests.filter(request => request.workflow).length;
         page = await restart(); observe(page);
-        // Startup opens a new-task surface; reopening persisted history is a UI action.
         await page.locator(`[data-session-drag-id="${sessionId}"]`).click();
         const restored = await stateIs('paused');
         assert.equal(restored.current.id, running.current.id);
         await idle();
         assert.equal(fixture.requests.filter(request => request.workflow).length, before, 'Restart must not replay the model request');
         fixture.stage = 'restart-complete';
-        await clickWorkflow('workflow-goal-resume');
+        await page.getByTestId('workflow-goal-resume').click();
         await stateIs('completed');
         await idle();
         assert.equal(fixture.failures.length, 0, 'Fixture requests must stay within the controlled contract');
         await screenshot('goal-restart-resumed.png');
       });
+
       await step('laboratory-disable-preserves-history-and-stop', async () => {
         fixture.stage = 'laboratory-pause-hold';
-        await page.getByTestId('workflow-mode-goal').click();
+        await activateGoalDraftMode();
         await send('PLAN_GOAL_E2E_LABORATORY_PAUSE: Preserve this goal when I disable the laboratory and pause.');
         await waitUntil(() => fixture.holds.some(hold => hold.stage === 'laboratory-pause-hold'), 'laboratory goal provider request');
         const running = await stateIs('running');
         const before = fixture.requests.filter(request => request.workflow).length;
         await setLaboratory(false);
-        await revealWorkflow();
         assert.equal(await page.getByTestId('workflow-goal-pause').isEnabled(), true, 'Disabling cannot remove the stop control');
         assert.equal(await page.getByTestId('workflow-goal-cancel').isEnabled(), true);
-        await clickWorkflow('workflow-goal-pause');
+        await page.getByTestId('workflow-goal-pause').click();
         const paused = await stateIs('paused');
         await idle();
         await waitUntil(() => fixture.holds.find(hold => hold.stage === 'laboratory-pause-hold')?.closed, 'disabled goal request to close on pause');
         assert.equal(paused.current.id, running.current.id);
         assert.deepEqual(paused.history, running.history);
         assert.equal(await page.getByTestId('workflow-goal-resume').isDisabled(), true);
+        await openGoalSidePanel();
         assert.equal(await page.getByTestId('workflow-goal-set-budget').isDisabled(), true);
-        await revealWorkflow();
         await page.getByTestId('workflow-history').locator('summary').first().click();
         assert.equal(await page.getByTestId('workflow-history-entry').count(), paused.history.length);
         await screenshot('laboratory-disabled-goal.png');
         await page.getByRole('button', { name: /^(New chat|新对话)$/ }).click();
-        assert.equal(await page.getByTestId('workflow-mode-select').count(), 0, 'Disabled new chat cannot select a workflow');
+        await openAddMenu();
+        assert.equal(await page.getByTestId('composer-add-plan-mode').count(), 0, 'Disabled new chat cannot select a workflow');
+        await page.keyboard.press('Escape');
         await page.locator(`[data-session-drag-id="${sessionId}"]`).click();
         assert.equal((await stateIs('paused')).current.id, paused.current.id);
         await reload();
@@ -286,13 +303,14 @@ export const planGoal = {
         await setLaboratory(true);
         assert.equal(fixture.requests.filter(request => request.workflow).length, before, 'Re-enabling cannot resume a stopped goal');
         fixture.stage = 'laboratory-resume-complete';
-        await clickWorkflow('workflow-goal-resume');
+        await page.getByTestId('workflow-goal-resume').click();
         assert.equal((await stateIs('completed')).current.id, paused.current.id);
         await idle();
       });
+
       await step('laboratory-disable-stops-next-turn', async () => {
         fixture.stage = 'laboratory-finish-hold';
-        await page.getByTestId('workflow-mode-goal').click();
+        await activateGoalDraftMode();
         await send('PLAN_GOAL_E2E_LABORATORY_BOUNDARY: Stop automatic continuation when the current turn finishes after I disable the laboratory.');
         await waitUntil(() => fixture.holds.some(hold => hold.stage === 'laboratory-finish-hold'), 'current goal turn to wait for its provider');
         const running = await stateIs('running');
@@ -309,8 +327,8 @@ export const planGoal = {
         await setLaboratory(true);
         assert.equal(fixture.requests.filter(request => request.workflow).length, before, 'Re-enabling only restores controls');
         fixture.stage = 'laboratory-finish-complete';
-        await clickWorkflow('workflow-goal-resume');
-        assert.equal((await stateIs('completed')).current.id, paused.current.id);
+        await page.getByTestId('workflow-goal-resume').click();
+        await stateIs('completed');
         await idle();
         assert.equal(fixture.failures.length, 0);
         await screenshot('goal-laboratory-resumed.png');

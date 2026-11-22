@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const { webpack } = require('next/dist/compiled/webpack/webpack.js');
 const repo = path.resolve(import.meta.dirname, '../..');
 
-test('workspace menu hides the native browser through layout changes and restores the same page', { timeout: 120000 }, async () => {
+test('workspace menus and renderer dialogs suspend the native browser and restore the same page', { timeout: 120000 }, async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'piora-tool-menu-'));
   let browser;
   try {
@@ -27,7 +27,7 @@ return <I18nProvider><button id='outside'>Outside</button><button onClick={()=>s
 <div id='file-panel' style={{height:'calc(100vh - 40px)',display:active?'flex':'none',flexDirection:'column'}}><RightPanel activeTab={tab} onActiveTabChange={setTab} active={active} maximized={false} onMaximizedChange={noop} onClosePanel={()=>setActive(false)} cwd={null} refreshKey={0} fileTabs={[]} activeFileTabId={null} canReopenClosedFileTab={false} onSelectFileTab={noop} onCloseFileTab={noop} onCloseOtherFileTabs={noop} onCloseFileTabsToRight={noop} onMoveFileTab={noop} onReopenClosedFileTab={noop} onOpenFile={noop} onDirtyChange={noop} onRefresh={noop} onMention={noop} onMentions={noop} onMentionLines={noop} selectedAutomationId={null} sessionId='fixture' capabilities={null}/></div></I18nProvider>}
 createRoot(document.getElementById('root')).render(<App/>);`);
     const alias = Object.fromEntries(['../FileExplorer', '../FileViewer', '../TabBar', './ReviewPanel', './CommandPanel', './HarmonyPanel', '../AutomationPanel', './SSHPanel', './design-to-harmony/DesignToHarmonyPanel', 'next/dynamic'].map(name => [name + '$', stubs]));
-    const compiler = webpack({ mode: 'development', target: 'web', devtool: false, entry: path.join(directory, 'entry.tsx'), output: { path: directory, filename: 'bundle.js' }, resolve: { extensions: ['.tsx', '.ts', '.js'], modules: [path.join(repo, 'node_modules')], alias: { ...alias, '@': repo } }, module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: path.join(directory, 'ts.cjs') }, { test: /\.css$/, use: path.join(directory, 'css.cjs') }] } });
+    const compiler = webpack({ mode: 'development', target: 'web', devtool: false, entry: path.join(directory, 'entry.tsx'), output: { path: directory, filename: 'bundle.js' }, resolve: { extensions: ['.tsx', '.ts', '.js'], modules: ['node_modules', path.join(repo, 'node_modules')], alias: { ...alias, '@': repo } }, module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: path.join(directory, 'ts.cjs') }, { test: /\.css$/, use: path.join(directory, 'css.cjs') }] } });
     await new Promise((resolve, reject) => compiler.run((error, stats) => compiler.close(() => error || stats.hasErrors() ? reject(error || new Error(stats.toString({ all: false, errors: true }))) : resolve())));
     const css = (await readFile(path.join(repo, 'app/globals.css'), 'utf8')).replace(/^@import.*$/gm, '');
     browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : 'chromium', headless: true });
@@ -92,6 +92,69 @@ createRoot(document.getElementById('root')).render(<App/>);`);
       await page.getByRole('button', { name: 'Toggle panel', exact: true }).click(); await menu.waitFor({ state: 'hidden' });
       await page.getByRole('button', { name: 'Toggle panel', exact: true }).click(); await nativeVisible(true);
       assert.equal(await menu.count(), 0, 'reopening the panel cannot restore a stale menu');
+
+      const actionsBeforeDialogs = await page.evaluate(() => window.nativeActions);
+      await page.evaluate(() => {
+        window.finishShow = undefined;
+        window.delayNextShow = true;
+        window.dispatchEvent(new Event('resize'));
+      });
+      await page.waitForFunction(() => typeof window.finishShow === 'function');
+      await page.evaluate(() => {
+        const portal = document.createElement('div');
+        portal.id = 'dialog-portal';
+        portal.innerHTML = '<div role="dialog" aria-modal="true" style="position:fixed;top:0;left:0;width:80px;height:20px">Settings</div>';
+        document.body.append(portal);
+      });
+      await nativeVisible(false);
+      assert.ok(await page.evaluate(() => window.nativeViewports.at(-1).width > 0), 'temporary suspension retains the measured browser bounds');
+      const afterDialog = await page.evaluate(() => {
+        const dialog = document.createElement('dialog');
+        dialog.id = 'confirmation';
+        dialog.textContent = 'Confirmation';
+        document.body.append(dialog);
+        dialog.showModal();
+        document.getElementById('dialog-portal').hidden = true;
+        window.finishShow();
+        return window.nativeViewports.length;
+      });
+      await page.setViewportSize({ width: 600, height: 720 });
+      await page.evaluate(() => window.emitNativeState());
+      await page.waitForTimeout(300);
+      assert.equal(await page.evaluate(index => window.nativeViewports.slice(index).some(call => call.visible), afterDialog), false,
+        'closing one modal and refreshing the viewport cannot cover another modal');
+      await page.evaluate(() => document.getElementById('confirmation').close());
+      await nativeVisible(true);
+      await page.evaluate(() => { document.getElementById('dialog-portal').hidden = false; });
+      await nativeVisible(false);
+      await page.evaluate(() => document.getElementById('dialog-portal').remove());
+      await nativeVisible(true);
+
+      await page.evaluate(() => {
+        const popup = document.createElement('div');
+        popup.id = 'anchored-popup';
+        popup.setAttribute('role', 'menu');
+        popup.setAttribute('popover', 'manual');
+        popup.style.cssText = 'position:fixed;inset:auto;top:0;left:0;margin:0;width:12px;height:12px';
+        document.body.append(popup);
+        popup.showPopover();
+      });
+      await page.locator('#anchored-popup').waitFor();
+      assert.equal(await page.evaluate(() => window.nativeVisible), true, 'a menu outside the browser leaves the native page visible');
+      await page.evaluate(() => {
+        const bounds = window.nativeViewports.findLast(item => item.visible);
+        const popup = document.getElementById('anchored-popup');
+        popup.style.left = `${bounds.x + 4}px`;
+        popup.style.top = `${bounds.y + 4}px`;
+      });
+      await nativeVisible(false);
+      await page.evaluate(() => document.getElementById('anchored-popup').hidePopover());
+      await nativeVisible(true);
+      await page.evaluate(() => document.getElementById('anchored-popup').showPopover());
+      await nativeVisible(false);
+      await page.evaluate(() => document.getElementById('anchored-popup').remove());
+      await nativeVisible(true);
+      assert.deepEqual(await page.evaluate(() => window.nativeActions), actionsBeforeDialogs, 'portals hide the existing view without starting browser navigation');
       assert.deepEqual(errors, []);
       await page.close();
     }
