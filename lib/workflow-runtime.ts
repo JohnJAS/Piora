@@ -172,8 +172,10 @@ export class WorkflowRuntime {
   action(input: WorkflowAction): WorkflowActionResult {
     let prompt: string | undefined;
     this.change(record => {
-      const extraSignature = input.objective !== undefined || input.criteria !== undefined || input.planMarkdown !== undefined
-        ? `:${createHash("sha256").update(JSON.stringify([input.objective ?? "", input.criteria ?? null, input.planMarkdown ?? ""])).digest("hex").slice(0, 12)}`
+      const extraSignature = input.objective !== undefined || input.criteria !== undefined || input.planMarkdown !== undefined || input.feedback !== undefined
+        ? `:${createHash("sha256").update(JSON.stringify(input.feedback === undefined
+          ? [input.objective ?? "", input.criteria ?? null, input.planMarkdown ?? ""]
+          : [input.objective ?? "", input.criteria ?? null, input.planMarkdown ?? "", input.feedback])).digest("hex").slice(0, 12)}`
         : "";
       const key = `${input.runId}:${input.expectedRevision}:${input.action}:${input.turnBudget ?? ""}${extraSignature}`;
       if (record.actions.includes(key)) return;
@@ -198,11 +200,13 @@ export class WorkflowRuntime {
         }
         case "revise":
           if (run.kind !== "plan" || run.status !== "awaiting_approval") throw new WorkflowError("This plan is not awaiting approval");
+          if (input.feedback !== undefined) this.requireModeTools("plan");
           snapshot.history.push(structuredClone(run));
           run.version++;
           run.status = "planning";
           run.reason = "revision_requested";
           delete run.planEditedByUser;
+          prompt = input.feedback;
           break;
         case "exit":
           if (run.status === "running") throw new WorkflowError("Stop the active execution before exiting");

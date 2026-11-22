@@ -9,6 +9,7 @@ export interface WorkflowActionExtra {
   objective?: string;
   criteria?: WorkflowCriterion[];
   planMarkdown?: string;
+  feedback?: string;
 }
 
 /** Session and revision checks fence slow requests after switching chats or acting. */
@@ -106,6 +107,7 @@ export function useWorkflow(
         ...(options.objective !== undefined ? { objective: options.objective } : {}),
         ...(options.criteria !== undefined ? { criteria: options.criteria } : {}),
         ...(options.planMarkdown !== undefined ? { planMarkdown: options.planMarkdown } : {}),
+        ...(options.feedback !== undefined ? { feedback: options.feedback } : {}),
       });
       if (epoch !== generation.current) return false;
       accept(next);

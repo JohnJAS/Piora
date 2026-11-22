@@ -47,6 +47,11 @@ export const browserPersistence = {
     const observations = [];
     async function open(name) {
       await page.getByText(name, { exact: true }).first().click();
+      await page.getByText('Controlled browser persistence fixture', { exact: true }).waitFor();
+      // Selecting a chat focuses its composer. Application shortcuts are
+      // intentionally preserved for text editors, so move focus to a normal
+      // toolbar button before exercising the browser shortcut.
+      await page.locator('.desktop-titlebar-sidebar-toggle').focus();
       await page.keyboard.press(process.platform === 'darwin' ? 'Meta+t' : 'Control+t');
       const address = page.getByRole('textbox', { name: /^(Address|地址)$/ });
       const target = `${fixture.origin}/${name.endsWith("A") ? "chat-a" : "chat-b"}`;

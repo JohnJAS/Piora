@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useRef } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import type { PermissionMode, ToolPermissionState } from "@/lib/tool-permission-policy";
 import type { WorkflowRun } from "@/lib/workflow-types";
@@ -18,7 +18,9 @@ export interface ImplementPlanCardProps {
   permissionSaving?: boolean;
   onToolPermissionChange?: (mode: PermissionMode) => void;
   onApprove: () => void;
-  onReviseWithFeedback: (feedback: string) => void;
+  feedback: string;
+  onFeedbackChange: (feedback: string) => void;
+  onReviseWithFeedback: (feedback: string) => Promise<boolean>;
   onDismiss: () => void;
 }
 
@@ -35,17 +37,19 @@ export function ImplementPlanCard({
   permissionSaving,
   onToolPermissionChange,
   onApprove,
+  feedback,
+  onFeedbackChange,
   onReviseWithFeedback,
   onDismiss,
 }: ImplementPlanCardProps) {
   const { t } = useI18n();
-  const [feedback, setFeedback] = useState("");
   const reviseInputRef = useRef<HTMLInputElement>(null);
+  const submittingRef = useRef(false);
 
   const submitRevision = () => {
-    if (!enabled || busy) return;
-    onReviseWithFeedback(feedback.trim());
-    setFeedback("");
+    if (!enabled || busy || submittingRef.current) return;
+    submittingRef.current = true;
+    void onReviseWithFeedback(feedback.trim()).catch(() => false).finally(() => { submittingRef.current = false; });
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
@@ -95,6 +99,7 @@ export function ImplementPlanCard({
             type="button"
             className={styles.btnGhost}
             data-testid="workflow-plan-open-editor"
+            disabled={busy}
             onClick={() => dispatchOpenWorkflowPanel({ tab: "plan", sessionId, runId: run.id })}
           >
             <AliIcon name="external-link" size={13} />
@@ -146,7 +151,7 @@ export function ImplementPlanCard({
               value={feedback}
               placeholder={t("workflow.plan.revisePlaceholder")}
               aria-label={t("workflow.plan.revisePlaceholder")}
-              onChange={(event) => setFeedback(event.target.value)}
+              onChange={(event) => onFeedbackChange(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault();

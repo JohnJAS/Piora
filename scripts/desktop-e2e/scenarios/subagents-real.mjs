@@ -16,14 +16,22 @@ const parentSelection = selection(parentModel), readerSelection = selection(read
 export const subagentsReal = {
   id: 'subagents-real', mode: 'real-provider',
   scope: 'Real configured providers, Electron UI delegation, independent read/write/verification and retained child context.',
-  coverage: ['real parent and child model requests', 'two independent delegated tasks', 'read-only child with a different model', 'child write and command verification', 'continuation with saved context', 'full child transcript and usage'],
+  coverage: ['real parent and child model requests', 'two independent delegated tasks', parentModel === readerModel ? 'read-only child using the same model' : 'read-only child with a different model', 'child write and command verification', 'continuation with saved context', 'full child transcript and usage'],
   limits: ['Requires local credentials; PIORA_SUBAGENT_REAL_AGENT_DIR selects their directory, PIORA_SUBAGENT_REAL_PARENT_MODEL and PIORA_SUBAGENT_REAL_READER_MODEL select provider/modelId.', 'Provider responses are nondeterministic; failure is recorded without substituting scripted responses.', 'Parent runtime creation is test preparation; all task submissions and settings changes use the UI.'],
   async prepare({ paths, registerCleanup, report }) {
     const source = process.env.PIORA_SUBAGENT_REAL_AGENT_DIR ?? join(homedir(), '.pi', 'agent');
+    report.credentialSource = source;
     const auth = JSON.parse(await readFile(join(source, 'auth.json'), 'utf8'));
     const config = JSON.parse(await readFile(join(source, 'models.json'), 'utf8'));
     const selectedAuth = {}, providers = {};
     for (const { provider, modelId } of [parentSelection, readerSelection]) {
+      const credential = auth[provider];
+      // A copied OAuth refresh token can rotate the original account's token.
+      // Do not refresh or nearly expire it inside a disposable test profile.
+      if (credential?.type === 'oauth') {
+        assert.ok(Number.isFinite(credential.expires) && credential.expires > Date.now() + 60 * 60 * 1000,
+          `The ${provider} OAuth credential is expired or close to expiry. Sign in again before running this test.`);
+      }
       if (auth[provider]) selectedAuth[provider] = auth[provider];
       const configured = config.providers?.[provider];
       assert.ok(auth[provider] || configured?.apiKey, `Credential for ${provider} is required`);
@@ -42,9 +50,10 @@ export const subagentsReal = {
     report.credentials = 'selected existing credentials copied to isolated runtime and removed during cleanup';
     report.models = { parent: parentModel, reader: readerModel };
   },
-  async run({ page, origin, directory, paths, step, waitUntil }) {
+  async run({ page, origin, directory, paths, reload, step, waitUntil }) {
     let sessionId;
     const observations = [];
+    const transcriptChecks = [];
     const readJson = async path => {
       for (let attempt = 0; ; attempt++) {
         try { return await page.evaluate(async path => { const response = await fetch(path); return { status: response.status, body: await response.json() }; }, path); }
@@ -63,7 +72,9 @@ export const subagentsReal = {
     const assertParentHealthy = async () => {
       const response = await readJson(`/api/agent/${sessionId}`);
       assert.equal(response.status, 200); const state = response.body;
-      assert.ok(!state.state?.lastPromptFailed, state.state?.lastPromptErrorSummary || 'Real parent model failed');
+      const failure = (state.state?.lastPromptErrorSummary || 'Real parent model failed')
+        .replace(/(api[\s_-]*key\s*:\s*)[^,\s]+/gi, '$1[redacted]');
+      assert.ok(!state.state?.lastPromptFailed, failure);
       return state.state;
     };
     const send = async text => { await page.locator('textarea').first().fill(text); await page.getByRole('button', { name: /^(Send|发送)$/ }).click(); };
@@ -71,34 +82,12 @@ export const subagentsReal = {
       return (await assertParentHealthy())?.runtime === 'idle';
     }, 'real parent and child models to settle');
     try {
-      await step('prepare-real-parent-runtime', async () => {
-        const prepared = await page.evaluate(async ({ cwd, provider, modelId }) => {
-          const response = await fetch('/api/agent/new', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ type: 'ensure_session', cwd, provider, modelId, thinkingLevel: 'off' }) });
-          return { status: response.status, body: await response.json() };
-        }, { cwd: workspace, ...parentSelection });
-        assert.equal(prepared.status, 200); sessionId = prepared.body.sessionId;
-        await page.evaluate(async id => {
-          await fetch(`/api/agent/${id}`); const events = await fetch(`/api/agent/${id}/events`);
-          const reader = events.body.getReader(); await reader.read(); await reader.cancel();
-        }, sessionId);
-        await page.goto(`${origin}/?session=${sessionId}`, { waitUntil: 'domcontentloaded' });
-        await page.locator('textarea').first().waitFor({ state: 'visible' });
+      await step('configure-real-subagent-models', async () => {
+        // Settings do not depend on a prepared conversation. Complete this UI
+        // action before creating the runtime and compiling its history routes.
         const dialog = page.getByRole('dialog', { name: /^(Settings|设置)$/ });
-        // A visible server-rendered button can precede hydration after navigation.
-        // Opening settings is idempotent; never retry toggles or task submissions.
-        await waitUntil(async () => {
-          if (await dialog.isVisible()) return true;
-          try {
-            await page.getByRole('button', { name: /^(Settings|设置)$/ }).click({ timeout: 2000 });
-            await dialog.waitFor({ state: 'visible', timeout: 2000 });
-            return true;
-          } catch (error) {
-            if (error.name !== 'TimeoutError') throw error;
-            // A late-opened dialog may cover the original settings button.
-            return dialog.isVisible();
-          }
-        }, 'settings dialog after session navigation');
+        await page.getByRole('button', { name: /^(Settings|设置)$/ }).click();
+        await dialog.waitFor();
         await dialog.getByTestId('settings-laboratory').click();
         const toggle = dialog.getByTestId('subagent-toggle'); await waitUntil(() => toggle.isEnabled(), 'subagent switch');
         if (!await toggle.isChecked()) await toggle.click();
@@ -113,8 +102,24 @@ export const subagentsReal = {
           return data.settings.modelOverrides.Explore === readerModel;
         }, 'reader model override saved');
         await page.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
-        // The parent was provisioned through the API and has no message yet.
-        // Explicitly reopen that prepared chat before submitting its first turn.
+      });
+      await step('prepare-real-parent-runtime', async () => {
+        const prepared = await page.evaluate(async ({ cwd, provider, modelId }) => {
+          const response = await fetch('/api/agent/new', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type: 'ensure_session', cwd, provider, modelId, thinkingLevel: 'off' }) });
+          return { status: response.status, body: await response.json() };
+        }, { cwd: workspace, ...parentSelection });
+        assert.equal(prepared.status, 200); sessionId = prepared.body.sessionId;
+        // Warm read-only routes before the UI starts its own history and SSE deadlines.
+        const history = await readJson(`/api/sessions/${sessionId}?deferThinking=1&deferMedia=1&view=transcript`);
+        assert.equal(history.status, 200);
+        await page.evaluate(async id => {
+          const events = await fetch(`/api/agent/${id}/events`, { signal: AbortSignal.timeout(120_000) });
+          if (!events.ok || !events.body) throw new Error(`Fixture event stream failed with HTTP ${events.status}`);
+          const reader = events.body.getReader();
+          try { if ((await reader.read()).done) throw new Error('Fixture event stream closed before sending data'); }
+          finally { await reader.cancel(); }
+        }, sessionId);
         await page.goto(`${origin}/?session=${sessionId}`, { waitUntil: 'domcontentloaded' });
         await page.locator('textarea').first().waitFor({ state: 'visible' });
       });
@@ -124,7 +129,7 @@ export const subagentsReal = {
         await idle();
         const list = await records(); assert.ok(list.every(record => record.status === 'completed'), JSON.stringify(list.map(record => ({ status: record.status, error: record.error }))));
         const reader = list.find(record => record.agentType === 'Explore'), writer = list.find(record => record.agentType === 'general-purpose');
-        assert.ok(reader && writer); assert.equal(reader.model, readerModel);
+        assert.ok(reader && writer); assert.equal(reader.model, readerModel); assert.equal(writer.model, parentModel);
         assert.ok(reader.totalToolUseCount > 0 && writer.totalToolUseCount >= 2);
         assert.ok(list.every(record => record.totalTokens > 0 && !Object.hasOwn(record, 'prompt') && !Object.hasOwn(record, 'childSessionFile')));
         assert.match(reader.result, /16/); assert.match(reader.result, /34/);
@@ -144,21 +149,7 @@ export const subagentsReal = {
           assert.equal(files.length, 1);
           const transcript = await readFile(join(folder, files[0]), 'utf8');
           assert.ok(!transcript.includes('PARENT_ONLY_REAL_9461'), 'parent private history must remain isolated');
-          const card = page.locator(`[data-subagent-id="${record.agentId}"]`).first();
-          await card.locator('[aria-expanded]').click();
-          await card.locator('[data-subagent-tools] > summary').first().click();
-          await card.locator('[data-subagent-role="toolResult"]').first().waitFor();
         }
-        const group = page.locator(`[data-subagent-group="${sessionId}"]`);
-        await group.waitFor({ state: 'hidden' });
-        const card = page.locator(`[data-subagent-id="${reader.agentId}"]`).first();
-        await card.getByRole('button', { name: /^(View details|查看详情)$/ }).click();
-        const details = page.locator(`[data-subagent-inspector="${reader.agentId}"]`);
-        await details.locator('[data-subagent-activity] > summary').click();
-        await details.locator('[data-subagent-tools] > summary').first().click();
-        await details.locator('[data-subagent-role="toolResult"]').first().waitFor();
-        await details.getByRole('button', { name: /Close subagent details|关闭子代理详情/ }).click();
-        await page.screenshot({ path: join(directory, 'real-subagents.png'), animations: 'disabled' });
       });
       await step('real-model-continues-owned-child-context', async () => {
         const reader = (await records()).find(record => record.agentType === 'Explore');
@@ -168,7 +159,54 @@ export const subagentsReal = {
         const current = (await records()).find(record => record.agentId === reader.agentId);
         assert.equal(current.status, 'completed'); assert.match(current.result, /50/);
         assert.equal((await records()).length, 2);
+        const response = await readJson(`/api/sessions/${sessionId}`);
+        assert.equal(response.status, 200);
+        const messages = response.body.context.messages;
+        const lastUser = messages.findLastIndex(message => message.role === 'user');
+        assert.ok(lastUser >= 0);
+        const calls = messages.slice(lastUser + 1).filter(message => message.role === 'assistant')
+          .flatMap(message => message.content.filter(block => block.type === 'toolCall'));
+        assert.ok(calls.some(call => call.toolName === 'SendMessage' && call.input.to === reader.agentId));
+        assert.ok(calls.every(call => ['SendMessage', 'TaskOutput'].includes(call.toolName)));
       });
-    } finally { await writeFile(join(directory, 'real-subagent-evidence.json'), JSON.stringify({ sessionId, observations }, null, 2)); }
+      await step('real-desktop-child-transcript', async () => {
+        // Verify disk-backed tool outputs after reloading the conversation.
+        // Live title and transcript reconciliation can still replace cards
+        // from the first turn immediately after the model goes idle.
+        await reload();
+        await page.waitForURL(url => url.searchParams.get('session') === sessionId);
+        const list = await records();
+        const expandFirstToolResult = async surface => {
+          const result = surface.locator('[data-subagent-role="toolResult"]').first();
+          await result.waitFor({ timeout: 30_000 });
+          assert.equal(await result.locator('pre').isVisible(), false, 'The tool output starts collapsed');
+          await result.locator('summary').click();
+          await result.locator('pre').waitFor({ timeout: 10_000 });
+        };
+        for (const record of list) {
+          const card = page.locator(`[data-subagent-id="${record.agentId}"]`).first();
+          const trigger = card.locator('.chat-disclosure-trigger').first();
+          await trigger.click();
+          try {
+            await expandFirstToolResult(card);
+            transcriptChecks.push({ agentId: record.agentId, inline: 'passed' });
+          } catch (error) {
+            transcriptChecks.push({ agentId: record.agentId, inline: 'failed', mounted: await card.count(), expanded: await card.locator('.chat-disclosure-trigger[aria-expanded="true"]').count(), timelines: await card.locator('[data-subagent-transcript]').count(), toolResults: await card.locator('[data-subagent-role="toolResult"]').count() });
+            throw error;
+          }
+          await trigger.click();
+        }
+        const group = page.locator(`[data-subagent-group="${sessionId}"]`);
+        await group.waitFor({ state: 'hidden' });
+        const reader = list.find(record => record.agentType === 'Explore');
+        const card = page.locator(`[data-subagent-id="${reader.agentId}"]`).first();
+        await card.getByRole('button', { name: /^(View details|查看详情)$/ }).click();
+        const details = page.locator(`[data-subagent-inspector="${reader.agentId}"]`);
+        await expandFirstToolResult(details);
+        transcriptChecks.push({ agentId: reader.agentId, inspector: 'passed' });
+        await details.getByRole('button', { name: /Close subagent details|关闭子代理详情/ }).click();
+        await page.screenshot({ path: join(directory, 'real-subagents.png'), animations: 'disabled' });
+      });
+    } finally { await writeFile(join(directory, 'real-subagent-evidence.json'), JSON.stringify({ sessionId, observations, transcriptChecks }, null, 2)); }
   },
 };

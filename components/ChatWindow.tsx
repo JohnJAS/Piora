@@ -773,7 +773,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
         <ChatWorkflowDock
           sessionId={session?.id ?? sessionIdRef.current}
           snapshot={workflow.snapshot}
-          busy={workflow.busy}
+          busy={workflow.busy || sessionReadOnly}
           running={sessionBusy}
           enabled={laboratory.planGoalEnabled}
           settingsReady={laboratory.ready}
@@ -788,11 +788,6 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
           onAcceptSnapshot={workflow.accept}
           onRefresh={laboratory.ready ? workflow.refresh : laboratory.refresh}
           onOpenTaskChanges={onOpenTaskChanges}
-          onSendPlanRevision={async (feedback) => {
-            await handleComposerSend(feedback, undefined, undefined, undefined, undefined, {
-              workflow: { mode: "plan", turnBudget: workflow.snapshot?.turnBudget ?? DEFAULT_WORKFLOW_TURN_BUDGET },
-            });
-          }}
           onFocusComposer={() => chatInputRef?.current?.focus()}
           onEnterGoalDraft={(inlineObjective) => chatInputRef?.current?.enterGoalDraftMode(inlineObjective)}
           replaceGoalRequest={replaceGoalRequest}

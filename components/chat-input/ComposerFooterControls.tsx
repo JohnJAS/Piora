@@ -36,9 +36,16 @@ export function AttachmentAddMenu({
   onStartGoalWorkflow,
 }: AttachmentAddMenuProps) {
   const { t } = useI18n();
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
   const canOpen = canAttachFiles || workflowEnabled;
   return (
-    <div ref={menuRef} className="composer-add-control">
+    <div ref={menuRef} className="composer-add-control" onKeyDown={(event) => {
+      if (event.key !== "Escape" || !open) return;
+      event.preventDefault();
+      event.stopPropagation();
+      onToggle();
+      triggerRef.current?.focus();
+    }}>
       {open && (
         <div className="composer-add-menu" role="menu" aria-label={t("chat.addMenu")}>
           {canAttachFiles && (
@@ -115,6 +122,7 @@ export function AttachmentAddMenu({
         </div>
       )}
       <button
+        ref={triggerRef}
         type="button"
         className={`composer-add-trigger${open ? " is-open" : ""}${hasAttachments ? " has-attachments" : ""}`}
         data-testid="composer-add-trigger"

@@ -324,8 +324,17 @@ export const subagents = {
             await waitUntil(() => appearance.getByRole('radio', { name: view.locale, exact: true }).getAttribute('aria-checked').then(value => value === 'true'), 'language applied');
             await dialog.locator(`[role="radio"][data-theme-id="${view.theme}"]`).click();
             await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, view.theme);
-            await dialog.getByRole('button', { name: /^(Back to Piora|返回 Piora)$/ }).click();
+            try {
+              await dialog.getByRole('button', { name: /^(Back to Piora|返回 Piora)$/ }).click({ timeout: 8_000 });
+            } catch (error) {
+              // A development-page navigation can unmount Settings while the
+              // click is pending. Accept that only if it actually closed; the
+              // persisted locale/theme and inspector are still checked below.
+              if (await dialog.isVisible().catch(() => false)) throw error;
+            }
             await dialog.waitFor({ state: 'hidden' });
+            await page.waitForFunction(({ theme, locale }) => document.documentElement.dataset.theme === theme
+              && (locale === 'English' ? document.documentElement.lang.startsWith('en') : document.documentElement.lang === 'zh-CN'), view);
             const [record] = await read();
             await detailButton(record.agentId).click();
             const inspector = page.getByRole('region', { name: view.title, exact: true });

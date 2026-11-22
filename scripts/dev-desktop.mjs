@@ -234,10 +234,16 @@ async function main() {
     if (!stopping) void shutdown(code || 1);
   });
 
+  const configuredReadyTimeout = Number(process.env.PIORA_DESKTOP_DEV_NEXT_READY_TIMEOUT_MS);
+  const readyTimeout = Number.isSafeInteger(configuredReadyTimeout) && configuredReadyTimeout >= 60_000 && configuredReadyTimeout <= 300_000
+    ? configuredReadyTimeout : 60_000;
+  let readyTimer;
   const nextReadyWithTimeout = Promise.race([
     nextReady,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("Next.js did not report readiness within 60 seconds")), 60_000)),
-  ]);
+    new Promise((_, reject) => {
+      readyTimer = setTimeout(() => reject(new Error(`Next.js did not report readiness within ${readyTimeout / 1000} seconds`)), readyTimeout);
+    }),
+  ]).finally(() => clearTimeout(readyTimer));
   await Promise.all([nextReadyWithTimeout, initialCompile]);
   if (stopping) return;
   launchElectron();

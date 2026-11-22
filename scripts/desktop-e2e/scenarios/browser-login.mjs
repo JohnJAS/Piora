@@ -8,7 +8,7 @@ export const browserLogin = {
   id: 'browser-login',
   mode: 'local-model-fixture',
   scope: 'real Electron chat and embedded browser; deterministic local model and login website',
-  coverage: ['UI send without approval modes', 'automatic browser reveal without login cards', 'user sign-in through UI', 'automatic continuation through the real SDK', 'removed settings menu and launcher content'],
+  coverage: ['explicit one-time approval to open the page', 'automatic browser reveal without login cards', 'user sign-in through UI', 'automatic continuation through the real SDK', 'current permission control and removed legacy launcher content'],
   limits: ['real model providers', 'third-party login providers and SSO', 'packaged releases', 'background Playwright handoff', 'non-Windows platforms'],
   async prepare({ paths, registerCleanup, report }) {
     const requests = [], metadataRequests = [];
@@ -51,9 +51,27 @@ export const browserLogin = {
     await mkdir(join(paths.agent, 'piora/tool-permissions'), { recursive: true });
     await writeFile(join(paths.agent, 'piora/tool-permissions/default.json'), JSON.stringify({ mode: 'ask', revision: 9, schemaVersion: 2 }));
   },
-  async run({ page, getBrowser, step, waitUntil, screenshot }) {
+  async run({ page, getBrowser, step, waitUntil, screenshot, directory }) {
+    await step('prepare-isolated-event-stream', async () => {
+      const handshake = await page.evaluate(async cwd => {
+        const created = await fetch('/api/agent/new', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'ensure_session', cwd, provider: 'desktop-login-fixture', modelId: 'browser-login' }), signal: AbortSignal.timeout(180_000) });
+        if (!created.ok) throw new Error(`Warmup session failed: ${created.status}`);
+        const { sessionId } = await created.json();
+        const response = await fetch(`/api/agent/${sessionId}/events?transport=delta`, { signal: AbortSignal.timeout(180_000) });
+        if (!response.ok || !response.body) throw new Error(`Warmup event stream failed: ${response.status}`);
+        const reader = response.body.getReader(), decoder = new TextDecoder();
+        try {
+          let value = '';
+          while (!value.includes('\n\n')) { const chunk = await reader.read(); if (chunk.done) throw new Error('Warmup stream closed before handshake'); value += decoder.decode(chunk.value, { stream: true }); }
+          return JSON.parse(value.split('\n').find(line => line.startsWith('data: '))?.slice(6) ?? 'null');
+        } finally { await reader.cancel(); }
+      }, directory);
+      assert.equal(handshake?.type, 'connected');
+      assert.equal(fixture.requests.length, 0, 'Warmup must not start a model request');
+    });
     await step('verify-clean-launcher-and-settings', async () => {
-      assert.equal(await page.locator('[data-permission-trigger]').count(), 0);
+      assert.equal(await page.locator('[data-permission-trigger]').count(), 1, 'Current per-chat permission control remains available');
       assert.equal(await page.getByText('先描述结果，项目和模型都可以直接在输入框里调整。', { exact: true }).count(), 0);
       assert.equal(await page.getByRole('button', { name: /审阅当前未提交的改动|Review uncommitted changes/ }).count(), 0);
       await page.getByRole('button', { name: /^(Settings|设置)$/ }).click();
@@ -65,10 +83,12 @@ export const browserLogin = {
     await step('send-and-reveal-login-without-cards', async () => {
       await page.locator('textarea').first().fill('Open the local fixture and continue automatically after I sign in.');
       await page.getByRole('button', { name: /^(Send|发送)$/ }).click();
+      await page.getByRole('button', { name: /^(Allow once|允许本次)$/ }).click();
       await page.getByRole('textbox', { name: /^(Address|地址)$/ }).waitFor({ state: 'visible' });
       await waitUntil(() => fixture.requests.some(request => request.action === 'wait_for_user'), 'login tool to begin');
       await page.getByText(/Sign in in the browser|请在浏览器中登录/).waitFor({ timeout: 75000 });
-      assert.equal(await page.locator('.browser-user-wait, .browser-handoff-notice, [data-permission-trigger]').count(), 0);
+      assert.equal(await page.locator('.browser-user-wait, .browser-handoff-notice').count(), 0);
+      assert.equal(await page.getByRole('button', { name: /^(Allow once|允许本次)$/ }).count(), 0, 'Login handoff does not request a second approval');
       assert.equal(await page.getByRole('button', { name: /我已完成，继续|Done, continue/ }).count(), 0);
       await screenshot('login-visible.png');
     });
@@ -83,7 +103,7 @@ export const browserLogin = {
       await page.getByText('LOGIN_AUTO_RESUMED', { exact: true }).waitFor();
       await waitUntil(() => page.getByRole('button', { name: /^(Send|发送)$/ }).isVisible(), 'session idle');
       assert.deepEqual(fixture.requests.map(request => request.action), ['open', 'wait_for_user', 'snapshot', 'final']);
-      assert.equal(await page.locator('.browser-user-wait, .browser-handoff-notice, [data-permission-trigger]').count(), 0);
+      assert.equal(await page.locator('.browser-user-wait, .browser-handoff-notice').count(), 0);
       await screenshot('login-resumed.png');
     });
   },
