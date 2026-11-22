@@ -374,8 +374,11 @@ export const subagents = {
         assert.match(failed.error, /Intentional subagent provider failure/);
         const group = page.locator(`[data-subagent-group="${sessionId}"]`);
         await group.waitFor({ state: 'hidden' });
+        // The final parent reply replaces the streaming row with the disk-backed
+        // chat card. Expand that finished card before asserting its error detail.
+        await page.getByText('CHILD_FAILURE_REPORTED', { exact: true }).waitFor();
         const card = taskCard(failed.agentId);
-        await card.locator('[aria-expanded]').click();
+        await card.locator('[aria-expanded="false"]').click();
         await card.getByRole('alert').filter({ hasText: 'Intentional subagent provider failure' }).waitFor();
         await detailButton(failed.agentId).click();
         const inspector = inspectorFor(failed.agentId);

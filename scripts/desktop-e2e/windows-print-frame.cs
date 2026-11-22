@@ -11,7 +11,6 @@ public static class PioraPrintFrame {
     private delegate bool Visit(IntPtr window, IntPtr data);
     [DllImport("user32.dll")] private static extern bool EnumWindows(Visit callback, IntPtr data);
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, Visit callback, IntPtr data);
-    [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern IntPtr GetLastActivePopup(IntPtr window);
     [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr window, uint command);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
@@ -49,32 +48,45 @@ public static class PioraPrintFrame {
           catch (ArgumentException) { return false; }
     }
 
-    public static IntPtr Find(int browserProcess, long[] previousFrames) {
-        var frame = GetForegroundWindow();
-        if (frame == IntPtr.Zero || WindowClass(frame) != "ApplicationFrameWindow" ||
-            Array.IndexOf(previousFrames, frame.ToInt64()) >= 0) return IntPtr.Zero;
-
-        var windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-        var host = ProcessId(frame);
-        if (!IsImage(host, Path.Combine(windows, "explorer.exe"))) return IntPtr.Zero;
-
-        bool proxyFound = false;
+    private static bool HasFixtureProxy(int browserProcess, int shellProcess) {
+        bool expected = false, another = false;
         EnumWindows((w, _) => {
-            if (ProcessId(w) != browserProcess || WindowClass(w) != "Chrome_WidgetWin_1" ||
-                !IsWindowVisible(w) || IsWindowEnabled(w)) return true;
-            var proxy = GetLastActivePopup(w);
-            proxyFound = WindowClass(proxy) == "ProxyModalWindow" && ProcessId(proxy) == host && GetWindow(proxy, 4) == w;
-            return !proxyFound;
+            if (!IsWindowVisible(w) || WindowClass(w) != "ProxyModalWindow" || ProcessId(w) != shellProcess) return true;
+            var owner = GetWindow(w, 4);
+            if (ProcessId(owner) == browserProcess && WindowClass(owner) == "Chrome_WidgetWin_1" &&
+                !IsWindowEnabled(owner) && GetLastActivePopup(owner) == w) expected = true;
+            else another = true;
+            return !another;
         }, IntPtr.Zero);
-        if (!proxyFound) return IntPtr.Zero;
+        return expected && !another;
+    }
 
-        string printBroker = Path.Combine(windows, @"SystemApps\Windows.PrintDialog_cw5n1h2txyewy\PrintDialog.exe");
-        bool brokerFound = false;
+    private static bool ContainsBroker(IntPtr frame, int host, string printBroker) {
+        bool found = false;
         EnumChildWindows(frame, (child, _) => {
             var pid = ProcessId(child);
-            brokerFound = pid != host && IsImage(pid, printBroker);
-            return !brokerFound;
+            found = pid != host && IsImage(pid, printBroker);
+            return !found;
         }, IntPtr.Zero);
-        return brokerFound ? frame : IntPtr.Zero;
+        return found;
+    }
+
+    public static IntPtr Find(int browserProcess, long[] previousFrames) {
+        string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        string explorer = Path.Combine(windows, "explorer.exe");
+        string printBroker = Path.Combine(windows, @"SystemApps\Windows.PrintDialog_cw5n1h2txyewy\PrintDialog.exe");
+        IntPtr candidate = IntPtr.Zero;
+        foreach (long handle in VisibleFrames()) {
+            if (Array.IndexOf(previousFrames, handle) >= 0) continue;
+            var frame = new IntPtr(handle);
+            int host = ProcessId(frame);
+            if (!IsImage(host, explorer) || !HasFixtureProxy(browserProcess, host) ||
+                !ContainsBroker(frame, host, printBroker)) continue;
+            // A second broker frame could belong to another print request. A user
+            // switching foreground windows must never redirect the fixture's input.
+            if (candidate != IntPtr.Zero) return IntPtr.Zero;
+            candidate = frame;
+        }
+        return candidate;
     }
 }

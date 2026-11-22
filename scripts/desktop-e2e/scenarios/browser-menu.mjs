@@ -268,13 +268,17 @@ export const browserMenu = {
       await guest.getByRole("heading", { name: siteTitle }).waitFor();
     };
     const popup = async () => {
+      await page.bringToFront();
+      const previous = new Set(pages());
       await page.locator("[data-browser-menu-trigger]").click();
-      const menu = await waitUntil(
-        () => pages().find((p) => p.url().startsWith("data:text/html") && !p.isClosed()),
-        "native browser menu window",
-      );
-      await menu.locator("button[data-action=history]").waitFor();
-      return menu;
+      return waitUntil(async () => {
+        for (const candidate of pages()) {
+          if (previous.has(candidate) || candidate.isClosed() || !candidate.url().startsWith("data:text/html")) continue;
+          const ready = await candidate.locator("button[data-action=history]").isVisible().catch(() => false);
+          if (ready) return candidate;
+        }
+        return undefined;
+      }, "a newly opened browser menu is ready for input");
     };
     let floating;
     const expectFloating = async (section) => {
@@ -288,10 +292,14 @@ export const browserMenu = {
     const choose = async (action, sub) => {
       const menu = await popup();
       if (sub) await menu.locator("[data-sub=" + sub + "]").click();
-      await menu
-        .locator("button[data-action=" + action + "]")
-        .last()
-        .click();
+      const item = menu.locator("button[data-action=" + action + "]").last();
+      try {
+        await item.click({ noWaitAfter: true });
+      } catch (error) {
+        // A successful command closes its native window before CDP can acknowledge
+        // mouse-up. The next UI or system-dialog assertion verifies the actual action.
+        if (!menu.isClosed() || page.isClosed() || !/target.*closed|session closed/i.test(error.message)) throw error;
+      }
       if (action === "import" || action === "privacy") await expectFloating(action);
     };
     const close = async () => {
