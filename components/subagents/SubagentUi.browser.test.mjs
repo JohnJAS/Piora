@@ -125,7 +125,7 @@ test("refactored subagent task card, completion card, inspector timeline, fullRe
                       rawText={"<subagent-notification>\\n离线不可恢复摘要卡片: completed\\nagentId: agent_missing_full\\n" + unavailableSeed.result + "\\n</subagent-notification>"}
                     />
                     <div style={{ marginTop: 24 }}>
-                      <SubagentSettings cwd="F:/Piora" />
+                      <SubagentSettings cwd={${JSON.stringify(directory)}} />
                     </div>
                   </main>
                   <aside style={{ borderLeft: "1px solid var(--border)", height: "100vh", position: "sticky", top: 0 }}>
