@@ -268,6 +268,7 @@ export const browserMenu = {
       assert.equal(readyStatus, 200, "fixture chat is ready before opening the workspace");
       for (let attempt = 0; attempt < 2; attempt++) {
         await fixtureChat.click();
+        await page.locator(`[data-chat-surface][data-session-id="${fixture.id}"]`).waitFor();
         if (await address().isVisible()) break;
         await page.keyboard.press(process.platform === "darwin" ? "Meta+t" : "Control+t");
         try {
@@ -382,7 +383,12 @@ export const browserMenu = {
         const profiles = region.getByRole("listbox");
         assert.equal(await profiles.locator('[data-source-id^="chrome/"]').count(), 3);
         assert.equal(await profiles.locator("[aria-selected=true]").count(), 1);
-        assert.equal(await picker.locator("svg:last-child").count(), 1);
+        assert.equal(await picker.locator(":scope > svg").count(), 1);
+        const selectedProfile = profiles.getByRole("option", { selected: true });
+        const labelsFit = await selectedProfile.locator("small").evaluateAll((labels) =>
+          labels.every((label) => label.scrollWidth <= label.clientWidth + 1),
+        );
+        assert.ok(labelsFit, "the selected profile name and its same-name hint fit inside the popup");
         await region.screenshot({ path: join(directory, "profile-menu.png") });
         await profiles.locator('[data-source-id="chrome/Profile 2"]').click();
         await picker.press("ArrowDown");

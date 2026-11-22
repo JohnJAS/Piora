@@ -47,8 +47,10 @@ export const browserPersistence = {
     const observations = [];
     async function open(name) {
       await page.getByText(name, { exact: true }).first().click();
-      await page.keyboard.press(process.platform === 'darwin' ? 'Meta+t' : 'Control+t');
+      await page.locator(`[data-chat-surface][data-session-id="${fixture.sessionIds[name]}"]`).waitFor();
       const address = page.getByRole('combobox', { name: /^(Address|地址)$/ });
+      if (!await address.isVisible()) await page.keyboard.press(process.platform === 'darwin' ? 'Meta+t' : 'Control+t');
+      await address.waitFor();
       const target = `${fixture.origin}/${name.endsWith("A") ? "chat-a" : "chat-b"}`;
       await waitUntil(async () => (await page.evaluate(() => window.piDesktop.browser.getState())).sessionId === fixture.sessionIds[name], "selected chat browser binding");
       await address.fill(target); await address.press('Enter');

@@ -49,6 +49,7 @@ export const browserLogin = {
     const settings = JSON.parse(await readFile(join(paths.agent, 'settings.json'), 'utf8'));
     await writeFile(join(paths.agent, 'settings.json'), JSON.stringify({ ...settings, enabledModels: ['desktop-login-fixture/browser-login'] }));
     await mkdir(join(paths.agent, 'piora/tool-permissions'), { recursive: true });
+    await writeFile(join(paths.agent, 'piora/tool-approval.json'), JSON.stringify({ enabled: false, revision: 1 }));
     await writeFile(join(paths.agent, 'piora/tool-permissions/default.json'), JSON.stringify({ mode: 'ask', revision: 9, schemaVersion: 2 }));
   },
   async run({ page, getBrowser, step, waitUntil, screenshot }) {

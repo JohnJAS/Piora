@@ -66,14 +66,10 @@ export async function browserProfiles(
   if (!folders.length) return fallback;
   return folders.map((directory) => {
     const info = cache[directory] ?? {};
-    const googleName = field(info.gaia_given_name) || field(info.gaia_name);
-    const name =
-      (info.is_using_default_name ? googleName : "") ||
-      field(info.name) ||
-      googleName ||
-      field(info.user_name) ||
-      directory;
-    return { id: browser + "/" + directory, browser, name, account: field(info.user_name), directory };
+    const account = field(info.user_name);
+    const accountName = field(info.gaia_given_name) || field(info.gaia_name) || account;
+    const name = (info.is_using_default_name && accountName) || field(info.name) || accountName || directory;
+    return { id: browser + "/" + directory, browser, name, account, directory };
   });
 }
 
