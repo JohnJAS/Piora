@@ -1,1 +1,0 @@
-- 移除桌面扩展中的 Piora Task Monitor 和 DSH 社区目录，以及对应的 Cordis 宿主。
