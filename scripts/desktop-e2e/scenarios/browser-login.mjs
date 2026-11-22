@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+const fixtureTitlePrompt = "Give this fixture a short title. Marker: PIORA_BROWSER_LOGIN_TITLE.";
 let fixture;
 export const browserLogin = {
   id: 'browser-login',
@@ -24,7 +25,11 @@ export const browserLogin = {
         const chunks = []; for await (const chunk of req) chunks.push(chunk);
         const body = JSON.parse(Buffer.concat(chunks).toString());
         const tools = body.messages.filter(message => message.role === 'tool').length;
-        const browserRequest = body.tools?.some(tool => tool.function?.name === 'browser') === true;
+        const last = body.messages.at(-1);
+        const lastText = typeof last?.content === 'string' ? last.content : (Array.isArray(last?.content) ? last.content.map(part => part.text ?? '').join('\n') : '');
+        // A title request can inherit the chat's browser tool schemas and all three tool results.
+        const titleRequest = last?.role === 'user' && lastText.includes(fixtureTitlePrompt);
+        const browserRequest = !titleRequest && body.tools?.some(tool => tool.function?.name === 'browser') === true;
         const action = !browserRequest ? null : tools === 0 ? { action: 'open', url: fixture.origin + '/login' }
           : tools === 1 ? { action: 'wait_for_user', purpose: 'login', reason: 'Sign in to the local test site' }
           : tools === 2 ? { action: 'snapshot' } : null;
@@ -53,6 +58,7 @@ export const browserLogin = {
     await writeFile(join(paths.agent, 'piora/tool-permissions/default.json'), JSON.stringify({ mode: 'ask', revision: 9, schemaVersion: 2 }));
   },
   async run({ page, getBrowser, step, waitUntil, screenshot }) {
+    await page.evaluate(prompt => localStorage.setItem('piora-session-title-prompt-v1', prompt), fixtureTitlePrompt);
     await step('verify-clean-launcher-and-settings', async () => {
       assert.equal(await page.locator('[data-permission-trigger]').count(), 0);
       assert.equal(await page.getByText('先描述结果，项目和模型都可以直接在输入框里调整。', { exact: true }).count(), 0);

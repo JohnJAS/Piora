@@ -1,6 +1,6 @@
 param(
   [Parameter(Mandatory)] [int] $BrowserProcess,
-  [Parameter(Mandatory)] [ValidateSet('open','cancel-print','print-pdf','save-pdf')] [string] $Operation,
+  [Parameter(Mandatory)] [ValidateSet('open','prepare-print','cancel-print','print-pdf','save-pdf')] [string] $Operation,
   [Parameter(Mandatory)] [string] $FixtureDirectory,
   [string] $FixtureFile
 )
@@ -78,6 +78,18 @@ $windowCondition = [System.Windows.Automation.PropertyCondition]::new([System.Wi
 # The Windows print broker can own its own top-level window. Only an explicitly
 # requested acceptance run on a disposable hosted machine may address that broker.
 $hostedPrint = $env:PIORA_CI_BROWSER_ACCEPTANCE -eq '1' -and $env:RUNNER_ENVIRONMENT -eq 'github-hosted' -and $env:GITHUB_ACTIONS -eq 'true' -and $Operation -ne 'open'
+$inspectPrint = $Operation -in @('prepare-print','cancel-print','print-pdf')
+if ($inspectPrint) {
+  Add-Type -Path (Join-Path $PSScriptRoot 'windows-print-frame.cs')
+  $frameFile = Join-Path $FixtureDirectory "visible-print-frames-$BrowserProcess.json"
+  if ($Operation -eq 'prepare-print') {
+    ConvertTo-Json -InputObject @([PioraPrintFrame]::VisibleFrames()) -Compress | Set-Content -LiteralPath $frameFile
+    return
+  }
+  [long[]] $previousFrames = @(Get-Content -Raw -LiteralPath $frameFile | ConvertFrom-Json)
+  $image = (Get-Process -Id $BrowserProcess).MainModule.FileVersionInfo
+  $appNames = @($image.ProductName,$image.FileDescription,[IO.Path]::GetFileNameWithoutExtension($image.FileName)) | Where-Object {$_}
+}
 $until = (Get-Date).AddSeconds(35)
 $observed = @()
 $ownedTitles = [Collections.Generic.HashSet[string]]::new()
@@ -88,6 +100,16 @@ while ((Get-Date) -lt $until) {
     $refreshAt = (Get-Date).AddSeconds(3)
   }
   $windows = [Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
+  $printFrame = [IntPtr]::Zero
+  if ($inspectPrint) {
+    $printFrame = [PioraPrintFrame]::Find($BrowserProcess, $previousFrames)
+    if ($printFrame -ne [IntPtr]::Zero) {
+      $frameElement = [System.Windows.Automation.AutomationElement]::FromHandle($printFrame)
+      # The native title identifies the requesting application, for example "Piora - 打印".
+      $belongs = $appNames | Where-Object { $frameElement.Current.Name.StartsWith($_ + ' - ', [StringComparison]::OrdinalIgnoreCase) }
+      if ($belongs) { $windows.Add($frameElement) }
+    }
+  }
   foreach ($rootWindow in [System.Windows.Automation.AutomationElement]::RootElement.FindAll($scope::Children,$trueCondition)) {
     if (!(OwnedWindow $rootWindow)) {
       if (!$hostedPrint) { continue }
@@ -106,18 +128,18 @@ while ((Get-Date) -lt $until) {
       [void]$ownedTitles.Add(($window.Current.ClassName + "/" + $title))
       if ($Operation -eq 'open') { $wanted = $title -match '^(Open|打开|选择文件)' }
       elseif ($Operation -eq 'save-pdf') { $wanted = $title -match 'Save.*(Output|As)|另存为|保存打印输出|将打印输出' }
-      else { $wanted = $title -match '^(Print|打印)(?:$|[ ·\-:：])' }
+      else { $wanted = ($printFrame -ne [IntPtr]::Zero -and $window.Current.NativeWindowHandle -eq $printFrame.ToInt64()) -or $title -match '^(Print|打印)(?:$|[ ·\-:：])' }
       if (!$wanted) { continue }
       $all = @($window.FindAll($scope::Descendants,$trueCondition))
       $observed = @($all | Where-Object {$_.Current.ControlType -in @([System.Windows.Automation.ControlType]::Edit,[System.Windows.Automation.ControlType]::ComboBox) -or $_.Current.AutomationId -in @('1','2','1148','1001')} | ForEach-Object {$_.Current.AutomationId + '/' + $_.Current.ControlType.ProgrammaticName + '/enabled=' + $_.Current.IsEnabled})
       $buttons = @($all | Where-Object {$_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and $_.Current.IsEnabled})
       if ($Operation -eq 'cancel-print') {
-        $button = $buttons | Where-Object { $_.Current.AutomationId -eq '2' -or $_.Current.Name -match 'Cancel|取消' } | Select-Object -First 1
+        $button = $buttons | Where-Object { $_.Current.AutomationId -in @('2','CloseButton') -or $_.Current.Name -match 'Cancel|取消' } | Select-Object -First 1
         if ($button) { ClickButton $button; return }
       } elseif ($Operation -eq 'print-pdf') {
         $printer = $all | Where-Object {$_.Current.Name -eq 'Microsoft Print to PDF'} | Select-Object -First 1
         if (!$printer) {
-          $combo = $all | Where-Object {$_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox -and ($_.Current.Name -match 'printer|打印机|name|名称' -or $_.Current.AutomationId -eq '1139')} | Select-Object -First 1
+          $combo = $all | Where-Object {$_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox -and ($_.Current.Name -match 'printer|打印机|name|名称' -or $_.Current.AutomationId -in @('1139','printerSelector'))} | Select-Object -First 1
           if ($combo) {
             $expand = $null
             if ($combo.TryGetCurrentPattern([System.Windows.Automation.ExpandCollapsePattern]::Pattern,[ref]$expand)) { $expand.Expand() }
@@ -132,7 +154,7 @@ while ((Get-Date) -lt $until) {
           $currentPrinter = $all | Where-Object {$_.Current.ControlType -eq [System.Windows.Automation.ControlType]::ComboBox -and $_.Current.Name -eq 'Microsoft Print to PDF'}
           if (!$currentPrinter) {continue}
         }
-        $button = $buttons | Where-Object {$_.Current.AutomationId -eq '1' -or $_.Current.Name -match '^(Print|打印)(\(&?.\))?$'} | Select-Object -First 1
+        $button = $buttons | Where-Object {$_.Current.AutomationId -in @('1','PrintButton') -or $_.Current.Name -match '^(Print|打印)(\(&?.\))?$'} | Select-Object -First 1
         if ($button) { ClickButton $button; return }
       } else {
         $edit = $all | Where-Object { $_.Current.ControlType -eq [System.Windows.Automation.ControlType]::Edit -and ($_.Current.AutomationId -in @('1148','1001') -or $_.Current.Name -match 'File name|文件名') } | Select-Object -First 1

@@ -5406,7 +5406,9 @@ span.linenumber {
 }
 
 @media (max-width: 1439px) {
-  .app-shell.desktop-chrome .right-panel-container[data-subagent-panel] {
+  .app-shell.desktop-chrome .right-panel-container,
+  .app-shell.desktop-chrome .right-panel-resize-handle,
+  .app-shell.desktop-chrome .right-panel-overlay-backdrop {
     top: var(--desktop-titlebar-height);
   }
 }

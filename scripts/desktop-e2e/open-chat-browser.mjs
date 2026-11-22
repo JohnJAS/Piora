@@ -1,5 +1,5 @@
 /** Open the selected chat's workspace browser using the same controls as a user. */
-export async function openChatBrowser(page, sessionId, waitUntil) {
+export async function openChatBrowser(page, sessionId, waitUntil, { useLauncher = false } = {}) {
   const chat = page.locator(`[data-chat-surface][data-session-id="${sessionId}"]`);
   if (!await chat.isVisible()) {
     const row = page.locator(`[data-session-drag-id="${sessionId}"]`);
@@ -15,7 +15,9 @@ export async function openChatBrowser(page, sessionId, waitUntil) {
     const tools = page.getByRole("button", { name: /^(打开工具|Open tool)$/ });
     await tools.waitFor();
     const tab = page.locator("#workspace-browser-tab");
+    const launcher = page.locator(".right-panel-surface").getByRole("button", { name: /^(浏览器|Browser)\s*(Ctrl\+T)?$/ });
     if (await tab.isVisible()) await tab.click();
+    else if (useLauncher && await launcher.isVisible()) await launcher.click();
     else {
       if (await tools.getAttribute("aria-expanded") !== "true") await tools.click();
       // The accessible name also includes the displayed keyboard shortcut.

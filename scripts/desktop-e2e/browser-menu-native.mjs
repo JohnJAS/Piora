@@ -142,9 +142,11 @@ export async function nativeMenuAcceptance({ fixture, ui, step, waitUntil, direc
   });
   await step("real-print-dialog-cancel-and-print-styled-page-to-pdf", async () => {
     await ui.navigate("/book");
+    await file("prepare-print");
     await ui.choose("print");
     await file("cancel-print");
     assert.ok((await ui.state()).url.endsWith("/book"));
+    await file("prepare-print");
     await ui.choose("print");
     await file("print-pdf");
     await file("save-pdf", pdf);

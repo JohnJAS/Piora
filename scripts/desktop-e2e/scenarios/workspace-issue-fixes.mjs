@@ -122,7 +122,12 @@ export const workspaceIssueFixes = {
         assert.equal((await state()).zoomFactor, 1);
         await zoomIn.click();
         evidence.zoom = (await state()).zoomFactor;
-        await Promise.all([menu.waitForEvent("close"), menu.keyboard.press("Escape")]);
+        const closed = menu.waitForEvent("close");
+        await menu.keyboard.down("Escape").catch(error => {
+          if (!/Target page, context or browser has been closed/.test(error.message)) throw error;
+        });
+        await closed;
+        await page.keyboard.up("Escape");
         await navigate(fixture.origins[1]); assert.equal((await state()).zoomFactor, 1);
         site = await navigate(fixture.origins[0]); assert.ok(Math.abs((await state()).zoomFactor - evidence.zoom) < 0.001);
       });

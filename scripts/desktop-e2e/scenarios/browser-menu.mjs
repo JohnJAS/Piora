@@ -258,7 +258,7 @@ export const browserMenu = {
       getBrowser()
         .contexts()
         .flatMap((c) => c.pages());
-    const openPanel = () => openChatBrowser(page, fixture.id, waitUntil);
+    const openPanel = () => openChatBrowser(page, fixture.id, waitUntil, { useLauncher: appearance });
     const navigate = async (path) => {
       const url = fixture.origin + path;
       await address().fill(url);
@@ -415,6 +415,21 @@ export const browserMenu = {
         const toolbar = page.locator("[data-browser-device]");
         await toolbar.getByRole("combobox", { name: /设备预设|Device preset/ }).selectOption("iPhone SE");
         await toolbar.screenshot({ path: join(directory, "device-toolbar.png") });
+      });
+      await step("compact-window-browser-launcher-and-tool-menu", async () => {
+        await page.setViewportSize({ width: 1024, height: 720 });
+        const closeTool = page.locator("#workspace-browser-tab").locator("..").getByRole("button");
+        await closeTool.click();
+        const addTool = page.getByRole("button", { name: /^(打开工具|Open tool)$/ });
+        const titlebar = page.locator(".desktop-titlebar");
+        const [buttonBounds, titleBounds] = await Promise.all([addTool.boundingBox(), titlebar.boundingBox()]);
+        assert.ok(buttonBounds, "the compact tool button is visible");
+        if (titleBounds) assert.ok(buttonBounds.y >= titleBounds.y + titleBounds.height - 1,
+          "the compact tool button clears the desktop title bar");
+        await openChatBrowser(page, fixture.id, waitUntil);
+        await closeTool.click();
+        await openChatBrowser(page, fixture.id, waitUntil, { useLauncher: true });
+        await page.screenshot({ path: join(directory, "compact-workspace.png") });
       });
       return;
     }
