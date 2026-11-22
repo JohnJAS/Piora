@@ -43,7 +43,8 @@ html[data-app-background-active="true"] body::after {
   display: none;
 }
 
-.character-background-motion {
+.character-background-motion,
+.character-background-performance {
   position: fixed;
   z-index: 0;
   inset: -32px;
@@ -55,13 +56,34 @@ html[data-app-background-active="true"] body::after {
   transform: scale(1.035);
 }
 
-.settings-backdrop > .character-background-motion {
+.character-background-performance {
+  max-width: none;
+  max-height: none;
+  object-fit: cover;
+  object-position: center;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 180ms ease-out;
+}
+
+.settings-backdrop > .character-background-motion,
+.settings-backdrop > .character-background-performance {
   position: absolute;
 }
 
 @media (prefers-reduced-motion: no-preference) {
   html[data-app-background-active="true"]:not(.desktop-pet-document) .character-background-motion[data-ready="true"] {
     visibility: visible;
+  }
+
+  html[data-app-background-active="true"]:not(.desktop-pet-document) .character-background-performance {
+    visibility: visible;
+  }
+
+  .character-background-performance[data-playing="true"] {
+    opacity: 1;
   }
 
   html[data-app-background-motion="running"] {

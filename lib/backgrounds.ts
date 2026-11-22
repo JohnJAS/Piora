@@ -34,6 +34,7 @@ export interface BackgroundManifest {
 export const BACKGROUND_PREFERENCE_STORAGE_KEY = "pi-background:v1";
 export const CHARACTER_OVERLAY_MIGRATION_KEY = "pi-background:character-overlay-v2";
 export const GLACIER_MOTION_BACKGROUND_ID = "nordic-ice-motion";
+export const TIDE_PERFORMANCE_BACKGROUND_ID = "character-whale-tide";
 export const CUSTOM_BACKGROUND_FALLBACK_STORAGE_KEY = "pi-background:custom-data-url:v1";
 export const CUSTOM_BACKGROUND_MAX_BYTES = 12 * 1024 * 1024;
 export const CUSTOM_BACKGROUND_DATA_URL_FALLBACK_MAX_BYTES = 1536 * 1024;
@@ -80,6 +81,7 @@ export interface BackgroundPreference {
   sidebarOverlay: number;
   filePanelOverlay: number;
   motionEnabled?: boolean;
+  live2dEnabled?: boolean;
 }
 
 export const DEFAULT_BACKGROUND_PREFERENCE: Readonly<BackgroundPreference> = Object.freeze({
@@ -227,6 +229,7 @@ export function normalizeBackgroundPreference(value: unknown): BackgroundPrefere
     sidebarOverlay,
     filePanelOverlay,
     ...(typeof value.motionEnabled === "boolean" ? { motionEnabled: value.motionEnabled } : {}),
+    ...(typeof value.live2dEnabled === "boolean" ? { live2dEnabled: value.live2dEnabled } : {}),
   };
 
   if (value.source === "builtin" && typeof value.presetId === "string" && getBackgroundPreset(value.presetId)) {
