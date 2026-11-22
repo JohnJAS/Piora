@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import type { BrowserDownloadPreferences } from "@/desktop/src/browser-preferences";
 import { useI18n } from "@/hooks/useI18n";
 import { AliIcon } from "./AliIcon";
+import { ProfileSettingsHome } from "./workspace/browser/BrowserProfileSection";
+import { reopenFromSettings, type ToolsBridge } from "./workspace/browser/shared";
 import styles from "./SettingsDialog.module.css";
 
 export function BrowserSettings() {
@@ -46,6 +48,7 @@ export function BrowserSettings() {
         <h2>{t("browserPreferences.title")}</h2>
         <p>{t("browserPreferences.description")}</p>
       </div>
+      {typeof window !== "undefined" && window.piDesktop?.browser?.tools && <ProfileSettingsHome bridge={window.piDesktop.browser as ToolsBridge} navigate={reopenFromSettings} />}
       <section data-settings-id="browser.downloads" className={`${styles.promptCard} ${styles.browserPreferencesCard}`} aria-labelledby="browser-download-label">
         <form onSubmit={event => { event.preventDefault(); void save(); }}>
           <div className={styles.browserDownloadPath}>

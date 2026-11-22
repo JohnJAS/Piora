@@ -21,6 +21,9 @@ import { PANEL_RESIZE_EVENT } from "@/lib/panel-resize-events";
 import { pollVisibleDocument } from "@/lib/visible-poller";
 import { normalizeAnswerLink, type BrowserNavigationRequest } from "@/lib/answer-links";
 import { AliIcon } from "../AliIcon";
+import { BrowserAddress } from "./browser/BrowserAddress";
+import { BrowserControls } from "./browser/BrowserControls";
+import type { ToolsBridge } from "./browser/shared";
 import styles from "./WorkspacePanel.module.css";
 
 type BrowserState = {
@@ -225,6 +228,9 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
   followingRef.current = followingAgent;
   const viewportRef = useRef<HTMLDivElement>(null);
   const addressRef = useRef<HTMLInputElement>(null);
+  const [toolSlot, setToolSlot] = useState<HTMLDivElement | null>(null);
+  const [covered, setCovered] = useState(false);
+  const [deviceDragging, setDeviceDragging] = useState(false);
   const viewportSyncRef = useRef<ReturnType<typeof createBrowserViewportSync> | null>(null);
   const panelActiveRef = useRef(active);
   panelActiveRef.current = active;
@@ -298,8 +304,8 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
       y: Math.ceil(top),
       width: Math.max(0, Math.floor(right) - Math.ceil(left)),
       height: Math.max(0, Math.floor(bottom) - Math.ceil(top)),
-    }, panelActiveRef.current && !resizingRef.current && visible && right > left && bottom > top);
-  }, [state?.url]);
+    }, panelActiveRef.current && !covered && !deviceDragging && !resizingRef.current && visible && right > left && bottom > top);
+  }, [covered, deviceDragging, state?.url]);
 
   useLayoutEffect(() => {
     // WebContentsView lives above the renderer DOM and is not clipped by the
@@ -556,10 +562,12 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
       <button type="button" aria-label={t("browser.back")} disabled={!state?.canGoBack} onClick={() => void act({ action: "back" })}><AliIcon name="arrowleft" size={14} /></button>
       <button type="button" aria-label={t("browser.forward")} disabled={!state?.canGoForward} onClick={() => void act({ action: "forward" })}><AliIcon name="arrowright" size={14} /></button>
       <button type="button" aria-label={t("browser.reload")} disabled={!state} onClick={() => void act({ action: "reload" })}><AliIcon name="reload" size={14} /></button>
-      <form onSubmit={(event) => { event.preventDefault(); if (address.trim()) void act({ action: "navigate", url: address.trim() }); }}>
-        <input ref={addressRef} value={address} aria-label={t("browser.address")} placeholder={t("browser.addressPlaceholder")} onChange={(event) => setAddress(event.target.value)} />
-      </form>
+      <BrowserAddress key={state?.activeTabId ?? "starting"} value={address} change={setAddress} inputRef={addressRef} label={t("browser.address")}
+        placeholder={t("browser.addressPlaceholder")} invoke={bridge.tools} slot={toolSlot} navigate={url => void act({action:"navigate", url})} />
       <button type="button" aria-label={t("browser.siteLogin")} title={t("browser.siteLogin")} disabled={!state || blank} onClick={() => void act({ action: "configure_login" })}><AliIcon name="lock" size={14} /></button>
+      {state && bridge.tools && <BrowserControls key={[state.sessionId, state.activeTabId, state.navigationEpoch].join("/")} bridge={bridge as ToolsBridge} navigationEpoch={state.navigationEpoch ?? 0}
+        sessionId={state.sessionId} tabId={state.activeTabId} active={active} slot={toolSlot} viewport={viewportRef.current}
+        cover={setCovered} suspend={setDeviceDragging} navigate={url => void act({action:"navigate",url})} report={setError} />}
     </div>
     <div className={styles.browserBookmarkBar} aria-label={t("browser.bookmarkBar")}>
       <div className={styles.browserZoom} role="group" aria-label={t("browserPreferences.zoom")}>
@@ -597,7 +605,8 @@ function DesktopBrowserPanel({ active, bridge, maximized, sessionId, navigationR
       </button>
     </div>
     {error ? <div className={styles.browserError} role="alert">{error}</div> : null}
-    <div ref={viewportRef} className={styles.browserViewport} data-browser-viewport="" data-busy={state?.loading ? "true" : undefined}>
+    <div ref={setToolSlot} style={covered ? { flex: "1 1 0", minHeight: 0, overflow: "auto" } : { flex: "0 1 auto", minHeight: 0, maxHeight: "55%", overflow: "auto" }} />
+    <div ref={viewportRef} style={covered ? { display: "none" } : undefined} className={styles.browserViewport} data-browser-viewport="" data-busy={state?.loading ? "true" : undefined}>
       {blank ? <div className={styles.browserStart} data-onboarding={showOnboarding ? "true" : undefined}>
         <AliIcon name="earth" size={28} />
         <strong>{showOnboarding ? t("browser.welcomeTitle") : t("browser.startTitle")}</strong>

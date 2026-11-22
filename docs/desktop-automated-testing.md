@@ -4,6 +4,12 @@
 
 默认 `settings-theme` 场景通过设置按钮打开外观界面，点击深色主题，核对实际页面主题与持久设置，刷新后再次核对，再切换浅色并重复验证。它没有模型调用，不需要供应商凭据，也不直接写入主题状态。另有 Windows 专用的 `stop-shell` / `stop-bash` 停止场景，使用本地模型响应夹具和真实 shell 进程，见下文。
 
+## Windows 内置浏览器菜单
+
+`browser-menu` 用临时 Windows 桌面配置和本地网站验证三点菜单、剪贴板图片、设备视口、联系人、并发下载、历史搜索与清理后重启。`browser-menu-native` 通过系统文件选择器导入测试文件，并验证 Windows 打印对话框的取消及打印到 PDF。原生打印验收使用 Microsoft Print to PDF 和可用的 `pdftoppm`，打印结果与导入数据都属于本次测试目录。两种场景均可用 `--executable` 核对 CI 安装包中的桌面程序。
+
+`node scripts/test-desktop-browser-navigation.mjs` 使用独立 Electron 配置检查真实 Agent 在设备预览显示、收起和恢复后的点击。加 `--dpi=1.25` 或 `--dpi=1.5` 可在单个测试进程下核对相应显示比例与菜单定位。
+
 ## 使用量月度与每日看板
 
 `npm run test:desktop:e2e -- --scenario usage-dashboard --step-timeout-ms 120000` 在独立 profile 中准备合成会话文件，通过真实 Electron 设置界面与本地鉴权 API 验证月度聚合、日期切换、逐日下钻、分时用量、空数据、可选范围、刷新、键盘切换和重载，并保存明暗主题与窄视口截图。使用量接口不 mock，不调用模型、不复制用户会话或凭据。

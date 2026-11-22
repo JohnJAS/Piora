@@ -59,7 +59,7 @@ export const workspaceIssueFixes = {
       await page.keyboard.press("Escape");
     };
     const navigate = async origin => {
-      const address = page.getByRole("textbox", { name: /^(Address|地址)$/ });
+      const address = page.getByRole("combobox", { name: /^(Address|地址)$/ });
       if (!await address.isVisible()) await page.keyboard.press(process.platform === "darwin" ? "Meta+t" : "Control+t");
       await address.waitFor();
       await waitUntil(async () => (await state()).sessionId === fixture.id, "browser bound to the selected fixture chat");

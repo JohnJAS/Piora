@@ -258,6 +258,12 @@ const runtime = Object.freeze({
     return ipcRenderer.invoke("pi:harmony-runtime-picker", kind) as Promise<string | null>;
   },
   browser: Object.freeze({
+    tools(command: string, input: unknown) { return ipcRenderer.invoke("pi:browser-tools", command, input); },
+    onToolsEvent(listener: (event: unknown) => void) {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown) => listener(data);
+      ipcRenderer.on("pi:browser-tools-event", handler);
+      return () => ipcRenderer.removeListener("pi:browser-tools-event", handler);
+    },
     getState() {
       return ipcRenderer.invoke("pi:browser-get-state");
     },

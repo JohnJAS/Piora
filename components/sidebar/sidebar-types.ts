@@ -104,6 +104,8 @@ declare global {
       selectHarmonyRuntimePath?: (kind: "sdk" | "hdc") => Promise<string | null>;
       onMenuAction?: (listener: (action: string) => void) => () => void;
       browser?: {
+        tools?: import("@/desktop/src/browser/contracts").BrowserToolInvoke;
+        onToolsEvent?: (listener: (event: import("@/desktop/src/browser/contracts").BrowserToolsEvent) => void) => () => void;
         getPreferences?: () => Promise<import("@/desktop/src/browser-preferences").BrowserDownloadPreferences>;
         setPreferences?: (input: { directory: string; askEachTime: boolean }) => Promise<import("@/desktop/src/browser-preferences").BrowserDownloadPreferences>;
         getState: () => Promise<DesktopBrowserState | null>;
@@ -138,6 +140,7 @@ export interface DesktopUpdateState {
 }
 
 export interface DesktopBrowserState {
+  navigationEpoch?: number;
   zoomFactor?: number;
   tabCount?: number;
   tabLimit?: number;

@@ -83,6 +83,8 @@ export interface BrowserAgentHost {
   restoreTab(tabId: string): Promise<void>;
   isShowing(tabId: string): boolean;
   panelBounds(): { x: number; y: number; width: number; height: number } | null;
+  presentDevice?(tabId: string, bounds: { x: number; y: number; width: number; height: number }, force?: boolean): boolean;
+  deviceInputScale?(tabId: string): number;
   setBounds(tabId: string, bounds: { x: number; y: number; width: number; height: number }): void;
   attach(tabId: string): void;
   detach(tabId: string): void;
@@ -1068,6 +1070,12 @@ export class BrowserAgentControl {
     const bounds = this.host.panelBounds();
     if (!bounds) return;
     this.host.attach(tabId);
+    if (this.host.presentDevice?.(tabId, bounds, this.metrics.has(tabId))) {
+      this.metrics.delete(tabId);
+      this.presented.add(tabId);
+      this.host.setBackgroundThrottling(tabId, true);
+      return;
+    }
     this.host.setBounds(tabId, bounds);
     if (this.metrics.has(tabId) || !this.presented.has(tabId)) {
       await this.command(tabId, "Emulation.clearDeviceMetricsOverride", {});
@@ -1089,9 +1097,11 @@ export class BrowserAgentControl {
   private async placeOffscreen(tabId: string): Promise<void> {
     this.presented.delete(tabId);
     this.host.attach(tabId);
-    this.host.setBounds(tabId, { ...AGENT_OFFSCREEN_BOUNDS });
+    const device = this.host.presentDevice?.(tabId, { ...AGENT_OFFSCREEN_BOUNDS }, this.metrics.has(tabId));
+    if (device) this.metrics.delete(tabId);
+    else this.host.setBounds(tabId, { ...AGENT_OFFSCREEN_BOUNDS });
     this.host.setBackgroundThrottling(tabId, false);
-    if (!this.metrics.has(tabId)) {
+    if (!device && !this.metrics.has(tabId)) {
       await this.command(tabId, "Emulation.setDeviceMetricsOverride", {
         width: AGENT_VIEWPORT.width,
         height: AGENT_VIEWPORT.height,
@@ -1131,6 +1141,8 @@ export class BrowserAgentControl {
     }
     this.presented.delete(tabId);
     try {
+      const bounds = this.host.panelBounds();
+      if (bounds && this.host.isShowing(tabId)) this.host.presentDevice?.(tabId, bounds, true);
       this.host.setBackgroundThrottling(tabId, true);
     } catch {
       // Closed tabs have no throttling state.
@@ -1197,7 +1209,9 @@ export class BrowserAgentControl {
     if (!point || point.ok === false) throw new Error(point?.error || "Element ref was not found. Take a new snapshot.");
     if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) throw new Error("Element is not visible.");
     if ((point.width ?? 1) <= 0 || (point.height ?? 1) <= 0) throw new Error("Element is not visible.");
-    return { x: Math.round(point.x!), y: Math.round(point.y!) };
+    // The DOM reports CSS pixels. Chromium dispatches pointer input in the scaled preview surface.
+    const scale = this.host.deviceInputScale?.(tabId) ?? 1;
+    return { x: Math.round(point.x! * scale), y: Math.round(point.y! * scale) };
   }
 
   private pageResult(request: BrowserAgentRequest, tabId: string, notice?: string): unknown {

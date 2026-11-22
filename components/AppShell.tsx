@@ -566,6 +566,26 @@ export function AppShell() {
     return () => window.removeEventListener("piora:open-reply-settings", open);
   }, [openSettings]);
 
+  const openHistoryLink = answerNavigation.openLink;
+  useEffect(() => {
+    const settings = (event: Event) => {
+      if ((event as CustomEvent).detail === "vault") openSettings("data", "data.websiteAccounts");
+      else openSettings("browser");
+    };
+    const history = (event: Event) => {
+      const url = (event as CustomEvent).detail;
+      if (typeof url !== "string" || !/^https?:\/\//i.test(url)) return;
+      setSettingsDialogOpen(false);
+      openHistoryLink(url);
+    };
+    window.addEventListener("piora:browser-settings", settings);
+    window.addEventListener("piora:browser-history-open", history);
+    return () => {
+      window.removeEventListener("piora:browser-settings", settings);
+      window.removeEventListener("piora:browser-history-open", history);
+    };
+  }, [openHistoryLink, openSettings]);
+
   const openModelsSettings = useCallback(() => openSettings("models"), [openSettings]);
 
   const openSessionStatsPanel = useCallback(() => {

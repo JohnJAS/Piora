@@ -1,0 +1,215 @@
+.home,
+.sheet,
+.recent,
+.suggestions,
+.device,
+.find,
+.status {
+  color: var(--text);
+  background: var(--bg-panel);
+  font: inherit;
+}
+.home,
+.sheet,
+.recent,
+.suggestions {
+  min-width: 0;
+  overflow: auto;
+  padding: 10px;
+}
+.sheet {
+  height: 100%;
+  padding: 12px;
+  overscroll-behavior: contain;
+}
+.recent,
+.suggestions {
+  max-height: 190px;
+  border-bottom: 1px solid var(--border);
+}
+.heading,
+.record,
+.actions,
+.device,
+.find,
+.status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.heading {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.heading h3,
+.records h4 {
+  margin: 4px 0;
+}
+.records,
+.form,
+.download,
+.link,
+.suggestions button {
+  display: grid;
+  gap: 6px;
+}
+.records,
+.form {
+  align-content: start;
+}
+.record {
+  border-bottom: 1px solid var(--border);
+  padding: 5px 0;
+}
+.link {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+.link strong,
+.link small,
+.download strong,
+.download small,
+.suggestions strong,
+.suggestions small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.records small,
+.suggestions small {
+  color: var(--text-muted);
+}
+.actions,
+.device,
+.find {
+  flex-wrap: wrap;
+}
+.download {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+.heading button,
+.records button,
+.form button,
+.home button,
+.find button,
+.device button,
+.status button,
+.suggestions button {
+  min-height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--bg);
+  padding: 3px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+button.link,
+.suggestions button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+.suggestions button[aria-selected="true"],
+.suggestions button:hover,
+.link:hover {
+  background: var(--bg-hover);
+}
+.form fieldset {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--border);
+  padding: 8px;
+  max-height: 200px;
+  overflow: auto;
+}
+.form label {
+  display: grid;
+  gap: 3px;
+}
+.form label.check,
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px;
+}
+.form p,
+.records p {
+  margin: 4px 0;
+  font-size: 0.9em;
+}
+.form input:not([type="checkbox"]),
+.form select,
+.records input,
+.find input,
+.device input,
+.device select {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 4px 7px;
+  font: inherit;
+}
+.device,
+.find,
+.status {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.device input {
+  width: 64px;
+}
+.find input {
+  flex: 1;
+}
+.find output {
+  font-variant-numeric: tabular-nums;
+}
+.status {
+  justify-content: space-between;
+}
+.downloadButton {
+  position: relative;
+}
+.downloadButton small {
+  position: absolute;
+  right: -3px;
+  bottom: -4px;
+  color: var(--accent);
+  font-size: 9px;
+  background: var(--bg);
+}
+.sideHandle,
+.bottomHandle {
+  position: absolute;
+  border: 0;
+  padding: 0;
+  background: var(--border);
+  touch-action: none;
+}
+.sideHandle {
+  width: 8px;
+  cursor: ew-resize;
+}
+.bottomHandle {
+  height: 8px;
+  cursor: ns-resize;
+}
+.home {
+  padding: 0;
+}
+.sheet :disabled,
+.form :disabled,
+.device :disabled {
+  opacity: 0.5;
+}
+.records progress {
+  max-width: 100%;
+}

@@ -65,7 +65,7 @@ export const browserLogin = {
     await step('send-and-reveal-login-without-cards', async () => {
       await page.locator('textarea').first().fill('Open the local fixture and continue automatically after I sign in.');
       await page.getByRole('button', { name: /^(Send|发送)$/ }).click();
-      await page.getByRole('textbox', { name: /^(Address|地址)$/ }).waitFor({ state: 'visible' });
+      await page.getByRole('combobox', { name: /^(Address|地址)$/ }).waitFor({ state: 'visible' });
       await waitUntil(() => fixture.requests.some(request => request.action === 'wait_for_user'), 'login tool to begin');
       await page.getByText(/Sign in in the browser|请在浏览器中登录/).waitFor({ timeout: 75000 });
       assert.equal(await page.locator('.browser-user-wait, .browser-handoff-notice, [data-permission-trigger]').count(), 0);

@@ -48,7 +48,7 @@ export const browserPersistence = {
     async function open(name) {
       await page.getByText(name, { exact: true }).first().click();
       await page.keyboard.press(process.platform === 'darwin' ? 'Meta+t' : 'Control+t');
-      const address = page.getByRole('textbox', { name: /^(Address|地址)$/ });
+      const address = page.getByRole('combobox', { name: /^(Address|地址)$/ });
       const target = `${fixture.origin}/${name.endsWith("A") ? "chat-a" : "chat-b"}`;
       await waitUntil(async () => (await page.evaluate(() => window.piDesktop.browser.getState())).sessionId === fixture.sessionIds[name], "selected chat browser binding");
       await address.fill(target); await address.press('Enter');
