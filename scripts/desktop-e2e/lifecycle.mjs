@@ -43,6 +43,8 @@ export function isolatedEnvironment(source, paths) {
     PIORA_DEV_TSCONFIG: paths.tsconfig,
     PIORA_DESKTOP_DEV_PORT: String(paths.port),
     PIORA_DESKTOP_DEV_DEBUG_PORT: String(paths.debugPort),
+    // Do not download missing SDK tools while running isolated UI tests.
+    PI_OFFLINE: '1',
     NEXT_TELEMETRY_DISABLED: '1',
     ...(paths.electronDist ? { ELECTRON_OVERRIDE_DIST_PATH: paths.electronDist } : {}),
   };

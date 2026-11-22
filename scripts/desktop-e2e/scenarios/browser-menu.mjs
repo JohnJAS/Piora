@@ -258,7 +258,17 @@ export const browserMenu = {
       getBrowser()
         .contexts()
         .flatMap((c) => c.pages());
-    const openPanel = () => openChatBrowser(page, fixture.id, waitUntil, { useLauncher: appearance });
+    const openPanel = async () => {
+      // Wait for the read-only fixture route to compile before the UI starts
+      // its shorter history-loading deadline on a cold development server.
+      const status = await page.evaluate(async (id) => {
+        const response = await fetch(`/api/sessions/${id}?deferThinking=1&deferMedia=1&view=chat`, { cache: "no-store" });
+        await response.arrayBuffer();
+        return response.status;
+      }, fixture.id);
+      assert.equal(status, 200);
+      return openChatBrowser(page, fixture.id, waitUntil, { useLauncher: appearance });
+    };
     const navigate = async (path) => {
       const url = fixture.origin + path;
       await address().fill(url);
@@ -522,31 +532,49 @@ export const browserMenu = {
       await guest.getByText("Activated", { exact: true }).waitFor();
       await device.getByRole("button", { name: /旋转|Rotate/ }).click();
       await waitUntil(async () => await guest.evaluate(() => innerWidth === 667), "rotated logical viewport");
-      await choose("screenshot");
-      await page.getByText(/网页截图已复制|Page screenshot copied/).waitFor();
-      const pixel = await page.evaluate(async () => {
-        const value = await window.piDesktop.clipboard.readImage();
-        if (!value) return null;
-        const img = new Image();
-        img.src = value.startsWith("data:") ? value : "data:image/png;base64," + value;
-        await img.decode();
-        const canvas = document.createElement("canvas");
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-        return {
-          width: img.width,
-          height: img.height,
-          rgb: [...ctx.getImageData(Math.floor(img.width * 0.7), Math.floor(img.height * 0.85), 1, 1).data].slice(
-            0,
-            3,
-          ),
-        };
+      // The screenshot action uses the real system clipboard. Keep its prior
+      // text/image in memory and restore only if our screenshot still owns it.
+      await page.evaluate(async () => {
+        window.__pioraClipboardBackup = { text: await window.piDesktop.clipboard.readText(), image: await window.piDesktop.clipboard.readImage() };
       });
-      assert.ok(pixel?.width > 20 && pixel?.height > 20);
-      assert.deepEqual(pixel.rgb, [25, 119, 173]);
-      await writeFile(join(directory, "clipboard-evidence.json"), JSON.stringify(pixel));
+      try {
+        await choose("screenshot");
+        await page.getByText(/网页截图已复制|Page screenshot copied/).waitFor();
+        const pixel = await page.evaluate(async () => {
+          const value = await window.piDesktop.clipboard.readImage();
+          window.__pioraClipboardScreenshot = value;
+          if (!value) return null;
+          const img = new Image();
+          img.src = value.startsWith("data:") ? value : "data:image/png;base64," + value;
+          await img.decode();
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          return {
+            width: img.width,
+            height: img.height,
+            rgb: [...ctx.getImageData(Math.floor(img.width * 0.7), Math.floor(img.height * 0.85), 1, 1).data].slice(
+              0,
+              3,
+            ),
+          };
+        });
+        assert.ok(pixel?.width > 20 && pixel?.height > 20);
+        assert.deepEqual(pixel.rgb, [25, 119, 173]);
+        await writeFile(join(directory, "clipboard-evidence.json"), JSON.stringify(pixel));
+      } finally {
+        await page.evaluate(async () => {
+          const previous = window.__pioraClipboardBackup, screenshot = window.__pioraClipboardScreenshot;
+          if (previous && screenshot && await window.piDesktop.clipboard.readImage() === screenshot) {
+            if (previous.image) await window.piDesktop.clipboard.writeImage(previous.image);
+            else await window.piDesktop.clipboard.writeText(previous.text);
+          }
+          delete window.__pioraClipboardBackup;
+          delete window.__pioraClipboardScreenshot;
+        });
+      }
       await device.getByRole("button", { name: /关闭设备工具栏|Close device toolbar/ }).click();
     });
     await step("manage-and-fill-contact", async () => {

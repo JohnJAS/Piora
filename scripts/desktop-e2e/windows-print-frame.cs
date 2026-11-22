@@ -30,13 +30,22 @@ public static class PioraPrintFrame {
         return name.ToString();
     }
 
-    public static long[] VisibleFrames() {
+    public static long[] FrameHandles(bool visibleOnly) {
         var frames = new List<long>();
         EnumWindows((w, _) => {
-            if (IsWindowVisible(w) && WindowClass(w) == "ApplicationFrameWindow") frames.Add(w.ToInt64());
+            if ((!visibleOnly || IsWindowVisible(w)) && WindowClass(w) == "ApplicationFrameWindow") frames.Add(w.ToInt64());
             return true;
         }, IntPtr.Zero);
         return frames.ToArray();
+    }
+
+    public static long[] VisibleProxies() {
+        var proxies = new List<long>();
+        EnumWindows((w, _) => {
+            if (IsWindowVisible(w) && WindowClass(w) == "ProxyModalWindow") proxies.Add(w.ToInt64());
+            return true;
+        }, IntPtr.Zero);
+        return proxies.ToArray();
     }
 
     private static bool IsImage(int pid, string expectedPath) {
@@ -48,13 +57,19 @@ public static class PioraPrintFrame {
           catch (ArgumentException) { return false; }
     }
 
-    private static bool HasFixtureProxy(int browserProcess, int shellProcess) {
+    private static bool HasFixtureProxy(int browserProcess, int shellProcess, long[] previousProxies) {
         bool expected = false, another = false;
         EnumWindows((w, _) => {
-            if (!IsWindowVisible(w) || WindowClass(w) != "ProxyModalWindow" || ProcessId(w) != shellProcess) return true;
+            if (!IsWindowVisible(w) || WindowClass(w) != "ProxyModalWindow" || ProcessId(w) != shellProcess ||
+                Array.IndexOf(previousProxies, w.ToInt64()) >= 0) return true;
             var owner = GetWindow(w, 4);
+            var popup = GetLastActivePopup(owner);
+            // Some Windows builds keep an application-owned Win32 print dialog
+            // as the active popup while Explorer hosts the visible print UI.
+            bool active = popup == w || (ProcessId(popup) == browserProcess &&
+                WindowClass(popup) == "#32770" && GetWindow(popup, 4) == owner && IsWindowVisible(popup));
             if (ProcessId(owner) == browserProcess && WindowClass(owner) == "Chrome_WidgetWin_1" &&
-                !IsWindowEnabled(owner) && GetLastActivePopup(owner) == w) expected = true;
+                !IsWindowEnabled(owner) && active) expected = true;
             else another = true;
             return !another;
         }, IntPtr.Zero);
@@ -71,16 +86,38 @@ public static class PioraPrintFrame {
         return found;
     }
 
-    public static IntPtr Find(int browserProcess, long[] previousFrames) {
+    // Report only window/process metadata, never titles or page content. This
+    // helps distinguish an unsupported Windows broker layout from an app error.
+    public static string Describe(int browserProcess, long[] previousProxies) {
+        string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        string explorer = Path.Combine(windows, "explorer.exe");
+        string printBroker = Path.Combine(windows, @"SystemApps\Windows.PrintDialog_cw5n1h2txyewy\PrintDialog.exe");
+        var rows = new List<string>();
+        EnumWindows((w, _) => {
+            if (!IsWindowVisible(w)) return true;
+            string kind = WindowClass(w);
+            int pid = ProcessId(w);
+            if (kind != "ApplicationFrameWindow" && kind != "ProxyModalWindow" && pid != browserProcess) return true;
+            var owner = GetWindow(w, 4);
+            rows.Add(String.Format("class={0},pid={1},ownerPid={2},enabled={3},explorer={4},fixtureProxy={5},printBroker={6},existingProxy={7},ownerPopup={8}",
+                kind, pid, ProcessId(owner), IsWindowEnabled(w), IsImage(pid, explorer),
+                HasFixtureProxy(browserProcess, pid, previousProxies), ContainsBroker(w, pid, printBroker),
+                Array.IndexOf(previousProxies, w.ToInt64()) >= 0, owner != IntPtr.Zero && GetLastActivePopup(owner) == w));
+            return true;
+        }, IntPtr.Zero);
+        return String.Join("; ", rows.ToArray());
+    }
+
+    public static IntPtr Find(int browserProcess, long[] previousFrames, long[] previousProxies) {
         string windows = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         string explorer = Path.Combine(windows, "explorer.exe");
         string printBroker = Path.Combine(windows, @"SystemApps\Windows.PrintDialog_cw5n1h2txyewy\PrintDialog.exe");
         IntPtr candidate = IntPtr.Zero;
-        foreach (long handle in VisibleFrames()) {
+        foreach (long handle in FrameHandles(true)) {
             if (Array.IndexOf(previousFrames, handle) >= 0) continue;
             var frame = new IntPtr(handle);
             int host = ProcessId(frame);
-            if (!IsImage(host, explorer) || !HasFixtureProxy(browserProcess, host) ||
+            if (!IsImage(host, explorer) || !HasFixtureProxy(browserProcess, host, previousProxies) ||
                 !ContainsBroker(frame, host, printBroker)) continue;
             // A second broker frame could belong to another print request. A user
             // switching foreground windows must never redirect the fixture's input.

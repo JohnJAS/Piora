@@ -14,22 +14,35 @@ using System.Runtime.InteropServices;
 public static class PioraMenuDialogOwner {
   [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr window, uint command);
   [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr window, int id);
+  [DllImport("user32.dll")] private static extern int GetDlgCtrlID(IntPtr window);
+  [DllImport("user32.dll")] private static extern IntPtr GetParent(IntPtr window);
+  [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
   [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr window);
   private delegate bool VisitControl(IntPtr handle, IntPtr data);
   [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, VisitControl visit, IntPtr data);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetClassName(IntPtr handle, System.Text.StringBuilder name, int capacity);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr SendMessageTimeout(IntPtr handle, uint message, IntPtr size, string text, uint flags, uint timeout, out IntPtr result);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern IntPtr SendMessageTimeout(IntPtr handle, uint message, IntPtr size, System.Text.StringBuilder text, uint flags, uint timeout, out IntPtr result);
+  private static string WindowClass(IntPtr window) {
+    var name = new System.Text.StringBuilder(64);
+    GetClassName(window, name, name.Capacity);
+    return name.ToString();
+  }
+  private static bool InFilenameField(IntPtr edit, IntPtr dialog) {
+    for (IntPtr window = edit; window != dialog && window != IntPtr.Zero; window = GetParent(window)) {
+      int id = GetDlgCtrlID(window);
+      if (id == 1001 || id == 1148) return true;
+    }
+    return false;
+  }
   public static bool SetFixtureFilename(IntPtr dialog, string path) {
-    IntPtr combo = GetDlgItem(dialog, 1148), edit = IntPtr.Zero;
-    if (combo == IntPtr.Zero) return false;
-    EnumChildWindows(combo, (handle, _) => {
-      var name = new System.Text.StringBuilder(64);
-      GetClassName(handle, name, name.Capacity);
-      if (name.ToString() != "Edit") return true;
-      edit = handle; return false;
+    var fields = new System.Collections.Generic.List<IntPtr>();
+    EnumChildWindows(dialog, (handle, _) => {
+      if (WindowClass(handle) == "Edit" && IsWindowVisible(handle) && IsWindowEnabled(handle) && InFilenameField(handle, dialog)) fields.Add(handle);
+      return true;
     }, IntPtr.Zero);
-    if (edit == IntPtr.Zero || !IsWindowEnabled(edit)) return false;
+    if (fields.Count != 1) return false;
+    IntPtr edit = fields[0];
     IntPtr result;
     if (SendMessageTimeout(edit, 0x000C, IntPtr.Zero, path, 2, 1500, out result) == IntPtr.Zero) return false;
     var selected = new System.Text.StringBuilder(path.Length + 2);
@@ -83,16 +96,24 @@ if ($inspectPrint) {
   Add-Type -Path (Join-Path $PSScriptRoot 'windows-print-frame.cs')
   $frameFile = Join-Path $FixtureDirectory "visible-print-frames-$BrowserProcess.json"
   if ($Operation -eq 'prepare-print') {
-    ConvertTo-Json -InputObject @([PioraPrintFrame]::VisibleFrames()) -Compress | Set-Content -LiteralPath $frameFile
+    $baseline = @{ frames = @([PioraPrintFrame]::FrameHandles($false)); proxies = @([PioraPrintFrame]::VisibleProxies()) }
+    ConvertTo-Json -InputObject $baseline -Compress | Set-Content -LiteralPath $frameFile
     return
   }
-  [long[]] $previousFrames = @(Get-Content -Raw -LiteralPath $frameFile | ConvertFrom-Json)
+  # Windows PowerShell 5 returns the JSON array as one pipeline object.
+  # Enumerate the parsed value explicitly before converting its entries.
+  $baseline = Get-Content -Raw -LiteralPath $frameFile | ConvertFrom-Json
+  [long[]] $previousFrames = @()
+  foreach ($frame in $baseline.frames) { $previousFrames += [long]$frame }
+  [long[]] $previousProxies = @()
+  foreach ($proxy in $baseline.proxies) { $previousProxies += [long]$proxy }
   $image = (Get-Process -Id $BrowserProcess).MainModule.FileVersionInfo
   $appNames = @($image.ProductName,$image.FileDescription,[IO.Path]::GetFileNameWithoutExtension($image.FileName)) | Where-Object {$_}
 }
 $until = (Get-Date).AddSeconds(35)
 $observed = @()
 $ownedTitles = [Collections.Generic.HashSet[string]]::new()
+$printOutputWindows = [Collections.Generic.HashSet[string]]::new()
 $refreshAt = [datetime]::MinValue
 while ((Get-Date) -lt $until) {
   if ((Get-Date) -ge $refreshAt) {
@@ -102,7 +123,7 @@ while ((Get-Date) -lt $until) {
   $windows = [Collections.Generic.List[System.Windows.Automation.AutomationElement]]::new()
   $printFrame = [IntPtr]::Zero
   if ($inspectPrint) {
-    $printFrame = [PioraPrintFrame]::Find($BrowserProcess, $previousFrames)
+    $printFrame = [PioraPrintFrame]::Find($BrowserProcess, $previousFrames, $previousProxies)
     if ($printFrame -ne [IntPtr]::Zero) {
       $frameElement = [System.Windows.Automation.AutomationElement]::FromHandle($printFrame)
       # The native title identifies the requesting application, for example "Piora - 打印".
@@ -112,6 +133,15 @@ while ((Get-Date) -lt $until) {
   }
   foreach ($rootWindow in [System.Windows.Automation.AutomationElement]::RootElement.FindAll($scope::Children,$trueCondition)) {
     if (!(OwnedWindow $rootWindow)) {
+      if ($Operation -eq 'save-pdf' -and $rootWindow.Current.Name -match 'Save.*Output|保存打印|将打印输出|Print to PDF') {
+        # Diagnose newly encountered broker layouts without recording files or
+        # sending input to a window whose ownership is not established.
+        $nativeOwner = [PioraMenuDialogOwner]::GetWindow([IntPtr]$rootWindow.Current.NativeWindowHandle, 4)
+        [int]$ownerPid = 0
+        [void][PioraMenuDialogOwner]::GetWindowThreadProcessId($nativeOwner, [ref]$ownerPid)
+        $process = Get-Process -Id $rootWindow.Current.ProcessId -ErrorAction SilentlyContinue
+        [void]$printOutputWindows.Add(('class={0},process={1},pid={2},ownerPid={3}' -f $rootWindow.Current.ClassName,$process.ProcessName,$rootWindow.Current.ProcessId,$ownerPid))
+      }
       if (!$hostedPrint) { continue }
       $systemPrint = $rootWindow.Current.Name -match '^(Print|打印)(?:$|[ ·\-:：])'
       $saveOutput = $Operation -eq 'save-pdf' -and $rootWindow.Current.Name -match 'Save.*Output|保存打印输出|将打印输出'
@@ -136,6 +166,12 @@ while ((Get-Date) -lt $until) {
       if ($Operation -eq 'cancel-print') {
         $button = $buttons | Where-Object { $_.Current.AutomationId -in @('2','CloseButton') -or $_.Current.Name -match 'Cancel|取消' } | Select-Object -First 1
         if ($button) { ClickButton $button; return }
+        if ($window.Current.ClassName -eq '#32770' -and (OwnedWindow $window)) {
+          $handle = [IntPtr]$window.Current.NativeWindowHandle
+          $cancel = [PioraMenuDialogOwner]::GetDlgItem($handle, 2)
+          if ($cancel -ne [IntPtr]::Zero -and [PioraMenuDialogOwner]::IsWindowEnabled($cancel) -and
+              [PioraMenuDialogOwner]::PostMessage($handle, 0x0111, [IntPtr]2, $cancel)) { return }
+        }
       } elseif ($Operation -eq 'print-pdf') {
         $printer = $all | Where-Object {$_.Current.Name -eq 'Microsoft Print to PDF'} | Select-Object -First 1
         if (!$printer) {
@@ -191,4 +227,6 @@ while ((Get-Date) -lt $until) {
   }
   Start-Sleep -Milliseconds 180
 }
-throw ("Fixture-owned dialog unavailable for " + $Operation + ". Owned windows: " + ($ownedTitles -join ', ') + ". Controls: " + ($observed -join ', '))
+$printDiagnostic = if ($inspectPrint) { ". Window metadata: " + [PioraPrintFrame]::Describe($BrowserProcess, $previousProxies) }
+    elseif ($Operation -eq 'save-pdf') { ". Print output window metadata: " + ($printOutputWindows -join '; ') } else { '' }
+throw ("Fixture-owned dialog unavailable for " + $Operation + ". Owned windows: " + ($ownedTitles -join ', ') + ". Controls: " + ($observed -join ', ') + $printDiagnostic)
