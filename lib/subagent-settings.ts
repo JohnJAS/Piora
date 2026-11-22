@@ -7,7 +7,7 @@ import type { SubagentProfile, SubagentSettings } from "./subagent-types.ts";
 export const MAX_CUSTOM_PROFILES_PER_SCOPE = 100;
 
 export const DEFAULT_SUBAGENT_SETTINGS: SubagentSettings = {
-  enabled: false, maxConcurrency: 4, timeoutSeconds: 0, maxTokens: 0,
+  limitsVersion: 1, enabled: false, maxConcurrency: 4, timeoutSeconds: 0, maxTokens: 0,
   maxResultChars: 8_000, disabledProfiles: [], modelOverrides: {},
 };
 
@@ -26,13 +26,15 @@ export function parseSubagentSettings(value: unknown): SubagentSettings {
   if (Object.keys(v).some(key => !(key in DEFAULT_SUBAGENT_SETTINGS)) || typeof v.enabled !== "boolean") {
     throw new TypeError("Invalid subagent settings fields");
   }
+  if (v.limitsVersion !== undefined && v.limitsVersion !== 1) throw new TypeError("Invalid limits version");
   const limits: Record<string, number> = {};
   for (const [key, min, max] of LIMIT_BOUNDS) {
-    // Support upgrading from beta.26 three-field settings where limit fields are absent.
     const raw = v[key];
     const resolved = raw === undefined ? DEFAULT_SUBAGENT_SETTINGS[key] : raw;
     if (!Number.isSafeInteger(resolved) || resolved < min || resolved > max) throw new TypeError(`Invalid ${key}`);
-    limits[key] = resolved;
+    // beta.26 ignored legacy on-disk limits. Only limits explicitly saved by the
+    // new settings UI carry this version and may become active again.
+    limits[key] = v.limitsVersion === 1 ? resolved : DEFAULT_SUBAGENT_SETTINGS[key];
   }
   if (!Array.isArray(v.disabledProfiles) || v.disabledProfiles.length > 200 || v.disabledProfiles.some(name => typeof name !== "string" || !name || name.length > 200)) {
     throw new TypeError("Invalid disabled profiles");
@@ -42,6 +44,7 @@ export function parseSubagentSettings(value: unknown): SubagentSettings {
     throw new TypeError("Models use provider/modelId");
   }
   return {
+    limitsVersion: 1,
     enabled: v.enabled,
     maxConcurrency: limits.maxConcurrency,
     timeoutSeconds: limits.timeoutSeconds,
@@ -85,6 +88,13 @@ export function parseSubagentMaxTurns(value: unknown, file: string): number | un
   return parsed;
 }
 
+export function parseSubagentProfileMaxTurns(value: unknown, version: unknown, file: string): number | undefined {
+  // Old profile files may retain maxTurns even though beta.26 stopped applying it.
+  if (version === undefined) return undefined;
+  if (version !== 1 && version !== "1") throw new Error(`Invalid profile limits version: ${file}`);
+  return parseSubagentMaxTurns(value, file);
+}
+
 export function parseSubagentProfileTools(value: unknown): string[] | undefined {
   if (value === undefined) return undefined;
   const list = typeof value === "string" ? value.split(",").map(item => item.trim()).filter(Boolean) : value;
@@ -124,7 +134,7 @@ export function listSubagentProfiles(cwd: string): SubagentProfile[] {
       const { frontmatter: v, body } = parseFrontmatter(readFileSync(path, "utf8"));
       const name = String(v.name ?? file.slice(0, -3));
       if (!name.trim() || name.length > 200 || BUILTIN_SUBAGENT_PROFILES.some(profile => profile.name.toLowerCase() === name.toLowerCase())) throw new Error(`Invalid/reserved subagent profile: ${name}`);
-      const maxTurns = parseSubagentMaxTurns(v.maxTurns, file);
+      const maxTurns = parseSubagentProfileMaxTurns(v.maxTurns, v.pioraLimitsVersion, file);
       if (v.model !== undefined && (typeof v.model !== "string" || !/^[^/\s]+\/.+$/u.test(v.model))) throw new Error(`Invalid model: ${file}`);
       profiles.set(name, {
         id: parseSubagentProfileId(v.id),

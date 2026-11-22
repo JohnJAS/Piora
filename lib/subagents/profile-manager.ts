@@ -6,7 +6,7 @@ import { writePrivateFileAtomicSync } from "../atomic-file.ts";
 import {
   BUILTIN_SUBAGENT_PROFILES,
   MAX_CUSTOM_PROFILES_PER_SCOPE,
-  parseSubagentMaxTurns,
+  parseSubagentProfileMaxTurns,
   parseSubagentProfileAliases,
   parseSubagentProfileId,
   parseSubagentProfileTools,
@@ -99,7 +99,7 @@ export function serializeSubagentProfileMarkdown(
     lines.push(`model: ${formatYamlString(input.model)}`);
   }
   if (input.maxTurns && input.maxTurns > 0) {
-    lines.push(`maxTurns: ${input.maxTurns}`);
+    lines.push("pioraLimitsVersion: 1", `maxTurns: ${input.maxTurns}`);
   }
   if (input.background) {
     lines.push("background: true");
@@ -116,7 +116,7 @@ export function parseCustomProfileContent(markdown: string, file: string, source
   if (!name || name.length > 200 || isReservedName(name)) {
     throw new Error(`Invalid/reserved subagent profile: ${name || file}`);
   }
-  const maxTurns = parseSubagentMaxTurns(v.maxTurns, file);
+  const maxTurns = parseSubagentProfileMaxTurns(v.maxTurns, v.pioraLimitsVersion, file);
   if (v.model !== undefined && (typeof v.model !== "string" || !MODEL_PATTERN.test(v.model))) {
     throw new Error(`Invalid model: ${file}`);
   }

@@ -30,6 +30,7 @@ export function resolveSubagentModelOverride(
 
 export function isSubagentTool(name: string): boolean { return (SUBAGENT_TOOLS as readonly string[]).includes(name); }
 export interface SubagentSettings {
+  limitsVersion: 1;
   enabled: boolean;
   maxConcurrency: number;
   timeoutSeconds: number;

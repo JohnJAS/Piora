@@ -185,7 +185,7 @@ test("refactored subagent task card, completion card, inspector timeline, fullRe
       };
     });
 
-    let settings = { enabled: true, maxConcurrency: 4, timeoutSeconds: 300, maxTokens: 0, maxResultChars: 8_000, disabledProfiles: [], modelOverrides: {} };
+    let settings = { limitsVersion: 1, enabled: true, maxConcurrency: 4, timeoutSeconds: 300, maxTokens: 0, maxResultChars: 8_000, disabledProfiles: [], modelOverrides: {} };
     let profiles = [
       { name: "general-purpose", source: "built-in", description: "Independent work", systemPrompt: "Complete tasks cleanly.", maxTurns: 30 },
       { name: "Explore", source: "built-in", description: "Read-only exploration", systemPrompt: "Explore read-only.", tools: ["read", "grep", "find", "ls"], maxTurns: 20 },

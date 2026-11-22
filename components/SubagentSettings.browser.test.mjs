@@ -30,7 +30,7 @@ test('subagent settings preserve profile choices with readable responsive contro
     browser = await chromium.launch({ channel: process.platform === 'win32' ? 'msedge' : 'chromium', headless: true });
     const observations = [];
     for (const locale of ['zh-CN', 'en']) {
-      let settings = { enabled: false, disabledProfiles: [], modelOverrides: {} };
+      let settings = { limitsVersion: 1, enabled: false, maxConcurrency: 4, timeoutSeconds: 0, maxTokens: 0, maxResultChars: 8000, disabledProfiles: [], modelOverrides: {} };
       const profiles = [{ name: 'general-purpose', source: 'built-in', description: 'Independent work' }, { name: 'Explore', source: 'built-in', description: 'Read-only exploration' }];
       const modelList = [{ provider: 'fixture', id: 'reader', name: 'Fixture Reader' }, { provider: 'secondary', id: 'writer/v2', name: 'Fixture Writer' }];
       const catalogRequests = [], writes = [];
@@ -75,7 +75,16 @@ test('subagent settings preserve profile choices with readable responsive contro
       await page.waitForFunction(() => document.querySelector('[data-testid="subagent-toggle"]')?.getAttribute('aria-checked') === 'true');
       await card.locator('summary').click();
       assert.equal(await card.getByRole('checkbox').count(), 2);
-      assert.equal(await card.locator('input[type="number"]').count(), 0, 'The expanded settings have no manual run limits');
+      const limits = card.locator('input[type="number"]');
+      assert.equal(await limits.count(), 4, 'The expanded settings expose four optional limits');
+      assert.deepEqual(await limits.evaluateAll(inputs => inputs.map(input => input.value)), ['4', '0', '0', '8000']);
+      await limits.first().fill('5');
+      await save(() => limits.first().blur());
+      assert.equal(settings.limitsVersion, 1);
+      assert.equal(settings.maxConcurrency, 5);
+      await limits.first().fill('4');
+      await save(() => limits.first().blur());
+      assert.equal(settings.maxConcurrency, 4);
       const explore = card.getByRole('checkbox', { name: /Explore/ });
       await save(() => explore.click()); assert.deepEqual(settings.disabledProfiles, ['Explore']);
       const model = card.getByRole('combobox', { name: /Explore/ });
@@ -151,6 +160,7 @@ test('subagent settings preserve profile choices with readable responsive contro
       await save(() => custom.selectOption('fixture/reader'));
       await save(() => custom.selectOption(''));
       assert.equal(settings.modelOverrides.Reviewer, '');
+      await custom.locator('option:checked').filter({ hasText: /Fixture Writer/ }).waitFor({ state: 'attached' });
       assert.match(await custom.locator('option:checked').textContent(), /Fixture Writer/);
       // Loading, total failure, empty and partial catalogs recover without losing overrides.
       catalogMode = 'hold'; await reopen();
