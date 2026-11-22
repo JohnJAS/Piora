@@ -206,7 +206,7 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       // Queue strips tuck behind the input while keeping their controls exposed.
       const chatWindowSource = await readFile(path.join(repo, "components/ChatWindow.tsx"), "utf8");
       assert.match(chatWindowSource, /queueContent=\{composerQueueContent\}/);
-      assert.match(chatWindowSource, /const composerQueueContent = useMemo\(\(\) => \(\s*<ChatCommandQueue records=\{chatCommands\.records\} actions=\{queueActions\} pendingMessages=\{queuedMessages\} onPendingAction=\{handlePendingInputAction\} \/>/);
+      assert.match(chatWindowSource, /const composerQueueContent = useMemo\(\(\) => \(\s*<ChatCommandQueue\s+records=\{chatCommands\.records\}\s+actions=\{queueActions\}\s+pendingMessages=\{queuedMessages\}\s+onPendingAction=\{handlePendingInputAction\}\s+onOpenPendingInSideChat=\{canOpenSideChat \? openPendingInSideChat : undefined\}\s*\/>/);
       await page.evaluate(() => window.setRuntimeQueue({steering:['same <b>literal</b>','same <b>literal</b>'],followUp:[],pendingInputs:[{id:'first',text:'same <b>literal</b>',kind:'steer'},{id:'second',text:'same <b>literal</b>',kind:'steer'}]}));
       const runtimeRegion = conversation.getByRole('region', { name: locale === 'zh-CN' ? '接下来执行' : 'Up next' });
       const restorePending = runtimeRegion.getByRole('button', { name: locale === 'zh-CN' ? '恢复排队' : 'Move to queue', exact: true });
@@ -599,157 +599,59 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await page.reload();
       const launcher = page.locator("#launcher");
       const topbar = launcher.locator(".chat-composer-topbar");
-      const modeToggle = launcher.getByTestId("workflow-mode-toggle");
       const projectTrigger = launcher.locator('[class*="projectTrigger"]');
       const templateTrigger = launcher.locator('.chat-composer-footer [class*="SystemPromptSelector"][aria-haspopup="listbox"]');
-      await modeToggle.waitFor();
+      const addTrigger = launcher.getByTestId("composer-add-trigger");
+      await addTrigger.waitFor();
       await templateTrigger.waitFor();
       await launcher.locator('[data-permission-trigger]').waitFor();
       await page.addStyleTag({ content: "#command-results,#conversation,#room,#shortcut-settings{display:none}#launcher{margin-inline:auto;height:680px}#root>main{padding:24px}" });
       assert.equal(await launcher.locator('[class*="eyebrow"]').count(), 0, "the redundant new-task eyebrow is removed");
-      assert.equal(await modeToggle.getAttribute("aria-expanded"), "false");
-      assert.equal(await topbar.locator("button").count(), 1, "the enabled laboratory also leaves only the project picker above the input");
-      assert.equal(await topbar.locator(".chat-composer-workflow").count(), 0, "mode controls remain in the footer");
-      assert.equal(await launcher.locator(".chat-composer-footer .chat-composer-workflow").count(), 1);
-      assert.equal(await topbar.locator(".chat-composer-context").count(), 1);
-      const assertFooterWorkflowOrder = async (composer, hasFooterPrompt = false) => {
-        const order = await composer.locator(".chat-composer-footer").evaluate(footer => {
-          const permission = footer.querySelector("[data-permission-trigger]");
-          const workflow = footer.querySelector(".chat-composer-workflow");
-          const optimize = footer.querySelector(".prompt-optimize-button");
-          const prompt = footer.querySelector('[class*="SystemPromptSelector"][aria-haspopup="listbox"]');
-          return { permissionBeforeWorkflow: Boolean(permission && workflow && permission.compareDocumentPosition(workflow) & Node.DOCUMENT_POSITION_FOLLOWING),
-            workflowBeforeOptimize: Boolean(workflow && optimize && workflow.compareDocumentPosition(optimize) & Node.DOCUMENT_POSITION_FOLLOWING),
-            workflowBeforePrompt: prompt ? Boolean(workflow && workflow.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING) : null,
-            promptBeforeOptimize: prompt ? Boolean(optimize && prompt.compareDocumentPosition(optimize) & Node.DOCUMENT_POSITION_FOLLOWING) : null };
-        });
-        assert.deepEqual(order, { permissionBeforeWorkflow: true, workflowBeforeOptimize: true, workflowBeforePrompt: hasFooterPrompt ? true : null,
-          promptBeforeOptimize: hasFooterPrompt ? true : null }, "footer controls follow permission, mode, system prompt and optimization order");
-      };
-      await assertFooterWorkflowOrder(launcher, true);
-      for (const width of [900, 720, 480, 320]) {
-        await launcher.evaluate((node, value) => { node.style.width = value + "px"; }, width);
-        const layout = await launcher.locator(".chat-composer-footer").evaluate(footer => {
-          const label = footer.querySelector(".model-settings-control .model-settings-trigger-label");
-          const original = label.textContent;
-          const controls = [footer.querySelector("[data-permission-trigger]"), footer.querySelector(".chat-composer-workflow"), footer.querySelector(".prompt-optimize-button"), footer.querySelector(".composer-submit-controls")];
-          const rows = () => controls.map(node => Math.round(node.getBoundingClientRect().top - footer.getBoundingClientRect().top));
-          label.textContent = "maas-deepseek-v4.1-flash-volcengine-" + "production".repeat(12);
-          const long = rows(), truncated = label.scrollWidth > label.clientWidth;
-          label.textContent = "Mini";
-          const short = rows();
-          label.textContent = original;
-          return { long, short, truncated };
-        });
-        assert.deepEqual(layout.long, layout.short, `${locale}/${width}: changing only model length must not move actions to another row`);
-        assert.equal(layout.truncated, true);
-      }
-      const capture = process.env.PIORA_COMPOSER_SCREENSHOTS
-        ? path.join(repo, ".verification", "launcher-composer-ux") : null;
-      if (capture) await mkdir(capture, { recursive: true });
+      assert.equal(await topbar.locator("button").count(), 1, "only the project picker is above the input");
+      assert.equal(await launcher.getByTestId("workflow-plan-pill").count(), 0, "Agent mode has no persistent Plan pill");
+      assert.equal(await launcher.getByTestId("workflow-goal-pill").count(), 0, "Agent mode has no persistent Goal pill");
       const settleLayout = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-      const modeMenu = page.getByTestId("workflow-mode-menu");
-      const finishModeAnimation = async () => {
-        await settleLayout();
-        if (await modeMenu.isVisible()) await modeMenu.evaluate(async menu => {
-          await Promise.all(menu.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
-        });
-      };
-      const assertModeMenu = async (trigger, placement = "above") => {
-        await modeMenu.waitFor();
-        const menuBox = await modeMenu.boundingBox();
-        const triggerBox = await trigger.boundingBox();
-        assert.ok(placement === "above" ? menuBox.y + menuBox.height <= triggerBox.y - 4 : menuBox.y >= triggerBox.y + triggerBox.height + 4,
-          `the mode menu opens ${placement} its trigger: ${JSON.stringify({ menuBox, triggerBox })}`);
-        assert.ok(menuBox.x >= 7 && menuBox.x + menuBox.width <= page.viewportSize().width - 7, "the menu respects horizontal viewport bounds");
-        assert.equal(await modeMenu.evaluate(menu => menu.parentElement === document.body), true, "the menu portal avoids composer clipping");
-        const options = await modeMenu.locator('button[data-testid^="workflow-mode-"]').evaluateAll(buttons => buttons.map(button => {
-          const box = button.getBoundingClientRect();
-          const label = button.querySelector("span");
-          return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width, height: box.height,
-            readable: Boolean(label && label.clientWidth > 0 && label.scrollWidth <= label.clientWidth + 1) };
-        }));
-        assert.equal(options.length, 3, "all three modes are directly visible in the menu");
-        assert.ok(options.every(option => option.width >= 40 && option.height >= 28 && option.readable
-          && option.left >= menuBox.x && option.right <= menuBox.x + menuBox.width + 1
-          && option.top >= menuBox.y && option.bottom <= menuBox.y + menuBox.height + 1), "mode options fit the menu without clipping");
-      };
-      await launcher.locator("textarea").click();
-      const restingMode = await modeToggle.boundingBox();
-      assert.equal(await modeToggle.locator("svg").count(), 1, "the trigger retains only its mode icon, without an expansion arrow");
-      await modeToggle.hover();
-      await page.waitForTimeout(250);
-      assert.deepEqual(await modeToggle.boundingBox(), restingMode, "hover does not grow an empty arrow slot");
-      assert.equal(await modeToggle.getAttribute("aria-expanded"), "false", "opening the menu requires a click");
-      await page.mouse.move(0, 0);
-      await page.keyboard.press("Tab");
-      await modeToggle.focus();
-      assert.equal(await modeToggle.evaluate(button => button.matches(":focus-visible")), true);
-      assert.equal(await modeToggle.getAttribute("aria-expanded"), "false", "focus alone does not open the menu");
-      await launcher.locator("textarea").click();
+      const capture = process.env.PIORA_COMPOSER_SCREENSHOTS ? path.join(repo, ".verification", "launcher-composer-ux") : null;
+      if (capture) await mkdir(capture, { recursive: true });
       const assertProjectLeftAligned = async () => {
         const row = await topbar.boundingBox();
         const project = await projectTrigger.boundingBox();
-        assert.ok(Math.abs(project.x - row.x - 2) < 1,
-          `${locale}: the project picker stays against the topbar's left padding regardless of laboratory modes`);
+        assert.ok(Math.abs(project.x - row.x - 2) < 1, locale + ": the project picker remains left aligned");
+      };
+      const assertFooterWorkflowOrder = async (composer, hasFooterPrompt = false) => {
+        const order = await composer.locator(".chat-composer-footer").evaluate(footer => {
+          const permission = footer.querySelector("[data-permission-trigger]");
+          const prompt = footer.querySelector('[class*="SystemPromptSelector"][aria-haspopup="listbox"]');
+          const optimize = footer.querySelector(".prompt-optimize-button");
+          return { permissionBeforePrompt: Boolean(permission && prompt && permission.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING),
+            promptBeforeOptimize: Boolean(prompt && optimize && prompt.compareDocumentPosition(optimize) & Node.DOCUMENT_POSITION_FOLLOWING) };
+        });
+        if (hasFooterPrompt) assert.deepEqual(order, { permissionBeforePrompt: true, promptBeforeOptimize: true }, "permission, system prompt and optimization retain their order");
       };
       for (const dark of [false, true]) {
         await page.evaluate(dark => document.documentElement.classList.toggle("dark", dark), dark);
         for (const [width, fontSize] of [[900, 14], [590, 14], [420, 14], [320, 14], [420, 20], [320, 20]]) {
-          await launcher.evaluate((section, width) => {
-            section.style.width = width + "px";
-            section.style.setProperty("--chat-column-width", "100%");
-          }, width);
+          await launcher.evaluate((section, width) => { section.style.width = width + "px"; section.style.setProperty("--chat-column-width", "100%"); }, width);
           await page.evaluate(fontSize => { document.documentElement.style.fontSize = fontSize + "px"; }, fontSize);
           await settleLayout();
-          await finishModeAnimation();
-          assert.equal(await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize)), fontSize, "font-size coverage changes the real root font size");
-          assert.ok(Math.abs(await modeToggle.evaluate(element => parseFloat(getComputedStyle(element).fontSize)) - fontSize * 0.821) < 0.1,
-            "mode controls inherit the scaled text size");
-          const before = await topbar.locator(".chat-composer-context").boundingBox();
           await assertProjectLeftAligned();
-          await modeToggle.click();
-          await finishModeAnimation();
-          await assertModeMenu(modeToggle);
-          const after = await topbar.locator(".chat-composer-context").boundingBox();
-          await assertProjectLeftAligned();
-          assert.ok(Math.abs(before.x - after.x) < 1,
-            `${locale}/${dark}/${width}/${fontSize}: footer expansion preserves the context controls' horizontal position`);
-          const geometry = await launcher.evaluate(section => {
-            const rect = element => { const { left, right, top, bottom, width, height } = element.getBoundingClientRect(); return { left, right, top, bottom, width, height }; };
-            const topbar = section.querySelector(".chat-composer-topbar");
-            const surface = section.querySelector(".chat-composer-surface");
-            const mode = section.querySelector('[data-testid="workflow-mode-select"]');
-            return {
-              topbar: rect(topbar), surface: rect(surface),
-              context: rect(topbar.querySelector(".chat-composer-context")),
-              mode: rect(mode),
-              contextButtons: [...topbar.querySelectorAll('.chat-composer-context button')].map(rect),
-              footer: rect(surface.querySelector(".chat-composer-footer")),
-              footerButtons: [...surface.querySelectorAll('.chat-composer-footer button, .chat-composer-footer input')]
-                .filter(control => getComputedStyle(control).visibility !== "hidden" && control.getBoundingClientRect().width > 0).map(rect),
-              overflow: topbar.scrollWidth - topbar.clientWidth,
-              footerOverflow: surface.querySelector(".chat-composer-footer").scrollWidth - surface.querySelector(".chat-composer-footer").clientWidth,
-              optimizeVisible: getComputedStyle(surface.querySelector('.prompt-optimize-button > span')).display !== "none",
-            };
+          await addTrigger.click();
+          assert.equal(await launcher.getByTestId("composer-add-plan-mode").getAttribute("aria-checked"), "false");
+          await launcher.getByTestId("composer-add-plan-mode").click();
+          const pill = launcher.getByTestId("workflow-plan-pill");
+          await pill.waitFor();
+          assert.equal(await launcher.locator(".chat-composer-footer").getAttribute("data-workflow-mode"), "plan");
+          const geometry = await launcher.locator(".chat-composer-footer").evaluate(footer => {
+            const rect = element => { const { left, right, top, bottom } = element.getBoundingClientRect(); return { left, right, top, bottom }; };
+            return { frame: rect(footer), overflow: footer.scrollWidth - footer.clientWidth,
+              controls: [...footer.querySelectorAll("button,input")].filter(node => getComputedStyle(node).visibility !== "hidden" && node.getBoundingClientRect().width > 0).map(rect) };
           });
-          assert.ok(geometry.overflow <= 1, `${locale}/${width}/${fontSize}: topbar overflow ${JSON.stringify(geometry)}`);
-          assert.ok(geometry.contextButtons.every(box => box.left >= geometry.topbar.left - 1 && box.right <= geometry.topbar.right + 1),
-            `${locale}/${width}/${fontSize}: topbar buttons must fit ${JSON.stringify(geometry)}`);
-          assert.ok(geometry.footerButtons.every(box => box.left >= geometry.footer.left - 1 && box.right <= geometry.footer.right + 1), "launcher footer controls stay inside the composer");
-          assert.ok(geometry.footerOverflow <= 1, `${locale}/${width}/${fontSize}: footer does not overflow`);
-          assert.ok(geometry.footerButtons.every((button, index) => geometry.footerButtons.slice(index + 1).every(other =>
-            button.right <= other.left + 1 || other.right <= button.left + 1 || button.bottom <= other.top + 1 || other.bottom <= button.top + 1)),
-          "footer controls wrap without overlapping the expanded modes, model or send button");
-          assert.equal(geometry.optimizeVisible, true, "launcher optimization remains visible on narrow panels");
-          assert.ok(geometry.mode.top >= geometry.topbar.bottom, "mode selection sits below the separate project row");
+          assert.ok(geometry.overflow <= 1, locale + "/" + width + ": footer must not overflow");
+          assert.ok(geometry.controls.every(box => box.left >= geometry.frame.left - 1 && box.right <= geometry.frame.right + 1), "footer controls stay within the composer");
+          assert.ok(geometry.controls.every((box, index) => geometry.controls.slice(index + 1).every(other => box.right <= other.left + 1 || other.right <= box.left + 1 || box.bottom <= other.top + 1 || other.bottom <= box.top + 1)), "footer controls do not overlap");
           await assertFooterWorkflowOrder(launcher, true);
-          if (capture && (width === 900 || width === 320)) {
-            await launcher.screenshot({ path: path.join(capture, `${locale}-${dark ? "dark" : "light"}-${width}-${fontSize}-expanded.png`) });
-          }
-          await page.keyboard.press("Escape");
-          assert.equal(await modeToggle.getAttribute("aria-expanded"), "false");
-          await finishModeAnimation();
+          await pill.click();
+          assert.equal(await launcher.getByTestId("workflow-plan-pill").count(), 0, "the Plan pill exits Plan mode");
         }
       }
       await page.evaluate(() => { document.documentElement.classList.remove("dark"); document.documentElement.style.removeProperty("font-size"); });
@@ -819,188 +721,72 @@ createRoot(document.getElementById("root")).render(<App/>);`);
       await projectPopup.waitFor({ state: "hidden" });
       await page.setViewportSize({ width: 1440, height: 1100 });
       await launcher.evaluate(section => { section.style.width = "900px"; });
-      await modeToggle.click();
-      await modeMenu.getByTestId("workflow-mode-plan").click();
-      // The real launcher must keep the hit region open beyond the previous
-      // 520ms selection deadline while the pointer remains on a choice.
-      await page.waitForTimeout(650);
-      assert.equal(await modeToggle.getAttribute("aria-expanded"), "true", "a selected Plan remains expanded under the pointer");
-      assert.equal(await modeMenu.getByTestId("workflow-mode-plan").getAttribute("aria-pressed"), "true");
-      await modeMenu.getByTestId("workflow-mode-goal").click();
-      await page.waitForTimeout(650);
-      assert.equal(await modeToggle.getAttribute("aria-expanded"), "true", "Goal budget reflow under a stationary pointer does not dismiss the choices");
-      await modeMenu.getByTestId("workflow-mode-agent").hover();
-      await page.waitForTimeout(650);
-      assert.equal(await modeToggle.getAttribute("aria-expanded"), "true", "crossing between mode buttons stays inside the same hover boundary");
-      assert.equal(await modeMenu.getByTestId("workflow-mode-goal").getAttribute("aria-pressed"), "true", "hovering another option does not change the selection");
-      await launcher.getByTestId("workflow-budget-input").hover();
-      await page.waitForFunction(() => document.querySelector('#launcher [data-testid="workflow-mode-toggle"]').getAttribute("aria-expanded") === "false");
-      await finishModeAnimation();
-      assert.ok((await modeToggle.textContent()).includes("Goal"), "moving to the separate Goal budget closes the menu without changing mode");
-      const goalGeometry = () => launcher.getByTestId("workflow-mode-select").evaluate(slot => {
-        const mode = slot.getBoundingClientRect();
-        const toggle = slot.querySelector('[data-testid="workflow-mode-toggle"]').getBoundingClientRect();
-        const budget = slot.parentElement.querySelector("label").getBoundingClientRect();
-        return { width: mode.width, toggleWidth: toggle.width, gap: budget.left - mode.right };
-      });
-      const compactGoal = await goalGeometry();
-      assert.ok(Math.abs(compactGoal.width - compactGoal.toggleWidth) <= 1, "the Goal trigger occupies only its visible button width");
-      assert.ok(Math.abs(compactGoal.gap - 12) < 1, "Goal budget sits beside the trigger without reserved menu space");
-      await assertProjectLeftAligned();
-      if (capture) await launcher.screenshot({ path: path.join(capture, locale + "-goal-menu-closed.png") });
-      const footerBeforeMenu = await launcher.locator(".chat-composer-footer").boundingBox();
-      await modeToggle.click();
-      await finishModeAnimation();
-      await assertModeMenu(modeToggle);
-      assert.deepEqual(await goalGeometry(), compactGoal, "opening the menu does not move or resize the Goal budget");
-      assert.deepEqual(await launcher.locator(".chat-composer-footer").boundingBox(), footerBeforeMenu, "the menu overlays content without resizing the toolbar");
-      await page.keyboard.press("Escape");
-      await modeMenu.waitFor({ state: "hidden" });
-      assert.deepEqual(await goalGeometry(), compactGoal, "closing the menu preserves the compact toolbar geometry");
-      await launcher.evaluate(section => { section.style.width = "320px"; });
-      await settleLayout();
-      await projectTrigger.click();
-      await projectPopup.waitFor();
-      const narrowPopup = await projectPopup.boundingBox();
-      const narrowTopbar = await topbar.boundingBox();
-      assert.ok(narrowPopup.x >= narrowTopbar.x - 1 && narrowPopup.x + narrowPopup.width <= narrowTopbar.x + narrowTopbar.width + 1,
-        "left-aligned project menu stays inside a narrow composer in a wide desktop window");
-      await page.keyboard.press("Escape");
-      await launcher.evaluate(section => { section.style.width = "900px"; });
-      await launcher.getByTestId("workflow-budget-input").fill("7");
+      await addTrigger.click();
+      await launcher.getByTestId("composer-add-goal-mode").click();
+      const goalPill = launcher.getByTestId("workflow-goal-pill");
+      await goalPill.waitFor();
+      assert.equal(await launcher.locator("textarea").getAttribute("data-goal-drafting"), "true");
+      assert.equal(await launcher.locator("textarea").getAttribute("rows"), "3", "Goal drafting enlarges the input");
       await launcher.locator("textarea").fill("Implement the approved launcher UX");
       await launcher.locator(".composer-submit-controls > button").click();
       await page.waitForFunction(() => window.launchRequest?.prompt.message === "Implement the approved launcher UX");
       const approvedLaunch = await page.evaluate(() => window.launchRequest);
-      assert.deepEqual(approvedLaunch.prompt.commandInput.workflow, { mode: "goal", turnBudget: 7 });
+      assert.deepEqual(approvedLaunch.prompt.commandInput.workflow, { mode: "goal", turnBudget: 10 });
       assert.equal(approvedLaunch.prompt.permissionMode, "full");
       assert.equal(approvedLaunch.cwd, "/workspace/a-very-long-project-name-for-layout-checks");
 
-      // Conversation mode controls remain in the footer while streaming or
-      // workflow actions are busy; those states only disable editing.
       await page.addStyleTag({ content: "#launcher{display:none}#conversation{display:block!important;margin-inline:auto}" });
       await page.evaluate(() => { window.setBusy(false); window.setConversationWorkflowEnabled(true); });
-      const conversationMode = conversation.getByTestId("workflow-mode-toggle");
       const conversationFooter = conversation.locator(".chat-composer-footer");
-      await conversationMode.waitFor();
+      const conversationAdd = conversation.getByTestId("composer-add-trigger");
+      await conversationAdd.waitFor();
       await conversation.locator("[data-permission-trigger]").waitFor();
-      assert.equal(await conversation.locator(".chat-composer-topbar .chat-composer-workflow").count(), 0);
-      assert.equal(await conversationFooter.locator(".chat-composer-workflow").count(), 1);
-      await assertFooterWorkflowOrder(conversation, true);
-      await conversationMode.click();
-      await finishModeAnimation();
-      // This fixture initially sits at the viewport top; verify the fallback
-      // before placing it below chat history as in the application.
-      await assertModeMenu(conversationMode, "below");
-      await modeMenu.getByTestId("workflow-mode-goal").click();
-      await conversation.getByTestId("workflow-budget-input").fill("9");
-      await page.addStyleTag({ content: "#conversation{min-height:calc(100vh - 80px);display:flex!important;flex-direction:column;justify-content:flex-end}" });
-      const finishConversationModeAnimation = finishModeAnimation;
-      const conversationFooterGeometry = () => conversationFooter.evaluate(footer => {
-        const rect = element => { const { left, right, top, bottom, width, height } = element.getBoundingClientRect(); return { left, right, top, bottom, width, height }; };
-        return { frame: rect(footer), overflow: footer.scrollWidth - footer.clientWidth,
-          controls: [...footer.querySelectorAll("button,input")].filter(control => getComputedStyle(control).visibility !== "hidden" && control.getBoundingClientRect().width > 0).map(rect) };
-      });
-      const assertConversationFooterFits = async width => {
-        const footerLayout = await conversationFooterGeometry();
-        assert.ok(footerLayout.overflow <= 1, `${locale}/${width}: conversation footer does not overflow: ${JSON.stringify(footerLayout)}`);
-        assert.ok(footerLayout.controls.every(control => control.left >= footerLayout.frame.left - 1 && control.right <= footerLayout.frame.right + 1
-          && control.top >= footerLayout.frame.top - 1 && control.bottom <= footerLayout.frame.bottom + 1), "conversation footer keeps all controls inside its bounds");
-        assert.ok(footerLayout.controls.every((control, index) => footerLayout.controls.slice(index + 1).every(other =>
-          control.right <= other.left + 1 || other.right <= control.left + 1 || control.bottom <= other.top + 1 || other.bottom <= control.top + 1)),
-        "conversation footer wraps modes, Goal budget and send controls without overlap");
-        return footerLayout;
-      };
-      for (const width of [900, 420, 320]) {
-        await conversation.evaluate((section, width) => { section.style.width = width + "px"; }, width);
-        await settleLayout();
-        await finishConversationModeAnimation();
-        await conversationMode.click();
-        await finishConversationModeAnimation();
-        await assertConversationFooterFits(width);
-        await assertModeMenu(conversationMode);
-        if (width === 900) {
-          const permission = conversation.locator("[data-permission-trigger]");
-          const originalStyle = await permission.getAttribute("style");
-          const previousAnchor = await conversationMode.boundingBox();
-          const previousFooter = await conversationFooter.boundingBox();
-          await permission.evaluate(button => { button.style.paddingRight = (parseFloat(getComputedStyle(button).paddingRight) + 16) + "px"; });
-          await finishModeAnimation();
-          const movedAnchor = await conversationMode.boundingBox();
-          assert.ok(Math.abs(movedAnchor.x - previousAnchor.x - 16) < 1, "changing a preceding control moves the menu anchor");
-          assert.deepEqual(await conversationFooter.boundingBox(), previousFooter, "the preceding control can move the anchor without resizing the footer");
-          assert.ok(Math.abs((await modeMenu.boundingBox()).x - movedAnchor.x) < 1, "the open menu follows an anchor moved by a preceding control");
-          await permission.evaluate((button, originalStyle) => { if (originalStyle === null) button.removeAttribute("style"); else button.setAttribute("style", originalStyle); }, originalStyle);
-          await finishModeAnimation();
-          await assertModeMenu(conversationMode);
-          const orderedControls = await conversationFooter.evaluate(footer => ["[data-permission-trigger]", ".chat-composer-workflow", '[class*="SystemPromptSelector"][aria-haspopup="listbox"]'].map(selector => {
-            const { left, right, top, bottom } = footer.querySelector(selector).getBoundingClientRect();
-            return { left, right, top, bottom };
-          }));
-          assert.ok(orderedControls.every((control, index) => index === 0 || orderedControls[index - 1].right <= control.left + 1 || orderedControls[index - 1].bottom <= control.top + 1),
-            "conversation footer presents permissions, modes and the system prompt in reading order");
-        }
-        await page.keyboard.press("Escape");
-        await finishConversationModeAnimation();
-      }
-      const conversationBudget = conversation.getByTestId("workflow-budget-input");
-      const preservedDraft = "Continue with visible Goal controls";
-      await editor.fill(preservedDraft);
+      await conversationAdd.click();
+      await conversation.getByTestId("composer-add-plan-mode").click();
+      const planPill = conversation.getByTestId("workflow-plan-pill");
+      await planPill.waitFor();
+      await editor.fill("Continue with a visible Plan");
       for (const state of ["streaming", "workflowBusy"]) {
-        await conversationMode.click();
-        await modeMenu.waitFor();
         await page.evaluate(state => { window.setBusy(state === "streaming"); window.setWorkflowBusy(state === "workflowBusy"); }, state);
-        await modeMenu.waitFor({ state: "hidden" });
-        assert.equal(await conversationMode.isVisible(), true, `${state} keeps the mode selector visible`);
-        assert.equal(await conversationMode.isDisabled(), true, `${state} disables mode changes`);
-        assert.equal(await conversationBudget.isVisible(), true, `${state} keeps the Goal budget visible`);
-        assert.equal(await conversationBudget.isDisabled(), true, `${state} disables budget changes`);
-        assert.ok((await conversationMode.textContent()).includes("Goal"), `${state} preserves the selected mode`);
-        assert.equal(await conversationBudget.inputValue(), "9", `${state} preserves the selected budget`);
-        assert.equal(await editor.inputValue(), preservedDraft, `${state} preserves the draft`);
+        assert.equal(await planPill.isDisabled(), true, state + " disables changes while retaining the mode");
+        assert.equal(await editor.inputValue(), "Continue with a visible Plan", state + " preserves the draft");
+        await conversationAdd.click();
+        assert.equal(await conversation.getByTestId("composer-add-plan-mode").isDisabled(), true);
+        assert.equal(await conversation.getByTestId("composer-add-goal-mode").isDisabled(), true);
+        await conversationAdd.click();
         for (const width of [900, 420, 320]) {
           await conversation.evaluate((section, width) => { section.style.width = width + "px"; }, width);
           await settleLayout();
-          await assertConversationFooterFits(width);
-          assert.equal(await conversationFooter.locator(".chat-composer-workflow").count(), 1, `${state}/${width} retains the complete workflow controls`);
-          await assertFooterWorkflowOrder(conversation, true);
-          for (const selector of ["[data-permission-trigger]", '[class*="SystemPromptSelector"][aria-haspopup="listbox"]', ".prompt-optimize-button", ".model-settings-control", ".composer-submit-controls"]) {
-            assert.equal(await conversationFooter.locator(selector).isVisible(), true, `${state}/${width}: ${selector} remains visible`);
-          }
-          if (state === "streaming") {
-            assert.equal(await conversationFooter.locator(".streaming-action-primary").isVisible(), true);
-            assert.equal(await conversationFooter.locator(".streaming-mode-picker").isVisible(), true);
-          } else {
-            assert.equal(await conversationFooter.locator(".composer-submit-controls > button").isVisible(), true);
-          }
+          const layout = await conversationFooter.evaluate(footer => {
+            const rect = node => { const { left, right, top, bottom } = node.getBoundingClientRect(); return { left, right, top, bottom }; };
+            return { frame: rect(footer), overflow: footer.scrollWidth - footer.clientWidth,
+              controls: [...footer.querySelectorAll("button,input")].filter(node => getComputedStyle(node).visibility !== "hidden" && node.getBoundingClientRect().width > 0).map(rect) };
+          });
+          assert.ok(layout.overflow <= 1, state + "/" + width + ": footer must not overflow");
+          assert.ok(layout.controls.every(box => box.left >= layout.frame.left - 1 && box.right <= layout.frame.right + 1), "conversation controls remain inside the composer");
+          assert.ok(layout.controls.every((box, index) => layout.controls.slice(index + 1).every(other => box.right <= other.left + 1 || other.right <= box.left + 1 || box.bottom <= other.top + 1 || other.bottom <= box.top + 1)), "conversation controls do not overlap");
         }
         await page.evaluate(() => { window.setBusy(false); window.setWorkflowBusy(false); });
-        await page.waitForFunction(() => !document.querySelector('#conversation [data-testid="workflow-mode-toggle"]').disabled);
-        assert.equal(await conversationBudget.isDisabled(), false, `${state} completion restores budget editing`);
-        assert.ok((await conversationMode.textContent()).includes("Goal"), `${state} completion retains Goal`);
-        assert.equal(await conversationBudget.inputValue(), "9", `${state} completion retains the budget`);
-        assert.equal(await editor.inputValue(), preservedDraft, `${state} completion retains the draft`);
+        assert.equal(await planPill.isDisabled(), false);
       }
-      await conversation.locator(".model-settings-trigger:not([data-permission-trigger])").click();
-      await page.locator(".model-settings-popover").waitFor();
-      await page.keyboard.press("Escape");
       await page.evaluate(() => window.setBusy(true));
       await conversationFooter.locator(".streaming-action-primary").click();
-      await page.waitForFunction(text => window.queuedInputs?.at(-1)?.text === text, preservedDraft);
-      assert.deepEqual(await page.evaluate(() => window.lastQueuedOptions.workflow), { mode: "goal", turnBudget: 9 }, "streaming submissions retain the visible disabled workflow selection");
-      assert.equal(await editor.inputValue(), "", "queueing still clears the submitted draft");
-      assert.equal(await conversationFooter.locator(".streaming-stop-button").isVisible(), true, "an empty streaming draft retains the stop action");
-      await assertConversationFooterFits(320);
-      await page.evaluate(() => { window.setBusy(false); window.setWorkflowBusy(true); });
-      await editor.fill("Continue while workflow controls are busy");
+      await page.waitForFunction(() => window.queuedInputs?.at(-1)?.text === "Continue with a visible Plan");
+      assert.deepEqual(await page.evaluate(() => window.lastQueuedOptions.workflow), { mode: "plan", turnBudget: 10 }, "queued input retains the active workflow");
+      assert.equal(await editor.inputValue(), "", "queueing clears the submitted draft");
+      assert.equal(await conversationFooter.locator(".streaming-stop-button").isVisible(), true);
+      await page.evaluate(() => window.setBusy(false));
+      await planPill.click();
+      assert.equal(await conversation.getByTestId("workflow-plan-pill").count(), 0);
+      await conversationAdd.click();
+      await conversation.getByTestId("composer-add-goal-mode").click();
+      await conversation.getByTestId("workflow-goal-pill").waitFor();
+      await editor.fill("Continue with a Goal");
       await conversation.locator(".composer-submit-controls > button").click();
-      await page.waitForFunction(() => window.submission?.text === "Continue while workflow controls are busy");
-      assert.deepEqual((await page.evaluate(() => window.submission)).args[4].workflow, { mode: "goal", turnBudget: 9 }, "busy workflow controls do not reset the submitted workflow");
-      assert.equal(await editor.inputValue(), "", "sending still clears the submitted draft");
-      await page.evaluate(() => window.setWorkflowBusy(false));
-      await page.waitForFunction(() => !document.querySelector('#conversation [data-testid="workflow-mode-toggle"]').disabled);
-      assert.ok((await conversationMode.textContent()).includes("Goal"), "sending preserves the selected Goal mode for the next draft");
-      assert.equal(await conversationBudget.inputValue(), "9", "sending preserves the selected Goal budget for the next draft");
+      await page.waitForFunction(() => window.submission?.text === "Continue with a Goal");
+      assert.deepEqual((await page.evaluate(() => window.submission)).args[4].workflow, { mode: "goal", turnBudget: 10 }, "the submitted objective retains Goal mode and its budget");
+      assert.equal(await editor.inputValue(), "");
+      assert.equal(await conversation.getByTestId("workflow-goal-pill").count(), 0, "a submitted Goal leaves drafting mode");
       assert.deepEqual(errors, []);
       await context.close();
     }

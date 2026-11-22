@@ -262,7 +262,10 @@ async function setupSidebarPage(options = {}) {
     if (pathname === "/api/rooms") return route.fulfill({ json: { rooms: [] } });
     if (pathname === "/api/worktrees") return route.fulfill({ json: { isGitRepository: false, projectRoot: "F:/fixture", worktrees: [] } });
     if (pathname === "/api/home") return route.fulfill({ json: { home: "C:/Users/test" } });
-    if (pathname === "/api/agent/running") return route.fulfill({ json: { runningSessionIds: [], runningSessions: [] } });
+    if (pathname === "/api/agent/running") return route.fulfill({ json: {
+      runningSessionIds: options.subagentParentIds ?? [],
+      runningSessions: (options.subagentParentIds ?? []).map(id => ({ id, runtime: "running", pendingApproval: false, lastPromptFailed: false, runningSubagentCount: 1 })),
+    } });
 
     if (pathname === "/" || pathname.startsWith("/?")) {
       return route.fulfill({

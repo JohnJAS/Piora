@@ -21,7 +21,7 @@ function render(overrides = {}) {
     React, formatStatusDuration, agentRunning: true, agentPhase: { kind: "waiting_model" },
     streamState: { streamingMessage: { role: "assistant", content: [{ type: "text", text: "partial reply" }] } },
     visionStatus: null, compactProcess: false, browserWaiting: false, statusElapsedMs: 301000,
-    statusIdleMs: 300000, retryInfo: null,
+    statusIdleMs: 300000, retryInfo: null, workflow: { snapshot: null },
     phaseLabel: () => "Waiting for model",
     t: (key, params) => `${key}${params ? ` ${Object.values(params).join(" ")}` : ""}`,
     ...overrides,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {
@@ -119,6 +119,7 @@ function SubagentResultSection({
   const [cachedFull, setCachedFull] = useState<string | null | undefined>(undefined);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "copiedSummary">("idle");
   const [copying, setCopying] = useState(false);
+  const resultContentId = useId();
 
   const isTruncated = isSubagentResultTruncated(record);
   const shouldFetchFull = isTruncated && expandedFull;
@@ -165,6 +166,7 @@ function SubagentResultSection({
               type="button"
               className={`${styles.btn} ${styles.btnGhost}`}
               aria-expanded={expandedFull}
+              aria-controls={resultContentId}
               data-subagent-expand-result
               onClick={() => setExpandedFull(value => !value)}
             >
@@ -191,9 +193,11 @@ function SubagentResultSection({
           </button>
         </span>
       </div>
-      <MarkdownBody className={styles.resultBody} cwd={cwd} onOpenFile={onOpenFile}>
-        {visibleText}
-      </MarkdownBody>
+      <div id={resultContentId}>
+        <MarkdownBody className={styles.resultBody} cwd={cwd} onOpenFile={onOpenFile}>
+          {visibleText}
+        </MarkdownBody>
+      </div>
       {copyState === "copiedSummary" && (
         <p className={styles.truncatedBadge} role="status" data-subagent-copy-status>{t("subagent.copiedSummary")}</p>
       )}
@@ -419,7 +423,6 @@ export function SubagentInspector({
         }
       }}
     >
-      {resizeHandle}
       <header className={styles.header}>
         <div className={styles.headerTitleGroup}>
           <AliIcon name="robot" size={14} />
@@ -461,6 +464,7 @@ export function SubagentInspector({
           </button>
         </div>
       </header>
+      {resizeHandle}
 
       {showSwitcher && onSelect && (
         <div className={styles.switcherBar}>

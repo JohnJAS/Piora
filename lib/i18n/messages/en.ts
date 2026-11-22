@@ -1157,6 +1157,7 @@ export const enLocale: LocalePlugin = {
     "background.blur": "Blur",
     "background.motion": "Background motion",
     "background.characterMotion": "Character animation",
+    "background.live2dExperimental": "Live2D (experimental)",
     "background.artworkPending": "The final original artwork for this slot is pending; this is a color-study preview.",
     "background.error.corruptImage": "This image cannot be decoded.",
     "background.error.dimensionsTooLarge": "Image dimensions are too large.",

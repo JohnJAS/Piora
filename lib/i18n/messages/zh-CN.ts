@@ -1157,6 +1157,7 @@ export const zhCNLocale: LocalePlugin = {
     "background.blur": "模糊",
     "background.motion": "背景微动",
     "background.characterMotion": "角色动画",
+    "background.live2dExperimental": "Live2D（实验）",
     "background.artworkPending": "该资源位的最终原创图片尚待生成，当前显示的是配色预览。",
     "background.error.corruptImage": "无法解码这张图片。",
     "background.error.dimensionsTooLarge": "图片尺寸过大。",
