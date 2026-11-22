@@ -38,11 +38,12 @@ export async function nativeMenuAcceptance({ fixture, ui, step, waitUntil, direc
     await vault.getByLabel(/主密码（导入时|Master password \(backup/).fill("isolated-view-master");
     await vault.getByRole("button", { name: /^(创建凭据库|Create vault)$/ }).click();
     await vault.getByRole("button", { name: /^(锁定|Lock)$/ }).waitFor();
-    await vault
-      .getByRole("checkbox", {
-        name: /自动保存网页登录账户并自动登录|Remember website accounts and sign in automatically/,
-      })
-      .uncheck();
+    const remember = vault.getByRole("checkbox", {
+      name: /自动保存网页登录账户并自动登录|Remember website accounts and sign in automatically/,
+    });
+    if (await remember.isChecked()) await remember.click();
+    await waitUntil(async () => !await remember.isChecked() && await remember.isEnabled(),
+      "the vault saved the disabled automatic-login preference");
     await vault
       .locator("summary")
       .filter({ hasText: /HTTP 站点白名单|HTTP site allowlist/ })

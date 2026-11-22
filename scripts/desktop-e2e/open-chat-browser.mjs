@@ -3,7 +3,8 @@ export async function openChatBrowser(page, sessionId, waitUntil, { useLauncher 
   const chat = page.locator(`[data-chat-surface][data-session-id="${sessionId}"]`);
   if (!await chat.isVisible()) {
     const row = page.locator(`[data-session-drag-id="${sessionId}"]`);
-    const showSidebar = page.getByRole("button", { name: /^(显示侧边栏|Show sidebar)$/ });
+    // Compact desktop windows expose the same action in the title bar and the chat toolbar.
+    const showSidebar = page.getByRole("button", { name: /^(显示侧边栏|Show sidebar)$/ }).first();
     if (!await row.isVisible() && await showSidebar.isVisible()) await showSidebar.click();
     await row.click();
     await chat.waitFor();
