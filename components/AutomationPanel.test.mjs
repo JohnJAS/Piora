@@ -3,7 +3,11 @@ import fs from "node:fs";
 import test from "node:test";
 
 const panel = fs.readFileSync(new URL("./AutomationPanel.tsx", import.meta.url), "utf8");
-const messageView = fs.readFileSync(new URL("./MessageView.tsx", import.meta.url), "utf8");
+const messageView = [
+  fs.readFileSync(new URL("./MessageView.tsx", import.meta.url), "utf8"),
+  fs.readFileSync(new URL("./message-view/shared.ts", import.meta.url), "utf8"),
+  fs.readFileSync(new URL("./message-view/ToolCallBlock.tsx", import.meta.url), "utf8"),
+].join("\n");
 const rightPanel = fs.readFileSync(new URL("./workspace/RightPanel.tsx", import.meta.url), "utf8");
 const settingsNavigation = fs.readFileSync(new URL("../lib/settings-search.ts", import.meta.url), "utf8");
 

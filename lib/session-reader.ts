@@ -11,11 +11,14 @@ import type { SessionEntry as PiSessionEntry } from "@earendil-works/pi-coding-a
 import { SessionCatalogIndex } from "./session-catalog-index";
 import { normalizeToolCalls } from "./normalize";
 import { sessionPathKey } from "./session-path";
+import { historyPath } from "./session-history";
 import { isDeletedUserMessage } from "./session-message-delete";
 import { resolveProject, type ProjectInfo } from "./worktree";
 import { getPromptMaterialDisplayMetadata, restorePromptMaterialDisplayPreview } from "./prompt-materials";
 import { isProjectlessChatCwd } from "./projectless-chat-path";
 import { getProjectlessChatWorkspace } from "./projectless-chat-server";
+import { SIDE_BOUNDARY_CUSTOM_TYPE } from "./side-chat/policy";
+import { resolveSideChatPath } from "./side-chat/store";
 import { isSubagentTool, projectSubagentMessageDetails } from "./subagent-types";
 
 export { getAgentDir };
@@ -126,7 +129,15 @@ export async function resolveSessionPath(sessionId: string): Promise<string | nu
 
   // Cache miss: scan all sessions to populate cache, then retry
   await listAllSessions();
-  return getPathCache().get(sessionId) ?? null;
+  const resolved = getPathCache().get(sessionId);
+  if (resolved) return resolved;
+
+  const sideChatPath = resolveSideChatPath(sessionId);
+  if (sideChatPath) {
+    cacheSessionPath(sessionId, sideChatPath);
+    return sideChatPath;
+  }
+  return null;
 }
 
 export async function resolveSessionIdByPath(filePath: string): Promise<string | undefined> {
@@ -246,7 +257,7 @@ function resolveActiveSessionSettings(
 export function buildSessionContext(
   entries: SessionEntry[],
   leafId?: string | null,
-  options: { deferThinking?: boolean; deferToolResultImages?: boolean } = {},
+  options: { deferThinking?: boolean; deferToolResultImages?: boolean; includeCompactedMessages?: boolean } = {},
 ): SessionContext {
   const byId = new Map<string, SessionEntry>();
   for (const e of entries) byId.set(e.id, e);
@@ -258,14 +269,21 @@ export function buildSessionContext(
   // avoid constructing the SDK message context only to discard its messages.
   const settings = resolveActiveSessionSettings(entries, leafId, byId);
 
-  const contextEntries = piBuildContextEntries(
-    piEntries,
-    leafId,
-    byId as unknown as Map<string, PiSessionEntry>,
-  );
+  const rawContextEntries = options.includeCompactedMessages
+    ? historyPath(entries, leafId === undefined ? entries.at(-1)?.id ?? null : leafId)
+    : piBuildContextEntries(piEntries, leafId, byId as unknown as Map<string, PiSessionEntry>);
 
-  // Convert the SDK-selected context entries and their IDs together. This keeps
-  // fork/navigation targets aligned while preserving pi's compaction ordering.
+  let boundaryIndex = -1;
+  for (let i = rawContextEntries.length - 1; i >= 0; i--) {
+    const candidate = rawContextEntries[i] as { type?: unknown; customType?: unknown };
+    if (candidate.type === "custom_message" && candidate.customType === SIDE_BOUNDARY_CUSTOM_TYPE) {
+      boundaryIndex = i;
+      break;
+    }
+  }
+  const contextEntries = boundaryIndex >= 0 ? rawContextEntries.slice(boundaryIndex + 1) : rawContextEntries;
+
+  // Convert entries and their IDs together to keep fork and navigation targets aligned.
   const messages: AgentMessage[] = [];
   const entryIds: string[] = [];
   let followsDeletedPrompt = false;
@@ -434,6 +452,7 @@ export function entryToUiMessage(
         timestamp: parseEntryTimestamp(entry.timestamp),
       };
     case "custom_message":
+      if (entry.customType === SIDE_BOUNDARY_CUSTOM_TYPE) return null;
       return {
         role: "custom",
         customType: entry.customType,

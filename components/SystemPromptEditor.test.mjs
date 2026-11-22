@@ -6,7 +6,11 @@ const editor = readFileSync(new URL("./SystemPromptEditor.tsx", import.meta.url)
 const selector = readFileSync(new URL("./SystemPromptSelector.tsx", import.meta.url), "utf8");
 const route = readFileSync(new URL("../app/api/system-prompt/route.ts", import.meta.url), "utf8");
 const sessionRoute = readFileSync(new URL("../app/api/sessions/[id]/system-prompt/route.ts", import.meta.url), "utf8");
-const manager = readFileSync(new URL("../lib/rpc-manager.ts", import.meta.url), "utf8");
+const manager = [
+  readFileSync(new URL("../lib/rpc/session-bootstrap.ts", import.meta.url), "utf8"),
+  readFileSync(new URL("../lib/rpc/session-wrapper.ts", import.meta.url), "utf8"),
+  readFileSync(new URL("../lib/rpc/system-prompt-reloader.ts", import.meta.url), "utf8"),
+].join("\n");
 const chatWindow = readFileSync(new URL("./ChatWindow.tsx", import.meta.url), "utf8");
 const projectPicker = readFileSync(new URL("./NewSessionProjectPicker.tsx", import.meta.url), "utf8");
 

@@ -120,6 +120,14 @@ export async function POST(
       return NextResponse.json({ success: true, data: result, commandId: result.commandId, ...(result.runId ? { runId: result.runId } : {}), ...(result.attachedRunId ? { attachedRunId: result.attachedRunId } : {}) });
     }
 
+    // Presence/activity signals for request_user_input must never spin up an idle session.
+    if (body.type === "user_input_presence" || body.type === "user_input_activity") {
+      const live = getRpcSession(id);
+      if (!live?.isAlive()) return NextResponse.json({ success: true, data: null });
+      const result = await live.send(body);
+      return NextResponse.json({ success: true, data: result });
+    }
+
     // Fast path: already-running session
     const existing = getRpcSession(id);
     if (existing?.isAlive()) {

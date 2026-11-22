@@ -103,6 +103,7 @@ export interface ChatCommandQueueActions {
   edit(record: ChatCommandView): Promise<string>;
   save(record: ChatCommandView, text: string): Promise<void>;
   resume(record: ChatCommandView): Promise<void>;
+  openInSideChat?(record: ChatCommandView): Promise<void>;
 }
 
 function QueuedCommandRow({ record, actions }: { record: ChatCommandView; actions: ChatCommandQueueActions }) {
@@ -133,6 +134,7 @@ function QueuedCommandRow({ record, actions }: { record: ChatCommandView; action
       <span className={styles.queueIcon} aria-hidden="true"><AliIcon name="menu" size={13} /></span>
       <button type="button" className={styles.queuePreview} title={preview} disabled={pending || preparing} onClick={() => void edit()}>{record.queuePaused ? t(editing ? "chatCommands.editing" : "chatCommands.paused") + " · " : ""}{preview}</button>
       {record.queuePaused && value === null && <button type="button" className={styles.queueMode} disabled={pending || preparing} onClick={() => void run(() => actions.resume(record))}>{t("chatCommands.resumeQueue")}</button>}
+      {actions.openInSideChat && value === null && !record.attachments && record.preview?.trim() ? <button type="button" className={styles.queueMode} disabled={pending || preparing} title={t("sideChat.openInSideChat")} onClick={() => void run(() => actions.openInSideChat!(record))}><AliIcon name="chat-bubble-plus" size={12} />{t("sideChat.openInSideChat")}</button> : null}
       <button type="button" className={styles.queueMode} data-live-tooltip={record.commandId} title={t("chat.switchToSteerHelp")} aria-disabled={pending} disabled={preparing || !!operation || !!record.queuePaused || value !== null} onClick={() => void run(() => actions.steer(record))}><AliIcon name="arrowup" size={12} />{t("chat.switchToSteer")}</button>
       <button type="button" className={styles.queueAction} disabled={pending || preparing} title={t("chatCommands.cancel")} aria-label={t("chatCommands.cancel")} onClick={() => void run(() => actions.cancel(record))}><AliIcon name="delete" size={14} /></button>
 
@@ -145,7 +147,7 @@ function QueuedCommandRow({ record, actions }: { record: ChatCommandView; action
   </div>;
 }
 
-function PendingInputRow({ item, onAction }: { item: { id: string; commandId?: string; text: string; kind: "steer" | "followUp" }; onAction: (id: string, action: "queue" | "delete") => Promise<void> }) {
+function PendingInputRow({ item, onAction, onOpenInSideChat }: { item: { id: string; commandId?: string; text: string; kind: "steer" | "followUp" }; onAction: (id: string, action: "queue" | "delete") => Promise<void>; onOpenInSideChat?: (item: { id: string; text: string }) => Promise<void> }) {
   const { t } = useI18n();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,10 +158,18 @@ function PendingInputRow({ item, onAction }: { item: { id: string; commandId?: s
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setPending(false); }
   };
+  const openInSide = async () => {
+    if (pending || !onOpenInSideChat || !item.text.trim()) return;
+    setPending(true); setError(null);
+    try { await onOpenInSideChat({ id: item.id, text: item.text }); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { setPending(false); }
+  };
   return <div className={styles.queueItem}>
     <div className={styles.queueRow}>
       <span className={styles.queueIcon} aria-hidden="true"><AliIcon name="arrowright" size={13} /></span>
       <span className={styles.queuePreview} title={item.text}>{item.text}</span>
+      {onOpenInSideChat && item.text.trim() ? <button type="button" className={styles.queueMode} disabled={pending} title={t("sideChat.openInSideChat")} onClick={() => void openInSide()}><AliIcon name="chat-bubble-plus" size={12} />{t("sideChat.openInSideChat")}</button> : null}
       <button type="button" className={styles.queueMode} data-live-tooltip={item.commandId ?? item.id} aria-disabled={pending} title={t(item.kind === "steer" ? "chat.restoreQueueHelp" : "chat.restoreFollowUpQueueHelp")} onClick={() => void run("queue")}><AliIcon name="arrowdown" size={12} />{t("chat.restoreQueue")}</button>
       <button type="button" className={styles.queueAction} disabled={pending} aria-label={t("chatCommands.cancel")} title={t("chatCommands.cancel")} onClick={() => void run("delete")}><AliIcon name="delete" size={14} /></button>
     </div>
@@ -167,7 +177,7 @@ function PendingInputRow({ item, onAction }: { item: { id: string; commandId?: s
   </div>;
 }
 
-export function ChatCommandQueue({ records, actions, pendingMessages, onRecall, onPendingAction }: { records: ChatCommandView[]; actions: ChatCommandQueueActions; pendingMessages?: { steering: string[]; followUp: string[]; pendingInputs?: { id: string; commandId?: string; text: string; kind: "steer" | "followUp" }[] } | null; onRecall?: () => void | Promise<void>; onPendingAction?: (id: string, action: "queue" | "delete") => Promise<void> }) {
+export function ChatCommandQueue({ records, actions, pendingMessages, onRecall, onPendingAction, onOpenPendingInSideChat }: { records: ChatCommandView[]; actions: ChatCommandQueueActions; pendingMessages?: { steering: string[]; followUp: string[]; pendingInputs?: { id: string; commandId?: string; text: string; kind: "steer" | "followUp" }[] } | null; onRecall?: () => void | Promise<void>; onPendingAction?: (id: string, action: "queue" | "delete") => Promise<void>; onOpenPendingInSideChat?: (item: { id: string; text: string }) => Promise<void> }) {
   const { t } = useI18n();
   const [recalling, setRecalling] = useState(false);
   const [visibleQueueIds, setVisibleQueueIds] = useState<Set<string>>(() => new Set());
@@ -205,7 +215,7 @@ export function ChatCommandQueue({ records, actions, pendingMessages, onRecall, 
       {pendingMessages?.pendingInputs && onPendingAction ? pendingMessages.pendingInputs.map(item => {
         const attachments = records.find(record => record.commandId === item.commandId)?.attachments;
         const text = [item.text, attachments ? t("chatCommands.attachmentSummary", { count: attachments }) : ""].filter(Boolean).join(" · ");
-        return <PendingInputRow key={item.id} item={{ ...item, text }} onAction={onPendingAction} />;
+        return <PendingInputRow key={item.id} item={{ ...item, text }} onAction={onPendingAction} onOpenInSideChat={!attachments ? onOpenPendingInSideChat : undefined} />;
       }) : delivered.map(({ text, label }, index) => <div key={`delivered-${index}`} className={styles.queueItem} role="status">
         <div className={styles.queueRow}>
           <span className={styles.queueIcon} aria-hidden="true"><AliIcon name="arrowright" size={13} /></span>

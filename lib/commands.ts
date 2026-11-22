@@ -8,6 +8,8 @@ export interface CommandContext {
   hasSession: boolean;
   isRunning: boolean;
   isGitRepository: boolean;
+  sideChatEnabled?: boolean;
+  hasSideChat?: boolean;
   actions: Partial<Record<string, (argument?: string) => void | Promise<void>>>;
 }
 
@@ -48,12 +50,20 @@ export const BUILTIN_SLASH_COMMANDS: SlashCommandPaletteItem[] = [
   { name: "copy", description: "chat.commandCopy", source: "builtin" },
 ];
 
-const command = (id: string, group: CommandGroup, title: string, options: { keywords?: string[]; shortcut?: string; needs?: "project" | "session" | "git"; whenIdle?: boolean; argument?: CommandArgument } = {}): Command => ({
+const command = (id: string, group: CommandGroup, title: string, options: { keywords?: string[]; shortcut?: string; needs?: "project" | "session" | "git" | "sideChat" | "openSideChat"; whenIdle?: boolean; argument?: CommandArgument } = {}): Command => ({
   id, group, title, keywords: options.keywords, shortcut: options.shortcut, argument: options.argument,
   enabled: (ctx) => {
     if (!ctx.actions[id]) return { reason: "commands.unavailable" };
     if (options.needs === "project" && !ctx.hasProject) return { reason: "commands.needsProject" };
     if (options.needs === "session" && !ctx.hasSession) return { reason: "commands.needsSession" };
+    if (options.needs === "sideChat") {
+      if (!ctx.sideChatEnabled) return { reason: "commands.sideChatDisabled" };
+      if (!ctx.hasSession) return { reason: "commands.needsSideChat" };
+    }
+    if (options.needs === "openSideChat") {
+      if (!ctx.sideChatEnabled) return { reason: "commands.sideChatDisabled" };
+      if (!ctx.hasSideChat) return { reason: "commands.needsSideChat" };
+    }
     if (options.whenIdle && ctx.isRunning) return { reason: "commands.busy" };
     if (options.needs === "git" && !ctx.isGitRepository) return { reason: "commands.needsGit" };
     return true;
@@ -85,6 +95,10 @@ export const GUI_COMMANDS: Command[] = [
   // Temporarily hidden together with the workspace entry; keep the action implementation.
   // command("panel.design", "panel", "commands.openDesign", { needs: "project" }),
   command("composer.voiceInput", "navigate", "commands.voiceInput", { needs: "project" }),
+  command("composer.togglePlanMode", "navigate", "commands.togglePlanMode", { needs: "project" }),
+  command("panel.openSideChat", "panel", "commands.panel.openSideChat", { needs: "sideChat" }),
+  command("composer.focusSideChat", "navigate", "commands.composer.focusSideChat", { needs: "openSideChat" }),
+  command("composer.focusMainChat", "navigate", "commands.composer.focusMainChat", { needs: "project" }),
   command("companion.togglePanel", "panel", "commands.openCompanionPanel"),
   command("panel.toggleSidebar", "panel", "commands.toggleSidebar"),
   command("panel.close", "panel", "commands.closePanel"),

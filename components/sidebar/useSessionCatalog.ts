@@ -36,7 +36,10 @@ export function useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectR
     const request = new AbortController();
     loadSessionsRequest.current = request;
     try {
-      if (showLoading) setLoading(true);
+      if (showLoading) {
+        setLoading(true);
+        setCatalogComplete(false);
+      }
       const sessions = new Map<string, SessionInfo>();
       let offset: number | null = 0;
       let version: string | undefined;
@@ -73,12 +76,15 @@ export function useSessionCatalog({ selectedSessionId, refreshKey, mutedProjectR
         return next.size === previous.size ? previous : next;
       });
       setError(null);
+      setCatalogComplete(true);
     } catch (caught) {
-      if (!request.signal.aborted) setError(String(caught));
+      if (!request.signal.aborted) {
+        setCatalogComplete(false);
+        setError(String(caught));
+      }
     } finally {
       if (loadSessionsRequest.current === request) {
         loadSessionsRequest.current = null;
-        setCatalogComplete(true);
         setLoading(false);
       }
     }

@@ -28,6 +28,12 @@ export function collectModelChangeNotices(entries: SessionEntry[], leafId: strin
   let afterIndex = -1;
   let hasReply = false;
   for (const current of path.reverse()) {
+    if (current.type === "custom_message" && current.customType === "piora-side-boundary") {
+      afterEntryId = undefined;
+      afterIndex = -1;
+      hasReply = false;
+      continue;
+    }
     // The SDK places a compaction summary before retained messages, although
     // the summary entry was appended later. Anchor to the last displayed row.
     const index = visible.get(current.id);

@@ -71,6 +71,7 @@ const assets = [
     ["Piora Plan and Goal workflows", "extensions/piora-workflows.ts"],
     ["Piora user-input extension", "extensions/piora-user-input.ts"],
     ["Piora collaboration-room extension", "extensions/piora-room.ts"],
+    ["Piora side-chat extension", "extensions/piora-side-chat.ts"],
     ["Piora meme extension", "extensions/piora-meme.ts"],
     // First-party extensions execute from source at runtime and resolve their
     // relative imports through this tree. Stage the complete Piora library so

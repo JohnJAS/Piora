@@ -40,6 +40,13 @@ Lint: `npm run lint`
 - 打包前由 `electron-before-build.cjs` 生成说明，发布前验证更新元数据中的说明完整且与目标版本一致；缺失或不一致时必须修复，不能绕过检查发布。
 - 发布包只在 GitHub Actions 构建。推送后确认仓库、标签、提交与工作流一致，明确报告“已触发”“构建中”“失败”或“已发布”，不能把推送标签当成发布完成。
 
+### 架构边界与模块化约束
+
+- 全仓架构与模块地图见 `docs/ARCHITECTURE_GUIDE.md`；修改跨模块能力前先明确归属与数据流边界。
+- 避免继续向超过 800 行的核心大文件（如 `desktop/src/main.ts`、`components/ModelsConfig.tsx`、`components/AppShell.tsx`、`components/ChatInput.tsx`、`hooks/useAgentSession.ts`）追加新业务；新增功能应优先抽离为内聚子模块或通过窄接口接入。
+- 新增服务端领域逻辑应放入对应领域子目录（如 `lib/rpc/`、`lib/harmony/`、`lib/ssh/`、`lib/shell/`），不再继续往 `lib/` 顶层平铺文件。
+- 避免随意新增零散的 `globalThis.__*` 键；若因 Next.js HMR 需要跨热重载保持状态，应优先复用对应领域的注册表模块（如 `lib/rpc/registry.ts`）并确保退出/清理路径完整。
+
 ---
 
 ## Architecture
@@ -93,7 +100,10 @@ app/api/
   health/, home/, project-info/, search/ supporting workspace endpoints
 
 lib/
-  rpc-manager.ts             AgentSessionWrapper, lifecycle registry, and session startup
+  rpc-manager.ts             public facade barrel for AgentSessionWrapper, registry, and startRpcSession
+  rpc/                       modular RPC runtime: session-wrapper, session-bootstrap, registry, extension-ui-bridge, capability-controller, tool-permission-bridge, queue-tracker, runtime-activity-tracker, system-prompt-reloader, commands/*
+  session-message-router.ts  session message/command dispatch; helpers under lib/session-router/
+  session-router/            command/operation runner, queue mutations, and router error types
   model-stall-guard.ts       model request stall watchdog wrapped around streamSimple
   extension-config.ts        extension inventory, stable ids, load plan, and preferences
   first-party-extensions.ts  bundled extension descriptors and profile membership
@@ -101,9 +111,12 @@ lib/
   task-status.ts             normalized running/task snapshots
   session-reader.ts          read-only session loading, context building, and caches
   session-{path,flags,trash}.ts session lookup, metadata flags, and recoverable deletion
-  room-{store,coordinator,chat-routing,chat,types}.ts multi-agent room subsystem
-  harmony/                   runtime, device manager, HDC, artifact integrity/errors, UI tree, vision
-  companion-pets.ts          pet validation/import and sprite processing
+  room-store.ts              public facade barrel for room persistence; domain modules under lib/rooms/
+  rooms/                     DAG-clean room storage, members, messages, tasks, and artifacts
+  room-{coordinator,chat-routing,chat,types}.ts multi-agent room coordination and routing
+  harmony/                   runtime, device manager (+ manager/* controllers), HDC, artifact integrity/errors, UI tree, vision
+  companion-pets.ts          public facade barrel for pet import/validation; modules under lib/companion/
+  companion/                 pet manifest, sprite inspector, pet filesystem helpers, and pet installer
   companion-store.ts         companion persistence boundary
   companion.ts               active companion preferences/state helpers
   model-*.ts, provider-*.ts  model scope/policy/runtime/discovery and credential listing
@@ -118,13 +131,13 @@ lib/
 components/
   AppShell.tsx              top-level layout, URL/project/tab state, workspace composition
   ChatWindow.tsx            chat rendering, session hook, and task-control registration
-  ChatInput.tsx             composer, model/thinking controls and attachments
-  MessageView.tsx           user/assistant/tool message rendering
+  ChatInput.tsx             composer orchestration; subcomponents & hooks under components/chat-input/
+  MessageView.tsx           assistant/message orchestration; subcomponents under components/message-view/
   SessionSidebar.tsx        sidebar composition; details live under components/sidebar/
   Room*.tsx                 room navigation, settings, and multi-agent workspace
   Companion*.tsx            companion settings, pet renderer, and desktop companion window
-  FileExplorer/FileViewer   allow-listed file navigation, editing, and previews
-  Models/Extensions/Plugins/SkillsConfig model, extension, package, and skill settings
+  FileExplorer/FileViewer   allow-listed file navigation, editing, and previews (subcomponents under components/file-explorer/ and components/file-viewer/)
+  Models/Extensions/Plugins/SkillsConfig model, extension, package, and skill settings (subcomponents under components/models-config/ and components/plugins-config/)
   workspace/                browser, command, change/review, search, and Harmony panels
   MarkdownBody/MermaidBlock markdown and diagram rendering
 

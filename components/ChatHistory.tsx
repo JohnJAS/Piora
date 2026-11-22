@@ -15,8 +15,9 @@ import { ModelChangeNotice } from "./ModelChangeNotice";
 import { type ModelChangeNotice as ModelChange } from "@/lib/model-change-notices";
 import type { TaskTiming } from "@/lib/task-timing";
 import type { ChatCommandView } from "@/lib/chat-command-types";
+import type { CompletedGoalBadge } from "@/lib/workflow-types";
 
-export interface ChatHistoryHandle { revealEntry(id: string): void; cancelNavigation(): void; captureAnchor(): void }
+export interface ChatHistoryHandle { revealEntry(id: string): void; cancelNavigation(): void }
 type MessageProps = ComponentProps<typeof MessageView>;
 interface Props extends Pick<MessageProps, "modelNames" | "cwd" | "onOpenFile" | "onFork" | "onNavigate" | "onEditContent" | "onEditFailed" | "onRetry" | "retryDisabled" | "sessionId" | "onOpenAutomation" | "onOpenCommandExecution"> {
   visible?: boolean;
@@ -38,26 +39,37 @@ interface Props extends Pick<MessageProps, "modelNames" | "cwd" | "onOpenFile" |
   scrollContainer: RefObject<HTMLDivElement | null>;
   handleRef: Ref<ChatHistoryHandle>;
   onDeleteMessage?: (message: AgentMessage, entryId?: string) => Promise<void>;
+  onInsertIntoMain?: (text: string) => void;
   deleteDisabled?: boolean;
   responseTimings?: Map<number, TaskTiming>;
   operations?: ChatCommandView[];
   commandActions?: ChatCommandCardActions;
+  completedGoal?: CompletedGoalBadge | null;
 }
 
 const NO_MODEL_CHANGES: ModelChange[] = [];
 const NO_OPERATIONS: ChatCommandView[] = [];
 
-const HistoryMessage = memo(function HistoryMessage({ originalMessage, allowActions, onBranch, onDeleteMessage, actionsDisabled, deleteDisabled, ...props }: MessageProps & {
+const HistoryMessage = memo(function HistoryMessage({ originalMessage, allowActions, onBranch, onDeleteMessage, onInsertIntoMain, actionsDisabled, deleteDisabled, ...props }: MessageProps & {
   originalMessage: AgentMessage; allowActions: boolean; onBranch?: Props["onBranch"];
-  onDeleteMessage?: Props["onDeleteMessage"]; actionsDisabled: boolean; deleteDisabled: boolean;
+  onDeleteMessage?: Props["onDeleteMessage"]; onInsertIntoMain?: Props["onInsertIntoMain"]; actionsDisabled: boolean; deleteDisabled: boolean;
 }) {
   const { t } = useI18n();
   const { entryId, message, intermediate } = props;
   const actions = useMemo(() => <>
     {onBranch && allowActions && entryId && (message.role === "user" || message.role === "assistant" && !intermediate && !message.content.some(block => block.type === "toolCall")) ?
       <button type="button" className="message-delete-button" disabled={actionsDisabled} title={t("i18n.branchFromHereTitle")} onClick={() => { void onBranch(entryId); }}><AliIcon name="fork" size={11} />{t("i18n.branchFromHere")}</button> : null}
+    {onInsertIntoMain && allowActions && message.role === "assistant" && !intermediate ?
+      <button type="button" className="message-delete-button" title={t("sideChat.insertToMain")} onClick={() => {
+        const text = message.content
+          .filter((block): block is { type: "text"; text: string } => block.type === "text" && typeof block.text === "string")
+          .map((block) => block.text)
+          .join("\n")
+          .trim();
+        if (text) onInsertIntoMain(text);
+      }}><AliIcon name="arrowleft" size={11} />{t("sideChat.insertToMain")}</button> : null}
     {allowActions && onDeleteMessage && (entryId || message.role === "user" && message.clientPromptId) ? <DeleteMessageAction message={originalMessage} entryId={entryId} onDelete={onDeleteMessage} disabled={deleteDisabled} /> : null}
-  </>, [onBranch, allowActions, entryId, message, intermediate, actionsDisabled, onDeleteMessage, originalMessage, deleteDisabled, t]);
+  </>, [onBranch, allowActions, entryId, message, intermediate, actionsDisabled, onInsertIntoMain, onDeleteMessage, originalMessage, deleteDisabled, t]);
   return <MessageView {...props} messageActions={actions} />;
 });
 
@@ -76,7 +88,7 @@ function DeleteMessageAction({ message, entryId, onDelete, disabled }: { message
 }
 
 /** One turn projection for saved history and the live tail in both display modes. */
-function ChatHistoryContent({ visible: _visible, messages: savedMessages, modelChanges = NO_MODEL_CHANGES, compactProcess = true, directProcess = false, streamingMessage, entryIds, busy, streaming, interruptionId, isNew, forkingEntryId, highlightedEntryId, lastUserMsgRef, pendingScrollToUserRef, scrollContainer, handleRef, onBranch, onDeleteMessage, deleteDisabled = false, operations = NO_OPERATIONS, commandActions, responseTimings, ...messageProps }: Props) {
+function ChatHistoryContent({ visible: _visible, messages: savedMessages, modelChanges = NO_MODEL_CHANGES, compactProcess = true, directProcess = false, streamingMessage, entryIds, busy, streaming, interruptionId, isNew, forkingEntryId, highlightedEntryId, lastUserMsgRef, pendingScrollToUserRef, scrollContainer, handleRef, onBranch, onDeleteMessage, deleteDisabled = false, operations = NO_OPERATIONS, commandActions, responseTimings, completedGoal, ...messageProps }: Props) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState<Map<string, boolean>>(() => new Map());
   const [inspectCommand, setInspectCommand] = useState<string | null>(null);
@@ -111,6 +123,12 @@ function ChatHistoryContent({ visible: _visible, messages: savedMessages, modelC
     });
   }, [base.rows, liveRows, compactProcess, directProcess, interruptionId]);
   const metadata = base.metadata;
+  const lastAssistantIndex = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.role === "assistant") return i;
+    }
+    return -1;
+  }, [messages]);
   // Text-only deltas retain the key array too: VirtualList need not rebuild
   // every offset or prune its height/disclosure caches on every token.
   const tailKeysJson = JSON.stringify(liveRows.map(row => row.key));
@@ -124,7 +142,6 @@ function ChatHistoryContent({ visible: _visible, messages: savedMessages, modelC
     }
   }, [keys, entryRows]);
   useImperativeHandle(handleRef, () => ({
-    captureAnchor() { list.current?.captureAnchor(); },
     revealEntry(id) {
       const key = entryRows.get(id);
       const group = entryGroups.get(id);
@@ -178,7 +195,8 @@ function ChatHistoryContent({ visible: _visible, messages: savedMessages, modelC
           forking={forkingEntryId === entryIds[index]}
           prevAssistantEntryId={!busy && message.role === "user" && messages[index - 1]?.role === "assistant" ? entryIds[index - 1] : undefined}
           showTimestamp={showTimestamp} prevTimestamp={messages[index - 1]?.timestamp}
-          taskTiming={responseTimings?.get(index)} />
+          taskTiming={responseTimings?.get(index)}
+          completedGoal={completedGoal && !busy && !streaming && index === lastAssistantIndex && !row.intermediate ? completedGoal : null} />
       </RenderErrorBoundary>
     </div></RevealProcessCommandContext.Provider></CompactProcessContext.Provider>;
   }} />;

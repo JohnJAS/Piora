@@ -2,12 +2,11 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { createServer } from "node:net";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { createDesktopDevRelay } from "./desktop-dev-relay.mjs";
 import { desktopDevelopmentEnvironment } from "./desktop-dev-environment.mjs";
-import { buildCordisCommunityRenderer } from "./build-cordis-community-renderer.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const host = "127.0.0.1";
@@ -239,7 +238,7 @@ async function main() {
     nextReady,
     new Promise((_, reject) => setTimeout(() => reject(new Error("Next.js did not report readiness within 60 seconds")), 60_000)),
   ]);
-  await Promise.all([nextReadyWithTimeout, initialCompile, buildCordisCommunityRenderer(resolve(root))]);
+  await Promise.all([nextReadyWithTimeout, initialCompile]);
   if (stopping) return;
   launchElectron();
   log("ready", "React/CSS hot reload is active; desktop source changes restart Electron");

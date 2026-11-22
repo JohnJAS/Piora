@@ -4,6 +4,7 @@ import type { AgentSessionWrapper, startRpcSession } from "./rpc-manager";
 import type { SubagentDriver } from "./subagent-runtime";
 import { isSubagentTool, projectSubagentDetail } from "./subagent-types";
 import { saveSubagent } from "./subagent-store";
+import { formatLiveToolActivity } from "./subagents/activity-format";
 import { isWorkflowTool } from "./workflow-tools";
 
 const forbidden = new Set(["piora_room", "piora_automation"]);
@@ -34,21 +35,65 @@ export function createSubagentDriver(parent: AgentSessionWrapper, start: typeof 
         record.childSessionId = realSessionId; record.childSessionFile = child.inner.sessionFile;
         record.model = child.inner.model ? `${child.inner.model.provider}/${child.inner.model.id}` : model;
         saveSubagent(record);
-        let tokens = 0, toolCount = 0, output = "";
+        const sessionEntries = (child.inner as { sessionManager?: { getEntries?: () => unknown[] } }).sessionManager;
+        const priorEntryCount = sessionEntries?.getEntries?.()?.length ?? 0;
+        let tokens = 0, toolCount = 0, turns = 0, output = "", anonymousToolSeq = 0;
+        const activeTools = new Map<string, { toolName: string; activity: string }>();
+        const activeActivityUpdate = () => {
+          const entries = [...activeTools.values()];
+          const latest = entries.at(-1);
+          if (!latest) return { currentTool: undefined, currentActivity: undefined };
+          const activity = entries.length > 1
+            ? `${latest.activity} (+${entries.length - 1})`
+            : latest.activity;
+          return { currentTool: latest.toolName, currentActivity: activity };
+        };
         const completion = new Promise<string>((resolve, reject) => {
           cancel = () => { void child.send({ type: "abort" }).catch(() => undefined); reject(signal.reason ?? new Error("Subagent cancelled")); };
           signal.addEventListener("abort", cancel, { once: true });
           detach = child.onEvent(event => {
-            if (event.type === "tool_execution_start") { toolCount++; progress(tokens, toolCount); }
+            if (event.type === "tool_execution_start") {
+              toolCount++;
+              const toolName = typeof event.toolName === "string" ? event.toolName.slice(0, 80) : undefined;
+              if (toolName) {
+                const callId = typeof event.toolCallId === "string" && event.toolCallId
+                  ? event.toolCallId
+                  : `anon:${toolName}:${++anonymousToolSeq}`;
+                activeTools.set(callId, { toolName, activity: formatLiveToolActivity(toolName, event.args) });
+              }
+              progress(tokens, toolCount, activeActivityUpdate());
+            }
+            if (event.type === "tool_execution_end") {
+              const callId = typeof event.toolCallId === "string" && event.toolCallId ? event.toolCallId : undefined;
+              if (callId && activeTools.has(callId)) {
+                activeTools.delete(callId);
+              } else if (typeof event.toolName === "string") {
+                for (const [key, value] of activeTools) {
+                  if (value.toolName === event.toolName) {
+                    activeTools.delete(key);
+                    break;
+                  }
+                }
+              }
+              progress(tokens, toolCount, activeActivityUpdate());
+            }
             if (event.type === "message_end") {
               const message = event.message as { role?: string; content?: { type?: string; text?: string }[]; usage?: { totalTokens?: number; input?: number; output?: number; cacheRead?: number; cacheWrite?: number }; stopReason?: string; errorMessage?: string } | undefined;
               if (message?.role === "assistant") {
                 const usage = message.usage;
                 tokens += usage?.totalTokens ?? ((usage?.input ?? 0) + (usage?.output ?? 0) + (usage?.cacheRead ?? 0) + (usage?.cacheWrite ?? 0));
                 output = message.content?.filter(block => block.type === "text").map(block => block.text ?? "").join("\n") ?? "";
-                progress(tokens, toolCount);
+                if (activeTools.size === 0) {
+                  progress(tokens, toolCount, { currentTool: undefined, currentActivity: undefined });
+                } else {
+                  progress(tokens, toolCount, activeActivityUpdate());
+                }
                 if (message.stopReason === "error" || message.stopReason === "aborted") reject(new Error(message.errorMessage || "Subagent model did not complete"));
               }
+            }
+            if (event.type === "turn_end" && profile.maxTurns && profile.maxTurns > 0 && ++turns >= profile.maxTurns) {
+              const results = event.toolResults as unknown[] | undefined;
+              if (results?.length) { void child.send({ type: "abort" }).catch(() => undefined); reject(new Error("Subagent turn limit reached")); }
             }
             if (event.type === "prompt_error") reject(new Error(String(event.errorMessage ?? "Subagent failed")));
             if (event.type === "prompt_done") {
@@ -60,7 +105,16 @@ export function createSubagentDriver(parent: AgentSessionWrapper, start: typeof 
         // Attach a rejection handler before admission, which can itself fail.
         completion.catch(() => undefined);
         await child.send({ type: "prompt", message: record.prompt, source: "subagent" });
-        return await completion;
+        const finalText = await completion;
+        const entries = sessionEntries?.getEntries?.() ?? [];
+        for (let index = entries.length - 1; index >= priorEntryCount; index--) {
+          const entry = entries[index] as { type?: unknown; id?: unknown; message?: { role?: unknown } } | undefined;
+          if (entry?.type === "message" && entry.message?.role === "assistant" && typeof entry.id === "string" && entry.id.length <= 128) {
+            record.resultEntryId = entry.id;
+            break;
+          }
+        }
+        return finalText;
       } finally {
         if (cancel) signal.removeEventListener("abort", cancel);
         detach?.();

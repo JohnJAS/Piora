@@ -7,7 +7,7 @@ let fixture;
 export const subagents = {
   id: 'subagents', mode: 'local-model-fixture',
   scope: 'Real Electron UI, SDK child sessions, independent tool execution, cancellation and disk recovery with a deterministic loopback model.',
-  coverage: ['default-off toggle and reload', 'profile model selection without manual execution limits', 'parallel child contexts beyond the former token budget', 'read-only Explore', 'collapsed task, reply and tool details', 'running-only sidebar and parent draft', 'independent inspector resizing with workspace restoration', 'narrow modal focus', 'English dark mode and Chinese light mode', 'background notification', 'SendMessage continuation', 'provider failure', 'parallel Stop and Escape cancellation', 'disable cancellation', 'restart interruption and saved continuation'],
+  coverage: ['default-off toggle and reload', 'profile model selection and optional execution limits', 'parallel child contexts beyond the former token budget', 'read-only Explore', 'timeline entries with collapsed tool output', 'running-only sidebar and parent draft', 'independent inspector resizing with workspace restoration', 'narrow modal focus', 'English dark mode and Chinese light mode', 'background notification', 'SendMessage continuation', 'provider failure', 'parallel Stop and Escape cancellation', 'disable cancellation', 'restart interruption and saved continuation'],
   limits: ['Model responses are scripted; not real-provider semantic acceptance.', 'Parent runtime creation is fixture preparation; task submissions and feature changes use the UI.', 'No other platforms or external accounts are exercised.'],
   async prepare(context) { fixture = await prepareSubagentModel(context); fixture.backgroundDelayMs = 30_000; },
   async run(context) {
@@ -71,9 +71,9 @@ export const subagents = {
     const detailButton = agentId => taskCard(agentId).getByRole('button', { name: /^(View details|查看详情)$/ });
     const inspectorFor = agentId => page.locator(`[data-subagent-inspector="${agentId}"]`);
     const openTools = async parent => {
-      const tools = parent.locator('[data-subagent-tools]').first();
-      await tools.locator(':scope > summary').click();
-      return tools.locator('[data-subagent-role="toolResult"]').first();
+      const result = parent.locator('[data-subagent-role="toolResult"]').first();
+      await result.waitFor();
+      return result;
     };
     const idle = () => waitUntil(async () => {
       if (!sessionId) return false;
@@ -130,7 +130,9 @@ export const subagents = {
         const card = dialog.locator('[data-settings-id="laboratory.subagents"]');
         await waitUntil(() => card.getByRole('switch').isEnabled(), 'subagent settings loaded');
         if (await card.locator('details').getAttribute('open') === null) await card.locator('summary').click();
-        assert.equal(await card.locator('input[type="number"]').count(), 0, 'No manual subagent run limits');
+        const limits = card.locator('input[type="number"]');
+        assert.equal(await limits.count(), 4, 'Four optional subagent limits are available');
+        assert.deepEqual(await limits.evaluateAll(inputs => inputs.map(input => input.value)), ['4', '0', '0', '8000'], 'Upgrades preserve unlimited time and token defaults');
         const picker = card.getByRole('combobox', { name: /Explore/ });
         await waitUntil(async () => await picker.getAttribute('aria-busy') === 'false' && await picker.isEnabled(), 'subagent model catalog');
         return picker;
@@ -186,30 +188,23 @@ export const subagents = {
           await opener.focus();
           await page.keyboard.press('Enter');
           const details = inspectorFor(record.agentId);
-          await details.getByText(record.result, { exact: true }).waitFor();
-          const activity = details.locator('[data-subagent-activity]');
-          const runInfo = details.locator('[data-subagent-run-info]');
-          assert.equal(await activity.getAttribute('open'), null);
-          assert.equal(await runInfo.getAttribute('open'), null);
-          assert.equal(await activity.locator('[data-subagent-transcript]').count(), 0);
+          await details.getByText(record.result, { exact: true }).first().waitFor();
+          const activity = details.locator('[data-subagent-transcript]').first();
+          await activity.waitFor();
           assert.equal(await details.locator('textarea').count(), 0);
           assert.equal(await composer.inputValue(), 'Keep this independent parent draft');
           assert.equal(new URL(page.url()).searchParams.get('session'), sessionId);
+          await details.getByTitle(record.model, { exact: true }).waitFor();
           await page.screenshot({ path: join(directory, 'subagent-overview.png'), animations: 'disabled' });
-          await activity.locator(':scope > summary').click();
           const instructions = activity.locator('[data-subagent-role="user"]').first();
           const reply = activity.locator('[data-subagent-role="assistant"]').first();
           await instructions.waitFor(); await reply.waitFor();
-          assert.equal(await instructions.locator('details').getAttribute('open'), null);
-          assert.equal(await reply.locator('details').getAttribute('open'), null);
-          await instructions.locator('summary').click();
-          await instructions.locator('p').filter({ hasText: 'Read the assigned fixture' }).waitFor();
+          await instructions.getByText('Read the assigned fixture', { exact: false }).waitFor();
+          await reply.getByText(record.result, { exact: false }).waitFor();
           const result = await openTools(activity);
-          await result.waitFor();
+          assert.equal(await result.locator('details').getAttribute('open'), null, 'Tool output starts collapsed');
           await result.locator('summary').click();
           await result.locator('pre').filter({ hasText: record.result }).waitFor();
-          await runInfo.locator(':scope > summary').click();
-          await runInfo.getByText(record.model, { exact: true }).waitFor();
           await page.screenshot({ path: join(directory, 'subagent-expanded-activity.png'), animations: 'disabled' });
           await page.keyboard.press('Escape');
           await details.waitFor({ state: 'hidden' });
@@ -279,14 +274,15 @@ export const subagents = {
           await page.setViewportSize({ width: 1050, height: 780 });
           await reload();
           await opener.click();
-          const output = inspector.locator('[data-subagent-run-info] > summary');
-          await output.waitFor();
+          const output = inspector.locator('[data-subagent-transcript]');
+          await output.locator('[data-subagent-role="toolResult"]').first().waitFor();
           await waitUntil(async () => (await readWidth()) >= 627, 'detail width restored after reload');
           assert.equal(await inspector.getAttribute('role'), 'dialog');
           assert.equal(await inspector.getAttribute('aria-modal'), 'true');
           await waitUntil(() => close.evaluate(element => element === document.activeElement), 'narrow inspector gets initial focus');
+          const lastFocusable = inspector.locator('a[href],area[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),summary,iframe,audio[controls],video[controls],[contenteditable="true"],[tabindex]:not([tabindex="-1"])').last();
           await page.keyboard.press('Shift+Tab');
-          assert.equal(await output.evaluate(element => element === document.activeElement), true);
+          await waitUntil(() => lastFocusable.evaluate(element => element === document.activeElement), 'reverse tab wraps to the last inspector control');
           await page.keyboard.press('Tab');
           assert.equal(await close.evaluate(element => element === document.activeElement), true);
           await drag(60, 'overlay');
@@ -318,7 +314,7 @@ export const subagents = {
           await page.setViewportSize({ width: 1600, height: 900 });
           for (const view of [
             { locale: 'English', theme: 'dark', title: 'Subagent details', activity: 'Activity', outcome: 'Result' },
-            { locale: '简体中文', theme: 'light', title: '子代理详情', activity: '执行记录', outcome: '任务结果' },
+            { locale: '简体中文', theme: 'light', title: '子代理详情', activity: '执行记录', outcome: '执行结论' },
           ]) {
             await page.getByRole('button', { name: /^(Settings|设置)$/ }).click();
             const dialog = page.getByRole('dialog', { name: /^(Settings|设置)$/ });
@@ -333,8 +329,8 @@ export const subagents = {
             const [record] = await read();
             await detailButton(record.agentId).click();
             const inspector = page.getByRole('region', { name: view.title, exact: true });
-            await inspector.getByRole('heading', { name: view.outcome }).waitFor();
-            await inspector.getByText(view.activity, { exact: true }).click();
+            await inspector.locator('[data-subagent-result]').getByText(view.outcome, { exact: true }).waitFor();
+            await inspector.locator('[data-subagent-transcript]').getByText(view.activity, { exact: true }).waitFor();
             await inspector.locator('[data-subagent-role="user"]').first().waitFor();
             await page.screenshot({ path: join(directory, `subagent-${view.theme}.png`), animations: 'disabled' });
             await inspector.getByRole('button', { name: /^(Close subagent details|关闭子代理详情)$/ }).click();
@@ -447,7 +443,7 @@ export const subagents = {
         await group.waitFor({ state: 'hidden' });
         await detailButton(interrupted.agentId).click();
         const inspector = inspectorFor(interrupted.agentId);
-        await inspector.locator('[data-status="interrupted"]').waitFor();
+        await inspector.locator('[data-status="interrupted"]:not([aria-hidden="true"])').waitFor();
         await page.screenshot({ path: join(directory, 'subagent-restarted.png'), animations: 'disabled' });
         await inspector.getByRole('button', { name: /Close subagent details|关闭子代理详情/ }).click();
       });

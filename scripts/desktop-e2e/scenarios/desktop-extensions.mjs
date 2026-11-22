@@ -49,7 +49,7 @@ async function prepareInstalledFixtures(root) {
 export const desktopExtensions = {
   id: "desktop-extensions",
   scope: "real Electron settings, restricted desktop extension IPC and both real managers using local installed-program fixtures",
-  coverage: ["both extensions on one page", "no project required", "installation entries", "untrusted action rejection",
+  coverage: ["both dedicated extensions on one page", "directory and generic host absent", "no project required", "installation entries", "untrusted action rejection",
     "desktop-only task endpoint", "independent start/stop and preferences", "autostart after app restart", "uninstall preserves data"],
   limits: ["test host entries represent installed programs; upstream installation and native windows have separate smoke tests", "model calls"],
   async run({ page, directory, restart, screenshot, step, waitUntil }) {
@@ -84,6 +84,11 @@ export const desktopExtensions = {
       }
       assert.equal(await pet().getByRole("switch").count(), 2);
       assert.equal(await meme().getByRole("switch").count(), 1);
+      assert.equal(await dialog.getByRole("heading", { name: /^(Extension directory|扩展目录|Piora Task Monitor|DSH community directory|DSH 社区目录)$/ }).count(), 0);
+      assert.deepEqual(await page.evaluate(async () => {
+        const bridge = window.piDesktop.desktopExtensions;
+        return [Object.hasOwn(bridge, "cordis"), (await bridge.list()).map(entry => entry.manifest.id)];
+      }), [false, ["dsh-pet", "dsh-meme"]]);
       assert.equal(await dialog.getByText(/Agent (packages|插件)/).count() > 0, true);
       await screenshot("desktop-extensions.png");
     });

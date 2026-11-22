@@ -102,7 +102,12 @@ export function buildCompactChatHistoryRows(
         if (Boolean(isEmptyThinkingBlock(original, { isStreaming: i === streamingIndex }))) continue;
         // Splitting rows must not change deferred lookup or disclosure identities.
         const block = original.type === "thinking" ? { ...original, deferredBlockIndex: original.deferredBlockIndex ?? b } : original;
-        const process = block.type === "thinking" || block.type === "toolCall" && !isSubagentTool(block.toolName) || (progressText && block.type === "text");
+        const standaloneTool = block.type === "toolCall" && (
+          isSubagentTool(block.toolName)
+          || block.toolName === "piora_submit_plan"
+          || block.toolName === "piora_request_user_input"
+        );
+        const process = block.type === "thinking" || (block.type === "toolCall" && !standaloneTool) || (progressText && block.type === "text");
         const activity = block.type === "toolCall" ? toolActivityKind(block.toolName) : undefined;
         const previous = segments.at(-1);
         if (previous?.process === process && previous.activity === activity) previous.blocks.push(block);

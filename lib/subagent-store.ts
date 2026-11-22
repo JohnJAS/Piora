@@ -94,7 +94,9 @@ export function listSubagentRecords(parent: string): SubagentRecord[] {
       if (!stat.isFile() || stat.size > 1024 * 1024) continue;
       const record = JSON.parse(readFileSync(file, "utf8")) as SubagentRecord;
       if (record?.version === 1 && hasSubagentProjection(record) && record.parentSessionId === parent && name === `${record.agentId}.json`
-        && typeof record.prompt === "string" && (record.childSessionFile === undefined || typeof record.childSessionFile === "string")) records.push(record);
+        && typeof record.prompt === "string" && (record.childSessionFile === undefined || typeof record.childSessionFile === "string")
+        && (record.resultEntryId === undefined || typeof record.resultEntryId === "string")
+        && (record.resultFullLength === undefined || (Number.isSafeInteger(record.resultFullLength) && record.resultFullLength >= 0))) records.push(record);
     } catch (error) {
       if (!(error instanceof SyntaxError) && (error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }

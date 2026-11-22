@@ -14,6 +14,7 @@ import { nativeMcpEn } from "./native-mcp";
 import { modelSamplingEn } from "./model-sampling";
 import { skillSourcesEn } from "./skill-sources";
 import { quickAccessEn } from "./quick-access";
+import { SIDE_CHAT_MESSAGES_EN } from "./side-chat";
 
 /** Pi Web 内置英语语言包。 */
 export const enLocale: LocalePlugin = {
@@ -74,6 +75,7 @@ export const enLocale: LocalePlugin = {
     ...sshEn,
     ...quickAccessEn,
     ...replySuggestionsEn,
+    ...SIDE_CHAT_MESSAGES_EN,
     "chat.deleteMessage": "Delete message",
     "chat.deletingMessage": "Deleting…",
     "chat.deleteMessageBusy": "Stop the task or wait for it to finish before deleting messages.",
@@ -1288,8 +1290,6 @@ export const enLocale: LocalePlugin = {
     "history.reload": "Reload history",
     "history.loading": "Generating the full history…",
     "history.loadError": "The full history could not be loaded",
-    "history.loadEarlier": "Load earlier messages",
-    "history.returnToNewest": "Return to latest messages",
     "history.retry": "Retry",
     "common.retry": "Retry",
     "history.frameTitle": "Full conversation history content",
@@ -2549,7 +2549,6 @@ export const enLocale: LocalePlugin = {
     "chat.toolCalls": "tool calls",
     "chat.collapseProcess": "Collapse process details",
     "chat.expandProcess": "Expand process details",
-    "chat.loadEarlier": "Scroll up to load earlier messages ({count} hidden)",
     "chat.expandLongMessage": "Show full message · {count} lines",
     "chat.collapseLongMessage": "Collapse message · {count} lines",
     "chat.loadingLongMessage": "Loading full content…",

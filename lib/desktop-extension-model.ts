@@ -9,7 +9,7 @@ interface ExtensionModelRequest {
   messages?: { content: { type: string; text?: string; attachment?: { data?: string; mediaType?: string } }[] }[];
 }
 
-export async function completeDesktopExtensionModel(value: unknown, signal: AbortSignal, imageRequired: boolean): Promise<string | true> {
+export async function completeDesktopExtensionModel(value: unknown, signal: AbortSignal): Promise<string | true> {
   const input = value as ExtensionModelRequest | null;
   if (input?.action !== "check" && input?.action !== "complete") throw new Error("Invalid model action");
   const content: (TextContent | ImageContent)[] = [];
@@ -21,19 +21,16 @@ export async function completeDesktopExtensionModel(value: unknown, signal: Abor
     }
   }
   const containsImage = content.some(part => part.type === "image");
-  const cwd = await resolveModelRequestCwd(imageRequired ? input.selection?.cwd : undefined);
+  const cwd = await resolveModelRequestCwd(input.selection?.cwd);
   const services = await createTrustedModelServices(cwd);
   const scope = await resolveVisibleModels(services.modelRuntime, services.settingsManager.getEnabledModels());
   const requested = input.selection?.provider && input.selection.provider !== "piora";
   const model = requested ? scope.visible.find(model => model.provider === input.selection?.provider && model.id === input.selection?.model) : scope.visible[0];
-  if (!model || (imageRequired || containsImage) && !modelSupportsImages(model)) {
-    throw new Error(imageRequired
-      ? "当前模型不可用或不支持图片，请选择支持图片的模型，或手动指定分类。"
-      : "当前模型不可用或不支持所需输入，请选择兼容模型。");
+  if (!model || !modelSupportsImages(model)) {
+    throw new Error("当前模型不可用或不支持图片，请选择支持图片的模型，或手动指定分类。");
   }
   if (input.action === "check") return true;
-  if (imageRequired && !containsImage) throw new Error("No valid image");
-  if (!content.length) throw new Error("No valid model input");
+  if (!containsImage) throw new Error("No valid image");
   signal.throwIfAborted();
   const result = await services.modelRuntime.completeSimple(model, { messages: [{ role: "user", content, timestamp: Date.now() }] },
     { maxTokens: 4096, maxRetries: 0, timeoutMs: 110000, signal });

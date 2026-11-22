@@ -3,7 +3,14 @@ import type { Stats } from "node:fs";
 import { lstat, open, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { getRuntimeAgentDataDirectory } from "./runtime-home";
-import { isSubagentId, truncatedSubagentResultPrefix, type SubagentRecord, type SubagentTranscriptEntry, type SubagentTranscriptPage } from "./subagent-types";
+import { summarizeToolActivity } from "./subagents/activity-format";
+import {
+  isSubagentId,
+  truncatedSubagentResultPrefix,
+  type SubagentRecord,
+  type SubagentTranscriptEntry,
+  type SubagentTranscriptPage,
+} from "./subagent-types";
 
 const CHUNK = 32 * 1024;
 const SCAN_LIMIT = 2 * 1024 * 1024;
@@ -11,7 +18,7 @@ const LINE_LIMIT = 128 * 1024;
 const PAGE_LIMIT = 96 * 1024;
 const ENTRY_LIMIT = 50;
 type Handle = Awaited<ReturnType<typeof open>>;
-type Cursor = { identity: string; offset: number; size: number; changed: string; boundary: string; skipping: boolean };
+type Cursor = { identity: string; offset: number; size: number; changed: string; boundary: string; skipping: boolean; within?: number };
 
 export class StaleSubagentTranscript extends Error {}
 
@@ -46,12 +53,19 @@ function parseCursor(value: string): Cursor {
     const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as Cursor;
     if (typeof parsed.identity === "string" && typeof parsed.changed === "string" && typeof parsed.boundary === "string"
       && Number.isSafeInteger(parsed.offset) && parsed.offset > 0 && Number.isSafeInteger(parsed.size) && parsed.size >= parsed.offset
-      && typeof parsed.skipping === "boolean") return parsed;
+      && typeof parsed.skipping === "boolean"
+      && (parsed.within === undefined || (Number.isSafeInteger(parsed.within) && parsed.within > 0))) return parsed;
   } catch { /* Invalid cursors never select a transcript. */ }
   throw new TypeError("Invalid transcript cursor");
 }
 
-function visibleEntry(buffer: Buffer, offset: number, textLimit = 8_000, endedAt?: number): SubagentTranscriptEntry | null {
+interface ExtractedToolCall {
+  name: string;
+  summary?: string;
+  toolCallId?: string;
+}
+
+function parseMessageRecord(buffer: Buffer, endedAt?: number) {
   let entry;
   try { entry = JSON.parse(buffer.toString("utf8")); } catch { return null; }
   const message = entry?.message;
@@ -59,27 +73,95 @@ function visibleEntry(buffer: Buffer, offset: number, textLimit = 8_000, endedAt
   if (endedAt !== undefined && typeof entry.timestamp === "string" && Date.parse(entry.timestamp) > endedAt) return null;
   const blocks: unknown[] = Array.isArray(message.content) ? message.content : [];
   const texts: string[] = typeof message.content === "string" ? [message.content] : [];
-  const tools: string[] = [];
+  const toolCalls: ExtractedToolCall[] = [];
   for (const block of blocks) {
     if (!block || typeof block !== "object") continue;
-    const data = block as { type?: unknown; text?: unknown; name?: unknown; toolName?: unknown };
+    const data = block as { type?: unknown; text?: unknown; name?: unknown; toolName?: unknown; id?: unknown; toolCallId?: unknown; arguments?: unknown; input?: unknown };
     if (data.type === "text" && typeof data.text === "string") texts.push(data.text);
     const name = data.name ?? data.toolName;
-    if (data.type === "toolCall" && typeof name === "string") tools.push(name.slice(0, 80));
+    if (data.type === "toolCall" && typeof name === "string") {
+      const clean = name.slice(0, 80);
+      const rawId = data.id ?? data.toolCallId;
+      toolCalls.push({
+        name: clean,
+        summary: summarizeToolActivity(clean, data.arguments ?? data.input),
+        toolCallId: typeof rawId === "string" && rawId ? rawId.slice(0, 128) : undefined,
+      });
+    }
   }
-  const text = texts.join("\n");
-  if (!text && !tools.length && message.role === "assistant") return null;
-  return {
-    id: typeof entry.id === "string" && entry.id.length <= 128 ? entry.id : String(offset),
-    role: !text && tools.length > 0 ? "toolCall" : message.role,
-    text: text.slice(0, textLimit),
-    toolName: (tools.join(", ") || (typeof message.toolName === "string" ? message.toolName : "")).slice(0, 180) || undefined,
-    truncated: text.length > textLimit || undefined,
-  };
+  const timestamp = typeof message.timestamp === "number" && Number.isFinite(message.timestamp)
+    ? message.timestamp
+    : typeof entry.timestamp === "string" && Number.isFinite(Date.parse(entry.timestamp))
+      ? Date.parse(entry.timestamp)
+      : undefined;
+  return { entry, message, text: texts.join("\n"), toolCalls, timestamp };
 }
 
-async function readTranscriptSnapshot<T>(record: SubagentRecord, signal: AbortSignal,
-  readSnapshot: (file: Handle, initial: Stats) => Promise<T>): Promise<T | undefined> {
+function visibleEntries(buffer: Buffer, offset: number, textLimit = 8_000, endedAt?: number): SubagentTranscriptEntry[] {
+  const parsed = parseMessageRecord(buffer, endedAt);
+  if (!parsed) return [];
+  const { entry, message, text, toolCalls, timestamp } = parsed;
+  const baseId = typeof entry.id === "string" && entry.id.length <= 128 ? entry.id : String(offset);
+
+  if (message.role === "assistant") {
+    if (!text && toolCalls.length === 0) return [];
+    const results: SubagentTranscriptEntry[] = [];
+    if (text) {
+      results.push({
+        id: baseId,
+        role: "assistant",
+        text: text.slice(0, textLimit),
+        ...(timestamp !== undefined ? { timestamp } : {}),
+        truncated: text.length > textLimit || undefined,
+      });
+    }
+    if (toolCalls.length === 1 && !text) {
+      const call = toolCalls[0];
+      results.push({
+        id: baseId,
+        role: "toolCall",
+        text: "",
+        toolName: call.name,
+        ...(call.summary ? { toolSummary: call.summary } : {}),
+        ...(call.toolCallId ? { toolCallId: call.toolCallId } : {}),
+        ...(timestamp !== undefined ? { timestamp } : {}),
+      });
+    } else if (toolCalls.length > 0) {
+      for (let index = 0; index < toolCalls.length; index++) {
+        const call = toolCalls[index];
+        results.push({
+          id: `${baseId}:tool:${index}`,
+          role: "toolCall",
+          text: "",
+          toolName: call.name,
+          ...(call.summary ? { toolSummary: call.summary } : {}),
+          ...(call.toolCallId ? { toolCallId: call.toolCallId } : {}),
+          ...(timestamp !== undefined ? { timestamp } : {}),
+        });
+      }
+    }
+    return results;
+  }
+
+  const toolCallId = typeof message.toolCallId === "string" ? message.toolCallId.slice(0, 128) : undefined;
+  const toolName = typeof message.toolName === "string" ? message.toolName.slice(0, 180) : undefined;
+  return [{
+    id: baseId,
+    role: message.role,
+    text: text.slice(0, textLimit),
+    ...(toolName ? { toolName } : {}),
+    ...(toolCallId ? { toolCallId } : {}),
+    ...(message.role === "toolResult" && message.isError === true ? { isError: true } : {}),
+    ...(timestamp !== undefined ? { timestamp } : {}),
+    truncated: text.length > textLimit || undefined,
+  }];
+}
+
+async function readTranscriptSnapshot<T>(
+  record: SubagentRecord,
+  signal: AbortSignal,
+  readSnapshot: (file: Handle, initial: Stats) => Promise<T>,
+): Promise<T | undefined> {
   if (!record.childSessionFile) return;
   if (!isSubagentId(record.parentSessionId) || !isSubagentId(record.agentId)) throw new TypeError("Invalid transcript identity");
   try {
@@ -127,16 +209,41 @@ export async function readSubagentTranscript(record: SubagentRecord, before: str
     let bytes = 2;
     let moreAt = 0;
     let moreSkipping = false;
+    let moreWithin: number | undefined;
+    let resumeWithin = cursor?.within;
     const consume = async (lineStart: number) => {
       const length = lineEnd - lineStart;
-      if (skipping || length === 0) return true;
-      const entry = length > LINE_LIMIT ? { id: `omitted:${lineEnd}`, role: "omitted" as const, text: "" }
-        : visibleEntry(await read(file, lineStart, length), lineStart);
-      if (!entry) return true;
-      const size = Buffer.byteLength(JSON.stringify(entry)) + 1;
-      if (bytes + size > PAGE_LIMIT) return false;
-      entries.push(entry);
-      bytes += size;
+      if (skipping || length === 0) {
+        resumeWithin = undefined;
+        return true;
+      }
+      const fullBatch: SubagentTranscriptEntry[] = length > LINE_LIMIT
+        ? [{ id: `omitted:${lineEnd}`, role: "omitted", text: "" }]
+        : visibleEntries(await read(file, lineStart, length), lineStart);
+      const limit = resumeWithin !== undefined ? Math.min(resumeWithin, fullBatch.length) : fullBatch.length;
+      resumeWithin = undefined;
+      if (limit === 0) return true;
+      for (let i = limit - 1; i >= 0; i--) {
+        if (entries.length >= ENTRY_LIMIT) {
+          moreWithin = i === fullBatch.length - 1 ? undefined : i + 1;
+          return false;
+        }
+        let item = fullBatch[i];
+        let itemSize = Buffer.byteLength(JSON.stringify(item)) + 1;
+        if (itemSize > PAGE_LIMIT - 2) {
+          item = { id: `omitted:${lineEnd}:${i}`, role: "omitted", text: "" };
+          itemSize = Buffer.byteLength(JSON.stringify(item)) + 1;
+        }
+        if (bytes + itemSize > PAGE_LIMIT) {
+          if (entries.length > 0) {
+            moreWithin = i === fullBatch.length - 1 ? undefined : i + 1;
+            return false;
+          }
+          // Single item fits PAGE_LIMIT - 2 because oversized items were replaced above.
+        }
+        entries.push(item);
+        bytes += itemSize;
+      }
       return true;
     };
     scan: while (position > floor) {
@@ -158,7 +265,15 @@ export async function readSubagentTranscript(record: SubagentRecord, before: str
       moreAt = floor;
       moreSkipping = floor !== lineEnd;
     }
-    const next: Cursor | null = moreAt ? { identity, offset: moreAt, size: initial.size, changed, boundary: await boundary(file, moreAt), skipping: moreSkipping } : null;
+    const next: Cursor | null = moreAt ? {
+      identity,
+      offset: moreAt,
+      size: initial.size,
+      changed,
+      boundary: await boundary(file, moreAt),
+      skipping: moreSkipping,
+      ...(moreWithin !== undefined ? { within: moreWithin } : {}),
+    } : null;
     return { entries: entries.reverse(), before: next ? Buffer.from(JSON.stringify(next)).toString("base64url") : null };
   });
   if (!page && before) throw new StaleSubagentTranscript("Transcript is no longer available");
@@ -166,18 +281,34 @@ export async function readSubagentTranscript(record: SubagentRecord, before: str
 }
 
 export async function readSubagentResult(record: SubagentRecord, signal: AbortSignal): Promise<string | null> {
-  const prefix = truncatedSubagentResultPrefix(record.result);
-  if (prefix === undefined) return record.result;
+  const suffixPrefix = truncatedSubagentResultPrefix(record.result);
+  const needsRecovery = record.resultTruncated === true || suffixPrefix !== undefined;
+  if (!needsRecovery) return record.result;
   return await readTranscriptSnapshot(record, signal, async (file, initial) => {
     const offset = Math.max(0, initial.size - SCAN_LIMIT);
     const tail = await read(file, offset, initial.size - offset);
-    // Only match complete assistant replies to the saved result prefix.
+    const attemptStart = record.attemptStartedAt ?? record.startedAt;
+    // Scan only the latest completed turn (never cross a prior attempt's user message).
     for (let end = tail.lastIndexOf(10); end > 0;) {
       signal.throwIfAborted();
       const start = tail.lastIndexOf(10, end - 1) + 1;
       if (!start && offset > 0) break;
-      const entry = visibleEntry(tail.subarray(start, end), offset + start, Infinity, record.endedAt);
-      if (entry?.role === "assistant" && entry.text.length > record.result.length && entry.text.startsWith(prefix)) return entry.text;
+      const parsed = parseMessageRecord(tail.subarray(start, end), record.endedAt);
+      if (parsed?.message.role === "user") break;
+      if (parsed?.message.role === "assistant") {
+        if (record.resultEntryId) {
+          if (parsed.entry.id === record.resultEntryId) return parsed.text;
+        } else {
+          const withinAttemptWindow = parsed.timestamp === undefined || attemptStart === undefined || parsed.timestamp >= attemptStart;
+          const lengthMatches = record.resultFullLength !== undefined
+            ? parsed.text.length === record.resultFullLength
+            : parsed.text.length > record.result.length;
+          const prefixMatches = suffixPrefix === undefined || parsed.text.startsWith(suffixPrefix);
+          if (withinAttemptWindow && lengthMatches && prefixMatches) {
+            return parsed.text;
+          }
+        }
+      }
       end = start - 1;
     }
     return null;

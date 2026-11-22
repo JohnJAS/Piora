@@ -337,7 +337,7 @@ export async function POST(req: Request) {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
       const desktopPackageResponse = () => NextResponse.json({
         code: "desktop-extension-package",
-        error: "This package declares a desktop extension. Open Settings > Desktop extensions to check its compatibility.",
+        error: "This package requires a desktop adapter. Settings > Desktop extensions provides DSH Pet and DSH Meme.",
       }, { status: 409 });
       if (isDesktopExtensionPackage(resolve(body.cwd, source))) return desktopPackageResponse();
       await packageManager.install(source, { local });

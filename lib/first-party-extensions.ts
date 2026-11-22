@@ -26,6 +26,11 @@ export const FIRST_PARTY_EXTENSIONS: readonly FirstPartyExtensionDescriptor[] = 
     profiles: ["normal"], required: true,
   },
   {
+    id: "piora:side-chat", fileName: "piora-side-chat.ts", name: `${APP_DISPLAY_NAME} Side Chat`,
+    description: "Read-only parent conversation inspection for parallel side chats. Controlled by the Side Chat switch in Laboratory settings.",
+    profiles: ["normal"], required: true,
+  },
+  {
     id: "piora:meme", fileName: "piora-meme.ts", name: `${APP_DISPLAY_NAME} Memes`,
     description: "Bridge the pinned DSH Meme desktop plugin for search, sending, learning and library maintenance.",
     profiles: ["normal"],

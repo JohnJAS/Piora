@@ -1,6 +1,7 @@
 import type { AgentRuntimeProfile } from "./agent-runtime-profile";
 import { MEME_TOOL_NAMES } from "./meme-types";
 import { BUILTIN_AGENT_TOOLS, HARMONY_AGENT_TOOLS } from "./tool-presets";
+import { isSideChatTool } from "./side-chat/types";
 import { isWorkflowTool } from "./workflow-tools";
 import { isSubagentTool } from "./subagent-types";
 
@@ -170,7 +171,7 @@ export function buildSessionCapabilityCatalog(
   return tools
     // These controls are dependencies of the selected host mode. A second
     // project toggle would allow an otherwise enabled workflow to be unusable.
-    .filter((tool) => !isWorkflowTool(tool.name) && !isSubagentTool(tool.name))
+    .filter((tool) => !isWorkflowTool(tool.name) && !isSubagentTool(tool.name) && !isSideChatTool(tool.name))
     .map((tool): Omit<SessionCapabilityItem, "enabled" | "activeToolNames"> => {
       const definition = CAPABILITY_DEFINITIONS.find((candidate) => candidate.matches(tool.name));
       const profileAllowed = definition?.profiles.includes(profile) ?? profile === "normal";

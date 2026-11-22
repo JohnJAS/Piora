@@ -7,26 +7,12 @@ import {
   useCallback,
   useMemo,
   useId,
-  type CSSProperties,
-  type MouseEvent,
 } from "react";
-import type { SyntaxHighlighterProps } from "react-syntax-highlighter";
-import renderSyntaxNode from "react-syntax-highlighter/dist/esm/create-element";
-import vs from "react-syntax-highlighter/dist/esm/styles/prism/vs";
-import vscDarkPlus from "react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus";
-import ReactMarkdown from "react-markdown";
 import { useTheme } from "@/hooks/useTheme";
-import {
-  DOCX_PREVIEW_MAX_BYTES,
-  getFileViewerKind,
-  getFileExt,
-  isMarkdownPath,
-} from "@/lib/file-types";
-import { encodeFilePathForApi, getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
-import { resolveLocalFileHref } from "@/lib/file-links";
-import { markdownPreviewRemarkPlugins, normalizeDisplayMath } from "@/lib/markdown";
+import { getFileViewerKind, isMarkdownPath } from "@/lib/file-types";
+import { getFileDirectory, getFileName, getRelativeFilePath } from "@/lib/file-paths";
+import { normalizeDisplayMath } from "@/lib/markdown";
 import { useMarkdownRehypePlugins } from "@/hooks/useMarkdownRehypePlugins";
-import { CodeBlock, MermaidBlock } from "./MermaidBlock";
 import type { GitFileDiffResponse } from "@/lib/git-types";
 import { useI18n } from "@/hooks/useI18n";
 import editorStyles from "./FileEditor.module.css";
@@ -34,635 +20,43 @@ import { AliIcon } from "./AliIcon";
 import { DiffView } from "./DiffView";
 import { FileCodeEditor, type FileCodeEditorHandle } from "./FileCodeEditor";
 import type { CodeIntelligenceMode } from "@/lib/code-intelligence-types";
-import { getDraftFileLineChanges, getFileLineSeparator, getGitFileLineChanges, normalizeFileLineEndings, preserveFileLineEndings } from "@/lib/file-editor-line-changes";
-import { getAdjacentChangeIndex, getCurrentChangeIndex, getDiffChangeRanges, getEditorChangeRanges } from "@/lib/file-change-navigation";
-import { LazySyntaxHighlighter as SyntaxHighlighter } from "./LazySyntaxHighlighter";
+import {
+  getDraftFileLineChanges,
+  getFileLineSeparator,
+  getGitFileLineChanges,
+  normalizeFileLineEndings,
+  preserveFileLineEndings,
+} from "@/lib/file-editor-line-changes";
+import {
+  getAdjacentChangeIndex,
+  getCurrentChangeIndex,
+  getDiffChangeRanges,
+  getEditorChangeRanges,
+} from "@/lib/file-change-navigation";
 import { FileReferenceRecovery } from "./FileReferenceRecovery";
+import { FileConflictBanner, FileSaveErrorBanner } from "./file-viewer/FileConflictBanner";
+import { FilePreviewPane } from "./file-viewer/FilePreviewPane";
+import { AudioViewer, DocumentViewer, ImageViewer } from "./file-viewer/MediaViewers";
+import { FileSourceView, getSelectedSourceLineRange } from "./file-viewer/SourceCodeView";
+import {
+  DISPLAY_MODE_LABEL_KEYS,
+  DownloadLink,
+  formatSize,
+  getFileApiUrl,
+  getFileWriteApiUrl,
+  MentionIcon,
+  utf8ByteLength,
+  type ConflictDecision,
+  type DisplayMode,
+  type FileConflictData,
+  type FileData,
+  type FileViewerProps,
+  type SelectedLineRange,
+} from "./file-viewer/shared";
 
-interface Props {
-  filePath: string;
-  cwd?: string;
-  sourceSessionId?: string | null;
-  onOpenFile?: (filePath: string, options?: { line?: number; column?: number }) => void;
-  onMentionLines?: (relativePath: string, startLine: number, endLine: number) => void;
-  gitRefreshKey?: number;
-  initialDisplayMode?: DisplayMode;
-  revealLine?: number;
-  revealColumn?: number;
-  revealKey?: number;
-  active?: boolean;
-  onDirtyChange?: (dirty: boolean) => void;
-  onSaved?: () => void;
-}
+export type { DisplayMode } from "./file-viewer/shared";
 
-interface FileData {
-  content: string;
-  language: string;
-  size: number;
-  version: string;
-  mtime: string;
-}
-
-export type DisplayMode = "source" | "preview" | "diff" | "edit" | "split";
-
-const DISPLAY_MODE_LABEL_KEYS: Record<DisplayMode, string> = {
-  source: "i18n.source",
-  preview: "i18n.preview",
-  diff: "i18n.diff",
-  edit: "i18n.edit",
-  split: "files.splitPreview",
-};
-
-interface FileConflictData {
-  error?: string;
-  code?: string;
-  currentVersion?: string;
-  mtime?: string;
-  size?: number;
-  notice?: "changed" | "refreshFailed";
-}
-
-type ConflictDecision = "reload" | "overwrite";
-
-const FILE_CODE_STYLE: CSSProperties = {
-  fontFamily: "var(--font-mono)",
-  fontSize: "var(--text-base)",
-  lineHeight: 1.6,
-};
-
-const FILE_LINE_NUMBER_STYLE: CSSProperties = {
-  width: "max(48px, calc(var(--text-xs) + 37px))",
-  minWidth: "max(48px, calc(var(--text-xs) + 37px))",
-  padding: "0 10px",
-  textAlign: "right",
-  color: "var(--text-dim)",
-  background: "var(--file-panel-surface-panel, var(--bg-panel))",
-  borderRight: "1px solid var(--border)",
-  fontFamily: "var(--font-mono)",
-  fontSize: "var(--text-xs)",
-  fontStyle: "normal",
-  fontVariantNumeric: "tabular-nums",
-  lineHeight: "var(--editor-code-line-height)",
-  userSelect: "none",
-  flexShrink: 0,
-  verticalAlign: "top",
-};
-
-type SourceCodeRendererProps = Parameters<NonNullable<SyntaxHighlighterProps["renderer"]>>[0] & {
-  wrapLines: boolean;
-  highlightedLine?: number;
-};
-
-interface SelectedLineRange {
-  startLine: number;
-  endLine: number;
-}
-
-function MentionIcon() {
-  return <AliIcon name="link" size={14} />;
-}
-
-function closestSourceLine(node: Node): HTMLElement | null {
-  const element = node.nodeType === Node.ELEMENT_NODE
-    ? node as Element
-    : node.parentElement;
-  return element?.closest<HTMLElement>(".file-source-line[data-line-number]") ?? null;
-}
-
-function getSelectedSourceLineRange(root: HTMLElement, selection: Selection | null): SelectedLineRange | null {
-  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
-
-  const range = selection.getRangeAt(0);
-  if (!root.contains(range.startContainer) || !root.contains(range.endContainer)) return null;
-
-  let startElement = closestSourceLine(range.startContainer);
-  let endElement = closestSourceLine(range.endContainer);
-  if (!startElement || !endElement || !root.contains(startElement) || !root.contains(endElement)) return null;
-
-  let startLine = Number(startElement.dataset.lineNumber);
-  let endLine = Number(endElement.dataset.lineNumber);
-  if (!Number.isInteger(startLine) || !Number.isInteger(endLine)) return null;
-
-  if (startLine < endLine) {
-    // Browser ranges can start at the end of the preceding line or end at the
-    // start of the following line. Exclude either boundary line when none of
-    // its source text is actually selected.
-    const startContent = startElement.querySelector<HTMLElement>(".file-source-line-content");
-    if (startContent?.contains(range.startContainer)) {
-      const selectedSuffix = document.createRange();
-      selectedSuffix.selectNodeContents(startContent);
-      selectedSuffix.setStart(range.startContainer, range.startOffset);
-      if (selectedSuffix.toString().length === 0) {
-        const nextLine = startElement.nextElementSibling;
-        if (nextLine instanceof HTMLElement && nextLine.matches(".file-source-line[data-line-number]")) {
-          startElement = nextLine;
-          startLine = Number(startElement.dataset.lineNumber);
-        }
-      }
-    }
-
-    const endContent = endElement.querySelector<HTMLElement>(".file-source-line-content");
-    if (endContent?.contains(range.endContainer)) {
-      const selectedPrefix = document.createRange();
-      selectedPrefix.selectNodeContents(endContent);
-      selectedPrefix.setEnd(range.endContainer, range.endOffset);
-      if (selectedPrefix.toString().length === 0) {
-        const previousLine = endElement.previousElementSibling;
-        if (previousLine instanceof HTMLElement && previousLine.matches(".file-source-line[data-line-number]")) {
-          endElement = previousLine;
-          endLine = Number(endElement.dataset.lineNumber);
-        }
-      }
-    }
-  }
-
-  if (startLine > endLine) return null;
-  return { startLine, endLine };
-}
-
-function SourceCodeRenderer({ rows, stylesheet, useInlineStyles, wrapLines, highlightedLine }: SourceCodeRendererProps) {
-  return rows.map((row, lineIndex) => {
-    const children = row.children ?? [];
-    const firstChildClasses = children[0]?.properties?.className;
-    const hasLineNumber = Array.isArray(firstChildClasses)
-      && firstChildClasses.includes("react-syntax-highlighter-line-number");
-    const lineNumberNode = hasLineNumber ? children[0] : null;
-    const contentNodes = hasLineNumber ? children.slice(1) : children;
-
-    return (
-      <span
-        className={`file-source-line${highlightedLine === lineIndex + 1 ? " search-reveal-line" : ""}`}
-        data-line-number={lineIndex + 1}
-        key={`source-line-${lineIndex}`}
-        style={{ display: "flex", minWidth: "100%" }}
-      >
-        {lineNumberNode && renderSyntaxNode({
-          node: lineNumberNode,
-          stylesheet,
-          useInlineStyles,
-          key: `source-line-number-${lineIndex}`,
-        })}
-        <span
-          className="file-source-line-content"
-          style={{
-            flex: "1 1 auto",
-            minWidth: 0,
-            overflowWrap: wrapLines ? "anywhere" : "normal",
-            whiteSpace: wrapLines ? "pre-wrap" : "pre",
-          }}
-        >
-          {contentNodes.map((node, tokenIndex) => renderSyntaxNode({
-            node,
-            stylesheet,
-            useInlineStyles,
-            key: `source-token-${lineIndex}-${tokenIndex}`,
-          }))}
-        </span>
-      </span>
-    );
-  });
-}
-
-function getFileApiUrl(
-  filePath: string,
-  type: "read" | "download" | "meta" | "preview" | "watch",
-  sourceSessionId?: string | null,
-  params: Record<string, string | number | undefined> = {},
-): string {
-  const encoded = encodeFilePathForApi(filePath);
-  const searchParams = new URLSearchParams({ type });
-  if (sourceSessionId) searchParams.set("sessionId", sourceSessionId);
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) searchParams.set(key, String(value));
-  }
-  return `/api/files/${encoded}?${searchParams.toString()}`;
-}
-
-function getFileWriteApiUrl(filePath: string): string {
-  return `/api/files/${encodeFilePathForApi(filePath)}`;
-}
-
-function DownloadLink({ filePath, sourceSessionId }: { filePath: string; sourceSessionId?: string | null }) {
-  const { t } = useI18n();
-  return (
-    <a
-      href={getFileApiUrl(filePath, "download", sourceSessionId)}
-      download={getFileName(filePath)}
-      title={t("i18n.downloadFile")}
-      aria-label={t("i18n.downloadFile")}
-      className="file-viewer-icon-button"
-    >
-      <AliIcon name="download" size={14} />
-    </a>
-  );
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function ReadOnlyNotice() {
-  const { t } = useI18n();
-  return (
-    <div className={editorStyles.readOnlyNotice} role="status">
-      <AliIcon name="lock" size={13} />
-      <span>
-        <strong>{t("fileEditor.readOnlyTitle")}</strong>
-        {t("fileEditor.readOnlyTypeBody")}
-      </span>
-    </div>
-  );
-}
-
-function utf8ByteLength(value: string): number {
-  return new TextEncoder().encode(value).byteLength;
-}
-
-function ImageViewer({ filePath, cwd, sourceSessionId, active = true }: Props) {
-  const { t } = useI18n();
-  const [watching, setWatching] = useState(false);
-  const [bust, setBust] = useState(0);
-  const [size, setSize] = useState<number | null>(null);
-  const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const esRef = useRef<EventSource | null>(null);
-
-  const ext = getFileName(filePath).toLowerCase().split(".").pop() ?? "";
-
-  useEffect(() => {
-    setBust(0);
-    setSize(null);
-    setNaturalSize(null);
-    setError(null);
-    setWatching(false);
-
-    if (esRef.current) {
-      esRef.current.close();
-      esRef.current = null;
-    }
-
-    if (!active) return;
-
-    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
-    esRef.current = es;
-
-    es.addEventListener("connected", () => setWatching(true));
-    es.addEventListener("change", (e) => {
-      try {
-        const d = JSON.parse((e as MessageEvent).data) as { size?: number };
-        if (typeof d.size === "number") setSize(d.size);
-      } catch { /* ignore */ }
-      setBust((b) => b + 1);
-    });
-    es.addEventListener("error", () => setWatching(false));
-    es.onerror = () => setWatching(false);
-
-    return () => {
-      es.close();
-      esRef.current = null;
-    };
-  }, [active, filePath, sourceSessionId]);
-
-  const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
-
-  const formatSizeStr = size != null ? formatSize(size) : null;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "4px 16px",
-          borderBottom: "1px solid var(--border)",
-          fontSize: "var(--text-xs)",
-          color: "var(--text-dim)",
-          background: "var(--file-panel-surface, var(--bg))",
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ fontFamily: "var(--font-mono)" }} title={filePath}>
-          {getRelativeFilePath(filePath, cwd)}
-        </span>
-        <span style={{ marginLeft: "auto" }}>{ext || "image"}</span>
-        {naturalSize && <span>{naturalSize.w} × {naturalSize.h}</span>}
-        {formatSizeStr && <span>{formatSizeStr}</span>}
-        <span
-          title={watching ? t("i18n.liveSync") : t("i18n.notWatching")}
-          style={{ display: "flex", alignItems: "center", gap: 4, color: watching ? "#4ade80" : "var(--text-dim)" }}
-        >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: watching ? "#4ade80" : "var(--border)",
-              display: "inline-block",
-              boxShadow: watching ? "0 0 4px #4ade80" : "none",
-            }}
-          />
-          {watching ? "live" : "static"}
-        </span>
-        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
-      </div>
-      <ReadOnlyNotice />
-      <div
-        style={{
-          flex: 1,
-          overflow: "auto",
-          background: "var(--file-panel-surface-panel, var(--bg-panel))",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 16,
-          backgroundImage:
-            "linear-gradient(45deg, var(--bg) 25%, transparent 25%), linear-gradient(-45deg, var(--bg) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--bg) 75%), linear-gradient(-45deg, transparent 75%, var(--bg) 75%)",
-          backgroundSize: "16px 16px",
-          backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0px",
-        }}
-      >
-        {error ? (
-          <div style={{ color: "#f87171", fontSize: "var(--text-base)" }}>{error}</div>
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={src}
-            alt={filePath}
-            onLoad={(e) => {
-              const img = e.currentTarget;
-              setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
-            }}
-            onError={() => setError("Failed to load image")}
-            style={{
-              maxWidth: "100%",
-              maxHeight: "100%",
-              objectFit: "contain",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-            }}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function formatDuration(seconds: number): string {
-  if (!Number.isFinite(seconds)) return "";
-  const totalSeconds = Math.round(seconds);
-  const mins = Math.floor(totalSeconds / 60);
-  const secs = totalSeconds % 60;
-  return `${mins}:${String(secs).padStart(2, "0")}`;
-}
-
-function AudioViewer({ filePath, cwd, sourceSessionId, active = true }: Props) {
-  const { t } = useI18n();
-  const [watching, setWatching] = useState(false);
-  const [bust, setBust] = useState(0);
-  const [size, setSize] = useState<number | null>(null);
-  const [duration, setDuration] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const esRef = useRef<EventSource | null>(null);
-
-  const ext = getFileName(filePath).toLowerCase().split(".").pop() ?? "";
-
-  useEffect(() => {
-    setBust(0);
-    setSize(null);
-    setDuration(null);
-    setError(null);
-    setWatching(false);
-
-    if (esRef.current) {
-      esRef.current.close();
-      esRef.current = null;
-    }
-
-    if (!active) return;
-
-    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
-    esRef.current = es;
-
-    es.addEventListener("connected", () => setWatching(true));
-    es.addEventListener("change", (e) => {
-      try {
-        const d = JSON.parse((e as MessageEvent).data) as { size?: number };
-        if (typeof d.size === "number") setSize(d.size);
-      } catch { /* ignore */ }
-      setDuration(null);
-      setError(null);
-      setBust((b) => b + 1);
-    });
-    es.addEventListener("error", () => setWatching(false));
-    es.onerror = () => setWatching(false);
-
-    return () => {
-      es.close();
-      esRef.current = null;
-    };
-  }, [active, filePath, sourceSessionId]);
-
-  const src = getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "4px 16px",
-          borderBottom: "1px solid var(--border)",
-          fontSize: "var(--text-xs)",
-          color: "var(--text-dim)",
-          background: "var(--file-panel-surface, var(--bg))",
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ fontFamily: "var(--font-mono)" }} title={filePath}>
-          {getRelativeFilePath(filePath, cwd)}
-        </span>
-        <span style={{ marginLeft: "auto" }}>{ext || "audio"}</span>
-        {duration != null && <span>{formatDuration(duration)}</span>}
-        {size != null && <span>{formatSize(size)}</span>}
-        <span
-          title={watching ? t("i18n.liveSync") : t("i18n.notWatching")}
-          style={{ display: "flex", alignItems: "center", gap: 4, color: watching ? "#4ade80" : "var(--text-dim)" }}
-        >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: watching ? "#4ade80" : "var(--border)",
-              display: "inline-block",
-              boxShadow: watching ? "0 0 4px #4ade80" : "none",
-            }}
-          />
-          {watching ? "live" : "static"}
-        </span>
-        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
-      </div>
-      <ReadOnlyNotice />
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 24,
-          background: "var(--file-panel-surface-panel, var(--bg-panel))",
-        }}
-      >
-        <div style={{ width: "min(680px, 100%)" }}>
-          {error && (
-            <div style={{ color: "#f87171", fontSize: "var(--text-base)", marginBottom: 12, textAlign: "center" }}>
-              {error}
-            </div>
-          )}
-          <audio
-            key={src}
-            controls
-            preload="metadata"
-            src={src}
-            onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
-            onError={() => setError("Failed to load audio")}
-            style={{ width: "100%" }}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DocumentViewer({ filePath, cwd, sourceSessionId, active = true }: Props) {
-  const { t } = useI18n();
-  const [watching, setWatching] = useState(false);
-  const [bust, setBust] = useState(0);
-  const [size, setSize] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const esRef = useRef<EventSource | null>(null);
-
-  const ext = getFileExt(filePath);
-  const isPdf = ext === "pdf";
-  const previewUrl = isPdf
-    ? getFileApiUrl(filePath, "read", sourceSessionId, bust ? { v: bust } : undefined)
-    : getFileApiUrl(filePath, "preview", sourceSessionId, bust ? { v: bust } : undefined);
-
-  useEffect(() => {
-    setBust(0);
-    setSize(null);
-    setError(null);
-    setWatching(false);
-
-    if (esRef.current) {
-      esRef.current.close();
-      esRef.current = null;
-    }
-
-    if (!active) return;
-
-    fetch(getFileApiUrl(filePath, "meta", sourceSessionId))
-      .then((r) => r.json())
-      .then((d: { size?: number; error?: string }) => {
-        if (d.error) setError(d.error);
-        if (typeof d.size === "number") {
-          setSize(d.size);
-          if (!isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
-            setError("DOCX too large for preview (>10MB)");
-          }
-        }
-      })
-      .catch((e) => setError(String(e)));
-
-    const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
-    esRef.current = es;
-
-    es.addEventListener("connected", () => setWatching(true));
-    es.addEventListener("change", (e) => {
-      try {
-        const d = JSON.parse((e as MessageEvent).data) as { size?: number };
-        if (typeof d.size === "number") {
-          setSize(d.size);
-          if (!isPdf && d.size > DOCX_PREVIEW_MAX_BYTES) {
-            setError("DOCX too large for preview (>10MB)");
-            return;
-          }
-        }
-      } catch { /* ignore */ }
-      setError(null);
-      setBust((b) => b + 1);
-    });
-    es.addEventListener("error", () => setWatching(false));
-    es.onerror = () => setWatching(false);
-
-    return () => {
-      es.close();
-      esRef.current = null;
-    };
-  }, [active, filePath, isPdf, sourceSessionId]);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          padding: "4px 16px",
-          borderBottom: "1px solid var(--border)",
-          fontSize: "var(--text-xs)",
-          color: "var(--text-dim)",
-          background: "var(--file-panel-surface, var(--bg))",
-          flexShrink: 0,
-        }}
-      >
-        <span style={{ fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={filePath}>
-          {getRelativeFilePath(filePath, cwd)}
-        </span>
-        <span style={{ marginLeft: "auto" }}>{ext === "docx" ? "docx preview" : "pdf"}</span>
-        {size != null && <span>{formatSize(size)}</span>}
-        <DownloadLink filePath={filePath} sourceSessionId={sourceSessionId} />
-        <span
-          title={watching ? t("i18n.liveSync") : t("i18n.notWatching")}
-          style={{ display: "flex", alignItems: "center", gap: 4, color: watching ? "#4ade80" : "var(--text-dim)", flexShrink: 0 }}
-        >
-          <span
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: "50%",
-              background: watching ? "#4ade80" : "var(--border)",
-              display: "inline-block",
-              boxShadow: watching ? "0 0 4px #4ade80" : "none",
-            }}
-          />
-          {watching ? "live" : "static"}
-        </span>
-      </div>
-      <ReadOnlyNotice />
-      <div style={{ flex: 1, minHeight: 0, background: "var(--file-panel-surface-panel, var(--bg-panel))" }}>
-        {error ? (
-          <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, color: "#f87171", fontSize: "var(--text-base)", textAlign: "center" }}>
-            {error}
-          </div>
-        ) : (
-          <iframe
-            key={previewUrl}
-            src={previewUrl}
-            sandbox={isPdf ? undefined : ""}
-            title={t("i18n.previewFile", { file: getFileName(filePath) })}
-            style={{ width: "100%", height: "100%", border: "none", background: isPdf ? "var(--file-panel-surface, var(--bg))" : "#eef1f5" }}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function FileViewer(props: Props) {
+export function FileViewer(props: FileViewerProps) {
   const { filePath: originalPath, onOpenFile, revealLine, revealColumn } = props;
   const [recovered, setRecovered] = useState<{ original: string; path: string } | null>(null);
   const filePath = recovered?.original === props.filePath ? recovered.path : props.filePath;
@@ -688,7 +82,7 @@ function FileViewerContent({
   onDirtyChange,
   onSaved,
   onLocateFile,
-}: Props & { onLocateFile: (path: string) => void }) {
+}: FileViewerProps & { onLocateFile: (path: string) => void }) {
   const viewerKind = getFileViewerKind(filePath);
   if (viewerKind === "image") {
     return <ImageViewer filePath={filePath} cwd={cwd} sourceSessionId={sourceSessionId} active={active} />;
@@ -734,7 +128,7 @@ function TextFileViewer({
   onDirtyChange,
   onSaved,
   onLocateFile,
-}: Props & { onLocateFile: (path: string) => void }) {
+}: FileViewerProps & { onLocateFile: (path: string) => void }) {
   const updateBlockerId = useId();
   const { isDark } = useTheme();
   const { t } = useI18n();
@@ -777,6 +171,7 @@ function TextFileViewer({
   const gitDiffRequestRef = useRef(0);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const viewerRootRef = useRef<HTMLDivElement | null>(null);
+  const [selectedLineRange, setSelectedLineRange] = useState<SelectedLineRange | null>(null);
 
   const syncPreviewScroll = useCallback(() => {
     const preview = splitPreviewRef.current;
@@ -816,7 +211,6 @@ function TextFileViewer({
     if (displayMode === "preview" || displayMode === "diff") setDisplayMode("source");
     if (displayMode === "split") setCompactSplitSide("edit");
   }, [active, data, displayMode, loading, revealColumn, revealKey, revealLine]);
-  const [selectedLineRange, setSelectedLineRange] = useState<SelectedLineRange | null>(null);
 
   const dirty = preserveFileLineEndings(draftContent, savedContent) !== savedContent;
   dirtyRef.current = dirty;
@@ -952,17 +346,11 @@ function TextFileViewer({
     const es = new EventSource(getFileApiUrl(filePath, "watch", sourceSessionId));
     esRef.current = es;
 
-    es.addEventListener("connected", () => {
-      setWatching(true);
-    });
-
+    es.addEventListener("connected", () => { setWatching(true); });
     es.addEventListener("change", (event) => {
       if (dirtyRef.current || savingRef.current) {
         if (!savingRef.current) {
-          let details: FileConflictData = {
-            code: "FILE_CONFLICT",
-            notice: "changed",
-          };
+          let details: FileConflictData = { code: "FILE_CONFLICT", notice: "changed" };
           try {
             details = {
               ...details,
@@ -978,14 +366,8 @@ function TextFileViewer({
       }
       void fetchGitDiff(filePath);
     });
-
-    es.addEventListener("error", () => {
-      setWatching(false);
-    });
-
-    es.onerror = () => {
-      setWatching(false);
-    };
+    es.addEventListener("error", () => { setWatching(false); });
+    es.onerror = () => { setWatching(false); };
 
     return () => {
       es.close();
@@ -1025,8 +407,12 @@ function TextFileViewer({
   const changeRanges = navigatingDiff ? diffChangeRanges : editorChangeRanges;
   const changePosition = navigatingDiff ? diffReveal?.line ?? null : changeLine;
   const currentChangeIndex = getCurrentChangeIndex(changeRanges, changePosition);
-  const changeCountLabel = !changeRanges.length ? t("fileEditor.noChanges")
-    : t(currentChangeIndex < 0 ? "fileEditor.changeTotal" : "fileEditor.changePosition", { current: currentChangeIndex + 1, total: changeRanges.length });
+  const changeCountLabel = !changeRanges.length
+    ? t("fileEditor.noChanges")
+    : t(currentChangeIndex < 0 ? "fileEditor.changeTotal" : "fileEditor.changePosition", {
+      current: currentChangeIndex + 1,
+      total: changeRanges.length,
+    });
 
   const navigateChange = (direction: -1 | 1) => {
     const index = getAdjacentChangeIndex(changeRanges, changePosition, direction);
@@ -1130,11 +516,7 @@ function TextFileViewer({
 
       if (response.status === 409 || next.code === "FILE_CONFLICT") {
         setConflictDecision(null);
-        setExternalChange({
-          ...next,
-          code: "FILE_CONFLICT",
-          notice: "changed",
-        });
+        setExternalChange({ ...next, code: "FILE_CONFLICT", notice: "changed" });
         return;
       }
       if (!response.ok || next.error) {
@@ -1300,122 +682,62 @@ function TextFileViewer({
   const metadata = isDeletedDiff
     ? t("files.deleted")
     : `${language} · ${t(lines.length === 1 ? "fileEditor.lineCountOne" : "fileEditor.lineCount", { count: lines.length })} · ${formatSize(dirty ? utf8ByteLength(content) : data!.size)}`;
-  const externalChangeMessage = externalChange?.notice === "refreshFailed"
-    ? t("fileEditor.refreshFailed", { error: externalChange.error ?? t("i18n.unknown") })
-    : t("fileEditor.externalChangeBody");
 
   const renderEditor = () => (
-          <div className={`${editorStyles.editorShell} file-editor-shell`}>
-            <div className={editorStyles.editorBody}>
-              <FileCodeEditor
-                key={`${filePath}:${getFileLineSeparator(savedContent)}`}
-                ref={editorRef}
-                value={preserveFileLineEndings(draftContent, savedContent)}
-                filePath={filePath}
-                cwd={cwd}
-                lineSeparator={getFileLineSeparator(savedContent)}
-                scrollTop={editorScrollTop}
-                ariaLabel={t("fileEditor.editFile", { file: getFileName(filePath) })}
-                onChange={(nextValue) => {
-                  setDraftContent(nextValue);
-                  draftContentRef.current = nextValue;
-                  setSaveError(null);
-                }}
-                onCursorChange={(position) => { setCursorPosition(position); setChangeLine(position.line); }}
-                onScrollChange={(top) => { setEditorScrollTop(top); syncPreviewScroll(); }}
-                onSave={() => void saveFile(false)}
-                onNavigate={(target) => onOpenFile?.(target.filePath, { line: target.line, column: target.column })}
-                onIntelligenceMode={(mode, message) => setIntelligence({ mode, message })}
-                lineChanges={editorLineChanges}
-              />
-            </div>
-            <div className={`${editorStyles.statusBar} file-editor-status`}>
-              <span className={dirty ? editorStyles.unsavedStatus : editorStyles.savedStatus}>
-                <span className={editorStyles.statusDot} aria-hidden="true" />
-                {dirty ? t("fileEditor.unsaved") : t("i18n.saved")}
-              </span>
-              <span>{t("fileEditor.cursorPosition", { line: cursorPosition.line, column: cursorPosition.column })}</span>
-              {intelligence ? <span title={intelligence.message} aria-label={intelligence.message}>
-                {intelligence.mode === "arkts-basic" ? t("fileEditor.arktsBasic") : t("fileEditor.tsIntelligence")}
-              </span> : null}
-              <span>UTF-8</span>
-              <span>{formatSize(utf8ByteLength(draftContent))}</span>
-            </div>
-          </div>
+    <div className={`${editorStyles.editorShell} file-editor-shell`}>
+      <div className={editorStyles.editorBody}>
+        <FileCodeEditor
+          key={`${filePath}:${getFileLineSeparator(savedContent)}`}
+          ref={editorRef}
+          value={preserveFileLineEndings(draftContent, savedContent)}
+          filePath={filePath}
+          cwd={cwd}
+          lineSeparator={getFileLineSeparator(savedContent)}
+          scrollTop={editorScrollTop}
+          ariaLabel={t("fileEditor.editFile", { file: getFileName(filePath) })}
+          onChange={(nextValue) => {
+            setDraftContent(nextValue);
+            draftContentRef.current = nextValue;
+            setSaveError(null);
+          }}
+          onCursorChange={(position) => { setCursorPosition(position); setChangeLine(position.line); }}
+          onScrollChange={(top) => { setEditorScrollTop(top); syncPreviewScroll(); }}
+          onSave={() => void saveFile(false)}
+          onNavigate={(target) => onOpenFile?.(target.filePath, { line: target.line, column: target.column })}
+          onIntelligenceMode={(mode, message) => setIntelligence({ mode, message })}
+          lineChanges={editorLineChanges}
+        />
+      </div>
+      <div className={`${editorStyles.statusBar} file-editor-status`}>
+        <span className={dirty ? editorStyles.unsavedStatus : editorStyles.savedStatus}>
+          <span className={editorStyles.statusDot} aria-hidden="true" />
+          {dirty ? t("fileEditor.unsaved") : t("i18n.saved")}
+        </span>
+        <span>{t("fileEditor.cursorPosition", { line: cursorPosition.line, column: cursorPosition.column })}</span>
+        {intelligence ? (
+          <span title={intelligence.message} aria-label={intelligence.message}>
+            {intelligence.mode === "arkts-basic" ? t("fileEditor.arktsBasic") : t("fileEditor.tsIntelligence")}
+          </span>
+        ) : null}
+        <span>UTF-8</span>
+        <span>{formatSize(utf8ByteLength(draftContent))}</span>
+      </div>
+    </div>
   );
 
-  const renderPreview = (live = false) => isHtml ? (
-          <iframe
-            srcDoc={live ? debouncedHtml : content}
-            sandbox="allow-scripts"
-            style={{ width: "100%", height: "100%", border: "none", background: "var(--file-panel-surface, var(--bg))" }}
-             title={t("i18n.htmlPreview")}
-          />
-  ) : (
-          <div
-            className="markdown-body markdown-file-preview"
-            style={{ padding: "24px 32px" }}
-          >
-            <ReactMarkdown
-              remarkPlugins={markdownPreviewRemarkPlugins}
-              rehypePlugins={markdownPreviewRehypePluginsWithMath}
-              components={{
-                code({ className, children, ...props }) {
-                  const lang = className?.replace("language-", "").toLowerCase() ?? "";
-                  const raw = String(children);
-                  const isBlock = className?.includes("language-") || raw.includes("\n");
-                  if (isBlock) {
-                    if (lang === "mermaid") {
-                      return <MermaidBlock code={raw.replace(/\n$/, "")} defaultPreview />;
-                    }
-                    return <CodeBlock code={raw.replace(/\n$/, "")} lang={lang} />;
-                  }
-                  return (
-                    <code className={className} {...props}>
-                      {children}
-                    </code>
-                  );
-                },
-                pre({ children }) {
-                  // Render the code block directly — CodeBlock provides its own wrapping.
-                  // For non-mermaid blocks, pass through to default pre rendering.
-                  return <>{children}</>;
-                },
-                a({ href, children, ...props }) {
-                  delete props.node;
-                  const linkedFile = onOpenFile
-                    ? resolveLocalFileHref(href, markdownDirectory, cwd ?? markdownDirectory)
-                    : null;
-                  if (!linkedFile || !onOpenFile) {
-                    return <a href={href} {...props}>{children}</a>;
-                  }
-
-                  const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-                    if (event.defaultPrevented || event.button !== 0) return;
-                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                    event.preventDefault();
-                    onOpenFile(linkedFile);
-                  };
-
-                  return <a href={href} {...props} onClick={handleClick}>{children}</a>;
-                },
-                img({ src, alt, ...props }) {
-                  delete props.node;
-                  const imagePath = typeof src === "string"
-                    ? resolveLocalFileHref(src, markdownDirectory, cwd ?? markdownDirectory)
-                    : null;
-                  const imageSrc = imagePath
-                    ? getFileApiUrl(imagePath, "read", sourceSessionId)
-                    : src;
-                  // Dynamic local paths are served directly by the file API.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  return <img src={imageSrc} alt={alt ?? ""} loading="lazy" {...props} />;
-                },
-              }}
-            >
-              {markdownPreview}
-            </ReactMarkdown>
-          </div>
+  const renderPreview = (live = false) => (
+    <FilePreviewPane
+      isHtml={isHtml}
+      live={live}
+      content={content}
+      debouncedHtml={debouncedHtml}
+      markdownPreview={markdownPreview}
+      markdownRehypePlugins={markdownPreviewRehypePluginsWithMath}
+      markdownDirectory={markdownDirectory}
+      cwd={cwd}
+      sourceSessionId={sourceSessionId}
+      onOpenFile={onOpenFile}
+    />
   );
 
   return (
@@ -1455,7 +777,7 @@ function TextFileViewer({
           {displayModes.length > 1 && (
             <div className="file-viewer-mode-switch" aria-label={t("i18n.fileViewMode")}>
               {displayModes.map((mode) => {
-                const active = effectiveDisplayMode === mode;
+                const modeActive = effectiveDisplayMode === mode;
                 return (
                   <button
                     key={mode}
@@ -1463,29 +785,31 @@ function TextFileViewer({
                     onClick={() => setDisplayMode(mode)}
                     title={mode === "diff" ? t("i18n.compareHead") : mode === "edit" ? t("fileEditor.editModeTitle") : undefined}
                     aria-label={mode === "edit" ? t("fileEditor.editModeTitle") : t(DISPLAY_MODE_LABEL_KEYS[mode])}
-                    aria-pressed={active}
+                    aria-pressed={modeActive}
                     className={`file-viewer-mode-button${mode === "edit" ? ` ${editorStyles.editModeButton}` : ""}`}
-                    data-active={mode === "edit" && active ? "true" : undefined}
+                    data-active={mode === "edit" && modeActive ? "true" : undefined}
                     style={{
-                      background: active ? "var(--bg-selected)" : "transparent",
-                      color: active ? "var(--text)" : "var(--text-muted)",
+                      background: modeActive ? "var(--bg-selected)" : "transparent",
+                      color: modeActive ? "var(--text)" : "var(--text-muted)",
                     }}
                   >
-                    {mode === "edit" && (
-                      <AliIcon name="edit" size={12} />
-                    )}
+                    {mode === "edit" && <AliIcon name="edit" size={12} />}
                     {t(DISPLAY_MODE_LABEL_KEYS[mode])}
                   </button>
                 );
               })}
             </div>
           )}
-          {effectiveDisplayMode === "split" && viewerWidth < 650 ? <div className="file-viewer-mode-switch" aria-label={t("files.splitPreview")}><button type="button" aria-pressed={compactSplitSide === "edit"} onClick={() => setCompactSplitSide("edit")}>{t("i18n.edit")}</button><button type="button" aria-pressed={compactSplitSide === "preview"} onClick={() => setCompactSplitSide("preview")}>{t("i18n.preview")}</button></div> : null}
+          {effectiveDisplayMode === "split" && viewerWidth < 650 ? (
+            <div className="file-viewer-mode-switch" aria-label={t("files.splitPreview")}>
+              <button type="button" aria-pressed={compactSplitSide === "edit"} onClick={() => setCompactSplitSide("edit")}>{t("i18n.edit")}</button>
+              <button type="button" aria-pressed={compactSplitSide === "preview"} onClick={() => setCompactSplitSide("preview")}>{t("i18n.preview")}</button>
+            </div>
+          ) : null}
 
           <div className="file-viewer-actions">
             <div className={editorStyles.changeNavigation} role="group" aria-label={t("fileEditor.changeNavigation")}>
-              <span className={editorStyles.changeCount} role="status" aria-live="polite" aria-atomic="true"
-                title={changeCountLabel}>
+              <span className={editorStyles.changeCount} role="status" aria-live="polite" aria-atomic="true" title={changeCountLabel}>
                 <span aria-hidden="true">{currentChangeIndex + 1}/{changeRanges.length}</span>
                 <span className="sr-only">{changeCountLabel}</span>
               </span>
@@ -1549,81 +873,28 @@ function TextFileViewer({
       </div>
 
       {externalChange && !isDeletedDiff && (
-        <div
-          className={editorStyles.conflictBanner}
-          role="alert"
-          aria-live="polite"
-          onKeyDown={(event) => {
-            if (event.key !== "Escape" || !conflictDecision) return;
-            event.preventDefault();
-            setConflictDecision(null);
+        <FileConflictBanner
+          externalChange={externalChange}
+          conflictDecision={conflictDecision}
+          saving={saving}
+          conflictConfirmRef={conflictConfirmRef}
+          onSetConflictDecision={setConflictDecision}
+          onKeepEditing={() => {
+            setExternalChange(null);
+            setDisplayMode("edit");
+            requestAnimationFrame(() => editorRef.current?.focus());
           }}
-        >
-          <div className={`${editorStyles.noticeCopy} ${conflictDecision ? editorStyles.confirmationCopy : ""}`}>
-            <strong>
-              {conflictDecision === "reload"
-                ? t("fileEditor.reloadConfirmTitle")
-                : conflictDecision === "overwrite"
-                  ? t("fileEditor.overwriteConfirmTitle")
-                  : t("fileEditor.externalChangeTitle")}
-            </strong>
-            <span>
-              {conflictDecision === "reload"
-                ? t("fileEditor.reloadConfirmBody")
-                : conflictDecision === "overwrite"
-                  ? t("fileEditor.overwriteConfirmBody")
-                  : externalChangeMessage}
-            </span>
-          </div>
-          <div className={editorStyles.noticeActions}>
-            {conflictDecision ? (
-              <>
-                <button type="button" onClick={() => setConflictDecision(null)} disabled={saving}>
-                  {t("i18n.cancel")}
-                </button>
-                <button
-                  ref={conflictConfirmRef}
-                  type="button"
-                  className={editorStyles.dangerAction}
-                  onClick={conflictDecision === "reload" ? () => void reloadFromDisk() : overwriteDisk}
-                  disabled={saving}
-                >
-                  {conflictDecision === "reload" ? t("fileEditor.confirmReload") : t("fileEditor.confirmOverwrite")}
-                </button>
-              </>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setExternalChange(null);
-                    setDisplayMode("edit");
-                    requestAnimationFrame(() => editorRef.current?.focus());
-                  }}
-                  disabled={saving}
-                >
-                  {t("fileEditor.keepEditing")}
-                </button>
-                <button type="button" onClick={() => setConflictDecision("reload")} disabled={saving}>
-                  {t("fileEditor.reloadDisk")}
-                </button>
-                <button type="button" className={editorStyles.dangerAction} onClick={() => setConflictDecision("overwrite")} disabled={saving}>
-                  {t("fileEditor.overwrite")}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+          onReloadFromDisk={() => void reloadFromDisk()}
+          onOverwriteDisk={overwriteDisk}
+        />
       )}
 
       {saveError && !isDeletedDiff && (
-        <div className={editorStyles.errorBanner} role="alert">
-          <span><strong>{t("fileEditor.saveFailed")}</strong> {saveError}</span>
-          <div className={editorStyles.noticeActions}>
-            <button type="button" onClick={() => void saveFile(false)}>{t("fileEditor.tryAgain")}</button>
-            <button type="button" onClick={() => setSaveError(null)} aria-label={t("fileEditor.dismissSaveError")}>{t("fileEditor.dismiss")}</button>
-          </div>
-        </div>
+        <FileSaveErrorBanner
+          saveError={saveError}
+          onRetry={() => void saveFile(false)}
+          onDismiss={() => setSaveError(null)}
+        />
       )}
 
       {/* Content area */}
@@ -1639,46 +910,26 @@ function TextFileViewer({
         {effectiveDisplayMode === "edit" ? (
           renderEditor()
         ) : effectiveDisplayMode === "split" ? (
-          viewerWidth >= 650
-            ? <div className={editorStyles.splitPreviewLayout}><div className={editorStyles.splitEditorPane}>{renderEditor()}</div><div ref={isMarkdown ? splitPreviewRef : undefined} className={editorStyles.splitPreviewPane}>{renderPreview(true)}</div></div>
-            : compactSplitSide === "edit" ? renderEditor() : renderPreview(true)
+          viewerWidth >= 650 ? (
+            <div className={editorStyles.splitPreviewLayout}>
+              <div className={editorStyles.splitEditorPane}>{renderEditor()}</div>
+              <div ref={isMarkdown ? splitPreviewRef : undefined} className={editorStyles.splitPreviewPane}>{renderPreview(true)}</div>
+            </div>
+          ) : (
+            compactSplitSide === "edit" ? renderEditor() : renderPreview(true)
+          )
         ) : effectiveDisplayMode === "diff" && hasGitDiff ? (
           <DiffView patch={gitDiff.patch!} revealDiffLine={diffReveal} />
         ) : (isHtml || isMarkdown) && effectiveDisplayMode === "preview" ? (
           renderPreview()
         ) : (
-          <SyntaxHighlighter
-            className={wrapLines ? "file-source-view is-wrapped" : "file-source-view"}
-            language={language === "text" ? "plaintext" : language}
-            style={isDark ? vscDarkPlus : vs}
-            showLineNumbers
-            lineNumberStyle={{
-              ...FILE_LINE_NUMBER_STYLE,
-            }}
-            customStyle={{
-              margin: 0,
-              padding: 0,
-              border: 0,
-              background: "var(--file-panel-surface, var(--bg))",
-              ...FILE_CODE_STYLE,
-              width: wrapLines ? "100%" : "max-content",
-              minWidth: "100%",
-              minHeight: "100%",
-              overflow: "visible",
-            }}
-            codeTagProps={{
-              style: {
-                fontFamily: "var(--font-mono)",
-                overflowWrap: wrapLines ? "anywhere" : "normal",
-              },
-            }}
-            renderer={(rendererProps) => (
-              <SourceCodeRenderer {...rendererProps} wrapLines={wrapLines} highlightedLine={sourceHighlight === changeReveal ? sourceHighlight?.line : undefined} />
-            )}
-            wrapLongLines={wrapLines}
-          >
-            {content}
-          </SyntaxHighlighter>
+          <FileSourceView
+            content={content}
+            language={language}
+            isDark={isDark}
+            wrapLines={wrapLines}
+            highlightedLine={sourceHighlight === changeReveal ? sourceHighlight?.line : undefined}
+          />
         )}
       </div>
     </div>

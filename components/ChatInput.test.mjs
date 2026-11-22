@@ -33,7 +33,18 @@ const {
 const { ChatCommandQueue } = await jiti.import("./ChatCommandCard.tsx");
 const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const globalCss = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-const chatInputSource = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+const chatInputSource = [
+  readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./chat-input/shared.ts", import.meta.url), "utf8"),
+  readFileSync(new URL("./chat-input/ComposerBanners.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./chat-input/ComposerMenus.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./chat-input/ComposerMetrics.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./chat-input/ModelSettingsMenu.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./chat-input/ComposerFooterControls.tsx", import.meta.url), "utf8"),
+  readFileSync(new URL("./chat-input/useFileMentionAutocomplete.ts", import.meta.url), "utf8"),
+  readFileSync(new URL("./chat-input/usePromptOptimization.ts", import.meta.url), "utf8"),
+  readFileSync(new URL("./chat-input/useSendModePopover.ts", import.meta.url), "utf8"),
+].join("\n");
 const agentSessionSource = readFileSync(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8");
 
 test("uses an ordinary cursor for the session information hover", () => {
@@ -400,7 +411,11 @@ test("designs prompt optimization as a preview before replacing the draft", () =
   assert.match(chatInputSource, /chat\.useOptimizedPrompt/);
   assert.match(
     chatInputSource,
-    /className="is-primary"[\s\S]*?onClick=\{\(\) => \{[\s\S]*?commitReplyDraft\(\{ value: promptOptimization\.result!, spans: \[\] \}\)[\s\S]*?chat\.useOptimizedPrompt/,
+    /className="is-primary"[\s\S]*?onClick=\{\(\) => onUseOptimized\(state\.result!\)\}[\s\S]*?chat\.useOptimizedPrompt/,
+  );
+  assert.match(
+    chatInputSource,
+    /onUseOptimized=\{\(result\) => \{[\s\S]*?commitReplyDraft\(\{ value: result, spans: \[\] \}\)/,
   );
 });
 

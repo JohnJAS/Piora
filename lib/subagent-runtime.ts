@@ -1,13 +1,24 @@
 import { randomUUID } from "node:crypto";
-import { listSubagentProfiles, readSubagentSettings } from "./subagent-settings.ts";
+import { readSubagentSettings } from "./subagent-settings.ts";
+import { listSubagentProfilesSafe } from "./subagents/profile-manager.ts";
 import { listSubagentRecords, saveSubagent } from "./subagent-store.ts";
-import { MAX_SUBAGENT_RESULT_CHARS, SUBAGENT_RESULT_TRUNCATION_SUFFIX, type SubagentLaunch, type SubagentProfile, type SubagentRecord, type SubagentSettings } from "./subagent-types.ts";
+import {
+  isSubagentProfileDisabled,
+  resolveSubagentModelOverride,
+  SUBAGENT_RESULT_TRUNCATION_SUFFIX,
+  type SubagentLaunch,
+  type SubagentProfile,
+  type SubagentRecord,
+  type SubagentSettings,
+} from "./subagent-types.ts";
 
-const MAX_CONCURRENT_SUBAGENTS = 4;
-
+export interface SubagentActivityUpdate {
+  currentTool?: string;
+  currentActivity?: string;
+}
 export interface SubagentDriver {
   run(record: SubagentRecord, profile: SubagentProfile, signal: AbortSignal,
-    progress: (tokens: number, tools: number) => void): Promise<string>;
+    progress: (tokens: number, tools: number, activity?: SubagentActivityUpdate) => void): Promise<string>;
   notify(record: SubagentRecord): Promise<void>;
   changed?(record: SubagentRecord): void;
 }
@@ -37,67 +48,123 @@ export class SubagentRuntime {
     this.records.set(record.agentId, record);
     this.driver.changed?.({ ...record });
   }
-  private profile(name: string): SubagentProfile {
+  private profile(name: string, profileId?: string): SubagentProfile {
     const settings = this.settings();
     if (!settings.enabled || this.disposed) throw new Error("Subagents are disabled");
-    const available = listSubagentProfiles(this.cwd).filter(profile => !settings.disabledProfiles.includes(profile.name));
+    const allProfiles = listSubagentProfilesSafe(this.cwd).profiles;
+    if (profileId) {
+      const byId = allProfiles.find(profile => profile.id === profileId);
+      if (!byId) {
+        throw new Error(`Subagent profile '${name}' (${profileId}) is no longer available`);
+      }
+      if (isSubagentProfileDisabled(settings, byId)) {
+        throw new Error(`Subagent profile '${byId.name}' is disabled`);
+      }
+      const overrideModel = resolveSubagentModelOverride(settings, byId);
+      return { ...byId, model: overrideModel || byId.model };
+    }
+    const available = allProfiles.filter(profile => !isSubagentProfileDisabled(settings, profile));
     const exact = available.find(profile => profile.name === name);
-    const matches = exact ? [exact] : available.filter(profile => profile.name.toLowerCase() === name.toLowerCase());
+    let matches = exact ? [exact] : available.filter(profile => profile.name.toLowerCase() === name.toLowerCase());
+    if (matches.length === 0) {
+      matches = available.filter(profile => profile.aliases?.includes(name));
+    }
     if (matches.length !== 1) throw new Error(`Unknown or ambiguous subagent type '${name}'. Available: ${available.map(profile => profile.name).join(", ")}`);
     const profile = { ...matches[0] };
-    profile.model = Object.hasOwn(settings.modelOverrides, profile.name) && settings.modelOverrides[profile.name] || profile.model;
+    const overrideModel = resolveSubagentModelOverride(settings, profile);
+    profile.model = overrideModel || profile.model;
     return profile;
   }
   async launch(input: SubagentLaunch, toolCallId: string, signal?: AbortSignal): Promise<SubagentRecord> {
     const profile = this.profile(input.subagent_type ?? "general-purpose");
     if (!input.description?.trim() || input.description.length > 500 || !input.prompt?.trim() || input.prompt.length > 100_000) throw new TypeError("Provide a description and a bounded task prompt");
-    const record: SubagentRecord = { version: 1, agentId: `agent_${randomUUID()}`, parentSessionId: this.parentSessionId, parentToolCallId: toolCallId,
-      agentType: profile.name, description: input.description, prompt: input.prompt, status: "running",
-      background: (input.run_in_background ?? profile.background) === true, startedAt: Date.now(), result: "", totalTokens: 0, totalToolUseCount: 0 };
+    const record: SubagentRecord = {
+      version: 1,
+      agentId: `agent_${randomUUID()}`,
+      parentSessionId: this.parentSessionId,
+      parentToolCallId: toolCallId,
+      agentType: profile.name,
+      ...(profile.id ? { profileId: profile.id } : {}),
+      description: input.description,
+      prompt: input.prompt,
+      status: "running",
+      background: (input.run_in_background ?? profile.background) === true,
+      startedAt: Date.now(),
+      result: "",
+      totalTokens: 0,
+      totalToolUseCount: 0,
+    };
     return this.execute(record, profile, signal);
   }
   async continue(id: string, prompt: string, signal?: AbortSignal): Promise<SubagentRecord> {
-    const record = this.get(id), profile = this.profile(record.agentType);
+    const record = this.get(id), profile = this.profile(record.agentType, record.profileId);
     if (!prompt?.trim() || prompt.length > 100_000) throw new TypeError("Provide a bounded message");
     if (this.active.has(id)) throw new Error("Subagent is running; wait for its result before continuing");
     if (!record.childSessionFile) throw new Error("Subagent has no saved context to continue");
+    record.agentType = profile.name;
+    if (profile.id) record.profileId = profile.id;
     record.prompt = prompt; record.background = false; record.status = "running";
     record.attempt = (record.attempt ?? 1) + 1; record.attemptStartedAt = Date.now();
-    record.result = ""; record.error = undefined; record.endedAt = undefined;
+    record.result = ""; record.resultTruncated = undefined; record.resultEntryId = undefined; record.resultFullLength = undefined;
+    record.error = undefined; record.endedAt = undefined;
+    record.currentTool = undefined; record.currentActivity = undefined;
     return this.execute(record, profile, signal);
   }
   private async execute(record: SubagentRecord, profile: SubagentProfile, parentSignal?: AbortSignal): Promise<SubagentRecord> {
-    if (!this.settings().enabled || this.disposed) throw new Error("Subagents are disabled");
+    const settings = this.settings();
+    if (!settings.enabled || this.disposed) throw new Error("Subagents are disabled");
     parentSignal?.throwIfAborted();
-    if (this.active.size >= MAX_CONCURRENT_SUBAGENTS) throw new Error(`Subagent concurrency limit (${MAX_CONCURRENT_SUBAGENTS}) reached. Wait for an existing task.`);
+    if (this.active.size >= settings.maxConcurrency) throw new Error(`Subagent concurrency limit (${settings.maxConcurrency}) reached. Wait for an existing task.`);
+    if (settings.maxTokens > 0 && this.list().reduce((sum, item) => sum + item.totalTokens, 0) >= settings.maxTokens) {
+      throw new Error("Subagent token budget exhausted");
+    }
     const controller = new AbortController();
     const cancel = () => controller.abort(parentSignal?.reason ?? new Error("Parent task cancelled"));
     if (!record.background) parentSignal?.addEventListener("abort", cancel, { once: true });
     const baseTokens = record.totalTokens, baseTools = record.totalToolUseCount;
+    const timer = settings.timeoutSeconds > 0
+      ? setTimeout(() => controller.abort(new Error("Subagent timed out")), settings.timeoutSeconds * 1000)
+      : undefined;
     this.persist(record);
     // Register synchronously before invoking the driver, including drivers that settle immediately.
     const task = Promise.resolve().then(async () => {
       let notify = false;
       try {
         controller.signal.throwIfAborted();
-        const result = await this.driver.run(record, profile, controller.signal, (tokens, tools) => {
+        const result = await this.driver.run(record, profile, controller.signal, (tokens, tools, activity) => {
           record.totalTokens = baseTokens + tokens; record.totalToolUseCount = baseTools + tools;
+          if (activity !== undefined) {
+            record.currentTool = activity.currentTool || undefined;
+            record.currentActivity = activity.currentActivity || undefined;
+          }
           this.persist(record);
-          if (!this.settings().enabled) controller.abort(new Error("Subagents were disabled"));
+          const current = this.settings();
+          if (!current.enabled) controller.abort(new Error("Subagents were disabled"));
+          if (current.maxTokens > 0 && this.list().reduce((sum, item) => sum + item.totalTokens, 0) >= current.maxTokens) {
+            controller.abort(new Error("Subagent token budget exhausted"));
+          }
         });
         controller.signal.throwIfAborted();
-        record.result = result.length > MAX_SUBAGENT_RESULT_CHARS
-          ? result.slice(0, MAX_SUBAGENT_RESULT_CHARS - SUBAGENT_RESULT_TRUNCATION_SUFFIX.length) + SUBAGENT_RESULT_TRUNCATION_SUFFIX
-          : result;
+        record.resultFullLength = result.length;
+        if (result.length > settings.maxResultChars) {
+          const suffix = SUBAGENT_RESULT_TRUNCATION_SUFFIX;
+          record.result = `${result.slice(0, Math.max(0, settings.maxResultChars - suffix.length))}${suffix}`.slice(0, settings.maxResultChars);
+          record.resultTruncated = true;
+        } else {
+          record.result = result;
+          record.resultTruncated = undefined;
+        }
         record.status = "completed";
       } catch (error) {
         const reason = controller.signal.aborted ? controller.signal.reason : error;
         record.error = reason instanceof Error ? reason.message : String(reason);
-        record.status = controller.signal.aborted ? "cancelled" : "failed";
+        record.status = controller.signal.aborted && !/timed out|budget|turn limit/i.test(record.error) ? "cancelled" : "failed";
       } finally {
-        if (!record.background) parentSignal?.removeEventListener("abort", cancel);
+        if (timer) clearTimeout(timer);
+        parentSignal?.removeEventListener("abort", cancel);
         notify = record.background && !this.disposed && record.status !== "cancelled" && this.settings().enabled;
         if (notify) this.notifications++;
+        record.currentTool = undefined; record.currentActivity = undefined;
         record.endedAt = Date.now(); this.active.delete(record.agentId); this.persist(record);
       }
       if (notify) {

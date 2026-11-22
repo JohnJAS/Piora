@@ -2,9 +2,9 @@
 
 > Deterministically generated from the committed npm lockfile. Do not edit by hand; run `npm run licenses:generate`.
 
-Lockfile SHA-256: `8e22c09d3bc87b188695eb8d0cf2aaf282e9026e31b543c823b299695b8c1ee9`
+Lockfile SHA-256: `4e59bf028a0e685f9ae51f81f1d83462dc9181f877df6298ff06f4da8b0aa257`
 
-Unique locked packages: **1304**. Runtime packages: **776**. Build/development-only packages: **528**.
+Unique locked packages: **1273**. Runtime packages: **773**. Build/development-only packages: **500**.
 
 This source inventory records lockfile package-declared license labels plus exact version-scoped reviewed declarations before reviewed postinstall replacements. The packaged application additionally contains a build-derived SBOM, the final package-copy inventory, every published LICENSE/LICENCE/COPYING/NOTICE file, and version-scoped reviewed upstream fallbacks when a compiled npm package omits its required license text. A runtime package marked `UNDECLARED` fails generation.
 
@@ -75,8 +75,6 @@ Every locked package declares a license.
 | `@codemirror/state` | `6.7.6` | MIT | No |
 | `@codemirror/streamparser` | `6.0.0` | MIT | No |
 | `@codemirror/view` | `6.43.15` | MIT | No |
-| `@deepseek-ai/cordis` | `4.1.0` | MIT | No |
-| `@deepseek-ai/cosmokit` | `1.9.0` | MIT | No |
 | `@earendil-works/pi-agent-core` | `1.5.2` | MIT | No |
 | `@earendil-works/pi-ai` | `1.5.2` | MIT | No |
 | `@earendil-works/pi-codemode` | `1.5.2` | MIT | No |
@@ -198,7 +196,6 @@ Every locked package declares a license.
 | `@smithy/types` | `4.19.0` | Apache-2.0 | No |
 | `@sqlite.org/sqlite-wasm` | `3.53.4-build2` | Apache-2.0 | No |
 | `@stablelib/base64` | `1.0.1` | MIT | No |
-| `@standard-schema/spec` | `1.1.0` | MIT | No |
 | `@swc/helpers` | `0.5.23` | Apache-2.0 | No |
 | `@types/d3` | `7.4.3` | MIT | No |
 | `@types/d3-array` | `3.2.2` | MIT | No |
@@ -835,32 +832,6 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `@emnapi/core` | `1.9.1` | MIT | Yes |
 | `@emnapi/wasi-threads` | `1.2.0` | MIT | Yes |
 | `@emnapi/wasi-threads` | `1.2.3` | MIT | Yes |
-| `@esbuild/aix-ppc64` | `0.28.2` | MIT | Yes |
-| `@esbuild/android-arm` | `0.28.2` | MIT | Yes |
-| `@esbuild/android-arm64` | `0.28.2` | MIT | Yes |
-| `@esbuild/android-x64` | `0.28.2` | MIT | Yes |
-| `@esbuild/darwin-arm64` | `0.28.2` | MIT | Yes |
-| `@esbuild/darwin-x64` | `0.28.2` | MIT | Yes |
-| `@esbuild/freebsd-arm64` | `0.28.2` | MIT | Yes |
-| `@esbuild/freebsd-x64` | `0.28.2` | MIT | Yes |
-| `@esbuild/linux-arm` | `0.28.2` | MIT | Yes |
-| `@esbuild/linux-arm64` | `0.28.2` | MIT | Yes |
-| `@esbuild/linux-ia32` | `0.28.2` | MIT | Yes |
-| `@esbuild/linux-loong64` | `0.28.2` | MIT | Yes |
-| `@esbuild/linux-mips64el` | `0.28.2` | MIT | Yes |
-| `@esbuild/linux-ppc64` | `0.28.2` | MIT | Yes |
-| `@esbuild/linux-riscv64` | `0.28.2` | MIT | Yes |
-| `@esbuild/linux-s390x` | `0.28.2` | MIT | Yes |
-| `@esbuild/linux-x64` | `0.28.2` | MIT | Yes |
-| `@esbuild/netbsd-arm64` | `0.28.2` | MIT | Yes |
-| `@esbuild/netbsd-x64` | `0.28.2` | MIT | Yes |
-| `@esbuild/openbsd-arm64` | `0.28.2` | MIT | Yes |
-| `@esbuild/openbsd-x64` | `0.28.2` | MIT | Yes |
-| `@esbuild/openharmony-arm64` | `0.28.2` | MIT | Yes |
-| `@esbuild/sunos-x64` | `0.28.2` | MIT | Yes |
-| `@esbuild/win32-arm64` | `0.28.2` | MIT | Yes |
-| `@esbuild/win32-ia32` | `0.28.2` | MIT | Yes |
-| `@esbuild/win32-x64` | `0.28.2` | MIT | Yes |
 | `@eslint-community/eslint-utils` | `4.9.1` | MIT | No |
 | `@eslint-community/regexpp` | `4.12.2` | MIT | No |
 | `@eslint/config-array` | `0.23.6` | Apache-2.0 | No |
@@ -929,7 +900,6 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `@types/react-dom` | `19.3.0` | MIT | No |
 | `@types/react-syntax-highlighter` | `15.5.13` | MIT | No |
 | `@types/responselike` | `1.0.3` | MIT | No |
-| `@types/semver` | `7.8.0` | MIT | No |
 | `@types/stats.js` | `0.17.4` | MIT | No |
 | `@types/three` | `0.187.0` | MIT | No |
 | `@types/turndown` | `5.0.6` | MIT | No |
@@ -1059,7 +1029,6 @@ Archive SHA-256: `02fe458be20493fbdf43f61ea20610b811ee6c738ab1676c61b9cfcd1a33c8
 | `es-shim-unscopables` | `1.1.0` | MIT | No |
 | `es-to-primitive` | `1.3.0` | MIT | No |
 | `es6-error` | `4.1.1` | MIT | Yes |
-| `esbuild` | `0.28.2` | MIT | No |
 | `escape-string-regexp` | `4.0.0` | MIT | No |
 | `eslint` | `10.15.0` | MIT | No |
 | `eslint-config-next` | `16.4.6` | MIT | No |

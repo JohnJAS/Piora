@@ -111,6 +111,7 @@ createRoot(document.getElementById('root')).render(<I18nProvider><App/></I18nPro
       if (url.pathname.endsWith(".js")) return route.fulfill({ contentType: "text/javascript", body: await readFile(path.join(directory, path.basename(url.pathname))) });
       if (!url.pathname.startsWith("/api/")) return route.fulfill({ contentType: "text/html", body: '<!doctype html><meta charset="utf-8"><style>:root{--bg:#fff;--bg-panel:#fafafa;--bg-hover:#f1f1f1;--bg-selected:#eee;--border:#dedede;--border-soft:#dedede;--surface-raised:#fff;--floating-background:#fff;--floating-border:#dedede;--floating-filter:none;--floating-shadow:0 5px 18px #0002;--radius-control:8px;--ui-font-family:Arial,sans-serif;--text:#262626;--text-muted:#666;--text-dim:#a3a3a3;--accent:#2563eb;--text-xs:12px;--text-sm:14px}body{font-family:Arial,sans-serif;color:var(--text);line-height:1.5}' + tooltipCss + composerThemeCss + '</style><div id="root"></div><script src="/bundle.js"></script>' });
       if (url.pathname === "/api/models") return route.fulfill({ json: { models: {}, modelList: [] } });
+      if (url.pathname === "/api/settings/side-chat") return route.fulfill({ json: { enabled: false } });
       if (url.pathname === "/api/settings/subagents") return route.fulfill({ json: {
         settings: { enabled: false, disabledProfiles: [], modelOverrides: {} }, profiles: [],
       } });
@@ -797,6 +798,7 @@ createRoot(document.getElementById('root')).render(<I18nProvider><App/></I18nPro
     await chooseDraft("goal");
     await assertNoWorkflowStrip("selecting a new Goal does not promote historical Plans into the current strip");
     assert.deepEqual(await page.evaluate(() => window.state.snapshot.history), retainedHistory, "hidden terminal details remain in the workflow history model");
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now())));
     failNextWorkflowRead = true;
     await page.evaluate(() => window.state.refresh());
     const loadError = page.getByRole("alert").filter({ hasText: locale === "zh-CN" ? "无法加载工作流状态。" : "Workflow state could not be loaded." });
@@ -804,6 +806,7 @@ createRoot(document.getElementById('root')).render(<I18nProvider><App/></I18nPro
     await assertNoWorkflowStrip("a history-only load failure displays its error without resurrecting the strip");
     await loadError.getByRole("button").click();
     await page.waitForFunction(() => window.state.error === null);
+    await page.clock.resume();
 
     // The displayed workflow comes from the current run, independently of the
     // next message's mode and the Agent mode used during approved execution.

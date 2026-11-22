@@ -43,17 +43,17 @@ try {
     const file = join(root, id + ".jsonl");
     await writeFile(file, serialized([{ type: "session", version: 3, id, cwd: root, timestamp }, ...entries]));
     cacheSessionPath(id, file);
-    const get = (paged, etag) => GET(new Request("http://local/api/sessions/" + id + "?deferThinking=1&deferMedia=1" + (paged ? "&view=chat" : ""), {
+    const get = (view, etag) => GET(new Request("http://local/api/sessions/" + id + "?deferThinking=1&deferMedia=1" + (view ? "&view=" + view : ""), {
       headers: etag ? { "if-none-match": etag } : {},
     }), { params: Promise.resolve({ id }) });
 
     const fullTimer = timed(() => new Promise(resolveTimer => setTimeout(resolveTimer, 0)));
-    const readFull = await timed(() => get(false));
+    const readFull = await timed(() => get());
     const fullTimerMs = (await fullTimer).ms;
     assert.equal(readFull.result.status, 200);
     const raw = await readFull.result.arrayBuffer();
     const timer = timed(() => new Promise(resolveTimer => setTimeout(resolveTimer, 0)));
-    const cold = await timed(() => get(true));
+    const cold = await timed(() => get("chat"));
     const eventLoopDelay = (await timer).ms;
     assert.equal(cold.result.status, 200);
     const etag = cold.result.headers.get("etag");
@@ -64,16 +64,25 @@ try {
     assert.ok(page.context.entryIds.length <= 80);
     const warm = [], revalidated = [];
     for (let index = 0; index < 21; index++) {
-      const hit = await timed(() => get(true));
+      const hit = await timed(() => get("chat"));
       warm.push(hit.ms);
       await hit.result.arrayBuffer();
-      const notModified = await timed(() => get(true, etag));
+      const notModified = await timed(() => get("chat", etag));
       assert.equal(notModified.result.status, 304);
       revalidated.push(notModified.ms);
     }
+    const readTranscript = await timed(() => get("transcript"));
+    assert.equal(readTranscript.result.status, 200);
+    const transcriptText = await readTranscript.result.text();
+    const transcript = JSON.parse(transcriptText);
+    assert.equal(transcript.context.messages.length, size);
+    assert.deepEqual(transcript.context.entryIds, entries.map(entry => entry.id));
+    assert.equal(transcript.historyPage, undefined);
+    assert.equal((await get("transcript", readTranscript.result.headers.get("etag"))).status, 304);
     report.sessions.push({ messages: size, fullBytes: raw.byteLength, fullColdMs: rounded(readFull.ms), fullTimerMs: rounded(fullTimerMs), pageBytes: Buffer.byteLength(text),
       pageColdMs: rounded(cold.ms), coldTimerMs: rounded(eventLoopDelay), pageP50: percentile(warm, 0.5), pageP95: percentile(warm, 0.95),
-      revalidateP50: percentile(revalidated, 0.5), revalidateP95: percentile(revalidated, 0.95) });
+      revalidateP50: percentile(revalidated, 0.5), revalidateP95: percentile(revalidated, 0.95),
+      transcriptBytes: Buffer.byteLength(transcriptText), transcriptColdMs: rounded(readTranscript.ms) });
   }
 
   const journal = store.commandsPath("benchmark-journal");
