@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import type { BackgroundPreset } from "@/lib/backgrounds";
+import { TIDE_PERFORMANCE_BACKGROUND_ID, type BackgroundPreset } from "@/lib/backgrounds";
 import { createWallpaperFrameClock } from "@/lib/character-wallpaper-clock";
 import { getCharacterWallpaperRig, type CharacterWallpaperRig } from "@/lib/character-wallpaper-rigs";
 import type { CharacterWallpaperRenderer } from "@/lib/character-wallpaper-renderer";
@@ -11,7 +11,7 @@ const TIDE_PERFORMANCE = {
 };
 
 function playCharacterWallpaper(canvas: HTMLCanvasElement, renderer: CharacterWallpaperRenderer | null,
-  artwork: HTMLImageElement, rig: CharacterWallpaperRig, clip?: typeof TIDE_PERFORMANCE) {
+  artwork: HTMLImageElement, rig: CharacterWallpaperRig, focusX: number, clip?: typeof TIDE_PERFORMANCE) {
   let frame: number | null = null;
   const clock = createWallpaperFrameClock(clip ? 60 : 30);
   let elapsed = 0;
@@ -20,7 +20,6 @@ function playCharacterWallpaper(canvas: HTMLCanvasElement, renderer: CharacterWa
   let performing = false;
   let playRequest = 0;
   let stageReady = false;
-  const focusX = clip?.view.focusX ?? 0.5;
   const film = clip ? document.createElement("video") : null;
   if (film && clip) {
     film.className = "character-background-performance";
@@ -204,7 +203,7 @@ function playCharacterWallpaper(canvas: HTMLCanvasElement, renderer: CharacterWa
   };
 }
 
-export function CharacterBackgroundMotion({ preset }: { preset: BackgroundPreset }) {
+export function CharacterBackgroundMotion({ preset, live2dEnabled }: { preset: BackgroundPreset; live2dEnabled: boolean }) {
   const { id, asset } = preset;
   useEffect(() => {
     const rig = getCharacterWallpaperRig(id);
@@ -231,9 +230,12 @@ export function CharacterBackgroundMotion({ preset }: { preset: BackgroundPreset
         canvas.dataset.characterBackground = id;
         canvas.setAttribute("aria-hidden", "true");
         const layers = hasAtlas ? { performance: module.getCharacterPerformance(id), atlas } : undefined;
-        const clip = id === "character-whale-tide" ? TIDE_PERFORMANCE : undefined;
-        const renderer = module.createCharacterWallpaperRenderer(canvas, artwork, rig, layers, clip?.view);
-        if (renderer || clip) stop = playCharacterWallpaper(canvas, renderer, artwork, rig, clip);
+        const performance = id === TIDE_PERFORMANCE_BACKGROUND_ID ? TIDE_PERFORMANCE : undefined;
+        const clip = live2dEnabled ? performance : undefined;
+        const renderer = module.createCharacterWallpaperRenderer(canvas, artwork, rig, layers, performance?.view);
+        if (renderer || clip) {
+          stop = playCharacterWallpaper(canvas, renderer, artwork, rig, performance?.view.focusX ?? 0.5, clip);
+        }
       }).catch(() => {
         // The prepainted wallpaper is also the fallback for failed loads.
       });
@@ -246,6 +248,6 @@ export function CharacterBackgroundMotion({ preset }: { preset: BackgroundPreset
       motion.removeEventListener("change", updateMotion);
       stop?.();
     };
-  }, [asset, id]);
+  }, [asset, id, live2dEnabled]);
   return null;
 }

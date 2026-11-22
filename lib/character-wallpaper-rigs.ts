@@ -7,6 +7,7 @@ export interface CharacterWallpaperRig {
   rigidFace?: Region;
   headContact?: readonly [x: number, y: number];
   chest: Region;
+  chestBreathScale?: number;
   sway: readonly [Region, Region];
   pins: readonly Pin[];
   eyes: readonly [Eye] | readonly [Eye, Eye];
@@ -367,6 +368,7 @@ const rigs: Record<string, CharacterWallpaperRig> = {
     // nose and eyes together while the forearm moves underneath them.
     rigidFace: [1274, 199, 100, 94],
     chest: [1321, 434, 60, 44],
+    chestBreathScale: 1.5,
     sway: [[1036, 516, 47, 57], [1551, 581, 43, 49]],
     pins: [
       [1183, 336, 1238, 314, 31],

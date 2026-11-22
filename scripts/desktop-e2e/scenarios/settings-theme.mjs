@@ -99,6 +99,7 @@ export const settingsTheme = {
     const backgrounds = () => dialog.getByRole('tab', { name: /^(Background|背景)$/ });
     const colors = () => dialog.getByRole('tab', { name: /^(Theme & colors|主题与配色)$/i });
     const toggle = () => dialog.getByRole('checkbox', { name: /^(Background motion|背景微动|Character animation|角色动画)$/ });
+    const live2d = () => dialog.getByRole('checkbox', { name: /^(Live2D \(experimental\)|Live2D（实验）)$/ });
     const assertPreset = preset => waitUntil(() => page.evaluate(preset => document.documentElement.dataset.appBackgroundPreset === preset, preset), `selected ${preset} background`);
     await step('glacier-parallax', async () => {
       await page.emulateMedia({ reducedMotion: 'no-preference' });
@@ -192,11 +193,16 @@ export const settingsTheme = {
       await colors().click();
       await dialog.locator(`[data-appearance-look="${preset}"]`).click();
       await assertTheme(preset);
+      await backgrounds().click();
+      assert.equal(await live2d().isChecked(), false);
+      await assertCharacterMotion('.settings-backdrop', preset);
+      const film = page.locator('video.character-background-performance');
+      assert.equal(await film.count(), 0);
+      await live2d().check();
       await closeSettings();
       await reload();
       // No pointer input after reload. Check decoded media time as well as
       // visibility so an empty video/poster cannot satisfy this scenario.
-      const film = page.locator('video.character-background-performance');
       const started = await waitUntil(() => film.evaluate(video => {
         const style = getComputedStyle(video);
         return document.hasFocus() && video.readyState >= 2 && video.currentTime > 0 && !video.paused &&
@@ -328,6 +334,17 @@ export const settingsTheme = {
       await original.dispose();
       await film.waitFor({ state: 'detached' });
       await characterScene.waitFor({ state: 'detached' });
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      dialog = await openAppearance();
+      await backgrounds().click();
+      assert.equal(await live2d().isChecked(), true);
+      await live2d().uncheck();
+      await film.waitFor({ state: 'detached' });
+      await assertCharacterMotion('.settings-backdrop', preset);
+      await reload();
+      await assertPreset(preset);
+      await assertCharacterMotion('body', preset);
+      assert.equal(await film.count(), 0);
     });
   },
 };

@@ -352,6 +352,10 @@ export function useBackground() {
     commitPreference({ ...snapshot.preference, motionEnabled });
   }, [snapshot.preference]);
 
+  const setLive2dEnabled = useCallback((live2dEnabled: boolean) => {
+    commitPreference({ ...snapshot.preference, live2dEnabled });
+  }, [snapshot.preference]);
+
   const reset = useCallback(async () => {
     operationRevision += 1;
     storedCustom = null;
@@ -379,6 +383,7 @@ export function useBackground() {
     setFilePanelOverlay,
     setBlur,
     setMotionEnabled,
+    setLive2dEnabled,
     reset,
   };
 }

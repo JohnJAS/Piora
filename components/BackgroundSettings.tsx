@@ -3,7 +3,7 @@
 import { useId, useRef } from "react";
 import { useBackground } from "@/hooks/useBackground";
 import { useI18n } from "@/hooks/useI18n";
-import { getBackgroundMotionKind, getBackgroundPreset, SUPPORTED_BACKGROUND_MIME_TYPES } from "@/lib/backgrounds";
+import { getBackgroundMotionKind, getBackgroundPreset, SUPPORTED_BACKGROUND_MIME_TYPES, TIDE_PERFORMANCE_BACKGROUND_ID } from "@/lib/backgrounds";
 import type { BackgroundStorageErrorCode } from "@/lib/background-storage";
 import styles from "./BackgroundSettings.module.css";
 
@@ -47,6 +47,7 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
     setFilePanelOverlay,
     setBlur,
     setMotionEnabled,
+    setLive2dEnabled,
     reset,
   } = useBackground();
 
@@ -90,6 +91,18 @@ export function BackgroundSettings({ compact = false, className }: BackgroundSet
             onChange={(event) => setMotionEnabled(event.currentTarget.checked)}
           />
           {t(motion === "character" ? "background.characterMotion" : "background.motion")}
+        </label>
+      )}
+
+      {selectedPreset?.id === TIDE_PERFORMANCE_BACKGROUND_ID && (
+        <label className={styles.motionToggle}>
+          <input
+            type="checkbox"
+            checked={preference.live2dEnabled === true}
+            disabled={!hydrated || busy || preference.motionEnabled === false}
+            onChange={(event) => setLive2dEnabled(event.currentTarget.checked)}
+          />
+          {t("background.live2dExperimental")}
         </label>
       )}
 

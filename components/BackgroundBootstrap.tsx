@@ -14,5 +14,7 @@ export function BackgroundBootstrap() {
   const kind = getBackgroundMotionKind(preference.presetId);
   if (kind === "glacier") return <BackgroundMotion />;
   const character = kind === "character" ? getBackgroundPreset(preference.presetId) : undefined;
-  return character ? <CharacterBackgroundMotion key={character.id} preset={character} /> : null;
+  return character ? (
+    <CharacterBackgroundMotion key={character.id} preset={character} live2dEnabled={preference.live2dEnabled === true} />
+  ) : null;
 }

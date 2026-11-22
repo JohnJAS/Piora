@@ -363,6 +363,7 @@ export function createCharacterWallpaperRenderer(
 
   // Offset the idle rhythm for each painted pose.
   const offset = (rig.head[0] % 13) * 0.058;
+  const chestLiftRange = Math.min(5.4, rig.chest[3] * 0.075);
   return {
     resize(cssWidth: number, cssHeight: number) {
       const pixelBudget = view?.maxPixels ?? MAX_RENDER_PIXELS;
@@ -406,8 +407,10 @@ export function createCharacterWallpaperRenderer(
         0.023 * Math.sin(headPhase - lag) + 0.009 * Math.sin(breathPhase - lag)
       );
       const cycle = seconds % (23.1 + 2 * offset);
-      const chestLift = Math.min(5.4, rig.chest[3] * 0.075) * (breath + 0.33 * gesture);
-      gl.uniform2f(lift, rig.headContact ? 0 : chestLift + 2 * gesture - lookY, chestLift);
+      const idleLift = chestLiftRange * breath;
+      const gestureLift = chestLiftRange * 0.33 * gesture;
+      const chestLift = idleLift * (rig.chestBreathScale ?? 1) + gestureLift;
+      gl.uniform2f(lift, rig.headContact ? 0 : idleLift + gestureLift + 2 * gesture - lookY, chestLift);
       gl.uniform2f(lean, rig.headContact ? 0 : 3.2 * gesture + 1.4 * lookX, 1.4 * gesture);
       gl.uniform2f(gaze, lookX - 0.74 * gesture * (1 - attention), lookY - 0.35 * gesture * (1 - attention));
       if (beats) {
