@@ -4,6 +4,13 @@ All notable changes to Piora are documented here. The project follows [Semantic 
 
 ## [Unreleased]
 
+## [0.5.11-beta.29] - 2026-11-23
+
+### 修复
+
+- 修复关闭子代理详情后，聊天卡片按钮可能无法重新获得键盘焦点的问题。
+- 修复部分 Windows 域设备因账号查询超时而无法在组织统计中关联登录身份的问题。
+
 ## [0.5.11-beta.28] - 2026-11-23
 
 ### 新增
