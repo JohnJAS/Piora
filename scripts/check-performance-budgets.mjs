@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { createJiti } from "jiti";
 import { buildVirtualOffsets, virtualRange } from "../lib/virtual-window.ts";
 import { indexTaskTree, flattenTaskWindow } from "../lib/sidebar-tree-window.ts";
@@ -52,6 +52,26 @@ const history = Array.from({ length: 10_000 }, (_, index) => index % 2 === 0
 const historyIds = history.map((_, index) => `entry-${index}`);
 const historyRows = buildCompactChatHistoryRows(history, historyIds, false, new Map()).rows;
 const historyOffsets = buildVirtualOffsets(historyRows.map((row) => row.key), new Map(), 160);
+
+const claudeLive = new URL("../public/themes/character-backgrounds/claude-live/", import.meta.url);
+const claudeSkins = ["claude-paper", "claude-lamp", "claude-autumn"];
+const puppetFiles = ["face-atlas.webp", "parts-atlas.webp", "rig.json", "stage.webp"];
+const claudeAssetChecks = [];
+let claudeTotalBytes = 0;
+for (const skin of claudeSkins) {
+  const folder = new URL(skin + "/", claudeLive);
+  const entries = existsSync(folder) ? readdirSync(folder, { withFileTypes: true }) : [];
+  const complete = entries.length === puppetFiles.length
+    && entries.every(entry => entry.isFile() && puppetFiles.includes(entry.name));
+  claudeAssetChecks.push(verify(skin + " has the four runtime files", complete));
+  if (!complete) continue;
+  const bytes = puppetFiles.reduce((total, asset) => total + statSync(new URL(asset, folder)).size, 0);
+  claudeTotalBytes += bytes;
+  claudeAssetChecks.push(verify(`${skin} runtime assets: ${bytes} bytes / 2800000 bytes`, bytes <= 2_800_000));
+}
+const onlyClaudeSkins = existsSync(claudeLive) && readdirSync(claudeLive, { withFileTypes: true }).every(
+  entry => entry.isDirectory() && claudeSkins.includes(entry.name),
+);
 const taskTree = sessions.map((session) => ({ session, children: [] }));
 
 const syntaxSources = ["components/DiffView.tsx", "components/FileViewer.tsx", "components/MermaidBlock.tsx", "components/LazySyntaxHighlighter.tsx"]
@@ -68,6 +88,10 @@ const rootMarkdownConsumerSource = ["components/MessageView.tsx", "components/Co
   .join("\n");
 
 const checks = [
+  ...claudeAssetChecks,
+  verify("Claude live directories contain only paper, lamp, and autumn", onlyClaudeSkins),
+  verify(`Claude series runtime assets: ${claudeTotalBytes} bytes / 8000000 bytes`,
+    claudeAssetChecks.length === claudeSkins.length * 2 && claudeTotalBytes <= 8_000_000),
   measure("filter 500 tasks", 50, () => filterSessions(sessions, "", "task 49")),
   measure("search a 5,000-file index", 800, () => filterFileEntries(fileEntries, "file-4999", 1_000)),
   measure("plan 10,000 actual chat rows", 100, () => buildCompactChatHistoryRows(history, historyIds, false, new Map())),

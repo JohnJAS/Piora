@@ -1,6 +1,7 @@
 "use client";
 import { ToolPermissionControl } from "./ToolPermissionControl";
 import type { PermissionMode, ToolPermissionState } from "@/lib/tool-permission-policy";
+import type { ComposerActivity } from "@/lib/character-director-state";
 
 import React, { useRef, useState, useCallback, useEffect, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
 import { useReplyDraft } from "@/hooks/useReplyDraft";
@@ -163,6 +164,7 @@ interface Props {
   toolPermission?: ToolPermissionState | null;
   permissionSaving?: boolean;
   onToolPermissionChange?: (mode: PermissionMode) => void;
+  onCharacterActivity?: (activity: ComposerActivity) => void;
   surfacePlacement?: "main" | "side";
   sideChatEnabled?: boolean;
   canOpenSideChat?: boolean;
@@ -208,7 +210,7 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
   workflow, workflowBusy = false, workflowEnabled = true,
   hasActiveGoal = false, hasPausedGoal = false, workflowAutoContinuing = false,
   onWorkflowModeChange, onRequestGoalReplace, onRequestPausedGoalResume,
-  toolPermission, permissionSaving, onToolPermissionChange,
+  toolPermission, permissionSaving, onToolPermissionChange, onCharacterActivity,
   surfacePlacement = "main", sideChatEnabled = false, canOpenSideChat = false, onOpenSideChat,
   replySource = null,
 }: Props, ref) {
@@ -1706,7 +1708,10 @@ export const ChatInput = React.memo(forwardRef<ChatInputHandle, Props>(function 
             aria-controls={slashMenuOpen ? slashListId : atMenuPosition ? atListId : undefined}
             aria-activedescendant={slashMenuOpen && filteredSlashCommands[slashActiveIndex] ? `${slashListId}-${slashActiveIndex}` : atMenuPosition && atMatches[atActiveIndex] ? `${atListId}-${atActiveIndex}` : undefined}
             value={value}
+            onFocus={onCharacterActivity ? () => onCharacterActivity("focus") : undefined}
+            onBlur={onCharacterActivity ? () => onCharacterActivity("blur") : undefined}
             onChange={(e) => {
+              onCharacterActivity?.("input");
               if (localVoiceRecording || voiceTranscribing) stopVoiceInput(true);
               if (localDictation.error) localDictation.clearError();
               if (promptOptimization && e.target.value.trim() !== promptOptimization.source) {

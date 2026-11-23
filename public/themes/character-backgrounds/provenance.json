@@ -154,6 +154,33 @@
     },
     {
       "id": "character-claude-paper",
+      "dynamicWallpaper": {
+        "method": "Built-in image_gen reference edits, measured face landmarks, registered arm cross sections and signed-distance coverage",
+        "reference": "claude-paper.webp",
+        "referenceSha256": "9adb7836fd4fa7ba42b7c0eb037c0193c98dcb5c978086e434e266dda9c3e3b0",
+        "placement": "scripts/claude-puppet/claude-paper.placement.json",
+        "bake": "scripts/bake-claude-puppet.py",
+        "assetDirectory": "claude-live/claude-paper",
+        "assets": ["stage.webp", "parts-atlas.webp", "face-atlas.webp", "rig.json"],
+        "license": "CC-BY-NC-SA-4.0",
+        "rawSourceSha256": {
+          "stage.png": "8f4696d77827d72ddff7372d6f47e467ae32a7dba2fc0a15546d473fa4efe0c6",
+          "character_master.png": "75ca6ccd9cdaa911417dcacd92b64b56632fb151cbd4520c951c166d24877d02",
+          "back_hair.png": "a457986ecd3ce4e4dd75ec6953091a09bee09f496f3247d02f73a1e413338452",
+          "torso.png": "21746385a5bfccd93de1c4032bcf3d5753def512b60c5ac4fe173e419a7101e3",
+          "prop.png": "a1ef633bd856de788677c75e5070d31fb7555025e0f4bd4e85502a3534d80979",
+          "head_base.png": "e519d6c736dd520ddc0e9544feeb52fe67eefb25b6079d85b81293f43c4b2fee",
+          "front_hair_l.png": "7de7c258800457cd1033db5056aa1ab9402fe673b0b35809ab8668c142044cf8",
+          "front_hair_r.png": "db73f895b8a6a3e9ebf1c6f745545fbcaead981258477a6a7ee53b641fd5465b",
+          "tassel_ribbon.png": "0775ba8f6e653acb024e423a248395634b67074e762da88e1ad2ca48898cea93",
+          "arm_front_page_turn.png": "dc17b060ce65c0a4951df762409b53d8569aad1b4bde04d4f6bcc95b3b166bba",
+          "arm_front_chin_rest.png": "0f4a95573f2d5e58e08677cfd6bdf7d9d11f2a1719b55314581b6b97fb275d89",
+          "arm_front_wave_greet.png": "a805c9777d83630bef3bca0c43b79b6523dfc93f43d4859f172f9df7e0440e4e",
+          "faces_sheet.png": "1c0c9057c2d37e9be9bdeaefee844ae5009ac08daad517e12e9ad250f9d4a54c",
+          "blink_sheet.png": "6e3d8fc06eecb089da11ebc8c1194ceebd1c2dae05ca58fe3c611369f7a5fdbe",
+          "mouth_sheet.png": "6921f00de0eba469a09f7eb0f0ffa073e085a7a032ef67e81f0506581e9c048c"
+        }
+      },
       "source": {
         "repository": "https://github.com/JohnJAS/ai-chan-sheets",
         "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
@@ -229,6 +256,53 @@
     },
     {
       "id": "character-claude-lamp",
+      "dynamicWallpaper": {
+        "method": "Codex built-in image_gen reference edits from the matching Claude wallpaper, calibrated face and limb geometry, signed-distance arm coverage",
+        "reference": "claude-lamp.webp",
+        "referenceSha256": "2c0741ef00166130212df9f08aa9366d508a9bc2442be14e4b33860570413ebb",
+        "placement": "scripts/claude-puppet/claude-lamp.placement.json",
+        "bake": "scripts/bake-claude-puppet.py",
+        "assetDirectory": "claude-live/claude-lamp",
+        "assets": [
+          "stage.webp",
+          "parts-atlas.webp",
+          "face-atlas.webp",
+          "rig.json"
+        ],
+        "license": "CC-BY-NC-SA-4.0",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "rawManifestSha256": "9adf53f3da821edff2f0346ffd6162631e2d6a7321ceaf9bf0bec66d1f89970a",
+        "rawSourceSha256": {
+          "arm_front_chin_rest.png": "c372d6839518d5a63706f1ffa6fce25564e65e5ebee2b9a44ead3c5bf2d6c3af",
+          "arm_front_idle.png": "e1e174226a46f4039b0bee906bd8d22575249895764bea4dde4367474f77a8f5",
+          "arm_front_page_turn.png": "145ba194ff773ffc4cd0ee2098d890f329f04a75dfb05aeb4e62205ce829fa35",
+          "arm_front_wave_greet.png": "0a86df7fc1269cacf5333a62d7fd06dc08b9f63fe7f861c900e333359db6466c",
+          "back_hair.png": "5c44148f98808b732c0322c79ea3953a1672ce85cc46c6ff2942141080dcb5d3",
+          "blink_sheet.png": "a008d05dd482c0966cea2c687198e460eb508a56cfd71889df30efe24651d6a4",
+          "cape_skirt.png": "a475679abe941ecf47126bd9977b800396eecab2e4e147f9a37d254ae7a86380",
+          "character_master.png": "45afd515c257412fa99fc53e96069a290e8bcf5ec3ee3363ca4ea8d50bfb7e32",
+          "faces_sheet.png": "3f7c6c1c2e3ad6de14bb6f4271de9e2cb3661327ccb3fa0d61a59da9ff12e45d",
+          "front_hair_l.png": "281e2d8432725f7be890904928d533f00c14920970f5af5e6e423cc278c4cc16",
+          "front_hair_r.png": "9c3ef9ce6d54ed7dd552630662ca3c46f559fb47deb3bcc3626b69e48ac411ad",
+          "hair_ornament.png": "097c5d413dc82ec095820394160b252cec6601e3663aeec70ec535cfada86a0c",
+          "mouth_sheet.png": "a2d8e49b9a903487f2721b0d34a2073b4eaa2713d72eb8fe6442568f262a9187",
+          "prop.png": "d234da735298369280d05aa57de034299687b159a3d509ab085980a53d6119d6",
+          "stage.png": "6a8211e74c6153b26f9649c0703b89f2b2c668fc9cd3e19dcdfc4dbd314859f6",
+          "tassel_ribbon.png": "c16d5d15ddc1276893f29f48bf6a931120d89a06ae437f50f77f614d4d4ec71c",
+          "torso.png": "76d4e59b3163a49c3e4062f054d927093f0acd97f488573e6bb9de3704df0171"
+        },
+        "unusedCandidateSha256": {
+          "arm_back.png": "b2fa55b44f66871d914162e187819223c068ff6724c8d1378f02b293d4ddcf72",
+          "head_base.png": "a708914342d6dcfb3c7601c3174e89351fe7383790dde78bc58e0e27a137d3cb"
+        },
+        "outputSha256": {
+          "face-atlas.webp": "81fd4e4934373cf2b4a8e646f0f5c2a7230d562f264a14e5cb06a769b5a9e73e",
+          "parts-atlas.webp": "25a4d1a6bedb01a319201312840cb5968b5722c5ed69abba01898d430154471c",
+          "rig.json": "eca0dba931b552a1acbe79e5cdf3b783db21f93a8bee73fad7bed89e600abd30",
+          "stage.webp": "7e72eaf95324bcbef6552e46c8404d4fe3779b1c52fd1c1c0be3d1f0e176caad"
+        }
+      },
       "source": {
         "repository": "https://github.com/JohnJAS/ai-chan-sheets",
         "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",
@@ -244,6 +318,53 @@
     },
     {
       "id": "character-claude-autumn",
+      "dynamicWallpaper": {
+        "method": "Codex built-in image_gen reference edits from the matching Claude wallpaper, calibrated face and limb geometry, signed-distance arm coverage",
+        "reference": "claude-autumn.webp",
+        "referenceSha256": "c3afea9c74962e96ad15b829636306d07b6da09ab3ee833e9021853e3a0f7cdd",
+        "placement": "scripts/claude-puppet/claude-autumn.placement.json",
+        "bake": "scripts/bake-claude-puppet.py",
+        "assetDirectory": "claude-live/claude-autumn",
+        "assets": [
+          "stage.webp",
+          "parts-atlas.webp",
+          "face-atlas.webp",
+          "rig.json"
+        ],
+        "license": "CC-BY-NC-SA-4.0",
+        "originalCharacterCreator": "ZipZipPipe",
+        "completionCreator": "lmy414",
+        "rawManifestSha256": "d36b4d7b88f55fa23836b3b1c272aee7ef387f39ceb49a1130ea81371fa6fb1d",
+        "rawSourceSha256": {
+          "arm_front_chin_rest.png": "bc642e1d0eb33aa1ddafd17b184e0505887862e33394d860ee4090600e20ab6d",
+          "arm_front_idle.png": "6b0bdd8668d4a0c81c4ce170da9e04d585af90da68979ac25eb17be7797ebd07",
+          "arm_front_page_turn.png": "34e20e3e7dc6ee89851c2e3823eaac53f37fd45a065a28ee26fa6230dbe8440f",
+          "arm_front_wave_greet.png": "4178804cf9a7eb3115a3ecca284e5d60036210296f0c968af8c30f44430d1656",
+          "back_hair.png": "fd657c0c08b85bfaafb1ab3ddf038e697ca5abfb87c99df7b9fa36cc1666113e",
+          "blink_sheet.png": "18658588a0eb61abdd96c235a134a6a28bb585307426f5a6d306ad694875b3fb",
+          "cape_skirt.png": "791a3e301f7b0b711af7a49f634bb577fffcd60d317d1d71bd7aeb73e6846b07",
+          "character_master.png": "1fc9ff611e26355d67b75133492c1c1ba73bed0701cd2c9ff9e09e9e41766d90",
+          "faces_sheet.png": "2b0e1c5dbebf0ef510fe4e433e13384cc3de3c4763d6695980a659a93f534653",
+          "front_hair_l.png": "6394fea19b15d2cd340c14bacab6c7c077ac40fad850af9f0efc740c94e5f315",
+          "front_hair_r.png": "419939fc87c6109d41929b7dd260c031d5d77802de8265f88109a3e55b4de48f",
+          "hair_ornament.png": "5a48ba0d639b90bebbb2776422185d7c67012f47db1babf9781832e60a2b66f1",
+          "mouth_sheet.png": "c39b9fa180ce55505937f8ea399c256bd6493f927b7f560b290811e72aef6d2f",
+          "prop.png": "daa6c08e170ff073a88f2b1e18c9d3e018694889b7a65afd666dc40940a1eed2",
+          "stage.png": "0e69afad95e952f8ed5378d5ba0d490ae5ed2a96beb056ede03211cc4039f3e7",
+          "tassel_ribbon.png": "1202044a2d88146370b5fe0130d5c3bcaf015152d14d8ef6189ed6f8b54e9b8f",
+          "torso.png": "cf9fab4789e85a451620ab0991197f498170b4b96f4dcb600bb20f720c61cbdb"
+        },
+        "unusedCandidateSha256": {
+          "arm_back.png": "f84cade2bd98cf0dabe2ba3dc56ef8eba12619e10610fd3cd20bc8450814d314",
+          "head_base.png": "772b295699221ec01212eba637e941dab1335aad1e649c73a1f2ed38bd1e8ac6"
+        },
+        "outputSha256": {
+          "face-atlas.webp": "ebb537e7b402457d7ef47ce290a2144c87360e0579162348b66957f675685b06",
+          "parts-atlas.webp": "7c4800eef96347fb0f5cbb4cbfa66b89490207592c45be6e40557b85366b7440",
+          "rig.json": "3034bb98835bcb7e56e039165b7a2f1289ec9c5c24e36f115e14a130d75780e2",
+          "stage.webp": "4403c8efe80dcbc945c7a139257c49663bc5c9c50679469baad194baebd4478a"
+        }
+      },
       "source": {
         "repository": "https://github.com/JohnJAS/ai-chan-sheets",
         "commit": "51c15559ac7ebc6bbfb22e1769ba46716f976d5d",

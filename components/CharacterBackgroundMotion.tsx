@@ -4,6 +4,8 @@ import { createWallpaperFrameClock } from "@/lib/character-wallpaper-clock";
 import { getCharacterWallpaperRig, type CharacterWallpaperRig } from "@/lib/character-wallpaper-rigs";
 import type { CharacterWallpaperRenderer } from "@/lib/character-wallpaper-renderer";
 
+const CLAUDE_PUPPETS = new Set(["character-claude-paper", "character-claude-lamp", "character-claude-autumn"]);
+
 const TIDE_PERFORMANCE = {
   actor: "/themes/character-backgrounds/performances/whale-tide-actor.webm",
   stage: "/themes/character-backgrounds/performances/whale-tide-stage.webp",
@@ -217,6 +219,19 @@ export function CharacterBackgroundMotion({ preset, live2dEnabled }: { preset: B
       stop?.();
       stop = undefined;
       if (!motion.matches || !rig) return;
+      if (CLAUDE_PUPPETS.has(id)) {
+        const controller = new AbortController();
+        stop = () => controller.abort();
+        void import("@/lib/character-wallpaper/puppet-wallpaper")
+          .then(({ mountPuppetWallpaper }) => {
+            if (!controller.signal.aborted) {
+              const folder = id.slice("character-".length);
+              return mountPuppetWallpaper(id, "/themes/character-backgrounds/claude-live/" + folder, controller.signal);
+            }
+          })
+          .catch(() => { /* The static wallpaper remains visible if the rig cannot load. */ });
+        return;
+      }
       const artwork = new Image();
       artwork.src = asset;
       const atlas = new Image();
@@ -232,9 +247,10 @@ export function CharacterBackgroundMotion({ preset, live2dEnabled }: { preset: B
         const layers = hasAtlas ? { performance: module.getCharacterPerformance(id), atlas } : undefined;
         const performance = id === TIDE_PERFORMANCE_BACKGROUND_ID ? TIDE_PERFORMANCE : undefined;
         const clip = live2dEnabled ? performance : undefined;
-        const renderer = module.createCharacterWallpaperRenderer(canvas, artwork, rig, layers, performance?.view);
+        const view = performance?.view ?? (id === "character-gpt-cloud" ? { focusX: 0.8 } : undefined);
+        const renderer = module.createCharacterWallpaperRenderer(canvas, artwork, rig, layers, view);
         if (renderer || clip) {
-          stop = playCharacterWallpaper(canvas, renderer, artwork, rig, performance?.view.focusX ?? 0.5, clip);
+          stop = playCharacterWallpaper(canvas, renderer, artwork, rig, view?.focusX ?? 0.5, clip);
         }
       }).catch(() => {
         // The prepainted wallpaper is also the fallback for failed loads.

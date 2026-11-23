@@ -37,6 +37,12 @@ atlases from the registered plates, outlines and original paintings.
 - Changes: a new scene and pose for each wallpaper, with the character sheet used for identity and costume reference; generated with Codex built-in image_gen on 2026-10-30, then encoded as WebP. Exact reference commit, file, URL and generation prompt are recorded in `provenance.json`.
 - The upstream license explicitly excludes its `参考原图/` directory; those original illustrations were not copied into this asset directory. The repository's supplemental-sheet license does not provide a separate license to the original character designs.
 
+### Claude 系列动态改编
+
+`claude-live/claude-paper/` 使用内置 image_gen 参考 `claude-paper.webp` 绘制的无人书房、透明角色分层、手势和脸部图集。烘焙脚本按测量坐标裁切和对齐素材，保留原场景中人物遮挡范围之外的像素。手臂的四组原画共用肩、肘、腕和指端网格，手势图集的 alpha 通道保存到原画轮廓的有符号距离。原始 PNG 的哈希、参考图和烘焙入口见 `provenance.json`。动态素材沿用 **CC BY-NC-SA 4.0**，保留 **ZipZipPipe（胖次狐）** 的原始角色设计署名及 **lmy414** 的补充设定署名。
+
+`claude-live/claude-lamp/` 和 `claude-live/claude-autumn/` 分别以 `claude-lamp.webp` 和 `claude-autumn.webp` 为唯一人物和场景参考。两套舞台、透明角色分层、手势、表情、眨眼和口型由内置 image_gen 分别绘制，随后按各自原图校正。琥珀夜读的台灯光与金尘和秋日手记的落叶由运行时绘制。两套派生资产同样沿用 **CC BY-NC-SA 4.0**，保留 **ZipZipPipe（胖次狐）** 与 **lmy414** 的署名。各套的原始 PNG、标定文件和运行时资产哈希见 `provenance.json`。
+
 ## Kitty humanizations (3 images)
 
 `kitty-ribbon.webp`, `kitty-strawberry.webp`, `kitty-moon.webp` are generated, unofficial Hello Kitty humanizations, not part of ai-chan-sheets. Hello Kitty is a Sanrio character. No rights to the underlying character or trademark, or brand endorsement, are granted by Piora's MIT license or by the AI sheet license.

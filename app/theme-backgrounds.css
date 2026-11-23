@@ -68,6 +68,15 @@ html[data-app-background-active="true"] body::after {
   transition: opacity 180ms ease-out;
 }
 
+.character-background-motion[data-puppet-wallpaper] {
+  opacity: 0;
+  transition: opacity 180ms ease-out;
+}
+
+.character-background-motion[data-puppet-wallpaper][data-ready="true"] {
+  opacity: 1;
+}
+
 .settings-backdrop > .character-background-motion,
 .settings-backdrop > .character-background-performance {
   position: absolute;
@@ -311,6 +320,10 @@ html[data-app-background-active="true"] #file-panel {
   backdrop-filter: blur(5px);
   --file-panel-surface: transparent;
   --file-panel-surface-panel: transparent;
+}
+
+html[data-app-background-active="true"]:has(canvas[data-puppet-wallpaper][data-ready="true"]) #file-panel {
+  backdrop-filter: blur(1.5px);
 }
 
 html[data-app-background-active="true"] #file-panel .right-panel-surface {

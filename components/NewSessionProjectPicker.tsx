@@ -12,6 +12,7 @@ import {
 import { useI18n } from "@/hooks/useI18n";
 import { useLaboratorySettings } from "@/hooks/useLaboratorySettings";
 import { useDefaultToolPermission } from "@/hooks/useDefaultToolPermission";
+import { useCharacterDirectorState } from "@/hooks/useCharacterDirectorState";
 import type { AttachedFile } from "@/hooks/useAgentSession";
 import { fetchModelCatalog, type ModelCatalogEntry } from "@/lib/model-catalog-client";
 import { buildSessionProjectGroups, getProjectLabel } from "@/lib/session-project-groups";
@@ -62,6 +63,7 @@ export function NewSessionProjectPicker({
   projectPickerRequestKey?: number;
 }) {
   const { t } = useI18n();
+  const publishCharacterComposer = useCharacterDirectorState(true, "idle");
   const laboratory = useLaboratorySettings();
   const { state: toolPermission, saving: permissionSaving, savingRef: permissionSavingRef, error: permissionError, save: handleToolPermission } = useDefaultToolPermission();
   const localChatInputRef = useRef<ChatInputHandle>(null);
@@ -444,6 +446,7 @@ export function NewSessionProjectPicker({
           ref={effectiveChatInputRef}
           variant="launcher"
           onSend={handleLandingSend}
+          onCharacterActivity={publishCharacterComposer}
           onAbort={() => {}}
           isStreaming={false}
           workflow={laboratory.planGoalEnabled ? { mode: "agent", turnBudget: DEFAULT_WORKFLOW_TURN_BUDGET } : undefined}

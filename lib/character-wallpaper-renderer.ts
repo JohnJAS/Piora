@@ -226,7 +226,7 @@ export function createCharacterWallpaperRenderer(
   artwork: HTMLImageElement,
   rig: CharacterWallpaperRig,
   layers?: { performance: CharacterPerformance; atlas: HTMLImageElement },
-  view?: { focusX: number; maxPixels: number },
+  view?: { focusX: number; maxPixels?: number },
 ) {
   const context = canvas.getContext("webgl", {
     alpha: false,
@@ -367,7 +367,8 @@ export function createCharacterWallpaperRenderer(
   return {
     resize(cssWidth: number, cssHeight: number) {
       const pixelBudget = view?.maxPixels ?? MAX_RENDER_PIXELS;
-      const pixelRatio = Math.min(window.devicePixelRatio, view ? 2 : 1.5, Math.sqrt(pixelBudget / (cssWidth * cssHeight)));
+      const maxDpr = view?.maxPixels === undefined ? 1.5 : 2;
+      const pixelRatio = Math.min(window.devicePixelRatio, maxDpr, Math.sqrt(pixelBudget / (cssWidth * cssHeight)));
       canvas.width = Math.max(1, Math.round(cssWidth * pixelRatio));
       canvas.height = Math.max(1, Math.round(cssHeight * pixelRatio));
       gl.viewport(0, 0, canvas.width, canvas.height);

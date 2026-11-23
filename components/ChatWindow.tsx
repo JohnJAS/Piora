@@ -38,6 +38,8 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import type { ContextUsage, SessionStatsInfo } from "@/lib/pi-types";
 import { deriveCompanionActivityStatus, type CompanionActivity } from "@/lib/companion";
+import { getCharacterSessionPhase } from "@/lib/character-director-state";
+import { useCharacterDirectorState } from "@/hooks/useCharacterDirectorState";
 import { formatStatusDuration } from "@/lib/status-duration";
 import { AliIcon } from "./AliIcon";
 import { shouldShowScrollToBottom } from "@/lib/chat-scroll";
@@ -76,6 +78,7 @@ interface Props {
   onContextUsageChange?: (usage: ContextUsage | null) => void;
   onOpenFile?: (filePath: string) => void;
   onCompanionActivityChange?: (activity: CompanionActivity) => void;
+  characterWallpaperActivity?: boolean;
   onTaskControlsChange?: (controls: TaskControls | null) => void;
   onOpenTaskChanges?: () => void;
   onRenameTask?: (name: string) => void | Promise<void>;
@@ -171,7 +174,7 @@ function getUserInputText(message: AgentMessage): string | null {
   return text.length > 0 ? text : null;
 }
 
-export function ChatWindow({ visible = true, historyVisible = false, onHistoryControlsChange, session, initialRunning, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, onTaskControlsChange, onOpenTaskChanges, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenModels, onPromptSubmitted, sideChatEnabled = false, onOpenSideChat }: Props) {
+export function ChatWindow({ visible = true, historyVisible = false, onHistoryControlsChange, session, initialRunning, focusEntryId, newSessionCwd, newSessionInitialModel, initialPrompt, claimInitialPrompt, onAgentEnd, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSessionStatsChange, onSessionStatsPanelOpen, onContextUsageChange, onOpenFile, onCompanionActivityChange, characterWallpaperActivity = false, onTaskControlsChange, onOpenTaskChanges, onSlashCommandsChange, onOpenAutomation, onCapabilitiesChange, onOpenModels, onPromptSubmitted, sideChatEnabled = false, onOpenSideChat }: Props) {
   // A new-chat action remounts this window. Directory names cannot identify
   // drafts: two new chats in the same project must never restore each other.
   const [newChatDraftKey] = useState(() => `new:${crypto.randomUUID()}`);
@@ -432,6 +435,23 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
   const companionPreviousStatusRef = useRef<CompanionActivity["status"]>("idle");
   const companionRunIdRef = useRef(0);
   const [companionActivityEvent, setCompanionActivityEvent] = useState<CompanionActivity["event"]>();
+  const streamingReply = streamState.streamingMessage;
+  const settledReply = messages.at(-1);
+  const publishCharacterComposer = useCharacterDirectorState(
+    characterWallpaperActivity,
+    getCharacterSessionPhase({
+      approval: Boolean(extensionDialog || extensionCustomUi || currentWorkflowRun?.status === "awaiting_approval"),
+      retrying: Boolean(retryInfo || (modelError && sessionBusy)),
+      tools: bashRunning || agentPhase?.kind === "running_tools" || agentPhase?.kind === "running_command",
+      streamingText: streamState.isStreaming && streamingReply?.role === "assistant"
+        && Boolean(streamingReply.content?.some((block) => block.type === "text" && block.text.length > 0)),
+      busy: sessionBusy || isCompacting,
+    }),
+    companionActivityEvent?.key,
+    companionActivityEvent?.kind,
+    interruptedRunId !== null,
+    settledReply?.role === "assistant" ? settledReply.stopReason : undefined,
+  );
 
   useEffect(() => {
     const wasBusy = companionWasBusyRef.current;
@@ -827,6 +847,7 @@ export function ChatWindow({ visible = true, historyVisible = false, onHistoryCo
       })}
       sendDisabled={sessionReadOnly || !laboratory.ready || workflow.busy || laboratory.planGoalEnabled && Boolean((session?.id ?? sessionIdRef.current) && !workflow.snapshot)}
       onSend={handleComposerSend}
+      onCharacterActivity={publishCharacterComposer}
       onQueueInput={chatCommands.submit}
       commandCatalog={commandCatalog}
       slashCommandsError={slashCommandsError}

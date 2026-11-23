@@ -3083,6 +3083,7 @@ export function AppShell() {
                 onContextUsageChange={handleContextUsageChange}
                 onOpenFile={handleOpenLinkedFile}
                 onCompanionActivityChange={setCompanionActivity}
+                characterWallpaperActivity
                 onTaskControlsChange={handleTaskControlsChange}
                 onOpenTaskChanges={handleOpenTaskChanges}
                 onRenameTask={handleTaskRename}
