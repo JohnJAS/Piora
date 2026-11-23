@@ -209,10 +209,8 @@ export const subagents = {
           await page.bringToFront();
           await page.keyboard.press('Escape');
           await details.waitFor({ state: 'hidden' });
-          // The app restores focus on its next animation frame. A hosted Windows window
-          // may defer that frame until capture requests presentation.
-          await page.screenshot({ path: join(directory, 'subagent-return-to-chat.png') });
           await waitUntil(() => opener.evaluate((element, id) => element.id === id && element === document.activeElement, openerId), 'focus returned to chat card');
+          await page.screenshot({ path: join(directory, 'subagent-return-to-chat.png') });
           await composer.fill('');
         } finally { if (oldViewport) await page.setViewportSize(oldViewport); }
       });

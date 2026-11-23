@@ -1070,12 +1070,9 @@ export function AppShell() {
     if (subagentSelection || !focus?.restore) return;
     subagentFocus.current = null;
     // Restored history and virtualized rows can replace the trigger while details are open.
-    const frame = requestAnimationFrame(() => {
-      const opener = document.getElementById(focus.openerId);
-      if (opener?.getClientRects().length && !opener.closest("[inert]")) opener.focus({ preventScroll: true });
-      else chatInputRef.current?.focus();
-    });
-    return () => cancelAnimationFrame(frame);
+    const opener = document.getElementById(focus.openerId);
+    if (opener?.getClientRects().length && !opener.closest("[inert]")) opener.focus({ preventScroll: true });
+    else chatInputRef.current?.focus();
   }, [subagentSelection]);
 
   useEffect(() => {
